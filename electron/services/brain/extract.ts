@@ -59,8 +59,12 @@ export class ExtractionParseError extends Error {
  * asked for JSON routinely fences it or introduces it with a sentence. A
  * greedy first-`{`-to-last-`}` slice fails on any trailing prose containing a
  * brace, so this counts depth and respects string literals.
+ *
+ * Exported for `curation.ts`, which parses a reply from the same CLI in the
+ * same way. A second brace counter would be a second place to get string
+ * escaping wrong.
  */
-function firstJsonObject(raw: string): string | null {
+export function firstJsonObject(raw: string): string | null {
   let depth = 0;
   let start = -1;
   let inString = false;

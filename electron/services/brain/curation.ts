@@ -1,0 +1,141 @@
+import { z } from 'zod';
+import { createSummaryQueryRunner } from '../sessions/summary-query';
+import type { CurationResult } from './curate';
+import { firstJsonObject } from './extract';
+
+/**
+ * The curation contract (spec §3). `extract.ts`'s twin: schema, prompt, pinned
+ * model, retry-once runner.
+ */
+
+const CurationResultSchema = z.object({
+  collapsed: z.string().trim().min(1),
+  promotedFacts: z.array(z.string()).default([]),
+});
+
+/**
+ * Compile-time proof that the schema and the pure fold's input agree.
+ *
+ * `CurationResult` is declared in `curate.ts` so the fold never imports this
+ * module; this assignment is what stops the two drifting apart silently.
+ */
+const _shapeCheck: (a: z.infer<typeof CurationResultSchema>) => CurationResult = (a) => a;
+void _shapeCheck;
+
+export class CurationParseError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'CurationParseError';
+  }
+}
+
+/**
+ * Opus, pinned SEPARATELY from `EXTRACTION_MODEL` (spec §3).
+ *
+ * Volume is the entire reason extraction is not on Opus — backfill is ~142
+ * sessions. Curation has no such volume: at most `MAX_NOTES_PER_RUN` notes per
+ * run, behind a 7-day cooldown, on notes that have already accumulated. It is
+ * a compression task where a subtle judgement error is durable, which is where
+ * the better model earns its cost.
+ *
+ * Two tasks with different volume and different stakes get two constants. The
+ * next reason to change one will not apply to the other.
+ */
+export const CURATION_MODEL = 'claude-opus-5';
+
+/** What the model is shown. `entries` is exactly what the fold will remove. */
+export interface CurationInput {
+  title: string;
+  noteType: string;
+  entries: string[];
+}
+
+export function parseCuration(raw: string): CurationResult {
+  const json = firstJsonObject(raw);
+  if (json === null) {
+    throw new CurationParseError(`no JSON object in reply: ${raw.slice(0, 200)}`);
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(json) as unknown;
+  } catch (err) {
+    throw new CurationParseError(`reply is not valid JSON: ${(err as Error).message}`);
+  }
+
+  const result = CurationResultSchema.safeParse(parsed);
+  if (!result.success) {
+    const first = result.error.issues[0];
+    throw new CurationParseError(
+      `curation failed validation at ${first.path.join('.') || '(root)'}: ${first.message}`,
+    );
+  }
+  return result.data;
+}
+
+/**
+ * The prompt.
+ *
+ * It states plainly that the entries have ALREADY been chosen. The model is
+ * summarizing a span, not deciding what history to lose — telling it otherwise
+ * would invite it to argue with a decision it has no say in, and a reply that
+ * withheld prose for entries the fold is going to remove anyway would leave
+ * the note strictly worse off.
+ */
+export function buildCurationPrompt(input: CurationInput): string {
+  return `You are compressing the history section of one note in an engineering
+knowledge vault, so that retrieving the note costs less context.
+
+Return ONLY a JSON object matching this shape, with no commentary:
+
+{"collapsed":string,"promotedFacts":[string]}
+
+Rules:
+- \`collapsed\` is 1-3 sentences of plain prose covering the entries below as a
+  whole. It replaces them. Write what a developer would still need in six
+  months: what was decided, what changed, what it led to.
+- \`promotedFacts\` are durable facts that recur across these entries and are
+  worth keeping as standalone facts once the entries are gone. Return [] if
+  there are none. Do not restate the prose.
+- Write plain sentences. No Markdown headings, no bullets, no line breaks.
+- These entries have already been selected for collapsing. Your job is to
+  summarize them, not to choose which ones survive.
+
+NOTE
+${input.noteType}: ${input.title}
+
+ENTRIES BEING COLLAPSED
+${input.entries.join('\n')}`;
+}
+
+export type Curator = (input: CurationInput, configDir: string) => Promise<CurationResult>;
+
+export interface CuratorDeps {
+  /**
+   * Injected in tests. Defaults to the shared `claude -p` runner, which
+   * already pins a stable scratch cwd and sweeps the throwaway JSONL the CLI
+   * writes — and the Brain's own discovery excludes that scratch directory, so
+   * curation calls cannot be re-indexed by the Brain.
+   */
+  runQuery?: (opts: { prompt: string; model: string; configDir: string }) => Promise<string>;
+}
+
+export function createCurator(deps: CuratorDeps = {}): Curator {
+  const runQuery = deps.runQuery ?? createSummaryQueryRunner();
+
+  return async function curateWithModel(input, configDir) {
+    const prompt = buildCurationPrompt(input);
+    const reply = await runQuery({ prompt, model: CURATION_MODEL, configDir });
+    try {
+      return parseCuration(reply);
+    } catch (err) {
+      if (!(err instanceof CurationParseError)) throw err;
+      // Exactly one retry, matching `createExtractor`. A transport error never
+      // reaches here — `runQuery` rejects and that propagates unretried,
+      // because a spawn or auth failure is not a bad answer and immediately
+      // repeating it just fails twice.
+      const second = await runQuery({ prompt, model: CURATION_MODEL, configDir });
+      return parseCuration(second);
+    }
+  };
+}
