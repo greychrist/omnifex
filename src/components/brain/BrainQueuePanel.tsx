@@ -48,6 +48,7 @@ export const BrainQueuePanel: React.FC<{ accountId: number | null }> = ({ accoun
   const [outcome, setOutcome] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
+  const [confirmingAll, setConfirmingAll] = useState(false);
   const [autoIndex, setAutoIndex] = useState(false);
   const [paused, setPaused] = useState(false);
   const [curate, setCurate] = useState(false);
@@ -55,9 +56,14 @@ export const BrainQueuePanel: React.FC<{ accountId: number | null }> = ({ accoun
   // account's Claude config — so it re-reads whenever the account changes.
   const [mcpStatus, setMcpStatus] = useState({ registered: false, available: false });
 
-  // Both switches are GLOBAL, not per account. Read once on mount rather than
-  // on every account change, which would imply they are scoped when they are
-  // not.
+  // These settings are GLOBAL, not per account — they are deliberately not
+  // re-read when the account changes, which would imply a scoping they do not
+  // have.
+  //
+  // They ARE re-read on `nonce`, i.e. after every action. Reading only at mount
+  // is the stale-read bug this tab has now shipped three times: a pause applied
+  // from anywhere else — another window, the queue panel's own drain, a direct
+  // settings write — left this showing the opposite of the truth.
   useEffect(() => {
     let cancelled = false;
     void Promise.all([
@@ -76,7 +82,7 @@ export const BrainQueuePanel: React.FC<{ accountId: number | null }> = ({ accoun
         // reading: it never turns unattended spending ON by accident.
       });
     return () => { cancelled = true; };
-  }, []);
+  }, [nonce]);
 
   useEffect(() => {
     if (accountId === null) {
@@ -120,6 +126,9 @@ export const BrainQueuePanel: React.FC<{ accountId: number | null }> = ({ accoun
   useEffect(() => {
     setOutcome(null);
     setError(null);
+    // A pending confirmation must not carry across accounts: the count it was
+    // showing belonged to a different queue.
+    setConfirmingAll(false);
   }, [accountId]);
 
   useEffect(() => {
@@ -192,18 +201,49 @@ export const BrainQueuePanel: React.FC<{ accountId: number | null }> = ({ accoun
           Curate
         </button>
 
+        {/* Two-step, because this is the control that indexed 158 items — about
+            an hour of Sonnet — when the user meant to index the one row they
+            had selected. The count in the label IS the confirmation: a button
+            that says what it is about to do cannot spring a surprise. */}
+        {confirmingAll ? (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => {
+              setConfirmingAll(false);
+              run(async () => {
+                const out = await api.brainQueueDrain();
+                if (out.yielded) {
+                  return out.reason === 'session-active'
+                    ? `yielded after ${String(out.processed)} — a session is open`
+                    : `yielded after ${String(out.processed)} — the queue is paused`;
+                }
+                return `indexed ${String(out.processed)}`;
+              });
+            }}
+            className="rounded-md border border-destructive px-2 py-1 text-destructive hover:bg-destructive/10 disabled:opacity-50"
+          >
+            Confirm — index {counts.pending}?
+          </button>
+        ) : (
+          <button
+            type="button"
+            disabled={busy || counts.pending === 0}
+            onClick={() => { setConfirmingAll(true); }}
+            className="rounded-md border px-2 py-1 hover:bg-accent disabled:opacity-50"
+          >
+            Index All ({counts.pending})
+          </button>
+        )}
+
+        {/* A button, not a checkbox: stopping a run in progress is an action,
+            and the label has to say what pressing it will DO. */}
         <button
           type="button"
-          disabled={busy}
-          onClick={() => {
-            run(async () => {
-              await api.brainQueueDrain();
-              return 'drain finished';
-            });
-          }}
-          className="rounded-md border px-2 py-1 hover:bg-accent disabled:opacity-50"
+          onClick={() => { setSwitch(PAUSED_KEY, !paused, setPaused); }}
+          className="rounded-md border px-2 py-1 hover:bg-accent"
         >
-          Drain now
+          {paused ? 'Resume' : 'Pause'}
         </button>
 
         <button
@@ -232,13 +272,6 @@ export const BrainQueuePanel: React.FC<{ accountId: number | null }> = ({ accoun
           title="Compress long notes when a session closes, so retrieving them costs less context. Off by default — it spends tokens unattended and rewrites existing notes. Every run commits as 'Curation', so git revert in the vault undoes it."
           checked={curate}
           onChange={(next) => { setSwitch(CURATE_KEY, next, setCurate); }}
-        />
-
-        <SettingSwitch
-          label="Pause"
-          title="Stop the worker from draining, without turning auto-index off."
-          checked={paused}
-          onChange={(next) => { setSwitch(PAUSED_KEY, next, setPaused); }}
         />
 
         {mcpStatus.available && (
