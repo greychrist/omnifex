@@ -3,6 +3,7 @@ import { ChevronsUpDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible';
 import { StreamMessage } from './StreamMessage';
+import { TranscriptRowBoundary } from '@/components/claude/TranscriptRowBoundary';
 import { summarizeHiddenEvents, countHiddenEvents } from '@/lib/hiddenEventsSummary';
 import { useScrollAnchor } from '@/lib/useScrollAnchor';
 import type { JsonlNode } from '@/types/jsonl';
@@ -63,15 +64,16 @@ export const HiddenEventsGroup: React.FC<Props> = ({
         style={{ borderLeftColor: 'color-mix(in oklab, var(--color-foreground) 65%, transparent)' }}
       >
         {messages.map((message, idx) => (
-          <StreamMessage
-            key={idx}
-            message={message}
-            streamMessages={streamMessages}
-            accountType={accountType}
-            onLinkDetected={onLinkDetected}
-            onResend={onResend}
-            inExpandedGroup
-          />
+          <TranscriptRowBoundary key={idx}>
+            <StreamMessage
+              message={message}
+              streamMessages={streamMessages}
+              accountType={accountType}
+              onLinkDetected={onLinkDetected}
+              onResend={onResend}
+              inExpandedGroup
+            />
+          </TranscriptRowBoundary>
         ))}
       </CollapsibleContent>
     </Collapsible>

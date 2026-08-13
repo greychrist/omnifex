@@ -4,6 +4,7 @@ import { ArrowDown, ArrowUp, ChevronDown, ChevronUp, ChevronsDown, ChevronsUp } 
 import { Button } from "@/components/ui/button";
 import { TooltipSimple } from "@/components/ui/tooltip-modern";
 import { StreamMessage } from "@/components/StreamMessage";
+import { TranscriptRowBoundary } from "@/components/claude/TranscriptRowBoundary";
 import { HiddenEventsGroup } from "@/components/HiddenEventsGroup";
 import { InflightAssistantBubble } from "@/components/InflightAssistantBubble";
 import { FindBar } from "@/components/FindBar";
@@ -447,13 +448,15 @@ export function ClaudeTranscript({
                 >
                   {withTimeline(
                     message,
-                    <StreamMessage
-                      message={message}
-                      streamMessages={messages}
-                      onLinkDetected={onLinkDetected}
-                      accountType={accountType}
-                      onResend={onResend}
-                    />,
+                    <TranscriptRowBoundary>
+                      <StreamMessage
+                        message={message}
+                        streamMessages={messages}
+                        onLinkDetected={onLinkDetected}
+                        accountType={accountType}
+                        onResend={onResend}
+                      />
+                    </TranscriptRowBoundary>,
                   )}
                 </div>
               ))
@@ -468,14 +471,16 @@ export function ClaudeTranscript({
                     >
                       {withTimeline(
                         item.message,
-                        <StreamMessage
-                          message={item.message}
-                          streamMessages={messages}
-                          onLinkDetected={onLinkDetected}
-                          accountType={accountType}
-                          compact
-                          onResend={onResend}
-                        />,
+                        <TranscriptRowBoundary>
+                          <StreamMessage
+                            message={item.message}
+                            streamMessages={messages}
+                            onLinkDetected={onLinkDetected}
+                            accountType={accountType}
+                            compact
+                            onResend={onResend}
+                          />
+                        </TranscriptRowBoundary>,
                       )}
                     </div>
                   ) : (

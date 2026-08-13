@@ -32,6 +32,7 @@ import {
   asToolInput,
   asToolInputOneOf,
   TOOLS_WITH_WIDGETS_LOWER,
+  toolInputString,
   warnUnhandledKnownTool,
 } from "@/lib/types/toolInput";
 import { extractToolResultImages, toolResultHasImages } from "@/lib/toolResultImages";
@@ -715,15 +716,30 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
               );
             }
 
-            // Edit
+            // Edit. Every branch below guards its fields with
+            // `toolInputString` rather than truthiness: a non-string
+            // `file_path` / `command` / pattern is malformed input the CLI
+            // itself had to be hardened against (2.1.229), and it reaches our
+            // widgets' string work as a render-time TypeError. Falling through
+            // lands it in the raw-JSON display at the bottom of this switch,
+            // which is what an unreadable payload deserves.
             const editInput = asToolInput(toolName, 'Edit', rawInput);
-            if (editInput?.file_path) {
+            if (
+              editInput &&
+              toolInputString(editInput.file_path) &&
+              typeof editInput.old_string === 'string' &&
+              typeof editInput.new_string === 'string'
+            ) {
               return <EditWidget {...editInput} result={toolResult} />;
             }
 
             // MultiEdit
             const multiEditInput = asToolInput(toolName, 'MultiEdit', rawInput);
-            if (multiEditInput?.file_path && multiEditInput.edits) {
+            if (
+              multiEditInput &&
+              toolInputString(multiEditInput.file_path) &&
+              Array.isArray(multiEditInput.edits)
+            ) {
               return <MultiEditWidget {...multiEditInput} result={toolResult} />;
             }
 
@@ -739,50 +755,60 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
 
             // LS
             const lsInput = asToolInput(toolName, 'LS', rawInput);
-            if (lsInput?.path) {
-              return <LSWidget path={lsInput.path} result={toolResult} />;
+            const lsPath = toolInputString(lsInput?.path);
+            if (lsPath) {
+              return <LSWidget path={lsPath} result={toolResult} />;
             }
 
             // Read
             const readInput = asToolInput(toolName, 'Read', rawInput);
-            if (readInput?.file_path) {
-              return <ReadWidget filePath={readInput.file_path} result={toolResult} />;
+            const readPath = toolInputString(readInput?.file_path);
+            if (readPath) {
+              return <ReadWidget filePath={readPath} result={toolResult} />;
             }
 
             // Glob
             const globInput = asToolInput(toolName, 'Glob', rawInput);
-            if (globInput?.pattern) {
-              return <GlobWidget pattern={globInput.pattern} result={toolResult} />;
+            const globPattern = toolInputString(globInput?.pattern);
+            if (globPattern) {
+              return <GlobWidget pattern={globPattern} result={toolResult} />;
             }
 
             // Bash
             const bashInput = asToolInput(toolName, 'Bash', rawInput);
-            if (bashInput?.command) {
-              return <BashWidget command={bashInput.command} description={bashInput.description} result={toolResult} />;
+            const bashCommand = toolInputString(bashInput?.command);
+            if (bashCommand) {
+              return <BashWidget command={bashCommand} description={toolInputString(bashInput?.description) ?? undefined} result={toolResult} />;
             }
 
             // Write
             const writeInput = asToolInput(toolName, 'Write', rawInput);
-            if (writeInput?.file_path && writeInput.content !== undefined) {
-              return <WriteWidget filePath={writeInput.file_path} content={writeInput.content} result={toolResult} />;
+            const writePath = toolInputString(writeInput?.file_path);
+            // `content` may legitimately be '' (writing an empty file), so it
+            // is type-checked rather than run through `toolInputString`.
+            if (writePath && typeof writeInput?.content === 'string') {
+              return <WriteWidget filePath={writePath} content={writeInput.content} result={toolResult} />;
             }
 
             // Grep
             const grepInput = asToolInput(toolName, 'Grep', rawInput);
-            if (grepInput?.pattern) {
-              return <GrepWidget pattern={grepInput.pattern} include={grepInput.include} path={grepInput.path} exclude={grepInput.exclude} result={toolResult} />;
+            const grepPattern = toolInputString(grepInput?.pattern);
+            if (grepPattern) {
+              return <GrepWidget pattern={grepPattern} include={toolInputString(grepInput?.include) ?? undefined} path={toolInputString(grepInput?.path) ?? undefined} exclude={toolInputString(grepInput?.exclude) ?? undefined} result={toolResult} />;
             }
 
             // WebSearch
             const webSearchInput = asToolInput(toolName, 'WebSearch', rawInput);
-            if (webSearchInput?.query) {
-              return <WebSearchWidget query={webSearchInput.query} result={toolResult} />;
+            const webSearchQuery = toolInputString(webSearchInput?.query);
+            if (webSearchQuery) {
+              return <WebSearchWidget query={webSearchQuery} result={toolResult} />;
             }
 
             // WebFetch
             const webFetchInput = asToolInput(toolName, 'WebFetch', rawInput);
-            if (webFetchInput?.url) {
-              return <WebFetchWidget url={webFetchInput.url} prompt={webFetchInput.prompt} result={toolResult} />;
+            const webFetchUrl = toolInputString(webFetchInput?.url);
+            if (webFetchUrl) {
+              return <WebFetchWidget url={webFetchUrl} prompt={toolInputString(webFetchInput?.prompt) ?? undefined} result={toolResult} />;
             }
 
             warnUnhandledKnownTool(toolName, rawInput);

@@ -366,3 +366,49 @@ describe("PermissionCard — command preview hardening", () => {
     expect(screen.queryByText(/hidden character|scroll to see/)).toBeNull();
   });
 });
+
+// Claude Code 2.1.229 fixed its own crash on a tool call carrying a non-string
+// `glob`, `file_path`, or `command`. The same payload reaches this card, whose
+// typed branches returned the field as a declared `string` straight into
+// `buildCommandPreview` → `raw.replace(...)` → TypeError. A permission card
+// that cannot render has no Allow/Deny, so the session sits blocked.
+describe("PermissionCard — malformed tool input (CLI 2.1.229 class)", () => {
+  const malformed: { tool: string; input: Record<string, unknown>; what: string }[] = [
+    { tool: "Bash", what: "object command", input: { command: { cmd: "ls" } } },
+    { tool: "Read", what: "numeric file_path", input: { file_path: 123 } },
+    { tool: "Write", what: "array file_path", input: { file_path: ["/tmp/a"] } },
+    { tool: "Edit", what: "numeric file_path", input: { file_path: 7 } },
+    { tool: "MultiEdit", what: "object file_path", input: { file_path: { p: "x" } } },
+    { tool: "Grep", what: "array pattern", input: { pattern: ["x"] } },
+    { tool: "Glob", what: "numeric pattern", input: { pattern: 9 } },
+    { tool: "LS", what: "numeric path", input: { path: 1 } },
+    { tool: "WebFetch", what: "object url", input: { url: { href: "x" } } },
+  ];
+
+  for (const { tool, input, what } of malformed) {
+    it(`renders ${tool} with a ${what} as a JSON preview instead of crashing`, () => {
+      expect(() =>
+        render(
+          <PermissionCard
+            request={makeClaudeRequest({ toolName: tool, toolInput: input })}
+            onAllow={vi.fn()}
+            onDeny={vi.fn()}
+          />,
+        ),
+      ).not.toThrow();
+      // Allow/Deny must stay reachable — that is the whole point of the card.
+      expect(screen.getByRole("button", { name: /deny/i })).toBeTruthy();
+    });
+  }
+
+  it("still previews a well-formed command unchanged", () => {
+    render(
+      <PermissionCard
+        request={makeClaudeRequest({ toolInput: { command: "ls -la" } })}
+        onAllow={vi.fn()}
+        onDeny={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("ls -la")).toBeTruthy();
+  });
+});

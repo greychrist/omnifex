@@ -29,9 +29,9 @@ import * as path from 'node:path';
  * old value and the new one, and file or fix whatever they imply. Bumping it
  * to silence the badge throws away the only drift signal we have.
  *
- * Last review: 2.1.222 → 2.1.224 on 2026-08-07.
+ * Last review: 2.1.224 → 2.1.229 on 2026-08-13.
  */
-export const REVIEWED_CLI_VERSION = '2.1.224';
+export const REVIEWED_CLI_VERSION = '2.1.229';
 
 /**
  * app_settings key holding the user's explicit OmniFex-checkout override.

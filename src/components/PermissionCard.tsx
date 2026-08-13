@@ -24,7 +24,7 @@ import {
   type IncomingSuggestion,
 } from "@/lib/permissionCardLogic";
 import type { PermissionRequestPayload } from "@/lib/types/permissionRequest";
-import { asToolInput } from "@/lib/types/toolInput";
+import { asToolInput, toolInputString } from "@/lib/types/toolInput";
 import { CodexPatchPreview } from "@/components/codex/CodexPatchPreview";
 import { CodexExecPreview } from "@/components/codex/CodexExecPreview";
 
@@ -43,31 +43,38 @@ interface PermissionCardProps {
  * pre-typed behavior so unknown tools still surface a useful label.
  */
 function formatToolInput(toolName: string | undefined, input: Record<string, unknown>): string {
-  const bash = asToolInput(toolName, 'Bash', input);
-  if (bash?.command) return bash.command;
+  // Every branch runs its field through `toolInputString`. The typed map is a
+  // compile-time contract only: Claude can emit a non-string `command` /
+  // `file_path` / pattern (Claude Code 2.1.229 fixed its own crash on exactly
+  // that), and returning one here as a declared `string` reaches
+  // `buildCommandPreview`'s `raw.replace(...)` as a TypeError — which takes the
+  // card down, and with it the Allow/Deny the session is waiting on. A field
+  // that fails the guard falls through to the JSON dump at the bottom.
+  const bash = toolInputString(asToolInput(toolName, 'Bash', input)?.command);
+  if (bash) return bash;
 
-  const read = asToolInput(toolName, 'Read', input);
-  if (read?.file_path) return read.file_path;
-  const write = asToolInput(toolName, 'Write', input);
-  if (write?.file_path) return write.file_path;
-  const edit = asToolInput(toolName, 'Edit', input);
-  if (edit?.file_path) return edit.file_path;
-  const multiEdit = asToolInput(toolName, 'MultiEdit', input);
-  if (multiEdit?.file_path) return multiEdit.file_path;
+  const read = toolInputString(asToolInput(toolName, 'Read', input)?.file_path);
+  if (read) return read;
+  const write = toolInputString(asToolInput(toolName, 'Write', input)?.file_path);
+  if (write) return write;
+  const edit = toolInputString(asToolInput(toolName, 'Edit', input)?.file_path);
+  if (edit) return edit;
+  const multiEdit = toolInputString(asToolInput(toolName, 'MultiEdit', input)?.file_path);
+  if (multiEdit) return multiEdit;
 
-  const grep = asToolInput(toolName, 'Grep', input);
-  if (grep?.pattern) return grep.pattern;
-  const glob = asToolInput(toolName, 'Glob', input);
-  if (glob?.pattern) return glob.pattern;
+  const grep = toolInputString(asToolInput(toolName, 'Grep', input)?.pattern);
+  if (grep) return grep;
+  const glob = toolInputString(asToolInput(toolName, 'Glob', input)?.pattern);
+  if (glob) return glob;
 
   // LS uses `path`, not `file_path` — the generic field probe below
   // wouldn't pick it up, so a permission request for LS would render
   // as raw JSON without this branch.
-  const ls = asToolInput(toolName, 'LS', input);
-  if (ls?.path) return ls.path;
+  const ls = toolInputString(asToolInput(toolName, 'LS', input)?.path);
+  if (ls) return ls;
 
-  const webFetch = asToolInput(toolName, 'WebFetch', input);
-  if (webFetch?.url) return webFetch.url;
+  const webFetch = toolInputString(asToolInput(toolName, 'WebFetch', input)?.url);
+  if (webFetch) return webFetch;
 
   // Unknown / MCP / future tools: generic field probe keeps the card
   // functional for anything not in our typed map.

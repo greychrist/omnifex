@@ -232,6 +232,26 @@ export function asToolInputOneOf<K extends KnownToolName>(
 }
 
 /**
+ * Field-level string guard for tool inputs.
+ *
+ * `asToolInput` asserts the discriminator name and object-ness and stops there
+ * — the CLI's schemas are compile-time only, and Claude can emit a `file_path`,
+ * `command`, or `glob` that isn't a string. Claude Code 2.1.229 shipped a fix
+ * for its own crash on exactly that, and it tolerates the value rather than
+ * rejecting it upstream, so the malformed block still reaches everything that
+ * renders the JSONL.
+ *
+ * Our widgets and the permission preview do string work on those fields
+ * (`path.split('.')`, `raw.replace(...)`), so every branch that hands one to a
+ * consumer checks it here first and falls through to the raw-JSON display when
+ * it fails. Empty strings fail too: each call site already treated `''` as "no
+ * usable value" via its truthiness check before this guard existed.
+ */
+export function toolInputString(value: unknown): string | null {
+  return typeof value === 'string' && value.length > 0 ? value : null;
+}
+
+/**
  * Dev-mode diagnostic: fires when a tool_use block arrives carrying a
  * known PascalCase tool name (i.e. one we have a widget branch for)
  * but `renderToolWidget` reached the end without matching any branch.
