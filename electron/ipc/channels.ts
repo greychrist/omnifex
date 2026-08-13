@@ -35,6 +35,8 @@ export const INVOKE_CHANNELS: readonly string[] = [
   'brain_curate_note',
   'brain_enqueue_curation',
   'brain_stats',
+  'brain_excluded_projects',
+  'brain_set_excluded_projects',
   'brain_mcp_status',
   'brain_mcp_register',
   'brain_mcp_unregister',

@@ -1033,8 +1033,12 @@ export interface BrainSourceSummary {
   itemKey: string;
   label: string;
   mtimeMs: number;
+  /** Bytes on disk — the best single predictor of what indexing will cost. */
+  size: number;
   admitted: boolean;
   reason: string;
+  /** True when this item's project is excluded from the Brain. */
+  excluded: boolean;
   /** Mirrors `SourceStatus` in electron/services/brain/sources/state.ts. */
   status: 'pending' | 'indexed' | 'skipped' | 'failed' | 'blocked' | null;
   changed: boolean;
@@ -3109,8 +3113,23 @@ export const api = {
   },
 
   /** Discovered source items for one account, newest first. */
-  async brainListSources(accountId: number): Promise<BrainSourceSummary[]> {
-    return apiCall<BrainSourceSummary[]>('brain_list_sources', { accountId });
+  async brainListSources(
+    accountId: number,
+    opts: { includeExcluded?: boolean } = {},
+  ): Promise<BrainSourceSummary[]> {
+    return apiCall<BrainSourceSummary[]>('brain_list_sources', stripUndefined({
+      accountId,
+      includeExcluded: opts.includeExcluded,
+    }));
+  },
+
+  /** Encoded project directory names this account will never index. */
+  async brainExcludedProjects(accountId: number): Promise<string[]> {
+    return apiCall<string[]>('brain_excluded_projects', { accountId });
+  },
+
+  async brainSetExcludedProjects(accountId: number, labels: string[]): Promise<void> {
+    return apiCall<void>('brain_set_excluded_projects', { accountId, labels });
   },
 
   /** The distilled view of one item, or null when it is not this account's. */

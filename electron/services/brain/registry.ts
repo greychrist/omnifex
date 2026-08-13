@@ -55,6 +55,19 @@ export function vaultSettingKey(accountId: number): string {
  *  settings under this prefix; they must not be mistaken for vault paths. */
 const VAULT_KEY_RE = /^brain\.vault\.\d+$/;
 
+/**
+ * app_settings key holding one account's excluded project directories.
+ *
+ * A settings key rather than a table: this is a handful of strings per
+ * account, and it matches how the vault path is already stored. The value is
+ * a JSON array of ENCODED project directory names — Plan 6 established that
+ * decoding those back to real paths is unreliable (`wombeats-ios` decodes
+ * wrongly), so the encoded name is the only stable key available.
+ */
+export function excludedProjectsKey(accountId: number): string {
+  return `brain.excludedProjects.${String(accountId)}`;
+}
+
 /** The derived search index, inside the vault it indexes. Gitignored by the
  *  layout vault.ts scaffolds, and rebuildable from the Markdown. */
 const INDEX_DIR = '.omnifex';
@@ -149,11 +162,17 @@ export interface SourceSummary {
   itemKey: string;
   label: string;
   mtimeMs: number;
+  /** Bytes on disk. Without it a 21MB session looks like a 40KB one, and size
+   *  is the best single predictor of what indexing it will cost. */
+  size: number;
   admitted: boolean;
   reason: string;
   /** Recorded state, or null when this item has never been through indexing. */
   status: SourceStatus | null;
   changed: boolean;
+  /** True when this item's project is on the account's exclusion list. Only
+   *  ever true when the caller asked to see excluded rows. */
+  excluded: boolean;
 }
 
 /** What one indexing run did. */
@@ -221,7 +240,16 @@ export interface BrainService {
    * ownership instead. Discovery is a directory walk, not a model call —
    * doing it whole and filtering after costs nothing worth protecting.
    */
-  listSources(accountId: number): Promise<SourceSummary[]>;
+  listSources(accountId: number, opts?: { includeExcluded?: boolean }): Promise<SourceSummary[]>;
+  /** Encoded project directory names this account will never index. */
+  excludedProjects(accountId: number): string[];
+  /**
+   * Replace the exclusion list. Excluded projects drop out of discovery
+   * entirely — they never list, never enqueue, and never index on session
+   * close, which is the only thing that keeps a temp project out of the vault
+   * while Auto-index is on.
+   */
+  setExcludedProjects(accountId: number, labels: string[]): void;
   /** Distilled preview of one item, or null when it is not this account's. */
   previewSource(accountId: number, itemKey: string): Promise<SourcePreview | null>;
   /**
@@ -554,6 +582,34 @@ export function createBrainService(
 
   function readPath(accountId: number): string | null {
     return db.getSetting(vaultSettingKey(accountId));
+  }
+
+  /**
+   * One account's excluded project directories.
+   *
+   * Never throws for a hand-mangled value: an unparseable setting reads as "no
+   * exclusions", which fails OPEN. That is the safe direction here only because
+   * the alternative — failing closed and silently indexing nothing — would look
+   * exactly like the Brain being broken.
+   */
+  function readExcluded(accountId: number): string[] {
+    const raw = db.getSetting(excludedProjectsKey(accountId));
+    if (raw === null) return [];
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === 'string') : [];
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * The single exclusion predicate, applied at EVERY path that can reach the
+   * model. Discovery alone is not enough: the queue is durable across restarts,
+   * so an exclusion added today has to stop work queued yesterday.
+   */
+  function isExcludedItem(accountId: number, item: SourceItem): boolean {
+    return readExcluded(accountId).includes(item.label);
   }
 
   /**
@@ -907,8 +963,25 @@ export function createBrainService(
       return updated;
     },
 
-    async listSources(accountId: number): Promise<SourceSummary[]> {
+    excludedProjects(accountId: number): string[] {
       requireAccountId(accountId);
+      return readExcluded(accountId);
+    },
+
+    setExcludedProjects(accountId: number, labels: string[]): void {
+      requireAccountId(accountId);
+      // Deduped and sorted so the stored value is stable: an unordered list
+      // would rewrite the setting on every save and make diffs meaningless.
+      const unique = [...new Set(labels.filter((l) => l !== ''))].sort();
+      db.saveSetting(excludedProjectsKey(accountId), JSON.stringify(unique));
+    },
+
+    async listSources(
+      accountId: number,
+      opts: { includeExcluded?: boolean } = {},
+    ): Promise<SourceSummary[]> {
+      requireAccountId(accountId);
+      const excluded = new Set(readExcluded(accountId));
       const summaries: SourceSummary[] = [];
       for (const source of sources) {
         for (const item of await source.discover()) {
@@ -916,6 +989,8 @@ export function createBrainService(
           // another account is not merely uninteresting here — surfacing it
           // would put one account's project names in another's UI.
           if (item.accountId !== accountId) continue;
+          const isExcluded = excluded.has(item.label);
+          if (isExcluded && opts.includeExcluded !== true) continue;
           const verdict = source.admit(item);
           const prior = sourceState.get(accountId, item.sourceId, item.itemKey);
           summaries.push({
@@ -924,10 +999,12 @@ export function createBrainService(
             itemKey: item.itemKey,
             label: item.label,
             mtimeMs: item.mtimeMs,
+            size: item.size,
             admitted: verdict.admitted,
             reason: verdict.reason,
             status: prior?.status ?? null,
             changed: sourceState.hasChanged(item),
+            excluded: isExcluded,
           });
         }
       }
@@ -990,6 +1067,18 @@ export function createBrainService(
       const found = await findItem(accountId, itemKey);
       if (!found) throw new Error(`source item not found for this account: ${itemKey}`);
       const { source, item } = found;
+
+      // The backstop. The queue is durable across restarts, so an exclusion
+      // added after an item was queued still has to stop it — and this is the
+      // last point before anything is spent.
+      if (isExcludedItem(accountId, item)) {
+        return {
+          itemKey,
+          notesWritten: [],
+          skipped: true,
+          reason: `project is excluded from the Brain: ${item.label}`,
+        };
+      }
 
       // Already done and nothing moved — stop before spending anything.
       //
@@ -1268,6 +1357,11 @@ export function createBrainService(
       // tokens, and an item this account does not own would be indexed
       // through the wrong subscription and into the wrong vault.
       if (!found) throw new Error(`source item not found for this account: ${itemKey}`);
+      // Refuse rather than silently drop: this is an explicit user action, and
+      // a no-op would look like it worked.
+      if (isExcludedItem(accountId, found.item)) {
+        throw new Error(`project is excluded from the Brain: ${found.item.label}`);
+      }
       queueStore.enqueue(accountId, found.item.sourceId, found.item.itemKey);
     },
 
@@ -1291,6 +1385,7 @@ export function createBrainService(
           const belongs =
             item.itemKey.startsWith(`${encoded}/`) || item.itemKey.startsWith(`${projectPath}:`);
           if (!belongs) continue;
+          if (isExcludedItem(accountId, item)) continue;
           if (!source.admit(item).admitted) continue;
           const prior = sourceState.get(accountId, item.sourceId, item.itemKey);
           if (prior?.status === 'indexed' && !sourceState.hasChanged(item)) continue;
@@ -1307,6 +1402,7 @@ export function createBrainService(
       for (const source of sources) {
         for (const item of await source.discover()) {
           if (item.accountId !== accountId) continue;
+          if (isExcludedItem(accountId, item)) continue;
           // Gate first, so the queue never holds work that would be skipped
           // the moment it was claimed.
           if (!source.admit(item).admitted) continue;

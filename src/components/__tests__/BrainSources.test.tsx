@@ -24,10 +24,12 @@ function summary(over: Partial<BrainSourceSummary> = {}): BrainSourceSummary {
     itemKey: 'sess-a',
     label: '-Users-dev-omnifex',
     mtimeMs: 1_700_000_000_000,
+    size: 40_960,
     admitted: true,
     reason: '4 prompts, 3 assistant replies',
     status: null,
     changed: true,
+    excluded: false,
     ...over,
   };
 }
