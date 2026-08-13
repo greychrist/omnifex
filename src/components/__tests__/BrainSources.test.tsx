@@ -5,7 +5,12 @@ import { BrainSources } from '@/components/brain/BrainSources';
 import { api, type BrainSourcePreview, type BrainSourceSummary } from '@/lib/api';
 
 vi.mock('@/lib/api', () => ({
-  api: { brainListSources: vi.fn(), brainSourcePreview: vi.fn(), brainIndexSource: vi.fn() },
+  api: {
+    brainListSources: vi.fn(),
+    brainSourcePreview: vi.fn(),
+    brainIndexSource: vi.fn(),
+    brainSetExcludedProjects: vi.fn(),
+  },
 }));
 
 // The queue panel has its own tests; here it only needs to report which
@@ -22,12 +27,14 @@ function summary(over: Partial<BrainSourceSummary> = {}): BrainSourceSummary {
     accountId: 1,
     sourceId: 'session',
     itemKey: 'sess-a',
-    label: '-Users-dev-omnifex',
+    label: '/Users/dev/omnifex',
     mtimeMs: 1_700_000_000_000,
+    size: 40_960,
     admitted: true,
     reason: '4 prompts, 3 assistant replies',
     status: null,
     changed: true,
+    excluded: false,
     ...over,
   };
 }
@@ -60,13 +67,14 @@ describe('BrainSources', () => {
     vi.mocked(api.brainIndexSource).mockResolvedValue({
       itemKey: 'sess-a', notesWritten: ['Subsystems/A.md'], skipped: false, reason: '1 note(s) written',
     });
+    vi.mocked(api.brainSetExcludedProjects).mockResolvedValue(undefined);
   });
 
   it('lists discovered items for the given account', async () => {
     vi.mocked(api.brainListSources).mockResolvedValue([summary()]);
     render(<BrainSources accountId={1} />);
-    expect(await screen.findByText('sess-a')).toBeTruthy();
-    expect(api.brainListSources).toHaveBeenCalledWith(1);
+    expect(await screen.findByText('/Users/dev/omnifex')).toBeTruthy();
+    expect(api.brainListSources).toHaveBeenCalledWith(1, { includeExcluded: true });
   });
 
   it('shows why a skipped item was skipped', async () => {
@@ -82,7 +90,7 @@ describe('BrainSources', () => {
     vi.mocked(api.brainSourcePreview).mockResolvedValue(preview());
     render(<BrainSources accountId={1} />);
 
-    fireEvent.click(await screen.findByText('sess-a'));
+    fireEvent.click(await screen.findByText('/Users/dev/omnifex'));
 
     expect(await screen.findByText(/USER: do the thing/)).toBeTruthy();
     expect(api.brainSourcePreview).toHaveBeenCalledWith(1, 'sess-a');
@@ -93,7 +101,7 @@ describe('BrainSources', () => {
     vi.mocked(api.brainSourcePreview).mockResolvedValue(preview({ truncated: true }));
     render(<BrainSources accountId={1} />);
 
-    fireEvent.click(await screen.findByText('sess-a'));
+    fireEvent.click(await screen.findByText('/Users/dev/omnifex'));
     // Without this the reader cannot tell they are looking at a tail, which is
     // the same failure the distiller's own marker exists to prevent.
     expect(await screen.findByText(/truncated/i)).toBeTruthy();
@@ -104,7 +112,7 @@ describe('BrainSources', () => {
     vi.mocked(api.brainSourcePreview).mockResolvedValue(preview({ prose: 'PERSONAL PROSE' }));
     const { rerender } = render(<BrainSources accountId={1} />);
 
-    fireEvent.click(await screen.findByText('sess-a'));
+    fireEvent.click(await screen.findByText('/Users/dev/omnifex'));
     await screen.findByText(/PERSONAL PROSE/);
 
     vi.mocked(api.brainListSources).mockResolvedValue([]);
@@ -135,7 +143,7 @@ describe('BrainSources', () => {
     vi.mocked(api.brainSourcePreview).mockResolvedValue(preview());
     render(<BrainSources accountId={1} />);
 
-    fireEvent.click(await screen.findByText('sess-a'));
+    fireEvent.click(await screen.findByText('/Users/dev/omnifex'));
     await screen.findByText(/USER: do the thing/);
     fireEvent.click(screen.getByRole('button', { name: /^index$/i }));
 
@@ -150,7 +158,7 @@ describe('BrainSources', () => {
     vi.mocked(api.brainSourcePreview).mockResolvedValue(preview({ admitted: false, reason: 'no prose' }));
     render(<BrainSources accountId={1} />);
 
-    fireEvent.click(await screen.findByText('sess-a'));
+    fireEvent.click(await screen.findByText('/Users/dev/omnifex'));
     await screen.findByText(/USER: do the thing/);
     // Indexing a rejected item would spend a token the gate exists to save.
     expect(screen.queryByRole('button', { name: /^index$/i })).toBeNull();
@@ -164,7 +172,7 @@ describe('BrainSources', () => {
     });
     render(<BrainSources accountId={1} />);
 
-    fireEvent.click(await screen.findByText('sess-a'));
+    fireEvent.click(await screen.findByText('/Users/dev/omnifex'));
     await screen.findByText(/USER: do the thing/);
     fireEvent.click(screen.getByRole('button', { name: /^index$/i }));
 
@@ -177,10 +185,122 @@ describe('BrainSources', () => {
     vi.mocked(api.brainIndexSource).mockRejectedValue(new Error('no vault configured'));
     render(<BrainSources accountId={1} />);
 
-    fireEvent.click(await screen.findByText('sess-a'));
+    fireEvent.click(await screen.findByText('/Users/dev/omnifex'));
     await screen.findByText(/USER: do the thing/);
     fireEvent.click(screen.getByRole('button', { name: /^index$/i }));
 
     expect(await screen.findByText(/no vault configured/)).toBeTruthy();
+  });
+
+  /**
+   * The preview is a consequence of a selection, so with nothing selected it
+   * has nothing to say — and half the pane spent saying "select something" is
+   * half the pane not showing rows.
+   */
+  it('renders no preview panel until a row is selected', async () => {
+    vi.mocked(api.brainListSources).mockResolvedValue([summary()]);
+    render(<BrainSources accountId={1} />);
+    await screen.findByText('/Users/dev/omnifex');
+
+    expect(screen.queryByRole('button', { name: /close preview/i })).toBeNull();
+    expect(api.brainSourcePreview).not.toHaveBeenCalled();
+  });
+
+  it('closes the preview on the X', async () => {
+    vi.mocked(api.brainListSources).mockResolvedValue([summary()]);
+    vi.mocked(api.brainSourcePreview).mockResolvedValue(preview());
+    render(<BrainSources accountId={1} />);
+
+    fireEvent.click(await screen.findByText('/Users/dev/omnifex'));
+    await screen.findByText(/USER: do the thing/);
+
+    fireEvent.click(screen.getByRole('button', { name: /close preview/i }));
+
+    await waitFor(() => { expect(screen.queryByText(/USER: do the thing/)).toBeNull(); });
+  });
+
+  it('deselects when the press lands away from the table', async () => {
+    vi.mocked(api.brainListSources).mockResolvedValue([summary()]);
+    vi.mocked(api.brainSourcePreview).mockResolvedValue(preview());
+    render(<BrainSources accountId={1} />);
+
+    fireEvent.click(await screen.findByText('/Users/dev/omnifex'));
+    await screen.findByText(/USER: do the thing/);
+
+    fireEvent.mouseDown(document.body);
+
+    await waitFor(() => { expect(screen.queryByText(/USER: do the thing/)).toBeNull(); });
+  });
+
+  /**
+   * A mousedown inside the preview must NOT deselect: it would unmount the
+   * panel before the click reached the button being pressed.
+   */
+  it('keeps the preview open when the press lands inside it', async () => {
+    vi.mocked(api.brainListSources).mockResolvedValue([summary()]);
+    vi.mocked(api.brainSourcePreview).mockResolvedValue(preview());
+    render(<BrainSources accountId={1} />);
+
+    fireEvent.click(await screen.findByText('/Users/dev/omnifex'));
+    const prose = await screen.findByText(/USER: do the thing/);
+
+    fireEvent.mouseDown(prose);
+
+    expect(screen.getByText(/USER: do the thing/)).toBeTruthy();
+  });
+
+  /**
+   * A disabled button whose label changed was the only sign a 20-second model
+   * call was running, and it sits in the preview — off to the side of where
+   * the user is looking.
+   */
+  it('announces an indexing run above the table, not just on the button', async () => {
+    vi.mocked(api.brainListSources).mockResolvedValue([summary()]);
+    vi.mocked(api.brainSourcePreview).mockResolvedValue(preview());
+    let finish: (r: { itemKey: string; notesWritten: string[]; skipped: boolean; reason: string }) => void = () => {};
+    vi.mocked(api.brainIndexSource).mockReturnValue(
+      new Promise((r) => { finish = r; }) as ReturnType<typeof api.brainIndexSource>,
+    );
+    render(<BrainSources accountId={1} />);
+
+    fireEvent.click(await screen.findByText('/Users/dev/omnifex'));
+    await screen.findByText(/USER: do the thing/);
+    fireEvent.click(screen.getByRole('button', { name: /^index$/i }));
+
+    const banner = await screen.findByRole('status');
+    expect(banner.textContent).toMatch(/indexing/i);
+    // Names what is being worked on, so it is not just a moving bar.
+    expect(banner.textContent).toContain('sess-a');
+
+    finish({ itemKey: 'sess-a', notesWritten: ['A.md'], skipped: false, reason: 'ok' });
+    await waitFor(() => { expect(screen.queryByRole('status')).toBeNull(); });
+  });
+
+  it('counts through a multi-row run in the same banner', async () => {
+    vi.mocked(api.brainListSources).mockResolvedValue([
+      summary({ itemKey: 'a' }), summary({ itemKey: 'b' }),
+    ]);
+    let finish: (r: { itemKey: string; notesWritten: string[]; skipped: boolean; reason: string }) => void = () => {};
+    vi.mocked(api.brainIndexSource).mockReturnValue(
+      new Promise((r) => { finish = r; }) as ReturnType<typeof api.brainIndexSource>,
+    );
+    render(<BrainSources accountId={1} />);
+
+    fireEvent.click(await screen.findByLabelText('Select a'));
+    fireEvent.click(screen.getByLabelText('Select b'));
+    fireEvent.click(screen.getByRole('button', { name: /index selected \(2\)/i }));
+
+    const banner = await screen.findByRole('status');
+    expect(banner.textContent).toMatch(/1 of 2/);
+    finish({ itemKey: 'a', notesWritten: [], skipped: false, reason: 'ok' });
+  });
+
+  it('shows a listing error even with no row selected', async () => {
+    vi.mocked(api.brainListSources).mockRejectedValue(new Error('config dir unreadable'));
+    render(<BrainSources accountId={1} />);
+    // The preview used to host this, which put it behind a selection that a
+    // listing failure can never produce.
+    expect(await screen.findByText(/config dir unreadable/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /close preview/i })).toBeNull();
   });
 });

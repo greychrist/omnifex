@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createDatabase, type Database } from '../services/database';
 import {
+  CURATION_SOURCE_ID,
   createBrainQueueStore,
   createBrainQueueWorker,
   type BrainQueueStore,
@@ -200,9 +201,9 @@ describe('brain queue worker', () => {
     };
     const w = createBrainQueueWorker({
       store,
-      indexSource: async (_accountId, itemKey) => {
-        state.indexed.push(itemKey);
-        return state.result(itemKey);
+      process: async (entry) => {
+        state.indexed.push(entry.itemKey);
+        await state.result(entry.itemKey);
       },
       hasActiveSession: () => state.active,
       isPaused: () => state.paused,
@@ -313,9 +314,8 @@ describe('brain queue worker', () => {
     const seen: (string | null)[] = [];
     const w = createBrainQueueWorker({
       store,
-      indexSource: async () => {
+      process: async () => {
         seen.push(wRef.current()?.itemKey ?? null);
-        return { skipped: false, reason: 'ok' };
       },
       hasActiveSession: () => false,
       isPaused: () => false,
@@ -330,10 +330,94 @@ describe('brain queue worker', () => {
     expect(w.running()).toBe(false);
   });
 
+  /**
+   * `drain()` used to return void, so the Brain tab printed "drain finished"
+   * whether it had indexed 158 items or yielded instantly on an open session.
+   * The user pressed the button, nothing happened, and the UI congratulated
+   * itself. The caller has to be able to tell those apart.
+   */
+  it('reports yielding for an open session rather than completion', async () => {
+    store.enqueue(accountId, 'session', 'a');
+    const { w } = worker({ active: true });
+    expect(await w.drain()).toEqual({ processed: 0, yielded: true, reason: 'session-active' });
+  });
+
+  it('reports yielding when paused, distinctly from an open session', async () => {
+    store.enqueue(accountId, 'session', 'a');
+    const { w } = worker({ paused: true });
+    expect(await w.drain()).toEqual({ processed: 0, yielded: true, reason: 'paused' });
+  });
+
+  it('reports how many it processed when it runs to empty', async () => {
+    store.enqueue(accountId, 'session', 'a');
+    store.enqueue(accountId, 'session', 'b');
+    const { w } = worker();
+    expect(await w.drain()).toEqual({ processed: 2, yielded: false, reason: 'empty' });
+  });
+
+  it('counts a failed item as processed', async () => {
+    store.enqueue(accountId, 'session', 'bad');
+    const { w } = worker({ result: () => Promise.reject(new Error('boom')) });
+    expect((await w.drain()).processed).toBe(1);
+  });
+
+  it('reports partial progress when a session opens mid-run', async () => {
+    store.enqueue(accountId, 'session', 'a');
+    store.enqueue(accountId, 'session', 'b');
+    const { w, state } = worker({
+      result: () => {
+        state.active = true;
+        return Promise.resolve({ skipped: false, reason: 'ok' });
+      },
+    });
+    expect(await w.drain()).toEqual({ processed: 1, yielded: true, reason: 'session-active' });
+  });
+
   it('stops cleanly on an empty queue', async () => {
     const { w, state } = worker();
-    await expect(w.drain()).resolves.toBeUndefined();
+    await expect(w.drain()).resolves.toEqual({ processed: 0, yielded: false, reason: 'empty' });
     expect(state.indexed).toEqual([]);
+  });
+
+  it('hands the whole entry to process, so the worker need not know what an item is', async () => {
+    store.enqueue(accountId, 'session', 'a');
+    store.enqueue(accountId, CURATION_SOURCE_ID, 'Subsystems/Widget.md');
+    const seen: { sourceId: string; itemKey: string }[] = [];
+    const w = createBrainQueueWorker({
+      store,
+      process: async (entry) => {
+        seen.push({ sourceId: entry.sourceId, itemKey: entry.itemKey });
+      },
+      hasActiveSession: () => false,
+      isPaused: () => false,
+    });
+
+    await w.drain();
+
+    expect(seen).toEqual([
+      { sourceId: 'session', itemKey: 'a' },
+      { sourceId: CURATION_SOURCE_ID, itemKey: 'Subsystems/Widget.md' },
+    ]);
+  });
+
+  it('fails only the curation entry when process throws for it', async () => {
+    store.enqueue(accountId, CURATION_SOURCE_ID, 'Subsystems/Bad.md');
+    store.enqueue(accountId, 'session', 'good');
+    const w = createBrainQueueWorker({
+      store,
+      process: async (entry) => {
+        if (entry.sourceId === CURATION_SOURCE_ID) throw new Error('model said no');
+      },
+      hasActiveSession: () => false,
+      isPaused: () => false,
+    });
+
+    await w.drain();
+
+    const rows = store.list(accountId);
+    expect(rows.find((r) => r.itemKey === 'Subsystems/Bad.md')?.status).toBe('failed');
+    expect(rows.find((r) => r.itemKey === 'Subsystems/Bad.md')?.error).toBe('model said no');
+    expect(rows.find((r) => r.itemKey === 'good')?.status).toBe('done');
   });
 
   it('checks the yield gate between items, not just once', async () => {

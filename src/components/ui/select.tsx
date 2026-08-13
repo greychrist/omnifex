@@ -80,11 +80,25 @@ const SelectContent = React.forwardRef<
       {...props}
     >
       <SelectScrollUpButton />
+      {/* The Viewport is the SCROLL CONTAINER for the options, so it must not
+          be given a fixed height. It used to carry an arbitrary height utility
+          bound to the trigger-height custom property, which made it exactly as
+          tall as the TRIGGER — 28px for the Brain tab's `h-7` account switcher
+          — turning a three-item list into a one-line scrolling window with
+          scroll buttons and hover auto-scroll. It read as a sticky, laggy
+          dropdown. (Spelled out in prose rather than as the class itself:
+          Tailwind scans comments too, and naming it would regenerate the dead
+          rule this removed.)
+
+          Radix bounds a popper Select with
+          `max-height: var(--radix-select-content-available-height)` on the
+          CONTENT (see its Select docs, "Constrain the content size"), never
+          with a height on the viewport. Content's `max-h-96` above is that
+          bound here. */}
       <SelectPrimitive.Viewport
         className={cn(
           "p-1",
-          position === "popper" &&
-            "h-[var(--radix-select-trigger-height)] w-full min-w-[var(--radix-select-trigger-width)]"
+          position === "popper" && "w-full min-w-[var(--radix-select-trigger-width)]"
         )}
       >
         {children}

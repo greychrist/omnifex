@@ -44,6 +44,11 @@ vi.mock('@/components/brain/BrainSources', () => ({
     <div data-testid="sources">{String(accountId)}</div>
   ),
 }));
+vi.mock('@/components/brain/BrainStatsPanel', () => ({
+  BrainStatsPanel: ({ accountId }: { accountId: number | null }) => (
+    <div data-testid="stats">{String(accountId)}</div>
+  ),
+}));
 
 // Radix's Select renders a button-plus-portal that jsdom cannot drive with a
 // change event. A native <select> with the same contract is enough here: this
@@ -106,6 +111,37 @@ describe('BrainTab', () => {
     });
   });
 
+  /**
+   * The flash this pins.
+   *
+   * `useBrainVault` clears `status` to null synchronously on switch, by design.
+   * `needsSetup` derives from `status`, so while the read is in flight it is
+   * false — "unknown yet" fell through to the HEALTHY branch. On an
+   * unconfigured account every switch therefore rendered
+   * setup → notes+stats → setup, a full pane swap and back, right under the
+   * header where "no vault" is shown.
+   *
+   * Unknown is not healthy. Until the status lands, neither branch may render.
+   */
+  it('renders neither the panes nor the stats bar while the status is unknown', async () => {
+    let resolveStatus: (s: BrainVaultStatus) => void = () => {};
+    vi.mocked(api.brainStatus).mockReturnValue(
+      new Promise<BrainVaultStatus>((r) => { resolveStatus = r; }),
+    );
+
+    render(<BrainTab />);
+    await waitFor(() => { expect(api.brainStatus).toHaveBeenCalledWith(7); });
+
+    // Mid-flight: the healthy branch must not be showing.
+    expect(screen.queryByTestId('note-list')).toBeNull();
+    expect(screen.queryByTestId('stats')).toBeNull();
+    expect(screen.queryByTestId('vault-setup')).toBeNull();
+
+    resolveStatus(status({ configured: false, path: null, exists: false }));
+    await waitFor(() => { expect(screen.getByTestId('vault-setup')).toBeTruthy(); });
+    expect(screen.queryByTestId('note-list')).toBeNull();
+  });
+
   it('routes an unconfigured vault to the setup panel', async () => {
     vi.mocked(api.brainStatus).mockResolvedValue(status({ configured: false, path: null, exists: false }));
     render(<BrainTab />);
@@ -166,6 +202,38 @@ describe('BrainTab', () => {
     render(<BrainTab />);
     await waitFor(() => { expect(screen.getByTestId('vault-setup')).toBeTruthy(); });
     expect(screen.queryByRole('button', { name: /vault/i })).toBeNull();
+  });
+
+  /**
+   * The header summary is the element the flash was reported next to, so it is
+   * pinned here — but note what this does and does not show.
+   *
+   * `headerSummary` reads `status` and `loading`, which are set on different
+   * ticks: on switch `status` clears synchronously while `loading` is still
+   * false, so there is a committed render where it returns ''. This test was
+   * written expecting to catch that and it passed unchanged — React flushes
+   * the passive effect that sets `loading` before the browser paints, so the
+   * blank frame is committed but never seen. The reported flash was the pane
+   * swap above, not this.
+   *
+   * Kept as a guard: the summary must go straight to 'loading…' and then to
+   * the answer, never through a blank.
+   */
+  it('does not blank the header summary between accounts', async () => {
+    let resolveStatus: (s: BrainVaultStatus) => void = () => {};
+    vi.mocked(api.brainStatus).mockReturnValue(
+      new Promise<BrainVaultStatus>((r) => { resolveStatus = r; }),
+    );
+
+    render(<BrainTab />);
+    await waitFor(() => { expect(api.brainStatus).toHaveBeenCalledWith(7); });
+
+    expect(screen.getByTestId('brain-summary').textContent).toBe('loading…');
+
+    resolveStatus(status({ configured: false, path: null, exists: false }));
+    await waitFor(() => {
+      expect(screen.getByTestId('brain-summary').textContent).toBe('no vault');
+    });
   });
 
   it('surfaces a load error', async () => {

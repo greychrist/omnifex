@@ -15,8 +15,10 @@ import { fireAndLogGitFailure } from './git-logging';
 import { canonicalPath, fsIdentity, isSameOrInside, resolveVaultRoot } from './paths';
 import { createSourceStateStore, type SourceStatus } from './sources/state';
 import {
+  CURATION_SOURCE_ID,
   createBrainQueueStore,
   createBrainQueueWorker,
+  type DrainOutcome,
   type QueueCounts,
   type QueueEntry,
 } from './queue';
@@ -25,6 +27,10 @@ import { SESSION_SOURCE_ID } from './sources/session-transcripts';
 import type { Extractor } from './extract';
 import { resolveEntityPath, type ExistingNote } from './resolve';
 import { merge } from './merge';
+import { MAX_NOTES_PER_RUN, collapsibleEntries, curate, qualifies } from './curate';
+import type { Curator } from './curation';
+import { computeVaultStats, type VaultStats } from './stats';
+import { isExcludedProject, parseDecisions, type ProjectDecisions } from './exclusions';
 import type { AccountsService } from '../accounts';
 import type { ParsedNote } from './types';
 
@@ -49,6 +55,20 @@ export function vaultSettingKey(accountId: number): string {
 /** Only `brain.vault.<digits>` keys are vault paths. Task 8 may add other
  *  settings under this prefix; they must not be mistaken for vault paths. */
 const VAULT_KEY_RE = /^brain\.vault\.\d+$/;
+
+/**
+ * app_settings key holding one account's project include/exclude decisions.
+ *
+ * A settings key rather than a table: this is a handful of strings per
+ * account, and it matches how the vault path is already stored. The value is
+ * a JSON map of absolute project path → excluded, and an ABSENT entry is not
+ * "included" — it means no decision has been recorded, so the default rule in
+ * `exclusions.ts` applies. That distinction is what lets scratch projects be
+ * excluded out of the box while staying re-includable.
+ */
+export function excludedProjectsKey(accountId: number): string {
+  return `brain.excludedProjects.${String(accountId)}`;
+}
 
 /** The derived search index, inside the vault it indexes. Gitignored by the
  *  layout vault.ts scaffolds, and rebuildable from the Markdown. */
@@ -142,13 +162,20 @@ export interface SourceSummary {
   accountId: number;
   sourceId: string;
   itemKey: string;
+  /** The project folder, absolute. Grouping and exclusion key. */
   label: string;
   mtimeMs: number;
+  /** Bytes on disk. Without it a 21MB session looks like a 40KB one, and size
+   *  is the best single predictor of what indexing it will cost. */
+  size: number;
   admitted: boolean;
   reason: string;
   /** Recorded state, or null when this item has never been through indexing. */
   status: SourceStatus | null;
   changed: boolean;
+  /** True when this item's project is on the account's exclusion list. Only
+   *  ever true when the caller asked to see excluded rows. */
+  excluded: boolean;
 }
 
 /** What one indexing run did. */
@@ -157,6 +184,14 @@ export interface IndexResult {
   /** Vault-relative paths written, in the order they were written. */
   notesWritten: string[];
   /** True when nothing was indexed — gate rejection or a recorded failure. */
+  skipped: boolean;
+  reason: string;
+}
+
+/** What one curation run did to one note. */
+export interface CurateResult {
+  notePath: string;
+  /** True when nothing was spent: the note vanished, or stopped qualifying. */
   skipped: boolean;
   reason: string;
 }
@@ -208,7 +243,20 @@ export interface BrainService {
    * ownership instead. Discovery is a directory walk, not a model call —
    * doing it whole and filtering after costs nothing worth protecting.
    */
-  listSources(accountId: number): Promise<SourceSummary[]>;
+  listSources(accountId: number, opts?: { includeExcluded?: boolean }): Promise<SourceSummary[]>;
+  /**
+   * Record which project folders this account may index.
+   *
+   * A complete map of the decisions being made, not a list of exclusions: an
+   * absent key means "no decision", which leaves the scratch-path default in
+   * force, so sending only the excluded paths would silently re-exclude every
+   * temp project the user had deliberately re-included.
+   *
+   * Excluded projects drop out of discovery entirely — they never list, never
+   * enqueue, and never index on session close, which is the only thing that
+   * keeps a temp project out of the vault while Auto-index is on.
+   */
+  setExcludedProjects(accountId: number, decisions: ProjectDecisions): void;
   /** Distilled preview of one item, or null when it is not this account's. */
   previewSource(accountId: number, itemKey: string): Promise<SourcePreview | null>;
   /**
@@ -225,6 +273,27 @@ export interface BrainService {
     itemKey: string,
     opts?: { force?: boolean },
   ): Promise<IndexResult>;
+  /**
+   * Compress one note's accumulated Timeline. The second method here that
+   * spends tokens.
+   *
+   * Re-checks `qualifies` BEFORE spending: a note can change between enqueue
+   * and claim, and Plan 4a's most expensive bug was `indexSource` ignoring
+   * exactly this class of check while every unit test passed.
+   *
+   * Resolves with `skipped` for a note that vanished or stopped qualifying —
+   * both are completed units of work. Rejects when the model reply is
+   * unusable, so the queue records a failure and the note is left untouched.
+   */
+  curateNote(accountId: number, relPath: string): Promise<CurateResult>;
+  /**
+   * Queue the notes most worth compressing, longest Timeline first, capped at
+   * `MAX_NOTES_PER_RUN`. Returns how many were queued.
+   *
+   * Synchronous, unlike `backfill`: reading a vault is, and `discover()` is
+   * what makes that one async.
+   */
+  enqueueCuration(accountId: number): number;
   /** Queue one item this account owns. Throws for an item it does not. */
   enqueueSource(accountId: number, itemKey: string): Promise<void>;
   /**
@@ -242,11 +311,22 @@ export interface BrainService {
    * and unchanged. Returns how many were queued.
    */
   backfill(accountId: number): Promise<number>;
+  /**
+   * Vault size, context cost and Timeline distribution. Zeroes when
+   * unconfigured — a stats panel must render rather than throw.
+   */
+  stats(accountId: number): VaultStats;
   queueCounts(accountId?: number): QueueCounts;
   queueList(accountId: number, limit?: number): QueueEntry[];
   clearFinishedQueue(accountId: number): void;
-  /** Drain the queue, yielding to interactive sessions. Never throws. */
-  drainQueue(): Promise<void>;
+  /**
+   * Drain the queue, yielding to interactive sessions. Never throws.
+   *
+   * Returns what it actually did, so a caller can tell "indexed 158" from
+   * "yielded instantly because a session was open" — the Brain tab reported
+   * both as success until this returned something.
+   */
+  drainQueue(): Promise<DrainOutcome>;
   /** The entry being indexed right now, for the operational pane. */
   queueCurrent(): QueueEntry | null;
   closeAll(): void;
@@ -430,6 +510,12 @@ export interface BrainServiceOptions {
   /** Turns distilled prose into entities. Absent means indexing is unavailable. */
   extractor?: Extractor;
   /**
+   * Compresses an accumulated note. Absent means curation is unavailable —
+   * `curateNote` throws rather than silently no-opping, the same rule
+   * `extractor` follows.
+   */
+  curator?: Curator;
+  /**
    * True while the user has an interactive session open. The worker yields
    * entirely while it is (spec §11) — indexing must never compete with real
    * work for rate limit.
@@ -468,10 +554,16 @@ export function createBrainService(
 
   const queueWorker = createBrainQueueWorker({
     store: queueStore,
-    // Routed through the service's own method rather than a captured closure,
-    // so every drain gets the unchanged-item short-circuit and the per-entity
-    // isolation that live there.
-    indexSource: (accountId, itemKey) => service.indexSource(accountId, itemKey),
+    // The dispatch. Routed through the service's own methods rather than
+    // captured closures, so every drain gets the unchanged-item short-circuit,
+    // the per-entity isolation and the re-qualification check that live there.
+    process: async (entry) => {
+      if (entry.sourceId === CURATION_SOURCE_ID) {
+        await service.curateNote(entry.accountId, entry.itemKey);
+        return;
+      }
+      await service.indexSource(entry.accountId, entry.itemKey);
+    },
     hasActiveSession: opts.hasActiveSession ?? (() => false),
     isPaused: opts.isQueuePaused ?? (() => false),
   });
@@ -497,6 +589,20 @@ export function createBrainService(
 
   function readPath(accountId: number): string | null {
     return db.getSetting(vaultSettingKey(accountId));
+  }
+
+  /** One account's recorded project decisions. */
+  function readDecisions(accountId: number): ProjectDecisions {
+    return parseDecisions(db.getSetting(excludedProjectsKey(accountId)));
+  }
+
+  /**
+   * The single exclusion predicate, applied at EVERY path that can reach the
+   * model. Discovery alone is not enough: the queue is durable across restarts,
+   * so an exclusion added today has to stop work queued yesterday.
+   */
+  function isExcludedItem(accountId: number, item: SourceItem): boolean {
+    return isExcludedProject(item.label, readDecisions(accountId));
   }
 
   /**
@@ -850,8 +956,23 @@ export function createBrainService(
       return updated;
     },
 
-    async listSources(accountId: number): Promise<SourceSummary[]> {
+    setExcludedProjects(accountId: number, decisions: ProjectDecisions): void {
       requireAccountId(accountId);
+      // Key-sorted so the stored value is stable: an unordered map would
+      // rewrite the setting on every save and make diffs meaningless.
+      const stable: ProjectDecisions = {};
+      for (const key of Object.keys(decisions).sort()) {
+        if (key !== '') stable[key] = decisions[key];
+      }
+      db.saveSetting(excludedProjectsKey(accountId), JSON.stringify(stable));
+    },
+
+    async listSources(
+      accountId: number,
+      opts: { includeExcluded?: boolean } = {},
+    ): Promise<SourceSummary[]> {
+      requireAccountId(accountId);
+      const decisions = readDecisions(accountId);
       const summaries: SourceSummary[] = [];
       for (const source of sources) {
         for (const item of await source.discover()) {
@@ -859,6 +980,8 @@ export function createBrainService(
           // another account is not merely uninteresting here — surfacing it
           // would put one account's project names in another's UI.
           if (item.accountId !== accountId) continue;
+          const isExcluded = isExcludedProject(item.label, decisions);
+          if (isExcluded && opts.includeExcluded !== true) continue;
           const verdict = source.admit(item);
           const prior = sourceState.get(accountId, item.sourceId, item.itemKey);
           summaries.push({
@@ -867,10 +990,12 @@ export function createBrainService(
             itemKey: item.itemKey,
             label: item.label,
             mtimeMs: item.mtimeMs,
+            size: item.size,
             admitted: verdict.admitted,
             reason: verdict.reason,
             status: prior?.status ?? null,
             changed: sourceState.hasChanged(item),
+            excluded: isExcluded,
           });
         }
       }
@@ -933,6 +1058,18 @@ export function createBrainService(
       const found = await findItem(accountId, itemKey);
       if (!found) throw new Error(`source item not found for this account: ${itemKey}`);
       const { source, item } = found;
+
+      // The backstop. The queue is durable across restarts, so an exclusion
+      // added after an item was queued still has to stop it — and this is the
+      // last point before anything is spent.
+      if (isExcludedItem(accountId, item)) {
+        return {
+          itemKey,
+          notesWritten: [],
+          skipped: true,
+          reason: `project is excluded from the Brain: ${item.label}`,
+        };
+      }
 
       // Already done and nothing moved — stop before spending anything.
       //
@@ -1106,6 +1243,104 @@ export function createBrainService(
       return { itemKey, notesWritten, skipped: false, reason };
     },
 
+    async curateNote(accountId: number, relPath: string): Promise<CurateResult> {
+      requireAccountId(accountId);
+      if (!opts.curator) throw new Error('brain: no curator configured');
+      if (!opts.accounts) throw new Error('brain: no accounts service configured');
+
+      const handle = requireHandle(accountId);
+
+      let note: ParsedNote;
+      try {
+        note = handle.vault.readNote(relPath);
+      } catch {
+        // Deleted, or unparseable after a hand edit, between enqueue and claim.
+        // A completed unit of work, not a failure — see the queue's skip rule.
+        return { notePath: relPath, skipped: true, reason: 'note is missing or unreadable' };
+      }
+
+      const date = today();
+      // Before the token, never after. The note may have been curated or
+      // shortened since it was queued. Plan 4a's most expensive bug was
+      // `indexSource` skipping exactly this class of check.
+      if (!qualifies(note, date)) {
+        return { notePath: relPath, skipped: true, reason: 'no longer qualifies for curation' };
+      }
+
+      const account = opts.accounts.listAccounts().find((a) => a.id === accountId);
+      if (!account) {
+        // No silent fallback to another account's config dir — that would push
+        // this account's content through the wrong subscription (spec §4).
+        return { notePath: relPath, skipped: true, reason: 'no account for this note' };
+      }
+
+      const entries = collapsibleEntries(note);
+      // Deliberately unguarded: a rejection here propagates to the worker,
+      // which records the failure against the queue entry. The note is not
+      // written, so a failed curation costs tokens and not history.
+      const result = await opts.curator(
+        { title: handle.vault.noteTitle(relPath), noteType: note.frontmatter.type, entries },
+        account.config_dir,
+      );
+
+      const curated = curate(note, result, { date });
+      handle.vault.writeNote(relPath, curated);
+      handle.index.upsert(relPath, handle.vault.noteTitle(relPath), curated);
+      commitAndRecord(handle, 'Curation');
+
+      return {
+        notePath: relPath,
+        skipped: false,
+        reason: `${String(entries.length)} entries collapsed`,
+      };
+    },
+
+    enqueueCuration(accountId: number): number {
+      requireAccountId(accountId);
+      // `readPath` first, so an unconfigured account reports zero rather than
+      // lazily materialising a vault just to find it has nothing to curate.
+      const handle = readPath(accountId) === null ? null : requireHandle(accountId);
+      if (!handle) return 0;
+
+      const date = today();
+      const candidates: { relPath: string; length: number }[] = [];
+      for (const relPath of handle.vault.listNotes()) {
+        let note: ParsedNote;
+        try {
+          note = handle.vault.readNote(relPath);
+        } catch {
+          // One unreadable note must not cost the whole run.
+          continue;
+        }
+        if (!qualifies(note, date)) continue;
+        candidates.push({ relPath, length: collapsibleEntries(note).length });
+      }
+
+      // Worst offenders first: the longest Timeline is where compression buys
+      // the most context back. Ties break on path so a run is deterministic.
+      candidates.sort((a, b) => b.length - a.length || a.relPath.localeCompare(b.relPath));
+
+      const chosen = candidates.slice(0, MAX_NOTES_PER_RUN);
+      for (const c of chosen) queueStore.enqueue(accountId, CURATION_SOURCE_ID, c.relPath);
+      return chosen.length;
+    },
+
+    stats(accountId: number): VaultStats {
+      requireAccountId(accountId);
+      const handle = readPath(accountId) === null ? null : requireHandle(accountId);
+      if (!handle) return computeVaultStats([], today());
+
+      const notes: { relPath: string; note: ParsedNote }[] = [];
+      for (const relPath of handle.vault.listNotes()) {
+        try {
+          notes.push({ relPath, note: handle.vault.readNote(relPath) });
+        } catch {
+          // One unreadable note must not cost the whole reading.
+        }
+      }
+      return computeVaultStats(notes, today());
+    },
+
     async enqueueSource(accountId: number, itemKey: string): Promise<void> {
       requireAccountId(accountId);
       const found = await findItem(accountId, itemKey);
@@ -1113,6 +1348,11 @@ export function createBrainService(
       // tokens, and an item this account does not own would be indexed
       // through the wrong subscription and into the wrong vault.
       if (!found) throw new Error(`source item not found for this account: ${itemKey}`);
+      // Refuse rather than silently drop: this is an explicit user action, and
+      // a no-op would look like it worked.
+      if (isExcludedItem(accountId, found.item)) {
+        throw new Error(`project is excluded from the Brain: ${found.item.label}`);
+      }
       queueStore.enqueue(accountId, found.item.sourceId, found.item.itemKey);
     },
 
@@ -1136,6 +1376,7 @@ export function createBrainService(
           const belongs =
             item.itemKey.startsWith(`${encoded}/`) || item.itemKey.startsWith(`${projectPath}:`);
           if (!belongs) continue;
+          if (isExcludedItem(accountId, item)) continue;
           if (!source.admit(item).admitted) continue;
           const prior = sourceState.get(accountId, item.sourceId, item.itemKey);
           if (prior?.status === 'indexed' && !sourceState.hasChanged(item)) continue;
@@ -1152,6 +1393,7 @@ export function createBrainService(
       for (const source of sources) {
         for (const item of await source.discover()) {
           if (item.accountId !== accountId) continue;
+          if (isExcludedItem(accountId, item)) continue;
           // Gate first, so the queue never holds work that would be skipped
           // the moment it was claimed.
           if (!source.admit(item).admitted) continue;
@@ -1181,7 +1423,7 @@ export function createBrainService(
       queueStore.clearFinished(accountId);
     },
 
-    drainQueue(): Promise<void> {
+    drainQueue(): Promise<DrainOutcome> {
       return queueWorker.drain();
     },
 

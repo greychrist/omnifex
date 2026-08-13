@@ -15,6 +15,7 @@ const EMPTY: BrainQueueCounts = { pending: 0, running: 0, done: 0, failed: 0 };
 /** Mirrors the backend keys in electron/services/brain/queue.ts. */
 const AUTO_INDEX_KEY = 'brain.autoIndex';
 const PAUSED_KEY = 'brain.queuePaused';
+const CURATE_KEY = 'brain.curate';
 
 /**
  * A labelled switch for one global setting.
@@ -49,27 +50,38 @@ export const BrainQueuePanel: React.FC<{ accountId: number | null }> = ({ accoun
   const [nonce, setNonce] = useState(0);
   const [autoIndex, setAutoIndex] = useState(false);
   const [paused, setPaused] = useState(false);
+  const [curate, setCurate] = useState(false);
   // Unlike the two above, this one IS per account — it writes into one
   // account's Claude config — so it re-reads whenever the account changes.
   const [mcpStatus, setMcpStatus] = useState({ registered: false, available: false });
 
-  // Both switches are GLOBAL, not per account. Read once on mount rather than
-  // on every account change, which would imply they are scoped when they are
-  // not.
+  // These settings are GLOBAL, not per account — they are deliberately not
+  // re-read when the account changes, which would imply a scoping they do not
+  // have.
+  //
+  // They ARE re-read on `nonce`, i.e. after every action. Reading only at mount
+  // is the stale-read bug this tab has now shipped three times: a pause applied
+  // from anywhere else — another window, the queue panel's own drain, a direct
+  // settings write — left this showing the opposite of the truth.
   useEffect(() => {
     let cancelled = false;
-    void Promise.all([api.getSetting(AUTO_INDEX_KEY), api.getSetting(PAUSED_KEY)])
-      .then(([auto, pause]) => {
+    void Promise.all([
+      api.getSetting(AUTO_INDEX_KEY),
+      api.getSetting(PAUSED_KEY),
+      api.getSetting(CURATE_KEY),
+    ])
+      .then(([auto, pause, cur]) => {
         if (cancelled) return;
         setAutoIndex(auto === 'true');
         setPaused(pause === 'true');
+        setCurate(cur === 'true');
       })
       .catch(() => {
-        // A settings read failure leaves both switches off, which is the safe
+        // A settings read failure leaves every switch off, which is the safe
         // reading: it never turns unattended spending ON by accident.
       });
     return () => { cancelled = true; };
-  }, []);
+  }, [nonce]);
 
   useEffect(() => {
     if (accountId === null) {
@@ -150,11 +162,19 @@ export const BrainQueuePanel: React.FC<{ accountId: number | null }> = ({ accoun
   const failed = entries.filter((e) => e.status === 'failed');
 
   return (
-    <div className="border-b px-4 py-2 text-xs">
+    <div className="border-b bg-background px-4 py-2 text-xs">
       <div className="flex flex-wrap items-center gap-3">
-        <span className="text-muted-foreground">
-          {counts.pending} pending · {counts.running} running · {counts.done} done ·{' '}
-          {counts.failed} failed
+        {/* The queue's own reading, boxed away from the buttons beside it —
+            four counts run together read as one sentence about nothing. */}
+        <span
+          data-testid="queue-counts"
+          className="rounded-md border bg-muted/40 px-2 py-1 tabular-nums text-muted-foreground"
+        >
+          <span className="font-medium text-foreground">{counts.pending}</span> queued
+          {counts.running > 0 && <> · {counts.running} running</>} · {counts.done} done
+          {counts.failed > 0 && (
+            <> · <span className="text-destructive">{counts.failed} failed</span></>
+          )}
         </span>
 
         <button
@@ -176,13 +196,29 @@ export const BrainQueuePanel: React.FC<{ accountId: number | null }> = ({ accoun
           disabled={busy}
           onClick={() => {
             run(async () => {
-              await api.brainQueueDrain();
-              return 'drain finished';
+              const n = await api.brainEnqueueCuration(accountId);
+              return `queued ${String(n)} for curation`;
             });
           }}
           className="rounded-md border px-2 py-1 hover:bg-accent disabled:opacity-50"
         >
-          Drain now
+          Curate
+        </button>
+
+        {/* No bulk index button. Indexing is driven by the checked rows below
+            (Index Selected) and by the worker, which drains this queue when a
+            session closes. A control that ran everything pending is what
+            indexed 158 sessions — about an hour of Sonnet — when the user
+            meant to index the one row they had ticked. */}
+
+        {/* A button, not a checkbox: stopping a run in progress is an action,
+            and the label has to say what pressing it will DO. */}
+        <button
+          type="button"
+          onClick={() => { setSwitch(PAUSED_KEY, !paused, setPaused); }}
+          className="rounded-md border px-2 py-1 hover:bg-accent"
+        >
+          {paused ? 'Resume' : 'Pause'}
         </button>
 
         <button
@@ -207,10 +243,10 @@ export const BrainQueuePanel: React.FC<{ accountId: number | null }> = ({ accoun
         />
 
         <SettingSwitch
-          label="Pause"
-          title="Stop the worker from draining, without turning auto-index off."
-          checked={paused}
-          onChange={(next) => { setSwitch(PAUSED_KEY, next, setPaused); }}
+          label="Auto-curate"
+          title="Compress long notes when a session closes, so retrieving them costs less context. Off by default — it spends tokens unattended and rewrites existing notes. Every run commits as 'Curation', so git revert in the vault undoes it."
+          checked={curate}
+          onChange={(next) => { setSwitch(CURATE_KEY, next, setCurate); }}
         />
 
         {mcpStatus.available && (

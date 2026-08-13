@@ -136,10 +136,24 @@ describe('session transcript source', () => {
       await expect(source.discover()).resolves.toEqual([]);
     });
 
-    it('labels an item with its project directory for the Sources pane', async () => {
+    it('labels an item with its project folder for the Sources pane', async () => {
       writeSession(personalCfg, '-Users-dev-Repos-omnifex', 'sess-a', GOOD);
       const [item] = await source.discover();
-      expect(item.label).toBe('-Users-dev-Repos-omnifex');
+      expect(item.label).toBe('/Users/dev/Repos/omnifex');
+    });
+
+    /**
+     * The label is recovered from the transcript's own `cwd`, never decoded
+     * from the encoded dir name: that encoding is lossy, and a folder whose
+     * name contains a dash decodes to a path that does not exist.
+     */
+    it('recovers a folder whose own name contains a dash', async () => {
+      const dashed = GOOD.replace(/\/Users\/dev\/Repos\/omnifex/g, '/Users/dev/Repos/wombeats-ios');
+      writeSession(personalCfg, '-Users-dev-Repos-wombeats-ios', 'sess-a', dashed);
+
+      const [item] = await source.discover();
+
+      expect(item.label).toBe('/Users/dev/Repos/wombeats-ios');
     });
   });
 
@@ -291,6 +305,16 @@ describe('session transcript source', () => {
       expect(after.status).toBe('indexed');
       // Recorded at the same mtime, so nothing has moved since.
       expect(after.changed).toBe(false);
+      brain.closeAll();
+    });
+
+    it('carries the folder path through to the summary', async () => {
+      writeSession(personalCfg, '-Users-dev-Repos-omnifex', 'sess-a', GOOD);
+      const brain = service();
+
+      const [summary] = await brain.listSources(personalId);
+
+      expect(summary.label).toBe('/Users/dev/Repos/omnifex');
       brain.closeAll();
     });
 

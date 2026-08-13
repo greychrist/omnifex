@@ -53,8 +53,10 @@ import {
   type BrainMcpEnvironment,
 } from './services/brain/mcp-registration';
 import { createExtractor } from './services/brain/extract';
+import { createCurator } from './services/brain/curation';
 import {
   BRAIN_AUTO_INDEX_SETTING_KEY,
+  BRAIN_CURATE_SETTING_KEY,
   BRAIN_QUEUE_PAUSED_SETTING_KEY,
 } from './services/brain/queue';
 import { createAccountsService } from './services/accounts';
@@ -504,6 +506,7 @@ app.whenReady().then(() => {
   const brainService: BrainService | undefined = createBrainService(db, {
     accounts: accountsService,
     extractor: createExtractor(),
+    curator: createCurator(),
     sources: [
       createSessionSource({ accounts: accountsService }),
       captureSource,
@@ -756,30 +759,48 @@ app.whenReady().then(() => {
           );
       }
 
-      // Brain auto-index. OFF by default — the user opts in once, after seeing
-      // real notes from an explicit backfill. Read fresh on every close so a
-      // Settings flip applies without a restart, matching the summary gate
-      // directly above.
+      // Brain work on close. Both switches are OFF by default — the user opts
+      // in once, after seeing real output. Read fresh on every close so a flip
+      // applies without a restart, matching the summary gate directly above.
       //
       // Ownership comes from the config dir the session ran under, never from
       // resolve() (spec §4) — the same rule the session source applies, and it
       // stays correct even if path rules changed after the session ran.
-      //
-      // Fire-and-forget: session teardown must never wait on indexing, and the
-      // worker yields immediately anyway while another session is still open.
-      if (db.getSetting(BRAIN_AUTO_INDEX_SETTING_KEY) === 'true') {
+      const autoIndexOn = db.getSetting(BRAIN_AUTO_INDEX_SETTING_KEY) === 'true';
+      const curateOn = db.getSetting(BRAIN_CURATE_SETTING_KEY) === 'true';
+      // The drain is armed by EITHER switch. Gating it on auto-index alone
+      // would leave curation-only users queueing notes that nothing ever
+      // drained.
+      if (autoIndexOn || curateOn) {
         const account = accountsService.getAccountByConfigDir(configDir);
         if (account) {
-          brainService
-            ?.enqueueSource(account.id, sessionId)
+          // Fire-and-forget: session teardown must never wait on Brain work,
+          // and the worker yields immediately anyway while another session is
+          // still open.
+          Promise.resolve()
+            .then(() =>
+              autoIndexOn ? brainService?.enqueueSource(account.id, sessionId) : undefined,
+            )
             // The session just closed in this project, which is exactly when
             // its auto-memory notes and instruction files were most likely
             // edited — the memory tool writes during a session, and a CLAUDE.md
             // is edited in one. Change detection makes the ordinary case a free
             // no-op, so this costs a directory walk and nothing else.
-            .then(() => brainService?.enqueueProjectSources(account.id, projectPath))
+            .then(() =>
+              autoIndexOn
+                ? brainService?.enqueueProjectSources(account.id, projectPath)
+                : undefined,
+            )
+            .then(() => {
+              // Selected from the vault as it stands NOW, so a note pushed over
+              // the threshold by the indexing queued just above is picked up on
+              // the NEXT close rather than this one. A one-session lag against
+              // a 7-day cooldown, and it self-corrects; selecting after the
+              // drain would mean draining twice on every close.
+              if (curateOn) brainService?.enqueueCuration(account.id);
+            })
             .then(() => brainService?.drainQueue())
-            .catch((err: unknown) => console.warn('[main] brain auto-index failed:', err));
+            .catch((err: unknown) => console.warn('[main] brain work on close failed:', err));
         }
       }
     },

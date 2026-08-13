@@ -30,7 +30,17 @@ export interface SourceItem {
   mtimeMs: number;
   /** Size in bytes. Half of the cheap change check. */
   size: number;
-  /** Short human label for the Sources pane, e.g. the project directory. */
+  /**
+   * The project folder this item belongs to, as an absolute path.
+   *
+   * The Sources pane groups on it and exclusions key on it, so every adapter
+   * must produce the SAME identity for the same folder — a session, its
+   * auto-memory and its CLAUDE.md are one project. Adapters that only hold the
+   * CLI's encoded directory name must recover the path authoritatively
+   * (`recoverProjectPath`) rather than decoding it: the encoding is lossy, and
+   * a folder whose own name contains a dash decodes to a path that does not
+   * exist.
+   */
   label: string;
 }
 

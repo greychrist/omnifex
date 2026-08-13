@@ -114,6 +114,22 @@ describe('repo artifact source', () => {
     ]);
   });
 
+  /**
+   * The label is the PROJECT, never the file. It is what the Sources pane
+   * groups on and what exclusions key on, so labelling an artifact `CLAUDE.md`
+   * both read as a file at the root of the drive and made every repo's
+   * instruction file share one exclusion.
+   */
+  it('labels an artifact with its repo, not with the file', async () => {
+    writeFileSync(join(repo, 'CLAUDE.md'), '# rules\n\nsome rules\n', 'utf8');
+    mkdirSync(join(repo, 'src'), { recursive: true });
+    writeFileSync(join(repo, 'src', 'CLAUDE.md'), '# src rules\n\nnested\n', 'utf8');
+
+    const items = await createRepoArtifactSource({ accounts: accountsWith(1) }).discover();
+
+    expect(items.map((i) => i.label)).toEqual([repo, repo]);
+  });
+
   it('ignores README, CHANGELOG and docs', async () => {
     writeFileSync(join(repo, 'README.md'), '# readme\n', 'utf8');
     writeFileSync(join(repo, 'CHANGELOG.md'), '# changelog\n', 'utf8');

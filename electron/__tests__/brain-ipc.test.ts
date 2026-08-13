@@ -20,8 +20,10 @@ const CHANNELS = [
   'brain_backfill',
   'brain_backlinks',
   'brain_clear_vault_path',
+  'brain_curate_note',
   'brain_default_vault_path',
   'brain_delete_note',
+  'brain_enqueue_curation',
   'brain_enqueue_project_sources',
   'brain_index_source',
   'brain_list_notes',
@@ -31,13 +33,14 @@ const CHANNELS = [
   'brain_mcp_unregister',
   'brain_queue_clear',
   'brain_queue_counts',
-  'brain_queue_drain',
   'brain_queue_list',
   'brain_read_note',
   'brain_rebuild',
   'brain_search',
+  'brain_set_excluded_projects',
   'brain_set_vault_path',
   'brain_source_preview',
+  'brain_stats',
   'brain_status',
   'brain_update_note',
   'brain_vault_path',
@@ -148,7 +151,6 @@ describe('brain IPC handlers', () => {
     await expect(bare.brain_queue_list(null, { accountId: 1 })).resolves.toEqual([]);
     // Writes must not report work that never happened.
     await expect(bare.brain_backfill(null, { accountId: 1 })).rejects.toThrow(/unavailable/);
-    await expect(bare.brain_queue_drain(null, {})).rejects.toThrow(/unavailable/);
     await expect(bare.brain_queue_clear(null, { accountId: 1 })).rejects.toThrow(/unavailable/);
   });
 
@@ -190,6 +192,36 @@ describe('brain IPC handlers', () => {
     const none = createBrainHandlers(undefined);
     expect(await none.brain_search(null, { accountId: 1, query: 'x' })).toEqual([]);
     expect(await none.brain_vault_path(null, { accountId: 1 })).toBeNull();
+  });
+
+  it('curation handlers throw rather than claiming a run that never happened', async () => {
+    const none = createBrainHandlers(undefined);
+    await expect(
+      none.brain_curate_note(null, { accountId: 1, notePath: 'a.md' }),
+    ).rejects.toThrow(/brain service unavailable/);
+    await expect(
+      none.brain_enqueue_curation(null, { accountId: 1 }),
+    ).rejects.toThrow(/brain service unavailable/);
+  });
+
+  it('brain_stats degrades to an empty reading rather than throwing', async () => {
+    const none = createBrainHandlers(undefined);
+    const stats = (await none.brain_stats(null, { accountId: 1 })) as { noteCount: number };
+    expect(stats.noteCount).toBe(0);
+  });
+
+  it('brain_curate_note accepts snake_case note_path', async () => {
+    const calls: [number, string][] = [];
+    const stub = {
+      curateNote: (accountId: number, notePath: string) => {
+        calls.push([accountId, notePath]);
+        return Promise.resolve({ notePath, skipped: false, reason: 'ok' });
+      },
+    } as unknown as BrainService;
+
+    await createBrainHandlers(stub).brain_curate_note(null, { account_id: 3, note_path: 'a.md' });
+
+    expect(calls).toEqual([[3, 'a.md']]);
   });
 
   it('write handlers throw rather than silently no-op when no brain service is wired', async () => {
@@ -273,11 +305,15 @@ describe('brain IPC handlers', () => {
       updateNoteBody: () => { throw boom; },
       backlinks: () => { throw boom; },
       listSources: () => { throw boom; },
+      setExcludedProjects: () => { throw boom; },
       previewSource: () => { throw boom; },
       indexSource: () => { throw boom; },
+      curateNote: () => { throw boom; },
+      enqueueCuration: () => { throw boom; },
       enqueueSource: () => { throw boom; },
       enqueueProjectSources: () => { throw boom; },
       backfill: () => { throw boom; },
+      stats: () => { throw boom; },
       queueCounts: () => { throw boom; },
       queueList: () => { throw boom; },
       clearFinishedQueue: () => { throw boom; },

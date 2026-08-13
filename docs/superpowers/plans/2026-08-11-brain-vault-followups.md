@@ -175,6 +175,87 @@ length cap. These remain:
 
 ---
 
+## Opened by Plan 7 (`feat/brain-curation`, 2026-08-12)
+
+**One real curation at Opus, and it is worth its token.** A note with 12
+Timeline entries drawn from this document's own history, curated through the
+live CLI at `claude-opus-5`: **7 entries collapsed into one, 5 retained, in
+11 seconds.** Every factual claim in the collapsed prose checks out, including
+which fix caused which — it correctly attributed the Haiku→Sonnet move to the
+measured `distill.ts` hallucination rather than to cost, and correctly recorded
+that Opus was rejected on volume.
+
+Three things went better than expected:
+
+- **The promoted facts are real, and one of them is a correction.** Among the
+  five promoted was `The distiller reads session transcripts only — it does not
+  read git diffs.` The source entry recorded that Haiku *hallucinated* that
+  claim; the model promoted the refutation, not the hallucination. Compare Plan
+  4a and Plan 6, where model output had to be caught inventing things — this run
+  had the opposite failure mode available to it and did not take it.
+- **The human sections survived byte-identical.** `Open items` and
+  `Assistant notes` came through untouched, as did `Summary`, `Connected to`
+  and `Decisions`.
+- **11 seconds, against ~2.5 minutes for one extraction.** Curation reads a
+  handful of bullets rather than a truncated megabyte, so the Opus pin costs
+  far less wall-clock than the Sonnet extraction pin does. The volume argument
+  that kept extraction off Opus does not transfer.
+
+**The measurement that was supposed to set the threshold could NOT be taken,
+and `MIN_TIMELINE_ENTRIES = 8` therefore ships unmeasured.** This is the one
+open item from this plan and it is deliberate, not an oversight.
+
+- The free half was measured. Translating the real auto-memory corpus into a
+  throwaway vault (86 discovered, **83 admitted, 110ms, no model, no tokens**)
+  gives the first real context-cost figures: **83 notes, 144 KB,
+  ~37k estimated tokens for the whole vault, ~402 tokens for the median note,
+  ~1,389 for the largest** (`Notes/project_win_production_standup.md`).
+- The half that sets the threshold was not. All 83 landed in the `none`
+  Timeline bucket and `qualifyingCount` was **0** — correctly, because
+  translated auto-memory notes carry no Timeline and are never curated. The
+  Timeline distribution only becomes meaningful once **session-extracted** notes
+  exist, and that needs a Sonnet backfill (~142 sessions, 30–100 minutes,
+  real spend). That is Greg's call, not something to do unattended.
+- So: run a session backfill, read the histogram in the stats panel, and set
+  `MIN_TIMELINE_ENTRIES` from it. Until then the constant is Rowboat's number
+  wearing a comment that says so.
+
+**The `Curation` commit is real but ASYNCHRONOUS, and a naive check will miss
+it.** The first live probe read `git log` immediately after `curateNote`
+resolved and saw only the seed commit — `commitAndRecord` is `void`-ed
+fire-and-forget (`registry.ts:561`), as every other Brain write path is. Waiting
+3s showed `b17e8f7 Curation` on top. Nothing is wrong, but the spec's
+audit-trail claim cannot be verified by a synchronous read, so it is pinned by a
+unit test that asserts on the captured `git commit -q -m Curation` argv instead.
+
+- **A stub `execGit` returning `''` for everything never reaches `git commit`.**
+  `commitAll` asks `git status --porcelain` what is staged and returns
+  `nothing-to-commit` for an empty answer, so a uniformly-empty stub silently
+  proves nothing. The commit-message test returns a non-empty porcelain line for
+  `status`. Worth knowing for any future test that asserts on commit behaviour.
+
+**Re-curation is blocked, verified live.** `enqueueCuration` immediately after a
+real curation returned **0**. All three guards were independently in force: the
+Timeline was down to 6 entries, `curated_at` was today, and `updated`
+(2026-08-12) was no longer later than `curated_at` (2026-08-13).
+
+- **`updated` is deliberately NOT bumped by curation**, which is what makes that
+  third guard work. Curation is not a source event: `updated` means "the latest
+  source this note has seen", and bumping it would both mislabel a compressed
+  note as freshly sourced and re-open the note for immediate re-curation.
+
+- **Deviation from spec §6, taken knowingly.** Recently-curated ships as a list
+  in the stats panel rather than a filter in the note list. A filter would need
+  `curated_at` for every note, which the renderer only has after reading every
+  note over IPC; the backend already computes it in one pass for the stats
+  panel. Same information, one read instead of N.
+
+- **NOT verified: any of this inside the running app.** Same gap Plans 5 and 6
+  both recorded, and for the same reason — the real app database still has no
+  vault configured. Everything above ran against throwaway vaults through the
+  real CLI. The stats panel, the Auto-curate switch and the manual Curate button
+  have unit tests but have never been rendered in the live app.
+
 ## Opened by Plan 6 (`feat/brain-repo-automemory`, 2026-08-12)
 
 **The whole auto-memory corpus translated, free.** 86 files discovered under

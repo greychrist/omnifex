@@ -201,6 +201,23 @@ describe('auto-memory source', () => {
     expect((await source.discover()).map((i) => i.itemKey)).toEqual(['-repo-a/a.md']);
   });
 
+  /**
+   * Same rule as transcripts: the label is the real folder, recovered from a
+   * `cwd` rather than decoded from the encoded dir name.
+   */
+  it('labels a memory with its project folder, recovered from a sibling transcript', async () => {
+    writeMemory(personal, '-Users-dev-Repos-wombeats-ios', 'a.md', REAL);
+    writeFileSync(
+      join(personal, 'projects', '-Users-dev-Repos-wombeats-ios', 's.jsonl'),
+      JSON.stringify({ type: 'user', cwd: '/Users/dev/Repos/wombeats-ios' }),
+      'utf8',
+    );
+
+    const [item] = await source.discover();
+
+    expect(item.label).toBe('/Users/dev/Repos/wombeats-ios');
+  });
+
   it('qualifies the key by project, since slugs recur across projects', async () => {
     writeMemory(personal, '-repo-a', 'user_setup.md', REAL);
     writeMemory(personal, '-repo-b', 'user_setup.md', REAL);

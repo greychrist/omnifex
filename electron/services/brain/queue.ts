@@ -199,19 +199,41 @@ export type HasActiveSession = () => boolean;
 
 export interface QueueWorkerDeps {
   store: BrainQueueStore;
-  /** Plan 4a's method. Every drain path goes through it, so the
-   *  unchanged-item short-circuit and per-entity isolation both still apply. */
-  indexSource(
-    accountId: number,
-    itemKey: string,
-  ): Promise<{ skipped: boolean; reason: string }>;
+  /**
+   * Do one entry's work. Takes the WHOLE entry, not `(accountId, itemKey)`:
+   * the queue now carries more than one kind of work — indexing a source and
+   * curating a note — and a worker that destructured the pair would have to
+   * know which was which. The registry owns that dispatch; this file does not
+   * know what an item is.
+   *
+   * Resolves for a completed unit of work, including a skip. Rejects only for
+   * a real failure, which is recorded against the entry and never blocks the
+   * queue.
+   */
+  process(entry: QueueEntry): Promise<void>;
   hasActiveSession: HasActiveSession;
   isPaused(): boolean;
 }
 
+/**
+ * What one drain actually did.
+ *
+ * `drain()` used to return void, so every caller had to assume success. The
+ * Brain tab printed "drain finished" whether the worker had indexed 158 items
+ * or yielded instantly because a session was open — the user pressed the
+ * button, nothing happened, and the UI congratulated itself.
+ */
+export interface DrainOutcome {
+  /** Items taken to a terminal state, successes and failures alike. */
+  processed: number;
+  /** True when the worker stopped for a reason other than an empty queue. */
+  yielded: boolean;
+  reason: 'empty' | 'paused' | 'session-active';
+}
+
 export interface BrainQueueWorker {
   /** Drain until empty or until yielding. Safe to call repeatedly. */
-  drain(): Promise<void>;
+  drain(): Promise<DrainOutcome>;
   /** The entry being worked on right now, for the operational pane. */
   current(): QueueEntry | null;
   running(): boolean;
@@ -221,34 +243,48 @@ export function createBrainQueueWorker(deps: QueueWorkerDeps): BrainQueueWorker 
   let draining = false;
   let currentEntry: QueueEntry | null = null;
 
-  async function drain(): Promise<void> {
+  async function drain(): Promise<DrainOutcome> {
     // Re-entry guard. Concurrency 1 is the contract with the user's rate
-    // limit, and a second drain would also pay twice for one item.
-    if (draining) return;
+    // limit, and a second drain would also pay twice for one item. Reported as
+    // a yield rather than a completion: this call indexed nothing.
+    if (draining) return { processed: 0, yielded: true, reason: 'paused' };
     draining = true;
+    let processed = 0;
     try {
       for (;;) {
         // Re-checked every iteration, not once at the top: checking only on
         // entry would let a long backfill run to completion no matter what the
         // user started doing halfway through.
-        if (deps.isPaused() || deps.hasActiveSession()) return;
+        //
+        // Two checks rather than one `||` so the caller learns WHICH stopped
+        // it — "a session is open" and "you paused it" need different words in
+        // the UI, and the user has to be able to tell them apart.
+        if (deps.isPaused()) return { processed, yielded: true, reason: 'paused' };
+        if (deps.hasActiveSession()) {
+          return { processed, yielded: true, reason: 'session-active' };
+        }
 
         const entry = deps.store.claimNext();
-        if (!entry) return;
+        if (!entry) return { processed, yielded: false, reason: 'empty' };
 
         currentEntry = entry;
         try {
-          // A skipped result — a gate rejection, or an item unchanged since it
-          // was last indexed — is a COMPLETED unit of work, not a failure.
-          // Recording it as failed would fill the operational pane with red
-          // during entirely normal operation.
-          await deps.indexSource(entry.accountId, entry.itemKey);
+          // A skipped result — a gate rejection, an item unchanged since it was
+          // last indexed, or a note that no longer qualifies for curation — is
+          // a COMPLETED unit of work, not a failure. Recording it as failed
+          // would fill the operational pane with red during entirely normal
+          // operation.
+          await deps.process(entry);
           deps.store.complete(entry.id);
         } catch (err) {
           // Spec §8: a failed item never blocks the queue.
           deps.store.fail(entry.id, (err as Error).message);
         } finally {
           currentEntry = null;
+          // Counted in `finally`: a failed item is still an item taken to a
+          // terminal state, and progress that stalled on failures would read
+          // as a hung run.
+          processed += 1;
         }
       }
     } finally {
@@ -274,3 +310,17 @@ export const BRAIN_AUTO_INDEX_SETTING_KEY = 'brain.autoIndex';
 
 /** User-facing pause for the queue, independent of the auto-index opt-in. */
 export const BRAIN_QUEUE_PAUSED_SETTING_KEY = 'brain.queuePaused';
+
+/**
+ * The sentinel `source_id` for a curation row. It names no adapter — there is
+ * no curation `BrainSource` — and exists so one queue can carry both kinds of
+ * work. The registry dispatches on it; nothing else should match on it.
+ */
+export const CURATION_SOURCE_ID = 'curation';
+
+/**
+ * Curation on session close. Default `'false'`, for the same reason
+ * auto-indexing is, and one more: curation REWRITES existing notes rather than
+ * only adding to them. The user opts in once, after seeing real output.
+ */
+export const BRAIN_CURATE_SETTING_KEY = 'brain.curate';

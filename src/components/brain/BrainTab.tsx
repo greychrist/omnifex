@@ -8,6 +8,7 @@ import { BrainVaultSetup } from './BrainVaultSetup';
 import { BrainNoteList } from './BrainNoteList';
 import { BrainNoteViewer } from './BrainNoteViewer';
 import { BrainSources } from './BrainSources';
+import { BrainStatsPanel } from './BrainStatsPanel';
 
 /**
  * The Brain tab, scoped to exactly ONE account at a time.
@@ -63,6 +64,18 @@ export const BrainTab: React.FC = () => {
     return `${status.noteCount} ${status.noteCount === 1 ? 'note' : 'notes'}`;
   };
 
+  /**
+   * UNKNOWN IS NOT HEALTHY.
+   *
+   * `useBrainVault` clears `status` to null synchronously on every account
+   * switch, deliberately. Both branches below derive from `status`, so during
+   * the read neither question — "does this vault need setup?", "how many
+   * notes?" — has an answer yet. Treating that gap as "no setup needed" made
+   * an unconfigured account render setup → panes → setup on every switch: a
+   * visible flash next to the header summary.
+   */
+  const statusKnown = status !== null;
+
   // Anything that stops this account's vault from being browsable routes to the
   // setup panel, which is the only surface that can explain WHY and offer the
   // matching repair.
@@ -73,7 +86,10 @@ export const BrainTab: React.FC = () => {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex items-center gap-3 border-b px-4 py-2">
+      {/* Title bar. Each band below it — stats, queue controls, table actions,
+          filters — is a distinct surface, so the eye can tell chrome from
+          data instead of reading four identical strips as one slab. */}
+      <header className="flex items-center gap-3 border-b bg-card px-4 py-2">
         <h2 className="text-sm font-medium">Brain</h2>
         <SelectComponent
           value={accountId === null ? '' : String(accountId)}
@@ -131,7 +147,26 @@ export const BrainTab: React.FC = () => {
         </div>
       )}
 
-      {needsSetup || showVault ? (
+      {/* Above both panes: it describes the vault as a whole, which is the
+          same thing whichever pane is open. Selecting a recently curated note
+          switches to Notes, since inspecting one is the point of naming it. */}
+      {statusKnown && !needsSetup && !showVault && (
+        <BrainStatsPanel
+          accountId={accountId}
+          onSelect={(notePath) => {
+            setPane('notes');
+            setSelectedNote(notePath);
+          }}
+        />
+      )}
+
+      {!statusKnown ? (
+        // Holds the space while the status is in flight, so switching accounts
+        // does not swap panes twice. The header already says "loading…".
+        <div className="flex min-h-0 flex-1 items-center justify-center text-xs text-muted-foreground">
+          {vault.loading ? 'loading…' : null}
+        </div>
+      ) : needsSetup || showVault ? (
         <BrainVaultSetup vault={vault} accountName={account?.name ?? null} />
       ) : pane === 'sources' ? (
         <BrainSources accountId={accountId} />
