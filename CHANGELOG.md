@@ -5,6 +5,47 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.123] — 2026-08-13
+
+Refresh on the Brain's Sources pane now means the whole page, not just the
+table — and the test suite stopped lying about an intermittent failure.
+
+### Fixed
+
+- **"Spent indexing" and the other vault figures now keep up.** The stats bar
+  already accepted a `nonce` prop documented as "bumped after a run, so the
+  figures do not go stale behind the user" — and nothing ever passed it, so it
+  defaulted to `0` forever and the figures froze at whatever they read on
+  mount. Closing and reopening the tab was the only thing that corrected them.
+  Pressing Refresh could not have helped either way: the stats bar is a sibling
+  of the Sources pane, not a child, so that pane's refresh could never reach
+  it. The pane now reports vault changes upward, on a finished run and on
+  Refresh, and the header's note count re-reads with them.
+- **The queue chip on the same bar had the identical defect** — its own
+  internal counter, no polling, so a background drain changed `queued · done`
+  with nothing on screen to notice. It refreshes with everything else now.
+
+### Changed
+
+- **Every test run leaves a machine-readable record** at
+  `.vitest/last-run.json`. Terminal output was the only account of a run, and a
+  failure whose name scrolled past was unrecoverable — the only route back was
+  another run, which for an intermittent failure samples a new outcome rather
+  than replaying the old one.
+- **The account-identity watcher tests are deterministic.** They flaked under
+  full-suite load, and the obvious lever — a longer timeout — had already been
+  pulled and could not work. Instrumenting a failing run with a second,
+  independent watcher on the same directory recorded *zero* filesystem events
+  in ten seconds while the file on disk held the new value the entire time:
+  under vitest's worker pool the event is dropped outright, not delivered late.
+  They now retry the write rather than extending the wait. Twelve consecutive
+  full runs clean; previously roughly one in three failed. A genuine
+  regression still fails loudly rather than being retried away.
+- The same tests no longer leak fixture directories into the system temp dir
+  (~30 per run, 1535 had accumulated).
+
+Installers remain **unsigned**.
+
 ## [0.4.122] — 2026-08-13
 
 Brain indexing runs now live in the main process, so they survive leaving the
