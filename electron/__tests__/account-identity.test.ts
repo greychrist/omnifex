@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -10,13 +10,34 @@ import {
   watchOauthIdentity,
 } from '../services/account-identity';
 
+/**
+ * Every directory this file has created, so `afterEach` can remove them.
+ *
+ * Without this the fixtures were pure leak: one run left ~30 directories in
+ * the system temp dir forever, and a machine that had run the suite for a
+ * while had accumulated 1314 of them.
+ */
+const createdDirs: string[] = [];
+
 function tmpConfigDir(contents?: string): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'omnifex-identity-'));
+  createdDirs.push(dir);
   if (contents !== undefined) {
     fs.writeFileSync(path.join(dir, '.claude.json'), contents, 'utf8');
   }
   return dir;
 }
+
+afterEach(() => {
+  // Best-effort: a watcher test disposes its watcher first, but removal racing
+  // a still-draining fs event must never fail the test that just passed.
+  while (createdDirs.length > 0) {
+    const dir = createdDirs.pop();
+    if (dir !== undefined) {
+      try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* leave it */ }
+    }
+  }
+});
 
 describe('readOauthIdentity', () => {
   it('extracts the oauth identity from <configDir>/.claude.json', () => {
@@ -168,18 +189,64 @@ describe('watchOauthIdentity', () => {
     fs.renameSync(tmp, path.join(dir, '.claude.json'));
   }
 
+  /**
+   * How long to leave the watcher undisturbed before writing again.
+   *
+   * MUST exceed the watcher's own 150ms debounce. Each fs event resets that
+   * timer, so a retry loop faster than the debounce would keep pushing the
+   * callback into the future and starve the very thing it is waiting for.
+   */
+  const RETRY_MS = 400;
+
+  /**
+   * Perform `write` until `observed()` reports the watcher noticed, or fail.
+   *
+   * Retrying the WRITE, not merely waiting longer, is the whole point. Under
+   * vitest's worker pool an `fs.watch` event is occasionally dropped outright
+   * rather than delivered late: instrumenting a failing run with a second,
+   * independent watcher on the same directory recorded ZERO raw events in ten
+   * seconds while the file on disk held the new value the entire time. No
+   * timeout can wait out an event that is never coming, which is why raising
+   * this test's window to 10s did not stop it flaking.
+   *
+   * Repeating the write is safe because the watcher compares by VALUE against
+   * the identity it snapshotted when it attached — so re-writing the same new
+   * address stays a change until it has actually been observed, and a
+   * duplicate delivery can only produce the callback the test is waiting for.
+   */
+  async function writeUntilObserved(
+    write: () => void,
+    observed: () => boolean,
+    attempts = 12,
+  ): Promise<void> {
+    for (let i = 0; i < attempts; i += 1) {
+      write();
+      const deadline = Date.now() + RETRY_MS;
+      while (Date.now() < deadline) {
+        if (observed()) return;
+        await new Promise((r) => setTimeout(r, 25));
+      }
+    }
+    throw new Error(
+      `watcher never fired after ${String(attempts)} writes over ` +
+      `${String((attempts * RETRY_MS) / 1000)}s — this is a real failure, not the dropped-event flake`,
+    );
+  }
+
   it('fires when .claude.json is rewritten atomically', async () => {
     const dir = tmpConfigDir(JSON.stringify({ oauthAccount: { emailAddress: 'a@example.com' } }));
     const onChange = vi.fn();
     const sub = watchOauthIdentity(dir, onChange);
 
-    writeIdentity(dir, 'b@example.com');
+    await writeUntilObserved(
+      () => { writeIdentity(dir, 'b@example.com'); },
+      () => onChange.mock.calls.length > 0,
+    );
 
-    await vi.waitFor(() => { expect(onChange).toHaveBeenCalled(); }, { timeout: 10000 });
+    expect(onChange).toHaveBeenCalled();
     sub.dispose();
-    // 20s test timeout: fs.watch delivery has no latency guarantee and the
-    // full suite runs these in parallel. A waitFor longer than vitest's
-    // default 5s per-test timeout is dead code without this.
+    // 20s test timeout: the retry loop above can legitimately spend several
+    // seconds, and vitest's default per-test timeout is 5s.
   }, 20000);
 
   // macOS FSEvents names `.claude.json` in the event stream even when an
@@ -215,15 +282,19 @@ describe('watchOauthIdentity', () => {
     const onChange = vi.fn();
     const sub = watchOauthIdentity(dir, onChange);
 
-    const tmp = path.join(dir, '.claude.json.tmp');
-    fs.writeFileSync(tmp, JSON.stringify({ numStartups: 3 }), 'utf8');
-    fs.renameSync(tmp, path.join(dir, '.claude.json'));
+    await writeUntilObserved(
+      () => {
+        const tmp = path.join(dir, '.claude.json.tmp');
+        fs.writeFileSync(tmp, JSON.stringify({ numStartups: 3 }), 'utf8');
+        fs.renameSync(tmp, path.join(dir, '.claude.json'));
+      },
+      () => onChange.mock.calls.length > 0,
+    );
 
-    await vi.waitFor(() => { expect(onChange).toHaveBeenCalled(); }, { timeout: 10000 });
+    expect(onChange).toHaveBeenCalled();
     sub.dispose();
-    // 20s test timeout: fs.watch delivery has no latency guarantee and the
-    // full suite runs these in parallel. A waitFor longer than vitest's
-    // default 5s per-test timeout is dead code without this.
+    // 20s test timeout: the retry loop above can legitimately spend several
+    // seconds, and vitest's default per-test timeout is 5s.
   }, 20000);
 
   it('stops firing after dispose', async () => {

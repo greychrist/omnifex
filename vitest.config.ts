@@ -14,6 +14,16 @@ export default defineConfig({
       'src/**/*.test.tsx',
     ],
     environment: 'node',
+    // `default` still prints to the terminal; `json` leaves a record behind.
+    //
+    // Terminal output is the only account of a run, and it is routinely piped
+    // through `tail`. A run that reported "1 failed" with the name scrolled or
+    // filtered away was unrecoverable — the only way "back" was another run,
+    // which for a load-dependent flake samples a new outcome rather than
+    // replaying the old one. This file answers "which test failed?" without
+    // re-running anything.
+    reporters: ['default', 'json'],
+    outputFile: { json: './.vitest/last-run.json' },
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html', 'json-summary'],

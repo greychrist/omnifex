@@ -20,6 +20,10 @@ out/
 # Vitest coverage reports
 coverage/
 
+# Vitest JSON run record — rewritten every `npm test`, read to find out which
+# test failed without re-running the suite.
+.vitest/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
