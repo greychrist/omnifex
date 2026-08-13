@@ -5,6 +5,52 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.120] — 2026-08-13
+
+The Brain page, rebuilt — and it can now tell you what it has cost you.
+
+### Added
+
+- **Indexing costs, per item and per account.** Every indexing run already paid
+  for a CLI call whose reply carried the exact cost and token usage; OmniFex
+  parsed out the text and threw the rest away. It is now recorded: a sortable
+  **Cost** column with a token breakdown on hover, and a **Spent indexing**
+  total in the stats strip. These are the CLI's own figures, not an estimate
+  from a pricing table that would drift. A retry is added to the bill rather
+  than replacing it — a garbled first answer is spent money, not a refund.
+- **A Settings tab** on the Brain page, holding vault setup and repair plus the
+  three switches that let the Brain spend unattended (Auto-index, Auto-curate,
+  Expose to Claude). The queue's actions stay with the source list they act on.
+
+### Changed
+
+- **The Brain page follows the Projects layout**: a title and blurb above a
+  single card, the vault's name and note count at its top left, the account
+  selector at its top right, and Notes / Sources / Settings tabs beneath. The
+  tabs are the standard size used everywhere else in the app.
+- **A vault that needs setting up no longer replaces the page.** It selects the
+  Settings tab and disables the other two, so the account selector stays
+  reachable — previously a broken vault stranded you on the account you were
+  trying to leave.
+- **Clearer stats.** "Timeline entries per note" is now "Sessions recorded per
+  note", rendered as one badge per bucket with the reading direction spelled
+  out ("4 notes have 1–3 entries") and the buckets past the curation threshold
+  marked. Every string about curation now says what it does for you — cheaper
+  recalls — instead of assuming the word explains itself.
+
+### Fixed
+
+- **A session split across two folders is one item again.** Resuming a
+  conversation in a different directory continues it in a second transcript
+  file under the same session id. Those halves collided: they shared one row of
+  state, ticking one ticked both, and indexing distilled half the conversation
+  and marked the whole thing done. One session is now one source, spanning every
+  file that belongs to it, and change detection covers all of them.
+- **"View in Log" reaches the Log.** It landed on Settings and stopped there.
+
+Installers remain **unsigned** — macOS Gatekeeper will block first launch;
+right-click → Open to run.
+
 ## [0.4.119] — 2026-08-13
 
 The Brain stops indexing conversations you are still having.
