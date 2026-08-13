@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useAccounts } from '@/contexts/AccountsContext';
 import { useBrainVault } from '@/hooks/useBrainVault';
 import { AccountBadge } from '@/components/AccountBadge';
@@ -30,6 +30,26 @@ export const BrainTab: React.FC = () => {
   const [selectedNote, setSelectedNote] = useState<string | null>(null);
 
   const { accountId, setAccountId } = vault;
+
+  /**
+   * Bumped whenever a pane below changes the vault, and handed to the stats
+   * bar — whose fetch effect keys on it.
+   *
+   * The bar reads `brain_stats`, which nothing inside Sources can reach: it is
+   * a sibling, not a child. Before this the prop was simply never passed, so
+   * it defaulted to 0 forever and "Spent indexing" froze at whatever it read
+   * on mount. Closing and reopening the tab was the only cure.
+   */
+  const [statsNonce, setStatsNonce] = useState(0);
+
+  /**
+   * Two readings go stale together, so they refresh together: the stats bar,
+   * and the vault status behind the header's note count.
+   */
+  const handleVaultChanged = useCallback(() => {
+    setStatsNonce((n) => n + 1);
+    void vault.refresh();
+  }, [vault.refresh]);
 
   // Land on an account rather than an empty screen. The FIRST account, not a
   // remembered or resolved one: this app has no "default account" concept, and
@@ -154,6 +174,7 @@ export const BrainTab: React.FC = () => {
             {statusKnown && !needsSetup && (
               <BrainStatsPanel
                 accountId={accountId}
+                nonce={statsNonce}
                 className="mb-4 shrink-0 rounded-md border bg-muted/40 px-4 py-2.5 text-xs"
                 onSelect={(notePath) => {
                   setTab('notes');
@@ -234,7 +255,7 @@ export const BrainTab: React.FC = () => {
 
                   <TabsContent value="sources" className="mt-0 flex min-h-0 flex-1">
                     <div className="flex min-h-0 flex-1 overflow-hidden rounded-md border">
-                      <BrainSources accountId={accountId} />
+                      <BrainSources accountId={accountId} onVaultChanged={handleVaultChanged} />
                     </div>
                   </TabsContent>
 

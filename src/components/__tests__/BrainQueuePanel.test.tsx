@@ -72,6 +72,36 @@ describe('BrainQueuePanel controls', () => {
   
   
   
+  /**
+   * The queue changes from outside this panel — a background drain on session
+   * close, or the Sources pane's Refresh. Reading only on its own actions is
+   * the stale-read this component's own comment says the tab has shipped three
+   * times; the owner needs a way to say "re-read".
+   */
+  it('re-reads the queue when the owner bumps refreshToken', async () => {
+    const { rerender } = render(<BrainQueueActions accountId={1} refreshToken={0} />);
+    await waitFor(() => { expect(api.brainQueueCounts).toHaveBeenCalledTimes(1); });
+
+    vi.mocked(api.brainQueueCounts).mockResolvedValue({
+      pending: 0, running: 0, done: 158, failed: 0,
+    });
+    rerender(<BrainQueueActions accountId={1} refreshToken={1} />);
+
+    await waitFor(() => { expect(api.brainQueueCounts).toHaveBeenCalledTimes(2); });
+    expect(await screen.findByText(/158 done/)).toBeTruthy();
+  });
+
+  it('does not re-read when refreshToken is unchanged', async () => {
+    const { rerender } = render(<BrainQueueActions accountId={1} refreshToken={3} />);
+    await waitFor(() => { expect(api.brainQueueCounts).toHaveBeenCalledTimes(1); });
+
+    // A re-render alone must not cost an IPC round trip per frame.
+    rerender(<BrainQueueActions accountId={1} refreshToken={3} />);
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(api.brainQueueCounts).toHaveBeenCalledTimes(1);
+  });
+
   it('offers Resume, not Pause, when the queue is already paused', async () => {
     vi.mocked(api.getSetting).mockImplementation((k: string) =>
       Promise.resolve(k === 'brain.queuePaused' ? 'true' : 'false'));

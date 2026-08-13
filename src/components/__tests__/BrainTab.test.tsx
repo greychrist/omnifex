@@ -41,8 +41,17 @@ vi.mock('@/components/brain/BrainVaultSetup', () => ({
   BrainVaultSetup: () => <div data-testid="vault-setup" />,
 }));
 vi.mock('@/components/brain/BrainSources', () => ({
-  BrainSources: ({ accountId }: { accountId: number | null }) => (
-    <div data-testid="sources">{String(accountId)}</div>
+  // Exposes the vault-changed callback as a button, so a test can fire the
+  // thing an indexing run or a Refresh press fires.
+  BrainSources: (
+    { accountId, onVaultChanged }: { accountId: number | null; onVaultChanged?: () => void },
+  ) => (
+    <div data-testid="sources">
+      {String(accountId)}
+      {/* Labelled rather than captioned: text here would join this node's
+          textContent, which sibling tests assert is the account id alone. */}
+      <button type="button" aria-label="fire vault changed" onClick={onVaultChanged} />
+    </div>
   ),
 }));
 vi.mock('@/components/brain/BrainQueuePanel', () => ({
@@ -51,8 +60,10 @@ vi.mock('@/components/brain/BrainQueuePanel', () => ({
   ),
 }));
 vi.mock('@/components/brain/BrainStatsPanel', () => ({
-  BrainStatsPanel: ({ accountId }: { accountId: number | null }) => (
-    <div data-testid="stats">{String(accountId)}</div>
+  // Reports the nonce it was handed: the real panel's fetch effect keys on it,
+  // so "did BrainTab bump it?" is the whole question.
+  BrainStatsPanel: ({ accountId, nonce }: { accountId: number | null; nonce?: number }) => (
+    <div data-testid="stats" data-nonce={String(nonce ?? 'undefined')}>{String(accountId)}</div>
   ),
 }));
 
@@ -117,6 +128,48 @@ describe('BrainTab', () => {
   it('selects the first account on mount rather than rendering empty', async () => {
     render(<BrainTab />);
     await waitFor(() => { expect(api.brainStatus).toHaveBeenCalledWith(7); });
+  });
+
+  /**
+   * The stats bar reads `brain_stats`, which the Sources pane cannot reach: it
+   * is a sibling, not a child. So an indexing run updated the rows and left
+   * "Spent indexing" showing a figure from before the spend — and pressing
+   * Refresh in Sources did not help, because it only re-lists that pane. The
+   * only thing that ever corrected it was closing and reopening the tab.
+   */
+  it('refreshes the stats bar when the sources pane reports a vault change', async () => {
+    render(<BrainTab />);
+    const before = (await screen.findByTestId('stats')).getAttribute('data-nonce');
+    // The pane only exists on its own tab; the default is Notes.
+    fireEvent.click(await screen.findByRole('tab', { name: /^sources$/i }));
+
+    fireEvent.click(await screen.findByRole('button', { name: /fire vault changed/i }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('stats').getAttribute('data-nonce')).not.toBe(before);
+    });
+  });
+
+  it('never leaves the stats nonce undefined', async () => {
+    // Passing no nonce at all is the bug this guards: the panel defaults it to
+    // 0, so its fetch effect never re-runs and the figures freeze on mount.
+    render(<BrainTab />);
+    const stats = await screen.findByTestId('stats');
+    expect(stats.getAttribute('data-nonce')).not.toBe('undefined');
+  });
+
+  /** The header's note count comes from the vault status, not from stats. */
+  it('re-reads the vault status on a vault change, so the note count keeps up', async () => {
+    render(<BrainTab />);
+    await waitFor(() => { expect(api.brainStatus).toHaveBeenCalledWith(7); });
+    fireEvent.click(await screen.findByRole('tab', { name: /^sources$/i }));
+    const before = vi.mocked(api.brainStatus).mock.calls.length;
+
+    fireEvent.click(await screen.findByRole('button', { name: /fire vault changed/i }));
+
+    await waitFor(() => {
+      expect(vi.mocked(api.brainStatus).mock.calls.length).toBeGreaterThan(before);
+    });
   });
 
   it('shows the three-pane view for a healthy vault', async () => {

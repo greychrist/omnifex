@@ -31,8 +31,12 @@ function runProgressListener(): (run: unknown) => void {
 vi.mock('@/components/brain/BrainQueuePanel', () => ({
   // Only the actions half renders here now — the persistent switches moved to
   // the Brain tab's Settings tab.
-  BrainQueueActions: ({ accountId }: { accountId: number | null }) => (
-    <div data-testid="queue-panel">{String(accountId)}</div>
+  BrainQueueActions: (
+    { accountId, refreshToken }: { accountId: number | null; refreshToken?: number },
+  ) => (
+    <div data-testid="queue-panel" data-refresh={String(refreshToken ?? 'undefined')}>
+      {String(accountId)}
+    </div>
   ),
 }));
 
@@ -475,6 +479,71 @@ describe('BrainSources', () => {
     // what died with the component.
     await waitFor(() => {
       expect(api.brainIndexSelection).toHaveBeenCalledWith(1, ['a', 'b']);
+    });
+  });
+
+  /**
+   * The stats bar ("Spent indexing", "Notes in vault") is a SIBLING of this
+   * pane, reading `brain_stats` on its own. Nothing here can re-read it, so a
+   * finished run left the cost figure showing a number from before the spend.
+   */
+  it('tells its owner the vault changed when a run ends', async () => {
+    const onVaultChanged = vi.fn();
+    vi.mocked(api.brainListSources).mockResolvedValue([summary()]);
+    render(<BrainSources accountId={1} onVaultChanged={onVaultChanged} />);
+    await screen.findByText('/Users/dev/omnifex');
+
+    const push = runProgressListener();
+    push({ accountId: 1, total: 1, completed: 0, item: 'sess-a', written: 0, skipped: 0 });
+    push(null);
+
+    await waitFor(() => { expect(onVaultChanged).toHaveBeenCalled(); });
+  });
+
+  it('tells its owner the vault changed when Refresh is pressed', async () => {
+    const onVaultChanged = vi.fn();
+    vi.mocked(api.brainListSources).mockResolvedValue([summary()]);
+    render(<BrainSources accountId={1} onVaultChanged={onVaultChanged} />);
+    await screen.findByText('/Users/dev/omnifex');
+
+    fireEvent.click(screen.getByRole('button', { name: /refresh/i }));
+
+    // Refresh has to mean "re-read everything on this page", or the figure the
+    // user is staring at stays wrong no matter how many times they press it.
+    await waitFor(() => { expect(onVaultChanged).toHaveBeenCalled(); });
+  });
+
+  /** Another account's run must not trigger a re-read of this one's figures. */
+  it('stays quiet for a run belonging to a different account', async () => {
+    const onVaultChanged = vi.fn();
+    vi.mocked(api.brainListSources).mockResolvedValue([summary()]);
+    render(<BrainSources accountId={1} onVaultChanged={onVaultChanged} />);
+    await screen.findByText('/Users/dev/omnifex');
+
+    runProgressListener()({
+      accountId: 2, total: 1, completed: 1, item: 'other', written: 1, skipped: 0,
+    });
+
+    await waitFor(() => { expect(screen.queryByRole('status')).toBeNull(); });
+    expect(onVaultChanged).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The queue chip sits on the same bar as the Refresh button, so "refresh"
+   * has to reach it too — a background drain changes those counts with no
+   * action in this pane to notice it.
+   */
+  it('refreshes the queue counts when Refresh is pressed', async () => {
+    vi.mocked(api.brainListSources).mockResolvedValue([summary()]);
+    render(<BrainSources accountId={1} />);
+    await screen.findByText('/Users/dev/omnifex');
+    const before = screen.getByTestId('queue-panel').getAttribute('data-refresh');
+    expect(before).not.toBe('undefined');
+
+    fireEvent.click(screen.getByRole('button', { name: /refresh/i }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('queue-panel').getAttribute('data-refresh')).not.toBe(before);
     });
   });
 

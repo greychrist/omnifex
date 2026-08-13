@@ -27,7 +27,19 @@ type Nonce = number;
  * something to control; an operations panel over a queue nothing drains would
  * be a control surface for nothing.
  */
-export const BrainSources: React.FC<{ accountId: number | null }> = ({ accountId }) => {
+export const BrainSources: React.FC<{
+  accountId: number | null;
+  /**
+   * Called when this pane did something that changes the vault as a whole —
+   * a run finished, or the user asked for a refresh.
+   *
+   * The stats bar ("Spent indexing", "Notes in vault") is a SIBLING of this
+   * pane and reads `brain_stats` on its own, so nothing here can re-read it.
+   * Without this the cost figure kept showing a number from before the spend,
+   * and only closing and reopening the tab ever corrected it.
+   */
+  onVaultChanged?: () => void;
+}> = ({ accountId, onVaultChanged }) => {
   const [items, setItems] = useState<BrainSourceSummary[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [preview, setPreview] = useState<BrainSourcePreview | null>(null);
@@ -61,6 +73,29 @@ export const BrainSources: React.FC<{ accountId: number | null }> = ({ accountId
 
   /** Any index button is live work: either starting, or already reported. */
   const indexing = starting || runProgress !== null;
+
+  /**
+   * Held in a ref, not read directly, so the effects below can announce a
+   * change without listing the callback as a dependency.
+   *
+   * The owner passes an inline closure, which is a new function every render;
+   * depending on it would re-subscribe on every render and, via the setState
+   * that subscription performs, loop forever. Same ref-capture rule the tab
+   * system's callback props follow.
+   */
+  const onVaultChangedRef = useRef(onVaultChanged);
+  useEffect(() => { onVaultChangedRef.current = onVaultChanged; });
+
+  /**
+   * Re-list here, and tell the owner to re-read what only it can reach.
+   *
+   * Every path that changes what the vault contains or costs goes through
+   * this, so no caller has to remember there are two things to refresh.
+   */
+  const reload = useCallback(() => {
+    setNonce((n) => n + 1);
+    onVaultChangedRef.current?.();
+  }, []);
 
   // Both are account-scoped: carrying either across a switch would render one
   // account's material under another account's header.
@@ -130,9 +165,10 @@ export const BrainSources: React.FC<{ accountId: number | null }> = ({ accountId
       // terminating null would blank a banner this account still owns.
       if (run !== null && run.accountId !== accountId) return;
       setRunProgress(run);
-      if (run === null) setNonce((n) => n + 1);
+      // A finished run changed both the rows and the vault's totals.
+      if (run === null) reload();
     });
-  }, [accountId]);
+  }, [accountId, reload]);
 
   const select = useCallback(
     (itemKey: string) => {
@@ -190,7 +226,7 @@ export const BrainSources: React.FC<{ accountId: number | null }> = ({ accountId
           setSelectedRows(new Set());
           // Re-listing is what turns a row's status from null to indexed.
           // Without it the button looks like it did nothing.
-          setNonce((n) => n + 1);
+          reload();
         })
         // Only whole-run failures land here — no vault, a run already in
         // flight. Per-item outcomes come back in `results` above.
@@ -218,16 +254,14 @@ export const BrainSources: React.FC<{ accountId: number | null }> = ({ accountId
   }, [items, selectedRows, startRun]);
 
   /**
-   * Re-read the listing on demand.
+   * Re-read this page on demand — the rows here AND the stats bar above.
    *
-   * Stays live during a run on purpose: a run only re-lists once the WHOLE
-   * selection finishes, so this is the only way to watch statuses land one at
-   * a time — and after a sub-tab switch it is how you re-check a pane whose
-   * rows went stale while it was unmounted.
+   * "Refresh" has to mean everything on the page, not everything in this
+   * component: pressing it and watching a stale cost figure sit there is
+   * exactly the report that produced this. Stays live during a run on
+   * purpose, since a run only re-lists once the WHOLE selection finishes.
    */
-  const refresh = useCallback(() => {
-    setNonce((n) => n + 1);
-  }, []);
+  const refresh = reload;
 
   /**
    * Each row already carries the effective verdict, so the exclusion state is
@@ -298,7 +332,10 @@ export const BrainSources: React.FC<{ accountId: number | null }> = ({ accountId
       {/* The queue's actions, above the list they act on. The persistent
           switches that let it spend unattended live under Settings. */}
       <div className="border-b bg-background px-4 py-2">
-        <BrainQueueActions accountId={accountId} />
+        {/* `nonce` is bumped by `reload()`, so Refresh and a finished run
+            reach the queue chip too — it sits on this bar and a background
+            drain changes its counts with nothing here to notice. */}
+        <BrainQueueActions accountId={accountId} refreshToken={nonce} />
       </div>
       <div className="flex min-h-0 flex-1">
       {/* The table takes the whole pane until something is selected — there is

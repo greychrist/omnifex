@@ -69,7 +69,18 @@ const SettingSwitch: React.FC<{
  * progress is something you DO, and it belongs beside the buttons whose work
  * it stops.
  */
-export const BrainQueueActions: React.FC<{ accountId: number | null }> = ({ accountId }) => {
+export const BrainQueueActions: React.FC<{
+  accountId: number | null;
+  /**
+   * Bumped by the owner when something OUTSIDE this panel changed the queue —
+   * a background drain on session close, or the Sources pane's Refresh.
+   *
+   * Its own controls already re-read via `nonce`; this covers the changes it
+   * has no way to notice, which is the other half of the stale-read the
+   * comment below describes.
+   */
+  refreshToken?: number;
+}> = ({ accountId, refreshToken = 0 }) => {
   const [counts, setCounts] = useState<BrainQueueCounts>(EMPTY);
   const [entries, setEntries] = useState<BrainQueueEntry[]>([]);
   const [busy, setBusy] = useState(false);
@@ -90,7 +101,7 @@ export const BrainQueueActions: React.FC<{ accountId: number | null }> = ({ acco
         // A failed read leaves it un-paused, matching the stored default.
       });
     return () => { cancelled = true; };
-  }, [nonce]);
+  }, [nonce, refreshToken]);
 
   useEffect(() => {
     setOutcome(null);
@@ -108,7 +119,7 @@ export const BrainQueueActions: React.FC<{ accountId: number | null }> = ({ acco
       })
       .catch((err: Error) => { if (!cancelled) setError(err.message); });
     return () => { cancelled = true; };
-  }, [accountId, nonce]);
+  }, [accountId, nonce, refreshToken]);
 
   /** Every control refreshes on completion, or the panel lies about its state. */
   const run = useCallback(
