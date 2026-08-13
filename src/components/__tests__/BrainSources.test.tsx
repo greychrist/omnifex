@@ -27,6 +27,8 @@ function summary(over: Partial<BrainSourceSummary> = {}): BrainSourceSummary {
     accountId: 1,
     sourceId: 'session',
     itemKey: 'sess-a',
+    name: 'sess-a',
+    inUse: false,
     label: '/Users/dev/omnifex',
     mtimeMs: 1_700_000_000_000,
     size: 40_960,

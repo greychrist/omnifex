@@ -1,5 +1,5 @@
 import { existsSync, lstatSync, mkdirSync, readdirSync, realpathSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import type { Database } from '../database';
 import { createVault, type Vault } from './vault';
 import {
@@ -162,6 +162,21 @@ export interface SourceSummary {
   accountId: number;
   sourceId: string;
   itemKey: string;
+  /**
+   * What to call this row: a session's id, or a file-backed item's file name.
+   *
+   * Computed here rather than in the renderer because the rule is per source
+   * kind, and the adapters own kind. Never a full path — the project column
+   * already carries the folder, and repeating it in every row buried the one
+   * part that identifies the item.
+   */
+  name: string;
+  /**
+   * True when this row is a session that is open in OmniFex right now. Such a
+   * transcript is still being written, so indexing it would distil half a
+   * conversation and record it as done.
+   */
+  inUse: boolean;
   /** The project folder, absolute. Grouping and exclusion key. */
   label: string;
   mtimeMs: number;
@@ -526,6 +541,20 @@ export interface BrainServiceOptions {
   hasActiveSession?: () => boolean;
   /** True while the user has paused the queue from the Brain tab. */
   isQueuePaused?: () => boolean;
+  /**
+   * Session UUIDs open in OmniFex right now — `SessionsService`'s
+   * `listActiveSessionIds()`, injected so the Brain keeps no dependency on the
+   * sessions layer.
+   *
+   * Distinct from `hasActiveSession`, which asks the global question ("is the
+   * user working, so should the worker yield?"). This one is per-item: WHICH
+   * transcripts are still being written, and therefore must not be distilled
+   * and recorded as finished.
+   *
+   * Defaults to "nothing is open", correct for tests and for any construction
+   * without a sessions dependency.
+   */
+  liveSessionIds?: () => Iterable<string>;
 }
 
 export function createBrainService(
@@ -585,6 +614,39 @@ export function createBrainService(
       if (item) return { source, item };
     }
     return null;
+  }
+
+  /**
+   * The set of session UUIDs open right now, or empty when the lookup fails.
+   *
+   * Swallows a throwing provider on purpose: this feeds a listing that must
+   * render, and the enforcement that actually protects money lives in
+   * `indexSource`. A pane that dies because the sessions service hiccupped
+   * would be a worse failure than a badge that is briefly missing.
+   */
+  function liveSessions(): Set<string> {
+    try {
+      return new Set(opts.liveSessionIds?.() ?? []);
+    } catch {
+      return new Set();
+    }
+  }
+
+  /** True when this item is a session transcript that is still being written. */
+  function isLiveItem(item: SourceItem, live: Set<string> = liveSessions()): boolean {
+    return item.sourceId === SESSION_SOURCE_ID && live.has(item.itemKey);
+  }
+
+  /**
+   * The row's display name. A session is named by its id — that is the thing
+   * you paste to find one conversation. Everything else is a file, and its
+   * file name says more than an encoded key does. Falls back to the key for a
+   * source with no real path behind it.
+   */
+  function displayName(item: SourceItem): string {
+    if (item.sourceId === SESSION_SOURCE_ID) return item.itemKey;
+    const base = item.path ? basename(item.path) : '';
+    return base || item.itemKey;
   }
 
   function readPath(accountId: number): string | null {
@@ -973,6 +1035,10 @@ export function createBrainService(
     ): Promise<SourceSummary[]> {
       requireAccountId(accountId);
       const decisions = readDecisions(accountId);
+      // Read once for the whole listing rather than per row: the set is a
+      // snapshot either way, and a per-row read could mark two rows of the
+      // same scan against different states of the world.
+      const live = liveSessions();
       const summaries: SourceSummary[] = [];
       for (const source of sources) {
         for (const item of await source.discover()) {
@@ -988,6 +1054,8 @@ export function createBrainService(
             accountId,
             sourceId: item.sourceId,
             itemKey: item.itemKey,
+            name: displayName(item),
+            inUse: isLiveItem(item, live),
             label: item.label,
             mtimeMs: item.mtimeMs,
             size: item.size,
@@ -1068,6 +1136,21 @@ export function createBrainService(
           notesWritten: [],
           skipped: true,
           reason: `project is excluded from the Brain: ${item.label}`,
+        };
+      }
+
+      // The session is open in another tab, so its transcript is still being
+      // written. Checked BEFORE the change check and ignoring `force`: the
+      // objection is not "this looks unchanged", it is "this is not finished",
+      // and forcing a redo of a partial conversation only buys a different
+      // partial note. Sits above every model call for the same reason the
+      // exclusion backstop does.
+      if (isLiveItem(item)) {
+        return {
+          itemKey,
+          notesWritten: [],
+          skipped: true,
+          reason: 'session is still open in OmniFex — close the tab to index it',
         };
       }
 
@@ -1352,6 +1435,11 @@ export function createBrainService(
       // a no-op would look like it worked.
       if (isExcludedItem(accountId, found.item)) {
         throw new Error(`project is excluded from the Brain: ${found.item.label}`);
+      }
+      // Same rule as the exclusion above: an explicit user action that cannot
+      // succeed is refused out loud, not queued to fail quietly later.
+      if (isLiveItem(found.item)) {
+        throw new Error('session is still open in OmniFex — close the tab to index it');
       }
       queueStore.enqueue(accountId, found.item.sourceId, found.item.itemKey);
     },

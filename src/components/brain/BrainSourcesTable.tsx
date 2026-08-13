@@ -11,7 +11,7 @@ import { Popover } from '@/components/ui/popover';
  * a queue.
  */
 
-export type SortKey = 'project' | 'type' | 'when' | 'size' | 'status';
+export type SortKey = 'project' | 'name' | 'type' | 'when' | 'size' | 'status';
 export type StatusFilter = 'all' | 'never' | 'indexed' | 'failed' | 'changed';
 
 export interface BrainSourcesTableProps {
@@ -44,6 +44,20 @@ function statusOf(r: BrainSourceSummary): string {
  */
 export function isSettled(r: BrainSourceSummary): boolean {
   return r.status === 'indexed' && !r.changed;
+}
+
+/**
+ * Why this row cannot be ticked, or null when it can be.
+ *
+ * Two different refusals the user has to be able to tell apart: a settled row
+ * would spend nothing because nothing changed, while an in-use row would spend
+ * on a conversation still being written. `indexSource` refuses the second one
+ * too — this is the half that stops the click.
+ */
+export function blockedReason(r: BrainSourceSummary): string | null {
+  if (r.inUse) return 'This session is open in OmniFex — close the tab to index it';
+  if (isSettled(r)) return 'Already indexed — nothing has changed since';
+  return null;
 }
 
 function matchesStatus(r: BrainSourceSummary, f: StatusFilter): boolean {
@@ -133,6 +147,7 @@ export const BrainSourcesTable: React.FC<BrainSourcesTableProps> = ({
           // The item key stays searchable though it no longer has a column:
           // pasting a session id is how you find one specific conversation.
           r.itemKey.toLowerCase().includes(needle) ||
+          r.name.toLowerCase().includes(needle) ||
           r.label.toLowerCase().includes(needle) ||
           sourceTypeLabel(r.sourceId).toLowerCase().includes(needle)),
     );
@@ -140,6 +155,7 @@ export const BrainSourcesTable: React.FC<BrainSourcesTableProps> = ({
     return [...filtered].sort((a, b) => {
       switch (sort.key) {
         case 'project': return dir * comparePaths(a.label, b.label);
+        case 'name': return dir * a.name.localeCompare(b.name, undefined, { numeric: true });
         case 'type': return dir * a.sourceId.localeCompare(b.sourceId);
         case 'size': return dir * (a.size - b.size);
         case 'status': return dir * statusOf(a).localeCompare(statusOf(b));
@@ -156,7 +172,7 @@ export const BrainSourcesTable: React.FC<BrainSourcesTableProps> = ({
    * up indexing 158 sessions having meant to index one.
    */
   const selectableIds = useMemo(
-    () => visible.filter((r) => !isSettled(r)).map(rowId),
+    () => visible.filter((r) => blockedReason(r) === null).map(rowId),
     [visible],
   );
   const allVisibleSelected =
@@ -304,6 +320,7 @@ export const BrainSourcesTable: React.FC<BrainSourcesTableProps> = ({
                 />
               </th>
               {header('project', 'Project')}
+              {header('name', 'Name')}
               {header('type', 'Type')}
               {header('when', 'When')}
               {header('size', 'Size')}
@@ -314,7 +331,7 @@ export const BrainSourcesTable: React.FC<BrainSourcesTableProps> = ({
             {visible.map((r) => {
               const id = rowId(r);
               const active = activeItemKey === r.itemKey;
-              const settled = isSettled(r);
+              const blocked = blockedReason(r);
               return (
                 <tr
                   key={id}
@@ -333,10 +350,10 @@ export const BrainSourcesTable: React.FC<BrainSourcesTableProps> = ({
                     <input
                       type="checkbox"
                       checked={selected.has(id)}
-                      disabled={settled}
+                      disabled={blocked !== null}
                       onChange={() => { toggleOne(id); }}
                       aria-label={`Select ${r.itemKey}`}
-                      title={settled ? 'Already indexed — nothing has changed since' : undefined}
+                      title={blocked ?? undefined}
                       className="h-3 w-3 disabled:opacity-40"
                     />
                   </td>
@@ -345,6 +362,22 @@ export const BrainSourcesTable: React.FC<BrainSourcesTableProps> = ({
                       and wrapping made every row two lines tall. The table
                       scrolls sideways instead. */}
                   <td className="whitespace-nowrap px-2 py-1.5 font-medium">{r.label}</td>
+                  {/* The row's own identity. A session id is what you paste in
+                      to find one conversation; a file's name says more than its
+                      encoded key does. */}
+                  <td className="whitespace-nowrap px-2 py-1.5 font-mono text-[11px]">
+                    <span className="inline-flex items-center gap-1.5">
+                      <span data-testid="source-name">{r.name}</span>
+                      {r.inUse && (
+                        <span
+                          title="This session is open in OmniFex — close the tab to index it"
+                          className="rounded-sm bg-primary/15 px-1 py-px font-sans text-[10px] font-medium text-primary"
+                        >
+                          In use
+                        </span>
+                      )}
+                    </span>
+                  </td>
                   <td className="whitespace-nowrap px-2 py-1.5 text-muted-foreground">
                     {sourceTypeLabel(r.sourceId)}
                   </td>

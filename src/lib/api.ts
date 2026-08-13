@@ -1031,6 +1031,11 @@ export interface BrainSourceSummary {
   accountId: number;
   sourceId: string;
   itemKey: string;
+  /** Display name: a session's id, or a file-backed item's file name. */
+  name: string;
+  /** True when this row is a session open in OmniFex right now. Indexing one
+   *  is refused by the backend — the transcript is still being written. */
+  inUse: boolean;
   /** The project folder, absolute. Grouping and exclusion key. */
   label: string;
   mtimeMs: number;

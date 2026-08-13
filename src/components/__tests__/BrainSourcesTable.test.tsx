@@ -6,10 +6,15 @@ import { BrainSourcesTable, comparePaths, rowId } from '@/components/brain/Brain
 import type { BrainSourceSummary } from '@/lib/api';
 
 function row(over: Partial<BrainSourceSummary> = {}): BrainSourceSummary {
-  return {
+  // `name` follows the item key unless a fixture sets it, mirroring the
+  // backend rule for sessions — otherwise a row overriding only `itemKey`
+  // would render under a name no real listing would ever produce.
+  const base: BrainSourceSummary = {
     accountId: 1,
     sourceId: 'session',
     itemKey: 'sess-a',
+    name: 'sess-a',
+    inUse: false,
     label: '/Users/greg/Repos/personal/WIN',
     mtimeMs: Date.parse('2026-08-01T00:00:00Z'),
     size: 40_960,
@@ -20,6 +25,7 @@ function row(over: Partial<BrainSourceSummary> = {}): BrainSourceSummary {
     excluded: false,
     ...over,
   };
+  return { ...base, name: over.name ?? base.itemKey };
 }
 
 const ROWS = [
@@ -111,14 +117,17 @@ describe('BrainSourcesTable', () => {
     const types = screen
       .getAllByRole('row')
       .slice(1)
-      .map((r) => within(r).getAllByRole('cell')[2].textContent ?? '');
+      .map((r) => within(r).getAllByRole('cell')[3].textContent ?? '');
     expect(types).toEqual(['Session', 'Memory', 'Repo file']);
   });
 
-  it('does not show the session id', () => {
+  // Supersedes an earlier "does not show the session id" rule. Hiding it made
+  // every row anonymous: the project column is shared by dozens of rows, so
+  // nothing on screen said WHICH conversation a row was.
+  it('shows each row identity under a Name column', () => {
     render(<Harness />);
-    expect(screen.queryByRole('columnheader', { name: /session/i })).toBeNull();
-    expect(screen.queryByText('aaa')).toBeNull();
+    expect(screen.getByRole('button', { name: /^Name/ })).toBeTruthy();
+    expect(screen.getByText('aaa')).toBeTruthy();
   });
 
   it('sorts by type', () => {
@@ -279,5 +288,103 @@ describe('BrainSourcesTable', () => {
 
   it('is case-insensitive, so Repos and repos do not split the list', () => {
     expect(['/x/Zed', '/x/apple'].sort(comparePaths)).toEqual(['/x/apple', '/x/Zed']);
+  });
+});
+
+// A row's identity was searchable but invisible: you could paste a session id
+// into the filter and find it, but nothing on screen told you which row was
+// which conversation. The Name column puts that back — the session id for a
+// session, the file name for anything file-backed.
+describe('BrainSourcesTable — Name column', () => {
+  it('shows the backend-computed name for each row', () => {
+    render(
+      <BrainSourcesTable
+        rows={[
+          row({ itemKey: 'sess-1', name: 'sess-1' }),
+          row({ itemKey: '-Users-greg-x:notes.md', sourceId: 'auto-memory', name: 'notes.md' }),
+        ]}
+        selected={new Set()}
+        onSelectedChange={vi.fn()}
+        activeItemKey={null}
+        onOpen={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('sess-1')).toBeTruthy();
+    expect(screen.getByText('notes.md')).toBeTruthy();
+    // The encoded key is never what the user reads.
+    expect(screen.queryByText('-Users-greg-x:notes.md')).toBeNull();
+  });
+
+  it('sorts by name', () => {
+    render(
+      <BrainSourcesTable
+        rows={[row({ itemKey: 'b', name: 'zeta.md' }), row({ itemKey: 'a', name: 'alpha.md' })]}
+        selected={new Set()}
+        onSelectedChange={vi.fn()}
+        activeItemKey={null}
+        onOpen={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /^Name/ }));
+    const names = screen.getAllByTestId('source-name').map((el) => el.textContent);
+    expect(names).toEqual(['zeta.md', 'alpha.md']);
+    fireEvent.click(screen.getByRole('button', { name: /^Name/ }));
+    expect(screen.getAllByTestId('source-name').map((el) => el.textContent))
+      .toEqual(['alpha.md', 'zeta.md']);
+  });
+});
+
+// A session that is open is still being written to. Indexing it distils half a
+// conversation and records it as done — which is exactly what happened to
+// session 82ab1eb8 on 2026-08-13.
+describe('BrainSourcesTable — sessions in use', () => {
+  it('marks an in-use row and refuses to let it be ticked', () => {
+    render(
+      <BrainSourcesTable
+        rows={[row({ itemKey: 'live', name: 'live', inUse: true })]}
+        selected={new Set()}
+        onSelectedChange={vi.fn()}
+        activeItemKey={null}
+        onOpen={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/in use/i)).toBeTruthy();
+    const box = screen.getByRole('checkbox', { name: /Select live/ }) as HTMLInputElement;
+    expect(box.disabled).toBe(true);
+  });
+
+  it('leaves an in-use row out of select-all', () => {
+    const onSelectedChange = vi.fn();
+    render(
+      <BrainSourcesTable
+        rows={[
+          row({ itemKey: 'live', name: 'live', inUse: true }),
+          row({ itemKey: 'done', name: 'done' }),
+        ]}
+        selected={new Set()}
+        onSelectedChange={onSelectedChange}
+        activeItemKey={null}
+        onOpen={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole('checkbox', { name: /select all shown/i }));
+    const next = onSelectedChange.mock.calls[0][0] as Set<string>;
+    expect([...next]).toEqual(['session:done']);
+  });
+
+  it('still lets an in-use row be opened for preview', () => {
+    // Reading a live session is free and useful; only spending on it is not.
+    const onOpen = vi.fn();
+    render(
+      <BrainSourcesTable
+        rows={[row({ itemKey: 'live', name: 'live', inUse: true })]}
+        selected={new Set()}
+        onSelectedChange={vi.fn()}
+        activeItemKey={null}
+        onOpen={onOpen}
+      />,
+    );
+    fireEvent.click(screen.getByText('live'));
+    expect(onOpen).toHaveBeenCalledWith('live');
   });
 });

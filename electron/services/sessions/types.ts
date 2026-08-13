@@ -201,6 +201,9 @@ export interface SessionsService {
   isActive(tabId: string): boolean;
   /** Return all tab IDs that currently have a registered session handle. */
   listActiveTabIds(): string[];
+  /** Session UUIDs of every open session. The Brain's live-source guard
+   *  reads this to refuse indexing a transcript that is still growing. */
+  listActiveSessionIds(): string[];
   /**
    * Return tab IDs whose conversation is in-flight.
    *

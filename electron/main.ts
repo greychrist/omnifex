@@ -129,7 +129,11 @@ const router = createWindowRouter();
 // `listActiveTabIds` is here so the Brain's queue worker can ask whether the
 // user has a session open without main having to thread the whole service
 // through service construction that happens before it exists.
-let _sessionsService: { stopAll(): void; listActiveTabIds(): string[] } | null = null;
+let _sessionsService: {
+  stopAll(): void;
+  listActiveTabIds(): string[];
+  listActiveSessionIds(): string[];
+} | null = null;
 let _notificationsService: { dismissAll(): void } | null = null;
 let _gitWatcherService: { disposeAll(): void } | null = null;
 let _sessionCostService: { stopAll(): void } | null = null;
@@ -522,6 +526,10 @@ app.whenReady().then(() => {
     // Read through a getter rather than captured: `sessionsService` is
     // constructed below this line.
     hasActiveSession: () => (_sessionsService?.listActiveTabIds().length ?? 0) > 0,
+    // Per-item, where hasActiveSession is global: these are the transcripts
+    // still being written to, and indexing one distils half a conversation and
+    // then records it as finished. Same getter reason as above.
+    liveSessionIds: () => _sessionsService?.listActiveSessionIds() ?? [],
     isQueuePaused: () => db.getSetting(BRAIN_QUEUE_PAUSED_SETTING_KEY) === 'true',
   });
   brainRef = brainService;

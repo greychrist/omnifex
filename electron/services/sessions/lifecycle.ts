@@ -514,6 +514,25 @@ export function createSessionsService(
     return Array.from(sessions.keys());
   }
 
+  /**
+   * The session UUIDs of every open session, deduplicated.
+   *
+   * The join lives here rather than in each caller: this map is the only
+   * authority on which conversations are still being written to, and the Brain
+   * needs exactly that set — a transcript whose session is still open would be
+   * distilled half-finished and then recorded as done.
+   *
+   * Handles with no UUID yet (a cold start that has not minted one) contribute
+   * nothing; there is no transcript on disk to protect yet either.
+   */
+  function listActiveSessionIds(): string[] {
+    const ids = new Set<string>();
+    for (const handle of sessions.values()) {
+      if (handle.sessionId) ids.add(handle.sessionId);
+    }
+    return Array.from(ids);
+  }
+
   // TODO(jsonl-as-rendered): main no longer tracks conversationStatus — the
   // wait-for-idle gate has moved to the renderer. This always returns [] since
   // Task 3 of the jsonl-as-rendered refactor. See TODO.md for the follow-up
@@ -895,6 +914,7 @@ export function createSessionsService(
     getHealth,
     isActive,
     listActiveTabIds,
+    listActiveSessionIds,
     listInFlightTabIds,
     listSessionStatuses,
     setMode,
