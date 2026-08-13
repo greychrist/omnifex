@@ -12,19 +12,6 @@ import { api, type BrainVaultStats } from '@/lib/api';
  * Rendered above BOTH panes rather than inside Sources, because it describes
  * the vault as a whole — the same thing whichever pane is open.
  */
-const EMPTY: BrainVaultStats = {
-  noteCount: 0,
-  totalBytes: 0,
-  byType: {},
-  medianBytes: 0,
-  largestBytes: 0,
-  largestNote: null,
-  estimatedTokens: { median: 0, largest: 0, vault: 0 },
-  timelineBuckets: [],
-  qualifyingCount: 0,
-  recentlyCurated: [],
-};
-
 function kb(bytes: number): string {
   return `${(bytes / 1024).toFixed(1)} KB`;
 }
@@ -39,36 +26,51 @@ export const BrainStatsPanel: React.FC<{
   nonce?: number;
   onSelect?: (notePath: string) => void;
 }> = ({ accountId, nonce = 0, onSelect }) => {
-  const [stats, setStats] = useState<BrainVaultStats>(EMPTY);
-  const [error, setError] = useState<string | null>(null);
+  /**
+   * The account each reading belongs to is stored WITH it, and a reading for
+   * any other account is discarded at render.
+   *
+   * Clearing inside the effect would still paint one frame of the previous
+   * account's figures, and `useBrainVault` names that precisely: "showing
+   * account 1's note list under account 2's badge for even one frame is
+   * exactly the cross-account leak the per-vault design exists to make
+   * impossible." Keying the data makes the stale frame unrepresentable rather
+   * than merely brief.
+   */
+  const [loaded, setLoaded] = useState<{ accountId: number; stats: BrainVaultStats } | null>(null);
+  const [failure, setFailure] = useState<{ accountId: number; message: string } | null>(null);
 
   useEffect(() => {
-    if (accountId === null) {
-      setStats(EMPTY);
-      return;
-    }
+    if (accountId === null) return;
     let cancelled = false;
     void api
       .brainStats(accountId)
       .then((s) => {
         if (cancelled) return;
-        setStats(s);
-        setError(null);
+        setLoaded({ accountId, stats: s });
+        setFailure(null);
       })
       .catch((err: Error) => {
         // Zeroes would read as "an empty vault", which is a different and much
         // more alarming claim than "the reading failed".
-        if (!cancelled) setError(err.message);
+        if (!cancelled) setFailure({ accountId, message: err.message });
       });
     return () => { cancelled = true; };
   }, [accountId, nonce]);
 
   if (accountId === null) return null;
 
+  const stats = loaded?.accountId === accountId ? loaded.stats : null;
+  const error = failure?.accountId === accountId ? failure.message : null;
+
   return (
     <div className="border-b px-4 py-2 text-xs" data-testid="brain-stats">
       {error ? (
         <span className="text-destructive">{error}</span>
+      ) : stats === null ? (
+        // Occupies the same line while the read is in flight, so switching
+        // accounts does not shove the panes below up and down.
+        <span className="text-muted-foreground">reading vault…</span>
       ) : (
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
           <span className="text-muted-foreground">
@@ -91,7 +93,7 @@ export const BrainStatsPanel: React.FC<{
         </div>
       )}
 
-      {stats.recentlyCurated.length > 0 && (
+      {stats !== null && stats.recentlyCurated.length > 0 && (
         <div className="mt-1 flex flex-wrap items-center gap-2 text-muted-foreground">
           <span>recently curated:</span>
           {stats.recentlyCurated.map((n) => (
