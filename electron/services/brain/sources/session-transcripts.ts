@@ -73,7 +73,7 @@ export function createSessionSource(deps: SessionSourceDeps): BrainSource {
         const projectDir = join(projectsDir, project.name);
         // Once per project, not once per transcript: this reads a file, and a
         // busy project holds hundreds of them.
-        const labelPath = recoverProjectPath(projectDir, project.name);
+        const label = recoverProjectPath(projectDir, project.name);
 
         for (const entry of listDirSafe(projectDir)) {
           // Top-level `.jsonl` only. `<sessionId>/` directories hold
@@ -98,8 +98,7 @@ export function createSessionSource(deps: SessionSourceDeps): BrainSource {
             path,
             mtimeMs: stat.mtimeMs,
             size: stat.size,
-            label: project.name,
-            labelPath,
+            label,
           });
         }
       }

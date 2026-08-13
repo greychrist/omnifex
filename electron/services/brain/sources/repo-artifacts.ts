@@ -145,7 +145,11 @@ export function createRepoArtifactSource(deps: { accounts: AccountsService }): B
               path,
               mtimeMs: stat.mtimeMs,
               size: stat.size,
-              label: file,
+              // The repo, never the file: the label is the project identity
+              // the pane groups on and exclusions key on. Labelling this
+              // `CLAUDE.md` put every repo's instruction file under one
+              // "project" that read as a file at the root of the drive.
+              label: repoPath,
             });
           }
         }

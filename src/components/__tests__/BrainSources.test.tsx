@@ -9,7 +9,6 @@ vi.mock('@/lib/api', () => ({
     brainListSources: vi.fn(),
     brainSourcePreview: vi.fn(),
     brainIndexSource: vi.fn(),
-    brainExcludedProjects: vi.fn(),
     brainSetExcludedProjects: vi.fn(),
   },
 }));
@@ -28,8 +27,7 @@ function summary(over: Partial<BrainSourceSummary> = {}): BrainSourceSummary {
     accountId: 1,
     sourceId: 'session',
     itemKey: 'sess-a',
-    label: '-Users-dev-omnifex',
-    labelPath: '/Users/dev/omnifex',
+    label: '/Users/dev/omnifex',
     mtimeMs: 1_700_000_000_000,
     size: 40_960,
     admitted: true,
@@ -69,7 +67,6 @@ describe('BrainSources', () => {
     vi.mocked(api.brainIndexSource).mockResolvedValue({
       itemKey: 'sess-a', notesWritten: ['Subsystems/A.md'], skipped: false, reason: '1 note(s) written',
     });
-    vi.mocked(api.brainExcludedProjects).mockResolvedValue([]);
     vi.mocked(api.brainSetExcludedProjects).mockResolvedValue(undefined);
   });
 

@@ -35,11 +35,12 @@ function item(itemKey: string, label: string): SourceItem {
   };
 }
 
-/** Two projects: one to keep, one to exclude. */
+/** Two projects: ordinary work, and scratch. Labels are folder paths. */
+const WIN = '/Users/greg/Repos/personal/WIN';
 const ITEMS = [
-  item('keep-1', '-Users-greg-Repos-personal-WIN'),
-  item('keep-2', '-Users-greg-Repos-personal-WIN'),
-  item('tmp-1', '-private-tmp-brain-probe'),
+  item('keep-1', WIN),
+  item('keep-2', WIN),
+  item('tmp-1', '/private/tmp/brain-probe'),
 ];
 
 function fakeSource(extra: Partial<BrainSource> = {}): BrainSource {
@@ -77,7 +78,9 @@ describe('durable project exclusion', () => {
   let brain: BrainService;
   let extractor: ReturnType<typeof vi.fn>;
   const accountId = 1;
-  const TMP = '-private-tmp-brain-probe';
+  const TMP = '/private/tmp/brain-probe';
+  /** Exclude the scratch project the way a stored decision would. */
+  const excludeTmp = { [TMP]: true };
 
   beforeEach(() => {
     db = createDatabase(':memory:');
@@ -104,25 +107,42 @@ describe('durable project exclusion', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it('round-trips the excluded list', () => {
-    expect(brain.excludedProjects(accountId)).toEqual([]);
-    brain.setExcludedProjects(accountId, [TMP]);
-    expect(brain.excludedProjects(accountId)).toEqual([TMP]);
-  });
-
-  it('keeps one account exclusions out of another', () => {
-    brain.setExcludedProjects(accountId, [TMP]);
-    expect(brain.excludedProjects(2)).toEqual([]);
-  });
-
-  it('omits excluded rows from listSources', async () => {
-    brain.setExcludedProjects(accountId, [TMP]);
+  /**
+   * Scratch is out of the box. A probe session in `/private/tmp` is the Brain
+   * watching itself, and indexing it spends tokens on nothing.
+   */
+  it('excludes a scratch project with no decision recorded', async () => {
     const rows = await brain.listSources(accountId);
     expect(rows.map((r) => r.itemKey).sort()).toEqual(['keep-1', 'keep-2']);
   });
 
+  it('honours an explicit decision to include a scratch project', async () => {
+    brain.setExcludedProjects(accountId, { [TMP]: false });
+    const rows = await brain.listSources(accountId);
+    expect(rows.map((r) => r.itemKey).sort()).toEqual(['keep-1', 'keep-2', 'tmp-1']);
+  });
+
+  it('keeps one account decisions out of another', async () => {
+    brain.setExcludedProjects(accountId, { [WIN]: true });
+    db.raw
+      .prepare(
+        `INSERT INTO accounts (id, name, config_dir, engine, subscription_label, has_cost)
+         VALUES (2, 'work', '/cfg/work', 'claude', 'Max', 0)`,
+      )
+      .run();
+    // Account 2 owns none of these items, but the point is that its settings
+    // key is untouched: the WIN exclusion is account 1's alone.
+    expect(db.getSetting('brain.excludedProjects.2')).toBeNull();
+  });
+
+  it('omits an explicitly excluded project from listSources', async () => {
+    brain.setExcludedProjects(accountId, { [WIN]: true });
+    const rows = await brain.listSources(accountId);
+    expect(rows).toEqual([]);
+  });
+
   it('reveals excluded rows on request, so they can be un-excluded', async () => {
-    brain.setExcludedProjects(accountId, [TMP]);
+    brain.setExcludedProjects(accountId, excludeTmp);
     const rows = await brain.listSources(accountId, { includeExcluded: true });
     expect(rows.map((r) => r.itemKey).sort()).toEqual(['keep-1', 'keep-2', 'tmp-1']);
     expect(rows.find((r) => r.itemKey === 'tmp-1')?.excluded).toBe(true);
@@ -130,13 +150,13 @@ describe('durable project exclusion', () => {
   });
 
   it('refuses to queue an excluded item', async () => {
-    brain.setExcludedProjects(accountId, [TMP]);
+    brain.setExcludedProjects(accountId, excludeTmp);
     await expect(brain.enqueueSource(accountId, 'tmp-1')).rejects.toThrow(/excluded/i);
     expect(brain.queueCounts(accountId).pending).toBe(0);
   });
 
   it('skips excluded items during backfill', async () => {
-    brain.setExcludedProjects(accountId, [TMP]);
+    brain.setExcludedProjects(accountId, excludeTmp);
     expect(await brain.backfill(accountId)).toBe(2);
   });
 
@@ -145,10 +165,12 @@ describe('durable project exclusion', () => {
    * today has to stop work that was queued yesterday.
    */
   it('skips an already-queued item whose project was excluded afterwards', async () => {
+    // Included first, or the default rule would refuse the enqueue outright.
+    brain.setExcludedProjects(accountId, { [TMP]: false });
     await brain.enqueueSource(accountId, 'tmp-1');
     expect(brain.queueCounts(accountId).pending).toBe(1);
 
-    brain.setExcludedProjects(accountId, [TMP]);
+    brain.setExcludedProjects(accountId, excludeTmp);
     const result = await brain.indexSource(accountId, 'tmp-1');
 
     expect(result.skipped).toBe(true);
@@ -157,7 +179,7 @@ describe('durable project exclusion', () => {
   });
 
   it('still indexes an item from a project that is not excluded', async () => {
-    brain.setExcludedProjects(accountId, [TMP]);
+    brain.setExcludedProjects(accountId, excludeTmp);
     const result = await brain.indexSource(accountId, 'keep-1');
     expect(result.skipped).toBe(false);
     expect(extractor).toHaveBeenCalledTimes(1);

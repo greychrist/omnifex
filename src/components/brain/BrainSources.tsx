@@ -30,7 +30,6 @@ export const BrainSources: React.FC<{ accountId: number | null }> = ({ accountId
   const [outcome, setOutcome] = useState<string | null>(null);
   const [nonce, setNonce] = useState<Nonce>(0);
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
-  const [excluded, setExcluded] = useState<Set<string>>(new Set());
   const [managing, setManaging] = useState(false);
   const [runProgress, setRunProgress] = useState<{ current: number; total: number } | null>(null);
 
@@ -45,19 +44,6 @@ export const BrainSources: React.FC<{ accountId: number | null }> = ({ accountId
     setSelectedRows(new Set());
     setManaging(false);
   }, [accountId]);
-
-  useEffect(() => {
-    if (accountId === null) return;
-    let cancelled = false;
-    void api
-      .brainExcludedProjects(accountId)
-      .then((list) => { if (!cancelled) setExcluded(new Set(list)); })
-      .catch(() => {
-        // Unknown reads as "nothing excluded", matching the service's own
-        // fail-open on an unparseable setting.
-      });
-    return () => { cancelled = true; };
-  }, [accountId, nonce]);
 
   useEffect(() => {
     if (accountId === null) return;
@@ -160,22 +146,32 @@ export const BrainSources: React.FC<{ accountId: number | null }> = ({ accountId
     })();
   }, [accountId, items, selectedRows]);
 
+  /**
+   * Each row already carries the effective verdict, so the exclusion state is
+   * read off the listing rather than fetched separately. One source of truth,
+   * and no window in which the checkboxes and the rows disagree.
+   */
+  const excluded = useMemo(
+    () => new Set(items.filter((r) => r.excluded).map((r) => r.label)),
+    [items],
+  );
+
   const toggleExcluded = useCallback(
-    (label: string, exclude: boolean) => {
+    (path: string, exclude: boolean) => {
       if (accountId === null) return;
-      const next = new Set(excluded);
-      if (exclude) next.add(label);
-      else next.delete(label);
-      setExcluded(next);
+      // Every project's decision goes over, not just the excluded ones. An
+      // absent key means "not decided", which leaves the scratch-path default
+      // in force — so an exclusions-only payload would silently re-exclude a
+      // temp project the user had deliberately re-included.
+      const decisions: Record<string, boolean> = {};
+      for (const row of items) decisions[row.label] = row.excluded;
+      decisions[path] = exclude;
       api
-        .brainSetExcludedProjects(accountId, [...next])
+        .brainSetExcludedProjects(accountId, decisions)
         .then(() => { setNonce((n) => n + 1); })
-        .catch((err: Error) => {
-          setExcluded(excluded);
-          setError(err.message);
-        });
+        .catch((err: Error) => { setError(err.message); });
     },
-    [accountId, excluded],
+    [accountId, items],
   );
 
   /** Rows the table shows: excluded projects are hidden unless being managed. */

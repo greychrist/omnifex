@@ -215,25 +215,20 @@ export function createBrainHandlers(
       return brain.backlinks(accountId, requireString(params, 'notePath', 'note_path'));
     },
 
-    async brain_excluded_projects(_event, params = {}) {
-      const accountId = requireAccountId(params);
-      // A read: an unavailable service means "nothing is excluded", which is
-      // the truthful answer for a Brain that is not running.
-      if (!brain) return [];
-      return brain.excludedProjects(accountId);
-    },
-
     async brain_set_excluded_projects(_event, params = {}) {
       // A write. Reporting success while the service is missing would claim an
       // exclusion that does not exist — and the user would then trust that a
       // temp project is being kept out of the vault when it is not.
       if (!brain) throw new Error('brain service unavailable');
-      const raw = params.labels ?? params.projects;
-      if (!Array.isArray(raw)) throw new Error('labels is required');
-      brain.setExcludedProjects(
-        requireAccountId(params),
-        raw.filter((v): v is string => typeof v === 'string'),
-      );
+      const raw = params.decisions;
+      if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+        throw new Error('decisions is required');
+      }
+      const decisions: Record<string, boolean> = {};
+      for (const [key, value] of Object.entries(raw)) {
+        if (typeof value === 'boolean') decisions[key] = value;
+      }
+      brain.setExcludedProjects(requireAccountId(params), decisions);
       return null;
     },
 

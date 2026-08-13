@@ -1031,10 +1031,8 @@ export interface BrainSourceSummary {
   accountId: number;
   sourceId: string;
   itemKey: string;
+  /** The project folder, absolute. Grouping and exclusion key. */
   label: string;
-  /** The folder `label` stands for, absolute. Display only — `label` is still
-   *  the grouping and exclusion key. */
-  labelPath: string;
   mtimeMs: number;
   /** Bytes on disk — the best single predictor of what indexing will cost. */
   size: number;
@@ -3126,13 +3124,20 @@ export const api = {
     }));
   },
 
-  /** Encoded project directory names this account will never index. */
-  async brainExcludedProjects(accountId: number): Promise<string[]> {
-    return apiCall<string[]>('brain_excluded_projects', { accountId });
-  },
-
-  async brainSetExcludedProjects(accountId: number, labels: string[]): Promise<void> {
-    return apiCall<void>('brain_set_excluded_projects', { accountId, labels });
+  /**
+   * Record which project folders this account may index.
+   *
+   * Send the complete map of decisions being made, keyed by absolute project
+   * path — not just the excluded ones. An absent key means "no decision", which
+   * leaves the scratch-path default in force, so an exclusions-only payload
+   * would silently re-exclude every temp project deliberately re-included.
+   * Each row's current state is on `BrainSourceSummary.excluded`.
+   */
+  async brainSetExcludedProjects(
+    accountId: number,
+    decisions: Record<string, boolean>,
+  ): Promise<void> {
+    return apiCall<void>('brain_set_excluded_projects', { accountId, decisions });
   },
 
   /** The distilled view of one item, or null when it is not this account's. */

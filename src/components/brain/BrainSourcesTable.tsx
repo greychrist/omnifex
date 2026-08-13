@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import type { BrainSourceSummary } from '@/lib/api';
+import { Popover } from '@/components/ui/popover';
 
 /**
  * The sources table: sort, filter, and multi-select.
@@ -47,33 +48,34 @@ function kb(bytes: number): string {
 }
 
 /**
- * Every project on screen, as `{ label, path }`, ordered by path.
+ * Every project folder on screen, with how many rows it holds, A→Z.
  *
- * Ordered by PATH rather than by label because the path is what the user
- * reads; ordering the encoded names would sort on characters nobody is
- * looking at. The label stays the key throughout — the backend recovers the
- * path authoritatively from a transcript's `cwd`, but only the label is
- * guaranteed to be the name on disk.
+ * Segment-wise and case-insensitive rather than a plain `localeCompare` on the
+ * whole string: comparing paths as flat text interleaves a folder with its own
+ * children (`/a/b` lands between `/a-x` and `/a/c`), which reads as unsorted.
  */
-export function projectsOf(rows: BrainSourceSummary[]): { label: string; path: string }[] {
-  const byLabel = new Map<string, string>();
-  for (const r of rows) if (!byLabel.has(r.label)) byLabel.set(r.label, r.labelPath);
-  return [...byLabel]
-    .map(([label, path]) => ({ label, path }))
-    .sort((a, b) => a.path.localeCompare(b.path));
+export function projectsOf(rows: BrainSourceSummary[]): { path: string; count: number }[] {
+  const counts = new Map<string, number>();
+  for (const r of rows) counts.set(r.label, (counts.get(r.label) ?? 0) + 1);
+  return [...counts]
+    .map(([path, count]) => ({ path, count }))
+    .sort((a, b) => comparePaths(a.path, b.path));
 }
 
-/**
- * A path split so the folder name survives truncation.
- *
- * Every project of Greg's shares a `/Users/…/Repos/…` prefix, so a column that
- * truncates on the right cuts away the only part that distinguishes one row
- * from another. The parent gets `truncate`; the basename does not.
- */
-export function splitPath(path: string): { parent: string; base: string } {
-  const cut = path.lastIndexOf('/');
-  if (cut < 0) return { parent: '', base: path };
-  return { parent: path.slice(0, cut + 1), base: path.slice(cut + 1) };
+/** Order two paths the way a person reads a folder tree. */
+export function comparePaths(a: string, b: string): number {
+  const left = a.split('/');
+  const right = b.split('/');
+  for (let i = 0; i < Math.max(left.length, right.length); i++) {
+    const l = left[i];
+    const r = right[i];
+    // A shorter path is the parent, so it sorts first.
+    if (l === undefined) return -1;
+    if (r === undefined) return 1;
+    const cmp = l.localeCompare(r, undefined, { sensitivity: 'base', numeric: true });
+    if (cmp !== 0) return cmp;
+  }
+  return 0;
 }
 
 export const BrainSourcesTable: React.FC<BrainSourcesTableProps> = ({
@@ -82,7 +84,11 @@ export const BrainSourcesTable: React.FC<BrainSourcesTableProps> = ({
   const [sort, setSort] = useState<{ key: SortKey; desc: boolean }>({ key: 'when', desc: true });
   const [text, setText] = useState('');
   const [status, setStatus] = useState<StatusFilter>('all');
-  const [project, setProject] = useState<string>('all');
+  // Which projects the view is narrowed to. Empty means "no narrowing" — every
+  // project shows — so a newly discovered project appears without the user
+  // having to notice and tick it.
+  const [hidden, setHidden] = useState<ReadonlySet<string>>(new Set());
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   const projects = useMemo(() => projectsOf(rows), [rows]);
 
@@ -90,7 +96,7 @@ export const BrainSourcesTable: React.FC<BrainSourcesTableProps> = ({
     const needle = text.trim().toLowerCase();
     const filtered = rows.filter(
       (r) =>
-        (project === 'all' || r.label === project) &&
+        !hidden.has(r.label) &&
         matchesStatus(r, status) &&
         (needle === '' ||
           r.itemKey.toLowerCase().includes(needle) ||
@@ -99,14 +105,14 @@ export const BrainSourcesTable: React.FC<BrainSourcesTableProps> = ({
     const dir = sort.desc ? -1 : 1;
     return [...filtered].sort((a, b) => {
       switch (sort.key) {
-        case 'project': return dir * a.labelPath.localeCompare(b.labelPath);
+        case 'project': return dir * comparePaths(a.label, b.label);
         case 'item': return dir * a.itemKey.localeCompare(b.itemKey);
         case 'size': return dir * (a.size - b.size);
         case 'status': return dir * statusOf(a).localeCompare(statusOf(b));
         default: return dir * (a.mtimeMs - b.mtimeMs);
       }
     });
-  }, [rows, text, status, project, sort]);
+  }, [rows, text, status, hidden, sort]);
 
   const visibleIds = useMemo(() => visible.map(rowId), [visible]);
   const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selected.has(id));
@@ -122,6 +128,13 @@ export const BrainSourcesTable: React.FC<BrainSourcesTableProps> = ({
     if (allVisibleSelected) visibleIds.forEach((id) => next.delete(id));
     else visibleIds.forEach((id) => next.add(id));
     onSelectedChange(next);
+  }
+
+  function toggleHidden(path: string): void {
+    const next = new Set(hidden);
+    if (next.has(path)) next.delete(path);
+    else next.add(path);
+    setHidden(next);
   }
 
   function toggleOne(id: string): void {
@@ -157,17 +170,63 @@ export const BrainSourcesTable: React.FC<BrainSourcesTableProps> = ({
           aria-label="Filter sessions"
           className="h-7 w-48 rounded-md border bg-background px-2"
         />
-        <select
-          value={project}
-          onChange={(e) => { setProject(e.target.value); }}
-          aria-label="Filter by project"
-          className="h-7 rounded-md border bg-background px-1"
-        >
-          <option value="all">All projects</option>
-          {projects.map((p) => (
-            <option key={p.label} value={p.label}>{p.path}</option>
-          ))}
-        </select>
+        <Popover
+          open={pickerOpen}
+          onOpenChange={setPickerOpen}
+          align="start"
+          className="max-h-80 w-[34rem] overflow-y-auto p-2"
+          trigger={
+            <button
+              type="button"
+              onClick={() => { setPickerOpen((o) => !o); }}
+              aria-label="Filter by project"
+              aria-expanded={pickerOpen}
+              className="h-7 rounded-md border px-2 hover:bg-accent"
+            >
+              {hidden.size === 0
+                ? 'All projects'
+                : `${String(projects.length - hidden.size)} of ${String(projects.length)} projects`}
+            </button>
+          }
+          content={
+            <div className="text-xs">
+              <div className="mb-1 flex gap-2 border-b pb-1">
+                <button
+                  type="button"
+                  onClick={() => { setHidden(new Set()); }}
+                  className="rounded px-1 hover:bg-accent"
+                >
+                  Show all
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setHidden(new Set(projects.map((p) => p.path))); }}
+                  className="rounded px-1 hover:bg-accent"
+                >
+                  Hide all
+                </button>
+              </div>
+              <ul>
+                {projects.map((p) => (
+                  <li key={p.path}>
+                    <label className="flex items-center gap-2 rounded px-1 py-0.5 hover:bg-accent">
+                      <input
+                        type="checkbox"
+                        checked={!hidden.has(p.path)}
+                        onChange={() => { toggleHidden(p.path); }}
+                        aria-label={`Show ${p.path}`}
+                        className="h-3 w-3 shrink-0"
+                      />
+                      {/* Whole path, unabridged — see the Project column. */}
+                      <span className="break-all">{p.path}</span>
+                      <span className="ml-auto shrink-0 text-muted-foreground">{p.count}</span>
+                    </label>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          }
+        />
         <select
           value={status}
           onChange={(e) => { setStatus(e.target.value as StatusFilter); }}
@@ -226,18 +285,13 @@ export const BrainSourcesTable: React.FC<BrainSourcesTableProps> = ({
                       className="h-3 w-3"
                     />
                   </td>
-                  {/* Parent truncates, basename does not — see splitPath. */}
-                  <td className="px-2 py-1" title={r.labelPath}>
-                    <span className="flex max-w-[16rem] items-baseline">
-                      <span className="truncate text-muted-foreground">
-                        {splitPath(r.labelPath).parent}
-                      </span>
-                      <span className="shrink-0">{splitPath(r.labelPath).base}</span>
-                    </span>
-                  </td>
-                  <td className="max-w-[14rem] truncate px-2 py-1" title={r.reason}>
-                    {r.itemKey}
-                  </td>
+                  {/* The whole path, never abridged. Wraps rather than
+                      truncating: these paths share long prefixes, so cutting
+                      one anywhere hides the part that identifies it. */}
+                  <td className="break-all px-2 py-1">{r.label}</td>
+                  {/* An artifact's key carries its repo path, so this wraps
+                      for the same reason the Project column does. */}
+                  <td className="break-all px-2 py-1">{r.itemKey}</td>
                   <td className="whitespace-nowrap px-2 py-1 text-muted-foreground">
                     {new Date(r.mtimeMs).toISOString().slice(0, 10)}
                   </td>

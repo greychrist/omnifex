@@ -30,6 +30,7 @@ import { merge } from './merge';
 import { MAX_NOTES_PER_RUN, collapsibleEntries, curate, qualifies } from './curate';
 import type { Curator } from './curation';
 import { computeVaultStats, type VaultStats } from './stats';
+import { isExcludedProject, parseDecisions, type ProjectDecisions } from './exclusions';
 import type { AccountsService } from '../accounts';
 import type { ParsedNote } from './types';
 
@@ -56,13 +57,14 @@ export function vaultSettingKey(accountId: number): string {
 const VAULT_KEY_RE = /^brain\.vault\.\d+$/;
 
 /**
- * app_settings key holding one account's excluded project directories.
+ * app_settings key holding one account's project include/exclude decisions.
  *
  * A settings key rather than a table: this is a handful of strings per
  * account, and it matches how the vault path is already stored. The value is
- * a JSON array of ENCODED project directory names — Plan 6 established that
- * decoding those back to real paths is unreliable (`wombeats-ios` decodes
- * wrongly), so the encoded name is the only stable key available.
+ * a JSON map of absolute project path → excluded, and an ABSENT entry is not
+ * "included" — it means no decision has been recorded, so the default rule in
+ * `exclusions.ts` applies. That distinction is what lets scratch projects be
+ * excluded out of the box while staying re-includable.
  */
 export function excludedProjectsKey(accountId: number): string {
   return `brain.excludedProjects.${String(accountId)}`;
@@ -160,10 +162,8 @@ export interface SourceSummary {
   accountId: number;
   sourceId: string;
   itemKey: string;
+  /** The project folder, absolute. Grouping and exclusion key. */
   label: string;
-  /** The folder `label` stands for, absolute. Display only — `label` is still
-   *  the key. Falls back to `label` for an item with no folder behind it. */
-  labelPath: string;
   mtimeMs: number;
   /** Bytes on disk. Without it a 21MB session looks like a 40KB one, and size
    *  is the best single predictor of what indexing it will cost. */
@@ -244,15 +244,19 @@ export interface BrainService {
    * doing it whole and filtering after costs nothing worth protecting.
    */
   listSources(accountId: number, opts?: { includeExcluded?: boolean }): Promise<SourceSummary[]>;
-  /** Encoded project directory names this account will never index. */
-  excludedProjects(accountId: number): string[];
   /**
-   * Replace the exclusion list. Excluded projects drop out of discovery
-   * entirely — they never list, never enqueue, and never index on session
-   * close, which is the only thing that keeps a temp project out of the vault
-   * while Auto-index is on.
+   * Record which project folders this account may index.
+   *
+   * A complete map of the decisions being made, not a list of exclusions: an
+   * absent key means "no decision", which leaves the scratch-path default in
+   * force, so sending only the excluded paths would silently re-exclude every
+   * temp project the user had deliberately re-included.
+   *
+   * Excluded projects drop out of discovery entirely — they never list, never
+   * enqueue, and never index on session close, which is the only thing that
+   * keeps a temp project out of the vault while Auto-index is on.
    */
-  setExcludedProjects(accountId: number, labels: string[]): void;
+  setExcludedProjects(accountId: number, decisions: ProjectDecisions): void;
   /** Distilled preview of one item, or null when it is not this account's. */
   previewSource(accountId: number, itemKey: string): Promise<SourcePreview | null>;
   /**
@@ -587,23 +591,9 @@ export function createBrainService(
     return db.getSetting(vaultSettingKey(accountId));
   }
 
-  /**
-   * One account's excluded project directories.
-   *
-   * Never throws for a hand-mangled value: an unparseable setting reads as "no
-   * exclusions", which fails OPEN. That is the safe direction here only because
-   * the alternative — failing closed and silently indexing nothing — would look
-   * exactly like the Brain being broken.
-   */
-  function readExcluded(accountId: number): string[] {
-    const raw = db.getSetting(excludedProjectsKey(accountId));
-    if (raw === null) return [];
-    try {
-      const parsed: unknown = JSON.parse(raw);
-      return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === 'string') : [];
-    } catch {
-      return [];
-    }
+  /** One account's recorded project decisions. */
+  function readDecisions(accountId: number): ProjectDecisions {
+    return parseDecisions(db.getSetting(excludedProjectsKey(accountId)));
   }
 
   /**
@@ -612,7 +602,7 @@ export function createBrainService(
    * so an exclusion added today has to stop work queued yesterday.
    */
   function isExcludedItem(accountId: number, item: SourceItem): boolean {
-    return readExcluded(accountId).includes(item.label);
+    return isExcludedProject(item.label, readDecisions(accountId));
   }
 
   /**
@@ -966,17 +956,15 @@ export function createBrainService(
       return updated;
     },
 
-    excludedProjects(accountId: number): string[] {
+    setExcludedProjects(accountId: number, decisions: ProjectDecisions): void {
       requireAccountId(accountId);
-      return readExcluded(accountId);
-    },
-
-    setExcludedProjects(accountId: number, labels: string[]): void {
-      requireAccountId(accountId);
-      // Deduped and sorted so the stored value is stable: an unordered list
-      // would rewrite the setting on every save and make diffs meaningless.
-      const unique = [...new Set(labels.filter((l) => l !== ''))].sort();
-      db.saveSetting(excludedProjectsKey(accountId), JSON.stringify(unique));
+      // Key-sorted so the stored value is stable: an unordered map would
+      // rewrite the setting on every save and make diffs meaningless.
+      const stable: ProjectDecisions = {};
+      for (const key of Object.keys(decisions).sort()) {
+        if (key !== '') stable[key] = decisions[key];
+      }
+      db.saveSetting(excludedProjectsKey(accountId), JSON.stringify(stable));
     },
 
     async listSources(
@@ -984,7 +972,7 @@ export function createBrainService(
       opts: { includeExcluded?: boolean } = {},
     ): Promise<SourceSummary[]> {
       requireAccountId(accountId);
-      const excluded = new Set(readExcluded(accountId));
+      const decisions = readDecisions(accountId);
       const summaries: SourceSummary[] = [];
       for (const source of sources) {
         for (const item of await source.discover()) {
@@ -992,7 +980,7 @@ export function createBrainService(
           // another account is not merely uninteresting here — surfacing it
           // would put one account's project names in another's UI.
           if (item.accountId !== accountId) continue;
-          const isExcluded = excluded.has(item.label);
+          const isExcluded = isExcludedProject(item.label, decisions);
           if (isExcluded && opts.includeExcluded !== true) continue;
           const verdict = source.admit(item);
           const prior = sourceState.get(accountId, item.sourceId, item.itemKey);
@@ -1001,7 +989,6 @@ export function createBrainService(
             sourceId: item.sourceId,
             itemKey: item.itemKey,
             label: item.label,
-            labelPath: item.labelPath ?? item.label,
             mtimeMs: item.mtimeMs,
             size: item.size,
             admitted: verdict.admitted,

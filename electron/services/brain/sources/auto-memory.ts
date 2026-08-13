@@ -158,7 +158,7 @@ export function createAutoMemorySource(deps: { accounts: AccountsService }): Bra
           const memoryDir = join(projectsDir, project.name, 'memory');
           // Recovered from the project's transcripts, which sit beside
           // `memory/`. Once per project — it reads a file.
-          const labelPath = recoverProjectPath(join(projectsDir, project.name), project.name);
+          const label = recoverProjectPath(join(projectsDir, project.name), project.name);
 
           for (const entry of listDirSafe(memoryDir)) {
             if (entry.isDirectory) continue;
@@ -185,8 +185,7 @@ export function createAutoMemorySource(deps: { accounts: AccountsService }): Bra
               path,
               mtimeMs: stat.mtimeMs,
               size: stat.size,
-              label: project.name,
-              labelPath,
+              label,
             });
           }
         }

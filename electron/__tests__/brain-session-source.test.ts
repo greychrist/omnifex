@@ -136,25 +136,24 @@ describe('session transcript source', () => {
       await expect(source.discover()).resolves.toEqual([]);
     });
 
-    it('labels an item with its project directory for the Sources pane', async () => {
+    it('labels an item with its project folder for the Sources pane', async () => {
       writeSession(personalCfg, '-Users-dev-Repos-omnifex', 'sess-a', GOOD);
       const [item] = await source.discover();
-      expect(item.label).toBe('-Users-dev-Repos-omnifex');
+      expect(item.label).toBe('/Users/dev/Repos/omnifex');
     });
 
     /**
-     * The label is the KEY (exclusions and grouping hang off it, and it must
-     * stay stable); the path is what a human reads. Recovered from the
-     * transcript's own `cwd`, never decoded from the dir name — a folder whose
+     * The label is recovered from the transcript's own `cwd`, never decoded
+     * from the encoded dir name: that encoding is lossy, and a folder whose
      * name contains a dash decodes to a path that does not exist.
      */
-    it('carries the real folder path, recovered from the transcript cwd', async () => {
+    it('recovers a folder whose own name contains a dash', async () => {
       const dashed = GOOD.replace(/\/Users\/dev\/Repos\/omnifex/g, '/Users/dev/Repos/wombeats-ios');
       writeSession(personalCfg, '-Users-dev-Repos-wombeats-ios', 'sess-a', dashed);
 
       const [item] = await source.discover();
 
-      expect(item.labelPath).toBe('/Users/dev/Repos/wombeats-ios');
+      expect(item.label).toBe('/Users/dev/Repos/wombeats-ios');
     });
   });
 
@@ -309,15 +308,13 @@ describe('session transcript source', () => {
       brain.closeAll();
     });
 
-    it('carries the folder path through to the summary, for display', async () => {
+    it('carries the folder path through to the summary', async () => {
       writeSession(personalCfg, '-Users-dev-Repos-omnifex', 'sess-a', GOOD);
       const brain = service();
 
       const [summary] = await brain.listSources(personalId);
 
-      // The encoded dir remains the key; the path rides alongside it.
-      expect(summary.label).toBe('-Users-dev-Repos-omnifex');
-      expect(summary.labelPath).toBe('/Users/dev/Repos/omnifex');
+      expect(summary.label).toBe('/Users/dev/Repos/omnifex');
       brain.closeAll();
     });
 

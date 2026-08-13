@@ -202,11 +202,10 @@ describe('auto-memory source', () => {
   });
 
   /**
-   * Same rule as transcripts: the label stays the encoded dir (it is the key
-   * exclusions hang off), and the path beside it is recovered from a real
-   * `cwd` rather than decoded from that name.
+   * Same rule as transcripts: the label is the real folder, recovered from a
+   * `cwd` rather than decoded from the encoded dir name.
    */
-  it('carries the real folder path, recovered from a sibling transcript', async () => {
+  it('labels a memory with its project folder, recovered from a sibling transcript', async () => {
     writeMemory(personal, '-Users-dev-Repos-wombeats-ios', 'a.md', REAL);
     writeFileSync(
       join(personal, 'projects', '-Users-dev-Repos-wombeats-ios', 's.jsonl'),
@@ -216,7 +215,7 @@ describe('auto-memory source', () => {
 
     const [item] = await source.discover();
 
-    expect(item.labelPath).toBe('/Users/dev/Repos/wombeats-ios');
+    expect(item.label).toBe('/Users/dev/Repos/wombeats-ios');
   });
 
   it('qualifies the key by project, since slugs recur across projects', async () => {

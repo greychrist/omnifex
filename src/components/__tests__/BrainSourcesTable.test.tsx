@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { BrainSourcesTable, rowId } from '@/components/brain/BrainSourcesTable';
+import { BrainSourcesTable, comparePaths, rowId } from '@/components/brain/BrainSourcesTable';
 import type { BrainSourceSummary } from '@/lib/api';
 
 function row(over: Partial<BrainSourceSummary> = {}): BrainSourceSummary {
@@ -10,8 +10,7 @@ function row(over: Partial<BrainSourceSummary> = {}): BrainSourceSummary {
     accountId: 1,
     sourceId: 'session',
     itemKey: 'sess-a',
-    label: '-Users-greg-Repos-personal-WIN',
-    labelPath: '/Users/greg/Repos/personal/WIN',
+    label: '/Users/greg/Repos/personal/WIN',
     mtimeMs: Date.parse('2026-08-01T00:00:00Z'),
     size: 40_960,
     admitted: true,
@@ -28,8 +27,7 @@ const ROWS = [
   row({ itemKey: 'bbb', mtimeMs: Date.parse('2026-08-10T00:00:00Z'), size: 9_000_000 }),
   row({
     itemKey: 'ccc',
-    label: '-private-tmp-brain-probe',
-    labelPath: '/private/tmp/brain-probe',
+    label: '/private/tmp/brain-probe',
     mtimeMs: Date.parse('2026-08-05T00:00:00Z'),
     size: 5_000,
     status: 'indexed',
@@ -86,12 +84,29 @@ describe('BrainSourcesTable', () => {
     expect(itemCells()).toEqual(['ccc']);
   });
 
-  it('filters by project', () => {
+  it('filters by project from the popover', () => {
     render(<Harness />);
-    fireEvent.change(screen.getByLabelText(/filter by project/i), {
-      target: { value: '-private-tmp-brain-probe' },
-    });
+    fireEvent.click(screen.getByLabelText(/filter by project/i));
+    fireEvent.click(screen.getByLabelText('Show /Users/greg/Repos/personal/WIN'));
     expect(itemCells()).toEqual(['ccc']);
+  });
+
+  it('reports how many projects are showing once some are hidden', () => {
+    render(<Harness />);
+    const trigger = screen.getByLabelText(/filter by project/i);
+    expect(trigger.textContent).toBe('All projects');
+    fireEvent.click(trigger);
+    fireEvent.click(screen.getByLabelText('Show /private/tmp/brain-probe'));
+    expect(trigger.textContent).toBe('1 of 2 projects');
+  });
+
+  it('hides and restores every project at once', () => {
+    render(<Harness />);
+    fireEvent.click(screen.getByLabelText(/filter by project/i));
+    fireEvent.click(screen.getByRole('button', { name: /hide all/i }));
+    expect(screen.getByText(/nothing matches/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /show all/i }));
+    expect(itemCells()).toEqual(['bbb', 'ccc', 'aaa']);
   });
 
   it('filters by status', () => {
@@ -115,9 +130,8 @@ describe('BrainSourcesTable', () => {
    */
   it('select-all covers only the filtered rows', () => {
     render(<Harness />);
-    fireEvent.change(screen.getByLabelText(/filter by project/i), {
-      target: { value: '-private-tmp-brain-probe' },
-    });
+    fireEvent.click(screen.getByLabelText(/filter by project/i));
+    fireEvent.click(screen.getByLabelText('Show /Users/greg/Repos/personal/WIN'));
     fireEvent.click(screen.getByLabelText(/select all shown/i));
     expect(screen.getByTestId('count').textContent).toBe('1');
   });
@@ -153,7 +167,7 @@ describe('BrainSourcesTable', () => {
       .not.toBe(rowId(row({ sourceId: 'auto-memory', itemKey: 'x' })));
   });
 
-  it('shows the folder path, not the encoded directory name', () => {
+  it('shows the whole folder path, unabridged', () => {
     render(<Harness />);
     const cells = screen
       .getAllByRole('row')
@@ -163,20 +177,15 @@ describe('BrainSourcesTable', () => {
     expect(cells).toContain('/private/tmp/brain-probe');
   });
 
-  /**
-   * Alphabetical on the PATH, which is what the user reads. Sorting the
-   * encoded names instead would order `-private-...` before `-Users-...` on
-   * the strength of characters nobody is looking at.
-   */
-  it('lists projects alphabetically by path in the filter', () => {
+  it('lists projects alphabetically in the filter, with their counts', () => {
     render(<Harness />);
-    const options = within(screen.getByLabelText(/filter by project/i))
-      .getAllByRole('option')
-      .map((o) => o.textContent);
-    expect(options).toEqual([
-      'All projects',
-      '/private/tmp/brain-probe',
-      '/Users/greg/Repos/personal/WIN',
+    fireEvent.click(screen.getByLabelText(/filter by project/i));
+    const shown = screen
+      .getAllByRole('checkbox', { name: /^Show \// })
+      .map((c) => c.getAttribute('aria-label'));
+    expect(shown).toEqual([
+      'Show /private/tmp/brain-probe',
+      'Show /Users/greg/Repos/personal/WIN',
     ]);
   });
 
@@ -187,5 +196,21 @@ describe('BrainSourcesTable', () => {
     expect(itemCells()).toEqual(['aaa', 'bbb', 'ccc']);
     fireEvent.click(screen.getByRole('button', { name: /^project/i }));
     expect(itemCells()).toEqual(['ccc', 'aaa', 'bbb']);
+  });
+
+  /**
+   * Comparing paths as flat text lets a sibling land in the middle of a
+   * folder's subtree, which is what made the list read as unsorted. Segment-
+   * wise, `a` beats `a-x` at the segment that differs, so `/a`'s children stay
+   * contiguous and its parent leads them.
+   */
+  it('keeps a folder subtree contiguous, parent first', () => {
+    expect(
+      ['/a/b/z', '/a-x', '/a/b', '/a/b/c'].sort(comparePaths),
+    ).toEqual(['/a/b', '/a/b/c', '/a/b/z', '/a-x']);
+  });
+
+  it('is case-insensitive, so Repos and repos do not split the list', () => {
+    expect(['/x/Zed', '/x/apple'].sort(comparePaths)).toEqual(['/x/apple', '/x/Zed']);
   });
 });
