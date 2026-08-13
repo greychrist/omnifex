@@ -26,6 +26,8 @@ import { SESSION_SOURCE_ID } from './sources/session-transcripts';
 import type { Extractor } from './extract';
 import { resolveEntityPath, type ExistingNote } from './resolve';
 import { merge } from './merge';
+import { MAX_NOTES_PER_RUN, collapsibleEntries, curate, qualifies } from './curate';
+import type { Curator } from './curation';
 import type { AccountsService } from '../accounts';
 import type { ParsedNote } from './types';
 
@@ -162,6 +164,14 @@ export interface IndexResult {
   reason: string;
 }
 
+/** What one curation run did to one note. */
+export interface CurateResult {
+  notePath: string;
+  /** True when nothing was spent: the note vanished, or stopped qualifying. */
+  skipped: boolean;
+  reason: string;
+}
+
 /**
  * The view of one item, for inspection before any token is spent.
  *
@@ -226,6 +236,27 @@ export interface BrainService {
     itemKey: string,
     opts?: { force?: boolean },
   ): Promise<IndexResult>;
+  /**
+   * Compress one note's accumulated Timeline. The second method here that
+   * spends tokens.
+   *
+   * Re-checks `qualifies` BEFORE spending: a note can change between enqueue
+   * and claim, and Plan 4a's most expensive bug was `indexSource` ignoring
+   * exactly this class of check while every unit test passed.
+   *
+   * Resolves with `skipped` for a note that vanished or stopped qualifying —
+   * both are completed units of work. Rejects when the model reply is
+   * unusable, so the queue records a failure and the note is left untouched.
+   */
+  curateNote(accountId: number, relPath: string): Promise<CurateResult>;
+  /**
+   * Queue the notes most worth compressing, longest Timeline first, capped at
+   * `MAX_NOTES_PER_RUN`. Returns how many were queued.
+   *
+   * Synchronous, unlike `backfill`: reading a vault is, and `discover()` is
+   * what makes that one async.
+   */
+  enqueueCuration(accountId: number): number;
   /** Queue one item this account owns. Throws for an item it does not. */
   enqueueSource(accountId: number, itemKey: string): Promise<void>;
   /**
@@ -430,6 +461,12 @@ export interface BrainServiceOptions {
   accounts?: AccountsService;
   /** Turns distilled prose into entities. Absent means indexing is unavailable. */
   extractor?: Extractor;
+  /**
+   * Compresses an accumulated note. Absent means curation is unavailable —
+   * `curateNote` throws rather than silently no-opping, the same rule
+   * `extractor` follows.
+   */
+  curator?: Curator;
   /**
    * True while the user has an interactive session open. The worker yields
    * entirely while it is (spec §11) — indexing must never compete with real
@@ -1111,6 +1148,88 @@ export function createBrainService(
           ? `${String(notesWritten.length)} note(s) written, ${String(entityErrors.length)} entity skipped: ${errorSummary ?? ''}`
           : `${String(notesWritten.length)} note(s) written`;
       return { itemKey, notesWritten, skipped: false, reason };
+    },
+
+    async curateNote(accountId: number, relPath: string): Promise<CurateResult> {
+      requireAccountId(accountId);
+      if (!opts.curator) throw new Error('brain: no curator configured');
+      if (!opts.accounts) throw new Error('brain: no accounts service configured');
+
+      const handle = requireHandle(accountId);
+
+      let note: ParsedNote;
+      try {
+        note = handle.vault.readNote(relPath);
+      } catch {
+        // Deleted, or unparseable after a hand edit, between enqueue and claim.
+        // A completed unit of work, not a failure — see the queue's skip rule.
+        return { notePath: relPath, skipped: true, reason: 'note is missing or unreadable' };
+      }
+
+      const date = today();
+      // Before the token, never after. The note may have been curated or
+      // shortened since it was queued. Plan 4a's most expensive bug was
+      // `indexSource` skipping exactly this class of check.
+      if (!qualifies(note, date)) {
+        return { notePath: relPath, skipped: true, reason: 'no longer qualifies for curation' };
+      }
+
+      const account = opts.accounts.listAccounts().find((a) => a.id === accountId);
+      if (!account) {
+        // No silent fallback to another account's config dir — that would push
+        // this account's content through the wrong subscription (spec §4).
+        return { notePath: relPath, skipped: true, reason: 'no account for this note' };
+      }
+
+      const entries = collapsibleEntries(note);
+      // Deliberately unguarded: a rejection here propagates to the worker,
+      // which records the failure against the queue entry. The note is not
+      // written, so a failed curation costs tokens and not history.
+      const result = await opts.curator(
+        { title: handle.vault.noteTitle(relPath), noteType: note.frontmatter.type, entries },
+        account.config_dir,
+      );
+
+      const curated = curate(note, result, { date });
+      handle.vault.writeNote(relPath, curated);
+      handle.index.upsert(relPath, handle.vault.noteTitle(relPath), curated);
+      commitAndRecord(handle, 'Curation');
+
+      return {
+        notePath: relPath,
+        skipped: false,
+        reason: `${String(entries.length)} entries collapsed`,
+      };
+    },
+
+    enqueueCuration(accountId: number): number {
+      requireAccountId(accountId);
+      // `readPath` first, so an unconfigured account reports zero rather than
+      // lazily materialising a vault just to find it has nothing to curate.
+      const handle = readPath(accountId) === null ? null : requireHandle(accountId);
+      if (!handle) return 0;
+
+      const date = today();
+      const candidates: { relPath: string; length: number }[] = [];
+      for (const relPath of handle.vault.listNotes()) {
+        let note: ParsedNote;
+        try {
+          note = handle.vault.readNote(relPath);
+        } catch {
+          // One unreadable note must not cost the whole run.
+          continue;
+        }
+        if (!qualifies(note, date)) continue;
+        candidates.push({ relPath, length: collapsibleEntries(note).length });
+      }
+
+      // Worst offenders first: the longest Timeline is where compression buys
+      // the most context back. Ties break on path so a run is deterministic.
+      candidates.sort((a, b) => b.length - a.length || a.relPath.localeCompare(b.relPath));
+
+      const chosen = candidates.slice(0, MAX_NOTES_PER_RUN);
+      for (const c of chosen) queueStore.enqueue(accountId, CURATION_SOURCE_ID, c.relPath);
+      return chosen.length;
     },
 
     async enqueueSource(accountId: number, itemKey: string): Promise<void> {
