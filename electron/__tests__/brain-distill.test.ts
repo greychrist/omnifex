@@ -26,6 +26,71 @@ describe('distillTranscript', () => {
     expect(prose).not.toContain('old_string');
   });
 
+  /**
+   * Measured on the real corpus (2026-08-12): across the 25 largest
+   * transcripts, 107 of 576 candidate prompt rows — 19% — were pure
+   * `<task-notification>` payloads, and on two sessions machine text was 45-47%
+   * of the ENTIRE distillation. Prompt priority spends the scarcest budget
+   * first, so this noise was displacing real asks.
+   *
+   * Blocks are stripped rather than whole rows dropped: all 107 observed
+   * rows were pure machine text, but the CLI can append a block to text the
+   * user actually typed, and dropping the row would lose the ask with it.
+   */
+  function userRow(text: string): string {
+    return JSON.stringify({
+      type: 'user',
+      message: { role: 'user', content: [{ type: 'text', text }] },
+    });
+  }
+
+  it('drops a row that is nothing but a task notification', () => {
+    const jsonl = [
+      userRow('<task-notification>\n<task-id>abc</task-id>\n<status>done</status>\n</task-notification>'),
+      userRow('Actually fix the flange.'),
+    ].join('\n');
+    const { prose } = distillTranscript(jsonl, 's');
+    expect(prose).not.toContain('task-notification');
+    expect(prose).not.toContain('abc');
+    expect(prose).toContain('Actually fix the flange.');
+  });
+
+  it('keeps the human half of a row that also carries a notification', () => {
+    const jsonl = userRow(
+      'Fix the flange.\n<task-notification>\n<task-id>abc</task-id>\n</task-notification>',
+    );
+    const { prose } = distillTranscript(jsonl, 's');
+    expect(prose).toContain('Fix the flange.');
+    expect(prose).not.toContain('task-id');
+  });
+
+  it('strips a command wrapper that is not at the start of the text', () => {
+    const jsonl = userRow('Do the thing.\n<command-name>/verify</command-name>');
+    const { prose } = distillTranscript(jsonl, 's');
+    expect(prose).toContain('Do the thing.');
+    expect(prose).not.toContain('/verify');
+  });
+
+  it('strips interruption markers', () => {
+    const jsonl = userRow('[Request interrupted by user]\nUse Sonnet instead.');
+    const { prose } = distillTranscript(jsonl, 's');
+    expect(prose).toContain('Use Sonnet instead.');
+    expect(prose).not.toContain('Request interrupted');
+  });
+
+  it('drops a row whose synthetic block was left unclosed', () => {
+    // 107 of 107 observed blocks were well formed. A malformed one is machine
+    // text regardless, and letting a stray opening tag through would leak the
+    // payload this filter exists to remove.
+    const jsonl = [
+      userRow('<task-notification>\n<task-id>abc</task-id>'),
+      userRow('Real ask.'),
+    ].join('\n');
+    const { prose } = distillTranscript(jsonl, 's');
+    expect(prose).not.toContain('task-id');
+    expect(prose).toContain('Real ask.');
+  });
+
   it('drops thinking blocks', () => {
     const { prose } = distillTranscript(normal, 'sess-normal');
     expect(prose).not.toContain('Let me look at registry.ts');
@@ -72,7 +137,9 @@ describe('distillTranscript', () => {
   });
 
   it('truncates oldest-first with an explicit marker', () => {
-    const filler = 'x'.repeat(2_000);
+    // Sized off the constant so raising the budget does not silently stop
+    // exercising truncation — the behaviour is under test, not the number.
+    const filler = 'x'.repeat(Math.ceil(DISTILL_MAX_CHARS / 4));
     const rows: string[] = [];
     for (let i = 0; i < 12; i += 1) {
       rows.push(
@@ -102,7 +169,7 @@ describe('distillTranscript', () => {
       type: 'user',
       uuid: 'u1',
       timestamp: '2026-08-01T10:00:00.000Z',
-      message: { role: 'user', content: `${'y'.repeat(20_000)}ENDMARKER` },
+      message: { role: 'user', content: `${'y'.repeat(DISTILL_MAX_CHARS * 2)}ENDMARKER` },
     });
     const { prose, truncated } = distillTranscript(one, 's');
     expect(truncated).toBe(true);
@@ -111,7 +178,7 @@ describe('distillTranscript', () => {
   });
 
   it('keeps every prompt when truncating, and spends what is left on the newest replies', () => {
-    const filler = 'z'.repeat(1_500);
+    const filler = 'z'.repeat(Math.ceil(DISTILL_MAX_CHARS / 5));
     const rows: string[] = [];
     for (let i = 0; i < 10; i += 1) {
       rows.push(
@@ -170,7 +237,7 @@ describe('distillTranscript', () => {
     const rows = Array.from({ length: 6 }, (_, i) =>
       JSON.stringify({
         type: 'user', uuid: `u${i}`, timestamp: '2026-08-01T10:00:00.000Z',
-        message: { role: 'user', content: `P${i} ${'q'.repeat(2_000)}` },
+        message: { role: 'user', content: `P${i} ${'q'.repeat(Math.ceil(DISTILL_MAX_CHARS / 4))}` },
       }),
     );
     const { prose, truncated } = distillTranscript(rows.join('\n'), 's');

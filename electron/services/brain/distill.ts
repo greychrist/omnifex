@@ -38,10 +38,25 @@ export interface DistilledSession extends DistilledItem {
  */
 
 /**
- * ~8KB per session (spec §6). Characters rather than tokens: the ceiling is a
- * budget guard, and a tokenizer here would be precision nobody consumes.
+ * 128KB per session. Characters rather than tokens: the ceiling is a budget
+ * guard, and a tokenizer here would be precision nobody consumes.
+ *
+ * Spec §6 said 8KB, and that was measured wrong. Distillation already drops
+ * tool results, thinking blocks, file contents and (now) machine-generated
+ * blocks, so the surviving prose is a tiny fraction of the raw JSONL: measured
+ * across the personal account's 64 admitted sessions, the full distilled size
+ * is a median of 27KB and a MAXIMUM of 111.5KB — against raw transcripts of
+ * 5-21MB. At 8KB only 11 of 64 sessions survived whole and 78% of the material
+ * was discarded; every large session was cut to the same 8KB stub, which is
+ * what made the notes uninformative.
+ *
+ * 128KB is the smallest round cap above that observed maximum, so on this
+ * corpus nothing is truncated at all and 256KB would buy nothing. The cap is
+ * now a safety rail against a pathological outlier rather than a routine
+ * constraint — and because it binds only on outliers, the cost per extraction
+ * is the session's real size (~27KB median), not the cap.
  */
-export const DISTILL_MAX_CHARS = 8_192;
+export const DISTILL_MAX_CHARS = 131_072;
 
 const TRUNCATION_MARKER = '[… earlier turns elided …]\n\n';
 
@@ -79,11 +94,40 @@ function parseRows(jsonl: string): Row[] {
  * filter: these are machine text, and a note quoting them reads as if the user
  * typed XML.
  */
+/**
+ * Machine-generated blocks the CLI writes into rows typed `user`.
+ *
+ * Measured on the real corpus (2026-08-12): across the 25 largest transcripts,
+ * 107 of 576 candidate prompt rows — 19% — were pure `<task-notification>`
+ * payloads, and on two sessions machine text made up 45-47% of the ENTIRE
+ * distillation. Because `truncateWithPromptPriority` spends the budget on
+ * prompts FIRST, this noise was displacing the real asks it exists to protect.
+ *
+ * Only tags actually observed are listed. `<system-reminder>` is deliberately
+ * absent: it never appeared in a candidate prompt row on this corpus, and
+ * filtering for something unobserved is a guess wearing a rule's clothes.
+ */
+const SYNTHETIC_TAGS = 'task-notification|command-name|command-message|command-args|command-stdout|local-command-stdout';
+const SYNTHETIC_BLOCK = new RegExp(`<(${SYNTHETIC_TAGS})>[\\s\\S]*?</\\1>`, 'g');
+const SYNTHETIC_OPEN = new RegExp(`<(?:${SYNTHETIC_TAGS})>`);
+/** The CLI's own marker, not something the user typed. */
+const INTERRUPTION = /\[Request interrupted[^\]]*\]/g;
+
+/**
+ * Strip machine blocks and keep whatever the human actually typed.
+ *
+ * Stripping BLOCKS rather than dropping whole rows: every one of the 107
+ * observed notification rows was pure machine text, so in practice this drops
+ * them — but the CLI can append a block to text the user really typed, and a
+ * whole-row rule would throw the ask away with the noise.
+ */
 function cleanPrompt(text: string): string | null {
-  const trimmed = text.trim();
-  if (!trimmed) return null;
-  if (/^<command-(name|stdout|args|message)>/.test(trimmed)) return null;
-  return trimmed;
+  const stripped = text.replace(SYNTHETIC_BLOCK, '').replace(INTERRUPTION, '').trim();
+  if (!stripped) return null;
+  // A leftover opening tag means the block was malformed. It is machine text
+  // either way, and letting it through would leak the payload this removes.
+  if (SYNTHETIC_OPEN.test(stripped)) return null;
+  return stripped;
 }
 
 /** The typed text of a prompt row, or null when the row carries none. */
