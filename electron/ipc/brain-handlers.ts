@@ -249,15 +249,30 @@ export function createBrainHandlers(
       return brain.previewSource(accountId, requireString(params, 'itemKey', 'item_key'));
     },
 
-    async brain_index_source(_event, params = {}) {
-      // Neither a read nor an ordinary write: this one spends tokens. A `null`
-      // result while the service is missing would report an indexing run that
-      // never happened, so it throws like the other write handlers.
+    /**
+     * The only channel that indexes. A single-item `brain_index_source` used
+     * to sit beside it, but it spent tokens without creating a run record —
+     * so any caller reaching for it lost progress the moment the pane
+     * unmounted. One item is a selection of one.
+     *
+     * Neither a read nor an ordinary write: this spends tokens, so it throws
+     * rather than returning null and reporting a run that never happened.
+     */
+    async brain_index_selection(_event, params = {}) {
       if (!brain) throw new Error('brain service unavailable');
-      return brain.indexSource(
-        requireAccountId(params),
-        requireString(params, 'itemKey', 'item_key'),
-      );
+      const raw = params.itemKeys ?? params.item_keys;
+      if (!Array.isArray(raw) || raw.some((k) => typeof k !== 'string')) {
+        throw new Error('itemKeys must be an array of strings');
+      }
+      return brain.indexSelection(requireAccountId(params), raw as string[]);
+    },
+
+    async brain_current_run(_event, params = {}) {
+      const accountId = requireAccountId(params);
+      // A read: with no service there is no run, which is the truthful answer
+      // and lets the pane mount without an error banner.
+      if (!brain) return null;
+      return brain.currentRun(accountId);
     },
 
     async brain_curate_note(_event, params = {}) {

@@ -212,6 +212,55 @@ export interface IndexResult {
   reason: string;
 }
 
+/**
+ * An indexing run in flight, as any window can read it back.
+ *
+ * This lives in the main process on purpose. It used to be React state inside
+ * BrainSources.tsx, so it died with the component — and the pane unmounts
+ * whenever the Brain tab's sub-tab changes, leaving a run that was still
+ * spending tokens with nothing on screen to say so.
+ *
+ * Note it is NOT persisted. It does not need to be: `indexSource` records
+ * every item's outcome through `sourceState` before it returns, so an app quit
+ * mid-run loses this summary and nothing else — the next listing reads the
+ * truth off the rows themselves.
+ */
+export interface BrainRun {
+  /** The account whose vault this run is writing into. */
+  accountId: number;
+  /** Items the run was asked to do. */
+  total: number;
+  /** Items taken to a terminal state so far — finished, NOT started. */
+  completed: number;
+  /** The item being worked on right now: the `completed + 1`-th. */
+  item: string;
+  /** Items that produced at least one note. */
+  written: number;
+  /** Items that were skipped or failed. Both are completed units of work. */
+  skipped: number;
+}
+
+/** What a whole selection cost, once every item reached a terminal state. */
+export interface RunResult {
+  /** Items that produced at least one note. */
+  written: number;
+  /** Items skipped or failed. Both are completed units of work. */
+  skipped: number;
+  /**
+   * One entry per item, in the order given — including items that threw, which
+   * are recorded as skips carrying the thrown message as their reason.
+   *
+   * Kept per-item rather than collapsed to counts because a one-item run has
+   * to be able to say WHY: "Not indexed: session is still open in OmniFex" is
+   * the whole answer, and "indexed 0, skipped 1" is none of it.
+   *
+   * Note this reports only per-ITEM outcomes. Something that stops the whole
+   * run — no vault, a run already in flight — rejects the call instead, so the
+   * pane can tell "nothing ran" apart from "it ran and declined".
+   */
+  results: IndexResult[];
+}
+
 /** What one curation run did to one note. */
 export interface CurateResult {
   notePath: string;
@@ -297,6 +346,32 @@ export interface BrainService {
     itemKey: string,
     opts?: { force?: boolean },
   ): Promise<IndexResult>;
+  /**
+   * Index a whole selection, one item at a time, tracking progress that
+   * outlives any window.
+   *
+   * Deliberately a sequential loop over exactly `itemKeys` rather than a queue
+   * drain: draining processes everything pending, which is how "Drain now"
+   * once ran 158 sessions when the user had ticked one. Nothing here can reach
+   * an item the caller did not name.
+   *
+   * Concurrency 1, like the queue worker, for the same reason — the rate limit
+   * is shared, and two runs would pay twice for an item in both selections. A
+   * second call while one is in flight throws.
+   *
+   * Per-item failures are collected, never thrown: one bad item must not
+   * abandon the rest of a selection the user explicitly ticked.
+   */
+  indexSelection(accountId: number, itemKeys: string[]): Promise<RunResult>;
+  /**
+   * The run in flight for this account, or null. Account-scoped so a run
+   * cannot be reported under another account's header.
+   *
+   * A fresh mount calls this to rebuild its progress banner, the same way
+   * SessionList calls `summary_generating_now` for work that started before it
+   * could subscribe.
+   */
+  currentRun(accountId: number): BrainRun | null;
   /**
    * Compress one note's accumulated Timeline. The second method here that
    * spends tokens.
@@ -564,6 +639,14 @@ export interface BrainServiceOptions {
    * without a sessions dependency.
    */
   liveSessionIds?: () => Iterable<string>;
+  /**
+   * Called on every change to the run in flight, and once with `null` when it
+   * ends. `main.ts` forwards this to the renderer; tests record the sequence.
+   *
+   * The terminating `null` is load-bearing: without it a live pane would hang
+   * on the last frame forever, showing a bar for a run that had finished.
+   */
+  onRunProgress?: (run: BrainRun | null) => void;
 }
 
 export function createBrainService(
@@ -584,6 +667,26 @@ export function createBrainService(
   const sources = opts.sources ?? [];
   const sourceState = createSourceStateStore(db);
   const queueStore = createBrainQueueStore(db);
+
+  // The run in flight, or null. One at a time across all accounts, matching
+  // the queue worker's concurrency-1 contract with the shared rate limit.
+  let activeRun: BrainRun | null = null;
+
+  /**
+   * Push the current run to whoever is listening.
+   *
+   * Wrapped so a throwing subscriber cannot take the run down with it: the
+   * subscriber is `webContents.send` on a window that may have closed
+   * mid-run, and losing the display must never abort work already paid for.
+   */
+  function publishRun(): void {
+    if (!opts.onRunProgress) return;
+    try {
+      opts.onRunProgress(activeRun);
+    } catch (err) {
+      console.warn('[brain] run progress subscriber threw:', (err as Error).message);
+    }
+  }
 
   // A crash or quit mid-item leaves a row `running` forever; without this the
   // queue silently stops draining after one bad shutdown.
@@ -1354,6 +1457,68 @@ export function createBrainService(
           ? `${String(notesWritten.length)} note(s) written, ${String(entityErrors.length)} entity skipped: ${errorSummary ?? ''}`
           : `${String(notesWritten.length)} note(s) written`;
       return { itemKey, notesWritten, skipped: false, reason };
+    },
+
+    async indexSelection(accountId: number, itemKeys: string[]): Promise<RunResult> {
+      requireAccountId(accountId);
+      // Refused before the run record is set, so a rejected call cannot strand
+      // a banner with nothing left to finish it.
+      if (itemKeys.length === 0) throw new Error('brain: no items in the selection');
+      if (activeRun) {
+        throw new Error(
+          `brain: an indexing run is already in flight (${String(activeRun.completed)} of ${String(activeRun.total)})`,
+        );
+      }
+
+      let written = 0;
+      let skipped = 0;
+      const results: IndexResult[] = [];
+
+      activeRun = {
+        accountId, total: itemKeys.length, completed: 0, item: itemKeys[0], written, skipped,
+      };
+      publishRun();
+
+      try {
+        for (const itemKey of itemKeys) {
+          // Set before the await, so `currentRun` names the item actually in
+          // flight rather than the one that finished last.
+          activeRun = { ...activeRun, item: itemKey };
+          try {
+            const result = await service.indexSource(accountId, itemKey);
+            results.push(result);
+            if (result.skipped) skipped += 1;
+            else written += 1;
+          } catch (err) {
+            // Spec §8's rule, applied to a selection: a failed item is
+            // recorded and stepped over, never allowed to end the run. Shaped
+            // as a skip so every item has one entry in `results` — a caller
+            // iterating outcomes should not have to join two arrays to find
+            // out what happened to the third item.
+            results.push({
+              itemKey, notesWritten: [], skipped: true, reason: (err as Error).message,
+            });
+            skipped += 1;
+          }
+          activeRun = { ...activeRun, completed: activeRun.completed + 1, written, skipped };
+          publishRun();
+        }
+      } finally {
+        // In `finally` so a throw that escapes the loop still clears the run.
+        // A stuck `activeRun` would refuse every later run for the lifetime of
+        // the process, with no way to reset short of restarting the app.
+        activeRun = null;
+        publishRun();
+      }
+
+      return { written, skipped, results };
+    },
+
+    currentRun(accountId: number): BrainRun | null {
+      requireAccountId(accountId);
+      // Account-scoped: another account's run is not this pane's business, and
+      // showing it would attribute one account's spend to another.
+      return activeRun && activeRun.accountId === accountId ? activeRun : null;
     },
 
     async curateNote(accountId: number, relPath: string): Promise<CurateResult> {

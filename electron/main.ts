@@ -535,6 +535,11 @@ app.whenReady().then(() => {
     // then records it as finished. Same getter reason as above.
     liveSessionIds: () => _sessionsService?.listActiveSessionIds() ?? [],
     isQueuePaused: () => db.getSetting(BRAIN_QUEUE_PAUSED_SETTING_KEY) === 'true',
+    // Broadcast, not routed to an owner window: the run outlives the pane that
+    // started it — the Brain tab unmounts the Sources pane on a sub-tab switch
+    // — so whichever window is showing the pane needs the frames, not the one
+    // that happened to press the button.
+    onRunProgress: (run) => { sendToRenderer('brain-run-progress', run); },
   });
   brainRef = brainService;
 

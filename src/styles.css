@@ -1106,6 +1106,30 @@ code::-webkit-scrollbar-thumb:hover {
 }
 
 
+/* Indeterminate progress sweep, for work whose only unit is "the whole thing".
+   Used by the Brain sources banner: indexing one item is a single opaque
+   await, so a percentage there would be invented. Translating a one-third-wide
+   fill across the track says "running, duration unknown" without claiming one.
+   See BrainSources.tsx. */
+@keyframes brain-indeterminate {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
+}
+
+.brain-indeterminate-bar {
+  animation: brain-indeterminate 1.4s ease-in-out infinite;
+}
+
+/* A sweep with nowhere to go reads as a stalled bar, so honour the OS setting
+   with a pulse instead of freezing the element mid-track. */
+@media (prefers-reduced-motion: reduce) {
+  .brain-indeterminate-bar {
+    animation: none;
+    width: 100%;
+    opacity: 0.5;
+  }
+}
+
 /* Find-in-chat highlights. The `data-find` attribute is the contract with
    `useFindInChat`; the hook wraps every match in <mark data-find> and toggles
    `.is-active` on the currently focused hit. Theme-neutral yellow reads on

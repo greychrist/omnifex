@@ -1153,6 +1153,26 @@ export interface BrainIndexResult {
   reason: string;
 }
 
+/** Mirrors the backend `BrainRun` in electron/services/brain/registry.ts. */
+export interface BrainRun {
+  accountId: number;
+  total: number;
+  /** Items FINISHED, not started. */
+  completed: number;
+  /** The item in flight: the `completed + 1`-th. */
+  item: string;
+  written: number;
+  skipped: number;
+}
+
+/** Mirrors the backend `RunResult` in electron/services/brain/registry.ts. */
+export interface BrainRunResult {
+  written: number;
+  skipped: number;
+  /** One per item, in the order given. A throw arrives as a skip carrying it. */
+  results: BrainIndexResult[];
+}
+
 /** Mirrors the backend `CurateResult` in electron/services/brain/registry.ts. */
 export interface BrainCurateResult {
   notePath: string;
@@ -3156,9 +3176,43 @@ export const api = {
     return apiCall<BrainSourcePreview | null>('brain_source_preview', { accountId, itemKey });
   },
 
-  /** Extract one item and merge it into the account's vault. Spends tokens. */
-  async brainIndexSource(accountId: number, itemKey: string): Promise<BrainIndexResult> {
-    return apiCall<BrainIndexResult>('brain_index_source', { accountId, itemKey });
+  /**
+   * Index a whole selection in the main process. Spends tokens.
+   *
+   * The only renderer path that does. A single-item `brainIndexSource` used to
+   * sit beside this one; it was removed because it spent tokens WITHOUT a run
+   * record, so anything reaching for it would silently reintroduce the
+   * untracked run this API exists to prevent. One item is `[itemKey]`.
+   *
+   * The loop lives on the other side of this call so it outlives the pane: the
+   * Brain tab unmounts the Sources pane on a sub-tab switch, which used to
+   * take the run's progress with it.
+   */
+  async brainIndexSelection(accountId: number, itemKeys: string[]): Promise<BrainRunResult> {
+    return apiCall<BrainRunResult>('brain_index_selection', { accountId, itemKeys });
+  },
+
+  /**
+   * The indexing run in flight for this account, or null.
+   *
+   * BrainSources calls this on mount so it can rebuild its banner for a run
+   * that started before the component existed — the same reason SessionList
+   * calls `summary_generating_now`.
+   */
+  async brainCurrentRun(accountId: number): Promise<BrainRun | null> {
+    return apiCall<BrainRun | null>('brain_current_run', { accountId });
+  },
+
+  /** Progress frames for the run in flight; `null` means it ended. */
+  onBrainRunProgress(callback: (run: BrainRun | null) => void): () => void {
+    return window.electronAPI.onEvent('brain-run-progress', (data: any) => {
+      if (data === null || data === undefined) {
+        callback(null);
+        return;
+      }
+      if (typeof data !== 'object' || typeof data.total !== 'number') return;
+      callback(data as BrainRun);
+    });
   },
 
   async brainQueueCounts(accountId: number): Promise<BrainQueueCounts> {

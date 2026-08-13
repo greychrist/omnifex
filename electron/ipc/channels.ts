@@ -25,7 +25,8 @@ export const INVOKE_CHANNELS: readonly string[] = [
   'brain_backlinks',
   'brain_list_sources',
   'brain_source_preview',
-  'brain_index_source',
+  'brain_index_selection',
+  'brain_current_run',
   'brain_queue_counts',
   'brain_queue_list',
   'brain_queue_clear',
@@ -298,4 +299,8 @@ export const EVENT_CHANNEL_EXACT: readonly string[] = [
   // disk, so verification badges self-correct after a logout/login performed
   // outside OmniFex. Payload: { configDir, verdict }.
   'account-identity-changed',
+  // Progress of the Brain indexing run in flight, or null when it ends. Sent
+  // to every window: the run outlives the pane that started it, so any mount
+  // must be able to pick it up. Payload: BrainRun | null.
+  'brain-run-progress',
 ];

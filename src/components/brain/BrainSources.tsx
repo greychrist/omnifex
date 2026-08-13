@@ -1,6 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Loader2 } from 'lucide-react';
-import { api, type BrainSourcePreview, type BrainSourceSummary } from '@/lib/api';
+import { Loader2, RefreshCw } from 'lucide-react';
+import {
+  api,
+  type BrainRun,
+  type BrainSourcePreview,
+  type BrainSourceSummary,
+} from '@/lib/api';
 import { BrainQueueActions } from './BrainQueuePanel';
 import { BrainSourcesTable, rowId } from './BrainSourcesTable';
 import { BrainProjectExclusions } from './BrainProjectExclusions';
@@ -28,17 +33,34 @@ export const BrainSources: React.FC<{ accountId: number | null }> = ({ accountId
   const [preview, setPreview] = useState<BrainSourcePreview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [indexing, setIndexing] = useState(false);
+  /**
+   * True between pressing an index button and the call settling.
+   *
+   * Distinct from `runProgress`, which is the main process's view: this covers
+   * the round trip before the first frame lands, so the button cannot be
+   * pressed twice into a run that exists but has not reported yet.
+   */
+  const [starting, setStarting] = useState(false);
   const [outcome, setOutcome] = useState<string | null>(null);
   const [nonce, setNonce] = useState<Nonce>(0);
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
   const [managing, setManaging] = useState(false);
-  /** What the run banner shows. `item` names what is being worked on now. */
-  const [runProgress, setRunProgress] = useState<
-    { current: number; total: number; item: string } | null
-  >(null);
+  /**
+   * The run in flight, as the MAIN PROCESS reports it. `completed` counts
+   * items that have FINISHED, and `item` names the one in flight.
+   *
+   * Not owned here: this pane unmounts whenever the Brain tab's sub-tab
+   * changes, and a run that lived in component state died with it — the user
+   * came back to tokens still being spent and nothing on screen saying so. It
+   * is seeded from `brainCurrentRun` on mount and then followed by pushed
+   * frames, so a run started before this component existed still draws.
+   */
+  const [runProgress, setRunProgress] = useState<BrainRun | null>(null);
   const tableRef = useRef<HTMLDivElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
+
+  /** Any index button is live work: either starting, or already reported. */
+  const indexing = starting || runProgress !== null;
 
   // Both are account-scoped: carrying either across a switch would render one
   // account's material under another account's header.
@@ -76,6 +98,42 @@ export const BrainSources: React.FC<{ accountId: number | null }> = ({ accountId
     };
   }, [accountId, nonce]);
 
+  /**
+   * Pick up a run already in flight.
+   *
+   * Runs on mount and on every account switch, because either can leave this
+   * pane looking at work it never saw start — a sub-tab switch unmounts it
+   * outright. The equivalent of SessionList asking `summary_generating_now`.
+   */
+  useEffect(() => {
+    if (accountId === null) return;
+    let cancelled = false;
+    api
+      .brainCurrentRun(accountId)
+      .then((run) => { if (!cancelled) setRunProgress(run); })
+      // A run we cannot ask about is not worth an error banner over the whole
+      // pane: the listing below is still perfectly usable.
+      .catch(() => { if (!cancelled) setRunProgress(null); });
+    return () => { cancelled = true; };
+  }, [accountId]);
+
+  /**
+   * Follow the run the main process is actually executing.
+   *
+   * A `null` frame means it ended: drop the banner and re-list, since the run
+   * just changed the statuses the table is showing.
+   */
+  useEffect(() => {
+    if (accountId === null) return;
+    return api.onBrainRunProgress((run) => {
+      // Another account's run is not this pane's to draw, and clearing on its
+      // terminating null would blank a banner this account still owns.
+      if (run !== null && run.accountId !== accountId) return;
+      setRunProgress(run);
+      if (run === null) setNonce((n) => n + 1);
+    });
+  }, [accountId]);
+
   const select = useCallback(
     (itemKey: string) => {
       if (accountId === null) return;
@@ -91,71 +149,85 @@ export const BrainSources: React.FC<{ accountId: number | null }> = ({ accountId
   );
 
   /**
-   * The only control in this app that spends tokens on its own. One item at a
-   * time and only on an explicit press — Plan 4b's worker is what makes this
-   * automatic, and it does not exist yet.
+   * Start a run in the main process and report what it cost.
+   *
+   * The loop deliberately lives on the other side of this call. Here it was a
+   * `for` over the selection, which meant unmounting the pane — a Brain sub-tab
+   * switch does exactly that — left the run spending tokens with no progress
+   * on screen and no completion refresh at the end.
+   *
+   * Still exactly the ticked items, never a queue drain: draining processes
+   * everything pending, which is how "Drain now" once ran 158 sessions for one
+   * selected row.
    */
-  const index = useCallback(() => {
-    if (accountId === null || selected === null) return;
-    setIndexing(true);
-    setRunProgress({ current: 1, total: 1, item: selected });
-    setOutcome(null);
-    setError(null);
-    api
-      .brainIndexSource(accountId, selected)
-      .then((result) => {
-        setOutcome(
-          result.skipped
-            ? `Not indexed: ${result.reason}`
-            : `Indexed — ${result.notesWritten.join(', ') || 'nothing worth a note'}`,
-        );
-        // Re-listing is what turns this row's status from null to indexed.
-        // Without it the button looks like it did nothing.
-        setNonce((n) => n + 1);
-      })
-      .catch((err: Error) => setError(err.message))
-      .finally(() => {
-        setIndexing(false);
-        setRunProgress(null);
+  const startRun = useCallback(
+    (itemKeys: string[]) => {
+      if (accountId === null || itemKeys.length === 0) return;
+      setStarting(true);
+      setOutcome(null);
+      setError(null);
+      // An optimistic first frame, so the banner is up before the round trip
+      // returns. Real frames overwrite it within milliseconds.
+      setRunProgress({
+        accountId, total: itemKeys.length, completed: 0, item: itemKeys[0],
+        written: 0, skipped: 0,
       });
-  }, [accountId, selected]);
+
+      api
+        .brainIndexSelection(accountId, itemKeys)
+        .then((result) => {
+          // One item can say exactly why; a selection can only report totals.
+          // "indexed 0, skipped 1" is not an answer a user can act on when
+          // they asked about one specific file.
+          const only = result.results.length === 1 ? result.results[0] : null;
+          setOutcome(
+            only
+              ? only.skipped
+                ? `Not indexed: ${only.reason}`
+                : `Indexed — ${only.notesWritten.join(', ') || 'nothing worth a note'}`
+              : `indexed ${String(result.written)}, skipped ${String(result.skipped)}`,
+          );
+          setSelectedRows(new Set());
+          // Re-listing is what turns a row's status from null to indexed.
+          // Without it the button looks like it did nothing.
+          setNonce((n) => n + 1);
+        })
+        // Only whole-run failures land here — no vault, a run already in
+        // flight. Per-item outcomes come back in `results` above.
+        .catch((err: Error) => { setError(err.message); })
+        .finally(() => {
+          setStarting(false);
+          // The main process also sends a terminating null; clearing here too
+          // covers the case where this window missed it.
+          setRunProgress(null);
+        });
+    },
+    [accountId],
+  );
+
+  /** The preview panel's button: the one row being looked at. */
+  const index = useCallback(() => {
+    if (selected === null) return;
+    startRun([selected]);
+  }, [selected, startRun]);
+
+  /** The action bar's button: every ticked row. */
+  const indexSelected = useCallback(() => {
+    const targets = items.filter((r) => selectedRows.has(rowId(r)));
+    startRun(targets.map((r) => r.itemKey));
+  }, [items, selectedRows, startRun]);
 
   /**
-   * Index exactly the checked rows — one direct call each, not a queue drain.
+   * Re-read the listing on demand.
    *
-   * Draining would process everything pending, which is the whole reason the
-   * original "Drain now" ran 158 sessions when one was selected. A sequential
-   * loop over the selection cannot reach anything the user did not tick.
+   * Stays live during a run on purpose: a run only re-lists once the WHOLE
+   * selection finishes, so this is the only way to watch statuses land one at
+   * a time — and after a sub-tab switch it is how you re-check a pane whose
+   * rows went stale while it was unmounted.
    */
-  const indexSelected = useCallback(() => {
-    if (accountId === null || selectedRows.size === 0) return;
-    const targets = items.filter((r) => selectedRows.has(rowId(r)));
-    setIndexing(true);
-    setOutcome(null);
-    setError(null);
-
-    void (async () => {
-      let written = 0;
-      let skipped = 0;
-      for (const [i, r] of targets.entries()) {
-        setRunProgress({ current: i + 1, total: targets.length, item: r.itemKey });
-        try {
-          const result = await api.brainIndexSource(accountId, r.itemKey);
-          if (result.skipped) skipped += 1;
-          else written += 1;
-        } catch (err) {
-          // One bad item must not abandon the rest of the selection.
-          setError((err as Error).message);
-          skipped += 1;
-        }
-      }
-      setRunProgress(null);
-      setIndexing(false);
-      setOutcome(`indexed ${String(written)}, skipped ${String(skipped)}`);
-      setSelectedRows(new Set());
-      setNonce((n) => n + 1);
-    })();
-  }, [accountId, items, selectedRows]);
+  const refresh = useCallback(() => {
+    setNonce((n) => n + 1);
+  }, []);
 
   /**
    * Each row already carries the effective verdict, so the exclusion state is
@@ -248,6 +320,15 @@ export const BrainSources: React.FC<{ accountId: number | null }> = ({ accountId
           >
             Index Selected ({selectedRows.size})
           </button>
+          <button
+            type="button"
+            onClick={refresh}
+            disabled={loading}
+            className="flex items-center gap-1.5 rounded-md border px-2 py-1 hover:bg-accent disabled:opacity-40"
+          >
+            <RefreshCw className={`h-3 w-3 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
           {/* A popover, not an inline block: expanding in place pushed the
               whole table down, so the rows being talked about moved off
               screen the moment you went to change them. */}
@@ -288,18 +369,37 @@ export const BrainSources: React.FC<{ accountId: number | null }> = ({ accountId
               <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
               <span className="font-medium">
                 {runProgress.total > 1
-                  ? `Indexing ${String(runProgress.current)} of ${String(runProgress.total)}`
+                  ? `Indexing ${String(runProgress.completed + 1)} of ${String(runProgress.total)}`
                   : 'Indexing'}
               </span>
               <span className="truncate text-muted-foreground">{runProgress.item}</span>
             </div>
-            <div className="h-1 w-full overflow-hidden rounded bg-muted">
-              <div
-                className="h-full bg-primary transition-[width] duration-300"
-                style={{
-                  width: `${String(Math.round((runProgress.current / runProgress.total) * 100))}%`,
-                }}
-              />
+            {/* One item is the only unit of progress there is: `indexSource`
+                distills and extracts behind a single await and reports nothing
+                partway. So a lone item gets a sweep, not a percentage — the
+                fraction would be 0% for the whole call and then gone. */}
+            <div
+              role="progressbar"
+              aria-label="Indexing progress"
+              {...(runProgress.total > 1
+                ? {
+                    'aria-valuemin': 0,
+                    'aria-valuemax': runProgress.total,
+                    'aria-valuenow': runProgress.completed,
+                  }
+                : {})}
+              className="h-1 w-full overflow-hidden rounded bg-muted"
+            >
+              {runProgress.total > 1 ? (
+                <div
+                  className="h-full bg-primary transition-[width] duration-300"
+                  style={{
+                    width: `${String(Math.round((runProgress.completed / runProgress.total) * 100))}%`,
+                  }}
+                />
+              ) : (
+                <div className="brain-indeterminate-bar h-full w-1/3 rounded bg-primary" />
+              )}
             </div>
           </div>
         )}

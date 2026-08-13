@@ -21,11 +21,12 @@ const CHANNELS = [
   'brain_backlinks',
   'brain_clear_vault_path',
   'brain_curate_note',
+  'brain_current_run',
   'brain_default_vault_path',
   'brain_delete_note',
   'brain_enqueue_curation',
   'brain_enqueue_project_sources',
-  'brain_index_source',
+  'brain_index_selection',
   'brain_list_notes',
   'brain_list_sources',
   'brain_mcp_register',
@@ -138,9 +139,37 @@ describe('brain IPC handlers', () => {
     await expect(bare.brain_source_preview(null, { accountId: 1, itemKey: 'x' })).resolves.toBeNull();
   });
 
-  it('brain_index_source requires an accountId and an itemKey', async () => {
-    await expect(handlers.brain_index_source(null, {})).rejects.toThrow(/accountId/);
-    await expect(handlers.brain_index_source(null, { accountId: 1 })).rejects.toThrow(/itemKey/);
+  it('brain_index_selection rejects anything that is not a list of keys', async () => {
+    await expect(handlers.brain_index_selection(null, { accountId: 1 })).rejects.toThrow(/itemKeys/);
+    // A bare string is the tempting mistake, and would index a selection of
+    // one item named by the string's first character if it were spread.
+    await expect(
+      handlers.brain_index_selection(null, { accountId: 1, itemKeys: 'sess-a' }),
+    ).rejects.toThrow(/itemKeys/);
+    await expect(
+      handlers.brain_index_selection(null, { accountId: 1, itemKeys: [1, 2] }),
+    ).rejects.toThrow(/itemKeys/);
+  });
+
+  it('brain_index_selection accepts the snake_case spelling', async () => {
+    // Handler adapters take both spellings; without this the renderer's
+    // camelCase call is the only one that works, silently.
+    await expect(
+      handlers.brain_index_selection(null, { account_id: 1, item_keys: [] }),
+    ).rejects.toThrow(/no items/);
+  });
+
+  it('brain_current_run reports null with no run in flight', async () => {
+    await expect(handlers.brain_current_run(null, { accountId: 1 })).resolves.toBeNull();
+  });
+
+  it('run handlers: the read degrades, the spending one throws', async () => {
+    const bare = createBrainHandlers(undefined);
+    // A fresh pane must be able to mount and simply learn there is no run.
+    await expect(bare.brain_current_run(null, { accountId: 1 })).resolves.toBeNull();
+    await expect(
+      bare.brain_index_selection(null, { accountId: 1, itemKeys: ['a'] }),
+    ).rejects.toThrow(/brain service unavailable/);
   });
 
   it('queue reads degrade and queue writes throw when the service is unavailable', async () => {
@@ -158,13 +187,12 @@ describe('brain IPC handlers', () => {
     await expect(handlers.brain_backfill(null, {})).rejects.toThrow(/accountId/);
   });
 
-  it('brain_index_source throws rather than degrading when the service is unavailable', async () => {
-    // Unlike the read handlers, this is a WRITE that also spends tokens.
-    // Returning a null result would report an indexing run that never happened.
-    const bare = createBrainHandlers(undefined);
-    await expect(
-      bare.brain_index_source(null, { account_id: 1, item_key: 'sess-a' }),
-    ).rejects.toThrow(/brain service unavailable/);
+  it('offers no untracked way to index a single item', () => {
+    // `brain_index_source` was removed with the run tracker: it spent tokens
+    // without creating a run record, so any caller reaching for it lost all
+    // progress the moment the Sources pane unmounted. One item is
+    // `brain_index_selection` with a one-key list.
+    expect(handlers.brain_index_source).toBeUndefined();
   });
 
   it('brain_clear_vault_path actually clears a configured path', async () => {
@@ -308,6 +336,8 @@ describe('brain IPC handlers', () => {
       setExcludedProjects: () => { throw boom; },
       previewSource: () => { throw boom; },
       indexSource: () => { throw boom; },
+      indexSelection: () => { throw boom; },
+      currentRun: () => { throw boom; },
       curateNote: () => { throw boom; },
       enqueueCuration: () => { throw boom; },
       enqueueSource: () => { throw boom; },
