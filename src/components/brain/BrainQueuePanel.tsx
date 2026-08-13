@@ -17,6 +17,9 @@ const AUTO_INDEX_KEY = 'brain.autoIndex';
 const PAUSED_KEY = 'brain.queuePaused';
 const CURATE_KEY = 'brain.curate';
 
+/** Fast enough to look live against ~21.5s per item, cheap enough to ignore. */
+const PROGRESS_POLL_MS = 500;
+
 /**
  * A labelled switch for one global setting.
  *
@@ -49,6 +52,13 @@ export const BrainQueuePanel: React.FC<{ accountId: number | null }> = ({ accoun
   const [error, setError] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
   const [confirmingAll, setConfirmingAll] = useState(false);
+  const [progress, setProgress] = useState<{ current: number; total: number } | null>(null);
+  /**
+   * Only a DRAIN has progress worth showing. Backfill, Curate and Clear are
+   * instant enqueues, and polling during them would both be meaningless and
+   * charge the queue an extra read per click.
+   */
+  const [draining, setDraining] = useState(false);
   const [autoIndex, setAutoIndex] = useState(false);
   const [paused, setPaused] = useState(false);
   const [curate, setCurate] = useState(false);
@@ -144,10 +154,56 @@ export const BrainQueuePanel: React.FC<{ accountId: number | null }> = ({ accoun
     return () => { cancelled = true; };
   }, [accountId, nonce]);
 
+  /**
+   * Live progress while a run is in flight.
+   *
+   * The original failure had two halves. One was a bulk button that ran
+   * everything; the other was that the worker then ran correctly for a full
+   * minute while the panel showed nothing, so it was indistinguishable from a
+   * dead button.
+   *
+   * Polled rather than evented: `brainQueueCounts` is already on the IPC
+   * surface, so this needs no new channel or preload allow-list entry, and two
+   * SQLite counts a second against a run measured at 21.5s per item is not a
+   * cost worth engineering around.
+   */
+  useEffect(() => {
+    if (!draining || accountId === null) return;
+    let cancelled = false;
+    // Captured from the first reading, not recomputed: the denominator must not
+    // move underneath the user as items leave the pending column.
+    let total = 0;
+
+    const tick = (): void => {
+      api
+        .brainQueueCounts(accountId)
+        .then((c) => {
+          if (cancelled) return;
+          const seen = c.done + c.failed + c.pending + c.running;
+          if (total === 0) total = seen;
+          setProgress({ current: Math.min(c.done + c.failed + 1, total), total });
+        })
+        .catch(() => {
+          // Freeze on the last observed value rather than inventing one. A
+          // progress bar that completes because its poll failed is worse than
+          // one that stops moving.
+        });
+    };
+
+    tick();
+    const id = setInterval(tick, PROGRESS_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+      setProgress(null);
+    };
+  }, [draining, accountId]);
+
   /** Every control refreshes on completion, or the panel lies about its state. */
   const run = useCallback(
-    (fn: () => Promise<string | null>) => {
+    (fn: () => Promise<string | null>, tracked = false) => {
       setBusy(true);
+      if (tracked) setDraining(true);
       setError(null);
       setOutcome(null);
       fn()
@@ -156,7 +212,10 @@ export const BrainQueuePanel: React.FC<{ accountId: number | null }> = ({ accoun
           setNonce((n) => n + 1);
         })
         .catch((err: Error) => setError(err.message))
-        .finally(() => { setBusy(false); });
+        .finally(() => {
+          setBusy(false);
+          setDraining(false);
+        });
     },
     [],
   );
@@ -219,7 +278,7 @@ export const BrainQueuePanel: React.FC<{ accountId: number | null }> = ({ accoun
                     : `yielded after ${String(out.processed)} — the queue is paused`;
                 }
                 return `indexed ${String(out.processed)}`;
-              });
+              }, true);
             }}
             className="rounded-md border border-destructive px-2 py-1 text-destructive hover:bg-destructive/10 disabled:opacity-50"
           >
@@ -286,6 +345,20 @@ export const BrainQueuePanel: React.FC<{ accountId: number | null }> = ({ accoun
         {outcome && <span className="text-muted-foreground">{outcome}</span>}
         {error && <span className="text-destructive">{error}</span>}
       </div>
+
+      {progress && (
+        <div className="mt-2">
+          <div className="mb-1 text-muted-foreground">
+            Indexing {progress.current} of {progress.total}
+          </div>
+          <div className="h-1 w-full overflow-hidden rounded bg-muted">
+            <div
+              className="h-full bg-primary transition-[width] duration-300"
+              style={{ width: `${String(Math.round((progress.current / progress.total) * 100))}%` }}
+            />
+          </div>
+        </div>
+      )}
 
       {failed.length > 0 && (
         <ul className="mt-2 space-y-1">

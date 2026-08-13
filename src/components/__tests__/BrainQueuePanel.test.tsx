@@ -120,6 +120,46 @@ describe('BrainQueuePanel controls', () => {
   });
 
   /**
+   * The other half of the original failure: the worker WAS running, correctly,
+   * for a full minute — and the panel showed nothing at all, so the user could
+   * not tell it from a dead button.
+   */
+  it('shows live progress while a run is in flight', async () => {
+    let finish: (o: { processed: number; yielded: boolean; reason: 'empty' }) => void = () => {};
+    vi.mocked(api.brainQueueDrain).mockReturnValue(
+      new Promise((r) => { finish = r; }) as ReturnType<typeof api.brainQueueDrain>,
+    );
+    // 158 total: 4 already done, 154 pending.
+    render(<BrainQueuePanel accountId={1} />);
+    fireEvent.click(await screen.findByRole('button', { name: /index all \(154\)/i }));
+    fireEvent.click(screen.getByRole('button', { name: /confirm/i }));
+
+    // The poll observes progress moving.
+    vi.mocked(api.brainQueueCounts).mockResolvedValue({
+      pending: 150, running: 1, done: 8, failed: 0,
+    });
+    await waitFor(
+      () => { expect(screen.getByText(/indexing 9 of 158/i)).toBeTruthy(); },
+      { timeout: 3000 },
+    );
+
+    finish({ processed: 154, yielded: false, reason: 'empty' });
+    await waitFor(() => { expect(screen.queryByText(/indexing \d+ of/i)).toBeNull(); });
+  });
+
+  it('stops polling once the run ends', async () => {
+    render(<BrainQueuePanel accountId={1} />);
+    fireEvent.click(await screen.findByRole('button', { name: /index all \(154\)/i }));
+    fireEvent.click(screen.getByRole('button', { name: /confirm/i }));
+    await waitFor(() => { expect(screen.getByText(/indexed 0/i)).toBeTruthy(); });
+
+    const settled = vi.mocked(api.brainQueueCounts).mock.calls.length;
+    await new Promise((r) => setTimeout(r, 1200));
+    // A timer left running would keep calling after the run finished.
+    expect(vi.mocked(api.brainQueueCounts).mock.calls.length).toBe(settled);
+  });
+
+  /**
    * The stale-read bug this tab has now shipped three times. A pause applied
    * from anywhere other than this button must show up here.
    */
