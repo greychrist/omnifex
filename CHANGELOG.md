@@ -5,6 +5,49 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.122] — 2026-08-13
+
+Brain indexing runs now live in the main process, so they survive leaving the
+page — and the progress bar reports work done rather than work started.
+
+### Fixed
+
+- **The indexing progress bar no longer fills instantly.** It sized itself on
+  items *started*, not items finished, so a one-item run read 100% from its
+  first frame — before any work had happened — and an N-item run reached full
+  the moment the last item *began*, never showing that item run. It now
+  measures items completed. A single-item run gets an indeterminate sweep
+  instead of a percentage, because indexing one item is a single opaque await
+  that reports nothing partway: any figure there would have been invented.
+- **A run no longer vanishes when you leave the Sources pane.** The Brain tab
+  unmounts the pane on a sub-tab switch, and the run lived in component state,
+  so navigating away left tokens being spent with nothing on screen saying so —
+  and no listing refresh when it finished. The pane now rebuilds its banner
+  from the main process on mount, so a run it never saw start still draws.
+
+### Added
+
+- **Refresh button on the Sources pane.** Deliberately live *during* a run: a
+  run only re-lists once the whole selection finishes, so this is the only way
+  to watch statuses land one at a time — and it is how you re-check rows that
+  went stale while the pane was unmounted.
+- **`brain_index_selection` and `brain_current_run` IPC channels**, plus a
+  `brain-run-progress` event broadcast to every window. Indexing runs one item
+  at a time at concurrency 1, matching the queue worker's contract with the
+  shared rate limit, and still touches only the rows you ticked — never a queue
+  drain. Per-item failures are recorded and stepped over rather than abandoning
+  the rest of a selection.
+
+### Removed
+
+- **`brain_index_source` and `api.brainIndexSource`.** Once the preview panel's
+  Index button routed through the tracked path they had no callers, and keeping
+  them would have left a second way to spend tokens with no run record —
+  exactly the failure this release fixes. The `indexSource` service method is
+  untouched; the queue worker still uses it.
+
+Installers remain **unsigned**.
+
 ## [0.4.121] — 2026-08-13
 
 A changelog-review pass against Claude Code 2.1.231.
