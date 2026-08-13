@@ -215,9 +215,25 @@ export interface QueueWorkerDeps {
   isPaused(): boolean;
 }
 
+/**
+ * What one drain actually did.
+ *
+ * `drain()` used to return void, so every caller had to assume success. The
+ * Brain tab printed "drain finished" whether the worker had indexed 158 items
+ * or yielded instantly because a session was open — the user pressed the
+ * button, nothing happened, and the UI congratulated itself.
+ */
+export interface DrainOutcome {
+  /** Items taken to a terminal state, successes and failures alike. */
+  processed: number;
+  /** True when the worker stopped for a reason other than an empty queue. */
+  yielded: boolean;
+  reason: 'empty' | 'paused' | 'session-active';
+}
+
 export interface BrainQueueWorker {
   /** Drain until empty or until yielding. Safe to call repeatedly. */
-  drain(): Promise<void>;
+  drain(): Promise<DrainOutcome>;
   /** The entry being worked on right now, for the operational pane. */
   current(): QueueEntry | null;
   running(): boolean;
@@ -227,20 +243,29 @@ export function createBrainQueueWorker(deps: QueueWorkerDeps): BrainQueueWorker 
   let draining = false;
   let currentEntry: QueueEntry | null = null;
 
-  async function drain(): Promise<void> {
+  async function drain(): Promise<DrainOutcome> {
     // Re-entry guard. Concurrency 1 is the contract with the user's rate
-    // limit, and a second drain would also pay twice for one item.
-    if (draining) return;
+    // limit, and a second drain would also pay twice for one item. Reported as
+    // a yield rather than a completion: this call indexed nothing.
+    if (draining) return { processed: 0, yielded: true, reason: 'paused' };
     draining = true;
+    let processed = 0;
     try {
       for (;;) {
         // Re-checked every iteration, not once at the top: checking only on
         // entry would let a long backfill run to completion no matter what the
         // user started doing halfway through.
-        if (deps.isPaused() || deps.hasActiveSession()) return;
+        //
+        // Two checks rather than one `||` so the caller learns WHICH stopped
+        // it — "a session is open" and "you paused it" need different words in
+        // the UI, and the user has to be able to tell them apart.
+        if (deps.isPaused()) return { processed, yielded: true, reason: 'paused' };
+        if (deps.hasActiveSession()) {
+          return { processed, yielded: true, reason: 'session-active' };
+        }
 
         const entry = deps.store.claimNext();
-        if (!entry) return;
+        if (!entry) return { processed, yielded: false, reason: 'empty' };
 
         currentEntry = entry;
         try {
@@ -256,6 +281,10 @@ export function createBrainQueueWorker(deps: QueueWorkerDeps): BrainQueueWorker 
           deps.store.fail(entry.id, (err as Error).message);
         } finally {
           currentEntry = null;
+          // Counted in `finally`: a failed item is still an item taken to a
+          // terminal state, and progress that stalled on failures would read
+          // as a hung run.
+          processed += 1;
         }
       }
     } finally {

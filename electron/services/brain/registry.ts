@@ -18,6 +18,7 @@ import {
   CURATION_SOURCE_ID,
   createBrainQueueStore,
   createBrainQueueWorker,
+  type DrainOutcome,
   type QueueCounts,
   type QueueEntry,
 } from './queue';
@@ -283,8 +284,14 @@ export interface BrainService {
   queueCounts(accountId?: number): QueueCounts;
   queueList(accountId: number, limit?: number): QueueEntry[];
   clearFinishedQueue(accountId: number): void;
-  /** Drain the queue, yielding to interactive sessions. Never throws. */
-  drainQueue(): Promise<void>;
+  /**
+   * Drain the queue, yielding to interactive sessions. Never throws.
+   *
+   * Returns what it actually did, so a caller can tell "indexed 158" from
+   * "yielded instantly because a session was open" — the Brain tab reported
+   * both as success until this returned something.
+   */
+  drainQueue(): Promise<DrainOutcome>;
   /** The entry being indexed right now, for the operational pane. */
   queueCurrent(): QueueEntry | null;
   closeAll(): void;
@@ -1329,7 +1336,7 @@ export function createBrainService(
       queueStore.clearFinished(accountId);
     },
 
-    drainQueue(): Promise<void> {
+    drainQueue(): Promise<DrainOutcome> {
       return queueWorker.drain();
     },
 

@@ -302,8 +302,9 @@ export function createBrainHandlers(
       if (!brain) throw new Error('brain service unavailable');
       // No accountId: the queue spans accounts and each entry carries its own,
       // which is what keeps a drain from ever crossing them.
-      await brain.drainQueue();
-      return null;
+      // Returns the outcome rather than null: the panel has to be able to say
+      // "yielded — a session is open" instead of claiming a run finished.
+      return brain.drainQueue();
     },
 
     async brain_queue_clear(_event, params = {}) {

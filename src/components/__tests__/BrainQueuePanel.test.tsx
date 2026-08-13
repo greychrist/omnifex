@@ -37,7 +37,9 @@ describe('BrainQueuePanel', () => {
     });
     vi.mocked(api.brainQueueList).mockResolvedValue([]);
     vi.mocked(api.brainBackfill).mockResolvedValue(0);
-    vi.mocked(api.brainQueueDrain).mockResolvedValue(undefined);
+    vi.mocked(api.brainQueueDrain).mockResolvedValue({
+      processed: 0, yielded: false, reason: 'empty',
+    });
     vi.mocked(api.brainQueueClear).mockResolvedValue(undefined);
     vi.mocked(api.getSetting).mockResolvedValue('false');
     vi.mocked(api.saveSetting).mockResolvedValue(undefined);
