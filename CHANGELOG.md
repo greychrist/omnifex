@@ -5,6 +5,32 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.119] — 2026-08-13
+
+The Brain stops indexing conversations you are still having.
+
+### Added
+
+- **A Name column in the Sources pane.** Each row now shows what it actually
+  is — a session's id, or a file-backed item's file name (never the whole
+  path). Sortable and searchable. Without it every row was anonymous: the
+  project column is shared by dozens of rows, so nothing on screen said which
+  conversation a row was.
+
+### Fixed
+
+- **A session that is still open is no longer indexable.** Its transcript is
+  still being written, so indexing distilled half a conversation, recorded the
+  item as done, and — because extraction asks a non-deterministic model — left
+  a note that would never match the finished session. Open sessions are now
+  marked "In use", cannot be ticked, and are refused by the backend at press
+  time, so the badge lagging a listing cannot cost anything. The refusal
+  ignores "force": the objection is not that the file looks unchanged, it is
+  that the conversation is not over.
+
+Installers remain **unsigned** — macOS Gatekeeper will block first launch;
+right-click → Open to run.
+
 ## [0.4.118] — 2026-08-13
 
 Hardening from the Claude Code 2.1.224 → 2.1.229 changelog review.
