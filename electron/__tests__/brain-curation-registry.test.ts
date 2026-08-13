@@ -176,6 +176,33 @@ describe('curation on the registry', () => {
     expect(brain.enqueueCuration(accountId)).toBe(0);
   });
 
+  it('commits the curated note under the message "Curation"', async () => {
+    // The commit is fire-and-forget (`commitAndRecord`), so a live `git log`
+    // read immediately after curateNote resolves races it. Asserting on the
+    // captured argv is what makes the spec's audit-trail claim testable.
+    const calls: string[][] = [];
+    const svc = createBrainService(db, {
+      // `commitAll` asks git what is staged and returns `nothing-to-commit`
+      // when the answer is empty, so a stub that returns '' for everything
+      // never reaches `git commit` at all.
+      execGit: async (args: string[]) => {
+        calls.push(args);
+        return args[0] === 'status' ? ' M Subsystems/Widget.md\n' : '';
+      },
+      curator: curator as never,
+      accounts: accountsStub,
+    });
+    svc.setVaultPath(accountId, join(dir, 'commit-vault'));
+    svc.writeNote(accountId, 'Subsystems/Widget.md', noteWith(12), 'seed');
+
+    await svc.curateNote(accountId, 'Subsystems/Widget.md');
+    // Let the fire-and-forget commit settle.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(calls.some((args) => args.includes('commit') && args.includes('Curation'))).toBe(true);
+    svc.closeAll();
+  });
+
   it('reports stats over the real vault, and zeroes when unconfigured', () => {
     brain.writeNote(accountId, 'Subsystems/Widget.md', noteWith(12), 'seed');
     brain.writeNote(accountId, 'Subsystems/Short.md', noteWith(2), 'seed');

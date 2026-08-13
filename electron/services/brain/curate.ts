@@ -22,9 +22,16 @@ import type { ParsedNote } from './types';
  */
 
 /**
- * §10's numbers, inherited from Rowboat and NOT yet measured against a real
- * vault. `stats.ts` exists to say whether they are right; retune them from
- * what it reports rather than from taste.
+ * §10's numbers, inherited from Rowboat.
+ *
+ * `MIN_TIMELINE_ENTRIES` is STILL UNMEASURED, deliberately. The Plan 7 probe
+ * could only build a vault from the auto-memory corpus, whose 83 notes all
+ * carry no Timeline at all — so the histogram that would justify a number came
+ * back entirely in the `none` bucket. The distribution only becomes meaningful
+ * once session-extracted notes exist, which needs a Sonnet backfill.
+ *
+ * Read the Timeline histogram in the Brain tab's stats panel after a backfill
+ * and set this from it. Until then it is Rowboat's number, not this vault's.
  */
 export const MIN_TIMELINE_ENTRIES = 8;
 export const RETAIN_RECENT = 5;
