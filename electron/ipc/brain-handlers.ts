@@ -7,6 +7,7 @@ import {
   type VaultStatus,
 } from '../services/brain/registry';
 import { NoteParseError } from '../services/brain/frontmatter';
+import type { VaultStats } from '../services/brain/stats';
 
 type Params = Record<string, unknown>;
 
@@ -63,6 +64,35 @@ function unconfiguredStatus(accountId: number): VaultStatus {
     gitAvailable: false,
     lastGitError: null,
     conflict: null,
+  };
+}
+
+/**
+ * What `stats()` would report for an account with no vault.
+ *
+ * Hand-mirrors `computeVaultStats([], …)` rather than importing the service:
+ * this layer must render something truthful even when the service failed to
+ * construct, which is exactly when it cannot be called. `brain-ipc.test.ts` is
+ * what keeps the two shapes honest.
+ */
+function emptyStats(): VaultStats {
+  return {
+    noteCount: 0,
+    totalBytes: 0,
+    byType: {},
+    medianBytes: 0,
+    largestBytes: 0,
+    largestNote: null,
+    estimatedTokens: { median: 0, largest: 0, vault: 0 },
+    timelineBuckets: [
+      { label: 'none', count: 0 },
+      { label: '1–3', count: 0 },
+      { label: '4–7', count: 0 },
+      { label: '8–15', count: 0 },
+      { label: '16+', count: 0 },
+    ],
+    qualifyingCount: 0,
+    recentlyCurated: [],
   };
 }
 
@@ -209,6 +239,30 @@ export function createBrainHandlers(
         requireAccountId(params),
         requireString(params, 'itemKey', 'item_key'),
       );
+    },
+
+    async brain_curate_note(_event, params = {}) {
+      // Spends tokens, like brain_index_source: a null result while the
+      // service is missing would report a curation that never happened.
+      if (!brain) throw new Error('brain service unavailable');
+      return brain.curateNote(
+        requireAccountId(params),
+        requireString(params, 'notePath', 'note_path'),
+      );
+    },
+
+    async brain_enqueue_curation(_event, params = {}) {
+      // A write that queues token-spending work, like brain_backfill.
+      if (!brain) throw new Error('brain service unavailable');
+      return brain.enqueueCuration(requireAccountId(params));
+    },
+
+    async brain_stats(_event, params = {}) {
+      const accountId = requireAccountId(params);
+      // A read: degrades so the stats panel renders truthful zeroes rather
+      // than an error when the service failed to construct.
+      if (!brain) return emptyStats();
+      return brain.stats(accountId);
     },
 
     async brain_queue_counts(_event, params = {}) {

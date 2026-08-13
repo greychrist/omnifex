@@ -1133,6 +1133,29 @@ export interface BrainIndexResult {
   reason: string;
 }
 
+/** Mirrors the backend `CurateResult` in electron/services/brain/registry.ts. */
+export interface BrainCurateResult {
+  notePath: string;
+  /** True when nothing was spent: the note vanished, or stopped qualifying. */
+  skipped: boolean;
+  reason: string;
+}
+
+/** Mirrors the backend `VaultStats` in electron/services/brain/stats.ts. */
+export interface BrainVaultStats {
+  noteCount: number;
+  totalBytes: number;
+  byType: Record<string, number>;
+  medianBytes: number;
+  largestBytes: number;
+  largestNote: string | null;
+  /** Derived from a bytes/4 ratio. Always label these as estimates in the UI. */
+  estimatedTokens: { median: number; largest: number; vault: number };
+  timelineBuckets: { label: string; count: number }[];
+  qualifyingCount: number;
+  recentlyCurated: { relPath: string; curatedAt: string }[];
+}
+
 /** Mirrors the backend `ParsedNote` in electron/services/brain/types.ts. */
 export interface BrainNote {
   frontmatter: {
@@ -3105,6 +3128,21 @@ export const api = {
   /** Queue every admitted, not-yet-indexed item for an account. */
   async brainBackfill(accountId: number): Promise<number> {
     return apiCall<number>('brain_backfill', { accountId });
+  },
+
+  /** Compress one note's accumulated Timeline. Spends tokens. */
+  async brainCurateNote(accountId: number, notePath: string): Promise<BrainCurateResult> {
+    return apiCall<BrainCurateResult>('brain_curate_note', { accountId, notePath });
+  },
+
+  /** Queue the notes most worth compressing. Returns how many were queued. */
+  async brainEnqueueCuration(accountId: number): Promise<number> {
+    return apiCall<number>('brain_enqueue_curation', { accountId });
+  },
+
+  /** Vault size, context cost and Timeline distribution. */
+  async brainStats(accountId: number): Promise<BrainVaultStats> {
+    return apiCall<BrainVaultStats>('brain_stats', { accountId });
   },
 
   /** Drain the queue now. Yields immediately if a session is open. */
