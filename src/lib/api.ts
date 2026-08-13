@@ -1032,6 +1032,9 @@ export interface BrainSourceSummary {
   sourceId: string;
   itemKey: string;
   label: string;
+  /** The folder `label` stands for, absolute. Display only — `label` is still
+   *  the grouping and exclusion key. */
+  labelPath: string;
   mtimeMs: number;
   /** Bytes on disk — the best single predictor of what indexing will cost. */
   size: number;

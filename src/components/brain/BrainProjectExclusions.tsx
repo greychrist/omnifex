@@ -1,6 +1,6 @@
 import React from 'react';
 import type { BrainSourceSummary } from '@/lib/api';
-import { projectLabel } from './BrainSourcesTable';
+import { projectsOf, splitPath } from './BrainSourcesTable';
 
 /**
  * Which projects the Brain is allowed to touch at all.
@@ -19,7 +19,8 @@ export const BrainProjectExclusions: React.FC<{
 }> = ({ rows, excluded, onToggle, onClose }) => {
   const counts = new Map<string, number>();
   for (const r of rows) counts.set(r.label, (counts.get(r.label) ?? 0) + 1);
-  const projects = [...counts.keys()].sort();
+  // Same ordering rule as the table's filter: alphabetical on the path.
+  const projects = projectsOf(rows);
 
   return (
     <div className="border-b bg-muted/30 px-3 py-2 text-xs">
@@ -39,18 +40,23 @@ export const BrainProjectExclusions: React.FC<{
       </div>
       <ul className="grid gap-1 sm:grid-cols-2">
         {projects.map((p) => (
-          <li key={p}>
-            <label className="flex items-center gap-2" title={p}>
+          <li key={p.label}>
+            <label className="flex items-center gap-2" title={p.path}>
               <input
                 type="checkbox"
-                checked={!excluded.has(p)}
-                onChange={(e) => { onToggle(p, !e.target.checked); }}
-                aria-label={`Include ${p}`}
+                checked={!excluded.has(p.label)}
+                onChange={(e) => { onToggle(p.label, !e.target.checked); }}
+                aria-label={`Include ${p.path}`}
                 className="h-3 w-3 shrink-0"
               />
-              <span className="truncate">{projectLabel(p)}</span>
+              {/* Parent truncates, folder name does not — these paths share
+                  long prefixes, and the tail is the distinguishing part. */}
+              <span className="flex min-w-0 items-baseline">
+                <span className="truncate text-muted-foreground">{splitPath(p.path).parent}</span>
+                <span className="shrink-0">{splitPath(p.path).base}</span>
+              </span>
               <span className="shrink-0 text-muted-foreground">
-                {counts.get(p)} {counts.get(p) === 1 ? 'item' : 'items'}
+                {counts.get(p.label)} {counts.get(p.label) === 1 ? 'item' : 'items'}
               </span>
             </label>
           </li>

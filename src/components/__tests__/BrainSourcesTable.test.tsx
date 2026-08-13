@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { BrainSourcesTable, projectLabel, rowId } from '@/components/brain/BrainSourcesTable';
+import { BrainSourcesTable, rowId } from '@/components/brain/BrainSourcesTable';
 import type { BrainSourceSummary } from '@/lib/api';
 
 function row(over: Partial<BrainSourceSummary> = {}): BrainSourceSummary {
@@ -11,6 +11,7 @@ function row(over: Partial<BrainSourceSummary> = {}): BrainSourceSummary {
     sourceId: 'session',
     itemKey: 'sess-a',
     label: '-Users-greg-Repos-personal-WIN',
+    labelPath: '/Users/greg/Repos/personal/WIN',
     mtimeMs: Date.parse('2026-08-01T00:00:00Z'),
     size: 40_960,
     admitted: true,
@@ -28,6 +29,7 @@ const ROWS = [
   row({
     itemKey: 'ccc',
     label: '-private-tmp-brain-probe',
+    labelPath: '/private/tmp/brain-probe',
     mtimeMs: Date.parse('2026-08-05T00:00:00Z'),
     size: 5_000,
     status: 'indexed',
@@ -151,9 +153,39 @@ describe('BrainSourcesTable', () => {
       .not.toBe(rowId(row({ sourceId: 'auto-memory', itemKey: 'x' })));
   });
 
-  it('renders a readable project label without claiming to decode the path', () => {
-    // Best-effort only: Plan 6 proved decoding these is unreliable, so the
-    // encoded name stays the key and this touches display alone.
-    expect(projectLabel('-Users-greg-Repos-personal-WIN')).toBe('personal/WIN');
+  it('shows the folder path, not the encoded directory name', () => {
+    render(<Harness />);
+    const cells = screen
+      .getAllByRole('row')
+      .slice(1)
+      .map((r) => within(r).getAllByRole('cell')[1].textContent ?? '');
+    expect(cells).toContain('/Users/greg/Repos/personal/WIN');
+    expect(cells).toContain('/private/tmp/brain-probe');
+  });
+
+  /**
+   * Alphabetical on the PATH, which is what the user reads. Sorting the
+   * encoded names instead would order `-private-...` before `-Users-...` on
+   * the strength of characters nobody is looking at.
+   */
+  it('lists projects alphabetically by path in the filter', () => {
+    render(<Harness />);
+    const options = within(screen.getByLabelText(/filter by project/i))
+      .getAllByRole('option')
+      .map((o) => o.textContent);
+    expect(options).toEqual([
+      'All projects',
+      '/private/tmp/brain-probe',
+      '/Users/greg/Repos/personal/WIN',
+    ]);
+  });
+
+  it('sorts the project column by path', () => {
+    render(<Harness />);
+    fireEvent.click(screen.getByRole('button', { name: /^project/i }));
+    // Descending on the first click, so `/Users…` leads `/private…`.
+    expect(itemCells()).toEqual(['aaa', 'bbb', 'ccc']);
+    fireEvent.click(screen.getByRole('button', { name: /^project/i }));
+    expect(itemCells()).toEqual(['ccc', 'aaa', 'bbb']);
   });
 });

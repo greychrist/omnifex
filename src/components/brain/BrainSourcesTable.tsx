@@ -47,15 +47,33 @@ function kb(bytes: number): string {
 }
 
 /**
- * The encoded project directory, rendered readably.
+ * Every project on screen, as `{ label, path }`, ordered by path.
  *
- * Best-effort ONLY. Plan 6 established that decoding these back to real paths
- * is unreliable — `wombeats-ios` decodes wrongly — which is why the exclusion
- * list and all grouping key on the encoded name. This touches the label alone.
+ * Ordered by PATH rather than by label because the path is what the user
+ * reads; ordering the encoded names would sort on characters nobody is
+ * looking at. The label stays the key throughout — the backend recovers the
+ * path authoritatively from a transcript's `cwd`, but only the label is
+ * guaranteed to be the name on disk.
  */
-export function projectLabel(encoded: string): string {
-  const tail = encoded.replace(/^-+/, '').split('-');
-  return tail.slice(-2).join('/') || encoded;
+export function projectsOf(rows: BrainSourceSummary[]): { label: string; path: string }[] {
+  const byLabel = new Map<string, string>();
+  for (const r of rows) if (!byLabel.has(r.label)) byLabel.set(r.label, r.labelPath);
+  return [...byLabel]
+    .map(([label, path]) => ({ label, path }))
+    .sort((a, b) => a.path.localeCompare(b.path));
+}
+
+/**
+ * A path split so the folder name survives truncation.
+ *
+ * Every project of Greg's shares a `/Users/…/Repos/…` prefix, so a column that
+ * truncates on the right cuts away the only part that distinguishes one row
+ * from another. The parent gets `truncate`; the basename does not.
+ */
+export function splitPath(path: string): { parent: string; base: string } {
+  const cut = path.lastIndexOf('/');
+  if (cut < 0) return { parent: '', base: path };
+  return { parent: path.slice(0, cut + 1), base: path.slice(cut + 1) };
 }
 
 export const BrainSourcesTable: React.FC<BrainSourcesTableProps> = ({
@@ -66,10 +84,7 @@ export const BrainSourcesTable: React.FC<BrainSourcesTableProps> = ({
   const [status, setStatus] = useState<StatusFilter>('all');
   const [project, setProject] = useState<string>('all');
 
-  const projects = useMemo(
-    () => [...new Set(rows.map((r) => r.label))].sort(),
-    [rows],
-  );
+  const projects = useMemo(() => projectsOf(rows), [rows]);
 
   const visible = useMemo(() => {
     const needle = text.trim().toLowerCase();
@@ -84,7 +99,7 @@ export const BrainSourcesTable: React.FC<BrainSourcesTableProps> = ({
     const dir = sort.desc ? -1 : 1;
     return [...filtered].sort((a, b) => {
       switch (sort.key) {
-        case 'project': return dir * a.label.localeCompare(b.label);
+        case 'project': return dir * a.labelPath.localeCompare(b.labelPath);
         case 'item': return dir * a.itemKey.localeCompare(b.itemKey);
         case 'size': return dir * (a.size - b.size);
         case 'status': return dir * statusOf(a).localeCompare(statusOf(b));
@@ -150,7 +165,7 @@ export const BrainSourcesTable: React.FC<BrainSourcesTableProps> = ({
         >
           <option value="all">All projects</option>
           {projects.map((p) => (
-            <option key={p} value={p}>{projectLabel(p)}</option>
+            <option key={p.label} value={p.label}>{p.path}</option>
           ))}
         </select>
         <select
@@ -211,8 +226,14 @@ export const BrainSourcesTable: React.FC<BrainSourcesTableProps> = ({
                       className="h-3 w-3"
                     />
                   </td>
-                  <td className="max-w-[12rem] truncate px-2 py-1" title={r.label}>
-                    {projectLabel(r.label)}
+                  {/* Parent truncates, basename does not — see splitPath. */}
+                  <td className="px-2 py-1" title={r.labelPath}>
+                    <span className="flex max-w-[16rem] items-baseline">
+                      <span className="truncate text-muted-foreground">
+                        {splitPath(r.labelPath).parent}
+                      </span>
+                      <span className="shrink-0">{splitPath(r.labelPath).base}</span>
+                    </span>
                   </td>
                   <td className="max-w-[14rem] truncate px-2 py-1" title={r.reason}>
                     {r.itemKey}

@@ -29,6 +29,7 @@ function summary(over: Partial<BrainSourceSummary> = {}): BrainSourceSummary {
     sourceId: 'session',
     itemKey: 'sess-a',
     label: '-Users-dev-omnifex',
+    labelPath: '/Users/dev/omnifex',
     mtimeMs: 1_700_000_000_000,
     size: 40_960,
     admitted: true,

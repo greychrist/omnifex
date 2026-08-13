@@ -2,6 +2,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import type { AccountsService } from '../../accounts';
 import { SCRATCH_DIR_NAME } from '../../sessions/summary-query';
+import { recoverProjectPath } from '../../project-paths';
 import { distillTranscript } from '../distill';
 import type { AdmitVerdict, BrainSource, DistilledItem, SourceItem } from './types';
 import type { DistilledSession } from '../distill';
@@ -70,6 +71,9 @@ export function createSessionSource(deps: SessionSourceDeps): BrainSource {
         if (!project.isDirectory) continue;
         if (isScratchProject(project.name)) continue;
         const projectDir = join(projectsDir, project.name);
+        // Once per project, not once per transcript: this reads a file, and a
+        // busy project holds hundreds of them.
+        const labelPath = recoverProjectPath(projectDir, project.name);
 
         for (const entry of listDirSafe(projectDir)) {
           // Top-level `.jsonl` only. `<sessionId>/` directories hold
@@ -95,6 +99,7 @@ export function createSessionSource(deps: SessionSourceDeps): BrainSource {
             mtimeMs: stat.mtimeMs,
             size: stat.size,
             label: project.name,
+            labelPath,
           });
         }
       }

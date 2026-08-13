@@ -14,6 +14,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { load } from 'js-yaml';
 import type { AccountsService } from '../../accounts';
+import { recoverProjectPath } from '../../project-paths';
 import type { AdmitVerdict, BrainSource, SourceItem, TranslatedNote } from './types';
 
 export const AUTO_MEMORY_SOURCE_ID = 'auto-memory';
@@ -155,6 +156,9 @@ export function createAutoMemorySource(deps: { accounts: AccountsService }): Bra
         for (const project of listDirSafe(projectsDir)) {
           if (!project.isDirectory) continue;
           const memoryDir = join(projectsDir, project.name, 'memory');
+          // Recovered from the project's transcripts, which sit beside
+          // `memory/`. Once per project — it reads a file.
+          const labelPath = recoverProjectPath(join(projectsDir, project.name), project.name);
 
           for (const entry of listDirSafe(memoryDir)) {
             if (entry.isDirectory) continue;
@@ -182,6 +186,7 @@ export function createAutoMemorySource(deps: { accounts: AccountsService }): Bra
               mtimeMs: stat.mtimeMs,
               size: stat.size,
               label: project.name,
+              labelPath,
             });
           }
         }

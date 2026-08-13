@@ -161,6 +161,9 @@ export interface SourceSummary {
   sourceId: string;
   itemKey: string;
   label: string;
+  /** The folder `label` stands for, absolute. Display only — `label` is still
+   *  the key. Falls back to `label` for an item with no folder behind it. */
+  labelPath: string;
   mtimeMs: number;
   /** Bytes on disk. Without it a 21MB session looks like a 40KB one, and size
    *  is the best single predictor of what indexing it will cost. */
@@ -998,6 +1001,7 @@ export function createBrainService(
             sourceId: item.sourceId,
             itemKey: item.itemKey,
             label: item.label,
+            labelPath: item.labelPath ?? item.label,
             mtimeMs: item.mtimeMs,
             size: item.size,
             admitted: verdict.admitted,

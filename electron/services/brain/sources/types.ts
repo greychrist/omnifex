@@ -32,6 +32,17 @@ export interface SourceItem {
   size: number;
   /** Short human label for the Sources pane, e.g. the project directory. */
   label: string;
+  /**
+   * The folder `label` stands for, as an absolute path.
+   *
+   * Display only — `label` remains the grouping and exclusion key, because it
+   * is what the filesystem guarantees is stable. Adapters that know the real
+   * path should recover it authoritatively (`recoverProjectPath`) rather than
+   * decoding the encoded dir name, which is lossy: a folder whose own name
+   * contains a dash decodes to a path that does not exist. Omitted when the
+   * item has no folder behind it.
+   */
+  labelPath?: string;
 }
 
 /**
