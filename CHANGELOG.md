@@ -5,6 +5,66 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.117] — 2026-08-13
+
+The Brain ships: a per-account Markdown knowledge vault that reads what you
+have already done and makes it retrievable in later sessions.
+
+### Added
+
+- **The Brain — a per-account vault.** Each account gets its own Obsidian-style
+  folder of Markdown notes, git-versioned and FTS5-indexed. Per account, not
+  per app: a work transcript can never be indexed through the personal account,
+  and one account's material can never surface in another's retrieval.
+- **Four sources feed it.** Session transcripts, explicit captures, Claude
+  Code's own auto-memory files, and repo instruction files (`CLAUDE.md`,
+  `AGENTS.md`). Auto-memory and repo artifacts are *translated* rather than
+  extracted — they are already curated prose, so running them through a model
+  would spend a token to rewrite what you deliberately wrote.
+- **A deterministic admission gate.** Sessions under two prompts, with no
+  assistant prose, or that died on a startup error are skipped with no model
+  call. The Sources pane shows the reason for every verdict, so the gate can be
+  checked before it spends anything.
+- **MCP server and `/recall`.** The vault is reachable from Claude sessions —
+  automatically for sessions started in OmniFex, and optionally registered into
+  an account's Claude config so terminal sessions reach it too.
+- **Curation.** Long notes are compressed so recalling one costs less context.
+  The model proposes a summary and which facts to promote; a pure fold decides
+  what is actually removed, so the model never chooses what to delete. Every run
+  commits as "Curation", so `git revert` in the vault undoes it.
+- **Vault statistics.** Note count, size, what one recall costs a session, how
+  many notes are long enough to curate, and the Timeline histogram behind that
+  judgement.
+- **A Sources operational pane.** A sortable, filterable, multi-select table
+  over everything discovered: project, type, date, size, status. Indexing runs
+  only on the rows you tick, with a live progress banner naming what it is
+  working on. Rows already indexed and unchanged cannot be ticked, since
+  indexing would refuse them anyway.
+- **Durable per-project inclusion.** Scratch paths (`/private`, `/tmp`,
+  `/var/folders`) are excluded by default and the choice is overridable per
+  path — the only thing that keeps a temp project out of the vault while
+  Auto-index is on.
+- **Two off-by-default switches**, Auto-index and Auto-curate. Both spend tokens
+  unattended, so neither is on until you say so.
+
+### Changed
+
+- **A project is identified by its folder path**, recovered from each
+  transcript's own `cwd` rather than decoded from the CLI's directory encoding.
+  That encoding is lossy — a folder whose name contains a dash decodes to a path
+  that does not exist — and every source now agrees on one identity, so a
+  session, its auto-memory and its `CLAUDE.md` are one project.
+
+### Fixed
+
+- **The account dropdown no longer clips its options** to the height of the
+  trigger. A stray Radix viewport constraint made every `Select` in the app open
+  as a one-line scroller.
+- **User-scope MCP servers are written to `.claude.json`**, not `settings.json`,
+  which is where the CLI actually reads them from.
+
+Installers remain **unsigned**.
+
 ## [0.4.116] — 2026-08-10
 
 ### Changed
