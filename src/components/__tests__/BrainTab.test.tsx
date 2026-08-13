@@ -44,6 +44,11 @@ vi.mock('@/components/brain/BrainSources', () => ({
     <div data-testid="sources">{String(accountId)}</div>
   ),
 }));
+vi.mock('@/components/brain/BrainStatsPanel', () => ({
+  BrainStatsPanel: ({ accountId }: { accountId: number | null }) => (
+    <div data-testid="stats">{String(accountId)}</div>
+  ),
+}));
 
 // Radix's Select renders a button-plus-portal that jsdom cannot drive with a
 // change event. A native <select> with the same contract is enough here: this

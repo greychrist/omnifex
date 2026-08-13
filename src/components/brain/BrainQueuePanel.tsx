@@ -15,6 +15,7 @@ const EMPTY: BrainQueueCounts = { pending: 0, running: 0, done: 0, failed: 0 };
 /** Mirrors the backend keys in electron/services/brain/queue.ts. */
 const AUTO_INDEX_KEY = 'brain.autoIndex';
 const PAUSED_KEY = 'brain.queuePaused';
+const CURATE_KEY = 'brain.curate';
 
 /**
  * A labelled switch for one global setting.
@@ -49,6 +50,7 @@ export const BrainQueuePanel: React.FC<{ accountId: number | null }> = ({ accoun
   const [nonce, setNonce] = useState(0);
   const [autoIndex, setAutoIndex] = useState(false);
   const [paused, setPaused] = useState(false);
+  const [curate, setCurate] = useState(false);
   // Unlike the two above, this one IS per account — it writes into one
   // account's Claude config — so it re-reads whenever the account changes.
   const [mcpStatus, setMcpStatus] = useState({ registered: false, available: false });
@@ -58,14 +60,19 @@ export const BrainQueuePanel: React.FC<{ accountId: number | null }> = ({ accoun
   // not.
   useEffect(() => {
     let cancelled = false;
-    void Promise.all([api.getSetting(AUTO_INDEX_KEY), api.getSetting(PAUSED_KEY)])
-      .then(([auto, pause]) => {
+    void Promise.all([
+      api.getSetting(AUTO_INDEX_KEY),
+      api.getSetting(PAUSED_KEY),
+      api.getSetting(CURATE_KEY),
+    ])
+      .then(([auto, pause, cur]) => {
         if (cancelled) return;
         setAutoIndex(auto === 'true');
         setPaused(pause === 'true');
+        setCurate(cur === 'true');
       })
       .catch(() => {
-        // A settings read failure leaves both switches off, which is the safe
+        // A settings read failure leaves every switch off, which is the safe
         // reading: it never turns unattended spending ON by accident.
       });
     return () => { cancelled = true; };
@@ -176,6 +183,20 @@ export const BrainQueuePanel: React.FC<{ accountId: number | null }> = ({ accoun
           disabled={busy}
           onClick={() => {
             run(async () => {
+              const n = await api.brainEnqueueCuration(accountId);
+              return `queued ${String(n)} for curation`;
+            });
+          }}
+          className="rounded-md border px-2 py-1 hover:bg-accent disabled:opacity-50"
+        >
+          Curate
+        </button>
+
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => {
+            run(async () => {
               await api.brainQueueDrain();
               return 'drain finished';
             });
@@ -204,6 +225,13 @@ export const BrainQueuePanel: React.FC<{ accountId: number | null }> = ({ accoun
           title="Index each session when it closes. Off by default — it spends tokens unattended."
           checked={autoIndex}
           onChange={(next) => { setSwitch(AUTO_INDEX_KEY, next, setAutoIndex); }}
+        />
+
+        <SettingSwitch
+          label="Auto-curate"
+          title="Compress long notes when a session closes, so retrieving them costs less context. Off by default — it spends tokens unattended and rewrites existing notes. Every run commits as 'Curation', so git revert in the vault undoes it."
+          checked={curate}
+          onChange={(next) => { setSwitch(CURATE_KEY, next, setCurate); }}
         />
 
         <SettingSwitch

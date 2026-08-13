@@ -8,6 +8,7 @@ import { BrainVaultSetup } from './BrainVaultSetup';
 import { BrainNoteList } from './BrainNoteList';
 import { BrainNoteViewer } from './BrainNoteViewer';
 import { BrainSources } from './BrainSources';
+import { BrainStatsPanel } from './BrainStatsPanel';
 
 /**
  * The Brain tab, scoped to exactly ONE account at a time.
@@ -129,6 +130,19 @@ export const BrainTab: React.FC = () => {
         <div className="border-b bg-destructive/10 px-4 py-2 text-xs text-destructive">
           {vault.error}
         </div>
+      )}
+
+      {/* Above both panes: it describes the vault as a whole, which is the
+          same thing whichever pane is open. Selecting a recently curated note
+          switches to Notes, since inspecting one is the point of naming it. */}
+      {!needsSetup && !showVault && (
+        <BrainStatsPanel
+          accountId={accountId}
+          onSelect={(notePath) => {
+            setPane('notes');
+            setSelectedNote(notePath);
+          }}
+        />
       )}
 
       {needsSetup || showVault ? (
