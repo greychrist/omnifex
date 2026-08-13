@@ -15,6 +15,11 @@ function row(over: Partial<BrainSourceSummary> = {}): BrainSourceSummary {
     itemKey: 'sess-a',
     name: 'sess-a',
     inUse: false,
+    costUsd: null,
+    inputTokens: null,
+    outputTokens: null,
+    cacheReadTokens: null,
+    cacheCreationTokens: null,
     label: '/Users/greg/Repos/personal/WIN',
     mtimeMs: Date.parse('2026-08-01T00:00:00Z'),
     size: 40_960,
@@ -386,5 +391,68 @@ describe('BrainSourcesTable — sessions in use', () => {
     );
     fireEvent.click(screen.getByText('live'));
     expect(onOpen).toHaveBeenCalledWith('live');
+  });
+});
+
+// Every indexing run's cost comes back in the CLI's own JSON envelope; the
+// runner used to discard it. Now that it is recorded, the row that was paid
+// for is where it belongs.
+describe('BrainSourcesTable — cost', () => {
+  it('shows what a row cost, and nothing for one never indexed', () => {
+    render(
+      <BrainSourcesTable
+        rows={[
+          row({ itemKey: 'paid', name: 'paid', costUsd: 0.020333 }),
+          row({ itemKey: 'free', name: 'free' }),
+        ]}
+        selected={new Set()}
+        onSelectedChange={vi.fn()}
+        activeItemKey={null}
+        onOpen={vi.fn()}
+      />,
+    );
+    const cells = screen.getAllByTestId('source-cost').map((c) => c.textContent);
+    // Sub-cent runs still have to read as money, not as "$0.02" rounded from
+    // nothing — and an unindexed row must not claim to have been free.
+    expect(cells).toEqual(['$0.0203', '—']);
+  });
+
+  it('breaks the cost down by tokens on hover', () => {
+    render(
+      <BrainSourcesTable
+        rows={[row({
+          itemKey: 'paid', name: 'paid', costUsd: 0.02,
+          inputTokens: 10, outputTokens: 315,
+          cacheReadTokens: 0, cacheCreationTokens: 9374,
+        })]}
+        selected={new Set()}
+        onSelectedChange={vi.fn()}
+        activeItemKey={null}
+        onOpen={vi.fn()}
+      />,
+    );
+    const title = screen.getByTestId('source-cost').getAttribute('title') ?? '';
+    expect(title).toMatch(/10 in/);
+    expect(title).toMatch(/315 out/);
+    expect(title).toMatch(/9,374 cache write/);
+  });
+
+  it('sorts by cost, with never-indexed rows treated as zero', () => {
+    render(
+      <BrainSourcesTable
+        rows={[
+          row({ itemKey: 'a', name: 'a', costUsd: 0.01 }),
+          row({ itemKey: 'b', name: 'b', costUsd: 0.5 }),
+          row({ itemKey: 'c', name: 'c' }),
+        ]}
+        selected={new Set()}
+        onSelectedChange={vi.fn()}
+        activeItemKey={null}
+        onOpen={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /^Cost/ }));
+    expect(screen.getAllByTestId('source-name').map((n) => n.textContent))
+      .toEqual(['b', 'a', 'c']);
   });
 });

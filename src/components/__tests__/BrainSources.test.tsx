@@ -17,7 +17,9 @@ vi.mock('@/lib/api', () => ({
 // account it was handed, which is what keeps these assertions about the
 // sources list rather than about queue depth.
 vi.mock('@/components/brain/BrainQueuePanel', () => ({
-  BrainQueuePanel: ({ accountId }: { accountId: number | null }) => (
+  // Only the actions half renders here now — the persistent switches moved to
+  // the Brain tab's Settings tab.
+  BrainQueueActions: ({ accountId }: { accountId: number | null }) => (
     <div data-testid="queue-panel">{String(accountId)}</div>
   ),
 }));
@@ -29,6 +31,11 @@ function summary(over: Partial<BrainSourceSummary> = {}): BrainSourceSummary {
     itemKey: 'sess-a',
     name: 'sess-a',
     inUse: false,
+    costUsd: null,
+    inputTokens: null,
+    outputTokens: null,
+    cacheReadTokens: null,
+    cacheCreationTokens: null,
     label: '/Users/dev/omnifex',
     mtimeMs: 1_700_000_000_000,
     size: 40_960,

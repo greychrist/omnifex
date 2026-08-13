@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
+import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, cleanup, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, cleanup, fireEvent, within } from '@testing-library/react';
 import { BrainTab } from '@/components/brain/BrainTab';
 import { api, type BrainVaultStatus } from '@/lib/api';
 
@@ -44,31 +45,51 @@ vi.mock('@/components/brain/BrainSources', () => ({
     <div data-testid="sources">{String(accountId)}</div>
   ),
 }));
+vi.mock('@/components/brain/BrainQueuePanel', () => ({
+  BrainAutomationSettings: ({ accountId }: { accountId: number | null }) => (
+    <div data-testid="automation-settings">{String(accountId)}</div>
+  ),
+}));
 vi.mock('@/components/brain/BrainStatsPanel', () => ({
   BrainStatsPanel: ({ accountId }: { accountId: number | null }) => (
     <div data-testid="stats">{String(accountId)}</div>
   ),
 }));
 
-// Radix's Select renders a button-plus-portal that jsdom cannot drive with a
-// change event. A native <select> with the same contract is enough here: this
-// file tests what the header's account switcher DOES, not how Radix paints it.
+// Radix's Select renders a button-plus-portal that jsdom cannot drive. These
+// stand-ins keep the same contract — a current value, items that report their
+// own value on press, and a trigger that renders whatever it was given — which
+// is what this file tests: what the account switcher DOES, and that the
+// trigger carries the badge, not how Radix paints either.
+const SelectValueCtx = React.createContext<(v: string) => void>(() => undefined);
 vi.mock('@/components/ui/select', () => ({
-  SelectComponent: ({
-    value, onValueChange, options,
+  Select: ({
+    value, onValueChange, children,
   }: {
     value: string;
     onValueChange: (v: string) => void;
-    options: { value: string; label: string }[];
+    children: React.ReactNode;
   }) => (
-    <select
-      data-testid="account-select"
-      value={value}
-      onChange={(e) => { onValueChange(e.target.value); }}
-    >
-      {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-    </select>
+    <SelectValueCtx.Provider value={onValueChange}>
+      <div data-testid="account-select" data-value={value}>{children}</div>
+    </SelectValueCtx.Provider>
   ),
+  SelectTrigger: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="account-select-trigger">{children}</div>
+  ),
+  SelectContent: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  SelectItem: ({ value, children }: { value: string; children: React.ReactNode }) => {
+    const onValueChange = React.useContext(SelectValueCtx);
+    return (
+      <button
+        type="button"
+        data-testid={`account-option-${value}`}
+        onClick={() => { onValueChange(value); }}
+      >
+        {children}
+      </button>
+    );
+  },
 }));
 
 // AccountBadge reaches for ThemeProvider; its own rendering is covered by
@@ -176,32 +197,43 @@ describe('BrainTab', () => {
     });
   });
 
-  it('opens the vault panel for a healthy vault via the header toggle', async () => {
+  it('reaches vault management from the Settings tab on a healthy vault', async () => {
     render(<BrainTab />);
     await waitFor(() => { expect(screen.getByTestId('note-list')).toBeTruthy(); });
 
     // Without this route the rebuild and disconnect controls would only be
     // reachable by first BREAKING the vault.
-    fireEvent.click(screen.getByRole('button', { name: /vault/i }));
+    fireEvent.click(screen.getByRole('tab', { name: /settings/i }));
     expect(screen.getByTestId('vault-setup')).toBeTruthy();
+    expect(screen.getByTestId('automation-settings')).toBeTruthy();
     expect(screen.queryByTestId('note-list')).toBeNull();
   });
 
-  it('closes the vault panel again on a second click', async () => {
+  it('goes back to the notes from Settings', async () => {
     render(<BrainTab />);
     await waitFor(() => { expect(screen.getByTestId('note-list')).toBeTruthy(); });
 
-    const toggle = screen.getByRole('button', { name: /vault/i });
-    fireEvent.click(toggle);
-    fireEvent.click(toggle);
+    fireEvent.click(screen.getByRole('tab', { name: /settings/i }));
+    fireEvent.click(screen.getByRole('tab', { name: /^notes$/i }));
     expect(screen.getByTestId('note-list')).toBeTruthy();
   });
 
-  it('does not offer the toggle when the vault is already routed to setup', async () => {
+  it('forces Settings and disables the other tabs while a vault needs setup', async () => {
+    // The old shell REPLACED the page with the setup panel, which hid the
+    // account switcher too — so a broken vault stranded the user on the very
+    // account they wanted to leave. Now it is a tab, and the rest are refused
+    // rather than removed.
     vi.mocked(api.brainStatus).mockResolvedValue(status({ configured: false, path: null, exists: false }));
     render(<BrainTab />);
     await waitFor(() => { expect(screen.getByTestId('vault-setup')).toBeTruthy(); });
-    expect(screen.queryByRole('button', { name: /vault/i })).toBeNull();
+
+    expect((screen.getByRole('tab', { name: /^notes$/i }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole('tab', { name: /^sources$/i }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole('tab', { name: /settings/i }) as HTMLButtonElement).disabled).toBe(false);
+    // The way out of a broken vault stays reachable.
+    expect(screen.getByTestId('account-select')).toBeTruthy();
+    // Four zeroes would read as a fact rather than as an absence.
+    expect(screen.queryByTestId('stats')).toBeNull();
   });
 
   /**
@@ -246,11 +278,11 @@ describe('BrainTab', () => {
     render(<BrainTab />);
     await waitFor(() => { expect(screen.getByTestId('note-list')).toBeTruthy(); });
 
-    fireEvent.click(screen.getByRole('button', { name: /^sources$/i }));
+    fireEvent.click(screen.getByRole('tab', { name: /^sources$/i }));
     expect(screen.getByTestId('sources')).toBeTruthy();
     expect(screen.queryByTestId('note-list')).toBeNull();
 
-    fireEvent.click(screen.getByRole('button', { name: /^notes$/i }));
+    fireEvent.click(screen.getByRole('tab', { name: /^notes$/i }));
     expect(screen.getByTestId('note-list')).toBeTruthy();
   });
 
@@ -258,13 +290,86 @@ describe('BrainTab', () => {
     render(<BrainTab />);
     await waitFor(() => { expect(screen.getByTestId('note-list')).toBeTruthy(); });
 
-    fireEvent.click(screen.getByRole('button', { name: /^sources$/i }));
+    fireEvent.click(screen.getByRole('tab', { name: /^sources$/i }));
     expect(screen.getByTestId('sources').textContent).toBe('7');
 
-    fireEvent.change(screen.getByTestId('account-select'), { target: { value: '9' } });
+    fireEvent.click(screen.getByTestId('account-option-9'));
     // Landing back on notes after a switch is deliberate: the sources list is
     // a scan of another account's config dir, and silently re-running it under
     // a new account reads as if the previous list simply updated.
     await waitFor(() => { expect(screen.getByTestId('note-list')).toBeTruthy(); });
+  });
+});
+
+// The page was restyled to match Projects: a hero title and blurb above a
+// single card, the vault's own name and count at the card's top left, and the
+// account selector at its top right.
+describe('BrainTab — account switcher placement', () => {
+  // Its own setup: the suite above scopes `beforeEach` to its own describe, so
+  // without this the status mock returns undefined and nothing renders.
+  beforeEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+    vi.mocked(api.brainStatus).mockImplementation((id) => Promise.resolve(status({ accountId: id })));
+    vi.mocked(api.brainListNotes).mockResolvedValue(['Notes/A.md', 'Notes/B.md']);
+  });
+
+  it('leads with a hero title and blurb, then one card holding the rest', async () => {
+    render(<BrainTab />);
+    await screen.findByTestId('account-select');
+
+    const title = screen.getByRole('heading', { level: 1, name: 'Brain' });
+    expect(title).toBeTruthy();
+    // A blurb saying what the page is for, the way Projects does.
+    expect(screen.getByText(/vault of what you have already worked on/i)).toBeTruthy();
+    // The working surface sits below the hero, not beside it.
+    expect(title.compareDocumentPosition(screen.getByTestId('account-select'))
+      & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('names the selected vault at the top left and the account at the top right', async () => {
+    render(<BrainTab />);
+    await screen.findByTestId('account-select');
+
+    // "personal Brain (2 notes)" — the shape "Recent Projects (12)" uses.
+    const heading = await screen.findByRole('heading', { level: 2 });
+    expect(heading.textContent).toContain('personal Brain');
+    await waitFor(() => {
+      expect(screen.getByTestId('brain-summary').textContent).toBe('2 notes');
+    });
+    // Selector to the right of the name, in the same header row.
+    expect(heading.compareDocumentPosition(screen.getByTestId('account-select'))
+      & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('offers Notes, Sources and Settings — no Vault tab', async () => {
+    render(<BrainTab />);
+    await screen.findByTestId('account-select');
+    const tabs = screen.getAllByRole('tab').map((t) => t.textContent?.trim());
+    expect(tabs).toEqual(['Notes', 'Sources', 'Settings']);
+  });
+
+  it('renders the account badge inside the trigger, not a bare name', async () => {
+    render(<BrainTab />);
+    const trigger = await screen.findByTestId('account-select-trigger');
+    expect(within(trigger).getByTestId('account-badge').textContent).toBe('personal');
+  });
+
+  it('offers every account as a badge in the list', async () => {
+    render(<BrainTab />);
+    await screen.findByTestId('account-select');
+    expect(within(screen.getByTestId('account-option-7')).getByTestId('account-badge')).toBeTruthy();
+    expect(within(screen.getByTestId('account-option-9')).getByTestId('account-badge')).toBeTruthy();
+  });
+
+  it('keeps the switcher reachable on a vault that needs setup', async () => {
+    // The band the stats live in is hidden during setup. If the switcher were
+    // hidden with it, an account whose vault is unconfigured would strand the
+    // user there with no way to switch away.
+    vi.mocked(api.brainStatus).mockResolvedValue(status({ configured: false }));
+    render(<BrainTab />);
+    await screen.findByTestId('vault-setup');
+    expect(screen.getByTestId('account-select')).toBeTruthy();
+    expect(screen.queryByTestId('stats')).toBeNull();
   });
 });

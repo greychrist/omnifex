@@ -32,6 +32,15 @@ export interface VaultStats {
   /** Every figure here is derived from BYTES_PER_TOKEN. Label as estimated. */
   estimatedTokens: { median: number; largest: number; vault: number };
   timelineBuckets: { label: string; count: number }[];
+  /**
+   * What indexing this vault has cost so far, in USD.
+   *
+   * Not derivable from the notes — it lives in `brain_sources`, which the
+   * registry sums and layers on. `computeVaultStats` therefore reports 0 and
+   * the registry overwrites it; the alternative was passing a DB handle into a
+   * pure fold over Markdown.
+   */
+  spentUsd: number;
   qualifyingCount: number;
   recentlyCurated: { relPath: string; curatedAt: string }[];
 }
@@ -125,6 +134,8 @@ export function computeVaultStats(
       vault: Math.round(totalBytes / BYTES_PER_TOKEN),
     },
     timelineBuckets: BUCKET_ORDER.map((label) => ({ label, count: buckets.get(label) ?? 0 })),
+    // Overwritten by the registry, which is the only layer that can read it.
+    spentUsd: 0,
     qualifyingCount,
     recentlyCurated: curated.slice(0, RECENT_LIMIT),
   };

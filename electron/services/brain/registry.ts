@@ -191,6 +191,15 @@ export interface SourceSummary {
   /** True when this item's project is on the account's exclusion list. Only
    *  ever true when the caller asked to see excluded rows. */
   excluded: boolean;
+  /**
+   * What the last model-backed run on this item cost, as the CLI reported it.
+   * Null means nothing has ever been spent here — not that a run was free.
+   */
+  costUsd: number | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  cacheReadTokens: number | null;
+  cacheCreationTokens: number | null;
 }
 
 /** What one indexing run did. */
@@ -649,6 +658,20 @@ export function createBrainService(
     return base || item.itemKey;
   }
 
+  /**
+   * What this account has spent on indexing, summed from the per-item figures.
+   *
+   * Scoped by account_id like every other read here: one account's spend must
+   * never be reported under another's header, which is the same rule that
+   * governs the notes themselves.
+   */
+  function spentUsd(accountId: number): number {
+    const row = db.raw
+      .prepare('SELECT COALESCE(SUM(cost_usd), 0) AS total FROM brain_sources WHERE account_id = ?')
+      .get(accountId) as { total: number | null } | undefined;
+    return row?.total ?? 0;
+  }
+
   function readPath(accountId: number): string | null {
     return db.getSetting(vaultSettingKey(accountId));
   }
@@ -1064,6 +1087,11 @@ export function createBrainService(
             status: prior?.status ?? null,
             changed: sourceState.hasChanged(item),
             excluded: isExcluded,
+            costUsd: prior?.cost?.costUsd ?? null,
+            inputTokens: prior?.cost?.inputTokens ?? null,
+            outputTokens: prior?.cost?.outputTokens ?? null,
+            cacheReadTokens: prior?.cost?.cacheReadTokens ?? null,
+            cacheCreationTokens: prior?.cost?.cacheCreationTokens ?? null,
           });
         }
       }
@@ -1311,13 +1339,15 @@ export function createBrainService(
       // Nothing usable at all is reported as skipped, so the Sources pane does
       // not claim a successful run that produced no note.
       if (notesWritten.length === 0 && entityErrors.length > 0) {
-        sourceState.record(item, { status: 'failed', error: errorSummary });
+        sourceState.record(item, { status: 'failed', error: errorSummary, run: extraction.run });
         return { itemKey, notesWritten, skipped: true, reason: errorSummary ?? 'no notes written' };
       }
 
       // Partially written still counts as indexed: the item was processed, and
       // re-running would spend another token to arrive at the same place.
-      sourceState.record(item, { status: 'indexed', error: errorSummary });
+      // The run is recorded with the outcome, not separately: money is spent
+      // whether or not the entities it produced turned into notes.
+      sourceState.record(item, { status: 'indexed', error: errorSummary, run: extraction.run });
 
       const reason =
         entityErrors.length > 0
@@ -1421,7 +1451,7 @@ export function createBrainService(
           // One unreadable note must not cost the whole reading.
         }
       }
-      return computeVaultStats(notes, today());
+      return { ...computeVaultStats(notes, today()), spentUsd: spentUsd(accountId) };
     },
 
     async enqueueSource(accountId: number, itemKey: string): Promise<void> {

@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { api, type BrainSourcePreview, type BrainSourceSummary } from '@/lib/api';
-import { BrainQueuePanel } from './BrainQueuePanel';
+import { BrainQueueActions } from './BrainQueuePanel';
 import { BrainSourcesTable, rowId } from './BrainSourcesTable';
 import { BrainProjectExclusions } from './BrainProjectExclusions';
 import { Popover } from '@/components/ui/popover';
@@ -223,7 +223,11 @@ export const BrainSources: React.FC<{ accountId: number | null }> = ({ accountId
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <BrainQueuePanel accountId={accountId} />
+      {/* The queue's actions, above the list they act on. The persistent
+          switches that let it spend unattended live under Settings. */}
+      <div className="border-b bg-background px-4 py-2">
+        <BrainQueueActions accountId={accountId} />
+      </div>
       <div className="flex min-h-0 flex-1">
       {/* The table takes the whole pane until something is selected — there is
           nothing to reserve room for. */}

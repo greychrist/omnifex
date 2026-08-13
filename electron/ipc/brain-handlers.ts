@@ -92,6 +92,7 @@ function emptyStats(): VaultStats {
       { label: '16+', count: 0 },
     ],
     qualifyingCount: 0,
+    spentUsd: 0,
     recentlyCurated: [],
   };
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createDatabase, type Database } from '../services/database';
@@ -751,5 +751,206 @@ describe('session transcript source', () => {
       await expect(brain.indexSource(personalId, 'sess-a')).rejects.toThrow(/extractor/i);
       brain.closeAll();
     });
+  });
+});
+
+/**
+ * A session id is not unique per FILE. The CLI files transcripts per project
+ * directory, so resuming a conversation in a different cwd — moving between a
+ * git worktree and its main checkout, say — starts a second file carrying the
+ * same session id.
+ *
+ * Observed in the field: session 91ca1859 ran in
+ * `…/pi-tuitive--claude-worktrees-PI-272-289` until 2026-07-14T03:28:36 and
+ * continued in `…/pi-tuitive` nine seconds later. Two files, 1,435 and 743
+ * lines, one conversation.
+ *
+ * Emitting one item per file made those two rows collide on
+ * `(account_id, source_id, item_key)`: React warned about the duplicate key,
+ * both rows shared one state row, ticking one ticked both, and `findItem`
+ * returned whichever came first — so indexing distilled half the conversation
+ * and marked the whole thing done.
+ */
+describe('session transcript source — one session, many files', () => {
+  let db: Database;
+  let accounts: AccountsService;
+  let source: BrainSource;
+  let dir: string;
+  let cfg: string;
+
+  const WORKTREE = '-Users-dev-Repos-omnifex--claude-worktrees-PI-272';
+  const MAIN = '-Users-dev-Repos-omnifex';
+
+  function write(project: string, sessionId: string, body: string, mtimeMs?: number): string {
+    const projectDir = join(cfg, 'projects', project);
+    mkdirSync(projectDir, { recursive: true });
+    const file = join(projectDir, `${sessionId}.jsonl`);
+    writeFileSync(file, body, 'utf-8');
+    if (mtimeMs !== undefined) {
+      const when = new Date(mtimeMs);
+      utimesSync(file, when, when);
+    }
+    return file;
+  }
+
+  beforeEach(() => {
+    db = createDatabase(':memory:');
+    dir = mkdtempSync(join(tmpdir(), 'omnifex-multi-file-'));
+    cfg = join(dir, 'personal');
+    mkdirSync(cfg, { recursive: true });
+    accounts = createAccountsService(db);
+    accounts.createAccount({ name: 'personal', configDir: cfg, engine: 'claude' });
+    source = createSessionSource({ accounts });
+  });
+
+  afterEach(() => {
+    db.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  const EARLIER = Date.parse('2026-07-14T03:28:36.000Z');
+  const LATER = Date.parse('2026-07-14T03:28:45.000Z');
+
+  it('emits one item for a session split across two project directories', async () => {
+    write(WORKTREE, 'sess-split', GOOD, EARLIER);
+    write(MAIN, 'sess-split', GOOD, LATER);
+
+    const items = await source.discover();
+    expect(items).toHaveLength(1);
+    expect(items[0].itemKey).toBe('sess-split');
+  });
+
+  it('carries every backing file, oldest first', async () => {
+    const older = write(WORKTREE, 'sess-split', GOOD, EARLIER);
+    const newer = write(MAIN, 'sess-split', GOOD, LATER);
+
+    const [item] = await source.discover();
+    // Order is the conversation's order: the half that was written first is
+    // the half that was said first.
+    expect(item.paths).toEqual([older, newer]);
+  });
+
+  it('reports the newest file as its primary path, size as the whole session', async () => {
+    write(WORKTREE, 'sess-split', GOOD, EARLIER);
+    const newer = write(MAIN, 'sess-split', GOOD, LATER);
+
+    const [item] = await source.discover();
+    // Where the conversation currently lives, which is also the project it
+    // should be grouped and excluded under.
+    expect(item.path).toBe(newer);
+    expect(item.mtimeMs).toBe(LATER);
+    expect(item.size).toBe(Buffer.byteLength(GOOD) * 2);
+  });
+
+  it('still emits one item per file when the ids differ', async () => {
+    write(MAIN, 'sess-a', GOOD, EARLIER);
+    write(MAIN, 'sess-b', GOOD, LATER);
+    const items = await source.discover();
+    expect(items.map((i) => i.itemKey).sort()).toEqual(['sess-a', 'sess-b']);
+    expect(items.every((i) => i.paths?.length === 1)).toBe(true);
+  });
+
+  it('never merges the same id across two accounts', async () => {
+    // Two accounts can hold the same session id, and joining them would put
+    // one account's conversation into the other's vault.
+    const otherCfg = join(dir, 'work');
+    mkdirSync(join(otherCfg, 'projects', MAIN), { recursive: true });
+    writeFileSync(join(otherCfg, 'projects', MAIN, 'sess-split.jsonl'), GOOD, 'utf-8');
+    accounts.createAccount({ name: 'work', configDir: otherCfg, engine: 'claude' });
+    write(MAIN, 'sess-split', GOOD, EARLIER);
+
+    const items = await source.discover();
+    expect(items).toHaveLength(2);
+    expect(new Set(items.map((i) => i.accountId)).size).toBe(2);
+    for (const item of items) expect(item.paths).toHaveLength(1);
+  });
+
+  it('distils the whole conversation, not just one half', async () => {
+    write(WORKTREE, 'sess-split', [PROMPT('from the worktree', 1), PROSE('answer one', 1)].join('\n'), EARLIER);
+    write(MAIN, 'sess-split', [PROMPT('from the checkout', 2), PROSE('answer two', 2)].join('\n'), LATER);
+
+    const [item] = await source.discover();
+    const distilled = await source.distill!(item);
+    expect(distilled.prose).toContain('from the worktree');
+    expect(distilled.prose).toContain('from the checkout');
+  });
+
+  it('admits on the combined transcript, not on either half alone', async () => {
+    // One prompt each: neither half clears the 2-prompt gate, the conversation
+    // does. Judging a half would reject a real session.
+    write(WORKTREE, 'sess-split', [PROMPT('only ask here', 1), PROSE('answer one', 1)].join('\n'), EARLIER);
+    write(MAIN, 'sess-split', [PROMPT('only ask there', 2), PROSE('answer two', 2)].join('\n'), LATER);
+
+    const [item] = await source.discover();
+    expect(source.admit(item).admitted).toBe(true);
+  });
+});
+
+/**
+ * Change detection has to cover every file behind an item. Hashing only the
+ * primary path would mean a session whose EARLIER half changed — a repaired
+ * transcript, a resumed conversation gaining rows — looked unchanged, so the
+ * note stayed built from content that no longer exists.
+ */
+describe('session transcript source — change detection across files', () => {
+  let db: Database;
+  let accounts: AccountsService;
+  let source: BrainSource;
+  let dir: string;
+  let cfg: string;
+
+  function write(project: string, sessionId: string, body: string, mtimeMs: number): string {
+    const projectDir = join(cfg, 'projects', project);
+    mkdirSync(projectDir, { recursive: true });
+    const file = join(projectDir, `${sessionId}.jsonl`);
+    writeFileSync(file, body, 'utf-8');
+    const when = new Date(mtimeMs);
+    utimesSync(file, when, when);
+    return file;
+  }
+
+  beforeEach(() => {
+    db = createDatabase(':memory:');
+    dir = mkdtempSync(join(tmpdir(), 'omnifex-multi-change-'));
+    cfg = join(dir, 'personal');
+    mkdirSync(cfg, { recursive: true });
+    accounts = createAccountsService(db);
+    accounts.createAccount({ name: 'personal', configDir: cfg, engine: 'claude' });
+    source = createSessionSource({ accounts });
+  });
+
+  afterEach(() => {
+    db.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  const EARLIER = Date.parse('2026-07-14T03:28:36.000Z');
+  const LATER = Date.parse('2026-07-14T03:28:45.000Z');
+
+  it('hashes every file, so a change in an older half is not read as unchanged', async () => {
+    const older = write('-Users-dev-a', 'sess-split', GOOD, EARLIER);
+    const newest = write('-Users-dev-b', 'sess-split', GOOD, LATER);
+    const store = createSourceStateStore(db);
+
+    const [before] = await source.discover();
+    store.record(before, { status: 'indexed' });
+    expect(store.hasChanged(before)).toBe(false);
+
+    // Change the OLDER half's content, and touch the newest file without
+    // changing it — which is what a live session does to its own transcript.
+    // The touch is what gets past the mtime fast path (unmoved mtime means
+    // unmoved bytes, by design, for single-file items too); the hash is then
+    // the only thing that can notice the older half moved. Hashing `item.path`
+    // alone reports no change here, which is the bug this pins.
+    writeFileSync(older, `${GOOD}\n${PROMPT('a third ask', 3)}`, 'utf-8');
+    const keepOld = new Date(EARLIER);
+    utimesSync(older, keepOld, keepOld);
+    const touched = new Date(LATER + 60_000);
+    utimesSync(newest, touched, touched);
+
+    const [after] = await source.discover();
+    // The newest file is still the primary — only its timestamp moved.
+    expect(after.path).toBe(newest);
+    expect(store.hasChanged(after)).toBe(true);
   });
 });

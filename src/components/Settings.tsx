@@ -14,6 +14,7 @@ import { StorageTab } from "./StorageTab";
 import { LogTab } from "./LogTab";
 import { SummaryPromptSettings } from "./settings-panels/SummaryPromptSettings";
 import { fireAndLog, logAndForget } from "@/lib/fireAndLog";
+import { clearInitialSettingsTab, readInitialSettingsTab } from '@/lib/settingsInitialTab';
 import {
   GeneralSettings,
   AppearanceSettings,
@@ -54,20 +55,14 @@ export const Settings: React.FC<SettingsProps> = ({
 }) => {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // sessionStorage handoff from App.tsx's "View in Log" action — read AND
-  // clear on first render so a stale value from a prior toast can't sticky
-  // the Settings tab onto Log on a subsequent unrelated open. The
-  // `log:focus-error-view` window event covers the warm-mount case below.
-  const [activeTab, setActiveTab] = useState<string>(() => {
-    try {
-      const seed = window.sessionStorage.getItem('omnifex:settings-initial-tab');
-      if (seed) {
-        window.sessionStorage.removeItem('omnifex:settings-initial-tab');
-        return seed;
-      }
-    } catch { /* private mode etc — fall through to default */ }
-    return 'general';
-  });
+  // sessionStorage handoff from App.tsx's "View in Log" action. The read is
+  // PURE: it used to clear the key here too, which React StrictMode breaks by
+  // design — it invokes initializers twice, so the first call consumed the seed
+  // and the second returned 'general'. "View in Log" then opened Settings on
+  // General, and the `log:focus-error-view` event could not cover for it
+  // because `Settings` is lazily loaded and had not mounted when it fired.
+  // Consuming the seed is now an effect, below.
+  const [activeTab, setActiveTab] = useState<string>(readInitialSettingsTab);
   const [currentBinaryPath, setCurrentBinaryPath] = useState<string | null>(null);
   const [selectedInstallation, setSelectedInstallation] = useState<ClaudeInstallation | null>(null);
   const [binaryPathChanged, setBinaryPathChanged] = useState(false);
@@ -85,10 +80,19 @@ export const Settings: React.FC<SettingsProps> = ({
   // "View in Log" action on an error toast. Switch the inner tab to the
   // Log panel; LogTab handles the level-filter side of the same event.
   useEffect(() => {
-    const handler = () => { setActiveTab('log'); };
+    const handler = () => {
+      // Also consumes the seed: on the warm path this component was already
+      // mounted, so the mount effect above ran long before App seeded it.
+      clearInitialSettingsTab();
+      setActiveTab('log');
+    };
     window.addEventListener('log:focus-error-view', handler);
     return () => { window.removeEventListener('log:focus-error-view', handler); };
   }, []);
+
+  // Consume the seed once mounted, so it cannot hijack a later, unrelated open
+  // of the Settings tab. Idempotent — StrictMode runs this twice.
+  useEffect(() => { clearInitialSettingsTab(); }, []);
 
   const loadClaudeBinaryPath = async () => {
     try {

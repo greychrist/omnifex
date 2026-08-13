@@ -67,6 +67,15 @@ const BRAIN_TABLES_DDL = `
     last_indexed_at TEXT,
     status TEXT NOT NULL DEFAULT 'pending',
     error TEXT,
+    -- What the last run of this item actually cost, straight from the CLI's
+    -- own total_cost_usd — not an estimate derived from a pricing table we
+    -- would then have to keep in step with Anthropic's. NULL means nothing has
+    -- been spent on this item, which is distinct from a run that cost 0.
+    cost_usd REAL,
+    input_tokens INTEGER,
+    output_tokens INTEGER,
+    cache_read_tokens INTEGER,
+    cache_creation_tokens INTEGER,
     PRIMARY KEY (account_id, source_id, item_key),
     FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
   );
@@ -546,6 +555,30 @@ const migrations: Migration[] = [
       'so the two cannot drift.',
     up: (db) => {
       db.exec(BRAIN_TABLES_DDL);
+    },
+  },
+  {
+    version: 19,
+    description:
+      'Record what each Brain indexing run cost. Every run already pays for a '
+      + '`claude -p --output-format json` call whose envelope carries '
+      + '`total_cost_usd` and a usage breakdown; the runner parsed out the '
+      + 'reply and discarded the rest, so the Brain could spend without ever '
+      + 'being able to say what it spent. Columns are nullable: NULL means '
+      + 'nothing has been spent on that item, which is not the same as a run '
+      + 'that cost zero.',
+    up: (db) => {
+      const cols = db.pragma('table_info(brain_sources)') as { name: string }[];
+      const add = (name: string, type: string): void => {
+        if (!cols.some((c) => c.name === name)) {
+          db.exec(`ALTER TABLE brain_sources ADD COLUMN ${name} ${type}`);
+        }
+      };
+      add('cost_usd', 'REAL');
+      add('input_tokens', 'INTEGER');
+      add('output_tokens', 'INTEGER');
+      add('cache_read_tokens', 'INTEGER');
+      add('cache_creation_tokens', 'INTEGER');
     },
   },
 ];

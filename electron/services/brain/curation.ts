@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { createSummaryQueryRunner } from '../sessions/summary-query';
+import { createSummaryQueryRunner, type CliRunResult } from '../sessions/summary-query';
 import type { CurationResult } from './curate';
 import { firstJsonObject } from './extract';
 
@@ -117,7 +117,9 @@ export interface CuratorDeps {
    * writes — and the Brain's own discovery excludes that scratch directory, so
    * curation calls cannot be re-indexed by the Brain.
    */
-  runQuery?: (opts: { prompt: string; model: string; configDir: string }) => Promise<string>;
+  runQuery?: (
+    opts: { prompt: string; model: string; configDir: string },
+  ) => Promise<CliRunResult>;
 }
 
 export function createCurator(deps: CuratorDeps = {}): Curator {
@@ -127,7 +129,7 @@ export function createCurator(deps: CuratorDeps = {}): Curator {
     const prompt = buildCurationPrompt(input);
     const reply = await runQuery({ prompt, model: CURATION_MODEL, configDir });
     try {
-      return parseCuration(reply);
+      return parseCuration(reply.result);
     } catch (err) {
       if (!(err instanceof CurationParseError)) throw err;
       // Exactly one retry, matching `createExtractor`. A transport error never
@@ -135,7 +137,7 @@ export function createCurator(deps: CuratorDeps = {}): Curator {
       // because a spawn or auth failure is not a bad answer and immediately
       // repeating it just fails twice.
       const second = await runQuery({ prompt, model: CURATION_MODEL, configDir });
-      return parseCuration(second);
+      return parseCuration(second.result);
     }
   };
 }

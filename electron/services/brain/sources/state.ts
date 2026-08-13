@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import type { Database } from '../../database';
-import type { SourceItem } from './types';
+import { pathsOf, type SourceItem } from './types';
 
 /**
  * Where an item stands with the indexer.
@@ -22,12 +22,34 @@ export interface SourceState {
   lastIndexedAt: string | null;
   status: SourceStatus;
   error: string | null;
+  /** What the last run that spent anything on this item cost. See RunCost. */
+  cost: RunCost | null;
+}
+
+/**
+ * What one model-backed run cost, as the CLI itself reported it.
+ *
+ * Null fields mean "the CLI did not say", never "zero" — an envelope that
+ * stops carrying a field must degrade to unknown rather than to free.
+ */
+export interface RunCost {
+  costUsd: number | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  cacheReadTokens: number | null;
+  cacheCreationTokens: number | null;
 }
 
 export interface RecordOptions {
   status: SourceStatus;
   /** Cleared when omitted, so a fixed failure stops being reported. */
   error?: string;
+  /**
+   * What this run spent, when it spent anything. Omitted by every path that
+   * costs nothing — a gate rejection, a translating source, an unchanged item
+   * — and those leave any previously recorded figures intact.
+   */
+  run?: RunCost;
 }
 
 export interface SourceStateStore {
@@ -48,6 +70,11 @@ interface Row {
   last_indexed_at: string | null;
   status: string;
   error: string | null;
+  cost_usd: number | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  cache_read_tokens: number | null;
+  cache_creation_tokens: number | null;
 }
 
 function toState(row: Row): SourceState {
@@ -60,6 +87,22 @@ function toState(row: Row): SourceState {
     lastIndexedAt: row.last_indexed_at,
     status: row.status as SourceStatus,
     error: row.error,
+    // All-null means nothing was ever spent here; the object would be five
+    // nulls saying the same thing, so the whole thing is null instead.
+    cost:
+      row.cost_usd === null &&
+      row.input_tokens === null &&
+      row.output_tokens === null &&
+      row.cache_read_tokens === null &&
+      row.cache_creation_tokens === null
+        ? null
+        : {
+            costUsd: row.cost_usd,
+            inputTokens: row.input_tokens,
+            outputTokens: row.output_tokens,
+            cacheReadTokens: row.cache_read_tokens,
+            cacheCreationTokens: row.cache_creation_tokens,
+          },
   };
 }
 
@@ -69,9 +112,20 @@ function toState(row: Row): SourceState {
  * Null is treated as "changed" by every caller. A file that vanished between
  * discovery and hashing is exactly the case where re-examining it is correct.
  */
-function hashFile(path: string): string | null {
+/**
+ * One hash over every file behind an item, in order.
+ *
+ * Not just `item.path`: a session resumed in another cwd spans several files
+ * (see `SourceItem.paths`), and hashing only the newest would miss an edit to
+ * an earlier half — the note would stay built from content that had changed
+ * underneath it. Any unreadable file makes the whole hash null, which reads as
+ * "cannot tell", and `hasChanged` treats that as changed.
+ */
+function hashItem(item: Pick<SourceItem, 'path' | 'paths'>): string | null {
   try {
-    return createHash('sha256').update(readFileSync(path)).digest('hex');
+    const h = createHash('sha256');
+    for (const p of pathsOf(item)) h.update(readFileSync(p));
+    return h.digest('hex');
   } catch {
     return null;
   }
@@ -109,27 +163,43 @@ export function createSourceStateStore(db: Database): SourceStateStore {
   }
 
   function record(item: SourceItem, opts: RecordOptions): void {
+    // A run that spent nothing (a gate rejection, a translating source) leaves
+    // the previous figures alone rather than nulling them: what an item cost to
+    // index is still true after a later run declined to index it again.
+    const run = opts.run;
     raw
       .prepare(
         `INSERT INTO brain_sources
-           (account_id, source_id, item_key, mtime, hash, last_indexed_at, status, error)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+           (account_id, source_id, item_key, mtime, hash, last_indexed_at, status, error,
+            cost_usd, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (account_id, source_id, item_key) DO UPDATE SET
            mtime = excluded.mtime,
            hash = excluded.hash,
            last_indexed_at = excluded.last_indexed_at,
            status = excluded.status,
-           error = excluded.error`,
+           error = excluded.error,
+           cost_usd = COALESCE(excluded.cost_usd, brain_sources.cost_usd),
+           input_tokens = COALESCE(excluded.input_tokens, brain_sources.input_tokens),
+           output_tokens = COALESCE(excluded.output_tokens, brain_sources.output_tokens),
+           cache_read_tokens = COALESCE(excluded.cache_read_tokens, brain_sources.cache_read_tokens),
+           cache_creation_tokens =
+             COALESCE(excluded.cache_creation_tokens, brain_sources.cache_creation_tokens)`,
       )
       .run(
         item.accountId,
         item.sourceId,
         item.itemKey,
         Math.floor(item.mtimeMs),
-        hashFile(item.path),
+        hashItem(item),
         new Date().toISOString(),
         opts.status,
         opts.error ?? null,
+        run?.costUsd ?? null,
+        run?.inputTokens ?? null,
+        run?.outputTokens ?? null,
+        run?.cacheReadTokens ?? null,
+        run?.cacheCreationTokens ?? null,
       );
   }
 
@@ -143,7 +213,7 @@ export function createSourceStateStore(db: Database): SourceStateStore {
     // Slow path. mtime moving does NOT imply the content moved — a restore, a
     // branch switch, or a `touch` all rewrite timestamps over identical bytes,
     // and treating those as edits would re-index an entire vault for nothing.
-    const current = hashFile(item.path);
+    const current = hashItem(item);
     if (current === null || prior.hash === null) return true;
     return current !== prior.hash;
   }

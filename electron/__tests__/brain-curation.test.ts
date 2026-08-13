@@ -1,4 +1,21 @@
 import { describe, expect, it, vi } from 'vitest';
+import type { CliRunResult } from '../services/sessions/summary-query';
+/**
+ * A `claude -p` result carrying just the reply. The runner now returns the
+ * CLI's cost accounting alongside the text; these tests are about the text.
+ */
+function reply(text: string): CliRunResult {
+  return {
+    result: text,
+    costUsd: null,
+    inputTokens: null,
+    outputTokens: null,
+    cacheReadTokens: null,
+    cacheCreationTokens: null,
+    durationMs: null,
+  };
+}
+
 import {
   CURATION_MODEL,
   CurationParseError,
@@ -63,7 +80,7 @@ describe('parseCuration', () => {
 
 describe('createCurator', () => {
   it('calls the pinned model with the account config dir', async () => {
-    const runQuery = vi.fn().mockResolvedValue('{"collapsed":"ok","promotedFacts":[]}');
+    const runQuery = vi.fn().mockResolvedValue(reply('{"collapsed":"ok","promotedFacts":[]}'));
     const curator = createCurator({ runQuery });
     const out = await curator(INPUT, '/cfg');
 
@@ -80,8 +97,8 @@ describe('createCurator', () => {
   it('retries exactly once on an unusable reply', async () => {
     const runQuery = vi
       .fn()
-      .mockResolvedValueOnce('nope')
-      .mockResolvedValueOnce('{"collapsed":"second try","promotedFacts":[]}');
+      .mockResolvedValueOnce(reply('nope'))
+      .mockResolvedValueOnce(reply('{"collapsed":"second try","promotedFacts":[]}'));
     const out = await createCurator({ runQuery })(INPUT, '/cfg');
 
     expect(out.collapsed).toBe('second try');
@@ -95,7 +112,7 @@ describe('createCurator', () => {
   });
 
   it('propagates a second bad reply rather than looping', async () => {
-    const runQuery = vi.fn().mockResolvedValue('still nope');
+    const runQuery = vi.fn().mockResolvedValue(reply('still nope'));
     await expect(createCurator({ runQuery })(INPUT, '/cfg')).rejects.toThrow(CurationParseError);
     expect(runQuery).toHaveBeenCalledTimes(2);
   });

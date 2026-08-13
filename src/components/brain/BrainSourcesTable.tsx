@@ -11,7 +11,7 @@ import { Popover } from '@/components/ui/popover';
  * a queue.
  */
 
-export type SortKey = 'project' | 'name' | 'type' | 'when' | 'size' | 'status';
+export type SortKey = 'project' | 'name' | 'type' | 'when' | 'size' | 'cost' | 'status';
 export type StatusFilter = 'all' | 'never' | 'indexed' | 'failed' | 'changed';
 
 export interface BrainSourcesTableProps {
@@ -87,6 +87,29 @@ export function sourceTypeLabel(sourceId: string): string {
   }
 }
 
+/**
+ * A run's cost, or an em dash when nothing was ever spent on the row.
+ *
+ * Four decimals, not two: one extraction lands around $0.02, and at two
+ * decimals every cheap run would read as "$0.02" and every very cheap one as
+ * "$0.00" — which says free, and it was not.
+ */
+function usd(cost: number | null): string {
+  if (cost === null) return '—';
+  return `$${cost.toFixed(4)}`;
+}
+
+/** The token split behind a cost, for the cell's tooltip. */
+function costBreakdown(r: BrainSourceSummary): string | undefined {
+  if (r.costUsd === null) return undefined;
+  const n = (v: number | null): string => (v === null ? '?' : v.toLocaleString());
+  return (
+    `${usd(r.costUsd)} — ${n(r.inputTokens)} in, ${n(r.outputTokens)} out, ` +
+    `${n(r.cacheReadTokens)} cache read, ${n(r.cacheCreationTokens)} cache write. ` +
+    "The CLI's own figure for the run that indexed this item."
+  );
+}
+
 function kb(bytes: number): string {
   if (bytes >= 1_048_576) return `${(bytes / 1_048_576).toFixed(1)} MB`;
   return `${Math.max(1, Math.round(bytes / 1024))} KB`;
@@ -158,6 +181,9 @@ export const BrainSourcesTable: React.FC<BrainSourcesTableProps> = ({
         case 'name': return dir * a.name.localeCompare(b.name, undefined, { numeric: true });
         case 'type': return dir * a.sourceId.localeCompare(b.sourceId);
         case 'size': return dir * (a.size - b.size);
+        // Never-indexed rows sort as zero: they cost nothing, which is exactly
+        // where they belong in a cost ordering.
+        case 'cost': return dir * ((a.costUsd ?? 0) - (b.costUsd ?? 0));
         case 'status': return dir * statusOf(a).localeCompare(statusOf(b));
         default: return dir * (a.mtimeMs - b.mtimeMs);
       }
@@ -324,6 +350,7 @@ export const BrainSourcesTable: React.FC<BrainSourcesTableProps> = ({
               {header('type', 'Type')}
               {header('when', 'When')}
               {header('size', 'Size')}
+              {header('cost', 'Cost')}
               {header('status', 'Status')}
             </tr>
           </thead>
@@ -386,6 +413,15 @@ export const BrainSourcesTable: React.FC<BrainSourcesTableProps> = ({
                   </td>
                   <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums text-muted-foreground">
                     {kb(r.size)}
+                  </td>
+                  <td
+                    data-testid="source-cost"
+                    title={costBreakdown(r)}
+                    className={`whitespace-nowrap px-2 py-1.5 text-right tabular-nums ${
+                      r.costUsd === null ? 'text-muted-foreground' : ''
+                    }`}
+                  >
+                    {usd(r.costUsd)}
                   </td>
                   {/* A rejected row shows the gate's REASON, not just
                       "skipped" — "fewer than 2 prompts" is the answer to the

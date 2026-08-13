@@ -1036,6 +1036,16 @@ export interface BrainSourceSummary {
   /** True when this row is a session open in OmniFex right now. Indexing one
    *  is refused by the backend — the transcript is still being written. */
   inUse: boolean;
+  /**
+   * What the last model-backed run on this item cost, straight from the CLI's
+   * own accounting. Null means nothing has ever been spent on it — which is
+   * not the same as a run that was free.
+   */
+  costUsd: number | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  cacheReadTokens: number | null;
+  cacheCreationTokens: number | null;
   /** The project folder, absolute. Grouping and exclusion key. */
   label: string;
   mtimeMs: number;
@@ -1162,6 +1172,8 @@ export interface BrainVaultStats {
   /** Derived from a bytes/4 ratio. Always label these as estimates in the UI. */
   estimatedTokens: { median: number; largest: number; vault: number };
   timelineBuckets: { label: string; count: number }[];
+  /** What indexing this vault has cost so far, in USD, summed per account. */
+  spentUsd: number;
   qualifyingCount: number;
   recentlyCurated: { relPath: string; curatedAt: string }[];
 }

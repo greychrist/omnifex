@@ -507,6 +507,10 @@ app.whenReady().then(() => {
         .filter((v) => v.root !== ''),
   });
 
+  // Built once: it resolves the claude binary and pins a scratch cwd, and both
+  // the Brain's extractor and session summarization run through it.
+  const summaryQueryRunner = createSummaryQueryRunner();
+
   const brainService: BrainService | undefined = createBrainService(db, {
     accounts: accountsService,
     extractor: createExtractor(),
@@ -982,7 +986,11 @@ app.whenReady().then(() => {
     // call, instead of mixing throwaway summary sessions into the user's
     // real project session list. bypassPermissions + disallowedTools:['*']
     // keep this strictly text-in / text-out.
-    runQuery: createSummaryQueryRunner(),
+    // The runner now returns the CLI's cost accounting alongside the reply
+    // (the Brain records what each indexing run cost). Session summaries want
+    // only the text, so they unwrap it here rather than the runner keeping a
+    // second, string-only entry point that would drift.
+    runQuery: async (opts) => (await summaryQueryRunner(opts)).result,
     onSummaryUpdated: (sessionUuid) => {
       // Broadcast to every renderer; SessionList rows subscribe and refetch
       // the matching uuid. Channel matches the existing `session-` prefix

@@ -6,6 +6,15 @@ import { api, type BrainQueueCounts, type BrainQueueEntry } from '@/lib/api';
  * control panel over a queue nothing drained would have been a control surface
  * for nothing. The worker exists now, so it lands.
  *
+ * Split in two along the line the Brain tab's tabs draw:
+ *
+ *  - `BrainQueueActions` — what the queue is doing and what you can do to it
+ *    right now. Lives above the Sources table, because Backfill and Curate act
+ *    on the list you are looking at.
+ *  - `BrainAutomationSettings` — the three persistent switches. They are
+ *    configuration, not actions, and a tab named Settings is where someone
+ *    goes to stop unattended spending.
+ *
  * Everything here is scoped to the selected account. Queue depth is per
  * account, and showing one account's backlog under another would misreport
  * what is about to be indexed and where it will land.
@@ -18,12 +27,24 @@ const PAUSED_KEY = 'brain.queuePaused';
 const CURATE_KEY = 'brain.curate';
 
 /**
- * A labelled switch for one global setting.
- *
- * Both switches live here rather than in Settings — spec §14 puts the kill
- * switch in Settings, but every other operational control is already in this
- * panel and splitting them would mean hunting in two places to stop indexing.
+ * Optimistic, then persisted: a toggle is the user's own action, and a control
+ * that lags a round trip reads as broken. A failed write puts it back and says
+ * why, so the switch never lies about what was stored.
  */
+function persistSwitch(
+  key: string,
+  next: boolean,
+  apply: (v: boolean) => void,
+  onError: (message: string) => void,
+): void {
+  apply(next);
+  api.saveSetting(key, next ? 'true' : 'false').catch((err: Error) => {
+    apply(!next);
+    onError(err.message);
+  });
+}
+
+/** A labelled switch for one persistent setting. */
 const SettingSwitch: React.FC<{
   label: string;
   title: string;
@@ -41,86 +62,35 @@ const SettingSwitch: React.FC<{
   </label>
 );
 
-export const BrainQueuePanel: React.FC<{ accountId: number | null }> = ({ accountId }) => {
+/**
+ * Queue depth, the actions that change it, and anything that failed.
+ *
+ * Pause/Resume lives here rather than with the switches: stopping a run in
+ * progress is something you DO, and it belongs beside the buttons whose work
+ * it stops.
+ */
+export const BrainQueueActions: React.FC<{ accountId: number | null }> = ({ accountId }) => {
   const [counts, setCounts] = useState<BrainQueueCounts>(EMPTY);
   const [entries, setEntries] = useState<BrainQueueEntry[]>([]);
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
-  const [autoIndex, setAutoIndex] = useState(false);
   const [paused, setPaused] = useState(false);
-  const [curate, setCurate] = useState(false);
-  // Unlike the two above, this one IS per account — it writes into one
-  // account's Claude config — so it re-reads whenever the account changes.
-  const [mcpStatus, setMcpStatus] = useState({ registered: false, available: false });
 
-  // These settings are GLOBAL, not per account — they are deliberately not
-  // re-read when the account changes, which would imply a scoping they do not
-  // have.
-  //
-  // They ARE re-read on `nonce`, i.e. after every action. Reading only at mount
-  // is the stale-read bug this tab has now shipped three times: a pause applied
-  // from anywhere else — another window, the queue panel's own drain, a direct
-  // settings write — left this showing the opposite of the truth.
+  // Re-read on `nonce`, i.e. after every action — not only at mount. Reading
+  // once is the stale-read bug this tab has now shipped three times: a pause
+  // applied from anywhere else left this showing the opposite of the truth.
   useEffect(() => {
     let cancelled = false;
-    void Promise.all([
-      api.getSetting(AUTO_INDEX_KEY),
-      api.getSetting(PAUSED_KEY),
-      api.getSetting(CURATE_KEY),
-    ])
-      .then(([auto, pause, cur]) => {
-        if (cancelled) return;
-        setAutoIndex(auto === 'true');
-        setPaused(pause === 'true');
-        setCurate(cur === 'true');
-      })
+    void api
+      .getSetting(PAUSED_KEY)
+      .then((pause) => { if (!cancelled) setPaused(pause === 'true'); })
       .catch(() => {
-        // A settings read failure leaves every switch off, which is the safe
-        // reading: it never turns unattended spending ON by accident.
+        // A failed read leaves it un-paused, matching the stored default.
       });
     return () => { cancelled = true; };
   }, [nonce]);
-
-  useEffect(() => {
-    if (accountId === null) {
-      setMcpStatus({ registered: false, available: false });
-      return;
-    }
-    let cancelled = false;
-    void api
-      .brainMcpStatus(accountId)
-      .then((status) => { if (!cancelled) setMcpStatus(status); })
-      .catch(() => {
-        // Unknown reads as "not exposed", which is the safe direction: it can
-        // never imply residue exists in a config dir when it does not.
-        if (!cancelled) setMcpStatus({ registered: false, available: false });
-      });
-    return () => { cancelled = true; };
-  }, [accountId, nonce]);
-
-  const setMcpRegistered = useCallback((next: boolean) => {
-    if (accountId === null) return;
-    // Not optimistic, unlike the two global switches: this one writes into a
-    // real Claude config dir, and showing it flipped before the write landed
-    // would claim residue that may not exist.
-    setError(null);
-    const call = next ? api.brainMcpRegister(accountId) : api.brainMcpUnregister(accountId);
-    void call
-      .then(() => { setMcpStatus((prev) => ({ ...prev, registered: next })); })
-      .catch((err: Error) => { setError(err.message); });
-  }, [accountId]);
-
-  const setSwitch = useCallback((key: string, next: boolean, apply: (v: boolean) => void) => {
-    // Optimistic, then persisted: the toggle is the user's own action, and a
-    // control that lags a round trip reads as broken.
-    apply(next);
-    api.saveSetting(key, next ? 'true' : 'false').catch((err: Error) => {
-      apply(!next);
-      setError(err.message);
-    });
-  }, []);
 
   useEffect(() => {
     setOutcome(null);
@@ -162,7 +132,7 @@ export const BrainQueuePanel: React.FC<{ accountId: number | null }> = ({ accoun
   const failed = entries.filter((e) => e.status === 'failed');
 
   return (
-    <div className="border-b bg-background px-4 py-2 text-xs">
+    <div className="text-xs">
       <div className="flex flex-wrap items-center gap-3">
         {/* The queue's own reading, boxed away from the buttons beside it —
             four counts run together read as one sentence about nothing. */}
@@ -215,7 +185,7 @@ export const BrainQueuePanel: React.FC<{ accountId: number | null }> = ({ accoun
             and the label has to say what pressing it will DO. */}
         <button
           type="button"
-          onClick={() => { setSwitch(PAUSED_KEY, !paused, setPaused); }}
+          onClick={() => { persistSwitch(PAUSED_KEY, !paused, setPaused, setError); }}
           className="rounded-md border px-2 py-1 hover:bg-accent"
         >
           {paused ? 'Resume' : 'Pause'}
@@ -234,29 +204,6 @@ export const BrainQueuePanel: React.FC<{ accountId: number | null }> = ({ accoun
         >
           Clear finished
         </button>
-
-        <SettingSwitch
-          label="Auto-index"
-          title="Index each session when it closes. Off by default — it spends tokens unattended."
-          checked={autoIndex}
-          onChange={(next) => { setSwitch(AUTO_INDEX_KEY, next, setAutoIndex); }}
-        />
-
-        <SettingSwitch
-          label="Auto-curate"
-          title="Compress long notes when a session closes, so retrieving them costs less context. Off by default — it spends tokens unattended and rewrites existing notes. Every run commits as 'Curation', so git revert in the vault undoes it."
-          checked={curate}
-          onChange={(next) => { setSwitch(CURATE_KEY, next, setCurate); }}
-        />
-
-        {mcpStatus.available && (
-          <SettingSwitch
-            label="Expose to Claude outside OmniFex"
-            title="Sessions started from OmniFex already reach this vault. This also writes the Brain server into this account's Claude config, so terminal sessions reach it too."
-            checked={mcpStatus.registered}
-            onChange={setMcpRegistered}
-          />
-        )}
 
         {outcome && <span className="text-muted-foreground">{outcome}</span>}
         {error && <span className="text-destructive">{error}</span>}
@@ -278,4 +225,100 @@ export const BrainQueuePanel: React.FC<{ accountId: number | null }> = ({ accoun
   );
 };
 
-export default BrainQueuePanel;
+/**
+ * The three switches that let the Brain spend without being asked.
+ *
+ * Grouped under Settings because that is where someone goes to turn unattended
+ * spending off. Each is off by default, and a failed settings read leaves them
+ * that way — the safe direction, since it can never turn spending ON by
+ * accident.
+ */
+export const BrainAutomationSettings: React.FC<{ accountId: number | null }> = ({ accountId }) => {
+  const [autoIndex, setAutoIndex] = useState(false);
+  const [curate, setCurate] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // Unlike the two above, this one IS per account — it writes into one
+  // account's Claude config — so it re-reads whenever the account changes.
+  const [mcpStatus, setMcpStatus] = useState({ registered: false, available: false });
+
+  // These settings are GLOBAL, not per account — deliberately not re-read when
+  // the account changes, which would imply a scoping they do not have.
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.all([api.getSetting(AUTO_INDEX_KEY), api.getSetting(CURATE_KEY)])
+      .then(([auto, cur]) => {
+        if (cancelled) return;
+        setAutoIndex(auto === 'true');
+        setCurate(cur === 'true');
+      })
+      .catch(() => {
+        // Leaves both off — never turns unattended spending on by accident.
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (accountId === null) {
+      setMcpStatus({ registered: false, available: false });
+      return;
+    }
+    let cancelled = false;
+    void api
+      .brainMcpStatus(accountId)
+      .then((status) => { if (!cancelled) setMcpStatus(status); })
+      .catch(() => {
+        // Unknown reads as "not exposed", which is the safe direction: it can
+        // never imply residue exists in a config dir when it does not.
+        if (!cancelled) setMcpStatus({ registered: false, available: false });
+      });
+    return () => { cancelled = true; };
+  }, [accountId]);
+
+  const setMcpRegistered = useCallback((next: boolean) => {
+    if (accountId === null) return;
+    // Not optimistic, unlike the two global switches: this one writes into a
+    // real Claude config dir, and showing it flipped before the write landed
+    // would claim residue that may not exist.
+    setError(null);
+    const call = next ? api.brainMcpRegister(accountId) : api.brainMcpUnregister(accountId);
+    void call
+      .then(() => { setMcpStatus((prev) => ({ ...prev, registered: next })); })
+      .catch((err: Error) => { setError(err.message); });
+  }, [accountId]);
+
+  if (accountId === null) return null;
+
+  return (
+    <div className="text-xs">
+      <h3 className="mb-2 text-[10px] uppercase tracking-wider text-muted-foreground">
+        Automation
+      </h3>
+      <div className="flex flex-col gap-2">
+        <SettingSwitch
+          label="Auto-index"
+          title="Index each session when it closes. Off by default — it spends tokens unattended."
+          checked={autoIndex}
+          onChange={(next) => { persistSwitch(AUTO_INDEX_KEY, next, setAutoIndex, setError); }}
+        />
+
+        <SettingSwitch
+          label="Auto-curate"
+          title="Compress long notes when a session closes, so retrieving them costs less context. Off by default — it spends tokens unattended and rewrites existing notes. Every run commits as 'Curation', so git revert in the vault undoes it."
+          checked={curate}
+          onChange={(next) => { persistSwitch(CURATE_KEY, next, setCurate, setError); }}
+        />
+
+        {mcpStatus.available && (
+          <SettingSwitch
+            label="Expose to Claude outside OmniFex"
+            title="Sessions started from OmniFex already reach this vault. This also writes the Brain server into this account's Claude config, so terminal sessions reach it too."
+            checked={mcpStatus.registered}
+            onChange={setMcpRegistered}
+          />
+        )}
+
+        {error && <span className="text-destructive">{error}</span>}
+      </div>
+    </div>
+  );
+};

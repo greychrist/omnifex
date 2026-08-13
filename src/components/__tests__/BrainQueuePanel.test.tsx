@@ -1,7 +1,25 @@
 // @vitest-environment jsdom
+import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
-import { BrainQueuePanel } from '@/components/brain/BrainQueuePanel';
+import {
+  BrainQueueActions,
+  BrainAutomationSettings,
+} from '@/components/brain/BrainQueuePanel';
+
+/**
+ * The panel is now two components in two different tabs: the queue's actions
+ * sit above the Sources table, the persistent switches under Settings. The
+ * suites below are about what those controls DO, which did not change, so they
+ * drive both halves together. WHERE each half renders is asserted in
+ * BrainTab.test.tsx, which is the thing that actually decides it.
+ */
+const BrainQueuePanel: React.FC<{ accountId: number | null }> = ({ accountId }) => (
+  <>
+    <BrainQueueActions accountId={accountId} />
+    <BrainAutomationSettings accountId={accountId} />
+  </>
+);
 import { api, type BrainQueueEntry } from '@/lib/api';
 
 vi.mock('@/lib/api', () => ({
@@ -287,5 +305,48 @@ describe('BrainQueuePanel', () => {
       expect(await screen.findByText('no vault configured')).toBeTruthy();
       expect((toggle() as HTMLInputElement).checked).toBe(false);
     });
+  });
+});
+
+// The split itself. Each half has to be complete on its own, because they
+// render in different tabs and the user only ever sees one at a time.
+describe('queue panel split', () => {
+  beforeEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+    vi.mocked(api.brainQueueCounts).mockResolvedValue({
+      pending: 0, running: 0, done: 0, failed: 0,
+    });
+    vi.mocked(api.brainQueueList).mockResolvedValue([]);
+    vi.mocked(api.getSetting).mockResolvedValue('false');
+    vi.mocked(api.brainMcpStatus).mockResolvedValue({ registered: true, available: true });
+  });
+
+  it('gives the actions half the queue controls and none of the switches', async () => {
+    render(<BrainQueueActions accountId={1} />);
+    await screen.findByTestId('queue-counts');
+    expect(screen.getByRole('button', { name: /backfill/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^pause$/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /clear finished/i })).toBeTruthy();
+    expect(screen.queryByRole('checkbox', { name: /auto-index/i })).toBeNull();
+    expect(screen.queryByRole('checkbox', { name: /auto-curate/i })).toBeNull();
+  });
+
+  it('gives the settings half every switch and none of the queue controls', async () => {
+    render(<BrainAutomationSettings accountId={1} />);
+    expect(await screen.findByRole('checkbox', { name: /auto-index/i })).toBeTruthy();
+    expect(screen.getByRole('checkbox', { name: /auto-curate/i })).toBeTruthy();
+    await waitFor(() => {
+      expect(screen.getByRole('checkbox', { name: /expose to claude/i })).toBeTruthy();
+    });
+    expect(screen.queryByRole('button', { name: /backfill/i })).toBeNull();
+    expect(screen.queryByTestId('queue-counts')).toBeNull();
+  });
+
+  it('asks for nothing on either half without an account', () => {
+    render(<BrainQueueActions accountId={null} />);
+    render(<BrainAutomationSettings accountId={null} />);
+    expect(api.brainQueueCounts).not.toHaveBeenCalled();
+    expect(api.brainMcpStatus).not.toHaveBeenCalled();
   });
 });

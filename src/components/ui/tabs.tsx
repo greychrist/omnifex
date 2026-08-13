@@ -117,6 +117,10 @@ export interface TabsTriggerProps {
   children: React.ReactNode;
   className?: string;
   disabled?: boolean;
+  /** Native tooltip. A disabled trigger has to be able to say why it is
+   *  disabled; the value already reaches the button through the props
+   *  spread, this only declares it. */
+  title?: string;
 }
 
 /**

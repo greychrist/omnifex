@@ -28,6 +28,7 @@ import { StartupIntro } from "@/components/StartupIntro";
 import { fireAndLog, logAndForget } from "@/lib/fireAndLog";
 import { buildCliReviewLaunch } from "@/lib/cliReviewLaunch";
 import { CLI_REVIEW_PROMPT_SETTING_KEY } from "@/lib/cliReviewPrompt";
+import { seedInitialSettingsTab } from '@/lib/settingsInitialTab';
 
 type View = 
   | "welcome" 
@@ -104,21 +105,20 @@ function AppContent() {
           label: 'View in Log',
           onClick: () => {
             setToast(null);
-            // sessionStorage handoff covers the cold-mount case: if no
-            // Settings tab exists, createSettingsTab() schedules a fresh
-            // mount and Settings' useState initializer reads this key on
-            // first render, so the inner tab opens directly on `log`
-            // instead of defaulting to `general`. The window event below
-            // covers the warm-mount case where the Settings tab was
-            // already open — it switches inner state without remount.
-            try {
-              window.sessionStorage.setItem('omnifex:settings-initial-tab', 'log');
-            } catch { /* private mode etc — fall back to the event path */ }
+            // The sessionStorage seed is what carries a COLD open: if no
+            // Settings tab exists, createSettingsTab() schedules a mount and
+            // Settings reads the seed on first render, opening on `log`
+            // instead of `general`.
+            //
+            // The event below cannot do that job. `Settings` is React.lazy
+            // (TabContent.tsx), so on a cold open its chunk is still loading
+            // when this fires and nothing is listening yet — an earlier
+            // comment here claimed the opposite, and believing it is how the
+            // seed's StrictMode bug went unnoticed. The event covers only the
+            // WARM case, where Settings is already mounted and its inner state
+            // has to change without a remount.
+            seedInitialSettingsTab('log');
             createSettingsTab();
-            // Settings + LogTab listen for this and switch their inner
-            // state in unison when the Settings tab is already mounted.
-            // Dispatched asynchronously so any newly-mounted tab has
-            // attached its listener by the time the event fires.
             setTimeout(() => {
               window.dispatchEvent(new CustomEvent('log:focus-error-view'));
             }, 0);

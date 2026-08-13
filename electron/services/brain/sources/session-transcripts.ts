@@ -4,7 +4,7 @@ import type { AccountsService } from '../../accounts';
 import { SCRATCH_DIR_NAME } from '../../sessions/summary-query';
 import { recoverProjectPath } from '../../project-paths';
 import { distillTranscript } from '../distill';
-import type { AdmitVerdict, BrainSource, DistilledItem, SourceItem } from './types';
+import { pathsOf, type AdmitVerdict, type BrainSource, type DistilledItem, type SourceItem } from './types';
 import type { DistilledSession } from '../distill';
 
 export interface SessionSourceDeps {
@@ -62,7 +62,10 @@ export function createSessionSource(deps: SessionSourceDeps): BrainSource {
   const readFile = deps.readFile ?? ((path: string) => readFileSync(path, 'utf-8'));
 
   async function discover(): Promise<SourceItem[]> {
-    const items: SourceItem[] = [];
+    // Keyed by account + session id, because a session id is unique only
+    // within an account: two accounts may hold the same id, and joining those
+    // would put one account's conversation into the other's vault.
+    const bySession = new Map<string, { file: string; mtimeMs: number; size: number; label: string; accountId: number }[]>();
 
     for (const account of accounts.listAccounts()) {
       const projectsDir = join(account.config_dir, 'projects');
@@ -91,17 +94,43 @@ export function createSessionSource(deps: SessionSourceDeps): BrainSource {
             continue;
           }
 
-          items.push({
-            sourceId: SESSION_SOURCE_ID,
-            itemKey: entry.name.slice(0, -'.jsonl'.length),
-            accountId: account.id,
-            path,
+          const sessionId = entry.name.slice(0, -'.jsonl'.length);
+          const key = `${String(account.id)}:${sessionId}`;
+          const group = bySession.get(key) ?? [];
+          group.push({
+            file: path,
             mtimeMs: stat.mtimeMs,
             size: stat.size,
             label,
+            accountId: account.id,
           });
+          bySession.set(key, group);
         }
       }
+    }
+
+    const items: SourceItem[] = [];
+    for (const [key, files] of bySession) {
+      const sessionId = key.slice(key.indexOf(':') + 1);
+      // Oldest first, which is the order the conversation was had. mtime is
+      // the proxy rather than the first row's timestamp on purpose: discovery
+      // walks hundreds of files per account and must not read any of them.
+      files.sort((a, b) => a.mtimeMs - b.mtimeMs);
+      const newest = files[files.length - 1];
+      items.push({
+        sourceId: SESSION_SOURCE_ID,
+        itemKey: sessionId,
+        accountId: newest.accountId,
+        // The newest file's project: where the conversation currently lives,
+        // and therefore the project this item is grouped and excluded under.
+        path: newest.file,
+        paths: files.map((f) => f.file),
+        mtimeMs: newest.mtimeMs,
+        // The whole session's bytes. Half of it would understate what indexing
+        // this item is about to cost, which is what the column is FOR.
+        size: files.reduce((total, f) => total + f.size, 0),
+        label: newest.label,
+      });
     }
 
     return items;
@@ -116,7 +145,11 @@ export function createSessionSource(deps: SessionSourceDeps): BrainSource {
    */
   function distillItem(item: SourceItem): DistilledSession | null {
     try {
-      return distillTranscript(readFile(item.path), item.itemKey);
+      // Every file, in order: the halves of a resumed conversation are one
+      // transcript, and judging or distilling either alone misreads it — a
+      // two-prompt session split one-and-one would fail the gate twice.
+      const jsonl = pathsOf(item).map((p) => readFile(p)).join('\n');
+      return distillTranscript(jsonl, item.itemKey);
     } catch {
       return null;
     }

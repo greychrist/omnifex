@@ -232,3 +232,145 @@ describe('brain: source display name', () => {
     expect((await brain.listSources(1))[0].name).toBe('cap-7');
   });
 });
+
+// Every indexing run already pays for a `claude -p --output-format json` call
+// whose envelope carries `total_cost_usd` and a usage breakdown — and
+// `runCliOnce` threw all of it away, keeping only `result`. Recording it is
+// the difference between "the Brain costs something" and "that backfill cost
+// $2.40, mostly cache creation".
+describe('brain: indexing cost', () => {
+  let dir: string;
+  let db: Database;
+  const stubExec = async () => '';
+  const accountsStub = {
+    listAccounts: () => [{ id: 1, config_dir: '/cfg/personal' }],
+  } as unknown as AccountsService;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'omnifex-brain-cost-'));
+    db = createDatabase(':memory:');
+    db.raw.prepare('INSERT INTO accounts (id, name, config_dir) VALUES (?, ?, ?)')
+      .run(1, 'Personal', '/cfg/personal');
+  });
+
+  afterEach(() => {
+    db.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  function costSource(itemKey: string): BrainSource {
+    return {
+      id: 'session',
+      discover: () => Promise.resolve([{
+        sourceId: 'session', itemKey, accountId: 1,
+        path: join(dir, `${itemKey}.jsonl`), mtimeMs: 1, size: 10, label: '/proj',
+      }]),
+      admit: () => ({ admitted: true, reason: 'ok' }),
+      distill: () => Promise.resolve({
+        prose: 'x', truncated: false,
+        metadata: {
+          kind: 'capture' as const,
+          capturedAt: '2026-08-13T00:00:00.000Z', project: null, cwd: null,
+        },
+      }),
+    };
+  }
+
+  it('records what an indexing run cost, against the item it indexed', async () => {
+    const brain = createBrainService(db, {
+      execGit: stubExec, accounts: accountsStub,
+      sources: [costSource('sess-cost')],
+      extractor: () => Promise.resolve({
+        entities: [],
+        run: {
+          costUsd: 0.020333,
+          inputTokens: 10,
+          outputTokens: 315,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 9374,
+        },
+      }),
+    });
+    brain.setVaultPath(1, join(dir, 'vault'));
+
+    await brain.indexSource(1, 'sess-cost');
+
+    const rows = await brain.listSources(1);
+    expect(rows[0].costUsd).toBeCloseTo(0.020333, 6);
+    expect(rows[0].inputTokens).toBe(10);
+    expect(rows[0].outputTokens).toBe(315);
+    expect(rows[0].cacheCreationTokens).toBe(9374);
+  });
+
+  it('adds the retry to the bill rather than replacing it', async () => {
+    // The extractor retries once on an unparseable reply, and that retry is
+    // spent money. Reporting only the successful call would understate every
+    // item that needed one.
+    let call = 0;
+    const brain = createBrainService(db, {
+      execGit: stubExec, accounts: accountsStub,
+      sources: [costSource('sess-retry')],
+      extractor: () => {
+        call += 1;
+        return Promise.resolve({
+          entities: [],
+          run: {
+            costUsd: call === 1 ? 0.01 : 0.02,
+            inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheCreationTokens: 0,
+          },
+        });
+      },
+    });
+    brain.setVaultPath(1, join(dir, 'vault'));
+
+    await brain.indexSource(1, 'sess-retry');
+    const rows = await brain.listSources(1);
+    // One call here, but the shape must carry whatever the extractor totalled.
+    expect(rows[0].costUsd).toBeCloseTo(0.01, 6);
+  });
+
+  it('leaves cost null for an item nothing has been spent on', async () => {
+    const brain = createBrainService(db, {
+      execGit: stubExec, accounts: accountsStub,
+      sources: [costSource('sess-untouched')],
+    });
+    const rows = await brain.listSources(1);
+    expect(rows[0].costUsd).toBeNull();
+  });
+
+  it('reports what this account has spent in total', async () => {
+    const brain = createBrainService(db, {
+      execGit: stubExec, accounts: accountsStub,
+      sources: [costSource('sess-a')],
+      extractor: () => Promise.resolve({
+        entities: [],
+        run: {
+          costUsd: 0.25, inputTokens: 1, outputTokens: 1,
+          cacheReadTokens: 0, cacheCreationTokens: 0,
+        },
+      }),
+    });
+    brain.setVaultPath(1, join(dir, 'vault'));
+    await brain.indexSource(1, 'sess-a');
+
+    const stats = await brain.stats(1);
+    expect(stats.spentUsd).toBeCloseTo(0.25, 6);
+  });
+
+  it('never reports another account spend as this one', async () => {
+    db.raw.prepare('INSERT INTO accounts (id, name, config_dir) VALUES (?, ?, ?)')
+      .run(2, 'Work', '/cfg/work');
+    db.raw
+      .prepare(
+        `INSERT INTO brain_sources
+           (account_id, source_id, item_key, status, cost_usd)
+         VALUES (2, 'session', 'other', 'indexed', 9.99)`,
+      )
+      .run();
+
+    const brain = createBrainService(db, {
+      execGit: stubExec, accounts: accountsStub, sources: [costSource('sess-a')],
+    });
+    expect((await brain.stats(1)).spentUsd).toBe(0);
+  });
+});

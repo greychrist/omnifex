@@ -24,8 +24,27 @@ export interface SourceItem {
   itemKey: string;
   /** The owning account. */
   accountId: number;
-  /** Absolute path to the backing file. */
+  /**
+   * Absolute path to the backing file. When an item spans several (see
+   * `paths`), this is the newest — the one whose project the item is grouped
+   * and excluded under.
+   */
   path: string;
+  /**
+   * Every file backing this item, oldest first, when there is more than one.
+   *
+   * A session id is not unique per file: the CLI stores transcripts per
+   * project directory, so resuming a conversation in another cwd continues it
+   * in a second file under the same id. Those files are halves of ONE
+   * conversation and must be one item — emitting one per file collides on
+   * `(account_id, source_id, item_key)`, which means a shared state row, a
+   * duplicate React key, and indexing that distils half the conversation and
+   * records the whole thing as done.
+   *
+   * Absent for the ordinary single-file case. Read it through `pathsOf`, never
+   * directly, so callers have one code path.
+   */
+  paths?: string[];
   /** Modification time in epoch ms, from `fs.stat`. */
   mtimeMs: number;
   /** Size in bytes. Half of the cheap change check. */
@@ -173,4 +192,12 @@ export interface BrainSource {
    * The gate, change detection, the git commit and the queue are unchanged.
    */
   translate?(item: SourceItem): Promise<TranslatedNote[]>;
+}
+
+/**
+ * Every file backing an item, oldest first — the one place that knows a
+ * single-file item and a multi-file one are the same shape.
+ */
+export function pathsOf(item: Pick<SourceItem, 'path' | 'paths'>): string[] {
+  return item.paths ?? [item.path];
 }

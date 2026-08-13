@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { createSummaryQueryRunner } from '../sessions/summary-query';
+import { createSummaryQueryRunner, type CliRunResult } from '../sessions/summary-query';
+import type { RunCost } from './sources/state';
 import type { DistilledItem, ItemMetadata } from './sources/types';
 
 /**
@@ -152,7 +153,9 @@ export interface ExtractorDeps {
    * writes — and the Brain's own discovery excludes that scratch directory, so
    * extraction calls cannot be re-indexed by the Brain.
    */
-  runQuery?: (opts: { prompt: string; model: string; configDir: string }) => Promise<string>;
+  runQuery?: (
+    opts: { prompt: string; model: string; configDir: string },
+  ) => Promise<CliRunResult>;
 }
 
 /** What the vault already holds, so a run can converge on existing names. */
@@ -161,11 +164,52 @@ export interface ExtractionContext {
   existingNames: string[];
 }
 
+/**
+ * An extraction, plus what producing it cost.
+ *
+ * `run` is optional because not every extractor spends: tests supply canned
+ * entities, and a source that translates never reaches a model at all. Absent
+ * means "nothing was spent", which the state store treats as "leave whatever
+ * was recorded before alone" rather than as zero.
+ */
+export type ExtractionRun = Extraction & { run?: RunCost };
+
 export type Extractor = (
   item: DistilledItem,
   configDir: string,
   context?: ExtractionContext,
-) => Promise<Extraction>;
+) => Promise<ExtractionRun>;
+
+/**
+ * Add two runs together. A retry is money spent on top of the first attempt,
+ * not instead of it — reporting only the successful call would understate
+ * every item that needed one. Null plus a number is that number: one leg
+ * failing to report must not erase the leg that did.
+ */
+function addRuns(a: RunCost | undefined, b: RunCost | undefined): RunCost | undefined {
+  if (!a) return b;
+  if (!b) return a;
+  const sum = (x: number | null, y: number | null): number | null =>
+    x === null && y === null ? null : (x ?? 0) + (y ?? 0);
+  return {
+    costUsd: sum(a.costUsd, b.costUsd),
+    inputTokens: sum(a.inputTokens, b.inputTokens),
+    outputTokens: sum(a.outputTokens, b.outputTokens),
+    cacheReadTokens: sum(a.cacheReadTokens, b.cacheReadTokens),
+    cacheCreationTokens: sum(a.cacheCreationTokens, b.cacheCreationTokens),
+  };
+}
+
+/** The cost half of a `claude -p` result, in the shape the state store keeps. */
+function runCostOf(r: CliRunResult): RunCost {
+  return {
+    costUsd: r.costUsd,
+    inputTokens: r.inputTokens,
+    outputTokens: r.outputTokens,
+    cacheReadTokens: r.cacheReadTokens,
+    cacheCreationTokens: r.cacheCreationTokens,
+  };
+}
 
 /**
  * The per-kind wording of the prompt.
@@ -304,7 +348,7 @@ export function createExtractor(deps: ExtractorDeps = {}): Extractor {
     const prompt = buildExtractionPrompt(item, context);
     const reply = await runQuery({ prompt, model: EXTRACTION_MODEL, configDir });
     try {
-      return parseExtraction(reply);
+      return { ...parseExtraction(reply.result), run: runCostOf(reply) };
     } catch (err) {
       if (!(err instanceof ExtractionParseError)) throw err;
       // Exactly one retry (spec §8). A transport error never reaches here —
@@ -312,7 +356,12 @@ export function createExtractor(deps: ExtractorDeps = {}): Extractor {
       // auth failure is not a bad answer and immediately repeating it just
       // fails twice.
       const second = await runQuery({ prompt, model: EXTRACTION_MODEL, configDir });
-      return parseExtraction(second);
+      // Both calls are billed, so both are reported. The first one produced
+      // garbage, not a refund.
+      return {
+        ...parseExtraction(second.result),
+        run: addRuns(runCostOf(reply), runCostOf(second)),
+      };
     }
   };
 }

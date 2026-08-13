@@ -68,8 +68,29 @@ export interface RunPromptParams {
   cwd: string;
 }
 
+/**
+ * One `claude -p` call: the reply, and what it cost.
+ *
+ * The cost figures are the CLI's OWN accounting, lifted from the
+ * `--output-format json` envelope this runner already receives — not an
+ * estimate derived from a local pricing table that would silently drift from
+ * Anthropic's. Every field is nullable because the envelope is the CLI's, not
+ * ours: a future version that stops emitting one must degrade to "unknown"
+ * rather than to a confident zero, which would read as "this was free".
+ */
+export interface CliRunResult {
+  /** The model's reply text — what every caller before this wanted. */
+  result: string;
+  costUsd: number | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  cacheReadTokens: number | null;
+  cacheCreationTokens: number | null;
+  durationMs: number | null;
+}
+
 /** Subset of the CLI runner surface we depend on — exposed for testing. */
-export type RunPromptFn = (params: RunPromptParams) => Promise<string>;
+export type RunPromptFn = (params: RunPromptParams) => Promise<CliRunResult>;
 
 /**
  * Spawn `claude -p <prompt> --output-format json` and resolve with the
@@ -77,7 +98,28 @@ export type RunPromptFn = (params: RunPromptParams) => Promise<string>;
  * a message that includes captured stderr. Exposed as a default
  * implementation of `RunPromptFn` for the runner factory.
  */
-export async function runCliOnce(p: RunPromptParams): Promise<string> {
+/**
+ * The fields of the CLI's `--output-format json` envelope we read. Verified
+ * against 2.1.229; anything absent degrades to null rather than to zero.
+ */
+interface CliResultEnvelope {
+  result?: unknown;
+  total_cost_usd?: unknown;
+  duration_ms?: unknown;
+  usage?: {
+    input_tokens?: unknown;
+    output_tokens?: unknown;
+    cache_read_input_tokens?: unknown;
+    cache_creation_input_tokens?: unknown;
+  };
+}
+
+/** A finite number, or null. Guards against a string or a missing field. */
+function num(v: unknown): number | null {
+  return typeof v === 'number' && Number.isFinite(v) ? v : null;
+}
+
+export async function runCliOnce(p: RunPromptParams): Promise<CliRunResult> {
   const args: string[] = ['-p', p.prompt, '--output-format', 'json'];
   if (p.model) args.push('--model', p.model);
   args.push('--permission-mode', 'bypassPermissions');
@@ -102,7 +144,7 @@ export async function runCliOnce(p: RunPromptParams): Promise<string> {
     stderr += typeof chunk === 'string' ? chunk : chunk.toString('utf8');
   });
 
-  return await new Promise<string>((resolve, reject) => {
+  return await new Promise<CliRunResult>((resolve, reject) => {
     child.once('error', reject);
     child.once('exit', (code, signal) => {
       if (code !== 0) {
@@ -116,9 +158,16 @@ export async function runCliOnce(p: RunPromptParams): Promise<string> {
         return;
       }
       try {
-        const parsed = JSON.parse(stdout) as { result?: unknown };
-        const result = typeof parsed?.result === 'string' ? parsed.result.trim() : '';
-        resolve(result);
+        const parsed = JSON.parse(stdout) as CliResultEnvelope;
+        resolve({
+          result: typeof parsed?.result === 'string' ? parsed.result.trim() : '',
+          costUsd: num(parsed?.total_cost_usd),
+          inputTokens: num(parsed?.usage?.input_tokens),
+          outputTokens: num(parsed?.usage?.output_tokens),
+          cacheReadTokens: num(parsed?.usage?.cache_read_input_tokens),
+          cacheCreationTokens: num(parsed?.usage?.cache_creation_input_tokens),
+          durationMs: num(parsed?.duration_ms),
+        });
       } catch (e) {
         reject(
           new Error(
@@ -195,13 +244,13 @@ export function encodeProjectKey(absPath: string): string {
 
 export function createSummaryQueryRunner(
   deps: SummaryQueryDeps = {},
-): (opts: SummaryQueryOptions) => Promise<string> {
+): (opts: SummaryQueryOptions) => Promise<CliRunResult> {
   const runPrompt: RunPromptFn = deps.runPrompt ?? runCliOnce;
   const tmpRoot = deps.tmpRoot ?? os.tmpdir();
   const resolveClaudeBinary = deps.resolveClaudeBinary ?? findSystemClaudeBinary;
   const scratchCwd = path.join(tmpRoot, SCRATCH_DIR_NAME);
 
-  return async function runSummaryQuery(opts: SummaryQueryOptions): Promise<string> {
+  return async function runSummaryQuery(opts: SummaryQueryOptions): Promise<CliRunResult> {
     const claudeBinary = resolveClaudeBinary();
     if (!claudeBinary) {
       throw new Error(

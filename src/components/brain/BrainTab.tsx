@@ -1,14 +1,19 @@
 import React, { useEffect, useState } from 'react';
-import { Settings2 } from 'lucide-react';
 import { useAccounts } from '@/contexts/AccountsContext';
 import { useBrainVault } from '@/hooks/useBrainVault';
 import { AccountBadge } from '@/components/AccountBadge';
-import { SelectComponent } from '@/components/ui/select';
+import { Card } from '@/components/ui/card';
+import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { BrainVaultSetup } from './BrainVaultSetup';
 import { BrainNoteList } from './BrainNoteList';
 import { BrainNoteViewer } from './BrainNoteViewer';
 import { BrainSources } from './BrainSources';
 import { BrainStatsPanel } from './BrainStatsPanel';
+import { BrainAutomationSettings } from './BrainQueuePanel';
+
+/** The three tabs, and the only state that decides what the card body shows. */
+type BrainTabName = 'notes' | 'sources' | 'settings';
 
 /**
  * The Brain tab, scoped to exactly ONE account at a time.
@@ -20,7 +25,7 @@ import { BrainStatsPanel } from './BrainStatsPanel';
  * control, and everything downstream re-derives from the chosen account.
  */
 export const BrainTab: React.FC = () => {
-  const { accounts, getColor, getIcon, getAccountType } = useAccounts();
+  const { accounts } = useAccounts();
   const vault = useBrainVault();
   const [selectedNote, setSelectedNote] = useState<string | null>(null);
 
@@ -44,18 +49,14 @@ export const BrainTab: React.FC = () => {
   const account = accounts.find((a) => a.id === accountId) ?? null;
   const status = vault.status;
 
-  // A healthy vault still has things to manage — rebuilding a stale index,
-  // disconnecting, seeing why git stopped committing. Without this toggle the
-  // setup panel would only ever be reachable by BREAKING the vault first.
-  const [showVault, setShowVault] = useState(false);
-  useEffect(() => { setShowVault(false); }, [accountId]);
+  // One value, not a pane plus a `showVault` flag. Vault management used to be
+  // a toggle that REPLACED the whole page, so a broken vault hid the account
+  // switcher and stranded the user on the account they wanted to leave. As a
+  // tab it is just another destination, and setup renders inside it.
+  const [tab, setTab] = useState<BrainTabName>('notes');
+  useEffect(() => { setTab('notes'); }, [accountId]);
 
-  // Notes are what the vault holds; Sources is what the indexer can see. They
-  // are different questions about the same account, so they share the header
-  // and the account switcher rather than being separate tabs.
-  const [pane, setPane] = useState<'notes' | 'sources'>('notes');
-  useEffect(() => { setPane('notes'); }, [accountId]);
-
+  /** The parenthetical beside the vault's name, the way Projects counts rows. */
   const headerSummary = (): string => {
     if (!status) return vault.loading ? 'loading…' : '';
     if (!status.configured) return 'no vault';
@@ -84,112 +85,171 @@ export const BrainTab: React.FC = () => {
 
   const indexIsStale = status !== null && status.exists && status.indexedCount !== status.noteCount;
 
+  // A vault that cannot be browsed forces the tab that can repair it. Notes and
+  // Sources are disabled rather than hidden: a tab strip that changes length
+  // depending on vault health reads as a different page every time.
+  const effectiveTab: BrainTabName = needsSetup ? 'settings' : tab;
+  const vaultUnusable = needsSetup;
+
   return (
-    <div className="flex h-full flex-col">
-      {/* Title bar. Each band below it — stats, queue controls, table actions,
-          filters — is a distinct surface, so the eye can tell chrome from
-          data instead of reading four identical strips as one slab. */}
-      <header className="flex items-center gap-3 border-b bg-card px-4 py-2">
-        <h2 className="text-sm font-medium">Brain</h2>
-        <SelectComponent
-          value={accountId === null ? '' : String(accountId)}
-          onValueChange={(v) => setAccountId(Number(v))}
-          options={accounts.map((a) => ({ value: String(a.id), label: a.name }))}
-          placeholder="Select an account"
-          className="h-7 w-56 text-xs"
-        />
-        {account && (
-          <AccountBadge
-            name={account.name}
-            color={getColor(account.name)}
-            icon={getIcon(account.name)}
-            accountType={getAccountType(account.name)}
-            variant="compact"
-          />
-        )}
-        <span className="ml-auto text-xs text-muted-foreground" data-testid="brain-summary">
-          {headerSummary()}
-        </span>
-        {!needsSetup && (
-          <div className="flex items-center gap-1 text-xs">
-            {(['notes', 'sources'] as const).map((p) => (
-              <button
-                key={p}
-                type="button"
-                onClick={() => { setPane(p); }}
-                aria-pressed={pane === p}
-                className={`rounded-md px-2 py-1 capitalize hover:bg-accent ${
-                  pane === p ? 'bg-accent text-accent-foreground' : 'text-muted-foreground'
-                }`}
-              >
-                {p}
-              </button>
-            ))}
-          </div>
-        )}
-        {!needsSetup && (
-          <button
-            type="button"
-            onClick={() => { setShowVault((v) => !v); }}
-            aria-pressed={showVault}
-            className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs hover:bg-accent hover:text-accent-foreground"
-          >
-            <Settings2 className="h-3.5 w-3.5" />
-            Vault
-            {indexIsStale && <span className="ml-1 h-1.5 w-1.5 rounded-full bg-amber-500" />}
-          </button>
-        )}
-      </header>
-
-      {vault.error && (
-        <div className="border-b bg-destructive/10 px-4 py-2 text-xs text-destructive">
-          {vault.error}
+    <div className="h-full overflow-hidden">
+      <div className="mx-auto flex h-full max-w-6xl flex-col">
+        {/* Hero, matching the Projects page: what this page is, in one line,
+            above the surface that does the work. */}
+        <div className="shrink-0 p-6">
+          <h1 className="text-3xl font-bold">Brain</h1>
+          <p className="text-body-small mt-1 text-muted-foreground">
+            A per-account vault of what you have already worked on, so later
+            sessions can recall it instead of being told again.
+          </p>
         </div>
-      )}
 
-      {/* Above both panes: it describes the vault as a whole, which is the
-          same thing whichever pane is open. Selecting a recently curated note
-          switches to Notes, since inspecting one is the point of naming it. */}
-      {statusKnown && !needsSetup && !showVault && (
-        <BrainStatsPanel
-          accountId={accountId}
-          onSelect={(notePath) => {
-            setPane('notes');
-            setSelectedNote(notePath);
-          }}
-        />
-      )}
+        <div className="flex min-h-0 flex-1 flex-col px-6 pb-6">
+          <Card className="flex min-h-0 flex-1 flex-col p-6">
+            {/* Card header: which vault on the left, which account on the
+                right — the same shape as "Recent Projects (12)". */}
+            <div className="mb-4 flex shrink-0 items-center justify-between gap-3">
+              <h2 className="text-heading-4">
+                {account ? `${account.name} Brain` : 'Brain'}
+                <span className="text-caption ml-2 font-normal text-muted-foreground">
+                  (<span data-testid="brain-summary">{headerSummary()}</span>)
+                </span>
+              </h2>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                  Account
+                </span>
+                {/* Same treatment as the Projects page: the trigger renders the
+                    account's own badge rather than its name as plain text, and
+                    the wrapper div keeps the badge out of SelectTrigger's
+                    `[&>span]:line-clamp-1` scope — inside it, line-clamp forces
+                    `display: -webkit-box` and stacks the icon above the label. */}
+                <Select
+                  value={accountId === null ? '' : String(accountId)}
+                  onValueChange={(v) => { setAccountId(Number(v)); }}
+                >
+                  <SelectTrigger className="h-7 w-auto gap-1.5 pl-1 text-xs [&>svg]:size-3">
+                    <div className="inline-flex items-center">
+                      {account ? (
+                        <AccountBadge name={account.name} size="sm" />
+                      ) : (
+                        <span className="text-muted-foreground">Select an account</span>
+                      )}
+                    </div>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {accounts.map((a) => (
+                      <SelectItem key={a.id} value={String(a.id)}>
+                        <AccountBadge name={a.name} size="sm" />
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
 
-      {!statusKnown ? (
-        // Holds the space while the status is in flight, so switching accounts
-        // does not swap panes twice. The header already says "loading…".
-        <div className="flex min-h-0 flex-1 items-center justify-center text-xs text-muted-foreground">
-          {vault.loading ? 'loading…' : null}
+            {/* What this vault costs and holds, under the name it belongs to.
+                Hidden while the vault is unusable — every figure would be zero,
+                and four zeroes read as a fact rather than as an absence. */}
+            {statusKnown && !needsSetup && (
+              <BrainStatsPanel
+                accountId={accountId}
+                className="mb-4 shrink-0 rounded-md border bg-muted/40 px-4 py-2.5 text-xs"
+                onSelect={(notePath) => {
+                  setTab('notes');
+                  setSelectedNote(notePath);
+                }}
+              />
+            )}
+
+            {vault.error && (
+              <div className="mb-4 shrink-0 rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                {vault.error}
+              </div>
+            )}
+
+            <Tabs
+              value={effectiveTab}
+              onValueChange={(v) => { setTab(v as BrainTabName); }}
+              className="flex min-h-0 flex-1 flex-col"
+            >
+              <TabsList className="mb-4 shrink-0">
+                <TabsTrigger
+                  value="notes"
+                  disabled={vaultUnusable}
+                  title={vaultUnusable ? 'This vault needs setting up first' : undefined}
+                >
+                  Notes
+                </TabsTrigger>
+                <TabsTrigger
+                  value="sources"
+                  disabled={vaultUnusable}
+                  title={vaultUnusable ? 'This vault needs setting up first' : undefined}
+                >
+                  Sources
+                </TabsTrigger>
+                <TabsTrigger value="settings">
+                  Settings
+                  {/* The staleness dot the Vault button used to carry: the
+                      index no longer matches the notes on disk, and Settings
+                      is where the rebuild lives. */}
+                  {indexIsStale && (
+                    <span
+                      data-testid="index-stale-dot"
+                      title="The search index no longer matches the notes on disk"
+                      className="ml-1.5 h-1.5 w-1.5 rounded-full bg-amber-500"
+                    />
+                  )}
+                </TabsTrigger>
+              </TabsList>
+
+              {!statusKnown ? (
+                // Holds the space while the read is in flight, so switching
+                // accounts does not swap the body twice.
+                <div className="flex min-h-0 flex-1 items-center justify-center text-xs text-muted-foreground">
+                  {vault.loading ? 'loading…' : null}
+                </div>
+              ) : (
+                <>
+                  <TabsContent value="notes" className="mt-0 flex min-h-0 flex-1">
+                    <div className="flex min-h-0 flex-1 overflow-hidden rounded-md border">
+                      <div className="w-72 shrink-0 overflow-y-auto border-r">
+                        <BrainNoteList
+                          accountId={accountId}
+                          notes={vault.notes}
+                          selected={selectedNote}
+                          onSelect={setSelectedNote}
+                        />
+                      </div>
+                      <div className="min-w-0 flex-1 overflow-y-auto">
+                        <BrainNoteViewer
+                          accountId={accountId}
+                          notePath={selectedNote}
+                          onNavigate={setSelectedNote}
+                          onChanged={vault.refresh}
+                        />
+                      </div>
+                    </div>
+                  </TabsContent>
+
+                  <TabsContent value="sources" className="mt-0 flex min-h-0 flex-1">
+                    <div className="flex min-h-0 flex-1 overflow-hidden rounded-md border">
+                      <BrainSources accountId={accountId} />
+                    </div>
+                  </TabsContent>
+
+                  <TabsContent value="settings" className="mt-0 min-h-0 flex-1 overflow-y-auto">
+                    <div className="space-y-6">
+                      <BrainVaultSetup vault={vault} accountName={account?.name ?? null} />
+                      <BrainAutomationSettings accountId={accountId} />
+                    </div>
+                  </TabsContent>
+                </>
+              )}
+            </Tabs>
+          </Card>
         </div>
-      ) : needsSetup || showVault ? (
-        <BrainVaultSetup vault={vault} accountName={account?.name ?? null} />
-      ) : pane === 'sources' ? (
-        <BrainSources accountId={accountId} />
-      ) : (
-        <div className="flex min-h-0 flex-1">
-          <div className="w-72 shrink-0 overflow-y-auto border-r">
-            <BrainNoteList
-              accountId={accountId}
-              notes={vault.notes}
-              selected={selectedNote}
-              onSelect={setSelectedNote}
-            />
-          </div>
-          <div className="min-w-0 flex-1 overflow-y-auto">
-            <BrainNoteViewer
-              accountId={accountId}
-              notePath={selectedNote}
-              onNavigate={setSelectedNote}
-              onChanged={vault.refresh}
-            />
-          </div>
-        </div>
-      )}
+      </div>
     </div>
   );
 };

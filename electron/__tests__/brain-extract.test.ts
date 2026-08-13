@@ -6,6 +6,28 @@ import {
   ExtractionParseError,
 } from '../services/brain/extract';
 import type { DistilledItem } from '../services/brain/sources/types';
+import type { CliRunResult } from '../services/sessions/summary-query';
+
+/**
+ * A `claude -p` result carrying just the reply.
+ *
+ * The runner now returns the CLI's cost accounting alongside the text (the
+ * Brain records what each indexing run cost). These suites are about the text,
+ * so they wrap it here rather than restating five null fields per fixture.
+ */
+function reply(text: string, cost: Partial<CliRunResult> = {}): CliRunResult {
+  return {
+    result: text,
+    costUsd: null,
+    inputTokens: null,
+    outputTokens: null,
+    cacheReadTokens: null,
+    cacheCreationTokens: null,
+    durationMs: null,
+    ...cost,
+  };
+}
+
 
 const VALID = {
   entities: [
@@ -138,7 +160,7 @@ describe('createExtractor', () => {
     const extract = createExtractor({
       runQuery: async (opts) => {
         calls.push(opts);
-        return '{"entities":[]}';
+        return reply('{"entities":[]}');
       },
     });
 
@@ -157,7 +179,7 @@ describe('createExtractor', () => {
     const extract = createExtractor({
       runQuery: async (opts) => {
         prompt = opts.prompt;
-        return '{"entities":[]}';
+        return reply('{"entities":[]}');
       },
     });
     await extract(ITEM, '/cfg');
@@ -174,7 +196,7 @@ describe('createExtractor', () => {
     const extract = createExtractor({
       runQuery: async (opts) => {
         prompt = opts.prompt;
-        return '{"entities":[]}';
+        return reply('{"entities":[]}');
       },
     });
     await extract({ ...ITEM, truncated: true }, '/cfg');
@@ -186,7 +208,7 @@ describe('createExtractor', () => {
     const extract = createExtractor({
       runQuery: async (opts) => {
         prompt = opts.prompt;
-        return '{"entities":[]}';
+        return reply('{"entities":[]}');
       },
     });
     await extract(ITEM, '/cfg');
@@ -198,10 +220,10 @@ describe('createExtractor', () => {
     const extract = createExtractor({
       runQuery: async () => {
         n += 1;
-        return n === 1 ? 'sorry, no idea' : '{"entities":[]}';
+        return reply(n === 1 ? 'sorry, no idea' : '{"entities":[]}');
       },
     });
-    await expect(extract(ITEM, '/cfg')).resolves.toEqual({ entities: [] });
+    await expect(extract(ITEM, '/cfg')).resolves.toMatchObject({ entities: [] });
     expect(n).toBe(2);
   });
 
@@ -210,7 +232,7 @@ describe('createExtractor', () => {
     const extract = createExtractor({
       runQuery: async () => {
         n += 1;
-        return 'still not json';
+        return reply('still not json');
       },
     });
     // Spec §8: one retry, then `failed` with the error visible. Retrying

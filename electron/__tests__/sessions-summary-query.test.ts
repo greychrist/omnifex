@@ -6,11 +6,33 @@ import { EventEmitter } from 'node:events';
 import { Readable } from 'node:stream';
 import { spawn } from 'node:child_process';
 import {
+
   createSummaryQueryRunner,
   encodeProjectKey,
   runCliOnce,
   type RunPromptFn,
 } from '../services/sessions/summary-query';
+import type { CliRunResult } from '../services/sessions/summary-query';
+
+/**
+ * A `claude -p` result carrying just the reply.
+ *
+ * The runner now returns the CLI's cost accounting alongside the text (the
+ * Brain records what each indexing run cost). These suites are about the text,
+ * so they wrap it here rather than restating five null fields per fixture.
+ */
+function reply(text: string, cost: Partial<CliRunResult> = {}): CliRunResult {
+  return {
+    result: text,
+    costUsd: null,
+    inputTokens: null,
+    outputTokens: null,
+    cacheReadTokens: null,
+    cacheCreationTokens: null,
+    durationMs: null,
+    ...cost,
+  };
+}
 
 vi.mock('node:child_process', async () => {
   const actual = await vi.importActual<typeof import('node:child_process')>('node:child_process');
@@ -44,7 +66,7 @@ describe('createSummaryQueryRunner', () => {
     let seenCwd = '';
     const runPrompt: RunPromptFn = vi.fn(async (params) => {
       seenCwd = params.cwd;
-      return 'ok';
+      return reply('ok');
     });
 
     const run = createSummaryQueryRunner({ runPrompt, tmpRoot });
@@ -58,7 +80,7 @@ describe('createSummaryQueryRunner', () => {
     const seen: string[] = [];
     const runPrompt: RunPromptFn = vi.fn(async (params) => {
       seen.push(params.cwd);
-      return '';
+      return reply('');
     });
 
     const run = createSummaryQueryRunner({ runPrompt, tmpRoot });
@@ -71,26 +93,27 @@ describe('createSummaryQueryRunner', () => {
   });
 
   it('returns the runner output verbatim', async () => {
-    const runPrompt: RunPromptFn = vi.fn(async () => 'hello world');
+    const runPrompt: RunPromptFn = vi.fn(async () => reply('hello world'));
 
     const run = createSummaryQueryRunner({ runPrompt, tmpRoot });
     const out = await run({ prompt: 'p', model: 'm', configDir });
 
-    expect(out).toBe('hello world');
+    // The reply now travels alongside the CLI's cost accounting.
+    expect(out.result).toBe('hello world');
   });
 
   it('returns an empty string when the CLI replies with an empty result', async () => {
-    const runPrompt: RunPromptFn = vi.fn(async () => '');
+    const runPrompt: RunPromptFn = vi.fn(async () => reply(''));
     const run = createSummaryQueryRunner({ runPrompt, tmpRoot });
     const out = await run({ prompt: 'p', model: 'm', configDir });
-    expect(out).toBe('');
+    expect(out.result).toBe('');
   });
 
   it('forwards configDir + model + prompt to the runner', async () => {
     let seen: Parameters<RunPromptFn>[0] | null = null;
     const runPrompt: RunPromptFn = vi.fn(async (params) => {
       seen = params;
-      return '';
+      return reply('');
     });
 
     const run = createSummaryQueryRunner({ runPrompt, tmpRoot });
@@ -112,7 +135,7 @@ describe('createSummaryQueryRunner', () => {
       );
       fs.mkdirSync(projectsDir, { recursive: true });
       fs.writeFileSync(path.join(projectsDir, 'fake-uuid.jsonl'), 'x', 'utf-8');
-      return 'hi';
+      return reply('hi');
     });
 
     const run = createSummaryQueryRunner({ runPrompt, tmpRoot });
@@ -125,7 +148,7 @@ describe('createSummaryQueryRunner', () => {
     let seenCwd = '';
     const runPrompt: RunPromptFn = vi.fn(async (params) => {
       seenCwd = params.cwd;
-      return '';
+      return reply('');
     });
 
     const run = createSummaryQueryRunner({ runPrompt, tmpRoot });
@@ -207,7 +230,7 @@ describe('createSummaryQueryRunner', () => {
     let seenBinary: string | null = null;
     const runPrompt: RunPromptFn = vi.fn(async (params) => {
       seenBinary = params.claudeBinary;
-      return '';
+      return reply('');
     });
 
     const run = createSummaryQueryRunner({
@@ -221,7 +244,7 @@ describe('createSummaryQueryRunner', () => {
   });
 
   it('throws a clear error when no Claude binary can be resolved', async () => {
-    const runPrompt: RunPromptFn = vi.fn(async () => '');
+    const runPrompt: RunPromptFn = vi.fn(async () => reply(''));
 
     const run = createSummaryQueryRunner({
       runPrompt,
@@ -295,7 +318,7 @@ describe('runCliOnce (default RunPromptFn)', () => {
     fake.stdout.push(null);
     await flush();
     fake.emit('exit', 0, null);
-    await expect(pending).resolves.toBe('a short summary.');
+    await expect(pending).resolves.toMatchObject({ result: 'a short summary.' });
   });
 
   it('rejects with stderr context on non-zero exit', async () => {
@@ -332,5 +355,79 @@ describe('runCliOnce (default RunPromptFn)', () => {
     await flush();
     fake.emit('exit', 0, null);
     await assertion;
+  });
+  /**
+   * The cost half of the envelope. Every `claude -p` call already returns this;
+   * the runner parsed out `result` and dropped the rest, so the Brain could
+   * spend without ever being able to say what it spent.
+   *
+   * Field names verified against the CLI's own output on 2.1.229.
+   */
+  it('lifts the CLI cost and usage out of the envelope', async () => {
+    const fake = makeFakeChild();
+    mockedSpawn.mockReturnValue(fake as never);
+
+    const pending = runCliOnce({
+      claudeBinary: '/bin/claude', prompt: 'p', configDir: '/cfg', cwd: '/tmp/scratch',
+    });
+    fake.stdout.push(JSON.stringify({
+      result: 'ok',
+      total_cost_usd: 0.020333,
+      duration_ms: 4589,
+      usage: {
+        input_tokens: 10,
+        output_tokens: 315,
+        cache_read_input_tokens: 0,
+        cache_creation_input_tokens: 9374,
+      },
+    }));
+    fake.stdout.push(null);
+    await flush();
+    fake.emit('exit', 0, null);
+
+    await expect(pending).resolves.toEqual({
+      result: 'ok',
+      costUsd: 0.020333,
+      inputTokens: 10,
+      outputTokens: 315,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 9374,
+      durationMs: 4589,
+    });
+  });
+
+  it('reports an absent figure as unknown, never as free', async () => {
+    // A future CLI that stops emitting a field must not have that read as a
+    // confident zero — "$0.00" is a claim, and it would be a false one.
+    const fake = makeFakeChild();
+    mockedSpawn.mockReturnValue(fake as never);
+
+    const pending = runCliOnce({
+      claudeBinary: '/bin/claude', prompt: 'p', configDir: '/cfg', cwd: '/tmp/scratch',
+    });
+    fake.stdout.push(JSON.stringify({ result: 'ok' }));
+    fake.stdout.push(null);
+    await flush();
+    fake.emit('exit', 0, null);
+
+    const out = await pending;
+    expect(out.costUsd).toBeNull();
+    expect(out.inputTokens).toBeNull();
+    expect(out.durationMs).toBeNull();
+  });
+
+  it('ignores a non-numeric cost rather than coercing it', async () => {
+    const fake = makeFakeChild();
+    mockedSpawn.mockReturnValue(fake as never);
+
+    const pending = runCliOnce({
+      claudeBinary: '/bin/claude', prompt: 'p', configDir: '/cfg', cwd: '/tmp/scratch',
+    });
+    fake.stdout.push(JSON.stringify({ result: 'ok', total_cost_usd: '0.02' }));
+    fake.stdout.push(null);
+    await flush();
+    fake.emit('exit', 0, null);
+
+    expect((await pending).costUsd).toBeNull();
   });
 });
