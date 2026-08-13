@@ -86,7 +86,10 @@ export const BrainTab: React.FC = () => {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex items-center gap-3 border-b px-4 py-2">
+      {/* Title bar. Each band below it — stats, queue controls, table actions,
+          filters — is a distinct surface, so the eye can tell chrome from
+          data instead of reading four identical strips as one slab. */}
+      <header className="flex items-center gap-3 border-b bg-card px-4 py-2">
         <h2 className="text-sm font-medium">Brain</h2>
         <SelectComponent
           value={accountId === null ? '' : String(accountId)}

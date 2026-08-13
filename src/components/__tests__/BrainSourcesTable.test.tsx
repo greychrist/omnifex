@@ -158,6 +158,29 @@ describe('BrainSourcesTable', () => {
     expect(itemCells()).toEqual(['ccc']);
   });
 
+  /**
+   * Re-indexing an unchanged item is a no-op the service already refuses
+   * ("unchanged since it was last indexed"), so offering it as a choice
+   * invites a press that spends nothing and does nothing.
+   */
+  it('cannot select a row that is indexed and unchanged', () => {
+    render(<Harness />);
+    expect(screen.getByLabelText('Select ccc')).toHaveProperty('disabled', true);
+    expect(screen.getByLabelText('Select aaa')).toHaveProperty('disabled', false);
+  });
+
+  it('still allows a row that changed since it was indexed', () => {
+    render(<Harness rows={[row({ itemKey: 'moved', status: 'indexed', changed: true })]} />);
+    expect(screen.getByLabelText('Select moved')).toHaveProperty('disabled', false);
+  });
+
+  it('select-all skips the rows that cannot be selected', () => {
+    render(<Harness />);
+    fireEvent.click(screen.getByLabelText(/select all shown/i));
+    // Three rows shown, but `ccc` is indexed and unchanged.
+    expect(screen.getByTestId('count').textContent).toBe('2');
+  });
+
   it('selects and deselects a single row', () => {
     render(<Harness />);
     fireEvent.click(screen.getByLabelText('Select aaa'));
@@ -172,17 +195,18 @@ describe('BrainSourcesTable', () => {
    * sessions having meant to index one.
    */
   it('select-all covers only the filtered rows', () => {
-    render(<Harness />);
+    render(<Harness rows={[ROWS[0], ROWS[1], row({ itemKey: 'other', label: '/tmp/x' })]} />);
     fireEvent.click(screen.getByLabelText(/filter by project/i));
-    fireEvent.click(screen.getByLabelText('Show /Users/greg/Repos/personal/WIN'));
+    fireEvent.click(screen.getByLabelText('Show /tmp/x'));
     fireEvent.click(screen.getByLabelText(/select all shown/i));
-    expect(screen.getByTestId('count').textContent).toBe('1');
+    // Two shown, and the hidden project's row is not reached.
+    expect(screen.getByTestId('count').textContent).toBe('2');
   });
 
   it('select-all toggles off when everything shown is already selected', () => {
     render(<Harness />);
     fireEvent.click(screen.getByLabelText(/select all shown/i));
-    expect(screen.getByTestId('count').textContent).toBe('3');
+    expect(screen.getByTestId('count').textContent).toBe('2');
     fireEvent.click(screen.getByLabelText(/select all shown/i));
     expect(screen.getByTestId('count').textContent).toBe('0');
   });

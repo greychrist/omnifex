@@ -162,11 +162,19 @@ export const BrainQueuePanel: React.FC<{ accountId: number | null }> = ({ accoun
   const failed = entries.filter((e) => e.status === 'failed');
 
   return (
-    <div className="border-b px-4 py-2 text-xs">
+    <div className="border-b bg-background px-4 py-2 text-xs">
       <div className="flex flex-wrap items-center gap-3">
-        <span className="text-muted-foreground">
-          {counts.pending} pending · {counts.running} running · {counts.done} done ·{' '}
-          {counts.failed} failed
+        {/* The queue's own reading, boxed away from the buttons beside it —
+            four counts run together read as one sentence about nothing. */}
+        <span
+          data-testid="queue-counts"
+          className="rounded-md border bg-muted/40 px-2 py-1 tabular-nums text-muted-foreground"
+        >
+          <span className="font-medium text-foreground">{counts.pending}</span> queued
+          {counts.running > 0 && <> · {counts.running} running</>} · {counts.done} done
+          {counts.failed > 0 && (
+            <> · <span className="text-destructive">{counts.failed} failed</span></>
+          )}
         </span>
 
         <button

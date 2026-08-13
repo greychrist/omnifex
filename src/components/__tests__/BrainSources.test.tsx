@@ -249,6 +249,52 @@ describe('BrainSources', () => {
     expect(screen.getByText(/USER: do the thing/)).toBeTruthy();
   });
 
+  /**
+   * A disabled button whose label changed was the only sign a 20-second model
+   * call was running, and it sits in the preview — off to the side of where
+   * the user is looking.
+   */
+  it('announces an indexing run above the table, not just on the button', async () => {
+    vi.mocked(api.brainListSources).mockResolvedValue([summary()]);
+    vi.mocked(api.brainSourcePreview).mockResolvedValue(preview());
+    let finish: (r: { itemKey: string; notesWritten: string[]; skipped: boolean; reason: string }) => void = () => {};
+    vi.mocked(api.brainIndexSource).mockReturnValue(
+      new Promise((r) => { finish = r; }) as ReturnType<typeof api.brainIndexSource>,
+    );
+    render(<BrainSources accountId={1} />);
+
+    fireEvent.click(await screen.findByText('/Users/dev/omnifex'));
+    await screen.findByText(/USER: do the thing/);
+    fireEvent.click(screen.getByRole('button', { name: /^index$/i }));
+
+    const banner = await screen.findByRole('status');
+    expect(banner.textContent).toMatch(/indexing/i);
+    // Names what is being worked on, so it is not just a moving bar.
+    expect(banner.textContent).toContain('sess-a');
+
+    finish({ itemKey: 'sess-a', notesWritten: ['A.md'], skipped: false, reason: 'ok' });
+    await waitFor(() => { expect(screen.queryByRole('status')).toBeNull(); });
+  });
+
+  it('counts through a multi-row run in the same banner', async () => {
+    vi.mocked(api.brainListSources).mockResolvedValue([
+      summary({ itemKey: 'a' }), summary({ itemKey: 'b' }),
+    ]);
+    let finish: (r: { itemKey: string; notesWritten: string[]; skipped: boolean; reason: string }) => void = () => {};
+    vi.mocked(api.brainIndexSource).mockReturnValue(
+      new Promise((r) => { finish = r; }) as ReturnType<typeof api.brainIndexSource>,
+    );
+    render(<BrainSources accountId={1} />);
+
+    fireEvent.click(await screen.findByLabelText('Select a'));
+    fireEvent.click(screen.getByLabelText('Select b'));
+    fireEvent.click(screen.getByRole('button', { name: /index selected \(2\)/i }));
+
+    const banner = await screen.findByRole('status');
+    expect(banner.textContent).toMatch(/1 of 2/);
+    finish({ itemKey: 'a', notesWritten: [], skipped: false, reason: 'ok' });
+  });
+
   it('shows a listing error even with no row selected', async () => {
     vi.mocked(api.brainListSources).mockRejectedValue(new Error('config dir unreadable'));
     render(<BrainSources accountId={1} />);

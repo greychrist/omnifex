@@ -30,7 +30,7 @@ describe('BrainStatsPanel', () => {
   it('shows the selected account figures', async () => {
     vi.mocked(api.brainStats).mockResolvedValue(stats(83));
     render(<BrainStatsPanel accountId={1} />);
-    await waitFor(() => { expect(screen.getByText(/83 notes/)).toBeTruthy(); });
+    await waitFor(() => { expect(screen.getByText('83')).toBeTruthy(); });
   });
 
   /**
@@ -42,13 +42,13 @@ describe('BrainStatsPanel', () => {
   it('never shows the previous account figures after a switch', async () => {
     vi.mocked(api.brainStats).mockResolvedValue(stats(83, ['Subsystems/Personal.md']));
     const { rerender } = render(<BrainStatsPanel accountId={1} />);
-    await waitFor(() => { expect(screen.getByText(/83 notes/)).toBeTruthy(); });
+    await waitFor(() => { expect(screen.getByText('83')).toBeTruthy(); });
 
     // The work account's read is still in flight.
     vi.mocked(api.brainStats).mockReturnValue(new Promise(() => {}) as Promise<BrainVaultStats>);
     rerender(<BrainStatsPanel accountId={2} />);
 
-    expect(screen.queryByText(/83 notes/)).toBeNull();
+    expect(screen.queryByText('83')).toBeNull();
     expect(screen.queryByText('Subsystems/Personal.md')).toBeNull();
   });
 

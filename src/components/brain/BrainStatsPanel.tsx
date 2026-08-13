@@ -20,6 +20,22 @@ function tokens(n: number): string {
   return n >= 1000 ? `~${(n / 1000).toFixed(1)}k` : `~${String(n)}`;
 }
 
+/**
+ * One figure, with a label saying what it means.
+ *
+ * The bar previously ran four unlabelled phrases together on one line, so
+ * reading it meant decoding which number belonged to which idea.
+ */
+const Stat: React.FC<{ label: string; value: string; sub?: string; title?: string }> = ({
+  label, value, sub, title,
+}) => (
+  <div title={title} className={title ? 'cursor-help' : undefined}>
+    <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</div>
+    <div className="font-medium tabular-nums">{value}</div>
+    {sub && <div className="text-[11px] text-muted-foreground">{sub}</div>}
+  </div>
+);
+
 export const BrainStatsPanel: React.FC<{
   accountId: number | null;
   /** Bumped after a run, so the figures do not go stale behind the user. */
@@ -64,7 +80,7 @@ export const BrainStatsPanel: React.FC<{
   const error = failure?.accountId === accountId ? failure.message : null;
 
   return (
-    <div className="border-b px-4 py-2 text-xs" data-testid="brain-stats">
+    <div className="border-b bg-muted/40 px-4 py-2.5 text-xs" data-testid="brain-stats">
       {error ? (
         <span className="text-destructive">{error}</span>
       ) : stats === null ? (
@@ -72,24 +88,32 @@ export const BrainStatsPanel: React.FC<{
         // accounts does not shove the panes below up and down.
         <span className="text-muted-foreground">reading vault…</span>
       ) : (
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-          <span className="text-muted-foreground">
-            {stats.noteCount} notes · {kb(stats.totalBytes)}
-          </span>
-          <span
-            className="text-muted-foreground"
-            title="Rough estimate at 4 bytes per token. Not a tokenizer count."
-          >
-            est. context per retrieval: {tokens(stats.estimatedTokens.median)} median ·{' '}
-            {tokens(stats.estimatedTokens.largest)} largest
-          </span>
-          <span className="text-muted-foreground" title="Timeline entries per note.">
-            timeline:{' '}
-            {stats.timelineBuckets.map((b) => `${b.label} ${String(b.count)}`).join(' · ')}
-          </span>
-          <span className={stats.qualifyingCount > 0 ? '' : 'text-muted-foreground'}>
-            {stats.qualifyingCount} qualify for curation
-          </span>
+        <div className="flex flex-wrap items-center gap-x-8 gap-y-2">
+          <Stat label="Notes in vault" value={String(stats.noteCount)} sub={kb(stats.totalBytes)} />
+          {/* The old label — "est. context per retrieval" — named a mechanism
+              rather than a consequence. This is the number that matters: what
+              recalling a note costs the session that asks for it. */}
+          <Stat
+            label="Cost of one recall"
+            value={`${tokens(stats.estimatedTokens.median)} tokens`}
+            sub={`biggest note ${tokens(stats.estimatedTokens.largest)}`}
+            title="What a Brain lookup adds to a session's context. Typical note, then the largest. Rough estimate at 4 bytes per token — not a tokenizer count."
+          />
+          <Stat
+            label="Ready to curate"
+            value={String(stats.qualifyingCount)}
+            sub={
+              stats.qualifyingCount === 0
+                ? 'nothing is long enough yet'
+                : 'notes long enough to compress'
+            }
+            title="Notes with enough Timeline history to be worth compressing. Curation rewrites them so recalling one costs less."
+          />
+          <Stat
+            label="Timeline entries per note"
+            value={stats.timelineBuckets.map((b) => `${b.label}: ${String(b.count)}`).join('  ')}
+            title="How much history each note has accumulated. This is what decides which notes qualify for curation."
+          />
         </div>
       )}
 

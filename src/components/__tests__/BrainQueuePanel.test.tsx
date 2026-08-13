@@ -114,8 +114,13 @@ describe('BrainQueuePanel', () => {
     });
     render(<BrainQueuePanel accountId={1} />);
 
-    expect(await screen.findByText(/7 pending/i)).toBeTruthy();
-    expect(screen.getByText(/2 failed/i)).toBeTruthy();
+    // Read as one reading: the figures are split across elements so the count
+    // can be weighted against its label.
+    const counts = await screen.findByTestId('queue-counts');
+    expect(counts.textContent).toMatch(/7\s*queued/);
+    expect(counts.textContent).toMatch(/1 running/);
+    expect(counts.textContent).toMatch(/12 done/);
+    expect(counts.textContent).toMatch(/2 failed/);
     expect(api.brainQueueCounts).toHaveBeenCalledWith(1);
   });
 
@@ -136,7 +141,7 @@ describe('BrainQueuePanel', () => {
   it('backfills and refreshes the counts', async () => {
     vi.mocked(api.brainBackfill).mockResolvedValue(14);
     render(<BrainQueuePanel accountId={1} />);
-    await screen.findByText(/0 pending/i);
+    await screen.findByTestId('queue-counts');
 
     fireEvent.click(screen.getByRole('button', { name: /backfill/i }));
 
@@ -149,7 +154,7 @@ describe('BrainQueuePanel', () => {
   
   it('clears finished entries', async () => {
     render(<BrainQueuePanel accountId={1} />);
-    await screen.findByText(/0 pending/i);
+    await screen.findByTestId('queue-counts');
 
     fireEvent.click(screen.getByRole('button', { name: /clear finished/i }));
 
@@ -159,7 +164,7 @@ describe('BrainQueuePanel', () => {
   it('surfaces a backfill failure rather than silently doing nothing', async () => {
     vi.mocked(api.brainBackfill).mockRejectedValue(new Error('no vault configured'));
     render(<BrainQueuePanel accountId={1} />);
-    await screen.findByText(/0 pending/i);
+    await screen.findByTestId('queue-counts');
 
     fireEvent.click(screen.getByRole('button', { name: /backfill/i }));
 

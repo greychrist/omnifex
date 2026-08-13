@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Loader2 } from 'lucide-react';
 import { api, type BrainSourcePreview, type BrainSourceSummary } from '@/lib/api';
 import { BrainQueuePanel } from './BrainQueuePanel';
 import { BrainSourcesTable, rowId } from './BrainSourcesTable';
@@ -32,7 +33,10 @@ export const BrainSources: React.FC<{ accountId: number | null }> = ({ accountId
   const [nonce, setNonce] = useState<Nonce>(0);
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
   const [managing, setManaging] = useState(false);
-  const [runProgress, setRunProgress] = useState<{ current: number; total: number } | null>(null);
+  /** What the run banner shows. `item` names what is being worked on now. */
+  const [runProgress, setRunProgress] = useState<
+    { current: number; total: number; item: string } | null
+  >(null);
   const tableRef = useRef<HTMLDivElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
 
@@ -94,6 +98,7 @@ export const BrainSources: React.FC<{ accountId: number | null }> = ({ accountId
   const index = useCallback(() => {
     if (accountId === null || selected === null) return;
     setIndexing(true);
+    setRunProgress({ current: 1, total: 1, item: selected });
     setOutcome(null);
     setError(null);
     api
@@ -109,7 +114,10 @@ export const BrainSources: React.FC<{ accountId: number | null }> = ({ accountId
         setNonce((n) => n + 1);
       })
       .catch((err: Error) => setError(err.message))
-      .finally(() => { setIndexing(false); });
+      .finally(() => {
+        setIndexing(false);
+        setRunProgress(null);
+      });
   }, [accountId, selected]);
 
   /**
@@ -130,7 +138,7 @@ export const BrainSources: React.FC<{ accountId: number | null }> = ({ accountId
       let written = 0;
       let skipped = 0;
       for (const [i, r] of targets.entries()) {
-        setRunProgress({ current: i + 1, total: targets.length });
+        setRunProgress({ current: i + 1, total: targets.length, item: r.itemKey });
         try {
           const result = await api.brainIndexSource(accountId, r.itemKey);
           if (result.skipped) skipped += 1;
@@ -224,12 +232,15 @@ export const BrainSources: React.FC<{ accountId: number | null }> = ({ accountId
           selected === null ? 'flex-1' : 'w-[40rem] shrink-0 border-r'
         }`}
       >
-        <div className="flex flex-wrap items-center gap-2 border-b px-3 py-2 text-xs">
+        {/* The action bar. Its own surface, above the filter bar and the table
+            — three stacked rows that all looked alike read as one undivided
+            slab. */}
+        <div className="flex flex-wrap items-center gap-2 border-b bg-background px-3 py-2 text-xs">
           <button
             type="button"
             onClick={indexSelected}
             disabled={indexing || selectedRows.size === 0}
-            className="rounded-md border px-2 py-1 hover:bg-accent disabled:opacity-50"
+            className="rounded-md bg-primary px-2.5 py-1 font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
           >
             Index Selected ({selectedRows.size})
           </button>
@@ -264,13 +275,19 @@ export const BrainSources: React.FC<{ accountId: number | null }> = ({ accountId
           {outcome && !runProgress && <span className="text-muted-foreground">{outcome}</span>}
         </div>
 
-        {/* Lives with the control that produces it. A run measured at ~21.5s
-            per item with no visible progress is indistinguishable from a dead
-            button — the second half of the original failure. */}
+        {/* Above the table, where the user is looking. A ~20s model call whose
+            only sign was a disabled button in the side panel was
+            indistinguishable from a dead button. */}
         {runProgress && (
-          <div className="border-b px-3 py-2 text-xs">
-            <div className="mb-1 text-muted-foreground">
-              Indexing {runProgress.current} of {runProgress.total}
+          <div role="status" aria-live="polite" className="border-b bg-primary/5 px-3 py-2 text-xs">
+            <div className="mb-1 flex items-center gap-2">
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+              <span className="font-medium">
+                {runProgress.total > 1
+                  ? `Indexing ${String(runProgress.current)} of ${String(runProgress.total)}`
+                  : 'Indexing'}
+              </span>
+              <span className="truncate text-muted-foreground">{runProgress.item}</span>
             </div>
             <div className="h-1 w-full overflow-hidden rounded bg-muted">
               <div

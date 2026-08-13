@@ -34,6 +34,18 @@ function statusOf(r: BrainSourceSummary): string {
   return 'never';
 }
 
+/**
+ * True when indexing this row would do nothing.
+ *
+ * `indexSource` short-circuits an already-indexed item whose bytes and mtime
+ * have not moved — "unchanged since it was last indexed" — so ticking one buys
+ * a press that spends nothing and changes nothing. A row that HAS changed is
+ * still worth re-indexing.
+ */
+export function isSettled(r: BrainSourceSummary): boolean {
+  return r.status === 'indexed' && !r.changed;
+}
+
 function matchesStatus(r: BrainSourceSummary, f: StatusFilter): boolean {
   if (f === 'all') return true;
   if (f === 'changed') return r.status === 'indexed' && r.changed;
@@ -136,19 +148,24 @@ export const BrainSourcesTable: React.FC<BrainSourcesTableProps> = ({
     });
   }, [rows, text, status, hidden, sort]);
 
-  const visibleIds = useMemo(() => visible.map(rowId), [visible]);
-  const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selected.has(id));
-
   /**
-   * Select-all covers the FILTERED rows, never the whole corpus.
+   * Rows worth ticking: filtered, minus the ones indexing would refuse.
    *
-   * A select-all that silently reaches past what is on screen is how a user
-   * ends up indexing 158 sessions having meant to index one.
+   * Select-all covers the FILTERED rows and never the whole corpus — a
+   * select-all that silently reaches past what is on screen is how a user ends
+   * up indexing 158 sessions having meant to index one.
    */
+  const selectableIds = useMemo(
+    () => visible.filter((r) => !isSettled(r)).map(rowId),
+    [visible],
+  );
+  const allVisibleSelected =
+    selectableIds.length > 0 && selectableIds.every((id) => selected.has(id));
+
   function toggleAll(): void {
     const next = new Set(selected);
-    if (allVisibleSelected) visibleIds.forEach((id) => next.delete(id));
-    else visibleIds.forEach((id) => next.add(id));
+    if (allVisibleSelected) selectableIds.forEach((id) => next.delete(id));
+    else selectableIds.forEach((id) => next.add(id));
     onSelectedChange(next);
   }
 
@@ -184,7 +201,9 @@ export const BrainSourcesTable: React.FC<BrainSourcesTableProps> = ({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex flex-wrap items-center gap-2 border-b px-3 py-2 text-xs">
+      {/* The filter row is a second bar, tinted to read as chrome rather than
+          as the first line of the table. */}
+      <div className="flex flex-wrap items-center gap-2 border-b bg-muted/40 px-3 py-2 text-xs">
         <input
           value={text}
           onChange={(e) => { setText(e.target.value); }}
@@ -267,12 +286,15 @@ export const BrainSourcesTable: React.FC<BrainSourcesTableProps> = ({
       </div>
 
       {/* Scrolls in both directions: paths are not truncated, so a deep one
-          is allowed to run past the pane rather than be abridged. */}
-      <div className="min-h-0 flex-1 overflow-auto">
+          is allowed to run past the pane rather than be abridged. `bg-card`
+          separates the data surface from the bars above it. */}
+      <div className="min-h-0 flex-1 overflow-auto bg-card">
         <table className="w-full text-xs">
-          <thead className="sticky top-0 bg-background text-muted-foreground">
-            <tr className="border-b">
-              <th className="w-8 px-2 py-1">
+          {/* Opaque and shadowed: a transparent sticky header let striped
+              rows scroll through the column names. */}
+          <thead className="sticky top-0 z-10 bg-card text-muted-foreground shadow-[0_1px_0_0_hsl(var(--border))]">
+            <tr>
+              <th className="w-8 px-2 py-1.5">
                 <input
                   type="checkbox"
                   checked={allVisibleSelected}
@@ -291,43 +313,52 @@ export const BrainSourcesTable: React.FC<BrainSourcesTableProps> = ({
           <tbody>
             {visible.map((r) => {
               const id = rowId(r);
+              const active = activeItemKey === r.itemKey;
+              const settled = isSettled(r);
               return (
                 <tr
                   key={id}
                   onClick={() => { onOpen(r.itemKey); }}
-                  aria-selected={activeItemKey === r.itemKey}
-                  className={`cursor-pointer border-b hover:bg-accent ${
-                    activeItemKey === r.itemKey ? 'bg-accent' : ''
+                  aria-selected={active}
+                  // A left bar rather than a fill alone: with a striped body,
+                  // one row tinted a shade darker is not legible as "this is
+                  // the one open on the right".
+                  className={`cursor-pointer border-b border-border/50 ${
+                    active
+                      ? 'bg-accent text-accent-foreground shadow-[inset_3px_0_0_0_hsl(var(--primary))]'
+                      : 'even:bg-muted/30 hover:bg-muted/60'
                   } ${r.excluded ? 'opacity-50' : ''}`}
                 >
-                  <td className="px-2 py-1" onClick={(e) => { e.stopPropagation(); }}>
+                  <td className="px-2 py-1.5" onClick={(e) => { e.stopPropagation(); }}>
                     <input
                       type="checkbox"
                       checked={selected.has(id)}
+                      disabled={settled}
                       onChange={() => { toggleOne(id); }}
                       aria-label={`Select ${r.itemKey}`}
-                      className="h-3 w-3"
+                      title={settled ? 'Already indexed — nothing has changed since' : undefined}
+                      className="h-3 w-3 disabled:opacity-40"
                     />
                   </td>
                   {/* One line, whole path. These share long prefixes, so
                       cutting one anywhere hides the part that identifies it,
                       and wrapping made every row two lines tall. The table
                       scrolls sideways instead. */}
-                  <td className="whitespace-nowrap px-2 py-1">{r.label}</td>
-                  <td className="whitespace-nowrap px-2 py-1 text-muted-foreground">
+                  <td className="whitespace-nowrap px-2 py-1.5 font-medium">{r.label}</td>
+                  <td className="whitespace-nowrap px-2 py-1.5 text-muted-foreground">
                     {sourceTypeLabel(r.sourceId)}
                   </td>
-                  <td className="whitespace-nowrap px-2 py-1 text-muted-foreground">
+                  <td className="whitespace-nowrap px-2 py-1.5 tabular-nums text-muted-foreground">
                     {new Date(r.mtimeMs).toISOString().slice(0, 10)}
                   </td>
-                  <td className="whitespace-nowrap px-2 py-1 text-muted-foreground">
+                  <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums text-muted-foreground">
                     {kb(r.size)}
                   </td>
                   {/* A rejected row shows the gate's REASON, not just
                       "skipped" — "fewer than 2 prompts" is the answer to the
                       question the status alone provokes. */}
                   <td
-                    className="max-w-[12rem] truncate px-2 py-1 text-muted-foreground"
+                    className="max-w-[12rem] truncate px-2 py-1.5 text-muted-foreground"
                     title={r.reason}
                   >
                     {r.admitted ? statusOf(r) : r.reason}
