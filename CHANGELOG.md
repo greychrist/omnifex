@@ -5,6 +5,23 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.121] — 2026-08-13
+
+A changelog-review pass against Claude Code 2.1.231.
+
+### Changed
+
+- **Reviewed the Claude Code changelog through 2.1.231**, clearing the "CLI
+  ahead of review" badge. The range held one entry — an MCP OAuth redirect-URI
+  fix for servers with a pre-registered OAuth client, reconciling 2.1.229's
+  `localhost` → `127.0.0.1` switch. It lands entirely inside the CLI process:
+  OmniFex's MCP service only reads and writes config files and never builds a
+  redirect URI, and the `mcp_status` control response stays shape-compatible.
+  No OmniFex change was needed, but signing in to an OAuth MCP server from
+  inside a session works again. 2.1.230 carries no changelog entry at all.
+
+Installers remain **unsigned**.
+
 ## [0.4.120] — 2026-08-13
 
 The Brain page, rebuilt — and it can now tell you what it has cost you.
