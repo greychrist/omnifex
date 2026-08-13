@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createDatabase, type Database } from '../services/database';
 import {
+  CURATION_SOURCE_ID,
   createBrainQueueStore,
   createBrainQueueWorker,
   type BrainQueueStore,
@@ -200,9 +201,9 @@ describe('brain queue worker', () => {
     };
     const w = createBrainQueueWorker({
       store,
-      indexSource: async (_accountId, itemKey) => {
-        state.indexed.push(itemKey);
-        return state.result(itemKey);
+      process: async (entry) => {
+        state.indexed.push(entry.itemKey);
+        await state.result(entry.itemKey);
       },
       hasActiveSession: () => state.active,
       isPaused: () => state.paused,
@@ -313,9 +314,8 @@ describe('brain queue worker', () => {
     const seen: (string | null)[] = [];
     const w = createBrainQueueWorker({
       store,
-      indexSource: async () => {
+      process: async () => {
         seen.push(wRef.current()?.itemKey ?? null);
-        return { skipped: false, reason: 'ok' };
       },
       hasActiveSession: () => false,
       isPaused: () => false,
@@ -334,6 +334,47 @@ describe('brain queue worker', () => {
     const { w, state } = worker();
     await expect(w.drain()).resolves.toBeUndefined();
     expect(state.indexed).toEqual([]);
+  });
+
+  it('hands the whole entry to process, so the worker need not know what an item is', async () => {
+    store.enqueue(accountId, 'session', 'a');
+    store.enqueue(accountId, CURATION_SOURCE_ID, 'Subsystems/Widget.md');
+    const seen: { sourceId: string; itemKey: string }[] = [];
+    const w = createBrainQueueWorker({
+      store,
+      process: async (entry) => {
+        seen.push({ sourceId: entry.sourceId, itemKey: entry.itemKey });
+      },
+      hasActiveSession: () => false,
+      isPaused: () => false,
+    });
+
+    await w.drain();
+
+    expect(seen).toEqual([
+      { sourceId: 'session', itemKey: 'a' },
+      { sourceId: CURATION_SOURCE_ID, itemKey: 'Subsystems/Widget.md' },
+    ]);
+  });
+
+  it('fails only the curation entry when process throws for it', async () => {
+    store.enqueue(accountId, CURATION_SOURCE_ID, 'Subsystems/Bad.md');
+    store.enqueue(accountId, 'session', 'good');
+    const w = createBrainQueueWorker({
+      store,
+      process: async (entry) => {
+        if (entry.sourceId === CURATION_SOURCE_ID) throw new Error('model said no');
+      },
+      hasActiveSession: () => false,
+      isPaused: () => false,
+    });
+
+    await w.drain();
+
+    const rows = store.list(accountId);
+    expect(rows.find((r) => r.itemKey === 'Subsystems/Bad.md')?.status).toBe('failed');
+    expect(rows.find((r) => r.itemKey === 'Subsystems/Bad.md')?.error).toBe('model said no');
+    expect(rows.find((r) => r.itemKey === 'good')?.status).toBe('done');
   });
 
   it('checks the yield gate between items, not just once', async () => {

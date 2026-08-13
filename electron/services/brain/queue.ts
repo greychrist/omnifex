@@ -199,12 +199,18 @@ export type HasActiveSession = () => boolean;
 
 export interface QueueWorkerDeps {
   store: BrainQueueStore;
-  /** Plan 4a's method. Every drain path goes through it, so the
-   *  unchanged-item short-circuit and per-entity isolation both still apply. */
-  indexSource(
-    accountId: number,
-    itemKey: string,
-  ): Promise<{ skipped: boolean; reason: string }>;
+  /**
+   * Do one entry's work. Takes the WHOLE entry, not `(accountId, itemKey)`:
+   * the queue now carries more than one kind of work — indexing a source and
+   * curating a note — and a worker that destructured the pair would have to
+   * know which was which. The registry owns that dispatch; this file does not
+   * know what an item is.
+   *
+   * Resolves for a completed unit of work, including a skip. Rejects only for
+   * a real failure, which is recorded against the entry and never blocks the
+   * queue.
+   */
+  process(entry: QueueEntry): Promise<void>;
   hasActiveSession: HasActiveSession;
   isPaused(): boolean;
 }
@@ -238,11 +244,12 @@ export function createBrainQueueWorker(deps: QueueWorkerDeps): BrainQueueWorker 
 
         currentEntry = entry;
         try {
-          // A skipped result — a gate rejection, or an item unchanged since it
-          // was last indexed — is a COMPLETED unit of work, not a failure.
-          // Recording it as failed would fill the operational pane with red
-          // during entirely normal operation.
-          await deps.indexSource(entry.accountId, entry.itemKey);
+          // A skipped result — a gate rejection, an item unchanged since it was
+          // last indexed, or a note that no longer qualifies for curation — is
+          // a COMPLETED unit of work, not a failure. Recording it as failed
+          // would fill the operational pane with red during entirely normal
+          // operation.
+          await deps.process(entry);
           deps.store.complete(entry.id);
         } catch (err) {
           // Spec §8: a failed item never blocks the queue.
@@ -274,3 +281,17 @@ export const BRAIN_AUTO_INDEX_SETTING_KEY = 'brain.autoIndex';
 
 /** User-facing pause for the queue, independent of the auto-index opt-in. */
 export const BRAIN_QUEUE_PAUSED_SETTING_KEY = 'brain.queuePaused';
+
+/**
+ * The sentinel `source_id` for a curation row. It names no adapter — there is
+ * no curation `BrainSource` — and exists so one queue can carry both kinds of
+ * work. The registry dispatches on it; nothing else should match on it.
+ */
+export const CURATION_SOURCE_ID = 'curation';
+
+/**
+ * Curation on session close. Default `'false'`, for the same reason
+ * auto-indexing is, and one more: curation REWRITES existing notes rather than
+ * only adding to them. The user opts in once, after seeing real output.
+ */
+export const BRAIN_CURATE_SETTING_KEY = 'brain.curate';

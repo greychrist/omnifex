@@ -15,6 +15,7 @@ import { fireAndLogGitFailure } from './git-logging';
 import { canonicalPath, fsIdentity, isSameOrInside, resolveVaultRoot } from './paths';
 import { createSourceStateStore, type SourceStatus } from './sources/state';
 import {
+  CURATION_SOURCE_ID,
   createBrainQueueStore,
   createBrainQueueWorker,
   type QueueCounts,
@@ -468,10 +469,16 @@ export function createBrainService(
 
   const queueWorker = createBrainQueueWorker({
     store: queueStore,
-    // Routed through the service's own method rather than a captured closure,
-    // so every drain gets the unchanged-item short-circuit and the per-entity
-    // isolation that live there.
-    indexSource: (accountId, itemKey) => service.indexSource(accountId, itemKey),
+    // The dispatch. Routed through the service's own methods rather than
+    // captured closures, so every drain gets the unchanged-item short-circuit,
+    // the per-entity isolation and the re-qualification check that live there.
+    process: async (entry) => {
+      if (entry.sourceId === CURATION_SOURCE_ID) {
+        await service.curateNote(entry.accountId, entry.itemKey);
+        return;
+      }
+      await service.indexSource(entry.accountId, entry.itemKey);
+    },
     hasActiveSession: opts.hasActiveSession ?? (() => false),
     isPaused: opts.isQueuePaused ?? (() => false),
   });
