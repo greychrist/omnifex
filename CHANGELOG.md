@@ -5,6 +5,34 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.118] — 2026-08-13
+
+Hardening from the Claude Code 2.1.224 → 2.1.229 changelog review.
+
+### Fixed
+
+- **A malformed tool call no longer blanks the app.** Claude Code 2.1.229 fixed
+  its own crash-to-error-screen when a tool call carried a non-string `glob`,
+  `file_path`, or `command`. It tolerates the value rather than rejecting it
+  upstream, so the malformed block still reaches the transcript — where a
+  numeric `file_path` threw inside the syntax-language lookup. The nearest error
+  boundary was the app-level one, so one bad message blanked all of OmniFex, and
+  blanked it again on every replay of that session.
+- **A malformed tool call no longer blocks a permission prompt.** The same
+  payload reached the permission card's preview builder as a declared string,
+  so the card threw and took Allow / Deny with it — leaving the session waiting
+  on an answer that could not be given. Malformed fields now fall through to the
+  raw-JSON display in both places.
+
+### Changed
+
+- Every transcript row renders inside its own error boundary, so a message that
+  cannot be rendered is contained to one row instead of the whole window.
+- Reviewed CLI watermark moved to 2.1.229.
+
+Installers remain **unsigned** — macOS Gatekeeper will block first launch;
+right-click → Open to run.
+
 ## [0.4.117] — 2026-08-13
 
 The Brain ships: a per-account Markdown knowledge vault that reads what you
