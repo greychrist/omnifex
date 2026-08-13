@@ -5,7 +5,13 @@ import { BrainSources } from '@/components/brain/BrainSources';
 import { api, type BrainSourcePreview, type BrainSourceSummary } from '@/lib/api';
 
 vi.mock('@/lib/api', () => ({
-  api: { brainListSources: vi.fn(), brainSourcePreview: vi.fn(), brainIndexSource: vi.fn() },
+  api: {
+    brainListSources: vi.fn(),
+    brainSourcePreview: vi.fn(),
+    brainIndexSource: vi.fn(),
+    brainExcludedProjects: vi.fn(),
+    brainSetExcludedProjects: vi.fn(),
+  },
 }));
 
 // The queue panel has its own tests; here it only needs to report which
@@ -62,13 +68,15 @@ describe('BrainSources', () => {
     vi.mocked(api.brainIndexSource).mockResolvedValue({
       itemKey: 'sess-a', notesWritten: ['Subsystems/A.md'], skipped: false, reason: '1 note(s) written',
     });
+    vi.mocked(api.brainExcludedProjects).mockResolvedValue([]);
+    vi.mocked(api.brainSetExcludedProjects).mockResolvedValue(undefined);
   });
 
   it('lists discovered items for the given account', async () => {
     vi.mocked(api.brainListSources).mockResolvedValue([summary()]);
     render(<BrainSources accountId={1} />);
     expect(await screen.findByText('sess-a')).toBeTruthy();
-    expect(api.brainListSources).toHaveBeenCalledWith(1);
+    expect(api.brainListSources).toHaveBeenCalledWith(1, { includeExcluded: true });
   });
 
   it('shows why a skipped item was skipped', async () => {
