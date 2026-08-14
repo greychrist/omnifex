@@ -6,9 +6,14 @@ import type { Database } from '../database';
  * `brain_queue` has existed since schema v18 and until now had no owner. This
  * file is the only thing that knows its columns.
  *
- * The queue survives restart, drains at concurrency 1, and yields entirely
- * while the user has an interactive session open — indexing must never compete
- * with real work for rate limit.
+ * The queue survives restart and drains at concurrency 1.
+ *
+ * It used to yield entirely while any session tab was open. Plan 8 removed
+ * that: a tab is open for hours and spends rate limit for seconds of it, so the
+ * gate stalled the queue almost permanently (165 items pending) while
+ * protecting almost nothing. The per-item guard that was doing the real work —
+ * refusing a transcript still being written — lives in the registry and stays.
+ * What replaces the gate as a brake is `isRateLimitError` plus a cooldown.
  */
 
 export type QueueStatus = 'pending' | 'running' | 'done' | 'failed';
@@ -39,6 +44,14 @@ export interface BrainQueueStore {
   claimNext(): QueueEntry | null;
   complete(id: number): void;
   fail(id: number, error: string): void;
+  /**
+   * Put a claimed entry back, as though it had never been handed out.
+   *
+   * For a rate limit specifically: the item is fine, the account is out of
+   * budget for the moment. `fail` would be a lie that also costs the user a
+   * manual retry, since a failed row is terminal until something re-enqueues it.
+   */
+  requeue(id: number): void;
   counts(accountId?: number): QueueCounts;
   list(accountId: number, limit?: number): QueueEntry[];
   /** Reset orphaned `running` rows to pending. Call once at startup. */
@@ -167,6 +180,16 @@ export function createBrainQueueStore(db: Database): BrainQueueStore {
     return info.changes;
   }
 
+  function requeue(id: number): void {
+    raw
+      .prepare(
+        `UPDATE brain_queue
+            SET status = 'pending', started_at = NULL, error = NULL
+          WHERE id = ?`,
+      )
+      .run(id);
+  }
+
   function clearFinished(accountId: number): void {
     raw
       .prepare("DELETE FROM brain_queue WHERE account_id = ? AND status IN ('done', 'failed')")
@@ -178,6 +201,7 @@ export function createBrainQueueStore(db: Database): BrainQueueStore {
     claimNext,
     complete: (id) => { finish(id, 'done', null); },
     fail: (id, error) => { finish(id, 'failed', error); },
+    requeue,
     counts,
     list,
     recoverOrphans,
@@ -186,16 +210,35 @@ export function createBrainQueueStore(db: Database): BrainQueueStore {
 }
 
 /**
- * True while the user has an interactive session open.
+ * How long to stand down after the account reports a rate limit.
  *
- * IMPORTANT: implement this with `listActiveTabIds()`, never
- * `listInFlightTabIds()`. The latter is hardcoded to `return []`
- * (`sessions/lifecycle.ts:511`, dead since the jsonl-as-rendered refactor) and
- * `docs/session-lifecycle.md` names relying on it as an anti-pattern. A worker
- * gated on it would never yield — it would run hardest exactly when the user is
- * working, which is the failure the yield rule exists to prevent.
+ * In memory, never persisted. A restart is already the user saying they want
+ * something to happen, and an app that silently refuses to index for fifteen
+ * minutes after launch is indistinguishable from one that is broken.
  */
-export type HasActiveSession = () => boolean;
+export const RATE_LIMIT_COOLDOWN_MS = 15 * 60 * 1000;
+
+/**
+ * Whether a failure means "the account is out of budget" rather than "this item
+ * is bad".
+ *
+ * A predicate rather than an inline regex because it is the one part of backoff
+ * that depends on wording the CLI controls: when a message shape changes this
+ * is a one-line edit with its own test, instead of an archaeology exercise
+ * inside a control-flow branch.
+ *
+ * `rate limit` matches with a space and NOT with a hyphen on purpose. This
+ * corpus is engineering prose about, among other things, rate-limit tracking,
+ * so `wrote note Topics/rate-limit-tracking.md` must not read as a rate limit.
+ */
+export function isRateLimitError(message: string): boolean {
+  return (
+    /usage limit/i.test(message) ||
+    /rate limit/i.test(message) ||
+    /\b429\b/.test(message) ||
+    /quota exceeded/i.test(message)
+  );
+}
 
 export interface QueueWorkerDeps {
   store: BrainQueueStore;
@@ -211,8 +254,9 @@ export interface QueueWorkerDeps {
    * queue.
    */
   process(entry: QueueEntry): Promise<void>;
-  hasActiveSession: HasActiveSession;
   isPaused(): boolean;
+  /** Injectable clock, so cooldown behaviour is testable without timers. */
+  now?: () => number;
 }
 
 /**
@@ -228,7 +272,13 @@ export interface DrainOutcome {
   processed: number;
   /** True when the worker stopped for a reason other than an empty queue. */
   yielded: boolean;
-  reason: 'empty' | 'paused' | 'session-active';
+  reason: 'empty' | 'paused' | 'rate-limited' | 'busy';
+  /**
+   * Epoch ms when a rate-limited worker will try again. Present only for
+   * `'rate-limited'`, so the panel can say when rather than only that it
+   * stopped — "paused until 2:14pm" is actionable and "paused" is not.
+   */
+  retryAt?: number;
 }
 
 export interface BrainQueueWorker {
@@ -242,6 +292,9 @@ export interface BrainQueueWorker {
 export function createBrainQueueWorker(deps: QueueWorkerDeps): BrainQueueWorker {
   let draining = false;
   let currentEntry: QueueEntry | null = null;
+  /** Epoch ms before which no entry may be claimed. Null when clear. */
+  let cooldownUntil: number | null = null;
+  const now = deps.now ?? Date.now;
 
   async function drain(): Promise<DrainOutcome> {
     // Re-entry guard. Concurrency 1 is the contract with the user's rate
@@ -256,12 +309,12 @@ export function createBrainQueueWorker(deps: QueueWorkerDeps): BrainQueueWorker 
         // entry would let a long backfill run to completion no matter what the
         // user started doing halfway through.
         //
-        // Two checks rather than one `||` so the caller learns WHICH stopped
-        // it — "a session is open" and "you paused it" need different words in
-        // the UI, and the user has to be able to tell them apart.
+        // Separate checks rather than one `||` so the caller learns WHICH
+        // stopped it — "you paused it" and "the account is rate limited" need
+        // different words in the UI, and the user has to tell them apart.
         if (deps.isPaused()) return { processed, yielded: true, reason: 'paused' };
-        if (deps.hasActiveSession()) {
-          return { processed, yielded: true, reason: 'session-active' };
+        if (cooldownUntil !== null && now() < cooldownUntil) {
+          return { processed, yielded: true, reason: 'rate-limited', retryAt: cooldownUntil };
         }
 
         const entry = deps.store.claimNext();
@@ -277,15 +330,25 @@ export function createBrainQueueWorker(deps: QueueWorkerDeps): BrainQueueWorker 
           await deps.process(entry);
           deps.store.complete(entry.id);
         } catch (err) {
+          const message = (err as Error).message;
+          if (isRateLimitError(message)) {
+            // Not `processed`: nothing was taken to a terminal state, and the
+            // item goes back exactly as it was. Counting it would report work
+            // the user did not get.
+            deps.store.requeue(entry.id);
+            cooldownUntil = now() + RATE_LIMIT_COOLDOWN_MS;
+            return { processed, yielded: true, reason: 'rate-limited', retryAt: cooldownUntil };
+          }
           // Spec §8: a failed item never blocks the queue.
-          deps.store.fail(entry.id, (err as Error).message);
+          deps.store.fail(entry.id, message);
         } finally {
           currentEntry = null;
-          // Counted in `finally`: a failed item is still an item taken to a
-          // terminal state, and progress that stalled on failures would read
-          // as a hung run.
-          processed += 1;
         }
+        // After the try, not inside a `finally`: the rate-limit path returns
+        // without processing anything, and a `finally` would credit it anyway.
+        // A failed item still counts — it reached a terminal state, and
+        // progress that stalled on failures would read as a hung run.
+        processed += 1;
       }
     } finally {
       draining = false;

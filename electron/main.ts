@@ -522,17 +522,13 @@ app.whenReady().then(() => {
       createAutoMemorySource({ accounts: accountsService }),
       createRepoArtifactSource({ accounts: accountsService }),
     ],
-    // `listActiveTabIds`, never `listInFlightTabIds` — the latter is hardcoded
-    // to return [] (sessions/lifecycle.ts, dead since the jsonl-as-rendered
-    // refactor), so a worker gated on it would never yield and would run
-    // hardest exactly when the user is working. See docs/session-lifecycle.md.
+    // The only session-awareness the indexer has since Plan 8 dropped the
+    // global "a tab is open" gate: these are the transcripts still being
+    // written to, and indexing one distils half a conversation and then
+    // records it as finished.
     //
     // Read through a getter rather than captured: `sessionsService` is
     // constructed below this line.
-    hasActiveSession: () => (_sessionsService?.listActiveTabIds().length ?? 0) > 0,
-    // Per-item, where hasActiveSession is global: these are the transcripts
-    // still being written to, and indexing one distils half a conversation and
-    // then records it as finished. Same getter reason as above.
     liveSessionIds: () => _sessionsService?.listActiveSessionIds() ?? [],
     isQueuePaused: () => db.getSetting(BRAIN_QUEUE_PAUSED_SETTING_KEY) === 'true',
     // Broadcast, not routed to an owner window: the run outlives the pane that
@@ -791,9 +787,7 @@ app.whenReady().then(() => {
       if (autoIndexOn || curateOn) {
         const account = accountsService.getAccountByConfigDir(configDir);
         if (account) {
-          // Fire-and-forget: session teardown must never wait on Brain work,
-          // and the worker yields immediately anyway while another session is
-          // still open.
+          // Fire-and-forget: session teardown must never wait on Brain work.
           Promise.resolve()
             .then(() =>
               autoIndexOn ? brainService?.enqueueSource(account.id, sessionId) : undefined,
@@ -909,6 +903,18 @@ app.whenReady().then(() => {
       console.warn('[cost-history] sweep failed:', err);
     }
   }, 60 * 60 * 1000);
+
+  // Periodic drain (Plan 8). Session close is the only other trigger, and it
+  // is not enough on its own: a drain that stops — paused, rate limited, or
+  // because a selection run held the worker — used to have nothing to restart
+  // it until the next session happened to close, which is how 165 items came
+  // to be pending. An empty queue costs one indexed SELECT, so an idle app
+  // pays nothing for this.
+  setInterval(() => {
+    void brainRef?.drainQueue().catch((err: unknown) => {
+      console.warn('[brain] periodic drain failed:', err);
+    });
+  }, 5 * 60 * 1000);
   const proxyService = createProxyService(db);
   const mcpService = createMCPService();
   // The persistent, per-account half of Brain MCP registration. Reuses

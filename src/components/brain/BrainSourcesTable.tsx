@@ -19,6 +19,18 @@ export interface BrainSourcesTableProps {
   selected: ReadonlySet<string>;
   onSelectedChange: (next: Set<string>) => void;
   activeItemKey: string | null;
+  /**
+   * The item the indexer is working on right now — `BrainRun.item`.
+   *
+   * Distinct from `activeItemKey`, which is the row the user opened in the
+   * preview. The run banner counts "3 of 20" without ever saying which of
+   * these rows the number is about; this is what closes that gap.
+   *
+   * Null when nothing is in flight. A curation entry names a note path rather
+   * than a source key, so no row matches — which is correct, since curation
+   * does not appear in this table.
+   */
+  indexingItemKey: string | null;
   onOpen: (itemKey: string) => void;
 }
 
@@ -147,7 +159,7 @@ export function comparePaths(a: string, b: string): number {
 }
 
 export const BrainSourcesTable: React.FC<BrainSourcesTableProps> = ({
-  rows, selected, onSelectedChange, activeItemKey, onOpen,
+  rows, selected, onSelectedChange, activeItemKey, indexingItemKey, onOpen,
 }) => {
   const [sort, setSort] = useState<{ key: SortKey; desc: boolean }>({ key: 'when', desc: true });
   const [text, setText] = useState('');
@@ -225,18 +237,41 @@ export const BrainSourcesTable: React.FC<BrainSourcesTableProps> = ({
     onSelectedChange(next);
   }
 
-  function header(key: SortKey, label: string): React.ReactElement {
+  function sortButton(key: SortKey, label: string): React.ReactElement {
     const active = sort.key === key;
     return (
-      <th className="px-2 py-1 text-left font-medium">
-        <button
-          type="button"
-          onClick={() => { setSort((s) => ({ key, desc: s.key === key ? !s.desc : true })); }}
-          aria-sort={active ? (sort.desc ? 'descending' : 'ascending') : 'none'}
-          className="hover:text-foreground"
-        >
-          {label}{active ? (sort.desc ? ' ↓' : ' ↑') : ''}
-        </button>
+      <button
+        type="button"
+        onClick={() => { setSort((s) => ({ key, desc: s.key === key ? !s.desc : true })); }}
+        aria-sort={active ? (sort.desc ? 'descending' : 'ascending') : 'none'}
+        className={active ? 'text-foreground' : 'hover:text-foreground'}
+      >
+        {label}{active ? (sort.desc ? ' ↓' : ' ↑') : ''}
+      </button>
+    );
+  }
+
+  function header(key: SortKey, label: string): React.ReactElement {
+    return <th className="px-2 py-1 text-left font-medium">{sortButton(key, label)}</th>;
+  }
+
+  /**
+   * A stacked cell's header: both halves keep their own sort control.
+   *
+   * Merging two columns must not cost two orderings — sorting by cost is how
+   * you find what the vault actually spent money on, and it would have gone
+   * with the Cost column otherwise.
+   */
+  function pairHeader(
+    a: [SortKey, string],
+    b: [SortKey, string],
+    align: 'left' | 'right' = 'left',
+  ): React.ReactElement {
+    return (
+      <th className={`px-2 py-1 font-medium text-${align}`}>
+        {sortButton(a[0], a[1])}
+        <span className="px-1 text-muted-foreground/50">/</span>
+        {sortButton(b[0], b[1])}
       </th>
     );
   }
@@ -345,12 +380,10 @@ export const BrainSourcesTable: React.FC<BrainSourcesTableProps> = ({
                   className="h-3 w-3"
                 />
               </th>
-              {header('project', 'Project')}
-              {header('name', 'Name')}
+              {pairHeader(['project', 'Project'], ['name', 'Name'])}
               {header('type', 'Type')}
               {header('when', 'When')}
-              {header('size', 'Size')}
-              {header('cost', 'Cost')}
+              {pairHeader(['size', 'Size'], ['cost', 'Cost'], 'right')}
               {header('status', 'Status')}
             </tr>
           </thead>
@@ -358,6 +391,7 @@ export const BrainSourcesTable: React.FC<BrainSourcesTableProps> = ({
             {visible.map((r) => {
               const id = rowId(r);
               const active = activeItemKey === r.itemKey;
+              const indexing = indexingItemKey === r.itemKey;
               const blocked = blockedReason(r);
               return (
                 <tr
@@ -384,16 +418,17 @@ export const BrainSourcesTable: React.FC<BrainSourcesTableProps> = ({
                       className="h-3 w-3 disabled:opacity-40"
                     />
                   </td>
-                  {/* One line, whole path. These share long prefixes, so
-                      cutting one anywhere hides the part that identifies it,
-                      and wrapping made every row two lines tall. The table
-                      scrolls sideways instead. */}
-                  <td className="whitespace-nowrap px-2 py-1.5 font-medium">{r.label}</td>
-                  {/* The row's own identity. A session id is what you paste in
-                      to find one conversation; a file's name says more than its
-                      encoded key does. */}
-                  <td className="whitespace-nowrap px-2 py-1.5 font-mono text-[11px]">
-                    <span className="inline-flex items-center gap-1.5">
+                  {/* Project on top, the row's own name beneath it. Whole path
+                      on one line: these share long prefixes, so cutting one
+                      anywhere hides the part that identifies it. Stacking the
+                      name here is what let the table lose a column without
+                      abridging anything. */}
+                  <td className="whitespace-nowrap px-2 py-1.5 align-top leading-tight">
+                    <div data-testid="source-project" className="font-medium">{r.label}</div>
+                    <div className="flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground">
+                      {/* A session id is what you paste in to find one
+                          conversation; a file's name says more than its
+                          encoded key does. */}
                       <span data-testid="source-name">{r.name}</span>
                       {r.inUse && (
                         <span
@@ -403,34 +438,45 @@ export const BrainSourcesTable: React.FC<BrainSourcesTableProps> = ({
                           In use
                         </span>
                       )}
-                    </span>
-                  </td>
-                  <td className="whitespace-nowrap px-2 py-1.5 text-muted-foreground">
-                    {sourceTypeLabel(r.sourceId)}
-                  </td>
-                  <td className="whitespace-nowrap px-2 py-1.5 tabular-nums text-muted-foreground">
-                    {new Date(r.mtimeMs).toISOString().slice(0, 10)}
-                  </td>
-                  <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums text-muted-foreground">
-                    {kb(r.size)}
+                    </div>
                   </td>
                   <td
-                    data-testid="source-cost"
-                    title={costBreakdown(r)}
-                    className={`whitespace-nowrap px-2 py-1.5 text-right tabular-nums ${
-                      r.costUsd === null ? 'text-muted-foreground' : ''
-                    }`}
+                    data-testid="source-type"
+                    className="whitespace-nowrap px-2 py-1.5 align-top text-muted-foreground"
                   >
-                    {usd(r.costUsd)}
+                    {sourceTypeLabel(r.sourceId)}
                   </td>
-                  {/* A rejected row shows the gate's REASON, not just
+                  <td className="whitespace-nowrap px-2 py-1.5 align-top tabular-nums text-muted-foreground">
+                    {new Date(r.mtimeMs).toISOString().slice(0, 10)}
+                  </td>
+                  {/* Size over cost, dimmed second line — the same stacked cell
+                      SessionList uses, so the two tables read alike. */}
+                  <td className="whitespace-nowrap px-2 py-1.5 text-right align-top leading-tight tabular-nums">
+                    <div data-testid="source-size" className="text-muted-foreground">
+                      {kb(r.size)}
+                    </div>
+                    <div
+                      data-testid="source-cost"
+                      title={costBreakdown(r)}
+                      className={r.costUsd === null ? 'text-muted-foreground/70' : ''}
+                    >
+                      {usd(r.costUsd)}
+                    </div>
+                  </td>
+                  {/* What this row is doing right now beats what it last did:
+                      while it is in flight, "indexing…" is the answer to the
+                      question the run banner's "3 of 20" provokes. Otherwise a
+                      rejected row shows the gate's REASON rather than just
                       "skipped" — "fewer than 2 prompts" is the answer to the
                       question the status alone provokes. */}
                   <td
-                    className="max-w-[12rem] truncate px-2 py-1.5 text-muted-foreground"
-                    title={r.reason}
+                    data-testid="source-status"
+                    className={`max-w-[12rem] truncate px-2 py-1.5 align-top ${
+                      indexing ? 'font-medium text-primary' : 'text-muted-foreground'
+                    }`}
+                    title={indexing ? 'Being indexed right now' : r.reason}
                   >
-                    {r.admitted ? statusOf(r) : r.reason}
+                    {indexing ? 'indexing…' : r.admitted ? statusOf(r) : r.reason}
                   </td>
                 </tr>
               );

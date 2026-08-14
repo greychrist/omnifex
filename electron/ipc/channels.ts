@@ -27,6 +27,7 @@ export const INVOKE_CHANNELS: readonly string[] = [
   'brain_source_preview',
   'brain_index_selection',
   'brain_current_run',
+  'brain_active_run',
   'brain_queue_counts',
   'brain_queue_list',
   'brain_queue_clear',

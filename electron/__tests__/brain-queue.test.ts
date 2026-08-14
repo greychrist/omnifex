@@ -2,8 +2,10 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createDatabase, type Database } from '../services/database';
 import {
   CURATION_SOURCE_ID,
+  RATE_LIMIT_COOLDOWN_MS,
   createBrainQueueStore,
   createBrainQueueWorker,
+  isRateLimitError,
   type BrainQueueStore,
 } from '../services/brain/queue';
 
@@ -186,16 +188,17 @@ describe('brain queue worker', () => {
 
   interface Harness {
     indexed: string[];
-    active: boolean;
     paused: boolean;
+    /** Controllable clock, so cooldown tests need no timers. */
+    now: number;
     result: (itemKey: string) => Promise<{ skipped: boolean; reason: string }>;
   }
 
   function worker(h: Partial<Harness> = {}) {
     const state: Harness = {
       indexed: [],
-      active: false,
       paused: false,
+      now: 1_000_000,
       result: async () => ({ skipped: false, reason: 'ok' }),
       ...h,
     };
@@ -205,8 +208,8 @@ describe('brain queue worker', () => {
         state.indexed.push(entry.itemKey);
         await state.result(entry.itemKey);
       },
-      hasActiveSession: () => state.active,
       isPaused: () => state.paused,
+      now: () => state.now,
     });
     return { w, state };
   }
@@ -232,27 +235,22 @@ describe('brain queue worker', () => {
     expect(store.counts(accountId)).toMatchObject({ pending: 0, done: 2 });
   });
 
-  it('does nothing while an interactive session is active', async () => {
+  /**
+   * Plan 8's behaviour change. The worker used to yield whenever any session
+   * tab was open anywhere in the app, which meant a backlog only moved when the
+   * user fully stepped away — 165 items were pending on the author's machine
+   * for exactly this reason. The guard that was doing real work is per-item
+   * (`liveSessionIds`), and it stays.
+   */
+  it('drains while the user has an interactive session open', async () => {
     store.enqueue(accountId, 'session', 'a');
-    const { w, state } = worker({ active: true });
+    store.enqueue(accountId, 'session', 'b');
+    const { w, state } = worker();
 
     await w.drain();
 
-    // Spec §11: indexing must never compete with the user for rate limit.
-    expect(state.indexed).toEqual([]);
-    // Yielding must not consume the item — it is still waiting, not lost.
-    expect(store.counts(accountId).pending).toBe(1);
-  });
-
-  it('resumes once the active session ends', async () => {
-    store.enqueue(accountId, 'session', 'a');
-    const { w, state } = worker({ active: true });
-    await w.drain();
-    state.active = false;
-
-    await w.drain();
-
-    expect(state.indexed).toEqual(['a']);
+    expect(state.indexed).toEqual(['a', 'b']);
+    expect(store.counts(accountId)).toMatchObject({ pending: 0, done: 2 });
   });
 
   it('does nothing while paused', async () => {
@@ -317,7 +315,6 @@ describe('brain queue worker', () => {
       process: async () => {
         seen.push(wRef.current()?.itemKey ?? null);
       },
-      hasActiveSession: () => false,
       isPaused: () => false,
     });
     const wRef = w;
@@ -332,17 +329,11 @@ describe('brain queue worker', () => {
 
   /**
    * `drain()` used to return void, so the Brain tab printed "drain finished"
-   * whether it had indexed 158 items or yielded instantly on an open session.
-   * The user pressed the button, nothing happened, and the UI congratulated
-   * itself. The caller has to be able to tell those apart.
+   * whether it had indexed 158 items or yielded instantly. The user pressed the
+   * button, nothing happened, and the UI congratulated itself. The caller has
+   * to be able to tell those apart.
    */
-  it('reports yielding for an open session rather than completion', async () => {
-    store.enqueue(accountId, 'session', 'a');
-    const { w } = worker({ active: true });
-    expect(await w.drain()).toEqual({ processed: 0, yielded: true, reason: 'session-active' });
-  });
-
-  it('reports yielding when paused, distinctly from an open session', async () => {
+  it('reports yielding when paused, distinctly from running to empty', async () => {
     store.enqueue(accountId, 'session', 'a');
     const { w } = worker({ paused: true });
     expect(await w.drain()).toEqual({ processed: 0, yielded: true, reason: 'paused' });
@@ -361,16 +352,16 @@ describe('brain queue worker', () => {
     expect((await w.drain()).processed).toBe(1);
   });
 
-  it('reports partial progress when a session opens mid-run', async () => {
+  it('reports partial progress when the user pauses mid-run', async () => {
     store.enqueue(accountId, 'session', 'a');
     store.enqueue(accountId, 'session', 'b');
     const { w, state } = worker({
       result: () => {
-        state.active = true;
+        state.paused = true;
         return Promise.resolve({ skipped: false, reason: 'ok' });
       },
     });
-    expect(await w.drain()).toEqual({ processed: 1, yielded: true, reason: 'session-active' });
+    expect(await w.drain()).toEqual({ processed: 1, yielded: true, reason: 'paused' });
   });
 
   it('stops cleanly on an empty queue', async () => {
@@ -388,7 +379,6 @@ describe('brain queue worker', () => {
       process: async (entry) => {
         seen.push({ sourceId: entry.sourceId, itemKey: entry.itemKey });
       },
-      hasActiveSession: () => false,
       isPaused: () => false,
     });
 
@@ -408,7 +398,6 @@ describe('brain queue worker', () => {
       process: async (entry) => {
         if (entry.sourceId === CURATION_SOURCE_ID) throw new Error('model said no');
       },
-      hasActiveSession: () => false,
       isPaused: () => false,
     });
 
@@ -420,13 +409,13 @@ describe('brain queue worker', () => {
     expect(rows.find((r) => r.itemKey === 'good')?.status).toBe('done');
   });
 
-  it('checks the yield gate between items, not just once', async () => {
+  it('checks the pause gate between items, not just once', async () => {
     store.enqueue(accountId, 'session', 'a');
     store.enqueue(accountId, 'session', 'b');
     const { w, state } = worker({
       result: async () => {
-        // The user starts a session while the first item is being indexed.
-        state.active = true;
+        // The user hits pause while the first item is being indexed.
+        state.paused = true;
         return { skipped: false, reason: 'ok' };
       },
     });
@@ -437,5 +426,142 @@ describe('brain queue worker', () => {
     // completion no matter what the user started doing halfway through.
     expect(state.indexed).toEqual(['a']);
     expect(store.counts(accountId).pending).toBe(1);
+  });
+});
+
+/**
+ * Plan 8. Backoff is what replaces the old "yield whenever a tab is open" gate.
+ * With the gate gone, a rate limit is no longer something that happens while
+ * the user is away — it is something that can steal the limit out from under
+ * the turn they are waiting on, so it needs a real mechanism rather than a
+ * proxy for one.
+ */
+describe('brain queue worker — rate-limit backoff', () => {
+  let db: Database;
+  let store: BrainQueueStore;
+  let accountId: number;
+
+  function addAccount(name: string): number {
+    const info = db.raw
+      .prepare(
+        `INSERT INTO accounts (name, config_dir, engine, subscription_label, has_cost)
+         VALUES (?, ?, 'claude', 'Max', 0)`,
+      )
+      .run(name, `/tmp/${name}`);
+    return Number(info.lastInsertRowid);
+  }
+
+  const START = 1_000_000;
+
+  function worker(reject: (key: string) => Error | null) {
+    const state = { indexed: [] as string[], now: START };
+    const w = createBrainQueueWorker({
+      store,
+      process: async (entry) => {
+        state.indexed.push(entry.itemKey);
+        const err = reject(entry.itemKey);
+        if (err) throw err;
+      },
+      isPaused: () => false,
+      now: () => state.now,
+    });
+    return { w, state };
+  }
+
+  beforeEach(() => {
+    db = createDatabase(':memory:');
+    accountId = addAccount('personal');
+    store = createBrainQueueStore(db);
+  });
+
+  afterEach(() => {
+    db.close();
+  });
+
+  it('returns a rate-limited entry to pending rather than failing it', async () => {
+    store.enqueue(accountId, 'session', 'a');
+    const { w } = worker(() => new Error('Claude usage limit reached'));
+
+    await w.drain();
+
+    // A rate limit is not a property of the item. Recording it as failed would
+    // make the user clear a red row that named the wrong problem, and the item
+    // would never be retried.
+    expect(store.counts(accountId)).toMatchObject({ pending: 1, failed: 0, done: 0 });
+  });
+
+  it('stops the drain and reports when it will retry', async () => {
+    store.enqueue(accountId, 'session', 'a');
+    store.enqueue(accountId, 'session', 'b');
+    const { w, state } = worker((k) => (k === 'a' ? new Error('429 too many requests') : null));
+
+    const outcome = await w.drain();
+
+    expect(state.indexed).toEqual(['a']);
+    expect(outcome).toMatchObject({ processed: 0, yielded: true, reason: 'rate-limited' });
+    expect(outcome.retryAt).toBe(START + RATE_LIMIT_COOLDOWN_MS);
+  });
+
+  it('claims nothing while the cooldown is in force', async () => {
+    store.enqueue(accountId, 'session', 'a');
+    const { w, state } = worker(() => new Error('rate limit exceeded'));
+    await w.drain();
+    state.indexed.length = 0;
+
+    state.now = START + RATE_LIMIT_COOLDOWN_MS - 1;
+    const outcome = await w.drain();
+
+    expect(state.indexed).toEqual([]);
+    expect(outcome).toMatchObject({ processed: 0, yielded: true, reason: 'rate-limited' });
+  });
+
+  it('resumes once the cooldown passes', async () => {
+    store.enqueue(accountId, 'session', 'a');
+    let limited = true;
+    const { w, state } = worker(() => (limited ? new Error('usage limit reached') : null));
+    await w.drain();
+    limited = false;
+    state.indexed.length = 0;
+
+    state.now = START + RATE_LIMIT_COOLDOWN_MS;
+    await w.drain();
+
+    expect(state.indexed).toEqual(['a']);
+    expect(store.counts(accountId)).toMatchObject({ done: 1, pending: 0 });
+  });
+
+  it('still fails an entry for an error that is not a rate limit', async () => {
+    store.enqueue(accountId, 'session', 'a');
+    store.enqueue(accountId, 'session', 'b');
+    const { w, state } = worker((k) => (k === 'a' ? new Error('extraction blew up') : null));
+
+    await w.drain();
+
+    // Spec §8's rule is untouched: an ordinary failure is recorded and stepped
+    // over, and the queue keeps going.
+    expect(state.indexed).toEqual(['a', 'b']);
+    expect(store.counts(accountId)).toMatchObject({ failed: 1, done: 1 });
+  });
+});
+
+describe('isRateLimitError', () => {
+  it.each([
+    'Claude usage limit reached',
+    'RATE LIMIT exceeded, retry later',
+    'HTTP 429 Too Many Requests',
+    'quota exceeded for this organization',
+  ])('matches %j', (message) => {
+    expect(isRateLimitError(message)).toBe(true);
+  });
+
+  it.each([
+    'extraction blew up',
+    'zod validation failed: entities[0].name',
+    // The corpus is engineering prose about this very subject, so a note whose
+    // TEXT discusses rate limiting must not be mistaken for a rate limit.
+    'wrote note Topics/rate-limit-tracking.md',
+    'ENOENT: no such file or directory',
+  ])('does not match %j', (message) => {
+    expect(isRateLimitError(message)).toBe(false);
   });
 });

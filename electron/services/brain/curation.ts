@@ -1,7 +1,9 @@
 import { z } from 'zod';
 import { createSummaryQueryRunner, type CliRunResult } from '../sessions/summary-query';
 import type { CurationResult } from './curate';
-import { firstJsonObject } from './extract';
+import { firstJsonObject, runCostOf } from './extract';
+import { addRunCosts } from './spend';
+import type { RunCost } from './sources/state';
 
 /**
  * The curation contract (spec §3). `extract.ts`'s twin: schema, prompt, pinned
@@ -108,7 +110,20 @@ ENTRIES BEING COLLAPSED
 ${input.entries.join('\n')}`;
 }
 
-export type Curator = (input: CurationInput, configDir: string) => Promise<CurationResult>;
+/**
+ * A curation, plus what producing it cost.
+ *
+ * Mirrors `ExtractionRun` deliberately. Curation is pinned to Opus, so it is
+ * the most expensive thing the Brain does — and before Plan 8 the runner
+ * discarded the cost half of the CLI envelope, which made the single largest
+ * line item the one nothing could report.
+ *
+ * Optional for the same reason extraction's is: a test curator spends nothing,
+ * and absent must mean "nothing was spent" rather than "it was free".
+ */
+export type CurationRun = CurationResult & { run?: RunCost };
+
+export type Curator = (input: CurationInput, configDir: string) => Promise<CurationRun>;
 
 export interface CuratorDeps {
   /**
@@ -129,7 +144,7 @@ export function createCurator(deps: CuratorDeps = {}): Curator {
     const prompt = buildCurationPrompt(input);
     const reply = await runQuery({ prompt, model: CURATION_MODEL, configDir });
     try {
-      return parseCuration(reply.result);
+      return { ...parseCuration(reply.result), run: runCostOf(reply) };
     } catch (err) {
       if (!(err instanceof CurationParseError)) throw err;
       // Exactly one retry, matching `createExtractor`. A transport error never
@@ -137,7 +152,11 @@ export function createCurator(deps: CuratorDeps = {}): Curator {
       // because a spawn or auth failure is not a bad answer and immediately
       // repeating it just fails twice.
       const second = await runQuery({ prompt, model: CURATION_MODEL, configDir });
-      return parseCuration(second.result);
+      // Both legs, not just the one that worked: the first call was paid for.
+      return {
+        ...parseCuration(second.result),
+        run: addRunCosts(runCostOf(reply), runCostOf(second)),
+      };
     }
   };
 }

@@ -7,8 +7,9 @@ import { createAccountsService, type AccountsService } from '../services/account
 import { createBrainService } from '../services/brain/registry';
 import { createSessionSource } from '../services/brain/sources/session-transcripts';
 import { createSourceStateStore } from '../services/brain/sources/state';
+import { createBrainSpendStore } from '../services/brain/spend';
 import type { BrainSource, DistilledItem } from '../services/brain/sources/types';
-import type { Extractor } from '../services/brain/extract';
+import { EXTRACTION_MODEL, type Extractor } from '../services/brain/extract';
 
 const PROMPT = (text: string, i: number): string =>
   JSON.stringify({
@@ -361,6 +362,64 @@ describe('session transcript source', () => {
       return brain;
     }
 
+    /**
+     * Plan 8 §3. `brain_sources.cost_usd` already held the last run's figure,
+     * but re-indexing overwrote it — so the vault could not say what it had
+     * cost over any period, and the swept extraction transcripts meant nothing
+     * else on the machine could either.
+     */
+    it('appends what extraction cost to the spend ledger', async () => {
+      writeSession(personalCfg, '-Users-dev-Repos-omnifex', 'sess-a', GOOD);
+      const withCost = {
+        ...EXTRACTION,
+        run: {
+          costUsd: 0.017, inputTokens: 900, outputTokens: 120,
+          cacheReadTokens: 40, cacheCreationTokens: 5,
+        },
+      };
+      const brain = service(async () => withCost);
+
+      await brain.indexSource(personalId, 'sess-a');
+
+      const rows = createBrainSpendStore(db).byMonth(new Date().toISOString().slice(0, 7));
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({
+        kind: 'index',
+        sourceId: 'session',
+        itemKey: 'sess-a',
+        model: EXTRACTION_MODEL,
+        costUsd: 0.017,
+        inputTokens: 900,
+      });
+    });
+
+    it('appends a second row when the same item is indexed again', async () => {
+      writeSession(personalCfg, '-Users-dev-Repos-omnifex', 'sess-a', GOOD);
+      const run = {
+        costUsd: 0.01, inputTokens: 1, outputTokens: 1,
+        cacheReadTokens: null, cacheCreationTokens: null,
+      };
+      const brain = service(async () => ({ ...EXTRACTION, run }));
+
+      await brain.indexSource(personalId, 'sess-a');
+      await brain.indexSource(personalId, 'sess-a', { force: true });
+
+      // Two runs is two payments. The snapshot column reports 0.01 either way,
+      // which is exactly why the total cannot come from there.
+      expect(createBrainSpendStore(db).total(personalId)).toBeCloseTo(0.02, 6);
+    });
+
+    it('writes no ledger row for an item that never reached the model', async () => {
+      writeSession(personalCfg, '-Users-dev-Repos-omnifex', 'sess-a', GOOD);
+      const brain = service(stubExtractor());
+
+      // The stub extractor reports no `run`, which is how a translating source
+      // and a gate rejection both look. A row here would invent a payment.
+      await brain.indexSource(personalId, 'sess-a');
+
+      expect(createBrainSpendStore(db).total(personalId)).toBe(0);
+    });
+
     it('writes a note into the owning account vault and records the item indexed', async () => {
       writeSession(personalCfg, '-Users-dev-Repos-omnifex', 'sess-a', GOOD);
       const brain = service(stubExtractor());
@@ -704,25 +763,30 @@ describe('session transcript source', () => {
       brain.closeAll();
     });
 
-    it('drainQueue yields entirely while an interactive session is active', async () => {
+    /**
+     * Plan 8: the global "a tab is open" gate is gone. What still holds is the
+     * per-item guard — a transcript the user is actively writing to is skipped,
+     * because distilling half a conversation and recording it as finished
+     * would bake an incomplete note in permanently.
+     */
+    it('drainQueue indexes other sessions while one is still open', async () => {
       writeSession(personalCfg, '-Users-dev-Repos-omnifex', 'sess-a', GOOD);
+      writeSession(personalCfg, '-Users-dev-Repos-omnifex', 'sess-live', GOOD);
       const calls: string[] = [];
-      let active = true;
       const brain = createBrainService(db, {
         execGit: async () => '',
         accounts,
         extractor: stubExtractor(calls),
         sources: [createSessionSource({ accounts })],
-        hasActiveSession: () => active,
+        liveSessionIds: () => ['sess-live'],
       });
       brain.setVaultPath(personalId, join(dir, 'personal-vault'));
 
       await brain.backfill(personalId);
       await brain.drainQueue();
-      expect(calls).toEqual([]);
 
-      active = false;
-      await brain.drainQueue();
+      // The closed session is indexed even though another is open; the open
+      // one is left alone.
       expect(calls).toHaveLength(1);
       brain.closeAll();
     });

@@ -12,6 +12,8 @@ import { api, type CliReviewStatus } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import OmniFexIcon from '../../icons/icon.png';
 import { TabStatusPopover } from '@/components/TabStatusPopover';
+import { BrainRunIndicator } from '@/components/brain/BrainRunIndicator';
+import { useOptionalAccounts } from '@/contexts/AccountsContext';
 import { fireAndLog } from "@/lib/fireAndLog";
 // Minimum visible spin time on the upgrade-check button. Local checks can
 // resolve in <100ms which makes the spinner flash and feels like nothing
@@ -44,6 +46,15 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
   onCliReviewClick,
 }) => {
   const [appVersion, setAppVersion] = useState<string>('');
+
+  // Optional: the titlebar also renders in shells that do not mount
+  // AccountsProvider, and a missing provider must cost the indicator its
+  // labels, not crash the window chrome.
+  const accountsCtx = useOptionalAccounts();
+  const accountsForIndicator = React.useMemo(
+    () => (accountsCtx?.accounts ?? []).map((a) => ({ id: a.id, name: a.name })),
+    [accountsCtx?.accounts],
+  );
 
   // --- Update state ---
   type UpdateState =
@@ -299,6 +310,12 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
 
       {/* Right side - Navigation icons */}
       <div className="flex items-center pr-5 gap-2 app-no-drag">
+        {/* Brain indexing, which since Plan 8 runs while the user works. The
+            Brain tab owns the detail; this is the ambient "it is happening,
+            and here is where it is" signal. `useOptionalAccounts` because the
+            titlebar renders in shells without the provider. */}
+        <BrainRunIndicator accounts={accountsForIndicator} />
+
         {/* Update button — visible during checking, when update available, downloading, ready, up-to-date, or error */}
         <AnimatePresence>
           {updateState.status !== 'idle' && (

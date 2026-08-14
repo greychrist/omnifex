@@ -95,6 +95,47 @@ const BRAIN_TABLES_DDL = `
   );
 `;
 
+/**
+ * The Brain's append-only spend ledger (Plan 8 §3).
+ *
+ * Deliberately NOT part of session_cost_daily. That table is keyed
+ * (session_id, date, model) and upserts a daily total; a Brain item key for a
+ * session source IS a session UUID, so the two would collide on exactly the
+ * rows a user indexes on the day they ran, and "latest value for this day"
+ * cannot represent re-indexing as new money on top of old money.
+ *
+ * No FOREIGN KEY on account_id, and account_name is denormalised, on purpose:
+ * money spent is history. Deleting an account must not silently shrink a month
+ * that has already been reported.
+ */
+const BRAIN_SPEND_DDL = `
+  CREATE TABLE IF NOT EXISTS brain_spend (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_id INTEGER NOT NULL,
+    account_name TEXT NOT NULL,
+    -- 'index' | 'curation'. Curation is pinned to a better model on purpose,
+    -- so it is the line item most likely to surprise; a blended total hides it.
+    kind TEXT NOT NULL,
+    source_id TEXT,
+    item_key TEXT NOT NULL,
+    model TEXT NOT NULL,
+    -- Local date, YYYY-MM-DD, stored rather than derived. Every consumer groups
+    -- by month in the user's own timezone, and deriving that from a UTC instant
+    -- at read time is where off-by-one-day bugs live.
+    date TEXT NOT NULL,
+    spent_at TEXT NOT NULL,
+    input_tokens INTEGER,
+    output_tokens INTEGER,
+    cache_read_tokens INTEGER,
+    cache_creation_tokens INTEGER,
+    cost_usd REAL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_brain_spend_date ON brain_spend(date);
+  CREATE INDEX IF NOT EXISTS idx_brain_spend_account_date
+    ON brain_spend(account_name, date);
+`;
+
 const migrations: Migration[] = [
   {
     version: 1,
@@ -581,6 +622,74 @@ const migrations: Migration[] = [
       add('cache_creation_tokens', 'INTEGER');
     },
   },
+  {
+    version: 20,
+    description:
+      'Add brain_spend, an append-only ledger of what Brain indexing and '
+      + 'curation actually cost. brain_sources.cost_usd is a per-item snapshot '
+      + 'that re-indexing overwrites, so it cannot answer "what did the Brain '
+      + 'spend last month" — and since the extraction runner sweeps the '
+      + 'throwaway CLI transcript, nothing else on the machine can either, '
+      + 'which left every monthly cost report understated. DDL is shared with '
+      + 'initSchema via BRAIN_SPEND_DDL so the two cannot drift. Backfills the '
+      + 'ledger from the per-item snapshots, because stats.spentUsd moves onto '
+      + 'this table in the same change and an existing vault would otherwise '
+      + 'report a lifetime spend of zero.',
+    up: (db) => {
+      db.exec(BRAIN_SPEND_DDL);
+
+      // The backfill reads two tables this migration does not own. Neither is
+      // guaranteed: migrations run against databases of unknown vintage, and
+      // `brain_sources`'s own FK to `accounts` is resolved at DML time rather
+      // than at DDL time, so v18 can leave a brain_sources behind on a database
+      // that has no accounts table at all. Nothing to read is not an error —
+      // there is no spend history to carry across.
+      const present = new Set(
+        (
+          db
+            .prepare("SELECT name FROM sqlite_master WHERE type='table'")
+            .all() as { name: string }[]
+        ).map((r) => r.name),
+      );
+      if (!present.has('brain_sources') || !present.has('accounts')) return;
+
+      // One row per priced item. `cost_usd IS NOT NULL` is the filter that
+      // keeps translated sources — auto-memory, which never reaches a model —
+      // from being credited with a payment they never made.
+      //
+      // `model` is 'unknown' rather than today's pin: brain_sources never
+      // recorded one, and the extraction model changed from Haiku to Sonnet
+      // partway through, so stamping the current value would be a fabricated
+      // attribution in a table people price from. The CLI's own cost_usd rides
+      // along, so a report can still total these rows.
+      //
+      // date comes from last_indexed_at, not from now: collapsing history into
+      // the upgrade date would move months of spend into whichever month the
+      // user happened to update in. substr() over the ISO string is the local
+      // date only for UTC, but these are historical rows whose exact day is
+      // already approximate, and the alternative is a timezone conversion in
+      // SQL.
+      db.exec(`
+        INSERT INTO brain_spend
+          (account_id, account_name, kind, source_id, item_key, model, date, spent_at,
+           input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, cost_usd)
+        SELECT
+          s.account_id,
+          COALESCE(a.name, 'account ' || s.account_id),
+          'index',
+          s.source_id,
+          s.item_key,
+          'unknown',
+          substr(COALESCE(s.last_indexed_at, CURRENT_TIMESTAMP), 1, 10),
+          COALESCE(s.last_indexed_at, CURRENT_TIMESTAMP),
+          s.input_tokens, s.output_tokens, s.cache_read_tokens, s.cache_creation_tokens,
+          s.cost_usd
+        FROM brain_sources s
+        LEFT JOIN accounts a ON a.id = s.account_id
+        WHERE s.cost_usd IS NOT NULL
+      `);
+    },
+  },
 ];
 
 /**
@@ -796,4 +905,6 @@ function initSchema(db: BetterSqlite3.Database): void {
   // Canonical post-migration shape for brain_sources/brain_queue — see
   // BRAIN_TABLES_DDL. Keeps fresh installs from needing migration v18 at all.
   db.exec(BRAIN_TABLES_DDL);
+  // Likewise for the spend ledger and migration v20.
+  db.exec(BRAIN_SPEND_DDL);
 }
