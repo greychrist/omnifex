@@ -5,6 +5,57 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.124] — 2026-08-13
+
+Two changes about the same thing: a model answering from a lossy copy of
+something when the real text was available all along.
+
+### Added
+
+- **A re-read directive now goes out after every compaction.** Compaction keeps
+  the shape of the earlier turns and drops the specifics — the exact line
+  number, the literal stderr line, the value a command actually printed. A
+  model working from the summary still answers confidently about those,
+  reconstructing them from the gist, and the reconstruction is
+  indistinguishable from a memory. So OmniFex says so at the boundary: a short
+  prompt asking it to re-read and quote the source before restating anything
+  specific from before the cut. It fires on the CLI's `compact_boundary`, which
+  covers auto-compaction and a hand-typed `/compact`, not only the context
+  banner. Placement is the whole point — a standing instruction in `CLAUDE.md`
+  is loaded at session start and compacted away exactly when it becomes
+  relevant, whereas this arrives fresh on the near side of the boundary.
+
+  It is queued rather than sent outright: the boundary lands mid-turn, and the
+  prompt queue already drains on turn completion. It takes the front of that
+  queue, since anything queued before the compaction would otherwise be
+  answered from the degraded context this exists to repair.
+
+  **This release has no way to turn it off.** The text is overridable through a
+  `postCompact.promptTemplate` setting, but the panel that would write it is
+  not built yet, so every session gets the shipped default and pays one extra
+  turn per compaction. That panel is the next change. The directive also
+  no-ops in TUI mode, where the CLI owns the conversation.
+
+### Changed
+
+- **`brain_search` hits now carry the note text.** A hit used to be an FTS
+  snippet and a path, so every result a model actually wanted cost a
+  `brain_read` round trip — one per note. That call frequently didn't happen:
+  it answered from the snippet instead, which is a fragment the highlighter cut
+  mid-sentence. Notes are mostly short, so the body rides along for a few
+  hundred tokens and the second call disappears. Long notes are capped per hit
+  and per response, and anything short of the whole note sets `bodyTruncated`
+  so `brain_read` is still there for the rest. Both tool descriptions were
+  rewritten to match — without telling the model a hit is already complete, the
+  round trip survives and the body is simply paid for twice.
+
+  Bodies are read through the vault's own note reader, so containment and the
+  hard-link rejection stay the single copy of those checks now that note text,
+  and not just paths, crosses the vault boundary. A note deleted between
+  indexing and query degrades to one flagged hit instead of failing the search.
+
+Installers remain **unsigned**.
+
 ## [0.4.123] — 2026-08-13
 
 Refresh on the Brain's Sources pane now means the whole page, not just the
