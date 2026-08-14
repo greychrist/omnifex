@@ -52,6 +52,7 @@ export type StreamReducerEffect =
       messageCount: number;
     }
   | { kind: 'processQueuedPrompt' }
+  | { kind: 'queuePostCompactDirective' }
   | { kind: 'showPermissionPrompt'; payload: PermissionRequestPayload };
 
 /**
@@ -404,8 +405,16 @@ export function reduceSessionStreamMessage(
   // CLI emits compact_boundary after a manual or auto compaction; refresh the
   // header context-usage popover immediately rather than waiting for the next
   // turn's result.
+  //
+  // The same boundary is where the context goes lossy, so it is also where the
+  // post-compaction re-read directive gets queued. Queued rather than sent:
+  // compact_boundary arrives mid-turn, and the existing prompt queue already
+  // drains on `cli-stream-result`, which is exactly "the turn is over and the
+  // session will accept input". See postCompactPrompt.ts for why it is sent at
+  // all.
   if (node.kind === 'system' && node.subtype === 'compact_boundary') {
     effects.push({ kind: 'refreshContextUsage' });
+    effects.push({ kind: 'queuePostCompactDirective' });
   }
 
   // Model-fallback family — the CLI just switched (or refused and switched)

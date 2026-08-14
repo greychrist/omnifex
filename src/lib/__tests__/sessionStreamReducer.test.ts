@@ -234,6 +234,23 @@ describe('reduceSessionStreamMessage', () => {
     expect(kinds).toContain('refreshContextUsage');
   });
 
+  it('compact_boundary queues the post-compaction re-read directive', () => {
+    const r = reduceSessionStreamMessage(compactBoundary(), baseCtx);
+    expect(r.effects.map((e) => e.kind)).toContain('queuePostCompactDirective');
+  });
+
+  it('does not queue the directive for any other system subtype', () => {
+    const modelFallback: JsonlNode = {
+      kind: 'system',
+      subtype: 'model_fallback',
+      raw: { type: 'system', subtype: 'model_fallback', sessionId: '' } as never,
+      sessionId: '',
+      receivedAt: '2026-05-27T00:00:00Z',
+    };
+    const r = reduceSessionStreamMessage(modelFallback, baseCtx);
+    expect(r.effects.map((e) => e.kind)).not.toContain('queuePostCompactDirective');
+  });
+
   it('userInterrupted but non-error result still appends and clears the flag', () => {
     const r = reduceSessionStreamMessage(resultOk(), {
       ...baseCtx,

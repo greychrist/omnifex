@@ -23,6 +23,8 @@ function makeDeps(overrides: Partial<StreamEffectDeps> = {}): StreamEffectDeps {
     queuedPromptsRef: { current: [] },
     setQueuedPrompts: vi.fn(),
     handleSendPrompt: vi.fn(),
+    postCompactPrompt: 'RE-READ: your summary is lossy.',
+    currentModel: 'opus',
     onError: vi.fn(),
     ...overrides,
   };
@@ -179,6 +181,59 @@ describe('runStreamEffect', () => {
         deps,
       ); },
     ).not.toThrow();
+  });
+
+  describe('queuePostCompactDirective', () => {
+    it('queues the directive as a prompt at the current model', () => {
+      const setQueuedPrompts = vi.fn();
+      const deps = makeDeps({ setQueuedPrompts });
+      runStreamEffect({ kind: 'queuePostCompactDirective' }, deps);
+      expect(setQueuedPrompts).toHaveBeenCalledWith([
+        { prompt: 'RE-READ: your summary is lossy.', model: 'opus' },
+      ]);
+    });
+
+    it('lands ahead of prompts the user queued before the compaction', () => {
+      // The directive exists to correct a lossy summary *before* any further
+      // work runs against it. Appending would let the user's next prompt be
+      // answered from exactly the degraded context this is meant to repair.
+      const setQueuedPrompts = vi.fn();
+      const queuedPromptsRef = { current: [{ prompt: 'ship it', model: 'opus' }] };
+      const deps = makeDeps({ setQueuedPrompts, queuedPromptsRef });
+      runStreamEffect({ kind: 'queuePostCompactDirective' }, deps);
+      expect(setQueuedPrompts).toHaveBeenCalledWith([
+        { prompt: 'RE-READ: your summary is lossy.', model: 'opus' },
+        { prompt: 'ship it', model: 'opus' },
+      ]);
+    });
+
+    it('keeps the ref in sync so a same-tick queue drain sees the directive', () => {
+      // processQueuedPrompt reads queuedPromptsRef.current, not React state.
+      const queuedPromptsRef = { current: [] as { prompt: string; model: string }[] };
+      const deps = makeDeps({ queuedPromptsRef });
+      runStreamEffect({ kind: 'queuePostCompactDirective' }, deps);
+      expect(queuedPromptsRef.current).toEqual([
+        { prompt: 'RE-READ: your summary is lossy.', model: 'opus' },
+      ]);
+    });
+
+    it('does not double-queue when a directive is already pending', () => {
+      const setQueuedPrompts = vi.fn();
+      const queuedPromptsRef = {
+        current: [{ prompt: 'RE-READ: your summary is lossy.', model: 'opus' }],
+      };
+      const deps = makeDeps({ setQueuedPrompts, queuedPromptsRef });
+      runStreamEffect({ kind: 'queuePostCompactDirective' }, deps);
+      expect(setQueuedPrompts).not.toHaveBeenCalled();
+      expect(queuedPromptsRef.current).toHaveLength(1);
+    });
+
+    it('sends nothing when the resolved directive is empty', () => {
+      const setQueuedPrompts = vi.fn();
+      const deps = makeDeps({ setQueuedPrompts, postCompactPrompt: '  ' });
+      runStreamEffect({ kind: 'queuePostCompactDirective' }, deps);
+      expect(setQueuedPrompts).not.toHaveBeenCalled();
+    });
   });
 
   it('fire-and-forget effects swallow rejections via onError', async () => {

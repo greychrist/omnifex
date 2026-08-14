@@ -49,6 +49,13 @@ export interface StreamEffectDeps<Q extends QueuedPrompt = QueuedPrompt> {
   queuedPromptsRef: { current: Q[] };
   setQueuedPrompts: (next: Q[]) => void;
   handleSendPrompt: (prompt: string, model: string, images?: string[]) => void;
+  /** Resolved directive text (user override or shipped default) — see
+   *  `resolvePostCompactPrompt`. Resolved by the caller so this module stays
+   *  synchronous and free of IPC. */
+  postCompactPrompt: string;
+  /** Model the session is currently on, stamped onto the queued directive so
+   *  it sends on the same model as the work it is correcting. */
+  currentModel: string;
   onError: (kind: StreamReducerEffect['kind'], err: unknown) => void;
 }
 
@@ -113,6 +120,26 @@ export function runStreamEffect<Q extends QueuedPrompt = QueuedPrompt>(
       setTimeout(() => {
         deps.handleSendPrompt(next.prompt, next.model, next.images);
       }, 100);
+      return;
+    }
+
+    case 'queuePostCompactDirective': {
+      const prompt = deps.postCompactPrompt.trim();
+      // A blanked override means the user turned the directive off. Honour
+      // that rather than sending an empty turn.
+      if (!prompt) return;
+      const queue = deps.queuedPromptsRef.current;
+      // Two boundaries before the queue drains would otherwise stack two
+      // identical directives into the same conversation.
+      if (queue.some((q) => q.prompt === prompt)) return;
+      // Front of the queue, not the back: the directive repairs a lossy
+      // summary, and anything the user queued before the compaction would
+      // otherwise be answered from exactly the degraded context it repairs.
+      const next = [{ prompt, model: deps.currentModel } as Q, ...queue];
+      // Write the ref as well as state — processQueuedPrompt reads the ref,
+      // and a `result` can land before React has flushed the setState.
+      deps.queuedPromptsRef.current = next;
+      deps.setQueuedPrompts(next);
       return;
     }
 

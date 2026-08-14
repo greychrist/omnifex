@@ -63,6 +63,10 @@ import { lastPermissionMode, lastAssistantModel } from '@/lib/sessionDerivedStat
 import { changeSessionModel, mirrorControlState } from '@/lib/sessionModelChange';
 import { forwardedParentToolUseId } from '@/lib/subagentDispatch';
 import { reduceSessionStreamMessage } from '@/lib/sessionStreamReducer';
+import {
+  POST_COMPACT_PROMPT_SETTING_KEY,
+  resolvePostCompactPrompt,
+} from '@/lib/postCompactPrompt';
 import { parsePricingOverrides, type PricingOverrides } from '@/lib/pricing';
 import { runStreamEffect } from '@/lib/sessionStreamEffects';
 import { appendInflightDelta } from '@/lib/inflightCoalescer';
@@ -757,6 +761,27 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   // a deliberate cancel. Reset after the first result message is consumed.
   const userInterruptedRef = useRef(false);
   const isNearBottomRef = useRef(true);
+
+  // Post-compaction directive, read once and held in refs the stream handler
+  // can see without taking them as deps (it must not re-subscribe when the
+  // model picker changes). Seeded with the shipped default so a compaction
+  // that lands before the setting resolves still gets the directive.
+  const postCompactPromptRef = useRef<string>(resolvePostCompactPrompt(null));
+  const selectedModelRef = useRef<string>(selectedModel);
+  const sessionModeRef = useRef<SessionMode>(sessionMode);
+  useEffect(() => { selectedModelRef.current = selectedModel; }, [selectedModel]);
+  useEffect(() => { sessionModeRef.current = sessionMode; }, [sessionMode]);
+  useEffect(() => {
+    let cancelled = false;
+    // A failed read must not disable the directive — the shipped default is
+    // complete on its own, so fall through to the seed.
+    api.getSetting(POST_COMPACT_PROMPT_SETTING_KEY)
+      .then((stored) => {
+        if (!cancelled) postCompactPromptRef.current = resolvePostCompactPrompt(stored);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
   
   // Session metrics state for enhanced analytics
   const sessionMetrics = useRef({
@@ -1307,6 +1332,12 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
               'claude-code-session:send-prompt-effect',
               handleSendPromptForEffect ?? undefined,
             ),
+            // Empty in TUI mode, which no-ops the directive: there the CLI owns
+            // the conversation and prompts go through createTuiPromptHandler,
+            // so queueing one for this rich-mode sender would send it nowhere.
+            postCompactPrompt:
+              sessionModeRef.current === 'tui' ? '' : postCompactPromptRef.current,
+            currentModel: selectedModelRef.current,
             onError: (kind, err) =>
               { console.error(`[sessions] effect ${kind} failed:`, err); },
           });
