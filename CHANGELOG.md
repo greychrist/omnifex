@@ -5,6 +5,43 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.128] — 2026-08-14
+
+A changelog review pass against Claude Code 2.1.233. The drift badge is the
+only signal OmniFex has that the CLI it drives has moved underneath it, so the
+watermark is bumped only after the entries are actually read against the code.
+
+### Changed
+
+- **Reviewed against CLI 2.1.233.** The Updates button stops reporting the
+  installed CLI as unreviewed. Two entries in the range touch surfaces OmniFex
+  depends on; neither needed a code change, and the reasons are recorded at the
+  watermark so the next pass does not re-derive them.
+
+### Fixed
+
+- **The permission docs no longer describe reverted behaviour.** 2.1.232 made
+  Bash input redirections permission-checked as the file they read, and the
+  previous review pass documented it; 2.1.233 reverted that change. The note in
+  `docs/permission-syntax.md` said to expect a separate prompt for
+  `cmd < secrets.env`, which will not happen — a `Bash(...)` rule covering the
+  command again covers whatever it reads. Anthropic has said a narrower version
+  will return, so the note was corrected rather than deleted.
+
+### Note
+
+2.1.233 gated the todo/task tools (`TaskCreate` / `TaskGet` / `TaskUpdate` /
+`TaskList`, `TodoWrite`) off for Opus 4.8, Sonnet 5, Fable 5, Mythos 5 and
+newer, so the task panel and the per-tab task counts render empty on those
+models. This is upstream behaviour, not a regression here: the tools are still
+in the CLI behind an `isEnabled()` predicate driven by a remote flag, and the
+gate reads the canonical model id, so the `[1m]` context variants do not escape
+it. OmniFex already degrades to an empty list rather than erroring. Forcing the
+tools back on with `CLAUDE_CODE_ENABLE_TODO_TOOLS=1` would override a decision
+Anthropic can reverse without shipping a CLI release, so it was left alone.
+
+Installers remain **unsigned**.
+
 ## [0.4.127] — 2026-08-14
 
 Two features that could never have worked. The spend ledger could not say which
