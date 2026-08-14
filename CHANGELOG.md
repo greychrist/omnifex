@@ -5,6 +5,56 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.127] — 2026-08-14
+
+Two features that could never have worked. The spend ledger could not say which
+model it paid, and the Brain's project filter returned nothing for every query
+ever made against it. Both failed silently rather than erroring, which is why
+neither was noticed.
+
+### Fixed
+
+- **Every spend row now names the model that priced it.** The v20 backfill
+  stamped the literal `unknown` on every item indexed before the ledger
+  existed — on a real vault, 132 of 137 rows. That left the headline "what has
+  the Brain cost me" unable to break down by model, which is the one breakdown
+  that matters: curation is pinned to Opus and costs roughly ten times as much
+  per run as indexing, and a blended total hides it. The rows turned out to be
+  recoverable rather than unknowable — the extraction pin moved from Haiku to
+  Sonnet exactly once, at a known instant, and every row carries the timestamp
+  it was indexed at. The backfill now reads the model back from that timestamp,
+  and a new migration repairs databases that already ran the old one, rewriting
+  only rows that never named a model and leaving correct attributions
+  untouched. `brain_spend` is rebuilt with a `CHECK` so no future writer or
+  backfill can add a row that cannot say what it paid for.
+- **`brain_search`'s `project` filter works.** `merge()` has always honoured
+  `provenance.projectLink`, note frontmatter has always had a `project` field,
+  and the FTS index has always carried a `project` column weighted as a filter
+  — but nothing ever computed the value. The field was empty on every note in
+  every vault, so a documented search parameter returned an empty result for
+  every call it was ever given, silently. The value is now derived from the
+  path the material came from: a session's `projectPath`, a capture's `cwd`, an
+  instruction file's `repoPath`. Existing project notes are matched by title
+  and then by alias, so a `wombeats-ios` checkout attributes to
+  `Projects/WombBeats-iOS.md` rather than minting a second project note beside
+  it.
+
+### Changed
+
+- Both attributions are derived from the source material, never asked of the
+  model. A fabricated value in a table people price from, or filter by, is
+  worse than an absent one — so an item that cannot say leaves the field alone
+  rather than guessing, and never overwrites an attribution an earlier,
+  better-informed run made.
+
+### Note
+
+Existing vaults keep their empty `project` values until the index is rebuilt
+from the Brain tab; the field is read from the Markdown, which older notes do
+not carry until they are re-indexed.
+
+Installers remain **unsigned**.
+
 ## [0.4.126] — 2026-08-14
 
 The Brain only indexed when you were away, and spent money nothing could
