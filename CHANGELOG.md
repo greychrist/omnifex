@@ -5,6 +5,53 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.125] — 2026-08-14
+
+Claude Code 2.1.232 made agent spawns run in the background by default. That
+one line moved every signal OmniFex used to track a subagent, and the bar had
+been quietly lying ever since: rows that finished the instant they launched,
+run stats that never arrived, nested agents wearing their parent's name.
+
+### Fixed
+
+- **A launched agent no longer reads as finished for its entire run.** With
+  backgrounding now the default, `run_in_background` stopped appearing in the
+  dispatch input, so the immediate "Async agent launched" ACK closed the row —
+  the bar showed done, "Clear done" could delete a live agent, and the session
+  went idle while work continued. The background signal is now read off the
+  result (`toolUseResult.status: 'async_launched'`, with the ACK text as the
+  live-stream fallback) rather than the dispatch.
+- **Subagent run stats are back.** A backgrounded agent gets no `toolUseResult`
+  totals, so tokens, tool count, and duration reach the transcript only inside
+  the task-notification's `<usage>` block, which OmniFex was discarding. Every
+  subagent row had been showing blanks.
+- **Nested agents show their own names and numbers.** A child's description
+  comes from its sidecar instead of being copied from its parent, and its own
+  notification — previously dropped for naming no dispatched row — supplies
+  its status and stats.
+- **A finished agent that gets resumed goes live again.** Resuming through
+  SendMessage keys the notification to the SendMessage's id, so the resumed
+  run used to vanish entirely; the row now reopens for the duration and closes
+  with the resumed run's own totals.
+- **A child that outlives its parent is no longer reported as confidently
+  done.** An agent now backgrounds its own children and returns without them —
+  observed at seven minutes apart — so a finished parent no longer implies a
+  finished child; those rows read as inferred until each one reports.
+- **Markdown lists show their bullets and numbering again.** Tailwind's
+  Preflight resets `list-style: none` and this app's hand-rolled `.prose` CSS
+  set the indent but never restored the marker, so every ordered and bulleted
+  list — chat, brain notes, tool output — had been rendering as flush prose
+  with its numbering silently dropped.
+
+### Changed
+
+- Bash input redirections are documented as separately permission-checked
+  (CLI ≥2.1.232): a `Bash(...)` rule covering the command does not cover the
+  file it reads.
+- Changelog-review watermark moves to 2.1.232.
+
+Installers remain **unsigned**.
+
 ## [0.4.124] — 2026-08-13
 
 Two changes about the same thing: a model answering from a lossy copy of
