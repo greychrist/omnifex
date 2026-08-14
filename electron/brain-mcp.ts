@@ -65,7 +65,9 @@ function main(): Promise<void> {
         "Search this account's OmniFex Brain: durable engineering knowledge distilled from " +
         'its own past Claude Code sessions — subsystems, decisions, constraints and the ' +
         'identifiers a developer would actually type. Use it before asking the user to ' +
-        're-explain earlier work, and before assuming how something in this codebase came to be.',
+        're-explain earlier work, and before assuming how something in this codebase came to be. ' +
+        'Each hit carries the note text in `body`, so a result is usable as it stands — only ' +
+        'follow up with brain_read where a hit sets `bodyTruncated`.',
       inputSchema: {
         query: z.string().describe('Search terms. Identifiers and file names work well.'),
         type: z.enum(NOTE_TYPES).optional().describe('Restrict to one note type.'),
@@ -84,7 +86,9 @@ function main(): Promise<void> {
     'brain_read',
     {
       description:
-        'Read one Brain note whole, by the vault-relative path a brain_search hit reports.',
+        'Read one Brain note whole, by the vault-relative path a brain_search hit reports. ' +
+        'Needed only when that hit set `bodyTruncated` — otherwise the search result already ' +
+        'held the entire note and this call returns the same text again.',
       inputSchema: {
         path: z.string().describe('Vault-relative path, e.g. "Subsystems/Queue.md".'),
       },

@@ -12,7 +12,11 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createVault } from '../services/brain/vault';
 import { createVaultIndex, openVaultIndexReadOnly } from '../services/brain/search';
-import { createBrainMcpTools } from '../services/brain/mcp-tools';
+import {
+  createBrainMcpTools,
+  MAX_BODY_CHARS,
+  MAX_TOTAL_BODY_CHARS,
+} from '../services/brain/mcp-tools';
 import type { ParsedNote } from '../services/brain/types';
 
 function note(body: string, project?: string): ParsedNote {
@@ -86,6 +90,82 @@ describe('brain MCP tools', () => {
     it('never returns a note from the vault it was not handed', () => {
       const res = toolsFor(vaultA).search({ query: 'work-account' });
       expect(res).toEqual({ ok: true, hits: [] });
+    });
+
+    it('carries the note body so a hit is usable without a second call', () => {
+      // The point of the whole thing: a snippet-only hit forces a brain_read
+      // round trip per note, and in practice the model answers off the
+      // truncated snippet instead of making it.
+      const res = toolsFor(vaultA).search({ query: 'drain' });
+      expect(res.ok).toBe(true);
+      if (!res.ok) return;
+      expect(res.hits[0].body).toBe('the drain worker yields to interactive sessions');
+      expect(res.hits[0].bodyTruncated).toBe(false);
+    });
+
+    it('caps a long body and flags it so the model knows to read the rest', () => {
+      const vault = createVault(vaultA);
+      vault.writeNote('Subsystems/Long.md', note(`drain ${'x'.repeat(5000)}`));
+      createVaultIndex(join(vaultA, '.omnifex', 'index.db')).rebuild(vault);
+
+      const res = toolsFor(vaultA).search({ query: 'drain' });
+      expect(res.ok).toBe(true);
+      if (!res.ok) return;
+      const long = res.hits.find((h) => h.notePath === 'Subsystems/Long.md');
+      expect(long).toBeDefined();
+      expect(long!.body!.length).toBeLessThanOrEqual(MAX_BODY_CHARS);
+      expect(long!.bodyTruncated).toBe(true);
+    });
+
+    it('stops spending body budget once the response is already large', () => {
+      // `limit` allows 50 hits. Without a ceiling across the whole response,
+      // 50 long notes would bury the caller in one tool result.
+      const vault = createVault(vaultA);
+      for (let i = 0; i < 30; i++) {
+        vault.writeNote(`Subsystems/Bulk${String(i)}.md`, note(`drain ${'y'.repeat(1900)}`));
+      }
+      createVaultIndex(join(vaultA, '.omnifex', 'index.db')).rebuild(vault);
+
+      const res = toolsFor(vaultA).search({ query: 'drain', limit: 30 });
+      expect(res.ok).toBe(true);
+      if (!res.ok) return;
+      const spent = res.hits.reduce((n, h) => n + (h.body?.length ?? 0), 0);
+      expect(spent).toBeLessThanOrEqual(MAX_TOTAL_BODY_CHARS);
+      // Whatever got no body must say so, or the caller reads a partial set as
+      // if it were the whole thing.
+      for (const h of res.hits) {
+        if (h.body === null) expect(h.bodyTruncated).toBe(true);
+      }
+    });
+
+    it('degrades one unreadable note to a flagged hit instead of failing the search', () => {
+      const vault = createVault(vaultA);
+      vault.writeNote('Subsystems/Gone.md', note('drain me'));
+      createVaultIndex(join(vaultA, '.omnifex', 'index.db')).rebuild(vault);
+      // Indexed, then removed underneath — the index is a snapshot, so this is
+      // an ordinary race, not a corrupted vault.
+      rmSync(join(vaultA, 'Subsystems/Gone.md'));
+
+      const res = toolsFor(vaultA).search({ query: 'drain' });
+      expect(res.ok).toBe(true);
+      if (!res.ok) return;
+      const gone = res.hits.find((h) => h.notePath === 'Subsystems/Gone.md');
+      expect(gone).toBeDefined();
+      expect(gone!.body).toBeNull();
+      expect(gone!.bodyTruncated).toBe(true);
+      // The healthy hit in the same response still carries its body.
+      expect(res.hits.find((h) => h.notePath === 'Subsystems/Queue.md')?.body).toBeTruthy();
+    });
+
+    it('never carries a body across the vault boundary', () => {
+      // Bodies are new surface on the isolation property: `notePath` leaking
+      // would be bad, a body leaking would be worse.
+      const res = toolsFor(vaultA).search({ query: 'drain' });
+      expect(res.ok).toBe(true);
+      if (!res.ok) return;
+      for (const h of res.hits) {
+        expect(h.body ?? '').not.toContain('work-account material');
+      }
     });
 
     it('filters by project', () => {
