@@ -5,6 +5,77 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.126] — 2026-08-14
+
+The Brain only indexed when you were away, and spent money nothing could
+account for. It now runs alongside your work, records every cent it spends in
+a ledger a monthly report can read, and says which item it is on.
+
+### Added
+
+- **`brain_spend`, an append-only ledger of what indexing and curation cost.**
+  `brain_sources.cost_usd` was a per-item snapshot that re-indexing overwrote,
+  so the vault could answer "what did this item last cost" and nothing about a
+  period — and because the extraction runner sweeps the throwaway CLI
+  transcript, no cost report scanning session JSONL could see this spend at
+  all. Each model-backed run now appends a row carrying kind, model, local
+  date, all four token counts and the CLI's own `total_cost_usd`, summed at
+  read time. Deliberately a new table rather than `session_cost_daily`, whose
+  `(session_id, date, model)` key collides with Brain item keys for sessions
+  and whose daily-total grain cannot represent re-indexing as new money.
+- **Rate-limit backoff.** A rate-limited item returns to pending rather than
+  being recorded as failed, the drain stops, and a 15-minute cooldown holds
+  before anything is claimed again. Promised in the original design and never
+  built; it is now the only brake on a queue that no longer stands down on its
+  own.
+- **An app-wide indexing indicator** in the titlebar — vault name and item
+  N of M — seeded from the main process on mount, so arriving mid-run shows
+  the true position immediately instead of waiting minutes for the next frame.
+
+### Changed
+
+- **Indexing runs while you work.** The queue used to yield entirely whenever
+  any session tab was open anywhere in the app, which stalled it almost
+  permanently — a tab is open for hours and spends rate limit for seconds of
+  it. The guard that was doing the real work stays: a transcript still being
+  written is still skipped, because distilling half a conversation and
+  recording it as finished bakes an incomplete note in permanently.
+- **A periodic drain**, every five minutes. Session close was the only
+  trigger, so a drain that stopped for any reason had nothing to restart it
+  until the next session happened to close.
+- **The Sources table marks the row actually being indexed** as "indexing…",
+  overriding the admission gate's reason while the row is in flight. The run
+  banner counted "3 of 20" without ever saying which of the rows it meant.
+- **Sources table narrowed from seven columns to five**, stacking Project over
+  Name and Size over Cost — the latter matching the cell SessionList already
+  uses — so a deep absolute path renders unabridged without the table running
+  past the pane. Both halves of each stacked header keep their own sort.
+- **Background drains now publish run progress** the way a manual "Index all"
+  always has, with the total recomputed per item so work enqueued mid-drain
+  widens the bar rather than pushing it past 100%.
+- **Curation reports what it cost.** The runner kept the model's reply and
+  discarded the cost half of the envelope, which made the single most
+  expensive thing the Brain does the one spend nothing could report. Retries
+  bill both legs.
+
+### Fixed
+
+- **Lifetime spend no longer resets to zero on upgrade.** Vault statistics now
+  read the ledger, so migration v20 backfills it from the existing per-item
+  snapshots, dated from when each item was indexed rather than from the
+  upgrade. Backfilled rows are marked `model: unknown` rather than being
+  stamped with today's pin — the extraction model changed from Haiku to Sonnet
+  partway through, and a fabricated attribution in a table people price from
+  is worse than an honest gap. Their dollar figures are the CLI's own, so they
+  still total.
+- **A database with no `accounts` table no longer breaks the migration chain.**
+  `brain_sources`' foreign key resolves at DML time rather than at DDL time, so
+  an old database could carry the table without any accounts at all; the v20
+  backfill now skips rather than throwing.
+
+Installers remain **unsigned** — macOS Gatekeeper will block first launch;
+right-click → Open to run it.
+
 ## [0.4.125] — 2026-08-14
 
 Claude Code 2.1.232 made agent spawns run in the background by default. That
