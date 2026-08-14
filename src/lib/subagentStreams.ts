@@ -308,11 +308,17 @@ export function deriveSubagents(
 ): Subagent[] {
   const baseEvents = messagesToEvents(messages);
   const states = applyEvents(baseEvents);
-  const closureEvents = inferredClosureEvents(
-    messages,
-    states,
-    dispatchIndicesFromEvents(baseEvents),
-  );
+  // A resume restarts the clock for the inferred-closure guard: the `result`
+  // that ended the turn before the resume says nothing about the new run, so
+  // the row's anchor moves forward to the resume itself.
+  const anchors = dispatchIndicesFromEvents(baseEvents);
+  for (const ev of baseEvents) {
+    if (ev.kind !== 'AgentResumed') continue;
+    for (const s of states.values()) {
+      if (s.taskId === ev.taskId) anchors.set(s.toolUseId, ev.messageIdx);
+    }
+  }
+  const closureEvents = inferredClosureEvents(messages, states, anchors);
   // Apply closure events directly to the existing state map. We don't
   // re-run them through `applyEvents` because that starts from an empty
   // map; the inferred-closure semantics are simple enough to inline here

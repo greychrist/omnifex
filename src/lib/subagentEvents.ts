@@ -156,6 +156,16 @@ export type SubagentEvent =
         isBackgrounded?: boolean;
       };
     }
+  | {
+      // A finished agent was re-opened with SendMessage. Keyed by the agent id
+      // the CLI reports, which is the same id its notifications carry as
+      // `<task-id>` — so the row is found the same way the task-id fallback
+      // finds it. `messageIdx` re-anchors the inferred-closure guard: a
+      // `result` from before the resume says nothing about the new run.
+      kind: 'AgentResumed';
+      taskId: string;
+      messageIdx: number;
+    }
   | { kind: 'ClosedByParentResult'; toolUseId: string }
   | {
       // Live-forwarded subagent narration (--forward-subagent-text).
@@ -293,6 +303,36 @@ function isAsyncLaunchEnrichment(raw: unknown): boolean {
   return o.status === 'async_launched' || o.isAsync === true;
 }
 
+/** First text payload of a tool_result block, whichever shape it rides. */
+function toolResultText(content: unknown): string | undefined {
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return undefined;
+  const first = content.find((b) => (b as { type?: unknown })?.type === 'text');
+  const text = (first as { text?: unknown } | undefined)?.text;
+  return typeof text === 'string' ? text : undefined;
+}
+
+/**
+ * The agent id a SendMessage result reports having re-opened, or null.
+ *
+ * Structured first (`toolUseResult.resumedAgentId`, written onto the on-disk
+ * JSONL), then the same field out of the JSON blob the tool returns as text,
+ * which is all the live stream carries. SendMessage also addresses other
+ * Claude sessions — those results carry no `resumedAgentId`, so this stays
+ * silent for them.
+ */
+function resumedAgentId(raw: unknown, blockContent: unknown): string | null {
+  const tur = (raw as { toolUseResult?: unknown } | null)?.toolUseResult;
+  if (tur && typeof tur === 'object') {
+    const id = (tur as { resumedAgentId?: unknown }).resumedAgentId;
+    if (typeof id === 'string' && id.length > 0) return id;
+  }
+  const text = toolResultText(blockContent);
+  if (text === undefined) return null;
+  const m = /"resumedAgentId"\s*:\s*"([^"]+)"/.exec(text);
+  return m ? m[1] : null;
+}
+
 /**
  * Fallback for the live stream, where the enrichment above never arrives.
  *
@@ -377,6 +417,13 @@ export function messagesToEvents(messages: JsonlNode[]): SubagentEvent[] {
           if (block.type !== 'tool_result') continue;
           const id = block.tool_use_id;
           if (!id) continue;
+          // A SendMessage result that re-opened an agent: the row it names is
+          // working again, whatever its last notification said.
+          const resumed = resumedAgentId(raw, block.content);
+          if (resumed) {
+            events.push({ kind: 'AgentResumed', taskId: resumed, messageIdx: i });
+            continue;
+          }
           events.push({
             kind: 'ToolResult',
             toolUseId: id,
@@ -707,6 +754,22 @@ export function applyEvents(events: SubagentEvent[]): Map<string, SubagentState>
         if (patch.endTimeMs !== undefined && isTerminal(s.status)) {
           s.endedAt = new Date(patch.endTimeMs).toISOString();
         }
+        break;
+      }
+      case 'AgentResumed': {
+        // Reverse-lookup by taskId, exactly as TaskUpdated does. No match is
+        // the normal case for a cross-session SendMessage — stay quiet.
+        let s: SubagentState | undefined;
+        for (const candidate of byId.values()) {
+          if (candidate.taskId === ev.taskId) { s = candidate; break; }
+        }
+        if (!s) break;
+        // The one place a terminal row legitimately reopens: the agent is
+        // demonstrably working again. Clear the closure so the next
+        // notification is treated as a fresh one.
+        s.status = 'running';
+        s.closureSource = undefined;
+        s.endedAt = undefined;
         break;
       }
       case 'ClosedByParentResult': {

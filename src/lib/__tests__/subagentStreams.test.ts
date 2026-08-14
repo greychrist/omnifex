@@ -1043,6 +1043,128 @@ describe('XML task-notification (queue-operation / attachment)', () => {
     expect(subs[0].latest?.durationMs).toBe(106180);
   });
 
+  describe('resuming a finished agent (SendMessage)', () => {
+    // Resuming keys the eventual notification to the SendMessage's tool_use_id
+    // (handled above by the task-id fallback), but the row also has to go BACK
+    // to running for the duration of the resumed work — otherwise it reads
+    // "completed" while the agent is demonstrably busy. The signal is the
+    // SendMessage result's `toolUseResult.resumedAgentId`, which carries the
+    // same id the notifications use as <task-id>. Verified in session b1a9cc55.
+    const AGENT_ID = 'a65a69b5b316a0611';
+
+    function sendMessageResult(agentId: string, opts: { enrichment?: boolean } = {}): JsonlNode {
+      const payload = JSON.stringify({
+        success: true,
+        message: `Resuming agent ${agentId.slice(0, 7)}`,
+        resumedAgentId: agentId,
+      });
+      const node = {
+        kind: 'user', userKind: 'tool-result', sessionId: '', receivedAt: '',
+        raw: {
+          type: 'user',
+          message: {
+            role: 'user',
+            content: [
+              { type: 'tool_result', tool_use_id: 'toolu_sendmessage', content: [{ type: 'text', text: payload }] },
+            ],
+          },
+        },
+      } as unknown as { raw: Record<string, unknown> };
+      if (opts.enrichment) {
+        node.raw.toolUseResult = { success: true, resumedAgentId: agentId };
+      }
+      return node as unknown as JsonlNode;
+    }
+
+    /** A finished row whose taskId is AGENT_ID. */
+    const finished = () => [
+      bashBg(TOOL_USE_ID, 'map sessions'),
+      bgAck(TOOL_USE_ID),
+      {
+        kind: 'unknown', sessionId: '', receivedAt: '',
+        raw: {
+          type: 'queue-operation',
+          operation: 'enqueue',
+          content: [
+            '<task-notification>',
+            `<task-id>${AGENT_ID}</task-id>`,
+            `<tool-use-id>${TOOL_USE_ID}</tool-use-id>`,
+            '<status>completed</status>',
+            '<summary>Agent "map sessions" finished</summary>',
+            '<usage><subagent_tokens>42632</subagent_tokens><tool_uses>5</tool_uses><duration_ms>53971</duration_ms></usage>',
+            '</task-notification>',
+          ].join('\n'),
+        },
+      } as unknown as JsonlNode,
+    ];
+
+    it('puts a completed row back to running', () => {
+      const done = deriveSubagents(finished());
+      expect(done[0].status).toBe('completed');
+
+      const resumed = deriveSubagents([...finished(), sendMessageResult(AGENT_ID, { enrichment: true })]);
+      expect(resumed).toHaveLength(1);
+      expect(resumed[0].status).toBe('running');
+      expect(resumed[0].endedAt).toBeUndefined();
+      expect(resumed[0].closureSource).toBeUndefined();
+    });
+
+    it('detects the resume from the result text when the enrichment is absent', () => {
+      const resumed = deriveSubagents([...finished(), sendMessageResult(AGENT_ID)]);
+      expect(resumed[0].status).toBe('running');
+    });
+
+    it('closes again, with the resumed run\'s totals, when the next notification lands', () => {
+      const subs = deriveSubagents([
+        ...finished(),
+        sendMessageResult(AGENT_ID, { enrichment: true }),
+        {
+          kind: 'unknown', sessionId: '', receivedAt: '',
+          raw: {
+            type: 'queue-operation',
+            operation: 'enqueue',
+            content: [
+              '<task-notification>',
+              `<task-id>${AGENT_ID}</task-id>`,
+              '<tool-use-id>toolu_sendmessage</tool-use-id>',
+              '<status>completed</status>',
+              '<summary>Agent "map sessions" finished</summary>',
+              '<usage><subagent_tokens>56192</subagent_tokens><tool_uses>11</tool_uses><duration_ms>182029</duration_ms></usage>',
+              '</task-notification>',
+            ].join('\n'),
+          },
+        } as unknown as JsonlNode,
+      ]);
+      expect(subs).toHaveLength(1);
+      expect(subs[0].status).toBe('completed');
+      expect(subs[0].latest?.totalTokens).toBe(56192);
+    });
+
+    it('is not closed by a parent result that predates the resume', () => {
+      // The inferred-closure rule closes a running row once the parent has
+      // advanced past a `result`. After a resume, only results AFTER the
+      // resume say anything about the new run — the earlier one belongs to
+      // the turn that already finished.
+      const subs = deriveSubagents([
+        bashBg(TOOL_USE_ID, 'map sessions'),
+        bgAck(TOOL_USE_ID),
+        { kind: 'cli-stream-result', sessionId: '', receivedAt: '', raw: { type: 'result', subtype: 'success' } } as any,
+        ...finished().slice(2),
+        sendMessageResult(AGENT_ID, { enrichment: true }),
+        { kind: 'user', userKind: 'prompt', sessionId: '', receivedAt: '', raw: { type: 'user', message: { content: [{ type: 'text', text: 'next' }] } } } as any,
+      ]);
+      expect(subs[0].status).toBe('running');
+    });
+
+    it('ignores a resume naming an agent we have no row for', () => {
+      // SendMessage also addresses other Claude SESSIONS (CLI 2.1.232's @-mention),
+      // where `to` is a session name and no subagent row should react.
+      const subs = deriveSubagents([...finished(), sendMessageResult('some-other-session', { enrichment: true })]);
+      expect(subs).toHaveLength(1);
+      expect(subs[0].status).toBe('completed');
+    });
+  });
+
   it('ignores an XML notification whose tool-use-id AND task-id are both unknown', () => {
     // The orphan guard still holds: notifications routinely name tool_uses
     // from earlier turns we do not have in scope, and inventing rows for them
