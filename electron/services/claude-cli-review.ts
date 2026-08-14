@@ -29,13 +29,20 @@ import * as path from 'node:path';
  * old value and the new one, and file or fix whatever they imply. Bumping it
  * to silence the badge throws away the only drift signal we have.
  *
- * Last review: 2.1.231 → 2.1.232 on 2026-08-14. 2.1.232 backgrounds agent
- * spawns by default, which stopped `run_in_background` from appearing in the
- * dispatch input at all — `subagentEvents.ts` now reads the background signal
- * off the result side instead. (2.1.230 has no changelog entry — it was never
- * published with notes, so nothing in it was auditable.)
+ * Last review: 2.1.232 → 2.1.233 on 2026-08-14. 2.1.233 reverted 2.1.232's
+ * input-redirection permission check (`cmd < file`), so the note the previous
+ * pass added to `docs/permission-syntax.md` was corrected rather than removed —
+ * a narrower version is expected to return. Also gated the todo/task tools
+ * (TaskCreate/Get/Update/List, TodoWrite) off for Opus 4.8, Sonnet 5, Fable 5,
+ * Mythos 5 and newer: the tools are still in the binary behind an `isEnabled()`
+ * predicate driven by the remote `tengu_rosy_wren` flag, not deprecated, and the
+ * gate reads the CANONICAL model id (so `[1m]` aliases do not escape it).
+ * `taskList.ts` degrades to an empty list, so the task panel simply renders
+ * nothing on those models; deliberately left alone rather than forcing
+ * `CLAUDE_CODE_ENABLE_TODO_TOOLS=1`, which would override a decision Anthropic
+ * can reverse remotely.
  */
-export const REVIEWED_CLI_VERSION = '2.1.232';
+export const REVIEWED_CLI_VERSION = '2.1.233';
 
 /**
  * app_settings key holding the user's explicit OmniFex-checkout override.
