@@ -1,6 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import BetterSqlite3 from 'better-sqlite3';
-import { createDatabase, runMigrations, type Database } from '../services/database';
+import {
+  createDatabase,
+  runMigrations,
+  PRE_CUTOVER_EXTRACTION_MODEL,
+  POST_CUTOVER_EXTRACTION_MODEL,
+  type Database,
+} from '../services/database';
 
 /**
  * The spend ledger schema and its one-time backfill (Plan 8 §3).
@@ -138,13 +144,13 @@ describe('v20 backfill from brain_sources', () => {
   });
 
   /**
-   * The historical rows cannot say which model they used — `brain_sources`
-   * never recorded one, and the pin changed from Haiku to Sonnet partway
-   * through. Stamping today's model onto them would be a fabricated attribution
-   * in a table people will price from, so they say so instead. `cost_usd` on
-   * these rows is the CLI's own figure, so a report can still total them.
+   * `brain_sources` never recorded a model, but the ledger must never carry an
+   * unattributed row. The pin is recoverable rather than guessable: extraction
+   * ran on one model before the cutover and another after it, and every
+   * backfilled row knows when it was indexed. Attribution is therefore read
+   * from `last_indexed_at`, not stamped with today's pin.
    */
-  it('marks backfilled rows as an unknown model rather than guessing', () => {
+  it('attributes a backfilled row indexed after the cutover to Sonnet', () => {
     raw
       .prepare(
         `INSERT INTO brain_sources (account_id, source_id, item_key, last_indexed_at, status, cost_usd)
@@ -154,7 +160,38 @@ describe('v20 backfill from brain_sources', () => {
 
     runMigrations(raw);
 
-    expect(spend()[0].model).toBe('unknown');
+    expect(spend()[0].model).toBe(POST_CUTOVER_EXTRACTION_MODEL);
+  });
+
+  it('attributes a backfilled row indexed before the cutover to Haiku', () => {
+    raw
+      .prepare(
+        `INSERT INTO brain_sources (account_id, source_id, item_key, last_indexed_at, status, cost_usd)
+         VALUES (1, 'session', 'sess-old', '2026-08-12T04:00:00.000Z', 'indexed', 0.02)`,
+      )
+      .run();
+
+    runMigrations(raw);
+
+    expect(spend()[0].model).toBe(PRE_CUTOVER_EXTRACTION_MODEL);
+  });
+
+  it('never backfills a row without an attributed model', () => {
+    raw
+      .prepare(
+        `INSERT INTO brain_sources (account_id, source_id, item_key, last_indexed_at, status, cost_usd)
+         VALUES
+           (1, 'session', 'a', '2026-08-11T10:00:00.000Z', 'indexed', 0.01),
+           (1, 'session', 'b', '2026-08-14T10:00:00.000Z', 'indexed', 0.01),
+           (1, 'repo', 'c', NULL, 'indexed', 0.01)`,
+      )
+      .run();
+
+    runMigrations(raw);
+
+    const models = spend().map((r) => r.model as string);
+    expect(models).toHaveLength(3);
+    expect(models.every((m) => m !== '' && m !== 'unknown')).toBe(true);
   });
 
   it('skips items that never cost anything', () => {

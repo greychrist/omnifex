@@ -30,6 +30,8 @@ import { CURATION_MODEL } from './curation';
 import { createBrainSpendStore, localDate, type SpendKind } from './spend';
 import type { RunCost } from './sources/state';
 import { resolveEntityPath, type ExistingNote } from './resolve';
+import { projectLinkFor } from './project';
+import { NOTE_FOLDERS } from './types';
 import { merge } from './merge';
 import { MAX_NOTES_PER_RUN, collapsibleEntries, curate, qualifies } from './curate';
 import type { Curator } from './curation';
@@ -1458,6 +1460,10 @@ export function createBrainService(
         return { itemKey, notesWritten: [], skipped: true, reason };
       }
 
+      // Built once per item, not per entity: it is O(vault) reads, and the
+      // entities of one extraction all resolve against the same snapshot.
+      const existingNotes = readExistingNotes(handle);
+
       const provenance = {
         sourceKey: `${item.sourceId}:${item.itemKey}`,
         // Each kind supplies the date it actually knows. A capture has its
@@ -1466,13 +1472,17 @@ export function createBrainService(
         // Every arm falls back to today rather than to another kind's field,
         // since an empty string would sort before every real date.
         date: provenanceDate(distilled.metadata),
+        // Derived from the path the material came from, never from the model.
+        // Undefined when the item cannot say, which leaves any attribution an
+        // earlier run made in place rather than clearing it.
+        projectLink: projectLinkFor(
+          distilled.metadata,
+          existingNotes.filter((n) => n.path.startsWith(`${NOTE_FOLDERS.Project}/`)),
+        ),
       };
 
       const notesWritten: string[] = [];
       const entityErrors: string[] = [];
-      // Built once per item, not per entity: it is O(vault) reads, and the
-      // entities of one extraction all resolve against the same snapshot.
-      const existingNotes = readExistingNotes(handle);
       for (const entity of extraction.entities) {
         // Per-entity isolation. An entity name is model-supplied and therefore
         // untrusted input for a filesystem path; `vault.notePath` rejects
