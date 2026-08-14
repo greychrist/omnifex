@@ -54,7 +54,10 @@ const MIXED = [
 ];
 
 /** Wraps the controlled selection so tests can drive it like the real pane. */
-function Harness({ rows = ROWS }: { rows?: BrainSourceSummary[] }) {
+function Harness({
+  rows = ROWS,
+  indexingItemKey = null,
+}: { rows?: BrainSourceSummary[]; indexingItemKey?: string | null }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   return (
     <>
@@ -63,6 +66,7 @@ function Harness({ rows = ROWS }: { rows?: BrainSourceSummary[] }) {
         selected={selected}
         onSelectedChange={setSelected}
         activeItemKey={null}
+        indexingItemKey={indexingItemKey}
         onOpen={vi.fn()}
       />
       <div data-testid="count">{selected.size}</div>
@@ -119,10 +123,7 @@ describe('BrainSourcesTable', () => {
    */
   it('names the kind of each row, so a .md file is not read as a session', () => {
     render(<Harness rows={MIXED} />);
-    const types = screen
-      .getAllByRole('row')
-      .slice(1)
-      .map((r) => within(r).getAllByRole('cell')[3].textContent ?? '');
+    const types = screen.getAllByTestId('source-type').map((el) => el.textContent ?? '');
     expect(types).toEqual(['Session', 'Memory', 'Repo file']);
   });
 
@@ -250,12 +251,97 @@ describe('BrainSourcesTable', () => {
 
   it('shows the whole folder path, unabridged', () => {
     render(<Harness />);
-    const cells = screen
-      .getAllByRole('row')
-      .slice(1)
-      .map((r) => within(r).getAllByRole('cell')[1].textContent ?? '');
+    const cells = screen.getAllByTestId('source-project').map((el) => el.textContent ?? '');
     expect(cells).toContain('/Users/greg/Repos/personal/WIN');
     expect(cells).toContain('/private/tmp/brain-probe');
+  });
+
+  /**
+   * Seven columns ran past the pane on any real vault, where labels are deep
+   * absolute paths. Project/Name and Size/Cost stack into one cell each,
+   * following the pattern SessionList already uses for its own size-over-cost
+   * cell, so the table fits without abridging a path.
+   */
+  it('stacks the name under the project in one cell', () => {
+    render(<Harness rows={[row({ itemKey: 'sess-x', label: '/Users/greg/Repos/personal/WIN' })]} />);
+
+    const cell = screen.getByTestId('source-project').closest('td');
+    expect(cell).not.toBeNull();
+    expect(within(cell!).getByTestId('source-name').textContent).toBe('sess-x');
+  });
+
+  it('stacks the cost under the size in one cell', () => {
+    render(<Harness rows={[row({ itemKey: 'sess-x', size: 40_960, costUsd: 0.0142 })]} />);
+
+    const cell = screen.getByTestId('source-size').closest('td');
+    expect(cell).not.toBeNull();
+    expect(within(cell!).getByTestId('source-cost').textContent).toBe('$0.0142');
+  });
+
+  it('still sorts by name and by cost independently of their partner column', () => {
+    render(<Harness />);
+    // Both halves of a stacked cell keep their own sort control, or merging
+    // the columns would quietly remove two orderings.
+    fireEvent.click(screen.getByRole('button', { name: /^name/i }));
+    expect(itemCells()).toEqual(['ccc', 'bbb', 'aaa']);
+    fireEvent.click(screen.getByRole('button', { name: /^cost/i }));
+    expect(itemCells()).toHaveLength(3);
+  });
+});
+
+/**
+ * Which row is being worked on right now.
+ *
+ * The run banner says "3 of 20" but never which item, so the table could not
+ * say which of its own rows the number referred to. `BrainRun.item` names it,
+ * and the pane already has the run.
+ */
+describe('BrainSourcesTable — the row being indexed', () => {
+  it('marks the row in flight', () => {
+    render(<Harness indexingItemKey="bbb" />);
+
+    const row = screen.getByRole('checkbox', { name: 'Select bbb' }).closest('tr');
+    expect(within(row!).getByTestId('source-status').textContent).toMatch(/indexing/i);
+  });
+
+  it('marks only that row', () => {
+    render(<Harness indexingItemKey="bbb" />);
+
+    const statuses = screen.getAllByTestId('source-status').map((el) => el.textContent ?? '');
+    expect(statuses.filter((s) => /indexing/i.test(s))).toHaveLength(1);
+  });
+
+  it('shows nothing as indexing when no run is in flight', () => {
+    render(<Harness indexingItemKey={null} />);
+
+    const statuses = screen.getAllByTestId('source-status').map((el) => el.textContent ?? '');
+    expect(statuses.some((s) => /indexing/i.test(s))).toBe(false);
+  });
+
+  /**
+   * A never-indexed row shows the admission gate's reason rather than a
+   * status. While it is actually being worked on, what it is doing right now
+   * is the more useful answer.
+   */
+  it('overrides the gate reason while the row is in flight', () => {
+    render(
+      <Harness
+        rows={[row({ itemKey: 'gated', admitted: false, reason: 'fewer than 2 prompts' })]}
+        indexingItemKey="gated"
+      />,
+    );
+
+    expect(screen.getByTestId('source-status').textContent).toMatch(/indexing/i);
+  });
+
+  it('goes back to the recorded status once the run moves on', () => {
+    const rows = [row({ itemKey: 'aaa', status: 'indexed', changed: false })];
+    const { rerender } = render(<Harness rows={rows} indexingItemKey="aaa" />);
+    expect(screen.getByTestId('source-status').textContent).toMatch(/indexing/i);
+
+    rerender(<Harness rows={rows} indexingItemKey={null} />);
+
+    expect(screen.getByTestId('source-status').textContent).toBe('indexed');
   });
 
   it('lists projects alphabetically in the filter, with their counts', () => {
@@ -311,6 +397,7 @@ describe('BrainSourcesTable — Name column', () => {
         selected={new Set()}
         onSelectedChange={vi.fn()}
         activeItemKey={null}
+        indexingItemKey={null}
         onOpen={vi.fn()}
       />,
     );
@@ -327,6 +414,7 @@ describe('BrainSourcesTable — Name column', () => {
         selected={new Set()}
         onSelectedChange={vi.fn()}
         activeItemKey={null}
+        indexingItemKey={null}
         onOpen={vi.fn()}
       />,
     );
@@ -350,6 +438,7 @@ describe('BrainSourcesTable — sessions in use', () => {
         selected={new Set()}
         onSelectedChange={vi.fn()}
         activeItemKey={null}
+        indexingItemKey={null}
         onOpen={vi.fn()}
       />,
     );
@@ -369,6 +458,7 @@ describe('BrainSourcesTable — sessions in use', () => {
         selected={new Set()}
         onSelectedChange={onSelectedChange}
         activeItemKey={null}
+        indexingItemKey={null}
         onOpen={vi.fn()}
       />,
     );
@@ -386,6 +476,7 @@ describe('BrainSourcesTable — sessions in use', () => {
         selected={new Set()}
         onSelectedChange={vi.fn()}
         activeItemKey={null}
+        indexingItemKey={null}
         onOpen={onOpen}
       />,
     );
@@ -408,6 +499,7 @@ describe('BrainSourcesTable — cost', () => {
         selected={new Set()}
         onSelectedChange={vi.fn()}
         activeItemKey={null}
+        indexingItemKey={null}
         onOpen={vi.fn()}
       />,
     );
@@ -428,6 +520,7 @@ describe('BrainSourcesTable — cost', () => {
         selected={new Set()}
         onSelectedChange={vi.fn()}
         activeItemKey={null}
+        indexingItemKey={null}
         onOpen={vi.fn()}
       />,
     );
@@ -448,6 +541,7 @@ describe('BrainSourcesTable — cost', () => {
         selected={new Set()}
         onSelectedChange={vi.fn()}
         activeItemKey={null}
+        indexingItemKey={null}
         onOpen={vi.fn()}
       />,
     );

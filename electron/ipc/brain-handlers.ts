@@ -267,6 +267,14 @@ export function createBrainHandlers(
       return brain.indexSelection(requireAccountId(params), raw as string[]);
     },
 
+    async brain_active_run() {
+      // No accountId: the app-wide indicator asks whether anything is indexing
+      // at all, and cannot name the account in order to ask about it. The run
+      // it gets back carries its own, so the vault is still labelled.
+      if (!brain) return null;
+      return brain.activeRun();
+    },
+
     async brain_current_run(_event, params = {}) {
       const accountId = requireAccountId(params);
       // A read: with no service there is no run, which is the truthful answer

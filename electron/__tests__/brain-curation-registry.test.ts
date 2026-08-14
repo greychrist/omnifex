@@ -6,6 +6,8 @@ import { createDatabase, type Database } from '../services/database';
 import { createBrainService, type BrainService } from '../services/brain/registry';
 import { CURATION_SOURCE_ID } from '../services/brain/queue';
 import { MAX_NOTES_PER_RUN, MIN_TIMELINE_ENTRIES } from '../services/brain/curate';
+import { CURATION_MODEL } from '../services/brain/curation';
+import { createBrainSpendStore } from '../services/brain/spend';
 import type { AccountsService } from '../services/accounts';
 import type { ParsedNote } from '../services/brain/types';
 
@@ -13,7 +15,7 @@ import type { ParsedNote } from '../services/brain/types';
 const stubExec = async () => '';
 
 const accountsStub = {
-  listAccounts: () => [{ id: 1, config_dir: '/cfg/personal' }],
+  listAccounts: () => [{ id: 1, name: 'personal', config_dir: '/cfg/personal' }],
 } as unknown as AccountsService;
 
 function noteWith(entries: number): ParsedNote {
@@ -85,6 +87,45 @@ describe('curation on the registry', () => {
     brain.closeAll();
     db.close();
     rmSync(dir, { recursive: true, force: true });
+  });
+
+  /**
+   * Plan 8. Curation is pinned to Opus on purpose, so it is the single most
+   * expensive thing the Brain does — and until the ledger existed it was the
+   * one spend that was not recorded anywhere at all, not even as a snapshot.
+   */
+  it('records what curation cost in the spend ledger', async () => {
+    curator.mockResolvedValue({
+      collapsed: 'Early work.',
+      promotedFacts: ['A fact.'],
+      run: {
+        costUsd: 0.42, inputTokens: 1000, outputTokens: 200,
+        cacheReadTokens: 50, cacheCreationTokens: 10,
+      },
+    });
+    brain.writeNote(accountId, 'Subsystems/Widget.md', noteWith(12), 'seed');
+
+    await brain.curateNote(accountId, 'Subsystems/Widget.md');
+
+    const rows = createBrainSpendStore(db).byMonth(new Date().toISOString().slice(0, 7));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      kind: 'curation',
+      itemKey: 'Subsystems/Widget.md',
+      model: CURATION_MODEL,
+      costUsd: 0.42,
+      accountName: 'personal',
+    });
+  });
+
+  it('writes no ledger row when curation is skipped before it spends', async () => {
+    // Two entries, well under the threshold: `qualifies` rejects it, no model
+    // is reached, and a row here would claim money that was never spent.
+    brain.writeNote(accountId, 'Subsystems/Small.md', noteWith(2), 'seed');
+
+    await brain.curateNote(accountId, 'Subsystems/Small.md');
+
+    expect(createBrainSpendStore(db).total()).toBe(0);
   });
 
   it('curates a qualifying note and commits as Curation', async () => {

@@ -3202,6 +3202,17 @@ export const api = {
    * that started before the component existed — the same reason SessionList
    * calls `summary_generating_now`.
    */
+  /**
+   * The run in flight for any account, for the app-wide indicator.
+   *
+   * Separate from `brainCurrentRun` because the indicator has no account to
+   * scope by — it asks whether anything is indexing at all. The run carries its
+   * own `accountId`, so the vault is still named rather than guessed.
+   */
+  async brainActiveRun(): Promise<BrainRun | null> {
+    return apiCall<BrainRun | null>('brain_active_run', {});
+  },
+
   async brainCurrentRun(accountId: number): Promise<BrainRun | null> {
     return apiCall<BrainRun | null>('brain_current_run', { accountId });
   },

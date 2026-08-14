@@ -40,6 +40,10 @@ vi.mock('@/lib/api', () => ({
     onSessionInFlightCount: () => () => {},
     onUpdateProgress: () => () => {},
     onInstallStatus: () => () => {},
+    // The titlebar hosts the Brain run indicator. Nothing indexing is the
+    // right default here — these tests are about the changelog watermark.
+    brainActiveRun: () => Promise.resolve(null),
+    onBrainRunProgress: () => () => {},
   },
 }));
 

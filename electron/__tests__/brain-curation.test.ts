@@ -84,10 +84,41 @@ describe('createCurator', () => {
     const curator = createCurator({ runQuery });
     const out = await curator(INPUT, '/cfg');
 
-    expect(out).toEqual({ collapsed: 'ok', promotedFacts: [] });
+    expect(out).toMatchObject({ collapsed: 'ok', promotedFacts: [] });
     expect(runQuery).toHaveBeenCalledTimes(1);
     expect(runQuery.mock.calls[0][0].model).toBe(CURATION_MODEL);
     expect(runQuery.mock.calls[0][0].configDir).toBe('/cfg');
+  });
+
+  /**
+   * Plan 8. The runner used to keep `result` and drop the rest of the envelope,
+   * so the most expensive thing the Brain does was also the only spend nothing
+   * could report.
+   */
+  it('carries what the run cost back to the caller', async () => {
+    const runQuery = vi.fn().mockResolvedValue({
+      ...reply('{"collapsed":"ok","promotedFacts":[]}'),
+      costUsd: 0.4,
+      inputTokens: 1200,
+    });
+    const out = await createCurator({ runQuery })(INPUT, '/cfg');
+
+    expect(out.run).toMatchObject({ costUsd: 0.4, inputTokens: 1200 });
+  });
+
+  it('bills both legs when it retries, not only the one that worked', async () => {
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce({ ...reply('nope'), costUsd: 0.1, inputTokens: 10 })
+      .mockResolvedValueOnce({
+        ...reply('{"collapsed":"second try","promotedFacts":[]}'),
+        costUsd: 0.3,
+        inputTokens: 30,
+      });
+    const out = await createCurator({ runQuery })(INPUT, '/cfg');
+
+    // A retry is money spent on top of the first attempt, not instead of it.
+    expect(out.run).toMatchObject({ costUsd: 0.4, inputTokens: 40 });
   });
 
   it('is pinned to Opus, not to the extraction model', () => {

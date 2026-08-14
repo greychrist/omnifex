@@ -113,6 +113,91 @@ describe('brain indexing runs', () => {
     brain.closeAll();
   });
 
+  /**
+   * Plan 8 §4. Before this, only `indexSelection` published a run — so the one
+   * kind of indexing that runs unattended was the one kind with nothing on
+   * screen to say it was happening.
+   */
+  it('publishes a run for a background queue drain, not just a manual selection', async () => {
+    const seen: (BrainRun | null)[] = [];
+    const { extractor, release } = gatedExtractor();
+    const brain = createBrainService(db, {
+      execGit: stubExec, accounts: accountsStub, extractor,
+      sources: [fakeSource(1, ['a', 'b'])],
+      onRunProgress: (run) => { seen.push(run); },
+    });
+    brain.setVaultPath(1, join(dir, 'v-queue'));
+
+    await brain.backfill(1);
+    const drain = brain.drainQueue();
+
+    await until(() => release.length === 1, 'first queued item');
+    expect(brain.currentRun(1)).toMatchObject({ total: 2, completed: 0, item: 'a' });
+
+    release[0]();
+    await until(() => release.length === 2, 'second queued item');
+    expect(brain.currentRun(1)).toMatchObject({ total: 2, completed: 1, item: 'b' });
+
+    release[1]();
+    await drain;
+    expect(brain.currentRun(1)).toBeNull();
+    expect(seen[seen.length - 1]).toBeNull();
+    brain.closeAll();
+  });
+
+  /**
+   * `total` is recomputed per entry rather than snapshotted at drain start, so
+   * a session that closes mid-drain widens the bar instead of pushing it past
+   * 100%.
+   */
+  it('widens the total when work is enqueued mid-drain', async () => {
+    const { extractor, release } = gatedExtractor();
+    const brain = createBrainService(db, {
+      execGit: stubExec, accounts: accountsStub, extractor,
+      sources: [fakeSource(1, ['a', 'late-arrival'])],
+      onRunProgress: () => undefined,
+    });
+    brain.setVaultPath(1, join(dir, 'v-widen'));
+
+    // Only 'a' is queued to begin with; 'late-arrival' exists in the source but
+    // has not been asked for yet, which is what a session closing mid-drain
+    // looks like.
+    await brain.enqueueSource(1, 'a');
+    const drain = brain.drainQueue();
+    await until(() => release.length === 1, 'first queued item');
+    expect(brain.currentRun(1)).toMatchObject({ total: 1, completed: 0 });
+
+    // Something else lands on the queue while the first item is in flight.
+    await brain.enqueueSource(1, 'late-arrival');
+    release[0]();
+
+    await until(() => release.length === 2, 'the late arrival to reach the extractor');
+    expect(brain.currentRun(1)).toMatchObject({ total: 2, completed: 1, item: 'late-arrival' });
+    release[1]();
+    await drain;
+    brain.closeAll();
+  });
+
+  it('refuses a queue drain while a manual selection owns the run', async () => {
+    const { extractor, release } = gatedExtractor();
+    const brain = createBrainService(db, {
+      execGit: stubExec, accounts: accountsStub, extractor,
+      sources: [fakeSource(1, ['a', 'b'])],
+    });
+    brain.setVaultPath(1, join(dir, 'v-busy'));
+
+    await brain.backfill(1);
+    const selection = brain.indexSelection(1, ['a']);
+    await until(() => release.length === 1, 'the selection to reach the extractor');
+
+    // A timed drain must not overwrite the banner the user is watching.
+    expect(await brain.drainQueue()).toMatchObject({ processed: 0, reason: 'busy' });
+
+    release[0]();
+    await selection;
+    brain.closeAll();
+  });
+
   it('pushes every progress change to the subscriber, ending with null', async () => {
     const seen: (BrainRun | null)[] = [];
     const { extractor, release } = gatedExtractor();

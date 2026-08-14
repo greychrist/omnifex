@@ -18,13 +18,17 @@ import {
   CURATION_SOURCE_ID,
   createBrainQueueStore,
   createBrainQueueWorker,
+  isRateLimitError,
   type DrainOutcome,
   type QueueCounts,
   type QueueEntry,
 } from './queue';
 import type { BrainSource, ItemMetadata, SourceItem } from './sources/types';
 import { SESSION_SOURCE_ID } from './sources/session-transcripts';
-import type { Extractor } from './extract';
+import { EXTRACTION_MODEL, type Extractor } from './extract';
+import { CURATION_MODEL } from './curation';
+import { createBrainSpendStore, localDate, type SpendKind } from './spend';
+import type { RunCost } from './sources/state';
 import { resolveEntityPath, type ExistingNote } from './resolve';
 import { merge } from './merge';
 import { MAX_NOTES_PER_RUN, collapsibleEntries, curate, qualifies } from './curate';
@@ -373,6 +377,11 @@ export interface BrainService {
    */
   currentRun(accountId: number): BrainRun | null;
   /**
+   * The run in flight for ANY account, for the app-wide indicator. Carries its
+   * own `accountId` so the caller can name the vault rather than guess it.
+   */
+  activeRun(): BrainRun | null;
+  /**
    * Compress one note's accumulated Timeline. The second method here that
    * spends tokens.
    *
@@ -614,15 +623,6 @@ export interface BrainServiceOptions {
    * `extractor` follows.
    */
   curator?: Curator;
-  /**
-   * True while the user has an interactive session open. The worker yields
-   * entirely while it is (spec §11) — indexing must never compete with real
-   * work for rate limit.
-   *
-   * Defaults to "never active", which is correct for tests and for a service
-   * built without a sessions dependency; `main.ts` supplies the real one.
-   */
-  hasActiveSession?: () => boolean;
   /** True while the user has paused the queue from the Brain tab. */
   isQueuePaused?: () => boolean;
   /**
@@ -630,8 +630,8 @@ export interface BrainServiceOptions {
    * `listActiveSessionIds()`, injected so the Brain keeps no dependency on the
    * sessions layer.
    *
-   * Distinct from `hasActiveSession`, which asks the global question ("is the
-   * user working, so should the worker yield?"). This one is per-item: WHICH
+   * Since Plan 8 removed the global "is the user working?" gate, this is the
+   * ONLY session-awareness the indexer has, and the only one it needed: WHICH
    * transcripts are still being written, and therefore must not be distilled
    * and recorded as finished.
    *
@@ -667,6 +667,44 @@ export function createBrainService(
   const sources = opts.sources ?? [];
   const sourceState = createSourceStateStore(db);
   const queueStore = createBrainQueueStore(db);
+  const spendStore = createBrainSpendStore(db);
+
+  /**
+   * Append one model-backed run to the ledger.
+   *
+   * Swallows its own failure on purpose: losing an accounting row must never
+   * lose the note the money already bought, and this runs after the write that
+   * matters. The `run` guard is what keeps a gate rejection or a translating
+   * source — neither of which reaches a model — from inventing a payment.
+   */
+  function recordSpend(
+    accountId: number,
+    kind: SpendKind,
+    sourceId: string | null,
+    itemKey: string,
+    model: string,
+    run: RunCost | undefined,
+  ): void {
+    if (!run) return;
+    try {
+      const at = new Date();
+      spendStore.record({
+        ...run,
+        accountId,
+        accountName:
+          opts.accounts?.listAccounts().find((a) => a.id === accountId)?.name ??
+          `account ${String(accountId)}`,
+        kind,
+        sourceId,
+        itemKey,
+        model,
+        date: localDate(at),
+        spentAt: at.toISOString(),
+      });
+    } catch (err) {
+      console.warn('[brain] spend ledger write failed:', (err as Error).message);
+    }
+  }
 
   // The run in flight, or null. One at a time across all accounts, matching
   // the queue worker's concurrency-1 contract with the shared rate limit.
@@ -693,19 +731,51 @@ export function createBrainService(
   const orphans = queueStore.recoverOrphans();
   if (orphans > 0) console.warn(`brain: recovered ${String(orphans)} orphaned queue entries`);
 
+  /**
+   * Progress counters for the drain in flight, reset per drain.
+   *
+   * Before Plan 8 only `indexSelection` published a `BrainRun`, so background
+   * indexing — the kind that actually runs unattended — was the one kind with
+   * nothing on screen to say it was happening.
+   */
+  let queueRunStats = { completed: 0, written: 0, skipped: 0 };
+
   const queueWorker = createBrainQueueWorker({
     store: queueStore,
     // The dispatch. Routed through the service's own methods rather than
     // captured closures, so every drain gets the unchanged-item short-circuit,
     // the per-entity isolation and the re-qualification check that live there.
     process: async (entry) => {
-      if (entry.sourceId === CURATION_SOURCE_ID) {
-        await service.curateNote(entry.accountId, entry.itemKey);
-        return;
+      // `total` is recomputed per entry rather than snapshotted at drain start,
+      // so an enqueue that lands mid-drain widens the bar instead of pushing it
+      // past 100%. The claimed entry is no longer `pending`, hence the +1.
+      activeRun = {
+        accountId: entry.accountId,
+        total: queueRunStats.completed + 1 + queueStore.counts().pending,
+        completed: queueRunStats.completed,
+        item: entry.itemKey,
+        written: queueRunStats.written,
+        skipped: queueRunStats.skipped,
+      };
+      publishRun();
+
+      try {
+        const result =
+          entry.sourceId === CURATION_SOURCE_ID
+            ? await service.curateNote(entry.accountId, entry.itemKey)
+            : await service.indexSource(entry.accountId, entry.itemKey);
+        if (result.skipped) queueRunStats.skipped += 1;
+        else queueRunStats.written += 1;
+      } catch (err) {
+        // A rate limit puts the item back on the queue untouched, so counting
+        // it as completed would report work the user never got.
+        if (!isRateLimitError((err as Error).message)) queueRunStats.skipped += 1;
+        else queueRunStats.completed -= 1;
+        throw err;
+      } finally {
+        queueRunStats.completed += 1;
       }
-      await service.indexSource(entry.accountId, entry.itemKey);
     },
-    hasActiveSession: opts.hasActiveSession ?? (() => false),
     isPaused: opts.isQueuePaused ?? (() => false),
   });
 
@@ -762,17 +832,20 @@ export function createBrainService(
   }
 
   /**
-   * What this account has spent on indexing, summed from the per-item figures.
+   * What this account has spent on the Brain, from the ledger.
+   *
+   * Read from `brain_spend`, not `brain_sources`. The per-item column is a
+   * snapshot the next re-index overwrites, so summing it reported only the most
+   * recent run of each item and understated every vault that had been indexed
+   * twice. It also cannot see curation, which writes no `brain_sources` row at
+   * all.
    *
    * Scoped by account_id like every other read here: one account's spend must
    * never be reported under another's header, which is the same rule that
    * governs the notes themselves.
    */
   function spentUsd(accountId: number): number {
-    const row = db.raw
-      .prepare('SELECT COALESCE(SUM(cost_usd), 0) AS total FROM brain_sources WHERE account_id = ?')
-      .get(accountId) as { total: number | null } | undefined;
-    return row?.total ?? 0;
+    return spendStore.total(accountId);
   }
 
   function readPath(accountId: number): string | null {
@@ -1439,6 +1512,11 @@ export function createBrainService(
 
       const errorSummary = entityErrors.length > 0 ? entityErrors.join('; ') : undefined;
 
+      // Recorded before the outcome branches: a run that produced nothing
+      // usable still spent the money, and a ledger that only counted successes
+      // would understate every month containing a bad extraction.
+      recordSpend(accountId, 'index', item.sourceId, itemKey, EXTRACTION_MODEL, extraction.run);
+
       // Nothing usable at all is reported as skipped, so the Sources pane does
       // not claim a successful run that produced no note.
       if (notesWritten.length === 0 && entityErrors.length > 0) {
@@ -1521,6 +1599,18 @@ export function createBrainService(
       return activeRun && activeRun.accountId === accountId ? activeRun : null;
     },
 
+    activeRun(): BrainRun | null {
+      // Deliberately NOT account-scoped, unlike `currentRun`. The global
+      // indicator asks "is anything indexing?" and cannot know the answer's
+      // account in order to ask about it. Attribution is preserved rather than
+      // dropped: the run carries its own `accountId` and the indicator names
+      // the vault, so nothing is shown under the wrong account's header.
+      //
+      // This exposes no note content and no spend figure — only that a run
+      // exists and how far along it is.
+      return activeRun;
+    },
+
     async curateNote(accountId: number, relPath: string): Promise<CurateResult> {
       requireAccountId(accountId);
       if (!opts.curator) throw new Error('brain: no curator configured');
@@ -1560,6 +1650,8 @@ export function createBrainService(
         { title: handle.vault.noteTitle(relPath), noteType: note.frontmatter.type, entries },
         account.config_dir,
       );
+
+      recordSpend(accountId, 'curation', CURATION_SOURCE_ID, relPath, CURATION_MODEL, result.run);
 
       const curated = curate(note, result, { date });
       handle.vault.writeNote(relPath, curated);
@@ -1706,8 +1798,20 @@ export function createBrainService(
       queueStore.clearFinished(accountId);
     },
 
-    drainQueue(): Promise<DrainOutcome> {
-      return queueWorker.drain();
+    async drainQueue(): Promise<DrainOutcome> {
+      // A manual selection owns `activeRun` exclusively — `indexSelection`
+      // refuses to start while one is in flight, and the queue has to be just
+      // as polite in the other direction, or a timed drain would silently
+      // overwrite the banner the user is watching.
+      if (activeRun) return { processed: 0, yielded: true, reason: 'busy' };
+
+      queueRunStats = { completed: 0, written: 0, skipped: 0 };
+      try {
+        return await queueWorker.drain();
+      } finally {
+        activeRun = null;
+        publishRun();
+      }
     },
 
     queueCurrent(): QueueEntry | null {

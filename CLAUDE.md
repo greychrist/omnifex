@@ -33,6 +33,26 @@ Any change that touches Claude Code permission rules, path-rule formatting, or t
 
 Any change that touches session status, conversation status, the spinner / in-flight predicate, the status popover, `useSessionLifecycle`, or anything under `electron/services/sessions/`: read `docs/session-lifecycle.md` first. It defines the three orthogonal state axes (`sessionStatus`, `conversationStatus`, per-item task/subagent status), the invariants between them, the canonical in-flight rollup, and the anti-patterns that have repeatedly caused session-stuck-on-starting bugs.
 
+## The Brain
+
+A per-account memory vault: Markdown notes distilled from past sessions, repo artifacts, and explicit captures, searched over SQLite FTS5. Any change under `electron/services/brain/`, `electron/brain-mcp.ts`, `electron/ipc/brain-handlers.ts`, or `src/components/brain/` should start from `docs/superpowers/specs/2026-08-11-brain-memory-vault-design.md` — the parent spec — plus whichever of the six `*-brain-*` specs covers the area. The most recent is `2026-08-14-brain-concurrent-indexing-design.md` (Plan 8).
+
+### Shape
+
+- **Vault** — `~/Documents/OmniFex Brain/<account>/`, one per account, path in `app_settings` under `brain.vault.<accountId>`. Deliberately outside userData so it opens in Obsidian and backs up normally. Git-versioned; the FTS index lives at `<vault>/.omnifex/index.db` and is derived and disposable.
+- **Orchestration state** — `brain_sources` (change detection), `brain_queue` (work), `brain_spend` (append-only cost ledger) in `greychrist.db`. Note *content* never lives there, only pointers and status.
+- **Pipeline** — `sources/*` discover → `admit()` → `distill()` → `extract.ts` (Sonnet, zod-validated) → `merge.ts` (pure) → note. `curate.ts` / `curation.ts` is the separate Opus-pinned pass that rewrites accumulated notes.
+- **Consumption** — `brain-mcp.ts` is a stdio MCP server the *CLI* spawns (`brain_search` / `brain_read` / `brain_remember`), plus the Brain tab and `/recall`. Nothing auto-injects vault content into a session.
+
+### Rules that are load-bearing
+
+- **One vault per account, and isolation is enforced by process environment**, not query filters. The MCP server has no account concept — it reads the single `OMNIFEX_VAULT` path it was handed. Never add a "which vault?" parameter to it.
+- **The account that owns a source is the account that indexes it and whose vault receives it.** Ownership comes from the source's location (`getAccountByConfigDir` for transcripts), never from `resolve()`. No silent default-account fallback — an unresolved item is `blocked` and surfaced.
+- **Spawn the MCP server as `process.execPath` with `ELECTRON_RUN_AS_NODE=1`**, never system `node`: `better-sqlite3` is built against the Electron ABI.
+- **The Brain is auxiliary.** Nothing in it may break a session, block the UI, or consume rate limit needed for real work. A failed item never blocks the queue.
+- **`merge.ts` must stay pure and idempotent** — indexing the same session twice produces a byte-identical note. It is the property tested hardest.
+- **Money is recorded in `brain_spend`, never inferred.** `brain_sources.cost_usd` is a per-item snapshot that re-indexing overwrites; the ledger is append-only and is what `stats.spentUsd` and any monthly report read. Extraction transcripts are swept, so nothing else on the machine can see this spend.
+
 ## Research And Code Intelligence
 
 - Start from evidence, not memory.
@@ -99,6 +119,8 @@ Any change that touches session status, conversation status, the spinner / in-fl
   Slash-command storage and resolution.
 - `electron/services/auth/codex-auth.ts` + `one-shot-terminal.ts`
   Codex authentication (`codex login` driven through a shared pty terminal) and the one-shot pty/xterm modal it uses.
+- `electron/services/brain/`
+  The Brain: a per-account Markdown memory vault, its FTS5 index, the source adapters that feed it, and the throttled indexing queue. See the Brain section below before changing any of it.
 - `electron/services/lima.ts` / `git-worktrees.ts`
   Lima VM viewer and git-worktree listing.
 - `electron/services/database.ts`

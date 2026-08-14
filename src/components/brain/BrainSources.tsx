@@ -454,6 +454,9 @@ export const BrainSources: React.FC<{
               selected={selectedRows}
               onSelectedChange={setSelectedRows}
               activeItemKey={selected}
+              // Which row the indexer is actually on. The banner counts
+              // "3 of 20" without saying which of these rows it means.
+              indexingItemKey={runProgress?.item ?? null}
               onOpen={select}
             />
           </div>

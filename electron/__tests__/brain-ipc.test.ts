@@ -17,6 +17,7 @@ const NOTE: ParsedNote = {
 };
 
 const CHANNELS = [
+  'brain_active_run',
   'brain_backfill',
   'brain_backlinks',
   'brain_clear_vault_path',
@@ -338,6 +339,7 @@ describe('brain IPC handlers', () => {
       indexSource: () => { throw boom; },
       indexSelection: () => { throw boom; },
       currentRun: () => { throw boom; },
+      activeRun: () => { throw boom; },
       curateNote: () => { throw boom; },
       enqueueCuration: () => { throw boom; },
       enqueueSource: () => { throw boom; },

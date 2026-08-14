@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { createSummaryQueryRunner, type CliRunResult } from '../sessions/summary-query';
 import type { RunCost } from './sources/state';
+import { addRunCosts } from './spend';
 import type { DistilledItem, ItemMetadata } from './sources/types';
 
 /**
@@ -180,28 +181,8 @@ export type Extractor = (
   context?: ExtractionContext,
 ) => Promise<ExtractionRun>;
 
-/**
- * Add two runs together. A retry is money spent on top of the first attempt,
- * not instead of it — reporting only the successful call would understate
- * every item that needed one. Null plus a number is that number: one leg
- * failing to report must not erase the leg that did.
- */
-function addRuns(a: RunCost | undefined, b: RunCost | undefined): RunCost | undefined {
-  if (!a) return b;
-  if (!b) return a;
-  const sum = (x: number | null, y: number | null): number | null =>
-    x === null && y === null ? null : (x ?? 0) + (y ?? 0);
-  return {
-    costUsd: sum(a.costUsd, b.costUsd),
-    inputTokens: sum(a.inputTokens, b.inputTokens),
-    outputTokens: sum(a.outputTokens, b.outputTokens),
-    cacheReadTokens: sum(a.cacheReadTokens, b.cacheReadTokens),
-    cacheCreationTokens: sum(a.cacheCreationTokens, b.cacheCreationTokens),
-  };
-}
-
 /** The cost half of a `claude -p` result, in the shape the state store keeps. */
-function runCostOf(r: CliRunResult): RunCost {
+export function runCostOf(r: CliRunResult): RunCost {
   return {
     costUsd: r.costUsd,
     inputTokens: r.inputTokens,
@@ -360,7 +341,7 @@ export function createExtractor(deps: ExtractorDeps = {}): Extractor {
       // garbage, not a refund.
       return {
         ...parseExtraction(second.result),
-        run: addRuns(runCostOf(reply), runCostOf(second)),
+        run: addRunCosts(runCostOf(reply), runCostOf(second)),
       };
     }
   };
