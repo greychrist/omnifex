@@ -129,14 +129,15 @@ export type SubagentEvent =
       kind: 'ToolResult';
       toolUseId: string;
       isError: boolean;
-      /** Raw textual content from the tool_result block. Used as a heuristic
-       *  to detect the "Async agent launched" / "Command running in
-       *  background" ACK shape for safety, even though we already gate on
-       *  `isBackground` in the reducer. */
-      content?: string;
+      /** This result is a background-launch ACK, not a return value — so the
+       *  reducer must not close the row on it. Set when the result side says
+       *  so, which is the only place CLI ≥2.1.232 says it at all: agent
+       *  spawns are backgrounded by default there, so the dispatch input
+       *  carries no `run_in_background` to gate on. */
+      isBackgroundAck?: boolean;
     }
   | { kind: 'TaskNotification'; toolUseId: string; status: 'completed' | 'failed' | 'stopped'; summary?: string; taskId?: string; totalTokens?: number; toolUses?: number; durationMs?: number }
-  | { kind: 'TaskNotificationXml'; toolUseId: string; status: 'completed' | 'failed'; summary?: string; taskId?: string }
+  | { kind: 'TaskNotificationXml'; toolUseId: string; status: 'completed' | 'failed'; summary?: string; taskId?: string; totalTokens?: number; toolUses?: number; durationMs?: number }
   | {
       // CliTaskUpdatedMessage patch — wire-safe TaskState changes
       // (status, description, end_time, error, is_backgrounded, …).
@@ -198,6 +199,14 @@ interface ParsedTaskNotification {
   toolUseId: string;
   status: 'completed' | 'failed';
   summary?: string;
+  /** From the `<usage>` block. Since CLI 2.1.232 backgrounds agent spawns by
+   *  default, this is the only carrier of a subagent's run stats that reaches
+   *  the JSONL: the async-launch ACK's `toolUseResult` has no totals for
+   *  `readSubagentMeta` to read, and no structured `task_notification` line is
+   *  written. Absent on older/other carriers, hence all-optional. */
+  totalTokens?: number;
+  toolUses?: number;
+  durationMs?: number;
 }
 
 function parseTaskNotificationXml(text: string): ParsedTaskNotification | null {
@@ -205,6 +214,12 @@ function parseTaskNotificationXml(text: string): ParsedTaskNotification | null {
     const re = new RegExp(`<${name}>([\\s\\S]*?)</${name}>`);
     const m = text.match(re);
     return m ? m[1].trim() : undefined;
+  };
+  const numTag = (name: string): number | undefined => {
+    const raw = tag(name);
+    if (raw === undefined) return undefined;
+    const n = Number.parseInt(raw, 10);
+    return Number.isFinite(n) ? n : undefined;
   };
   const toolUseId = tag('tool-use-id');
   if (!toolUseId) return null;
@@ -214,6 +229,11 @@ function parseTaskNotificationXml(text: string): ParsedTaskNotification | null {
     toolUseId,
     status: statusRaw === 'completed' ? 'completed' : 'failed',
     summary: tag('summary'),
+    // `subagent_tokens`, not `total_tokens` — the XML block spells these
+    // differently from the structured `task_notification` usage object.
+    totalTokens: numTag('subagent_tokens'),
+    toolUses: numTag('tool_uses'),
+    durationMs: numTag('duration_ms'),
   };
 }
 
@@ -251,6 +271,41 @@ function forwardedNarration(raw: Record<string, unknown>): string {
   return chosen.length > FORWARDED_TEXT_MAX_LENGTH
     ? `${chosen.slice(0, FORWARDED_TEXT_MAX_LENGTH)}…`
     : chosen;
+}
+
+// The ACK the CLI returns the instant a backgrounded agent launches. Prefix
+// only: the full string continues into an instruction not to quote it and the
+// agentId, both of which have already changed wording once.
+const ASYNC_LAUNCH_ACK_PREFIX = 'Async agent launched';
+
+/**
+ * Does the tool_result line carry the CLI's async-launch enrichment?
+ *
+ * `toolUseResult` is written onto the on-disk JSONL line (never the live
+ * stream-json output), so this is the reliable signal in TUI mode — which
+ * tails that file — and absent in chat mode. `status: 'async_launched'` and
+ * `isAsync: true` ride together; either alone is enough.
+ */
+function isAsyncLaunchEnrichment(raw: unknown): boolean {
+  const tur = (raw as { toolUseResult?: unknown } | null)?.toolUseResult;
+  if (!tur || typeof tur !== 'object') return false;
+  const o = tur as { status?: unknown; isAsync?: unknown };
+  return o.status === 'async_launched' || o.isAsync === true;
+}
+
+/**
+ * Fallback for the live stream, where the enrichment above never arrives.
+ *
+ * `content` rides both shapes: a bare string, or the content-block array
+ * (`[{type:'text', text}]`) that a real 2.1.232 transcript persists. Only the
+ * first text block matters — the ACK leads with its marker sentence.
+ */
+function isAsyncLaunchText(content: unknown): boolean {
+  if (typeof content === 'string') return content.startsWith(ASYNC_LAUNCH_ACK_PREFIX);
+  if (!Array.isArray(content)) return false;
+  const first = content.find((b) => (b as { type?: unknown })?.type === 'text');
+  const text = (first as { text?: unknown } | undefined)?.text;
+  return typeof text === 'string' && text.startsWith(ASYNC_LAUNCH_ACK_PREFIX);
 }
 
 /**
@@ -317,6 +372,7 @@ export function messagesToEvents(messages: JsonlNode[]): SubagentEvent[] {
     if (m.kind === 'user') {
       const content = (raw as { message?: { content?: unknown } }).message?.content;
       if (Array.isArray(content)) {
+        const enrichedAck = isAsyncLaunchEnrichment(raw);
         for (const block of content as MessageContentBlock[]) {
           if (block.type !== 'tool_result') continue;
           const id = block.tool_use_id;
@@ -325,7 +381,7 @@ export function messagesToEvents(messages: JsonlNode[]): SubagentEvent[] {
             kind: 'ToolResult',
             toolUseId: id,
             isError: block.is_error === true,
-            content: typeof block.content === 'string' ? block.content : undefined,
+            isBackgroundAck: enrichedAck || isAsyncLaunchText(block.content),
           });
         }
         continue;
@@ -407,6 +463,9 @@ export function messagesToEvents(messages: JsonlNode[]): SubagentEvent[] {
           status: parsed.status,
           summary: parsed.summary,
           taskId: parsed.taskId,
+          totalTokens: parsed.totalTokens,
+          toolUses: parsed.toolUses,
+          durationMs: parsed.durationMs,
         });
       }
     }
@@ -534,6 +593,13 @@ export function applyEvents(events: SubagentEvent[]): Map<string, SubagentState>
         // is_error=true ACK counts (the dispatch itself failed); a success
         // ACK is ignored, and we wait for TaskNotification(Xml) or the
         // inferred-closure post-pass.
+        //
+        // `isBackgroundAck` is the same rule keyed off the result rather than
+        // the dispatch, and since CLI 2.1.232 it is the only one that fires
+        // for a plain agent spawn: backgrounding became the default, so the
+        // input no longer carries `run_in_background`. Backfilling
+        // `isBackground` keeps the row's later events on the background path.
+        if (ev.isBackgroundAck && !ev.isError) s.isBackground = true;
         if (s.isBackground && !ev.isError) break;
         s.status = ev.isError ? 'failed' : 'completed';
         s.closureSource = 'tool_result';
@@ -561,10 +627,20 @@ export function applyEvents(events: SubagentEvent[]): Map<string, SubagentState>
         break;
       }
       case 'TaskNotificationXml': {
-        const s = byId.get(ev.toolUseId);
-        // Only act when we know the dispatch — never invent orphan subs
-        // from a notification XML alone, since they routinely refer to
-        // tool_uses from earlier turns we may not have in scope.
+        // Resuming a finished agent (SendMessage) produces a notification
+        // keyed to the SendMessage's tool_use_id, which dispatched no row —
+        // but its `<task-id>` is still the original agent's, so fall back to
+        // that. Verified against a real resume, where the second run's totals
+        // were otherwise dropped on the floor.
+        let s = byId.get(ev.toolUseId);
+        if (!s && ev.taskId) {
+          for (const candidate of byId.values()) {
+            if (candidate.taskId === ev.taskId) { s = candidate; break; }
+          }
+        }
+        // Only act when we know the row — never invent orphan subs from a
+        // notification XML alone, since they routinely refer to tool_uses
+        // from earlier turns we may not have in scope.
         if (!s) break;
         // XML carrier outranks ToolResult but loses to structured
         // TaskNotification. Skip if the row already finalised via the
@@ -577,6 +653,11 @@ export function applyEvents(events: SubagentEvent[]): Map<string, SubagentState>
         s.endedAt = new Date().toISOString();
         const finalEntry: SubagentProgressEntry = {
           description: ev.summary ?? s.description ?? '',
+          // Fall back to the running tallies when the XML omits `<usage>`, so
+          // a carrier without stats doesn't blank numbers the row already had.
+          totalTokens: ev.totalTokens ?? s.latest?.totalTokens,
+          toolUses: ev.toolUses ?? s.latest?.toolUses,
+          durationMs: ev.durationMs ?? s.latest?.durationMs,
         };
         s.events.push(finalEntry);
         s.latest = finalEntry;

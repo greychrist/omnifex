@@ -78,6 +78,9 @@ export interface Subagent {
 export interface SubagentMetaInput {
   agentId?: string;
   agentType?: string;
+  /** The subagent's own description, from its sidecar. Only load-bearing for
+   *  nested rows, which have no dispatch in the main stream to label them. */
+  description?: string;
   model?: string;
   effort?: string;
   /** agentId of the dispatching subagent; set only at spawnDepth >= 2. */
@@ -86,6 +89,45 @@ export interface SubagentMetaInput {
   totalTokens?: number;
   durationMs?: number;
   toolUseCount?: number;
+}
+
+/** Closing status + run stats carried by one `task-notification`. */
+export interface NotificationStats {
+  status: 'completed' | 'failed';
+  summary?: string;
+  totalTokens?: number;
+  toolUses?: number;
+  durationMs?: number;
+}
+
+/**
+ * Index every XML `task-notification` in the stream by its `tool_use_id`.
+ *
+ * The reducer deliberately drops notifications that name no dispatched row,
+ * which is exactly the shape a NESTED subagent's notification takes: its
+ * dispatch was issued inside the parent's transcript, so the main stream never
+ * sees it. The row for it is synthesised later from sidecars — by which point
+ * the reducer has moved on. This index lets `applySubagentMeta` reunite the
+ * two. Costs one extra translation pass; callers should memoise on `messages`
+ * as they already do for `deriveSubagents`.
+ */
+export function notificationStatsByToolUse(
+  messages: JsonlNode[],
+): Record<string, NotificationStats> {
+  const out: Record<string, NotificationStats> = {};
+  for (const ev of messagesToEvents(messages)) {
+    if (ev.kind !== 'TaskNotificationXml') continue;
+    // Last notification wins: a resumed agent re-notifies with its running
+    // totals, and the newest is the one worth showing.
+    out[ev.toolUseId] = {
+      status: ev.status,
+      summary: ev.summary,
+      totalTokens: ev.totalTokens,
+      toolUses: ev.toolUses,
+      durationMs: ev.durationMs,
+    };
+  }
+  return out;
 }
 
 /**
@@ -97,6 +139,7 @@ export interface SubagentMetaInput {
 export function applySubagentMeta(
   subs: Subagent[],
   meta: Record<string, SubagentMetaInput>,
+  notifications: Record<string, NotificationStats> = {},
 ): Subagent[] {
   const merged = subs.map((sub) => {
     const m = meta[sub.toolUseId];
@@ -131,19 +174,38 @@ export function applySubagentMeta(
     // An orphan has nothing to attach to — a floating row with no context
     // reads worse than omitting it.
     if (!parent) continue;
+    // The child's own task-notification, if the main stream carried one. It
+    // is the only source of a nested agent's status and run stats.
+    const notif = notifications[toolUseId];
+    const description = m.description ?? parent.description;
+    const latest: SubagentProgressEntry | null = notif
+      ? {
+          description: notif.summary ?? description,
+          totalTokens: notif.totalTokens,
+          toolUses: notif.toolUses,
+          durationMs: notif.durationMs,
+        }
+      : null;
     nested.push({
       parent,
       row: {
         toolUseId,
         parentToolUseId: parent.toolUseId,
         agentType: m.agentType,
-        description: parent.description,
-        // Neither the sidecar nor any stream carries a nested agent's status.
-        // The parent's is a sound stand-in: a child cannot outlive the Task
-        // that dispatched it, so a returned parent means the child is done.
-        status: parent.status,
-        latest: null,
-        events: [],
+        // The child's own label when the sidecar carries one; the parent's
+        // only as a fallback, which otherwise renders siblings identically.
+        description,
+        // Prefer the child's own notification. Without one we are guessing:
+        // since CLI 2.1.232 an agent backgrounds its own children and returns
+        // without them, so a finished parent no longer implies a finished
+        // child (observed: parent done at 24s, children at 74s and 82s).
+        // `completed_inferred` renders with the distinct icon that says the
+        // closure was deduced rather than reported.
+        status: notif?.status ?? (parent.status === 'running' ? 'running' : 'completed_inferred'),
+        closureSource: notif ? 'task_notification_xml' : undefined,
+        summary: notif?.summary,
+        latest,
+        events: latest ? [latest] : [],
         colorIndex: parent.colorIndex,
         model: m.model,
         effort: m.effort,

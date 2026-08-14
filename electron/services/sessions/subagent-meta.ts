@@ -28,6 +28,11 @@ import { encodeProjectKey } from './summary-query';
 export interface SubagentMeta {
   agentId?: string;
   agentType?: string;
+  /** The subagent's own task description, from its sidecar. The main stream
+   *  only describes dispatches it can see, so for a nested subagent this is
+   *  the only label available — without it the renderer falls back to the
+   *  parent's description and sibling rows become indistinguishable. */
+  description?: string;
   /** The model the subagent ran on, from the last assistant turn in its
    *  transcript. Undefined when the subagent file is absent/unreadable. */
   model?: string;
@@ -127,6 +132,7 @@ interface SubagentSidecar {
   agentId: string;
   toolUseId: string;
   agentType?: string;
+  description?: string;
   parentAgentId?: string;
   spawnDepth?: number;
 }
@@ -157,6 +163,7 @@ function readSidecars(deps: SubagentMetaFs, subagentsDir: string): SubagentSidec
     const o = parsed as {
       toolUseId?: unknown;
       agentType?: unknown;
+      description?: unknown;
       parentAgentId?: unknown;
       spawnDepth?: unknown;
     };
@@ -167,6 +174,7 @@ function readSidecars(deps: SubagentMetaFs, subagentsDir: string): SubagentSidec
       agentId: match[1],
       toolUseId: o.toolUseId,
       agentType: typeof o.agentType === 'string' ? o.agentType : undefined,
+      description: typeof o.description === 'string' ? o.description : undefined,
       parentAgentId: typeof o.parentAgentId === 'string' ? o.parentAgentId : undefined,
       spawnDepth: typeof o.spawnDepth === 'number' ? o.spawnDepth : undefined,
     });
@@ -206,6 +214,7 @@ export function readSubagentMeta(
     out[s.toolUseId] = {
       agentId: s.agentId,
       agentType: s.agentType,
+      description: s.description,
       parentAgentId: s.parentAgentId,
       spawnDepth: s.spawnDepth,
       model: profile.model,

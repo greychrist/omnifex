@@ -710,6 +710,27 @@ html.is-macos body {
   padding-left: 1.625em;
 }
 
+/* Markers. Tailwind's Preflight resets `ol, ul { list-style: none }`, and this
+   prose CSS is hand-rolled — it set the indent above but never restored the
+   markers, so every markdown list in the app rendered as flush-left prose with
+   its numbering silently dropped. Nesting levels alternate the way Tailwind
+   Typography does, so a nested list is still distinguishable from its parent. */
+.prose ul { list-style-type: disc; }
+.prose ul ul { list-style-type: circle; }
+.prose ul ul ul { list-style-type: square; }
+.prose ol { list-style-type: decimal; }
+.prose ol ol { list-style-type: lower-alpha; }
+.prose ol ol ol { list-style-type: lower-roman; }
+
+.prose li::marker {
+  color: var(--color-muted-foreground);
+}
+
+/* GFM task lists ship their own checkbox — a bullet beside it reads as noise. */
+.prose li:has(> input[type="checkbox"]) {
+  list-style-type: none;
+}
+
 .prose li {
   margin-top: 0.5em;
   margin-bottom: 0.5em;

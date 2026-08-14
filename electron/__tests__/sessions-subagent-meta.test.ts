@@ -231,6 +231,15 @@ describe('readSubagentMeta — nested subagents via .meta.json sidecars', () => 
     expect(meta.toolu_child.agentType).toBe('general-purpose');
   });
 
+  it('reads each subagent its own description', () => {
+    // Without this the renderer has nothing to label a nested row with and
+    // falls back to the parent's description — verified against a real
+    // depth-2 run, where both children rendered as the parent's task.
+    const meta = read();
+    expect(meta.toolu_child.description).toBe('Count txt files');
+    expect(meta.toolu_parent.description).toBe('Nested subagent txt count');
+  });
+
   it('still merges main-stream totals onto the agent that has them', () => {
     // The sidecar carries no token/duration counts — those only exist on the
     // dispatching Task's toolUseResult, which only depth-1 agents get.

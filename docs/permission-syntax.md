@@ -33,6 +33,7 @@ Bash                     → all bash commands
 - Space before `*` enforces word boundary: `Bash(ls *)` matches `ls -la` but NOT `lsof`. `Bash(ls*)` matches both.
 - Shell operators are respected: `Bash(safe-cmd *)` does NOT cover `safe-cmd && other-cmd`. Each subcommand needs its own rule.
 - Argument-constraining rules are fragile (option reordering, redirects, variable expansion break them). For URL filtering, deny `curl`/`wget` and use `WebFetch(domain:...)`.
+- Input redirections are permission-checked like the argument spelling they stand in for, on every platform (CLI ≥2.1.232): `cmd < secrets.env` is checked as a read of `secrets.env`. A `Bash(...)` rule that covers the command does not cover the file it reads, so expect a separate prompt.
 
 ## Read / Edit
 

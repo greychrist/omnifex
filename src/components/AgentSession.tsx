@@ -83,7 +83,7 @@ import { GitBranchBadge } from "./claude-code-session/GitBranchBadge";
 import { GitWatchStatusIcon } from "./claude-code-session/GitWatchStatusIcon";
 import { resolveBranchColors } from '@/lib/branchColors';
 import type { BranchColor } from '@/lib/api';
-import { deriveSubagents, applySubagentMeta, createSubagentColorAllocator, type SubagentMetaInput } from "@/lib/subagentStreams";
+import { deriveSubagents, applySubagentMeta, createSubagentColorAllocator, notificationStatsByToolUse, type SubagentMetaInput } from "@/lib/subagentStreams";
 import { getTaskList, summarizeTaskList } from "@/lib/taskList";
 import { deriveWaitingFor, type TabWaitingFor } from "@/lib/tabWaitingFor";
 import { SubagentBar } from "./SubagentBar";
@@ -869,9 +869,14 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   const [subagentMeta, setSubagentMeta] = useState<Record<string, SubagentMetaInput>>({});
   const subagentMetaRef = useRef(subagentMeta);
   subagentMetaRef.current = subagentMeta;
+  // A nested subagent's task-notification lands in this stream but names no
+  // row the reducer knows (its dispatch happened inside the parent's own
+  // transcript), so it is indexed here and reunited with the synthesised row
+  // during the meta merge.
+  const notificationStats = useMemo(() => notificationStatsByToolUse(messages), [messages]);
   const subagents = useMemo(
-    () => applySubagentMeta(baseSubagents, subagentMeta),
-    [baseSubagents, subagentMeta],
+    () => applySubagentMeta(baseSubagents, subagentMeta, notificationStats),
+    [baseSubagents, subagentMeta, notificationStats],
   );
   // Stable signature of completed rows — drives the meta fetch without
   // depending on `subagentMeta` itself (which the fetch sets), so resolving

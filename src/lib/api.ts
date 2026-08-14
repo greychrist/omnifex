@@ -614,6 +614,9 @@ export interface SessionPluginInfo {
 export interface SubagentMetaEntry {
   agentId?: string;
   agentType?: string;
+  /** The subagent's own description, from its sidecar — the only label a
+   *  nested row has, since its dispatch never reaches the main stream. */
+  description?: string;
   model?: string;
   /** The subagent's own reasoning effort, when it differs from the session
    *  default. Undefined otherwise. */
