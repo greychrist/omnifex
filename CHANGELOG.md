@@ -5,6 +5,41 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.129] — 2026-08-14
+
+Two measured fixes to the Brain: what a search hit actually costs, and which
+section curation compresses. Both came out of reading the live vault rather
+than the design docs, and both corrected an assumption the specs had baked in.
+
+### Changed
+
+- **Search hits are filled by section priority instead of being cut at 2000
+  characters.** Note bodies over the cap were served as a plain prefix, and
+  because notes render `Connected to` second, 47% of the vault answered a query
+  with a summary paragraph and a truncated list of wikilinks — confidently
+  formatted, and carrying none of the facts the query asked for. `brain_search`
+  now fills the budget in priority order (Summary, Key facts, Decisions,
+  Timeline, then the human sections), drops `Connected to` from inline bodies
+  entirely, and spends what is left on the leading lines of the best section
+  too large to fit whole. Sections that were left out are named in a footer,
+  and a part-shown section says so inside itself. Bodies that already fit are
+  still served verbatim.
+- **Curation now compresses `Decisions`, not just `Timeline`.** A note gained
+  one Timeline entry per indexed session, so the gate watched the
+  slowest-growing section and had fired once in a month. Decisions accumulate
+  several per session and every one of them is dated, so they collapse by the
+  same deterministic rule — the fold picks the bullets and computes the span,
+  the model only writes prose about a span it was handed. A note now qualifies
+  on either section independently, and a run is ordered by both together.
+- **`Key facts` is deliberately left append-only.** It is the largest section
+  in the vault and the obvious target, but none of its bullets carry a date,
+  its only available order is age, and for a fact age predicts durability
+  rather than staleness — collapsing oldest-first would delete the
+  best-established facts first. The reasoning and two candidate directions are
+  recorded rather than papered over.
+
+Installers remain **unsigned**.
+
 ## [0.4.128] — 2026-08-14
 
 A changelog review pass against Claude Code 2.1.233. The drift badge is the
