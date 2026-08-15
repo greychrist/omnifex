@@ -9,7 +9,8 @@
   <p>
     Route projects to specific accounts, run interactive Claude Code sessions in a rich chat
     or full terminal view, manage MCP servers, slash commands, hooks and permissions, and
-    track token usage and rate limits — all without leaving the app.
+    track token usage and rate limits — all without leaving the app. Then give Claude a
+    persistent, searchable memory of everything you have already worked out.
   </p>
 </div>
 
@@ -25,6 +26,20 @@ OmniFex is **macOS (Apple Silicon) only** and ships as an **unsigned** build. ma
 The app drives the **Claude Code CLI** directly (via `node-pty` for terminal mode and `child_process` for structured streaming), so a working, authenticated Claude Code install is required. There is no web/REST mode and OmniFex bundles no model of its own.
 
 ## Features
+
+### The Brain — persistent memory across sessions
+
+A new Claude Code session starts knowing nothing about why your code is shaped the way it is, what you already tried, or what broke last time. Its built-in auto-memory helps, but is scoped to the repo you are currently sitting in. Your transcripts hold the rest of the answers, and in practice they are write-only — nobody reopens a `.jsonl` file.
+
+The Brain is a per-account **memory vault** distilled from those transcripts.
+
+- **Distilled, not archived.** Finished sessions, repo instruction files (`CLAUDE.md`, `AGENTS.md`), and Claude Code's own auto-memory are condensed into short Markdown notes — the decisions, the constraints, and the gotchas that cost real time — instead of being stored as raw transcripts.
+- **Queryable mid-session.** The vault is exposed to the CLI as an MCP server, so Claude searches it on its own initiative (`brain_search`, `brain_read`) and can save durable facts back (`brain_remember`). A `/recall` dialog and a Brain tab give you the same view by hand.
+- **Cross-project by design.** One vault spans every project under an account, so a constraint learned in one repo surfaces while you are working in another — the thing per-repo memory structurally cannot do.
+- **Plain Markdown you own.** Notes live in `~/Documents/OmniFex Brain/<account>/`, git-versioned, deliberately outside app storage so they open in Obsidian and back up normally. The search index is derived and disposable; delete it and it rebuilds.
+- **Per-account isolation.** Each account gets its own vault, enforced by the MCP server's process environment rather than by a query filter — a work vault is not reachable from a personal session, by construction.
+- **Auxiliary by contract.** Indexing is throttled, yields entirely while an interactive session is open, and never blocks the UI or consumes rate limit you need for real work. Every model call it makes is recorded in an append-only cost ledger you can read in the app.
+- **Nothing is auto-injected.** The Brain never stuffs itself into your prompts. It costs context only when something actually asks it a question.
 
 ### Multi-account routing
 - Bind projects to specific Claude accounts using path-prefix rules, with **longest-match-wins** resolution and explicit per-project overrides.
@@ -143,6 +158,7 @@ omnifex/
 │   │   ├── usage*.ts      #   usage aggregation + /usage scraping
 │   │   ├── rate-limits.ts #   rate-limit snapshots & notifications
 │   │   ├── mcp.ts         #   MCP management
+│   │   ├── brain/         #   the memory vault: sources, distill, merge, index
 │   │   └── …              #   slash commands, hooks, lima, git, updater, …
 │   └── __tests__/         # Vitest suites for main-process code
 ├── src/                   # Renderer (React)
@@ -159,6 +175,7 @@ omnifex/
 - All persistence is local (SQLite + your existing Claude/Codex config dirs). No telemetry, no analytics, no remote logging.
 - OmniFex talks to model providers only through the CLI binaries you install and authenticate; it sends nothing to Anthropic or OpenAI itself.
 - Per-session permission gating for tool use, mirroring Claude Code's native permission model.
+- Brain vaults are plain files on your disk, one per account, and never leave it. Distilling a session is a call to the CLI under that account's own credentials; the scratch transcripts those calls produce are swept, and the vault a session can reach is fixed by the process it was launched with.
 
 ## License
 
