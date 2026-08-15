@@ -5,6 +5,39 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.130] — 2026-08-15
+
+### Fixed
+
+- **Per-message token counts reported the uncached remainder as the whole
+  input.** The readouts rendered the API's `input_tokens` field verbatim, but
+  with prompt caching — which the CLI uses on every request — that field counts
+  only the input that missed cache; the rest arrives under
+  `cache_read_input_tokens` and `cache_creation_input_tokens`. Measured across a
+  live 296-message transcript, the field read `2` in 293 of them and `1` in the
+  other three, so a turn that actually read 45,435 tokens displayed as `2 in`.
+  The assistant completion band, the per-message `Tokens:` line, and the
+  Markdown export now report the true total.
+- **Cache-write tokens were not shown anywhere**, despite routinely being the
+  largest component of a turn's input and the most expensive per token. The
+  completion band now shows the cache read and cache write halves alongside the
+  total, so the figure can be reconciled against its parts.
+
+### Changed
+
+- Token counts in the completion band and `Tokens:` line are thousand-separated,
+  since they are now whole-input totals rather than one- and two-digit
+  remainders.
+- README now documents the Brain, context tracking and compaction, cost history,
+  and the editable prompt templates — four shipped subsystems that had no
+  presence in it.
+
+Costs were never affected by the token-count bug: cost computation has always
+billed input, output, cache read and cache write separately, which is why this
+surfaced as a display problem rather than a billing one.
+
+Installers remain **unsigned**.
+
 ## [0.4.129] — 2026-08-14
 
 Two measured fixes to the Brain: what a search hit actually costs, and which
