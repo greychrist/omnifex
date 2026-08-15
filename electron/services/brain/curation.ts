@@ -10,10 +10,22 @@ import type { RunCost } from './sources/state';
  * model, retry-once runner.
  */
 
-const CurationResultSchema = z.object({
-  collapsed: z.string().trim().min(1),
-  promotedFacts: z.array(z.string()).default([]),
-});
+/**
+ * Neither prose field is individually required, because a note qualifying on
+ * one section alone is shown one block and has nothing to say about the other.
+ * A reply with BOTH empty is still a parse failure: it would collapse spans and
+ * put nothing in their place, which is the one outcome worse than not curating.
+ */
+const CurationResultSchema = z
+  .object({
+    collapsed: z.string().trim().default(''),
+    collapsedDecisions: z.string().trim().default(''),
+    promotedFacts: z.array(z.string()).default([]),
+  })
+  .refine((r) => r.collapsed !== '' || r.collapsedDecisions !== '', {
+    message: 'expected prose for at least one collapsed span',
+    path: ['collapsed'],
+  });
 
 /**
  * Compile-time proof that the schema and the pure fold's input agree.
@@ -45,11 +57,16 @@ export class CurationParseError extends Error {
  */
 export const CURATION_MODEL = 'claude-opus-5';
 
-/** What the model is shown. `entries` is exactly what the fold will remove. */
+/**
+ * What the model is shown. `entries` and `decisions` are exactly what the fold
+ * will remove — never a superset, never a differently-computed span.
+ */
 export interface CurationInput {
   title: string;
   noteType: string;
   entries: string[];
+  /** Dated `Decisions` bullets being collapsed. Empty when none are. */
+  decisions?: string[];
 }
 
 export function parseCuration(raw: string): CurationResult {
@@ -85,17 +102,28 @@ export function parseCuration(raw: string): CurationResult {
  * the note strictly worse off.
  */
 export function buildCurationPrompt(input: CurationInput): string {
-  return `You are compressing the history section of one note in an engineering
-knowledge vault, so that retrieving the note costs less context.
+  const decisions = input.decisions ?? [];
+  // A section with nothing to collapse is omitted entirely rather than shown
+  // empty. Asking for a summary of an absent span invites the model to invent
+  // one, and its prose would then be folded in beside a computed date range.
+  const blocks = [
+    input.entries.length > 0 ? `TIMELINE ENTRIES BEING COLLAPSED\n${input.entries.join('\n')}` : '',
+    decisions.length > 0 ? `DECISIONS BEING COLLAPSED\n${decisions.join('\n')}` : '',
+  ].filter((block) => block !== '');
+
+  return `You are compressing one note in an engineering knowledge vault, so that
+retrieving the note costs less context.
 
 Return ONLY a JSON object matching this shape, with no commentary:
 
-{"collapsed":string,"promotedFacts":[string]}
+{"collapsed":string,"collapsedDecisions":string,"promotedFacts":[string]}
 
 Rules:
-- \`collapsed\` is 1-3 sentences of plain prose covering the entries below as a
-  whole. It replaces them. Write what a developer would still need in six
+- \`collapsed\` covers the TIMELINE entries below. \`collapsedDecisions\` covers
+  the DECISIONS below. Each is 1-3 sentences of plain prose covering that block
+  as a whole, and replaces it. Write what a developer would still need in six
   months: what was decided, what changed, what it led to.
+- If a block is absent below, return "" for its field. Do not invent one.
 - \`promotedFacts\` are durable facts that recur across these entries and are
   worth keeping as standalone facts once the entries are gone. Return [] if
   there are none. Do not restate the prose.
@@ -106,8 +134,7 @@ Rules:
 NOTE
 ${input.noteType}: ${input.title}
 
-ENTRIES BEING COLLAPSED
-${input.entries.join('\n')}`;
+${blocks.join('\n\n')}`;
 }
 
 /**

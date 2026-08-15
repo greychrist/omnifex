@@ -33,7 +33,13 @@ import { resolveEntityPath, type ExistingNote } from './resolve';
 import { projectLinkFor } from './project';
 import { NOTE_FOLDERS } from './types';
 import { merge } from './merge';
-import { MAX_NOTES_PER_RUN, collapsibleEntries, curate, qualifies } from './curate';
+import {
+  MAX_NOTES_PER_RUN,
+  collapsibleDecisions,
+  collapsibleEntries,
+  curate,
+  qualifies,
+} from './curate';
 import type { Curator } from './curation';
 import { computeVaultStats, type VaultStats } from './stats';
 import { isExcludedProject, parseDecisions, type ProjectDecisions } from './exclusions';
@@ -397,8 +403,9 @@ export interface BrainService {
    */
   curateNote(accountId: number, relPath: string): Promise<CurateResult>;
   /**
-   * Queue the notes most worth compressing, longest Timeline first, capped at
-   * `MAX_NOTES_PER_RUN`. Returns how many were queued.
+   * Queue the notes most worth compressing, most collapsible bullets first
+   * across `Timeline` and `Decisions` together, capped at `MAX_NOTES_PER_RUN`.
+   * Returns how many were queued.
    *
    * Synchronous, unlike `backfill`: reading a vault is, and `discover()` is
    * what makes that one async.
@@ -1653,11 +1660,17 @@ export function createBrainService(
       }
 
       const entries = collapsibleEntries(note);
+      const decisions = collapsibleDecisions(note);
       // Deliberately unguarded: a rejection here propagates to the worker,
       // which records the failure against the queue entry. The note is not
       // written, so a failed curation costs tokens and not history.
       const result = await opts.curator(
-        { title: handle.vault.noteTitle(relPath), noteType: note.frontmatter.type, entries },
+        {
+          title: handle.vault.noteTitle(relPath),
+          noteType: note.frontmatter.type,
+          entries,
+          decisions,
+        },
         account.config_dir,
       );
 
@@ -1693,11 +1706,16 @@ export function createBrainService(
           continue;
         }
         if (!qualifies(note, date)) continue;
-        candidates.push({ relPath, length: collapsibleEntries(note).length });
+        candidates.push({
+          relPath,
+          length: collapsibleEntries(note).length + collapsibleDecisions(note).length,
+        });
       }
 
-      // Worst offenders first: the longest Timeline is where compression buys
-      // the most context back. Ties break on path so a run is deterministic.
+      // Worst offenders first, counting BOTH collapsible sections: the note
+      // with 38 decisions and 7 Timeline entries is where compression buys the
+      // most context back, and ranking on Timeline alone would bury it. Ties
+      // break on path so a run is deterministic.
       candidates.sort((a, b) => b.length - a.length || a.relPath.localeCompare(b.relPath));
 
       const chosen = candidates.slice(0, MAX_NOTES_PER_RUN);

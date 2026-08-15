@@ -34,6 +34,39 @@ function note(body: string, project?: string): ParsedNote {
   };
 }
 
+/**
+ * A note in the seven-section shape merge.ts renders, sized past MAX_BODY_CHARS
+ * with the bulk sitting in `Connected to` — the real shape of the vault's
+ * largest notes, where wikilinks and Key facts crowd out everything a prefix
+ * slice would reach.
+ */
+function sectioned(): string {
+  const links = Array.from({ length: 80 }, (_, i) => `- [[Subsystems/WIKILINK-MARKER-${String(i)}]]`);
+  return [
+    '# Big',
+    '',
+    '## Summary',
+    'SUMMARY-MARKER the drain worker yields to interactive sessions.',
+    '',
+    '## Connected to',
+    ...links,
+    '',
+    '## Timeline',
+    '- **2026-08-01**: TIMELINE-MARKER wired the queue.',
+    '',
+    '## Decisions',
+    '- **2026-08-01**: DECISION-MARKER one worker drains, never two.',
+    '',
+    '## Key facts',
+    '- KEYFACT-MARKER drain concurrency is 1',
+    '',
+    '## Open items',
+    '',
+    '## Assistant notes',
+    '',
+  ].join('\n');
+}
+
 /** A tools instance bound to one vault, exactly as the server process binds one. */
 function toolsFor(root: string) {
   let n = 0;
@@ -136,6 +169,132 @@ describe('brain MCP tools', () => {
       for (const h of res.hits) {
         if (h.body === null) expect(h.bodyTruncated).toBe(true);
       }
+    });
+
+    it('spends an over-cap body on Key facts and Decisions, not the wikilink dump', () => {
+      // The failure this prevents, measured on the real vault: Projects/OmniFex.md
+      // is 25KB whose first 2000 characters are Summary plus a truncated
+      // `Connected to` list. A prefix slice therefore answered every search with
+      // navigation links and no content — confidently formatted and useless.
+      const vault = createVault(vaultA);
+      vault.writeNote('Subsystems/Big.md', note(sectioned()));
+      createVaultIndex(join(vaultA, '.omnifex', 'index.db')).rebuild(vault);
+
+      const res = toolsFor(vaultA).search({ query: 'drain' });
+      expect(res.ok).toBe(true);
+      if (!res.ok) return;
+      const big = res.hits.find((h) => h.notePath === 'Subsystems/Big.md');
+      expect(big).toBeDefined();
+      expect(big!.body!.length).toBeLessThanOrEqual(MAX_BODY_CHARS);
+      expect(big!.bodyTruncated).toBe(true);
+      expect(big!.body).toContain('KEYFACT-MARKER');
+      expect(big!.body).toContain('DECISION-MARKER');
+      expect(big!.body).toContain('SUMMARY-MARKER');
+    });
+
+    it('fills the budget with part of a section too large to fit whole', () => {
+      // Measured on the real vault: Key facts is 14KB of Projects/OmniFex.md's
+      // 25KB. Keeping only sections that fit entire leaves that note spending
+      // 560 of its 2000 characters on the Summary and dropping every fact.
+      const vault = createVault(vaultA);
+      const facts = Array.from({ length: 120 }, (_, i) => `- FACT-${String(i)} drain detail`);
+      vault.writeNote(
+        'Subsystems/Fat.md',
+        note(['# Fat', '', '## Summary', 'drain summary', '', '## Key facts', ...facts, ''].join('\n')),
+      );
+      createVaultIndex(join(vaultA, '.omnifex', 'index.db')).rebuild(vault);
+
+      const res = toolsFor(vaultA).search({ query: 'drain' });
+      expect(res.ok).toBe(true);
+      if (!res.ok) return;
+      const fat = res.hits.find((h) => h.notePath === 'Subsystems/Fat.md')!;
+      expect(fat.body!.length).toBeLessThanOrEqual(MAX_BODY_CHARS);
+      // The whole point: most of the budget goes to facts, not to whitespace.
+      expect(fat.body!.length).toBeGreaterThan(MAX_BODY_CHARS * 0.8);
+      expect(fat.body).toContain('## Key facts');
+      expect(fat.body).toContain('FACT-0');
+      expect(fat.bodyTruncated).toBe(true);
+    });
+
+    it('marks a part-shown section as cut rather than listing it as omitted', () => {
+      const vault = createVault(vaultA);
+      const facts = Array.from({ length: 120 }, (_, i) => `- FACT-${String(i)} drain detail`);
+      vault.writeNote(
+        'Subsystems/Fat.md',
+        note(['# Fat', '', '## Summary', 'drain summary', '', '## Key facts', ...facts, ''].join('\n')),
+      );
+      createVaultIndex(join(vaultA, '.omnifex', 'index.db')).rebuild(vault);
+
+      const res = toolsFor(vaultA).search({ query: 'drain' });
+      expect(res.ok).toBe(true);
+      if (!res.ok) return;
+      const body = res.hits.find((h) => h.notePath === 'Subsystems/Fat.md')!.body!;
+      // Saying "Key facts omitted" while showing 40 of them would be a lie.
+      expect(body).not.toMatch(/sections omitted[^)]*Key facts/);
+      expect(body).toContain('more in this section');
+    });
+
+    it('drops Connected to from an over-cap body', () => {
+      // Wikilinks are navigation, not content. They are the single largest
+      // thing standing between the cap and the sections that answer a query.
+      const vault = createVault(vaultA);
+      vault.writeNote('Subsystems/Big.md', note(sectioned()));
+      createVaultIndex(join(vaultA, '.omnifex', 'index.db')).rebuild(vault);
+
+      const res = toolsFor(vaultA).search({ query: 'drain' });
+      expect(res.ok).toBe(true);
+      if (!res.ok) return;
+      const body = res.hits.find((h) => h.notePath === 'Subsystems/Big.md')!.body!;
+      expect(body).not.toContain('WIKILINK-MARKER');
+      expect(body).not.toContain('## Connected to');
+    });
+
+    it('names the sections it left out so an omission does not read as an empty one', () => {
+      // Every note has all seven sections by construction (merge.ts SECTION_ORDER),
+      // so a silently missing one reads as "nothing to say" rather than "not shown".
+      const vault = createVault(vaultA);
+      vault.writeNote('Subsystems/Big.md', note(sectioned()));
+      createVaultIndex(join(vaultA, '.omnifex', 'index.db')).rebuild(vault);
+
+      const res = toolsFor(vaultA).search({ query: 'drain' });
+      expect(res.ok).toBe(true);
+      if (!res.ok) return;
+      const body = res.hits.find((h) => h.notePath === 'Subsystems/Big.md')!.body!;
+      expect(body).toContain('sections omitted');
+      expect(body).toContain('Connected to');
+    });
+
+    it('serves a body that fits verbatim, Connected to and all', () => {
+      // Condensing is a response to the cap, not a rewrite of every note. Over
+      // half the vault fits, and those hits must keep arriving whole.
+      const vault = createVault(vaultA);
+      const small = '# Small\n\n## Connected to\n- [[Projects/omnifex]]\n\n## Key facts\n- drain fact\n';
+      vault.writeNote('Subsystems/Small.md', note(small));
+      createVaultIndex(join(vaultA, '.omnifex', 'index.db')).rebuild(vault);
+
+      const res = toolsFor(vaultA).search({ query: 'drain' });
+      expect(res.ok).toBe(true);
+      if (!res.ok) return;
+      const hit = res.hits.find((h) => h.notePath === 'Subsystems/Small.md');
+      expect(hit!.body).toBe(small);
+      expect(hit!.bodyTruncated).toBe(false);
+    });
+
+    it('falls back to a prefix for an over-cap body with no sections at all', () => {
+      // Auto-memory translations carry prose with no `## ` headings. Section
+      // selection has nothing to select, and must not return an empty body.
+      const vault = createVault(vaultA);
+      vault.writeNote('Notes/Freeform.md', note(`drain ${'z'.repeat(5000)}`));
+      createVaultIndex(join(vaultA, '.omnifex', 'index.db')).rebuild(vault);
+
+      const res = toolsFor(vaultA).search({ query: 'drain' });
+      expect(res.ok).toBe(true);
+      if (!res.ok) return;
+      const free = res.hits.find((h) => h.notePath === 'Notes/Freeform.md');
+      expect(free!.body!.length).toBeGreaterThan(MAX_BODY_CHARS / 2);
+      expect(free!.body!.length).toBeLessThanOrEqual(MAX_BODY_CHARS);
+      expect(free!.body!.startsWith('drain zzz')).toBe(true);
+      expect(free!.bodyTruncated).toBe(true);
     });
 
     it('degrades one unreadable note to a flagged hit instead of failing the search', () => {

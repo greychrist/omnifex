@@ -58,23 +58,41 @@ describe('buildCurationPrompt', () => {
 describe('parseCuration', () => {
   it('accepts a fenced reply with prose around it', () => {
     const raw = 'Sure!\n```json\n{"collapsed":"Early work.","promotedFacts":["a"]}\n```\nDone.';
-    expect(parseCuration(raw)).toEqual({ collapsed: 'Early work.', promotedFacts: ['a'] });
+    expect(parseCuration(raw)).toEqual({
+      collapsed: 'Early work.',
+      collapsedDecisions: '',
+      promotedFacts: ['a'],
+    });
   });
 
   it('defaults promotedFacts to an empty array', () => {
-    expect(parseCuration('{"collapsed":"x"}')).toEqual({ collapsed: 'x', promotedFacts: [] });
+    expect(parseCuration('{"collapsed":"x"}')).toEqual({
+      collapsed: 'x',
+      collapsedDecisions: '',
+      promotedFacts: [],
+    });
   });
 
   it('throws CurationParseError when there is no JSON object', () => {
     expect(() => parseCuration('I could not do that.')).toThrow(CurationParseError);
   });
 
-  it('throws CurationParseError when collapsed is missing', () => {
+  it('throws CurationParseError when both prose fields are missing', () => {
     expect(() => parseCuration('{"promotedFacts":[]}')).toThrow(CurationParseError);
   });
 
-  it('throws CurationParseError when collapsed is empty', () => {
+  it('throws CurationParseError when both prose fields are empty', () => {
     expect(() => parseCuration('{"collapsed":"   "}')).toThrow(CurationParseError);
+  });
+
+  it('accepts a reply carrying only the decisions span', () => {
+    // A note qualifying on Decisions alone is shown one block and has nothing
+    // to say about a Timeline span it was never given.
+    expect(parseCuration('{"collapsedDecisions":"Settled the flange."}')).toEqual({
+      collapsed: '',
+      collapsedDecisions: 'Settled the flange.',
+      promotedFacts: [],
+    });
   });
 });
 

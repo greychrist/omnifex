@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   COOLDOWN_DAYS,
+  MIN_DECISION_ENTRIES,
   MIN_TIMELINE_ENTRIES,
   RETAIN_RECENT,
+  RETAIN_RECENT_DECISIONS,
+  collapsibleDecisions,
   collapsibleEntries,
   curate,
   qualifies,
@@ -56,8 +59,71 @@ function noteWith(count: number, extra: Partial<ParsedNote['frontmatter']> = {})
 
 const RESULT = {
   collapsed: 'Early widget work: the flange was specified and then revised twice.',
+  collapsedDecisions: 'Settled the flange material and the revision cadence.',
   promotedFacts: ['The flange is revised roughly monthly.'],
 };
+
+/**
+ * A note carrying `count` dated Decisions and a short Timeline — the real shape
+ * of the vault's biggest notes, where decisions outnumber timeline entries 3-5x
+ * because a session yields one Timeline entry and several decisions.
+ */
+function decisionNote(
+  count: number,
+  timelineCount = 2,
+  extra: Partial<ParsedNote['frontmatter']> = {},
+): ParsedNote {
+  const decisions = Array.from({ length: count }, (_, i) => {
+    const day = String(i + 1).padStart(2, '0');
+    return `- **2026-03-${day}**: Decision number ${String(i + 1)}.`;
+  });
+  const timeline = Array.from({ length: timelineCount }, (_, i) => {
+    const day = String(i + 1).padStart(2, '0');
+    return `- **2026-01-${day}**: Entry number ${String(i + 1)}.`;
+  });
+  return {
+    frontmatter: {
+      type: 'Subsystem',
+      aliases: [],
+      keywords: [],
+      created: '2026-01-01',
+      updated: '2026-04-01',
+      sources: ['session:a'],
+      ...extra,
+    },
+    body: [
+      '# Widget',
+      '',
+      '## Summary',
+      'A widget.',
+      '',
+      '## Timeline',
+      ...timeline,
+      '',
+      '## Decisions',
+      ...decisions,
+      '',
+      '## Key facts',
+      '- Widgets are load-bearing.',
+      '',
+      '## Open items',
+      '',
+      '## Assistant notes',
+      '',
+    ].join('\n'),
+  };
+}
+
+/** The non-blank lines of one rendered section. */
+function sectionOf(body: string, name: string): string[] {
+  const after = body.split(`## ${name}\n`)[1];
+  if (after === undefined) return [];
+  return after
+    .split('\n## ')[0]
+    .trim()
+    .split('\n')
+    .filter((line) => line.trim() !== '');
+}
 
 describe('qualifies', () => {
   it('is true for a long, never-curated note', () => {
@@ -198,5 +264,114 @@ describe('curate', () => {
     );
     const out = curate(note, RESULT, { date: '2026-03-01' });
     expect(out.body).toContain('- a hand-written line with no date');
+  });
+});
+
+describe('Decisions curation (Plan 9)', () => {
+  describe('qualifies', () => {
+    it('is true for a note over the Decisions threshold with a short Timeline', () => {
+      // The measured shape of PI-404-dashboard-builder-chrome.md: 38 decisions
+      // against 7 timeline entries, the largest note in the vault, which the
+      // Timeline-only gate could never reach.
+      expect(qualifies(decisionNote(MIN_DECISION_ENTRIES, 2), '2026-05-01')).toBe(true);
+    });
+
+    it('is false below both thresholds', () => {
+      expect(qualifies(decisionNote(MIN_DECISION_ENTRIES - 1, 2), '2026-05-01')).toBe(false);
+    });
+
+    it('still honours the cooldown when only Decisions qualify', () => {
+      const note = decisionNote(MIN_DECISION_ENTRIES, 2, { curated_at: '2026-04-28' });
+      expect(qualifies(note, '2026-05-01')).toBe(false);
+    });
+
+    it('is false for a note with neither section', () => {
+      const freeform: ParsedNote = {
+        frontmatter: {
+          type: 'Note',
+          aliases: [],
+          keywords: [],
+          created: '2026-01-01',
+          updated: '2026-02-01',
+          sources: [],
+        },
+        body: '# Freeform\n\n## Summary\nProse only.\n',
+      };
+      expect(qualifies(freeform, '2026-05-01')).toBe(false);
+    });
+  });
+
+  describe('collapsibleDecisions', () => {
+    it('is every dated decision except the newest RETAIN_RECENT_DECISIONS', () => {
+      const got = collapsibleDecisions(decisionNote(12));
+      expect(got).toHaveLength(12 - RETAIN_RECENT_DECISIONS);
+      expect(got[0]).toContain('Decision number 1.');
+      expect(got[got.length - 1]).toContain(`Decision number ${String(12 - RETAIN_RECENT_DECISIONS)}.`);
+    });
+  });
+
+  describe('curate', () => {
+    it('replaces the collapsed decisions with one dated-range bullet and keeps the tail', () => {
+      const out = curate(decisionNote(12), RESULT, { date: '2026-05-01' });
+      const decisions = sectionOf(out.body, 'Decisions');
+      expect(decisions).toHaveLength(1 + RETAIN_RECENT_DECISIONS);
+      expect(decisions[0]).toContain('**2026-03-01 – 2026-03-07**');
+      expect(decisions[0]).toContain('Settled the flange material');
+      expect(decisions[0]).toContain('_(7 decisions collapsed)_');
+      expect(decisions[decisions.length - 1]).toContain('Decision number 12.');
+    });
+
+    it('takes the decisions date range from the bullets, not from the model', () => {
+      // A model supplying its own span cannot displace the computed one: its
+      // text lands in the prose position, where it is merely wrong rather than
+      // authoritative. Same guarantee the Timeline fold already makes.
+      const out = curate(
+        decisionNote(12),
+        { ...RESULT, collapsedDecisions: '**1999-01-01 – 1999-12-31**: nope' },
+        { date: '2026-05-01' },
+      );
+      const first = sectionOf(out.body, 'Decisions')[0];
+      expect(first).toBe(
+        '- **2026-03-01 – 2026-03-07**: **1999-01-01 – 1999-12-31**: nope _(7 decisions collapsed)_',
+      );
+      expect(out.body).not.toContain('- **1999-01-01');
+    });
+
+    it('leaves Decisions alone when the section is under the retain floor', () => {
+      const note = decisionNote(RETAIN_RECENT_DECISIONS, 2);
+      const before = sectionOf(note.body, 'Decisions');
+      const out = curate(note, RESULT, { date: '2026-05-01' });
+      expect(sectionOf(out.body, 'Decisions')).toEqual(before);
+    });
+
+    it('collapses both sections in one pass when both are long', () => {
+      const note = decisionNote(12, MIN_TIMELINE_ENTRIES + 2);
+      const out = curate(note, RESULT, { date: '2026-05-01' });
+      expect(sectionOf(out.body, 'Timeline')[0]).toContain('entries collapsed');
+      expect(sectionOf(out.body, 'Decisions')[0]).toContain('decisions collapsed');
+    });
+
+    it('preserves hand-written undated Decisions lines', () => {
+      const note = decisionNote(12);
+      note.body = note.body.replace(
+        '## Key facts',
+        '- a hand-written note about the flange\n\n## Key facts',
+      );
+      const out = curate(note, RESULT, { date: '2026-05-01' });
+      expect(sectionOf(out.body, 'Decisions')).toContain('- a hand-written note about the flange');
+    });
+
+    it('is byte-identical across repeated calls', () => {
+      const note = decisionNote(12);
+      const once = curate(note, RESULT, { date: '2026-05-01' });
+      const twice = curate(note, RESULT, { date: '2026-05-01' });
+      expect(serializeNote(twice)).toBe(serializeNote(once));
+    });
+
+    it('never rewrites Key facts bullets that were already there', () => {
+      // Plan 9 §3: Key facts is deliberately not collapsed, only appended to.
+      const out = curate(decisionNote(12), RESULT, { date: '2026-05-01' });
+      expect(sectionOf(out.body, 'Key facts')).toContain('- Widgets are load-bearing.');
+    });
   });
 });
