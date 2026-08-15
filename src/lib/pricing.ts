@@ -145,6 +145,28 @@ export function splitCacheWriteTokens(usage: UsageTokens): { t5m: number; t1h: n
   return { t5m: usage.cache_creation_input_tokens ?? 0, t1h: 0 };
 }
 
+/**
+ * Every input token a turn consumed, across the three fields the API splits
+ * them over.
+ *
+ * `input_tokens` on its own is NOT "the input" — with prompt caching it counts
+ * only the uncached remainder, and Claude Code caches on every request. On a
+ * live transcript it was 2 in 293 of 296 assistant messages while the real
+ * input ran to tens of thousands, so anything rendering that field alone
+ * understates by orders of magnitude.
+ *
+ * Output is deliberately excluded; `turnContextTotal` in `turnDelta.ts` is the
+ * one that adds it, because it answers a different question (how big the
+ * context got, not what this turn read).
+ */
+export function totalInputTokens(usage: UsageTokens): number {
+  return (
+    (usage.input_tokens ?? 0) +
+    (usage.cache_read_input_tokens ?? 0) +
+    (usage.cache_creation_input_tokens ?? 0)
+  );
+}
+
 export function computeMessageCost(
   model: string,
   usage: UsageTokens,

@@ -43,6 +43,7 @@ function makeAssistantNode(opts: {
   inputTokens?: number;
   outputTokens?: number;
   cacheRead?: number;
+  cacheCreation?: number;
   model?: string;
 }): Extract<JsonlNode, { kind: 'assistant' }> {
   return {
@@ -60,6 +61,7 @@ function makeAssistantNode(opts: {
           input_tokens: opts.inputTokens ?? 100,
           output_tokens: opts.outputTokens ?? 50,
           cache_read_input_tokens: opts.cacheRead ?? 0,
+          cache_creation_input_tokens: opts.cacheCreation ?? 0,
         },
       },
     },
@@ -103,8 +105,9 @@ describe('AssistantCompletionBand', () => {
     );
     // Cost should not appear
     expect(screen.queryByText(/\$0\.0105/)).toBeNull();
-    // But token counts still appear
-    expect(screen.getByText(/1000 in \/ 500 out/)).toBeTruthy();
+    // But token counts still appear (thousand-separated since counts are now
+    // whole-input totals rather than the small uncached remainder).
+    expect(screen.getByText(/1,000 in \/ 500 out/)).toBeTruthy();
   });
 
   it('does NOT render the band when stop_reason is null', () => {
@@ -507,5 +510,46 @@ describe('unknown-record catch-all rendering', () => {
     const { container } = render(<StreamMessage message={node} streamMessages={[node]} />);
 
     expect(container.textContent).toContain('server_tool_use');
+  });
+});
+
+describe('input token counts include cached input', () => {
+  // Measured on a live transcript: across 296 assistant messages the bare
+  // `input_tokens` field was 2 in 293 of them and 1 in the rest, because
+  // prompt caching moves essentially all input into the two cache fields.
+  // Rendering that field as "in" understated a 45,435-token input as "2".
+  const REAL = { inputTokens: 2, cacheRead: 20496, cacheCreation: 24937, outputTokens: 644 };
+
+  it('reports total input in the completion band, not the uncached remainder', () => {
+    const node = makeAssistantNode({ stop_reason: 'end_turn', ...REAL });
+    render(<StreamMessage message={node} streamMessages={[node]} />);
+    expect(screen.getByText(/45,435 in \/ 644 out/)).toBeTruthy();
+    expect(screen.queryByText(/\b2 in\b/)).toBeNull();
+  });
+
+  it('shows cache-write tokens in the band, which were previously invisible', () => {
+    // The largest component of that message and the most expensive per token.
+    const node = makeAssistantNode({ stop_reason: 'end_turn', ...REAL });
+    render(<StreamMessage message={node} streamMessages={[node]} />);
+    expect(screen.getByText(/24,937 written/)).toBeTruthy();
+    expect(screen.getByText(/20,496 cached/)).toBeTruthy();
+  });
+
+  it('omits the written count when there is no cache write', () => {
+    const node = makeAssistantNode({
+      stop_reason: 'end_turn',
+      inputTokens: 100,
+      outputTokens: 20,
+      cacheCreation: 0,
+    });
+    render(<StreamMessage message={node} streamMessages={[node]} />);
+    expect(screen.queryByText(/written/)).toBeNull();
+  });
+
+  it('reports total input on the per-message Tokens line', () => {
+    // Rendered for every assistant message, not just terminal ones.
+    const node = makeAssistantNode({ stop_reason: null, ...REAL });
+    render(<StreamMessage message={node} streamMessages={[node]} />);
+    expect(screen.getByText(/Tokens: 45,435 in, 644 out/)).toBeTruthy();
   });
 });

@@ -67,7 +67,7 @@ import {
 } from "./ToolWidgets";
 import { turnDuration } from "@/lib/sessionDerivedState";
 import { isCompactSummaryRecord } from "@/lib/jsonlClassifier";
-import { computeMessageCost, type UsageTokens } from "@/lib/pricing";
+import { computeMessageCost, totalInputTokens, type UsageTokens } from "@/lib/pricing";
 
 // Stable module-level reference: ReactMarkdown re-renders if `remarkPlugins`
 // is a new array each call, which rebuilds nested Prism syntax-highlighted
@@ -275,15 +275,22 @@ function AssistantCompletionBand({
   const duration = turnDuration(allMessages, index);
   const raw = node.raw as { message?: { model?: string; usage?: UsageTokens } };
   const usage: UsageTokens = raw.message?.usage ?? {};
-  const inputTokens = usage.input_tokens ?? 0;
+  // Total input, not `usage.input_tokens` — see `totalInputTokens`. The bare
+  // field is the uncached remainder and reads as 1-2 on a cached request.
+  const inputTokens = totalInputTokens(usage);
   const outputTokens = usage.output_tokens ?? 0;
   const cacheRead = usage.cache_read_input_tokens ?? 0;
+  const cacheWrite = usage.cache_creation_input_tokens ?? 0;
   const cost = computeMessageCost(raw.message?.model ?? '', usage).usd;
 
   const parts: string[] = [];
   if (duration !== null) parts.push(formatDurationMs(duration));
-  parts.push(`${inputTokens} in / ${outputTokens} out`);
-  if (cacheRead > 0) parts.push(`${cacheRead} cached`);
+  parts.push(`${inputTokens.toLocaleString()} in / ${outputTokens.toLocaleString()} out`);
+  // Both halves of the input, so the total above can be reconciled against its
+  // parts. Cache writes were previously not shown at all despite routinely
+  // being the largest component and the most expensive per token.
+  if (cacheRead > 0) parts.push(`${cacheRead.toLocaleString()} cached`);
+  if (cacheWrite > 0) parts.push(`${cacheWrite.toLocaleString()} written`);
   if (accountType !== 'max') parts.push(`$${cost.toFixed(4)}`);
 
   return (
@@ -995,10 +1002,12 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
         output = out;
       }
 
-      const typedUsage = msg.usage as { input_tokens?: number; output_tokens?: number } | undefined;
+      const typedUsage = msg.usage as UsageTokens | undefined;
       const usageNode = typedUsage ? (
         <div className="text-xs text-muted-foreground mt-2 px-1">
-          Tokens: {typedUsage.input_tokens} in, {typedUsage.output_tokens} out
+          {/* Total input, not the uncached remainder — see `totalInputTokens`. */}
+          Tokens: {totalInputTokens(typedUsage).toLocaleString()} in,{' '}
+          {(typedUsage.output_tokens ?? 0).toLocaleString()} out
         </div>
       ) : null;
 

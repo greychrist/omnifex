@@ -1,5 +1,6 @@
 import type { JsonlNode } from "@/types/jsonl";
 import type { ClaudeStreamMessage } from "@/types/claudeStream";
+import { totalInputTokens } from "@/lib/pricing";
 
 /**
  * Copies the raw JSONL output to the clipboard.
@@ -46,7 +47,11 @@ export async function exportAsMarkdown(
         }
       }
       if (msg.message.usage) {
-        markdown += `*Tokens: ${msg.message.usage.input_tokens} in, ${msg.message.usage.output_tokens} out*\n\n`;
+        // Total input, not `usage.input_tokens` — with prompt caching that
+        // field is only the uncached remainder. See `totalInputTokens`.
+        const inTokens = totalInputTokens(msg.message.usage).toLocaleString();
+        const outTokens = (msg.message.usage.output_tokens ?? 0).toLocaleString();
+        markdown += `*Tokens: ${inTokens} in, ${outTokens} out*\n\n`;
       }
     } else if (msg.type === "user" && msg.message) {
       markdown += `## User\n\n`;

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveRates, computeMessageCost } from '../pricing';
+import { resolveRates, computeMessageCost, totalInputTokens } from '../pricing';
 
 const MTOK = 1_000_000;
 
@@ -101,5 +101,29 @@ describe('computeMessageCost', () => {
     );
     expect(cost.usd).toBeCloseTo(1, 6);
     expect(cost.estimated).toBe(false);
+  });
+});
+
+describe('totalInputTokens', () => {
+  it('sums the three fields the API splits input across', () => {
+    // Real payload shape from a live transcript: with prompt caching on, the
+    // bare `input_tokens` field counts only the uncached remainder.
+    expect(
+      totalInputTokens({
+        input_tokens: 2,
+        cache_read_input_tokens: 20496,
+        cache_creation_input_tokens: 24937,
+        output_tokens: 644,
+      }),
+    ).toBe(45435);
+  });
+
+  it('excludes output', () => {
+    expect(totalInputTokens({ input_tokens: 10, output_tokens: 9999 })).toBe(10);
+  });
+
+  it('treats missing fields as zero', () => {
+    expect(totalInputTokens({})).toBe(0);
+    expect(totalInputTokens({ cache_read_input_tokens: 5 })).toBe(5);
   });
 });
