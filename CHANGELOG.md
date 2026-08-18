@@ -5,6 +5,26 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.131] — 2026-08-17
+
+### Changed
+
+- **The Brain indexing indicator now says what it is doing.** The titlebar pill
+  read as a bare score — `Work · 0 of 8` — with no indication of what was being
+  counted or that anything was happening at all. It now names its own verb
+  (`Indexing Work vault · 0 of 8`) and moved from the right-hand navigation
+  group to the centre of the title bar. Centring is absolute rather than a third
+  flex child: in a `justify-between` row the pill would only have centred within
+  the leftover gap, sliding sideways whenever the navigation group changed width
+  as the update button or session badge appeared.
+- **The indicator's hover tooltip replaced the native one.** It used the browser
+  `title=` attribute, which is slow to appear, unstyled, and inconsistent with
+  the rest of the title bar. It now uses the app's own tooltip, describing what
+  indexing does alongside the in-flight item and progress count, with a matching
+  `aria-label` so the same detail reaches assistive technology.
+
+Installers remain **unsigned**.
+
 ## [0.4.130] — 2026-08-15
 
 ### Fixed
