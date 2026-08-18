@@ -1,5 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { Brain } from 'lucide-react';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip-modern';
 import { api, type BrainRun } from '@/lib/api';
 
 /**
@@ -53,19 +59,42 @@ export const BrainRunIndicator: React.FC<{
 
   if (!run) return null;
 
-  const vault =
-    accounts.find((a) => a.id === run.accountId)?.name ?? `account ${String(run.accountId)}`;
+  const name = accounts.find((a) => a.id === run.accountId)?.name;
+  // A deleted-mid-run account still has a vault and still has a run, so the id
+  // has to read as a possessive rather than a name: "account 99's vault".
+  const vault = name ? `${name} vault` : `account ${String(run.accountId)}'s vault`;
+  const progress = `${run.completed} of ${run.total}`;
 
   return (
-    <div
-      data-testid="brain-run-indicator"
-      title={`Indexing ${run.item} into the ${vault} vault`}
-      className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-violet-600/15 text-violet-400 app-no-drag"
-    >
-      <Brain size={13} className="animate-pulse" />
-      <span className="tabular-nums">
-        {vault} · {run.completed} of {run.total}
-      </span>
-    </div>
+    // Own provider: the titlebar has one, but this also renders in shells that
+    // do not, and nesting Radix providers is legal.
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <div
+            data-testid="brain-run-indicator"
+            aria-label={`Brain indexing: ${run.item} into the ${vault}, ${progress} complete`}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-violet-600/15 text-violet-400 app-no-drag"
+          >
+            <Brain size={13} className="animate-pulse" />
+            <span className="tabular-nums">
+              Indexing {vault} · {progress}
+            </span>
+          </div>
+        </TooltipTrigger>
+        {/* Below the pill: the titlebar is the top edge of the window, so a
+            top-side tooltip would render off-screen. */}
+        <TooltipContent side="bottom" className="max-w-xs">
+          <p className="font-medium text-popover-foreground">Brain indexing</p>
+          <p className="mt-1 text-muted-foreground">
+            Distilling past Claude sessions into durable notes in the {vault}.
+          </p>
+          <p className="mt-1.5 text-muted-foreground">
+            Current: <span className="font-mono">{run.item}</span>
+          </p>
+          <p className="text-muted-foreground tabular-nums">{progress} complete</p>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 };

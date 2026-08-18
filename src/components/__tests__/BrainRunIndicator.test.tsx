@@ -104,6 +104,38 @@ describe('BrainRunIndicator', () => {
     expect(await screen.findByText(/account 99/i)).toBeTruthy();
   });
 
+  /**
+   * A bare "Work · 3 of 20" reads as a score, not as work in progress. The pill
+   * is the only place indexing is visible from outside the Brain tab, so it has
+   * to name its own verb.
+   */
+  it('says what it is doing, not just a bare count', async () => {
+    vi.mocked(api.brainActiveRun).mockResolvedValue({ ...RUN, accountId: 2 });
+
+    render(<BrainRunIndicator accounts={ACCOUNTS} />);
+
+    expect(await screen.findByText(/Indexing Work vault · 3 of 20/)).toBeTruthy();
+  });
+
+  /**
+   * The native `title=` tooltip is slow, unstyled, and inconsistent with the
+   * rest of the titlebar. The detail moves to the app's own tooltip, with an
+   * aria-label so the same information survives for assistive tech and for
+   * tests, which cannot hover a Radix trigger in jsdom.
+   */
+  it('describes the run without relying on the native title tooltip', async () => {
+    vi.mocked(api.brainActiveRun).mockResolvedValue({ ...RUN, accountId: 2 });
+
+    render(<BrainRunIndicator accounts={ACCOUNTS} />);
+    const pill = await screen.findByTestId('brain-run-indicator');
+
+    expect(pill.getAttribute('title')).toBeNull();
+    const label = pill.getAttribute('aria-label') ?? '';
+    expect(label).toMatch(/Work vault/);
+    expect(label).toMatch(/sess-abc/);
+    expect(label).toMatch(/3 of 20/);
+  });
+
   it('unsubscribes on unmount', async () => {
     const unsubscribe = vi.fn();
     vi.mocked(api.onBrainRunProgress).mockReturnValue(unsubscribe);

@@ -308,14 +308,25 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
         </div>
       </div>
 
+      {/* Brain indexing, which since Plan 8 runs while the user works. The
+          Brain tab owns the detail; this is the ambient "it is happening, and
+          here is where it is" signal. `useOptionalAccounts` because the
+          titlebar renders in shells without the provider.
+
+          Absolutely centred rather than sitting in either flex group: as a
+          third child of a `justify-between` row it would only centre in the
+          leftover gap, and would slide sideways every time the nav group's
+          width changed (update button appearing, session badge, etc.).
+          `pointer-events-none` on the wrapper so the empty box cannot steal
+          drags from the title bar while no run is in flight. */}
+      <div className="absolute left-1/2 -translate-x-1/2 flex items-center pointer-events-none">
+        <div className="pointer-events-auto app-no-drag">
+          <BrainRunIndicator accounts={accountsForIndicator} />
+        </div>
+      </div>
+
       {/* Right side - Navigation icons */}
       <div className="flex items-center pr-5 gap-2 app-no-drag">
-        {/* Brain indexing, which since Plan 8 runs while the user works. The
-            Brain tab owns the detail; this is the ambient "it is happening,
-            and here is where it is" signal. `useOptionalAccounts` because the
-            titlebar renders in shells without the provider. */}
-        <BrainRunIndicator accounts={accountsForIndicator} />
-
         {/* Update button — visible during checking, when update available, downloading, ready, up-to-date, or error */}
         <AnimatePresence>
           {updateState.status !== 'idle' && (
