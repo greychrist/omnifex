@@ -372,15 +372,24 @@ export function isResultMessage(
 // can be string | array). Callers that need the precise shape should narrow
 // at use site with their own guards.
 
+/**
+ * `text` / `thinking` are optional because the field can be ABSENT, not merely
+ * empty. Claude Code 2.1.234 fixed a crash on API responses (non-streaming
+ * fallback path, typically third-party gateways) carrying a thinking block
+ * with no `thinking` field or a text block with no `text` field; tolerating it
+ * upstream means the shape now reaches our transcript instead of killing the
+ * CLI. Every read must go through `?? ''` — a required-string declaration here
+ * bought us nothing but unguarded `.trim()` calls.
+ */
 export interface MessageTextBlock {
   type: 'text';
-  text: string;
+  text?: string;
   citations?: unknown;
 }
 
 export interface MessageThinkingBlock {
   type: 'thinking';
-  thinking: string;
+  thinking?: string;
   signature?: string;
 }
 

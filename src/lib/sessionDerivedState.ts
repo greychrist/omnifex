@@ -199,3 +199,54 @@ export function lastPermissionMode(messages: JsonlNode[]): string | null {
   }
   return null;
 }
+
+/**
+ * Epoch-SECONDS reset time when the session is parked on a claude.ai usage
+ * limit, or null when it isn't.
+ *
+ * Claude Code 2.1.234 added `autoContinueAtUsageLimit`, which defaults ON for
+ * claude.ai logins (the CLI only defaults it off when an API key is present).
+ * A limited session no longer ends its turn — it waits for the reset and then
+ * continues, which can be hours. `waitingOnClaude` stays true across that wait
+ * and it is right to: the CLI really is still working the turn. But nothing
+ * told the user why, so the composer just spun.
+ *
+ * Same backward walk as `waitingOnClaude`, with one more decisive node kind:
+ *
+ *   - a `rate-limit-event` DECIDES. `rejected` + a numeric `resetsAt` means we
+ *     are parked until then; anything else means the limit is no longer
+ *     blocking and there is nothing to report.
+ *   - an assistant / result / main user node means the turn has spoken since
+ *     the rejection — it resumed or finished. Not waiting.
+ *   - everything else is bookkeeping and is skipped, exactly as above.
+ *
+ * A rejection with no `resetsAt` returns null on purpose: the CLI's own
+ * auto-continue predicate requires a finite `resetsAt`, and without one it
+ * offers the wait as a dialog choice rather than waiting. There is no wait to
+ * report, and inventing one would be a lie about what the CLI is doing.
+ *
+ * Deliberately takes no clock. Whether the reset time has passed is a
+ * presentation question, and keeping it out of here leaves the derivation
+ * pure and its tests deterministic.
+ */
+export function usageLimitWait(messages: JsonlNode[]): number | null {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const n = messages[i];
+    if (n.kind === 'rate-limit-event') {
+      const info = n.raw.rate_limit_info;
+      if (info?.status !== 'rejected') return null;
+      return typeof info.resetsAt === 'number' ? info.resetsAt : null;
+    }
+    if (isResultNode(n)) return null;
+    if (n.kind === 'assistant') {
+      if (!isMainAssistant(n)) continue; // sidechain subagent — not the main turn
+      return null;
+    }
+    if (n.kind === 'user') {
+      if (!isMainUserNode(n)) continue; // forwarded subagent prompt — not main-turn traffic
+      return null;
+    }
+    // anything else is bookkeeping — keep scanning backward.
+  }
+  return null;
+}

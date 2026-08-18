@@ -685,12 +685,12 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
         // Skip signature-only blocks (CLI returns { thinking: "", signature: "..." }
         // when showThinkingSummaries is off — there's nothing to display).
         if (content.type === "thinking") {
-          const thinkingText = content.thinking.trim();
+          const thinkingText = (content.thinking ?? '').trim();
           if (!thinkingText) return null;
           return (
             <ThinkingWidget
               key={idx}
-              thinking={content.thinking}
+              thinking={content.thinking ?? ''}
               signature={content.signature}
               defaultExpanded={inExpandedGroup}
             />
@@ -876,7 +876,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
       // produce output so we can find the last card-presentation block for
       // toolbar attachment.
       const visibleBlocks = blocks.filter((b) => {
-        if (b.type === 'thinking' && !b.thinking.trim()) return false;
+        if (b.type === 'thinking' && !(b.thinking ?? '').trim()) return false;
         return true;
       });
 
@@ -939,7 +939,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
         // Map blocks back through original index for stable keys
         let vIdx = 0;
         output = blocks.map((b, origIdx) => {
-          if (b.type === 'thinking' && !b.thinking.trim()) return null;
+          if (b.type === 'thinking' && !(b.thinking ?? '').trim()) return null;
           const node = renderWrappedBlock(b, vIdx, origIdx);
           if (node !== null) { renderedSomething = true; vIdx++; }
           return node;
@@ -982,7 +982,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
         for (let i = 0; i < blocks.length; i++) {
           const b = blocks[i];
           // Skip empty blocks (they don't count as visible)
-          if (b.type === 'thinking' && !b.thinking.trim()) continue;
+          if (b.type === 'thinking' && !(b.thinking ?? '').trim()) continue;
 
           const hidden = isBlockHiddenInCompact(b, message, renderConfig);
           if (hidden) {
@@ -1212,7 +1212,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
                   // boundary normalization; also extract inline
                   // `@/path/to/image.png` references as DownloadableImages.
                   if (content.type === "text") {
-                    const text = content.text;
+                    const text = content.text ?? '';
                     renderedSomething = true;
 
                     const slashMatch = /<command-name>(.+?)<\/command-name>[\s\S]*?<command-message>(.+?)<\/command-message>[\s\S]*?<command-args>(.*?)<\/command-args>/.exec(text);

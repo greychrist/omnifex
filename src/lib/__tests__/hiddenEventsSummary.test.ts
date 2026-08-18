@@ -133,3 +133,26 @@ describe('countHiddenEvents', () => {
     expect(countHiddenEvents(msgs)).toBe(0);
   });
 });
+
+// CLI 2.1.234: a thinking/text block can now arrive with its narrative field
+// absent rather than empty. Counting must treat that as "nothing to show".
+describe('hidden-event counting — block missing its narrative field (CLI 2.1.234 class)', () => {
+  it('does not count a thinking block with no `thinking` field', () => {
+    const msgs = [assistant([{ type: 'thinking', signature: 'sig' }])];
+    expect(() => countHiddenEvents(msgs)).not.toThrow();
+    expect(countHiddenEvents(msgs)).toBe(0);
+  });
+
+  it('does not count a text block with no `text` field', () => {
+    const msgs = [assistant([{ type: 'text' }])];
+    expect(countHiddenEvents(msgs)).toBe(0);
+  });
+
+  it('summarizes a malformed-only message as empty', () => {
+    expect(summarizeHiddenEvents([assistant([{ type: 'thinking' }, { type: 'text' }])])).toBe('');
+  });
+
+  it('still counts well-formed siblings alongside a malformed block', () => {
+    expect(countHiddenEvents([assistant([{ type: 'text' }, { type: 'text', text: 'real' }])])).toBe(1);
+  });
+});

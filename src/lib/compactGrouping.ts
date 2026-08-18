@@ -61,8 +61,8 @@ export type CompactItem =
 function isRenderableBlock(b: MessageContentBlock | null | undefined): boolean {
   if (!b || typeof b !== 'object') return false;
   if (b.type === 'tool_use' || b.type === 'tool_result' || b.type === 'image') return true;
-  if (b.type === 'text') return b.text.trim().length > 0;
-  if (b.type === 'thinking') return b.thinking.trim().length > 0;
+  if (b.type === 'text') return (b.text ?? '').trim().length > 0;
+  if (b.type === 'thinking') return (b.thinking ?? '').trim().length > 0;
   return false;
 }
 

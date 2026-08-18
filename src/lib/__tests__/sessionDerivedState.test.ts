@@ -9,6 +9,7 @@ import {
   sessionStartedAt,
   lastPermissionMode,
   lastAssistantModel,
+  usageLimitWait,
 } from '../sessionDerivedState';
 import { classifyJsonlLine } from '../jsonlClassifier';
 
@@ -608,5 +609,106 @@ describe('forwarded subagent messages (--forward-subagent-text)', () => {
       assistantWithStop('2026-07-22T10:01:00Z', 'end_turn'),
     ];
     expect(turnDuration(msgs, 2)).toBe(60_000);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// usageLimitWait — Claude Code 2.1.234
+// ---------------------------------------------------------------------------
+// 2.1.234 added `autoContinueAtUsageLimit` (default ON for claude.ai logins:
+// the CLI only defaults it off when an API key is present). A session that
+// hits a usage limit no longer ends its turn — it parks and resumes when the
+// limit resets, which can be hours. `waitingOnClaude` correctly stays true
+// through that (a rate-limit-event is skip-by-default, so the last decisive
+// node is still the unsettled assistant/prompt), which means OmniFex spins
+// with no explanation. This derivation is what lets the UI say why.
+function rateLimitEvent(
+  timestamp: string,
+  info: Record<string, unknown> | undefined,
+): JsonlNode {
+  return {
+    kind: 'rate-limit-event',
+    sessionId: 's1',
+    receivedAt: timestamp,
+    raw: { type: 'rate_limit_event', rate_limit_info: info, timestamp } as never,
+  } as unknown as JsonlNode;
+}
+
+describe('usageLimitWait', () => {
+  const RESETS_AT = 1_755_500_000; // epoch SECONDS, as the CLI emits it
+
+  it('returns the reset time when the transcript ends on a rejected limit', () => {
+    const msgs = [
+      userPrompt('2026-08-18T10:00:00Z'),
+      assistantWithStop('2026-08-18T10:00:01Z', null),
+      rateLimitEvent('2026-08-18T10:00:02Z', { status: 'rejected', resetsAt: RESETS_AT }),
+    ];
+    expect(usageLimitWait(msgs)).toBe(RESETS_AT);
+  });
+
+  it('returns null once the turn resumes after the reset', () => {
+    const msgs = [
+      userPrompt('2026-08-18T10:00:00Z'),
+      rateLimitEvent('2026-08-18T10:00:02Z', { status: 'rejected', resetsAt: RESETS_AT }),
+      assistantWithStop('2026-08-18T13:00:00Z', null),
+    ];
+    expect(usageLimitWait(msgs)).toBeNull();
+  });
+
+  it('returns null when the turn finished after the reset', () => {
+    const msgs = [
+      userPrompt('2026-08-18T10:00:00Z'),
+      rateLimitEvent('2026-08-18T10:00:02Z', { status: 'rejected', resetsAt: RESETS_AT }),
+      resultNode('2026-08-18T13:00:00Z'),
+    ];
+    expect(usageLimitWait(msgs)).toBeNull();
+  });
+
+  it('returns null when a later rate-limit event reports the limit allowed again', () => {
+    const msgs = [
+      userPrompt('2026-08-18T10:00:00Z'),
+      rateLimitEvent('2026-08-18T10:00:02Z', { status: 'rejected', resetsAt: RESETS_AT }),
+      rateLimitEvent('2026-08-18T13:00:00Z', { status: 'allowed' }),
+    ];
+    expect(usageLimitWait(msgs)).toBeNull();
+  });
+
+  it('looks past trailing bookkeeping nodes that carry no turn meaning', () => {
+    const msgs = [
+      userPrompt('2026-08-18T10:00:00Z'),
+      rateLimitEvent('2026-08-18T10:00:02Z', { status: 'rejected', resetsAt: RESETS_AT }),
+      systemStatus('2026-08-18T10:00:03Z'),
+    ];
+    expect(usageLimitWait(msgs)).toBe(RESETS_AT);
+  });
+
+  it('returns null for a rejection with no resetsAt', () => {
+    // The CLI's own auto-continue predicate requires a finite resetsAt; with
+    // none it shows the limit dialog instead of waiting, so there is no wait
+    // to report and we must not invent one.
+    const msgs = [
+      userPrompt('2026-08-18T10:00:00Z'),
+      rateLimitEvent('2026-08-18T10:00:02Z', { status: 'rejected' }),
+    ];
+    expect(usageLimitWait(msgs)).toBeNull();
+  });
+
+  it('returns null for a rate-limit event with no info block at all', () => {
+    const msgs = [userPrompt('2026-08-18T10:00:00Z'), rateLimitEvent('2026-08-18T10:00:02Z', undefined)];
+    expect(usageLimitWait(msgs)).toBeNull();
+  });
+
+  it('returns null for an empty transcript', () => {
+    expect(usageLimitWait([])).toBeNull();
+  });
+
+  it('ignores a rejection from earlier in the session that a later prompt moved past', () => {
+    const msgs = [
+      userPrompt('2026-08-18T10:00:00Z'),
+      rateLimitEvent('2026-08-18T10:00:02Z', { status: 'rejected', resetsAt: RESETS_AT }),
+      assistantWithStop('2026-08-18T13:00:00Z', 'end_turn'),
+      userPrompt('2026-08-18T14:00:00Z'),
+    ];
+    expect(usageLimitWait(msgs)).toBeNull();
   });
 });

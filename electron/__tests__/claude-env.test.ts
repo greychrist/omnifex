@@ -121,3 +121,48 @@ describe('buildClaudeEnv', () => {
     expect(env.CLAUDE_CONFIG_DIR).toMatch(/\.claude-personal$/);
   });
 });
+
+// Claude Code 2.1.234 added CLAUDE_CODE_PROJECT_DIR_NAME. In the binary it is
+// read as `CGc = memo(() => CLAUDE_CONFIG_DIR ? validate(CLAUDE_CODE_PROJECT_DIR_NAME) : undefined)`
+// and consumed as `projectDir = CGc() ?? encodedCwd(path)` — so it is honored
+// ONLY when CLAUDE_CONFIG_DIR is set, which OmniFex always sets. An inherited
+// value would therefore redirect EVERY project's transcripts into one flat
+// `<configDir>/projects/<name>/`, silently breaking `encodeProjectKey` and all
+// of its consumers (JSONL tailing, cost history, the summary sweep) and making
+// the Brain cross-attribute projects, since it keys ownership on that
+// directory name. We own the derivation, so we own the variable.
+describe('buildClaudeEnv — CLAUDE_CODE_PROJECT_DIR_NAME (CLI 2.1.234)', () => {
+  it('strips an inherited CLAUDE_CODE_PROJECT_DIR_NAME', () => {
+    const env = buildClaudeEnv(
+      '/Users/test/.claude-personal',
+      {},
+      fakeDeps({
+        processEnv: { PATH: '/usr/bin', CLAUDE_CODE_PROJECT_DIR_NAME: 'short-name' },
+      }),
+    );
+    expect(env.CLAUDE_CODE_PROJECT_DIR_NAME).toBeUndefined();
+    expect('CLAUDE_CODE_PROJECT_DIR_NAME' in env).toBe(false);
+  });
+
+  it('leaves the rest of the inherited environment alone while stripping it', () => {
+    const env = buildClaudeEnv(
+      '/Users/test/.claude-personal',
+      {},
+      fakeDeps({
+        processEnv: {
+          PATH: '/usr/bin',
+          CLAUDE_CODE_PROJECT_DIR_NAME: 'short-name',
+          ANTHROPIC_BASE_URL: 'http://localhost:11434',
+        },
+      }),
+    );
+    expect(env.PATH).toBe('/usr/bin');
+    expect(env.ANTHROPIC_BASE_URL).toBe('http://localhost:11434');
+    expect(env.CLAUDE_CONFIG_DIR).toBe('/Users/test/.claude-personal');
+  });
+
+  it('does not invent the variable when it was never in the environment', () => {
+    const env = buildClaudeEnv('/Users/test/.claude-personal', {}, fakeDeps());
+    expect('CLAUDE_CODE_PROJECT_DIR_NAME' in env).toBe(false);
+  });
+});

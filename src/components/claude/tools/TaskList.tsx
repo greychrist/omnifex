@@ -264,18 +264,18 @@ function summarizeMessageForTask(m: JsonlNode): MessageSummary {
         label: b.is_error ? `Error: ${preview}` : `Result: ${preview}`,
       };
     }
-    if (b.type === 'text' && b.text.trim()) {
+    if (b.type === 'text' && (b.text ?? '').trim()) {
       return {
         icon: MessageSquare,
         iconClass: 'text-sky-400/80',
-        label: b.text.replace(/\s+/g, ' ').trim().slice(0, 200),
+        label: (b.text ?? '').replace(/\s+/g, ' ').trim().slice(0, 200),
       };
     }
-    if (b.type === 'thinking' && b.thinking.trim()) {
+    if (b.type === 'thinking' && (b.thinking ?? '').trim()) {
       return {
         icon: MessageSquare,
         iconClass: 'text-violet-400/60',
-        label: `(thinking) ${b.thinking.replace(/\s+/g, ' ').trim().slice(0, 160)}`,
+        label: `(thinking) ${(b.thinking ?? '').replace(/\s+/g, ' ').trim().slice(0, 160)}`,
       };
     }
   }

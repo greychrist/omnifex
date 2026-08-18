@@ -70,9 +70,9 @@ function tally(messages: JsonlNode[]): Counts {
       } else if (b.type === 'tool_result') {
         c.toolResult += 1;
       } else if (b.type === 'thinking') {
-        if (b.thinking.trim().length > 0) c.thinking += 1;
+        if ((b.thinking ?? '').trim().length > 0) c.thinking += 1;
       } else if (b.type === 'text') {
-        if (b.text.trim().length > 0) c.text += 1;
+        if ((b.text ?? '').trim().length > 0) c.text += 1;
       }
     }
   }
@@ -144,9 +144,9 @@ export function countHiddenEvents(messages: JsonlNode[]): number {
       if (b.type === 'tool_use' || b.type === 'tool_result' || b.type === 'image') {
         n += 1;
       } else if (b.type === 'thinking') {
-        if (b.thinking.trim().length > 0) n += 1;
+        if ((b.thinking ?? '').trim().length > 0) n += 1;
       } else if (b.type === 'text') {
-        if (b.text.trim().length > 0) n += 1;
+        if ((b.text ?? '').trim().length > 0) n += 1;
       }
     }
   }

@@ -102,6 +102,22 @@ The CLI's `system:init` and `type:'result'` lines classify to `cli-stream-init` 
 
 Separately, the engine (`assistantMeta.ts`) merges each chain's trailing `message_delta` (resolved `stop_reason` + final `usage`) back into the committed `assistant` frame before it reaches `messages[]`, so the end-turn card, completion band, and per-message cost — all of which read the assistant's own `stop_reason`/`usage` — see honest values rather than the `message_start`-era stubs.
 
+### Usage-limit parking (`usageLimitWait`)
+
+Claude Code 2.1.234 added the `autoContinueAtUsageLimit` global-config key, and it defaults **on** for claude.ai logins (the CLI only defaults it off when an API key is present). Hitting a usage limit no longer ends the turn: the CLI parks it, waits for the reset, and then continues — which can be hours.
+
+Nothing about the axes changes. A `rate-limit-event` node is skip-by-default in `waitingOnClaude`, so the last decisive node stays the unsettled assistant or the awaiting prompt, `conversationStatus` stays `'running'`, and the in-flight rollup stays true. **That is correct** — the CLI genuinely still owns the turn. Do not "fix" it by teaching `waitingOnClaude` to treat a rejection as a turn-closer; the turn is not closed, and closing it would drop the resumed output on the floor.
+
+What was missing was an explanation, not a state. `usageLimitWait(messages)` in `src/lib/sessionDerivedState.ts` returns the epoch-**seconds** reset time when the transcript ends on a rejected limit, else `null`:
+
+- a `rate-limit-event` **decides** — `status: 'rejected'` plus a numeric `resetsAt` means parked; anything else means the limit is no longer blocking.
+- an assistant / result / main user node means the turn has spoken since, so it resumed or finished → `null`.
+- everything else is bookkeeping and is skipped, exactly as in `waitingOnClaude`.
+
+A rejection carrying no `resetsAt` returns `null` on purpose: the CLI's own auto-continue predicate requires a finite `resetsAt`, and without one it offers the wait as a dialog choice rather than waiting.
+
+It takes no clock — whether the reset has passed is a presentation question. `UsageLimitBanner` (rendered above the composer, beside `SubagentBar`) does the formatting and owns the countdown tick.
+
 ## The in-flight rollup
 
 This is the canonical predicate for "is anything pending in this session?" It drives:

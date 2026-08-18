@@ -404,3 +404,25 @@ describe('buildCompactItems', () => {
     }
   });
 });
+
+// CLI 2.1.234: a thinking/text block can now arrive with its narrative field
+// absent. Renderability must read that as "nothing to render", not throw.
+describe('compact grouping — block missing its narrative field (CLI 2.1.234 class)', () => {
+  it('does not throw on a thinking block with no `thinking` field', () => {
+    const cfg = createDefaultConfig();
+    const msg = assistantWithBlocks([{ type: 'thinking', signature: 'sig' }]);
+    expect(() => isMessageFullyHidden(msg, [msg], cfg)).not.toThrow();
+  });
+
+  it('does not throw on a text block with no `text` field', () => {
+    const cfg = createDefaultConfig();
+    const msg = assistantWithBlocks([{ type: 'text' }]);
+    expect(() => isMessageFullyHidden(msg, [msg], cfg)).not.toThrow();
+  });
+
+  it('does not throw when building compact items over a malformed block', () => {
+    const cfg = createDefaultConfig();
+    const msgs = [assistantWithBlocks([{ type: 'text' }, { type: 'thinking' }])];
+    expect(() => buildCompactItems(msgs, cfg)).not.toThrow();
+  });
+});

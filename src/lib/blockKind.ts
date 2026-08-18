@@ -85,7 +85,7 @@ export function classifyBlockKind(
 
   if (role === 'assistant') {
     if (block.type === 'text') {
-      const text = block.text.trim();
+      const text = (block.text ?? '').trim();
       if (text.length === 0) return null;
       // A text block whose parent assistant message ended the turn cleanly
       // (end_turn) is the "execution completed" visual. Gets its own kind so
@@ -96,7 +96,7 @@ export function classifyBlockKind(
       return 'assistant.text';
     }
     if (block.type === 'thinking') {
-      const text = block.thinking.trim();
+      const text = (block.thinking ?? '').trim();
       return text.length > 0 ? 'assistant.thinking' : null;
     }
     if (block.type === 'tool_use') {
@@ -143,7 +143,7 @@ export function classifyBlockKind(
       // / Notification / SessionEnd) or the "SessionStart hook additional
       // context:" variant. Also matches <system-reminder> blocks and
       // skill-load preambles. See `isSystemContextText`.
-      if (isSystemContextText(block.text)) return 'user.systemContext';
+      if (isSystemContextText(block.text ?? '')) return 'user.systemContext';
       // Plain user text falls through to whole-message classification
       // (user.prompt / user.subagentPrompt / user.sdkSystemBracket).
       return null;

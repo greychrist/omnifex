@@ -59,7 +59,8 @@ import { WebviewPreview } from "./WebviewPreview";
 import type { JsonlNode } from "@/types/jsonl";
 import { normalizeJsonlNode } from "@/lib/normalizeMessage";
 import { classifyJsonlLine } from '@/lib/jsonlClassifier';
-import { lastPermissionMode, lastAssistantModel } from '@/lib/sessionDerivedState';
+import { lastPermissionMode, lastAssistantModel, usageLimitWait } from '@/lib/sessionDerivedState';
+import { UsageLimitBanner } from "./claude-code-session/UsageLimitBanner";
 import { changeSessionModel, mirrorControlState } from '@/lib/sessionModelChange';
 import { forwardedParentToolUseId } from '@/lib/subagentDispatch';
 import { reduceSessionStreamMessage } from '@/lib/sessionStreamReducer';
@@ -1064,6 +1065,12 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   // panel — the CLI omits skipped servers from `mcp_servers` entirely — so
   // this notice is the only place they surface.
   const mcpServerErrors = useMemo(() => latestMcpServerErrors(messages), [messages]);
+
+  // Epoch-seconds reset time when the CLI has parked this turn on a claude.ai
+  // usage limit (Claude Code 2.1.234's autoContinueAtUsageLimit), else null.
+  // conversationStatus stays 'running' throughout — correctly, the CLI still
+  // owns the turn — so this is what keeps the spinner from being unexplained.
+  const usageLimitResetsAt = useMemo(() => usageLimitWait(messages), [messages]);
 
   // Mirror the cache clock onto the tab so the tab strip can show a glyph for
   // background sessions. Guarded by a last-value ref exactly like the
@@ -2889,6 +2896,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
               onDismiss={dismissSubagent}
               onDismissAllCompleted={dismissAllCompletedSubagents}
             />
+            <UsageLimitBanner resetsAt={usageLimitResetsAt} />
             <FloatingPromptInput
               ref={floatingPromptRef}
               // In TUI mode, route the prompt straight into the CLI's PTY —

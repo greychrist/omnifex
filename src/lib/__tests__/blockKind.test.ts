@@ -445,3 +445,25 @@ describe('classifyBlockKind — tool results carrying images', () => {
     expect(classifyBlockKind(parent.raw.message.content[0], parent)).toBe('user.image');
   });
 });
+
+// Claude Code 2.1.234 stopped crashing on content blocks whose narrative field
+// is absent (non-streaming fallback path, typically third-party gateways), so
+// the shape now reaches our classifier instead of dying upstream.
+describe('classifyBlockKind — block missing its narrative field (CLI 2.1.234 class)', () => {
+  it('treats a thinking block with no `thinking` field as empty', () => {
+    const parent = assistant([{ type: 'thinking', signature: 'sig' }]);
+    expect(() => classifyBlockKind(parent.raw.message.content[0], parent)).not.toThrow();
+    expect(classifyBlockKind(parent.raw.message.content[0], parent)).toBeNull();
+  });
+
+  it('treats a text block with no `text` field as empty', () => {
+    const parent = assistant([{ type: 'text' }]);
+    expect(() => classifyBlockKind(parent.raw.message.content[0], parent)).not.toThrow();
+    expect(classifyBlockKind(parent.raw.message.content[0], parent)).toBeNull();
+  });
+
+  it('treats a user text block with no `text` field as empty', () => {
+    const parent = user([{ type: 'text' }]);
+    expect(() => classifyBlockKind(parent.raw.message.content[0], parent)).not.toThrow();
+  });
+});

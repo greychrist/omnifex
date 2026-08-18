@@ -65,6 +65,18 @@ export function buildClaudeEnv(
   // Caller extras intentionally win — that lets per-account overrides like a
   // custom ANTHROPIC_BASE_URL replace whatever the parent shell carried.
   const result: NodeJS.ProcessEnv = { ...baseEnv, CLAUDE_CONFIG_DIR: resolved };
+
+  // Drop an inherited CLAUDE_CODE_PROJECT_DIR_NAME (Claude Code 2.1.234). The
+  // CLI honors it only when CLAUDE_CONFIG_DIR is set — which is exactly what
+  // we just did — and it replaces the encoded-cwd transcript directory
+  // wholesale: `projectDir = CLAUDE_CODE_PROJECT_DIR_NAME ?? encodedCwd(path)`.
+  // OmniFex derives that same directory itself (`encodeProjectKey` in
+  // sessions/summary-query.ts) for JSONL tailing, cost history, the
+  // summary-scratch sweep and the Brain's transcript source, so a value
+  // arriving from the parent shell would point every one of those at the wrong
+  // place AND collapse every project into one directory, which the Brain reads
+  // as project identity. We own the derivation, so we own the variable.
+  delete result.CLAUDE_CODE_PROJECT_DIR_NAME;
   for (const [k, v] of Object.entries(extras)) {
     if (v === undefined) {
       // eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- justified: env-var removal API; key is bounded by Object.entries(extras).

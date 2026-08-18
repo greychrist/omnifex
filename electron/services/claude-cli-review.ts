@@ -29,20 +29,44 @@ import * as path from 'node:path';
  * old value and the new one, and file or fix whatever they imply. Bumping it
  * to silence the badge throws away the only drift signal we have.
  *
- * Last review: 2.1.232 → 2.1.233 on 2026-08-14. 2.1.233 reverted 2.1.232's
- * input-redirection permission check (`cmd < file`), so the note the previous
- * pass added to `docs/permission-syntax.md` was corrected rather than removed —
- * a narrower version is expected to return. Also gated the todo/task tools
- * (TaskCreate/Get/Update/List, TodoWrite) off for Opus 4.8, Sonnet 5, Fable 5,
- * Mythos 5 and newer: the tools are still in the binary behind an `isEnabled()`
- * predicate driven by the remote `tengu_rosy_wren` flag, not deprecated, and the
- * gate reads the CANONICAL model id (so `[1m]` aliases do not escape it).
- * `taskList.ts` degrades to an empty list, so the task panel simply renders
- * nothing on those models; deliberately left alone rather than forcing
- * `CLAUDE_CODE_ENABLE_TODO_TOOLS=1`, which would override a decision Anthropic
- * can reverse remotely.
+ * Last review: 2.1.233 → 2.1.234 on 2026-08-18. Three findings, all fixed in
+ * this pass:
+ *
+ *  1. 2.1.234 stopped crashing on API responses (non-streaming fallback path,
+ *     typically third-party gateways) carrying a thinking block with no
+ *     `thinking` field or a text block with no `text` field. Tolerating it
+ *     upstream means the shape now reaches our transcript, where every read was
+ *     an unguarded `.trim()` against a required-string type — StreamMessage
+ *     caught the TypeError itself, so the damage was the whole message
+ *     collapsing into its "Error rendering message" card and taking the
+ *     assistant's real reply with it, on every reload. `text`/`thinking` are now
+ *     optional in `claudeStream.ts` and all 23 reads the compiler found are
+ *     guarded.
+ *  2. New `CLAUDE_CODE_PROJECT_DIR_NAME` env var. In the binary it is honored
+ *     ONLY when CLAUDE_CONFIG_DIR is set (`CGc = memo(() => CLAUDE_CONFIG_DIR ?
+ *     validate(EGc()) : undefined)`, consumed as `cF(e) = CGc() ?? aV(e)`), and
+ *     OmniFex always sets CLAUDE_CONFIG_DIR — so an inherited value would
+ *     redirect every project's transcripts into one flat
+ *     `<configDir>/projects/<name>/`, breaking `encodeProjectKey`'s consumers
+ *     and making the Brain cross-attribute projects. `buildClaudeEnv` now strips
+ *     it. Re-verified while there that our encoder still matches the CLI
+ *     exactly: `[^a-zA-Z0-9]` → `-`, cap 200, `-<base36 hash>` suffix.
+ *  3. New `autoContinueAtUsageLimit`, default ON for claude.ai logins (the CLI
+ *     defaults it off only when an API key is present). A limited session now
+ *     parks until the reset instead of ending its turn, so `conversationStatus`
+ *     legitimately stays 'running' for hours. Wire shape is unchanged — the
+ *     CLI's own predicate reads the same `status: 'rejected'` + `resetsAt` we
+ *     already parse — so this needed an explanation, not a state change:
+ *     `usageLimitWait` + `UsageLimitBanner`. See docs/session-lifecycle.md.
+ *
+ * Also fixed upstream, no action needed: `/tui` and the fullscreen-renderer
+ * prompt no longer drop launch `--allowed-tools` on restart (we pass the Brain's
+ * `--allowedTools` in TUI mode, so a mid-session switch used to start
+ * re-prompting for `brain_search`/`brain_read`), and session-scoped permission
+ * answers are no longer dropped for background subagent prompts, which is what
+ * had been defeating our session-destination rule twin in permissions.ts.
  */
-export const REVIEWED_CLI_VERSION = '2.1.233';
+export const REVIEWED_CLI_VERSION = '2.1.234';
 
 /**
  * app_settings key holding the user's explicit OmniFex-checkout override.

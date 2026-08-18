@@ -32,7 +32,7 @@ export function extractCopyText(msg: unknown): string {
   const parts: string[] = [];
   for (const c of content as MessageContentBlock[]) {
     if (c.type === 'text') {
-      parts.push(c.text);
+      parts.push(c.text ?? '');
     } else if (c.type === 'tool_use') {
       const input = c.input;
       if (typeof input.command === 'string') parts.push(input.command);
