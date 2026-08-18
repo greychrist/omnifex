@@ -5,6 +5,54 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.132] — 2026-08-18
+
+Absorbs the drift from Claude Code 2.1.234. Installers remain **unsigned**.
+
+### Fixed
+
+- **A malformed reply from Claude no longer swallows the whole message.** Claude
+  Code 2.1.234 stopped crashing on API responses that carry a thinking block with
+  no `thinking` field or a text block with no `text` field — a shape that turns up
+  on the non-streaming fallback path, typically behind third-party gateways.
+  Tolerating it upstream means it now reaches OmniFex's transcript instead of
+  killing the CLI, and every one of our reads was an unguarded `.trim()` against a
+  type that declared the field required. The message collapsed into the "Error
+  rendering message" card and took the assistant's actual reply down with it, on
+  first render and again on every reload of that session. The two fields are now
+  optional at the type level, which turned the compiler into the search tool: it
+  found 23 reads, six of them in places a grep had missed.
+- **An inherited `CLAUDE_CODE_PROJECT_DIR_NAME` can no longer redirect OmniFex's
+  transcript lookups.** 2.1.234 added the variable for hosts that give each
+  session its own config directory, and the CLI honours it only when
+  `CLAUDE_CONFIG_DIR` is set — which OmniFex always does. A value arriving from
+  the parent shell would replace the encoded-cwd transcript directory wholesale,
+  pointing JSONL tailing, cost history, the summary sweep and the Brain's
+  transcript source at the wrong place, and collapsing every project into a single
+  directory that the Brain reads as project identity. `buildClaudeEnv` now strips
+  it: OmniFex derives that directory itself, so it owns the variable.
+
+### Added
+
+- **Sessions parked on a usage limit now say so.** 2.1.234 added
+  `autoContinueAtUsageLimit`, on by default for claude.ai logins: hitting a usage
+  limit no longer ends the turn, it waits for the reset and then continues, which
+  can take hours. The turn genuinely is still in flight, so the composer kept
+  spinning with nothing on screen accounting for it. A banner above the composer
+  now names the wait and counts down to the reset. It is worded as an observation
+  rather than a promise — auto-continue is a CLI-side setting OmniFex cannot read,
+  and the wait is what is true either way.
+
+### Changed
+
+- The Claude Code changelog watermark moved to 2.1.234. Two bugs were fixed
+  upstream in that release rather than here: `/tui` and the fullscreen-renderer
+  prompt no longer drop launch `--allowed-tools` when they restart (OmniFex passes
+  the Brain's `--allowedTools` in terminal mode, so a mid-session switch used to
+  start re-prompting for `brain_search` / `brain_read`), and session-scoped
+  permission answers are no longer dropped when the prompt came from a background
+  subagent — which is what had been quietly defeating OmniFex's session-rule twin.
+
 ## [0.4.131] — 2026-08-17
 
 ### Changed
