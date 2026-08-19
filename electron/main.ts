@@ -1240,6 +1240,7 @@ app.whenReady().then(() => {
         claudeService.setProjectPinned(args),
       getHomeDirectory: () => claudeService.getHomeDirectory(),
       getSettings: (opts?: any) => claudeService.getClaudeSettings(opts),
+      getDefaultModel: (opts?: any) => claudeService.getDefaultModel(opts),
       saveSettings: (settings: any, opts?: any) => claudeService.saveClaudeSettings(settings, opts),
       getSystemPrompt: (opts?: any) => claudeService.getSystemPrompt(opts),
       saveSystemPrompt: (prompt: any, opts?: any) =>

@@ -2,10 +2,15 @@ import type { AccountsService } from './accounts';
 import type { RateLimitsService } from './rate-limits';
 import { findClaudeBinary as defaultFindClaudeBinary } from './util/find-claude-binary';
 import { stripAnsi } from './usage-runner/ansi';
-import { parseUsageOutput, isUsageOutputComplete, collectUsageDriftWarnings, type UsageData } from './usage-runner/parser';
+import {
+  parseUsageOutput,
+  isUsageOutputComplete,
+  collectUsageDriftWarnings,
+  rateLimitTypeForWindow,
+  type UsageData,
+} from './usage-runner/parser';
 import { resetsLabelToEpoch } from './usage-runner/resets-label';
 import { ensureTrustedScratchCwd } from './usage-runner/scratch-cwd';
-import { repairCorruptedWords } from './usage-runner/repair';
 import type { LoggingService } from './logging';
 import { buildClaudeEnv } from './util/claude-env';
 
@@ -93,12 +98,6 @@ export interface UsageRunnerDeps {
 
 const LOADING_DATA_MARKER = 'Loading usage data';
 
-const PARSER_LABEL_TO_RATE_LIMIT_TYPE: Record<UsageData['windows'][number]['label'], string> = {
-  current_session: 'five_hour',
-  week_all_models: 'seven_day',
-  week_sonnet: 'seven_day_sonnet',
-};
-
 // Plausibility caps per window. The 5h window maxes at 5 hours from now and
 // the 7d window at 7 days; we add a small margin to absorb clock skew + the
 // time spent rendering and capturing the TUI output before stamping
@@ -110,7 +109,7 @@ const SEVEN_DAY_CAP_MS = 8 * 24 * 60 * 60 * 1000;
 
 function validateResetEpoch(
   epochMs: number | null,
-  label: UsageData['windows'][number]['label'],
+  label: string,
   observedAtMs: number,
 ): { accepted: number | null; reason: string } {
   if (epochMs == null) return { accepted: null, reason: 'unparseable' };
@@ -221,7 +220,12 @@ export function createUsageRunnerService(deps: UsageRunnerDeps): UsageRunnerServ
         cwd,
         env: buildClaudeEnv(configDir),
         cols: 200,
-        rows: 60,
+        // Tall enough that the whole `/usage` dialog fits on one screen.
+        // `stripAnsi` replays the escape stream into a character grid and
+        // returns what the SCREEN holds, so anything the CLI pushes below the
+        // fold (it prints a `↓` and stops) is simply not in the capture. At 60
+        // rows the Subagents / Plugins / MCP tables fell off the bottom.
+        rows: 200,
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -322,8 +326,23 @@ export function createUsageRunnerService(deps: UsageRunnerDeps): UsageRunnerServ
     if (exited || Date.now() >= hardDeadline) {
       const raw = stripAnsi(buffer);
       try { pty.kill(); } catch { /* already gone */ }
+      // `raw` is now the SCREEN, not a byte soup of stacked frames, so
+      // whatever modal is holding startup is legible at a glance. That is the
+      // whole diagnosis for this class of failure: 2.1.235 shipped a
+      // managed-settings approval prompt that could capture the first
+      // keypress, and the next unrecognised dialog will be some other one we
+      // cannot know the wording of in advance. Naming which markers we were
+      // waiting for turns "timed out" into "timed out, and here is the screen
+      // that was up instead".
       logWarn('pty exited or timed out before prompt was ready', {
-        account: accountName, cwd, configDir, exited, raw,
+        account: accountName,
+        cwd,
+        configDir,
+        exited,
+        awaited_markers: READY_MARKERS,
+        handled_dialogs: { trust: trustConfirmed, chrome_extension: chromeDismissed },
+        screen: raw,
+        raw,
       });
       return cacheAndReturn(accountName, {
         ok: false, observed_at: observedAt, error: 'pty exited or timed out before prompt was ready',
@@ -406,21 +425,10 @@ export function createUsageRunnerService(deps: UsageRunnerDeps): UsageRunnerServ
     // `raw` inside the parse-failure / timeout branches, so a parse that
     // technically "succeeded" but produced wrong numbers was invisible.)
     logInfo('usage capture (pre-parse)', { account: accountName, raw });
-    // Vocabulary-driven repair: Claude's cursor-redraw drops single chars
-    // (e.g. "sessions" → "sessi ns") but the same word usually appears
-    // intact elsewhere in the buffer. See usage-runner/repair.ts.
-    const repaired = repairCorruptedWords(raw);
-    if (repaired !== raw) {
-      logInfo('repaired corrupted words from buffer vocabulary', {
-        account: accountName,
-        before_len: raw.length,
-        after_len: repaired.length,
-      });
-    }
-    const parsed = parseUsageOutput(repaired);
+    const parsed = parseUsageOutput(raw);
     if (!parsed.ok) {
       logWarn('parse failed', {
-        account: accountName, reason: parsed.reason, raw, repaired,
+        account: accountName, reason: parsed.reason, raw,
       });
       return cacheAndReturn(accountName, {
         ok: false, observed_at: observedAt, error: `parse_failed: ${parsed.reason}`, raw,
@@ -436,7 +444,7 @@ export function createUsageRunnerService(deps: UsageRunnerDeps): UsageRunnerServ
     // warning in the Log tab — same philosophy as the welcome-footer marker
     // drift — so a future CLI wording change is diagnosable instead of looking
     // like real zero usage. See collectUsageDriftWarnings.
-    const driftWarnings = collectUsageDriftWarnings(repaired);
+    const driftWarnings = collectUsageDriftWarnings(raw);
     if (driftWarnings.length > 0) {
       logWarn('usage output drift — parsed ok but expected labels missing (silent zeros likely)', {
         account: accountName, warnings: driftWarnings, raw,
@@ -464,7 +472,7 @@ export function createUsageRunnerService(deps: UsageRunnerDeps): UsageRunnerServ
     // COALESCEs null against the prior good value so a junk parse never
     // clobbers a known-good reset time.
     for (const w of parsed.data.windows) {
-      const type = PARSER_LABEL_TO_RATE_LIMIT_TYPE[w.label];
+      const type = rateLimitTypeForWindow(w.label);
       const resetsEpochMs = resetsLabelToEpoch(w.resets_at_label, observedAt);
       const validation = validateResetEpoch(resetsEpochMs, w.label, observedAt);
       const resetsAtSec = validation.accepted == null ? null : Math.floor(validation.accepted / 1000);

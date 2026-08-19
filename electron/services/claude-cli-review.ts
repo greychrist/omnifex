@@ -29,59 +29,90 @@ import * as path from 'node:path';
  * old value and the new one, and file or fix whatever they imply. Bumping it
  * to silence the badge throws away the only drift signal we have.
  *
- * Last review: 2.1.234 -> 2.1.235 on 2026-08-19. Findings:
+ * Last review: 2.1.235 -> 2.1.236 on 2026-08-19. Findings:
  *
- *  1. Permission dialogs changed twice in this release: display text and the
- *     "don't ask again" option now always describe what a grant would actually
- *     cover, and the option is withheld when the contents can't be fully
- *     displayed (notebook cell delete/replace dialogs previously omitted the
- *     existing cell content silently, and now say why). This is the only 2.1.235
- *     entry that moves a surface OmniFex owns rather than the CLI's own TUI —
- *     we build our own rules and our own "don't ask again" from the
- *     permission-request payload. Absorbed in the permissions change that lands
- *     with this bump (permissions.ts / PermissionCard / permissionRequest.ts);
- *     this watermark is only honest once that lands too.
- *  2. The Agent tool no longer advertises a general-purpose default in sessions
- *     where that agent is unavailable — an omitted `subagent_type` now errors
- *     with the available agents listed. No action: a dispatch that errors
- *     arrives as `tool_result.is_error`, and the reducer already takes
- *     Dispatched -> ToolResult(isError) to a `failed` row rather than leaving a
- *     phantom running one.
- *  3. The context-limit error now says when auto-compact is off and points at
- *     /config. No wire change and nothing to parse — `events.ts` prefers
- *     `errors[0]` generically rather than matching on the text. It does expose a
- *     gap on our side, filed not fixed: `contextPressure.ts` documents an
- *     explicit assumption that "the CLI auto-compacts first", which is what
- *     makes `critical` unreachable on a 200k window and drives the 0.95 clamp.
- *     With auto-compact off that assumption is wrong and the banner tops out
- *     amber while the session walks into a hard limit. The signal is already in
- *     a payload we fetch: `get_context_usage` carries `isAutoCompactEnabled`,
- *     `autoCompactThreshold` and `rawMaxTokens`, none of which we read.
- *     (Noted while there: `CliControlGetContextUsageResponse`'s `total_tokens` /
- *     `remaining_tokens` are vestigial — the live payload is camelCase, and the
- *     renderer reads `totalTokens` / `maxTokens` / `percentage` straight through
- *     the index signature.)
- *  4. SendMessage now refuses messages too large for cross-session delivery up
- *     front instead of dropping them silently. No action: AgentResumed keys on
- *     `toolUseResult.resumedAgentId` (or the same field in the returned JSON),
- *     and a refusal carries neither, so a rejected send can't reopen a
- *     subagent row.
+ *  1. `/usage` letter loss — REAL BUG, FIXED. Not a 2.1.236 regression; found
+ *     while checking 2.1.236's new usage-credits row against a live capture.
+ *     The CLI paints that dialog with a DIFFING renderer: after the first
+ *     paint it re-emits only the cells that changed and steps over the rest
+ *     with `ESC[<n>G` / `ESC[<n>C` / `ESC[<n>B` — and `ESC[<n>B` moves down
+ *     WITHOUT resetting the column. `ansi.ts` was a linear "escape -> one
+ *     space" stripper, so every stepped-over cell was dropped:
+ *     `/omnifex-release` parsed as `/ mnifex-rele se`, `mcp-atlassian` as
+ *     `mc -atlassian`, `general-purpose` as `g neral-purpose`. No amount of
+ *     space arithmetic recovers those — the character exists only in the
+ *     screen grid. `stripAnsi` is now a screen replay (grid + cursor motion +
+ *     erase ops), which made `usage-runner/repair.ts` dead and deleted it.
+ *     The pty grew from rows 60 -> 200 because the grid returns the SCREEN,
+ *     and at 60 rows the dialog scrolls with the ranked tables below the fold.
  *
- * Fixed upstream, no action needed: cloud sessions (/ultrareview, /autofix-pr)
- * no longer re-scan and re-render their event streams on every update, and a
- * language server disconnecting mid-session no longer invalidates the whole
- * prompt cache — fewer surprise cache resets behind our cache-expiry glyph.
+ *  2. `Current week (Fable)` — REAL BUG, FIXED. 2.1.236 renders a per-model
+ *     weekly bar that is not Sonnet. The header regex required `Son` inside
+ *     the parens, so the window never reached the popover or `rate_limits`.
+ *     Per-model bars come from a generic `limits` array CLI-side, so the set
+ *     is open: windows are now discovered (`findWindows` -> `week_<model>`,
+ *     `rateLimitTypeForWindow` -> `seven_day_<model>`) and an unrecognised
+ *     label raises a drift warning instead of vanishing. `isUsageOutputComplete`
+ *     no longer demands a Sonnet bar by name; it keys "the window list is
+ *     finished" on the contributing header, which renders below every window.
  *
- * Everything else in 2.1.235 is TUI-local and cannot reach us: the optional
- * spellcheck setting, prompt-input highlight offsets, nested markdown list
- * indentation in the terminal renderer (we render markdown ourselves), the
- * ctrl+t task list starting collapsed on resume (our TaskList owns its own
- * collapse state), Shift+Tab in the permission comment field, slash commands
- * showing HTML entities, the prompt-footer restart notice, vim-mode cursor
- * preservation, dialog arrow-key selection, the embedded grep improvements,
- * the `claude rc` enterprise-gateway check, and the VSCode tab-focus fix.
+ *  3. `ANTHROPIC_DEFAULT_MODEL` — new env var, and it outranks the
+ *     settings.json `model` pin. Verified in the binary:
+ *     `t.model || process.env.ANTHROPIC_MODEL || V.ANTHROPIC_DEFAULT_MODEL`.
+ *     `--model` still wins, so explicit picks are unaffected — but OmniFex
+ *     omits `--model` for "Account Default" and every spawn inherits
+ *     `process.env`, and `AgentSession` was sizing the context gauge from
+ *     `getClaudeSettings().model` alone. Added `claude.getDefaultModel()` +
+ *     the `get_claude_default_model` channel, which resolves the same order
+ *     the CLI does and reports which source won.
+ *
+ *  4. RETRACTED, recorded so it is not "rediscovered": the new usage-credits
+ *     row does NOT donate its `Resets` line to the Sonnet window. That claim
+ *     came from reading minified JSX child order; a live capture shows the
+ *     credits row renders BELOW the contributing section and the tables
+ *     footer, and `SECTION_HEADERS.contributing` already bounded every window
+ *     slice. Minified child order is not evidence — capture the screen.
+ *
+ *  5. SIGTERM in print/SDK mode no longer records an interrupted turn or
+ *     synthetic tool denials (the handler sets a `committed` latch, kills
+ *     child processes, exits 143). No action: we interrupt via a control
+ *     request, not a signal, and SIGTERM only fires from `close()` at
+ *     teardown — where `sessionStatus` is `stopped` and the in-flight rollup
+ *     is already false. Residual, cosmetic: a session killed mid-turn now
+ *     leaves a transcript that simply stops, with no interruption marker.
+ *
+ *  6. Slash-command typos no longer fuzzy-match. No action, but verified
+ *     rather than assumed: `usage-runner.ts` sends `/usage` (exact) and
+ *     `/quit`, and `/quit` is a REGISTERED ALIAS of `/exit` in the binary
+ *     (`aliases:["quit"]`). The entry preserves prefixes and aliases.
+ *
+ *  7. The managed-settings approval prompt no longer captures the first
+ *     keypress while invisible — a fix that removes a real failure mode for
+ *     the `/usage` pty automation, which types into whatever screen is up.
+ *     Deliberately NOT given a marker in the readiness loop: the dialog's
+ *     wording could not be verified from the binary and it cannot appear
+ *     without an org policy file, so hardcoding a guess is the brittleness
+ *     this review exists to catch. Instead the startup timeout now logs the
+ *     rendered screen plus the markers it was waiting for.
+ *
+ * Fixed upstream, no action needed: the fullscreen renderer now falls back to
+ * the classic renderer instead of failing permanently after one bad start
+ * (that failure mode would have broken TUI sessions and the `/usage` scrape
+ * alike). Watch item, not a finding: `ansi.ts` models the classic renderer, so
+ * if fullscreen ever becomes the default it needs re-verification.
+ *
+ * Everything else in 2.1.236 is out of reach: `notify_when_idle` on
+ * SendMessage (we never call it), the sandbox wildcard read-deny precedence
+ * change and the auto-mode Monitor-rule change (no sandbox or Monitor surface
+ * here), recap capping at 400 chars (content-only — `away_summary` still
+ * carries its text in `content`), the `/model` picker height and highlight
+ * (we mirror the model from JSONL, not the picker), tmux title throttling
+ * (OSC is stripped), `/goal` idle check-ins, Remote Control offline marking,
+ * footer alignment, the cwd-removed and subprocess-start fixes, the guest-pass
+ * `~/.claude.json` fix (we read-modify-write that file, never replace it), and
+ * the VSCode screen-reader work.
  */
-export const REVIEWED_CLI_VERSION = '2.1.235';
+export const REVIEWED_CLI_VERSION = '2.1.236';
 
 /**
  * app_settings key holding the user's explicit OmniFex-checkout override.

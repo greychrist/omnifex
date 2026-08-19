@@ -58,6 +58,7 @@ export interface Services {
     setProjectPinned(args: { projectPath: string; pinned: boolean }): unknown;
     getHomeDirectory(): unknown;
     getSettings(opts?: unknown): unknown;
+    getDefaultModel(opts?: unknown): unknown;
     saveSettings(settings: unknown, opts?: unknown): unknown;
     getSystemPrompt(opts?: unknown): unknown;
     saveSystemPrompt(prompt: unknown, opts?: unknown): unknown;
@@ -407,6 +408,10 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     get_claude_settings: wrapWith((p: Record<string, unknown>) => {
       const configDir = (p?.configDir ?? p?.config_dir) as string | undefined;
       return claude?.getSettings(configDir ? { configDir } : undefined) ?? null;
+    }),
+    get_claude_default_model: wrapWith((p: Record<string, unknown>) => {
+      const configDir = (p?.configDir ?? p?.config_dir) as string | undefined;
+      return claude?.getDefaultModel(configDir ? { configDir } : undefined) ?? null;
     }),
     save_claude_settings: wrapWith((p: Record<string, unknown>) => {
       const configDir = (p?.configDir ?? p?.config_dir) as string | undefined;

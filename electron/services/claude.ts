@@ -111,6 +111,11 @@ export interface ClaudeSettingsOpts {
 
 export interface ClaudeService {
   getHomeDirectory(): string;
+  /** Effective model for an "Account Default" session — env overrides included. */
+  getDefaultModel(opts?: { configDir?: string }): {
+    model: string | null;
+    source: 'ANTHROPIC_MODEL' | 'ANTHROPIC_DEFAULT_MODEL' | 'settings' | 'none';
+  };
 
   listProjects(): Promise<Project[]>;
   /** Pin/unpin a project to the top of the Projects list. Idempotent. */
@@ -382,6 +387,53 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
   // -------------------------------------------------------------------------
   // getHomeDirectory
   // -------------------------------------------------------------------------
+
+  /**
+   * The model an "Account Default" session actually starts on.
+   *
+   * OmniFex omits `--model` for the Default pick and lets the CLI resolve it,
+   * so this must resolve it the same way the CLI does. Claude Code 2.1.236
+   * added `ANTHROPIC_DEFAULT_MODEL`, which outranks the settings.json `model`
+   * key — and because every OmniFex spawn inherits `process.env` (see
+   * util/claude-env.ts), a value exported in the user's shell reaches the CLI
+   * whether or not anything in the UI mentions it.
+   *
+   * Precedence mirrors the CLI's own startup resolution:
+   *   `--model` (never set on this path) > ANTHROPIC_MODEL > ANTHROPIC_DEFAULT_MODEL > settings.json `model`
+   *
+   * `source` is returned so callers can say WHERE the value came from; a
+   * default that silently disagrees with settings.json is exactly the
+   * confusion that cost real time when a stale `model` pin made a picker
+   * selection look broken.
+   */
+  function getDefaultModel(opts?: { configDir?: string }): {
+    model: string | null;
+    source: 'ANTHROPIC_MODEL' | 'ANTHROPIC_DEFAULT_MODEL' | 'settings' | 'none';
+  } {
+    const fromEnv = (key: 'ANTHROPIC_MODEL' | 'ANTHROPIC_DEFAULT_MODEL'): string | null => {
+      const v = process.env[key];
+      return typeof v === 'string' && v.trim() ? v.trim() : null;
+    };
+    const envModel = fromEnv('ANTHROPIC_MODEL');
+    if (envModel) return { model: envModel, source: 'ANTHROPIC_MODEL' };
+    const envDefault = fromEnv('ANTHROPIC_DEFAULT_MODEL');
+    if (envDefault) return { model: envDefault, source: 'ANTHROPIC_DEFAULT_MODEL' };
+    // Read settings.json directly rather than through the async
+    // `getClaudeSettings`: this resolver is synchronous, and the only field it
+    // needs is `model`.
+    try {
+      if (opts?.configDir) {
+        const raw = fs.readFileSync(path.join(opts.configDir, 'settings.json'), 'utf-8');
+        const parsed = JSON.parse(raw) as { model?: unknown } | null;
+        const m = parsed?.model;
+        if (typeof m === 'string' && m.trim()) return { model: m.trim(), source: 'settings' };
+      }
+    } catch {
+      // Missing, unreadable, or malformed settings.json is a "no pin" answer,
+      // not an error — the CLI falls through to the tier default too.
+    }
+    return { model: null, source: 'none' };
+  }
 
   function getHomeDirectory(): string {
     return os.homedir();
@@ -1173,6 +1225,7 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
 
   return {
     getHomeDirectory,
+    getDefaultModel,
     listProjects,
     setProjectPinned,
     createProject,

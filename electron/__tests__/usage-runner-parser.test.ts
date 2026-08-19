@@ -88,14 +88,18 @@ Resets May 25 at 7pm (America/New_York)
 
 Current week (Sonnet only)
 0% used
+
+What's contributing to your limits usage?
+81% of your usage was at >150k context
 `;
     expect(isUsageOutputComplete(FIXTURE)).toBe(true);
   });
 
-  it('still rejects a render that is missing a window entirely', () => {
-    // The whole point of the check — if Sonnet hasn't been rendered yet at
-    // all, we're still in the middle of the async load and must keep
-    // waiting. Don't accept this as complete.
+  it('still rejects a render whose windows are mid-load', () => {
+    // The whole point of the check. "Mid-load" is detected by the absence of
+    // the contributing header, which renders below every window — NOT by
+    // demanding a particular per-model bar, because the set of those is open
+    // and an account may legitimately have none.
     const FIXTURE = `
 Session
 Total cost:             $0.0000
@@ -129,8 +133,36 @@ Resets May 25 at 7pm (America/New_York)
 Current week (Sonnet only)
 12% used
 Resets May 25 at 7pm (America/New_York)
+
+What's contributing to your limits usage?
+81% of your usage was at >150k context
 `;
     expect(isUsageOutputComplete(FIXTURE)).toBe(false);
+  });
+
+  it('accepts an account whose only per-model weekly bar is not Sonnet', () => {
+    // 2.1.236 renders `Current week (Fable)` for accounts that never show a
+    // Sonnet bar. Requiring Sonnet by name meant the fast path never fired
+    // for them and every poll paid the full quiet timeout.
+    const FIXTURE = `
+Session
+Total cost:             $0.0000
+
+Current session
+6% used
+Resets 3:40am (America/New_York)
+
+Current week (all models)
+7% used
+Resets May 25 at 7pm (America/New_York)
+
+Current week (Fable)
+0% used
+
+What's contributing to your limits usage?
+81% of your usage was at >150k context
+`;
+    expect(isUsageOutputComplete(FIXTURE)).toBe(true);
   });
 
   it('accepts a window-less (enterprise) render once the tables footer prints', () => {

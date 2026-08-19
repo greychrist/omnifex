@@ -16,11 +16,21 @@ interface Props {
   sessionCost?: import('@/lib/api').SessionCostSnapshot | null;
 }
 
+// Per-model weekly windows are an open set on the CLI side, so this is a
+// prettifier, not a gate — an unmapped label falls through to itself
+// (`week_haiku` → "Current week (haiku)") rather than disappearing.
 const WINDOW_LABELS: Record<string, string> = {
   current_session: 'Current session (5h)',
   week_all_models: 'Current week (all models)',
   week_sonnet: 'Current week (Sonnet only)',
+  week_opus: 'Current week (Opus only)',
+  week_fable: 'Current week (Fable only)',
+  week_haiku: 'Current week (Haiku only)',
 };
+
+function windowLabel(label: string): string {
+  return WINDOW_LABELS[label] ?? `Current week (${label.replace(/^week_/, '')})`;
+}
 
 function ageLabel(observedAt: number, now: number): string {
   const ms = now - observedAt;
@@ -111,7 +121,7 @@ export function UsageDetailPopover({
             {data.parsed.windows.map((w) => (
               <div key={w.label} className="space-y-1">
                 <div className="flex justify-between text-xs">
-                  <span>{WINDOW_LABELS[w.label] ?? w.label}</span>
+                  <span>{windowLabel(w.label)}</span>
                   <span className="font-mono">{w.pct_used.toFixed(0)}%</span>
                 </div>
                 <div className="h-1.5 w-full overflow-hidden rounded bg-foreground/10">

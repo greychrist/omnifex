@@ -1325,6 +1325,25 @@ export const api = {
   },
 
   /**
+   * The model an "Account Default" session actually starts on, and where that
+   * value came from. Not the same as `getClaudeSettings().model`: since Claude
+   * Code 2.1.236 an exported `ANTHROPIC_DEFAULT_MODEL` outranks the
+   * settings.json pin, and every OmniFex spawn inherits the environment.
+   */
+  async getClaudeDefaultModel(opts?: { configDir?: string }): Promise<{
+    model: string | null;
+    source: 'ANTHROPIC_MODEL' | 'ANTHROPIC_DEFAULT_MODEL' | 'settings' | 'none';
+  }> {
+    const params: Record<string, unknown> = {};
+    if (opts?.configDir) params.configDir = opts.configDir;
+    const result = await apiCall<{
+      model: string | null;
+      source: 'ANTHROPIC_MODEL' | 'ANTHROPIC_DEFAULT_MODEL' | 'settings' | 'none';
+    }>("get_claude_default_model", params);
+    return result ?? { model: null, source: 'none' };
+  },
+
+  /**
    * Reads the Claude settings file
    * @returns Promise resolving to the settings object
    */

@@ -1,5 +1,14 @@
 export interface UsageWindow {
-  label: 'current_session' | 'week_all_models' | 'week_sonnet';
+  /**
+   * `current_session`, `week_all_models`, or `week_<model>` for a per-model
+   * weekly bar. Deliberately a string rather than a closed union: the CLI
+   * renders per-model windows from a generic `limits` array, so the set grows
+   * without warning. 2.1.236 renders `Current week (Fable)` on accounts that
+   * previously only ever showed `(Sonnet only)`, and a closed union silently
+   * dropped it. Consumers map unknown labels through `rateLimitTypeForWindow`
+   * and fall back to showing the raw label.
+   */
+  label: string;
   pct_used: number;
   resets_at_label: string;
 }
@@ -50,19 +59,12 @@ export type ParseResult =
 // emits a row of tab labels (`Status   Config   Usage   Stats`) above the
 // `Session` block, so we anchor on header text rather than column zero.
 //
-// `week_sonnet` is intentionally fuzzy. As of Claude Code 2.1.132 the
-// Sonnet block is rendered asynchronously over a "Refreshing…" placeholder
-// using cursor-position overwrites, which our linear ANSI strip can't
-// replicate — the literal text "Sonnet only" arrives corrupted (e.g.
-// "Son et nly", chars dropped). The leading `Son` and the surrounding
-// parens have been stable across observed corruptions, and matches are
-// disambiguated from `(all models)` by requiring "Son" inside the parens.
-// If a future version drops the `S` too, weaken further.
+// Window headers are discovered rather than enumerated — see `findWindows`.
+// The per-model weekly bars come from a generic `limits` array on the CLI
+// side, so `(Sonnet only)` and `(Fable)` are two instances of an open set.
 const SECTION_HEADERS = {
   session: /^[ \t]*Session\s*$/m,
   current_session: /^[ \t]*Current session\s*$/m,
-  week_all_models: /^[ \t]*Current week \(all models\)\s*$/m,
-  week_sonnet: /^[ \t]*Current week \(\s*Son[^)]*\)\s*$/m,
   contributing: /^[ \t]*What's contributing to your limits usage\?\s*$/m,
   skills_table: /^[ \t]*Skills\s+% of usage\s*$/m,
   subagents_table: /^[ \t]*Subagents\s+% of usage\s*$/m,
@@ -73,6 +75,92 @@ const SECTION_HEADERS = {
   tables_footer: /^[ \t]*d to day\b/m,
 };
 
+/**
+ * Matches any rate-limit window header line, capturing the parenthesised
+ * model name for the weekly bars. One regex rather than a fixed list so a
+ * window the CLI adds later is *discovered* instead of dropped — the failure
+ * mode that hid `Current week (Fable)` behind a Sonnet-only pattern.
+ */
+const WINDOW_HEADER = /^[ \t]*(Current session|Current week \(([^)]*)\))[ \t]*$/gm;
+/** Same pattern, non-global, for use as a `sliceSection` end boundary. */
+const ANY_WINDOW_HEADER = /^[ \t]*(?:Current session|Current week \([^)]*\))[ \t]*$/m;
+
+/** `Sonnet only` → `week_sonnet`, `Fable` → `week_fable`, `all models` → `week_all_models`. */
+export function windowLabelFor(headerText: string, modelName: string | undefined): string {
+  if (modelName === undefined) return 'current_session';
+  const slug = modelName
+    .trim()
+    .replace(/\s+only$/i, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return slug ? `week_${slug}` : 'week_unknown';
+}
+
+/**
+ * Window labels seen in the wild. Not a validation gate — an unknown label
+ * still parses and still flows to storage — only the set that does NOT earn a
+ * drift warning.
+ */
+const KNOWN_WINDOW_LABELS = new Set([
+  'current_session',
+  'week_all_models',
+  'week_sonnet',
+  'week_opus',
+  'week_fable',
+  'week_haiku',
+]);
+
+/**
+ * Window label → the `rate_limit_type` stored by `rate-limits.ts`.
+ *
+ * Lives here, beside the labels it maps, so a newly discovered window gets a
+ * rate-limit type without a second edit somewhere else. `humanType` and
+ * `shouldNotify` in rate-limits.ts already degrade gracefully for a
+ * `seven_day_*` value they have never seen.
+ */
+export function rateLimitTypeForWindow(label: string): string {
+  if (label === 'current_session') return 'five_hour';
+  if (label === 'week_all_models') return 'seven_day';
+  if (label.startsWith('week_')) return `seven_day_${label.slice('week_'.length)}`;
+  return label;
+}
+
+interface FoundWindow { label: string; bodyStart: number; headerStart: number }
+
+/** All window headers in render order, with the offset each one's body starts at. */
+function findWindows(text: string): FoundWindow[] {
+  const out: FoundWindow[] = [];
+  const re = new RegExp(WINDOW_HEADER.source, WINDOW_HEADER.flags);
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    const label = windowLabelFor(m[1], m[2]);
+    // A redrawn screen can repeat a header; first occurrence wins, matching
+    // the previous first-match-wins behaviour of the fixed regexes.
+    if (out.some((w) => w.label === label)) continue;
+    out.push({ label, headerStart: m.index, bodyStart: m.index + m[0].length });
+  }
+  return out;
+}
+
+/**
+ * A window's body runs to the next window header or to the contributing
+ * section, whichever comes first. Bounding on "the next header of any kind"
+ * is what keeps a trailing bar — the 2.1.236 `Usage credits` row, say — from
+ * donating its `Resets` line to the window above it.
+ */
+function windowBlock(text: string, windows: FoundWindow[], idx: number): string {
+  let end = text.length;
+  const next = windows[idx + 1];
+  if (next) end = next.headerStart;
+  const contributing = new RegExp(SECTION_HEADERS.contributing.source, SECTION_HEADERS.contributing.flags)
+    .exec(text.slice(windows[idx].bodyStart));
+  if (contributing != null) {
+    end = Math.min(end, windows[idx].bodyStart + contributing.index);
+  }
+  return text.slice(windows[idx].bodyStart, end);
+}
+
 // 2.1.208+ rate-limited / refresh-failed render marker. Both observed
 // variants share the prefix:
 //   "Showing last-known usage as of <time> (rate limited — try again in a moment)"
@@ -81,11 +169,9 @@ const STALE_MARKER = /^[ \t]*Showing last-known usage/m;
 
 /**
  * Returns true when the captured TUI text appears to be a complete `/usage`
- * render: all three known window sections are present, each has a `% used`
- * line and a non-empty `Resets ...` line. Used by the runner as a fast-path
- * exit signal — no need to wait the full quiet timeout if the buffer is
- * already complete. Returns false (keep waiting) if any section is missing or
- * still in mid-render.
+ * render. Used by the runner as a fast-path exit signal — no need to wait the
+ * full quiet timeout if the buffer is already complete. Returns false (keep
+ * waiting) if a section is missing or still in mid-render.
  */
 export function isUsageOutputComplete(input: string): boolean {
   const result = parseUsageOutput(input);
@@ -105,28 +191,32 @@ export function isUsageOutputComplete(input: string): boolean {
   // enough along to show the footer already has its window headers and
   // takes the branch below.
   const text = input.replace(/\r\n/g, '\n');
-  const anyWindowHeader =
-    SECTION_HEADERS.current_session.test(text) ||
-    SECTION_HEADERS.week_all_models.test(text) ||
-    SECTION_HEADERS.week_sonnet.test(text);
-  if (!anyWindowHeader) {
+  if (!ANY_WINDOW_HEADER.test(text)) {
     return SECTION_HEADERS.tables_footer.test(text);
   }
 
-  // All three known windows must have parsed. A non-empty Resets line is
-  // required EXCEPT for 0%-used windows — observed in Claude Code 2.1.148:
-  // when Sonnet usage is 0%, the TUI renders the header + bar but omits the
-  // Resets line entirely (nothing to reset to). Without the carve-out the
-  // fast-path would never fire for that common case, forcing every poll to
-  // wait the full quiet timeout.
+  // The two windows every subscription render has must have parsed, and every
+  // window that DID parse must look settled. Per-model weekly bars are not
+  // required by name: the set is open (`(Sonnet only)`, `(Fable)`, …), and
+  // demanding a specific one is what left the fast path permanently disabled
+  // for accounts whose weekly bar is not Sonnet.
   //
-  // If a future CLI version emits more sections we still pass; if it emits
-  // fewer (e.g. free-tier accounts that only show the session window), the
-  // fast-path stays disabled and the runner falls back to the quiet timeout.
-  const required: UsageWindow['label'][] = ['current_session', 'week_all_models', 'week_sonnet'];
-  for (const label of required) {
-    const w = result.data.windows.find((w) => w.label === label);
-    if (!w) return false;
+  // The contributing header renders BELOW every window, so its presence is
+  // what says "the window list is finished" rather than "mid-paint". That
+  // replaces the old rule of demanding a Sonnet bar by name, which could not
+  // tell "Sonnet hasn't loaded yet" from "this account has no Sonnet bar" —
+  // and so left the fast path permanently off for accounts whose per-model
+  // bar is `(Fable)`.
+  //
+  // A non-empty Resets line is required EXCEPT for 0%-used windows — observed
+  // in Claude Code 2.1.148: at 0% the TUI renders the header + bar but omits
+  // the Resets line entirely (nothing to reset to). Without the carve-out the
+  // fast path would never fire for that common case.
+  for (const label of ['current_session', 'week_all_models']) {
+    if (!result.data.windows.some((w) => w.label === label)) return false;
+  }
+  if (!SECTION_HEADERS.contributing.test(text)) return false;
+  for (const w of result.data.windows) {
     if (w.pct_used > 0 && !w.resets_at_label.trim()) return false;
   }
   return true;
@@ -172,9 +262,7 @@ export function collectUsageDriftWarnings(input: string): string[] {
     const block = sliceSection(
       text,
       SECTION_HEADERS.session,
-      SECTION_HEADERS.current_session,
-      SECTION_HEADERS.week_all_models,
-      SECTION_HEADERS.week_sonnet,
+      ANY_WINDOW_HEADER,
       SECTION_HEADERS.contributing,
     ) ?? '';
     for (const { label, re } of SESSION_FIELD_LABELS) {
@@ -188,24 +276,26 @@ export function collectUsageDriftWarnings(input: string): string[] {
 
   // Windows: a matched header should be followed by a `% used` line. A header
   // without one means the usage-bar phrasing drifted.
-  const windowHeaders: [UsageWindow['label'], RegExp][] = [
-    ['current_session', SECTION_HEADERS.current_session],
-    ['week_all_models', SECTION_HEADERS.week_all_models],
-    ['week_sonnet', SECTION_HEADERS.week_sonnet],
-  ];
-  for (const [label, header] of windowHeaders) {
-    if (!header.test(text)) continue;
-    const block = sliceSection(
-      text,
-      header,
-      SECTION_HEADERS.current_session,
-      SECTION_HEADERS.week_all_models,
-      SECTION_HEADERS.week_sonnet,
-      SECTION_HEADERS.contributing,
-    ) ?? '';
+  const found = findWindows(text);
+  for (let i = 0; i < found.length; i += 1) {
+    const label = found[i].label;
+    const block = windowBlock(text, found, i);
     if (!/(\d+(?:\.\d+)?)\s*%\s*used/i.test(block)) {
       warnings.push(
         `window "${label}" header found but no "% used" line; likely CLI wording drift`,
+      );
+    }
+  }
+
+  // An unrecognised weekly window is not an error — the CLI's per-model bars
+  // are an open set and a new one should flow straight through. But it IS the
+  // moment to look, because this is also what a mangled header would produce,
+  // and a junk label becomes a junk `seven_day_*` rate-limit type downstream.
+  for (const w of found) {
+    if (!KNOWN_WINDOW_LABELS.has(w.label)) {
+      warnings.push(
+        `unrecognised rate-limit window "${w.label}" — new CLI window (fine) or a mangled header (not fine); ` +
+          `it will be stored as rate-limit type "${rateLimitTypeForWindow(w.label)}"`,
       );
     }
   }
@@ -218,12 +308,11 @@ export function parseUsageOutput(input: string): ParseResult {
 
   const session = parseSessionBlock(text);
   const windows: UsageWindow[] = [];
-  const cs = parseWindow(text, 'current_session', SECTION_HEADERS.current_session);
-  if (cs) windows.push(cs);
-  const wm = parseWindow(text, 'week_all_models', SECTION_HEADERS.week_all_models);
-  if (wm) windows.push(wm);
-  const ws = parseWindow(text, 'week_sonnet', SECTION_HEADERS.week_sonnet);
-  if (ws) windows.push(ws);
+  const found = findWindows(text);
+  for (let i = 0; i < found.length; i += 1) {
+    const w = parseWindow(windowBlock(text, found, i), found[i].label);
+    if (w) windows.push(w);
+  }
 
   // A valid render has at least one rate-limit window (subscription
   // accounts: MAX/Pro) OR the "What's contributing" section (enterprise /
@@ -273,9 +362,7 @@ function parseSessionBlock(text: string): UsageData['session'] {
   const block = sliceSection(
     text,
     SECTION_HEADERS.session,
-    SECTION_HEADERS.current_session,
-    SECTION_HEADERS.week_all_models,
-    SECTION_HEADERS.week_sonnet,
+    ANY_WINDOW_HEADER,
     SECTION_HEADERS.contributing,
   ) ?? '';
 
@@ -301,20 +388,7 @@ function parseSessionBlock(text: string): UsageData['session'] {
   };
 }
 
-function parseWindow(
-  text: string,
-  label: UsageWindow['label'],
-  header: RegExp,
-): UsageWindow | null {
-  const block = sliceSection(
-    text,
-    header,
-    SECTION_HEADERS.current_session,
-    SECTION_HEADERS.week_all_models,
-    SECTION_HEADERS.week_sonnet,
-    SECTION_HEADERS.contributing,
-  );
-  if (!block) return null;
+function parseWindow(block: string, label: string): UsageWindow | null {
   const pct = /(\d+(?:\.\d+)?)\s*%\s*used/i.exec(block)?.[1];
   if (pct == null) return null;
   const resetsLine = /Resets\s+(.+?)\s*$/m.exec(block)?.[1]?.trim();

@@ -2,23 +2,50 @@ import { describe, it, expect } from 'vitest';
 import { stripAnsi } from '../services/usage-runner/ansi';
 
 describe('stripAnsi', () => {
-  // SGR (color) sequences become empty; cursor-forward becomes a space to
-  // preserve word boundaries; cursor-down becomes a newline so multi-row
-  // panel content stays on separate lines for the parser.
+  // stripAnsi replays the stream into a character grid and serializes it, so
+  // these expectations are "what a terminal would show", not "what a linear
+  // substitution would emit". Runs of spaces still collapse to one on the way
+  // out, which is why column padding does not show up below.
   it('strips SGR color codes', () => {
     expect(stripAnsi('\x1b[31mred\x1b[0m')).toBe('red');
   });
   it('converts cursor-forward (C) to a single space', () => {
     expect(stripAnsi('Welcome\x1b[5Cback')).toBe('Welcome back');
   });
-  it('converts cursor-down (B) to a newline', () => {
-    expect(stripAnsi('row1\x1b[1Brow2')).toBe('row1\nrow2');
+  it('moves cursor-down (B) to the next row WITHOUT resetting the column', () => {
+    // Column preservation is the real terminal behaviour and the whole reason
+    // the grid exists: Claude's diffing renderer emits `\r ESC[3C ESC[1B` to
+    // indent a row, then paints single cells at absolute columns. Treating B
+    // as a plain newline put those cells at column 0 and lost the ones the
+    // renderer stepped over — "general-purpose" arrived as "g neral-purpose".
+    expect(stripAnsi('row1\x1b[1Brow2')).toBe('row1\n row2');
+  });
+  it('keeps a cell an earlier frame painted when a later frame steps over it', () => {
+    // Frame 1 paints "general-purpose"; frame 2 repaints only the cells that
+    // changed, jumping over the unchanged "e" with an absolute column move.
+    const frame1 = 'general-purpose';
+    const frame2 = '\r' + 'g' + '\x1b[3G' + 'neral-purpose';
+    expect(stripAnsi(frame1 + frame2)).toBe('general-purpose');
   });
   it('converts cursor-next-line (E) to a newline', () => {
     expect(stripAnsi('row1\x1b[1Erow2')).toBe('row1\nrow2');
   });
-  it('drops cursor-up and erase CSI sequences', () => {
-    expect(stripAnsi('a\x1b[2A\x1b[2Kb')).toBe('ab');
+  it('applies erase-line rather than ignoring it', () => {
+    // `ESC[2K` clears the row, so the 'a' written before it is gone; the
+    // cursor does not move, so 'b' lands back at column 1. The old stripper
+    // dropped erases entirely and reported stale characters as current.
+    expect(stripAnsi('a\x1b[2A\x1b[2Kb')).toBe(' b');
+  });
+  it('clears the screen on erase-display and on the alt-screen switch', () => {
+    // Erase does not move the cursor, so what follows keeps its column —
+    // Claude always sends an explicit `ESC[H` next, which is why the real
+    // capture starts cleanly at the top-left.
+    expect(stripAnsi('stale\x1b[2Jfresh')).toBe(' fresh');
+    expect(stripAnsi('stale\x1b[2J\x1b[Hfresh')).toBe('fresh');
+    expect(stripAnsi('shell scrollback\x1b[?1049h\x1b[Hdialog')).toBe('dialog');
+  });
+  it('restores a saved cursor position', () => {
+    expect(stripAnsi('\x1b7abc\x1b8x')).toBe('xbc');
   });
   it('converts cursor-position (H) to a space so per-cell-positioned TUI renderings stay parseable', () => {
     // Real-world break observed 2026-05-22 (Claude Code 2.1.148): the

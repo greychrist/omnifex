@@ -24,6 +24,8 @@ Resets 7pm (America/New_York)
 Current week (Sonnet only)
 6% used
 Resets 7pm (America/New_York)
+
+What's contributing to your limits usage?
 `;
 
 function makeFakeAccountsService(cliPath: string | null = null) {

@@ -67,6 +67,7 @@ export const INVOKE_CHANNELS: readonly string[] = [
   'set_project_pinned',
   'get_home_directory',
   'get_claude_settings',
+  'get_claude_default_model',
   'save_claude_settings',
   'get_system_prompt',
   'save_system_prompt',

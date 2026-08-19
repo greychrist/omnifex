@@ -572,20 +572,24 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     }
   }, [projectPath, hasInitialAccountOverride, agent]);
 
-  // Resolve the account's default model from its settings.json so the
-  // context-gauge fallback can size a 1M-context "Account Default" session
-  // correctly (the live window is unavailable in TUI mode, and the session's
-  // own model string never carries the [1m] suffix). Re-reads on account
-  // change rather than persisting, so a later settings.json edit isn't stale.
+  // Resolve the account's default model so the context-gauge fallback can
+  // size a 1M-context "Account Default" session correctly (the live window is
+  // unavailable in TUI mode, and the session's own model string never carries
+  // the [1m] suffix). Re-reads on account change rather than persisting, so a
+  // later settings.json edit isn't stale.
+  //
+  // Goes through `getClaudeDefaultModel`, not `getClaudeSettings().model`:
+  // Claude Code 2.1.236 added `ANTHROPIC_DEFAULT_MODEL`, which outranks the
+  // settings.json pin, and OmniFex spawns inherit the environment. Reading the
+  // file alone sized the gauge off a model the session was not running.
   const accountConfigDir = accountResolution?.account.config_dir ?? null;
   useEffect(() => {
     if (!accountConfigDir) { setAccountDefaultModel(null); return; }
     let cancelled = false;
-    api.getClaudeSettings({ configDir: accountConfigDir })
-      .then((settings) => {
+    api.getClaudeDefaultModel({ configDir: accountConfigDir })
+      .then(({ model }) => {
         if (cancelled) return;
-        const m = (settings as { model?: unknown } | null)?.model;
-        setAccountDefaultModel(typeof m === 'string' ? m : null);
+        setAccountDefaultModel(model);
       })
       .catch(() => { if (!cancelled) setAccountDefaultModel(null); });
     return () => { cancelled = true; };

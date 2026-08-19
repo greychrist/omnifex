@@ -12,6 +12,10 @@ export type RateLimitType =
   | 'seven_day'
   | 'seven_day_opus'
   | 'seven_day_sonnet'
+  // The CLI renders per-model weekly bars from an open `limits` array
+  // (`Current week (Fable)` landed in 2.1.236), so this cannot be closed.
+  // `humanType` and `shouldNotify` both handle an unseen `seven_day_*`.
+  | `seven_day_${string}`
   | 'overage';
 
 export type RateLimitStatus = 'allowed' | 'allowed_warning' | 'rejected';
@@ -137,6 +141,13 @@ function humanType(rateLimitType: string): string {
   if (rateLimitType === 'seven_day') return '7-day';
   if (rateLimitType === 'seven_day_opus') return '7-day Opus';
   if (rateLimitType === 'seven_day_sonnet') return '7-day Sonnet';
+  // Per-model weekly windows are an open set (`seven_day_fable`, …) — render
+  // any unseen one rather than leaking a snake_case identifier into a
+  // notification body.
+  if (rateLimitType.startsWith('seven_day_')) {
+    const model = rateLimitType.slice('seven_day_'.length).replace(/_/g, ' ');
+    return `7-day ${model.charAt(0).toUpperCase()}${model.slice(1)}`;
+  }
   return rateLimitType.replace(/_/g, ' ');
 }
 
