@@ -29,44 +29,59 @@ import * as path from 'node:path';
  * old value and the new one, and file or fix whatever they imply. Bumping it
  * to silence the badge throws away the only drift signal we have.
  *
- * Last review: 2.1.233 → 2.1.234 on 2026-08-18. Three findings, all fixed in
- * this pass:
+ * Last review: 2.1.234 -> 2.1.235 on 2026-08-19. Findings:
  *
- *  1. 2.1.234 stopped crashing on API responses (non-streaming fallback path,
- *     typically third-party gateways) carrying a thinking block with no
- *     `thinking` field or a text block with no `text` field. Tolerating it
- *     upstream means the shape now reaches our transcript, where every read was
- *     an unguarded `.trim()` against a required-string type — StreamMessage
- *     caught the TypeError itself, so the damage was the whole message
- *     collapsing into its "Error rendering message" card and taking the
- *     assistant's real reply with it, on every reload. `text`/`thinking` are now
- *     optional in `claudeStream.ts` and all 23 reads the compiler found are
- *     guarded.
- *  2. New `CLAUDE_CODE_PROJECT_DIR_NAME` env var. In the binary it is honored
- *     ONLY when CLAUDE_CONFIG_DIR is set (`CGc = memo(() => CLAUDE_CONFIG_DIR ?
- *     validate(EGc()) : undefined)`, consumed as `cF(e) = CGc() ?? aV(e)`), and
- *     OmniFex always sets CLAUDE_CONFIG_DIR — so an inherited value would
- *     redirect every project's transcripts into one flat
- *     `<configDir>/projects/<name>/`, breaking `encodeProjectKey`'s consumers
- *     and making the Brain cross-attribute projects. `buildClaudeEnv` now strips
- *     it. Re-verified while there that our encoder still matches the CLI
- *     exactly: `[^a-zA-Z0-9]` → `-`, cap 200, `-<base36 hash>` suffix.
- *  3. New `autoContinueAtUsageLimit`, default ON for claude.ai logins (the CLI
- *     defaults it off only when an API key is present). A limited session now
- *     parks until the reset instead of ending its turn, so `conversationStatus`
- *     legitimately stays 'running' for hours. Wire shape is unchanged — the
- *     CLI's own predicate reads the same `status: 'rejected'` + `resetsAt` we
- *     already parse — so this needed an explanation, not a state change:
- *     `usageLimitWait` + `UsageLimitBanner`. See docs/session-lifecycle.md.
+ *  1. Permission dialogs changed twice in this release: display text and the
+ *     "don't ask again" option now always describe what a grant would actually
+ *     cover, and the option is withheld when the contents can't be fully
+ *     displayed (notebook cell delete/replace dialogs previously omitted the
+ *     existing cell content silently, and now say why). This is the only 2.1.235
+ *     entry that moves a surface OmniFex owns rather than the CLI's own TUI —
+ *     we build our own rules and our own "don't ask again" from the
+ *     permission-request payload. Absorbed in the permissions change that lands
+ *     with this bump (permissions.ts / PermissionCard / permissionRequest.ts);
+ *     this watermark is only honest once that lands too.
+ *  2. The Agent tool no longer advertises a general-purpose default in sessions
+ *     where that agent is unavailable — an omitted `subagent_type` now errors
+ *     with the available agents listed. No action: a dispatch that errors
+ *     arrives as `tool_result.is_error`, and the reducer already takes
+ *     Dispatched -> ToolResult(isError) to a `failed` row rather than leaving a
+ *     phantom running one.
+ *  3. The context-limit error now says when auto-compact is off and points at
+ *     /config. No wire change and nothing to parse — `events.ts` prefers
+ *     `errors[0]` generically rather than matching on the text. It does expose a
+ *     gap on our side, filed not fixed: `contextPressure.ts` documents an
+ *     explicit assumption that "the CLI auto-compacts first", which is what
+ *     makes `critical` unreachable on a 200k window and drives the 0.95 clamp.
+ *     With auto-compact off that assumption is wrong and the banner tops out
+ *     amber while the session walks into a hard limit. The signal is already in
+ *     a payload we fetch: `get_context_usage` carries `isAutoCompactEnabled`,
+ *     `autoCompactThreshold` and `rawMaxTokens`, none of which we read.
+ *     (Noted while there: `CliControlGetContextUsageResponse`'s `total_tokens` /
+ *     `remaining_tokens` are vestigial — the live payload is camelCase, and the
+ *     renderer reads `totalTokens` / `maxTokens` / `percentage` straight through
+ *     the index signature.)
+ *  4. SendMessage now refuses messages too large for cross-session delivery up
+ *     front instead of dropping them silently. No action: AgentResumed keys on
+ *     `toolUseResult.resumedAgentId` (or the same field in the returned JSON),
+ *     and a refusal carries neither, so a rejected send can't reopen a
+ *     subagent row.
  *
- * Also fixed upstream, no action needed: `/tui` and the fullscreen-renderer
- * prompt no longer drop launch `--allowed-tools` on restart (we pass the Brain's
- * `--allowedTools` in TUI mode, so a mid-session switch used to start
- * re-prompting for `brain_search`/`brain_read`), and session-scoped permission
- * answers are no longer dropped for background subagent prompts, which is what
- * had been defeating our session-destination rule twin in permissions.ts.
+ * Fixed upstream, no action needed: cloud sessions (/ultrareview, /autofix-pr)
+ * no longer re-scan and re-render their event streams on every update, and a
+ * language server disconnecting mid-session no longer invalidates the whole
+ * prompt cache — fewer surprise cache resets behind our cache-expiry glyph.
+ *
+ * Everything else in 2.1.235 is TUI-local and cannot reach us: the optional
+ * spellcheck setting, prompt-input highlight offsets, nested markdown list
+ * indentation in the terminal renderer (we render markdown ourselves), the
+ * ctrl+t task list starting collapsed on resume (our TaskList owns its own
+ * collapse state), Shift+Tab in the permission comment field, slash commands
+ * showing HTML entities, the prompt-footer restart notice, vim-mode cursor
+ * preservation, dialog arrow-key selection, the embedded grep improvements,
+ * the `claude rc` enterprise-gateway check, and the VSCode tab-focus fix.
  */
-export const REVIEWED_CLI_VERSION = '2.1.234';
+export const REVIEWED_CLI_VERSION = '2.1.235';
 
 /**
  * app_settings key holding the user's explicit OmniFex-checkout override.
