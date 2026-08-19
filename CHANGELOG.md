@@ -5,6 +5,27 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.134] — 2026-08-19
+
+The `/usage` scraper reads the screen instead of guessing at it, which recovers characters it had been dropping and a rate-limit window it had been ignoring entirely. Absorbs Claude Code 2.1.236. Installers remain **unsigned**.
+
+### Fixed
+
+- **`/usage` no longer loses characters.** Claude Code paints that dialog with a diffing renderer: after the first paint it re-emits only the cells that changed and steps over the rest with cursor moves — and `ESC[<n>B` moves down *without* resetting the column. The linear escape stripper dropped every stepped-over cell, so `/omnifex-release` was parsed as `/ mnifex-rele se`, `mcp-atlassian` as `mc -atlassian`, and `general-purpose` as `g neral-purpose`. `stripAnsi` now replays the escape stream into a character grid, which is the only way to recover cells that exist on screen but not in the byte stream.
+- **A whole rate-limit window was being dropped.** Accounts whose per-model weekly bar is `Current week (Fable)` rather than `(Sonnet only)` saw nothing for it — not in the usage popover, not in stored rate limits. Windows are now discovered rather than enumerated, so any per-model bar the CLI adds is picked up, and an unrecognised one raises a visible drift warning instead of disappearing.
+- **The context gauge could size itself off the wrong model.** Claude Code 2.1.236 added `ANTHROPIC_DEFAULT_MODEL`, which outranks the `model` pin in `settings.json`. Since an "Account Default" session omits `--model` and inherits the environment, reading the settings file alone could describe a model the session was not running.
+- `/usage` polling is faster: the fast-path completeness check had been silently disabled for accounts without a Sonnet bar, making every poll wait out the full timeout.
+
+### Changed
+
+- The `/usage` pty grew from 60 to 200 rows. The screen replay returns what the screen holds, and at 60 rows the dialog scrolls with the Subagents, Plugins, and MCP tables below the fold.
+- A `/usage` startup timeout now logs the rendered screen and the markers it was waiting for, so an unrecognised blocking dialog is legible rather than a guess.
+- Renderer performance is now measurable: `__omnifexProfile.on()` in the devtools console reports per-component render counts and durations across a tab switch or drag, and works in packaged builds.
+
+### Removed
+
+- `usage-runner/repair.ts` — 185 lines of vocabulary-driven single-character repair that existed only to paper over the stripper's losses. The screen replay makes it unreachable.
+
 ## [0.4.133] — 2026-08-19
 
 Background agents stop lying about being finished, and the session says so from outside the tab. Absorbs Claude Code 2.1.235. Installers remain **unsigned**.
