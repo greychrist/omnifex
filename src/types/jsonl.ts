@@ -142,7 +142,24 @@ export type SystemSubtype =
   | 'model_refusal_fallback'
   | 'model_refusal_no_fallback'
   | 'model_consent_fallback'
-  | 'error_during_execution';
+  | 'error_during_execution'
+  // Snapshot of the session's running background tasks, re-emitted whenever
+  // that set changes (an agent is launched, a background shell finishes).
+  // Bookkeeping, not narrative — the SubagentBar is where this belongs, so
+  // `filterDisplayableMessages` drops it from the transcript.
+  | 'background_tasks_changed';
+
+/**
+ * One entry of a `system:background_tasks_changed` snapshot. Shape verified
+ * against a live 2.1.235 stream — `task_type` is what distinguishes an agent
+ * from a backgrounded shell.
+ */
+export interface BackgroundTaskEntry {
+  task_id: string;
+  /** 'local_agent' | 'local_bash' observed; open string on the wire. */
+  task_type: string;
+  description?: string;
+}
 
 export interface SystemRaw extends RawLineBase {
   type: 'system';
@@ -165,6 +182,9 @@ export interface SystemRaw extends RawLineBase {
   /** Present when subtype === 'thinking_tokens' — running estimate of the current turn's thinking size. */
   estimated_tokens?: number;
   estimated_tokens_delta?: number;
+  /** Present when subtype === 'background_tasks_changed' — the full set of
+   *  background tasks running at that moment, not a delta. */
+  tasks?: BackgroundTaskEntry[];
 }
 
 /**

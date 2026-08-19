@@ -257,6 +257,29 @@ describe('classifyJsonlLine', () => {
     }
   });
 
+  it('classifies system/background_tasks_changed', () => {
+    // Emitted by the CLI whenever the set of running background tasks
+    // changes (agent launched, shell finished). Payload verified against a
+    // live 2.1.235 stream: a `tasks[]` snapshot, each entry carrying
+    // task_id, task_type ('local_agent' | 'local_bash') and description.
+    const sample = {
+      type: 'system',
+      subtype: 'background_tasks_changed',
+      tasks: [
+        { task_id: 'a049922dff4f33de0', task_type: 'local_agent', description: 'Fresh re-review of full diff' },
+        { task_id: 'bi9gtjgnv', task_type: 'local_bash', description: 'Run full shell test suite with change' },
+      ],
+      uuid: 'a2d65a24-3973-4652-900c-9e5d889aa559',
+      session_id: '883f38aa-0dff-41c7-a5c5-43694f9443d2',
+      receivedAt: '2026-08-19T15:58:49.997Z',
+    };
+    const node = classifyJsonlLine(sample);
+    expect(node?.kind).toBe('system');
+    if (node?.kind === 'system') {
+      expect(node.subtype).toBe('background_tasks_changed');
+    }
+  });
+
   it('classifies system/turn_duration', () => {
     const node = classifyJsonlLine(JSONL_SAMPLES['system/turn_duration']);
     expect(node?.kind).toBe('system');

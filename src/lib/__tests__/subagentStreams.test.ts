@@ -663,20 +663,21 @@ describe('deriveSubagents', () => {
       expect(subs[0].status).toBe('completed');
     });
 
-    it('Bash run_in_background is marked completed_inferred when the parent advances past the result without a notification', () => {
-      // Refactored from the previous `abandoned`-on-orphan-detection assertion.
-      // The current design reserves `abandoned` for explicit "we know this
-      // didn't finish" cases (e.g. a future watchdog timeout); the
-      // safety-net inference path uses `completed_inferred` so the row
-      // renders with a distinct icon that makes the missing carrier visible.
+    it('Bash run_in_background stays running when the parent advances past the result without a notification', () => {
+      // Previously asserted `completed_inferred` here. A backgrounded shell
+      // outlives the turn that launched it exactly as a backgrounded agent
+      // does — `docker build` is still running when the user types the next
+      // prompt — so the parent's `result` was never evidence it finished.
+      // The row closes on its own carrier (`task_notification`, or the
+      // queue-operation XML the JSONL tail forwards) or not at all.
       const subs = deriveSubagents([
         bashBackground(TOOL_USE_ID, 'Build DMG'),
         toolResult(TOOL_USE_ID, false, 'Async agent launched'),
         { kind: 'cli-stream-result', sessionId: '', receivedAt: '', raw: { type: 'result', subtype: 'success', result: 'awaiting' } } as any,
         { kind: 'user', userKind: 'prompt', sessionId: '', receivedAt: '', raw: { type: 'user', message: { content: [{ type: 'text', text: 'next' }] } } } as any,
       ]);
-      expect(subs[0].status).toBe('completed_inferred');
-      expect(subs[0].closureSource).toBe('parent_result');
+      expect(subs[0].status).toBe('running');
+      expect(subs[0].closureSource).toBeUndefined();
     });
 
     it('Bash run_in_background stays running while the result event is the latest (live awaiting)', () => {
@@ -705,21 +706,37 @@ describe('deriveSubagents', () => {
     expect(subs[0].status).toBe('failed');
   });
 
-  it('background dispatch becomes "completed_inferred" when a result fires and the parent moves on without task_notification', () => {
-    // Loaded session: turn dispatched a background agent, the result event
-    // closed the turn, and then either a new user message or another turn
-    // happened — proving the parent moved on without the notification.
-    // Inference rule now uses completed_inferred (distinct icon) rather
-    // than abandoned, so the missing-carrier case is visible without
-    // looking like a hang.
+  it('background dispatch stays running when a result fires and the parent moves on without task_notification', () => {
+    // Previously asserted `completed_inferred`: the parent moving on was
+    // read as proof the agent had finished. It is not — the user typing the
+    // next prompt is unrelated to a background agent's progress, and since
+    // CLI 2.1.232 that is the normal shape of every agent spawn rather than
+    // a rare missing-carrier edge case.
     const subs = deriveSubagents([
       agentToolUse(TOOL_USE_ID, 'Verify', 'general-purpose', true),
       toolResult(TOOL_USE_ID, false, 'Async agent launched successfully'),
       { kind: 'cli-stream-result', sessionId: '', receivedAt: '', raw: { type: 'result', subtype: 'success', result: 'awaiting' } } as any,
       { kind: 'user', userKind: 'prompt', sessionId: '', receivedAt: '', raw: { type: 'user', message: { content: [{ type: 'text', text: 'next prompt' }] } } } as any,
     ]);
-    expect(subs[0].status).toBe('completed_inferred');
-    expect(subs[0].closureSource).toBe('parent_result');
+    expect(subs[0].status).toBe('running');
+    expect(subs[0].closureSource).toBeUndefined();
+  });
+
+  it('a backgrounded agent stays running after its parent turn ends (CLI >=2.1.232 launches async)', () => {
+    // Reproduces the pi-tuitive session: the dispatch input carries no
+    // `run_in_background` (2.1.232 backgrounds agent spawns by default), the
+    // ACK is what marks the row background, and the parent's turn ends
+    // seconds later — twelve minutes before the agent actually returned.
+    // A backgrounded agent's life is no longer bounded by the turn that
+    // launched it, so the parent's `result` is not evidence it finished.
+    const subs = deriveSubagents([
+      agentToolUse(TOOL_USE_ID, 'Adversarial pre-push review', 'general-purpose', false),
+      toolResult(TOOL_USE_ID, false, 'Async agent launched successfully. (This tool result is internal metadata.)'),
+      { kind: 'cli-stream-result', sessionId: '', receivedAt: '', raw: { type: 'result', subtype: 'success', result: 'dispatched' } } as any,
+      taskProgress(TOOL_USE_ID, 'Reviewing the diff'),
+    ]);
+    expect(subs[0].status).toBe('running');
+    expect(subs[0].isBackground).toBe(true);
   });
 
   it('background dispatch stays running while the result event is the latest message (live awaiting)', () => {
@@ -1412,6 +1429,90 @@ describe('forwarded subagent text (--forward-subagent-text)', () => {
       },
     } as unknown as JsonlNode;
   }
+
+  // A forwarded frame in which the SUBAGENT dispatches its own background
+  // shell. Its `parent_tool_use_id` is the only carrier of who owns the
+  // resulting task — the `task_started` that follows names the shell's own
+  // tool_use_id and says `owned_by_subagent: true`, but never the owner.
+  function forwardedAssistantToolUse(parentToolUseId: string, toolUseId: string, description: string): JsonlNode {
+    return {
+      kind: 'assistant', sessionId: '', receivedAt: '',
+      raw: {
+        type: 'assistant',
+        parent_tool_use_id: parentToolUseId,
+        message: {
+          role: 'assistant',
+          content: [{ type: 'tool_use', id: toolUseId, name: 'Bash', input: { command: 'sleep 40', description, run_in_background: true } }],
+        },
+      },
+    } as unknown as JsonlNode;
+  }
+
+  function ownedTaskStarted(toolUseId: string, taskId: string, description: string): JsonlNode {
+    return {
+      kind: 'unknown', sessionId: '', receivedAt: '',
+      raw: {
+        type: 'system',
+        subtype: 'task_started',
+        task_id: taskId,
+        owned_by_subagent: true,
+        tool_use_id: toolUseId,
+        description,
+        task_type: 'local_bash',
+      },
+    } as unknown as JsonlNode;
+  }
+
+  it('nests a subagent-owned background task under the agent that started it', () => {
+    // Verified against a live 2.1.235 stream: an agent that backgrounds its
+    // own shell produced a second TOP-LEVEL row in the parent session's bar,
+    // labelled with the shell's description ("Sleep 40 seconds in
+    // background") and indistinguishable from a real agent.
+    const subs = deriveSubagents([
+      agentToolUse(TOOL_USE_ID, 'probe owner', 'general-purpose', false),
+      toolResult(TOOL_USE_ID, false, 'Async agent launched successfully.'),
+      forwardedAssistantToolUse(TOOL_USE_ID, TOOL_USE_ID_2, 'Sleep 40 seconds in background'),
+      ownedTaskStarted(TOOL_USE_ID_2, 'bnncsuaov', 'Sleep 40 seconds in background'),
+    ]);
+    expect(subs).toHaveLength(2);
+    const owner = subs.find((s) => s.toolUseId === TOOL_USE_ID);
+    const owned = subs.find((s) => s.toolUseId === TOOL_USE_ID_2);
+    expect(owned?.parentToolUseId).toBe(TOOL_USE_ID);
+    // Nested rows share the owner's colour — the indent is what tells them
+    // apart from a sibling (see SubagentBar).
+    expect(owned?.colorIndex).toBe(owner?.colorIndex);
+    // ...and render directly beneath their owner.
+    expect(subs[0].toolUseId).toBe(TOOL_USE_ID);
+    expect(subs[1].toolUseId).toBe(TOOL_USE_ID_2);
+  });
+
+  it('nests an owned task even when task_started arrives before the frame naming its owner', () => {
+    // This is the real arrival order, not a hypothetical: the engine's
+    // assistant resolver buffers each committed frame on its own
+    // parent-chain key and flushes it only when that chain emits again, so
+    // the subagent's `task_started` reaches the renderer first. Harvesting
+    // ownership inline while walking messages nested nothing on a recorded
+    // 2.1.235 stream; the pre-pass is what makes it order-independent.
+    const subs = deriveSubagents([
+      agentToolUse(TOOL_USE_ID, 'probe owner', 'general-purpose', false),
+      toolResult(TOOL_USE_ID, false, 'Async agent launched successfully.'),
+      ownedTaskStarted(TOOL_USE_ID_2, 'bnncsuaov', 'Sleep 40 seconds in background'),
+      forwardedAssistantToolUse(TOOL_USE_ID, TOOL_USE_ID_2, 'Sleep 40 seconds in background'),
+    ]);
+    expect(subs.find((s) => s.toolUseId === TOOL_USE_ID_2)?.parentToolUseId).toBe(TOOL_USE_ID);
+  });
+
+  it('leaves an owned task at top level when its owner was never dispatched', () => {
+    // A visible orphan beats a task that ran invisibly — e.g. the owner's
+    // dispatch fell outside the loaded history.
+    const subs = deriveSubagents([
+      forwardedAssistantToolUse('toolu_MISSING_OWNER', TOOL_USE_ID_2, 'Sleep 40 seconds in background'),
+      ownedTaskStarted(TOOL_USE_ID_2, 'bnncsuaov', 'Sleep 40 seconds in background'),
+    ]);
+    expect(subs).toHaveLength(1);
+    expect(subs[0].toolUseId).toBe(TOOL_USE_ID_2);
+    expect(subs[0].colorIndex).toBeGreaterThanOrEqual(0);
+  });
 
   function forwardedAssistantThinking(parentToolUseId: string, thinking: string): JsonlNode {
     return {

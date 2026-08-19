@@ -1,5 +1,5 @@
 import type { JsonlNode } from "@/types/jsonl";
-import { isTaskLifecycleMarker } from "@/lib/subagentStreams";
+import { isTaskLifecycleMarker, isTaskNotificationCarrier } from "@/lib/subagentStreams";
 import { forwardedParentToolUseId, isSubagentPrompt } from "@/lib/subagentDispatch";
 import { detectSkillInjection } from "@/lib/skillDetection";
 import { toolResultHasImages } from "@/lib/toolResultImages";
@@ -77,6 +77,26 @@ export function filterDisplayableMessages(
     // activity label; they carry no body and must never render as an empty
     // transcript row.
     if (message.kind === "system" && message.subtype === "status") {
+      return false;
+    }
+
+    // Skip the `<task-notification>` carriers. These queue-operation /
+    // attachment envelopes exist to deliver a backgrounded dispatch's
+    // completion, which the SubagentBar renders as the row's closure — in
+    // the transcript they are a contentless "Background: enqueue" strip,
+    // one per completion plus its `remove` twin. A queue-operation carrying
+    // a real queued prompt is NOT this and stays visible.
+    if (isTaskNotificationCarrier(rawShape)) {
+      return false;
+    }
+
+    // Always skip `system:background_tasks_changed` — a re-emitted snapshot
+    // of every background task currently running, fired on each change.
+    // It is the same information the SubagentBar already renders as rows,
+    // so in the transcript it is pure noise: a long agent run emits one per
+    // launch and one per completion, and before it was classified at all
+    // each landed as an "Unrecognized record: system" card.
+    if (message.kind === "system" && message.subtype === "background_tasks_changed") {
       return false;
     }
 

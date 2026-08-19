@@ -108,6 +108,45 @@ describe('filterDisplayableMessages', () => {
     });
   });
 
+  describe('system:background_tasks_changed snapshots', () => {
+    const bgTasksChanged = (): JsonlNode =>
+      ({
+        kind: 'system', subtype: 'background_tasks_changed', sessionId: '', receivedAt: '',
+        raw: {
+          type: 'system',
+          subtype: 'background_tasks_changed',
+          tasks: [
+            { task_id: 'a049922dff4f33de0', task_type: 'local_agent', description: 'Fresh re-review of full diff' },
+          ],
+        },
+      }) as unknown as JsonlNode;
+
+    it('drops background_tasks_changed — the running-task set is the SubagentBar\'s surface, not a transcript row', () => {
+      expect(filterDisplayableMessages([bgTasksChanged()])).toHaveLength(0);
+    });
+  });
+
+  describe('queue-operation task-notification carriers', () => {
+    const XML = '<task-notification>\n<task-id>brh39815u</task-id>\n<tool-use-id>toolu_019Bf8</tool-use-id>\n<status>completed</status>\n</task-notification>';
+    const queueOp = (operation: string, content?: string): JsonlNode =>
+      ({
+        kind: 'queue-operation', sessionId: '', receivedAt: '2026-08-19T15:47:21.000Z',
+        raw: { type: 'queue-operation', operation, ...(content === undefined ? {} : { content }) },
+      }) as unknown as JsonlNode;
+
+    it('drops the enqueue carrier — its XML is consumed by the SubagentBar', () => {
+      expect(filterDisplayableMessages([queueOp('enqueue', XML)])).toHaveLength(0);
+    });
+
+    it('drops the matching remove carrier', () => {
+      expect(filterDisplayableMessages([queueOp('remove', XML)])).toHaveLength(0);
+    });
+
+    it('keeps a queued user prompt — that enqueue is the user\'s own message, not bookkeeping', () => {
+      expect(filterDisplayableMessages([queueOp('enqueue', 'Reply with exactly: ok')])).toHaveLength(1);
+    });
+  });
+
   describe('skill-injection isMeta exemption', () => {
     // The Claude Code CLI persists skill-body injections with isMeta:true,
     // which the CLI live-stream version emits as isSynthetic:true (no isMeta).

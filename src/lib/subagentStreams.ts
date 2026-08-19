@@ -14,6 +14,7 @@ import {
   dispatchIndicesFromEvents,
   inferredClosureEvents,
   isTaskLifecycleMarker as _isTaskLifecycleMarker,
+  isTaskNotificationCarrier as _isTaskNotificationCarrier,
   messagesToEvents,
   type SubagentProgressEntry,
   type SubagentState,
@@ -288,6 +289,7 @@ export function createSubagentColorAllocator(): SubagentColorAllocator {
 }
 
 export const isTaskLifecycleMarker = _isTaskLifecycleMarker;
+export const isTaskNotificationCarrier = _isTaskNotificationCarrier;
 
 /**
  * Build the subagent list from the message stream.
@@ -334,7 +336,8 @@ export function deriveSubagents(
     s.endedAt = s.endedAt ?? new Date().toISOString();
   }
 
-  return Array.from(states.values()).map((s) => ({
+  const all = Array.from(states.values());
+  const toRow = (s: SubagentState, colorIndex: number): Subagent => ({
     toolUseId: s.toolUseId,
     taskId: s.taskId,
     agentType: s.agentType,
@@ -345,11 +348,44 @@ export function deriveSubagents(
     latest: s.latest,
     events: s.events,
     summary: s.summary,
-    colorIndex: allocator ? allocator.acquire(s.toolUseId) : colorIndexFor(s.toolUseId),
+    colorIndex,
     isBackground: s.isBackground,
     error: s.error,
+    parentToolUseId: s.parentToolUseId,
     closureSource: s.closureSource,
-  }));
+  });
+
+  // Owners first, so a nested row can read its owner's colour — and so a
+  // nested row never consumes a palette slot of its own (it shares its
+  // owner's, exactly like the rows applySubagentMeta synthesises).
+  const rows = new Map<string, Subagent>();
+  for (const s of all) {
+    if (s.parentToolUseId) continue;
+    rows.set(s.toolUseId, toRow(s, allocator ? allocator.acquire(s.toolUseId) : colorIndexFor(s.toolUseId)));
+  }
+  const owned: Subagent[] = [];
+  for (const s of all) {
+    if (!s.parentToolUseId) continue;
+    const owner = rows.get(s.parentToolUseId);
+    // An owner we never saw dispatched leaves the row at top level rather
+    // than dropping it — a visible orphan beats a task that ran invisibly.
+    owned.push(toRow(s, owner ? owner.colorIndex : (allocator ? allocator.acquire(s.toolUseId) : colorIndexFor(s.toolUseId))));
+  }
+  if (owned.length === 0) return Array.from(rows.values());
+
+  // Splice each owned task directly beneath its owner so the branch reads as
+  // a group, mirroring applySubagentMeta's placement of nested agent rows.
+  const out: Subagent[] = [];
+  for (const row of rows.values()) {
+    out.push(row);
+    for (const child of owned) {
+      if (child.parentToolUseId === row.toolUseId) out.push(child);
+    }
+  }
+  for (const child of owned) {
+    if (!rows.has(child.parentToolUseId ?? '')) out.push(child);
+  }
+  return out;
 }
 
 export function clearCompleted(subs: Subagent[]): Subagent[] {
