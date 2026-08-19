@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { ArrowDown, ArrowUp, ChevronDown, ChevronUp, ChevronsDown, ChevronsUp } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronDown, ChevronUp, ChevronsDown, ChevronsUp, MessageSquare, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TooltipSimple } from "@/components/ui/tooltip-modern";
 import { StreamMessage } from "@/components/StreamMessage";
@@ -26,6 +26,21 @@ import type { ViewMode } from "@/components/SessionViewToggle";
 /** Shared chrome for the floating scroll/step buttons on the right edge. */
 const NAV_BUTTON =
   "h-8 w-8 hover:bg-accent/50 transition-colors bg-background/80 backdrop-blur-sm border border-border/50";
+
+/**
+ * A stepper's icon: what it steps over, then which way. Both glyphs drop to
+ * 12px so the pair still fits the 32px button, and both are decorative — the
+ * Button already carries the accessible name.
+ */
+const StepIcon: React.FC<{
+  subject: React.ComponentType<{ className?: string }>;
+  direction: React.ComponentType<{ className?: string }>;
+}> = ({ subject: Subject, direction: Direction }) => (
+  <span className="inline-flex items-center gap-px" aria-hidden="true">
+    <Subject className="h-3 w-3" />
+    <Direction className="h-3 w-3" />
+  </span>
+);
 
 export interface ClaudeTranscriptProps {
   /** All stream messages for this tab — passed to StreamMessage as the streamMessages context. */
@@ -337,9 +352,11 @@ export function ClaudeTranscript({
         onToggle={() => void setContextTimelineEnabled(!contextTimelineEnabled)}
       />
     </div>
-    {/* Three icon families, because six stacked buttons are otherwise
-        indistinguishable at 14px: double chevrons jump to an end, single
-        chevrons step one message, arrows step one prompt. */}
+    {/* Each stepper is a subject glyph plus a direction glyph, because six
+        buttons stacked in a 32px column are otherwise four near-identical
+        up/down arrows you have to hover to tell apart: a chat bubble steps
+        one message, a person steps one user prompt. The two jump-to-end
+        buttons stay bare double chevrons — they have no subject. */}
     <div className="absolute right-1 bottom-6 z-10 flex flex-col gap-1">
       <TooltipSimple content="Scroll to top" side="left">
         <Button
@@ -360,7 +377,7 @@ export function ClaudeTranscript({
           aria-label="Previous message"
           className={NAV_BUTTON}
         >
-          <ChevronUp className="h-3.5 w-3.5" />
+          <StepIcon subject={MessageSquare} direction={ChevronUp} />
         </Button>
       </TooltipSimple>
       <TooltipSimple content="Next message" side="left">
@@ -371,7 +388,7 @@ export function ClaudeTranscript({
           aria-label="Next message"
           className={NAV_BUTTON}
         >
-          <ChevronDown className="h-3.5 w-3.5" />
+          <StepIcon subject={MessageSquare} direction={ChevronDown} />
         </Button>
       </TooltipSimple>
       {/* Separates the two step pairs. Without it the column reads as five
@@ -391,7 +408,7 @@ export function ClaudeTranscript({
             disabled={!hasPrompt}
             className={NAV_BUTTON}
           >
-            <ArrowUp className="h-3.5 w-3.5" />
+            <StepIcon subject={User} direction={ArrowUp} />
           </Button>
         </span>
       </TooltipSimple>
@@ -405,7 +422,7 @@ export function ClaudeTranscript({
             disabled={!hasPrompt}
             className={NAV_BUTTON}
           >
-            <ArrowDown className="h-3.5 w-3.5" />
+            <StepIcon subject={User} direction={ArrowDown} />
           </Button>
         </span>
       </TooltipSimple>

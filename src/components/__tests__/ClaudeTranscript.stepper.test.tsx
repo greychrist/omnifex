@@ -227,3 +227,37 @@ describe('ClaudeTranscript — stepping between prompts', () => {
     });
   });
 });
+
+describe('stepper button icons', () => {
+  // Six buttons stacked in a 32px-wide column: without a subject icon the
+  // message steppers and the prompt steppers are two pairs of near-identical
+  // up/down glyphs, and you have to hover each one to find out which is which.
+  const iconNames = (el: HTMLElement) =>
+    Array.from(el.querySelectorAll('svg')).map((svg) => svg.getAttribute('class') ?? '');
+
+  it('marks the message steppers with a chat icon', () => {
+    const { getByLabelText } = renderTranscript([prompt(), assistant()]);
+    for (const label of ['Previous message', 'Next message']) {
+      const icons = iconNames(getByLabelText(label) as HTMLElement);
+      expect(icons).toHaveLength(2);
+      expect(icons.join(' ')).toContain('message-square');
+    }
+  });
+
+  it('marks the prompt steppers with a person icon', () => {
+    const { getByLabelText } = renderTranscript([prompt(), assistant()]);
+    for (const label of ['Previous prompt', 'Next prompt']) {
+      const icons = iconNames(getByLabelText(label) as HTMLElement);
+      expect(icons).toHaveLength(2);
+      expect(icons.join(' ')).toContain('lucide-user');
+    }
+  });
+
+  it('leaves the jump-to-end buttons as a single glyph', () => {
+    // These two aren't about a subject — they go to an end of the transcript,
+    // so a subject icon would be noise.
+    const { getByLabelText } = renderTranscript([prompt(), assistant()]);
+    expect(iconNames(getByLabelText('Scroll to top') as HTMLElement)).toHaveLength(1);
+    expect(iconNames(getByLabelText('Scroll to bottom') as HTMLElement)).toHaveLength(1);
+  });
+});
