@@ -471,3 +471,21 @@ describe('useTabContext — thrown without provider', () => {
     }
   });
 });
+
+describe('TabContext — addTab ordering', () => {
+  it('numbers tabs added in the same render from the array, not a stale snapshot', () => {
+    // `order: tabs.length` read a render-time snapshot, so two adds batched
+    // into one render both claimed the same index and `order` stopped
+    // agreeing with the array it indexes. Persistence sorts by that field on
+    // reload, so the tabs came back in the wrong order.
+    const { result } = renderHook(() => useTabContext(), { wrapper });
+    act(() => {
+      for (const title of ['A', 'B', 'C']) {
+        result.current.addTab({ type: 'chat', title, agent: 'claude', status: 'idle', hasUnsavedChanges: false });
+      }
+    });
+    const orders = result.current.tabs.map((t) => t.order);
+    expect(orders).toEqual([...orders].sort((a, b) => a - b));
+    expect(new Set(orders).size).toBe(orders.length);
+  });
+});

@@ -292,12 +292,16 @@ export const TabProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const newTab: Tab = {
       ...tabData,
       id: generateTabId(),
-      order: tabs.length,
+      // Placeholder: the real index is assigned inside the updater below.
+      // Reading `tabs.length` here takes a render-time snapshot, so two adds
+      // batched into one render both claimed the same `order` — which made
+      // `order` disagree with the array it is supposed to index.
+      order: 0,
       createdAt: new Date(),
       updatedAt: new Date()
     };
 
-    setTabs(prevTabs => [...prevTabs, newTab]);
+    setTabs(prevTabs => [...prevTabs, { ...newTab, order: prevTabs.length }]);
     setActiveTabId(newTab.id);
     return newTab.id;
   }, [tabs.length]);

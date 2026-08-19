@@ -466,6 +466,11 @@ export const TabManager: React.FC<TabManagerProps> = ({ className }) => {
         style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
       >
         <div className="flex items-center h-9 gap-1 px-2">
+          {/* In a DEV build the dragged tab blanks for a frame each time it
+              crosses a neighbour. That is StrictMode, not this code: React 19
+              double-invokes renders, effects and (new in 19) ref callbacks,
+              and framer-motion attaches its layout projection through a ref.
+              A packaged build does not do it. Judge drag smoothness there. */}
           <Reorder.Group
             axis="x"
             values={tabs}

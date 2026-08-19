@@ -68,6 +68,12 @@ A per-account memory vault: Markdown notes distilled from past sessions, repo ar
 ## Environment
 
 - Package manager: `npm`. `package-lock.json` is the source of truth.
+- Do not judge animation or drag smoothness in `npm start`. The renderer runs
+  under `React.StrictMode`, and in a dev build React 19 double-invokes renders,
+  effects and ref callbacks — which makes framer-motion's layout projection
+  visibly blank the dragged tab on every crossing in the tab strip. A packaged
+  build does not. Reproduce with `npm run package` and launch
+  `out/OmniFex-darwin-arm64/OmniFex.app` before believing an animation bug.
 - Node.js is the only required runtime. No Rust toolchain is needed.
 - Commands:
   - `npm start` — launch the Electron app via Electron Forge
