@@ -97,6 +97,7 @@ import { usePermissions } from "@/hooks/usePermissions";
 import { useSessionLifecycle } from "@/hooks/useSessionLifecycle";
 import { useSendPrompt } from "@/hooks/useSendPrompt";
 import { usePublishTabStatus } from "@/hooks/usePublishTabStatus";
+import { useRenderProfile } from "@/hooks/useRenderProfile";
 import { useTabContext } from "@/contexts/TabContext";
 // Virtualizer removed — flat list for reliable scrolling
 import { SessionPersistenceService } from "@/services/sessionPersistence";
@@ -219,6 +220,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   onProjectPathChange,
   isActive = true,
 }) => {
+  useRenderProfile('AgentSession');
   const [projectPath] = useState(initialProjectPath || session?.project_path || "");
   // Stream-derived per-tab state lives in `claudeSessionStore`. The hook
   // returns React-shaped setters so existing hook contracts (useSessionLifecycle,
@@ -2094,13 +2096,23 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     }
   };
 
-  // Handle URL detection from terminal output
-  const handleLinkDetected = (url: string) => {
+  // Handle URL detection from terminal output.
+  //
+  // Ref-captured rather than useCallback'd on [showPreview, showPreviewPrompt]:
+  // ClaudeTranscript is memoised, and this is one of its props, so the identity
+  // must never change — a fresh arrow here re-rendered every transcript row in
+  // every open tab on each parent render. Same trap as onResendStable above.
+  // The ref is reassigned each render, so the body still reads current state.
+  const linkDetectedRef = useRef<(url: string) => void>(() => {});
+  linkDetectedRef.current = (url: string) => {
     if (!showPreview && !showPreviewPrompt) {
       setPreviewUrl(url);
       setShowPreviewPrompt(true);
     }
   };
+  const handleLinkDetected = useCallback((url: string) => {
+    linkDetectedRef.current(url);
+  }, []);
 
   const handleClosePreview = () => {
     setShowPreview(false);

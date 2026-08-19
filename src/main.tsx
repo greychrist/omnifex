@@ -8,9 +8,14 @@ import AppIcon from "../icons/icon.png";
 import { logService } from "./lib/logService";
 import { api } from "./lib/api";
 import { logAndForget } from "@/lib/fireAndLog";
+import { installRenderProfilerConsole } from "@/lib/renderProfilerConsole";
 
 // Initialize structured logging
 logAndForget('main:initialize', logService.initialize());
+
+// Render profiler — off unless explicitly enabled, including in packaged
+// builds. `__omnifexProfile.on()` in the devtools console, then reload.
+installRenderProfilerConsole(window as unknown as Record<string, unknown>);
 
 // Check log count and warn if excessive
 api.logCount().then((count) => {

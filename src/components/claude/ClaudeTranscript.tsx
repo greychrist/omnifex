@@ -9,6 +9,8 @@ import { HiddenEventsGroup } from "@/components/HiddenEventsGroup";
 import { InflightAssistantBubble } from "@/components/InflightAssistantBubble";
 import { FindBar } from "@/components/FindBar";
 import { useFindInChat } from "@/hooks/useFindInChat";
+import { useRenderProfile } from "@/hooks/useRenderProfile";
+import { renderProfiler } from "@/lib/renderProfiler";
 import { buildCompactItems } from "@/lib/compactGrouping";
 import { filterDisplayableMessages } from "@/lib/messageFilters";
 import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
@@ -93,7 +95,7 @@ export interface ClaudeTranscriptProps {
  * Extracted from `ClaudeCodeSession` (now `AgentSession`) so the agent
  * shell can swap Claude vs. Codex transcripts without duplicating chrome.
  */
-export function ClaudeTranscript({
+function ClaudeTranscriptImpl({
   messages,
   viewMode,
   accountType,
@@ -110,6 +112,7 @@ export function ClaudeTranscript({
   messagesEndRef,
   isNearBottomRef,
 }: ClaudeTranscriptProps): React.ReactElement {
+  useRenderProfile('ClaudeTranscript');
   const { config: renderConfig } = useMessageRenderingConfig();
   const { reengagePx, disengagePx } = useAutoScroll();
   const { contextTimelineEnabled, setContextTimelineEnabled, contextJump, contextPressure } =
@@ -163,6 +166,10 @@ export function ClaudeTranscript({
     () => filterDisplayableMessages(messages, renderConfig.hardFilters),
     [messages, renderConfig.hardFilters],
   );
+  // The transcript is not virtualised, so every render walks this whole list.
+  // Recorded as a bulk count: in verbose mode it is exactly the rows rendered,
+  // in compact mode an upper bound (grouping folds some rows together).
+  renderProfiler.recordRenders('TranscriptRow(displayable)', displayableMessages.length);
 
   const parentRef = useRef<HTMLDivElement>(null);
   // Find-in-chat state. Cmd/Ctrl+F opens the floating FindBar; `useFindInChat`
@@ -577,3 +584,22 @@ export function ClaudeTranscript({
     </div>
   );
 }
+
+/**
+ * Memoised because the transcript is the most expensive thing in the app and
+ * the cheapest thing to skip.
+ *
+ * Every tab stays mounted — TabContent hides inactive panels with a CSS class
+ * rather than unmounting them — so a change to `activeTabId` re-renders every
+ * panel in the app. Measured in packaged 0.4.133, one tab click cost ~1435
+ * renders in ~110ms, 1419 of them transcript rows belonging to sessions the
+ * user was not even looking at. `isActive` is not a prop here, so none of that
+ * work could ever change a pixel of this subtree.
+ *
+ * The guard rail this needs: every prop must stay referentially stable across
+ * a parent re-render, or memo silently does nothing. `onLinkDetected` was a
+ * bare arrow in AgentSession and had to be ref-captured for this to bite —
+ * the same trap `onResendStable` was already fixed for. See
+ * ClaudeTranscript.memo.test.tsx, which fails if either regresses.
+ */
+export const ClaudeTranscript = React.memo(ClaudeTranscriptImpl);

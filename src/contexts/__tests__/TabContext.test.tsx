@@ -330,6 +330,64 @@ describe('TabContext — updateTab / setActiveTab / reorderTabs', () => {
     expect(after).toEqual([ids[1], ids[2], ids[0]]);
     expect(result.current.tabs.map((t) => t.order)).toEqual([0, 1, 2]);
   });
+
+  // A drag fires reorderTabs once per neighbour crossed. Rebuilding every tab
+  // object each time changes the props of every mounted TabPanel, which
+  // defeats its React.memo and re-renders every open session's transcript
+  // mid-drag — the measured cause of the drag hiccup. Only the tabs whose
+  // position actually moved may be re-created.
+  it('reorderTabs preserves object identity for tabs whose order did not change', async () => {
+    const { result } = renderHook(() => useTabContext(), { wrapper });
+    await waitFor(() => { expect(result.current.tabs.length).toBe(1); });
+    act(() => {
+      result.current.addTab({ type: 'chat', title: 'A', agent: 'claude', status: 'idle', hasUnsavedChanges: false });
+      result.current.addTab({ type: 'chat', title: 'B', agent: 'claude', status: 'idle', hasUnsavedChanges: false });
+      result.current.addTab({ type: 'chat', title: 'C', agent: 'claude', status: 'idle', hasUnsavedChanges: false });
+    });
+    const before = result.current.tabs;
+    expect(before).toHaveLength(4);
+
+    // Swap the first two — the single-neighbour crossing a drag produces.
+    act(() => { result.current.reorderTabs(0, 1); });
+    const after = result.current.tabs;
+
+    // The two that swapped are new objects with corrected order fields...
+    expect(after[0].id).toBe(before[1].id);
+    expect(after[1].id).toBe(before[0].id);
+    expect(after.map((t) => t.order)).toEqual([0, 1, 2, 3]);
+
+    // ...and the two that never moved are the SAME objects, so their panels
+    // bail out of re-rendering entirely.
+    expect(after[2]).toBe(before[2]);
+    expect(after[3]).toBe(before[3]);
+  });
+
+  it('reorderTabs ignores an out-of-range source index', async () => {
+    const { result } = renderHook(() => useTabContext(), { wrapper });
+    await waitFor(() => { expect(result.current.tabs.length).toBe(1); });
+    act(() => {
+      result.current.addTab({ type: 'chat', title: 'A', agent: 'claude', status: 'idle', hasUnsavedChanges: false });
+    });
+    const before = result.current.tabs;
+
+    act(() => { result.current.reorderTabs(7, 0); });
+
+    expect(result.current.tabs).toBe(before);
+  });
+
+  it('reorderTabs leaves every tab untouched when the move is a no-op', async () => {
+    const { result } = renderHook(() => useTabContext(), { wrapper });
+    await waitFor(() => { expect(result.current.tabs.length).toBe(1); });
+    act(() => {
+      result.current.addTab({ type: 'chat', title: 'A', agent: 'claude', status: 'idle', hasUnsavedChanges: false });
+    });
+    const before = result.current.tabs;
+
+    act(() => { result.current.reorderTabs(1, 1); });
+
+    expect(result.current.tabs[0]).toBe(before[0]);
+    expect(result.current.tabs[1]).toBe(before[1]);
+  });
 });
 
 describe('TabContext — lookups', () => {

@@ -396,15 +396,31 @@ export const TabProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const reorderTabs = useCallback((startIndex: number, endIndex: number) => {
     setTabs(prevTabs => {
+      // Nothing to do — and returning prevTabs keeps the context value stable,
+      // so a drag that ends where it started costs no render at all.
+      if (startIndex === endIndex) return prevTabs;
+      if (startIndex < 0 || startIndex >= prevTabs.length) return prevTabs;
+
       const newTabs = [...prevTabs];
       const [removed] = newTabs.splice(startIndex, 1);
       newTabs.splice(endIndex, 0, removed);
-      
-      // Update order property
-      return newTabs.map((tab, index) => ({
-        ...tab,
-        order: index
-      }));
+
+      // Re-number, but only re-create the tabs that actually moved.
+      //
+      // `order` has to stay correct — tabPersistence sorts restored tabs by it
+      // and TabStatusPopover orders its list by it — but rebuilding all N tab
+      // objects to fix two of them changed the props of every mounted
+      // TabPanel, defeating its React.memo. A drag fires this once per
+      // neighbour crossed, so that re-rendered every open session's
+      // unvirtualised transcript between drag frames. That was the hiccup.
+      //
+      // Whether the move happened is decided by the indices, NOT by whether
+      // any `order` field changed: if the array had drifted out of sync with
+      // its order fields, a real move could leave every field already equal to
+      // its index and we would silently swallow the drag.
+      return newTabs.map((tab, index) =>
+        tab.order === index ? tab : { ...tab, order: index },
+      );
     });
   }, []);
 

@@ -1,4 +1,5 @@
 import React, { Suspense, lazy, useEffect } from 'react';
+import { useRenderProfile } from '@/hooks/useRenderProfile';
 import { motion } from 'framer-motion';
 import { useTabState } from '@/hooks/useTabState';
 import { Tab } from '@/contexts/TabContext';
@@ -39,7 +40,11 @@ interface TabPanelProps {
   isActive: boolean;
 }
 
-const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
+const TabPanelImpl: React.FC<TabPanelProps> = ({ tab, isActive }) => {
+  // Every tab is mounted at once (inactive ones are hidden with a CSS class,
+  // not unmounted), so this counter answers the load-bearing question: does a
+  // single tab click re-render all N panels, or only the two that changed?
+  useRenderProfile('TabPanel');
   const { updateTab } = useTabState();
   const [projects, setProjects] = React.useState<Project[]>([]);
   const [selectedProject, setSelectedProject] = React.useState<Project | null>(null);
@@ -767,7 +772,20 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
   );
 };
 
+/**
+ * Memoised so a tab switch only re-renders the two panels whose `isActive`
+ * actually flipped, instead of all N. Every panel is mounted at once (inactive
+ * ones are hidden with a CSS class), and `setActiveTab` hands down a fresh
+ * `tabs` array while keeping the individual tab objects — so without this,
+ * every panel and every session below it re-rendered on each click.
+ *
+ * Depends on TabContext keeping tab object identity stable for tabs that did
+ * not change; `updateTab` already bails out when a write changes nothing.
+ */
+const TabPanel = React.memo(TabPanelImpl);
+
 export const TabContent: React.FC = () => {
+  useRenderProfile('TabContent');
   const { tabs, activeTabId, createChatTab, createProjectsTab, findTabBySessionId, closeTab, updateTab } = useTabState();
   
   // Listen for events to open sessions in tabs

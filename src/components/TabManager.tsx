@@ -8,6 +8,8 @@ import { AccountBadge } from './AccountBadge';
 import { useTabState } from '@/hooks/useTabState';
 import { Tab, useTabContext } from '@/contexts/TabContext';
 import { useSecondTick } from '@/hooks/useSecondTick';
+import { useRenderProfile } from '@/hooks/useRenderProfile';
+import { renderProfiler } from '@/lib/renderProfiler';
 import { evaluateCacheExpiry } from '@/lib/cacheExpiry';
 import { cn } from '@/lib/utils';
 import { fireAndLog } from "@/lib/fireAndLog";
@@ -139,6 +141,7 @@ export const AgentCountGlyph: React.FC<{ count: number }> = ({ count }) => {
 };
 
 const TabItem: React.FC<TabItemProps> = ({ tab, isActive, onClose, onClick, isDragging = false, setDraggedTabId }) => {
+  useRenderProfile('TabItem');
   const [isHovered, setIsHovered] = useState(false);
   const { config } = useMessageRenderingConfig();
 
@@ -279,6 +282,7 @@ interface TabManagerProps {
 }
 
 export const TabManager: React.FC<TabManagerProps> = ({ className }) => {
+  useRenderProfile('TabManager');
   const {
     tabs,
     activeTabId,
@@ -388,6 +392,10 @@ export const TabManager: React.FC<TabManagerProps> = ({ className }) => {
   }, [tabs]);
 
   const handleReorder = (newOrder: Tab[]) => {
+    // Opens a profiling window per drag crossing. `reorderTabs` renumbers by
+    // rebuilding every tab object, so this is the interaction we most need a
+    // number for — it fires once per neighbour passed, not once per drag.
+    renderProfiler.profile('tab-reorder');
     // Find the positions that changed
     const oldOrder = tabs.map(tab => tab.id);
     const newOrderIds = newOrder.map(tab => tab.id);
@@ -413,6 +421,14 @@ export const TabManager: React.FC<TabManagerProps> = ({ className }) => {
     if (canAddTab()) {
       createProjectsTab();
     }
+  };
+
+  // Wraps the plain switch so a click is measured end to end: the profiler
+  // window opens before setActiveTabId and closes after the resulting paint,
+  // which is exactly the interval that feels laggy.
+  const handleSwitchToTab = (id: string) => {
+    renderProfiler.profile('tab-switch');
+    switchToTab(id);
   };
 
   const scrollTabs = (direction: 'left' | 'right') => {
@@ -466,11 +482,17 @@ export const TabManager: React.FC<TabManagerProps> = ({ className }) => {
         style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
       >
         <div className="flex items-center h-9 gap-1 px-2">
-          {/* In a DEV build the dragged tab blanks for a frame each time it
-              crosses a neighbour. That is StrictMode, not this code: React 19
-              double-invokes renders, effects and (new in 19) ref callbacks,
-              and framer-motion attaches its layout projection through a ref.
-              A packaged build does not do it. Judge drag smoothness there. */}
+          {/* The dragged tab used to blank for a frame on each crossing. It
+              was not framer-motion and not StrictMode — both were blamed and
+              both were wrong. `onReorder` fires per crossing, and nothing in
+              the panel tree below was memoised, so every crossing re-rendered
+              every open session's full unvirtualised transcript (measured:
+              ~1400 rows, ~110ms) between the drag frames. StrictMode's
+              double-invoke made it obvious in dev, which is why it looked
+              dev-only; it was always there, just cheaper to miss.
+              Fixed by memoising TabPanel and ClaudeTranscript. If it ever
+              returns, measure with `__omnifexProfile.on()` before theorising —
+              see src/lib/renderProfiler.ts. */}
           <Reorder.Group
             axis="x"
             values={tabs}
@@ -488,7 +510,7 @@ export const TabManager: React.FC<TabManagerProps> = ({ className }) => {
                 tab={tab}
                 isActive={tab.id === activeTabId}
                 onClose={fireAndLog('tab-manager:close', handleCloseTab)}
-                onClick={switchToTab}
+                onClick={handleSwitchToTab}
                 isDragging={draggedTabId === tab.id}
                 setDraggedTabId={setDraggedTabId}
               />

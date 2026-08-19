@@ -68,12 +68,21 @@ A per-account memory vault: Markdown notes distilled from past sessions, repo ar
 ## Environment
 
 - Package manager: `npm`. `package-lock.json` is the source of truth.
-- Do not judge animation or drag smoothness in `npm start`. The renderer runs
-  under `React.StrictMode`, and in a dev build React 19 double-invokes renders,
-  effects and ref callbacks — which makes framer-motion's layout projection
-  visibly blank the dragged tab on every crossing in the tab strip. A packaged
-  build does not. Reproduce with `npm run package` and launch
-  `out/OmniFex-darwin-arm64/OmniFex.app` before believing an animation bug.
+- Confirm animation and drag smoothness in a packaged build before judging it:
+  `npm run package`, then launch `out/OmniFex-darwin-arm64/OmniFex.app`. The
+  dev renderer runs under `React.StrictMode` and React 19 double-invokes
+  renders, effects and ref callbacks, so dev exaggerates render cost roughly
+  2×. **Exaggerates, not invents** — do not conclude "dev-only artifact" from
+  a symptom that merely looks milder in the packaged build. That call was made
+  once about the tab-drag flash and was wrong; the real cause was an
+  unmemoised render storm that was present in both.
+- Measure renderer performance, do not reason about it. `__omnifexProfile.on()`
+  in the devtools console (works in packaged builds — the app menu keeps
+  `role: 'toggleDevTools'`), reload, then interact: each tab switch or drag
+  crossing prints its render count and duration. See `src/lib/renderProfiler.ts`.
+  Every open tab is mounted at once and the transcript is unvirtualised, so the
+  default failure mode is "one click re-rendered every session in the app" —
+  check that first.
 - Node.js is the only required runtime. No Rust toolchain is needed.
 - Commands:
   - `npm start` — launch the Electron app via Electron Forge
