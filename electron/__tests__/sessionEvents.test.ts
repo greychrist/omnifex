@@ -22,6 +22,69 @@ describe('classifyRuntimeEvent', () => {
     }
   });
 
+  it('classifies system:task_started with the task type that tells an agent from a shell', () => {
+    // Verified on a live 2.1.235 stream. `task_type` is the only field that
+    // distinguishes an agent launch from a backgrounded shell, and
+    // `task_notification` (which is what actually fires the notification)
+    // carries neither — so this is where the type has to be captured.
+    const event = classifyRuntimeEvent({
+      type: 'system',
+      subtype: 'task_started',
+      task_id: 'a53f3584d7e8b32d5',
+      tool_use_id: 'toolu_01JG8pQ',
+      description: 'Adversarial pre-push review',
+      subagent_type: 'general-purpose',
+      task_type: 'local_agent',
+    });
+    expect(event.kind).toBe('taskStarted');
+    if (event.kind === 'taskStarted') {
+      expect(event.taskId).toBe('a53f3584d7e8b32d5');
+      expect(event.taskType).toBe('local_agent');
+      expect(event.description).toBe('Adversarial pre-push review');
+    }
+  });
+
+  it('classifies a backgrounded shell started by a subagent', () => {
+    const event = classifyRuntimeEvent({
+      type: 'system',
+      subtype: 'task_started',
+      task_id: 'bnncsuaov',
+      owned_by_subagent: true,
+      tool_use_id: 'toolu_01TVBEY',
+      description: 'Sleep 40 seconds in background',
+      task_type: 'local_bash',
+    });
+    expect(event.kind).toBe('taskStarted');
+    if (event.kind === 'taskStarted') expect(event.taskType).toBe('local_bash');
+  });
+
+  it('classifies system:task_notification with status, summary and duration', () => {
+    const event = classifyRuntimeEvent({
+      type: 'system',
+      subtype: 'task_notification',
+      task_id: 'a53f3584d7e8b32d5',
+      tool_use_id: 'toolu_01JG8pQ',
+      status: 'completed',
+      summary: 'No merge blockers found.',
+      usage: { total_tokens: 20769, tool_uses: 1, duration_ms: 44630 },
+    });
+    expect(event.kind).toBe('taskNotification');
+    if (event.kind === 'taskNotification') {
+      expect(event.taskId).toBe('a53f3584d7e8b32d5');
+      expect(event.status).toBe('completed');
+      expect(event.summary).toBe('No merge blockers found.');
+      expect(event.durationMs).toBe(44630);
+    }
+  });
+
+  it('treats a non-completed task_notification as a failure', () => {
+    const event = classifyRuntimeEvent({
+      type: 'system', subtype: 'task_notification', task_id: 't', status: 'failed',
+    });
+    expect(event.kind).toBe('taskNotification');
+    if (event.kind === 'taskNotification') expect(event.status).toBe('failed');
+  });
+
   it('classifies result message and surfaces is_error + body', () => {
     const event = classifyRuntimeEvent({
       type: 'result',

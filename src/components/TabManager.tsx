@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence, Reorder } from 'framer-motion';
-import { X, Plus, MessageSquare, Folder, BarChart, Server, Settings, FileText, HardDrive, List, Brain } from 'lucide-react';
+import { X, Plus, MessageSquare, Folder, BarChart, Server, Settings, FileText, HardDrive, List, Brain, Bot } from 'lucide-react';
 import { Spinner } from '@/components/ui/spinner';
 import { useMessageRenderingConfig } from '@/contexts/MessageRenderingContext';
 import { TabStatusGlyph } from '@/components/TabStatusGlyph';
@@ -68,6 +68,7 @@ export type TabStatusIndicator =
   | { kind: 'permission' }
   | { kind: 'question' }
   | { kind: 'spinner' }
+  | { kind: 'agents'; count: number }
   | { kind: 'complete' }
   | { kind: 'cacheExpiring'; critical: boolean };
 
@@ -90,6 +91,14 @@ export function resolveTabStatusIndicator(
   // turn in flight, active task, or running subagent). Falls back to
   // the older `status === 'running'` for tabs that haven't published
   // promptStatus yet (non-chat tabs or pre-mount). Not configurable.
+  // Running agents outrank the spinner. A backgrounded agent's launching
+  // turn is already over (CLI >=2.1.232 backgrounds spawns by default), so
+  // the tab is "working" with nothing visibly happening inside it — a bare
+  // spinner reads the same as Claude mid-sentence and says nothing about
+  // what the session is actually waiting on. The count does.
+  if (tab.activeAgents && tab.activeAgents > 0) {
+    return { kind: 'agents', count: tab.activeAgents };
+  }
   if (tab.promptStatus === 'working' || (!tab.promptStatus && tab.status === 'running')) {
     return { kind: 'spinner' };
   }
@@ -110,6 +119,24 @@ export function resolveTabStatusIndicator(
   }
   return null;
 }
+
+/**
+ * "N agents still working" glyph. Rendered directly rather than through
+ * TabStatusGlyph, like the spinner: this says what the tab is *doing*, not
+ * which of the user-configurable state glyphs it is in. Exported for tests.
+ */
+export const AgentCountGlyph: React.FC<{ count: number }> = ({ count }) => {
+  const label = `${count} background agent${count === 1 ? '' : 's'} working`;
+  return (
+    <span className="inline-flex items-center gap-0.5 text-sky-400" aria-label={label} title={label}>
+      <Bot className="size-3.5 animate-pulse" />
+      {/* A single agent needs no numeral — the bot itself is the message. */}
+      {count > 1 && (
+        <span className="text-[10px] font-medium tabular-nums leading-none">{count}</span>
+      )}
+    </span>
+  );
+};
 
 const TabItem: React.FC<TabItemProps> = ({ tab, isActive, onClose, onClick, isDragging = false, setDraggedTabId }) => {
   const [isHovered, setIsHovered] = useState(false);
@@ -140,6 +167,8 @@ const TabItem: React.FC<TabItemProps> = ({ tab, isActive, onClose, onClick, isDr
         return <TabStatusGlyph style={ind.question} indicators={ind} palette={palette} ariaLabel="Question waiting" />;
       case 'spinner':
         return <Spinner className="size-3.5" />;
+      case 'agents':
+        return <AgentCountGlyph count={indicator.count} />;
       case 'complete':
         return <TabStatusGlyph style={ind.complete} indicators={ind} palette={palette} ariaLabel="Completed" />;
       case 'cacheExpiring':

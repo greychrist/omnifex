@@ -18,7 +18,8 @@ import type {
 } from './types';
 import type { AgentMessage } from '../agents/types';
 import { classifyRuntimeEvent } from './events';
-import { dispatchResultNotification } from './notifications';
+import { dispatchAgentNotification, dispatchResultNotification } from './notifications';
+import { createBackgroundTaskTracker } from './background-tasks';
 import { createJsonlTail, type JsonlTailHandle } from './jsonl-tail';
 import { encodeProjectKey } from './summary-query';
 import { setStatus } from './status';
@@ -146,6 +147,12 @@ export function listenToMessages(
   // queued_command attachments that the stream-json output may not yield.
   ensureJsonlTail(handle, tabId, jsonlState, sendToRenderer);
 
+  // Pairs each background task's `task_started` with the `task_notification`
+  // that ends it, which is the only way to know an AGENT (not a shell) just
+  // finished and what it was called. Per-listener, so it dies with the
+  // session; losing it costs at most one notification.
+  const backgroundTasks = createBackgroundTaskTracker();
+
   const subscriptions = [
     engine.onMessage((agentMsg: AgentMessage) => {
       const message = agentMsg.payload as Record<string, unknown>;
@@ -200,6 +207,28 @@ export function listenToMessages(
           // is now derived by the renderer from JSONL content, not from FSM
           // transitions in main.
           break;
+        case 'taskStarted':
+          backgroundTasks.started(event);
+          break;
+        case 'taskNotification': {
+          // A backgrounded agent finishes long after the `result`
+          // notification for the turn that launched it — since CLI
+          // >=2.1.232 that turn ends seconds after the launch ACK. Without
+          // this the user's only notification arrives while the real work
+          // is still running. Shells resolve to null and stay silent.
+          const agent = backgroundTasks.resolveAgent(event.taskId);
+          if (agent) {
+            dispatchAgentNotification({
+              tabId,
+              projectPath: handle.projectPath,
+              description: agent.description,
+              event,
+              sendToRenderer,
+              notificationHooks,
+            });
+          }
+          break;
+        }
         case 'result':
           // status flip after notification dispatch below
           break;

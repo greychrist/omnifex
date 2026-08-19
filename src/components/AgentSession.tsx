@@ -1212,6 +1212,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
           decisionReason: msg.decision_reason,
           blockedPath: msg.blocked_path,
           suggestions: msg.permission_suggestions ?? [],
+          suppressAlwaysAllowRule: msg.suppress_always_allow_rule === true,
           agent: msg.agent,
           summary: msg.summary,
           payload: msg.codex_payload,
@@ -1501,6 +1502,20 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     lastPromptStatusRef.current = promptStatus;
     updateTab(tabIdRef.current, { promptStatus });
   }, [promptStatus, updateTab]);
+
+  // Mirror the running-subagent count onto the tab so the tab strip can say
+  // WHAT a background tab is waiting on. Since CLI >=2.1.232 an agent spawn
+  // is backgrounded by default: the launching turn ends seconds later and
+  // the session sits "working" with an empty transcript for minutes, which
+  // a bare spinner reports identically to Claude mid-sentence. Guarded by a
+  // last-value ref like the promptStatus mirror above — updateTab returns a
+  // new tab object every call, so an unguarded write is a render loop.
+  const lastAgentCountRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (lastAgentCountRef.current === activeSubagentCount) return;
+    lastAgentCountRef.current = activeSubagentCount;
+    updateTab(tabIdRef.current, { activeAgents: activeSubagentCount });
+  }, [activeSubagentCount, updateTab]);
 
   // Mirror the "waiting on the human" state onto the tab so the TabManager
   // can show a shield (permission) / question mark (AskUserQuestion). Same

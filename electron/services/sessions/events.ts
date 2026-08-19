@@ -29,6 +29,13 @@ export interface RateLimitInfo {
  *   hook_response / user_prompt_submit). Fires on SessionStart BEFORE
  *   any user turn — forwarded to the renderer but no session-status
  *   event is emitted (conversationStatus derivation is the renderer's job).
+ * - `taskStarted`: a background task (agent or shell) began. Carries the
+ *   `task_type` that `taskNotification` lacks, which is the only way to
+ *   tell an agent's completion from a shell's when it later fires.
+ * - `taskNotification`: a background task finished. Since CLI >=2.1.232
+ *   backgrounds agent spawns by default this can land minutes after the
+ *   turn that launched it, long after the `result` notification — so it is
+ *   the only chance to tell the user their agent is done.
  * - `turn`: anything else mid-turn (assistant text, tool_use, tool_result,
  *   non-hook system events, etc.).
  */
@@ -39,6 +46,14 @@ export type RuntimeEvent =
   | { kind: 'compact'; trigger: 'manual' | 'auto' | null; preTokens: number | null }
   | { kind: 'streamEvent' }
   | { kind: 'hook' }
+  | { kind: 'taskStarted'; taskId: string; taskType: string; description: string }
+  | {
+      kind: 'taskNotification';
+      taskId: string;
+      status: 'completed' | 'failed';
+      summary: string;
+      durationMs: number | null;
+    }
   | { kind: 'turn' };
 
 const HOOK_LIFECYCLE_SUBTYPES: ReadonlySet<string> = new Set([
@@ -101,6 +116,29 @@ export function classifyRuntimeEvent(raw: unknown): RuntimeEvent {
     const preTokens =
       typeof meta?.pre_tokens === 'number' ? meta.pre_tokens : null;
     return { kind: 'compact', trigger, preTokens };
+  }
+
+  if (m.type === 'system' && m.subtype === 'task_started') {
+    return {
+      kind: 'taskStarted',
+      taskId: typeof m.task_id === 'string' ? m.task_id : '',
+      taskType: typeof m.task_type === 'string' ? m.task_type : '',
+      description: typeof m.description === 'string' ? m.description : '',
+    };
+  }
+
+  if (m.type === 'system' && m.subtype === 'task_notification') {
+    const usage = m.usage as { duration_ms?: unknown } | undefined;
+    return {
+      kind: 'taskNotification',
+      taskId: typeof m.task_id === 'string' ? m.task_id : '',
+      // Anything that isn't an explicit 'completed' is a failure for
+      // notification purposes — 'stopped' included, since the user asked
+      // for work that did not happen.
+      status: m.status === 'completed' ? 'completed' : 'failed',
+      summary: typeof m.summary === 'string' ? clip(m.summary) : '',
+      durationMs: typeof usage?.duration_ms === 'number' ? usage.duration_ms : null,
+    };
   }
 
   if (m.type === 'stream_event') {

@@ -75,6 +75,15 @@ export interface Tab {
    */
   promptStatus?: 'working' | 'ready';
   /**
+   * How many of this chat tab's subagents are still running, mirrored from
+   * the session's derived subagent rows (the same count usePublishTabStatus
+   * publishes as TabStatusSummary.activeAgents). Drives the TabManager's
+   * agent glyph, which outranks the generic working spinner: a backgrounded
+   * agent outlives the turn that launched it, so without this a tab waiting
+   * on one looks identical to a tab mid-sentence.
+   */
+  activeAgents?: number;
+  /**
    * Which "waiting on the human" state this chat tab is in, mirrored from
    * the session's pending permission (see deriveWaitingFor). Drives the
    * TabManager per-tab indicator: 'permission' → shield, 'question' →
