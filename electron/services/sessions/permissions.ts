@@ -445,6 +445,7 @@ export function createPermissionRequestHandler(
       title?: string;
       display_name?: string;
       description?: string;
+      suppress_always_allow_rule?: boolean;
     };
     const toolName = rawPayload.tool_name ?? 'unknown';
     const toolInput = rawPayload.input ?? {};
@@ -479,10 +480,22 @@ export function createPermissionRequestHandler(
       return;
     }
 
-    const suggestions = withDefaultRuleSuggestion(
-      rawPayload.permission_suggestions,
-      buildDefaultRule(toolName, toolInput, handle.projectPath),
-    );
+    // The CLI sets this when granting a persistent rule for this ask would
+    // write one broader than the ask's own verb — MCP retroactive approvals,
+    // and (since 2.1.235) any edit whose content it couldn't fully show. Its
+    // own dialog drops the entire standing row in that case; the TUI-side
+    // signal for the widened cases never reaches a stdio host, so this flag
+    // is all we get. Withhold our fallback rule too: for an MCP tool it is a
+    // bare whole-tool allow, exactly the grant the flag exists to prevent.
+    // The CLI's own suggestions ride along untouched — the card ignores them
+    // when suppressed, and discarding them would lose its real recommendation.
+    const suppressAlwaysAllowRule = rawPayload.suppress_always_allow_rule === true;
+    const suggestions = suppressAlwaysAllowRule
+      ? rawPayload.permission_suggestions
+      : withDefaultRuleSuggestion(
+          rawPayload.permission_suggestions,
+          buildDefaultRule(toolName, toolInput, handle.projectPath),
+        );
 
     const payload = {
       type: 'permission_request',
@@ -495,6 +508,8 @@ export function createPermissionRequestHandler(
       decision_reason: rawPayload.decision_reason,
       blocked_path: rawPayload.blocked_path,
       permission_suggestions: suggestions,
+      // Omitted rather than `false` so the wire stays the CLI's shape.
+      suppress_always_allow_rule: suppressAlwaysAllowRule || undefined,
     };
 
     logEntry({

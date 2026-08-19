@@ -35,6 +35,13 @@ export interface PermissionRequestPayload {
   decisionReason?: string;
   blockedPath?: string;
   suggestions: PermissionSuggestion[];
+  /**
+   * The CLI refuses a persistent rule for this ask — accepting one would
+   * grant more than the ask covers (MCP retroactive approvals; from CLI
+   * 2.1.235, edits whose content it could not fully display). The card
+   * offers allow-once / deny only, with no rule editor or scope.
+   */
+  suppressAlwaysAllowRule?: boolean;
   // ---- Codex-specific fields (populated for kind='patch' / 'exec') -----
   /** Which engine emitted the request. Defaults to `'claude'` historically. */
   agent?: 'claude' | 'codex';

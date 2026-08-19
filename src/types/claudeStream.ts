@@ -285,6 +285,12 @@ export interface PermissionRequestMessage extends OmnifexEnvelope {
   decision_reason?: string;
   blocked_path?: string;
   permission_suggestions?: PermissionSuggestion[];
+  /**
+   * CLI-set: a persistent grant for this ask would be broader than the ask
+   * itself, so no "don't ask again" affordance may be offered. Forwarded
+   * verbatim from the `can_use_tool` request; absent means not suppressed.
+   */
+  suppress_always_allow_rule?: boolean;
 }
 
 /**

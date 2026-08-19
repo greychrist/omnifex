@@ -412,3 +412,75 @@ describe("PermissionCard — malformed tool input (CLI 2.1.229 class)", () => {
     expect(screen.getByText("ls -la")).toBeTruthy();
   });
 });
+
+// The CLI sets `suppress_always_allow_rule` when a persistent grant for this
+// ask would be broader than the ask itself (MCP retroactive approvals, and
+// from 2.1.235 any edit whose content can't be fully reviewed). Its own TUI
+// drops the entire standing row in that case, leaving accept-once / reject.
+describe("PermissionCard — suppressAlwaysAllowRule", () => {
+  it("withholds the rule editor and both persisting buttons", () => {
+    render(
+      <PermissionCard
+        request={makeClaudeRequest({ suppressAlwaysAllowRule: true })}
+        onAllow={vi.fn()}
+        onDeny={vi.fn()}
+      />,
+    );
+    expect(
+      screen.queryByPlaceholderText(/e\.g\. Bash\(git:\*\) or Read/i),
+    ).toBeNull();
+    expect(screen.queryByRole("button", { name: /save permission/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /allow for session/i })).toBeNull();
+  });
+
+  it("offers a one-time Allow that persists nothing", () => {
+    const onAllow = vi.fn();
+    render(
+      <PermissionCard
+        request={makeClaudeRequest({ suppressAlwaysAllowRule: true })}
+        onAllow={onAllow}
+        onDeny={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /allow once/i }));
+    expect(onAllow).toHaveBeenCalledWith([]);
+  });
+
+  it("says why the standing grant is unavailable", () => {
+    render(
+      <PermissionCard
+        request={makeClaudeRequest({ suppressAlwaysAllowRule: true })}
+        onAllow={vi.fn()}
+        onDeny={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId("permission-no-standing-rule")).toBeTruthy();
+  });
+
+  it("still denies", () => {
+    const onDeny = vi.fn();
+    render(
+      <PermissionCard
+        request={makeClaudeRequest({ suppressAlwaysAllowRule: true })}
+        onAllow={vi.fn()}
+        onDeny={onDeny}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /deny/i }));
+    expect(onDeny).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves the rule editor in place when the flag is absent", () => {
+    render(
+      <PermissionCard
+        request={makeClaudeRequest()}
+        onAllow={vi.fn()}
+        onDeny={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByPlaceholderText(/e\.g\. Bash\(git:\*\) or Read/i),
+    ).toBeTruthy();
+    expect(screen.queryByTestId("permission-no-standing-rule")).toBeNull();
+  });
+});

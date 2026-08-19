@@ -108,6 +108,7 @@ export function PermissionCard({ request, onAllow, onDeny }: PermissionCardProps
     description,
     decisionReason,
     suggestions,
+    suppressAlwaysAllowRule,
   } = request;
   const { config } = useMessageRenderingConfig();
   const accentStyle = accentStyleFor(config, "permission.request");
@@ -140,6 +141,8 @@ export function PermissionCard({ request, onAllow, onDeny }: PermissionCardProps
   const handleSaveForSession = () => { onAllow([buildSessionSuggestion(rule)]); };
   const handleSavePermission = () =>
     { onAllow([buildPersistedSuggestion(rule, scope)]); };
+  // No suggestions at all: allow this one use and persist nothing.
+  const handleAllowOnce = () => { onAllow([]); };
 
   return (
     <div
@@ -188,7 +191,22 @@ export function PermissionCard({ request, onAllow, onDeny }: PermissionCardProps
           )}
         </div>
 
+        {/* The CLI vetoed any standing grant for this ask — a rule saved
+            here would cover more than what is being approved. Say so rather
+            than silently dropping the controls. */}
+        {suppressAlwaysAllowRule && (
+          <p
+            data-testid="permission-no-standing-rule"
+            className="rounded-md border border-amber-500/30 bg-amber-500/5 px-2 py-1.5 text-[11px] text-amber-500"
+          >
+            Claude Code won&apos;t let this one be saved as a rule — approving
+            it would grant more than this request covers. Allow it once, or
+            deny.
+          </p>
+        )}
+
         {/* Editable rule */}
+        {!suppressAlwaysAllowRule && (
         <div className="space-y-1">
           <label className="text-[11px] uppercase tracking-wide text-muted-foreground font-medium">
             Rule
@@ -208,8 +226,10 @@ export function PermissionCard({ request, onAllow, onDeny }: PermissionCardProps
             )}
           />
         </div>
+        )}
 
         {/* Scope combobox */}
+        {!suppressAlwaysAllowRule && (
         <div className="space-y-1">
           <label className="text-[11px] uppercase tracking-wide text-muted-foreground font-medium">
             Save to
@@ -252,6 +272,7 @@ export function PermissionCard({ request, onAllow, onDeny }: PermissionCardProps
             </SelectContent>
           </Select>
         </div>
+        )}
 
         {/* Buttons */}
         <div className="flex items-center justify-between gap-2 pt-1">
@@ -265,25 +286,38 @@ export function PermissionCard({ request, onAllow, onDeny }: PermissionCardProps
             Deny
           </Button>
           <div className="flex gap-2">
-            <Button
-              size="sm"
-              variant="secondary"
-              className="text-xs"
-              onClick={handleSaveForSession}
-              disabled={!rule.trim()}
-            >
-              <Clock className="h-3.5 w-3.5 mr-1" />
-              Allow for Session
-            </Button>
-            <Button
-              size="sm"
-              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs"
-              onClick={handleSavePermission}
-              disabled={!rule.trim()}
-            >
-              <ShieldCheck className="h-3.5 w-3.5 mr-1" />
-              Save Permission
-            </Button>
+            {suppressAlwaysAllowRule ? (
+              <Button
+                size="sm"
+                className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs"
+                onClick={handleAllowOnce}
+              >
+                <ShieldCheck className="h-3.5 w-3.5 mr-1" />
+                Allow once
+              </Button>
+            ) : (
+              <>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  className="text-xs"
+                  onClick={handleSaveForSession}
+                  disabled={!rule.trim()}
+                >
+                  <Clock className="h-3.5 w-3.5 mr-1" />
+                  Allow for Session
+                </Button>
+                <Button
+                  size="sm"
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs"
+                  onClick={handleSavePermission}
+                  disabled={!rule.trim()}
+                >
+                  <ShieldCheck className="h-3.5 w-3.5 mr-1" />
+                  Save Permission
+                </Button>
+              </>
+            )}
           </div>
         </div>
       </div>
