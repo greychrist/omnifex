@@ -5,6 +5,29 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.133] — 2026-08-19
+
+Background agents stop lying about being finished, and the session says so from outside the tab. Absorbs Claude Code 2.1.235. Installers remain **unsigned**.
+
+### Added
+
+- The tab strip shows a pulsing bot glyph, with a count past one, whenever a session has agents running — it outranks the generic working spinner, since a backgrounded agent leaves the tab "working" with an empty transcript for minutes. It still yields to a permission or question prompt, which you can act on.
+- A notification when a background agent finishes. Its launching turn ends within seconds of the ACK and fires its own "Task complete", so until now the only notification arrived while the real work was still running. Backgrounded shells stay silent.
+- The transcript's step buttons name what they step over: a chat bubble for messages, a person for user prompts. The two jump-to-end buttons keep a single bare chevron.
+
+### Changed
+
+- React 19 and framer-motion 13. No removed APIs were in use; the type breaks were the dropped global `JSX` namespace, `useRef<T>(null)` becoming `RefObject<T | null>`, and `useRef<T>()` requiring an argument.
+- Reviewed the Claude Code changelog through 2.1.235 and moved the watermark.
+
+### Fixed
+
+- A backgrounded agent no longer reads as done seconds after launch. The rule that closed a running row once the parent's turn ended was written when a Task returned inside its own turn; since CLI 2.1.232 agent spawns are backgrounded by default, so the turn ends minutes before the agent does. Background rows now close on their own carrier, or stay running. The same flaw closed a `run_in_background` shell the moment you typed the next prompt.
+- Background tasks an agent starts for itself nest under that agent instead of appearing as top-level rows indistinguishable from your own agents.
+- `system:background_tasks_changed` is classified and hidden rather than rendering an "Unrecognized record" card on every launch and completion, and the `<task-notification>` queue-operation carriers are hidden too — queued prompts of your own stay visible.
+- Permission dialogs withhold the standing-rule affordance when the CLI reports that granting one would cover more than the ask does.
+- Tabs added in the same render no longer claim the same `order`, which had them reload in an order nobody chose.
+
 ## [0.4.132] — 2026-08-18
 
 Absorbs the drift from Claude Code 2.1.234. Installers remain **unsigned**.
