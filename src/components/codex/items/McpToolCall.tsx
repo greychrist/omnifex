@@ -1,5 +1,6 @@
 import { Plug } from "lucide-react";
 import type { AgentMessage } from "@/lib/api";
+import type { JSX } from 'react';
 
 interface McpFields {
   serverName: string;

@@ -27,6 +27,7 @@ import type { PermissionRequestPayload } from "@/lib/types/permissionRequest";
 import { asToolInput, toolInputString } from "@/lib/types/toolInput";
 import { CodexPatchPreview } from "@/components/codex/CodexPatchPreview";
 import { CodexExecPreview } from "@/components/codex/CodexExecPreview";
+import type { JSX } from 'react';
 
 interface PermissionCardProps {
   request: PermissionRequestPayload;

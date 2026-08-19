@@ -7,6 +7,7 @@ import { useTheme } from "@/hooks";
 import { getClaudeSyntaxTheme } from "@/lib/claudeSyntaxTheme";
 import { buildMarkdownComponents } from "@/lib/markdownComponents";
 import type { AgentMessage } from "@/lib/api";
+import type { JSX } from 'react';
 
 /**
  * Extracts the `content` string from an `agent_message` notification.

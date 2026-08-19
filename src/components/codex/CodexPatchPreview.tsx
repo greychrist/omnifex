@@ -3,6 +3,7 @@ import { ChevronRight, FileEdit } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { DiffViewer } from "@/components/shared/DiffViewer";
 import { getLanguage } from "@/components/claude/tools/shared";
+import type { JSX } from 'react';
 
 /**
  * Normalized per-file change extracted from a Codex `applyPatchApproval`

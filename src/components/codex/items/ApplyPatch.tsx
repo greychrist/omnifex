@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import { DiffViewer } from "@/components/shared/DiffViewer";
 import { getLanguage } from "@/components/claude/tools/shared";
 import type { AgentMessage } from "@/lib/api";
+import type { JSX } from 'react';
 
 /**
  * Normalized per-file change extracted from a Codex `item.apply_patch`

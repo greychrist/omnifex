@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { AlertTriangle } from "lucide-react";
 import type { AgentMessage } from "@/lib/api";
+import type { JSX } from 'react';
 
 /**
  * Extract the `method` discriminator off a Codex notification envelope,

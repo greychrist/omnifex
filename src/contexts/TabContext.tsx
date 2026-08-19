@@ -145,7 +145,7 @@ export const TabProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [tabs, setTabs] = useState<Tab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const isInitialized = useRef(false);
-  const saveTimeoutRef = useRef<NodeJS.Timeout>();
+  const saveTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
   // Stable ref for tabs — used by lookup functions so they don't need
   // tabs in their dependency arrays (which would cascade new references
   // through useTabState on every tabs change and cause infinite loops).

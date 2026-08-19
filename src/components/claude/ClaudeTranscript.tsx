@@ -58,7 +58,9 @@ export interface ClaudeTranscriptProps {
    * Ref to the sentinel below the last message. The shell uses this from
    * its session-history loader to snap to the bottom after a resume.
    */
-  messagesEndRef: React.RefObject<HTMLDivElement>;
+  // React 19: `useRef<T>(null)` is typed `RefObject<T | null>`, so a prop
+  // that accepts a caller's ref has to admit null too.
+  messagesEndRef: React.RefObject<HTMLDivElement | null>;
   /**
    * Mutable flag tracking whether the user is currently near the bottom of
    * the transcript. The shell flips this true when sending a new prompt so

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { ChevronRight, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { AgentMessage } from "@/lib/api";
+import type { JSX } from 'react';
 
 /**
  * Extracts the reasoning text from an `agent_reasoning` notification.

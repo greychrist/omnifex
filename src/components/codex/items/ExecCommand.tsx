@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Terminal, ChevronRight, Copy, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { AgentMessage } from "@/lib/api";
+import type { JSX } from 'react';
 
 /**
  * Extracts the displayable fields from an `item.exec_command` notification.

@@ -1,6 +1,7 @@
 import { Globe, Globe2 } from "lucide-react";
 import { fireAndLog } from "@/lib/fireAndLog";
 import type { AgentMessage } from "@/lib/api";
+import type { JSX } from 'react';
 
 interface SearchResult {
   title: string;

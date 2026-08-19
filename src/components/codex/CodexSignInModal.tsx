@@ -8,6 +8,7 @@ import {
 } from '@/components/ui/dialog';
 import { OneShotTerminal } from '@/components/shared/OneShotTerminal';
 import { api, type CodexAuthStatus } from '@/lib/api';
+import type { JSX } from 'react';
 
 /**
  * Modal that drives the `codex login` OAuth flow inside a shared

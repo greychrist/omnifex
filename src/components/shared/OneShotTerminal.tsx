@@ -4,6 +4,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
 import { api } from '@/lib/api';
+import type { JSX } from 'react';
 
 interface OneShotTerminalProps {
   /** Subprocess to spawn (absolute path or PATH-resolvable name). */

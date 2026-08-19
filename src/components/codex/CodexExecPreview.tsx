@@ -1,4 +1,5 @@
 import { Terminal } from "lucide-react";
+import type { JSX } from 'react';
 
 /**
  * Fields extracted from a Codex `execCommandApproval` payload.
