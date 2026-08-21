@@ -40,8 +40,17 @@ temp_lib/
 AGENTS.md
 *_TASK.md
 
-# Claude project-specific files
-.claude/
+# Claude project-specific files.
+# Ignore the machine-local bits (settings.local.json, worktrees, caches)
+# but version the skills and commands: `.claude/skills/` is the only
+# location Claude Code actually loads project skills from, so leaving it
+# untracked meant the repo's own runbooks lived on one machine.
+# The parent must be excluded with `/*` rather than `/` — git will not
+# descend into a fully-ignored directory, so the negations below would
+# never be evaluated.
+.claude/*
+!.claude/skills/
+!.claude/commands/
 
 .superpowers/
 .env.superpowers/

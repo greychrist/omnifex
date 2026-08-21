@@ -1,6 +1,6 @@
 ---
 name: version-aware-research
-description: Use when syntax, configuration, APIs, or library behavior may be version-sensitive. Guides Codex to use Context7 selectively so research stays current without wasting tokens.
+description: Use when syntax, configuration, APIs, or library behavior may be version-sensitive. Guides Claude to use Context7 selectively so research stays current without wasting tokens.
 ---
 
 # Version-Aware Research
@@ -9,7 +9,7 @@ Use this skill when working with libraries, frameworks, or tools whose behavior 
 
 ## When To Use
 
-- React, Vite, Tauri, Tailwind, Axum, rusqlite, MCP, Codex settings/plugins
+- React, Vite, Tauri, Tailwind, Axum, rusqlite, MCP, Claude Code settings/plugins
 - Build config, CLI flags, plugin manifests, or JSON schema details
 - Any time the exact syntax or current recommendation matters
 
@@ -32,7 +32,7 @@ Use this skill when working with libraries, frameworks, or tools whose behavior 
 
 ## Good Examples
 
-- "What is the current Codex plugin manifest shape?"
+- "What is the current Claude Code plugin manifest shape?"
 - "What does the latest Tauri 2 command signature expect here?"
 - "What is the right TypeScript language server command/config now?"
 
