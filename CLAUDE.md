@@ -1,5 +1,11 @@
 # CLAUDE.md
 
+`AGENTS.md` is a symlink to this file — one document, two names, so agents that
+look for either find the same guidance. It used to be a hand-maintained copy
+that said "keep both in sync"; it drifted instead, still describing the app
+under its pre-rename name and missing six sections. Don't replace the symlink
+with a copy.
+
 OmniFex (by GreyChrist) is an **Electron** desktop app for Claude Code. The current product surface centers on multi-account routing, interactive Claude sessions, custom agents, MCP management, and usage analytics.
 
 The shipping app is OmniFex. Internal identifiers like `greychrist.db`, the `greychrist-file://` protocol, and localStorage keys retain the legacy name to avoid migration churn — only the user-facing brand and the repo/folder name changed.

@@ -37,8 +37,13 @@ coverage/
 temp_lib/
 
 .cursor/
-AGENTS.md
 *_TASK.md
+
+# AGENTS.md is NOT ignored: it is a symlink to CLAUDE.md, so agents that
+# look for either name get the same guidance and the two cannot drift.
+# It was ignored back when it was a hand-maintained copy — which is
+# precisely how it went stale. Don't re-add it here, and don't replace
+# the symlink with a real file.
 
 # Claude project-specific files.
 # Ignore the machine-local bits (settings.local.json, worktrees, caches)
