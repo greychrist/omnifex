@@ -5,6 +5,28 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.135] — 2026-08-21
+
+Installers are signed with an Apple Developer ID and notarized, so Gatekeeper accepts them without the right-click dance. Projects that already have sessions on disk open without needing a path rule first. Every prompt OmniFex sends on your behalf is now editable in one place.
+
+### Added
+
+- **Signed and notarized installers.** Both the `.app` and the `.dmg` are signed with a Developer ID certificate, notarized by Apple, and have the ticket stapled — so they pass Gatekeeper offline as well as online. Hardened runtime is on, which the self-signed cert could never allow: it has no Team ID, so Library Validation read the main binary and the embedded Electron Framework as different teams and killed the app at launch. A real Developer ID removes that constraint. The entitlements are OmniFex's own rather than the toolchain defaults, which requested camera, microphone, Bluetooth, and USB — none of which this app touches.
+- **Settings → System Prompts**, replacing the Session Summaries tab. Sub-tabs for Session summaries (unchanged) and Compactions. The post-compaction directive — the turn OmniFex sends after a conversation is compacted, telling the model its view of the earlier turns is now a lossy summary — was stored in settings but had no editor, so changing it meant editing the database by hand.
+
+### Changed
+
+- **A project whose sessions already live under one account resolves to that account.** Project listing has always attributed a project to whichever config directory physically contains it, but resolution only knew about path rules and explicit overrides, so the two could disagree — the Projects list showing a project as Work's while opening it reported no account configured. Path rules are now a convenience for folders with no history yet, rather than a gate on folders that demonstrably already belong somewhere. This is evidence, not a default: when a folder exists under two accounts the resolver still declines and the account picker asks.
+
+### Fixed
+
+- The account card labelled every explicit project override as "default" — it checked for a match type the backend does not emit, and fell through. There is no default account, so the label named something that cannot exist.
+- The Compactions directive can be turned off by clearing the box, and now stays off: an empty saved value renders as empty instead of falling back to the shipped default, which previously made a disabled directive look re-enabled on reopening Settings.
+
+### Removed
+
+- `PromptQueue.tsx`, which nothing imported — the session view has its own inline copy of the same UI.
+
 ## [0.4.134] — 2026-08-19
 
 The `/usage` scraper reads the screen instead of guessing at it, which recovers characters it had been dropping and a rate-limit window it had been ignoring entirely. Absorbs Claude Code 2.1.236. Installers remain **unsigned**.
