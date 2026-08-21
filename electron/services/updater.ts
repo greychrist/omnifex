@@ -1,13 +1,21 @@
 // Updater service — polls GitHub Releases for the configured public repo and
 // streams matching darwin-arm64 ZIP assets to $TMPDIR with progress.
 //
+// This module only DISCOVERS and DOWNLOADS. Installing is `installer.ts`,
+// which extracts the ZIP with `ditto -xk`, waits for the app to go idle, then
+// runs a helper script that swaps OmniFex.app in place and relaunches. The
+// normal update path is therefore fully automatic — the user is never asked to
+// drag anything. (Verified end to end on v0.4.135, including across the
+// self-signed → Developer ID identity change, which the in-place swap handled
+// without complaint.) Manual drag-install is only the fallback for a build
+// that isn't on a published release, e.g. a local one handed over by hand.
+//
 // History:
 //   - Pre-v0.3.12: GitHub Releases via a CI-driven workflow.
 //   - v0.3.12: Updater retired; releases moved local-only (no Actions budget).
 //   - v0.3.13: Local-folder scanner added so dev builds could be picked up.
 //   - May 2026: Repo went public; GitHub source restored alongside the local
-//     folder, then the local folder was removed entirely (this file). Manual
-//     drag-install is the fallback for builds not on a published release.
+//     folder, then the local folder was removed entirely (this file).
 //
 // Anonymous GitHub API gives 60 req/hr/IP — fine for a desktop client that
 // checks on launch and on user request. 403/404/network errors all reduce
