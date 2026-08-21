@@ -1,8 +1,7 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { Button } from '@/components/ui/button';
+import React, { useEffect, useState } from 'react';
 import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
-import { RotateCcw, Check, AlertCircle } from 'lucide-react';
+import { AlertCircle } from 'lucide-react';
 import { fireAndLog } from "@/lib/fireAndLog";
 import {
   api,
@@ -10,6 +9,8 @@ import {
   AUTO_ON_CLOSE_SETTING_KEY,
   ENABLED_SETTING_KEY,
 } from '@/lib/api';
+import { usePromptTemplate } from './usePromptTemplate';
+import { PromptTemplateEditor } from './PromptTemplateEditor';
 
 /**
  * The default prompt the backend ships with. Mirrored here so the
@@ -37,12 +38,8 @@ Format your response EXACTLY:
 <paragraph>...</paragraph>
 `;
 
-/** Debounce delay before the textarea contents are persisted. Tuned so
- *  short pauses while typing flush; rapid edits coalesce into one save. */
-const PROMPT_AUTOSAVE_DEBOUNCE_MS = 500;
-
 /**
- * Settings → Session Summaries panel.
+ * Settings → System Prompts → Session summaries.
  *
  * Layout (top → bottom):
  *   1. Heading + master "Enable summaries" switch (controls UI visibility
@@ -53,43 +50,27 @@ const PROMPT_AUTOSAVE_DEBOUNCE_MS = 500;
  *      lifecycle hook (auto generation on session close); the manual
  *      refresh button is unaffected.
  *
- * All three switches save instantly on flip (optimistic UI with
- * rollback on error). The prompt textarea debounces saves so each
- * keystroke doesn't hit IPC.
+ * Both switches save instantly on flip (optimistic UI with rollback on
+ * error). The prompt textarea's load/debounce/save cycle lives in
+ * `usePromptTemplate`, shared with the Compactions panel.
  */
 export const SummaryPromptSettings: React.FC = () => {
-  const [value, setValue] = useState<string>('');
-  const [loading, setLoading] = useState(true);
-  const [savedFlash, setSavedFlash] = useState<'prompt' | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const prompt = usePromptTemplate(PROMPT_TEMPLATE_SETTING_KEY, DEFAULT_SUMMARY_PROMPT);
 
+  const [switchesLoading, setSwitchesLoading] = useState(true);
   const [enabled, setEnabled] = useState<boolean>(true);
   const [enabledError, setEnabledError] = useState<string | null>(null);
   const [autoOnClose, setAutoOnClose] = useState<boolean>(true);
   const [autoOnCloseError, setAutoOnCloseError] = useState<string | null>(null);
 
-  // Debounce timer for the prompt-textarea auto-save. Refreshed on
-  // every keystroke so a save fires `PROMPT_AUTOSAVE_DEBOUNCE_MS` after
-  // the *last* edit rather than the first.
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Track the last value successfully persisted so we don't re-save on
-  // every render — and so the auto-save can no-op when the editor is
-  // showing exactly what's already on disk.
-  const savedRef = useRef<string>('');
-
   useEffect(() => {
     let cancelled = false;
     Promise.all([
-      api.getSetting(PROMPT_TEMPLATE_SETTING_KEY),
       api.getSetting(ENABLED_SETTING_KEY),
       api.getSetting(AUTO_ON_CLOSE_SETTING_KEY),
     ])
-      .then(([storedPrompt, storedEnabled, storedAuto]) => {
+      .then(([storedEnabled, storedAuto]) => {
         if (cancelled) return;
-        const initial = (storedPrompt && storedPrompt.length > 0) ? storedPrompt : DEFAULT_SUMMARY_PROMPT;
-        setValue(initial);
-        savedRef.current = initial;
         // Default-on if the row is missing (matches the backend seed in
         // `ensureDefaultSettings`). Any non-'true' string parses as off.
         setEnabled(storedEnabled === null ? true : storedEnabled === 'true');
@@ -97,43 +78,14 @@ export const SummaryPromptSettings: React.FC = () => {
       })
       .catch(() => {
         if (cancelled) return;
-        setValue(DEFAULT_SUMMARY_PROMPT);
-        savedRef.current = DEFAULT_SUMMARY_PROMPT;
         setEnabled(true);
         setAutoOnClose(true);
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) setSwitchesLoading(false);
       });
-    return () => {
-      cancelled = true;
-      if (saveTimer.current) clearTimeout(saveTimer.current);
-      if (flashTimer.current) clearTimeout(flashTimer.current);
-    };
+    return () => { cancelled = true; };
   }, []);
-
-  // Auto-save on prompt edits. Each keystroke resets the timer; after
-  // PROMPT_AUTOSAVE_DEBOUNCE_MS of inactivity the latest value is
-  // persisted. We compare against `savedRef.current` to skip the save
-  // when nothing actually changed (initial mount, undo back to saved,
-  // etc.).
-  const scheduleAutosave = (next: string) => {
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(fireAndLog('summary-prompt-settings:autosave', async () => {
-      saveTimer.current = null;
-      if (next === savedRef.current) return;
-      setError(null);
-      try {
-        await api.saveSetting(PROMPT_TEMPLATE_SETTING_KEY, next);
-        savedRef.current = next;
-        setSavedFlash('prompt');
-        if (flashTimer.current) clearTimeout(flashTimer.current);
-        flashTimer.current = setTimeout(() => { setSavedFlash(null); }, 1500);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Save failed.');
-      }
-    }), PROMPT_AUTOSAVE_DEBOUNCE_MS);
-  };
 
   const handleEnabledChange = async (next: boolean) => {
     const previous = enabled;
@@ -159,13 +111,7 @@ export const SummaryPromptSettings: React.FC = () => {
     }
   };
 
-  const handleResetToDefault = () => {
-    if (value === DEFAULT_SUMMARY_PROMPT) return;
-    setValue(DEFAULT_SUMMARY_PROMPT);
-    scheduleAutosave(DEFAULT_SUMMARY_PROMPT);
-  };
-
-  const isDefault = value === DEFAULT_SUMMARY_PROMPT;
+  const loading = prompt.loading || switchesLoading;
 
   return (
     <div className="space-y-4 max-w-3xl">
@@ -209,41 +155,15 @@ export const SummaryPromptSettings: React.FC = () => {
           )}
 
           <div className={enabled ? '' : 'opacity-50 pointer-events-none'}>
-            <textarea
-              value={value}
-              onChange={(e) => {
-                const next = e.target.value;
-                setValue(next);
-                setError(null);
-                scheduleAutosave(next);
-              }}
-              spellCheck={false}
-              rows={18}
-              className="w-full font-mono text-xs rounded-md border border-border/60 bg-background p-3 resize-y min-h-[300px] focus:outline-none focus:ring-1 focus:ring-ring"
+            <PromptTemplateEditor
+              value={prompt.value}
+              onChange={prompt.edit}
+              onReset={prompt.resetToDefault}
+              isDefault={prompt.isDefault}
+              saved={prompt.saved}
+              error={prompt.error}
+              aria-label="Session summary prompt"
             />
-
-            <div className="flex items-center gap-2 mt-2">
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={handleResetToDefault}
-                disabled={isDefault}
-                title="Replace the editor with OmniFex's default prompt. Saves automatically."
-              >
-                <RotateCcw className="mr-2 h-3.5 w-3.5" /> Reset to default
-              </Button>
-              {savedFlash === 'prompt' && (
-                <span className="inline-flex items-center text-[11px] text-emerald-400">
-                  <Check className="mr-1 h-3 w-3" /> Saved
-                </span>
-              )}
-              {error && (
-                <span className="inline-flex items-center gap-1 text-[11px] text-red-400">
-                  <AlertCircle className="h-3 w-3" />
-                  {error}
-                </span>
-              )}
-            </div>
 
             {/* Auto-on-close switch — only gates the lifecycle hook.
                 Manual refresh on a row works regardless. */}

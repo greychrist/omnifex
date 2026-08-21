@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 import { Toast, ToastContainer } from "@/components/ui/toast";
 import { StorageTab } from "./StorageTab";
 import { LogTab } from "./LogTab";
-import { SummaryPromptSettings } from "./settings-panels/SummaryPromptSettings";
+import { SystemPromptSettings } from "./settings-panels/SystemPromptSettings";
 import { fireAndLog, logAndForget } from "@/lib/fireAndLog";
 import { clearInitialSettingsTab, readInitialSettingsTab } from '@/lib/settingsInitialTab';
 import {
@@ -177,7 +177,7 @@ export const Settings: React.FC<SettingsProps> = ({
                 <TabsTrigger value="general" className="flex-1 py-2 text-xs">General</TabsTrigger>
                 <TabsTrigger value="appearance" className="flex-1 py-2 text-xs">Chats</TabsTrigger>
                 <TabsTrigger value="accounts" className="flex-1 py-2 text-xs">Accounts</TabsTrigger>
-                <TabsTrigger value="sessions" className="flex-1 py-2 text-xs">Session Summaries</TabsTrigger>
+                <TabsTrigger value="system_prompts" className="flex-1 py-2 text-xs">System Prompts</TabsTrigger>
                 <TabsTrigger value="storage" className="flex-1 py-2 text-xs">Storage</TabsTrigger>
                 <TabsTrigger value="proxy" className="flex-1 py-2 text-xs">Proxy</TabsTrigger>
                 <TabsTrigger value="rate_limits" className="flex-1 py-2 text-xs">Rate Limits</TabsTrigger>
@@ -234,10 +234,11 @@ export const Settings: React.FC<SettingsProps> = ({
               />
             </TabsContent>
 
-            {/* Sessions Tab — per-session summary prompt template */}
-            <TabsContent value="sessions" className="space-y-6">
+            {/* System Prompts Tab — every prompt OmniFex composes and sends
+                on the user's behalf, one sub-tab each. */}
+            <TabsContent value="system_prompts" className="space-y-6">
               <Card className="p-6">
-                <SummaryPromptSettings />
+                <SystemPromptSettings />
               </Card>
             </TabsContent>
 
