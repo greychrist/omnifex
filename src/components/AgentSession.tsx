@@ -457,7 +457,10 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     };
     const slot = {
       account,
-      matchType: accountResolution.match_type === 'override' ? 'override' as const : 'path_rule' as const,
+      matchType:
+        accountResolution.match_type === 'override' ? 'override' as const
+        : accountResolution.match_type === 'on_disk' ? 'on_disk' as const
+        : 'path_rule' as const,
       matchDetail: accountResolution.match_detail,
     };
     return agent === 'codex' ? { claude: null, codex: slot } : { claude: slot, codex: null };

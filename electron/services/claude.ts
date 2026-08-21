@@ -9,7 +9,7 @@ import path from 'node:path';
 import type { Database } from './database';
 import type { AccountsService } from './accounts';
 import { createProjectPinsService } from './project-pins';
-import { decodeProjectId, recoverProjectPath } from './project-paths';
+import { decodeProjectId, encodeProjectId, recoverProjectPath } from './project-paths';
 import { buildClaudeEnv } from './util/claude-env';
 
 /**
@@ -291,11 +291,8 @@ function findProjectDirsForPath(projectsDir: string, projectPath: string): strin
   return matches;
 }
 
-function encodeProjectId(projectPath: string): string {
-  // Claude Code convention: leading dash + slashes replaced with dashes
-  // e.g., /Users/foo/bar → -Users-foo-bar
-  return projectPath.replace(/\//g, '-');
-}
+// encodeProjectId moved to ./project-id so accounts.ts can share it without
+// importing this module (which already depends on accounts.ts).
 
 /**
  * Walk a JSONL session file once and pull out:

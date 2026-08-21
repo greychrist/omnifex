@@ -216,7 +216,12 @@ export interface ProjectOverride {
 /** One resolved routing target for a single engine. */
 export interface ResolveSlot {
   account: Account;
-  matchType: 'override' | 'path_rule';
+  /**
+   * `on_disk` means the project's session directory was found under exactly
+   * one account's config dir — evidence, not a default. Mirrors
+   * `ResolveMatchType` in `electron/services/accounts.ts`.
+   */
+  matchType: 'override' | 'path_rule' | 'on_disk';
   matchDetail: string;
 }
 

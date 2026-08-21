@@ -1,7 +1,9 @@
+import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { Database } from './database';
 import { discoverConfigDirs, nameFromConfigDir } from './first-run-discovery';
+import { encodeProjectId } from './project-paths';
 
 // ---------------------------------------------------------------------------
 // Public interfaces
@@ -97,26 +99,36 @@ export interface ProjectOverride {
 
 export interface ResolutionExplanation {
   account: Account;
-  match_type: 'override' | 'path_rule';
+  match_type: ResolveMatchType;
   match_detail: string | null;
 }
 
 /**
- * A single resolved routing target for one engine. `matchType` distinguishes
- * an explicit project override from a path-rule match; `matchDetail` is the
- * project path (override) or the matched prefix (path rule).
+ * How a project path was bound to an account.
+ *
+ * `on_disk` is evidence rather than configuration: the project's
+ * `projects/<encoded>` directory physically exists under exactly one account's
+ * config dir, so that account demonstrably owns the sessions. It is NOT a
+ * default — see `resolveOnDisk`.
+ */
+export type ResolveMatchType = 'override' | 'path_rule' | 'on_disk';
+
+/**
+ * A single resolved routing target for one engine. `matchDetail` is the project
+ * path (override), the matched prefix (path rule), or the config dir the
+ * project was found under (on disk).
  */
 export interface ResolveSlot {
   account: Account;
-  matchType: 'override' | 'path_rule';
+  matchType: ResolveMatchType;
   matchDetail: string;
 }
 
 /**
  * Result of resolving a project path. Each engine resolves independently:
- * explicit override → longest-prefix path rule → null. A `null` slot means
- * "no override and no matching path rule for that engine" — callers MUST treat
- * an all-null pair as an error condition, not a default-account fallback.
+ * explicit override → longest-prefix path rule → unambiguous on-disk ownership
+ * → null. A `null` slot means none of those bound the project — callers MUST
+ * treat an all-null pair as an error condition, not a default-account fallback.
  */
 export interface ResolvePair {
   claude: ResolveSlot | null;
@@ -270,8 +282,20 @@ function isPathInside(child: string, parent: string): boolean {
 // Factory
 // ---------------------------------------------------------------------------
 
-export function createAccountsService(db: Database): AccountsService {
+export interface AccountsServiceDeps {
+  /**
+   * Existence check used by on-disk ownership resolution. Injected so tests can
+   * describe a filesystem without creating one.
+   */
+  existsSync?: (p: string) => boolean;
+}
+
+export function createAccountsService(
+  db: Database,
+  deps: AccountsServiceDeps = {},
+): AccountsService {
   const raw = db.raw;
+  const existsSync = deps.existsSync ?? fs.existsSync;
 
   function listAccounts(): Account[] {
     const rows = raw
@@ -529,7 +553,55 @@ export function createAccountsService(db: Database): AccountsService {
       }
     }
 
+    // 3. On-disk ownership, Claude slot only — see resolveOnDisk.
+    result.claude ??= resolveOnDisk(normalizedProject);
+
     return result;
+  }
+
+  /**
+   * Bind a project to the account whose config dir already holds its sessions.
+   *
+   * `listProjects` has always attributed projects this way — it reads each
+   * account's `projects/` directory and stamps `account_id` from wherever it
+   * found the project. Resolution ignoring that produced the contradiction
+   * where the Projects list showed a project as Work's while opening it threw
+   * NO_ACCOUNT_FOR_PROJECT. The same principle already governs Brain sources
+   * ("ownership comes from the source's location, never from resolve()").
+   *
+   * This is emphatically not a default-account fallback:
+   *
+   *  - It only fires when the directory exists under EXACTLY ONE account.
+   *    Two matches (one repo opened under personal and work) is genuine
+   *    ambiguity and returns null so the account picker asks.
+   *  - It never invents `~/.claude`, and never picks "the first account".
+   *  - Overrides and path rules both still win, so any explicit user intent
+   *    beats the inference.
+   *
+   * Claude-only: Codex reads a single `~/.codex` and has no per-account
+   * `projects/<encoded>` layout, so there is no equivalent evidence to read.
+   */
+  function resolveOnDisk(normalizedProject: string): ResolveSlot | null {
+    const encoded = encodeProjectId(normalizedProject);
+
+    const claudeAccounts = (
+      raw.prepare('SELECT * FROM accounts').all() as AccountRow[]
+    ).filter((row) => (row.engine === 'codex' ? 'codex' : 'claude') === 'claude');
+
+    const owners = claudeAccounts.filter((row) =>
+      existsSync(path.join(normalizePath(row.config_dir), 'projects', encoded)),
+    );
+
+    // Zero owners: nothing on disk to go on. More than one: ambiguous, and
+    // guessing here is exactly the failure mode the no-default rule exists to
+    // prevent.
+    if (owners.length !== 1) return null;
+
+    return {
+      account: rowToAccount(owners[0]),
+      matchType: 'on_disk',
+      matchDetail: owners[0].config_dir,
+    };
   }
 
   // -------------------------------------------------------------------------

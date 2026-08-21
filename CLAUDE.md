@@ -149,9 +149,30 @@ This is a multi-engine app (Claude + Codex). Codex is reachable but partial — 
 
 1. Explicit project override
 2. Longest matching path rule
-3. `null`
+3. Unambiguous on-disk ownership — the project's `projects/<encoded>` directory
+   exists under **exactly one** account's config dir (Claude slot only)
+4. `null`
 
 Do not introduce a silent default-account fallback.
+
+Step 3 is evidence, not a default, and the distinction is load-bearing:
+
+- It fires only on **exactly one** match. Two accounts holding the same folder
+  is real ambiguity — return `null` and let the account picker ask.
+- It never invents `~/.claude` and never picks "the first account".
+- Explicit user intent (steps 1–2) always wins over the inference.
+
+The rationale is that `listProjects` has always attributed projects by
+location, stamping `account_id` from whichever config dir it found the project
+under. Resolution ignoring that produced a contradiction — the Projects list
+showing a project as Work's while opening it threw `NO_ACCOUNT_FOR_PROJECT`.
+The same principle already governs Brain sources ("ownership comes from the
+source's location, never from `resolve()`"); sessions are the same kind of
+artifact. Path rules are a convenience for folders with no history yet, not a
+gate on folders that demonstrably already belong somewhere.
+
+Codex is excluded from step 3: it reads a single `~/.codex` and has no
+per-account `projects/<encoded>` layout, so there is no equivalent evidence.
 
 Other account rules:
 

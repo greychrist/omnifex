@@ -105,3 +105,22 @@ export function recoverProjectPath(projectDir: string, projectId: string): strin
 
   return fallback;
 }
+
+/**
+ * Encode a project path the way the Claude CLI names its project directories:
+ * every `/` becomes `-`, which for an absolute path yields a leading dash.
+ *
+ *   /Users/foo/bar → -Users-foo-bar
+ *
+ * The inverse of `decodeProjectId`, and lossy in the same way — a folder whose
+ * own name contains a dash encodes identically to a nested path. That is why
+ * `recoverProjectPath` reads directory contents rather than decoding, and why
+ * on-disk ownership in `accounts.resolve()` treats a miss as "no evidence"
+ * rather than guessing.
+ *
+ * Lives here rather than in `claude.ts` so `accounts.ts` can share it:
+ * `claude.ts` already imports `accounts.ts`, so the reverse would be a cycle.
+ */
+export function encodeProjectId(projectPath: string): string {
+  return projectPath.replace(/\//g, '-');
+}
