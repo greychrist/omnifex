@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <!-- V8 compiles JavaScript to machine code at runtime and executes it.
+         Hardened runtime forbids both by default. -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+
+    <!-- better-sqlite3 and node-pty load as .node addons, and node-pty
+         posix_spawnp's its own `spawn-helper` binary out of
+         app.asar.unpacked. Library validation rejects loading code that
+         isn't part of the signed main image. -->
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+
+    <!-- The Brain MCP server is spawned as `process.execPath` with
+         ELECTRON_RUN_AS_NODE=1, and every session/agent launch passes a
+         CLAUDE_CONFIG_DIR for the resolved account. Child processes are
+         started with a modified environment. -->
+    <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+    <true/>
+  </dict>
+</plist>

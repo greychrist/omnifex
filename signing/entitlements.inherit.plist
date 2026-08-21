@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Helper processes (Renderer / GPU / Plugin) are signed separately from the
+  main binary and do not inherit its entitlements. @electron/osx-sign ships a
+  child plist for MAS only, so this is ours. Keep it in sync with
+  entitlements.plist: a key present there and missing here fails inside the
+  helper at runtime, not at signing time — the renderer that JITs is a helper,
+  not the main process.
+-->
+<plist version="1.0">
+  <dict>
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+    <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+    <true/>
+  </dict>
+</plist>

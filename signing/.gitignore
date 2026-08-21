@@ -1,0 +1,7 @@
+# Nothing secret belongs in this directory — credentials live in the
+# `omnifex-notary` keychain profile (see `notarytool store-credentials`).
+# These patterns are a tripwire in case a key is ever dropped here by hand.
+*.p8
+*.p12
+*.cer
+*.certSigningRequest

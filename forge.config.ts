@@ -1,8 +1,10 @@
 import type { ForgeConfig } from '@electron-forge/shared-types';
 import { VitePlugin } from '@electron-forge/plugin-vite';
-import { execSync } from 'node:child_process';
+import { execFileSync, execSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { optionsForFile, osxNotarizeConfig } from './signing';
+import { dmgArtifacts, notarizeDmg } from './signing/dmg';
 
 // Copy a native module and its transitive deps into the packaged app's node_modules.
 function copyNativeModule(buildPath: string, moduleName: string) {
@@ -19,29 +21,32 @@ const config: ForgeConfig = {
     executableName: 'omnifex',
     appBundleId: 'com.omnifex.app',
     icon: './icons/icon',
-    // Codesign with the self-signed "GreyChrist Local Sign" cert in Greg's
-    // login keychain. The cert gives the bundle a stable signing identity
-    // hash so macOS TCC grants (App Management, Files & Folders) persist
-    // across rebuilds instead of re-prompting every launch.
+    // Codesign with the Developer ID Application cert (team 37YG3HV4BV).
     //
-    // hardenedRuntime: false because macOS Library Validation requires both
-    // the loading process and loaded library to share an Apple Developer
-    // *Team ID*, not just a code-signing authority. Self-signed certs have
-    // `TeamIdentifier=not set`, so even when @electron/osx-sign re-signs
-    // both the main binary and the embedded Electron Framework with the
-    // same self-signed authority, Library Validation still rejects the
-    // pair as "different Team IDs" and dyld kills the app at launch.
-    // Disabling hardened runtime turns Library Validation off and the app
-    // launches; the cert's identity hash still drives stable TCC.
+    // `identity` is left unset so @electron/osx-sign discovers the Developer
+    // ID Application cert from the keychain itself — for a non-MAS build it
+    // looks for that cert type specifically, so it will not pick up an
+    // "Apple Development" cert by mistake. Set APPLE_SIGNING_IDENTITY to
+    // force a particular one when the keychain holds several.
     //
-    // Cert is self-signed → Gatekeeper still treats the build as
-    // untrusted → first launch per build still needs right-click → Open.
-    // Cleanup plan when Greg buys Developer ID: swap the identity name,
-    // re-enable hardened runtime, add notarization config.
+    // hardenedRuntime is on (see signing/index.ts): the notary service
+    // rejects any submission containing an executable signed without it.
+    // This was previously off because the self-signed cert had
+    // `TeamIdentifier=not set`, so Library Validation saw the main binary
+    // and the embedded Electron Framework as different teams and dyld
+    // killed the app at launch. A real Developer ID gives both the same
+    // Team ID, so that failure mode is gone.
+    //
+    // Entitlements are ours rather than osx-sign's defaults, which grant
+    // only allow-jit plus camera/mic/bluetooth/USB — too little of what
+    // Electron needs and several things OmniFex never touches.
     osxSign: {
-      identity: 'GreyChrist Local Sign',
-      optionsForFile: () => ({ hardenedRuntime: false }),
+      identity: process.env.APPLE_SIGNING_IDENTITY,
+      optionsForFile,
     },
+    // Opt-in via OMNIFEX_NOTARIZE=1 so local packaging doesn't block on
+    // Apple's notary queue. Credentials come from a keychain profile.
+    osxNotarize: osxNotarizeConfig(),
     extraResource: [
       './assets',
       // Also placed at Contents/Resources/ top-level so macOS NSSound
@@ -87,6 +92,33 @@ const config: ForgeConfig = {
         callback();
       },
     ],
+  },
+  hooks: {
+    // maker-dmg wraps the already-notarized .app in a brand new disk image
+    // that carries no signature of its own, so the container fails Gatekeeper
+    // even though the app inside passes. Sign / notarize / staple it here.
+    // Same OMNIFEX_NOTARIZE gate as osxNotarize — local builds skip it.
+    postMake: async (_forgeConfig, makeResults) => {
+      const notarize = osxNotarizeConfig();
+      if (!notarize) return makeResults;
+
+      for (const dmg of dmgArtifacts(makeResults)) {
+        await notarizeDmg(
+          dmg,
+          {
+            keychainProfile: notarize.keychainProfile,
+            identity: process.env.APPLE_SIGNING_IDENTITY,
+          },
+          {
+            run: (cmd, args) =>
+              execFileSync(cmd, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'] }),
+            log: (message) => { console.log(message); },
+          },
+        );
+      }
+
+      return makeResults;
+    },
   },
   makers: [
     { name: '@electron-forge/maker-dmg', config: { format: 'ULFO' } },
