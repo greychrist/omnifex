@@ -31,6 +31,21 @@ export interface Database {
   raw: BetterSqlite3.Database;
   getSetting(key: string): string | null;
   saveSetting(key: string, value: string): void;
+  /**
+   * Hand pages freed by deletes back to the filesystem, and return how many
+   * bytes that recovered.
+   *
+   * Deleting rows never shrinks a SQLite file on its own: the pages move to an
+   * internal freelist and are reused by later writes. Under
+   * `auto_vacuum = INCREMENTAL` this call is what actually returns them to the
+   * OS. Cheap and interruptible, unlike a full VACUUM — it moves only free
+   * pages and never rewrites live data.
+   *
+   * Returns 0 when there is nothing on the freelist, and when the database
+   * predates the INCREMENTAL default and has not been converted yet (the
+   * pragma is a harmless no-op under `auto_vacuum = NONE`).
+   */
+  reclaimFreePages(): number;
   close(): void;
 }
 
@@ -838,6 +853,19 @@ export function createDatabase(dbPath: string): Database {
   } catch (err) {
     throw toActionableNativeModuleError(err);
   }
+  // MUST come first — before `journal_mode` and before any table exists.
+  // Switching to WAL writes the database header, and once that is written the
+  // auto_vacuum mode can only be changed by a full VACUUM. Verified both ways
+  // against SQLite: `journal_mode=WAL` then `auto_vacuum=INCREMENTAL` leaves
+  // the mode at 0, the reverse order gives 2. Existing installs (created
+  // before this line) are converted lazily instead — see `reclaimDiskSpace` in
+  // services/logging.ts, which piggybacks on a VACUUM it was running anyway.
+  //
+  // INCREMENTAL rather than FULL: FULL compacts on every commit, putting the
+  // work on the hot write path. INCREMENTAL parks freed pages on the freelist
+  // until someone calls `reclaimFreePages()`, so the cost lands on a timer
+  // instead of on the user's next log write.
+  raw.pragma('auto_vacuum = INCREMENTAL');
   raw.pragma('journal_mode = WAL');
   raw.pragma('foreign_keys = ON');
 
@@ -861,6 +889,20 @@ export function createDatabase(dbPath: string): Database {
            ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`
         )
         .run(key, value);
+    },
+
+    reclaimFreePages(): number {
+      const pageSize = (raw.pragma('page_size', { simple: true }) as number) || 0;
+      const before = (raw.pragma('freelist_count', { simple: true }) as number) || 0;
+      if (before === 0) return 0;
+
+      raw.pragma('incremental_vacuum');
+      // WAL mode again: the rewrite lands in the -wal and the main file keeps
+      // its old size until the WAL is checkpointed back and truncated.
+      raw.pragma('wal_checkpoint(TRUNCATE)');
+
+      const after = (raw.pragma('freelist_count', { simple: true }) as number) || 0;
+      return Math.max(0, before - after) * pageSize;
     },
 
     close(): void {

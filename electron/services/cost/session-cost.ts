@@ -9,7 +9,7 @@
 
 import path from 'node:path';
 import fs from 'node:fs';
-import { encodeProjectKey } from '../sessions/summary-query';
+import { encodeProjectId } from '../project-paths';
 import type { PricingOverrides } from '../../../src/lib/pricing';
 import { computeSessionCost, type SessionCostSnapshot } from './session-cost-core';
 import { nodeCostFs, type CostFs, type CostHistoryService } from './cost-history';
@@ -63,7 +63,7 @@ export function createSessionCostService(deps: SessionCostDeps): SessionCostServ
     if (cached) return cached;
 
     const projectsDir = path.join(args.configDir, 'projects');
-    const primaryDir = path.join(projectsDir, encodeProjectKey(args.projectPath));
+    const primaryDir = path.join(projectsDir, encodeProjectId(args.projectPath));
     const primaryFile = path.join(primaryDir, `${args.sessionId}.jsonl`);
     if (stat(primaryFile)) {
       resolvedDirs.set(args.sessionId, primaryDir);

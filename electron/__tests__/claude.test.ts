@@ -78,6 +78,55 @@ describe('claude service', () => {
       expect(found).toBeDefined();
     });
 
+    it('does not report new activity when a session file is only touched', async () => {
+      // "Last activity" means "when Claude last worked here", not "when this
+      // inode was last written". The CLI touches a session file on reopen and
+      // on resume without appending anything — 2.1.239 fixed the same class of
+      // bug in `/resume` and the agents view, where a merely-reopened session
+      // jumped to the top of the list. Size is the discriminator, and
+      // listProjects already stats every file, so it costs no extra IO.
+      const configDir = path.join(tmpDir, '.claude-touch');
+      const projectDir = path.join(configDir, 'projects', '-home-user-touched');
+      fs.mkdirSync(projectDir, { recursive: true });
+      const sessionFile = path.join(projectDir, 'abc123.jsonl');
+      fs.writeFileSync(sessionFile, JSON.stringify({ type: 'system' }) + '\n');
+      accounts.createAccount({ name: 'Touch', configDir });
+
+      const before = (await service.listProjects())
+        .find((p) => p.id === '-home-user-touched');
+      expect(before?.most_recent_session).toBeDefined();
+
+      // Touch only: mtime jumps an hour, contents unchanged.
+      const later = new Date(Date.now() + 3600_000);
+      fs.utimesSync(sessionFile, later, later);
+
+      const after = (await service.listProjects())
+        .find((p) => p.id === '-home-user-touched');
+      expect(after?.most_recent_session).toBe(before?.most_recent_session);
+    });
+
+    it('reports new activity when a session file actually grows', async () => {
+      // The other half: a real append must still move the timestamp, or the
+      // guard above would freeze the list permanently.
+      const configDir = path.join(tmpDir, '.claude-append');
+      const projectDir = path.join(configDir, 'projects', '-home-user-appended');
+      fs.mkdirSync(projectDir, { recursive: true });
+      const sessionFile = path.join(projectDir, 'abc123.jsonl');
+      fs.writeFileSync(sessionFile, JSON.stringify({ type: 'system' }) + '\n');
+      accounts.createAccount({ name: 'Append', configDir });
+
+      const before = (await service.listProjects())
+        .find((p) => p.id === '-home-user-appended');
+
+      fs.appendFileSync(sessionFile, JSON.stringify({ type: 'user' }) + '\n');
+      const later = new Date(Date.now() + 3600_000);
+      fs.utimesSync(sessionFile, later, later);
+
+      const after = (await service.listProjects())
+        .find((p) => p.id === '-home-user-appended');
+      expect(after?.most_recent_session).toBeGreaterThan(before?.most_recent_session ?? 0);
+    });
+
     it('stamps pinned onto projects, reading the pins table', async () => {
       // The renderer gets pin state inside the payload it already fetches —
       // no second IPC call, so the two can't drift out of sync.
@@ -708,8 +757,12 @@ describe('claude service', () => {
       expect(project.path).toBe(projectPath);
       expect(project.account_id).toBe(account.id);
       expect(project.account_name).toBe('Test');
-      // Project ID encoding: slashes → dashes
-      expect(project.id).toBe(projectPath.replace(/\//g, '-'));
+      // Project ID encoding mirrors the CLI: EVERY non-alphanumeric character
+      // becomes a dash, not just the separators. This assertion used to say
+      // `replace(/\//g, '-')` and passed only because it re-derived the wrong
+      // rule; macOS temp dirs contain an underscore, so the two forms differ
+      // right here.
+      expect(project.id).toBe(projectPath.replace(/[^a-zA-Z0-9]/g, '-'));
       expect(fs.existsSync(path.join(configDir, 'projects', project.id))).toBe(true);
     });
 

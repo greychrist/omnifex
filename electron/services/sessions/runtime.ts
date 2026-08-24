@@ -21,7 +21,7 @@ import { classifyRuntimeEvent } from './events';
 import { dispatchAgentNotification, dispatchResultNotification } from './notifications';
 import { createBackgroundTaskTracker } from './background-tasks';
 import { createJsonlTail, type JsonlTailHandle } from './jsonl-tail';
-import { encodeProjectKey } from './summary-query';
+import { encodeProjectId } from '../project-paths';
 import { setStatus } from './status';
 
 export interface RuntimeDeps {
@@ -79,7 +79,7 @@ function ensureJsonlTail(
 ): void {
   if (state.tail || !handle.sessionId) return;
   if (process.env.OMNIFEX_DISABLE_JSONL_TAIL === '1') return;
-  const projectId = encodeProjectKey(handle.projectPath);
+  const projectId = encodeProjectId(handle.projectPath);
   const jsonlPath = path.join(
     handle.configDir,
     'projects',
@@ -342,7 +342,7 @@ export function restartQuery(
   const jsonlPath = path.join(
     handle.startParams.configDir,
     'projects',
-    encodeProjectKey(handle.startParams.projectPath),
+    encodeProjectId(handle.startParams.projectPath),
     `${handle.sessionId}.jsonl`,
   );
   const resume = fs.existsSync(jsonlPath);

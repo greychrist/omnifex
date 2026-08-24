@@ -94,7 +94,7 @@ vi.mock('node-pty', () => ({ spawn: vi.fn() }));
 import { spawn as ptySpawn } from 'node-pty';
 import { createClaudeCliEngine } from '../services/agents/claude-cli-engine';
 import { createSessionsService } from '../services/sessions';
-import { encodeProjectKey } from '../services/sessions/summary-query';
+import { encodeProjectId } from '../services/project-paths';
 
 function makeFakePty() {
   return {
@@ -248,7 +248,7 @@ describe('setMode: rich → tui → rich round-trip', () => {
     const jsonlPath = path.join(
       tmpConfig,
       'projects',
-      encodeProjectKey('/Users/test/proj'),
+      encodeProjectId('/Users/test/proj'),
       `${sessionId}.jsonl`,
     );
     fs.mkdirSync(path.dirname(jsonlPath), { recursive: true });

@@ -5,6 +5,7 @@ import { spawn, type ChildProcessByStdio } from 'node:child_process';
 import type { Readable } from 'node:stream';
 import { findSystemClaudeBinary } from './binary';
 import { buildClaudeEnv } from '../util/claude-env';
+import { encodeProjectId } from '../project-paths';
 
 // ---------------------------------------------------------------------------
 // One-shot summary runner — `claude -p <prompt> --output-format json`
@@ -197,50 +198,6 @@ export interface SummaryQueryDeps {
   resolveClaudeBinary?: () => string | null;
 }
 
-/**
- * Longest sanitized key the CLI writes verbatim. Past this it truncates and
- * appends a hash of the full path, so two deep paths sharing a 200-char
- * prefix can't collide on one directory.
- */
-const MAX_PROJECT_KEY_LEN = 200;
-
-/**
- * The CLI's path hash: djb2-style 32-bit rolling hash of the *normalized*
- * path (not the sanitized key), rendered base-36. Transcribed from the
- * 2.1.224 binary — `(t<<5)-t+charCodeAt(i)|0`, then `Math.abs(...).toString(36)`.
- *
- * `|0` keeps every step in int32, which is what makes the result reproducible;
- * dropping it would silently diverge once a path is long enough to overflow.
- */
-function cliPathHash(normalizedPath: string): string {
-  let h = 0;
-  for (let i = 0; i < normalizedPath.length; i++) {
-    h = ((h << 5) - h + normalizedPath.charCodeAt(i)) | 0;
-  }
-  return Math.abs(h).toString(36);
-}
-
-/**
- * Mirrors how the Claude Code subprocess derives the project subdirectory
- * under `<CLAUDE_CONFIG_DIR>/projects/`: NFC-normalize the absolute path,
- * replace every non-alphanumeric character with `-`, and — past
- * `MAX_PROJECT_KEY_LEN` — truncate and append a hash of the normalized path.
- * We compute this ourselves so lookups and the cleanup step target exactly
- * the directory the subprocess wrote into.
- *
- * This used to replace only `/`, which quietly diverged for any path
- * containing a dot, underscore or space (`my_app.v2` → the CLI writes
- * `my-app-v2`, we looked for `my_app.v2`) and for any path over the length
- * cap. Verified against CLI 2.1.224 by running `claude -p` in a >200-char
- * cwd with a scratch config dir and reading back the directory it created —
- * that case is pinned in `sessions-summary-query.test.ts`.
- */
-export function encodeProjectKey(absPath: string): string {
-  const normalized = absPath.normalize('NFC');
-  const key = normalized.replace(/[^a-zA-Z0-9]/g, '-');
-  if (key.length <= MAX_PROJECT_KEY_LEN) return key;
-  return `${key.slice(0, MAX_PROJECT_KEY_LEN)}-${cliPathHash(normalized)}`;
-}
 
 export function createSummaryQueryRunner(
   deps: SummaryQueryDeps = {},
@@ -266,7 +223,7 @@ export function createSummaryQueryRunner(
     const projectsDir = path.join(
       opts.configDir,
       'projects',
-      encodeProjectKey(scratchCwd),
+      encodeProjectId(scratchCwd),
     );
 
     try {

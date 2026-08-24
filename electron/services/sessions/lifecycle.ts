@@ -35,7 +35,7 @@ import {
   type RuntimeDeps,
 } from './runtime';
 import { createTuiJsonlListener } from './tui-jsonl';
-import { encodeProjectKey } from './summary-query';
+import { encodeProjectId } from '../project-paths';
 import { createClaudeCliEngine } from '../agents/claude-cli-engine';
 import { createCodexCliEngine } from '../agents/codex-cli-engine';
 import type { AgentEngine, AgentKind } from '../agents/types';
@@ -630,7 +630,7 @@ export function createSessionsService(
       const jsonlPathForResumeCheck = path.join(
         handle.configDir,
         'projects',
-        encodeProjectKey(handle.projectPath),
+        encodeProjectId(handle.projectPath),
         `${handle.sessionId}.jsonl`,
       );
       const resumeExistingTranscript = fs.existsSync(jsonlPathForResumeCheck);
@@ -665,7 +665,7 @@ export function createSessionsService(
       const jsonlPath = path.join(
         handle.configDir,
         'projects',
-        encodeProjectKey(handle.projectPath),
+        encodeProjectId(handle.projectPath),
         `${handle.sessionId}.jsonl`,
       );
       handle.tuiJsonl = createTuiJsonlListener({
@@ -780,7 +780,7 @@ export function createSessionsService(
     const jsonlPath = path.join(
       configDir,
       'projects',
-      encodeProjectKey(projectPath),
+      encodeProjectId(projectPath),
       `${sessionId}.jsonl`,
     );
 

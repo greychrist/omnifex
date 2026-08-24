@@ -91,6 +91,11 @@ export interface LoggingService {
    *   (`"1d"`, `"1w"`, `"1m"`, `"1h"`), or omitted entirely.
    * - If omitted, all entries are deleted.
    *
+   * When anything was deleted, the database file is compacted afterwards so
+   * the freed space returns to the filesystem rather than sitting on SQLite's
+   * internal freelist — see `reclaimDiskSpace`. A prune that removes nothing
+   * skips the compaction.
+   *
    * Returns the number of rows removed.
    */
   prune(olderThan?: string): number;
@@ -313,10 +318,63 @@ export function createLoggingService(
     return row.count;
   }
 
+  /**
+   * Give the deleted rows' disk space back to the filesystem.
+   *
+   * Deleting rows does not shrink a SQLite file. The pages move to an internal
+   * freelist and are reused by future writes, but the file itself only ever
+   * grows — `auto_vacuum` is NONE, and switching it on would itself require a
+   * full VACUUM. Greg's greychrist.db reached 2.15 GB holding 36 MB of live
+   * data: 98.3% freelist, left behind by a prune months earlier.
+   *
+   * Two steps, and the second is not optional. The database runs in WAL mode
+   * (`database.ts:841`), so VACUUM's rewrite lands in the `-wal` file and the
+   * main file keeps its old size until the WAL is checkpointed back and
+   * truncated. VACUUM alone leaves the user looking at an unchanged file.
+   *
+   * Cost scales with the rows *kept*, not the rows deleted, because VACUUM
+   * rewrites the live data. That is the right way round for this operation:
+   * the user has just chosen how much to retain, and a trim that leaves the
+   * file its old size is the bug being fixed here.
+   *
+   * Never allowed to fail the prune. The rows are already gone by the time we
+   * get here, so a VACUUM that cannot run (no temp space, an enclosing
+   * transaction) must be reported and stepped over, not thrown.
+   */
+  function reclaimDiskSpace(): void {
+    try {
+      // Databases created before `auto_vacuum = INCREMENTAL` became the default
+      // (database.ts) are still NONE, and SQLite only honours a change to that
+      // mode during a full VACUUM. We are about to run one regardless, so the
+      // conversion is free here — and it is the only place it can happen
+      // without blocking app startup on a VACUUM of the user's whole database.
+      // Already-INCREMENTAL databases are unaffected.
+      raw.pragma('auto_vacuum = INCREMENTAL');
+      raw.exec('VACUUM');
+      raw.pragma('wal_checkpoint(TRUNCATE)');
+    } catch (err) {
+      writeBatch([
+        {
+          timestamp: new Date().toISOString(),
+          level: 'warn',
+          // 'backend' rather than a new 'logging' source: this fires only when
+          // VACUUM itself is impossible, and a whole taxonomy entry would sit
+          // empty in the LogTab dropdown forever.
+          source: 'backend',
+          message: 'log prune succeeded but reclaiming disk space failed',
+          metadata: JSON.stringify({
+            error: err instanceof Error ? err.message : String(err),
+          }),
+        },
+      ]);
+    }
+  }
+
   function prune(olderThan?: string): number {
     // No cutoff → delete everything.
     if (olderThan === undefined) {
       const result = raw.prepare(`DELETE FROM app_logs`).run();
+      if (result.changes > 0) reclaimDiskSpace();
       return result.changes;
     }
 
@@ -330,6 +388,9 @@ export function createLoggingService(
     const result = raw
       .prepare(`DELETE FROM app_logs WHERE timestamp < ?`)
       .run(cutoff);
+    // Skipped when nothing was deleted: VACUUM rewrites the whole database, so
+    // a no-op prune must not pay for one.
+    if (result.changes > 0) reclaimDiskSpace();
     return result.changes;
   }
 

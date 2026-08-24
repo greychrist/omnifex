@@ -9,7 +9,7 @@ import {
   rateLimitTypeForWindow,
   type UsageData,
 } from './usage-runner/parser';
-import { resetsLabelToEpoch } from './usage-runner/resets-label';
+import { resetsLabelToEpoch, CLOCK_LABEL_GRACE_MS } from './usage-runner/resets-label';
 import { ensureTrustedScratchCwd } from './usage-runner/scratch-cwd';
 import type { LoggingService } from './logging';
 import { buildClaudeEnv } from './util/claude-env';
@@ -111,13 +111,22 @@ function validateResetEpoch(
   epochMs: number | null,
   label: string,
   observedAtMs: number,
+  rawLabel: string,
 ): { accepted: number | null; reason: string } {
-  if (epochMs == null) return { accepted: null, reason: 'unparseable' };
+  if (epochMs == null) {
+    // "The CLI printed no Resets line" and "the CLI printed one we don't
+    // understand" are different events. Only the second is drift worth
+    // raising — conflating them buried it under a daily warning.
+    return { accepted: null, reason: rawLabel.trim() ? 'unparseable' : 'absent' };
+  }
   const dt = epochMs - observedAtMs;
-  if (dt <= 0) return { accepted: null, reason: 'in_past' };
+  // Slightly-negative is normal, not a glitch: see CLOCK_LABEL_GRACE_MS. Clamp
+  // such a reset to `observedAtMs` so the countdown reads "now" rather than
+  // going negative.
+  if (dt < -CLOCK_LABEL_GRACE_MS) return { accepted: null, reason: 'in_past' };
   const cap = label === 'current_session' ? FIVE_HOUR_CAP_MS : SEVEN_DAY_CAP_MS;
   if (dt > cap) return { accepted: null, reason: `beyond_cap (dt=${dt}ms cap=${cap}ms)` };
-  return { accepted: epochMs, reason: 'ok' };
+  return { accepted: Math.max(epochMs, observedAtMs), reason: 'ok' };
 }
 
 export function createUsageRunnerService(deps: UsageRunnerDeps): UsageRunnerService {
@@ -274,20 +283,45 @@ export function createUsageRunnerService(deps: UsageRunnerDeps): UsageRunnerServ
     // spacing variant the TUI produces.
     const READY_MARKERS = ['for shortcuts', 'shift+tab to cycle'];
     const TRUST_MARKER = 'trust this folder';
-    // Claude Code added a first-run "Claude in Chrome extension detected"
-    // prompt that renders BEFORE the welcome footer. Its default-highlighted
-    // choice is "❯ 1. Yes, use my browser", so pressing Enter would opt the
-    // account into browser tools. Pressing Esc chooses "keep browser tools
-    // off" and continues to the welcome screen — that's what we want for a
-    // read-only usage scrape. Match on the prompt title; fall back to the
-    // action hint in case the wording drifts.
-    const CHROME_MARKER = 'chrome extension detected';
+    // Startup interstitials that render INSTEAD of the welcome footer, and so
+    // deadlock this loop unless we answer them. Every one of these is answered
+    // with Esc — the decline path. Enter would accept whatever option the TUI
+    // happens to highlight, and a read-only usage scrape must never change the
+    // user's configuration as a side effect of being run.
+    //
+    // Match on the prompt title, compacted and lowercased, so inter-word
+    // spacing produced by cursor-positioning escapes doesn't defeat it.
+    const ESC_DISMISSIBLE: { id: string; marker: string; why: string }[] = [
+      {
+        // First-run "Claude in Chrome extension detected". Highlighted choice
+        // is "❯ 1. Yes, use my browser", which would opt the account into
+        // browser tools; Esc keeps them off.
+        id: 'chrome_extension',
+        marker: 'chrome extension detected',
+        why: 'keeps browser tools off',
+      },
+      {
+        // "Try the new fullscreen renderer?" — CLI 2.1.239 capped it at three
+        // impressions (`fullscreenUpsellSeenCount`), but within those three it
+        // replaces the welcome screen entirely. Verified against 2.1.240 by
+        // forcing it in a pty: the captured screen holds the dialog and none
+        // of READY_MARKERS. Highlighted choice is "❯ 1. Yes, try it", which
+        // starts a renderer trial and persists `tui: "fullscreen"` into the
+        // user's settings.json if the session stays healthy. Esc is "Not now".
+        id: 'fullscreen_offer',
+        marker: 'try the new fullscreen renderer',
+        why: 'leaves the renderer choice to the user',
+      },
+    ];
     const compact = (s: string) => s.replace(/\s+/g, '');
     const COMPACT_READY_MARKERS = READY_MARKERS.map(compact);
     const COMPACT_TRUST_MARKER = compact(TRUST_MARKER);
-    const COMPACT_CHROME_MARKER = compact(CHROME_MARKER);
+    const COMPACT_DISMISSIBLE = ESC_DISMISSIBLE.map((d) => ({
+      ...d,
+      compactMarker: compact(d.marker).toLowerCase(),
+    }));
     let trustConfirmed = false;
-    let chromeDismissed = false;
+    const dismissed = new Set<string>();
     let readyLogged = false;
     while (Date.now() < hardDeadline) {
       const stripped = stripAnsi(buffer);
@@ -311,14 +345,15 @@ export function createUsageRunnerService(deps: UsageRunnerDeps): UsageRunnerServ
         pty.write('\r');
         trustConfirmed = true;
       }
-      if (!chromeDismissed && compactStripped.toLowerCase().includes(COMPACT_CHROME_MARKER)) {
-        // Esc keeps browser tools off and dismisses the prompt. Do NOT send
-        // Enter — that would accept the highlighted "use my browser" default.
-        logInfo('chrome-extension prompt observed — sending Esc to keep browser tools off', {
+      const compactLower = compactStripped.toLowerCase();
+      for (const d of COMPACT_DISMISSIBLE) {
+        if (dismissed.has(d.id)) continue;
+        if (!compactLower.includes(d.compactMarker)) continue;
+        logInfo(`startup dialog observed (${d.id}) — sending Esc, which ${d.why}`, {
           account: accountName,
         });
         pty.write('\x1b');
-        chromeDismissed = true;
+        dismissed.add(d.id);
       }
       if (exited) break;
       await sleep(50);
@@ -340,7 +375,8 @@ export function createUsageRunnerService(deps: UsageRunnerDeps): UsageRunnerServ
         configDir,
         exited,
         awaited_markers: READY_MARKERS,
-        handled_dialogs: { trust: trustConfirmed, chrome_extension: chromeDismissed },
+        handled_dialogs: { trust: trustConfirmed, dismissed: [...dismissed] },
+        dismissible_markers: ESC_DISMISSIBLE.map((d) => d.marker),
         screen: raw,
         raw,
       });
@@ -474,7 +510,7 @@ export function createUsageRunnerService(deps: UsageRunnerDeps): UsageRunnerServ
     for (const w of parsed.data.windows) {
       const type = rateLimitTypeForWindow(w.label);
       const resetsEpochMs = resetsLabelToEpoch(w.resets_at_label, observedAt);
-      const validation = validateResetEpoch(resetsEpochMs, w.label, observedAt);
+      const validation = validateResetEpoch(resetsEpochMs, w.label, observedAt, w.resets_at_label);
       const resetsAtSec = validation.accepted == null ? null : Math.floor(validation.accepted / 1000);
 
       const logCtx = {
@@ -489,6 +525,11 @@ export function createUsageRunnerService(deps: UsageRunnerDeps): UsageRunnerServ
       };
       if (validation.reason === 'ok') {
         logInfo('parsed reset epoch', logCtx);
+      } else if (validation.reason === 'absent') {
+        // Nothing to parse — the window rendered without a Resets line. The
+        // prior good value is preserved exactly as for a rejection, but this
+        // is routine CLI output, not drift.
+        logInfo('no reset label rendered for this window', logCtx);
       } else {
         logWarn('rejected reset epoch — preserving prior good value', logCtx);
       }

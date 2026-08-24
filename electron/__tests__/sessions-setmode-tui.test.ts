@@ -36,7 +36,7 @@ vi.mock('node-pty', () => ({ spawn: vi.fn() }));
 
 import { spawn as ptySpawn } from 'node-pty';
 import { createSessionsService } from '../services/sessions';
-import { encodeProjectKey } from '../services/sessions/summary-query';
+import { encodeProjectId } from '../services/project-paths';
 
 function makeFakePty() {
   return {
@@ -83,7 +83,7 @@ describe("setMode('tui') after a rich-mode start — resume vs fresh-start", () 
     const jsonlPath = path.join(
       tmpConfig,
       'projects',
-      encodeProjectKey(projectPath),
+      encodeProjectId(projectPath),
       `${sessionId!}.jsonl`,
     );
     expect(fs.existsSync(jsonlPath)).toBe(false);
@@ -113,7 +113,7 @@ describe("setMode('tui') after a rich-mode start — resume vs fresh-start", () 
     expect(sessionId).toBeTruthy();
 
     // Drop a JSONL file at the path the CLI would have written to.
-    const projectDir = path.join(tmpConfig, 'projects', encodeProjectKey(projectPath));
+    const projectDir = path.join(tmpConfig, 'projects', encodeProjectId(projectPath));
     fs.mkdirSync(projectDir, { recursive: true });
     const jsonlPath = path.join(projectDir, `${sessionId!}.jsonl`);
     fs.writeFileSync(jsonlPath, '{"type":"user","message":{"role":"user","content":"hi"}}\n');

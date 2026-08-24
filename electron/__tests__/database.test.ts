@@ -1,4 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import BetterSqlite3 from 'better-sqlite3';
 import {
   createDatabase,
@@ -550,5 +553,71 @@ describe('ensureDefaultSettings', () => {
     ensureDefaultSettings(db, { local_update_dir: '/default/path' });
 
     expect(db.getSetting('local_update_dir')).toBe('');
+  });
+});
+
+describe('database disk-space reclamation', () => {
+  let tmpDir: string;
+  let dbPath: string;
+  let db: Database;
+
+  function fileBytes(): number {
+    let total = 0;
+    for (const suffix of ['', '-wal', '-shm']) {
+      try { total += fs.statSync(dbPath + suffix).size; } catch { /* absent */ }
+    }
+    return total;
+  }
+
+  function fill(rows: number): void {
+    const insert = db.raw.prepare('INSERT INTO app_logs (timestamp, level, source, message, metadata) VALUES (?,?,?,?,?)');
+    const many = db.raw.transaction(() => {
+      for (let i = 0; i < rows; i++) {
+        insert.run('2024-01-01T00:00:00Z', 'info', 'backend', `m${i}`, 'x'.repeat(4000));
+      }
+    });
+    many();
+  }
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'omnifex-autovacuum-'));
+    dbPath = path.join(tmpDir, 'test.db');
+    db = createDatabase(dbPath);
+  });
+
+  afterEach(() => {
+    try { db.close(); } catch { /* already closed */ }
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('creates new databases in incremental auto-vacuum mode', () => {
+    // 2 === INCREMENTAL. This has to be set before the first table is created;
+    // afterwards the only way to change it is a full VACUUM. Greg's existing
+    // greychrist.db was created without it, which is how it reached 2.15 GB
+    // holding 36 MB of live data.
+    expect(db.raw.pragma('auto_vacuum', { simple: true })).toBe(2);
+  });
+
+  it('reclaimFreePages returns freed space to the filesystem without a full VACUUM', () => {
+    fill(5000);
+    db.raw.pragma('wal_checkpoint(TRUNCATE)');
+    const grown = fileBytes();
+    expect(grown).toBeGreaterThan(8 * 1024 * 1024);
+
+    db.raw.prepare('DELETE FROM app_logs').run();
+    db.raw.pragma('wal_checkpoint(TRUNCATE)');
+    // Deleting alone does nothing for the file — the pages sit on the freelist.
+    expect(fileBytes()).toBeGreaterThan(grown / 2);
+
+    const reclaimed = db.reclaimFreePages();
+    expect(reclaimed).toBeGreaterThan(0);
+    expect(fileBytes()).toBeLessThan(grown / 2);
+  });
+
+  it('reclaimFreePages is a cheap no-op when there is nothing to reclaim', () => {
+    fill(10);
+    db.raw.pragma('wal_checkpoint(TRUNCATE)');
+    db.reclaimFreePages();
+    expect(db.reclaimFreePages()).toBe(0);
   });
 });

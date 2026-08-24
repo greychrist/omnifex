@@ -6,12 +6,11 @@ import { EventEmitter } from 'node:events';
 import { Readable } from 'node:stream';
 import { spawn } from 'node:child_process';
 import {
-
   createSummaryQueryRunner,
-  encodeProjectKey,
   runCliOnce,
   type RunPromptFn,
 } from '../services/sessions/summary-query';
+import { encodeProjectId } from '../services/project-paths';
 import type { CliRunResult } from '../services/sessions/summary-query';
 
 /**
@@ -131,7 +130,7 @@ describe('createSummaryQueryRunner', () => {
       projectsDir = path.join(
         params.configDir,
         'projects',
-        encodeProjectKey(params.cwd),
+        encodeProjectId(params.cwd),
       );
       fs.mkdirSync(projectsDir, { recursive: true });
       fs.writeFileSync(path.join(projectsDir, 'fake-uuid.jsonl'), 'x', 'utf-8');
@@ -164,7 +163,7 @@ describe('createSummaryQueryRunner', () => {
       const projectsDir = path.join(
         params.configDir,
         'projects',
-        encodeProjectKey(params.cwd),
+        encodeProjectId(params.cwd),
       );
       fs.mkdirSync(projectsDir, { recursive: true });
       fs.writeFileSync(path.join(projectsDir, 'fake.jsonl'), 'x', 'utf-8');
@@ -175,38 +174,38 @@ describe('createSummaryQueryRunner', () => {
     await expect(run({ prompt: 'p', model: 'm', configDir })).rejects.toThrow('boom');
 
     expect(fs.existsSync(seenCwd)).toBe(true);
-    const projectsDir = path.join(configDir, 'projects', encodeProjectKey(seenCwd));
+    const projectsDir = path.join(configDir, 'projects', encodeProjectId(seenCwd));
     expect(fs.existsSync(projectsDir)).toBe(false);
   });
 
-  it('encodeProjectKey replaces path separators with dashes (matches the binary)', () => {
-    expect(encodeProjectKey('/Users/foo/Repos/bar')).toBe('-Users-foo-Repos-bar');
-    expect(encodeProjectKey('/var/folders/06/x/T/scratch')).toBe('-var-folders-06-x-T-scratch');
+  it('encodeProjectId replaces path separators with dashes (matches the binary)', () => {
+    expect(encodeProjectId('/Users/foo/Repos/bar')).toBe('-Users-foo-Repos-bar');
+    expect(encodeProjectId('/var/folders/06/x/T/scratch')).toBe('-var-folders-06-x-T-scratch');
   });
 
-  it('encodeProjectKey replaces every non-alphanumeric, not just the separator', () => {
+  it('encodeProjectId replaces every non-alphanumeric, not just the separator', () => {
     // The CLI sanitizes with /[^a-zA-Z0-9]/g, so dots, underscores and spaces
     // all collapse to '-'. Replacing only '/' pointed us at directories the
     // CLI never wrote.
-    expect(encodeProjectKey('/Users/foo/my_app.v2')).toBe('-Users-foo-my-app-v2');
-    expect(encodeProjectKey('/Users/foo/My Project')).toBe('-Users-foo-My-Project');
-    expect(encodeProjectKey('/Users/foo/a+b@c')).toBe('-Users-foo-a-b-c');
+    expect(encodeProjectId('/Users/foo/my_app.v2')).toBe('-Users-foo-my-app-v2');
+    expect(encodeProjectId('/Users/foo/My Project')).toBe('-Users-foo-My-Project');
+    expect(encodeProjectId('/Users/foo/a+b@c')).toBe('-Users-foo-a-b-c');
   });
 
-  it('encodeProjectKey leaves a 200-char key untruncated', () => {
+  it('encodeProjectId leaves a 200-char key untruncated', () => {
     const p = '/' + 'a'.repeat(199);
-    expect(encodeProjectKey(p)).toBe('-' + 'a'.repeat(199));
-    expect(encodeProjectKey(p)).toHaveLength(200);
+    expect(encodeProjectId(p)).toBe('-' + 'a'.repeat(199));
+    expect(encodeProjectId(p)).toHaveLength(200);
   });
 
-  it('encodeProjectKey truncates past 200 chars and appends the CLI hash', () => {
+  it('encodeProjectId truncates past 200 chars and appends the CLI hash', () => {
     const p = '/' + 'a'.repeat(200);
-    const encoded = encodeProjectKey(p);
+    const encoded = encodeProjectId(p);
     expect(encoded.slice(0, 200)).toBe('-' + 'a'.repeat(199));
     expect(encoded).toMatch(/^-a{199}-[0-9a-z]+$/);
   });
 
-  it('encodeProjectKey matches a directory name observed from CLI 2.1.224', () => {
+  it('encodeProjectId matches a directory name observed from CLI 2.1.224', () => {
     // Ground truth: ran `claude -p` in this cwd with a scratch CLAUDE_CONFIG_DIR
     // and read back the directory the binary created under projects/.
     const cwd =
@@ -214,16 +213,16 @@ describe('createSummaryQueryRunner', () => {
       'seg_four.v4/seg_five.v5/seg_six.v6/seg_seven.v7/seg_eight.v8/seg_nine.v9/' +
       'seg_ten.v10/seg_eleven.v11/seg_twelve.v12/seg_thirteen.v13/' +
       'seg_fourteen.v14/seg_fifteen.v15';
-    expect(encodeProjectKey(cwd)).toBe(
+    expect(encodeProjectId(cwd)).toBe(
       '-private-tmp-omnifex-encoder-probe-seg-one-v1-seg-two-v2-seg-three-v3-' +
         'seg-four-v4-seg-five-v5-seg-six-v6-seg-seven-v7-seg-eight-v8-seg-nine-v9-' +
         'seg-ten-v10-seg-eleven-v11-seg-twelve-v12-seg-thirteen-v1-vflzar',
     );
   });
 
-  it('encodeProjectKey NFC-normalizes before sanitizing and hashing', () => {
+  it('encodeProjectId NFC-normalizes before sanitizing and hashing', () => {
     // 'e' + combining acute vs precomposed 'e-acute': same directory either way.
-    expect(encodeProjectKey('/Users/foo/cafe\u0301')).toBe(encodeProjectKey('/Users/foo/caf\u00e9'));
+    expect(encodeProjectId('/Users/foo/cafe\u0301')).toBe(encodeProjectId('/Users/foo/caf\u00e9'));
   });
 
   it('passes the resolved claude binary through to runPrompt', async () => {

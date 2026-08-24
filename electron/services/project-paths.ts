@@ -107,20 +107,59 @@ export function recoverProjectPath(projectDir: string, projectId: string): strin
 }
 
 /**
+ * Longest sanitized key the CLI writes verbatim. Past this it truncates and
+ * appends a hash of the full path, so two deep paths sharing a 200-char
+ * prefix can't collide on one directory.
+ */
+const MAX_PROJECT_KEY_LEN = 200;
+
+/**
+ * The CLI's path hash: djb2-style 32-bit rolling hash of the *normalized*
+ * path (not the sanitized key), rendered base-36. Transcribed from the
+ * 2.1.224 binary — `(t<<5)-t+charCodeAt(i)|0`, then `Math.abs(...).toString(36)`.
+ *
+ * `|0` keeps every step in int32, which is what makes the result reproducible;
+ * dropping it would silently diverge once a path is long enough to overflow.
+ */
+function cliPathHash(normalizedPath: string): string {
+  let h = 0;
+  for (let i = 0; i < normalizedPath.length; i++) {
+    h = ((h << 5) - h + normalizedPath.charCodeAt(i)) | 0;
+  }
+  return Math.abs(h).toString(36);
+}
+
+/**
  * Encode a project path the way the Claude CLI names its project directories:
- * every `/` becomes `-`, which for an absolute path yields a leading dash.
+ * NFC-normalize the absolute path, replace every non-alphanumeric character
+ * with `-`, and — past `MAX_PROJECT_KEY_LEN` — truncate and append a hash of
+ * the normalized path.
  *
- *   /Users/foo/bar → -Users-foo-bar
+ *   /Users/foo/bar        → -Users-foo-bar
+ *   /Users/foo/my_app.v2  → -Users-foo-my-app-v2
  *
- * The inverse of `decodeProjectId`, and lossy in the same way — a folder whose
- * own name contains a dash encodes identically to a nested path. That is why
- * `recoverProjectPath` reads directory contents rather than decoding, and why
- * on-disk ownership in `accounts.resolve()` treats a miss as "no evidence"
- * rather than guessing.
+ * The rule is "every non-alphanumeric", not "every slash". This used to be
+ * slash-only here while `sessions/summary-query.ts` carried a second, correct
+ * copy — so lookups that went through this one silently missed any path
+ * containing a dot, underscore or space. `accounts.resolve()` step 3 read that
+ * miss as "no on-disk evidence" for projects that were sitting right there:
+ * `.../pi-tuitive/.claude-worktrees/PI-390` lives in
+ * `-Users-…-pi-tuitive--claude-worktrees-PI-390`, which the slash-only form
+ * never produced. The two copies are now one; see the CLI 2.1.224 directory
+ * capture pinned in `sessions-summary-query.test.ts`.
+ *
+ * Still lossy, and `decodeProjectId` is still only its naive inverse — a
+ * folder whose own name contains a dash encodes identically to a nested path,
+ * which is why `recoverProjectPath` reads directory contents rather than
+ * decoding, and why on-disk ownership treats a miss as "no evidence" rather
+ * than a guess.
  *
  * Lives here rather than in `claude.ts` so `accounts.ts` can share it:
  * `claude.ts` already imports `accounts.ts`, so the reverse would be a cycle.
  */
 export function encodeProjectId(projectPath: string): string {
-  return projectPath.replace(/\//g, '-');
+  const normalized = projectPath.normalize('NFC');
+  const key = normalized.replace(/[^a-zA-Z0-9]/g, '-');
+  if (key.length <= MAX_PROJECT_KEY_LEN) return key;
+  return `${key.slice(0, MAX_PROJECT_KEY_LEN)}-${cliPathHash(normalized)}`;
 }

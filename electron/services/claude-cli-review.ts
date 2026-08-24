@@ -29,6 +29,102 @@ import * as path from 'node:path';
  * old value and the new one, and file or fix whatever they imply. Bumping it
  * to silence the badge throws away the only drift signal we have.
  *
+ * Last review: 2.1.236 -> 2.1.241 on 2026-08-24. Findings:
+ *
+ *  1. Fullscreen renderer is the DEFAULT now — the 2.1.236 watch item, closed
+ *     with evidence rather than reasoning. A pty spawn of 2.1.240 with the
+ *     personal config dir emits `ESC[?1049h` (alternate screen) plus
+ *     `?1000h/?1002h/?1003h/?1006h` (mouse tracking) at startup, with no `tui`
+ *     key in settings.json — so it is gate-driven, not user-set. The
+ *     screen-replay `stripAnsi` written for 2.1.236 handles it unchanged:
+ *     30 days of `app_logs` show zero readiness timeouts and zero window-drift
+ *     warnings, and a live 2.1.241 capture parses complete with all three
+ *     windows (including `week_fable`) and no drift.
+ *
+ *  2. "Try the new fullscreen renderer?" — REAL BUG, FIXED. Forcing it with
+ *     CLAUDE_CODE_FORCE_FULLSCREEN_UPSELL=1 shows the dialog renders INSTEAD of
+ *     the welcome screen: the captured screen holds the dialog and none of
+ *     READY_MARKERS, so phase 1 ran to the hard deadline and the scrape
+ *     returned ok:false. 2.1.239 capped it at three impressions
+ *     (`fullscreenUpsellSeenCount`), which bounds the damage but does not
+ *     remove it. `usage-runner.ts` now answers it with Esc via the
+ *     ESC_DISMISSIBLE table, alongside the Chrome interstitial. Esc, never
+ *     Enter: Enter takes the highlighted "Yes, try it", which starts a trial
+ *     and can persist `tui: "fullscreen"` into the user's settings.json. A
+ *     read-only scrape must not change the user's configuration.
+ *
+ *  3. Reset-epoch parsing — TWO REAL BUGS, FIXED. Not 2.1.237+ regressions;
+ *     found by reading `app_logs` during the audit, both steady since
+ *     2026-08-05. (a) A bare clock label is minute-truncated and `observedAt`
+ *     is stamped after the render settles, so a window rolling over mid-capture
+ *     read as 16s "past" and `parseClockWithTz` pushed it a full day forward
+ *     (dt = 23h59m45s), which `validateResetEpoch` then dropped as beyond_cap.
+ *     `CLOCK_LABEL_GRACE_MS` now tolerates that and the epoch is clamped to
+ *     `observedAt`. (b) "no Resets line rendered" was reported as
+ *     `unparseable`, i.e. as drift, ~25 times a month — it is now `absent` and
+ *     logged at info, so a genuinely unrecognised label stays loud.
+ *
+ *  4. `encodeProjectId` — REAL BUG, FIXED. 2.1.239 fixed `claude -c`/resume
+ *     matching directories differing only by `_`, `-` or `.`; checking our side
+ *     showed TWO encoders, one correct (`encodeProjectKey`, every
+ *     non-alphanumeric to `-`) and one slash-only. The slash-only one backed
+ *     `accounts.resolve()` step 3, so on-disk ownership silently found "no
+ *     evidence" for any path with a dot, underscore or space —
+ *     `.../pi-tuitive/.claude-worktrees/PI-390` lives in
+ *     `-Users-...-pi-tuitive--claude-worktrees-PI-390`. The two are now one
+ *     function in `project-paths.ts`; `main.ts` no longer re-derives it inline.
+ *
+ *  5. UTF-8 BOM parity, FIXED. 2.1.239 stopped ignoring agents/skills/commands
+ *     whose `.md` starts with a BOM; `slash-commands.ts` anchored on /^---/ and
+ *     still did, so a file the CLI now honours lost its frontmatter here.
+ *
+ *  6. Touched-vs-appended parity, FIXED. 2.1.239 stopped reordering sessions
+ *     whose file was merely touched or reopened. `listProjects` ordered
+ *     projects on raw JSONL mtime with no equivalent guard; it now keys on file
+ *     size, which it was already stat-ing, so the fix costs no extra IO.
+ *
+ *  7. 2.1.240 and 2.1.241 carry NO changelog entries ("Bug fixes and
+ *     reliability improvements"), which is exactly the case this review exists
+ *     to distrust. Checked by other means instead: the two binaries differ, but
+ *     a normalised diff of their embedded strings is entirely rebuild churn
+ *     (minified module wrappers, per-class engine messages) plus
+ *     `// Version: 2.1.241`. Every candidate "new" string turned out to exist
+ *     in 2.1.240 as well — `strings` glues trailing bytes on, and that noise is
+ *     what makes a naive binary diff useless here. Every marker OmniFex
+ *     depends on is present in 2.1.241 (trust dialog, Chrome interstitial,
+ *     fullscreen offer, `Resets`, `% used`, `Total cost:`), and the welcome
+ *     footer — composed at runtime, not stored as a literal, so it must be
+ *     verified live — matched in a real capture.
+ *
+ * Fixed upstream, no action needed, but load-bearing enough to record:
+ * 2.1.239's mouse-report fix (a report split across writes could land as
+ * literal `35;150;7M` in the prompt — reachable in OmniFex terminal mode,
+ * since the CLI enables `?1000h/?1002h/?1003h/?1006h` and TerminalView forwards
+ * them through `onData`); 2.1.239's Esc-with-queued-prompt race, which left a
+ * session idle while Claude was still working — the exact false-idle class
+ * `docs/session-lifecycle.md` exists to prevent, and one we could not have
+ * fixed below our own layer; and 2.1.238's stdio MCP fix, which stops the
+ * Brain server being probed with `server/discover` before `initialize` on every
+ * session open.
+ *
+ * Adjacent, not from the changelog: the audit found `greychrist.db` at 2.15 GB
+ * holding 36 MB of live data — 98.3% freelist, left by a log prune months
+ * earlier, because deleting rows never shrinks a SQLite file and `auto_vacuum`
+ * was NONE. `logging.prune()` now compacts on its way out (and converts legacy
+ * databases while it is already vacuuming), new databases are created
+ * INCREMENTAL, and `main.ts` sweeps free pages hourly.
+ *
+ * Out of reach in 2.1.237-2.1.241: the "Concise" output style and every
+ * output-style fix (we surface no output styles — `output_style` is an untyped
+ * passthrough), `keybindingFlavor`, plugin/MCP `headersHelper` (we never emit
+ * one, and `mcp.ts` is file-based, so the `claude mcp list` rendering change is
+ * inert), self-hosted-runner flags, all Remote Control / cross-session /
+ * cloud-session work, the `/cost` 1.1x data-residency premium (display-only —
+ * we print what the CLI prints), Bedrock/Vertex/Foundry and Alpine/musl, the
+ * zsh-conditional permission-checking improvement (we consume the CLI's
+ * suggested Bash rules rather than splitting commands ourselves), and the long
+ * tail of TUI-only rendering, keybinding, vim-mode and IDE fixes.
+ *
  * Last review: 2.1.235 -> 2.1.236 on 2026-08-19. Findings:
  *
  *  1. `/usage` letter loss — REAL BUG, FIXED. Not a 2.1.236 regression; found
@@ -98,8 +194,17 @@ import * as path from 'node:path';
  * Fixed upstream, no action needed: the fullscreen renderer now falls back to
  * the classic renderer instead of failing permanently after one bad start
  * (that failure mode would have broken TUI sessions and the `/usage` scrape
- * alike). Watch item, not a finding: `ansi.ts` models the classic renderer, so
- * if fullscreen ever becomes the default it needs re-verification.
+ * alike). The watch item this left open — "`ansi.ts` models the classic
+ * renderer, so if fullscreen ever becomes the default it needs
+ * re-verification" — is now CLOSED, verified 2026-08-24 against CLI 2.1.240:
+ * fullscreen IS the default here (a pty spawn with the personal config dir
+ * emits `ESC[?1049h` plus `?1000h/?1002h/?1003h/?1006h` at startup, with no
+ * `tui` key in settings.json), and the screen-replay `stripAnsi` handles it —
+ * `app_logs` shows no readiness timeouts and no window drift across 30 days of
+ * scrapes on that renderer. What the same probe DID surface is the
+ * "Try the new fullscreen renderer?" dialog, which renders instead of the
+ * welcome screen and carries none of READY_MARKERS; `usage-runner.ts` now
+ * dismisses it with Esc alongside the Chrome interstitial.
  *
  * Everything else in 2.1.236 is out of reach: `notify_when_idle` on
  * SendMessage (we never call it), the sandbox wildcard read-deny precedence
@@ -112,7 +217,7 @@ import * as path from 'node:path';
  * `~/.claude.json` fix (we read-modify-write that file, never replace it), and
  * the VSCode screen-reader work.
  */
-export const REVIEWED_CLI_VERSION = '2.1.236';
+export const REVIEWED_CLI_VERSION = '2.1.241';
 
 /**
  * app_settings key holding the user's explicit OmniFex-checkout override.

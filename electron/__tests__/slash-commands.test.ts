@@ -21,6 +21,27 @@ describe('slash commands service', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
+  it('reads a command whose file starts with a UTF-8 BOM', () => {
+    // CLI 2.1.239 fixed agents, skills and commands whose .md begins with a
+    // BOM being silently ignored. Editors on Windows add one routinely, and
+    // our frontmatter regex anchors on /^---/, so the BOM pushed the file down
+    // the no-frontmatter path: description and allowed_tools came back empty
+    // and the raw `---` block leaked into the body. A file the CLI now honours
+    // must not read differently here.
+    fs.writeFileSync(
+      path.join(configDir, 'commands', 'bommed.md'),
+      '\uFEFF---\ndescription: Has a BOM\nallowed_tools: Read\n---\nBody text\n',
+      'utf-8',
+    );
+
+    const commands = service.list(undefined, configDir);
+    const cmd = commands.find((c) => c.name === 'bommed');
+    expect(cmd).toBeDefined();
+    expect(cmd?.description).toBe('Has a BOM');
+    expect(cmd?.allowed_tools).toBe('Read');
+    expect(cmd?.content).toBe('Body text');
+  });
+
   it('list returns empty array when no commands exist', () => {
     const commands = service.list(undefined, configDir);
     expect(Array.isArray(commands)).toBe(true);

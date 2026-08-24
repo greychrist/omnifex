@@ -633,6 +633,106 @@ describe('usage-runner', () => {
     expect(result.parsed.windows.length).toBe(3);
   });
 
+  describe('reset-epoch acceptance', () => {
+    function makeLoggingSpy() {
+      const rows: { level: string; message: string; metadata?: string }[] = [];
+      return {
+        rows,
+        logging: {
+          writeBatch: (batch: typeof rows) => { rows.push(...batch); },
+        } as unknown as import('../services/logging').LoggingService,
+      };
+    }
+
+    it('accepts a reset time that has only just passed instead of rejecting it', async () => {
+      // Production regression, seen 4× in app_logs between 2026-08-05 and
+      // 2026-08-22: the 5-hour window rolled over mid-capture, so the label
+      // read "5:19pm" while observedAt was 17:19:16 EDT. The clock parser
+      // pushed it to tomorrow (dt = 23h59m45s) and validateResetEpoch dropped
+      // it as beyond_cap, so a correct reset time never reached rate-limits.
+      const observedAt = Date.UTC(2026, 7, 22, 21, 19, 16);
+      const fixture = MAX_FULL_FIXTURE.replace(
+        'Resets 9:40am (America/New_York)',
+        'Resets 5:19pm (America/New_York)',
+      );
+      const { rows, logging } = makeLoggingSpy();
+      const recordUtilization = vi.fn();
+      const runner = createUsageRunnerService({
+        accounts: makeFakeAccountsService(),
+        rateLimits: { recordUtilization } as unknown as import('../services/rate-limits').RateLimitsService,
+        spawnPty: makeScriptedSpawn(fixture),
+        findClaudeBinary: () => '/fake/claude',
+        now: () => observedAt,
+        logging,
+        ...TUNING,
+      });
+      const result = await runner.run('personal');
+      expect(result.ok).toBe(true);
+
+      // The five-hour window must carry a reset time, clamped to "now" rather
+      // than sitting 16s in the past.
+      const fiveHour = recordUtilization.mock.calls.find((c) => c[1] === 'five_hour');
+      expect(fiveHour).toBeDefined();
+      expect(fiveHour?.[3]).toBe(Math.floor(observedAt / 1000));
+      expect(rows.some((r) => r.message.startsWith('rejected reset epoch'))).toBe(false);
+    });
+
+    it('treats an absent Resets line as absent, not as a parse failure', async () => {
+      // 25× in app_logs since 2026-08-05, most recently today: the CLI renders
+      // the current-session window with no Resets line at all. That is the CLI
+      // declining to print one, not a label we failed to understand — logging
+      // it at warn buried the real drift signal under recurring noise.
+      const observedAt = Date.UTC(2023, 10, 15, 10, 40, 0);
+      const fixture = MAX_FULL_FIXTURE.replace('Resets 9:40am (America/New_York)\n', '');
+      const { rows, logging } = makeLoggingSpy();
+      const recordUtilization = vi.fn();
+      const runner = createUsageRunnerService({
+        accounts: makeFakeAccountsService(),
+        rateLimits: { recordUtilization } as unknown as import('../services/rate-limits').RateLimitsService,
+        spawnPty: makeScriptedSpawn(fixture),
+        findClaudeBinary: () => '/fake/claude',
+        now: () => observedAt,
+        logging,
+        ...TUNING,
+      });
+      const result = await runner.run('personal');
+      expect(result.ok).toBe(true);
+
+      // Still recorded, still with a null reset (recordUtilization COALESCEs
+      // null against the last known-good value) — but not as a warning.
+      const fiveHour = recordUtilization.mock.calls.find((c) => c[1] === 'five_hour');
+      expect(fiveHour?.[3]).toBeNull();
+      expect(rows.some((r) => r.message.startsWith('rejected reset epoch'))).toBe(false);
+      const absent = rows.find((r) => r.metadata?.includes('"reason":"absent"'));
+      expect(absent).toBeDefined();
+      expect(absent?.level).not.toBe('warn');
+    });
+
+    it('still warns when a Resets label is present but unrecognized', async () => {
+      // The signal the noise was hiding: a label the CLI reworded into a shape
+      // resetsLabelToEpoch does not understand must stay loud.
+      const observedAt = Date.UTC(2023, 10, 15, 10, 40, 0);
+      const fixture = MAX_FULL_FIXTURE.replace(
+        'Resets 9:40am (America/New_York)',
+        'Resets sometime on Thursday',
+      );
+      const { rows, logging } = makeLoggingSpy();
+      const runner = createUsageRunnerService({
+        accounts: makeFakeAccountsService(),
+        rateLimits: makeFakeRateLimits(),
+        spawnPty: makeScriptedSpawn(fixture),
+        findClaudeBinary: () => '/fake/claude',
+        now: () => observedAt,
+        logging,
+        ...TUNING,
+      });
+      await runner.run('personal');
+      const warn = rows.find((r) => r.message.startsWith('rejected reset epoch'));
+      expect(warn?.level).toBe('warn');
+      expect(warn?.metadata).toContain('"reason":"unparseable"');
+    });
+  });
+
   it('dismisses the Chrome-extension interstitial (Esc) and still reaches /usage', async () => {
     // Claude Code added a first-run "Claude in Chrome extension detected"
     // prompt that appears BEFORE the welcome footer. Its default-highlighted
@@ -704,6 +804,83 @@ describe('usage-runner', () => {
     const usageIdx = writes.findIndex((w) => w.includes('/usage'));
     expect(escIdx).toBeGreaterThanOrEqual(0);
     expect(escIdx).toBeLessThan(usageIdx);
+  });
+
+  it('dismisses the fullscreen-renderer offer (Esc) and still reaches /usage', async () => {
+    // CLI 2.1.239 caps this dialog at three impressions
+    // (`fullscreenUpsellSeenCount`), but within those three it renders INSTEAD
+    // of the welcome screen: a live capture of 2.1.240 in a pty
+    // (CLAUDE_CODE_FORCE_FULLSCREEN_UPSELL=1) contains the dialog and none of
+    // READY_MARKERS, so the phase-1 loop ran to the hard deadline and the
+    // scrape returned ok:false.
+    //
+    // Esc is "Not now". Enter would pick the highlighted "Yes, try it", which
+    // starts a renderer trial and, if the session stays healthy, persists
+    // `tui: "fullscreen"` into the user's settings.json — a scrape must never
+    // change the user's renderer.
+    const upsellPrompt = [
+      ' Try the new fullscreen renderer?',
+      '',
+      ' · Flicker-free output — fixes the flashing you see during long responses',
+      ' · Mouse support — click to move your cursor or expand results',
+      ' · Selected text auto-copies to your clipboard',
+      '',
+      ' ❯ 1. Yes, try it',
+      ' 2. Not now',
+      '',
+      ' Enter to confirm · Esc to cancel',
+    ].join('\n');
+
+    const writes: string[] = [];
+    const upsellSpawn: PtySpawner = () => {
+      const dataHandlers: ((d: string) => void)[] = [];
+      const exitHandlers: ((code: { exitCode: number }) => void)[] = [];
+      let killed = false;
+      setTimeout(() => {
+        if (killed) return;
+        for (const h of dataHandlers) h(upsellPrompt);
+      }, 5);
+      return {
+        write: (data: string) => {
+          writes.push(data);
+          if (data.includes('\x1b')) {
+            setTimeout(() => {
+              if (killed) return;
+              for (const h of dataHandlers) h('\n? for shortcuts ');
+            }, 5);
+          }
+          if (data.includes('/usage')) {
+            setTimeout(() => {
+              if (killed) return;
+              for (const h of dataHandlers) h(MAX_FULL_FIXTURE);
+            }, 30);
+          }
+        },
+        kill: () => { killed = true; for (const h of exitHandlers) h({ exitCode: 0 }); },
+        onData: (cb) => { dataHandlers.push(cb); },
+        onExit: (cb) => { exitHandlers.push(cb); },
+      };
+    };
+
+    const observedAt = Date.UTC(2023, 10, 15, 10, 40, 0);
+    const runner = createUsageRunnerService({
+      accounts: makeFakeAccountsService(),
+      rateLimits: makeFakeRateLimits(),
+      spawnPty: upsellSpawn,
+      findClaudeBinary: () => '/fake/claude',
+      now: () => observedAt,
+      ...TUNING,
+    });
+    const result = await runner.run('personal');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.parsed.windows.length).toBe(3);
+    const escIdx = writes.findIndex((w) => w.includes('\x1b'));
+    const usageIdx = writes.findIndex((w) => w.includes('/usage'));
+    expect(escIdx).toBeGreaterThanOrEqual(0);
+    expect(escIdx).toBeLessThan(usageIdx);
+    // Enter must never be sent to this dialog — it would accept the trial.
+    expect(writes.slice(0, escIdx).some((w) => w.includes('\r'))).toBe(false);
   });
 
   it('passes the scratch cwd from ensureCwd into spawnPty (not os.homedir)', async () => {

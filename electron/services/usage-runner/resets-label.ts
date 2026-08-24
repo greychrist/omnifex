@@ -12,6 +12,18 @@
  *
  * Returns null for empty / unrecognized / invalid-timezone inputs.
  */
+/**
+ * How far a bare clock label may sit behind `observedAtMs` and still be read
+ * as "today, just now" rather than "tomorrow".
+ *
+ * Covers minute truncation in the label (up to 60s) plus the render-and-settle
+ * latency between the CLI painting the line and the runner stamping
+ * `observedAtMs`. Shared with `validateResetEpoch`, which must accept the
+ * slightly-negative delta this now produces instead of rejecting it as
+ * `in_past`.
+ */
+export const CLOCK_LABEL_GRACE_MS = 2 * 60 * 1000;
+
 export function resetsLabelToEpoch(label: string, observedAtMs: number): number | null {
   const s = label.trim();
   if (!s) return null;
@@ -154,7 +166,14 @@ function parseClockWithTz(s: string, observedAtMs: number): number | null {
   if (candidateOffset != null && candidateOffset !== offsetMs) {
     candidateUtc = Date.UTC(y, mo, d, hour24, minute, 0) - candidateOffset;
   }
-  if (candidateUtc <= observedAtMs) {
+  // Roll to tomorrow only once the candidate is past by more than the grace
+  // window. A bare clock label is minute-truncated, and `observedAtMs` is
+  // stamped after the TUI has rendered and settled, so a reset happening right
+  // now routinely reads as a few seconds "past". Rolling on that turned a
+  // correct reset time into one 24 hours out, which `validateResetEpoch` then
+  // threw away as beyond_cap. The same wall-clock time cannot recur for 24
+  // hours, so tolerating a couple of minutes is unambiguous.
+  if (candidateUtc <= observedAtMs - CLOCK_LABEL_GRACE_MS) {
     candidateUtc = Date.UTC(y, mo, d + 1, hour24, minute, 0) - offsetMs;
     const tomOffset = tzOffsetMs(tz, candidateUtc);
     if (tomOffset != null && tomOffset !== offsetMs) {

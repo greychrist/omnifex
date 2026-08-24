@@ -45,7 +45,14 @@ interface ParsedCommand {
   content: string;
 }
 
-function parseFrontmatter(raw: string): ParsedCommand {
+function parseFrontmatter(input: string): ParsedCommand {
+  // Strip a leading UTF-8 BOM before anchoring on `---`. Editors add one
+  // routinely and it is invisible, so without this the file falls down the
+  // no-frontmatter path: empty description, and the raw `---` block leaking
+  // into the body. Claude Code fixed the same bug on its side in 2.1.239, so a
+  // file the CLI now honours has to read the same way here. Written as an
+  // escape rather than a literal BOM so it stays visible in the source.
+  const raw = input.replace(/^\uFEFF/, '');
   const frontmatterMatch = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/.exec(raw);
   if (!frontmatterMatch) {
     return { description: '', allowed_tools: '', content: raw.trim() };

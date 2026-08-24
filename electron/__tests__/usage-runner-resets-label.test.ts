@@ -118,4 +118,30 @@ describe('resetsLabelToEpoch', () => {
       expect(resetsLabelToEpoch('May 99 at 7pm (America/New_York)', APR27_15Z)).toBeNull();
     });
   });
+
+  describe('a clock label that has only just passed', () => {
+    // Real capture, 2026-08-22: the window rolled over while the TUI was being
+    // read. `/usage` printed "Resets 5:19pm (America/New_York)" and the runner
+    // stamped observedAt at 17:19:16 EDT — 16 seconds later. The label is
+    // minute-truncated, so the printed minute is routinely a few seconds
+    // behind the observation even when the reset is happening right now.
+    //
+    // Treating that as "in the past" rolled the reset a full day forward
+    // (dt = 23h59m45s), which `validateResetEpoch` then rejected as
+    // beyond_cap, discarding a reset time that was in fact correct.
+    const AUG22_211916Z = Date.UTC(2026, 7, 22, 21, 19, 16);
+
+    it('stays on today rather than rolling a full day forward', () => {
+      const epoch = resetsLabelToEpoch('5:19pm (America/New_York)', AUG22_211916Z);
+      expect(epoch).toBe(Date.UTC(2026, 7, 22, 21, 19, 0));
+    });
+
+    it('still rolls to tomorrow once the time is genuinely past', () => {
+      // Same label observed 11 minutes later: well outside the grace window,
+      // so "5:19pm" can only mean tomorrow.
+      const later = Date.UTC(2026, 7, 22, 21, 30, 0);
+      const epoch = resetsLabelToEpoch('5:19pm (America/New_York)', later);
+      expect(epoch).toBe(Date.UTC(2026, 7, 23, 21, 19, 0));
+    });
+  });
 });

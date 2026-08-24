@@ -76,6 +76,7 @@ import {
   type NotificationSoundId,
 } from './services/notification-sounds';
 import { createClaudeService } from './services/claude';
+import { encodeProjectId } from './services/project-paths';
 import { createUsageService } from './services/usage';
 import { createRateLimitsService } from './services/rate-limits';
 import { createUsageRunnerService } from './services/usage-runner';
@@ -904,6 +905,24 @@ app.whenReady().then(() => {
     }
   }, 60 * 60 * 1000);
 
+  // Hand back pages freed by deletes anywhere in the database — rate-limit
+  // snapshots, brain queue rows, cost history — not just by a log prune, which
+  // compacts on its own way out. Without this, deleted space stays on SQLite's
+  // freelist and the file only ever grows: greychrist.db reached 2.15 GB
+  // holding 36 MB of live data that way.
+  //
+  // Cheap by construction: `reclaimFreePages` returns immediately when the
+  // freelist is empty (the steady state), and when it isn't, it moves free
+  // pages only and never rewrites live data. Hourly rather than on every
+  // delete so it never lands on a write path.
+  setInterval(() => {
+    try {
+      db.reclaimFreePages();
+    } catch (err) {
+      console.warn('[database] free-page reclaim failed:', err);
+    }
+  }, 60 * 60 * 1000);
+
   // Periodic drain (Plan 8). Session close is the only other trigger, and it
   // is not enough on its own: a drain that stops — paused, rate limited, or
   // because a selection run held the worker — used to have nothing to restart
@@ -933,9 +952,12 @@ app.whenReady().then(() => {
       // caller passes null — handles the rare case where we don't yet
       // know which account owns the session.
 
-      // Claude Code encodes project paths to directory names by
-      // replacing each '/' with '-'.
-      const projectId = projectPath.replace(/\//g, '-');
+      // Claude Code encodes project paths to directory names by replacing
+      // every non-alphanumeric character with '-'. Shared with the rest of the
+      // app rather than re-derived here: the old inline slash-only form missed
+      // any path with a dot, underscore or space, which silently pushed those
+      // sessions onto the rename-tolerant scan below.
+      const projectId = encodeProjectId(projectPath);
 
       const tryAt = (cfgDir: string): string | null => {
         // 1) Encoded path under this account's projects/

@@ -70,7 +70,7 @@ export function buildClaudeEnv(
   // CLI honors it only when CLAUDE_CONFIG_DIR is set — which is exactly what
   // we just did — and it replaces the encoded-cwd transcript directory
   // wholesale: `projectDir = CLAUDE_CODE_PROJECT_DIR_NAME ?? encodedCwd(path)`.
-  // OmniFex derives that same directory itself (`encodeProjectKey` in
+  // OmniFex derives that same directory itself (`encodeProjectId` in
   // sessions/summary-query.ts) for JSONL tailing, cost history, the
   // summary-scratch sweep and the Brain's transcript source, so a value
   // arriving from the parent shell would point every one of those at the wrong

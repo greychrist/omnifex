@@ -303,6 +303,42 @@ function findProjectDirsForPath(projectsDir: string, projectPath: string): strin
  * Returning all three from one pass lets `getProjectSessions` build the row's
  * "first activity – last activity" range without extra reads.
  */
+/**
+ * Last time Claude actually *worked* in a session file, as opposed to the last
+ * time the inode was written.
+ *
+ * `mtime` alone conflates the two. The CLI rewrites a session file when it is
+ * merely reopened or resumed, so a project the user only glanced at claimed
+ * fresh "Last activity" and jumped to the top of the Projects list. Claude
+ * Code fixed the same class of bug for `/resume` and the agents view in
+ * 2.1.239; this is the local half.
+ *
+ * File size is the discriminator: a transcript is append-only, so real work
+ * grows it and a touch does not. When the size is unchanged since we last
+ * looked, we keep the mtime observed at the last size change instead of the
+ * new one.
+ *
+ * Chosen over reading each transcript's last `timestamp` because
+ * `listProjects` already stats every file for `birthtime` — this adds no IO at
+ * all, where content timestamps would mean a tail read per session file on
+ * every list. The cost is that the very first observation of a file has no
+ * baseline and must trust its mtime; from then on the guard holds.
+ */
+const sessionActivity = new Map<string, { size: number; activityMs: number }>();
+
+function activityTimeFor(filePath: string, stat: fs.Stats): number {
+  const seen = sessionActivity.get(filePath);
+  if (seen && seen.size === stat.size) {
+    // Touched, not appended to. Keep the earlier reading — but never let it
+    // run ahead of mtime if the file was rewritten smaller/backdated.
+    return Math.min(seen.activityMs, stat.mtimeMs) === seen.activityMs
+      ? seen.activityMs
+      : stat.mtimeMs;
+  }
+  sessionActivity.set(filePath, { size: stat.size, activityMs: stat.mtimeMs });
+  return stat.mtimeMs;
+}
+
 function extractSessionMetadata(filePath: string): {
   firstMessage?: string;
   firstTimestamp?: string;
@@ -523,10 +559,11 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
           sessions.push(se.name.replace(/\.jsonl$/, ''));
 
           try {
-            const stat = fs.statSync(path.join(projectDir, se.name));
-            const mtime = stat.mtimeMs;
-            if (mostRecent === undefined || mtime > mostRecent) {
-              mostRecent = mtime;
+            const sessionPath = path.join(projectDir, se.name);
+            const stat = fs.statSync(sessionPath);
+            const activity = activityTimeFor(sessionPath, stat);
+            if (mostRecent === undefined || activity > mostRecent) {
+              mostRecent = activity;
             }
             if (stat.birthtimeMs < createdAt) {
               createdAt = stat.birthtimeMs;

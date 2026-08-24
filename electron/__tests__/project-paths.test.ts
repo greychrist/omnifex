@@ -2,7 +2,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync, utimesSync } from 'node:
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { decodeProjectId, recoverProjectPath } from '../services/project-paths';
+import { decodeProjectId, recoverProjectPath, encodeProjectId } from '../services/project-paths';
 
 /**
  * The encoding Claude Code applies to a cwd is lossy, so the only honest way
@@ -72,5 +72,32 @@ describe('recoverProjectPath', () => {
 
   it('falls back rather than throwing when the directory is gone', () => {
     expect(recoverProjectPath(join(root, 'missing'), '-Users-dev-x')).toBe('/Users/dev/x');
+  });
+});
+
+describe('encodeProjectId', () => {
+  // Mirrors the CLI's own sanitizer, verified against 2.1.224 in
+  // sessions-summary-query.test.ts and re-confirmed against 2.1.240 by reading
+  // Greg's on-disk projects/ dirs. Anything short of "every non-alphanumeric
+  // becomes a dash" silently misses directories that exist.
+  it('replaces every non-alphanumeric character, not just slashes', () => {
+    expect(encodeProjectId('/home/user/projects/my_app.v2'))
+      .toBe('-home-user-projects-my-app-v2');
+    expect(encodeProjectId('/Users/g/Repos/pi-tuitive/.claude-worktrees/PI-390'))
+      .toBe('-Users-g-Repos-pi-tuitive--claude-worktrees-PI-390');
+    expect(encodeProjectId('/home/user/my project')).toBe('-home-user-my-project');
+  });
+
+  it('still encodes a plain path the obvious way', () => {
+    expect(encodeProjectId('/Users/foo/bar')).toBe('-Users-foo-bar');
+  });
+
+  it('truncates and hashes past the CLI length cap', () => {
+    const long = '/home/user/' + 'a'.repeat(300);
+    const encoded = encodeProjectId(long);
+    expect(encoded.length).toBeLessThan(long.length);
+    expect(encoded.startsWith('-home-user-' + 'a'.repeat(50))).toBe(true);
+    // Two paths sharing a 200-char prefix must not collide on one directory.
+    expect(encodeProjectId(long + 'x')).not.toBe(encoded);
   });
 });

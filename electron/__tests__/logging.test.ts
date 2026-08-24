@@ -1,4 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { createDatabase, type Database } from '../services/database';
 import { createLoggingService, type LoggingService } from '../services/logging';
 
@@ -419,6 +422,128 @@ describe('logging service', () => {
   // ---------------------------------------------------------------------------
   // prune()
   // ---------------------------------------------------------------------------
+
+  // -------------------------------------------------------------------------
+  // prune() reclaims disk space
+  //
+  // These use a file-backed database rather than ':memory:' on purpose: the
+  // behaviour under test is the size of a file on disk, and the app runs in
+  // WAL mode, where a VACUUM's writes land in the -wal and the main file does
+  // not shrink until a checkpoint. A ':memory:' test cannot observe either.
+  // -------------------------------------------------------------------------
+
+  describe('prune() disk reclamation', () => {
+    let tmpDir: string;
+    let dbPath: string;
+    let fileDb: Database;
+    let fileLogging: LoggingService;
+
+    /** Total bytes SQLite is holding for this database, including the WAL. */
+    function onDiskBytes(): number {
+      let total = 0;
+      for (const suffix of ['', '-wal', '-shm']) {
+        try {
+          total += fs.statSync(dbPath + suffix).size;
+        } catch {
+          // Absent files contribute nothing.
+        }
+      }
+      return total;
+    }
+
+    function writeBulk(count: number, timestamp: string): void {
+      const metadata = JSON.stringify({ screen: 'x'.repeat(4000) });
+      const batch = Array.from({ length: count }, (_, i) => ({
+        timestamp,
+        level: 'info' as const,
+        source: 'usage-runner' as const,
+        message: `entry ${i}`,
+        metadata,
+      }));
+      fileLogging.writeBatch(batch);
+    }
+
+    beforeEach(() => {
+      tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'omnifex-log-vacuum-'));
+      dbPath = path.join(tmpDir, 'test.db');
+      fileDb = createDatabase(dbPath);
+      fileLogging = createLoggingService(fileDb);
+    });
+
+    afterEach(() => {
+      try { fileDb.close(); } catch { /* already closed */ }
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    it('shrinks the database file after pruning everything', () => {
+      // Greg's greychrist.db reached 2.15 GB of which 2.11 GB was free pages:
+      // a prune had deleted the rows months earlier, but auto_vacuum is NONE,
+      // so SQLite kept the space on the freelist and the file never shrank.
+      // Deleting rows is only half the job.
+      writeBulk(5000, '2024-01-01T00:00:00Z');
+      const before = onDiskBytes();
+      expect(before).toBeGreaterThan(8 * 1024 * 1024);
+
+      expect(fileLogging.prune()).toBe(5000);
+
+      const after = onDiskBytes();
+      expect(after).toBeLessThan(before / 2);
+    });
+
+    it('shrinks the file after pruning only the old half', () => {
+      // The partial case matters more than the delete-all case: it is what the
+      // "older than 1 week" buttons actually do.
+      writeBulk(4000, '2024-01-01T00:00:00Z');
+      writeBulk(400, '2099-01-01T00:00:00Z');
+      const before = onDiskBytes();
+
+      expect(fileLogging.prune('2025-01-01T00:00:00Z')).toBe(4000);
+
+      const after = onDiskBytes();
+      expect(after).toBeLessThan(before / 2);
+      // The rows we kept are still there and still readable.
+      expect(fileLogging.count({})).toBe(400);
+      expect(fileLogging.query({}).entries.length).toBeGreaterThan(0);
+    });
+
+    it('leaves the database usable for reads and writes afterwards', () => {
+      writeBulk(2000, '2024-01-01T00:00:00Z');
+      fileLogging.prune();
+
+      fileLogging.writeBatch([
+        { timestamp: '2099-01-02T00:00:00Z', level: 'warn', source: 'backend', message: 'after vacuum' },
+      ]);
+      expect(fileLogging.query({}).entries.map((e) => e.message)).toContain('after vacuum');
+    });
+
+    it('converts a legacy auto_vacuum=NONE database while it is already vacuuming', () => {
+      // Databases created before the INCREMENTAL default cannot be converted by
+      // pragma alone — SQLite only changes auto_vacuum during a full VACUUM.
+      // prune() is already running one, so the conversion rides along for free
+      // rather than costing a blocking VACUUM at app startup.
+      fileDb.raw.pragma('auto_vacuum = NONE');
+      fileDb.raw.exec('VACUUM');
+      expect(fileDb.raw.pragma('auto_vacuum', { simple: true })).toBe(0);
+
+      writeBulk(2000, '2024-01-01T00:00:00Z');
+      fileLogging.prune();
+
+      expect(fileDb.raw.pragma('auto_vacuum', { simple: true })).toBe(2);
+      // And from here the cheap path works without another full VACUUM.
+      writeBulk(2000, '2024-01-01T00:00:00Z');
+      fileDb.raw.prepare('DELETE FROM app_logs').run();
+      expect(fileDb.reclaimFreePages()).toBeGreaterThan(0);
+    });
+
+    it('does not vacuum when the cutoff deletes nothing', () => {
+      // An unparseable cutoff is treated as "delete nothing"; rewriting the
+      // whole file for a no-op would be pure cost.
+      writeBulk(2000, '2024-01-01T00:00:00Z');
+      const before = onDiskBytes();
+      expect(fileLogging.prune('not-a-duration')).toBe(0);
+      expect(onDiskBytes()).toBe(before);
+    });
+  });
 
   describe('prune()', () => {
     it('deletes all entries when olderThan is undefined and returns the count removed', () => {

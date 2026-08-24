@@ -23,7 +23,7 @@
 
 import path from 'node:path';
 import fs from 'node:fs';
-import { encodeProjectKey } from './summary-query';
+import { encodeProjectId } from '../project-paths';
 
 export interface SubagentMeta {
   agentId?: string;
@@ -198,7 +198,7 @@ export function readSubagentMeta(
   const projectDir = path.join(
     args.configDir,
     'projects',
-    encodeProjectKey(args.projectPath),
+    encodeProjectId(args.projectPath),
   );
   const sessionContents = deps.readFile(path.join(projectDir, `${args.sessionId}.jsonl`));
   if (sessionContents === null) return {};

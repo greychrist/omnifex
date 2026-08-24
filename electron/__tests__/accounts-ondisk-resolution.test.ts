@@ -57,6 +57,31 @@ describe('resolve() — on-disk ownership', () => {
     expect(pair.claude?.matchType).toBe('on_disk');
   });
 
+  it('resolves a path the CLI sanitizes beyond slashes (dots, underscores)', () => {
+    // The directory name here is written out literally rather than run through
+    // encodeProjectId, because a test that derives the fixture from the code
+    // under test can only ever prove self-consistency. This is the name the
+    // CLI actually creates: EVERY non-alphanumeric character becomes a dash,
+    // not just `/`. Greg's own tree has
+    // `-Users-gregorychristie-Repos-work-pi-tuitive--claude-worktrees-PI-390`
+    // for `.../pi-tuitive/.claude-worktrees/PI-390`, while the slash-only
+    // encoding looked for `...-pi-tuitive-.claude-worktrees-PI-390` and found
+    // nothing — so step 3 reported "no evidence" for a project sitting right
+    // there on disk.
+    const dotted = '/home/user/projects/my_app.v2';
+    const seed = createAccountsService(db);
+    seed.createAccount({ name: 'Personal', configDir: '/home/user/.claude-personal' });
+    const work = seed.createAccount({ name: 'Work', configDir: '/home/user/.claude-work' });
+
+    const accounts = serviceSeeing([
+      path.join('/home/user/.claude-work', 'projects', '-home-user-projects-my-app-v2'),
+    ]);
+
+    const pair = accounts.resolve(dotted);
+    expect(pair.claude?.account.id).toBe(work.id);
+    expect(pair.claude?.matchType).toBe('on_disk');
+  });
+
   it('reports the config dir it matched on, for the resolution UI', () => {
     const seed = createAccountsService(db);
     seed.createAccount({ name: 'Work', configDir: '/home/user/.claude-work' });

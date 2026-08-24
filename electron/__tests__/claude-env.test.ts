@@ -127,7 +127,7 @@ describe('buildClaudeEnv', () => {
 // and consumed as `projectDir = CGc() ?? encodedCwd(path)` — so it is honored
 // ONLY when CLAUDE_CONFIG_DIR is set, which OmniFex always sets. An inherited
 // value would therefore redirect EVERY project's transcripts into one flat
-// `<configDir>/projects/<name>/`, silently breaking `encodeProjectKey` and all
+// `<configDir>/projects/<name>/`, silently breaking `encodeProjectId` and all
 // of its consumers (JSONL tailing, cost history, the summary sweep) and making
 // the Brain cross-attribute projects, since it keys ownership on that
 // directory name. We own the derivation, so we own the variable.
