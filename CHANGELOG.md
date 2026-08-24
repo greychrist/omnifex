@@ -5,6 +5,24 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.136] — 2026-08-24
+
+Reviewed against Claude Code 2.1.241. Usage and rate-limit figures could stop updating entirely once the CLI started offering its new renderer at startup; that is fixed, along with a reset time that was being discarded exactly when it mattered. Trimming the log now actually gives the disk space back — the database here had grown to 2.15 GB while holding 36 MB of real data.
+
+### Fixed
+
+- **Usage and rate-limit figures could silently stop updating.** Claude Code shows a "Try the new fullscreen renderer?" dialog on startup, and it renders *instead of* the welcome screen — so the background reader that scrapes `/usage` waited for a prompt that never came and gave up each time. OmniFex now declines that dialog and carries on. It declines rather than accepts on purpose: accepting starts a renderer trial and writes a `tui` setting into your Claude config, which a read-only usage check has no business doing.
+- **A limit that had just reset was thrown away instead of recorded.** The CLI prints reset times to the minute, and OmniFex stamps the reading a moment after the screen settles, so a window rolling over mid-read looked a few seconds *past* — which pushed it a full day into the future, where it failed a plausibility check and was discarded. The countdown then showed a stale time until the next successful read.
+- **The Log tab collected a recurring warning that wasn't a problem.** A usage window rendered without a reset line was reported as a parse failure roughly twice a week, burying the warning that actually matters — a reset label the CLI has reworded into a shape OmniFex can't read. The two are now told apart.
+- **A project whose path contains a dot, underscore or space didn't resolve to its account.** Claude Code replaces *every* non-alphanumeric character in a project path when naming its session directory, not just the slashes. OmniFex had two encoders for this and only one was right; the wrong one backed account resolution, so a project with sessions plainly on disk reported no evidence of ownership. Worktree folders under `.claude-worktrees` were the common case.
+- **Slash commands and skills whose file starts with a byte-order mark were ignored.** The marker is invisible and some editors add it silently; the file loaded but lost its name and description. Claude Code fixed the same bug on its side in 2.1.239.
+- **The Projects list reordered itself for projects you had only looked at.** "Last activity" followed the session file's modification time, and Claude Code rewrites that file when a session is merely reopened — so reopening an old project moved it to the top as though work had happened.
+- **Trimming the log gave no disk space back.** Deleting rows never shrinks a SQLite file on its own: the space moves to an internal free list and the file only ever grows. Trimming now compacts the database as it finishes, and OmniFex reclaims space released elsewhere once an hour.
+
+### Changed
+
+- New databases are created in incremental auto-vacuum mode so freed space can be returned without a full rebuild. Existing databases are converted the first time you trim the log, which is already doing the rebuild that the conversion requires — nothing blocks at startup.
+
 ## [0.4.135] — 2026-08-21
 
 Installers are signed with an Apple Developer ID and notarized, so Gatekeeper accepts them without the right-click dance. Projects that already have sessions on disk open without needing a path rule first. Every prompt OmniFex sends on your behalf is now editable in one place.
