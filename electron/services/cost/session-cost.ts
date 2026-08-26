@@ -1,18 +1,24 @@
 // Cost module — live per-session cost watcher.
 //
 // One watcher per watched session. Polls a change signature (main JSONL
-// mtime+size, plus the subagents dir listing with per-file sizes) once per
-// pollMs; on change it re-reads and recomputes the whole session (full
-// re-parse at 1s debounce is well within budget for multi-MB transcripts and
-// avoids the offset/dedup bookkeeping an incremental parse would need),
-// pushes the snapshot on `session-cost:<sessionId>`, and upserts history.
+// mtime+size, plus every subagent transcript at any depth under `subagents/`,
+// with per-file sizes) once per pollMs; on change it re-reads and recomputes
+// the whole session (full re-parse at 1s debounce is well within budget for
+// multi-MB transcripts and avoids the offset/dedup bookkeeping an incremental
+// parse would need), pushes the snapshot on `session-cost:<sessionId>`, and
+// upserts history.
 
 import path from 'node:path';
 import fs from 'node:fs';
 import { encodeProjectId } from '../project-paths';
 import type { PricingOverrides } from '../../../src/lib/pricing';
 import { computeSessionCost, type SessionCostSnapshot } from './session-cost-core';
-import { nodeCostFs, type CostFs, type CostHistoryService } from './cost-history';
+import {
+  collectSubagentFiles,
+  nodeCostFs,
+  type CostFs,
+  type CostHistoryService,
+} from './cost-history';
 
 export interface SessionCostArgs {
   configDir: string;
@@ -97,14 +103,11 @@ export function createSessionCostService(deps: SessionCostDeps): SessionCostServ
   function signature(args: SessionCostArgs): string {
     const { sessionFile, subagentsDir } = paths(args);
     const main = stat(sessionFile);
-    const subs = fsDeps
-      .listDir(subagentsDir)
-      .filter((e) => !e.isDirectory && e.name.startsWith('agent-') && e.name.endsWith('.jsonl'))
-      .map((e) => {
-        const s = stat(path.join(subagentsDir, e.name));
-        return `${e.name}:${s?.size ?? 0}:${s?.mtimeMs ?? 0}`;
+    const subs = collectSubagentFiles(fsDeps, subagentsDir)
+      .map((full) => {
+        const s = stat(full);
+        return `${path.relative(subagentsDir, full)}:${s?.size ?? 0}:${s?.mtimeMs ?? 0}`;
       })
-      .sort()
       .join(',');
     return `${main?.size ?? 0}:${main?.mtimeMs ?? 0}|${subs}`;
   }
@@ -112,10 +115,8 @@ export function createSessionCostService(deps: SessionCostDeps): SessionCostServ
   function compute(args: SessionCostArgs): SessionCostSnapshot {
     const { sessionFile, subagentsDir } = paths(args);
     const sessionContent = fsDeps.readFile(sessionFile) ?? '';
-    const subagentContents = fsDeps
-      .listDir(subagentsDir)
-      .filter((e) => !e.isDirectory && e.name.startsWith('agent-') && e.name.endsWith('.jsonl'))
-      .map((e) => fsDeps.readFile(path.join(subagentsDir, e.name)))
+    const subagentContents = collectSubagentFiles(fsDeps, subagentsDir)
+      .map((p) => fsDeps.readFile(p))
       .filter((c): c is string => c !== null);
     const { snapshot, dailyRows } = computeSessionCost({
       sessionContent,

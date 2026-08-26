@@ -46,6 +46,59 @@ export const nodeCostFs: CostFs = {
   },
 };
 
+/** Depth cap for the subagents walk. Workflow agents sit at
+ *  `subagents/workflows/<wf-id>/agent-*.jsonl` — depth 3 — so 6 leaves room
+ *  for another nesting level upstream without letting a symlink loop spin. */
+const MAX_SUBAGENT_DEPTH = 6;
+
+/**
+ * Every subagent transcript for one session, at any depth under `subagents/`.
+ *
+ * The CLI writes plain Task subagents flat (`subagents/agent-<id>.jsonl`) but
+ * Workflow subagents one directory deeper
+ * (`subagents/workflows/wf_<id>/agent-<id>.jsonl`). A non-recursive listing
+ * sees only the first kind and silently drops the rest — for 2026-08 on
+ * ~/.claude-work that was 16 files and $37.41 of real spend. See
+ * docs/superpowers/specs/2026-08-26-cost-report-page-design.md §1.1.
+ *
+ * Returns absolute paths, sorted, so callers get a stable order for both
+ * change-detection signatures and cost aggregation.
+ */
+export function collectSubagentFiles(fsDeps: CostFs, subagentsDir: string): string[] {
+  const found: string[] = [];
+  const walk = (dir: string, depth: number): void => {
+    if (depth > MAX_SUBAGENT_DEPTH) return;
+    for (const entry of fsDeps.listDir(dir)) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory) {
+        walk(full, depth + 1);
+      } else if (entry.name.startsWith('agent-') && entry.name.endsWith('.jsonl')) {
+        found.push(full);
+      }
+    }
+  };
+  walk(subagentsDir, 0);
+  return found.sort();
+}
+
+/**
+ * Change-detection fragment for a session's subagent transcripts: each file's
+ * path-relative name plus size and mtime.
+ *
+ * Keyed on the path relative to `subagentsDir`, not the basename — two
+ * workflows can each hold an `agent-<id>.jsonl`, and a basename-keyed
+ * signature would let a newly-created nested file hide behind an unchanged
+ * flat one of the same name.
+ */
+function subagentSignature(fsDeps: CostFs, subagentsDir: string): string {
+  return collectSubagentFiles(fsDeps, subagentsDir)
+    .map((full) => {
+      const s = fsDeps.stat(full);
+      return `${path.relative(subagentsDir, full)}:${s?.size ?? 0}:${s?.mtimeMs ?? 0}`;
+    })
+    .join(',');
+}
+
 export interface CostHistoryFilters {
   startDate?: string;
   endDate?: string;
@@ -124,21 +177,12 @@ function recoverProjectPath(content: string, dirName: string): string {
 }
 
 /** Change-detection signature for a session's on-disk JSONLs: main file
- *  `size:mtimeMs` plus each `agent-*.jsonl` `name:size:mtimeMs` (sorted).
- *  Mirrors session-cost.ts's live-watcher signature() so the two stay
- *  consistent about what counts as "the same session content". */
+ *  `size:mtimeMs` plus every subagent transcript at any depth. Mirrors
+ *  session-cost.ts's live-watcher signature() so the two stay consistent
+ *  about what counts as "the same session content". */
 function sessionFileSignature(fsDeps: CostFs, mainPath: string, subagentsDir: string): string {
   const main = fsDeps.stat(mainPath);
-  const subs = fsDeps
-    .listDir(subagentsDir)
-    .filter((e) => !e.isDirectory && e.name.startsWith('agent-') && e.name.endsWith('.jsonl'))
-    .map((e) => {
-      const s = fsDeps.stat(path.join(subagentsDir, e.name));
-      return `${e.name}:${s?.size ?? 0}:${s?.mtimeMs ?? 0}`;
-    })
-    .sort()
-    .join(',');
-  return `${main?.size ?? 0}:${main?.mtimeMs ?? 0}|${subs}`;
+  return `${main?.size ?? 0}:${main?.mtimeMs ?? 0}|${subagentSignature(fsDeps, subagentsDir)}`;
 }
 
 export function createCostHistoryService(db: Database, fsDeps: CostFs = nodeCostFs): CostHistoryService {
@@ -225,10 +269,8 @@ export function createCostHistoryService(db: Database, fsDeps: CostFs = nodeCost
 
           const sessionContent = fsDeps.readFile(mainPath);
           if (sessionContent === null) continue;
-          const subagentContents = fsDeps
-            .listDir(subagentsDir)
-            .filter((e) => !e.isDirectory && e.name.startsWith('agent-') && e.name.endsWith('.jsonl'))
-            .map((e) => fsDeps.readFile(path.join(subagentsDir, e.name)))
+          const subagentContents = collectSubagentFiles(fsDeps, subagentsDir)
+            .map((p) => fsDeps.readFile(p))
             .filter((c): c is string => c !== null);
           const projectPath = recoverProjectPath(sessionContent, projectEntry.name);
           const { dailyRows } = computeSessionCost({

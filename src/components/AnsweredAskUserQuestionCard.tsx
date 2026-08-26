@@ -63,15 +63,16 @@ interface ParsedAnswerPayload {
  *
  *   `Your questions have been answered: "Q1"="A1", "Q2"="A2, A3" notes: User selected Other: "<typed>". You can now continue with these answers in mind.`
  *
- * The exact wording drifts between CLI builds — the prefix has been both
- * "User has answered your questions:" and "Your questions have been
- * answered:", and the annotation delimiter has been both `user notes:` and a
- * bare `notes:`. We anchor on each question's literal text from the tool_use
- * input rather than the prefix, and tolerate the optional `user ` on the
- * delimiter, so neither drift breaks extraction.
+ * Every part of that sentence except the `"question"="answer"` pairs has
+ * drifted between CLI builds: the prefix ("User has answered your questions:"
+ * → "Your questions have been answered:" → "The user answered:"), the
+ * annotation delimiter (`user notes:` → `notes:`), and the trailer ("You can
+ * now continue with these answers in mind." → "Read the answers carefully —
+ * …"). So we anchor only on each question's literal text from the tool_use
+ * input and slice answers out by index; no prefix or trailer wording is
+ * matched, and the `user ` on the delimiter stays optional.
  *
- * We anchor on each question's literal text from the tool_use input to
- * extract the answer, then scan the trailing `notes:` section for
+ * Having extracted the answers, we scan the trailing `notes:` section for
  * `User selected Other: "<text>"` patterns. When an Other-text equals a
  * question's answer (always true today, because `handleSubmit` swaps the
  * OTHER_VALUE sentinel for the typed text before sending), that question
@@ -131,29 +132,54 @@ function parseAnswerPayload(
     /* fall through to synthesised-string parsing */
   }
 
-  // Synthesised-string path. Anchor on each question's literal text rather
-  // than a generic `"key"="value"` regex — question text can contain
-  // characters that would make a generic regex ambiguous (the answer text
-  // can contain `, ` from multi-select joins, periods from prose, etc.).
-  const answers: Record<string, string> = {};
+  // Synthesised-string path. Locate each question's literal `"<q>"="` anchor
+  // and slice the answer out by index, rather than matching against a
+  // terminator pattern. The trailing prose is the part of this format that
+  // keeps drifting — "You can now continue with these answers in mind." became
+  // "Read the answers carefully — …" — and it was only ever load-bearing for
+  // the *last* question, which is exactly the one that silently rendered
+  // "(no answer recorded)" (session cd8cb2a5). Index slicing drops the
+  // dependency on trailer wording entirely:
+  //   - a non-final answer ends where the next question's anchor starts
+  //   - the final answer ends at the last `"` before the notes section, or
+  //     before end of string — trailers never contain quotes
+  // It also removes the regex-escaping hazard: question text is compared
+  // literally, so `{from, input, output}` and friends need no escaping.
+  const anchors: { question: string; anchorStart: number; valueStart: number }[] = [];
+  let cursor = 0;
   for (const q of questions) {
-    const qText = q.question;
-    const escaped = qText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    // Lookahead boundaries (in order of likelihood):
-    //   `", "` — another question follows
-    //   `" notes:` — annotations section follows. The `user ` prefix is
-    //                optional: older CLI builds emitted `user notes:`, the
-    //                current build emits a bare `notes:`. Accept both.
-    //   ` You can now …` — end of payload (period optional: the live
-    //                       format has a `.` only when notes precede it,
-    //                       since the period belongs to the notes' own
-    //                       terminator, not the trailer itself)
-    //   end of string — fallback for truncated content
-    const re = new RegExp(
-      `"${escaped}"="([\\s\\S]*?)"(?=, "|\\s+(?:user )?notes:|\\.?\\s*You can now|$)`,
-    );
-    const m = text.match(re);
-    if (m) answers[qText] = m[1];
+    const needle = `"${q.question}"="`;
+    const at = text.indexOf(needle, cursor);
+    // Not found → that question has no answer in this payload. Leave it out
+    // so the card shows "(no answer recorded)" for it and only it.
+    if (at === -1) continue;
+    anchors.push({ question: q.question, anchorStart: at, valueStart: at + needle.length });
+    cursor = at + needle.length;
+  }
+
+  // `notes:` is the annotation delimiter only where it follows the final
+  // answer; the same characters inside an earlier answer are answer content.
+  const lastValueStart = anchors.length > 0 ? anchors[anchors.length - 1].valueStart : 0;
+  const notesRe = /\s+(?:user )?notes:/g;
+  notesRe.lastIndex = lastValueStart;
+  const notesHit = notesRe.exec(text);
+  const answersEnd = notesHit ? notesHit.index : text.length;
+
+  const answers: Record<string, string> = {};
+  for (let i = 0; i < anchors.length; i++) {
+    const { question, valueStart } = anchors[i];
+    const next = anchors[i + 1];
+    // Non-final: `A", ` up to the next anchor — strip the separator, then the
+    // closing quote. Final: everything up to the notes section (or the end),
+    // cut at its last quote so the trailer prose falls away.
+    const segment = next
+      ? text.slice(valueStart, next.anchorStart).replace(/\s*,\s*$/, '')
+      : text.slice(valueStart, answersEnd);
+    const close = segment.lastIndexOf('"');
+    // No closing quote → truncated payload. Record nothing rather than a
+    // half-answer.
+    if (close === -1) continue;
+    answers[question] = segment.slice(0, close);
   }
 
   if (Object.keys(answers).length === 0) {
@@ -169,9 +195,8 @@ function parseAnswerPayload(
   // aggregates them into one trailing sentence), so matching by answer
   // text is the only honest mapping back.
   const annotations: Record<string, { notes?: string }> = {};
-  const notesMatch = /(?:user )?notes:\s*([\s\S]*?)(?:\.\s*You can now continue|$)/.exec(text);
-  if (notesMatch) {
-    const notes = notesMatch[1];
+  if (notesHit) {
+    const notes = text.slice(notesHit.index + notesHit[0].length);
     const otherTexts: string[] = Array.from(
       notes.matchAll(/User selected Other:\s*"([\s\S]*?)"/g),
     ).map((m) => m[1]);
