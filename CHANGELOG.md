@@ -5,6 +5,15 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.140] — 2026-08-26
+
+Fixes the check-on-open added in 0.4.139, which did nothing for the first minute after starting the app.
+
+### Fixed
+
+- **Opening the Updates panel now always checks.** 0.4.139 reused any answer less than a minute old, and the check that runs at startup started that clock — so opening the panel shortly after launching OmniFex, which is when most people look, quietly did nothing. Every open now checks. The rate-limit worry that motivated the reuse was not worth a feature that appears broken; if it ever bites in practice it needs a real answer, not a silent one.
+- **The Updates button no longer carries a redundant second click handler.** The panel already handled opening and closing on its own; the button's own handler agreed with it only by coincidence.
+
 ## [0.4.139] — 2026-08-26
 
 Opening the Updates panel now checks for you, rather than waiting for a press.
