@@ -5,6 +5,19 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.139] — 2026-08-26
+
+Opening the Updates panel now checks for you, rather than waiting for a press.
+
+### Changed
+
+- **The Updates panel checks as soon as you open it.** Opening it is the request, so it no longer makes you press a button to get an answer. The panel is open while the check runs and stays open when it finishes, so the result appears in front of you — which is what the button press could not do back when it lived on the titlebar. **Check for update** is still there for when you want to force a fresh answer.
+- **Repeated opens reuse a recent answer.** A check less than a minute old is shown again rather than re-run. The app-update check is an anonymous request to GitHub, which allows only sixty of those an hour — without this, opening and closing the panel a few times could use up the hour's budget and leave update checks failing for the rest of it.
+
+### Fixed
+
+- **The first open of the panel always re-checked needlessly.** The check that runs at launch wasn't recording when it happened, so the panel treated a result that was seconds old as though it had never been fetched.
+
 ## [0.4.138] — 2026-08-26
 
 The Updates button behaved backwards: hovering showed you the panel, clicking ran the check. So you'd click, the panel would follow your pointer away, and the answer would arrive somewhere you weren't looking. Clicking now just opens the panel, and checking is a button inside it.
