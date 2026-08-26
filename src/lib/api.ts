@@ -174,6 +174,26 @@ export interface UsageRunData {
    * "claude.ai Atlassian".
    */
   mcp_servers: { rows: { name: string; pct_used: number }[]; more_count: number | null };
+  /**
+   * `/loop` breakdown (Claude Code 2.1.243+), rendered after `mcp_servers`.
+   * Only `runs` is numeric — `tokens` / `per_run` keep the CLI's own
+   * abbreviated form (`480.2k`, `–`) because the abbreviation is lossy and
+   * re-deriving an integer would invent precision the render never had.
+   * `per_run` is null on narrow terminals, where the CLI drops that column.
+   * Empty on any CLI that doesn't draw the section, and on accounts with no
+   * `/loop` history.
+   */
+  loops: {
+    rows: {
+      prompt: string;
+      every: string;
+      runs: number;
+      tokens: string;
+      per_run: string | null;
+      last_run: string;
+    }[];
+    more_count: number | null;
+  };
 }
 
 export type UsageRunResult =
@@ -353,6 +373,13 @@ export interface CliReviewStatus {
   reviewed_version: string;
   /** True when the installed CLI is strictly newer than `reviewed_version`. */
   unreviewed: boolean;
+  /** Newest release on npm, or null when the registry was unreachable. */
+  latest_version: string | null;
+  /**
+   * True when `latest_version` is newer than what's installed. Separate from
+   * `unreviewed` on purpose — see `CliReviewStatus` in the service.
+   */
+  upgrade_available: boolean;
   /**
    * OmniFex source checkout the changelog review should run in, or null when
    * none could be resolved. Gates whether the drift warning is clickable.

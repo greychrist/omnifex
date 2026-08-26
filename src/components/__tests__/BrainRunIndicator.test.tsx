@@ -54,7 +54,10 @@ describe('BrainRunIndicator', () => {
     render(<BrainRunIndicator accounts={ACCOUNTS} />);
 
     expect(await screen.findByTestId('brain-run-indicator')).toBeTruthy();
-    expect(screen.getByText(/3 of 20/)).toBeTruthy();
+    // Item-positional, matching the Brain tab: 3 done means the 4th is the one
+    // being worked on. The same run must not read "3 of 20" here and "4 of 20"
+    // there.
+    expect(screen.getByText(/4 of 20/)).toBeTruthy();
   });
 
   it('names the vault being written to', async () => {
@@ -74,10 +77,10 @@ describe('BrainRunIndicator', () => {
     });
 
     pushRun()(RUN);
-    expect(await screen.findByText(/3 of 20/)).toBeTruthy();
+    expect(await screen.findByText(/4 of 20/)).toBeTruthy();
 
     pushRun()({ ...RUN, completed: 4 });
-    expect(await screen.findByText(/4 of 20/)).toBeTruthy();
+    expect(await screen.findByText(/5 of 20/)).toBeTruthy();
   });
 
   it('disappears on the terminating null frame', async () => {
@@ -114,7 +117,23 @@ describe('BrainRunIndicator', () => {
 
     render(<BrainRunIndicator accounts={ACCOUNTS} />);
 
-    expect(await screen.findByText(/Indexing Work vault · 3 of 20/)).toBeTruthy();
+    expect(await screen.findByText(/Indexing Work vault · 4 of 20/)).toBeTruthy();
+  });
+
+  /**
+   * A one-item run would read "1 of 1" for its whole life — a counter that
+   * never counts. The Brain tab drops the fraction there, and the pill has to
+   * agree with it, separator included.
+   */
+  it('drops the counter for a single-item run', async () => {
+    vi.mocked(api.brainActiveRun).mockResolvedValue({
+      ...RUN, accountId: 2, total: 1, completed: 0,
+    });
+
+    render(<BrainRunIndicator accounts={ACCOUNTS} />);
+
+    expect(await screen.findByText('Indexing Work vault')).toBeTruthy();
+    expect(screen.queryByText(/of 1/)).toBeNull();
   });
 
   /**
@@ -133,7 +152,7 @@ describe('BrainRunIndicator', () => {
     const label = pill.getAttribute('aria-label') ?? '';
     expect(label).toMatch(/Work vault/);
     expect(label).toMatch(/sess-abc/);
-    expect(label).toMatch(/3 of 20/);
+    expect(label).toMatch(/4 of 20/);
   });
 
   it('unsubscribes on unmount', async () => {

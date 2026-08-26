@@ -26,12 +26,14 @@ Bash(npm run test *)     → prefix + space = word boundary
 Bash(npm *)              → any command starting with npm
 Bash(npm:*)              → equivalent to "npm *"
 Bash(* install)          → any command ending with install
-Bash(git * main)         → git checkout main, git merge main, etc.
+Bash(git * main)         → git checkout main, git merge main, etc. (warned; see below)
 Bash                     → all bash commands
 ```
 
 - Space before `*` enforces word boundary: `Bash(ls *)` matches `ls -la` but NOT `lsof`. `Bash(ls*)` matches both.
+- **A wildcard before the subcommand is a privilege hole, and CLI ≥2.1.246 warns about it at startup** for every `allow` rule. `Bash(git * main)` does match `git checkout main` — but `*` also matches *options* inserted at that position, so it silently approves `git -c core.pager='sh -c …' main` and, for git specifically, `-c` and `--exec-path` run arbitrary commands. Put the `*` only after the subcommand: `Bash(git checkout *)`, not `Bash(git * main)`.
 - Shell operators are respected: `Bash(safe-cmd *)` does NOT cover `safe-cmd && other-cmd`. Each subcommand needs its own rule.
+- A command whose operators don't parse — a dangling `&&` or `||` — always prompts as of CLI 2.1.246, regardless of any matching allow rule. Nothing to configure; it just means a malformed command can no longer slip through on a rule that matched the parseable prefix.
 - Argument-constraining rules are fragile (option reordering, redirects, variable expansion break them). For URL filtering, deny `curl`/`wget` and use `WebFetch(domain:...)`.
 - Input redirections (`cmd < secrets.env`) are **not** separately permission-checked. The check shipped in 2.1.232 and was reverted in 2.1.233, with a narrower version expected later — until then a `Bash(...)` rule covering the command also covers whatever it reads via `<`.
 

@@ -39,5 +39,9 @@
   "mcp_servers": {
     "rows": [],
     "more_count": null
+  },
+  "loops": {
+    "rows": [],
+    "more_count": null
   }
 }

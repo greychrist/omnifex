@@ -532,12 +532,26 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
                 {/* Claude Code row. The version alone is the useful line; the
                     watermark note only appears when the CLI has actually
                     moved past what we've reviewed, so the popover stays
-                    two lines in the steady state. */}
+                    two lines in the steady state.
+
+                    The `→ available` suffix is the whole reason this row is
+                    more than a readout: the CLI self-updates only when it is
+                    launched directly, never from OmniFex's own pty spawns, so
+                    without it the popover reads as a steady state while
+                    releases pile up. Absent when the registry couldn't be
+                    reached — an unknown answer shows nothing rather than
+                    implying "up to date". */}
                 {cliReview && (
                   <div className="flex items-center justify-between gap-3">
                     <span className="text-muted-foreground">Claude Code</span>
+                    {/* One text node, not a nest of styled spans: split across
+                        elements this reads as "2.1.241" and "→ available" to
+                        anything walking direct text children, including the
+                        tests and a screen reader. */}
                     <span className="font-medium">
-                      {cliReview.installed_version ?? 'not found'}
+                      {cliReview.upgrade_available && cliReview.latest_version
+                        ? `${cliReview.installed_version ?? 'not found'} → ${cliReview.latest_version} available`
+                        : (cliReview.installed_version ?? 'not found')}
                     </span>
                   </div>
                 )}

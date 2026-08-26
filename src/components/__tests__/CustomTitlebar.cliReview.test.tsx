@@ -84,6 +84,8 @@ describe('CustomTitlebar — Claude Code changelog watermark', () => {
       installed_version: '2.1.230',
       reviewed_version: '2.1.222',
       unreviewed: true,
+      latest_version: null,
+      upgrade_available: false,
       repo_dir: null,
     });
     await renderSettled();
@@ -100,6 +102,8 @@ describe('CustomTitlebar — Claude Code changelog watermark', () => {
       installed_version: '2.1.222',
       reviewed_version: '2.1.222',
       unreviewed: false,
+      latest_version: null,
+      upgrade_available: false,
       repo_dir: null,
     });
     await renderSettled();
@@ -116,12 +120,89 @@ describe('CustomTitlebar — Claude Code changelog watermark', () => {
       installed_version: null,
       reviewed_version: '2.1.222',
       unreviewed: false,
+      latest_version: null,
+      upgrade_available: false,
       repo_dir: null,
     });
     await renderSettled();
 
     await waitFor(() => { expect(seen('not found')).toBeGreaterThan(0); });
     expect(dot()).toBeNull();
+  });
+
+  /**
+   * The bug this closes: the Claude Code row reported only the installed
+   * version, so a popover titled "Check for Upgrade" sat at what looked like a
+   * steady state while three CLI releases shipped. The CLI self-updates only
+   * when it is launched directly — OmniFex's own pty spawns don't trigger it —
+   * so nothing here was ever going to say a newer release existed.
+   */
+  it('offers the newer published release next to the installed one', async () => {
+    getClaudeCliReviewStatus.mockResolvedValue({
+      installed_version: '2.1.241',
+      reviewed_version: '2.1.241',
+      unreviewed: false,
+      latest_version: '2.1.246',
+      upgrade_available: true,
+      repo_dir: null,
+    });
+    await renderSettled();
+
+    await waitFor(() => { expect(seen(/2\.1\.241/)).toBeGreaterThan(0); });
+    expect(seen(/2\.1\.246 available/)).toBeGreaterThan(0);
+  });
+
+  it('shows the bare installed version when it is already current', async () => {
+    getClaudeCliReviewStatus.mockResolvedValue({
+      installed_version: '2.1.246',
+      reviewed_version: '2.1.241',
+      unreviewed: true,
+      latest_version: '2.1.246',
+      upgrade_available: false,
+      repo_dir: null,
+    });
+    await renderSettled();
+
+    await waitFor(() => { expect(seen('2.1.246')).toBeGreaterThan(0); });
+    // No "→ available" noise on the steady state, which is most of the time.
+    expect(seen(/available/)).toBe(0);
+  });
+
+  it('says nothing about upgrades when the registry was unreachable', async () => {
+    // Offline must degrade to the old row, not to a false "up to date".
+    getClaudeCliReviewStatus.mockResolvedValue({
+      installed_version: '2.1.241',
+      reviewed_version: '2.1.241',
+      unreviewed: false,
+      latest_version: null,
+      upgrade_available: false,
+      repo_dir: null,
+    });
+    await renderSettled();
+
+    await waitFor(() => { expect(seen('2.1.241')).toBeGreaterThan(0); });
+    expect(seen(/available/)).toBe(0);
+  });
+
+  /**
+   * The chosen semantics: an available upgrade is not reviewable drift. The
+   * amber dot keeps meaning "the binary you are running has moved past our
+   * watermark", because that is the only case a review pass can act on.
+   */
+  it('does not badge the button for an upgrade the user has not installed', async () => {
+    getClaudeCliReviewStatus.mockResolvedValue({
+      installed_version: '2.1.241',
+      reviewed_version: '2.1.241',
+      unreviewed: false,
+      latest_version: '2.1.246',
+      upgrade_available: true,
+      repo_dir: '/repo',
+    });
+    await renderSettled();
+
+    await waitFor(() => { expect(seen(/2\.1\.246 available/)).toBeGreaterThan(0); });
+    expect(dot()).toBeNull();
+    expect(seen(/ahead of the/)).toBe(0);
   });
 
   it('stays silent when the status call fails', async () => {
@@ -141,6 +222,8 @@ describe('CustomTitlebar — launching the changelog review', () => {
     installed_version: '2.1.224',
     reviewed_version: '2.1.222',
     unreviewed: true,
+    latest_version: null,
+    upgrade_available: false,
     repo_dir,
   });
 
@@ -191,6 +274,8 @@ describe('CustomTitlebar — launching the changelog review', () => {
       installed_version: '2.1.222',
       reviewed_version: '2.1.222',
       unreviewed: false,
+      latest_version: null,
+      upgrade_available: false,
       repo_dir: '/repos/omnifex',
     });
     render(<CustomTitlebar onCliReviewClick={vi.fn()} />);

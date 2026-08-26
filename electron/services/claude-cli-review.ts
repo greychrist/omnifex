@@ -29,6 +29,93 @@ import * as path from 'node:path';
  * old value and the new one, and file or fix whatever they imply. Bumping it
  * to silence the badge throws away the only drift signal we have.
  *
+ * Last review: 2.1.241 -> 2.1.246 on 2026-08-26. Findings:
+ *
+ *  Changelog coverage: 2.1.243, 2.1.245 and 2.1.246 have entries. 2.1.242 is
+ *  published to npm with NO changelog entry — a genuine gap, recorded rather
+ *  than skipped. 2.1.244 was never published, so it is not a gap. Both
+ *  binaries (2.1.241 and 2.1.246) were still installed under
+ *  ~/.local/share/claude/versions, so most findings below are a two-version
+ *  diff rather than an inference from the prose.
+ *
+ *  1. `/usage` Loops table — REAL BUG, FIXED. 2.1.243 added a Loops breakdown.
+ *     `children:"Loops"` appears 0x in the 2.1.241 binary and 1x in 2.1.246,
+ *     and the composing JSX orders the sections
+ *     [Skills, Subagents, Plugins, MCP servers, Loops] with the
+ *     `d to day / w to week` footer after them. `parseTable` bounded a table's
+ *     slice on the four "% of usage" headers plus that footer, so the LAST
+ *     ranked table's slice ran straight through the Loops block. Loops data
+ *     rows are harmless (`ROW_RE` needs a trailing `N%`; they end in a relative
+ *     time), but its truncation line `… N more` matched `MORE_RE` and
+ *     overwrote `more_count` on the table above — the Usage tab could show
+ *     "… 4 more" under MCP servers when the 4 were loops. `loops_table` is now
+ *     a boundary in both `parseTable` and `parseContributing`, and the section
+ *     is parsed (`parseLoops`) and rendered in its own right.
+ *
+ *     `parseLoops` anchors on `runs` — the only always-integer column — rather
+ *     than counting fields, because the CLI drops `per run` on narrow
+ *     terminals and a positional parse would then read `last run` as `per run`.
+ *     `tokens`/`per_run` keep the CLI's lossy abbreviation (`480.2k`) instead
+ *     of being parsed back to integers.
+ *
+ *  2. `docs/permission-syntax.md` documented a pattern the CLI now warns
+ *     about — FIXED. 2.1.246 added a startup warning for allow rules with a
+ *     wildcard before the subcommand, and its example is `Bash(git * main)`,
+ *     verbatim our line 29, where it was presented as a normal capability. The
+ *     warning text in the binary is specific: such a rule "also matches any
+ *     options inserted at that position and approves them without a prompt",
+ *     and for git, `-c` / `--exec-path` run arbitrary commands. The doc now
+ *     says to put the `*` after the subcommand. Nothing to change in code:
+ *     `buildDefaultRule` emits `base:*`, never a mid-command wildcard, and
+ *     every `Bash(...)` rule in the account and repo settings is trailing.
+ *     2.1.246's dangling-`&&`/`||` always-prompt change is noted in the same
+ *     section.
+ *
+ *  3. Plan-mode resume with `--permission-prompt-tool` — NOT our bug. The
+ *     2.1.246 fix is scoped to "when no permission mode was set", and OmniFex
+ *     always sets one: the renderer always sends a `permissionMode`, argv
+ *     carries it for the four CLI-accepted values, and `auto`/`dontAsk` are
+ *     reapplied via control_request immediately after spawn. No window where
+ *     we resume mode-less.
+ *
+ *  4. MCP `requiresUserInteraction` "don't ask again" — TUI-dialog only, not
+ *     the stdio channel. `requires_user_interaction` and
+ *     `suppress_always_allow_rule` were already on the wire in 2.1.241 (12/5
+ *     hits vs 9/5 in 2.1.246), and the CLI already denied an `allow` returned
+ *     by a permission-prompt-tool for such tools. `permissions.ts` honours
+ *     `suppress_always_allow_rule` already.
+ *
+ *  5. Checked and already at parity, each against local code rather than by
+ *     assumption: subagent model + effort in `/tasks` (we read both from
+ *     `subagents/agent-*.jsonl`); hook `if` conditions (HooksEditor cannot
+ *     author them but round-trips them — `fromConfig`/`toConfig` spread
+ *     unknown keys); `--agents` now hard-erroring (we never pass it);
+ *     `--strict-mcp-config` prompts (we deliberately never pass it);
+ *     `--setting-sources` and the sandbox (we pass it, the fix only helps);
+ *     MCP args for empty `{}` param schemas (all three Brain tools declare
+ *     typed zod params); and the idle pre-reset percentage, which never
+ *     reached us because the scrape spawns a fresh session per account.
+ *
+ *  Out of reach in 2.1.242-2.1.246: 2.1.245 entirely (a glibc startup crash on
+ *  Linux); every fullscreen scroll/resize/blank-transcript fix (we scrape one
+ *  static 200x200 grid); `claude agents` and background sessions; the
+ *  `.claude/worktrees` retention sweep (we only list); every plugin fix (cache,
+ *  BOM, `plugin:plugin:` prefix, `/reload-plugins`), since we load no plugins;
+ *  theme/keybindings/`/stats`/`/fork`/`/rename`/`/clear`/`@`-picker/vim-mode;
+ *  `/cd`, `/goal`, `/loop`, `/web-setup`, `/status`, `/login`, Chrome native
+ *  host; telemetry and OTel attribution; workload identity federation;
+ *  `ANTHROPIC_BASE_URL` gateway fixes; Remote Control, the self-hosted runner
+ *  and cloud sessions; auto-mode classifier availability; the zstd/startup/
+ *  memory improvements; `modelPicker`, `promptCacheTtl`,
+ *  `subagentPromptCacheTtl`, `modelPricing` and keyless Console sign-in
+ *  (settings we neither read nor write); Ultracode `/model` selection; and the
+ *  xhigh/max-with-thinking-off error wording, since our thinking picker was
+ *  removed in v0.4.70 and thinking is always adaptive.
+ *
+ *  Technique note: `rg` over the installed binary still works in 2.1.246. The
+ *  zstd compression 2.1.243 added applies to the download, not the installed
+ *  image.
+ *
  * Last review: 2.1.236 -> 2.1.241 on 2026-08-24. Findings:
  *
  *  1. Fullscreen renderer is the DEFAULT now — the 2.1.236 watch item, closed
@@ -217,7 +304,7 @@ import * as path from 'node:path';
  * `~/.claude.json` fix (we read-modify-write that file, never replace it), and
  * the VSCode screen-reader work.
  */
-export const REVIEWED_CLI_VERSION = '2.1.241';
+export const REVIEWED_CLI_VERSION = '2.1.246';
 
 /**
  * app_settings key holding the user's explicit OmniFex-checkout override.
@@ -233,6 +320,21 @@ export interface CliReviewStatus {
   reviewed_version: string;
   /** True when the installed CLI is strictly newer than the watermark. */
   unreviewed: boolean;
+  /**
+   * Newest release published to npm, or null when the registry couldn't be
+   * reached. A fact about the world rather than about this machine, so it is
+   * reported even when the local binary can't be probed.
+   */
+  latest_version: string | null;
+  /**
+   * True when a newer release than the installed one has been published.
+   *
+   * Deliberately separate from `unreviewed`: that flag means "the binary you
+   * are RUNNING has drifted past our watermark", which is the thing a review
+   * pass can act on — reviewing needs the binary on disk to `rg` and to
+   * capture a live render from. A release sitting on npm is not yet drift.
+   */
+  upgrade_available: boolean;
   /**
    * OmniFex source checkout to run the changelog review in, or null when we
    * can't find one. The renderer only makes the drift warning clickable when
@@ -293,6 +395,57 @@ function dirExists(dir: string): boolean {
   }
 }
 
+/**
+ * npm dist-tags for the CLI. 56 bytes on the wire, versus the full packument
+ * a `/latest` fetch would pull.
+ *
+ * `latest`, not `stable`: the dist-tags carry both and they disagree (stable
+ * sat at 2.1.231 while latest was 2.1.246), and it is `latest` that the native
+ * installer's self-update tracks — verified by watching a real upgrade land on
+ * 2.1.246. Reporting `stable` would tell users they were current while their
+ * own binary moved past it.
+ */
+const NPM_DIST_TAGS_URL =
+  'https://registry.npmjs.org/-/package/@anthropic-ai%2Fclaude-code/dist-tags';
+
+/** Concurrent callers share one request; see `fetchLatestCliVersion`. */
+let inFlightLatest: Promise<string | null> | null = null;
+
+/**
+ * Newest published Claude Code release, or null for any failure at all.
+ *
+ * Deliberately uncached beyond in-flight de-duplication. The button this feeds
+ * says "Check for Upgrade", and a time-based cache would make it lie — the
+ * whole reason this exists is that the popover looked like a steady state
+ * while three releases had shipped. 56 bytes per check is not worth a stale
+ * answer.
+ *
+ * Known limit: this is Node's `fetch`, which ignores system proxy settings, so
+ * a user behind a corporate proxy gets null and the row falls back to showing
+ * only the installed version. That degrades to the old behaviour rather than
+ * to a wrong answer.
+ */
+export function fetchLatestCliVersion(): Promise<string | null> {
+  inFlightLatest ??= (async () => {
+    try {
+      const res = await fetch(NPM_DIST_TAGS_URL, {
+        signal: AbortSignal.timeout(5000),
+        headers: { accept: 'application/json' },
+      });
+      if (!res.ok) return null;
+      const tags = (await res.json()) as { latest?: unknown };
+      return typeof tags.latest === 'string' ? tags.latest : null;
+    } catch {
+      // Offline, DNS failure, timeout, proxy interception serving HTML — all
+      // "undeterminable", and none of them may disturb the rest of the popover.
+      return null;
+    } finally {
+      inFlightLatest = null;
+    }
+  })();
+  return inFlightLatest;
+}
+
 export interface ClaudeCliReviewDeps {
   /**
    * Returns the raw `claude --version` output (e.g. "2.1.222 (Claude Code)"),
@@ -300,6 +453,12 @@ export interface ClaudeCliReviewDeps {
    * out, and so the caller owns binary resolution.
    */
   cliVersionFn: () => string | null;
+  /**
+   * Returns the newest Claude Code version published to npm, or null when the
+   * registry is unreachable. Optional: with no lookup wired the popover simply
+   * reports the installed version, exactly as it did before.
+   */
+  latestVersionFn?: () => Promise<string | null>;
   /**
    * The user's explicit `cli_review_repo_dir` override, or null/'' when unset.
    * Wins over discovery whenever the directory still exists.
@@ -386,9 +545,25 @@ export function createClaudeCliReviewService(
       raw = null;
     }
     const installed = parseCliVersion(raw);
+
+    // Network, so it fails soft and independently: a dead registry must not
+    // take out the watermark signal, which needs no network at all.
+    let latest: string | null = null;
+    try {
+      latest = parseCliVersion((await deps.latestVersionFn?.()) ?? null);
+    } catch {
+      latest = null;
+    }
+
     return {
       installed_version: installed,
       reviewed_version: REVIEWED_CLI_VERSION,
+      latest_version: latest,
+      // Strictly-newer, same as `unreviewed` and for the same reason: a native
+      // installer channel can briefly lead npm, and prompting the user to
+      // "upgrade" to an older build is worse than saying nothing.
+      upgrade_available:
+        installed !== null && latest !== null && compareCliVersions(latest, installed) > 0,
       // Strictly-newer only. A user running an OLDER CLI has no unreviewed
       // changelog to show them, and an unknown version must never nag.
       unreviewed: installed !== null && compareCliVersions(installed, REVIEWED_CLI_VERSION) > 0,

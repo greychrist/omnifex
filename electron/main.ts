@@ -64,6 +64,7 @@ import { runFirstTimeDiscovery } from './services/first-run-discovery';
 import { createClaudeBinaryService } from './services/claude-binary';
 import {
   createClaudeCliReviewService,
+  fetchLatestCliVersion,
   probeCliVersion,
   CLI_REVIEW_REPO_DIR_SETTING_KEY,
 } from './services/claude-cli-review';
@@ -579,6 +580,7 @@ app.whenReady().then(() => {
   const claudeCliReviewService = createClaudeCliReviewService({
     cliVersionFn: () =>
       probeCliVersion(claudeBinaryService.getPath() ?? claudeBinaryService.findBestBinary()),
+    latestVersionFn: fetchLatestCliVersion,
     repoDirOverrideFn: () => db.getSetting(CLI_REVIEW_REPO_DIR_SETTING_KEY),
     repoCandidatesFn: async () => [
       ...(app.isPackaged ? [] : [process.cwd()]),

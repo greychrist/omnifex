@@ -16,6 +16,25 @@ export interface UsageWindow {
 export interface UsageRow { name: string; pct_used: number }
 export interface UsageTable { rows: UsageRow[]; more_count: number | null }
 
+/**
+ * One row of the `/usage` Loops breakdown (Claude Code 2.1.243+).
+ *
+ * Only `runs` is numeric. `tokens` / `per_run` keep the CLI's own abbreviated
+ * rendering (`480.2k`, `1.2M`, `–`) rather than being parsed back to integers:
+ * the abbreviation is lossy, so re-deriving a number would invent precision
+ * the render never had. `per_run` is null on narrow terminals, where the CLI
+ * drops that column entirely.
+ */
+export interface UsageLoopRow {
+  prompt: string;
+  every: string;
+  runs: number;
+  tokens: string;
+  per_run: string | null;
+  last_run: string;
+}
+export interface UsageLoopsTable { rows: UsageLoopRow[]; more_count: number | null }
+
 export interface UsageData {
   /**
    * True when the render carries the 2.1.208+ "Showing last-known usage as
@@ -48,6 +67,13 @@ export interface UsageData {
   subagents: UsageTable;
   plugins: UsageTable;
   mcp_servers: UsageTable;
+  /**
+   * The Loops breakdown (Claude Code 2.1.243+), rendered after `mcp_servers`
+   * and before the tables footer. Empty on any CLI that doesn't draw it and
+   * on accounts with no `/loop` history — the CLI omits the whole section
+   * rather than drawing an empty one.
+   */
+  loops: UsageLoopsTable;
 }
 
 
@@ -70,6 +96,12 @@ const SECTION_HEADERS = {
   subagents_table: /^[ \t]*Subagents\s+% of usage\s*$/m,
   plugins_table: /^[ \t]*Plugins\s+% of usage\s*$/m,
   mcp_table: /^[ \t]*MCP servers\s+% of usage\s*$/m,
+  // 2.1.243's Loops breakdown. Not a "% of usage" table — its columns are
+  // `Loops | every | runs | tokens | per run | last run` — but it renders
+  // between `MCP servers` and the footer, so it MUST be a boundary for the
+  // table above it. Without that, the last ranked table's slice ran through
+  // the Loops block and adopted its `… N more` line as its own `more_count`.
+  loops_table: /^[ \t]*Loops\s+every\s+runs\s+tokens\b/m,
   // Footer hint Claude prints after the tables ("d to day · w to week").
   // Used as a hard end-boundary for the last table.
   tables_footer: /^[ \t]*d to day\b/m,
@@ -330,12 +362,14 @@ export function parseUsageOutput(input: string): ParseResult {
   const subagents = parseTable(text, SECTION_HEADERS.subagents_table);
   const plugins = parseTable(text, SECTION_HEADERS.plugins_table);
   const mcp_servers = parseTable(text, SECTION_HEADERS.mcp_table);
+  const loops = parseLoops(text);
 
   return {
     ok: true,
     data: {
       stale: STALE_MARKER.test(text),
       session, windows, contributing, skills, subagents, plugins, mcp_servers,
+      loops,
     },
   };
 }
@@ -429,6 +463,7 @@ function parseTable(text: string, header: RegExp): UsageTable {
     SECTION_HEADERS.subagents_table,
     SECTION_HEADERS.plugins_table,
     SECTION_HEADERS.mcp_table,
+    SECTION_HEADERS.loops_table,
     SECTION_HEADERS.tables_footer,
   );
   if (!block) return { rows: [], more_count: null };
@@ -450,6 +485,63 @@ function parseTable(text: string, header: RegExp): UsageTable {
   return { rows, more_count };
 }
 
+/**
+ * Parses the `/usage` Loops breakdown (Claude Code 2.1.243+):
+ *
+ *   Loops            every    runs   tokens   per run   last run
+ *   check the deploy 5m       12     480.2k   40.0k     2h ago
+ *   … 4 more
+ *
+ * Unlike the ranked tables, no column here has a fixed lexical shape: `every`
+ * is a cron description (`5m`, `dynamic`, `?`, `at 09:30`, or prose from the
+ * CLI's cron humaniser) and `last run` is a relative time. What IS reliable is
+ * the layout — the CLI draws each cell in a padded fixed-width box, so columns
+ * are separated by two or more spaces while spaces INSIDE a cell are single.
+ * So we split on runs of whitespace and anchor on `runs`, the only column that
+ * is always a bare integer (`every` never is).
+ *
+ * Anchoring rather than counting fields is what makes the narrow render work:
+ * the CLI drops the `per run` column when the terminal is too small, and a
+ * positional parse would then read `last run` as `per run`.
+ */
+function parseLoops(text: string): UsageLoopsTable {
+  const block = sliceSection(
+    text,
+    SECTION_HEADERS.loops_table,
+    SECTION_HEADERS.tables_footer,
+  );
+  if (!block) return { rows: [], more_count: null };
+
+  const rows: UsageLoopRow[] = [];
+  let more_count: number | null = null;
+  const MORE_RE = /^\s*…\s*(\d+)\s+more\s*$/;
+  for (const raw of block.split('\n')) {
+    const moreMatch = MORE_RE.exec(raw);
+    if (moreMatch) {
+      more_count = parseInt(moreMatch[1], 10);
+      continue;
+    }
+    const fields = raw.trim().split(/\s{2,}/);
+    // Need at least prompt + every + runs + tokens.
+    if (fields.length < 4) continue;
+    const runsIdx = fields.findIndex((f, i) => i >= 1 && /^\d+$/.test(f));
+    // `runsIdx < 2` means no `every` cell resolved — a prompt long enough to
+    // fill its column swallows the gap after it. Skip that row rather than
+    // shifting every later column by one.
+    if (runsIdx < 2 || runsIdx + 1 >= fields.length) continue;
+    const trailing = fields.slice(runsIdx + 2);
+    rows.push({
+      prompt: fields.slice(0, runsIdx - 1).join(' '),
+      every: fields[runsIdx - 1],
+      runs: parseInt(fields[runsIdx], 10),
+      tokens: fields[runsIdx + 1],
+      per_run: trailing.length >= 2 ? trailing[0] : null,
+      last_run: trailing.length > 0 ? trailing[trailing.length - 1] : '',
+    });
+  }
+  return { rows, more_count };
+}
+
 function parseContributing(text: string): { headline: string; detail: string }[] {
   // Bound the slice to the first ranked-table header / tables footer so the
   // enterprise shape (which renders tables directly below the contributing
@@ -465,6 +557,7 @@ function parseContributing(text: string): { headline: string; detail: string }[]
     SECTION_HEADERS.subagents_table,
     SECTION_HEADERS.plugins_table,
     SECTION_HEADERS.mcp_table,
+    SECTION_HEADERS.loops_table,
     SECTION_HEADERS.tables_footer,
   ) ?? '';
   // Each entry starts with a percent-headed headline (e.g. "86% of your usage

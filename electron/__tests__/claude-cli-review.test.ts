@@ -225,3 +225,101 @@ describe('REVIEWED_CLI_VERSION', () => {
     expect(REVIEWED_CLI_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
   });
 });
+
+describe('createClaudeCliReviewService — latest published release', () => {
+  /**
+   * The gap this closes: the popover's Claude Code row reported only what was
+   * installed, and nothing in OmniFex ever asked what the newest release was.
+   * A user sat three unreviewed CLI releases behind with a popover that looked
+   * like a steady state, because the CLI's self-update only runs when the CLI
+   * itself is launched — not when OmniFex spawns it.
+   */
+  const svc = (installed: string | null, latest: string | null) =>
+    createClaudeCliReviewService({
+      cliVersionFn: () => installed,
+      latestVersionFn: () => Promise.resolve(latest),
+    });
+
+  it('reports a newer published release as an available upgrade', async () => {
+    const status = await svc('2.1.241 (Claude Code)', '2.1.246').getStatus();
+    expect(status.latest_version).toBe('2.1.246');
+    expect(status.upgrade_available).toBe(true);
+  });
+
+  it('does not offer an upgrade when the installed CLI is already current', async () => {
+    const status = await svc('2.1.246 (Claude Code)', '2.1.246').getStatus();
+    expect(status.upgrade_available).toBe(false);
+  });
+
+  it('does not offer a downgrade when the installed CLI leads the registry', async () => {
+    // A native-installer channel can briefly lead npm. Telling the user to
+    // "upgrade" to an older build would be worse than saying nothing.
+    const status = await svc('2.1.250 (Claude Code)', '2.1.246').getStatus();
+    expect(status.upgrade_available).toBe(false);
+  });
+
+  it('stays silent when the registry cannot be reached', async () => {
+    // The Brain rule generalises: an auxiliary signal that cannot read its own
+    // state shows nothing. An offline user must not see a false "up to date"
+    // OR a spurious upgrade prompt.
+    const status = await svc('2.1.241 (Claude Code)', null).getStatus();
+    expect(status.latest_version).toBeNull();
+    expect(status.upgrade_available).toBe(false);
+  });
+
+  it('survives a registry lookup that rejects', async () => {
+    const status = await createClaudeCliReviewService({
+      cliVersionFn: () => '2.1.241 (Claude Code)',
+      latestVersionFn: () => Promise.reject(new Error('ENOTFOUND')),
+    }).getStatus();
+    expect(status.latest_version).toBeNull();
+    expect(status.upgrade_available).toBe(false);
+    // The rest of the payload must still be usable — a dead network cannot
+    // take out the watermark signal, which needs no network at all.
+    expect(status.installed_version).toBe('2.1.241');
+  });
+
+  it('cannot offer an upgrade when the installed version is unknown', async () => {
+    const status = await svc(null, '2.1.246').getStatus();
+    expect(status.upgrade_available).toBe(false);
+    // The latest version is still reported: it is a fact about the world, not
+    // about this machine, and the row can show it.
+    expect(status.latest_version).toBe('2.1.246');
+  });
+
+  it('reports nulls rather than throwing when no lookup is wired', async () => {
+    const status = await createClaudeCliReviewService({
+      cliVersionFn: () => '2.1.241 (Claude Code)',
+    }).getStatus();
+    expect(status.latest_version).toBeNull();
+    expect(status.upgrade_available).toBe(false);
+  });
+
+  /**
+   * Chosen semantics (Row only, dot unchanged): `unreviewed` keeps meaning
+   * "the binary you are RUNNING has drifted past our watermark". A newer
+   * release existing on npm is not drift you can review — the techniques that
+   * matter (rg the binary, capture a live render) need it on disk.
+   */
+  it('leaves the review dot keyed on the installed binary, not the registry', async () => {
+    const status = await svc('2.1.241 (Claude Code)', '99.0.0').getStatus();
+    expect(status.upgrade_available).toBe(true);
+    expect(status.unreviewed).toBe(
+      compareCliVersions('2.1.241', REVIEWED_CLI_VERSION) > 0,
+    );
+  });
+
+  it('re-checks on every call so an upgrade landing mid-session is picked up', async () => {
+    const latestFn = vi
+      .fn<() => Promise<string | null>>()
+      .mockResolvedValueOnce('2.1.246')
+      .mockResolvedValueOnce('2.1.247');
+    const service = createClaudeCliReviewService({
+      cliVersionFn: () => '2.1.241 (Claude Code)',
+      latestVersionFn: latestFn,
+    });
+
+    expect((await service.getStatus()).latest_version).toBe('2.1.246');
+    expect((await service.getStatus()).latest_version).toBe('2.1.247');
+  });
+});

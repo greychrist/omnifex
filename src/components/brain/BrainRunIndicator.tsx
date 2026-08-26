@@ -63,7 +63,13 @@ export const BrainRunIndicator: React.FC<{
   // A deleted-mid-run account still has a vault and still has a run, so the id
   // has to read as a possessive rather than a name: "account 99's vault".
   const vault = name ? `${name} vault` : `account ${String(run.accountId)}'s vault`;
-  const progress = `${run.completed} of ${run.total}`;
+  // Item-positional, the same framing the Brain tab's own banner uses: the
+  // `completed + 1`-th item is the one in flight. Reporting the completed count
+  // instead made one run read "0 of 2" in the titlebar and "1 of 2" in the tab.
+  // A single-item run drops the fraction rather than sitting at "1 of 1"
+  // forever — again matching the tab.
+  const position = run.total > 1 ? `${String(run.completed + 1)} of ${String(run.total)}` : null;
+  const label = position ? `Indexing ${vault} · ${position}` : `Indexing ${vault}`;
 
   return (
     // Own provider: the titlebar has one, but this also renders in shells that
@@ -73,13 +79,15 @@ export const BrainRunIndicator: React.FC<{
         <TooltipTrigger asChild>
           <div
             data-testid="brain-run-indicator"
-            aria-label={`Brain indexing: ${run.item} into the ${vault}, ${progress} complete`}
+            aria-label={
+              position
+                ? `Brain indexing: ${run.item} into the ${vault}, item ${position}`
+                : `Brain indexing: ${run.item} into the ${vault}`
+            }
             className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-violet-600/15 text-violet-400 app-no-drag"
           >
             <Brain size={13} className="animate-pulse" />
-            <span className="tabular-nums">
-              Indexing {vault} · {progress}
-            </span>
+            <span className="tabular-nums">{label}</span>
           </div>
         </TooltipTrigger>
         {/* Below the pill: the titlebar is the top edge of the window, so a
@@ -92,7 +100,9 @@ export const BrainRunIndicator: React.FC<{
           <p className="mt-1.5 text-muted-foreground">
             Current: <span className="font-mono">{run.item}</span>
           </p>
-          <p className="text-muted-foreground tabular-nums">{progress} complete</p>
+          {position && (
+            <p className="text-muted-foreground tabular-nums">Item {position}</p>
+          )}
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>

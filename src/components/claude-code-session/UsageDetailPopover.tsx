@@ -161,6 +161,9 @@ export function UsageDetailPopover({
           {data.parsed.mcp_servers.rows.length > 0 && (
             <UsageRankedTable title="MCP servers" table={data.parsed.mcp_servers} />
           )}
+          {data.parsed.loops.rows.length > 0 && (
+            <UsageLoopsSection table={data.parsed.loops} />
+          )}
 
           <div className="flex items-center justify-between pt-2 border-t border-border">
             <span className="text-[11px] text-muted-foreground">
@@ -194,6 +197,54 @@ export function UsageDetailPopover({
       onOpenChange={onOpenChange}
       align={align}
     />
+  );
+}
+
+/**
+ * The `/usage` Loops breakdown (Claude Code 2.1.243+).
+ *
+ * Not a `UsageRankedTable`: loops are measured in runs and tokens, not in a
+ * percentage of the limit, so there is no shared denominator to draw a bar
+ * against. `tokens` / `per_run` are rendered as the CLI abbreviated them
+ * rather than reformatted — the parser deliberately keeps the lossy string
+ * instead of inventing an integer.
+ */
+function UsageLoopsSection({
+  table,
+}: {
+  table: import('@/lib/api').UsageRunData['loops'];
+}) {
+  return (
+    <Section title="Loops">
+      {table.rows.map((r) => (
+        <div key={r.prompt} className="space-y-0.5">
+          <div className="flex items-center gap-2 text-xs">
+            <span className="flex-1 truncate" title={r.prompt}>{r.prompt}</span>
+            <span className="shrink-0 text-muted-foreground">every {r.every}</span>
+          </div>
+          <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+            <span className="font-mono tabular-nums">
+              {r.runs} run{r.runs === 1 ? '' : 's'}
+            </span>
+            <span aria-hidden>·</span>
+            <span className="font-mono tabular-nums">{r.tokens}</span>
+            {r.per_run != null && (
+              <>
+                <span aria-hidden>·</span>
+                <span className="font-mono tabular-nums">{r.per_run}/run</span>
+              </>
+            )}
+            <span aria-hidden>·</span>
+            <span>{r.last_run}</span>
+          </div>
+        </div>
+      ))}
+      {table.more_count != null && table.more_count > 0 && (
+        <div className="pl-1 text-[11px] text-muted-foreground">
+          … {table.more_count} more
+        </div>
+      )}
+    </Section>
   );
 }
 

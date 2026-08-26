@@ -307,3 +307,84 @@ Longer sessions are more expensive even when cached.
     ]);
   });
 });
+
+describe('parseUsageOutput — Loops table (CLI 2.1.243+)', () => {
+  // 2.1.243 added a Loops breakdown to `/usage`, rendered AFTER the four
+  // "% of usage" tables and BEFORE the `d to day · w to week` footer.
+  // Verified against the 2.1.246 binary: the section list is
+  // [Skills, Subagents, Plugins, MCP servers, Loops] and the Loops header
+  // row is `Loops  every  runs  tokens  per run  last run`.
+  const FIXTURE = `
+Session
+Total cost: $0.0000
+
+What's contributing to your limits usage?
+
+MCP servers % of usage
+claude.ai Atlassian 3%
+some-server 1%
+
+Loops          every    runs   tokens   per run   last run
+check the deploy     5m       12     480.2k   40.0k     2h ago
+babysit PRs          dynamic  3      91.1k    30.4k     yesterday
+one-shot audit       ?        0      0        –         –
+… 4 more
+
+d to day · w to week
+`;
+
+  it('does not let the Loops "… N more" leak into the table above it', () => {
+    const result = parseUsageOutput(FIXTURE);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.mcp_servers.rows).toEqual([
+      { name: 'claude.ai Atlassian', pct_used: 3 },
+      { name: 'some-server', pct_used: 1 },
+    ]);
+    // The `… 4 more` belongs to Loops, not to MCP servers.
+    expect(result.data.mcp_servers.more_count).toBeNull();
+    expect(result.data.loops.more_count).toBe(4);
+  });
+
+  it('parses loop rows, keeping multi-word prompts and the per-run column', () => {
+    const result = parseUsageOutput(FIXTURE);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.loops.rows).toEqual([
+      { prompt: 'check the deploy', every: '5m', runs: 12, tokens: '480.2k', per_run: '40.0k', last_run: '2h ago' },
+      { prompt: 'babysit PRs', every: 'dynamic', runs: 3, tokens: '91.1k', per_run: '30.4k', last_run: 'yesterday' },
+      { prompt: 'one-shot audit', every: '?', runs: 0, tokens: '0', per_run: '–', last_run: '–' },
+    ]);
+  });
+
+  it('parses a narrow render, where the CLI drops the "per run" column', () => {
+    const NARROW = `
+What's contributing to your limits usage?
+
+Loops        every   runs   tokens   last run
+nightly sweep    1d      7      210.0k   3d ago
+
+d to day · w to week
+`;
+    const result = parseUsageOutput(NARROW);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.loops.rows).toEqual([
+      { prompt: 'nightly sweep', every: '1d', runs: 7, tokens: '210.0k', per_run: null, last_run: '3d ago' },
+    ]);
+  });
+
+  it('reports an empty table when the CLI renders no Loops section', () => {
+    const result = parseUsageOutput(`
+What's contributing to your limits usage?
+
+Skills % of usage
+brainstorming 4%
+
+d to day · w to week
+`);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.loops).toEqual({ rows: [], more_count: null });
+  });
+});
