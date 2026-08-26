@@ -520,11 +520,93 @@ export interface SessionCostSnapshot {
 export interface CostHistoryPeriod {
   period: string;
   cost_usd: number;
+  request_count: number;
   input_tokens: number;
   output_tokens: number;
   cache_read_tokens: number;
   cache_write_tokens: number;
+  input_usd: number;
+  output_usd: number;
+  cache_read_usd: number;
+  cache_write_usd: number;
   is_estimated: number;
+}
+
+/** One period x model bucket, for the Cost Report's stacked-area chart. */
+export interface CostHistoryPeriodModel extends CostHistoryPeriod {
+  model: string;
+}
+
+/** Shared token/cost sums on every grouped Cost Report row. */
+interface CostGroupSums {
+  cost_usd: number;
+  request_count: number;
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  cache_write_tokens: number;
+}
+
+export interface CostByProject extends CostGroupSums {
+  project_path: string | null;
+}
+
+export interface CostByModel extends CostGroupSums {
+  model: string;
+}
+
+export interface CostByProjectModel extends CostByModel {
+  project_path: string | null;
+}
+
+/** Spend split by what it bought. `context_share` is the headline: the
+ *  fraction that is re-sent context rather than generated output. */
+export interface CostComponents {
+  cost_usd: number;
+  input_usd: number;
+  output_usd: number;
+  cache_read_usd: number;
+  cache_write_usd: number;
+  context_share: number;
+}
+
+export interface CachingRoi {
+  cache_read_tokens: number;
+  cache_write_tokens: number;
+  cache_write_1h_tokens: number;
+  cache_read_usd: number;
+  cache_write_usd: number;
+  read_write_ratio: number;
+  /** Caching pays for itself somewhere around 2 reads per write. Below that it
+   *  costs more than it saves and the UI must say so, not just print a number. */
+  below_break_even: boolean;
+  saved_usd: number;
+  premium_1h_usd: number;
+}
+
+export interface SubagentSplitRow {
+  /** 0 = main loop, 1 = subagent. */
+  is_subagent: number;
+  cost_usd: number;
+  request_count: number;
+  usd_per_request: number;
+}
+
+/** A model priced by the fallback rate rather than a table entry. Surfaced so
+ *  a newly released model cannot be billed at Sonnet rates unnoticed. */
+export interface UnpricedModel {
+  model: string;
+  request_count: number;
+  cost_usd: number;
+}
+
+/** Distinct values for the Cost Report's filter controls. */
+export interface CostFacets {
+  accounts: string[];
+  models: string[];
+  projects: string[];
+  minDate: string | null;
+  maxDate: string | null;
 }
 
 /** One session's aggregated cost row from the durable cost-history table.
@@ -542,13 +624,21 @@ export interface CostSessionRow {
   cache_write_tokens: number;
 }
 
-/** Shared filter shape for `sessionCostHistory` / `sessionCostSessions`. */
+/** Shared filter shape for every cost-history query.
+ *
+ *  The multi-valued fields accept a single string or an array; an array ORs
+ *  its values and an EMPTY array means "no filter", so clearing every checkbox
+ *  in the filter bar shows everything rather than nothing. */
 export interface CostHistoryFilterParams {
   startDate?: string;
   endDate?: string;
-  accountName?: string;
-  projectPath?: string;
-  model?: string;
+  accountName?: string | string[];
+  projectPath?: string | string[];
+  model?: string | string[];
+  /** Case-insensitive substring of the project path. */
+  projectSearch?: string;
+  /** Omit to include both the main loop and subagents. */
+  isSubagent?: boolean;
 }
 
 /** Latest rate-limit snapshot for one (account, rate-limit-type) pair. */
@@ -1739,6 +1829,54 @@ export const api = {
   /** Per-session cost rows from the durable cost-history table. */
   async sessionCostSessions(filters: CostHistoryFilterParams): Promise<CostSessionRow[]> {
     return apiCall("session_cost_sessions", stripUndefined(filters));
+  },
+
+  /** Aggregated cost history bucketed by period AND model, for the Cost
+   *  Report's stacked-area chart. */
+  async sessionCostHistoryByModel(
+    filters: CostHistoryFilterParams & { groupBy: 'day' | 'week' | 'month' },
+  ): Promise<CostHistoryPeriodModel[]> {
+    return apiCall("session_cost_history_by_model", stripUndefined(filters));
+  },
+
+  /** Spend grouped by project path, most expensive first. */
+  async sessionCostByProject(filters: CostHistoryFilterParams): Promise<CostByProject[]> {
+    return apiCall("session_cost_by_project", stripUndefined(filters));
+  },
+
+  /** Spend grouped by model, most expensive first. */
+  async sessionCostByModel(filters: CostHistoryFilterParams): Promise<CostByModel[]> {
+    return apiCall("session_cost_by_model", stripUndefined(filters));
+  },
+
+  /** Spend crossed by project and model. */
+  async sessionCostByProjectModel(filters: CostHistoryFilterParams): Promise<CostByProjectModel[]> {
+    return apiCall("session_cost_by_project_model", stripUndefined(filters));
+  },
+
+  /** Spend split into fresh input / output / cache read / cache write. */
+  async sessionCostComponents(filters: CostHistoryFilterParams): Promise<CostComponents | null> {
+    return apiCall("session_cost_components", stripUndefined(filters));
+  },
+
+  /** Cache read:write ratio, savings vs uncached, and the 1h TTL premium. */
+  async sessionCostCachingRoi(filters: CostHistoryFilterParams): Promise<CachingRoi | null> {
+    return apiCall("session_cost_caching_roi", stripUndefined(filters));
+  },
+
+  /** Main-loop vs subagent cost, requests, and cost per request. */
+  async sessionCostSubagentSplit(filters: CostHistoryFilterParams): Promise<SubagentSplitRow[]> {
+    return apiCall("session_cost_subagent_split", stripUndefined(filters));
+  },
+
+  /** Models billed at the fallback rate rather than a known one. */
+  async sessionCostUnpriced(filters: CostHistoryFilterParams): Promise<UnpricedModel[]> {
+    return apiCall("session_cost_unpriced", stripUndefined(filters));
+  },
+
+  /** Distinct accounts / models / projects and the available date range. */
+  async sessionCostFacets(filters: CostHistoryFilterParams): Promise<CostFacets | null> {
+    return apiCall("session_cost_facets", stripUndefined(filters));
   },
 
   /** Force a full re-scan of every account's surviving JSONLs into the

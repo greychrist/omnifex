@@ -1400,7 +1400,17 @@ app.whenReady().then(() => {
       unwatch: (sessionId: string) => sessionCostService.unwatch(sessionId),
       history: (f: Record<string, unknown>) =>
         costHistoryService.aggregate(f as never, ((f.groupBy as string) ?? 'day') as 'day' | 'week' | 'month'),
+      historyByModel: (f: Record<string, unknown>) =>
+        costHistoryService.aggregateByModel(f as never, ((f.groupBy as string) ?? 'day') as 'day' | 'week' | 'month'),
       sessions: (f: Record<string, unknown>) => costHistoryService.sessions(f as never),
+      byProject: (f: Record<string, unknown>) => costHistoryService.byProject(f as never),
+      byModel: (f: Record<string, unknown>) => costHistoryService.byModel(f as never),
+      byProjectModel: (f: Record<string, unknown>) => costHistoryService.byProjectModel(f as never),
+      components: (f: Record<string, unknown>) => costHistoryService.components(f as never),
+      cachingRoi: (f: Record<string, unknown>) => costHistoryService.cachingRoi(f as never),
+      subagentSplit: (f: Record<string, unknown>) => costHistoryService.subagentSplit(f as never),
+      unpriced: (f: Record<string, unknown>) => costHistoryService.unpriced(f as never),
+      facets: (f: Record<string, unknown>) => costHistoryService.facets(f as never),
       rescan: () => costHistoryService.backfill(accountsService.listAccounts()),
     },
     // Usage adapter

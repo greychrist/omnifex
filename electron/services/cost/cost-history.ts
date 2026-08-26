@@ -99,23 +99,132 @@ function subagentSignature(fsDeps: CostFs, subagentsDir: string): string {
     .join(',');
 }
 
+/** Multi-valued fields OR their values together; an empty array means "no
+ *  filter", not "match nothing" — a filter bar that empties the table the
+ *  moment you clear a checkbox reads as a bug. */
 export interface CostHistoryFilters {
   startDate?: string;
   endDate?: string;
-  accountName?: string;
-  projectPath?: string;
-  model?: string;
+  accountName?: string | string[];
+  projectPath?: string | string[];
+  model?: string | string[];
+  /** Case-insensitive substring of `project_path`. */
+  projectSearch?: string;
+  /** `undefined` includes both the main loop and subagents. */
+  isSubagent?: boolean;
 }
 
 export interface CostHistoryPeriod {
   period: string;
   cost_usd: number;
+  request_count: number;
   input_tokens: number;
   output_tokens: number;
   cache_read_tokens: number;
   cache_write_tokens: number;
+  input_usd: number;
+  output_usd: number;
+  cache_read_usd: number;
+  cache_write_usd: number;
   is_estimated: number;
 }
+
+/** One period x model bucket, for the stacked-area chart. */
+export interface CostHistoryPeriodModel extends CostHistoryPeriod {
+  model: string;
+}
+
+export interface CostByProject {
+  project_path: string | null;
+  cost_usd: number;
+  request_count: number;
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  cache_write_tokens: number;
+}
+
+export interface CostByModel {
+  model: string;
+  cost_usd: number;
+  request_count: number;
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  cache_write_tokens: number;
+}
+
+export interface CostByProjectModel extends CostByModel {
+  project_path: string | null;
+}
+
+export interface CostComponents {
+  cost_usd: number;
+  input_usd: number;
+  output_usd: number;
+  cache_read_usd: number;
+  cache_write_usd: number;
+  /** Share of spend that is context (fresh input + cache read + cache write)
+   *  rather than generated output. The headline the report exists to produce:
+   *  "87% of spend is context" reframes "we spend a lot on AI" as "we spend a
+   *  lot on re-sending context", which is a different and more fixable
+   *  problem. 0 when nothing matched. */
+  context_share: number;
+}
+
+export interface CachingRoi {
+  cache_read_tokens: number;
+  cache_write_tokens: number;
+  cache_write_1h_tokens: number;
+  cache_read_usd: number;
+  cache_write_usd: number;
+  /** Reads per write. 0 when nothing was written to cache. */
+  read_write_ratio: number;
+  /** Reads are billed at 0.1x input and writes at 1.25x, so caching pays for
+   *  itself somewhere around 2 reads per write. Below that it costs more than
+   *  it saves, which the UI must say out loud rather than printing a number. */
+  below_break_even: boolean;
+  /** What the cache-read tokens would have cost at the full input rate, minus
+   *  what they did cost. Derived from the stored cache_read_usd so it stays
+   *  consistent with the rates actually billed. */
+  saved_usd: number;
+  /** The extra paid for 1h-TTL writes over the 5m rate. */
+  premium_1h_usd: number;
+}
+
+export interface SubagentSplitRow {
+  is_subagent: number;
+  cost_usd: number;
+  request_count: number;
+  /** 0 when the side recorded no requests. */
+  usd_per_request: number;
+}
+
+export interface UnpricedModel {
+  model: string;
+  request_count: number;
+  cost_usd: number;
+}
+
+/** Distinct values available to the filter controls. Deliberately NOT narrowed
+ *  by the multi-select filters themselves — a control that erases its own
+ *  alternatives when you use it cannot be un-used. */
+export interface CostFacets {
+  accounts: string[];
+  models: string[];
+  projects: string[];
+  minDate: string | null;
+  maxDate: string | null;
+}
+
+/** Break-even reads-per-write. cacheRead is 0.10x input and cacheWrite5m is
+ *  1.25x, so a write pays for itself after 1.25 / (1 - 0.10) ≈ 1.39 reads;
+ *  2 is the conventional rule of thumb and the one the Python report uses. */
+const CACHE_BREAK_EVEN_RATIO = 2;
+
+/** Cache reads bill at 0.10x the input rate, so 0.90 of the notional full-rate
+ *  cost is what caching saved. */
+const CACHE_READ_DISCOUNT = 0.1;
 
 export interface CostSessionRow {
   session_id: string;
@@ -138,20 +247,63 @@ export interface AccountLike {
 export interface CostHistoryService {
   replaceSession(sessionId: string, rows: SessionCostDailyRow[]): void;
   aggregate(filters: CostHistoryFilters, groupBy: 'day' | 'week' | 'month'): CostHistoryPeriod[];
+  aggregateByModel(filters: CostHistoryFilters, groupBy: 'day' | 'week' | 'month'): CostHistoryPeriodModel[];
   sessions(filters: CostHistoryFilters): CostSessionRow[];
+  byProject(filters: CostHistoryFilters): CostByProject[];
+  byModel(filters: CostHistoryFilters): CostByModel[];
+  byProjectModel(filters: CostHistoryFilters): CostByProjectModel[];
+  components(filters: CostHistoryFilters): CostComponents;
+  cachingRoi(filters: CostHistoryFilters): CachingRoi;
+  subagentSplit(filters: CostHistoryFilters): SubagentSplitRow[];
+  unpriced(filters: CostHistoryFilters): UnpricedModel[];
+  facets(filters: CostHistoryFilters): CostFacets;
   backfill(accounts: AccountLike[]): { sessionsScanned: number };
+}
+
+/** LIKE treats `%` and `_` as wildcards, so a project path containing either
+ *  would silently over-match. Escape them and declare the escape character. */
+function escapeLike(term: string): string {
+  return term.replace(/[\\%_]/g, (c) => `\\${c}`);
 }
 
 function whereClause(filters: CostHistoryFilters): { sql: string; params: unknown[] } {
   const clauses: string[] = [];
   const params: unknown[] = [];
+
+  const multi = (column: string, value: string | string[] | undefined): void => {
+    if (value === undefined) return;
+    const values = Array.isArray(value) ? value : [value];
+    // An empty array is "the user cleared the checkboxes", which means show
+    // everything — not `IN ()`, which matches nothing.
+    if (values.length === 0) return;
+    clauses.push(`${column} IN (${values.map(() => '?').join(',')})`);
+    params.push(...values);
+  };
+
   if (filters.startDate) { clauses.push('date >= ?'); params.push(filters.startDate); }
   if (filters.endDate) { clauses.push('date <= ?'); params.push(filters.endDate); }
-  if (filters.accountName) { clauses.push('account_name = ?'); params.push(filters.accountName); }
-  if (filters.projectPath) { clauses.push('project_path = ?'); params.push(filters.projectPath); }
-  if (filters.model) { clauses.push('model = ?'); params.push(filters.model); }
+  multi('account_name', filters.accountName);
+  multi('project_path', filters.projectPath);
+  multi('model', filters.model);
+  if (filters.projectSearch) {
+    clauses.push("project_path LIKE ? ESCAPE '\\'");
+    params.push(`%${escapeLike(filters.projectSearch)}%`);
+  }
+  if (filters.isSubagent !== undefined) {
+    clauses.push('is_subagent = ?');
+    params.push(filters.isSubagent ? 1 : 0);
+  }
   return { sql: clauses.length ? `WHERE ${clauses.join(' AND ')}` : '', params };
 }
+
+/** The SUM columns every grouped query shares. */
+const SUM_COLUMNS = `
+  SUM(cost_usd) AS cost_usd,
+  SUM(request_count) AS request_count,
+  SUM(input_tokens) AS input_tokens,
+  SUM(output_tokens) AS output_tokens,
+  SUM(cache_read_tokens) AS cache_read_tokens,
+  SUM(cache_write_5m_tokens + cache_write_1h_tokens) AS cache_write_tokens`;
 
 const PERIOD_EXPR: Record<'day' | 'week' | 'month', string> = {
   day: 'date',
@@ -219,21 +371,169 @@ export function createCostHistoryService(db: Database, fsDeps: CostFs = nodeCost
     }
   });
 
+  const PERIOD_COLUMNS = `${SUM_COLUMNS},
+    SUM(input_usd) AS input_usd,
+    SUM(output_usd) AS output_usd,
+    SUM(cache_read_usd) AS cache_read_usd,
+    SUM(cache_write_usd) AS cache_write_usd,
+    MAX(is_estimated) AS is_estimated`;
+
   function aggregate(filters: CostHistoryFilters, groupBy: 'day' | 'week' | 'month'): CostHistoryPeriod[] {
     const { sql, params } = whereClause(filters);
     return db.raw
       .prepare(`
-        SELECT ${PERIOD_EXPR[groupBy]} AS period,
-               SUM(cost_usd) AS cost_usd,
-               SUM(input_tokens) AS input_tokens,
-               SUM(output_tokens) AS output_tokens,
-               SUM(cache_read_tokens) AS cache_read_tokens,
-               SUM(cache_write_5m_tokens + cache_write_1h_tokens) AS cache_write_tokens,
-               MAX(is_estimated) AS is_estimated
+        SELECT ${PERIOD_EXPR[groupBy]} AS period, ${PERIOD_COLUMNS}
         FROM session_cost_daily ${sql}
         GROUP BY period ORDER BY period
       `)
       .all(...params) as CostHistoryPeriod[];
+  }
+
+  /** Period x model, for the stacked-area chart. Kept separate from
+   *  `aggregate` so the chart and the KPI tiles cannot disagree about the
+   *  total by rounding a re-summed breakdown differently. */
+  function aggregateByModel(
+    filters: CostHistoryFilters,
+    groupBy: 'day' | 'week' | 'month',
+  ): CostHistoryPeriodModel[] {
+    const { sql, params } = whereClause(filters);
+    return db.raw
+      .prepare(`
+        SELECT ${PERIOD_EXPR[groupBy]} AS period, model, ${PERIOD_COLUMNS}
+        FROM session_cost_daily ${sql}
+        GROUP BY period, model ORDER BY period, cost_usd DESC
+      `)
+      .all(...params) as CostHistoryPeriodModel[];
+  }
+
+  /** `GROUP BY` one or two columns with the shared SUM set, ordered by spend. */
+  function grouped<T>(filters: CostHistoryFilters, columns: string): T[] {
+    const { sql, params } = whereClause(filters);
+    return db.raw
+      .prepare(`
+        SELECT ${columns}, ${SUM_COLUMNS}
+        FROM session_cost_daily ${sql}
+        GROUP BY ${columns} ORDER BY cost_usd DESC
+      `)
+      .all(...params) as T[];
+  }
+
+  const byProject = (f: CostHistoryFilters) => grouped<CostByProject>(f, 'project_path');
+  const byModel = (f: CostHistoryFilters) => grouped<CostByModel>(f, 'model');
+  const byProjectModel = (f: CostHistoryFilters) =>
+    grouped<CostByProjectModel>(f, 'project_path, model');
+
+  function components(filters: CostHistoryFilters): CostComponents {
+    const { sql, params } = whereClause(filters);
+    // COALESCE because SUM over no rows is NULL, and a null cost_usd reaching
+    // the renderer renders as "$NaN" rather than "$0.00".
+    const r = db.raw
+      .prepare(`
+        SELECT COALESCE(SUM(cost_usd), 0) AS cost_usd,
+               COALESCE(SUM(input_usd), 0) AS input_usd,
+               COALESCE(SUM(output_usd), 0) AS output_usd,
+               COALESCE(SUM(cache_read_usd), 0) AS cache_read_usd,
+               COALESCE(SUM(cache_write_usd), 0) AS cache_write_usd
+        FROM session_cost_daily ${sql}
+      `)
+      .get(...params) as Omit<CostComponents, 'context_share'>;
+    const context = r.input_usd + r.cache_read_usd + r.cache_write_usd;
+    return { ...r, context_share: r.cost_usd > 0 ? context / r.cost_usd : 0 };
+  }
+
+  function cachingRoi(filters: CostHistoryFilters): CachingRoi {
+    const { sql, params } = whereClause(filters);
+    const r = db.raw
+      .prepare(`
+        SELECT COALESCE(SUM(cache_read_tokens), 0) AS cache_read_tokens,
+               COALESCE(SUM(cache_write_5m_tokens + cache_write_1h_tokens), 0) AS cache_write_tokens,
+               COALESCE(SUM(cache_write_1h_tokens), 0) AS cache_write_1h_tokens,
+               COALESCE(SUM(cache_read_usd), 0) AS cache_read_usd,
+               COALESCE(SUM(cache_write_usd), 0) AS cache_write_usd
+        FROM session_cost_daily ${sql}
+      `)
+      .get(...params) as Omit<CachingRoi, 'read_write_ratio' | 'below_break_even' | 'saved_usd' | 'premium_1h_usd'>;
+
+    const ratio = r.cache_write_tokens > 0 ? r.cache_read_tokens / r.cache_write_tokens : 0;
+
+    // Derived from the STORED cache_read_usd rather than tokens x a blended
+    // rate: rates differ per model and are effective-dated, so re-deriving
+    // here would drift from what was actually billed.
+    const fullRateUsd = r.cache_read_usd / CACHE_READ_DISCOUNT;
+    const savedUsd = fullRateUsd - r.cache_read_usd;
+
+    // The 1h premium needs a per-model input rate, which the aggregate has
+    // averaged away. Recover it from the 1h tokens' share of cache_write_usd:
+    // a 1h token costs 2.00x input and a 5m token 1.25x, so the extra paid is
+    // 0.75/2.00 of what those tokens cost.
+    const writeTokens = r.cache_write_tokens;
+    const share1h = writeTokens > 0 ? r.cache_write_1h_tokens * 2 / (r.cache_write_1h_tokens * 2 + (writeTokens - r.cache_write_1h_tokens) * 1.25) : 0;
+    const premium1hUsd = r.cache_write_usd * share1h * (0.75 / 2);
+
+    return {
+      ...r,
+      read_write_ratio: ratio,
+      below_break_even: r.cache_write_tokens > 0 && ratio <= CACHE_BREAK_EVEN_RATIO,
+      saved_usd: savedUsd,
+      premium_1h_usd: premium1hUsd,
+    };
+  }
+
+  function subagentSplit(filters: CostHistoryFilters): SubagentSplitRow[] {
+    const { sql, params } = whereClause(filters);
+    const rows = db.raw
+      .prepare(`
+        SELECT is_subagent,
+               SUM(cost_usd) AS cost_usd,
+               SUM(request_count) AS request_count
+        FROM session_cost_daily ${sql}
+        GROUP BY is_subagent ORDER BY is_subagent
+      `)
+      .all(...params) as Array<Omit<SubagentSplitRow, 'usd_per_request'>>;
+    return rows.map((r) => ({
+      ...r,
+      usd_per_request: r.request_count > 0 ? r.cost_usd / r.request_count : 0,
+    }));
+  }
+
+  /** Models priced by the sonnet-tier fallback rather than a table entry.
+   *  Surfaced, never silently defaulted — a new model billed at the wrong rate
+   *  with no warning is how `<synthetic>` went unnoticed for months. */
+  function unpriced(filters: CostHistoryFilters): UnpricedModel[] {
+    const { sql, params } = whereClause(filters);
+    const where = sql ? `${sql} AND is_estimated = 1` : 'WHERE is_estimated = 1';
+    return db.raw
+      .prepare(`
+        SELECT model, SUM(request_count) AS request_count, SUM(cost_usd) AS cost_usd
+        FROM session_cost_daily ${where}
+        GROUP BY model ORDER BY cost_usd DESC
+      `)
+      .all(...params) as UnpricedModel[];
+  }
+
+  function facets(filters: CostHistoryFilters): CostFacets {
+    // Only the date range narrows the facets. Narrowing by account/model/
+    // project would let a control erase its own alternatives — select "Work"
+    // and "Personal" vanishes from the list you'd need to get back.
+    const { sql, params } = whereClause({
+      startDate: filters.startDate,
+      endDate: filters.endDate,
+    });
+    const column = (name: string): string[] =>
+      (db.raw
+        .prepare(`SELECT DISTINCT ${name} AS v FROM session_cost_daily ${sql} ORDER BY v`)
+        .all(...params) as Array<{ v: string | null }>)
+        .map((r) => r.v)
+        .filter((v): v is string => v !== null && v !== '');
+    const range = db.raw
+      .prepare(`SELECT MIN(date) AS minDate, MAX(date) AS maxDate FROM session_cost_daily ${sql}`)
+      .get(...params) as { minDate: string | null; maxDate: string | null };
+    return {
+      accounts: column('account_name'),
+      models: column('model'),
+      projects: column('project_path'),
+      ...range,
+    };
   }
 
   function sessions(filters: CostHistoryFilters): CostSessionRow[] {
@@ -298,7 +598,16 @@ export function createCostHistoryService(db: Database, fsDeps: CostFs = nodeCost
   return {
     replaceSession: (sessionId, rows) => { replaceSession(sessionId, rows); },
     aggregate,
+    aggregateByModel,
     sessions,
+    byProject,
+    byModel,
+    byProjectModel,
+    components,
+    cachingRoi,
+    subagentSplit,
+    unpriced,
+    facets,
     backfill,
   };
 }
