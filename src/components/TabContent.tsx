@@ -30,6 +30,7 @@ const MCPManager = lazy(() => import('@/components/MCPManager').then(m => ({ def
 const Settings = lazy(() => import('@/components/Settings').then(m => ({ default: m.Settings })));
 const MarkdownEditor = lazy(() => import('@/components/MarkdownEditor').then(m => ({ default: m.MarkdownEditor })));
 const LimaViewer = lazy(() => import('@/components/LimaViewer').then(m => ({ default: m.LimaViewer })));
+const CostReportView = lazy(() => import('@/components/CostReportView').then(m => ({ default: m.CostReportView })));
 const BrainTab = lazy(() => import('@/components/brain/BrainTab').then(m => ({ default: m.BrainTab })));
 // const ClaudeFileEditor = lazy(() => import('@/components/ClaudeFileEditor').then(m => ({ default: m.ClaudeFileEditor })));
 
@@ -714,6 +715,13 @@ const TabPanelImpl: React.FC<TabPanelProps> = ({ tab, isActive }) => {
         return (
           <div className="h-full">
             <BrainTab />
+          </div>
+        );
+
+      case 'cost-report':
+        return (
+          <div className="h-full">
+            <CostReportView />
           </div>
         );
       

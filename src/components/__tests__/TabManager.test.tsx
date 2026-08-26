@@ -2,7 +2,7 @@
 import React from 'react';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, act } from '@testing-library/react';
-import { Folder, List, MessageSquare } from 'lucide-react';
+import { Folder, List, MessageSquare, DollarSign } from 'lucide-react';
 import { getTabIcon, TabManager } from '../TabManager';
 import type { Tab } from '@/contexts/TabContext';
 
@@ -140,6 +140,10 @@ describe('getTabIcon', () => {
   it('returns the type default when no per-tab icon override is set', () => {
     expect(getTabIcon({ type: 'projects' })).toBe(Folder);
     expect(getTabIcon({ type: 'chat' })).toBe(MessageSquare);
+  });
+
+  it('gives the cost-report tab its own icon', () => {
+    expect(getTabIcon({ type: 'cost-report' })).toBe(DollarSign);
   });
 
   it('honors a "list" icon override on a projects-type tab (sessions drill-down)', () => {
