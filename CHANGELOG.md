@@ -5,6 +5,16 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.138] — 2026-08-26
+
+The Updates button behaved backwards: hovering showed you the panel, clicking ran the check. So you'd click, the panel would follow your pointer away, and the answer would arrive somewhere you weren't looking. Clicking now just opens the panel, and checking is a button inside it.
+
+### Changed
+
+- **The Updates button opens its panel on click.** It used to appear on hover only, which meant the click did something invisible — and the thing it did, checking for updates, replaced the panel you were reading with nothing. The panel now opens on click and stays open, including while a check runs.
+- **"Check for update" is a button inside the panel.** The versions above it refresh in place, so the result of the check appears where you asked for it.
+- **The dot on the Updates button covers everything worth opening it for.** Previously it appeared only when your Claude Code had moved past the version OmniFex was last checked against. It now also appears when a new OmniFex release is available, or when a newer Claude Code has been published — with the rows inside the panel telling you which of the three it is.
+
 ## [0.4.137] — 2026-08-26
 
 Reviewed against Claude Code 2.1.246. OmniFex now tells you when a newer Claude Code has actually been published, rather than only when yours has moved past what we've checked. The usage breakdown gained the Loops table Claude Code added, and stopped mis-attributing its overflow count to your MCP servers.
