@@ -25,6 +25,28 @@ const EMPTY: BrainQueueCounts = { pending: 0, running: 0, done: 0, failed: 0 };
 const AUTO_INDEX_KEY = 'brain.autoIndex';
 const PAUSED_KEY = 'brain.queuePaused';
 const CURATE_KEY = 'brain.curate';
+const IDLE_MINUTES_KEY = 'brain.idleMinutes';
+const SWEEP_HOURS_KEY = 'brain.sweepHours';
+
+/**
+ * Mirrors the defaults and ranges in electron/services/brain/queue.ts.
+ *
+ * Duplicated rather than imported because the renderer cannot import from
+ * `electron/`. The backend clamps whatever arrives regardless, so a drift here
+ * costs a misleading input hint and never a bad stored value.
+ */
+const IDLE_MINUTES = { def: 15, min: 1, max: 1440 };
+const SWEEP_HOURS = { def: 24, min: 1, max: 720 };
+
+/** Parse a stored setting the way the backend's readNumericSetting does. */
+function readNumber(
+  raw: string | null,
+  range: { def: number; min: number; max: number },
+): number {
+  const parsed = Number.parseInt((raw ?? '').trim(), 10);
+  if (!Number.isFinite(parsed)) return range.def;
+  return Math.min(range.max, Math.max(range.min, parsed));
+}
 
 /**
  * Optimistic, then persisted: a toggle is the user's own action, and a control
@@ -43,6 +65,82 @@ function persistSwitch(
     onError(err.message);
   });
 }
+
+/**
+ * Persist a number, reverting the control if the write fails.
+ *
+ * Applies first like `persistSwitch` — the value is already clamped and the
+ * user typed it — but the revert restores the PREVIOUS value rather than the
+ * negation, which is the only difference a number makes.
+ */
+function persistNumber(
+  key: string,
+  next: number,
+  prev: number,
+  apply: (v: number) => void,
+  onError: (message: string) => void,
+): void {
+  apply(next);
+  api.saveSetting(key, String(next)).catch((err: Error) => {
+    apply(prev);
+    onError(err.message);
+  });
+}
+
+/**
+ * A labelled number box for one persistent setting.
+ *
+ * Deliberately NOT optimistic on every change like `persistSwitch`: a switch
+ * has one event per user decision, a text box has one per keystroke, and
+ * writing on each would persist every intermediate value typed on the way to
+ * the one they meant. Commits on blur or Enter instead, and restores the
+ * stored value on Escape, so the box never shows a number the backend does
+ * not hold.
+ */
+const SettingNumber: React.FC<{
+  label: string;
+  suffix: string;
+  title: string;
+  value: number;
+  min: number;
+  max: number;
+  onCommit: (next: number) => void;
+}> = ({ label, suffix, title, value, min, max, onCommit }) => {
+  const [draft, setDraft] = useState(String(value));
+
+  // The stored value is authoritative: when it changes underneath this — the
+  // initial read landing, or a failed write reverting — the box follows.
+  useEffect(() => { setDraft(String(value)); }, [value]);
+
+  const commit = useCallback(() => {
+    const parsed = Number.parseInt(draft.trim(), 10);
+    // The same clamp-or-fall-back rule readNumericSetting applies, so what the
+    // box accepts and what the backend stores can never disagree.
+    const next = Number.isFinite(parsed) ? Math.min(max, Math.max(min, parsed)) : value;
+    setDraft(String(next));
+    if (next !== value) onCommit(next);
+  }, [draft, min, max, value, onCommit]);
+
+  return (
+    <label className="inline-flex items-center gap-1.5" title={title}>
+      <span className="text-muted-foreground">{label}</span>
+      <input
+        type="number"
+        min={min}
+        max={max}
+        value={draft}
+        onChange={(e) => { setDraft(e.target.value); }}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') e.currentTarget.blur();
+          if (e.key === 'Escape') { setDraft(String(value)); e.currentTarget.blur(); }
+        }}
+        className="w-14 rounded border border-border bg-background px-1 py-0.5 text-xs"
+      />
+      <span className="text-muted-foreground">{suffix}</span>
+    </label>
+  );
+};
 
 /** A labelled switch for one persistent setting. */
 const SettingSwitch: React.FC<{
@@ -247,6 +345,8 @@ export const BrainQueueActions: React.FC<{
 export const BrainAutomationSettings: React.FC<{ accountId: number | null }> = ({ accountId }) => {
   const [autoIndex, setAutoIndex] = useState(false);
   const [curate, setCurate] = useState(false);
+  const [idleMinutes, setIdleMinutes] = useState(IDLE_MINUTES.def);
+  const [sweepHours, setSweepHours] = useState(SWEEP_HOURS.def);
   const [error, setError] = useState<string | null>(null);
   // Unlike the two above, this one IS per account — it writes into one
   // account's Claude config — so it re-reads whenever the account changes.
@@ -256,14 +356,22 @@ export const BrainAutomationSettings: React.FC<{ accountId: number | null }> = (
   // the account changes, which would imply a scoping they do not have.
   useEffect(() => {
     let cancelled = false;
-    void Promise.all([api.getSetting(AUTO_INDEX_KEY), api.getSetting(CURATE_KEY)])
-      .then(([auto, cur]) => {
+    void Promise.all([
+      api.getSetting(AUTO_INDEX_KEY),
+      api.getSetting(CURATE_KEY),
+      api.getSetting(IDLE_MINUTES_KEY),
+      api.getSetting(SWEEP_HOURS_KEY),
+    ])
+      .then(([auto, cur, idle, sweep]) => {
         if (cancelled) return;
         setAutoIndex(auto === 'true');
         setCurate(cur === 'true');
+        setIdleMinutes(readNumber(idle, IDLE_MINUTES));
+        setSweepHours(readNumber(sweep, SWEEP_HOURS));
       })
       .catch(() => {
-        // Leaves both off — never turns unattended spending on by accident.
+        // Leaves both switches off — never turns unattended spending on by
+        // accident — and both numbers at the shipped defaults.
       });
     return () => { cancelled = true; };
   }, []);
@@ -307,14 +415,44 @@ export const BrainAutomationSettings: React.FC<{ accountId: number | null }> = (
       <div className="flex flex-col gap-2">
         <SettingSwitch
           label="Auto-index"
-          title="Index each session when it closes. Off by default — it spends tokens unattended."
+          title="Index each session when it closes, and check every few minutes for sessions that have gone idle without being closed. Off by default — it spends tokens unattended."
           checked={autoIndex}
           onChange={(next) => { persistSwitch(AUTO_INDEX_KEY, next, setAutoIndex, setError); }}
         />
 
+        {/* Indented under the switch they modify, and hidden while it is off:
+            neither value means anything until auto-indexing is on, and a knob
+            for a disabled feature reads as a knob that does nothing. */}
+        {autoIndex && (
+          <div className="ml-4 flex flex-col gap-2 border-l border-border pl-3">
+            <SettingNumber
+              label="Index open sessions after"
+              suffix="min idle"
+              title="A session still open in OmniFex is indexed once its transcript has gone untouched this long — it no longer has to wait for the tab to close. If the conversation continues afterwards it is indexed again, so the note keeps up."
+              value={idleMinutes}
+              min={IDLE_MINUTES.min}
+              max={IDLE_MINUTES.max}
+              onCommit={(next) => {
+                persistNumber(IDLE_MINUTES_KEY, next, idleMinutes, setIdleMinutes, setError);
+              }}
+            />
+            <SettingNumber
+              label="Each check looks back"
+              suffix="h"
+              title="How far into the past the background check looks. Older sessions are ignored, so turning auto-index on does not queue your entire history at once. Backfill still sees everything."
+              value={sweepHours}
+              min={SWEEP_HOURS.min}
+              max={SWEEP_HOURS.max}
+              onCommit={(next) => {
+                persistNumber(SWEEP_HOURS_KEY, next, sweepHours, setSweepHours, setError);
+              }}
+            />
+          </div>
+        )}
+
         <SettingSwitch
           label="Auto-curate"
-          title="Compress long notes when a session closes, so retrieving them costs less context. Off by default — it spends tokens unattended and rewrites existing notes. Every run commits as 'Curation', so git revert in the vault undoes it."
+          title="Compress long notes so retrieving them costs less context. Runs when a session closes and on the same background check as auto-indexing. Off by default — it spends tokens unattended and rewrites existing notes. Every run commits as 'Curation', so git revert in the vault undoes it."
           checked={curate}
           onChange={(next) => { persistSwitch(CURATE_KEY, next, setCurate, setError); }}
         />

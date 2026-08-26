@@ -16,6 +16,7 @@ import { canonicalPath, fsIdentity, isSameOrInside, resolveVaultRoot } from './p
 import { createSourceStateStore, type SourceStatus } from './sources/state';
 import {
   CURATION_SOURCE_ID,
+  DEFAULT_IDLE_MINUTES,
   createBrainQueueStore,
   createBrainQueueWorker,
   isRateLimitError,
@@ -301,6 +302,18 @@ export interface SourcePreview {
   reason: string;
 }
 
+/** Options for `backfill`, which serves both the button and the timed sweep. */
+export interface BackfillOptions {
+  /**
+   * Ignore items whose transcript is older than this epoch-ms floor.
+   *
+   * Omitted by the Backfill button, which means everything. Supplied by the
+   * periodic sweep, which must not turn the auto-index opt-in into an
+   * unattended full backfill on its first tick.
+   */
+  sinceMs?: number;
+}
+
 export interface BrainService {
   vaultPath(accountId: number): string | null;
   setVaultPath(accountId: number, path: string): void;
@@ -427,7 +440,7 @@ export interface BrainService {
    * Queue every admitted item this account owns that is not already indexed
    * and unchanged. Returns how many were queued.
    */
-  backfill(accountId: number): Promise<number>;
+  backfill(accountId: number, opts?: BackfillOptions): Promise<number>;
   /**
    * Vault size, context cost and Timeline distribution. Zeroes when
    * unconfigured — a stats panel must render rather than throw.
@@ -649,6 +662,17 @@ export interface BrainServiceOptions {
    */
   liveSessionIds?: () => Iterable<string>;
   /**
+   * How long a transcript must be untouched before its still-open session
+   * stops counting as live, in milliseconds.
+   *
+   * A getter rather than a value, matching `isQueuePaused`: it reads a user
+   * setting, and a captured number would need a restart to take effect while
+   * every other Brain switch does not.
+   */
+  idleMs?: () => number;
+  /** Injectable clock, so the idle threshold is testable without waiting. */
+  now?: () => number;
+  /**
    * Called on every change to the run in flight, and once with `null` when it
    * ends. `main.ts` forwards this to the renderer; tests record the sequence.
    *
@@ -674,6 +698,11 @@ export function createBrainService(
   // sources answers "nothing discovered", which is the correct answer for a
   // caller that never wired any up.
   const sources = opts.sources ?? [];
+  const clock = opts.now ?? Date.now;
+  // Defaults to the shipped threshold rather than to zero: a construction that
+  // wires no setting reader should behave like the product, not like a service
+  // with the idle gate switched off.
+  const idleMs = opts.idleMs ?? (() => DEFAULT_IDLE_MINUTES * 60_000);
   const sourceState = createSourceStateStore(db);
   const queueStore = createBrainQueueStore(db);
   const spendStore = createBrainSpendStore(db);
@@ -823,9 +852,26 @@ export function createBrainService(
     }
   }
 
-  /** True when this item is a session transcript that is still being written. */
-  function isLiveItem(item: SourceItem, live: Set<string> = liveSessions()): boolean {
-    return item.sourceId === SESSION_SOURCE_ID && live.has(item.itemKey);
+  /**
+   * True when this item is a session transcript that is still being written.
+   *
+   * Open is necessary but not sufficient. A tab can sit open for days after
+   * its conversation ended, and gating on open alone kept those transcripts
+   * out of the vault forever — the tab close was the only thing that ever
+   * discovered them. What actually disqualifies an item is recent WRITES, so
+   * that is what this asks: open, and touched within the idle threshold.
+   *
+   * `<` rather than `<=`, so a transcript exactly at the threshold is idle.
+   * `mtimeMs` comes from discovery's `stat`, which costs nothing extra.
+   */
+  function isLiveItem(
+    item: SourceItem,
+    live: Set<string> = liveSessions(),
+    at: number = clock(),
+  ): boolean {
+    if (item.sourceId !== SESSION_SOURCE_ID) return false;
+    if (!live.has(item.itemKey)) return false;
+    return at - item.mtimeMs < idleMs();
   }
 
   /**
@@ -1352,18 +1398,18 @@ export function createBrainService(
         };
       }
 
-      // The session is open in another tab, so its transcript is still being
-      // written. Checked BEFORE the change check and ignoring `force`: the
-      // objection is not "this looks unchanged", it is "this is not finished",
-      // and forcing a redo of a partial conversation only buys a different
-      // partial note. Sits above every model call for the same reason the
-      // exclusion backstop does.
+      // The session is open in another tab AND was written to recently, so its
+      // transcript is mid-conversation. Checked BEFORE the change check and
+      // ignoring `force`: the objection is not "this looks unchanged", it is
+      // "this is not finished", and forcing a redo of a partial conversation
+      // only buys a different partial note. Sits above every model call for
+      // the same reason the exclusion backstop does.
       if (isLiveItem(item)) {
         return {
           itemKey,
           notesWritten: [],
           skipped: true,
-          reason: 'session is still open in OmniFex — close the tab to index it',
+          reason: 'session is active in OmniFex — it will index once it goes idle',
         };
       }
 
@@ -1754,7 +1800,7 @@ export function createBrainService(
       // Same rule as the exclusion above: an explicit user action that cannot
       // succeed is refused out loud, not queued to fail quietly later.
       if (isLiveItem(found.item)) {
-        throw new Error('session is still open in OmniFex — close the tab to index it');
+        throw new Error('session is active in OmniFex — it will index once it goes idle');
       }
       queueStore.enqueue(accountId, found.item.sourceId, found.item.itemKey);
     },
@@ -1790,21 +1836,35 @@ export function createBrainService(
       return queued;
     },
 
-    async backfill(accountId: number): Promise<number> {
+    async backfill(accountId: number, opts: BackfillOptions = {}): Promise<number> {
       requireAccountId(accountId);
+      const live = liveSessions();
+      const at = clock();
       let queued = 0;
       for (const source of sources) {
         for (const item of await source.discover()) {
           if (item.accountId !== accountId) continue;
           if (isExcludedItem(accountId, item)) continue;
-          // Gate first, so the queue never holds work that would be skipped
-          // the moment it was claimed.
-          if (!source.admit(item).admitted) continue;
+          // The sweep's horizon. Absent for the Backfill button, which is the
+          // deliberate "everything" action and must stay one.
+          if (opts.sinceMs !== undefined && item.mtimeMs < opts.sinceMs) continue;
+          // Mid-conversation: `indexSource` would refuse it at claim time
+          // anyway, and on a five-minute timer that refusal is pure churn.
+          // Costs nothing if it goes idle before the next tick picks it up.
+          if (isLiveItem(item, live, at)) continue;
           // Already done and unmoved: `indexSource` would short-circuit
           // anyway, but keeping it out of the queue is what makes re-running
           // backfill after a partial run cost only what is left.
           const prior = sourceState.get(accountId, item.sourceId, item.itemKey);
           if (prior?.status === 'indexed' && !sourceState.hasChanged(item)) continue;
+          // Gate LAST, so the queue never holds work that would be skipped the
+          // moment it was claimed — but only after every cheap predicate has
+          // had its say. `admit()` reads and parses the whole transcript, and
+          // the periodic sweep calls this across every account: running it
+          // ahead of the mtime and change checks would re-read the user's
+          // entire history every five minutes. Reordering is safe because
+          // `admit()` is side-effect-free.
+          if (!source.admit(item).admitted) continue;
           queueStore.enqueue(accountId, item.sourceId, item.itemKey);
           queued += 1;
         }

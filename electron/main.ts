@@ -57,7 +57,16 @@ import { createCurator } from './services/brain/curation';
 import {
   BRAIN_AUTO_INDEX_SETTING_KEY,
   BRAIN_CURATE_SETTING_KEY,
+  BRAIN_IDLE_MINUTES_SETTING_KEY,
   BRAIN_QUEUE_PAUSED_SETTING_KEY,
+  BRAIN_SWEEP_HOURS_SETTING_KEY,
+  DEFAULT_IDLE_MINUTES,
+  DEFAULT_SWEEP_HOURS,
+  MAX_IDLE_MINUTES,
+  MAX_SWEEP_HOURS,
+  MIN_IDLE_MINUTES,
+  MIN_SWEEP_HOURS,
+  readNumericSetting,
 } from './services/brain/queue';
 import { createAccountsService } from './services/accounts';
 import { runFirstTimeDiscovery } from './services/first-run-discovery';
@@ -483,6 +492,11 @@ app.whenReady().then(() => {
     // backfill — rather than discovering it already ran.
     [BRAIN_AUTO_INDEX_SETTING_KEY]: 'false',
     [BRAIN_QUEUE_PAUSED_SETTING_KEY]: 'false',
+    // Both are knobs on auto-indexing, not switches for it: they do nothing
+    // until the opt-in above is on, so seeding them costs nothing and means
+    // the Settings inputs render a real value rather than an empty box.
+    [BRAIN_IDLE_MINUTES_SETTING_KEY]: String(DEFAULT_IDLE_MINUTES),
+    [BRAIN_SWEEP_HOURS_SETTING_KEY]: String(DEFAULT_SWEEP_HOURS),
   });
   const accountsService = createAccountsService(db);
 
@@ -532,6 +546,16 @@ app.whenReady().then(() => {
     // Read through a getter rather than captured: `sessionsService` is
     // constructed below this line.
     liveSessionIds: () => _sessionsService?.listActiveSessionIds() ?? [],
+    // How long one of those transcripts must sit untouched before it stops
+    // counting as live. Read fresh, like every other Brain setting, so a
+    // change in the Settings pane applies without a restart.
+    idleMs: () =>
+      readNumericSetting(
+        db.getSetting(BRAIN_IDLE_MINUTES_SETTING_KEY),
+        DEFAULT_IDLE_MINUTES,
+        MIN_IDLE_MINUTES,
+        MAX_IDLE_MINUTES,
+      ) * 60_000,
     isQueuePaused: () => db.getSetting(BRAIN_QUEUE_PAUSED_SETTING_KEY) === 'true',
     // Broadcast, not routed to an owner window: the run outlives the pane that
     // started it — the Brain tab unmounts the Sources pane on a sub-tab switch
@@ -925,15 +949,60 @@ app.whenReady().then(() => {
     }
   }, 60 * 60 * 1000);
 
-  // Periodic drain (Plan 8). Session close is the only other trigger, and it
-  // is not enough on its own: a drain that stops — paused, rate limited, or
-  // because a selection run held the worker — used to have nothing to restart
+  // Periodic discovery, then drain.
+  //
+  // The drain half is Plan 8's: session close is the only other trigger, and
+  // it is not enough on its own — a drain that stops (paused, rate limited, or
+  // because a selection run held the worker) used to have nothing to restart
   // it until the next session happened to close, which is how 165 items came
-  // to be pending. An empty queue costs one indexed SELECT, so an idle app
-  // pays nothing for this.
+  // to be pending.
+  //
+  // The discovery half is why a tab no longer has to close for its
+  // conversation to reach the vault. Session close used to be the ONLY thing
+  // that enqueued anything; a tab left open for a week held a conversation
+  // that ended on Tuesday out of the vault indefinitely. Both halves are
+  // bounded so an idle app pays nothing: an empty queue costs one indexed
+  // SELECT, and `backfill`'s cheap predicates run ahead of `admit()` so a
+  // sweep that finds nothing new reads no transcripts at all.
   setInterval(() => {
-    void brainRef?.drainQueue().catch((err: unknown) => {
-      console.warn('[brain] periodic drain failed:', err);
+    void (async () => {
+      // Read fresh on every tick, matching the close-time gate: a flip in the
+      // Settings pane applies without a restart.
+      const autoIndexOn = db.getSetting(BRAIN_AUTO_INDEX_SETTING_KEY) === 'true';
+      const curateOn = db.getSetting(BRAIN_CURATE_SETTING_KEY) === 'true';
+
+      if (autoIndexOn || curateOn) {
+        const sinceMs =
+          Date.now() -
+          readNumericSetting(
+            db.getSetting(BRAIN_SWEEP_HOURS_SETTING_KEY),
+            DEFAULT_SWEEP_HOURS,
+            MIN_SWEEP_HOURS,
+            MAX_SWEEP_HOURS,
+          ) * 60 * 60 * 1000;
+
+        for (const account of accountsService.listAccounts()) {
+          // An account with no vault has nowhere to put a note, and
+          // `backfill` would only queue work that failed at claim time.
+          if (!brainRef?.vaultPath(account.id)) continue;
+          try {
+            if (autoIndexOn) await brainRef.backfill(account.id, { sinceMs });
+            // Curation has the same gap indexing had: it was close-triggered
+            // only, so a user who never closes tabs would accumulate notes
+            // that nothing ever compressed — and unlimited re-indexing is
+            // exactly what makes notes accumulate. `enqueueCuration` selects
+            // from the vault as it stands now and caps itself per run.
+            if (curateOn) brainRef.enqueueCuration(account.id);
+          } catch (err) {
+            // One account's failure must not cost the others their sweep.
+            console.warn('[brain] sweep failed for account', account.id, err);
+          }
+        }
+      }
+
+      await brainRef?.drainQueue();
+    })().catch((err: unknown) => {
+      console.warn('[brain] periodic sweep failed:', err);
     });
   }, 5 * 60 * 1000);
   const proxyService = createProxyService(db);

@@ -9,6 +9,12 @@
 // The guard lives in `indexSource`, not only at the enqueue boundary, because
 // the Sources pane's "Index Selected" calls `indexSource` DIRECTLY — a queue-
 // only guard would leave the pane's own button as the one unprotected path.
+//
+// "Live" now means open AND recently written: a tab left open long after its
+// conversation ended no longer holds the transcript out of the vault. These
+// tests therefore stamp a FRESH mtime, which is what makes a session here
+// actively-written rather than merely open. The idle half of the contract —
+// what happens once the writes stop — lives in brain-idle-sweep.test.ts.
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -36,7 +42,10 @@ describe('brain: live sessions', () => {
       id: 'session',
       discover: () => Promise.resolve(keys.map((k) => ({
         sourceId: 'session', itemKey: k, accountId: 1,
-        path: join(dir, `${k}.jsonl`), mtimeMs: 1, size: 10, label: '/proj',
+        path: join(dir, `${k}.jsonl`),
+        // Written just now: these cases are about a session mid-conversation,
+        // and a stale mtime would make every one of them idle instead.
+        mtimeMs: Date.now(), size: 10, label: '/proj',
       }))),
       admit: () => ({ admitted: true, reason: 'ok' }),
       distill: () => Promise.resolve({
@@ -117,7 +126,7 @@ describe('brain: live sessions', () => {
 
     const result = await brain.indexSource(1, LIVE);
     expect(result.skipped).toBe(true);
-    expect(result.reason).toMatch(/open in OmniFex/i);
+    expect(result.reason).toMatch(/active in OmniFex/i);
     expect(result.notesWritten).toEqual([]);
     expect(extractorCalls).toBe(0);
   });
@@ -148,7 +157,7 @@ describe('brain: live sessions', () => {
     live = [];
     // Reaches the extractor now — no note is written for zero entities, but it
     // is no longer refused before it starts.
-    expect((await brain.indexSource(1, LIVE)).reason).not.toMatch(/open in OmniFex/i);
+    expect((await brain.indexSource(1, LIVE)).reason).not.toMatch(/active in OmniFex/i);
   });
 
   it('refuses to queue an open session rather than queueing a no-op', async () => {
@@ -157,7 +166,7 @@ describe('brain: live sessions', () => {
       sources: [sessionSource([LIVE])],
       liveSessionIds: () => [LIVE],
     });
-    await expect(brain.enqueueSource(1, LIVE)).rejects.toThrow(/open in OmniFex/i);
+    await expect(brain.enqueueSource(1, LIVE)).rejects.toThrow(/active in OmniFex/i);
   });
 
   it('survives a live-session lookup that throws', async () => {

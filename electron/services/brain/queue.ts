@@ -387,3 +387,55 @@ export const CURATION_SOURCE_ID = 'curation';
  * only adding to them. The user opts in once, after seeing real output.
  */
 export const BRAIN_CURATE_SETTING_KEY = 'brain.curate';
+
+/**
+ * How long an OPEN session's transcript must sit untouched before the indexer
+ * stops treating it as still being written.
+ *
+ * "Live" used to mean `open`, which meant a tab left open for a week held its
+ * conversation out of the vault indefinitely. It now means `still being
+ * written`, and this is the line between the two. Fifteen minutes is short
+ * enough that a finished conversation lands the same afternoon and long enough
+ * that a pause to read a diff does not trip it.
+ *
+ * The user adjusts it in Brain → Settings. It is deliberately NOT a cap on
+ * re-indexing: a session that resumes after being indexed is indexed again, so
+ * the note tracks the conversation rather than a snapshot of it.
+ */
+export const BRAIN_IDLE_MINUTES_SETTING_KEY = 'brain.idleMinutes';
+export const DEFAULT_IDLE_MINUTES = 15;
+export const MIN_IDLE_MINUTES = 1;
+export const MAX_IDLE_MINUTES = 1440;
+
+/**
+ * How far back the PERIODIC sweep looks. The Backfill button ignores it.
+ *
+ * Its whole job is the first tick after the auto-index opt-in: without a
+ * floor, that tick would discover every transcript the user has ever written
+ * and enqueue the lot unattended — the precise failure the off-by-default
+ * posture exists to prevent. Backfill stays the deliberate "everything" action.
+ */
+export const BRAIN_SWEEP_HOURS_SETTING_KEY = 'brain.sweepHours';
+export const DEFAULT_SWEEP_HOURS = 24;
+export const MIN_SWEEP_HOURS = 1;
+export const MAX_SWEEP_HOURS = 720;
+
+/**
+ * Read one numeric setting out of `app_settings`, which stores strings.
+ *
+ * Clamps rather than rejects, and falls back rather than throwing: these
+ * values are milliseconds by the time anything uses them, and a `NaN`
+ * threshold would compare false against every transcript and silently disable
+ * the feature. A hand-edited row should misbehave visibly at the edge of its
+ * range, never turn into a no-op nobody can see.
+ */
+export function readNumericSetting(
+  raw: string | null | undefined,
+  def: number,
+  min: number,
+  max: number,
+): number {
+  const parsed = Number.parseInt((raw ?? '').trim(), 10);
+  if (!Number.isFinite(parsed)) return def;
+  return Math.min(max, Math.max(min, parsed));
+}
