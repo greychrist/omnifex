@@ -195,10 +195,12 @@ export function createCostHistoryService(db: Database, fsDeps: CostFs = nodeCost
   const insertStmt = db.raw.prepare(`
     INSERT INTO session_cost_daily (
       session_id, date, model, account_name, config_dir, project_path,
+      is_subagent, request_count,
       input_tokens, output_tokens, cache_read_tokens,
       cache_write_5m_tokens, cache_write_1h_tokens,
+      input_usd, output_usd, cache_read_usd, cache_write_usd,
       cost_usd, is_estimated, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const deleteStmt = db.raw.prepare('DELETE FROM session_cost_daily WHERE session_id = ?');
 
@@ -208,8 +210,10 @@ export function createCostHistoryService(db: Database, fsDeps: CostFs = nodeCost
     for (const r of rows) {
       insertStmt.run(
         r.session_id, r.date, r.model, r.account_name, r.config_dir, r.project_path,
+        r.is_subagent, r.request_count,
         r.input_tokens, r.output_tokens, r.cache_read_tokens,
         r.cache_write_5m_tokens, r.cache_write_1h_tokens,
+        r.input_usd, r.output_usd, r.cache_read_usd, r.cache_write_usd,
         r.cost_usd, r.is_estimated, now,
       );
     }

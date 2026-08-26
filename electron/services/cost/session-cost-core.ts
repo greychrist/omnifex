@@ -36,11 +36,23 @@ export interface SessionCostDailyRow {
   account_name: string;
   config_dir: string;
   project_path: string | null;
+  /** 0 = main loop, 1 = subagent. Part of the primary key, so a day+model can
+   *  hold one row of each and every metric splits along the same axis. */
+  is_subagent: number;
+  /** Billed API requests folded into this row — one per deduped usage record. */
+  request_count: number;
   input_tokens: number;
   output_tokens: number;
   cache_read_tokens: number;
   cache_write_5m_tokens: number;
   cache_write_1h_tokens: number;
+  /** Component costs as billed, stored rather than derived. Recomputing these
+   *  from tokens x current rates would stop them summing to `cost_usd` the
+   *  moment a rate changed, and they would disagree silently. */
+  input_usd: number;
+  output_usd: number;
+  cache_read_usd: number;
+  cache_write_usd: number;
   cost_usd: number;
   is_estimated: number;
 }
@@ -115,7 +127,7 @@ export function computeSessionCost(args: ComputeSessionCostArgs): {
       // no timestamp still count toward the live snapshot but cannot be
       // bucketed into history.
       if (date.length === 10) {
-        const key = `${date}|${row.model}`;
+        const key = `${date}|${row.model}|${isSubagent ? 1 : 0}`;
         let d = daily.get(key);
         if (!d) {
           d = {
@@ -125,11 +137,17 @@ export function computeSessionCost(args: ComputeSessionCostArgs): {
             account_name: args.accountName,
             config_dir: args.configDir,
             project_path: args.projectPath,
+            is_subagent: isSubagent ? 1 : 0,
+            request_count: 0,
             input_tokens: 0,
             output_tokens: 0,
             cache_read_tokens: 0,
             cache_write_5m_tokens: 0,
             cache_write_1h_tokens: 0,
+            input_usd: 0,
+            output_usd: 0,
+            cache_read_usd: 0,
+            cache_write_usd: 0,
             cost_usd: 0,
             is_estimated: 0,
           };
@@ -140,6 +158,11 @@ export function computeSessionCost(args: ComputeSessionCostArgs): {
         d.cache_read_tokens += cacheRead;
         d.cache_write_5m_tokens += t5m;
         d.cache_write_1h_tokens += t1h;
+        d.request_count += 1;
+        d.input_usd += cost.inputUsd;
+        d.output_usd += cost.outputUsd;
+        d.cache_read_usd += cost.cacheReadUsd;
+        d.cache_write_usd += cost.cacheWriteUsd;
         d.cost_usd += cost.usd;
         if (cost.estimated) d.is_estimated = 1;
       }
