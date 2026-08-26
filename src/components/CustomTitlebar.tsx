@@ -18,6 +18,22 @@ import { fireAndLog } from "@/lib/fireAndLog";
 // happened; holding for ~700ms gives clear feedback.
 const MIN_CHECK_SPIN_MS = 700;
 
+/**
+ * How long an answer stays good enough to reuse when the popover is opened.
+ *
+ * Opening the panel means "tell me about updates", so it checks on open. It
+ * does NOT check on every open: `api.checkForUpdate` is an unauthenticated
+ * api.github.com request, deliberately cache-busted so GitHub's edge cache
+ * can't serve a stale release, and GitHub allows 60 of those per hour per IP.
+ * An unguarded auto-check turns a few minutes of opening and closing the
+ * popover into an hour of failing update checks that look like a bug.
+ *
+ * A minute is long enough to absorb that churn and short enough that the
+ * reused answer is never interestingly old. The `Check for update` button
+ * ignores this entirely — an explicit press always does real work.
+ */
+export const AUTO_CHECK_MAX_AGE_MS = 60_000;
+
 /** What the drift warning hands its host when clicked. */
 export interface CliReviewLaunchRequest {
   /** OmniFex checkout to run the review in (`CliReviewStatus.repo_dir`). */
@@ -126,11 +142,30 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
     setCliReview(await api.getClaudeCliReviewStatus());
   }, []);
 
+  // When the last check STARTED. Stamped on start rather than completion so
+  // two opens in quick succession can't both slip past the freshness guard
+  // while the first check is still in the air.
+  const lastCheckStartedAt = React.useRef(0);
+
   // One-click refresh for the upgrade-check button. Checks both the app
   // release and the CLI watermark — one button, one answer.
   const checkEverything = useCallback(() => {
+    lastCheckStartedAt.current = Date.now();
     withMinSpin(Promise.all([checkForUpdate(), checkCliReview()]));
   }, [checkForUpdate, checkCliReview, withMinSpin]);
+
+  // Check when the popover opens, so the panel is answering the question you
+  // just asked rather than replaying whatever it learned at launch. Two
+  // guards, both load-bearing: skip while a check is already running (opening
+  // during the on-mount check would otherwise double every probe), and skip
+  // while the shown answer is still fresh (see AUTO_CHECK_MAX_AGE_MS — the
+  // GitHub rate limit is real and unauthenticated).
+  useEffect(() => {
+    if (!updatesOpen) return;
+    if (checkingHold || updateState.status === 'checking') return;
+    if (Date.now() - lastCheckStartedAt.current < AUTO_CHECK_MAX_AGE_MS) return;
+    checkEverything();
+  }, [updatesOpen, checkingHold, updateState.status, checkEverything]);
 
   // Auto-dismiss the green "up-to-date" badge after a beat.
   useEffect(() => {
@@ -146,7 +181,11 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
   // Fetch app version + check for updates on mount.
   useEffect(() => {
     api.getAppVersion().then(setAppVersion).catch(() => {});
-    withMinSpin(Promise.all([checkForUpdate(), checkCliReview()]));
+    // Through checkEverything, not the two checks directly: it is what stamps
+    // `lastCheckStartedAt`, and the open-popover auto-check reads that stamp.
+    // Composing the pair inline here left the launch check unstamped, so the
+    // first open always re-probed a result that was seconds old.
+    checkEverything();
 
     // Listen for download progress
     const cleanupProgress = api.onUpdateProgress((data: { percent: number }) => {
@@ -187,7 +226,7 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
       cleanupProgress();
       cleanupInstallStatus();
     };
-  }, [checkForUpdate, withMinSpin]);
+  }, [checkEverything]);
 
   // One-click install. We keep download + install internal so the user only
   // ever sees one button press. `force` is wired to the live in-flight session

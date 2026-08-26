@@ -48,7 +48,7 @@ vi.mock('@/lib/api', () => ({
   },
 }));
 
-import { CustomTitlebar } from '@/components/CustomTitlebar';
+import { CustomTitlebar, AUTO_CHECK_MAX_AGE_MS } from '@/components/CustomTitlebar';
 
 beforeEach(() => {
   vi.useFakeTimers({ shouldAdvanceTime: true });
@@ -315,21 +315,70 @@ describe('CustomTitlebar — Updates disclosure', () => {
   const checkButton = () =>
     document.querySelector<HTMLButtonElement>('[data-updates-check]');
 
-  it('opens the popover on click without firing a check', async () => {
+  /**
+   * Opening the panel means "tell me about updates", so it checks on open —
+   * but only when what we are showing has gone stale. The app-update probe is
+   * an UNAUTHENTICATED api.github.com call, deliberately cache-busted, and
+   * GitHub allows 60 of those per hour per IP. Firing one on every open would
+   * let a few minutes of opening and closing exhaust the budget, after which
+   * the check fails for an hour and looks like a bug.
+   */
+  it('checks on open once the shown data has gone stale', async () => {
     getClaudeCliReviewStatus.mockResolvedValue(clean);
     render(<CustomTitlebar />);
     await vi.advanceTimersByTimeAsync(1000);
 
-    // The on-mount check has already run once; the click must not add to it.
+    const beforeApp = checkForUpdate.mock.calls.length;
+    const beforeCli = getClaudeCliReviewStatus.mock.calls.length;
+
+    await vi.advanceTimersByTimeAsync(AUTO_CHECK_MAX_AGE_MS);
+    openUpdates();
+    await vi.advanceTimersByTimeAsync(1000);
+
+    expect(checkForUpdate.mock.calls.length).toBe(beforeApp + 1);
+    expect(getClaudeCliReviewStatus.mock.calls.length).toBe(beforeCli + 1);
+  });
+
+  it('reuses the on-mount answer when the popover is opened right away', async () => {
+    getClaudeCliReviewStatus.mockResolvedValue(clean);
+    render(<CustomTitlebar />);
+    await vi.advanceTimersByTimeAsync(1000);
+
     const beforeApp = checkForUpdate.mock.calls.length;
     const beforeCli = getClaudeCliReviewStatus.mock.calls.length;
 
     openUpdates();
-    await vi.advanceTimersByTimeAsync(300);
+    await vi.advanceTimersByTimeAsync(1000);
 
     await waitFor(() => { expect(seen('Claude Code')).toBeGreaterThan(0); });
     expect(checkForUpdate.mock.calls.length).toBe(beforeApp);
     expect(getClaudeCliReviewStatus.mock.calls.length).toBe(beforeCli);
+  });
+
+  it('does not stack a second check onto one already in flight', async () => {
+    // Open while the on-mount check is still running: the auto-check must see
+    // it and stand down rather than doubling every probe.
+    getClaudeCliReviewStatus.mockResolvedValue(clean);
+    render(<CustomTitlebar />);
+    openUpdates();
+    await vi.advanceTimersByTimeAsync(2000);
+
+    expect(checkForUpdate.mock.calls.length).toBe(1);
+  });
+
+  it('still forces a check from the button inside the freshness window', async () => {
+    // The auto-check is best-effort; the explicit button is not. A user who
+    // presses it wants a real answer, not the cached one from a moment ago.
+    getClaudeCliReviewStatus.mockResolvedValue(clean);
+    await renderSettled();
+
+    await waitFor(() => { expect(checkButton()).not.toBeNull(); });
+    const beforeApp = checkForUpdate.mock.calls.length;
+
+    fireEvent.click(checkButton()!);
+    await vi.advanceTimersByTimeAsync(1000);
+
+    expect(checkForUpdate.mock.calls.length).toBe(beforeApp + 1);
   });
 
   it('checks both the app and the CLI from the button inside the popover', async () => {
