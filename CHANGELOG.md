@@ -5,6 +5,19 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.137] — 2026-08-26
+
+Reviewed against Claude Code 2.1.246. OmniFex now tells you when a newer Claude Code has actually been published, rather than only when yours has moved past what we've checked. The usage breakdown gained the Loops table Claude Code added, and stopped mis-attributing its overflow count to your MCP servers.
+
+### Added
+
+- **The Updates popover now checks for a newer Claude Code.** Previously it could only tell you that the CLI on your machine had moved past the version OmniFex had been checked against — which looks like a steady state even while several releases ship. It now also reports the newest release published to npm, so "you're behind" and "we haven't reviewed your version yet" are two separate, visible facts. If the check can't reach the registry it simply shows your installed version, as before.
+- **Scheduled `/loop` tasks now appear in the usage breakdown.** Claude Code 2.1.243 reports them under `/usage` — how often each loop runs, how many times it has run, and what it has cost in tokens. OmniFex shows the same table, which makes a chatty or runaway loop easy to spot.
+
+### Fixed
+
+- **The "… N more" line under MCP servers could be counting something else.** Claude Code added its Loops table directly beneath the MCP servers table, and OmniFex read the two as one — so the overflow count belonging to your loops was displayed as though servers had been hidden from the list.
+
 ## [0.4.136] — 2026-08-24
 
 Reviewed against Claude Code 2.1.241. Usage and rate-limit figures could stop updating entirely once the CLI started offering its new renderer at startup; that is fixed, along with a reset time that was being discarded exactly when it mattered. Trimming the log now actually gives the disk space back — the database here had grown to 2.15 GB while holding 36 MB of real data.
