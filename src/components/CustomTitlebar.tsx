@@ -18,22 +18,6 @@ import { fireAndLog } from "@/lib/fireAndLog";
 // happened; holding for ~700ms gives clear feedback.
 const MIN_CHECK_SPIN_MS = 700;
 
-/**
- * How long an answer stays good enough to reuse when the popover is opened.
- *
- * Opening the panel means "tell me about updates", so it checks on open. It
- * does NOT check on every open: `api.checkForUpdate` is an unauthenticated
- * api.github.com request, deliberately cache-busted so GitHub's edge cache
- * can't serve a stale release, and GitHub allows 60 of those per hour per IP.
- * An unguarded auto-check turns a few minutes of opening and closing the
- * popover into an hour of failing update checks that look like a bug.
- *
- * A minute is long enough to absorb that churn and short enough that the
- * reused answer is never interestingly old. The `Check for update` button
- * ignores this entirely — an explicit press always does real work.
- */
-export const AUTO_CHECK_MAX_AGE_MS = 60_000;
-
 /** What the drift warning hands its host when clicked. */
 export interface CliReviewLaunchRequest {
   /** OmniFex checkout to run the review in (`CliReviewStatus.repo_dir`). */
@@ -142,30 +126,34 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
     setCliReview(await api.getClaudeCliReviewStatus());
   }, []);
 
-  // When the last check STARTED. Stamped on start rather than completion so
-  // two opens in quick succession can't both slip past the freshness guard
-  // while the first check is still in the air.
-  const lastCheckStartedAt = React.useRef(0);
-
   // One-click refresh for the upgrade-check button. Checks both the app
   // release and the CLI watermark — one button, one answer.
   const checkEverything = useCallback(() => {
-    lastCheckStartedAt.current = Date.now();
     withMinSpin(Promise.all([checkForUpdate(), checkCliReview()]));
   }, [checkForUpdate, checkCliReview, withMinSpin]);
 
-  // Check when the popover opens, so the panel is answering the question you
-  // just asked rather than replaying whatever it learned at launch. Two
-  // guards, both load-bearing: skip while a check is already running (opening
-  // during the on-mount check would otherwise double every probe), and skip
-  // while the shown answer is still fresh (see AUTO_CHECK_MAX_AGE_MS — the
-  // GitHub rate limit is real and unauthenticated).
-  useEffect(() => {
-    if (!updatesOpen) return;
+  /**
+   * Opening the panel IS the request, so it checks on the way open.
+   *
+   * Driven by the open EVENT, not by an effect watching the open FLAG. A check
+   * moves updateState through checking -> up-to-date -> idle, and an effect
+   * keyed on the flag re-runs on each of those while the popover is still
+   * open — so it would re-fire forever. Handling the transition fires exactly
+   * once per open and cannot loop.
+   *
+   * The one guard is "not while a check is already running": opening during
+   * the launch check would otherwise double every probe. There is deliberately
+   * no time-based suppression. A 60s freshness window was tried in v0.4.139
+   * and was wrong — the launch check starts the clock, so opening the panel in
+   * the first minute after starting the app did nothing at all, which is
+   * exactly when anyone looks.
+   */
+  const handleUpdatesOpenChange = useCallback((next: boolean) => {
+    setUpdatesOpen(next);
+    if (!next) return;
     if (checkingHold || updateState.status === 'checking') return;
-    if (Date.now() - lastCheckStartedAt.current < AUTO_CHECK_MAX_AGE_MS) return;
     checkEverything();
-  }, [updatesOpen, checkingHold, updateState.status, checkEverything]);
+  }, [checkingHold, updateState.status, checkEverything]);
 
   // Auto-dismiss the green "up-to-date" badge after a beat.
   useEffect(() => {
@@ -538,13 +526,16 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
             return (
           <Popover
             open={updatesOpen}
-            onOpenChange={setUpdatesOpen}
+            onOpenChange={handleUpdatesOpenChange}
             side="bottom"
             align="end"
             className="px-0 py-0 w-[280px]"
+            /* The button carries no onClick: Popover wraps the trigger in
+               its own click handler that drives onOpenChange. A second toggle
+               here was redundant and only agreed with it by coincidence. */
             trigger={
               <motion.button
-                onClick={() => { setUpdatesOpen((v) => !v); }}
+                data-updates-trigger
                 whileTap={{ scale: 0.97 }}
                 transition={{ duration: 0.15 }}
                 className={cn(

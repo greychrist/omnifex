@@ -48,7 +48,7 @@ vi.mock('@/lib/api', () => ({
   },
 }));
 
-import { CustomTitlebar, AUTO_CHECK_MAX_AGE_MS } from '@/components/CustomTitlebar';
+import { CustomTitlebar } from '@/components/CustomTitlebar';
 
 beforeEach(() => {
   vi.useFakeTimers({ shouldAdvanceTime: true });
@@ -61,21 +61,28 @@ afterEach(() => {
   cleanup();
 });
 
-const updatesButton = () => screen.getByText('Updates').closest('button')!;
+// Selected by attribute, not by text: the popover's own header also reads
+// "Updates", so a text query matches twice the moment the panel is open.
+const updatesButton = () =>
+  document.querySelector<HTMLButtonElement>('[data-updates-trigger]')!;
 const openUpdates = () => { fireEvent.click(updatesButton()); };
 
 /**
- * Render, let the on-mount check and its minimum-spin hold settle, then open
- * the Updates popover. The popover only mounts its content while open, so the
- * version rows don't exist in the DOM until the trigger is clicked.
+ * Render, open the Updates popover, and let everything settle. The popover
+ * only mounts its content while open, so the version rows don't exist in the
+ * DOM until the trigger is clicked.
+ *
+ * BOTH waits have to clear MIN_CHECK_SPIN_MS (700), because there are two
+ * checks to outlast: the one on mount and the one opening the popover now
+ * triggers. While either is in flight the dot is suppressed and the
+ * `Check for update` button is disabled, so a shorter wait here silently
+ * changes what half these tests are asserting against.
  */
 async function renderSettled() {
   const result = render(<CustomTitlebar />);
-  // MIN_CHECK_SPIN_MS is 700; the dot is suppressed while a check is in
-  // flight, so the hold has to elapse before the badge can appear.
   await vi.advanceTimersByTimeAsync(1000);
   openUpdates();
-  await vi.advanceTimersByTimeAsync(300);
+  await vi.advanceTimersByTimeAsync(1000);
   return result;
 }
 
@@ -316,14 +323,13 @@ describe('CustomTitlebar — Updates disclosure', () => {
     document.querySelector<HTMLButtonElement>('[data-updates-check]');
 
   /**
-   * Opening the panel means "tell me about updates", so it checks on open —
-   * but only when what we are showing has gone stale. The app-update probe is
-   * an UNAUTHENTICATED api.github.com call, deliberately cache-busted, and
-   * GitHub allows 60 of those per hour per IP. Firing one on every open would
-   * let a few minutes of opening and closing exhaust the budget, after which
-   * the check fails for an hour and looks like a bug.
+   * Opening the panel IS the request, so it checks every time it opens — no
+   * freshness window. A 60s window was tried and was wrong: the launch check
+   * stamps the clock, so opening the panel in the first minute after starting
+   * the app — the exact thing anyone does to try the feature — silently did
+   * nothing and read as broken.
    */
-  it('checks on open once the shown data has gone stale', async () => {
+  it('checks every time the popover opens, including right after launch', async () => {
     getClaudeCliReviewStatus.mockResolvedValue(clean);
     render(<CustomTitlebar />);
     await vi.advanceTimersByTimeAsync(1000);
@@ -331,7 +337,6 @@ describe('CustomTitlebar — Updates disclosure', () => {
     const beforeApp = checkForUpdate.mock.calls.length;
     const beforeCli = getClaudeCliReviewStatus.mock.calls.length;
 
-    await vi.advanceTimersByTimeAsync(AUTO_CHECK_MAX_AGE_MS);
     openUpdates();
     await vi.advanceTimersByTimeAsync(1000);
 
@@ -339,20 +344,40 @@ describe('CustomTitlebar — Updates disclosure', () => {
     expect(getClaudeCliReviewStatus.mock.calls.length).toBe(beforeCli + 1);
   });
 
-  it('reuses the on-mount answer when the popover is opened right away', async () => {
+  it('checks again on a second open, with no time-based suppression', async () => {
     getClaudeCliReviewStatus.mockResolvedValue(clean);
-    render(<CustomTitlebar />);
+    await renderSettled();
+
+    const afterFirst = checkForUpdate.mock.calls.length;
+
+    openUpdates();                      // close
+    await vi.advanceTimersByTimeAsync(50);
+    openUpdates();                      // open again, immediately
     await vi.advanceTimersByTimeAsync(1000);
 
-    const beforeApp = checkForUpdate.mock.calls.length;
-    const beforeCli = getClaudeCliReviewStatus.mock.calls.length;
+    expect(checkForUpdate.mock.calls.length).toBe(afterFirst + 1);
+  });
 
-    openUpdates();
+  it('fires once per open, not once per render while open', async () => {
+    // The check moves updateState through checking -> up-to-date -> idle. If
+    // this were an effect keyed on the open FLAG rather than the open EVENT,
+    // each of those transitions would re-fire it forever.
+    getClaudeCliReviewStatus.mockResolvedValue(clean);
+    await renderSettled();
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    expect(checkForUpdate.mock.calls.length).toBe(2); // mount + one open
+  });
+
+  it('does not check when the popover closes', async () => {
+    getClaudeCliReviewStatus.mockResolvedValue(clean);
+    await renderSettled();
+
+    const afterOpen = checkForUpdate.mock.calls.length;
+    openUpdates();                      // close
     await vi.advanceTimersByTimeAsync(1000);
 
-    await waitFor(() => { expect(seen('Claude Code')).toBeGreaterThan(0); });
-    expect(checkForUpdate.mock.calls.length).toBe(beforeApp);
-    expect(getClaudeCliReviewStatus.mock.calls.length).toBe(beforeCli);
+    expect(checkForUpdate.mock.calls.length).toBe(afterOpen);
   });
 
   it('does not stack a second check onto one already in flight', async () => {
@@ -364,21 +389,6 @@ describe('CustomTitlebar — Updates disclosure', () => {
     await vi.advanceTimersByTimeAsync(2000);
 
     expect(checkForUpdate.mock.calls.length).toBe(1);
-  });
-
-  it('still forces a check from the button inside the freshness window', async () => {
-    // The auto-check is best-effort; the explicit button is not. A user who
-    // presses it wants a real answer, not the cached one from a moment ago.
-    getClaudeCliReviewStatus.mockResolvedValue(clean);
-    await renderSettled();
-
-    await waitFor(() => { expect(checkButton()).not.toBeNull(); });
-    const beforeApp = checkForUpdate.mock.calls.length;
-
-    fireEvent.click(checkButton()!);
-    await vi.advanceTimersByTimeAsync(1000);
-
-    expect(checkForUpdate.mock.calls.length).toBe(beforeApp + 1);
   });
 
   it('checks both the app and the CLI from the button inside the popover', async () => {
