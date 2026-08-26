@@ -72,7 +72,17 @@ export function computeSessionCost(args: ComputeSessionCostArgs): {
 
   const ingest = (rows: ExtractedUsageRow[], isSubagent: boolean): void => {
     for (const row of rows) {
-      const cost = computeMessageCost(row.model, row.usage, args.overrides);
+      // Price at the row's own UTC day so an effective-dated rate change does
+      // not re-price history on the next backfill sweep. Rows with no
+      // timestamp fall through to today's rates — they cannot be bucketed
+      // into history either, so they only reach the live snapshot.
+      const date = row.timestamp ? row.timestamp.slice(0, 10) : '';
+      const cost = computeMessageCost(
+        row.model,
+        row.usage,
+        args.overrides,
+        date.length === 10 ? date : undefined,
+      );
       const { t5m, t1h } = splitCacheWriteTokens(row.usage);
       const input = row.usage.input_tokens ?? 0;
       const output = row.usage.output_tokens ?? 0;
@@ -104,7 +114,6 @@ export function computeSessionCost(args: ComputeSessionCostArgs): {
       // Daily bucket — UTC date from the Z-suffixed ISO timestamp. Rows with
       // no timestamp still count toward the live snapshot but cannot be
       // bucketed into history.
-      const date = row.timestamp ? row.timestamp.slice(0, 10) : '';
       if (date.length === 10) {
         const key = `${date}|${row.model}`;
         let d = daily.get(key);

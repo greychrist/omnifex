@@ -14,8 +14,12 @@ export interface ModelRates {
   cacheWrite1h: number;
 }
 
-/** User-supplied rate override, in USD per MTok (matches published pricing). */
+/** User-supplied rate override, in USD per MTok (matches published pricing).
+ *
+ * `from` is the date the override takes effect, inclusive. The flat legacy
+ * shape (no `from`) normalises to `1970-01-01`, i.e. always applicable. */
 export interface PricingOverride {
+  from?: string;
   input?: number;
   output?: number;
   cacheRead?: number;
@@ -23,8 +27,12 @@ export interface PricingOverride {
   cacheWrite1h?: number;
 }
 
-/** Keyed by model-id substring pattern, e.g. { "opus-4-8": { input: 4 } }. */
-export type PricingOverrides = Record<string, PricingOverride>;
+/** A normalised override period — `from` is always present after parsing. */
+export type PricingOverridePeriod = PricingOverride & { from: string };
+
+/** Keyed by model-id substring pattern, e.g. `{ "opus-4-8": [{ from, input }] }`.
+ *  Periods are sorted ascending by `from`. */
+export type PricingOverrides = Record<string, PricingOverridePeriod[]>;
 
 export interface UsageTokens {
   input_tokens?: number;
@@ -51,7 +59,25 @@ export interface MessageCost {
 
 const MTOK = 1_000_000;
 
+/** One rate period for one model. `from` is inclusive; a period runs until the
+ *  next one starts, or forever if it is the last. */
+export interface RatePeriod {
+  from: string;
+  inputPerM: number;
+  outputPerM: number;
+  fastInputPerM?: number;
+  fastOutputPerM?: number;
+}
+
 // Ordered most-specific-first; first `model.includes(pattern)` match wins.
+//
+// RATES ARE EFFECTIVE-DATED. When a price changes, APPEND a period with the
+// effective date — never edit a rate in place. Rates are flat only in the
+// sense that every model currently has one period; editing that period
+// re-prices all of history the next time a session is re-scanned, because
+// `backfill()` recomputes `cost_usd` from tokens. Appending prices the days
+// before the change at the old rate and the days after at the new one, which
+// is the entire point.
 //
 // The bare `opus` row is a LEGACY catch-all priced for Opus 3. Every modern
 // Opus needs its own row above it — `claude-opus-5` matched none of the
@@ -59,36 +85,80 @@ const MTOK = 1_000_000;
 //
 // `fastInputPerM` / `fastOutputPerM` are set only on models that actually
 // support fast mode (Opus 5 and Opus 4.8; 4.7's was removed upstream).
-const RATE_TABLE: Array<{
-  pattern: string;
-  inputPerM: number;
-  outputPerM: number;
-  fastInputPerM?: number;
-  fastOutputPerM?: number;
-}> = [
-  { pattern: 'fable', inputPerM: 10, outputPerM: 50 },
-  { pattern: 'mythos', inputPerM: 10, outputPerM: 50 },
-  { pattern: 'opus-5', inputPerM: 5, outputPerM: 25, fastInputPerM: 10, fastOutputPerM: 50 },
-  { pattern: 'opus-4-8', inputPerM: 5, outputPerM: 25, fastInputPerM: 10, fastOutputPerM: 50 },
-  { pattern: 'opus-4-7', inputPerM: 5, outputPerM: 25 },
-  { pattern: 'opus-4-6', inputPerM: 5, outputPerM: 25 },
-  { pattern: 'opus-4-5', inputPerM: 5, outputPerM: 25 },
-  { pattern: 'opus', inputPerM: 15, outputPerM: 75 },
-  { pattern: 'haiku-4-5', inputPerM: 1, outputPerM: 5 },
-  { pattern: 'haiku', inputPerM: 0.25, outputPerM: 1.25 },
-  { pattern: 'sonnet', inputPerM: 3, outputPerM: 15 },
+//
+// `<synthetic>` is a CLI bookkeeping record that carries no usage. It is
+// priced at zero EXPLICITLY rather than left unmatched, so that the
+// unpriced-model warning stays meaningful — a flag that fires on every scan
+// is a flag nobody reads.
+export const RATE_TABLE: Array<{ pattern: string; periods: RatePeriod[] }> = [
+  { pattern: '<synthetic>', periods: [{ from: '2024-01-01', inputPerM: 0, outputPerM: 0 }] },
+  { pattern: 'fable', periods: [{ from: '2024-01-01', inputPerM: 10, outputPerM: 50 }] },
+  { pattern: 'mythos', periods: [{ from: '2024-01-01', inputPerM: 10, outputPerM: 50 }] },
+  { pattern: 'opus-5', periods: [{ from: '2024-01-01', inputPerM: 5, outputPerM: 25, fastInputPerM: 10, fastOutputPerM: 50 }] },
+  { pattern: 'opus-4-8', periods: [{ from: '2024-01-01', inputPerM: 5, outputPerM: 25, fastInputPerM: 10, fastOutputPerM: 50 }] },
+  { pattern: 'opus-4-7', periods: [{ from: '2024-01-01', inputPerM: 5, outputPerM: 25 }] },
+  { pattern: 'opus-4-6', periods: [{ from: '2024-01-01', inputPerM: 5, outputPerM: 25 }] },
+  { pattern: 'opus-4-5', periods: [{ from: '2024-01-01', inputPerM: 5, outputPerM: 25 }] },
+  { pattern: 'opus', periods: [{ from: '2024-01-01', inputPerM: 15, outputPerM: 75 }] },
+  { pattern: 'haiku-4-5', periods: [{ from: '2024-01-01', inputPerM: 1, outputPerM: 5 }] },
+  { pattern: 'haiku', periods: [{ from: '2024-01-01', inputPerM: 0.25, outputPerM: 1.25 }] },
+  { pattern: 'sonnet', periods: [{ from: '2024-01-01', inputPerM: 3, outputPerM: 15 }] },
+];
+
+/** Cache pricing as multipliers on the input rate, effective-dated for the
+ *  same reason the rates themselves are. Output tokens are never cached. */
+export interface CacheMultiplierPeriod {
+  from: string;
+  read: number;
+  write5m: number;
+  write1h: number;
+}
+
+export const CACHE_MULTIPLIERS: CacheMultiplierPeriod[] = [
+  { from: '2024-01-01', read: 0.1, write5m: 1.25, write1h: 2 },
 ];
 
 const DEFAULT_RATES = { inputPerM: 3, outputPerM: 15 }; // sonnet-tier fallback
 
-function baseRates(inputPerM: number, outputPerM: number): ModelRates {
+/** ISO date (YYYY-MM-DD) for "now", in UTC — the same basis the daily cost
+ *  rows are bucketed on. */
+function today(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+/**
+ * The period that applies on `date`: the one with the latest `from` on or
+ * before it.
+ *
+ * Order-independent — callers should not have to keep the list sorted. A date
+ * before every period falls back to the earliest rather than reporting the
+ * model unpriced: a transcript predating the table is far likelier than a
+ * genuinely unknown model, and reporting it unpriced would understate cost.
+ */
+export function ratePeriodFor<T extends { from: string }>(
+  periods: readonly T[],
+  date: string,
+): T | undefined {
+  let best: T | undefined;
+  let earliest: T | undefined;
+  for (const p of periods) {
+    if (!earliest || p.from < earliest.from) earliest = p;
+    if (p.from <= date && (!best || p.from > best.from)) best = p;
+  }
+  return best ?? earliest;
+}
+
+function baseRates(inputPerM: number, outputPerM: number, date: string): ModelRates {
   const input = inputPerM / MTOK;
+  // ratePeriodFor never returns undefined for a non-empty list, and
+  // CACHE_MULTIPLIERS is a module constant with at least one entry.
+  const mult = ratePeriodFor(CACHE_MULTIPLIERS, date)!;
   return {
     input,
     output: outputPerM / MTOK,
-    cacheRead: input * 0.1,
-    cacheWrite5m: input * 1.25,
-    cacheWrite1h: input * 2,
+    cacheRead: input * mult.read,
+    cacheWrite5m: input * mult.write5m,
+    cacheWrite1h: input * mult.write1h,
   };
 }
 
@@ -102,39 +172,67 @@ export function resolveRates(
      * rate) uses the standard rate rather than inventing a premium.
      */
     speed?: string | null;
+    /**
+     * The day the tokens were billed, `YYYY-MM-DD`, used to pick the rate
+     * period. Defaults to today, which is right for live-turn callers (the
+     * per-message footer) and wrong for historical ones — `computeSessionCost`
+     * passes each row's own date.
+     */
+    date?: string;
   },
 ): { rates: ModelRates; estimated: boolean } {
   const m = (model || '').toLowerCase();
+  const date = opts?.date ?? today();
   const entry = RATE_TABLE.find((e) => m.includes(e.pattern));
+  const period = entry ? ratePeriodFor(entry.periods, date) : undefined;
 
   const fast = opts?.speed === 'fast';
-  const inputPerM = (fast ? entry?.fastInputPerM : undefined) ?? entry?.inputPerM;
-  const outputPerM = (fast ? entry?.fastOutputPerM : undefined) ?? entry?.outputPerM;
+  const inputPerM = (fast ? period?.fastInputPerM : undefined) ?? period?.inputPerM;
+  const outputPerM = (fast ? period?.fastOutputPerM : undefined) ?? period?.outputPerM;
 
   let rates =
-    entry && inputPerM != null && outputPerM != null
-      ? baseRates(inputPerM, outputPerM)
-      : baseRates(DEFAULT_RATES.inputPerM, DEFAULT_RATES.outputPerM);
-  let estimated = !entry;
+    inputPerM != null && outputPerM != null
+      ? baseRates(inputPerM, outputPerM, date)
+      : baseRates(DEFAULT_RATES.inputPerM, DEFAULT_RATES.outputPerM, date);
+  let estimated = !period;
 
   if (overrides) {
     const key = Object.keys(overrides)
       .sort((a, b) => b.length - a.length)
       .find((k) => k.length > 0 && m.includes(k.toLowerCase()));
-    if (key) {
-      const o = overrides[key];
+    // An override key can match while none of its periods has started yet —
+    // a scheduled price change entered ahead of time. That is not an override
+    // for this date, so the table rate stands.
+    const o = key ? overridePeriodFor(overrides[key], date) : undefined;
+    if (o) {
+      const mult = ratePeriodFor(CACHE_MULTIPLIERS, date)!;
       const input = o.input != null ? o.input / MTOK : rates.input;
       rates = {
         input,
         output: o.output != null ? o.output / MTOK : rates.output,
-        cacheRead: o.cacheRead != null ? o.cacheRead / MTOK : input * 0.1,
-        cacheWrite5m: o.cacheWrite5m != null ? o.cacheWrite5m / MTOK : input * 1.25,
-        cacheWrite1h: o.cacheWrite1h != null ? o.cacheWrite1h / MTOK : input * 2,
+        cacheRead: o.cacheRead != null ? o.cacheRead / MTOK : input * mult.read,
+        cacheWrite5m: o.cacheWrite5m != null ? o.cacheWrite5m / MTOK : input * mult.write5m,
+        cacheWrite1h: o.cacheWrite1h != null ? o.cacheWrite1h / MTOK : input * mult.write1h,
       };
       estimated = false;
     }
   }
   return { rates, estimated };
+}
+
+/** The override period in force on `date`, or undefined if none has started.
+ *  Unlike `ratePeriodFor` there is no fall-back to the earliest period: an
+ *  override is a deliberate statement about a date range, so a date before it
+ *  begins must fall through to the table rate. */
+function overridePeriodFor(
+  periods: readonly PricingOverridePeriod[],
+  date: string,
+): PricingOverridePeriod | undefined {
+  let best: PricingOverridePeriod | undefined;
+  for (const p of periods) {
+    if (p.from <= date && (!best || p.from > best.from)) best = p;
+  }
+  return best;
 }
 
 export function splitCacheWriteTokens(usage: UsageTokens): { t5m: number; t1h: number } {
@@ -171,11 +269,14 @@ export function computeMessageCost(
   model: string,
   usage: UsageTokens,
   overrides?: PricingOverrides,
+  /** Billing day, `YYYY-MM-DD`; defaults to today. Historical callers must
+   *  pass the row's own date or a rate change re-prices the past. */
+  date?: string,
 ): MessageCost {
   // An explicit user override wins over the fast-mode rate — it is a
   // deliberate statement about what a token costs, so fast mode must not
   // silently double it. resolveRates applies overrides last.
-  const { rates, estimated } = resolveRates(model, overrides, { speed: usage.speed });
+  const { rates, estimated } = resolveRates(model, overrides, { speed: usage.speed, date });
   const inputUsd = (usage.input_tokens ?? 0) * rates.input;
   const outputUsd = (usage.output_tokens ?? 0) * rates.output;
   const cacheReadUsd = (usage.cache_read_input_tokens ?? 0) * rates.cacheRead;
@@ -193,9 +294,41 @@ export function computeMessageCost(
 
 const KNOWN_OVERRIDE_FIELDS = ['input', 'output', 'cacheRead', 'cacheWrite5m', 'cacheWrite1h'] as const;
 
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Flat overrides predate effective dating; treat them as always applicable
+ *  so an existing `pricing_overrides` setting keeps working untouched. */
+const LEGACY_FROM = '1970-01-01';
+
+/** One period, validated down to the five known numeric fields. Returns
+ *  undefined when nothing usable survives — a period that sets no rate is
+ *  noise, and a bad `from` is worse than none because it would silently
+ *  apply from the wrong day. */
+function parsePeriod(value: unknown, defaultFrom: string): PricingOverridePeriod | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const raw = value as Record<string, unknown>;
+  const from = typeof raw.from === 'string' ? raw.from : defaultFrom;
+  if (!ISO_DATE.test(from)) return undefined;
+
+  const entry: PricingOverridePeriod = { from };
+  let hasRate = false;
+  for (const field of KNOWN_OVERRIDE_FIELDS) {
+    const v = raw[field];
+    if (typeof v === 'number' && Number.isFinite(v)) {
+      entry[field] = v;
+      hasRate = true;
+    }
+  }
+  return hasRate ? entry : undefined;
+}
+
 /** Safe parse for the `pricing_overrides` app setting (JSON object or bust).
  *
- * Validates each entry down to the five known numeric fields: non-object
+ * Each key maps to either a single period (the flat legacy shape, normalised
+ * to `from: 1970-01-01`) or an array of dated periods, returned sorted
+ * ascending by `from`.
+ *
+ * Validates each period down to the five known numeric fields: non-object
  * entries are dropped entirely, and any field whose value isn't a finite
  * number (string, NaN, Infinity, unknown key) is dropped. A bad value must
  * never survive to `resolveRates` — a NaN rate produces a NaN cost, and
@@ -210,17 +343,11 @@ export function parsePricingOverrides(
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return undefined;
     const result: PricingOverrides = {};
     for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
-      if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
-      const entry: PricingOverride = {};
-      for (const field of KNOWN_OVERRIDE_FIELDS) {
-        const v = (value as Record<string, unknown>)[field];
-        if (typeof v === 'number' && Number.isFinite(v)) {
-          entry[field] = v;
-        }
-      }
-      if (Object.keys(entry).length > 0) {
-        result[key] = entry;
-      }
+      const periods = (Array.isArray(value) ? value : [value])
+        .map((v) => parsePeriod(v, LEGACY_FROM))
+        .filter((p): p is PricingOverridePeriod => p !== undefined)
+        .sort((a, b) => a.from.localeCompare(b.from));
+      if (periods.length > 0) result[key] = periods;
     }
     return result;
   } catch {

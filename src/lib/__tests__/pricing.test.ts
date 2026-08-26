@@ -97,7 +97,7 @@ describe('computeMessageCost', () => {
     const cost = computeMessageCost(
       'claude-opus-5',
       { input_tokens: 1_000_000, speed: 'fast' },
-      { 'opus-5': { input: 1 } },
+      { 'opus-5': [{ from: '1970-01-01', input: 1 }] },
     );
     expect(cost.usd).toBeCloseTo(1, 6);
     expect(cost.estimated).toBe(false);
