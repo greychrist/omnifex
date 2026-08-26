@@ -2,12 +2,10 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Settings, CircleFadingArrowUp, Download, Loader2, CheckCircle, AlertCircle, HardDrive, Brain } from 'lucide-react';
 import {
-  Tooltip,
-  TooltipContent,
   TooltipProvider,
   TooltipSimple,
-  TooltipTrigger,
 } from '@/components/ui/tooltip-modern';
+import { Popover } from '@/components/ui/popover';
 import { api, type CliReviewStatus } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import OmniFexIcon from '../../icons/icon.png';
@@ -123,6 +121,7 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
   // give us: main compares the installed binary against the release whose
   // changelog this build was reviewed against.
   const [cliReview, setCliReview] = useState<CliReviewStatus | null>(null);
+  const [updatesOpen, setUpdatesOpen] = useState(false);
   const checkCliReview = useCallback(async () => {
     setCliReview(await api.getClaudeCliReviewStatus());
   }, []);
@@ -483,16 +482,34 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
 
           {(() => {
             const isCheckingAnything = checkingHold || updateState.status === 'checking';
+            /* What earns the dot: anything worth opening the popover for.
+               It used to mean exactly one thing — the running binary had moved
+               past our changelog watermark — and an upgrade merely published
+               to npm was excluded on the grounds that a review pass cannot act
+               on it. That was right while CLICKING the button ran a check: the
+               dot was a prompt to do the review. Now the click just opens the
+               panel, so the dot's job is "there is something in here", and the
+               three rows inside are what say which. Undifferentiated on
+               purpose — a dot that encoded severity would need a legend.
+               Suppressed mid-check so a stale dot can't outlive its answer. */
+            const hasNews =
+              updateState.status === 'available' ||
+              !!cliReview?.upgrade_available ||
+              !!cliReview?.unreviewed;
             return (
-          <Tooltip delayDuration={150}>
-            <TooltipTrigger asChild>
+          <Popover
+            open={updatesOpen}
+            onOpenChange={setUpdatesOpen}
+            side="bottom"
+            align="end"
+            className="px-0 py-0 w-[280px]"
+            trigger={
               <motion.button
-                onClick={checkEverything}
-                disabled={isCheckingAnything || updateState.status === 'downloading'}
+                onClick={() => { setUpdatesOpen((v) => !v); }}
                 whileTap={{ scale: 0.97 }}
                 transition={{ duration: 0.15 }}
                 className={cn(
-                  'inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed app-no-drag',
+                  'inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium transition-colors app-no-drag',
                   'hover:bg-accent hover:text-accent-foreground',
                 )}
               >
@@ -501,25 +518,19 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
                   className={isCheckingAnything ? 'animate-spin' : ''}
                 />
                 <span>Updates</span>
-                {/* Amber dot: the installed CLI is ahead of the release whose
-                    changelog we've read. Deliberately a quiet marker rather
-                    than the loud app-update chrome — nothing is broken, there
-                    is just drift worth looking at. Suppressed while a check
-                    is in flight so a stale dot doesn't outlive its answer. */}
-                {cliReview?.unreviewed && !isCheckingAnything && (
+                {hasNews && !isCheckingAnything && (
                   <span
                     aria-hidden
-                    data-cli-unreviewed
+                    data-updates-indicator
                     className="h-1.5 w-1.5 rounded-full bg-amber-500"
                   />
                 )}
               </motion.button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" align="end" className="px-0 py-0 w-[280px]">
+            }
+            content={
+            <>
               <div className="px-3.5 py-2.5 border-b border-border/50 flex items-center justify-between">
-                <span className="text-base font-semibold">
-                  {isCheckingAnything ? 'Checking for upgrade…' : 'Check for Upgrade'}
-                </span>
+                <span className="text-base font-semibold">Updates</span>
                 {isCheckingAnything && (
                   <Loader2 size={14} className="animate-spin text-muted-foreground" />
                 )}
@@ -559,10 +570,7 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
                     the OmniFex checkout running the review for exactly the
                     range that drifted. Only a button when we have somewhere to
                     launch and a host willing to launch it — a dead click
-                    target is worse than plain text. Radix keeps tooltip
-                    content open while the pointer is over it, so the button is
-                    reachable without turning the whole popover into a
-                    click-open surface. */}
+                    target is worse than plain text. */}
                 {cliReview?.unreviewed && (() => {
                   const repoDir = cliReview.repo_dir;
                   const installedVersion = cliReview.installed_version;
@@ -607,8 +615,35 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
                   );
                 })()}
               </div>
-            </TooltipContent>
-          </Tooltip>
+              {/* Checking is an explicit act inside the panel, not a side
+                  effect of opening it. The rows above refresh underneath this
+                  button and the popover stays put, so the answer arrives where
+                  the question was asked — the whole point of the rework. */}
+              <div className="px-3.5 py-2.5 border-t border-border/50">
+                <button
+                  type="button"
+                  data-updates-check
+                  onClick={checkEverything}
+                  disabled={isCheckingAnything || updateState.status === 'downloading'}
+                  className={cn(
+                    'inline-flex w-full items-center justify-center gap-1.5 rounded-md px-2 py-1.5',
+                    'text-[12px] font-medium transition-colors app-no-drag',
+                    'bg-accent/60 hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed',
+                  )}
+                >
+                  {isCheckingAnything ? (
+                    <>
+                      <Loader2 size={13} className="animate-spin" />
+                      <span>Checking…</span>
+                    </>
+                  ) : (
+                    <span>Check for update</span>
+                  )}
+                </button>
+              </div>
+            </>
+            }
+          />
             );
           })()}
           </div>
