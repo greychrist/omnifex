@@ -5,6 +5,24 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.141] — 2026-08-26
+
+The Brain can index a session without you closing its tab.
+
+### Added
+
+- **Sessions index once they go quiet, not only when a tab closes.** Closing a tab was the only thing that ever handed a transcript to the Brain — the background timer drained work that already existed but never went looking for more. Leave a tab open for a week and a conversation that finished on Tuesday stayed out of the vault indefinitely. A still-open session is now indexed once its transcript has gone untouched for a while, so the note lands the same afternoon the conversation ends.
+- **Two new settings under Auto-index.** "Index open sessions after N min idle" (default 15) is how long a transcript must sit untouched before its open session counts as finished. "Each check looks back N h" (default 24) is how far into the past the background check reaches — it exists so switching auto-index on cannot queue your entire history at once. Backfill still sees everything.
+
+### Changed
+
+- **Auto-curate runs on the background check too.** It was close-triggered like indexing, so a user who never closes tabs would accumulate notes that nothing ever compressed — and since a session that resumes is re-indexed, accumulation is exactly what happens. Still off unless the switch is on.
+- **"In use" now means a session is actively being written to,** rather than merely open in OmniFex. That distinction is the whole feature: the guard exists to avoid distilling half a conversation, and an idle tab is not half a conversation.
+
+### Fixed
+
+- **The background check no longer re-reads every transcript you own.** Deciding whether an item is worth indexing parses the whole conversation, and that decision was being made before the cheap "has this changed?" checks. Harmless on a button press, expensive every five minutes; the cheap checks now run first, so a check that finds nothing new reads nothing at all.
+
 ## [0.4.140] — 2026-08-26
 
 Fixes the check-on-open added in 0.4.139, which did nothing for the first minute after starting the app.
