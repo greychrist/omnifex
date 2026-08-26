@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import {
-  Area,
-  AreaChart,
+  Bar,
+  BarChart,
   CartesianGrid,
   ResponsiveContainer,
   Tooltip,
@@ -15,6 +15,12 @@ import {
   modelLabel,
   type ChartMode,
 } from '@/lib/costChartPalette';
+import {
+  segmentPath,
+  toStackedSeries,
+  topModelFor,
+  type StackedBucket,
+} from '@/lib/costChartData';
 import { fmtUsd } from '@/lib/costReportFilters';
 
 interface CostChartProps {
@@ -22,34 +28,26 @@ interface CostChartProps {
   mode: ChartMode;
 }
 
+/** 4px rounded data-end — a column's cap, top corners only. */
+const CAP_RADIUS = 4;
+
+/** Segment separation is a gap in the surface colour, not a border drawn round
+ *  the mark. 1px each side reads as the 2px gap the method asks for. */
+const SEAM = 1;
+
 /**
- * Stacked area of spend over time, one band per model.
+ * Stacked columns of spend over time, one segment per model.
+ *
+ * Bars rather than an area: this is part-to-whole across discrete periods, and
+ * an area implies the spend interpolates between days, which it does not.
  *
  * Model → colour comes from the fixed slot map, never from series order, so
  * filtering a model out does not repaint the survivors and two months' charts
- * stay comparable. Series are also sorted by slot, so the stack order and the
- * legend order agree.
+ * stay comparable. Series are sorted by slot too, so stack order and legend
+ * order agree.
  */
 export function CostChart({ rows, mode }: CostChartProps) {
-  const { data, models } = useMemo(() => {
-    const modelSet = [...new Set(rows.map((r) => r.model))].sort(compareModelsBySlot);
-    const byPeriod = new Map<string, Record<string, number | string>>();
-    for (const r of rows) {
-      let bucket = byPeriod.get(r.period);
-      if (!bucket) {
-        bucket = { period: r.period };
-        // Zero-fill every series, or recharts renders a gap where a model was
-        // simply unused that day and the stack visibly tears.
-        for (const m of modelSet) bucket[m] = 0;
-        byPeriod.set(r.period, bucket);
-      }
-      bucket[r.model] = (bucket[r.model] as number) + r.cost_usd;
-    }
-    return {
-      data: [...byPeriod.values()].sort((a, b) => String(a.period).localeCompare(String(b.period))),
-      models: modelSet,
-    };
-  }, [rows]);
+  const { data, models } = useMemo(() => toStackedSeries(rows), [rows]);
 
   const axis = mode === 'dark' ? '#898781' : '#52514e';
   const grid = mode === 'dark' ? '#2c2c2a' : '#e1e0d9';
@@ -66,7 +64,7 @@ export function CostChart({ rows, mode }: CostChartProps) {
   return (
     <div className="h-56 w-full">
       <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+        <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }} barCategoryGap="18%">
           <CartesianGrid stroke={grid} vertical={false} />
           <XAxis
             dataKey="period"
@@ -81,10 +79,11 @@ export function CostChart({ rows, mode }: CostChartProps) {
             tick={{ fontSize: 10, fill: axis }}
             tickLine={false}
             axisLine={false}
-            width={52}
+            width={56}
             tickFormatter={(v: number) => fmtUsd(v)}
           />
           <Tooltip
+            cursor={{ fill: mode === 'dark' ? '#ffffff12' : '#0000000a' }}
             contentStyle={{
               background: surface,
               border: `1px solid ${grid}`,
@@ -95,28 +94,49 @@ export function CostChart({ rows, mode }: CostChartProps) {
             formatter={(value, name) => [fmtUsd(Number(value ?? 0)), modelLabel(String(name))]}
           />
           {models.map((m) => (
-            <Area
+            <Bar
               key={m}
-              type="monotone"
               dataKey={m}
               stackId="cost"
               fill={modelColor(m, mode)}
-              fillOpacity={0.9}
-              // A 2px surface-coloured seam between stacked bands rather than a
-              // same-hue outline: adjacent slots clear the CVD threshold on the
-              // adjacent-pair list, and the gap is what keeps them separable.
               stroke={surface}
-              strokeWidth={2}
-              activeDot={{ r: 4, stroke: surface, strokeWidth: 2 }}
+              strokeWidth={SEAM}
+              isAnimationActive={false}
+              // Which model sits on top varies per period, so the cap radius is
+              // decided per cell rather than per series.
+              shape={(props: unknown) => (
+                <StackedSegment {...(props as SegmentProps)} models={models} />
+              )}
             />
           ))}
-        </AreaChart>
+        </BarChart>
       </ResponsiveContainer>
     </div>
   );
 }
 
-/** Legend for the chart — identity is never colour-alone, so every band is
+interface SegmentProps {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  fill: string;
+  stroke: string;
+  strokeWidth: number;
+  dataKey: string;
+  payload: StackedBucket;
+}
+
+/** One stacked segment, rounding its top corners only when it is the topmost
+ *  segment that actually renders in its period. */
+function StackedSegment({ models, ...p }: SegmentProps & { models: string[] }) {
+  const isTop = topModelFor(p.payload, models) === p.dataKey;
+  const d = segmentPath(p.x, p.y, p.width, p.height, isTop ? CAP_RADIUS : 0);
+  if (!d) return null;
+  return <path d={d} fill={p.fill} stroke={p.stroke} strokeWidth={p.strokeWidth} />;
+}
+
+/** Legend for the chart — identity is never colour-alone, so every segment is
  *  also named here and in the by-model table below it. */
 export function CostChartLegend({ models, mode }: { models: string[]; mode: ChartMode }) {
   return (

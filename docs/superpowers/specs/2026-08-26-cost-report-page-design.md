@@ -247,7 +247,12 @@ different bills — so the account breakdown is always visible when more than on
 
 KPI tiles (total, requests, active days, $/request), then:
 
-- **Daily/weekly stacked area by model.** `recharts` ^3.8.1, already a dependency.
+- **Daily/weekly stacked columns by model.** `recharts` ^3.8.1, already a dependency.
+  Bars rather than an area: this is part-to-whole across discrete periods, which is what
+  the dataviz form table assigns to a stacked bar, and an area would imply the spend
+  interpolates between days. Only the topmost rendered segment of each column takes the
+  4px cap radius, clamped to the segment's own size — on real data the smallest segment
+  is a few pixels tall, and an unclamped round inverts the arc into a visible notch.
 - **Component split** — cache read / cache write / output / fresh input.
 - **Caching ROI** — ratio, saved-vs-uncached, 1h premium.
 - **Main loop vs subagent** — cost, requests, and $/request side by side.
