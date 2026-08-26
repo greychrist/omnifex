@@ -1,47 +1,63 @@
 // Cost Report chart palette — fixed model → colour, never assigned by rank.
 //
-// The slots and their order are the validated dataviz categorical palette
-// (adjacent-pair CVD-safe for stacked marks in both modes; verified with
-// `scripts/validate_palette.js`, worst adjacent CVD ΔE 9.1 light / 8.4 dark).
-// The model→slot ASSIGNMENT is chosen to agree with the Anthropic console's
-// own model colours, so the two can be read side by side without re-learning
-// the legend, and it matches `ai-cost-report.py`'s MODEL_SLOT exactly.
+// Hues are the dataviz categorical set, re-ordered to lead with red / blue /
+// green on request. The ORDER is the CVD-safety mechanism, not cosmetics: all
+// 40,320 orderings were enumerated against `scripts/validate_palette.js` in
+// both modes, and this is the best of the 10 that lead with those three hues
+// AND clear the ΔE >= 8 adjacent-pair gate outright (worst adjacent CVD 9.2
+// light / 9.4 dark — better margins than the palette's own default order).
 //
-// The invariant that matters: colour follows the ENTITY, never its rank. If
-// filtering a model out repainted the survivors, no two screenshots would be
-// comparable and every month-over-month reading would silently lie.
+// Red and green are never adjacent. They are the classic protan/deutan
+// confusion pair, so blue has to sit between them; that is why the order is
+// red→blue→green and not blue→green→red, and it is not something eyeballing
+// would have caught.
+//
+// Model→slot assignment is unchanged from `ai-cost-report.py`'s MODEL_SLOT, so
+// the three models that dominate real spend (opus-4-8, opus-5, fable-5) take
+// the three leading hues. NOTE: the previous order was chosen to match the
+// Anthropic console's own model colours so the two read side by side. That
+// property is deliberately given up here.
+//
+// The invariant that still holds: colour follows the ENTITY, never its rank.
+// If filtering a model out repainted the survivors, no two screenshots would
+// be comparable and every month-over-month reading would silently lie.
 
 export type ChartMode = 'light' | 'dark';
 
 export const CATEGORICAL_LIGHT = [
-  '#2a78d6', // 0 blue
-  '#eb6834', // 1 orange
-  '#1baf7a', // 2 aqua
-  '#eda100', // 3 yellow
-  '#e87ba4', // 4 magenta
-  '#008300', // 5 green
-  '#4a3aa7', // 6 violet
-  '#e34948', // 7 red
+  '#e34948', // 0 red
+  '#2a78d6', // 1 blue
+  '#008300', // 2 green
+  '#e87ba4', // 3 magenta
+  '#eda100', // 4 yellow
+  '#4a3aa7', // 5 violet
+  '#eb6834', // 6 orange
+  '#1baf7a', // 7 aqua
 ] as const;
 
 /** The same eight hues stepped for the dark surface — a selected dark palette,
  *  not an automatic flip of the light one. */
 export const CATEGORICAL_DARK = [
-  '#3987e5',
-  '#d95926',
-  '#199e70',
-  '#c98500',
-  '#d55181',
-  '#008300',
-  '#9085e9',
-  '#e66767',
+  '#e66767', // 0 red
+  '#3987e5', // 1 blue
+  '#008300', // 2 green
+  '#d55181', // 3 magenta
+  '#c98500', // 4 yellow
+  '#9085e9', // 5 violet
+  '#d95926', // 6 orange
+  '#199e70', // 7 aqua
 ] as const;
 
 /** `<synthetic>` records are CLI bookkeeping and cost nothing. Giving them a
  *  series hue would imply they are spend worth comparing. */
 const NEUTRAL: Record<ChartMode, string> = { light: '#898781', dark: '#898781' };
 
-/** Longest pattern first, so `opus-4-8` cannot be swallowed by `opus`. */
+/** Longest pattern first, so `opus-4-8` cannot be swallowed by `opus`.
+ *
+ *  Slots are indices into the arrays above, so re-colouring the palette does
+ *  not move a model relative to its peers — only the hue each slot holds
+ *  changes. With the current order that puts opus-4-8 on red, opus-5 on blue
+ *  and fable-5 on green: the three that carry essentially all real spend. */
 const MODEL_SLOT: Array<{ pattern: string; slot: number; label: string }> = [
   { pattern: 'opus-4-8', slot: 0, label: 'Opus 4.8' },
   { pattern: 'opus-4-7', slot: 6, label: 'Opus 4.7' },

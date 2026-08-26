@@ -261,8 +261,20 @@ KPI tiles (total, requests, active days, $/request), then:
 - **Unpriced-models banner** when `unpriced()` is non-empty.
 
 Model → colour is **fixed per model** via a lookup keyed on model id, never assigned by rank, so
-the legend means the same thing across months. The palette matches the Anthropic console's so the
-two read side by side. Chart work follows the `dataviz` skill.
+the legend means the same thing across months.
+
+The hues are the dataviz categorical set re-ordered to lead with **red → blue → green** (Greg's
+call, 2026-08-26; the orange/yellow-heavy default was the complaint). The order was chosen by
+enumerating all 40,320 permutations against `scripts/validate_palette.js` in both modes and
+taking the best of the ten that lead with those three hues *and* clear the ΔE >= 8 adjacent-pair
+gate outright — worst adjacent CVD 9.2 light / 9.4 dark, better margins than the default order.
+
+Red and green are never adjacent: they are the protan/deutan confusion pair, so blue sits between
+them. That is why the order is red→blue→green rather than blue→green→red.
+
+Model→slot assignment is unchanged, which puts opus-4-8 / opus-5 / fable-5 — 96.8% of lifetime
+spend — on the three leading hues. **Given up deliberately:** the previous order matched the
+Anthropic console's own model colours so the two could be read side by side.
 
 ### 5.3 Say it, don't just show it
 

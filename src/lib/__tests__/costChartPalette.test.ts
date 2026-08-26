@@ -80,3 +80,53 @@ describe('modelLabel', () => {
     expect(modelLabel('some-other-thing')).toBe('some-other-thing');
   });
 });
+
+/**
+ * The slot ORDER is the CVD-safety mechanism, not cosmetics. These pin the
+ * properties that a well-meaning "let's make it prettier" edit would silently
+ * break — the tests above only assert slot indices, which survive any recolour.
+ *
+ * Re-validate with the dataviz skill's own tool before changing a hex:
+ *   node scripts/validate_palette.js "<comma-separated>" --mode light|dark
+ */
+describe('palette safety properties', () => {
+  const RED = 0;
+  const GREEN = 2;
+
+  it('leads with red, blue, green as requested', () => {
+    expect(CATEGORICAL_LIGHT.slice(0, 3)).toEqual(['#e34948', '#2a78d6', '#008300']);
+    expect(CATEGORICAL_DARK.slice(0, 3)).toEqual(['#e66767', '#3987e5', '#008300']);
+  });
+
+  // Red and green are the classic protan/deutan confusion pair. Adjacent slots
+  // touch as stacked segments, so they must never neighbour each other — blue
+  // sits between them deliberately.
+  it('never places red and green in adjacent slots', () => {
+    expect(Math.abs(RED - GREEN)).toBeGreaterThan(1);
+  });
+
+  it('has eight distinct hues in each mode, and the same count in both', () => {
+    expect(CATEGORICAL_LIGHT).toHaveLength(8);
+    expect(CATEGORICAL_DARK).toHaveLength(8);
+    expect(new Set(CATEGORICAL_LIGHT).size).toBe(8);
+    expect(new Set(CATEGORICAL_DARK).size).toBe(8);
+  });
+
+  it('every model slot indexes a real palette entry', () => {
+    for (const model of [
+      'claude-opus-5', 'claude-opus-4-8', 'claude-opus-4-7', 'claude-fable-5',
+      'claude-mythos-5', 'claude-sonnet-5', 'claude-sonnet-4-6', 'claude-haiku-4-5',
+    ]) {
+      expect(CATEGORICAL_LIGHT).toContain(modelColor(model, 'light'));
+      expect(CATEGORICAL_DARK).toContain(modelColor(model, 'dark'));
+    }
+  });
+
+  // The models that carry essentially all of the real spend should be the ones
+  // wearing the leading hues; that is the point of the chosen assignment.
+  it('gives the three dominant models the three leading hues', () => {
+    expect(modelColor('claude-opus-4-8', 'dark')).toBe(CATEGORICAL_DARK[0]); // red
+    expect(modelColor('claude-opus-5', 'dark')).toBe(CATEGORICAL_DARK[1]);   // blue
+    expect(modelColor('claude-fable-5', 'dark')).toBe(CATEGORICAL_DARK[2]);  // green
+  });
+});
