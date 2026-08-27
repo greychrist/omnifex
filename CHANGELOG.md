@@ -5,6 +5,12 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.146] — 2026-08-27
+
+### Fixed
+
+- A session you started but never sent a prompt to could die with "No conversation found with session ID" — usually noticed on closing a different tab, which activates a neighbouring one and makes it reconnect. A session's id is assigned the moment it spawns, but the CLI only writes a transcript once there is something to record, so resuming an untouched session asked the CLI to continue a conversation that was never written. OmniFex now checks for the transcript first and keeps the same session id with a fresh one when there is none. Restoring tabs after an app restart reached the same path.
+
 ## [0.4.145] — 2026-08-27
 
 Claude Code 2.1.247 review: the CLI's new feedback drafts now render, and plugin manifest text is sanitized.
