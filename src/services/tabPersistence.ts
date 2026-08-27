@@ -136,8 +136,28 @@ export class TabPersistenceService {
         status: serialized.status === 'running' ? 'idle' : serialized.status // Ensure no running status
       }));
 
+      // The Usage dashboard was removed once it turned out to be unreachable
+      // (its only entry point was a window event nothing dispatched) and the
+      // Cost Report supersedes it. A tab persisted by an older build would
+      // otherwise restore into a type nothing renders — a blank tab, no error.
+      // Collapsed rather than merely retyped, so two of them cannot break the
+      // find-or-create singleton the opener relies on.
+      let seenCostReport = false;
+      const migrated = tabs
+        .map((tab) => (
+          (tab.type as string) === 'usage'
+            ? { ...tab, type: 'cost-report' as const, title: 'Cost', icon: undefined }
+            : tab
+        ))
+        .filter((tab) => {
+          if (tab.type !== 'cost-report') return true;
+          if (seenCostReport) return false;
+          seenCostReport = true;
+          return true;
+        });
+
       // Validate and filter out any invalid tabs
-      const validTabs = tabs.filter(tab => {
+      const validTabs = migrated.filter(tab => {
         // Basic validation
         if (!tab.id || !tab.type || !tab.title) return false;
         
@@ -151,7 +171,7 @@ export class TabPersistenceService {
             // Claude file tabs need a file ID
             return !!tab.claudeFileId;
           default:
-            // Other tab types (projects, agents, usage, etc.) are always valid
+            // Other tab types (projects, agents, cost-report, etc.) are always valid
             return true;
         }
       });

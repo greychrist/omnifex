@@ -8,7 +8,7 @@ import { modelColor } from '@/lib/costChartPalette';
 function row(period: string, model: string, cost_usd: number): CostHistoryPeriodModel {
   return {
     period, model, cost_usd,
-    request_count: 0, input_tokens: 0, output_tokens: 0,
+    request_count: 0, session_count: 0, input_tokens: 0, output_tokens: 0,
     cache_read_tokens: 0, cache_write_tokens: 0,
     input_usd: 0, output_usd: 0, cache_read_usd: 0, cache_write_usd: 0,
     is_estimated: 0,

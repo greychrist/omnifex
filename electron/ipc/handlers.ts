@@ -116,6 +116,7 @@ export interface Services {
     byModel(filters: Record<string, unknown>): unknown;
     byProjectModel(filters: Record<string, unknown>): unknown;
     components(filters: Record<string, unknown>): unknown;
+    totals(filters: Record<string, unknown>): unknown;
     cachingRoi(filters: Record<string, unknown>): unknown;
     subagentSplit(filters: Record<string, unknown>): unknown;
     unpriced(filters: Record<string, unknown>): unknown;
@@ -572,6 +573,7 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     session_cost_by_model: wrapWith((p: Record<string, unknown>) => cost?.byModel(costFilters(p)) ?? []),
     session_cost_by_project_model: wrapWith((p: Record<string, unknown>) => cost?.byProjectModel(costFilters(p)) ?? []),
     session_cost_components: wrapWith((p: Record<string, unknown>) => cost?.components(costFilters(p)) ?? null),
+    session_cost_totals: wrapWith((p: Record<string, unknown>) => cost?.totals(costFilters(p)) ?? null),
     session_cost_caching_roi: wrapWith((p: Record<string, unknown>) => cost?.cachingRoi(costFilters(p)) ?? null),
     session_cost_subagent_split: wrapWith((p: Record<string, unknown>) => cost?.subagentSplit(costFilters(p)) ?? []),
     session_cost_unpriced: wrapWith((p: Record<string, unknown>) => cost?.unpriced(costFilters(p)) ?? []),

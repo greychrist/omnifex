@@ -118,6 +118,9 @@ export interface CostHistoryPeriod {
   period: string;
   cost_usd: number;
   request_count: number;
+  /** Distinct sessions touching this period. NOT summable across periods —
+   *  use `totals()` for a range-wide count. */
+  session_count: number;
   input_tokens: number;
   output_tokens: number;
   cache_read_tokens: number;
@@ -138,6 +141,7 @@ export interface CostByProject {
   project_path: string | null;
   cost_usd: number;
   request_count: number;
+  session_count: number;
   input_tokens: number;
   output_tokens: number;
   cache_read_tokens: number;
@@ -148,6 +152,7 @@ export interface CostByModel {
   model: string;
   cost_usd: number;
   request_count: number;
+  session_count: number;
   input_tokens: number;
   output_tokens: number;
   cache_read_tokens: number;
@@ -209,6 +214,18 @@ export interface UnpricedModel {
 /** Distinct values available to the filter controls. Deliberately NOT narrowed
  *  by the multi-select filters themselves — a control that erases its own
  *  alternatives when you use it cannot be un-used. */
+/** Range-wide totals. Separate from `aggregate()` because `session_count` has
+ *  to be counted once over the whole range, not summed per period. */
+export interface CostTotals {
+  cost_usd: number;
+  request_count: number;
+  session_count: number;
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  cache_write_tokens: number;
+}
+
 export interface CostFacets {
   accounts: string[];
   models: string[];
@@ -253,6 +270,7 @@ export interface CostHistoryService {
   byModel(filters: CostHistoryFilters): CostByModel[];
   byProjectModel(filters: CostHistoryFilters): CostByProjectModel[];
   components(filters: CostHistoryFilters): CostComponents;
+  totals(filters: CostHistoryFilters): CostTotals;
   cachingRoi(filters: CostHistoryFilters): CachingRoi;
   subagentSplit(filters: CostHistoryFilters): SubagentSplitRow[];
   unpriced(filters: CostHistoryFilters): UnpricedModel[];
@@ -296,10 +314,15 @@ function whereClause(filters: CostHistoryFilters): { sql: string; params: unknow
   return { sql: clauses.length ? `WHERE ${clauses.join(' AND ')}` : '', params };
 }
 
-/** The SUM columns every grouped query shares. */
+/** The SUM columns every grouped query shares.
+ *
+ *  `session_count` is COUNT(DISTINCT ...), not a SUM — a session spanning two
+ *  days contributes a row to each, so summing per-period counts would
+ *  double-count it in any range total. */
 const SUM_COLUMNS = `
   SUM(cost_usd) AS cost_usd,
   SUM(request_count) AS request_count,
+  COUNT(DISTINCT session_id) AS session_count,
   SUM(input_tokens) AS input_tokens,
   SUM(output_tokens) AS output_tokens,
   SUM(cache_read_tokens) AS cache_read_tokens,
@@ -422,6 +445,22 @@ export function createCostHistoryService(db: Database, fsDeps: CostFs = nodeCost
   const byModel = (f: CostHistoryFilters) => grouped<CostByModel>(f, 'model');
   const byProjectModel = (f: CostHistoryFilters) =>
     grouped<CostByProjectModel>(f, 'project_path, model');
+
+  function totals(filters: CostHistoryFilters): CostTotals {
+    const { sql, params } = whereClause(filters);
+    return db.raw
+      .prepare(`
+        SELECT COALESCE(SUM(cost_usd), 0) AS cost_usd,
+               COALESCE(SUM(request_count), 0) AS request_count,
+               COUNT(DISTINCT session_id) AS session_count,
+               COALESCE(SUM(input_tokens), 0) AS input_tokens,
+               COALESCE(SUM(output_tokens), 0) AS output_tokens,
+               COALESCE(SUM(cache_read_tokens), 0) AS cache_read_tokens,
+               COALESCE(SUM(cache_write_5m_tokens + cache_write_1h_tokens), 0) AS cache_write_tokens
+        FROM session_cost_daily ${sql}
+      `)
+      .get(...params) as CostTotals;
+  }
 
   function components(filters: CostHistoryFilters): CostComponents {
     const { sql, params } = whereClause(filters);
@@ -604,6 +643,7 @@ export function createCostHistoryService(db: Database, fsDeps: CostFs = nodeCost
     byModel,
     byProjectModel,
     components,
+    totals,
     cachingRoi,
     subagentSplit,
     unpriced,

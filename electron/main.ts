@@ -1407,6 +1407,7 @@ app.whenReady().then(() => {
       byModel: (f: Record<string, unknown>) => costHistoryService.byModel(f as never),
       byProjectModel: (f: Record<string, unknown>) => costHistoryService.byProjectModel(f as never),
       components: (f: Record<string, unknown>) => costHistoryService.components(f as never),
+      totals: (f: Record<string, unknown>) => costHistoryService.totals(f as never),
       cachingRoi: (f: Record<string, unknown>) => costHistoryService.cachingRoi(f as never),
       subagentSplit: (f: Record<string, unknown>) => costHistoryService.subagentSplit(f as never),
       unpriced: (f: Record<string, unknown>) => costHistoryService.unpriced(f as never),

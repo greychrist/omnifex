@@ -521,6 +521,8 @@ export interface CostHistoryPeriod {
   period: string;
   cost_usd: number;
   request_count: number;
+  /** Distinct sessions in this period. NOT summable across periods. */
+  session_count: number;
   input_tokens: number;
   output_tokens: number;
   cache_read_tokens: number;
@@ -541,6 +543,7 @@ export interface CostHistoryPeriodModel extends CostHistoryPeriod {
 interface CostGroupSums {
   cost_usd: number;
   request_count: number;
+  session_count: number;
   input_tokens: number;
   output_tokens: number;
   cache_read_tokens: number;
@@ -598,6 +601,19 @@ export interface UnpricedModel {
   model: string;
   request_count: number;
   cost_usd: number;
+}
+
+/** Range-wide totals. Separate from the period rows because `session_count`
+ *  must be counted once over the range, not summed per period — a session
+ *  spanning two days would otherwise count twice. */
+export interface CostTotals {
+  cost_usd: number;
+  request_count: number;
+  session_count: number;
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  cache_write_tokens: number;
 }
 
 /** Distinct values for the Cost Report's filter controls. */
@@ -1852,6 +1868,11 @@ export const api = {
   /** Spend crossed by project and model. */
   async sessionCostByProjectModel(filters: CostHistoryFilterParams): Promise<CostByProjectModel[]> {
     return apiCall("session_cost_by_project_model", stripUndefined(filters));
+  },
+
+  /** Range-wide cost, requests and DISTINCT session count. */
+  async sessionCostTotals(filters: CostHistoryFilterParams): Promise<CostTotals | null> {
+    return apiCall("session_cost_totals", stripUndefined(filters));
   },
 
   /** Spend split into fresh input / output / cache read / cache write. */

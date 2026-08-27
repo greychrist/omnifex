@@ -228,3 +228,50 @@ describe('cost query surface', () => {
     });
   });
 });
+
+/**
+ * Session counts were the one metric the (now removed) Usage dashboard had
+ * that the Cost Report did not. Requests and sessions answer different
+ * questions — "6,637 requests" and "42 sessions" are both true and neither
+ * substitutes for the other.
+ */
+describe('session counts', () => {
+  let db: Database;
+  let svc: CostHistoryService;
+  beforeEach(() => { db = createDatabase(':memory:'); svc = createCostHistoryService(db); seed(svc); });
+  afterEach(() => { db.close(); });
+
+  it('counts distinct sessions per project', () => {
+    const r = svc.byProject({});
+    expect(r.find((x) => x.project_path === '/Users/me/alpha')!.session_count).toBe(1);
+    // beta is touched by two different sessions (s2 and s3).
+    expect(r.find((x) => x.project_path === '/Users/me/beta')!.session_count).toBe(2);
+  });
+
+  it('counts distinct sessions per model', () => {
+    expect(svc.byModel({}).find((x) => x.model === 'claude-opus-5')!.session_count).toBe(2);
+  });
+
+  it('counts distinct sessions per period', () => {
+    const [p] = svc.aggregate({ startDate: '2026-08-01', endDate: '2026-08-01' }, 'day');
+    expect(p.session_count).toBe(1);
+  });
+
+  // A session spanning two days must not be counted twice in the range total,
+  // which is exactly what SUM over per-period counts would do.
+  it('does not double-count a session that spans periods', () => {
+    svc.replaceSession('span', [
+      row({ session_id: 'span', date: '2026-08-05', cost_usd: 1 }),
+      row({ session_id: 'span', date: '2026-08-06', cost_usd: 1 }),
+    ]);
+    expect(svc.totals({ startDate: '2026-08-05' }).session_count).toBe(1);
+    expect(svc.aggregate({ startDate: '2026-08-05' }, 'day').reduce((n, p) => n + p.session_count, 0)).toBe(2);
+  });
+
+  it('totals() reports range-wide distinct sessions, requests and cost', () => {
+    const t = svc.totals({});
+    expect(t.session_count).toBe(3);
+    expect(t.request_count).toBe(18); // s1 5 + 8, s2 3, s3 2
+    expect(t.cost_usd).toBeCloseTo(20, 10);
+  });
+});

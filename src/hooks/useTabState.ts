@@ -14,7 +14,6 @@ interface UseTabStateReturn {
   // Operations
   createChatTab: (projectId?: string, title?: string, projectPath?: string, agent?: AgentKind) => string;
   createProjectsTab: () => string | null;
-  createUsageTab: () => string | null;
   createMCPTab: () => string | null;
   createLimaTab: () => string | null;
   createBrainTab: () => string | null;
@@ -82,24 +81,6 @@ export const useTabState = (): UseTabStateReturn => {
       icon: 'folder'
     });
   }, [addTab]);
-
-  const createUsageTab = useCallback((): string | null => {
-    // Check if usage tab already exists (singleton)
-    const existingTab = tabs.find(tab => tab.type === 'usage');
-    if (existingTab) {
-      setActiveTab(existingTab.id);
-      return existingTab.id;
-    }
-
-    return addTab({
-      type: 'usage',
-      title: 'Usage',
-      agent: 'claude',
-      status: 'idle',
-      hasUnsavedChanges: false,
-      icon: 'bar-chart'
-    });
-  }, [addTab, tabs, setActiveTab]);
 
   const createMCPTab = useCallback((): string | null => {
     // Check if MCP tab already exists (singleton)
@@ -308,7 +289,6 @@ export const useTabState = (): UseTabStateReturn => {
     // Operations
     createChatTab,
     createProjectsTab,
-    createUsageTab,
     createMCPTab,
     createLimaTab,
     createBrainTab,

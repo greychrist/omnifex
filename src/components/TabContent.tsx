@@ -25,7 +25,6 @@ import { slotToResolution, type FormAccountResolution } from "@/lib/accountResol
 
 // Lazy load heavy components
 const AgentSession = lazy(() => import('@/components/AgentSession').then(m => ({ default: m.AgentSession })));
-const UsageDashboard = lazy(() => import('@/components/UsageDashboard').then(m => ({ default: m.UsageDashboard })));
 const MCPManager = lazy(() => import('@/components/MCPManager').then(m => ({ default: m.MCPManager })));
 const Settings = lazy(() => import('@/components/Settings').then(m => ({ default: m.Settings })));
 const MarkdownEditor = lazy(() => import('@/components/MarkdownEditor').then(m => ({ default: m.MarkdownEditor })));
@@ -687,13 +686,6 @@ const TabPanelImpl: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                 }).catch(() => {});
               }}
             />
-          </div>
-        );
-      
-      case 'usage':
-        return (
-          <div className="h-full">
-            <UsageDashboard onBack={() => {}} />
           </div>
         );
       

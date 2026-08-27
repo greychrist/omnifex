@@ -21,16 +21,20 @@ import {
   type CostFacets,
   type CostHistoryPeriodModel,
   type CostSessionRow,
+  type CostTotals,
   type SubagentSplitRow,
   type UnpricedModel,
 } from '@/lib/api';
 import { useThemeContext } from '@/contexts/ThemeContext';
+import { useAccounts } from '@/contexts/AccountsContext';
+import { AccountPicker } from '@/components/AccountPicker';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { modelColor, modelLabel, type ChartMode } from '@/lib/costChartPalette';
 import {
   RANGE_PRESETS,
-  emptyFilterState,
+  loadFilterState,
+  saveFilterState,
   fmtPercent,
   fmtRatio,
   fmtTokens,
@@ -52,6 +56,7 @@ interface ReportData {
   subagents: SubagentSplitRow[];
   unpriced: UnpricedModel[];
   sessions: CostSessionRow[];
+  totals: CostTotals | null;
 }
 
 /** Trim a project path to its last two segments — enough to tell repos apart
@@ -88,7 +93,10 @@ export function CostReportView() {
   const { theme } = useThemeContext();
   const mode: ChartMode = theme === 'light' ? 'light' : 'dark';
 
-  const [filters, setFilters] = useState<CostFilterState>(emptyFilterState);
+  const { accounts } = useAccounts();
+  // Read synchronously on first render, so the page opens already filtered
+  // rather than flashing the defaults.
+  const [filters, setFilters] = useState<CostFilterState>(loadFilterState);
   const [facets, setFacets] = useState<CostFacets | null>(null);
   const [data, setData] = useState<ReportData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -105,7 +113,7 @@ export function CostReportView() {
     setLoading(true);
     setError(null);
     try {
-      const [periods, byProject, byModel, byProjectModel, components, roi, subagents, unpriced, sessions, f] =
+      const [periods, byProject, byModel, byProjectModel, components, roi, subagents, unpriced, sessions, f, t] =
         await Promise.all([
           api.sessionCostHistoryByModel({ ...params, groupBy: filters.groupBy }),
           api.sessionCostByProject(params),
@@ -117,8 +125,9 @@ export function CostReportView() {
           api.sessionCostUnpriced(params),
           api.sessionCostSessions(params),
           api.sessionCostFacets(params),
+          api.sessionCostTotals(params),
         ]);
-      setData({ periods, byProject, byModel, byProjectModel, components, roi, subagents, unpriced, sessions });
+      setData({ periods, byProject, byModel, byProjectModel, components, roi, subagents, unpriced, sessions, totals: t });
       setFacets(f);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -128,6 +137,7 @@ export function CostReportView() {
   }, [params, filters.groupBy]);
 
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => { saveFilterState(filters); }, [filters]);
 
   const rescan = useCallback(async () => {
     setRescanning(true);
@@ -143,10 +153,24 @@ export function CostReportView() {
   }, [load]);
 
   const total = data?.components?.cost_usd ?? 0;
-  const requests = useMemo(
-    () => (data?.subagents ?? []).reduce((n, r) => n + r.request_count, 0),
-    [data],
-  );
+  const requests = data?.totals?.request_count ?? 0;
+  const sessionCount = data?.totals?.session_count ?? 0;
+
+  /**
+   * Subscription accounts (Max, Pro) are not billed per token, so their dollar
+   * figure is what the usage WOULD have cost at API rates — not money spent.
+   * Saying so is the one thing the old Usage dashboard did better; it printed
+   * "Included" rather than a number. Keeping the number is more useful (it is
+   * how you compare accounts at all), but it must never read as a bill.
+   */
+  const notionalAccounts = useMemo(() => {
+    const inScope = filters.accounts.length
+      ? accounts.filter((a) => filters.accounts.includes(a.name))
+      : accounts;
+    return inScope
+      .filter((a) => /^(max|pro)$/i.test(a.subscription_label ?? ''))
+      .map((a) => a.name);
+  }, [accounts, filters.accounts]);
   const activeDays = useMemo(
     () => new Set((data?.periods ?? []).map((p) => p.period)).size,
     [data],
@@ -222,11 +246,11 @@ export function CostReportView() {
 
           <div className="mx-1 h-5 w-px bg-border" />
 
-          <MultiSelectFilter
-            label="Accounts"
-            options={facets?.accounts ?? []}
+          <AccountPicker
+            mode="multi"
+            accounts={facets?.accounts ?? []}
             selected={filters.accounts}
-            onChange={(accounts) => patch({ accounts })}
+            onChange={(next) => patch({ accounts: next })}
           />
           <MultiSelectFilter
             label="Models"
@@ -318,15 +342,27 @@ export function CostReportView() {
         ) : (
           <>
             {/* ── Headline ────────────────────────────────────────────── */}
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <Kpi label="Total" value={fmtUsd(total)} />
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+              <Kpi
+                label={notionalAccounts.length > 0 ? 'Total (notional)' : 'Total'}
+                value={fmtUsd(total)}
+                hint={notionalAccounts.length > 0 ? 'not billed per token' : undefined}
+              />
+              <Kpi label="Sessions" value={sessionCount.toLocaleString()} />
               <Kpi label="Requests" value={requests.toLocaleString()} />
               <Kpi label="Active periods" value={String(activeDays)} hint={filters.groupBy} />
-              <Kpi
-                label="Per request"
-                value={requests > 0 ? fmtUsd(total / requests) : '—'}
-              />
+              <Kpi label="Per request" value={requests > 0 ? fmtUsd(total / requests) : '—'} />
             </div>
+
+            {notionalAccounts.length > 0 && (
+              <p className="text-xs text-muted-foreground">
+                {notionalAccounts.join(' and ')}{' '}
+                {notionalAccounts.length > 1 ? 'are subscription accounts' : 'is a subscription account'},
+                so {notionalAccounts.length > 1 ? 'their' : 'its'} tokens are not billed per use.
+                The dollar figures below are what this usage <em>would</em> have cost at API rates —
+                useful for comparison, not a bill.
+              </p>
+            )}
 
             {/* ── Trend ───────────────────────────────────────────────── */}
             <Panel
@@ -513,6 +549,7 @@ export function CostReportView() {
                     <th className="py-1 pr-2 font-medium">Project</th>
                     <th className="py-1 pr-2 font-medium text-right">Cost</th>
                     <th className="py-1 pr-2 font-medium text-right">Share</th>
+                    <th className="py-1 pr-2 font-medium text-right">Sessions</th>
                     <th className="py-1 font-medium text-right">Requests</th>
                   </tr>
                 </thead>
@@ -526,6 +563,7 @@ export function CostReportView() {
                       <td className="py-1 pr-2 text-right font-mono text-muted-foreground">
                         {total > 0 ? fmtPercent(p.cost_usd / total) : '—'}
                       </td>
+                      <td className="py-1 pr-2 text-right font-mono">{p.session_count.toLocaleString()}</td>
                       <td className="py-1 text-right font-mono">{p.request_count.toLocaleString()}</td>
                     </tr>
                   ))}

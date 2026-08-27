@@ -48,7 +48,7 @@ type View =
  */
 function AppContent() {
   const [view, setView] = useState<View>("tabs");
-  const { createSettingsTab, createLimaTab, createBrainTab, createCostReportTab, createUsageTab } = useTabState();
+  const { createSettingsTab, createLimaTab, createBrainTab, createCostReportTab } = useTabState();
   const { activeTabId, setActiveTab, updateTab, addTab } = useTabContext();
   useNotifications(activeTabId, setActiveTab, updateTab);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -184,18 +184,6 @@ function AppContent() {
     };
   }, []);
 
-  // Legacy entry point — anything still dispatching this event opens the
-  // usage dashboard as a tab (singleton, like Settings / Lima) so the tab
-  // strip stays visible and the user has an obvious way back. The dedicated
-  // `view = 'usage-dashboard'` mode is gone; everything goes through tabs.
-  useEffect(() => {
-    const handler = () => {
-      setView('tabs');
-      createUsageTab();
-    };
-    window.addEventListener('navigate-to-usage-dashboard', handler);
-    return () => { window.removeEventListener('navigate-to-usage-dashboard', handler); };
-  }, [createUsageTab]);
 
   /**
    * Loads all projects from the ~/.claude/projects directory

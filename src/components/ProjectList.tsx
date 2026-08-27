@@ -1,31 +1,17 @@
 import React, { useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { FolderOpen, ArrowUp, ArrowDown, ArrowUpDown, Zap, List, Pin, Settings, Infinity as InfinityIcon } from "lucide-react";
+import { FolderOpen, ArrowUp, ArrowDown, ArrowUpDown, Zap, List, Pin, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { TooltipProvider, TooltipSimple } from "@/components/ui/tooltip-modern";
 import type { Project } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { AccountBadge } from "@/components/AccountBadge";
+import { AccountPicker } from "@/components/AccountPicker";
 import { fireAndLog } from "@/lib/fireAndLog";
 
 type SortKey = 'name' | 'account' | 'lastActivity';
 type SortDir = 'asc' | 'desc';
-
-/**
- * "All accounts" badge for the project filter. Matches AccountBadge's
- * `size="sm"` shape (`text-xs`, 15px icon, `px-2 py-0.5`, rounded border)
- * but uses theme-neutral muted tokens since "All" isn't a real account
- * and shouldn't pull from any account's color stack. Used in both the
- * closed dropdown trigger and the open dropdown items.
- */
-const AllAccountsBadge: React.FC = () => (
-  <span className="inline-flex items-center gap-1 rounded border border-border bg-muted/40 px-2 py-0.5 text-xs font-medium text-muted-foreground whitespace-nowrap">
-    <InfinityIcon className="h-[15px] w-[15px]" strokeWidth={2.2} />
-    All
-  </span>
-);
 
 /**
  * Format a Unix-seconds timestamp as a compact relative-time string
@@ -264,52 +250,12 @@ export const ProjectList: React.FC<ProjectListProps> = ({
                     <label className="text-[10px] uppercase tracking-wider text-muted-foreground">
                       Account
                     </label>
-                    <Select value={accountFilter} onValueChange={setAccountFilter}>
-                      {/* Trigger renders the badge directly when a real
-                          account is selected — both the closed dropdown
-                          and the dropdown items use AccountBadge size="sm"
-                          so the badge inherits the surrounding text-xs
-                          scale. "All" stays plain text since it's not an
-                          account. The legacy "(unassigned)" bucket
-                          (projects whose account didn't resolve) gets a
-                          muted "No account" string for the same reason.
-                          The trigger gets `[&>svg]:size-3` so the chevron
-                          stays small even though the badge itself is
-                          taller than bare text. */}
-                      <SelectTrigger className="h-7 text-xs w-auto gap-1.5 pl-1 [&>svg]:size-3">
-                        {/* Wrapper div keeps the badge out of
-                            SelectTrigger's `[&>span]:line-clamp-1`
-                            scope. Without it, line-clamp forces
-                            `display: -webkit-box` on the badge span and
-                            stacks the icon above the label. As a flex
-                            child of the trigger (justify-between), the
-                            div hugs its content on the left while the
-                            chevron stays right. */}
-                        <div className="inline-flex items-center">
-                          {accountFilter === 'all' ? (
-                            <AllAccountsBadge />
-                          ) : accountFilter === '(unassigned)' ? (
-                            <span className="text-muted-foreground">No account</span>
-                          ) : (
-                            <AccountBadge name={accountFilter} size="sm" />
-                          )}
-                        </div>
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">
-                          <AllAccountsBadge />
-                        </SelectItem>
-                        {accountOptions.map((name) => (
-                          <SelectItem key={name} value={name}>
-                            {name === '(unassigned)' ? (
-                              <span className="text-muted-foreground">No account</span>
-                            ) : (
-                              <AccountBadge name={name} size="sm" />
-                            )}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <AccountPicker
+                      accounts={accountOptions}
+                      value={accountFilter}
+                      onChange={setAccountFilter}
+                      allowAll
+                    />
                   </div>
                 )}
               </div>

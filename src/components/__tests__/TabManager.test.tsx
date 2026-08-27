@@ -105,7 +105,6 @@ function installState(overrides: StateOverrides = {}) {
     activeTabId: overrides.activeTabId ?? (tabs[0]?.id ?? null),
     createChatTab: vi.fn(),
     createProjectsTab,
-    createUsageTab: vi.fn(),
     createMCPTab: vi.fn(),
     createLimaTab: vi.fn(),
     createSettingsTab: vi.fn(),

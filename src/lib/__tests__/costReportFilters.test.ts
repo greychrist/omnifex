@@ -1,9 +1,12 @@
-import { describe, it, expect } from 'vitest';
+// @vitest-environment jsdom
+import { describe, it, expect, beforeEach } from 'vitest';
 import {
   RANGE_PRESETS,
   resolveRange,
   toFilterParams,
   emptyFilterState,
+  loadFilterState,
+  saveFilterState,
   fmtUsd,
   fmtTokens,
   fmtPercent,
@@ -102,5 +105,66 @@ describe('formatters', () => {
     expect(fmtRatio(35.4)).toBe('35:1');
     expect(fmtRatio(1.8)).toBe('1.8:1');
     expect(fmtRatio(0)).toBe('—');
+  });
+});
+
+/**
+ * The page remembers what you last set — everything except the date range,
+ * which resets so you never reopen weeks later still pinned to a stale
+ * absolute window.
+ */
+describe('filter persistence', () => {
+  const KEY = 'omnifex.costReport.filters';
+  beforeEach(() => { window.localStorage.clear(); });
+
+  it('round-trips every remembered field', () => {
+    const state: CostFilterState = {
+      ...emptyFilterState(),
+      accounts: ['Work'], models: ['claude-opus-5'], projects: ['/p'],
+      projectSearch: 'omni', scope: 'subagent', groupBy: 'week',
+    };
+    saveFilterState(state);
+    const back = loadFilterState();
+    expect(back.accounts).toEqual(['Work']);
+    expect(back.models).toEqual(['claude-opus-5']);
+    expect(back.projects).toEqual(['/p']);
+    expect(back.projectSearch).toBe('omni');
+    expect(back.scope).toBe('subagent');
+    expect(back.groupBy).toBe('week');
+  });
+
+  // The date range deliberately does NOT persist: an absolute custom window
+  // saved in August is meaningless in October, and would silently show an
+  // empty page.
+  it('never restores the date range', () => {
+    saveFilterState({ ...emptyFilterState(), rangeKey: '90d', customStart: '2026-01-01', customEnd: '2026-02-01' });
+    const back = loadFilterState();
+    expect(back.rangeKey).toBe(emptyFilterState().rangeKey);
+    expect(back.customStart).toBe('');
+    expect(back.customEnd).toBe('');
+  });
+
+  it('returns defaults when nothing has been saved', () => {
+    expect(loadFilterState()).toEqual(emptyFilterState());
+  });
+
+  it('returns defaults rather than throwing on corrupt storage', () => {
+    window.localStorage.setItem(KEY, '{not json');
+    expect(loadFilterState()).toEqual(emptyFilterState());
+  });
+
+  // A stored value from an older build must not smuggle an unknown scope or
+  // groupBy into a query.
+  it('drops fields whose stored value is no longer valid', () => {
+    window.localStorage.setItem(KEY, JSON.stringify({ scope: 'nonsense', groupBy: 'fortnight', accounts: 'Work' }));
+    const back = loadFilterState();
+    expect(back.scope).toBe('all');
+    expect(back.groupBy).toBe('day');
+    expect(back.accounts).toEqual([]);
+  });
+
+  it('keeps non-string entries out of the multi-select arrays', () => {
+    window.localStorage.setItem(KEY, JSON.stringify({ accounts: ['Work', 3, null] }));
+    expect(loadFilterState().accounts).toEqual(['Work']);
   });
 });

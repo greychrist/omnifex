@@ -130,3 +130,77 @@ export function fmtRatio(ratio: number): string {
   if (!Number.isFinite(ratio) || ratio <= 0) return '—';
   return ratio >= 10 ? `${Math.round(ratio)}:1` : `${ratio.toFixed(1)}:1`;
 }
+
+// ── Persistence ────────────────────────────────────────────────────────────
+//
+// localStorage rather than `app_settings`, matching how the rest of the
+// renderer stores view state (LogTab column widths, SubagentBar collapse,
+// AgentSession header height). It also reads synchronously, so the page opens
+// already filtered instead of flashing the defaults while an async setting
+// loads.
+
+const STORAGE_KEY = 'omnifex.costReport.filters';
+
+/** Fields that survive a relaunch. The date range deliberately does not: an
+ *  absolute window saved in August is meaningless in October and would
+ *  silently show an empty page. */
+type PersistedFilters = Pick<
+  CostFilterState,
+  'accounts' | 'models' | 'projects' | 'projectSearch' | 'scope' | 'groupBy'
+>;
+
+const SCOPES: CostScope[] = ['all', 'main', 'subagent'];
+const GROUP_BYS: CostFilterState['groupBy'][] = ['day', 'week', 'month'];
+
+/** Only strings survive — a stored array from an older build must not smuggle
+ *  a non-string into an `IN (...)` clause. */
+function stringArray(v: unknown): string[] {
+  return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
+}
+
+export function saveFilterState(state: CostFilterState): void {
+  const persisted: PersistedFilters = {
+    accounts: state.accounts,
+    models: state.models,
+    projects: state.projects,
+    projectSearch: state.projectSearch,
+    scope: state.scope,
+    groupBy: state.groupBy,
+  };
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(persisted));
+  } catch {
+    // Quota or private mode — the filters just won't be remembered.
+  }
+}
+
+/**
+ * The remembered filters, merged over the defaults. Every field is validated
+ * against the values this build actually accepts: a stale `scope` or `groupBy`
+ * from an older build must fall back rather than reach a query.
+ */
+export function loadFilterState(): CostFilterState {
+  const base = emptyFilterState();
+  let raw: unknown;
+  try {
+    const stored = window.localStorage.getItem(STORAGE_KEY);
+    if (!stored) return base;
+    raw = JSON.parse(stored);
+  } catch {
+    return base;
+  }
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return base;
+  const p = raw as Record<string, unknown>;
+
+  return {
+    ...base,
+    accounts: stringArray(p.accounts),
+    models: stringArray(p.models),
+    projects: stringArray(p.projects),
+    projectSearch: typeof p.projectSearch === 'string' ? p.projectSearch : base.projectSearch,
+    scope: SCOPES.includes(p.scope as CostScope) ? (p.scope as CostScope) : base.scope,
+    groupBy: GROUP_BYS.includes(p.groupBy as CostFilterState['groupBy'])
+      ? (p.groupBy as CostFilterState['groupBy'])
+      : base.groupBy,
+  };
+}

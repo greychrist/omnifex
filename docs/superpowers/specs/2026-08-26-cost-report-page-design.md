@@ -222,12 +222,32 @@ Wiring, following the Lima/Brain pattern exactly:
 1. `src/contexts/TabContext.tsx:11` — add `'cost-report'` to the type union.
 2. `src/hooks/useTabState.ts` — `createCostReportTab`, find-existing-or-create.
 3. `src/components/TabManager.tsx` — `case 'cost-report': return DollarSign` in `getTabIcon`.
-4. `src/components/TabContent.tsx` — `case 'cost-report':`, lazy-imported like `UsageDashboard`.
+4. `src/components/TabContent.tsx` — `case 'cost-report':`, lazy-imported.
 5. `src/components/CustomTitlebar.tsx` — an `onCostClick` button in the segmented group after
    Brain, wired from `src/App.tsx`.
 
-`CostsView` stays where it is, inside the Usage dashboard. The two are allowed to coexist;
-`CostsView` is the glance, this is the deep-dive.
+**Superseded 2026-08-26.** `CostsView` and `UsageDashboard` are deleted, not kept. The Usage
+dashboard turned out to be **unreachable**: its only entry point was a `navigate-to-usage-dashboard`
+window event that nothing in the codebase dispatched, left behind when the dedicated
+`view = 'usage-dashboard'` mode was removed. Keeping two overlapping cost pages — reading from
+different sources, able to disagree — to preserve one nobody could open was not worth it.
+
+Three things were ported across first, being the only ones the Usage view had that this page
+did not:
+
+- **Distinct session counts** (`totals()`, and `session_count` on the grouped queries). Requests
+  and sessions answer different questions; neither substitutes for the other. `session_count` is
+  `COUNT(DISTINCT session_id)`, never a `SUM` — a session spanning two days would otherwise be
+  counted twice in any range total.
+- **Notional dollars for subscription accounts.** A Max or Pro account is not billed per token,
+  so its figure is what the usage *would* have cost. The old view printed "Included"; this page
+  keeps the number (it is the only way to compare accounts) but labels the tile "Total (notional)"
+  and adds a caveat naming the accounts. Printing it unqualified reads as money spent.
+- Nothing from the data source: this page already reads the durable `session_cost_daily`, which is
+  the better of the two.
+
+A tab persisted as `type: 'usage'` by an older build migrates to `cost-report` on restore, and
+collapses if a Cost tab already exists, so the find-or-create singleton still holds.
 
 ### 5.1 Filters
 
@@ -235,7 +255,13 @@ A filter bar across the top, its state the single source of truth for every quer
 
 - **Date range** — presets (this month / last month / last 30d / last 90d / all time) plus
   explicit start/end date inputs. Choosing a custom date clears the preset selection.
-- **Account, model, project** — multi-select checkbox lists, populated from `facets()`. Empty
+- **Account** — `AccountPicker` in `multi` mode. That component was extracted from the two
+  hand-copied Radix Selects in `ProjectList` and `BrainTab` (BrainTab's comment read "Same
+  treatment as the Projects page", duplicating the paragraph that explains the same line-clamp
+  workaround) plus `UsageDashboard`'s unrelated badge-less button row — three looks for one
+  concept. Radix's Select cannot do multi-select, so the multi variant is a button + popover
+  wearing the same trigger classes, badges and "All" affordance.
+- **Model, project** — multi-select checkbox lists, populated from `facets()`. Empty
   selection means "all", not "none".
 - **Project search** — free-text, filters the project list and applies as `projectSearch`.
 - **Main loop / subagent / both** — a three-way toggle mapping to `isSubagent`.
@@ -275,6 +301,19 @@ them. That is why the order is red→blue→green rather than blue→green→red
 Model→slot assignment is unchanged, which puts opus-4-8 / opus-5 / fable-5 — 96.8% of lifetime
 spend — on the three leading hues. **Given up deliberately:** the previous order matched the
 Anthropic console's own model colours so the two could be read side by side.
+
+### 5.2a Remembering the filters
+
+Every filter except the date range persists to `localStorage` under
+`omnifex.costReport.filters`, read synchronously on first render so the page opens already
+filtered rather than flashing the defaults. localStorage rather than `app_settings` matches how
+the renderer stores its other view state (LogTab column widths, SubagentBar collapse,
+AgentSession header height), and avoids the async round-trip that would cause the flash.
+
+The **date range deliberately does not persist**: an absolute custom window saved in August is
+meaningless in October and would silently open on an empty page. Stored `scope` and `groupBy`
+values are validated against what this build accepts, so a value from an older build falls back
+rather than reaching a query.
 
 ### 5.3 Say it, don't just show it
 

@@ -11,7 +11,7 @@ interface RateLimitWidgetProps {
   windowType: 'five_hour' | 'seven_day';
   /** Account name displayed in tooltip. */
   accountName?: string;
-  /** Click handler — parent typically routes to UsageDashboard. */
+  /** Click handler — AccountCard uses it to toggle its usage popover. */
   onClick?: () => void;
   /** Wall-clock right now (ms since epoch). Defaults to `Date.now()`. */
   nowMs?: number;
