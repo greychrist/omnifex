@@ -5,6 +5,26 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.143] — 2026-08-26
+
+OmniFex stops hiding what it spends on your account.
+
+### Added
+
+- **The tokens OmniFex spends on its own behalf now appear in the Cost Report.** Session summaries, Brain indexing and Brain curation all run the Claude CLI on your account, and until now their transcripts were deleted the moment the call returned — so the money was invisible. They are kept instead, and show up as three line items: *OmniFex/Session summarization*, *OmniFex/Brain index* and *OmniFex/Brain curation*. **Your totals will go up.** That is the figure getting more complete, not new spending.
+- **A place to see and clear them.** Brain settings shows how many transcripts are retained and what they occupy, with a Clear button. They are also pruned automatically after 90 days. Clearing or pruning never touches cost history — spend already recorded stays in the report.
+
+### Fixed
+
+- **Sonnet 5 was priced 50% too high.** The rate table had one generic Sonnet entry at $3/$15 per million tokens; Sonnet 5 is $2/$10. Every Sonnet figure the report has ever shown was overstated. Press Rescan to reprice existing history.
+- **Internal spend was recorded by coin flip.** The old cleanup deleted each internal transcript immediately, which raced the process that prices it — so a non-deterministic fraction of that spend ended up in the table, and the rest vanished. Those unreliable rows are replaced with the Brain's own ledger, which recorded every indexing and curation run exactly. Spend from session summarization before this release is not recoverable, and no figure has been invented for it.
+
+### Changed
+
+- **The Cost Report's filter bar is grouped into labelled cards.** It was one unlabelled row of controls separated by hairlines — date presets, account, models, projects and scope all the same size, with nothing saying which was which. Account and project now share a card, and the project list narrows to whichever accounts you have selected. Date range keeps three presets on one line with explicit from/to below.
+- **Day / week / month moved next to the chart.** It changes how the trend is drawn, not which rows are counted; sitting among the filters it implied otherwise.
+- **The project search box is gone.** The Projects picker is searchable and now account-aware, which is what that box was for.
+
 ## [0.4.142] — 2026-08-26
 
 A Cost Report page, and a spend figure that was quietly too low.
