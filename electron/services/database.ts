@@ -920,6 +920,77 @@ const migrations: Migration[] = [
       if (!has) db.exec('ALTER TABLE session_cost_daily ADD COLUMN internal_kind TEXT');
     },
   },
+  {
+    version: 24,
+    description:
+      'Reconcile historical OmniFex-internal spend. Before transcripts were '
+      + 'retained, internal runs were deleted the moment the call returned — '
+      + 'but the cost watcher sometimes won the race, so session_cost_daily '
+      + 'holds a NON-DETERMINISTIC fraction of that spend under the scratch '
+      + 'project path. That is not data, it is whatever won a race, so those '
+      + 'rows are dropped and replaced from brain_spend, which recorded every '
+      + 'indexing and curation run exactly. Component costs are left at zero: '
+      + 'the ledger never recorded a breakdown, and splitting the total by a '
+      + 'guess would put invented numbers in the component panel. Pre-change '
+      + 'SESSION SUMMARIZATION spend is not recoverable — those transcripts '
+      + 'are gone and nothing else recorded them — and no figure is invented '
+      + 'for it. See '
+      + 'docs/superpowers/specs/2026-08-26-internal-session-archive-design.md.',
+    up: (db) => {
+      const has = (name: string): boolean =>
+        db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(name) !== undefined;
+      if (!has('session_cost_daily')) return;
+
+      // Whatever the race happened to capture. Deleted rather than kept
+      // alongside the ledger, which would double-count the overlap.
+      db.prepare("DELETE FROM session_cost_daily WHERE project_path LIKE '%omnifex-summary-scratch%'").run();
+
+      if (!has('brain_spend')) return;
+
+      // Deterministic session ids, so re-running replaces rather than doubles.
+      db.prepare("DELETE FROM session_cost_daily WHERE session_id LIKE 'brain-spend-%'").run();
+
+      db.exec(`
+        INSERT INTO session_cost_daily (
+          session_id, date, model, account_name, config_dir, project_path,
+          is_subagent, request_count,
+          input_tokens, output_tokens, cache_read_tokens,
+          cache_write_5m_tokens, cache_write_1h_tokens,
+          input_usd, output_usd, cache_read_usd, cache_write_usd,
+          cost_usd, is_estimated, updated_at, internal_kind
+        )
+        SELECT
+          'brain-spend-' || id,
+          date,
+          model,
+          account_name,
+          '',
+          CASE kind
+            WHEN 'index' THEN 'OmniFex/Brain index'
+            WHEN 'curation' THEN 'OmniFex/Brain curation'
+          END,
+          0,
+          1,
+          COALESCE(input_tokens, 0),
+          COALESCE(output_tokens, 0),
+          COALESCE(cache_read_tokens, 0),
+          0,
+          -- The Brain's calls use 1h cache writes; recording them in the 5m
+          -- column would misprice any future recomputation from tokens.
+          COALESCE(cache_creation_tokens, 0),
+          0, 0, 0, 0,
+          cost_usd,
+          0,
+          datetime('now'),
+          CASE kind
+            WHEN 'index' THEN 'brain-index'
+            WHEN 'curation' THEN 'brain-curation'
+          END
+        FROM brain_spend
+        WHERE kind IN ('index', 'curation')
+      `);
+    },
+  },
 ];
 
 /**

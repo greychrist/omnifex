@@ -57,7 +57,8 @@ A per-account memory vault: Markdown notes distilled from past sessions, repo ar
 - **Spawn the MCP server as `process.execPath` with `ELECTRON_RUN_AS_NODE=1`**, never system `node`: `better-sqlite3` is built against the Electron ABI.
 - **The Brain is auxiliary.** Nothing in it may break a session, block the UI, or consume rate limit needed for real work. A failed item never blocks the queue.
 - **`merge.ts` must stay pure and idempotent** — indexing the same session twice produces a byte-identical note. It is the property tested hardest.
-- **Money is recorded in `brain_spend`, never inferred.** `brain_sources.cost_usd` is a per-item snapshot that re-indexing overwrites; the ledger is append-only and is what `stats.spentUsd` and any monthly report read. Extraction transcripts are swept, so nothing else on the machine can see this spend.
+- **Money is recorded in `brain_spend`, never inferred.** `brain_sources.cost_usd` is a per-item snapshot that re-indexing overwrites; the ledger is append-only and is what `stats.spentUsd` and the Brain tab read. It is an *audit* record, not a reporting one — the Cost Report reads `session_cost_daily` only, so nothing is counted twice.
+- **Extraction transcripts are retained, not swept.** They used to be `rm -rf`'d the moment the call returned, which raced the cost watcher and left a non-deterministic fraction of the Brain's own spend in the cost table. They now move to `<userData>/internal-sessions/<account>/<kind>/<date>/` and are priced there like any other transcript, attributed as `OmniFex/Brain index` and `OmniFex/Brain curation`. Age-capped at 90 days with a Clear button; pruning never removes cost rows. The Brain must never index that archive — it would distil its own distillations and pay for it every cycle. See `docs/superpowers/specs/2026-08-26-internal-session-archive-design.md`.
 
 ## Research And Code Intelligence
 

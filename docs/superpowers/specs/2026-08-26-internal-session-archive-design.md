@@ -1,6 +1,6 @@
 # Retaining OmniFex's own model usage
 
-**Status:** proposed
+**Status:** implemented (2026-08-26)
 **Date:** 2026-08-26
 **Supersedes:** the sweep behaviour documented in `electron/services/sessions/summary-query.ts`
 **Related:** `2026-08-26-cost-report-page-design.md`, `2026-08-11-brain-memory-vault-design.md`
