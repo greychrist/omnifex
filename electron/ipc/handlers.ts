@@ -354,7 +354,6 @@ function costFilters(p: Record<string, unknown> | undefined): Record<string, unk
     accountName: p?.accountName ?? p?.account_name,
     projectPath: p?.projectPath ?? p?.project_path,
     model: p?.model,
-    projectSearch: p?.projectSearch ?? p?.project_search,
     isSubagent: p?.isSubagent ?? p?.is_subagent,
   };
 }

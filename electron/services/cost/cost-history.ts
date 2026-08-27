@@ -108,8 +108,6 @@ export interface CostHistoryFilters {
   accountName?: string | string[];
   projectPath?: string | string[];
   model?: string | string[];
-  /** Case-insensitive substring of `project_path`. */
-  projectSearch?: string;
   /** `undefined` includes both the main loop and subagents. */
   isSubagent?: boolean;
 }
@@ -278,12 +276,6 @@ export interface CostHistoryService {
   backfill(accounts: AccountLike[]): { sessionsScanned: number };
 }
 
-/** LIKE treats `%` and `_` as wildcards, so a project path containing either
- *  would silently over-match. Escape them and declare the escape character. */
-function escapeLike(term: string): string {
-  return term.replace(/[\\%_]/g, (c) => `\\${c}`);
-}
-
 function whereClause(filters: CostHistoryFilters): { sql: string; params: unknown[] } {
   const clauses: string[] = [];
   const params: unknown[] = [];
@@ -303,10 +295,6 @@ function whereClause(filters: CostHistoryFilters): { sql: string; params: unknow
   multi('account_name', filters.accountName);
   multi('project_path', filters.projectPath);
   multi('model', filters.model);
-  if (filters.projectSearch) {
-    clauses.push("project_path LIKE ? ESCAPE '\\'");
-    params.push(`%${escapeLike(filters.projectSearch)}%`);
-  }
   if (filters.isSubagent !== undefined) {
     clauses.push('is_subagent = ?');
     params.push(filters.isSubagent ? 1 : 0);
@@ -551,26 +539,34 @@ export function createCostHistoryService(db: Database, fsDeps: CostFs = nodeCost
   }
 
   function facets(filters: CostHistoryFilters): CostFacets {
-    // Only the date range narrows the facets. Narrowing by account/model/
-    // project would let a control erase its own alternatives — select "Work"
-    // and "Personal" vanishes from the list you'd need to get back.
-    const { sql, params } = whereClause({
-      startDate: filters.startDate,
-      endDate: filters.endDate,
-    });
-    const column = (name: string): string[] =>
+    // The date range narrows every facet. Beyond that, a control must not
+    // narrow its OWN list — select "Work" and "Personal" would vanish from
+    // the list you need to get back — so account and model are listed
+    // against the date range alone.
+    //
+    // Projects are the one deliberate exception, and it is not a violation of
+    // that rule: the project list is narrowed by ACCOUNT, never by the
+    // project selection itself. A project belongs to exactly one account's
+    // config dir, so showing every account's projects under a chosen account
+    // is noise rather than a useful alternative.
+    const dateOnly = { startDate: filters.startDate, endDate: filters.endDate };
+    const { sql, params } = whereClause(dateOnly);
+    const distinct = (name: string, where: { sql: string; params: unknown[] }): string[] =>
       (db.raw
-        .prepare(`SELECT DISTINCT ${name} AS v FROM session_cost_daily ${sql} ORDER BY v`)
-        .all(...params) as Array<{ v: string | null }>)
+        .prepare(`SELECT DISTINCT ${name} AS v FROM session_cost_daily ${where.sql} ORDER BY v`)
+        .all(...where.params) as Array<{ v: string | null }>)
         .map((r) => r.v)
         .filter((v): v is string => v !== null && v !== '');
+
+    const byDate = { sql, params };
+    const byAccount = whereClause({ ...dateOnly, accountName: filters.accountName });
     const range = db.raw
       .prepare(`SELECT MIN(date) AS minDate, MAX(date) AS maxDate FROM session_cost_daily ${sql}`)
       .get(...params) as { minDate: string | null; maxDate: string | null };
     return {
-      accounts: column('account_name'),
-      models: column('model'),
-      projects: column('project_path'),
+      accounts: distinct('account_name', byDate),
+      models: distinct('model', byDate),
+      projects: distinct('project_path', byAccount),
       ...range,
     };
   }

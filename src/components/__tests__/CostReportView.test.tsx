@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, cleanup, waitFor, fireEvent, within } from '@testing-library/react';
 
 // recharts needs a real layout box; jsdom gives it zero size and
 // ResponsiveContainer then renders nothing. The chart's data shaping is
@@ -33,8 +33,11 @@ vi.mock('@/hooks', () => ({ useTheme: () => ({ theme: 'gray' }) }));
 
 // vi.mock factories are hoisted above module-level consts, so the recorder
 // has to be created inside vi.hoisted to exist by the time the factory runs.
-const { calls, record, failing } = vi.hoisted(() => {
+const { calls, record, failing, facetProjects, recordFresh } = vi.hoisted(() => {
   const calls: Record<string, unknown[]> = {};
+  /** Mutable so a test can shrink the project facet the way selecting an
+   *  account does, and assert the page drops a now-unavailable selection. */
+  const facetProjects: string[] = [];
   /** Channels forced to reject, by recorder name. Lets a test simulate one
    *  query failing while the rest succeed. */
   const failing = new Set<string>();
@@ -44,7 +47,14 @@ const { calls, record, failing } = vi.hoisted(() => {
       ? Promise.reject(new Error(`No handler registered for '${name}'`))
       : Promise.resolve(value);
   };
-  return { calls, record, failing };
+  /** Like `record`, but builds the value fresh per call. Real IPC returns a
+   *  new object every time; a shared one is referentially stable, so React
+   *  never sees the state change and effects keyed on it never re-run. */
+  const recordFresh = <T,>(name: string, build: () => T) => (params: unknown) => {
+    (calls[name] ??= []).push(params);
+    return Promise.resolve(build());
+  };
+  return { calls, record, failing, facetProjects, recordFresh };
 });
 
 vi.mock('@/lib/api', () => ({
@@ -79,11 +89,11 @@ vi.mock('@/lib/api', () => ({
     }),
     sessionCostUnpriced: record('unpriced', []),
     sessionCostSessions: record('sessions', []),
-    sessionCostFacets: record('facets', {
+    sessionCostFacets: recordFresh('facets', () => ({
       accounts: ['Personal', 'Work'], models: ['claude-opus-5', 'claude-sonnet-5'],
-      projects: ['/Users/me/Repos/personal/omnifex', '/Users/me/Repos/work/mango'],
+      projects: [...facetProjects],
       minDate: '2026-06-10', maxDate: '2026-08-26',
-    }),
+    })),
     sessionCostRescan: record('rescan', { sessionsScanned: 5 }),
   },
 }));
@@ -97,6 +107,8 @@ describe('CostReportView', () => {
     // previous one's selection and a "toggle Work on" becomes "toggle it off".
     window.localStorage.clear();
     failing.clear();
+    facetProjects.length = 0;
+    facetProjects.push('/Users/me/Repos/personal/omnifex', '/Users/me/Repos/work/mango');
   });
   afterEach(cleanup);
 
@@ -143,16 +155,6 @@ describe('CostReportView', () => {
     await waitFor(() => {
       const last = calls.history[calls.history.length - 1] as Record<string, unknown>;
       expect(last.isSubagent).toBe(true);
-    });
-  });
-
-  it('passes the project search through as a filter', async () => {
-    render(<CostReportView />);
-    await waitFor(() => { expect(calls.byProject).toBeTruthy(); });
-    fireEvent.change(screen.getByPlaceholderText('Search projects…'), { target: { value: 'mango' } });
-    await waitFor(() => {
-      const last = calls.byProject[calls.byProject.length - 1] as Record<string, unknown>;
-      expect(last.projectSearch).toBe('mango');
     });
   });
 
@@ -267,5 +269,114 @@ describe('CostReportView', () => {
     render(<CostReportView />);
     await waitFor(() => { expect(calls.unpriced).toBeTruthy(); });
     expect(screen.queryByText(/billed at the fallback rate/)).toBeNull();
+  });
+
+  // ── Filter layout ────────────────────────────────────────────────────────
+  //
+  // The filter bar was one long unlabelled flex-wrap row separated by bare
+  // `|` dividers: you had to already know what each control did. These tests
+  // pin the grouping so a later tidy-up can't quietly flatten it back.
+  describe('filter layout', () => {
+    it('labels each filter group', async () => {
+      render(<CostReportView />);
+      await waitFor(() => { expect(calls.facets).toBeTruthy(); });
+      expect(screen.getByText('Date range')).toBeTruthy();
+      expect(screen.getByText('Account & project')).toBeTruthy();
+      expect(screen.getByText('Model & scope')).toBeTruthy();
+    });
+
+    it('puts the account chooser above the date range', async () => {
+      render(<CostReportView />);
+      await waitFor(() => { expect(calls.facets).toBeTruthy(); });
+      const accounts = screen.getByTestId('filter-accounts');
+      const dates = screen.getByTestId('filter-date-range');
+      // Node.DOCUMENT_POSITION_FOLLOWING === 4
+      expect(accounts.compareDocumentPosition(dates) & 4).toBeTruthy();
+    });
+
+    it('puts each control in exactly one card', async () => {
+      render(<CostReportView />);
+      await waitFor(() => { expect(calls.facets).toBeTruthy(); });
+      const accountProject = screen.getByTestId('filter-accounts');
+      const dates = screen.getByTestId('filter-date-range');
+      const modelScope = screen.getByTestId('filter-model-scope');
+
+      // Projects sit with accounts, not with models — they are one question.
+      expect(within(accountProject).getByRole('button', { name: /projects/i })).toBeTruthy();
+      expect(within(dates).getByRole('button', { name: 'This month' })).toBeTruthy();
+      expect(within(modelScope).getByRole('button', { name: 'Main loop' })).toBeTruthy();
+      expect(within(modelScope).getByRole('button', { name: /models/i })).toBeTruthy();
+
+      expect(within(dates).queryByRole('button', { name: /models/i })).toBeNull();
+      expect(within(modelScope).queryByRole('button', { name: 'This month' })).toBeNull();
+    });
+
+    it('offers only this month, last month and all time as presets', async () => {
+      render(<CostReportView />);
+      await waitFor(() => { expect(calls.facets).toBeTruthy(); });
+      const dates = screen.getByTestId('filter-date-range');
+      expect(within(dates).queryByText('30 days')).toBeNull();
+      expect(within(dates).queryByText('90 days')).toBeNull();
+      expect(within(dates).getByText('All time')).toBeTruthy();
+    });
+
+    it('has no project search box', async () => {
+      render(<CostReportView />);
+      await waitFor(() => { expect(calls.facets).toBeTruthy(); });
+      expect(screen.queryByPlaceholderText('Search projects…')).toBeNull();
+    });
+
+    // The project list narrows with the account, so a selection made under a
+    // different account would otherwise keep filtering invisibly.
+    it('drops a selected project the account scope no longer offers', async () => {
+      render(<CostReportView />);
+      await waitFor(() => { expect(calls.byProject).toBeTruthy(); });
+
+      const card = screen.getByTestId('filter-accounts');
+      fireEvent.click(within(card).getByRole('button', { name: /projects/i }));
+      // 'work/mango' is also a row in the by-project table, so stay in the card.
+      fireEvent.click(within(card).getByText('work/mango'));
+      await waitFor(() => {
+        const last = calls.byProject[calls.byProject.length - 1] as { projectPath?: string[] };
+        expect(last.projectPath).toEqual(['/Users/me/Repos/work/mango']);
+      });
+
+      // Facets now come back without that project, as they would once an
+      // account that does not own it is selected.
+      facetProjects.length = 0;
+      facetProjects.push('/Users/me/Repos/personal/omnifex');
+      fireEvent.click(within(card).getByTestId('account-picker-trigger'));
+      fireEvent.click(within(card).getByTestId('account-option-Personal'));
+
+      await waitFor(() => {
+        const last = calls.byProject[calls.byProject.length - 1] as { projectPath?: string[] };
+        expect(last.projectPath).toBeUndefined();
+      });
+    });
+
+    it('moves the day/week/month grouping out of the filters and next to the chart', async () => {
+      render(<CostReportView />);
+      await waitFor(() => { expect(screen.getByTestId('chart')).toBeTruthy(); });
+
+      // It is a display control, not a filter, so it must not sit in the
+      // filter block — grouping by week does not change which rows are counted.
+      const filters = screen.getByTestId('cost-filters');
+      expect(within(filters).queryByTestId('group-by-week')).toBeNull();
+
+      const trend = screen.getByTestId('trend-panel');
+      expect(within(trend).getByTestId('group-by-week')).toBeTruthy();
+      expect(within(trend).getByTestId('group-by-day')).toBeTruthy();
+      expect(within(trend).getByTestId('group-by-month')).toBeTruthy();
+    });
+
+    it('still re-queries when the grouping changes', async () => {
+      render(<CostReportView />);
+      await waitFor(() => { expect(screen.getByTestId('chart')).toBeTruthy(); });
+      fireEvent.click(screen.getByTestId('group-by-week'));
+      await waitFor(() => {
+        const last = calls.history[calls.history.length - 1] as { groupBy?: string };
+        expect(last.groupBy).toBe('week');
+      });
+    });
   });
 });

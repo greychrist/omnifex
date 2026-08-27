@@ -61,24 +61,6 @@ describe('cost query surface', () => {
     });
   });
 
-  describe('projectSearch', () => {
-    it('matches a substring of the project path', () => {
-      expect(svc.byProject({ projectSearch: 'alph' })).toHaveLength(1);
-      expect(svc.byProject({ projectSearch: 'me/' })).toHaveLength(2);
-    });
-
-    it('is case-insensitive', () => {
-      expect(svc.byProject({ projectSearch: 'ALPHA' })).toHaveLength(1);
-    });
-
-    // A path with a literal % or _ must not turn into a wildcard.
-    it('escapes LIKE metacharacters', () => {
-      svc.replaceSession('s9', [row({ session_id: 's9', project_path: '/Users/me/a_b', cost_usd: 1 })]);
-      expect(svc.byProject({ projectSearch: 'a_b' }).map((r) => r.project_path)).toEqual(['/Users/me/a_b']);
-      expect(svc.byProject({ projectSearch: '%' })).toHaveLength(0);
-    });
-  });
-
   describe('isSubagent', () => {
     it('undefined includes both sides', () => {
       expect(svc.byModel({ startDate: '2026-08-01', model: 'claude-opus-5' })[0].cost_usd).toBeCloseTo(12, 10);
@@ -199,10 +181,28 @@ describe('cost query surface', () => {
 
     // Narrowing to one account must not narrow the account list itself, or
     // the control you just used to filter would erase its own alternatives.
-    it('keeps the account list whole when an account filter is applied', () => {
+    // The same guard applies to models.
+    it('keeps the account and model lists whole when an account filter is applied', () => {
       const f = svc.facets({ accountName: 'Work' });
       expect(f.accounts).toEqual(['Personal', 'Work']);
-      expect(f.projects).toEqual(['/Users/me/alpha', '/Users/me/beta']);
+      expect(f.models).toEqual(['claude-opus-5', 'claude-sonnet-5']);
+    });
+
+    // Projects are the deliberate exception: a project belongs to an account,
+    // so listing every account's projects under a chosen account is noise.
+    // Personal only ever touched beta.
+    it('narrows the project list to the selected account', () => {
+      expect(svc.facets({ accountName: 'Personal' }).projects).toEqual(['/Users/me/beta']);
+    });
+
+    it('unions projects across several selected accounts', () => {
+      expect(svc.facets({ accountName: ['Work', 'Personal'] }).projects)
+        .toEqual(['/Users/me/alpha', '/Users/me/beta']);
+    });
+
+    it('lists every project again once the account filter is cleared', () => {
+      expect(svc.facets({ accountName: [] }).projects)
+        .toEqual(['/Users/me/alpha', '/Users/me/beta']);
     });
 
     it('returns empty lists and null dates on an empty table', () => {

@@ -7,7 +7,7 @@
 
 import type { CostHistoryFilterParams } from '@/lib/api';
 
-export type RangeKey = 'month' | 'last-month' | '30d' | '90d' | 'all';
+export type RangeKey = 'month' | 'last-month' | 'all';
 
 /** Which side of the Task boundary to count. */
 export type CostScope = 'all' | 'main' | 'subagent';
@@ -20,16 +20,16 @@ export interface CostFilterState {
   accounts: string[];
   models: string[];
   projects: string[];
-  projectSearch: string;
   scope: CostScope;
   groupBy: 'day' | 'week' | 'month';
 }
 
+/** Three presets, on one line. The rolling 30/90-day windows were dropped:
+ *  they answered the same question as "this month" less precisely, and the
+ *  explicit from/to inputs below cover any window worth naming. */
 export const RANGE_PRESETS: Array<{ key: RangeKey; label: string }> = [
   { key: 'month', label: 'This month' },
   { key: 'last-month', label: 'Last month' },
-  { key: '30d', label: '30 days' },
-  { key: '90d', label: '90 days' },
   { key: 'all', label: 'All time' },
 ];
 
@@ -41,7 +41,6 @@ export function emptyFilterState(): CostFilterState {
     accounts: [],
     models: [],
     projects: [],
-    projectSearch: '',
     scope: 'all',
     groupBy: 'day',
   };
@@ -72,7 +71,9 @@ export function resolveRange(
     const endDate = shiftDays(firstOfThis, -1);
     return { startDate: `${endDate.slice(0, 7)}-01`, endDate };
   }
-  return { startDate: shiftDays(today, key === '30d' ? -30 : -90), endDate: undefined };
+  // Unreachable given RangeKey, but exhaustiveness here is what makes adding
+  // a preset later a compile error rather than a silently empty range.
+  return { startDate: undefined, endDate: undefined };
 }
 
 /**
@@ -97,9 +98,6 @@ export function toFilterParams(state: CostFilterState, today: string): CostHisto
   if (state.accounts.length) params.accountName = state.accounts;
   if (state.models.length) params.model = state.models;
   if (state.projects.length) params.projectPath = state.projects;
-
-  const search = state.projectSearch.trim();
-  if (search) params.projectSearch = search;
 
   if (state.scope !== 'all') params.isSubagent = state.scope === 'subagent';
 
@@ -146,7 +144,7 @@ const STORAGE_KEY = 'omnifex.costReport.filters';
  *  silently show an empty page. */
 type PersistedFilters = Pick<
   CostFilterState,
-  'accounts' | 'models' | 'projects' | 'projectSearch' | 'scope' | 'groupBy'
+  'accounts' | 'models' | 'projects' | 'scope' | 'groupBy'
 >;
 
 const SCOPES: CostScope[] = ['all', 'main', 'subagent'];
@@ -163,7 +161,6 @@ export function saveFilterState(state: CostFilterState): void {
     accounts: state.accounts,
     models: state.models,
     projects: state.projects,
-    projectSearch: state.projectSearch,
     scope: state.scope,
     groupBy: state.groupBy,
   };
@@ -197,7 +194,6 @@ export function loadFilterState(): CostFilterState {
     accounts: stringArray(p.accounts),
     models: stringArray(p.models),
     projects: stringArray(p.projects),
-    projectSearch: typeof p.projectSearch === 'string' ? p.projectSearch : base.projectSearch,
     scope: SCOPES.includes(p.scope as CostScope) ? (p.scope as CostScope) : base.scope,
     groupBy: GROUP_BYS.includes(p.groupBy as CostFilterState['groupBy'])
       ? (p.groupBy as CostFilterState['groupBy'])

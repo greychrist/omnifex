@@ -44,6 +44,8 @@ import {
   type CostFilterState,
 } from '@/lib/costReportFilters';
 import { MultiSelectFilter } from '@/components/cost-report/MultiSelectFilter';
+import { FilterCard } from '@/components/cost-report/FilterCard';
+import { Card } from '@/components/ui/card';
 import { CostChart, CostChartLegend } from '@/components/cost-report/CostChart';
 
 interface ReportData {
@@ -67,25 +69,42 @@ function shortProject(path: string | null): string {
   return parts.slice(-2).join('/') || path;
 }
 
-function Panel({ title, subtitle, children }: { title: string; subtitle?: React.ReactNode; children: React.ReactNode }) {
+function Panel({
+  title,
+  subtitle,
+  actions,
+  testId,
+  children,
+}: {
+  title: string;
+  subtitle?: React.ReactNode;
+  /** Display controls that belong to this panel rather than to the filters —
+   *  they change how the data is drawn, not which rows are counted. */
+  actions?: React.ReactNode;
+  testId?: string;
+  children: React.ReactNode;
+}) {
   return (
-    <section className="space-y-2">
-      <div>
-        <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{title}</h3>
-        {subtitle && <p className="mt-1 text-sm text-foreground">{subtitle}</p>}
+    <Card data-testid={testId} className="space-y-2 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{title}</h3>
+          {subtitle && <p className="mt-1 text-sm text-foreground">{subtitle}</p>}
+        </div>
+        {actions && <div className="flex shrink-0 items-center gap-1">{actions}</div>}
       </div>
       {children}
-    </section>
+    </Card>
   );
 }
 
 function Kpi({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
-    <div className="rounded-md border border-border/60 bg-background/40 px-3 py-2">
+    <Card className="px-3 py-2">
       <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</div>
       <div className="font-mono text-lg text-foreground">{value}</div>
       {hint && <div className="text-[10px] text-muted-foreground">{hint}</div>}
-    </div>
+    </Card>
   );
 }
 
@@ -164,6 +183,17 @@ export function CostReportView() {
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { saveFilterState(filters); }, [filters]);
 
+  // Choosing an account narrows the project list, so a project picked under a
+  // different account would stay selected while no longer being on screen —
+  // a filter quietly excluding rows with no visible control to undo it. Drop
+  // any selection the current account scope can no longer offer.
+  useEffect(() => {
+    if (!facets || filters.projects.length === 0) return;
+    const available = new Set(facets.projects);
+    const kept = filters.projects.filter((p) => available.has(p));
+    if (kept.length !== filters.projects.length) patch({ projects: kept });
+  }, [facets, filters.projects, patch]);
+
   const rescan = useCallback(async () => {
     setRescanning(true);
     setError(null);
@@ -237,110 +267,114 @@ export function CostReportView() {
         </header>
 
         {/* ── Filters ─────────────────────────────────────────────────── */}
-        <div className="flex flex-wrap items-center gap-2">
-          {RANGE_PRESETS.map((r) => (
+        {/* Grouped into labelled cards by category. Previously one flex-wrap
+            row put date presets, account, models, projects, scope and the
+            day/week/month grouping shoulder to shoulder, separated only by
+            hairline dividers — same size, same weight, no labels.
+
+            Account and project share the top card because they are one
+            question, not two: a project belongs to an account, and the
+            project list narrows to whatever accounts are selected.
+
+            The grouping control is deliberately NOT here: it changes how the
+            trend is drawn, not which rows are counted, so it lives with the
+            chart. Mixing a display control into the filters implies changing
+            it changes the totals, and it does not. */}
+        <div data-testid="cost-filters" className="space-y-3">
+          <FilterCard label="Account & project" testId="filter-accounts">
+            <AccountPicker
+              mode="multi"
+              accounts={facets?.accounts ?? []}
+              selected={filters.accounts}
+              onChange={(next) => patch({ accounts: next })}
+            />
+            <MultiSelectFilter
+              label="Projects"
+              options={facets?.projects ?? []}
+              selected={filters.projects}
+              onChange={(projects) => patch({ projects })}
+              renderOption={shortProject}
+              searchable
+            />
+            <div className="flex-1" />
             <Button
-              key={r.key}
               size="sm"
-              variant={filters.rangeKey === r.key && !filters.customStart && !filters.customEnd ? 'default' : 'outline'}
-              onClick={() => patch({ rangeKey: r.key, customStart: '', customEnd: '' })}
+              variant="outline"
+              onClick={() => void rescan()}
+              disabled={rescanning}
+              title="Re-read every surviving transcript and rebuild the history rows"
             >
-              {r.label}
+              <RefreshCw className={cn('mr-1 h-3.5 w-3.5', rescanning && 'animate-spin')} />
+              Rescan
             </Button>
-          ))}
+          </FilterCard>
 
-          <input
-            type="date"
-            value={filters.customStart}
-            min={facets?.minDate ?? undefined}
-            max={facets?.maxDate ?? undefined}
-            onChange={(e) => patch({ customStart: e.target.value })}
-            className="h-8 rounded border border-border bg-background px-2 text-xs"
-            title="Custom start date (overrides the preset)"
-          />
-          <span className="text-xs text-muted-foreground">→</span>
-          <input
-            type="date"
-            value={filters.customEnd}
-            min={facets?.minDate ?? undefined}
-            max={facets?.maxDate ?? undefined}
-            onChange={(e) => patch({ customEnd: e.target.value })}
-            className="h-8 rounded border border-border bg-background px-2 text-xs"
-            title="Custom end date (overrides the preset)"
-          />
+          <div className="grid gap-3 lg:grid-cols-2">
+            <FilterCard label="Date range" testId="filter-date-range">
+              {/* Three presets, one line. w-full then drops the explicit
+                  dates onto their own row, so they read as an override of the
+                  presets rather than a fourth one. */}
+              {RANGE_PRESETS.map((r) => (
+                <Button
+                  key={r.key}
+                  size="sm"
+                  variant={filters.rangeKey === r.key && !filters.customStart && !filters.customEnd ? 'default' : 'outline'}
+                  onClick={() => patch({ rangeKey: r.key, customStart: '', customEnd: '' })}
+                >
+                  {r.label}
+                </Button>
+              ))}
 
-          <div className="mx-1 h-5 w-px bg-border" />
+              <div className="flex w-full items-center gap-1.5 pt-0.5">
+                <input
+                  type="date"
+                  aria-label="Custom start date"
+                  value={filters.customStart}
+                  min={facets?.minDate ?? undefined}
+                  max={facets?.maxDate ?? undefined}
+                  onChange={(e) => patch({ customStart: e.target.value })}
+                  className="min-w-0 flex-1 rounded border border-border bg-background px-2"
+                  title="Custom start date (overrides the preset)"
+                />
+                <span className="text-[11px] text-muted-foreground">→</span>
+                <input
+                  type="date"
+                  aria-label="Custom end date"
+                  value={filters.customEnd}
+                  min={facets?.minDate ?? undefined}
+                  max={facets?.maxDate ?? undefined}
+                  onChange={(e) => patch({ customEnd: e.target.value })}
+                  className="min-w-0 flex-1 rounded border border-border bg-background px-2"
+                  title="Custom end date (overrides the preset)"
+                />
+              </div>
+            </FilterCard>
 
-          <AccountPicker
-            mode="multi"
-            accounts={facets?.accounts ?? []}
-            selected={filters.accounts}
-            onChange={(next) => patch({ accounts: next })}
-          />
-          <MultiSelectFilter
-            label="Models"
-            options={facets?.models ?? []}
-            selected={filters.models}
-            onChange={(models) => patch({ models })}
-            renderOption={modelLabel}
-          />
-          <MultiSelectFilter
-            label="Projects"
-            options={facets?.projects ?? []}
-            selected={filters.projects}
-            onChange={(projects) => patch({ projects })}
-            renderOption={shortProject}
-            searchable
-          />
-
-          <input
-            value={filters.projectSearch}
-            onChange={(e) => patch({ projectSearch: e.target.value })}
-            placeholder="Search projects…"
-            className="h-8 w-40 rounded border border-border bg-background px-2 text-xs"
-          />
-
-          <div className="mx-1 h-5 w-px bg-border" />
-
-          {([
-            { key: 'all', label: 'Both' },
-            { key: 'main', label: 'Main loop' },
-            { key: 'subagent', label: 'Subagents' },
-          ] as const).map((s) => (
-            <Button
-              key={s.key}
-              size="sm"
-              variant={filters.scope === s.key ? 'default' : 'outline'}
-              onClick={() => patch({ scope: s.key })}
-            >
-              {s.label}
-            </Button>
-          ))}
-
-          <div className="mx-1 h-5 w-px bg-border" />
-
-          {(['day', 'week', 'month'] as const).map((g) => (
-            <Button
-              key={g}
-              size="sm"
-              variant={filters.groupBy === g ? 'default' : 'outline'}
-              onClick={() => patch({ groupBy: g })}
-            >
-              {g}
-            </Button>
-          ))}
-
-          <div className="flex-1" />
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => void rescan()}
-            disabled={rescanning}
-            title="Re-read every surviving transcript and rebuild the history rows"
-          >
-            <RefreshCw className={cn('mr-1 h-3.5 w-3.5', rescanning && 'animate-spin')} />
-            Rescan
-          </Button>
+            <FilterCard label="Model & scope" testId="filter-model-scope">
+              <MultiSelectFilter
+                label="Models"
+                options={facets?.models ?? []}
+                selected={filters.models}
+                onChange={(models) => patch({ models })}
+                renderOption={modelLabel}
+              />
+              <div className="mx-0.5 h-5 w-px shrink-0 bg-border" />
+              {([
+                { key: 'all', label: 'Both' },
+                { key: 'main', label: 'Main loop' },
+                { key: 'subagent', label: 'Subagents' },
+              ] as const).map((sc) => (
+                <Button
+                  key={sc.key}
+                  size="sm"
+                  variant={filters.scope === sc.key ? 'default' : 'outline'}
+                  onClick={() => patch({ scope: sc.key })}
+                >
+                  {sc.label}
+                </Button>
+              ))}
+            </FilterCard>
+          </div>
         </div>
 
         {error && <div className="text-sm text-red-400">{error}</div>}
@@ -407,6 +441,22 @@ export function CostReportView() {
             {/* ── Trend ───────────────────────────────────────────────── */}
             <Panel
               title="Spend over time"
+              testId="trend-panel"
+              actions={
+                <>
+                  {(['day', 'week', 'month'] as const).map((g) => (
+                    <Button
+                      key={g}
+                      size="sm"
+                      data-testid={`group-by-${g}`}
+                      variant={filters.groupBy === g ? 'default' : 'outline'}
+                      onClick={() => patch({ groupBy: g })}
+                    >
+                      {g}
+                    </Button>
+                  ))}
+                </>
+              }
               subtitle={
                 heaviestDays.length > 0 && burstShare >= 0.25 ? (
                   <>

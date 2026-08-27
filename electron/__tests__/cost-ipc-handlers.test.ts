@@ -112,11 +112,6 @@ describe('Cost Report IPC handlers', () => {
     expect((sub as Array<{ is_subagent: number }>)[0].is_subagent).toBe(1);
   });
 
-  it('carries projectSearch', async () => {
-    const r = await call('session_cost_by_project', { projectSearch: 'beta' });
-    expect((r as Array<{ project_path: string }>).map((x) => x.project_path)).toEqual(['/Users/me/beta']);
-  });
-
   it('returns the component split and caching ROI as objects, not arrays', async () => {
     const c = await call('session_cost_components', {}) as { cost_usd: number; context_share: number };
     expect(c.cost_usd).toBeCloseTo(17, 10);

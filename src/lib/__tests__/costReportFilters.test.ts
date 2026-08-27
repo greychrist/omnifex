@@ -29,11 +29,6 @@ describe('resolveRange', () => {
     expect(resolveRange('last-month', '2026-01-15')).toEqual({ startDate: '2025-12-01', endDate: '2025-12-31' });
   });
 
-  it('30d and 90d count back from today', () => {
-    expect(resolveRange('30d', TODAY).startDate).toBe('2026-07-27');
-    expect(resolveRange('90d', TODAY).startDate).toBe('2026-05-28');
-  });
-
   it('all time is unbounded', () => {
     expect(resolveRange('all', TODAY)).toEqual({ startDate: undefined, endDate: undefined });
   });
@@ -76,10 +71,6 @@ describe('toFilterParams', () => {
     expect(toFilterParams({ ...base, scope: 'subagent' }, TODAY).isSubagent).toBe(true);
   });
 
-  it('trims the project search and drops it when blank', () => {
-    expect(toFilterParams({ ...base, projectSearch: '  omni  ' }, TODAY).projectSearch).toBe('omni');
-    expect(toFilterParams({ ...base, projectSearch: '   ' }, TODAY).projectSearch).toBeUndefined();
-  });
 });
 
 describe('formatters', () => {
@@ -121,14 +112,13 @@ describe('filter persistence', () => {
     const state: CostFilterState = {
       ...emptyFilterState(),
       accounts: ['Work'], models: ['claude-opus-5'], projects: ['/p'],
-      projectSearch: 'omni', scope: 'subagent', groupBy: 'week',
+      scope: 'subagent', groupBy: 'week',
     };
     saveFilterState(state);
     const back = loadFilterState();
     expect(back.accounts).toEqual(['Work']);
     expect(back.models).toEqual(['claude-opus-5']);
     expect(back.projects).toEqual(['/p']);
-    expect(back.projectSearch).toBe('omni');
     expect(back.scope).toBe('subagent');
     expect(back.groupBy).toBe('week');
   });
@@ -137,7 +127,7 @@ describe('filter persistence', () => {
   // saved in August is meaningless in October, and would silently show an
   // empty page.
   it('never restores the date range', () => {
-    saveFilterState({ ...emptyFilterState(), rangeKey: '90d', customStart: '2026-01-01', customEnd: '2026-02-01' });
+    saveFilterState({ ...emptyFilterState(), rangeKey: 'all', customStart: '2026-01-01', customEnd: '2026-02-01' });
     const back = loadFilterState();
     expect(back.rangeKey).toBe(emptyFilterState().rangeKey);
     expect(back.customStart).toBe('');

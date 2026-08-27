@@ -652,7 +652,6 @@ export interface CostHistoryFilterParams {
   projectPath?: string | string[];
   model?: string | string[];
   /** Case-insensitive substring of the project path. */
-  projectSearch?: string;
   /** Omit to include both the main loop and subagents. */
   isSubagent?: boolean;
 }
