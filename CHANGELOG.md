@@ -5,6 +5,27 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.144] — 2026-08-27
+
+The Cost Report's spend chart becomes readable at a glance.
+
+### Added
+
+- Week rules in the daily view — hairline verticals at each week boundary, so a month of bars reads as four weeks instead of thirty-one undifferentiated columns. Keyed on the Monday each bar falls in, matching the `week` grouping, so a week whose Monday has no spend still gets its rule.
+- The plot area is now its own surface, a step lighter than the card it sits on.
+
+### Changed
+
+- Every bar carries an axis label. Ticks are month/day (`8/6`) instead of `2026-08-06`, which is what let them all fit; past 31 bars they thin evenly rather than colliding. The tooltip still shows the full date.
+- The "heaviest days" sentence above the chart uses the same month/day form as the axis, so you no longer translate between two date formats to find the day being named.
+- The plot surface, gridlines, axis line and week rules derive from the theme tokens instead of fixed hex. The app ships three themes whose card colours differ by a lot, and one hardcoded value was visibly wrong in the other two.
+- Bar caps scale with the bar's own width (30%, ceilinged at 6px). A single constant cannot look like a cap on both a 3-bar week and a 31-bar month.
+
+### Fixed
+
+- Bars rendered square whenever a sub-pixel segment sat on top of the stack. The rounded cap went to the topmost *non-zero* model, and a real day is $272 of Opus with $0.29 of Haiku above it — a 0.7px segment. The cap now goes to the topmost segment tall enough to show it, falling back to the topmost drawn segment on very short bars.
+- Gridlines were a near-black tuned to the previous, darker plot background and had become invisible against the new one.
+
 ## [0.4.143] — 2026-08-26
 
 OmniFex stops hiding what it spends on your account.
