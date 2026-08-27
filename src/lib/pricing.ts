@@ -102,6 +102,13 @@ export const RATE_TABLE: Array<{ pattern: string; periods: RatePeriod[] }> = [
   { pattern: 'opus', periods: [{ from: '2024-01-01', inputPerM: 15, outputPerM: 75 }] },
   { pattern: 'haiku-4-5', periods: [{ from: '2024-01-01', inputPerM: 1, outputPerM: 5 }] },
   { pattern: 'haiku', periods: [{ from: '2024-01-01', inputPerM: 0.25, outputPerM: 1.25 }] },
+  // Sonnet 5 is cheaper than every Sonnet before it. The $2/$10 launched as
+  // introductory pricing "through 2026-08-31"; that became the standard price
+  // and the scheduled rise to $3/$15 was cancelled, so there is one period,
+  // not two. Must stay ABOVE the generic 'sonnet' entry — resolveRates takes
+  // the first `includes` match, and a single generic entry priced Sonnet 5 at
+  // $3/$15 and overstated it by 1.5x.
+  { pattern: 'sonnet-5', periods: [{ from: '2024-01-01', inputPerM: 2, outputPerM: 10 }] },
   { pattern: 'sonnet', periods: [{ from: '2024-01-01', inputPerM: 3, outputPerM: 15 }] },
 ];
 

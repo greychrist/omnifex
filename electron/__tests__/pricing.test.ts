@@ -14,7 +14,8 @@ describe('resolveRates', () => {
     expect(resolveRates('claude-fable-5').rates.output).toBeCloseTo(50 / M, 12);
     expect(resolveRates('claude-opus-4-8').rates.input).toBeCloseTo(5 / M, 12);
     expect(resolveRates('claude-opus-4-8').rates.output).toBeCloseTo(25 / M, 12);
-    expect(resolveRates('claude-sonnet-5').rates.input).toBeCloseTo(3 / M, 12);
+    expect(resolveRates('claude-sonnet-5').rates.input).toBeCloseTo(2 / M, 12);
+    expect(resolveRates('claude-sonnet-5').rates.output).toBeCloseTo(10 / M, 12);
     expect(resolveRates('claude-haiku-4-5-20251001').rates.input).toBeCloseTo(1 / M, 12);
   });
 
@@ -22,6 +23,18 @@ describe('resolveRates', () => {
     expect(resolveRates('claude-opus-4-1').rates.input).toBeCloseTo(15 / M, 12);
     expect(resolveRates('claude-opus-4-8').rates.input).toBeCloseTo(5 / M, 12);
     expect(resolveRates('claude-3-5-haiku').rates.input).toBeCloseTo(0.25 / M, 12);
+  });
+
+  // Sonnet 5 is $2/$10; every earlier Sonnet is $3/$15. One generic
+  // 'sonnet' entry priced them all at $3/$15 and overstated Sonnet 5 by 1.5x.
+  it('prices Sonnet 5 apart from the older Sonnet family', () => {
+    expect(resolveRates('claude-sonnet-5').rates.input).toBeCloseTo(2 / M, 12);
+    expect(resolveRates('claude-sonnet-5').rates.output).toBeCloseTo(10 / M, 12);
+    expect(resolveRates('claude-sonnet-4-6').rates.input).toBeCloseTo(3 / M, 12);
+    expect(resolveRates('claude-sonnet-4-5').rates.input).toBeCloseTo(3 / M, 12);
+    // Cache rates derive from input, so they move with it.
+    expect(resolveRates('claude-sonnet-5').rates.cacheRead).toBeCloseTo((2 / M) * 0.1, 12);
+    expect(resolveRates('claude-sonnet-5').rates.cacheWrite1h).toBeCloseTo((2 / M) * 2, 12);
   });
 
   it('derives cache rates from input rate', () => {
@@ -75,7 +88,7 @@ describe('computeMessageCost', () => {
     const c = computeMessageCost('claude-sonnet-5', {
       cache_creation_input_tokens: 8000,
     });
-    expect(c.cacheWriteUsd).toBeCloseTo(8000 * (3 / M) * 1.25, 10);
+    expect(c.cacheWriteUsd).toBeCloseTo(8000 * (2 / M) * 1.25, 10);
   });
 
   it('empty usage costs zero', () => {

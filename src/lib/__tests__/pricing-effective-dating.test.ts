@@ -99,7 +99,7 @@ describe('rate-neutrality of the period migration', () => {
     'claude-opus-3': [15, 75],
     'claude-haiku-4-5': [1, 5],
     'claude-haiku-3': [0.25, 1.25],
-    'claude-sonnet-5': [3, 15],
+    'claude-sonnet-5': [2, 10],
     'claude-sonnet-4-6': [3, 15],
   };
 
