@@ -47,6 +47,7 @@ import { MultiSelectFilter } from '@/components/cost-report/MultiSelectFilter';
 import { FilterCard } from '@/components/cost-report/FilterCard';
 import { Card } from '@/components/ui/card';
 import { CostChart, CostChartLegend } from '@/components/cost-report/CostChart';
+import { formatPeriodTick } from '@/lib/costChartAxis';
 
 interface ReportData {
   periods: CostHistoryPeriodModel[];
@@ -461,7 +462,7 @@ export function CostReportView() {
                 heaviestDays.length > 0 && burstShare >= 0.25 ? (
                   <>
                     The {heaviestDays.length} heaviest {filters.groupBy === 'day' ? 'days' : 'periods'} —{' '}
-                    <span className="font-mono">{heaviestDays.map(([d]) => d).join(', ')}</span> — account for{' '}
+                    <span className="font-mono">{heaviestDays.map(([d]) => formatPeriodTick(d)).join(', ')}</span> — account for{' '}
                     <strong>{fmtPercent(burstShare)}</strong> of the total. This range is bursty,
                     not sustained.
                   </>

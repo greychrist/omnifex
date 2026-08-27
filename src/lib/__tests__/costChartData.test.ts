@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { segmentPath, toStackedSeries, topModelFor } from '../costChartData';
+import {
+  capRadius,
+  segmentPath,
+  toStackedSeries,
+  topCappedModel,
+  topModelFor,
+} from '../costChartData';
 import type { CostHistoryPeriodModel } from '@/lib/api';
 
 function row(period: string, model: string, cost_usd: number): CostHistoryPeriodModel {
@@ -133,5 +139,60 @@ describe('segmentPath', () => {
   it('renders nothing for a zero-height or zero-width segment', () => {
     expect(segmentPath(0, 0, 10, 0, 4)).toBe('');
     expect(segmentPath(0, 0, 0, 10, 4)).toBe('');
+  });
+});
+
+describe('capRadius', () => {
+  // A fixed radius is a different shape at every range length: 8px is a third
+  // of a bar on a month view and 4% of one on a three-day view, so the cap
+  // reads as "rounded" in one and "square" in the other. Scale it.
+  it('scales the cap with the bar width', () => {
+    expect(capRadius(20)).toBe(6);
+    expect(capRadius(14)).toBe(4);
+  });
+
+  it('stops growing on wide bars, so a short range does not draw arches', () => {
+    expect(capRadius(200)).toBe(6);
+  });
+
+  it('never rounds more than the bar can carry', () => {
+    expect(capRadius(6)).toBe(2);
+    expect(capRadius(0)).toBe(0);
+  });
+});
+
+describe('topCappedModel', () => {
+  const models = ['claude-opus-5', 'claude-sonnet-5', 'claude-haiku-4-5'];
+  // 300px of plot over a $120 axis.
+  const PX_PER_USD = 2.5;
+
+  // The shape that made every bar in a real month square: $272 of Opus with
+  // $0.29 of Haiku stacked on it. Haiku is the topmost non-zero model, and it
+  // is 0.7px tall — the cap went to a segment nobody can see.
+  it('skips a sliver too short to carry the round', () => {
+    const bucket = { period: 'd', 'claude-opus-5': 100, 'claude-sonnet-5': 0, 'claude-haiku-4-5': 0.29 };
+    expect(topCappedModel(bucket, models, PX_PER_USD, 6)).toBe('claude-opus-5');
+  });
+
+  it('caps the topmost segment when it is tall enough', () => {
+    const bucket = { period: 'd', 'claude-opus-5': 100, 'claude-sonnet-5': 20, 'claude-haiku-4-5': 0 };
+    expect(topCappedModel(bucket, models, PX_PER_USD, 6)).toBe('claude-sonnet-5');
+  });
+
+  // A $2 day is 5px tall in total. Refusing to round anything there would make
+  // the smallest bars the only square ones on the chart.
+  it('falls back to the topmost drawn segment when no segment can carry a full round', () => {
+    const bucket = { period: 'd', 'claude-opus-5': 1.7, 'claude-sonnet-5': 0, 'claude-haiku-4-5': 0.3 };
+    expect(topCappedModel(bucket, models, PX_PER_USD, 6)).toBe('claude-haiku-4-5');
+  });
+
+  it('returns null for a period with no spend', () => {
+    const bucket = { period: 'd', 'claude-opus-5': 0, 'claude-sonnet-5': 0, 'claude-haiku-4-5': 0 };
+    expect(topCappedModel(bucket, models, PX_PER_USD, 6)).toBeNull();
+  });
+
+  it('falls back when the scale is unknown', () => {
+    const bucket = { period: 'd', 'claude-opus-5': 100, 'claude-sonnet-5': 0, 'claude-haiku-4-5': 0.29 };
+    expect(topCappedModel(bucket, models, 0, 6)).toBe('claude-haiku-4-5');
   });
 });

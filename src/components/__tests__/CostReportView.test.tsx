@@ -369,6 +369,17 @@ describe('CostReportView', () => {
       expect(within(trend).getByTestId('group-by-month')).toBeTruthy();
     });
 
+    // The bars beneath it are labelled 8/1, 8/2 — spelling the same days out
+    // as 2026-08-01 in the sentence makes the reader translate between two
+    // formats to find the day being named.
+    it('names the heaviest days in the same month/day form as the axis', async () => {
+      render(<CostReportView />);
+      const trend = await screen.findByTestId('trend-panel');
+      await waitFor(() => { expect(within(trend).getByText(/heaviest/)).toBeTruthy(); });
+      expect(within(trend).getByText('8/1, 8/2')).toBeTruthy();
+      expect(within(trend).queryByText(/2026-08-01/)).toBeNull();
+    });
+
     it('still re-queries when the grouping changes', async () => {
       render(<CostReportView />);
       await waitFor(() => { expect(screen.getByTestId('chart')).toBeTruthy(); });

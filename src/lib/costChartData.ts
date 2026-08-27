@@ -90,3 +90,51 @@ export function segmentPath(
     `h${-width}Z`
   );
 }
+
+/** The most a cap ever rounds, in px. Past this a column starts reading as an
+ *  arch rather than as a bar with a top edge you can measure against the axis. */
+const MAX_CAP_RADIUS = 6;
+
+/** Fraction of the bar's own width the cap uses below that ceiling. */
+const CAP_RATIO = 0.3;
+
+/**
+ * The cap radius for a bar of this width.
+ *
+ * Relative, not fixed: the same chart draws 3 bars 200px wide and 31 bars 30px
+ * wide depending on the range, and one constant cannot look like a cap in both
+ * — it either vanishes on the wide bars or domes the narrow ones.
+ */
+export function capRadius(width: number): number {
+  if (!(width > 0)) return 0;
+  return Math.min(MAX_CAP_RADIUS, Math.round(width * CAP_RATIO));
+}
+
+/**
+ * The model that should carry the rounded cap: the topmost one whose segment
+ * is actually tall enough to show it.
+ *
+ * `topModelFor` alone is not enough. A period is routinely $272 of Opus with
+ * $0.29 of Haiku on top — the Haiku segment is the topmost non-zero one and is
+ * under a pixel tall, so the cap landed on something invisible (clamped to its
+ * own height) and every visible bar in the chart rendered square.
+ *
+ * `pxPerUnit` converts a bucket value to the height recharts will draw it at,
+ * taken from the segment doing the asking. If nothing in the stack can carry a
+ * full round — a very short bar — the topmost drawn segment takes it anyway
+ * and `segmentPath` clamps; otherwise the shortest bars would be the only
+ * square ones.
+ */
+export function topCappedModel(
+  bucket: StackedBucket,
+  models: string[],
+  pxPerUnit: number,
+  minHeight: number,
+): string | null {
+  if (pxPerUnit > 0) {
+    for (let i = models.length - 1; i >= 0; i -= 1) {
+      if ((bucket[models[i]] as number) * pxPerUnit >= minHeight) return models[i];
+    }
+  }
+  return topModelFor(bucket, models);
+}

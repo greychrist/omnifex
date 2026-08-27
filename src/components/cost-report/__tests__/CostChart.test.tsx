@@ -81,6 +81,51 @@ describe('CostChart', () => {
     }
   });
 
+  it('labels every bar with month/day, leaving the year off', () => {
+    const { container } = renderChart(<CostChart rows={ROWS} mode="dark" />);
+    const ticks = [...container.querySelectorAll('.recharts-xAxis-tick-labels .recharts-cartesian-axis-tick-value')]
+      .map((t) => t.textContent);
+    expect(ticks).toEqual(['8/1', '8/2', '8/3']);
+  });
+
+  it('rules a line between weeks so week boundaries are visible', () => {
+    // 2026-08-03 is a Monday, so the line sits between 8/2 and 8/3.
+    const { container } = renderChart(<CostChart rows={ROWS} mode="dark" />);
+    const lines = [...container.querySelectorAll('line[data-testid="week-separator"]')];
+    expect(lines).toHaveLength(1);
+    const [line] = lines;
+    expect(Number(line.getAttribute('x1'))).toBe(Number(line.getAttribute('x2')));
+    expect(Number(line.getAttribute('x1'))).toBeGreaterThan(0);
+    expect(Number(line.getAttribute('y2'))).toBeGreaterThan(Number(line.getAttribute('y1')));
+  });
+
+  it('draws no week separators when the bars are already weeks', () => {
+    const weekly = [row('2026-W30', 'claude-opus-5', 10), row('2026-W31', 'claude-opus-5', 8)];
+    const { container } = renderChart(<CostChart rows={weekly} mode="dark" />);
+    expect(container.querySelectorAll('line[data-testid="week-separator"]')).toHaveLength(0);
+  });
+
+  // Gridlines and week rules were a near-black tuned to the old surface; on the
+  // lighter plot they vanished into it. They are silver-gray now: a step the
+  // reader can see, still recessive against the bars.
+  it('rules the grid and the week lines in the same silver, lifted off the plot', () => {
+    const { container } = renderChart(<CostChart rows={ROWS} mode="dark" />);
+    const surface = container.querySelector('rect[data-testid="plot-surface"]')?.getAttribute('fill');
+    const gridline = container.querySelector('.recharts-cartesian-grid-horizontal line');
+    const separator = container.querySelector('line[data-testid="week-separator"]');
+
+    expect(gridline?.getAttribute('stroke')).not.toBe(surface);
+    expect(separator?.getAttribute('stroke')).toBe(gridline?.getAttribute('stroke'));
+    // Dark mode lifts toward white; the old value was a fixed near-black.
+    expect(gridline?.getAttribute('stroke')).toContain('white');
+  });
+
+  it('drops the rules toward black in light mode instead of flipping the dark value', () => {
+    const { container } = renderChart(<CostChart rows={ROWS} mode="light" />);
+    const gridline = container.querySelector('.recharts-cartesian-grid-horizontal line');
+    expect(gridline?.getAttribute('stroke')).toContain('black');
+  });
+
   it('paints each model in its fixed slot colour, not by series order', () => {
     const { container } = renderChart(<CostChart rows={ROWS} mode="dark" />);
     const fills = new Set(
@@ -91,20 +136,70 @@ describe('CostChart', () => {
     expect(fills.has(modelColor('claude-haiku-4-5', 'dark'))).toBe(true);
   });
 
-  it('separates stacked segments with a surface-coloured seam, not a border', () => {
+  // A fixed radius looked square on a month of narrow bars and vanished on a
+  // week of wide ones; it scales with the bar now, capped at 10px.
+  it('caps the topmost segment with a round scaled to the bar, top corners only', () => {
     const { container } = renderChart(<CostChart rows={ROWS} mode="dark" />);
-    const bar = [...container.querySelectorAll('path[fill]')].find((p) =>
-      p.getAttribute('fill') === modelColor('claude-opus-5', 'dark'),
+    // Three periods across 800px: bars are wide, so the cap takes the ceiling.
+    const caps = [...container.querySelectorAll('path')].filter((p) =>
+      (p.getAttribute('d') ?? '').includes('a6,6'),
     );
-    expect(bar?.getAttribute('stroke')).toBe('#1a1a19');
+    expect(caps.length).toBeGreaterThan(0);
+    // Two arcs, both at the top, then straight sides down to a square base.
+    for (const cap of caps) {
+      expect((cap.getAttribute('d')?.match(/a6,6/g) ?? []).length).toBe(2);
+    }
   });
 
-  it('uses the light surface for the seam in light mode', () => {
-    const { container } = renderChart(<CostChart rows={ROWS} mode="light" />);
-    const bar = [...container.querySelectorAll('path[fill]')].find((p) =>
-      p.getAttribute('fill') === modelColor('claude-opus-5', 'light'),
+  // The bug that made every bar in a real month square: a $0.29 Haiku segment
+  // on a $272 Opus bar is the topmost non-zero model and is under a pixel
+  // tall, so the cap went to a segment nobody can see.
+  it('caps the tallest visible segment when a sub-pixel sliver sits on top', () => {
+    const slivered = [
+      row('2026-08-01', 'claude-opus-5', 272),
+      row('2026-08-01', 'claude-haiku-4-5', 0.29),
+      row('2026-08-02', 'claude-opus-5', 180),
+      row('2026-08-02', 'claude-haiku-4-5', 0.2),
+    ];
+    const { container } = renderChart(<CostChart rows={slivered} mode="dark" />);
+    const opus = [...container.querySelectorAll('path[fill]')].filter(
+      (p) => p.getAttribute('fill') === modelColor('claude-opus-5', 'dark'),
     );
-    expect(bar?.getAttribute('stroke')).toBe('#fcfcfb');
+    expect(opus.length).toBe(2);
+    for (const bar of opus) {
+      expect(bar.getAttribute('d')).toMatch(/a6,6/);
+    }
+  });
+
+  it('lays a surface behind the plot area, a step lighter than the card', () => {
+    const { container } = renderChart(<CostChart rows={ROWS} mode="dark" />);
+    const surface = container.querySelector('rect[data-testid="plot-surface"]');
+    expect(surface).toBeTruthy();
+    expect(Number(surface?.getAttribute('width'))).toBeGreaterThan(0);
+    expect(Number(surface?.getAttribute('height'))).toBeGreaterThan(0);
+    // Derived from the card token: three themes ship three different card
+    // colours, and a fixed hex is visibly wrong in two of them.
+    expect(surface?.getAttribute('fill')).toContain('var(--color-card)');
+  });
+
+  it('paints the plot surface from the page background in light mode', () => {
+    const { container } = renderChart(<CostChart rows={ROWS} mode="light" />);
+    const surface = container.querySelector('rect[data-testid="plot-surface"]');
+    expect(surface?.getAttribute('fill')).toBe('var(--color-background)');
+  });
+
+  // The seam is a gap cut in the bar, so it has to be the colour of whatever
+  // is behind the bar — now the plot surface, not the card.
+  it('separates stacked segments with a seam in the plot surface colour', () => {
+    for (const mode of ['dark', 'light'] as const) {
+      const { container } = renderChart(<CostChart rows={ROWS} mode={mode} />);
+      const surface = container.querySelector('rect[data-testid="plot-surface"]');
+      const bar = [...container.querySelectorAll('path[fill]')].find((p) =>
+        p.getAttribute('fill') === modelColor('claude-opus-5', mode),
+      );
+      expect(bar?.getAttribute('stroke')).toBe(surface?.getAttribute('fill'));
+      cleanup();
+    }
   });
 });
 
