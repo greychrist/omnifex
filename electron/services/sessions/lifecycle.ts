@@ -35,12 +35,11 @@ import {
   type RuntimeDeps,
 } from './runtime';
 import { createTuiJsonlListener } from './tui-jsonl';
-import { encodeProjectId } from '../project-paths';
+import { encodeProjectId, hasTranscript } from '../project-paths';
 import { createClaudeCliEngine } from '../agents/claude-cli-engine';
 import { createCodexCliEngine } from '../agents/codex-cli-engine';
 import type { AgentEngine, AgentKind } from '../agents/types';
 import path from 'node:path';
-import fs from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { setStatus } from './status';
 
@@ -245,7 +244,18 @@ export function createSessionsService(
     // we mint a fresh one; for resume we reuse the caller's id. JSONL path
     // is known up front either way.
     const sessionId = params.resumeSessionId ?? randomUUID();
-    const resume = !!params.resumeSessionId;
+    // Resume ONLY when the CLI has actually written a transcript for this id.
+    //
+    // A session's UUID is pinned at spawn and pushed to the renderer via
+    // `session-init` immediately, so `claudeSessionId` exists long before any
+    // JSONL does. Reconnect and restart both hand that id straight back as
+    // `resumeSessionId`. When the user never sent a message there is no
+    // transcript, and `--resume` makes the CLI print "No conversation found
+    // with session ID …" and exit — the session dies the moment it starts.
+    // Keeping the id and spawning with `--session-id` gives the same UUID a
+    // fresh transcript, which is what the caller wanted anyway.
+    const resume = !!params.resumeSessionId
+      && hasTranscript(configDir, projectPath, sessionId);
 
     // The CLI is ready to accept stdin the moment we spawn it — there is
     // no application-level "ready" handshake in stream-json mode. We
@@ -627,13 +637,11 @@ export function createSessionsService(
       // boots the user out of the session via the TUI exit handler below.
       // Detect the JSONL's absence and pin the existing sessionId via
       // `--session-id <id>` instead — same UUID, fresh transcript, no error.
-      const jsonlPathForResumeCheck = path.join(
+      const resumeExistingTranscript = hasTranscript(
         handle.configDir,
-        'projects',
-        encodeProjectId(handle.projectPath),
-        `${handle.sessionId}.jsonl`,
+        handle.projectPath,
+        handle.sessionId,
       );
-      const resumeExistingTranscript = fs.existsSync(jsonlPathForResumeCheck);
 
       const tui = createTuiSession({
         tabId,

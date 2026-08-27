@@ -6,7 +6,6 @@
 // StrictMode / TUI-handoff identity-replace guards.
 
 import path from 'node:path';
-import fs from 'node:fs';
 import type {
   SessionHandle,
   SendToRenderer,
@@ -21,7 +20,7 @@ import { classifyRuntimeEvent } from './events';
 import { dispatchAgentNotification, dispatchResultNotification } from './notifications';
 import { createBackgroundTaskTracker } from './background-tasks';
 import { createJsonlTail, type JsonlTailHandle } from './jsonl-tail';
-import { encodeProjectId } from '../project-paths';
+import { encodeProjectId, hasTranscript } from '../project-paths';
 import { setStatus } from './status';
 
 export interface RuntimeDeps {
@@ -339,13 +338,11 @@ export function restartQuery(
     console.error(`[sessions] restartQuery: no sessionId for tab ${tabId}`);
     return;
   }
-  const jsonlPath = path.join(
+  const resume = hasTranscript(
     handle.startParams.configDir,
-    'projects',
-    encodeProjectId(handle.startParams.projectPath),
-    `${handle.sessionId}.jsonl`,
+    handle.startParams.projectPath,
+    handle.sessionId,
   );
-  const resume = fs.existsSync(jsonlPath);
   setStatus(handle, { sessionStatus: 'starting' }, tabId, deps.sendToRenderer);
   void handle.engine.start({
     projectPath: handle.startParams.projectPath,

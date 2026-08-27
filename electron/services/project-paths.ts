@@ -12,6 +12,29 @@ import path from 'node:path';
  */
 
 /**
+ * Has the CLI written a transcript for this session id yet?
+ *
+ * Three separate paths spawn the CLI against an existing session id — cold
+ * start with `resumeSessionId` (reconnect / restart), `restartQuery` after a
+ * stream death, and `setMode('tui')`. All three must answer the same question
+ * first, because `--resume` against an id with no JSONL makes the CLI print
+ * "No conversation found with session ID …" and exit. Passing `--session-id`
+ * instead keeps the id and starts a fresh transcript.
+ *
+ * The check lives here, next to `encodeProjectId`, so a fourth resume path
+ * cannot quietly forget it — that is exactly how the third one shipped.
+ */
+export function hasTranscript(
+  configDir: string,
+  projectPath: string,
+  sessionId: string,
+): boolean {
+  return fs.existsSync(
+    path.join(configDir, 'projects', encodeProjectId(projectPath), `${sessionId}.jsonl`),
+  );
+}
+
+/**
  * The naive inverse of Claude Code's project-id encoding: strip the leading
  * dash, then swap every remaining dash for a slash.
  *
