@@ -29,6 +29,115 @@ import * as path from 'node:path';
  * old value and the new one, and file or fix whatever they imply. Bumping it
  * to silence the badge throws away the only drift signal we have.
  *
+ * Last review: 2.1.246 -> 2.1.247 on 2026-08-27. Findings:
+ *
+ *  Changelog coverage: 2.1.247 is the only release in range and it has an
+ *  entry (36 lines). No gap. Both binaries (2.1.246 and 2.1.247) were still
+ *  installed under ~/.local/share/claude/versions, so the findings are a
+ *  two-version diff, not an inference from the prose.
+ *
+ *  Wire-shape diff first, prose second: a name-agnostic extraction of
+ *  `subtype:X("…")` from both binaries goes 93 -> 97 subtypes with NOTHING
+ *  removed. The four additions are `remote_tool_call`,
+ *  `remote_tools_announce`, `remote_tools_probe` and `remote_plumbing_call`
+ *  — Remote Control plumbing, which OmniFex never enables. So the release
+ *  moved no surface we parse except the one below.
+ *
+ *  1. `SendFeedback` / `system:feedback_draft_queued` — REAL BUG, FIXED.
+ *     The CLI's new SendFeedback tool queues a local draft feedback report
+ *     and emits `{type:"system", subtype:"feedback_draft_queued", draft_id,
+ *     draft_type, title, details_preview, uuid, session_id}` so a connected
+ *     host UI can show a review card without polling the filesystem. That
+ *     message reaches us: `runtime.ts` forwards every CLI message to the
+ *     renderer unconditionally, and main stamps `receivedAt` at IPC arrival,
+ *     which `classifySystem` requires.
+ *
+ *     It did NOT render as `system.unknown`, which is what the surface-level
+ *     reading predicted. `classifySystem` gates on the runtime
+ *     `SYSTEM_SUBTYPES` set BEFORE messageKind ever sees the node, so an
+ *     unlisted subtype becomes `kind:'unknown'` and drew the orange dashed
+ *     "Unrecognized record: system" catch-all. The RED test printed exactly
+ *     that markup — worth remembering that adding a subtype is a two-place
+ *     change (the type union is not the gate).
+ *
+ *     Now: `feedback_draft_queued` in `SystemSubtype` + `SYSTEM_SUBTYPES`,
+ *     mapped to `system.feedback_draft_queued`, registered as a yellow
+ *     `Flag` card with `hiddenInCompact:false` (the whole `system` category
+ *     defaults to hidden in compact — away_summary and the notifications each
+ *     opt out the same way). The wire carries no `content`/`body`/`message`
+ *     field, so `feedbackDraftBody()` synthesizes `<draft_type> · <title>`
+ *     plus the preview; it degrades to the title alone.
+ *
+ *     Dormant today, deliberately left enabled: `isEnabled` is
+ *     `feedbackDrafts !== "off" && Ufs()`, and `Ufs()` ends in the statsig
+ *     gate `tengu_juniper_relay`, which is currently false. Greg's call was
+ *     to render the drafts rather than set `feedbackDrafts:"off"` — OmniFex
+ *     has no `/feedback` surface, so an unrendered draft is one the user
+ *     never learns exists.
+ *
+ *     It CANNOT be forced on locally, and the obvious guess is wrong:
+ *     `CLAUDE_CODE_SEND_FEEDBACK` is a kill switch, not a force switch.
+ *     `if(e===false) return false; if(e===true) return gate(...); return
+ *     gate(...)` — setting it true falls through to the same gate as not
+ *     setting it. `Ufs()` also requires the `allow_product_feedback`
+ *     entitlement and first-party auth, and the binary carries no
+ *     GATE_OVERRIDE / STATSIG / gateOverrides escape hatch. To exercise the
+ *     card before the gate opens, use the Appearance preview
+ *     (`system.feedback_draft_queued` fixture) or append a
+ *     `feedback_draft_queued` line to a transcript and open that session —
+ *     history classifies through the same `classifyJsonlLine`.
+ *
+ *     Drafts land in `<CLAUDE_CONFIG_DIR>/feedback/drafts/`, NOT a literal
+ *     `~/.claude`: the binary builds the path as `join(jr(),"feedback",
+ *     "drafts")` and `jr()` is the same config-home helper backing `skills`,
+ *     `plugins` and `workflows`. The tool's own doc strings say
+ *     "~/.claude/feedback/drafts/" — loose prose, not the path logic. It also
+ *     declares `checkPermissions -> {behavior:"allow"}` unconditionally, so it
+ *     never reaches the stdio decider and needs no permission-rule work.
+ *
+ *  2. Plugin marketplace hardening — MATCHED. The CLI now rejects plugin
+ *     names carrying control/invisible characters and escapes marketplace text
+ *     in its own output. `sessions/plugins.ts` reads
+ *     `.claude-plugin/plugin.json` itself, so that hardening never covered the
+ *     fields we surface. React escapes markup, so the exposure was spoofing,
+ *     not injection: U+202E reverses displayed text ("gpj.exe" renders as
+ *     "exe.jpg") and zero-width characters fake a distinct identity.
+ *     `sanitizeManifestText()` now strips C0/C1 controls (that is what kills
+ *     an ANSI ESC), zero-width and bidi characters from name/source/version/
+ *     description/author/authorEmail. Tab/newline/CR become a space rather
+ *     than vanishing — dropping them merged "first\nsecond" into
+ *     "firstsecond". A field that sanitizes to nothing becomes undefined (a
+ *     missing row, not a blank one); a NAME that does falls back to the CLI's
+ *     own wording, "(unprintable plugin name)". `path` is deliberately left
+ *     raw — it is a real filesystem path used for the manifest read and the
+ *     renderer's list key, not prose.
+ *
+ *  3. Checked and already at parity, each against local code: the auto-mode
+ *     tip on Bash prompts (`auto` is already a first-class mode — ControlBar
+ *     PERMISSION_MODES, reapplied post-spawn in lifecycle.ts because argv
+ *     rejects it — and tui.ts scrapes no permission prompts); Sonnet 5's
+ *     auto-compact window moving to 1M (`resolveContextLimit` trusts the live
+ *     `maxTokens` and only uses the `[1m]` suffix pre-live; the 0.95 in
+ *     contextPressure.ts is our own clamp, not a model of the CLI's trigger);
+ *     the arrow-key+Enter off-by-one (usage-runner sends only `/usage`, Enter,
+ *     Esc, `/quit` — no arrow navigation); sub-agent 404 fallback (we read the
+ *     subagent's real model from subagents/agent-*.jsonl); `/compact` under
+ *     `--agent` (we never pass it — zero hits in electron/ or src/); and the
+ *     Bash sandbox deleting a symlinked settings.json (we pass no sandbox
+ *     settings, and neither account's settings.json is a symlink).
+ *
+ *  Out of reach in 2.1.247: `/claude-api` skill work; Ctrl shortcuts under
+ *  non-Latin layouts; the split mouse-report fix (CLI-side, helps our
+ *  TerminalView forwarding for free); `/terminal-setup`'s Zed keymap;
+ *  `/rename`'s registry warning; `claude agents` row states and every
+ *  background-session fix; hook/background output overflow and its memory
+ *  leak; `/install-github-app` over SSH; Remote Control diffs; the
+ *  self-hosted runner; every cloud-session fix; first-run gateway
+ *  connectivity; the Bedrock/Vertex/Foundry MCP-failure notice; cross-session
+ *  peer-message collapsing (we never call SendMessage); terminal-hyperlink
+ *  hardening; the prompt-footer PR badge; analytics-at-startup; the
+ *  `surface=claude_code` sign-in parameter; and org sign-in enforcement.
+ *
  * Last review: 2.1.241 -> 2.1.246 on 2026-08-26. Findings:
  *
  *  Changelog coverage: 2.1.243, 2.1.245 and 2.1.246 have entries. 2.1.242 is
@@ -304,7 +413,7 @@ import * as path from 'node:path';
  * `~/.claude.json` fix (we read-modify-write that file, never replace it), and
  * the VSCode screen-reader work.
  */
-export const REVIEWED_CLI_VERSION = '2.1.246';
+export const REVIEWED_CLI_VERSION = '2.1.247';
 
 /**
  * app_settings key holding the user's explicit OmniFex-checkout override.

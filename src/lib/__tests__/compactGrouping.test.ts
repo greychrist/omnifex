@@ -141,6 +141,22 @@ describe('isMessageFullyHidden', () => {
     expect(isMessageFullyHidden(msg, [msg], cfg)).toBe(true);
   });
 
+  it('never hides a queued feedback draft in compact mode', () => {
+    // The system category defaults to hiddenInCompact:true. A feedback draft is
+    // the only sign the CLI queued one — burying it in compact mode means the
+    // user never learns it exists, since OmniFex has no /feedback surface.
+    const cfg = createDefaultConfig();
+    const msg = {
+      kind: 'system', subtype: 'feedback_draft_queued', sessionId: '', receivedAt: '',
+      raw: {
+        type: 'system', subtype: 'feedback_draft_queued', draft_type: 'bug',
+        title: 'Edit reported success on a no-op',
+        details_preview: 'The Edit tool returned success but the file was unchanged.',
+      },
+    } as unknown as JsonlNode;
+    expect(isMessageFullyHidden(msg, [msg], cfg)).toBe(false);
+  });
+
   it('never hides an answered AskUserQuestion assistant message (tool.askUserQuestion.answered)', () => {
     // Regression: sentinel id head is "tool" → originOf returns "system" →
     // system category has hiddenInCompact:true → card vanishes in compact mode.

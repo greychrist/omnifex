@@ -12,7 +12,9 @@ export const KIND_FIXTURES: Record<string, string> = {
   "user.systemContext": "You are a code-review subagent. Check src/auth/*.ts for security issues.",
   "user.sdkSystemBracket": "[Request interrupted by user]",
   "user.tool-result": "The file src/auth/middleware.ts has been updated successfully.",
+  "user.tool-result.image": "(screenshot returned by the tool)",
   "user.image": "(image attachment)",
+  "user.compactSummary": "Earlier context was compacted. The conversation so far covered the auth-middleware refactor and its tests.",
 
   // ── agent ──
   "assistant.text": "I'll update `auth.ts` to read the new token format and add a migration helper. Starting with the tests now.",
@@ -31,6 +33,10 @@ export const KIND_FIXTURES: Record<string, string> = {
   "system.permission_denied": "Permission denied: Bash · rm -rf /tmp/scratch",
   "system.userPromptSubmit": "UserPromptSubmit · 1 message",
   "system.api_error": "503 Service Unavailable from api.anthropic.com — retrying.",
+  "system.away_summary": "While you were away: the test suite finished (42 passed) and the build completed.",
+  "system.thinking_tokens": "~800 thinking tokens",
+  "system.rate_limit": "5h · allowed · resets 4:00 PM",
+  "system.feedback_draft_queued": "bug · Edit reported success on a no-op\nThe Edit tool returned success but the file was unchanged.",
   "system.unknown": "(unrecognized system subtype — raw payload shown above)",
   "permission.request": "Allow Bash to run: git diff HEAD~1 --stat?",
   "permission.askUserQuestion": "Should I proceed with the destructive rename, or create a copy first?",

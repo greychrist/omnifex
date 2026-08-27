@@ -280,6 +280,29 @@ describe('classifyJsonlLine', () => {
     }
   });
 
+  it('classifies system/feedback_draft_queued', () => {
+    // Emitted by the CLI's SendFeedback tool after it writes a local draft to
+    // <CLAUDE_CONFIG_DIR>/feedback/drafts/, so a host UI can surface a review
+    // card without polling the filesystem. Shape taken from the message schema
+    // in the 2.1.247 binary: display fields only, the body stays on disk.
+    const sample = {
+      type: 'system',
+      subtype: 'feedback_draft_queued',
+      draft_id: '0f0c5d6e-6c2e-4a5f-9f1e-2b6a5a0f7c31',
+      draft_type: 'bug',
+      title: 'Edit reported success on a no-op',
+      details_preview: 'The Edit tool returned success but the file was unchanged.',
+      uuid: 'd1a1b0a1-7b2c-4b1e-9a3d-5e2f6c7a8b90',
+      session_id: '883f38aa-0dff-41c7-a5c5-43694f9443d2',
+      timestamp: '2026-08-27T15:58:49.997Z',
+    };
+    const node = classifyJsonlLine(sample);
+    expect(node?.kind).toBe('system');
+    if (node?.kind === 'system') {
+      expect(node.subtype).toBe('feedback_draft_queued');
+    }
+  });
+
   it('classifies system/turn_duration', () => {
     const node = classifyJsonlLine(JSONL_SAMPLES['system/turn_duration']);
     expect(node?.kind).toBe('system');

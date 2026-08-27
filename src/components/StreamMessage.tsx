@@ -26,7 +26,7 @@ import remarkGfm from "remark-gfm";
 import { getClaudeSyntaxTheme } from "@/lib/claudeSyntaxTheme";
 import { buildMarkdownComponents } from "@/lib/markdownComponents";
 import { useTheme } from "@/hooks";
-import type { JsonlNode } from "@/types/jsonl";
+import type { JsonlNode, SystemRaw } from "@/types/jsonl";
 import type { MessageContentBlock } from "@/types/claudeStream";
 import {
   asToolInput,
@@ -248,6 +248,23 @@ const ResendExtra: React.FC<{
 };
 
 
+// ─── Feedback drafts ────────────────────────────────────────────────────────
+
+/**
+ * Body line for a `system:feedback_draft_queued` card.
+ *
+ * The CLI's SendFeedback tool writes the draft to
+ * `<CLAUDE_CONFIG_DIR>/feedback/drafts/` and sends only display fields over the
+ * wire — there is no `content`/`body`/`message` field for the generic system
+ * branch to pick up, and the model is told not to mention the draft in the
+ * transcript. Without this the card would be the title alone, or nothing.
+ */
+function feedbackDraftBody(raw: SystemRaw): string {
+  const head = [raw.draft_type, raw.title].filter(Boolean).join(' · ');
+  const preview = raw.details_preview?.trim();
+  return preview ? `${head}\n${preview}` : head;
+}
+
 // ─── Completion band ────────────────────────────────────────────────────────
 
 const TERMINAL_STOP_REASONS = new Set([
@@ -461,10 +478,16 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
       // `body` is the notification-style shape some CLI warnings use.
       // thinking_tokens carries no narrative field at all — it's a running
       // numeric estimate — so its body is synthesized from `estimated_tokens`.
+      // feedback_draft_queued carries no narrative field either: the draft body
+      // stays on disk under <CLAUDE_CONFIG_DIR>/feedback/drafts/ and only the
+      // card's display fields cross the wire. Body is `<type> · <title>` plus
+      // the preview, so the card says what Claude filed without a round trip.
       const estimatedTokens = (sysRaw as unknown as { estimated_tokens?: number }).estimated_tokens;
       const text =
         subtype === 'thinking_tokens'
           ? (typeof estimatedTokens === 'number' ? `~${estimatedTokens} thinking tokens` : '')
+          : subtype === 'feedback_draft_queued'
+          ? feedbackDraftBody(sysRaw)
           : (sysRaw as unknown as { message?: unknown }).message
             ?? (sysRaw as unknown as { content?: unknown }).content
             ?? (sysRaw as unknown as { body?: unknown }).body

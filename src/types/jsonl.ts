@@ -147,7 +147,11 @@ export type SystemSubtype =
   // that set changes (an agent is launched, a background shell finishes).
   // Bookkeeping, not narrative — the SubagentBar is where this belongs, so
   // `filterDisplayableMessages` drops it from the transcript.
-  | 'background_tasks_changed';
+  | 'background_tasks_changed'
+  // The SendFeedback tool wrote a local draft feedback report to
+  // <CLAUDE_CONFIG_DIR>/feedback/drafts/. Display fields only — the body stays
+  // on disk, and nothing is sent until the user approves it via `/feedback`.
+  | 'feedback_draft_queued';
 
 /**
  * One entry of a `system:background_tasks_changed` snapshot. Shape verified
@@ -185,6 +189,13 @@ export interface SystemRaw extends RawLineBase {
   /** Present when subtype === 'background_tasks_changed' — the full set of
    *  background tasks running at that moment, not a delta. */
   tasks?: BackgroundTaskEntry[];
+  /** Present when subtype === 'feedback_draft_queued' — the on-disk draft's
+   *  id, used by `/feedback` to discard or submit it. */
+  draft_id?: string;
+  /** 'bug' | 'idea' | 'missing_capability' observed; open string on the wire. */
+  draft_type?: string;
+  /** First ~200 chars of the sanitized draft body; the rest stays on disk. */
+  details_preview?: string;
 }
 
 /**

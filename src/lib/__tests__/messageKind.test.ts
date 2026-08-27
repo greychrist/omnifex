@@ -23,7 +23,8 @@ const EMITTABLE_IDS = [
   "system.notification.error", "system.notification.stop",
   "system.hook_started", "system.hook_response", "system.permission_denied",
   "system.userPromptSubmit", "system.api_error", "system.away_summary",
-  "system.thinking_tokens", "system.rate_limit", "system.unknown",
+  "system.thinking_tokens", "system.rate_limit", "system.feedback_draft_queued",
+  "system.unknown",
   // permission / summary / fallback
   "permission.request", "permission.askUserQuestion",
   "summary.compaction", "unknown",
@@ -250,6 +251,15 @@ describe('classifyStandaloneKind', () => {
 
     it('classifies away_summary as its own separately-stylable kind', () => {
       expect(classifyStandaloneKind(sys('away_summary'), [])).toBe('system.away_summary');
+    });
+
+    it('classifies feedback_draft_queued as its own separately-stylable kind', () => {
+      // The SendFeedback tool's draft-queued card. It must not fall through to
+      // system.unknown: the system category is hiddenInCompact by default, and
+      // a queued draft is user-facing news, not diagnostics.
+      expect(classifyStandaloneKind(sys('feedback_draft_queued'), [])).toBe(
+        'system.feedback_draft_queued',
+      );
     });
 
     it('routes system.init to system.unknown (cli-stream-init intercepts init before this branch)', () => {

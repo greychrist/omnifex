@@ -124,3 +124,84 @@ describe('enrichPlugin', () => {
     expect(result.scope).toBe('user');
   });
 });
+
+// Plugin manifests are attacker-adjacent input: a marketplace plugin's
+// plugin.json is written by whoever published it, and OmniFex reads it
+// directly rather than through the CLI. Claude Code 2.1.247 started rejecting
+// marketplace names carrying control or invisible characters and escaping
+// marketplace-supplied text in its own output; these cover the same ground for
+// the fields we surface ourselves. Escapes are spelled out rather than pasted
+// literally — the whole point is that these characters are invisible in source.
+describe('enrichPlugin sanitizes manifest text', () => {
+  const configDir = '/home/me/.claude';
+  const pluginPath = '/home/me/.claude/plugins/demo';
+
+  function enrichWith(
+    manifest: Record<string, unknown>,
+    base: { name: string; path: string; source?: string } = { name: 'demo', path: pluginPath },
+  ) {
+    const fakeFs = {
+      [path.join(pluginPath, '.claude-plugin', 'plugin.json')]: JSON.stringify(manifest),
+    };
+    return enrichPlugin(base, { configDir, readFile: readFile(fakeFs) });
+  }
+
+  it('strips bidi overrides that would reverse displayed text', () => {
+    // U+202E flips rendering direction, so "gpj.exe" displays as "exe.jpg".
+    const result = enrichWith({ description: 'Reads \u202Egpj.exe\u202C files' });
+    expect(result.description).toBe('Reads gpj.exe files');
+  });
+
+  it('strips zero-width characters used to fake a distinct identity', () => {
+    const result = enrichWith({ author: 'Ac\u200Bme\u200D Inc' });
+    expect(result.author).toBe('Acme Inc');
+  });
+
+  it('turns newlines and tabs into spaces instead of merging words', () => {
+    // Dropping the control character outright would yield "firstsecond".
+    const result = enrichWith({ description: 'first\nsecond\tthird' });
+    expect(result.description).toBe('first second third');
+  });
+
+  it('strips the ESC that makes an ANSI sequence an ANSI sequence', () => {
+    const result = enrichWith({ description: '\u001B[31mdanger\u001B[0m' });
+    expect(result.description).toBe('[31mdanger[0m');
+  });
+
+  it('drops a field that is nothing but invisible characters', () => {
+    // An empty string would render as a present-but-blank Description row.
+    const result = enrichWith({ description: '\u200B\u200B', author: '   ' });
+    expect(result.description).toBeUndefined();
+    expect(result.author).toBeUndefined();
+  });
+
+  it('sanitizes the CLI-supplied name and source too', () => {
+    const result = enrichWith(
+      { version: '1.0.0' },
+      { name: 'de\u200Bmo', path: pluginPath, source: 'mkt\u202Eplace' },
+    );
+    expect(result.name).toBe('demo');
+    expect(result.source).toBe('mktplace');
+  });
+
+  it('names a plugin whose name is entirely invisible, rather than blanking it', () => {
+    // An empty name renders as a nameless row the user cannot identify. The
+    // CLI has the same fallback wording for unprintable marketplace names.
+    const result = enrichWith(
+      { version: '1.0.0' },
+      { name: '\u200B\u202E', path: pluginPath },
+    );
+    expect(result.name).toBe('(unprintable plugin name)');
+  });
+
+  it('leaves ordinary text alone, accents and emoji included', () => {
+    const result = enrichWith({
+      description: 'Café tooling — ships 🚀 fast',
+      author: 'Ünicode Ltd',
+      version: '1.2.3-beta.1',
+    });
+    expect(result.description).toBe('Café tooling — ships 🚀 fast');
+    expect(result.author).toBe('Ünicode Ltd');
+    expect(result.version).toBe('1.2.3-beta.1');
+  });
+});

@@ -211,6 +211,7 @@ const SYSTEM_SUBTYPES: ReadonlySet<SystemSubtype> = new Set<SystemSubtype>([
   'model_consent_fallback',
   'error_during_execution',
   'background_tasks_changed',
+  'feedback_draft_queued',
 ]);
 
 function classifyLastPrompt(r: Record<string, unknown>, sessionId: string): JsonlNode | null {

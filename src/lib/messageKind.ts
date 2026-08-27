@@ -184,6 +184,7 @@ export function classifyStandaloneKind(
     if (subtype === 'thinking_tokens') return 'system.thinking_tokens';
     if (subtype === 'user_prompt_submit') return 'system.userPromptSubmit';
     if (subtype === 'away_summary') return 'system.away_summary';
+    if (subtype === 'feedback_draft_queued') return 'system.feedback_draft_queued';
     // Fallback: any other system subtype renders as the unknown gray inline strip.
     return 'system.unknown';
   }
