@@ -10,6 +10,7 @@ import { BrainNoteViewer } from './BrainNoteViewer';
 import { BrainSources } from './BrainSources';
 import { BrainStatsPanel } from './BrainStatsPanel';
 import { BrainAutomationSettings } from './BrainQueuePanel';
+import { InternalArchiveSettings } from '../InternalArchiveSettings';
 
 /** The three tabs, and the only state that decides what the card body shows. */
 type BrainTabName = 'notes' | 'sources' | 'settings';
@@ -244,6 +245,11 @@ export const BrainTab: React.FC = () => {
                     <div className="space-y-6">
                       <BrainVaultSetup vault={vault} accountName={account?.name ?? null} />
                       <BrainAutomationSettings accountId={accountId} />
+                      {/* Not Brain-specific -- session summarization spends
+                          here too -- but this is where OmniFex's own token
+                          spend is already discussed, so it is where someone
+                          looking for it will look. */}
+                      <InternalArchiveSettings />
                     </div>
                   </TabsContent>
                 </>

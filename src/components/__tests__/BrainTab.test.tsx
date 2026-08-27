@@ -12,6 +12,10 @@ vi.mock('@/lib/api', () => ({
     brainRebuild: vi.fn(),
     brainSetVaultPath: vi.fn(),
     brainClearVaultPath: vi.fn(),
+    // The Settings tab now also shows what OmniFex's own retained transcripts
+    // occupy. Stubbed to empty so these tests stay about the Brain.
+    internalArchiveStats: vi.fn(async () => ({ files: 0, bytes: 0 })),
+    internalArchiveClear: vi.fn(async () => ({ files: 0, bytes: 0 })),
   },
 }));
 
