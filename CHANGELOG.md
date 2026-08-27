@@ -5,6 +5,30 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.142] — 2026-08-26
+
+A Cost Report page, and a spend figure that was quietly too low.
+
+### Added
+
+- **A Cost Report page, opened from the new Cost button in the titlebar.** The cost data was already in the database and had no screen; the only way to read it was a Python script in another repo. The page opens as a singleton tab and covers a trend chart, spend by project, by model, project × model, where the money goes inside a request (input / output / cache read / cache write), caching ROI, the main-loop vs subagent split, and any model whose rate we don't know.
+- **Filters across the whole page at once.** Date range (this month, last month, 30 / 90 days, all time, or explicit start and end), multi-select account, model and project, a free-text project search, and a main-loop / subagent toggle. Every panel reads the same filter state, so no two panels can disagree about what they're showing. The choices are remembered between launches — except the date range, since an absolute window saved in August shows an empty page in October.
+- **Rates are now effective-dated.** Spend from March is priced at March's rates rather than today's, so re-reading an old month doesn't silently reprice it.
+- **Subagent spend is stored separately from main-loop spend.** Migration 22 re-keys the daily cost table on `(session, date, model, is_subagent)` and persists the four component costs, which is what makes the split and the component breakdown possible without re-parsing transcripts.
+
+### Fixed
+
+- **Cost ingest was missing Workflow subagent transcripts entirely.** Subagents spawned by a workflow are written to a nested path, and the scan only looked one level deep — so every workflow's subagent spend was invisible. Real effect on one month of one account: the reported total was **$868, and the true figure is $905.69**. If you use workflows, your historical costs were understated and will go up after this release. That is the number getting more accurate, not your spending changing.
+- **One failed query no longer blanks the entire page.** The eleven panels load independently but were awaited together, so a single failure threw away ten good results. Each panel now fails on its own, and a banner names which parts didn't load.
+
+### Changed
+
+- **One account picker, shared by the Projects page, the Brain and the Cost Report.** The markup existed three times with three slightly different looks; it is now a single component with a single-select and a multi-select mode that share their chrome.
+
+### Removed
+
+- **The Usage dashboard and the old Costs view.** Both were unreachable — no button, menu item or route led to either. The three things they did that nothing else did were folded into the Cost Report page first, and a persisted Usage tab from an older build now reopens as the Cost Report rather than a blank tab.
+
 ## [0.4.141] — 2026-08-26
 
 The Brain can index a session without you closing its tab.
