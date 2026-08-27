@@ -1,9 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useAccounts } from '@/contexts/AccountsContext';
 import { useBrainVault } from '@/hooks/useBrainVault';
-import { AccountBadge } from '@/components/AccountBadge';
+import { AccountPicker } from '@/components/AccountPicker';
 import { Card } from '@/components/ui/card';
-import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { BrainVaultSetup } from './BrainVaultSetup';
 import { BrainNoteList } from './BrainNoteList';
@@ -139,32 +138,14 @@ export const BrainTab: React.FC = () => {
                 <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
                   Account
                 </span>
-                {/* Same treatment as the Projects page: the trigger renders the
-                    account's own badge rather than its name as plain text, and
-                    the wrapper div keeps the badge out of SelectTrigger's
-                    `[&>span]:line-clamp-1` scope — inside it, line-clamp forces
-                    `display: -webkit-box` and stacks the icon above the label. */}
-                <Select
-                  value={accountId === null ? '' : String(accountId)}
-                  onValueChange={(v) => { setAccountId(Number(v)); }}
-                >
-                  <SelectTrigger className="h-7 w-auto gap-1.5 pl-1 text-xs [&>svg]:size-3">
-                    <div className="inline-flex items-center">
-                      {account ? (
-                        <AccountBadge name={account.name} size="sm" />
-                      ) : (
-                        <span className="text-muted-foreground">Select an account</span>
-                      )}
-                    </div>
-                  </SelectTrigger>
-                  <SelectContent>
-                    {accounts.map((a) => (
-                      <SelectItem key={a.id} value={String(a.id)}>
-                        <AccountBadge name={a.name} size="sm" />
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <AccountPicker
+                  accounts={accounts.map((a) => a.name)}
+                  value={account?.name ?? null}
+                  onChange={(name) => {
+                    const match = accounts.find((a) => a.name === name);
+                    if (match) setAccountId(match.id);
+                  }}
+                />
               </div>
             </div>
 

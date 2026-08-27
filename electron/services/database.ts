@@ -795,6 +795,100 @@ const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 22,
+    description:
+      'Split main-loop and subagent spend into separate session_cost_daily '
+      + 'rows, and persist the component cost breakdown. The breakdown was '
+      + 'already computed on every ingest (SessionCostSnapshot.breakdown) and '
+      + 'thrown away, which is why "what share of spend is re-sent context?" '
+      + 'could not be answered without a re-scan. It is STORED rather than '
+      + 'recomputed at query time because cost_usd is priced with the rates in '
+      + 'force on the row date: a query-time split from tokens x current rates '
+      + 'would stop summing to the stored whole the moment a price changed, '
+      + 'and would disagree silently. is_subagent joins the primary key rather '
+      + 'than arriving as a pair of subagent_* columns, so that every metric '
+      + 'splits (tokens, requests, cache ratios) for one column instead of '
+      + 'eight. SQLite cannot widen a primary key in place, so the table is '
+      + 'rebuilt. Existing rows keep is_subagent = 0 and zeroed component '
+      + 'costs until the next backfill sweep re-reads their transcripts, which '
+      + 'happens on the first launch after this ships: scannedSignatures is '
+      + 'in-memory and starts empty every process. See '
+      + 'docs/superpowers/specs/2026-08-26-cost-report-page-design.md.',
+    up: (db) => {
+      // Migration 16 creates this table with CREATE TABLE IF NOT EXISTS, so it
+      // is not guaranteed present when the runner is pointed at a partial
+      // image (the v20/v21 migration tests do exactly that). Mirror 16's
+      // tolerance rather than assuming: create the new shape outright when
+      // there is nothing to migrate from.
+      const exists = db
+        .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='session_cost_daily'")
+        .get() !== undefined;
+
+      // Indexes follow a renamed table, so they are dropped first — otherwise
+      // the CREATE INDEX IF NOT EXISTS below finds the names still taken,
+      // skips silently, and the new table is left unindexed while the old
+      // indexes ride away with the table they were attached to. Same trap as
+      // migration 21.
+      if (exists) {
+        db.exec(`
+          DROP INDEX IF EXISTS idx_session_cost_daily_date;
+          DROP INDEX IF EXISTS idx_session_cost_daily_account;
+          ALTER TABLE session_cost_daily RENAME TO session_cost_daily_old;
+        `);
+      }
+
+      db.exec(`
+        CREATE TABLE session_cost_daily (
+          session_id            TEXT NOT NULL,
+          date                  TEXT NOT NULL,
+          model                 TEXT NOT NULL,
+          account_name          TEXT NOT NULL,
+          config_dir            TEXT NOT NULL,
+          project_path          TEXT,
+          is_subagent           INTEGER NOT NULL DEFAULT 0,
+          request_count         INTEGER NOT NULL DEFAULT 0,
+          input_tokens          INTEGER NOT NULL DEFAULT 0,
+          output_tokens         INTEGER NOT NULL DEFAULT 0,
+          cache_read_tokens     INTEGER NOT NULL DEFAULT 0,
+          cache_write_5m_tokens INTEGER NOT NULL DEFAULT 0,
+          cache_write_1h_tokens INTEGER NOT NULL DEFAULT 0,
+          input_usd             REAL NOT NULL DEFAULT 0,
+          output_usd            REAL NOT NULL DEFAULT 0,
+          cache_read_usd        REAL NOT NULL DEFAULT 0,
+          cache_write_usd       REAL NOT NULL DEFAULT 0,
+          cost_usd              REAL NOT NULL,
+          is_estimated          INTEGER NOT NULL DEFAULT 0,
+          updated_at            TEXT NOT NULL,
+          PRIMARY KEY (session_id, date, model, is_subagent)
+        );
+      `);
+
+      if (exists) {
+        db.exec(`
+          INSERT INTO session_cost_daily (
+            session_id, date, model, account_name, config_dir, project_path,
+            input_tokens, output_tokens, cache_read_tokens,
+            cache_write_5m_tokens, cache_write_1h_tokens,
+            cost_usd, is_estimated, updated_at
+          )
+          SELECT
+            session_id, date, model, account_name, config_dir, project_path,
+            input_tokens, output_tokens, cache_read_tokens,
+            cache_write_5m_tokens, cache_write_1h_tokens,
+            cost_usd, is_estimated, updated_at
+          FROM session_cost_daily_old;
+
+          DROP TABLE session_cost_daily_old;
+        `);
+      }
+
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_session_cost_daily_date ON session_cost_daily(date);
+        CREATE INDEX IF NOT EXISTS idx_session_cost_daily_account ON session_cost_daily(account_name, date);
+      `);
+    },
+  },
 ];
 
 /**

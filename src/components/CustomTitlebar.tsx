@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Settings, CircleFadingArrowUp, Download, Loader2, CheckCircle, AlertCircle, HardDrive, Brain } from 'lucide-react';
+import { Settings, CircleFadingArrowUp, Download, Loader2, CheckCircle, AlertCircle, HardDrive, Brain, DollarSign } from 'lucide-react';
 import {
   TooltipProvider,
   TooltipSimple,
@@ -32,6 +32,7 @@ interface CustomTitlebarProps {
   onSettingsClick?: () => void;
   onLimaClick?: () => void;
   onBrainClick?: () => void;
+  onCostClick?: () => void;
   /** Launches the changelog review. Omit to leave the drift warning as text. */
   onCliReviewClick?: (request: CliReviewLaunchRequest) => void;
 }
@@ -41,6 +42,7 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
   onSettingsClick,
   onLimaClick,
   onBrainClick,
+  onCostClick,
   onCliReviewClick,
 }) => {
   const [appVersion, setAppVersion] = useState<string>('');
@@ -490,6 +492,18 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
             >
               <Brain size={16} />
               <span>Brain</span>
+            </motion.button>
+          )}
+
+          {onCostClick && (
+            <motion.button
+              onClick={onCostClick}
+              whileTap={{ scale: 0.97 }}
+              transition={{ duration: 0.15 }}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium hover:bg-accent hover:text-accent-foreground transition-colors app-no-drag"
+            >
+              <DollarSign size={16} />
+              <span>Cost</span>
             </motion.button>
           )}
 

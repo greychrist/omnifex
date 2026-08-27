@@ -266,10 +266,11 @@ function extractUsageRows(
     const usage = msg.message.usage;
     const model = msg.message.model ?? 'unknown';
     const key = msg.requestId ?? msg.message.id ?? `line:${idx}`;
-    const { usd } = computeMessageCost(model, usage);
 
     const timestamp = msg.timestamp ?? '';
     const date = timestamp ? timestamp.substring(0, 10) : '';
+    // Price at the message's own day, not today's rates.
+    const { usd } = computeMessageCost(model, usage, undefined, date || undefined);
 
     if (byKey.has(key)) byKey.delete(key);
     byKey.set(key, {

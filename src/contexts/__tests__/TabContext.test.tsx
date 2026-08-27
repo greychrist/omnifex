@@ -439,6 +439,26 @@ describe('useTabState — operation wrappers', () => {
     expect(result.current.activeTabId).toBe(first);
   });
 
+  it('createCostReportTab adds a cost-report tab', async () => {
+    const { result } = renderHook(() => useTabState(), { wrapper });
+    await waitFor(() => { expect(result.current.tabs.length).toBe(1); });
+    act(() => { result.current.createCostReportTab(); });
+    expect(result.current.tabs.filter((t) => t.type === 'cost-report')).toHaveLength(1);
+  });
+
+  it('createCostReportTab reuses the existing tab instead of opening a second', async () => {
+    const { result } = renderHook(() => useTabState(), { wrapper });
+    await waitFor(() => { expect(result.current.tabs.length).toBe(1); });
+    let first: string | null = null;
+    act(() => { first = result.current.createCostReportTab(); });
+    let second: string | null = null;
+    act(() => { second = result.current.createCostReportTab(); });
+
+    expect(second).toBe(first);
+    expect(result.current.tabs.filter((t) => t.type === 'cost-report')).toHaveLength(1);
+    expect(result.current.activeTabId).toBe(first);
+  });
+
   it('createChatTab adds a chat tab and returns its id', async () => {
     const { result } = renderHook(() => useTabState(), { wrapper });
     await waitFor(() => { expect(result.current.tabs.length).toBe(1); });

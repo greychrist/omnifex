@@ -254,3 +254,67 @@ describe('AnsweredAskUserQuestionCard (wire format — synthesised string)', () 
     expect(screen.getByText('(no answer recorded)')).toBeTruthy();
   });
 });
+
+describe('AnsweredAskUserQuestionCard (CLI trailer drift — "Read the answers carefully")', () => {
+  // Verbatim tool_result from live session
+  // cd8cb2a5-e28a-4f8b-867d-78473f61219f. The CLI drifted again: the prefix
+  // is now "The user answered:" and the trailer is "Read the answers
+  // carefully — …" instead of "You can now continue with these answers in
+  // mind.". The prefix never mattered (we anchor on question text), but the
+  // trailer did: it was the terminal boundary for the LAST question's answer,
+  // so only that answer failed to parse and rendered "(no answer recorded)"
+  // while the earlier ones — bounded by the `", "` separator — were fine.
+  const TRAILER =
+    '. Read the answers carefully — they may request clarification, changes, ' +
+    'or that you not proceed — and follow what they actually say.';
+
+  it('parses every answer, including the last, with the new trailer', () => {
+    const liveContent =
+      'The user answered: ' +
+      '"There\'s already a CostsView embedded as a sub-tab inside the Usage dashboard (range presets, account filter, groupBy, rescan). What happens to it?"="Keep both", ' +
+      '"How much lands in this branch?"="Everything, staged commits (Recommended)", ' +
+      '"Which filters does the page need, and should they be multi-select?"="Date range incl. custom start/end, Account, model, project — all multi-select, Main-loop vs subagent toggle, Free-text project search", ' +
+      '"Effective-dated pricing (brief §5b) — rates as {from, input, output} periods instead of flat numbers?"="Port it now, OmniFex-only (Recommended)"' +
+      TRAILER;
+
+    render(
+      <AnsweredAskUserQuestionCard
+        input={input([
+          { question: "There's already a CostsView embedded as a sub-tab inside the Usage dashboard (range presets, account filter, groupBy, rescan). What happens to it?", header: 'Old view', options: [{ label: 'Keep both' }] },
+          { question: 'How much lands in this branch?', header: 'Scope', options: [{ label: 'Everything, staged commits (Recommended)' }] },
+          { question: 'Which filters does the page need, and should they be multi-select?', header: 'Filters', options: [{ label: 'Account' }], multiSelect: true },
+          { question: 'Effective-dated pricing (brief §5b) — rates as {from, input, output} periods instead of flat numbers?', header: 'Pricing', options: [{ label: 'Port it now, OmniFex-only (Recommended)' }] },
+        ])}
+        resultContent={liveContent}
+      />,
+    );
+
+    expect(screen.queryByText('(no answer recorded)')).toBeNull();
+    expect(screen.getByText('Keep both')).toBeTruthy();
+    expect(screen.getByText('Everything, staged commits (Recommended)')).toBeTruthy();
+    expect(screen.getByText('Date range incl. custom start/end, Account, model, project — all multi-select, Main-loop vs subagent toggle, Free-text project search')).toBeTruthy();
+    expect(screen.getByText('Port it now, OmniFex-only (Recommended)')).toBeTruthy();
+    // No trailer prose leaks into the answer cell.
+    expect(screen.queryByText(/Read the answers carefully/)).toBeNull();
+  });
+
+  it('keeps the Other annotation working under the new trailer', () => {
+    const typed = "Yes it's a generation. There should be an 'are you sure' to gate that.";
+    const liveContent =
+      `The user answered: "Regenerate?"="${typed}"` +
+      ` notes: User selected Other: "${typed}"` +
+      TRAILER;
+
+    render(
+      <AnsweredAskUserQuestionCard
+        input={input([{ question: 'Regenerate?', header: 'Regen', options: [{ label: 'No' }] }])}
+        resultContent={liveContent}
+      />,
+    );
+
+    expect(screen.getAllByText(new RegExp('There should be an')).length).toBe(1);
+    expect(screen.getByText(/Other:\s*Yes it's a generation/)).toBeTruthy();
+    expect(screen.queryByText(/User selected Other/)).toBeNull();
+    expect(screen.queryByText(/Read the answers carefully/)).toBeNull();
+  });
+});

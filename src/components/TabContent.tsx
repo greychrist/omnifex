@@ -25,11 +25,11 @@ import { slotToResolution, type FormAccountResolution } from "@/lib/accountResol
 
 // Lazy load heavy components
 const AgentSession = lazy(() => import('@/components/AgentSession').then(m => ({ default: m.AgentSession })));
-const UsageDashboard = lazy(() => import('@/components/UsageDashboard').then(m => ({ default: m.UsageDashboard })));
 const MCPManager = lazy(() => import('@/components/MCPManager').then(m => ({ default: m.MCPManager })));
 const Settings = lazy(() => import('@/components/Settings').then(m => ({ default: m.Settings })));
 const MarkdownEditor = lazy(() => import('@/components/MarkdownEditor').then(m => ({ default: m.MarkdownEditor })));
 const LimaViewer = lazy(() => import('@/components/LimaViewer').then(m => ({ default: m.LimaViewer })));
+const CostReportView = lazy(() => import('@/components/CostReportView').then(m => ({ default: m.CostReportView })));
 const BrainTab = lazy(() => import('@/components/brain/BrainTab').then(m => ({ default: m.BrainTab })));
 // const ClaudeFileEditor = lazy(() => import('@/components/ClaudeFileEditor').then(m => ({ default: m.ClaudeFileEditor })));
 
@@ -689,13 +689,6 @@ const TabPanelImpl: React.FC<TabPanelProps> = ({ tab, isActive }) => {
           </div>
         );
       
-      case 'usage':
-        return (
-          <div className="h-full">
-            <UsageDashboard onBack={() => {}} />
-          </div>
-        );
-      
       case 'mcp':
         return (
           <div className="h-full">
@@ -714,6 +707,13 @@ const TabPanelImpl: React.FC<TabPanelProps> = ({ tab, isActive }) => {
         return (
           <div className="h-full">
             <BrainTab />
+          </div>
+        );
+
+      case 'cost-report':
+        return (
+          <div className="h-full">
+            <CostReportView />
           </div>
         );
       

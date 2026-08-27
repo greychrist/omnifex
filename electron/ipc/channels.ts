@@ -119,6 +119,16 @@ export const INVOKE_CHANNELS: readonly string[] = [
   'session_cost_history',
   'session_cost_sessions',
   'session_cost_rescan',
+  'session_cost_by_project',
+  'session_cost_by_model',
+  'session_cost_by_project_model',
+  'session_cost_components',
+  'session_cost_caching_roi',
+  'session_cost_subagent_split',
+  'session_cost_unpriced',
+  'session_cost_facets',
+  'session_cost_totals',
+  'session_cost_history_by_model',
 
   // Usage
   'get_usage_stats',

@@ -346,7 +346,7 @@ describe('BrainTab', () => {
     fireEvent.click(screen.getByRole('tab', { name: /^sources$/i }));
     expect(screen.getByTestId('sources').textContent).toBe('7');
 
-    fireEvent.click(screen.getByTestId('account-option-9'));
+    fireEvent.click(screen.getByTestId('account-option-work'));
     // Landing back on notes after a switch is deliberate: the sources list is
     // a scan of another account's config dir, and silently re-running it under
     // a new account reads as if the previous list simply updated.
@@ -411,8 +411,8 @@ describe('BrainTab — account switcher placement', () => {
   it('offers every account as a badge in the list', async () => {
     render(<BrainTab />);
     await screen.findByTestId('account-select');
-    expect(within(screen.getByTestId('account-option-7')).getByTestId('account-badge')).toBeTruthy();
-    expect(within(screen.getByTestId('account-option-9')).getByTestId('account-badge')).toBeTruthy();
+    expect(within(screen.getByTestId('account-option-personal')).getByTestId('account-badge')).toBeTruthy();
+    expect(within(screen.getByTestId('account-option-work')).getByTestId('account-badge')).toBeTruthy();
   });
 
   it('keeps the switcher reachable on a vault that needs setup', async () => {

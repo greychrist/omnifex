@@ -5,7 +5,10 @@ import { Button } from '@/components/ui/button';
 
 const PLACEHOLDER = `{
   "sonnet-5": { "input": 2, "output": 10 },
-  "opus-4-8": { "input": 5, "output": 25, "cacheRead": 0.5 }
+  "opus-4-8": [
+    { "from": "2024-01-01", "input": 5, "output": 25, "cacheRead": 0.5 },
+    { "from": "2026-09-01", "input": 4, "output": 20 }
+  ]
 }`;
 
 /**
@@ -13,6 +16,11 @@ const PLACEHOLDER = `{
  * model-id substring patterns; omitted fields derive from the standard
  * formula (cache read 0.1x input, write 1.25x/2x). Used for price drift,
  * intro pricing, or negotiated enterprise rates.
+ *
+ * A value is either a single override (applies to all dates) or an array of
+ * `{ from, ... }` periods — the one with the latest `from` on or before a
+ * row's date wins. Prefer appending a period to editing one in place: an
+ * in-place edit silently re-prices every past row on the next cost re-scan.
  */
 export function PricingOverridesEditor() {
   const [text, setText] = useState('');

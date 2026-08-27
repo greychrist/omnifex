@@ -110,7 +110,17 @@ export interface Services {
     watch(args: { configDir: string; projectPath: string; sessionId: string; accountName: string }): unknown;
     unwatch(sessionId: string): unknown;
     history(filters: Record<string, unknown>): unknown;
+    historyByModel(filters: Record<string, unknown>): unknown;
     sessions(filters: Record<string, unknown>): unknown;
+    byProject(filters: Record<string, unknown>): unknown;
+    byModel(filters: Record<string, unknown>): unknown;
+    byProjectModel(filters: Record<string, unknown>): unknown;
+    components(filters: Record<string, unknown>): unknown;
+    totals(filters: Record<string, unknown>): unknown;
+    cachingRoi(filters: Record<string, unknown>): unknown;
+    subagentSplit(filters: Record<string, unknown>): unknown;
+    unpriced(filters: Record<string, unknown>): unknown;
+    facets(filters: Record<string, unknown>): unknown;
     rescan(): unknown;
   };
   usage?: {
@@ -330,6 +340,26 @@ function wrapWith<P>(fn: (params: P) => unknown): HandlerFn {
 }
 
 /**
+ * Normalise the cost-history filter params every Cost Report channel accepts.
+ *
+ * Accepts both camelCase and snake_case, per the repo's handler-adapter rule.
+ * The multi-select fields arrive as either a string or an array of strings and
+ * are passed through as-is; the service's whereClause() expands an array to
+ * `IN (...)` and treats an empty one as "no filter".
+ */
+function costFilters(p: Record<string, unknown> | undefined): Record<string, unknown> {
+  return {
+    startDate: p?.startDate ?? p?.start_date,
+    endDate: p?.endDate ?? p?.end_date,
+    accountName: p?.accountName ?? p?.account_name,
+    projectPath: p?.projectPath ?? p?.project_path,
+    model: p?.model,
+    projectSearch: p?.projectSearch ?? p?.project_search,
+    isSubagent: p?.isSubagent ?? p?.is_subagent,
+  };
+}
+
+/**
  * Build and return the full channel → handler map.
  * When a service is not provided, the handler resolves with `null` so the
  * renderer gets a defined (but empty) response rather than a blocked channel.
@@ -526,21 +556,28 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
       return null;
     }),
     session_cost_history: wrapWith((p: Record<string, unknown>) => cost?.history({
-      startDate: p?.startDate ?? p?.start_date,
-      endDate: p?.endDate ?? p?.end_date,
-      accountName: p?.accountName ?? p?.account_name,
-      projectPath: p?.projectPath ?? p?.project_path,
-      model: p?.model,
+      ...costFilters(p),
       groupBy: p?.groupBy ?? p?.group_by,
     }) ?? []),
-    session_cost_sessions: wrapWith((p: Record<string, unknown>) => cost?.sessions({
-      startDate: p?.startDate ?? p?.start_date,
-      endDate: p?.endDate ?? p?.end_date,
-      accountName: p?.accountName ?? p?.account_name,
-      projectPath: p?.projectPath ?? p?.project_path,
-      model: p?.model,
-    }) ?? []),
+    session_cost_sessions: wrapWith((p: Record<string, unknown>) => cost?.sessions(costFilters(p)) ?? []),
     session_cost_rescan: wrapWith(() => cost?.rescan() ?? null),
+
+    // Cost Report page queries. All share costFilters(), so a filter added to
+    // the filter bar reaches every panel at once rather than needing eleven
+    // parallel edits.
+    session_cost_history_by_model: wrapWith((p: Record<string, unknown>) => cost?.historyByModel({
+      ...costFilters(p),
+      groupBy: p?.groupBy ?? p?.group_by,
+    }) ?? []),
+    session_cost_by_project: wrapWith((p: Record<string, unknown>) => cost?.byProject(costFilters(p)) ?? []),
+    session_cost_by_model: wrapWith((p: Record<string, unknown>) => cost?.byModel(costFilters(p)) ?? []),
+    session_cost_by_project_model: wrapWith((p: Record<string, unknown>) => cost?.byProjectModel(costFilters(p)) ?? []),
+    session_cost_components: wrapWith((p: Record<string, unknown>) => cost?.components(costFilters(p)) ?? null),
+    session_cost_totals: wrapWith((p: Record<string, unknown>) => cost?.totals(costFilters(p)) ?? null),
+    session_cost_caching_roi: wrapWith((p: Record<string, unknown>) => cost?.cachingRoi(costFilters(p)) ?? null),
+    session_cost_subagent_split: wrapWith((p: Record<string, unknown>) => cost?.subagentSplit(costFilters(p)) ?? []),
+    session_cost_unpriced: wrapWith((p: Record<string, unknown>) => cost?.unpriced(costFilters(p)) ?? []),
+    session_cost_facets: wrapWith((p: Record<string, unknown>) => cost?.facets(costFilters(p)) ?? null),
 
     // ── Standalone model list (no active session required) ─────────────────
     list_supported_models: wrapWith((p: Record<string, unknown>) => models?.listSupported((p?.configDir ?? p?.config_dir) as string) ?? []),

@@ -14,10 +14,10 @@ interface UseTabStateReturn {
   // Operations
   createChatTab: (projectId?: string, title?: string, projectPath?: string, agent?: AgentKind) => string;
   createProjectsTab: () => string | null;
-  createUsageTab: () => string | null;
   createMCPTab: () => string | null;
   createLimaTab: () => string | null;
   createBrainTab: () => string | null;
+  createCostReportTab: () => string | null;
   createSettingsTab: () => string | null;
   createClaudeMdTab: () => string | null;
   createClaudeFileTab: (fileId: string, fileName: string) => string;
@@ -82,24 +82,6 @@ export const useTabState = (): UseTabStateReturn => {
     });
   }, [addTab]);
 
-  const createUsageTab = useCallback((): string | null => {
-    // Check if usage tab already exists (singleton)
-    const existingTab = tabs.find(tab => tab.type === 'usage');
-    if (existingTab) {
-      setActiveTab(existingTab.id);
-      return existingTab.id;
-    }
-
-    return addTab({
-      type: 'usage',
-      title: 'Usage',
-      agent: 'claude',
-      status: 'idle',
-      hasUnsavedChanges: false,
-      icon: 'bar-chart'
-    });
-  }, [addTab, tabs, setActiveTab]);
-
   const createMCPTab = useCallback((): string | null => {
     // Check if MCP tab already exists (singleton)
     const existingTab = tabs.find(tab => tab.type === 'mcp');
@@ -153,6 +135,25 @@ export const useTabState = (): UseTabStateReturn => {
       status: 'idle',
       hasUnsavedChanges: false,
       icon: 'brain',
+    });
+  }, [addTab, tabs, setActiveTab]);
+
+  const createCostReportTab = useCallback((): string | null => {
+    // Singleton — the page's whole value is one filter state applied across
+    // every panel at once, so a second instance would just be two views that
+    // silently disagree about what is being compared.
+    const existingTab = tabs.find(tab => tab.type === 'cost-report');
+    if (existingTab) {
+      setActiveTab(existingTab.id);
+      return existingTab.id;
+    }
+
+    return addTab({
+      type: 'cost-report',
+      title: 'Cost',
+      agent: 'claude',
+      status: 'idle',
+      hasUnsavedChanges: false,
     });
   }, [addTab, tabs, setActiveTab]);
 
@@ -288,10 +289,10 @@ export const useTabState = (): UseTabStateReturn => {
     // Operations
     createChatTab,
     createProjectsTab,
-    createUsageTab,
     createMCPTab,
     createLimaTab,
     createBrainTab,
+    createCostReportTab,
     createSettingsTab,
     createClaudeMdTab,
     createClaudeFileTab,

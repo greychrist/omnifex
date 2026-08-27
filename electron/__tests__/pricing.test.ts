@@ -38,13 +38,18 @@ describe('resolveRates', () => {
   });
 
   it('overrides apply per-MTok, longest pattern wins, and clear estimated', () => {
-    const overrides = { opus: { input: 99 }, 'opus-4-8': { input: 4, output: 20 } };
+    const overrides = {
+      opus: [{ from: '1970-01-01', input: 99 }],
+      'opus-4-8': [{ from: '1970-01-01', input: 4, output: 20 }],
+    };
     const r = resolveRates('claude-opus-4-8', overrides);
     expect(r.rates.input).toBeCloseTo(4 / M, 12);
     expect(r.rates.output).toBeCloseTo(20 / M, 12);
     // cache rates re-derive from overridden input
     expect(r.rates.cacheWrite5m).toBeCloseTo((4 / M) * 1.25, 12);
-    const unknown = resolveRates('claude-newthing-9', { newthing: { input: 7, output: 30 } });
+    const unknown = resolveRates('claude-newthing-9', {
+      newthing: [{ from: '1970-01-01', input: 7, output: 30 }],
+    });
     expect(unknown.estimated).toBe(false);
     expect(unknown.rates.input).toBeCloseTo(7 / M, 12);
   });
@@ -90,7 +95,10 @@ describe('splitCacheWriteTokens', () => {
 
 describe('parsePricingOverrides', () => {
   it('parses valid JSON, rejects garbage', () => {
-    expect(parsePricingOverrides('{"opus-4-8":{"input":4}}')).toEqual({ 'opus-4-8': { input: 4 } });
+    // The flat legacy shape normalises to one always-applicable period.
+    expect(parsePricingOverrides('{"opus-4-8":{"input":4}}')).toEqual({
+      'opus-4-8': [{ from: '1970-01-01', input: 4 }],
+    });
     expect(parsePricingOverrides('not json')).toBeUndefined();
     expect(parsePricingOverrides(null)).toBeUndefined();
     expect(parsePricingOverrides('[1,2]')).toBeUndefined();
@@ -106,17 +114,19 @@ describe('parsePricingOverrides', () => {
 
   it('keeps valid fields alongside dropped ones in the same entry', () => {
     expect(parsePricingOverrides('{"opus":{"input":5,"output":"bad","cacheRead":1e999}}')).toEqual({
-      opus: { input: 5 },
+      opus: [{ from: '1970-01-01', input: 5 }],
     });
   });
 
   it('drops a non-object entry entirely while keeping valid siblings', () => {
     expect(parsePricingOverrides('{"opus":5,"sonnet":{"input":3}}')).toEqual({
-      sonnet: { input: 3 },
+      sonnet: [{ from: '1970-01-01', input: 3 }],
     });
   });
 
   it('drops unknown fields even when numeric', () => {
-    expect(parsePricingOverrides('{"opus":{"input":5,"bogus":1}}')).toEqual({ opus: { input: 5 } });
+    expect(parsePricingOverrides('{"opus":{"input":5,"bogus":1}}')).toEqual({
+      opus: [{ from: '1970-01-01', input: 5 }],
+    });
   });
 });

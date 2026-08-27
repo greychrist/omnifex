@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence, Reorder } from 'framer-motion';
-import { X, Plus, MessageSquare, Folder, BarChart, Server, Settings, FileText, HardDrive, List, Brain, Bot } from 'lucide-react';
+import { X, Plus, MessageSquare, Folder, Server, Settings, FileText, HardDrive, List, Brain, Bot, DollarSign } from 'lucide-react';
 import { Spinner } from '@/components/ui/spinner';
 import { useMessageRenderingConfig } from '@/contexts/MessageRenderingContext';
 import { TabStatusGlyph } from '@/components/TabStatusGlyph';
@@ -47,14 +47,14 @@ export function getTabIcon(tab: Pick<Tab, 'type' | 'icon'>): typeof MessageSquar
       return MessageSquare;
     case 'projects':
       return Folder;
-    case 'usage':
-      return BarChart;
     case 'mcp':
       return Server;
     case 'lima':
       return HardDrive;
     case 'brain':
       return Brain;
+    case 'cost-report':
+      return DollarSign;
     case 'settings':
       return Settings;
     case 'claude-md':
