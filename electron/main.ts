@@ -530,8 +530,10 @@ app.whenReady().then(() => {
   // every kind of internal spend lands somewhere retained and attributable
   // rather than being swept — see
   // docs/superpowers/specs/2026-08-26-internal-session-archive-design.md.
+  const internalArchive = internalArchiveRoot(app.getPath('userData'));
+  const costBackfillOpts = { archiveRoot: internalArchive };
   const summaryQueryRunner = createSummaryQueryRunner({
-    archiveRoot: internalArchiveRoot(app.getPath('userData')),
+    archiveRoot: internalArchive,
     // Ownership from the config dir the run was launched with, never
     // resolve(): the same rule the Brain applies to its own sources.
     resolveAccountName: (configDir) =>
@@ -935,7 +937,7 @@ app.whenReady().then(() => {
   // sweep hourly to catch sessions run outside OmniFex (terminal claude-work).
   setTimeout(() => {
     try {
-      const r = costHistoryService.backfill(accountsService.listAccounts());
+      const r = costHistoryService.backfill(accountsService.listAccounts(), costBackfillOpts);
       console.log(`[cost-history] startup backfill: ${r.sessionsScanned} sessions`);
     } catch (err) {
       console.warn('[cost-history] startup backfill failed:', err);
@@ -943,7 +945,7 @@ app.whenReady().then(() => {
   }, 30_000);
   setInterval(() => {
     try {
-      costHistoryService.backfill(accountsService.listAccounts());
+      costHistoryService.backfill(accountsService.listAccounts(), costBackfillOpts);
     } catch (err) {
       console.warn('[cost-history] sweep failed:', err);
     }
@@ -1431,7 +1433,7 @@ app.whenReady().then(() => {
       subagentSplit: (f: Record<string, unknown>) => costHistoryService.subagentSplit(f as never),
       unpriced: (f: Record<string, unknown>) => costHistoryService.unpriced(f as never),
       facets: (f: Record<string, unknown>) => costHistoryService.facets(f as never),
-      rescan: () => costHistoryService.backfill(accountsService.listAccounts()),
+      rescan: () => costHistoryService.backfill(accountsService.listAccounts(), costBackfillOpts),
     },
     // Usage adapter
     usage: {

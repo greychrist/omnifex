@@ -31,6 +31,12 @@ export interface SessionCostSnapshot {
 
 export interface SessionCostDailyRow {
   session_id: string;
+  /**
+   * Which OmniFex-internal activity paid for this row, or absent for a real
+   * user session. Set from the archive path the transcript was found under —
+   * ownership by location, never inferred.
+   */
+  internal_kind?: string | null;
   date: string;
   model: string;
   account_name: string;

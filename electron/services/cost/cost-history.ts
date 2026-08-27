@@ -12,6 +12,17 @@ import path from 'node:path';
 import type { Database } from '../database';
 import { parsePricingOverrides } from '../../../src/lib/pricing';
 import { computeSessionCost, type SessionCostDailyRow } from './session-cost-core';
+import {
+  INTERNAL_KINDS,
+  INTERNAL_LABEL,
+  type InternalKind,
+} from '../sessions/internal-archive';
+
+/** Extra scan roots for a backfill sweep. */
+export interface BackfillOptions {
+  /** `internalArchiveRoot(userData)`. Omitted means "projects only". */
+  archiveRoot?: string;
+}
 
 export interface CostFs {
   readFile(p: string): string | null;
@@ -273,7 +284,7 @@ export interface CostHistoryService {
   subagentSplit(filters: CostHistoryFilters): SubagentSplitRow[];
   unpriced(filters: CostHistoryFilters): UnpricedModel[];
   facets(filters: CostHistoryFilters): CostFacets;
-  backfill(accounts: AccountLike[]): { sessionsScanned: number };
+  backfill(accounts: AccountLike[], opts?: BackfillOptions): { sessionsScanned: number };
 }
 
 function whereClause(filters: CostHistoryFilters): { sql: string; params: unknown[] } {
@@ -362,8 +373,8 @@ export function createCostHistoryService(db: Database, fsDeps: CostFs = nodeCost
       input_tokens, output_tokens, cache_read_tokens,
       cache_write_5m_tokens, cache_write_1h_tokens,
       input_usd, output_usd, cache_read_usd, cache_write_usd,
-      cost_usd, is_estimated, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      cost_usd, is_estimated, updated_at, internal_kind
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const deleteStmt = db.raw.prepare('DELETE FROM session_cost_daily WHERE session_id = ?');
 
@@ -377,7 +388,7 @@ export function createCostHistoryService(db: Database, fsDeps: CostFs = nodeCost
         r.input_tokens, r.output_tokens, r.cache_read_tokens,
         r.cache_write_5m_tokens, r.cache_write_1h_tokens,
         r.input_usd, r.output_usd, r.cache_read_usd, r.cache_write_usd,
-        r.cost_usd, r.is_estimated, now,
+        r.cost_usd, r.is_estimated, now, r.internal_kind ?? null,
       );
     }
   });
@@ -588,7 +599,7 @@ export function createCostHistoryService(db: Database, fsDeps: CostFs = nodeCost
       .all(...params) as CostSessionRow[];
   }
 
-  function backfill(accounts: AccountLike[]): { sessionsScanned: number } {
+  function backfill(accounts: AccountLike[], opts?: BackfillOptions): { sessionsScanned: number } {
     const overrides = parsePricingOverrides(db.getSetting('pricing_overrides'));
     let sessionsScanned = 0;
     for (const account of accounts) {
@@ -627,7 +638,78 @@ export function createCostHistoryService(db: Database, fsDeps: CostFs = nodeCost
         }
       }
     }
+
+    // OmniFex's own CLI runs. These transcripts used to be deleted the moment
+    // the call returned, so the money they cost was invisible; they are
+    // retained now and priced here, with the same parser and the same rates.
+    //
+    // Account and kind come from the archive path rather than from anything
+    // inside the file — ownership by location, the rule the Brain already
+    // applies to its own sources.
+    if (opts?.archiveRoot) {
+      sessionsScanned += backfillArchive(opts.archiveRoot, overrides);
+    }
+
     return { sessionsScanned };
+  }
+
+  /**
+   * Walk `<root>/<account>/<kind>/<date>/*.jsonl`.
+   *
+   * An unrecognised kind directory is SKIPPED rather than priced under a
+   * guessed label: money attributed to something we made up is worse than
+   * money we can see we missed.
+   */
+  function backfillArchive(root: string, overrides: ReturnType<typeof parsePricingOverrides>): number {
+    let scanned = 0;
+    for (const accountEntry of fsDeps.listDir(root)) {
+      if (!accountEntry.isDirectory) continue;
+      const accountDir = path.join(root, accountEntry.name);
+
+      for (const kindEntry of fsDeps.listDir(accountDir)) {
+        if (!kindEntry.isDirectory) continue;
+        if (!(INTERNAL_KINDS as readonly string[]).includes(kindEntry.name)) continue;
+        const kind = kindEntry.name as InternalKind;
+        const kindDir = path.join(accountDir, kind);
+
+        for (const dateEntry of fsDeps.listDir(kindDir)) {
+          if (!dateEntry.isDirectory) continue;
+          const dateDir = path.join(kindDir, dateEntry.name);
+
+          for (const entry of fsDeps.listDir(dateDir)) {
+            if (entry.isDirectory || !entry.name.endsWith('.jsonl')) continue;
+            const sessionId = entry.name.slice(0, -'.jsonl'.length);
+            const mainPath = path.join(dateDir, entry.name);
+
+            // Same skip-if-unchanged guard as the projects walk. An archived
+            // transcript never changes after it lands, so this is close to a
+            // permanent skip once seen.
+            const signature = sessionFileSignature(fsDeps, mainPath, path.join(dateDir, sessionId, 'subagents'));
+            if (scannedSignatures.get(mainPath) === signature) continue;
+
+            const sessionContent = fsDeps.readFile(mainPath);
+            if (sessionContent === null) continue;
+
+            const { dailyRows } = computeSessionCost({
+              sessionContent,
+              subagentContents: [],
+              sessionId,
+              accountName: accountEntry.name,
+              configDir: '',
+              projectPath: INTERNAL_LABEL[kind],
+              overrides,
+            });
+            replaceSession(
+              sessionId,
+              dailyRows.map((r) => ({ ...r, internal_kind: kind })),
+            );
+            scannedSignatures.set(mainPath, signature);
+            scanned += 1;
+          }
+        }
+      }
+    }
+    return scanned;
   }
 
   return {
