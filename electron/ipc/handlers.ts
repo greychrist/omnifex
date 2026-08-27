@@ -123,6 +123,10 @@ export interface Services {
     facets(filters: Record<string, unknown>): unknown;
     rescan(): unknown;
   };
+  internalArchive?: {
+    stats(): unknown;
+    clear(): unknown;
+  };
   usage?: {
     getStats(params?: unknown): unknown;
     getByDateRange(params: unknown): unknown;
@@ -364,7 +368,7 @@ function costFilters(p: Record<string, unknown> | undefined): Record<string, unk
  * renderer gets a defined (but empty) response rather than a blocked channel.
  */
 export function getHandlerMap(services: Services = {}): Record<string, HandlerFn> {
-  const { brain, brainMcp, accounts, claude, sessions, cost, usage, rateLimits, usageRunner, claudeBinary, mcp, slashCommands, sessionsSummary, logging, database, proxy, permissionsIO, models, commands, gitWatcher, branchColors, gitBranches, lima, filesystem, notificationSounds, oneShotTerminal, codexAuth, codexSessionWalker, accountIdentity, allowRawSql } = services;
+  const { brain, brainMcp, accounts, claude, sessions, cost, internalArchive, usage, rateLimits, usageRunner, claudeBinary, mcp, slashCommands, sessionsSummary, logging, database, proxy, permissionsIO, models, commands, gitWatcher, branchColors, gitBranches, lima, filesystem, notificationSounds, oneShotTerminal, codexAuth, codexSessionWalker, accountIdentity, allowRawSql } = services;
 
   // Positive account-ownership guard for config-editing channels. A non-empty
   // configDir supplied by the renderer must belong to a known account, so a
@@ -560,6 +564,8 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     }) ?? []),
     session_cost_sessions: wrapWith((p: Record<string, unknown>) => cost?.sessions(costFilters(p)) ?? []),
     session_cost_rescan: wrapWith(() => cost?.rescan() ?? null),
+    internal_archive_stats: wrapWith(() => internalArchive?.stats() ?? null),
+    internal_archive_clear: wrapWith(() => internalArchive?.clear() ?? null),
 
     // Cost Report page queries. All share costFilters(), so a filter added to
     // the filter bar reaches every panel at once rather than needing eleven

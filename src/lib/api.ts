@@ -645,6 +645,11 @@ export interface CostSessionRow {
  *  The multi-valued fields accept a single string or an array; an array ORs
  *  its values and an EMPTY array means "no filter", so clearing every checkbox
  *  in the filter bar shows everything rather than nothing. */
+export interface InternalArchiveStats {
+  files: number;
+  bytes: number;
+}
+
 export interface CostHistoryFilterParams {
   startDate?: string;
   endDate?: string;
@@ -1903,6 +1908,18 @@ export const api = {
    *  cost-history table (same work the startup backfill / hourly sweep do). */
   async sessionCostRescan(): Promise<{ sessionsScanned: number } | null> {
     return apiCall("session_cost_rescan", {});
+  },
+
+  /** What OmniFex's own retained transcripts occupy on disk. */
+  async internalArchiveStats(): Promise<InternalArchiveStats | null> {
+    return apiCall("internal_archive_stats", {});
+  },
+
+  /** Delete every retained internal transcript. Cost history is unaffected —
+   *  the rows they already accounted for stay in the report. Returns the
+   *  post-clear stats so the caller does not have to re-query. */
+  async internalArchiveClear(): Promise<InternalArchiveStats | null> {
+    return apiCall("internal_archive_clear", {});
   },
 
   async sessionGetPermissions(tabId: string, projectPath: string, configDir: string): Promise<any[]> {

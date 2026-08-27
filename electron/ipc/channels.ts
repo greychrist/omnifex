@@ -119,6 +119,8 @@ export const INVOKE_CHANNELS: readonly string[] = [
   'session_cost_history',
   'session_cost_sessions',
   'session_cost_rescan',
+  'internal_archive_stats',
+  'internal_archive_clear',
   'session_cost_by_project',
   'session_cost_by_model',
   'session_cost_by_project_model',

@@ -156,3 +156,119 @@ export async function archiveTranscripts(p: ArchiveTranscriptsParams): Promise<A
 
   return { moved, failed };
 }
+
+// ── Retention ──────────────────────────────────────────────────────────────
+//
+// The archive is bounded so it cannot grow forever, and pruning is SAFE
+// because it does not touch the cost table: `replaceSession` deletes only the
+// session it is replacing and `backfill` only visits transcripts it finds, so
+// a pruned transcript's cost rows survive — including across a rescan. That
+// property is what lets a finite archive coexist with a single accounting
+// path; without it every prune would quietly rewrite history downwards.
+
+import fsSync from 'node:fs';
+
+/** `YYYY-MM-DD`. Anything else in a kind directory is not ours to delete. */
+const DATE_DIR = /^\d{4}-\d{2}-\d{2}$/;
+
+function listDirSafe(dir: string): fsSync.Dirent[] {
+  try {
+    return fsSync.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    // A missing archive is the ordinary state before the first internal run.
+    return [];
+  }
+}
+
+/** Whole days, `from` - `to`, on the UTC date strings the archive is keyed by. */
+function daysBetween(from: string, to: string): number {
+  const a = Date.parse(`${from}T00:00:00Z`);
+  const b = Date.parse(`${to}T00:00:00Z`);
+  if (Number.isNaN(a) || Number.isNaN(b)) return 0;
+  return Math.floor((b - a) / 86_400_000);
+}
+
+/**
+ * Drop whole date directories older than `retentionDays`.
+ *
+ * By directory rather than by file mtime: a directory-level remove is one
+ * call, and it cannot half-delete a day and leave a partially-represented
+ * date behind.
+ *
+ * `retentionDays <= 0` means keep forever.
+ */
+export function pruneInternalArchive(
+  root: string,
+  retentionDays: number,
+  today: string,
+): { removedDays: number } {
+  if (retentionDays <= 0) return { removedDays: 0 };
+
+  let removedDays = 0;
+  for (const account of listDirSafe(root)) {
+    if (!account.isDirectory()) continue;
+    for (const kind of listDirSafe(path.join(root, account.name))) {
+      if (!kind.isDirectory()) continue;
+      const kindDir = path.join(root, account.name, kind.name);
+      for (const day of listDirSafe(kindDir)) {
+        // Not a date directory: not ours, leave it alone rather than guess.
+        if (!day.isDirectory() || !DATE_DIR.test(day.name)) continue;
+        if (daysBetween(day.name, today) <= retentionDays) continue;
+        try {
+          fsSync.rmSync(path.join(kindDir, day.name), { recursive: true, force: true });
+          removedDays += 1;
+        } catch {
+          // Retention is housekeeping. A day that will not delete is not worth
+          // failing a background sweep over; the next one retries.
+        }
+      }
+    }
+  }
+  return { removedDays };
+}
+
+function eachTranscript(root: string, visit: (p: string) => void): void {
+  for (const account of listDirSafe(root)) {
+    if (!account.isDirectory()) continue;
+    for (const kind of listDirSafe(path.join(root, account.name))) {
+      if (!kind.isDirectory()) continue;
+      const kindDir = path.join(root, account.name, kind.name);
+      for (const day of listDirSafe(kindDir)) {
+        if (!day.isDirectory()) continue;
+        const dayDir = path.join(kindDir, day.name);
+        for (const f of listDirSafe(dayDir)) {
+          if (f.isDirectory() || !f.name.endsWith('.jsonl')) continue;
+          visit(path.join(dayDir, f.name));
+        }
+      }
+    }
+  }
+}
+
+/** What the Clear button shows before asking. */
+export function internalArchiveStats(root: string): { files: number; bytes: number } {
+  let files = 0;
+  let bytes = 0;
+  eachTranscript(root, (p) => {
+    try {
+      bytes += fsSync.statSync(p).size;
+      files += 1;
+    } catch {
+      // Raced with a prune. Not counting it is the right answer.
+    }
+  });
+  return { files, bytes };
+}
+
+/**
+ * Remove every archived transcript.
+ *
+ * The root itself stays, so the next internal run writes into a directory
+ * that already exists. Cost history is untouched — same reason pruning is
+ * safe.
+ */
+export function clearInternalArchive(root: string): void {
+  for (const account of listDirSafe(root)) {
+    fsSync.rmSync(path.join(root, account.name), { recursive: true, force: true });
+  }
+}

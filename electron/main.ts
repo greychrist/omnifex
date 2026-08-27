@@ -115,7 +115,12 @@ import {
   ENABLED_SETTING_KEY,
 } from './services/sessions-summary';
 import { createSummaryQueryRunner } from './services/sessions/summary-query';
-import { internalArchiveRoot } from './services/sessions/internal-archive';
+import {
+  internalArchiveRoot,
+  pruneInternalArchive,
+  internalArchiveStats,
+  clearInternalArchive,
+} from './services/sessions/internal-archive';
 import { readSubagentMeta } from './services/sessions/subagent-meta';
 import { createPermissionsIOService } from './services/permissions-io';
 import { createUpdaterService } from './services/updater';
@@ -946,6 +951,14 @@ app.whenReady().then(() => {
   setInterval(() => {
     try {
       costHistoryService.backfill(accountsService.listAccounts(), costBackfillOpts);
+      // Prune AFTER the sweep, never before: a transcript that has not been
+      // priced yet must not be deleted for being old. Cost rows survive the
+      // prune either way, but pruning first would drop the spend entirely.
+      pruneInternalArchive(
+        internalArchive,
+        Number(db.getSetting('internal.archive.retentionDays') ?? 90),
+        new Date().toISOString().slice(0, 10),
+      );
     } catch (err) {
       console.warn('[cost-history] sweep failed:', err);
     }
@@ -1434,6 +1447,17 @@ app.whenReady().then(() => {
       unpriced: (f: Record<string, unknown>) => costHistoryService.unpriced(f as never),
       facets: (f: Record<string, unknown>) => costHistoryService.facets(f as never),
       rescan: () => costHistoryService.backfill(accountsService.listAccounts(), costBackfillOpts),
+    },
+    // OmniFex's own transcripts: what the archive holds, and how to empty it.
+    internalArchive: {
+      stats: () => internalArchiveStats(internalArchive),
+      // Clearing removes transcripts, never cost rows -- the spend they
+      // already accounted for stays in the report. Same property that makes
+      // retention pruning safe.
+      clear: () => {
+        clearInternalArchive(internalArchive);
+        return internalArchiveStats(internalArchive);
+      },
     },
     // Usage adapter
     usage: {
