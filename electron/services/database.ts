@@ -889,6 +889,37 @@ const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 23,
+    description:
+      'Add session_cost_daily.internal_kind: which OmniFex-internal activity '
+      + 'paid for a row (session-summarization | brain-index | brain-curation), '
+      + 'NULL for a real user session. OmniFex spends on the user account '
+      + 'through the CLI for session summaries, Brain indexing and Brain '
+      + 'curation; those transcripts used to be deleted the moment the call '
+      + 'returned, which raced the cost watcher and left a non-deterministic '
+      + 'fraction of that spend in the table. They are retained now, so the '
+      + 'rows need to say what they were. Nullable rather than defaulted, so '
+      + 'every existing row and every existing query keeps its exact current '
+      + 'meaning: NULL is not "unknown", it is "a real session". See '
+      + 'docs/superpowers/specs/2026-08-26-internal-session-archive-design.md.',
+    up: (db) => {
+      // Migration 16 creates this table with CREATE TABLE IF NOT EXISTS, so it
+      // is not guaranteed present when the runner is pointed at a partial
+      // image. Migration 22 learned this by breaking the v20/v21 tests; do not
+      // relearn it.
+      const exists = db
+        .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='session_cost_daily'")
+        .get() !== undefined;
+      if (!exists) return;
+
+      // ALTER TABLE ADD COLUMN throws on a duplicate, and migrations must be
+      // safe to re-run against an image that already has the column.
+      const has = (db.prepare('PRAGMA table_info(session_cost_daily)').all() as Array<{ name: string }>)
+        .some((c) => c.name === 'internal_kind');
+      if (!has) db.exec('ALTER TABLE session_cost_daily ADD COLUMN internal_kind TEXT');
+    },
+  },
 ];
 
 /**
