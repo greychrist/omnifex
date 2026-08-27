@@ -5,6 +5,19 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.145] — 2026-08-27
+
+Claude Code 2.1.247 review: the CLI's new feedback drafts now render, and plugin manifest text is sanitized.
+
+### Added
+
+- Queued feedback drafts appear in the transcript. Claude Code 2.1.247 added a `SendFeedback` tool that writes a local draft feedback report and announces it on the wire; OmniFex drew that announcement as an anonymous "Unrecognized record" card. It is now a yellow card naming the draft's type, title and preview, and it stays visible in compact mode — OmniFex has no `/feedback` surface, so an unrendered draft is one you never learn exists. The feature is still gated off CLI-side, so nothing appears until Anthropic enables it.
+- Preview text for six message kinds that were blank in Settings → Appearance, five of which predate this release.
+
+### Changed
+
+- Plugin names, descriptions, authors and versions read from a plugin's own `plugin.json` are stripped of control, zero-width and bidirectional characters before display, matching the hardening Claude Code 2.1.247 applied to marketplace text. The exposure was spoofing, not code execution: a right-to-left override renders "gpj.exe" as "exe.jpg". Newlines become spaces rather than vanishing, and a name that sanitizes to nothing falls back to a visible placeholder.
+
 ## [0.4.144] — 2026-08-27
 
 The Cost Report's spend chart becomes readable at a glance.
