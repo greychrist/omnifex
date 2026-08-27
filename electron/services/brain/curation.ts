@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { createSummaryQueryRunner, type CliRunResult } from '../sessions/summary-query';
+import { type CliRunResult } from '../sessions/summary-query';
 import type { CurationResult } from './curate';
 import { firstJsonObject, runCostOf } from './extract';
 import { addRunCosts } from './spend';
@@ -159,13 +159,13 @@ export interface CuratorDeps {
    * writes — and the Brain's own discovery excludes that scratch directory, so
    * curation calls cannot be re-indexed by the Brain.
    */
-  runQuery?: (
+  runQuery: (
     opts: { prompt: string; model: string; configDir: string },
   ) => Promise<CliRunResult>;
 }
 
-export function createCurator(deps: CuratorDeps = {}): Curator {
-  const runQuery = deps.runQuery ?? createSummaryQueryRunner();
+export function createCurator(deps: CuratorDeps): Curator {
+  const runQuery = deps.runQuery;
 
   return async function curateWithModel(input, configDir) {
     const prompt = buildCurationPrompt(input);

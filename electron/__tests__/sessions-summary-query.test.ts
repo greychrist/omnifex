@@ -40,18 +40,20 @@ vi.mock('node:child_process', async () => {
 const mockedSpawn = vi.mocked(spawn);
 
 // These tests cover the one-shot summary runner that wraps a `claude -p`
-// subprocess invocation. The hard requirement is that the CLI's JSONL
-// never lands inside the user's real project directory — every summary
-// call must run in a throwaway cwd and the runner must sweep the
-// resulting `<configDir>/projects/<encoded-scratch>/` directory before
-// returning.
+// subprocess invocation. Two hard requirements: the CLI's JSONL never lands
+// inside the user's real project directory, and it is never DELETED — every
+// one of these calls is billed, and the transcript is the only local record
+// that it happened. The runner moves it to the internal archive and leaves
+// `<configDir>/projects/<encoded-scratch>/` empty behind it.
 
 describe('createSummaryQueryRunner', () => {
   let tmpRoot: string;
   let configDir: string;
+  let archiveRoot: string;
 
   beforeEach(() => {
     tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'omnifex-sumq-root-'));
+    archiveRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'omnifex-sumq-archive-'));
     configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'omnifex-sumq-config-'));
     fs.mkdirSync(path.join(configDir, 'projects'), { recursive: true });
   });
@@ -59,6 +61,7 @@ describe('createSummaryQueryRunner', () => {
   afterEach(() => {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
     fs.rmSync(configDir, { recursive: true, force: true });
+    fs.rmSync(archiveRoot, { recursive: true, force: true });
   });
 
   it('runs the prompt in a stable shared scratch cwd under tmpRoot, never the configDir', async () => {
@@ -68,8 +71,8 @@ describe('createSummaryQueryRunner', () => {
       return reply('ok');
     });
 
-    const run = createSummaryQueryRunner({ runPrompt, tmpRoot });
-    await run({ prompt: 'p', model: 'claude-haiku-4-5', configDir });
+    const run = createSummaryQueryRunner({ runPrompt, tmpRoot, archiveRoot, resolveAccountName: () => 'Work' });
+    await run({ prompt: 'p', model: 'claude-haiku-4-5', configDir, kind: 'session-summarization' });
 
     expect(seenCwd).toBe(path.join(tmpRoot, 'omnifex-summary-scratch'));
     expect(seenCwd).not.toBe(configDir);
@@ -82,10 +85,10 @@ describe('createSummaryQueryRunner', () => {
       return reply('');
     });
 
-    const run = createSummaryQueryRunner({ runPrompt, tmpRoot });
-    await run({ prompt: 'a', model: 'm', configDir });
-    await run({ prompt: 'b', model: 'm', configDir });
-    await run({ prompt: 'c', model: 'm', configDir });
+    const run = createSummaryQueryRunner({ runPrompt, tmpRoot, archiveRoot, resolveAccountName: () => 'Work' });
+    await run({ prompt: 'a', model: 'm', configDir, kind: 'session-summarization' });
+    await run({ prompt: 'b', model: 'm', configDir, kind: 'session-summarization' });
+    await run({ prompt: 'c', model: 'm', configDir, kind: 'session-summarization' });
 
     expect(seen).toHaveLength(3);
     expect(new Set(seen).size).toBe(1);
@@ -94,8 +97,8 @@ describe('createSummaryQueryRunner', () => {
   it('returns the runner output verbatim', async () => {
     const runPrompt: RunPromptFn = vi.fn(async () => reply('hello world'));
 
-    const run = createSummaryQueryRunner({ runPrompt, tmpRoot });
-    const out = await run({ prompt: 'p', model: 'm', configDir });
+    const run = createSummaryQueryRunner({ runPrompt, tmpRoot, archiveRoot, resolveAccountName: () => 'Work' });
+    const out = await run({ prompt: 'p', model: 'm', configDir, kind: 'session-summarization' });
 
     // The reply now travels alongside the CLI's cost accounting.
     expect(out.result).toBe('hello world');
@@ -103,8 +106,8 @@ describe('createSummaryQueryRunner', () => {
 
   it('returns an empty string when the CLI replies with an empty result', async () => {
     const runPrompt: RunPromptFn = vi.fn(async () => reply(''));
-    const run = createSummaryQueryRunner({ runPrompt, tmpRoot });
-    const out = await run({ prompt: 'p', model: 'm', configDir });
+    const run = createSummaryQueryRunner({ runPrompt, tmpRoot, archiveRoot, resolveAccountName: () => 'Work' });
+    const out = await run({ prompt: 'p', model: 'm', configDir, kind: 'session-summarization' });
     expect(out.result).toBe('');
   });
 
@@ -115,8 +118,8 @@ describe('createSummaryQueryRunner', () => {
       return reply('');
     });
 
-    const run = createSummaryQueryRunner({ runPrompt, tmpRoot });
-    await run({ prompt: 'summarize this', model: 'claude-haiku-4-5', configDir });
+    const run = createSummaryQueryRunner({ runPrompt, tmpRoot, archiveRoot, resolveAccountName: () => 'Work' });
+    await run({ prompt: 'summarize this', model: 'claude-haiku-4-5', configDir, kind: 'session-summarization' });
 
     expect(seen).not.toBeNull();
     expect(seen!.configDir).toBe(configDir);
@@ -124,7 +127,7 @@ describe('createSummaryQueryRunner', () => {
     expect(seen!.prompt).toBe('summarize this');
   });
 
-  it('removes the JSONL projects subdirectory the subprocess wrote', async () => {
+  it('archives the JSONL instead of deleting it, and clears the projects subdirectory', async () => {
     let projectsDir = '';
     const runPrompt: RunPromptFn = vi.fn(async (params) => {
       projectsDir = path.join(
@@ -137,10 +140,42 @@ describe('createSummaryQueryRunner', () => {
       return reply('hi');
     });
 
-    const run = createSummaryQueryRunner({ runPrompt, tmpRoot });
-    await run({ prompt: 'p', model: 'm', configDir });
+    const run = createSummaryQueryRunner({
+      runPrompt, tmpRoot, archiveRoot,
+      resolveAccountName: () => 'Work',
+      now: () => new Date('2026-08-26T12:00:00Z'),
+    });
+    await run({ prompt: 'p', model: 'm', configDir, kind: 'session-summarization' });
 
+    // Gone from where the CLI put it...
     expect(fs.existsSync(projectsDir)).toBe(false);
+    // ...but kept, under account / kind / date.
+    const archived = path.join(
+      archiveRoot, 'Work', 'session-summarization', '2026-08-26', 'fake-uuid.jsonl',
+    );
+    expect(fs.existsSync(archived)).toBe(true);
+    expect(fs.readFileSync(archived, 'utf-8')).toBe('x');
+  });
+
+  // Attribution comes from the config dir the run was launched with, never
+  // from resolve(). An account that cannot be resolved must still keep its
+  // transcript -- an unattributed record beats a deleted one.
+  it('parks an unresolvable account under a visible placeholder', async () => {
+    const runPrompt: RunPromptFn = vi.fn(async (params) => {
+      const dir = path.join(params.configDir, 'projects', encodeProjectId(params.cwd));
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, 'u.jsonl'), 'x', 'utf-8');
+      return reply('hi');
+    });
+    const run = createSummaryQueryRunner({
+      runPrompt, tmpRoot, archiveRoot,
+      resolveAccountName: () => null,
+      now: () => new Date('2026-08-26T12:00:00Z'),
+    });
+    await run({ prompt: 'p', model: 'm', configDir, kind: 'brain-index' });
+    expect(fs.existsSync(
+      path.join(archiveRoot, '_unresolved', 'brain-index', '2026-08-26', 'u.jsonl'),
+    )).toBe(true);
   });
 
   it('keeps the scratch cwd directory between calls (does not delete it)', async () => {
@@ -150,8 +185,8 @@ describe('createSummaryQueryRunner', () => {
       return reply('');
     });
 
-    const run = createSummaryQueryRunner({ runPrompt, tmpRoot });
-    await run({ prompt: 'p', model: 'm', configDir });
+    const run = createSummaryQueryRunner({ runPrompt, tmpRoot, archiveRoot, resolveAccountName: () => 'Work' });
+    await run({ prompt: 'p', model: 'm', configDir, kind: 'session-summarization' });
 
     expect(fs.existsSync(seenCwd)).toBe(true);
   });
@@ -170,8 +205,8 @@ describe('createSummaryQueryRunner', () => {
       throw new Error('boom');
     });
 
-    const run = createSummaryQueryRunner({ runPrompt, tmpRoot });
-    await expect(run({ prompt: 'p', model: 'm', configDir })).rejects.toThrow('boom');
+    const run = createSummaryQueryRunner({ runPrompt, tmpRoot, archiveRoot, resolveAccountName: () => 'Work' });
+    await expect(run({ prompt: 'p', model: 'm', configDir, kind: 'session-summarization' })).rejects.toThrow('boom');
 
     expect(fs.existsSync(seenCwd)).toBe(true);
     const projectsDir = path.join(configDir, 'projects', encodeProjectId(seenCwd));
@@ -235,9 +270,11 @@ describe('createSummaryQueryRunner', () => {
     const run = createSummaryQueryRunner({
       runPrompt,
       tmpRoot,
+      archiveRoot,
+      resolveAccountName: () => 'Work',
       resolveClaudeBinary: () => '/usr/local/bin/claude',
     });
-    await run({ prompt: 'p', model: 'm', configDir });
+    await run({ prompt: 'p', model: 'm', configDir, kind: 'session-summarization' });
 
     expect(seenBinary).toBe('/usr/local/bin/claude');
   });
@@ -248,10 +285,12 @@ describe('createSummaryQueryRunner', () => {
     const run = createSummaryQueryRunner({
       runPrompt,
       tmpRoot,
+      archiveRoot,
+      resolveAccountName: () => 'Work',
       resolveClaudeBinary: () => null,
     });
 
-    await expect(run({ prompt: 'p', model: 'm', configDir })).rejects.toThrow(
+    await expect(run({ prompt: 'p', model: 'm', configDir, kind: 'session-summarization' })).rejects.toThrow(
       /Claude binary not found/i,
     );
     expect(runPrompt).not.toHaveBeenCalled();

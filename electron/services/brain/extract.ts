@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { createSummaryQueryRunner, type CliRunResult } from '../sessions/summary-query';
+import { type CliRunResult } from '../sessions/summary-query';
 import type { RunCost } from './sources/state';
 import { addRunCosts } from './spend';
 import type { DistilledItem, ItemMetadata } from './sources/types';
@@ -149,12 +149,16 @@ export const EXTRACTION_MODEL = 'claude-sonnet-5';
 
 export interface ExtractorDeps {
   /**
-   * Injected in tests. Defaults to the shared `claude -p` runner, which
-   * already pins a stable scratch cwd and sweeps the throwaway JSONL the CLI
-   * writes — and the Brain's own discovery excludes that scratch directory, so
-   * extraction calls cannot be re-indexed by the Brain.
+   * The shared `claude -p` runner. REQUIRED — it used to default to a
+   * self-constructed one, but the runner now needs an archive root it cannot
+   * invent, and a silent default would mean extraction transcripts went back
+   * to being discarded. main.ts owns construction; tests inject a fake.
+   *
+   * The runner pins a stable scratch cwd and moves the resulting JSONL into
+   * the internal archive; the Brain's own discovery excludes that archive, so
+   * extraction calls can never be re-indexed by the Brain.
    */
-  runQuery?: (
+  runQuery: (
     opts: { prompt: string; model: string; configDir: string },
   ) => Promise<CliRunResult>;
 }
@@ -322,8 +326,8 @@ ${item.prose}`;
  * `BATCH_SIZE = 1`, adopted from Rowboat (spec §8): one item per call, so a
  * bad reply damages exactly one note and the retry is cheap.
  */
-export function createExtractor(deps: ExtractorDeps = {}): Extractor {
-  const runQuery = deps.runQuery ?? createSummaryQueryRunner();
+export function createExtractor(deps: ExtractorDeps): Extractor {
+  const runQuery = deps.runQuery;
 
   return async function extract(item, configDir, context) {
     const prompt = buildExtractionPrompt(item, context);

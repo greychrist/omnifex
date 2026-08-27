@@ -115,6 +115,7 @@ import {
   ENABLED_SETTING_KEY,
 } from './services/sessions-summary';
 import { createSummaryQueryRunner } from './services/sessions/summary-query';
+import { internalArchiveRoot } from './services/sessions/internal-archive';
 import { readSubagentMeta } from './services/sessions/subagent-meta';
 import { createPermissionsIOService } from './services/permissions-io';
 import { createUpdaterService } from './services/updater';
@@ -525,12 +526,29 @@ app.whenReady().then(() => {
 
   // Built once: it resolves the claude binary and pins a scratch cwd, and both
   // the Brain's extractor and session summarization run through it.
-  const summaryQueryRunner = createSummaryQueryRunner();
+  // One runner for every internal CLI call. It owns the archive root, so
+  // every kind of internal spend lands somewhere retained and attributable
+  // rather than being swept — see
+  // docs/superpowers/specs/2026-08-26-internal-session-archive-design.md.
+  const summaryQueryRunner = createSummaryQueryRunner({
+    archiveRoot: internalArchiveRoot(app.getPath('userData')),
+    // Ownership from the config dir the run was launched with, never
+    // resolve(): the same rule the Brain applies to its own sources.
+    resolveAccountName: (configDir) =>
+      accountsService.getAccountByConfigDir(configDir)?.name ?? null,
+  });
 
   const brainService: BrainService | undefined = createBrainService(db, {
     accounts: accountsService,
-    extractor: createExtractor(),
-    curator: createCurator(),
+    // The kind is bound here rather than at each call site: one place to read
+    // when asking "what does OmniFex spend money on?", and a new caller cannot
+    // forget to pass it.
+    extractor: createExtractor({
+      runQuery: (opts) => summaryQueryRunner({ ...opts, kind: 'brain-index' }),
+    }),
+    curator: createCurator({
+      runQuery: (opts) => summaryQueryRunner({ ...opts, kind: 'brain-curation' }),
+    }),
     sources: [
       createSessionSource({ accounts: accountsService }),
       captureSource,
@@ -1094,7 +1112,8 @@ app.whenReady().then(() => {
     // (the Brain records what each indexing run cost). Session summaries want
     // only the text, so they unwrap it here rather than the runner keeping a
     // second, string-only entry point that would drift.
-    runQuery: async (opts) => (await summaryQueryRunner(opts)).result,
+    runQuery: async (opts) =>
+      (await summaryQueryRunner({ ...opts, kind: 'session-summarization' })).result,
     onSummaryUpdated: (sessionUuid) => {
       // Broadcast to every renderer; SessionList rows subscribe and refetch
       // the matching uuid. Channel matches the existing `session-` prefix

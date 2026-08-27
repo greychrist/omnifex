@@ -6,6 +6,11 @@ import type { Readable } from 'node:stream';
 import { findSystemClaudeBinary } from './binary';
 import { buildClaudeEnv } from '../util/claude-env';
 import { encodeProjectId } from '../project-paths';
+import {
+  archiveDirFor,
+  archiveTranscripts,
+  type InternalKind,
+} from './internal-archive';
 
 // ---------------------------------------------------------------------------
 // One-shot summary runner — `claude -p <prompt> --output-format json`
@@ -48,12 +53,25 @@ import { encodeProjectId } from '../project-paths';
  */
 export const SCRATCH_DIR_NAME = 'omnifex-summary-scratch';
 
+/**
+ * Account segment used when `resolveAccountName` comes back empty. Visible on
+ * purpose: an unattributed transcript is a problem to notice, and keeping it
+ * beats deleting it.
+ */
+export const UNRESOLVED_ACCOUNT = '_unresolved';
+
 export interface SummaryQueryOptions {
   prompt: string;
   /** CLI model id, e.g. 'claude-haiku-4-5'. */
   model: string;
   /** The resolved account's CLAUDE_CONFIG_DIR — auth lives here. */
   configDir: string;
+  /**
+   * Which internal activity is paying for this call. Required: a run that
+   * cannot say what it paid for cannot be attributed in the Cost Report, and
+   * an unattributed line item is indistinguishable from a bug.
+   */
+  kind: InternalKind;
 }
 
 export interface RunPromptParams {
@@ -191,6 +209,20 @@ export interface SummaryQueryDeps {
   /** Defaults to `os.tmpdir()`. Injected in tests. */
   tmpRoot?: string;
   /**
+   * `internalArchiveRoot(app.getPath('userData'))`. REQUIRED — there is no
+   * default, because a default would let a caller silently fall back to
+   * discarding transcripts, which is the exact bug this replaces.
+   */
+  archiveRoot: string;
+  /**
+   * Account that owns `configDir`. Ownership comes from the config dir the
+   * run was launched with, never from `resolve()` — the same rule the Brain
+   * uses for its sources.
+   */
+  resolveAccountName: (configDir: string) => string | null;
+  /** Injected in tests so the date partition is deterministic. */
+  now?: () => Date;
+  /**
    * Resolve the Claude Code binary. Defaults to `findSystemClaudeBinary`
    * (system installs → app-bundled per-platform binary). Injected in
    * tests so they can pin to a fake path without depending on disk state.
@@ -200,11 +232,12 @@ export interface SummaryQueryDeps {
 
 
 export function createSummaryQueryRunner(
-  deps: SummaryQueryDeps = {},
+  deps: SummaryQueryDeps,
 ): (opts: SummaryQueryOptions) => Promise<CliRunResult> {
   const runPrompt: RunPromptFn = deps.runPrompt ?? runCliOnce;
   const tmpRoot = deps.tmpRoot ?? os.tmpdir();
   const resolveClaudeBinary = deps.resolveClaudeBinary ?? findSystemClaudeBinary;
+  const { archiveRoot, resolveAccountName } = deps;
   const scratchCwd = path.join(tmpRoot, SCRATCH_DIR_NAME);
 
   return async function runSummaryQuery(opts: SummaryQueryOptions): Promise<CliRunResult> {
@@ -235,11 +268,30 @@ export function createSummaryQueryRunner(
         cwd: scratchCwd,
       });
     } finally {
-      // Sweep the JSONL the CLI wrote. Best-effort — the dir may not
-      // exist on early failure, and we don't want cleanup errors to
-      // mask the real outcome of the call. The scratch cwd itself is
-      // intentionally left alone; reusing it across calls is the whole
-      // point of this design.
+      // Move the JSONL the CLI wrote into the archive, then clear what is
+      // left behind. This used to be an unconditional `rm -rf`, which raced
+      // the cost watcher and destroyed the only local record that a paid call
+      // happened — see the spec for the reconciliation that cost us.
+      //
+      // Best-effort as a whole: the directory may not exist if the CLI failed
+      // before writing, and a cleanup error must never mask the real outcome
+      // of the call. The scratch cwd itself is still left alone; reusing it
+      // across calls is the whole point of pinning it.
+      try {
+        const accountName = resolveAccountName(opts.configDir) ?? UNRESOLVED_ACCOUNT;
+        const destDir = archiveDirFor(
+          archiveRoot,
+          accountName,
+          opts.kind,
+          (deps.now?.() ?? new Date()).toISOString().slice(0, 10),
+        );
+        await archiveTranscripts({ fs: fsPromises, projectsDir, destDir });
+      } catch {
+        // Archiving failed. The transcript stays where the CLI wrote it
+        // rather than being deleted, so nothing is lost; the next run's
+        // sweep will find it.
+      }
+      // Only removes what is still there — anything archived is already gone.
       await fsPromises
         .rm(projectsDir, { recursive: true, force: true })
         .catch(() => {});
