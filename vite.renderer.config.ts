@@ -4,6 +4,16 @@ import { fileURLToPath, URL } from 'node:url';
 
 export default defineConfig({
   plugins: [react()],
+  server: {
+    watch: {
+      // Test output, not source. `npm run test:coverage` writes thousands of
+      // HTML files under coverage/, and with the dev server running each one
+      // is a file-change event — one run produced 2,524 page reloads, which
+      // buries the plugin's own rebuild messages and makes it very hard to
+      // tell whether a main-process restart actually happened.
+      ignored: ['**/coverage/**', '**/.vitest/**', '**/out/**', '**/dist/**'],
+    },
+  },
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),

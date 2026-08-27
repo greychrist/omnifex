@@ -102,6 +102,8 @@ export function CostReportView() {
   const [loading, setLoading] = useState(true);
   const [rescanning, setRescanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Names of the panels whose query failed on the last load. */
+  const [failed, setFailed] = useState<string[]>([]);
 
   const params = useMemo(() => toFilterParams(filters, utcToday()), [filters]);
   const patch = useCallback(
@@ -112,28 +114,51 @@ export function CostReportView() {
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
-    try {
-      const [periods, byProject, byModel, byProjectModel, components, roi, subagents, unpriced, sessions, f, t] =
-        await Promise.all([
-          api.sessionCostHistoryByModel({ ...params, groupBy: filters.groupBy }),
-          api.sessionCostByProject(params),
-          api.sessionCostByModel(params),
-          api.sessionCostByProjectModel(params),
-          api.sessionCostComponents(params),
-          api.sessionCostCachingRoi(params),
-          api.sessionCostSubagentSplit(params),
-          api.sessionCostUnpriced(params),
-          api.sessionCostSessions(params),
-          api.sessionCostFacets(params),
-          api.sessionCostTotals(params),
-        ]);
-      setData({ periods, byProject, byModel, byProjectModel, components, roi, subagents, unpriced, sessions, totals: t });
-      setFacets(f);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLoading(false);
-    }
+
+    // allSettled, NOT all. Eleven independent queries feed eleven independent
+    // panels, so one failure must cost one panel — not the page. `Promise.all`
+    // rejected the whole load the first time a renderer hot-reload started
+    // calling a channel the still-running main process had no handler for, and
+    // one missing handler blanked every panel at once.
+    const queries = [
+      ['trend', () => api.sessionCostHistoryByModel({ ...params, groupBy: filters.groupBy })],
+      ['projects', () => api.sessionCostByProject(params)],
+      ['models', () => api.sessionCostByModel(params)],
+      ['project × model', () => api.sessionCostByProjectModel(params)],
+      ['component split', () => api.sessionCostComponents(params)],
+      ['caching ROI', () => api.sessionCostCachingRoi(params)],
+      ['subagent split', () => api.sessionCostSubagentSplit(params)],
+      ['unpriced models', () => api.sessionCostUnpriced(params)],
+      ['sessions', () => api.sessionCostSessions(params)],
+      ['filters', () => api.sessionCostFacets(params)],
+      ['totals', () => api.sessionCostTotals(params)],
+    ] as const;
+
+    const settled = await Promise.allSettled(queries.map(([, run]) => run()));
+    const value = <T,>(i: number, fallback: T): T => {
+      const r = settled[i];
+      return r.status === 'fulfilled' ? ((r.value ?? fallback) as T) : fallback;
+    };
+
+    const failedNames: string[] = queries
+      .filter((_, i) => settled[i].status === 'rejected')
+      .map(([name]) => name);
+
+    setData({
+      periods: value(0, []),
+      byProject: value(1, []),
+      byModel: value(2, []),
+      byProjectModel: value(3, []),
+      components: value(4, null),
+      roi: value(5, null),
+      subagents: value(6, []),
+      unpriced: value(7, []),
+      sessions: value(8, []),
+      totals: value(10, null),
+    });
+    setFacets(value(9, null));
+    setFailed(failedNames);
+    setLoading(false);
   }, [params, filters.groupBy]);
 
   useEffect(() => { void load(); }, [load]);
@@ -319,6 +344,21 @@ export function CostReportView() {
         </div>
 
         {error && <div className="text-sm text-red-400">{error}</div>}
+
+        {failed.length > 0 && (
+          <div className="flex items-start gap-2 rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-400" />
+            <div>
+              <div className="font-medium text-foreground">
+                Some panels could not load: {failed.join(', ')}
+              </div>
+              <div className="text-muted-foreground">
+                Everything else on this page is still accurate. If this followed an update,
+                restarting OmniFex usually clears it.
+              </div>
+            </div>
+          </div>
+        )}
 
         {data && data.unpriced.length > 0 && (
           <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs">

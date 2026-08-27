@@ -33,13 +33,18 @@ vi.mock('@/hooks', () => ({ useTheme: () => ({ theme: 'gray' }) }));
 
 // vi.mock factories are hoisted above module-level consts, so the recorder
 // has to be created inside vi.hoisted to exist by the time the factory runs.
-const { calls, record } = vi.hoisted(() => {
+const { calls, record, failing } = vi.hoisted(() => {
   const calls: Record<string, unknown[]> = {};
+  /** Channels forced to reject, by recorder name. Lets a test simulate one
+   *  query failing while the rest succeed. */
+  const failing = new Set<string>();
   const record = <T,>(name: string, value: T) => (params: unknown) => {
     (calls[name] ??= []).push(params);
-    return Promise.resolve(value);
+    return failing.has(name)
+      ? Promise.reject(new Error(`No handler registered for '${name}'`))
+      : Promise.resolve(value);
   };
-  return { calls, record };
+  return { calls, record, failing };
 });
 
 vi.mock('@/lib/api', () => ({
@@ -91,6 +96,7 @@ describe('CostReportView', () => {
     // The page persists its filters, so without this each test inherits the
     // previous one's selection and a "toggle Work on" becomes "toggle it off".
     window.localStorage.clear();
+    failing.clear();
   });
   afterEach(cleanup);
 
@@ -206,6 +212,54 @@ describe('CostReportView', () => {
       expect(last.accountName).toEqual(['Work']);
       // Range resets, so a stale absolute window can never strand the page.
       expect(String(last.startDate)).toMatch(/^\d{4}-\d{2}-01$/);
+    });
+  });
+
+  /**
+   * One query failing must not blank the page. This is exactly what happened
+   * in dev: the renderer hot-reloaded and started calling a channel the
+   * still-running main process had no handler for, and `Promise.all` turned
+   * one missing handler into eleven empty panels.
+   */
+  describe('partial failure', () => {
+    it('keeps every other panel when one query fails', async () => {
+      failing.add('totals');
+      render(<CostReportView />);
+
+      // The component split, ROI and subagent panels all still render.
+      await waitFor(() => { expect(screen.getByText(/of spend is/)).toBeTruthy(); });
+      expect(screen.getAllByText('40:1').length).toBeGreaterThan(0);
+      expect(screen.getByText(/per request against/)).toBeTruthy();
+    });
+
+    it('names the part that failed instead of a bare error', async () => {
+      failing.add('totals');
+      render(<CostReportView />);
+      await waitFor(() => { expect(screen.getByText(/Some panels could not load/)).toBeTruthy(); });
+      expect(screen.getByText(/totals/)).toBeTruthy();
+    });
+
+    it('still shows the chart when only the totals query fails', async () => {
+      failing.add('totals');
+      render(<CostReportView />);
+      await waitFor(() => { expect(screen.getByTestId('chart')).toBeTruthy(); });
+      expect(screen.getByTestId('chart').textContent).toBe('2 rows');
+    });
+
+    it('reports every failed query, not just the first', async () => {
+      failing.add('totals');
+      failing.add('roi');
+      render(<CostReportView />);
+      await waitFor(() => { expect(screen.getByText(/Some panels could not load/)).toBeTruthy(); });
+      const banner = screen.getByText(/Some panels could not load/).textContent ?? '';
+      expect(banner).toContain('totals');
+      expect(banner).toContain('caching ROI');
+    });
+
+    it('shows no failure banner when everything succeeds', async () => {
+      render(<CostReportView />);
+      await waitFor(() => { expect(screen.getByText(/of spend is/)).toBeTruthy(); });
+      expect(screen.queryByText(/Some panels could not load/)).toBeNull();
     });
   });
 
