@@ -3,7 +3,7 @@ import {
   Terminal,
   ChevronRight,
 } from "lucide-react";
-import { detectLinks, makeLinksClickable } from "@/lib/linkDetector";
+import { makeLinksClickable } from "@/lib/linkDetector";
 
 /**
  * Widget for user commands (e.g., model, clear)
@@ -40,19 +40,7 @@ export const CommandWidget: React.FC<{
  */
 export const CommandOutputWidget: React.FC<{
   output: string;
-  onLinkDetected?: (url: string) => void;
-}> = ({ output, onLinkDetected }) => {
-  // Check for links on mount and when output changes
-  React.useEffect(() => {
-    if (output && onLinkDetected) {
-      const links = detectLinks(output);
-      if (links.length > 0) {
-        // Notify about the first detected link
-        onLinkDetected(links[0].fullUrl);
-      }
-    }
-  }, [output, onLinkDetected]);
-
+}> = ({ output }) => {
   // ANSI sequences are inherently regex over control characters;
   // the no-control-regex lint warning is correct in the abstract but
   // inapplicable to terminal-output parsing.
@@ -78,9 +66,13 @@ export const CommandOutputWidget: React.FC<{
 
       if (!part) return;
 
-      // Make links clickable within this part
+      // Make links clickable within this part. These used to feed an
+      // in-app preview pane; that pane was unreachable dead code and is
+      // gone, so a click now opens the system browser — `window.open` is
+      // caught by setWindowOpenHandler in main.ts, which routes http/https
+      // through shell.openExternal.
       const linkElements = makeLinksClickable(part, (url) => {
-        onLinkDetected?.(url);
+        window.open(url, '_blank', 'noopener,noreferrer');
       });
 
       if (isBold) {

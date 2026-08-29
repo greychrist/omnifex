@@ -54,8 +54,6 @@ import { ElicitationDialog } from "./ElicitationDialog";
 import { SessionPermissionsEditor } from "./SessionPermissionsEditor";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { TooltipProvider, TooltipSimple } from "@/components/ui/tooltip-modern";
-import { SplitPane } from "@/components/ui/split-pane";
-import { WebviewPreview } from "./WebviewPreview";
 import type { JsonlNode } from "@/types/jsonl";
 import { normalizeJsonlNode } from "@/lib/normalizeMessage";
 import { classifyJsonlLine } from '@/lib/jsonlClassifier';
@@ -699,13 +697,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     branches: allBranchesForResolver,
   });
 
-  // New state for preview feature
-  const [showPreview, setShowPreview] = useState(false);
-  const [previewUrl, setPreviewUrl] = useState("");
-  const [showPreviewPrompt, setShowPreviewPrompt] = useState(false);
-  const [splitPosition, setSplitPosition] = useState(50);
-  const [isPreviewMaximized, setIsPreviewMaximized] = useState(false);
-  
   // Add collapsed state for queued prompts
   const [queuedPromptsCollapsed, setQueuedPromptsCollapsed] = useState(false);
 
@@ -2103,42 +2094,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     }
   };
 
-  // Handle URL detection from terminal output.
-  //
-  // Ref-captured rather than useCallback'd on [showPreview, showPreviewPrompt]:
-  // ClaudeTranscript is memoised, and this is one of its props, so the identity
-  // must never change — a fresh arrow here re-rendered every transcript row in
-  // every open tab on each parent render. Same trap as onResendStable above.
-  // The ref is reassigned each render, so the body still reads current state.
-  const linkDetectedRef = useRef<(url: string) => void>(() => {});
-  linkDetectedRef.current = (url: string) => {
-    if (!showPreview && !showPreviewPrompt) {
-      setPreviewUrl(url);
-      setShowPreviewPrompt(true);
-    }
-  };
-  const handleLinkDetected = useCallback((url: string) => {
-    linkDetectedRef.current(url);
-  }, []);
-
-  const handleClosePreview = () => {
-    setShowPreview(false);
-    setIsPreviewMaximized(false);
-    // Keep the previewUrl so it can be restored when reopening
-  };
-
-  const handlePreviewUrlChange = (url: string) => {
-    setPreviewUrl(url);
-  };
-
-  const handleTogglePreviewMaximize = () => {
-    setIsPreviewMaximized(!isPreviewMaximized);
-    // Reset split position when toggling maximize
-    if (isPreviewMaximized) {
-      setSplitPosition(50);
-    }
-  };
-
   const messagesList = agent === 'codex' ? (
     <CodexTranscript
       messages={codexMessages}
@@ -2150,7 +2105,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
       viewMode={viewMode}
       accountType={accountResolution?.account.subscription_label}
       onResend={onResendStable}
-      onLinkDetected={handleLinkDetected}
       waitingForPermission={waitingForPermission}
       outstandingWork={outstandingWork}
       hasInflightAssistant={hasInflightAssistant}
@@ -2165,29 +2119,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   );
 
 
-  // If preview is maximized, render only the WebviewPreview in full screen
-  if (showPreview && isPreviewMaximized) {
-    return (
-      <AnimatePresence>
-        <motion.div 
-          className="fixed inset-0 z-50 bg-background"
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.2 }}
-        >
-          <WebviewPreview
-            initialUrl={previewUrl}
-            onClose={handleClosePreview}
-            isMaximized={isPreviewMaximized}
-            onToggleMaximize={handleTogglePreviewMaximize}
-            onUrlChange={handlePreviewUrlChange}
-            className="h-full"
-          />
-        </motion.div>
-      </AnimatePresence>
-    );
-  }
 
   // Fire a custom event so TabContent can revert the current tab from
   // 'chat' back to 'projects'. When SessionList mutates a projects tab
@@ -2748,54 +2679,24 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
               <PanelRightOpen className="w-4 h-4" />
             </button>
           )}
-          {showPreview ? (
-            // Split pane layout when preview is active
-            <SplitPane
-              left={
-                <div className="h-full flex flex-col">
-                  {sessionMode === 'tui' ? (
-                    <TuiSessionLayout tabId={tabIdRef.current} />
-                  ) : (
-                    messagesList
-                  )}
+          <div className="h-full flex flex-col">
+            {sessionMode === 'tui' ? (
+              <TuiSessionLayout tabId={tabIdRef.current} />
+            ) : (
+              messagesList
+            )}
+            
+            {isLoading && messages.length === 0 && (
+              <div className="flex items-center justify-center h-full">
+                <div className="flex items-center gap-3">
+                  <div className="rotating-symbol text-primary" />
+                  <span className="text-sm text-muted-foreground">
+                    {session ? "Loading session history..." : "Initializing Claude Code..."}
+                  </span>
                 </div>
-              }
-              right={
-                <WebviewPreview
-                  initialUrl={previewUrl}
-                  onClose={handleClosePreview}
-                  isMaximized={isPreviewMaximized}
-                  onToggleMaximize={handleTogglePreviewMaximize}
-                  onUrlChange={handlePreviewUrlChange}
-                />
-              }
-              initialSplit={splitPosition}
-              onSplitChange={setSplitPosition}
-              minLeftWidth={400}
-              minRightWidth={400}
-              className="h-full"
-            />
-          ) : (
-            // Original layout when no preview
-            <div className="h-full flex flex-col">
-              {sessionMode === 'tui' ? (
-                <TuiSessionLayout tabId={tabIdRef.current} />
-              ) : (
-                messagesList
-              )}
-              
-              {isLoading && messages.length === 0 && (
-                <div className="flex items-center justify-center h-full">
-                  <div className="flex items-center gap-3">
-                    <div className="rotating-symbol text-primary" />
-                    <span className="text-sm text-muted-foreground">
-                      {session ? "Loading session history..." : "Initializing Claude Code..."}
-                    </span>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
+              </div>
+            )}
+          </div>
 
           {/* Queued Prompts Display — inside content area so bottom offsets are relative to scrollable region */}
           <AnimatePresence>

@@ -138,6 +138,7 @@ import { parsePricingOverrides } from '../src/lib/pricing';
 import { registerIpcHandlers } from './ipc/handlers';
 import { createWindowRouter } from './window-router';
 import { classifyNavigation } from './navigation-policy';
+import { resolveProtocolFile } from './file-protocol-policy';
 
 declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string | undefined;
 declare const MAIN_WINDOW_VITE_NAME: string;
@@ -373,9 +374,17 @@ function createWindow(): BrowserWindow {
   return win;
 }
 
-// Register custom protocol as privileged so it can load images in the renderer
+// Register custom protocol as privileged so it can load images in the renderer.
+//
+// `corsEnabled` is required alongside `supportFetchAPI`: a privileged scheme
+// with fetch support but no CORS enforcement lets any origin in the renderer
+// read from it cross-origin (Electron CVE-2026-70604, fixed in 41.4.0). The
+// handler below is also restricted to image files — see file-protocol-policy.
 protocol.registerSchemesAsPrivileged([
-  { scheme: 'greychrist-file', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
+  {
+    scheme: 'greychrist-file',
+    privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true },
+  },
 ]);
 
 // app.whenReady() returns a Promise; catch any thrown init error so it
@@ -407,18 +416,15 @@ app.whenReady().then(() => {
   protocol.handle('greychrist-file', async (request) => {
     try {
       const url = new URL(request.url);
-      const filePath = decodeURIComponent(url.pathname);
-      const data = fs.readFileSync(filePath);
-      // Guess content type from extension
-      const ext = path.extname(filePath).toLowerCase();
-      const contentType =
-        ext === '.png' ? 'image/png' :
-        ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' :
-        ext === '.gif' ? 'image/gif' :
-        ext === '.webp' ? 'image/webp' :
-        ext === '.svg' ? 'image/svg+xml' :
-        'application/octet-stream';
-      return new Response(data, { headers: { 'Content-Type': contentType } });
+      const decision = resolveProtocolFile(decodeURIComponent(url.pathname));
+      if (!decision.ok) {
+        console.warn('[protocol] greychrist-file refused:', decision.reason);
+        return new Response('Not found', { status: 404 });
+      }
+      // Read the path the policy resolved, not the one that was requested —
+      // reading the original would reopen the symlink swap it just rejected.
+      const data = fs.readFileSync(decision.path);
+      return new Response(data, { headers: { 'Content-Type': decision.contentType } });
     } catch (err) {
       console.error('[protocol] greychrist-file error:', err);
       return new Response('Not found', { status: 404 });

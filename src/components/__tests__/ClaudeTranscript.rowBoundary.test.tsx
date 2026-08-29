@@ -61,7 +61,6 @@ function renderTranscript(messages: JsonlNode[]) {
         viewMode="verbose"
         accountType={undefined}
         onResend={() => {}}
-        onLinkDetected={() => {}}
         waitingForPermission={false}
         outstandingWork={false}
         hasInflightAssistant={false}

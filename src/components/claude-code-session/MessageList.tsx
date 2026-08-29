@@ -10,7 +10,6 @@ interface MessageListProps {
   messages: JsonlNode[];
   projectPath: string;
   isStreaming: boolean;
-  onLinkDetected?: (url: string) => void;
   className?: string;
   accountType?: string;
 }
@@ -19,7 +18,6 @@ export const MessageList: React.FC<MessageListProps> = React.memo(({
   messages,
   projectPath,
   isStreaming,
-  onLinkDetected,
   className,
   accountType
 }) => {
@@ -135,7 +133,6 @@ export const MessageList: React.FC<MessageListProps> = React.memo(({
                   <StreamMessage
                     message={message}
                     streamMessages={messages}
-                    onLinkDetected={onLinkDetected}
                     accountType={accountType}
                   />
                 </div>

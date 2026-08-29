@@ -62,7 +62,6 @@ const prompt = (i: number): JsonlNode => ({
 function Harness({ messages, tick }: { messages: JsonlNode[]; tick: number }) {
   // Stable identities, exactly as AgentSession must supply them.
   const onResend = React.useRef(() => {}).current;
-  const onLinkDetected = React.useRef(() => {}).current;
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
   const isNearBottomRef = React.useRef(true);
   return (
@@ -74,7 +73,6 @@ function Harness({ messages, tick }: { messages: JsonlNode[]; tick: number }) {
         viewMode="verbose"
         accountType={undefined}
         onResend={onResend}
-        onLinkDetected={onLinkDetected}
         waitingForPermission={false}
         outstandingWork={false}
         hasInflightAssistant={false}

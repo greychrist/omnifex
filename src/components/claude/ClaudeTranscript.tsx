@@ -54,7 +54,6 @@ export interface ClaudeTranscriptProps {
   /** Stable resend callback (memoized in the shell). */
   onResend: (text: string, images: string[] | undefined) => void;
   /** Called when a URL is detected inside a rendered message. */
-  onLinkDetected: (url: string) => void;
   /** True while a permission prompt is open — forces scroll-to-bottom so the prompt is visible. */
   waitingForPermission: boolean;
   /** Whether the turn is in flight (mainTurn || tasks). Renders the typing-dots bubble. */
@@ -100,7 +99,6 @@ function ClaudeTranscriptImpl({
   viewMode,
   accountType,
   onResend,
-  onLinkDetected,
   waitingForPermission,
   outstandingWork,
   hasInflightAssistant,
@@ -478,7 +476,6 @@ function ClaudeTranscriptImpl({
                       <StreamMessage
                         message={message}
                         streamMessages={messages}
-                        onLinkDetected={onLinkDetected}
                         accountType={accountType}
                         onResend={onResend}
                       />
@@ -501,7 +498,6 @@ function ClaudeTranscriptImpl({
                           <StreamMessage
                             message={item.message}
                             streamMessages={messages}
-                            onLinkDetected={onLinkDetected}
                             accountType={accountType}
                             compact
                             onResend={onResend}
@@ -522,7 +518,6 @@ function ClaudeTranscriptImpl({
                           messages={item.messages}
                           streamMessages={messages}
                           accountType={accountType}
-                          onLinkDetected={onLinkDetected}
                           onResend={onResend}
                         />,
                       )}
@@ -597,9 +592,10 @@ function ClaudeTranscriptImpl({
  * work could ever change a pixel of this subtree.
  *
  * The guard rail this needs: every prop must stay referentially stable across
- * a parent re-render, or memo silently does nothing. `onLinkDetected` was a
- * bare arrow in AgentSession and had to be ref-captured for this to bite —
- * the same trap `onResendStable` was already fixed for. See
- * ClaudeTranscript.memo.test.tsx, which fails if either regresses.
+ * a parent re-render, or memo silently does nothing. `onResendStable` is the
+ * standing example — a bare arrow there re-rendered every transcript row in
+ * every open tab. (`onLinkDetected` was the same trap, and was ref-captured
+ * for it; the prop is gone now that the preview pane it fed was deleted.)
+ * See ClaudeTranscript.memo.test.tsx, which fails if that regresses.
  */
 export const ClaudeTranscript = React.memo(ClaudeTranscriptImpl);

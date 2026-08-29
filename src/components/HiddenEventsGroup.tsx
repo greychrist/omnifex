@@ -12,7 +12,6 @@ interface Props {
   messages: JsonlNode[];
   streamMessages: JsonlNode[];
   accountType?: string;
-  onLinkDetected?: (url: string) => void;
   onResend?: (text: string, images?: string[]) => void;
 }
 
@@ -26,7 +25,6 @@ export const HiddenEventsGroup: React.FC<Props> = ({
   messages,
   streamMessages,
   accountType,
-  onLinkDetected,
   onResend,
 }) => {
   const [open, setOpen] = useState(false);
@@ -69,7 +67,6 @@ export const HiddenEventsGroup: React.FC<Props> = ({
               message={message}
               streamMessages={streamMessages}
               accountType={accountType}
-              onLinkDetected={onLinkDetected}
               onResend={onResend}
               inExpandedGroup
             />

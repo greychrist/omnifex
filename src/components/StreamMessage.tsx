@@ -327,7 +327,6 @@ function AssistantCompletionBand({
 interface StreamMessageProps {
   message: JsonlNode;
   streamMessages: JsonlNode[];
-  onLinkDetected?: (url: string) => void;
   /** When set, cost is hidden for subscription account types (e.g. "max"). */
   accountType?: string;
   /** Rendered inside an expanded compact group. Nested collapsibles
@@ -347,7 +346,7 @@ interface StreamMessageProps {
 /**
  * Component to render a single Claude Code stream message
  */
-const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamMessages, onLinkDetected, accountType, inExpandedGroup, compact, onResend }) => {
+const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamMessages, accountType, inExpandedGroup, compact, onResend }) => {
   // Get current theme. Memoize the derived theme + components map so
   // ReactMarkdown sees stable prop references across renders — without
   // this, every render rebuilds the Prism-highlighted code DOM and the
@@ -1254,7 +1253,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
                     const stdoutMatch = /<local-command-stdout>([\s\S]*?)<\/local-command-stdout>/.exec(text);
                     if (stdoutMatch) {
                       const [, output] = stdoutMatch;
-                      return <CommandOutputWidget key={idx} output={output} onLinkDetected={onLinkDetected} />;
+                      return <CommandOutputWidget key={idx} output={output} />;
                     }
 
                     const imagePathRegex = /@(\/[^\s@]+\.(?:png|jpe?g|gif|webp|svg))/gi;

@@ -1,6 +1,5 @@
 export * from "./StreamMessage";
 export * from "./ToolWidgets";
-export * from "./WebviewPreview";
 export * from "./ImagePreview";
 export * from "./MCPManager";
 export * from "./MCPServerList";
@@ -24,5 +23,4 @@ export * from "./SlashCommandPicker";
 export * from "./SlashCommandsManager";
 export * from "./ui/popover";
 export * from "./ui/pagination";
-export * from "./ui/split-pane";
 export * from "./ui/scroll-area";
