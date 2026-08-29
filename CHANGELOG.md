@@ -5,6 +5,24 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.147] — 2026-08-29
+
+### Fixed
+
+- The `greychrist-file://` scheme, which renders images in the transcript, would read **any** file on disk: its handler passed the request path straight to `readFileSync` with no restriction, and the scheme was registered with fetch support but without CORS enforcement — the exact configuration Electron CVE-2026-70604 describes. Requests are now restricted to image files, decided on the path *after* symlink resolution so an image-named link pointing at a credentials file is refused, and the handler reads the path it just validated rather than the one it was handed. CORS enforcement is enabled on the scheme.
+- Links printed in command output rendered as clickable but did nothing when clicked. They had fed an in-app preview pane that stopped being reachable in 2025; they now open in your browser.
+
+### Changed
+
+- Updated Electron 41.2.0 → 41.10.7, picking up twelve security fixes including a context-isolation bypass and a sandboxed-iframe popup bypass.
+- Brain search now ORs your search terms instead of ANDing them. Every extra word used to narrow results to notes containing *all* of them, so describing what you wanted worked worse than naming a single identifier — the hit rate fell from 83% at one term to 0% at four while the vault held the content the whole time. Results are ranked by relevance, so notes matching more of your query still sort first.
+- Right-click in the app now offers **Look Up** for the selected text.
+- Patched a batch of dependency advisories (`tar`, `undici`, `tmp`, `brace-expansion`, `fast-uri`, `ip-address`, `nanoid`, `postcss`) and removed an unused image library.
+
+### Removed
+
+- The web preview pane and its split-pane layout. It had been unreachable since 2025 — no code path could open it — and the screenshot capability that gave it a purpose was removed before that.
+
 ## [0.4.146] — 2026-08-27
 
 ### Fixed
