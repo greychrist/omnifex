@@ -27,6 +27,14 @@ const MAX_QUERY_CHARS = 512;
  * operators, wildcards, or unbalanced quotes. Returns null when nothing
  * searchable remains — callers must return zero results rather than running a
  * query with an empty MATCH, which is a syntax error.
+ *
+ * Tokens are ORed, not ANDed. ANDing made every extra word narrow the result
+ * set to notes containing all of them, so describing what you wanted was
+ * actively worse than naming one identifier: across real sessions the hit rate
+ * fell from 83% at one term to 0% at four, while the vault held the content
+ * the whole time. `search()` orders by bm25, which already scores a note
+ * matching more of the query above one matching less — so OR degrades
+ * gracefully where AND fell off a cliff.
  */
 export function toFtsQuery(input: string): string | null {
   // Runtime guard: the IPC boundary is untyped at runtime, so callers may pass
@@ -42,5 +50,5 @@ export function toFtsQuery(input: string): string | null {
   // FTS5 escapes a double quote inside a string literal by doubling it. The
   // tokenizer above cannot emit one, but the escape is kept so this stays
   // correct if TOKEN ever widens.
-  return tokens.map((t) => `"${t.replace(/"/g, '""')}"`).join(' AND ');
+  return tokens.map((t) => `"${t.replace(/"/g, '""')}"`).join(' OR ');
 }

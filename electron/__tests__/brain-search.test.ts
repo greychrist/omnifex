@@ -66,6 +66,23 @@ describe('vault index', () => {
     expect(index.search('can_use_tool')).toHaveLength(1);
   });
 
+  // Regression: terms used to be ANDed, so a query naming more than one thing
+  // found nothing unless a single note held every word. Measured across real
+  // sessions that was a 0% hit rate at four terms.
+  it('finds notes matching only some of the query terms', () => {
+    index.upsert('Subsystems/ops.md', 'ops', note({}, 'the encompass ops backend handles rbac'));
+    expect(index.search('encompass docker compose lima')).toHaveLength(1);
+  });
+
+  it('ranks a note matching more terms above one matching fewer', () => {
+    index.upsert('Subsystems/both.md', 'both', note({}, 'the encompass ops backend'));
+    index.upsert('Subsystems/one.md', 'one', note({}, 'encompass alone, nothing else here'));
+    expect(index.search('encompass ops').map((h) => h.notePath)).toEqual([
+      'Subsystems/both.md',
+      'Subsystems/one.md',
+    ]);
+  });
+
   it('stems English prose so singular finds plural', () => {
     index.upsert('Topics/p.md', 'p', note({ type: 'Topic' }, 'permissions are enforced'));
     expect(index.search('permission')).toHaveLength(1);

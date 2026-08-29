@@ -1,5 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, protocol, Notification, shell, Menu, clipboard } from 'electron';
 import type { MenuItemConstructorOptions } from 'electron';
+import { buildContextMenuTemplate } from './context-menu-template';
 import { execSync, spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -357,30 +358,11 @@ function createWindow(): BrowserWindow {
   });
 
   win.webContents.on('context-menu', (_event, params) => {
-    const { selectionText, editFlags, isEditable, linkURL } = params;
-    const hasText = typeof selectionText === 'string' && selectionText.trim().length > 0;
-    const template: MenuItemConstructorOptions[] = [];
-
-    if (linkURL) {
-      template.push({ label: 'Open Link', click: () => { shell.openExternal(linkURL).catch((err: unknown) => { console.error('[main:open-link]', err); }); } });
-      template.push({ label: 'Copy Link', click: () => clipboard.writeText(linkURL) });
-      template.push({ type: 'separator' });
-    }
-
-    if (isEditable) {
-      template.push({ role: 'cut', enabled: !!editFlags.canCut });
-      template.push({ role: 'copy', enabled: !!editFlags.canCopy });
-      template.push({ role: 'paste', enabled: !!editFlags.canPaste });
-      template.push({ type: 'separator' });
-      template.push({ role: 'selectAll', enabled: !!editFlags.canSelectAll });
-    } else if (hasText) {
-      template.push({ role: 'copy' });
-      template.push({ type: 'separator' });
-      template.push({ role: 'selectAll' });
-    } else {
-      template.push({ role: 'selectAll' });
-    }
-
+    const template = buildContextMenuTemplate(params, {
+      openLink: (url) => { shell.openExternal(url).catch((err: unknown) => { console.error('[main:open-link]', err); }); },
+      copyLink: (url) => clipboard.writeText(url),
+      lookUpSelection: () => win.webContents.showDefinitionForSelection(),
+    });
     Menu.buildFromTemplate(template).popup({ window: win });
   });
 

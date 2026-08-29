@@ -20,30 +20,41 @@ describe('toFtsQuery', () => {
     expect(toFtsQuery('can_use_tool')).toBe('"can_use_tool"');
   });
 
-  it('ANDs multiple terms', () => {
-    expect(toFtsQuery('permission decider')).toBe('"permission" AND "decider"');
+  it('ORs multiple terms so partial matches still rank', () => {
+    expect(toFtsQuery('permission decider')).toBe('"permission" OR "decider"');
+  });
+
+  // Regression: every token was ANDed, so each extra word narrowed the result
+  // set to notes containing all of them. Real sessions measured a 0% hit rate
+  // at four terms while the vault plainly held the content -- "encompass ops"
+  // returned nothing though "encompass" alone matched 13 notes.
+  it('does not require every term to be present', () => {
+    expect(toFtsQuery('encompass ops')).toBe('"encompass" OR "ops"');
+    expect(toFtsQuery('encompass docker compose lima')).toBe(
+      '"encompass" OR "docker" OR "compose" OR "lima"'
+    );
   });
 
   it('drops FTS5 operator keywords so they are not searched literally', () => {
-    expect(toFtsQuery('foo OR bar')).toBe('"foo" AND "bar"');
-    expect(toFtsQuery('foo NOT bar')).toBe('"foo" AND "bar"');
-    expect(toFtsQuery('foo NEAR bar')).toBe('"foo" AND "bar"');
+    expect(toFtsQuery('foo OR bar')).toBe('"foo" OR "bar"');
+    expect(toFtsQuery('foo NOT bar')).toBe('"foo" OR "bar"');
+    expect(toFtsQuery('foo NEAR bar')).toBe('"foo" OR "bar"');
   });
 
   it('treats lowercase operator words as ordinary terms', () => {
-    expect(toFtsQuery('this or that')).toBe('"this" AND "or" AND "that"');
+    expect(toFtsQuery('this or that')).toBe('"this" OR "or" OR "that"');
   });
 
   it('neutralises embedded double quotes', () => {
-    expect(toFtsQuery('say "hi"')).toBe('"say" AND "hi"');
+    expect(toFtsQuery('say "hi"')).toBe('"say" OR "hi"');
   });
 
   it('strips wildcards and punctuation rather than passing them through', () => {
-    expect(toFtsQuery('perm* (stdio)')).toBe('"perm" AND "stdio"');
+    expect(toFtsQuery('perm* (stdio)')).toBe('"perm" OR "stdio"');
   });
 
   it('preserves unicode letters and digits', () => {
-    expect(toFtsQuery('café v2')).toBe('"café" AND "v2"');
+    expect(toFtsQuery('café v2')).toBe('"café" OR "v2"');
   });
 
   it('returns null when the input is only operator keywords', () => {
