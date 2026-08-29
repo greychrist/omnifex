@@ -29,6 +29,117 @@ import * as path from 'node:path';
  * old value and the new one, and file or fix whatever they imply. Bumping it
  * to silence the badge throws away the only drift signal we have.
  *
+ * Last review: 2.1.247 -> 2.1.251 on 2026-08-29. Findings:
+ *
+ *  Changelog coverage: the range is 2.1.248, 2.1.249, 2.1.250, 2.1.251.
+ *  2.1.249 has NO changelog entry — the file jumps 2.1.250 -> 2.1.248 —
+ *  recorded as a gap rather than skipped. 2.1.250 is a bare "Bug fixes and
+ *  reliability improvements" stub. Real content is 2.1.248 + 2.1.251. Both
+ *  the 2.1.247 and 2.1.251 binaries were still installed under
+ *  ~/.local/share/claude/versions, so these findings are a two-version diff,
+ *  not an inference from the prose.
+ *
+ *  Wire-shape diff first, prose second: `subtype:X("…")` goes 109 -> 112
+ *  with NOTHING removed. The additions are `remote_control_work_secret`,
+ *  `remote_plumbing_call` and `remote_tools_announce` — Remote Control
+ *  plumbing we never enable. The `/usage` section-header strings we anchor
+ *  on are unchanged across both binaries (`Current session` 3, `Current
+ *  week` 6, `What's contributing` 5, `% of usage` 2), so the scraper's
+ *  anchors did not move.
+ *
+ *  Nothing in the build is broken by this range. One true gap, deliberately
+ *  NOT fixed:
+ *
+ *  1. `PreModelSwitch` / `PostModelSwitch` — GAP, ACCEPTED, NOT FIXED.
+ *     2.1.251 adds two hook events (block, confirm or annotate a model
+ *     switch). The CLI carries its canonical event list as a literal array
+ *     in the binary; diffing that against HOOK_EVENTS in src/types/hooks.ts
+ *     gives 33 vs 31, and the difference is EXACTLY these two — nothing
+ *     else in our list is stale or invented.
+ *
+ *     Impact is bounded, and was checked rather than assumed. No data loss:
+ *     toEditable/toConfig (HooksEditor.tsx:101,:118) round-trip via
+ *     Object.entries, so an event we don't know survives a save untouched.
+ *     No crash: renderMatcher is only ever called with `selectedEvent`
+ *     (HooksEditor.tsx:598), which comes from the known-list picker, so
+ *     HOOK_EVENT_INFO[unknown].label is unreachable. The only symptom is
+ *     that these two can't be added through OmniFex and show no count badge.
+ *
+ *     Left unfixed by an explicit call on 2026-08-29: the configured hooks
+ *     are PostToolUse + Stop (personal) and Stop (work) — all events we
+ *     already support, and nothing in that setup wants a model-switch hook.
+ *     If a LATER review finds a third such gap, that is the signal to stop
+ *     hand-diffing and pin HOOK_EVENTS to the CLI's array in a test. The
+ *     existing coverage tests (HooksEditor.test.tsx:130) assert sample
+ *     labels and grouping only, which is exactly why this drift slid past.
+ *
+ *  2. Effort xhigh/max with thinking disabled — OUR BUG, FIXED UPSTREAM.
+ *     Pre-2.1.251, Opus 5 requests failed with "effort … is not supported
+ *     when thinking is disabled". OmniFex can produce that combination:
+ *     setEffort (sessions/queries.ts:117) and setThinking (:170) are
+ *     independent control requests, and both `xhigh` and `max` are offered
+ *     (sessions/types.ts:231). 2.1.251 coerces effort to `high` in that
+ *     case, so the failure is gone without a change here. Residual is
+ *     cosmetic: the picker reads "max" while the CLI sends "high".
+ *
+ *  Checked and confirmed inert — the three entries that looked like they
+ *  should have hit us:
+ *
+ *   - Project `.claude/settings.json` `env` can no longer set
+ *     CLAUDE_CONFIG_DIR / CLAUDE_CODE_TMPDIR / TMPDIR / TMP / TEMP. The one
+ *     entry in range that could have broken account routing. It does not:
+ *     we set CLAUDE_CONFIG_DIR in the spawned process environment
+ *     (util/claude-env.ts:64), never through a settings file. Worth knowing
+ *     the real blocklist is wider than the changelog says — it also covers
+ *     CLAUDE_SECURESTORAGE_CONFIG_DIR, XDG_RUNTIME_DIR, CLAUDE_JOB_DIR and a
+ *     tracing cluster (OTEL_LOG_RAW_API_BODIES, BETA_TRACING_ENDPOINT,
+ *     CLAUDE_PTY_RECORD) — and applies to `.claude/settings.local.json` too,
+ *     not just settings.json. The gate mechanism already existed in 2.1.247;
+ *     2.1.251 only added these keys to it.
+ *
+ *   - `--input-format stream-json` dropping client-injected assistant tool
+ *     calls sent without a message id. We do use that flag pair
+ *     (agents/claude-cli-engine.ts:54), but we only ever write `type:'user'`
+ *     lines (:368) — no assistant-role injection exists anywhere under
+ *     electron/services/agents/. Inert.
+ *
+ *   - The `/usage` Spend limit bar. It renders through the SAME bar
+ *     component as the rate-limit windows (title:"Spend limit",
+ *     limit:{utilization,resets_at}), so header + `% used` + `Resets` in the
+ *     window shape. Inert for two independent reasons: the render is gated
+ *     on gateway auth (`Ne()==="gateway"` — Claude apps gateway only), and
+ *     WINDOW_HEADER (usage-runner/parser.ts:116) matches only `Current
+ *     session` / `Current week (…)`, so it cannot be read as a rate-limit
+ *     window. Latent residual for a gateway account: windowBlock
+ *     (parser.ts:184) bounds on the next window header or the contributing
+ *     section, so the bar lands inside the last window's block — harmless
+ *     because parseWindow takes the FIRST `% used` / `Resets` match, which
+ *     is the window's own, unless that window is at 0% and omits its Resets
+ *     line. Same class as the 2.1.236 `Usage credits` row already guarded
+ *     against. Add a boundary if a gateway account ever matters.
+ *
+ *  `experimental.cacheTtl` in agent frontmatter (2.1.248) is not a gap: we
+ *  have no writer for .claude/agents/*.md at all — agent definitions are
+ *  read, never authored.
+ *
+ *  Out of reach in this range: --restricted; self-hosted-runner labels;
+ *  server-managed-settings diagnostics and approval dialogs; /usage-credits
+ *  variants; cross-session messaging and every agent-teams fix; all Remote
+ *  Control work; `claude agents` / `claude logs` / `claude rm` TUI fixes;
+ *  worktree-lock and background-session fixes; the symlink and
+ *  path-traversal hardening in file tools, Grep/Glob, plugin marketplaces
+ *  and the Workflow tool; the Bash arithmetic-assignment permission fix;
+ *  sandbox/proxy/ANTHROPIC_CUSTOM_HEADERS approval gates; /radio and
+ *  /schedule; /effort's per-model default and CLAUDE_CODE_SUBAGENT_MODEL
+ *  precedence (both CLI-internal state we never read); the commit-trailer
+ *  and Enterprise-default-model changes; Bedrock/Vertex/Foundry paths;
+ *  tmux/screen rendering; the `[1m]` code-rendering fix in /model (our model
+ *  detection is JSONL-based — sessionModelChange.ts:83 — not TUI-scraped);
+ *  the /cost prompt-cache line and `prompt_cache` status-line object (we do
+ *  not scrape /cost); hook stdout JSON parse errors;
+ *  desktopSessionCleanupPeriodDays; crossSessionInbound; and the VSCode
+ *  items.
+ *
  * Last review: 2.1.246 -> 2.1.247 on 2026-08-27. Findings:
  *
  *  Changelog coverage: 2.1.247 is the only release in range and it has an
@@ -413,7 +524,7 @@ import * as path from 'node:path';
  * `~/.claude.json` fix (we read-modify-write that file, never replace it), and
  * the VSCode screen-reader work.
  */
-export const REVIEWED_CLI_VERSION = '2.1.247';
+export const REVIEWED_CLI_VERSION = '2.1.251';
 
 /**
  * app_settings key holding the user's explicit OmniFex-checkout override.
