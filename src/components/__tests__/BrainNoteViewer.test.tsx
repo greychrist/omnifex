@@ -156,6 +156,110 @@ describe('BrainNoteViewer', () => {
     expect(onChanged).toHaveBeenCalled();
   });
 
+  it('closes the panel when the close button is pressed', async () => {
+    const onClose = vi.fn();
+    render(
+      <BrainNoteViewer
+        accountId={1}
+        notePath="Subsystems/Sessions.md"
+        onNavigate={vi.fn()}
+        onChanged={vi.fn()}
+        onClose={onClose}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: /close note/i }));
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  /**
+   * The editor holds unsaved text that exists nowhere else. Closing is one
+   * click away from Save, and a panel that discards a draft silently is a
+   * panel that loses work to a misclick.
+   */
+  it('asks before closing on an unsaved edit', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const onClose = vi.fn();
+    render(
+      <BrainNoteViewer
+        accountId={1}
+        notePath="Subsystems/Sessions.md"
+        onNavigate={vi.fn()}
+        onChanged={vi.fn()}
+        onClose={onClose}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: /edit/i }));
+    fireEvent.change(screen.getByTestId('md-editor'), { target: { value: 'unsaved words' } });
+    fireEvent.click(screen.getByRole('button', { name: /close note/i }));
+
+    expect(confirm).toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('closes on an unsaved edit once confirmed', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const onClose = vi.fn();
+    render(
+      <BrainNoteViewer
+        accountId={1}
+        notePath="Subsystems/Sessions.md"
+        onNavigate={vi.fn()}
+        onChanged={vi.fn()}
+        onClose={onClose}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: /edit/i }));
+    fireEvent.change(screen.getByTestId('md-editor'), { target: { value: 'unsaved words' } });
+    fireEvent.click(screen.getByRole('button', { name: /close note/i }));
+
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  /** An untouched draft is not work, so closing it needs no ceremony. */
+  it('does not ask when the editor is open but nothing was typed', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const onClose = vi.fn();
+    render(
+      <BrainNoteViewer
+        accountId={1}
+        notePath="Subsystems/Sessions.md"
+        onNavigate={vi.fn()}
+        onChanged={vi.fn()}
+        onClose={onClose}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: /edit/i }));
+    fireEvent.click(screen.getByRole('button', { name: /close note/i }));
+
+    expect(confirm).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  /**
+   * A deleted note leaves the panel pointing at a path that no longer exists,
+   * which read as "cannot read note" where the note used to be.
+   */
+  it('closes the panel after the note is deleted', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const onClose = vi.fn();
+    render(
+      <BrainNoteViewer
+        accountId={1}
+        notePath="Subsystems/Sessions.md"
+        onNavigate={vi.fn()}
+        onChanged={vi.fn()}
+        onClose={onClose}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: /delete/i }));
+    await waitFor(() => { expect(onClose).toHaveBeenCalled(); });
+  });
+
   it('surfaces a read failure rather than an empty note', async () => {
     vi.mocked(api.brainReadNote).mockRejectedValue(new Error('cannot read note: bad frontmatter'));
     render(<BrainNoteViewer accountId={1} notePath="Subsystems/Broken.md" onNavigate={vi.fn()} onChanged={vi.fn()} />);

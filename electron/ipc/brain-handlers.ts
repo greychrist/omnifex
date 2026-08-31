@@ -93,7 +93,6 @@ function emptyStats(): VaultStats {
     ],
     qualifyingCount: 0,
     spentUsd: 0,
-    recentlyCurated: [],
   };
 }
 
@@ -372,6 +371,25 @@ export function createBrainHandlers(
         throw err;
       }
       return handle ? handle.vault.listNotes() : [];
+    },
+
+    /**
+     * The same listing, with each note's frontmatter — what the Notes table
+     * sorts and filters on.
+     *
+     * Degrades to `[]` on a vault conflict for the same reason
+     * `brain_list_notes` does: another account's claim on a directory must not
+     * stop THIS account's pane from rendering.
+     */
+    async brain_list_note_meta(_event, params = {}) {
+      const accountId = requireAccountId(params);
+      if (!brain) return [];
+      try {
+        return brain.listNoteMeta(accountId);
+      } catch (err) {
+        if (err instanceof VaultConflictError) return [];
+        throw err;
+      }
     },
 
     /**

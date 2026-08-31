@@ -11,6 +11,8 @@ import { BrainSourcesTable, rowId } from './BrainSourcesTable';
 import { BrainProjectExclusions } from './BrainProjectExclusions';
 import { Popover } from '@/components/ui/popover';
 import { PHASE_LABEL, formatElapsed, useRunClock } from './runProgress';
+import { SplitHandle } from '@/components/ui/SplitHandle';
+import { useSplitWidth } from '@/hooks/useSplitWidth';
 
 /** Bumped to re-run the listing effect after an indexing run changes a status. */
 type Nonce = number;
@@ -72,6 +74,19 @@ export const BrainSources: React.FC<{
   const now = useRunClock(runProgress !== null);
   const tableRef = useRef<HTMLDivElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * The table/preview split. Was a hard-coded 40rem, which is the wrong
+   * number on a laptop and on a 32" display for opposite reasons.
+   */
+  const splitRef = useRef<HTMLDivElement>(null);
+  const split = useSplitWidth({
+    storageKey: 'omnifex.brain.sourcesSplit',
+    defaultWidth: 640,
+    min: 320,
+    minRight: 360,
+    containerRef: splitRef,
+  });
 
   /** Any index button is live work: either starting, or already reported. */
   const indexing = starting || runProgress !== null;
@@ -314,8 +329,11 @@ export const BrainSources: React.FC<{
    *
    * "Away" excludes the preview itself: a mousedown there would unmount the
    * panel before the click reached its own Index or close button, so the
-   * preview's controls would never fire. Everything else — the action bar, the
-   * queue panel, empty space — dismisses.
+   * preview's controls would never fire. It also excludes the splitter, which
+   * sits between the two panes and so is "away from the table" by the letter
+   * of this rule — grabbing it would close the pane the drag resizes.
+   * Everything else — the action bar, the queue panel, empty space —
+   * dismisses.
    */
   useEffect(() => {
     if (selected === null) return;
@@ -323,6 +341,12 @@ export const BrainSources: React.FC<{
       const target = e.target as Node;
       if (tableRef.current?.contains(target)) return;
       if (previewRef.current?.contains(target)) return;
+      if (
+        target instanceof Element &&
+        target.closest('[data-omnifex-split-handle]') !== null
+      ) {
+        return;
+      }
       closePreview();
     };
     document.addEventListener('mousedown', onDown);
@@ -343,13 +367,12 @@ export const BrainSources: React.FC<{
             drain changes its counts with nothing here to notice. */}
         <BrainQueueActions accountId={accountId} refreshToken={nonce} />
       </div>
-      <div className="flex min-h-0 flex-1">
+      <div ref={splitRef} className="flex min-h-0 flex-1">
       {/* The table takes the whole pane until something is selected — there is
           nothing to reserve room for. */}
       <div
-        className={`flex min-h-0 flex-col ${
-          selected === null ? 'flex-1' : 'w-[40rem] shrink-0 border-r'
-        }`}
+        className={`flex min-h-0 flex-col ${selected === null ? 'flex-1' : 'shrink-0'}`}
+        style={selected === null ? undefined : { width: split.width }}
       >
         {/* The action bar. Its own surface, above the filter bar and the table
             — three stacked rows that all looked alike read as one undivided
@@ -480,6 +503,13 @@ export const BrainSources: React.FC<{
 
       {/* Rendered only for a selected row. An empty panel holding a "select
           something" placeholder took half the pane to say nothing. */}
+      {selected !== null && (
+      <SplitHandle
+        label="Resize the sources list"
+        onMouseDown={split.startResize}
+        onDoubleClick={split.reset}
+      />
+      )}
       {selected !== null && (
       <div ref={previewRef} className="min-w-0 flex-1 overflow-y-auto p-4">
         <div className="mb-3 flex items-center gap-3">

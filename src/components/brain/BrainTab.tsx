@@ -1,16 +1,18 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useAccounts } from '@/contexts/AccountsContext';
 import { useBrainVault } from '@/hooks/useBrainVault';
 import { AccountPicker } from '@/components/AccountPicker';
 import { Card } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { BrainVaultSetup } from './BrainVaultSetup';
-import { BrainNoteList } from './BrainNoteList';
+import { BrainNotesTable } from './BrainNotesTable';
 import { BrainNoteViewer } from './BrainNoteViewer';
 import { BrainSources } from './BrainSources';
 import { BrainStatsPanel } from './BrainStatsPanel';
 import { BrainAutomationSettings } from './BrainQueuePanel';
 import { InternalArchiveSettings } from '../InternalArchiveSettings';
+import { SplitHandle } from '@/components/ui/SplitHandle';
+import { useSplitWidth } from '@/hooks/useSplitWidth';
 
 /** The three tabs, and the only state that decides what the card body shows. */
 type BrainTabName = 'notes' | 'sources' | 'settings';
@@ -41,6 +43,22 @@ export const BrainTab: React.FC = () => {
    * on mount. Closing and reopening the tab was the only cure.
    */
   const [statsNonce, setStatsNonce] = useState(0);
+
+  /**
+   * The Notes pane's table/viewer split, dragged by the bar between them.
+   *
+   * The table was a fixed 18rem sidebar, which is too narrow for four columns
+   * and unhelpfully wide for a vault of short names — the right width depends
+   * on the vault and the window, so it is the user's to choose.
+   */
+  const notesSplitRef = useRef<HTMLDivElement>(null);
+  const notesSplit = useSplitWidth({
+    storageKey: 'omnifex.brain.notesSplit',
+    defaultWidth: 460,
+    min: 260,
+    minRight: 360,
+    containerRef: notesSplitRef,
+  });
 
   /**
    * Two readings go stale together, so they refresh together: the stats bar,
@@ -158,10 +176,6 @@ export const BrainTab: React.FC = () => {
                 accountId={accountId}
                 nonce={statsNonce}
                 className="mb-4 shrink-0 rounded-md border bg-muted/40 px-4 py-2.5 text-xs"
-                onSelect={(notePath) => {
-                  setTab('notes');
-                  setSelectedNote(notePath);
-                }}
               />
             )}
 
@@ -215,23 +229,49 @@ export const BrainTab: React.FC = () => {
               ) : (
                 <>
                   <TabsContent value="notes" className="mt-0 flex min-h-0 flex-1">
-                    <div className="flex min-h-0 flex-1 overflow-hidden rounded-md border">
-                      <div className="w-72 shrink-0 overflow-y-auto border-r">
-                        <BrainNoteList
+                    <div
+                      ref={notesSplitRef}
+                      className="flex min-h-0 flex-1 overflow-hidden rounded-md border"
+                    >
+                      {/* The table takes the whole pane until a note is open —
+                          there is nothing to reserve room for, the same rule
+                          the Sources pane follows. */}
+                      <div
+                        className={
+                          selectedNote === null
+                            ? 'flex min-h-0 flex-1 flex-col'
+                            : 'flex min-h-0 shrink-0 flex-col'
+                        }
+                        style={selectedNote === null ? undefined : { width: notesSplit.width }}
+                      >
+                        <BrainNotesTable
                           accountId={accountId}
                           notes={vault.notes}
                           selected={selectedNote}
                           onSelect={setSelectedNote}
                         />
                       </div>
-                      <div className="min-w-0 flex-1 overflow-y-auto">
-                        <BrainNoteViewer
-                          accountId={accountId}
-                          notePath={selectedNote}
-                          onNavigate={setSelectedNote}
-                          onChanged={vault.refresh}
-                        />
-                      </div>
+                      {selectedNote !== null && (
+                        <>
+                          <SplitHandle
+                            label="Resize the note list"
+                            onMouseDown={notesSplit.startResize}
+                            onDoubleClick={notesSplit.reset}
+                          />
+                          <div className="min-w-0 flex-1 overflow-y-auto">
+                            <BrainNoteViewer
+                              accountId={accountId}
+                              notePath={selectedNote}
+                              onNavigate={setSelectedNote}
+                              onChanged={vault.refresh}
+                              // Clearing the selection is what closes it: the
+                              // pane is rendered off this value, so the table
+                              // takes the whole width back in the same tick.
+                              onClose={() => { setSelectedNote(null); }}
+                            />
+                          </div>
+                        </>
+                      )}
                     </div>
                   </TabsContent>
 

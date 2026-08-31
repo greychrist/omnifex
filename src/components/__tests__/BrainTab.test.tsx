@@ -3,12 +3,12 @@ import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, cleanup, fireEvent, within } from '@testing-library/react';
 import { BrainTab } from '@/components/brain/BrainTab';
-import { api, type BrainVaultStatus } from '@/lib/api';
+import { api, type BrainNoteMeta, type BrainVaultStatus } from '@/lib/api';
 
 vi.mock('@/lib/api', () => ({
   api: {
     brainStatus: vi.fn(),
-    brainListNotes: vi.fn(),
+    brainListNoteMeta: vi.fn(),
     brainRebuild: vi.fn(),
     brainSetVaultPath: vi.fn(),
     brainClearVaultPath: vi.fn(),
@@ -33,13 +33,36 @@ vi.mock('@/contexts/AccountsContext', () => ({
 
 // The panes have their own tests; here they only report what they were handed,
 // which is what makes the account-scoping assertions below meaningful.
-vi.mock('@/components/brain/BrainNoteList', () => ({
-  BrainNoteList: ({ accountId, notes }: { accountId: number | null; notes: string[] }) => (
-    <div data-testid="note-list">{`${String(accountId)}:${notes.join(',')}`}</div>
+vi.mock('@/components/brain/BrainNotesTable', () => ({
+  BrainNotesTable: (
+    {
+      accountId, notes, onSelect,
+    }: {
+      accountId: number | null;
+      notes: { relPath: string }[];
+      onSelect: (relPath: string) => void;
+    },
+  ) => (
+    <div data-testid="note-list">
+      {`${String(accountId)}:${notes.map((n) => n.relPath).join(',')}`}
+      {/* Labelled rather than captioned, so this node's textContent stays the
+          account id and paths the sibling tests assert on. */}
+      <button
+        type="button"
+        aria-label="open a note"
+        onClick={() => { onSelect('Notes/A.md'); }}
+      />
+    </div>
   ),
 }));
 vi.mock('@/components/brain/BrainNoteViewer', () => ({
-  BrainNoteViewer: () => <div data-testid="note-viewer" />,
+  // Exposes the close callback as a button, so a test can fire what the real
+  // viewer's ✕ fires.
+  BrainNoteViewer: ({ onClose }: { onClose?: () => void }) => (
+    <div data-testid="note-viewer">
+      <button type="button" aria-label="close the note" onClick={onClose} />
+    </div>
+  ),
 }));
 vi.mock('@/components/brain/BrainVaultSetup', () => ({
   BrainVaultSetup: () => <div data-testid="vault-setup" />,
@@ -121,12 +144,45 @@ function status(over: Partial<BrainVaultStatus> = {}): BrainVaultStatus {
   };
 }
 
+/** A listing row. Only `relPath` is asserted on here — the table has its
+ *  own tests for what it does with the rest. */
+function noteMeta(relPath: string): BrainNoteMeta {
+  return {
+    relPath,
+    title: relPath.split('/').pop()?.replace(/\.md$/, '') ?? relPath,
+    type: 'Note',
+    project: null,
+    created: '2026-08-01',
+    updated: '2026-08-01',
+    curatedAt: null,
+  };
+}
+
 describe('BrainTab', () => {
   beforeEach(() => {
     cleanup();
     vi.clearAllMocks();
     vi.mocked(api.brainStatus).mockImplementation((id) => Promise.resolve(status({ accountId: id })));
-    vi.mocked(api.brainListNotes).mockResolvedValue(['Notes/A.md', 'Notes/B.md']);
+    vi.mocked(api.brainListNoteMeta).mockResolvedValue([noteMeta('Notes/A.md'), noteMeta('Notes/B.md')]);
+  });
+
+  /**
+   * The viewer is rendered off the selection, so closing it has to give the
+   * table its width back — splitter and all. A close that left an empty pane
+   * and a divider behind would be a close in name only.
+   */
+  it('opens the note pane on select and puts it away on close', async () => {
+    render(<BrainTab />);
+    await waitFor(() => { expect(screen.getByTestId('note-list')).toBeTruthy(); });
+    expect(screen.queryByTestId('note-viewer')).toBeNull();
+
+    fireEvent.click(screen.getByLabelText('open a note'));
+    expect(screen.getByTestId('note-viewer')).toBeTruthy();
+    expect(screen.getByRole('separator', { name: /resize the note list/i })).toBeTruthy();
+
+    fireEvent.click(screen.getByLabelText('close the note'));
+    expect(screen.queryByTestId('note-viewer')).toBeNull();
+    expect(screen.queryByRole('separator', { name: /resize the note list/i })).toBeNull();
   });
 
   it('selects the first account on mount rather than rendering empty', async () => {
@@ -368,7 +424,7 @@ describe('BrainTab — account switcher placement', () => {
     cleanup();
     vi.clearAllMocks();
     vi.mocked(api.brainStatus).mockImplementation((id) => Promise.resolve(status({ accountId: id })));
-    vi.mocked(api.brainListNotes).mockResolvedValue(['Notes/A.md', 'Notes/B.md']);
+    vi.mocked(api.brainListNoteMeta).mockResolvedValue([noteMeta('Notes/A.md'), noteMeta('Notes/B.md')]);
   });
 
   it('leads with a hero title and blurb, then one card holding the rest', async () => {

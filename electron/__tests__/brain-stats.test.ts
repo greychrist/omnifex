@@ -91,21 +91,6 @@ describe('computeVaultStats', () => {
     expect(s.qualifyingCount).toBe(1);
   });
 
-  it('lists recently curated notes, newest first', () => {
-    const s = computeVaultStats(
-      [
-        { relPath: 'a.md', note: note(1, { curated_at: '2026-02-01' }) },
-        { relPath: 'b.md', note: note(1) },
-        { relPath: 'c.md', note: note(1, { curated_at: '2026-02-20' }) },
-      ],
-      '2026-03-01',
-    );
-    expect(s.recentlyCurated).toEqual([
-      { relPath: 'c.md', curatedAt: '2026-02-20' },
-      { relPath: 'a.md', curatedAt: '2026-02-01' },
-    ]);
-  });
-
   it('takes the median as the middle note by size', () => {
     const s = computeVaultStats(
       [

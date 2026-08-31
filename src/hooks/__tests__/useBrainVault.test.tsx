@@ -2,12 +2,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act, waitFor, cleanup } from '@testing-library/react';
 import { useBrainVault } from '../useBrainVault';
-import { api, type BrainVaultStatus } from '@/lib/api';
+import { api, type BrainNoteMeta, type BrainVaultStatus } from '@/lib/api';
 
 vi.mock('@/lib/api', () => ({
   api: {
     brainStatus: vi.fn(),
-    brainListNotes: vi.fn(),
+    brainListNoteMeta: vi.fn(),
     brainRebuild: vi.fn(),
     brainSetVaultPath: vi.fn(),
     brainClearVaultPath: vi.fn(),
@@ -22,13 +22,26 @@ function status(over: Partial<BrainVaultStatus> = {}): BrainVaultStatus {
   };
 }
 
+/** A listing row. This hook only ever passes them through. */
+function noteMeta(relPath: string): BrainNoteMeta {
+  return {
+    relPath,
+    title: relPath.split('/').pop()?.replace(/\.md$/, '') ?? relPath,
+    type: 'Note',
+    project: null,
+    created: '2026-08-01',
+    updated: '2026-08-01',
+    curatedAt: null,
+  };
+}
+
 describe('useBrainVault', () => {
   beforeEach(() => {
     cleanup();
     vi.clearAllMocks();
     // Echo the requested account back, so a test can tell WHOSE status landed.
     vi.mocked(api.brainStatus).mockImplementation((id) => Promise.resolve(status({ accountId: id })));
-    vi.mocked(api.brainListNotes).mockResolvedValue(['Notes/A.md', 'Notes/B.md']);
+    vi.mocked(api.brainListNoteMeta).mockResolvedValue([noteMeta('Notes/A.md'), noteMeta('Notes/B.md')]);
     vi.mocked(api.brainRebuild).mockResolvedValue(2);
     vi.mocked(api.brainSetVaultPath).mockResolvedValue(undefined);
     vi.mocked(api.brainClearVaultPath).mockResolvedValue(undefined);
@@ -47,17 +60,19 @@ describe('useBrainVault', () => {
     act(() => { result.current.setAccountId(1); });
     await waitFor(() => { expect(result.current.notes).toHaveLength(2); });
 
-    let resolveSecond: (v: string[]) => void = () => {};
-    vi.mocked(api.brainListNotes).mockReturnValueOnce(
-      new Promise<string[]>((r) => { resolveSecond = r; }),
+    let resolveSecond: (v: BrainNoteMeta[]) => void = () => {};
+    vi.mocked(api.brainListNoteMeta).mockReturnValueOnce(
+      new Promise<BrainNoteMeta[]>((r) => { resolveSecond = r; }),
     );
 
     act(() => { result.current.setAccountId(2); });
     // Account 1's notes must not be visible for even one frame under account 2.
     expect(result.current.notes).toEqual([]);
 
-    await act(async () => { resolveSecond(['Notes/C.md']); });
-    await waitFor(() => { expect(result.current.notes).toEqual(['Notes/C.md']); });
+    await act(async () => { resolveSecond([noteMeta('Notes/C.md')]); });
+    await waitFor(() => {
+      expect(result.current.notes.map((n) => n.relPath)).toEqual(['Notes/C.md']);
+    });
   });
 
   it('discards a slow load for a previous account', async () => {
@@ -84,7 +99,7 @@ describe('useBrainVault', () => {
     act(() => { result.current.setAccountId(1); });
 
     await waitFor(() => { expect(result.current.status?.configured).toBe(false); });
-    expect(api.brainListNotes).not.toHaveBeenCalled();
+    expect(api.brainListNoteMeta).not.toHaveBeenCalled();
   });
 
   it('does not list notes for a configured vault whose directory is gone', async () => {
@@ -93,7 +108,7 @@ describe('useBrainVault', () => {
     act(() => { result.current.setAccountId(1); });
 
     await waitFor(() => { expect(result.current.status?.exists).toBe(false); });
-    expect(api.brainListNotes).not.toHaveBeenCalled();
+    expect(api.brainListNoteMeta).not.toHaveBeenCalled();
   });
 
   it('surfaces a load failure instead of rendering an empty vault', async () => {

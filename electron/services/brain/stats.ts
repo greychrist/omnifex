@@ -42,11 +42,7 @@ export interface VaultStats {
    */
   spentUsd: number;
   qualifyingCount: number;
-  recentlyCurated: { relPath: string; curatedAt: string }[];
 }
-
-/** How many curated notes to name. Enough to spot a bad run, not a log. */
-const RECENT_LIMIT = 10;
 
 const BUCKET_ORDER = ['none', '1–3', '4–7', '8–15', '16+'];
 
@@ -85,7 +81,6 @@ export function computeVaultStats(
   const byType: Record<string, number> = {};
   const buckets = new Map<string, number>(BUCKET_ORDER.map((b) => [b, 0]));
   const sizes: number[] = [];
-  const curated: { relPath: string; curatedAt: string }[] = [];
 
   let totalBytes = 0;
   let largestBytes = 0;
@@ -109,17 +104,10 @@ export function computeVaultStats(
     buckets.set(bucket, (buckets.get(bucket) ?? 0) + 1);
 
     if (qualifies(note, today)) qualifyingCount += 1;
-    if (note.frontmatter.curated_at !== undefined) {
-      curated.push({ relPath, curatedAt: note.frontmatter.curated_at });
-    }
   }
 
   sizes.sort((a, b) => a - b);
   const medianBytes = sizes.length === 0 ? 0 : sizes[Math.floor((sizes.length - 1) / 2)];
-
-  curated.sort(
-    (a, b) => b.curatedAt.localeCompare(a.curatedAt) || a.relPath.localeCompare(b.relPath),
-  );
 
   return {
     noteCount: notes.length,
@@ -137,6 +125,5 @@ export function computeVaultStats(
     // Overwritten by the registry, which is the only layer that can read it.
     spentUsd: 0,
     qualifyingCount,
-    recentlyCurated: curated.slice(0, RECENT_LIMIT),
   };
 }

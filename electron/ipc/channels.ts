@@ -18,6 +18,7 @@ export const INVOKE_CHANNELS: readonly string[] = [
   'brain_status',
   'brain_search',
   'brain_list_notes',
+  'brain_list_note_meta',
   'brain_read_note',
   'brain_update_note',
   'brain_delete_note',

@@ -284,6 +284,25 @@ describe('BrainSources', () => {
   });
 
   /**
+   * The splitter sits BETWEEN the table and the preview, so it is "away from
+   * the table" by the dismissal rule's own reading — and a mousedown there is
+   * the first half of a drag. Left alone, grabbing the divider would unmount
+   * the pane the drag exists to resize.
+   */
+  it('keeps the preview open when the press lands on the splitter', async () => {
+    vi.mocked(api.brainListSources).mockResolvedValue([summary()]);
+    vi.mocked(api.brainSourcePreview).mockResolvedValue(preview());
+    render(<BrainSources accountId={1} />);
+
+    fireEvent.click(await screen.findByText('/Users/dev/omnifex'));
+    await screen.findByText(/USER: do the thing/);
+
+    fireEvent.mouseDown(screen.getByRole('separator', { name: /resize the sources list/i }));
+
+    expect(screen.getByText(/USER: do the thing/)).toBeTruthy();
+  });
+
+  /**
    * A disabled button whose label changed was the only sign a 20-second model
    * call was running, and it sits in the preview — off to the side of where
    * the user is looking.

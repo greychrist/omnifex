@@ -30,6 +30,14 @@ interface BrainNoteViewerProps {
   notePath: string | null;
   onNavigate: (notePath: string) => void;
   onChanged: () => Promise<void> | void;
+  /**
+   * Put the pane away, giving the table the full width back — the same thing
+   * the Sources preview's ✕ does.
+   *
+   * Optional so the viewer can still be rendered somewhere that has nothing to
+   * close; the button only appears when there is.
+   */
+  onClose?: () => void;
 }
 
 /**
@@ -42,7 +50,7 @@ interface BrainNoteViewerProps {
  * would make them untrustworthy.
  */
 export const BrainNoteViewer: React.FC<BrainNoteViewerProps> = ({
-  accountId, notePath, onNavigate, onChanged,
+  accountId, notePath, onNavigate, onChanged, onClose,
 }) => {
   const [note, setNote] = useState<BrainNote | null>(null);
   const [backlinks, setBacklinks] = useState<string[]>([]);
@@ -143,6 +151,22 @@ export const BrainNoteViewer: React.FC<BrainNoteViewerProps> = ({
       .finally(() => { setSaving(false); });
   };
 
+  /**
+   * Closing discards whatever is in the editor, and the editor is the only
+   * place that text exists. Close sits one button from Save, so an unguarded
+   * ✕ is a misclick away from losing an edit — the delete button has taken a
+   * confirmation for the same reason since it shipped.
+   *
+   * An UNTOUCHED draft is not work: opening the editor and changing your mind
+   * is the common case, and a dialog there would be noise.
+   */
+  const close = (): void => {
+    if (onClose === undefined) return;
+    const dirty = draft !== null && draft !== (note?.body ?? '');
+    if (dirty && !window.confirm('Discard your unsaved changes to this note?')) return;
+    onClose();
+  };
+
   const remove = (): void => {
     if (accountId === null || notePath === null) return;
     if (!window.confirm(`Delete "${noteTitle(notePath)}"? This cannot be undone from OmniFex.`)) {
@@ -150,7 +174,13 @@ export const BrainNoteViewer: React.FC<BrainNoteViewerProps> = ({
     }
     api
       .brainDeleteNote(accountId, notePath)
-      .then(async () => { await onChanged(); })
+      .then(async () => {
+        await onChanged();
+        // The pane would otherwise stay pointed at a path that no longer
+        // exists, and the next read renders "cannot read note" where the note
+        // the user just deleted used to be.
+        onClose?.();
+      })
       .catch((err: unknown) => { setError((err as Error).message); });
   };
 
@@ -196,6 +226,20 @@ export const BrainNoteViewer: React.FC<BrainNoteViewerProps> = ({
                 Cancel
               </Button>
             </>
+          )}
+          {/* Last in the row and iconic, the way the Sources preview closes.
+              Outside the edit/read branch above: it is available in both. */}
+          {onClose !== undefined && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={close}
+              aria-label="Close note"
+              title="Close"
+              className="px-2"
+            >
+              <X className="h-3.5 w-3.5" />
+            </Button>
           )}
         </div>
       </header>

@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { api, type BrainVaultStatus } from '@/lib/api';
+import { api, type BrainNoteMeta, type BrainVaultStatus } from '@/lib/api';
 
 export interface UseBrainVault {
   accountId: number | null;
   setAccountId: (id: number) => void;
   status: BrainVaultStatus | null;
-  notes: string[];
+  notes: BrainNoteMeta[];
   loading: boolean;
   error: string | null;
   refresh: () => Promise<void>;
@@ -27,7 +27,7 @@ export interface UseBrainVault {
 export function useBrainVault(): UseBrainVault {
   const [accountId, setAccountIdState] = useState<number | null>(null);
   const [status, setStatus] = useState<BrainVaultStatus | null>(null);
-  const [notes, setNotes] = useState<string[]>([]);
+  const [notes, setNotes] = useState<BrainNoteMeta[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -49,7 +49,9 @@ export function useBrainVault(): UseBrainVault {
       // An unconfigured or missing vault has nothing to list, and asking would
       // make the registry lazily CREATE one — the opposite of what a status
       // screen should do.
-      const list = next.configured && next.exists ? await api.brainListNotes(id) : [];
+      // Frontmatter, not just paths: the Notes table sorts on project, type
+      // and dates, none of which a path carries.
+      const list = next.configured && next.exists ? await api.brainListNoteMeta(id) : [];
       if (loadToken.current !== token) return;
       setNotes(list);
     } catch (err) {

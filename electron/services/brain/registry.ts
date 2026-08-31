@@ -32,6 +32,7 @@ import { createBrainSpendStore, localDate, type SpendKind } from './spend';
 import type { RunCost } from './sources/state';
 import { resolveEntityPath, type ExistingNote } from './resolve';
 import { projectLinkFor } from './project';
+import { toNoteMeta, type NoteMeta } from './note-meta';
 import { NOTE_FOLDERS } from './types';
 import { merge } from './merge';
 import {
@@ -476,6 +477,16 @@ export interface BrainService {
    * unconfigured — a stats panel must render rather than throw.
    */
   stats(accountId: number): VaultStats;
+  /**
+   * Every note's frontmatter, reduced to what the Notes table sorts on.
+   *
+   * A sibling of `stats()` rather than a widening of `listNotes()`: the search
+   * index and the wikilink resolver both want paths and nothing more, and
+   * making them pay to parse 338 files of frontmatter would be a tax on two
+   * hot paths for one pane's benefit. Empty when unconfigured — a browsing
+   * pane must render rather than throw.
+   */
+  listNoteMeta(accountId: number): NoteMeta[];
   queueCounts(accountId?: number): QueueCounts;
   queueList(accountId: number, limit?: number): QueueEntry[];
   clearFinishedQueue(accountId: number): void;
@@ -1866,6 +1877,23 @@ export function createBrainService(
         }
       }
       return { ...computeVaultStats(notes, today()), spentUsd: spentUsd(accountId) };
+    },
+
+    listNoteMeta(accountId: number): NoteMeta[] {
+      requireAccountId(accountId);
+      const handle = readPath(accountId) === null ? null : requireHandle(accountId);
+      if (!handle) return [];
+
+      const out: NoteMeta[] = [];
+      for (const relPath of handle.vault.listNotes()) {
+        try {
+          out.push(toNoteMeta(relPath, handle.vault.readNote(relPath)));
+        } catch {
+          // Same rule as `stats()`: one unreadable or malformed note must not
+          // cost the whole listing. It simply does not appear.
+        }
+      }
+      return out;
     },
 
     async enqueueSource(accountId: number, itemKey: string): Promise<void> {

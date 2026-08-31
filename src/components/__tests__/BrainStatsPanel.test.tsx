@@ -8,7 +8,7 @@ vi.mock('@/lib/api', () => ({
   api: { brainStats: vi.fn() },
 }));
 
-function stats(noteCount: number, curated: string[] = []): BrainVaultStats {
+function stats(noteCount: number): BrainVaultStats {
   return {
     noteCount,
     totalBytes: noteCount * 1024,
@@ -25,7 +25,6 @@ function stats(noteCount: number, curated: string[] = []): BrainVaultStats {
     ],
     qualifyingCount: 0,
     spentUsd: 0,
-    recentlyCurated: curated.map((relPath) => ({ relPath, curatedAt: '2026-08-13' })),
   };
 }
 
@@ -46,7 +45,7 @@ describe('BrainStatsPanel', () => {
    * impossible." This panel must clear on switch, not on resolve.
    */
   it('never shows the previous account figures after a switch', async () => {
-    vi.mocked(api.brainStats).mockResolvedValue(stats(83, ['Subsystems/Personal.md']));
+    vi.mocked(api.brainStats).mockResolvedValue(stats(83));
     const { rerender } = render(<BrainStatsPanel accountId={1} />);
     await waitFor(() => { expect(screen.getByText('83')).toBeTruthy(); });
 
@@ -55,7 +54,21 @@ describe('BrainStatsPanel', () => {
     rerender(<BrainStatsPanel accountId={2} />);
 
     expect(screen.queryByText('83')).toBeNull();
-    expect(screen.queryByText('Subsystems/Personal.md')).toBeNull();
+  });
+
+  /**
+   * The panel is a row of figures and nothing else. A trailing list of
+   * curated note paths used to wrap under it, growing the card's header band
+   * by an unpredictable number of lines and naming files nobody had asked
+   * about. Curation is still observable through "Ready to curate" and the
+   * vault's own git history.
+   */
+  it('does not list recently curated notes', async () => {
+    vi.mocked(api.brainStats).mockResolvedValue(stats(83));
+    render(<BrainStatsPanel accountId={1} />);
+    await waitFor(() => { expect(screen.getByText('83')).toBeTruthy(); });
+
+    expect(screen.queryByText(/recently curated/i)).toBeNull();
   });
 
   it('does not carry one account read failure into the next account', async () => {

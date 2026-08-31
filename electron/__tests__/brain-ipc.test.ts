@@ -28,6 +28,7 @@ const CHANNELS = [
   'brain_enqueue_curation',
   'brain_enqueue_project_sources',
   'brain_index_selection',
+  'brain_list_note_meta',
   'brain_list_notes',
   'brain_list_sources',
   'brain_mcp_register',
@@ -112,6 +113,31 @@ describe('brain IPC handlers', () => {
   it('returns [] rather than throwing for an unconfigured account', async () => {
     expect(await handlers.brain_search(null, { accountId: 99, query: 'x' })).toEqual([]);
     expect(await handlers.brain_list_notes(null, { accountId: 99 })).toEqual([]);
+    expect(await handlers.brain_list_note_meta(null, { accountId: 99 })).toEqual([]);
+  });
+
+  /** The Notes table sorts and filters on frontmatter, which a path list
+   *  cannot carry. This is the channel that hands it over. */
+  it('lists note frontmatter for the table to sort on', async () => {
+    await handlers.brain_set_vault_path(null, { accountId: 1, path: join(dir, 'personal') });
+    brain.writeNote(
+      1,
+      'Subsystems/A.md',
+      { ...NOTE, frontmatter: { ...NOTE.frontmatter, project: '[[Projects/omnifex]]' } },
+      'Manual edit',
+    );
+
+    expect(await handlers.brain_list_note_meta(null, { accountId: 1 })).toEqual([
+      {
+        relPath: 'Subsystems/A.md',
+        title: 'A',
+        type: 'Subsystem',
+        project: 'omnifex',
+        created: '2026-01-01',
+        updated: '2026-01-01',
+        curatedAt: null,
+      },
+    ]);
   });
 
   it('rejects a missing accountId instead of defaulting', async () => {
@@ -290,6 +316,11 @@ describe('brain IPC handlers', () => {
     expect(await handlers.brain_list_notes(null, { accountId: 2 })).toEqual([]);
   });
 
+  it('brain_list_note_meta degrades to [] when open() detects a vault conflict', async () => {
+    await induceConflictForAccount2();
+    expect(await handlers.brain_list_note_meta(null, { accountId: 2 })).toEqual([]);
+  });
+
   it('brain_read_note still throws when open() detects a vault conflict', async () => {
     await induceConflictForAccount2();
     await expect(
@@ -333,6 +364,7 @@ describe('brain IPC handlers', () => {
       deleteNote: () => { throw boom; },
       updateNoteBody: () => { throw boom; },
       backlinks: () => { throw boom; },
+      listNoteMeta: () => { throw boom; },
       listSources: () => { throw boom; },
       setExcludedProjects: () => { throw boom; },
       previewSource: () => { throw boom; },

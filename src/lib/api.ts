@@ -1354,7 +1354,20 @@ export interface BrainVaultStats {
   /** What indexing this vault has cost so far, in USD, summed per account. */
   spentUsd: number;
   qualifyingCount: number;
-  recentlyCurated: { relPath: string; curatedAt: string }[];
+}
+
+/** Mirrors the backend `NoteMeta` in electron/services/brain/note-meta.ts. */
+export interface BrainNoteMeta {
+  relPath: string;
+  /** Basename without `.md`. */
+  title: string;
+  type: BrainNoteType;
+  /** Display name of the owning project, or null when the note has none. */
+  project: string | null;
+  created: string;
+  updated: string;
+  /** ISO date of the last curation pass, or null if never curated. */
+  curatedAt: string | null;
 }
 
 /** Mirrors the backend `ParsedNote` in electron/services/brain/types.ts. */
@@ -3330,6 +3343,10 @@ export const api = {
       type: opts.type,
       limit: opts.limit,
     }));
+  },
+
+  async brainListNoteMeta(accountId: number): Promise<BrainNoteMeta[]> {
+    return apiCall<BrainNoteMeta[]>('brain_list_note_meta', { accountId });
   },
 
   async brainListNotes(accountId: number): Promise<string[]> {

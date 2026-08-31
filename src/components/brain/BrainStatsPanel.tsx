@@ -43,14 +43,13 @@ export const BrainStatsPanel: React.FC<{
   accountId: number | null;
   /** Bumped after a run, so the figures do not go stale behind the user. */
   nonce?: number;
-  onSelect?: (notePath: string) => void;
   /**
    * Overrides the band chrome. The panel now shares a row with the account
    * switcher, and whoever owns that row owns its border and background —
    * otherwise the two halves paint their own bands and the row reads as two.
    */
   className?: string;
-}> = ({ accountId, nonce = 0, onSelect, className }) => {
+}> = ({ accountId, nonce = 0, className }) => {
   /**
    * The account each reading belongs to is stored WITH it, and a reading for
    * any other account is discarded at render.
@@ -172,23 +171,6 @@ export const BrainStatsPanel: React.FC<{
               sub="8+ entries: older ones can be summarized to shrink recalls"
             />
           </div>
-        </div>
-      )}
-
-      {stats !== null && stats.recentlyCurated.length > 0 && (
-        <div className="mt-1 flex flex-wrap items-center gap-2 text-muted-foreground">
-          <span>recently curated:</span>
-          {stats.recentlyCurated.map((n) => (
-            <button
-              key={n.relPath}
-              type="button"
-              onClick={() => onSelect?.(n.relPath)}
-              className="rounded border px-1.5 py-0.5 hover:bg-accent"
-              title={`Curated ${n.curatedAt}. Every run commits as "Curation" — git revert in the vault undoes it.`}
-            >
-              {n.relPath}
-            </button>
-          ))}
         </div>
       )}
     </div>
