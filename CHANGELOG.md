@@ -5,6 +5,27 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.149] — 2026-08-31
+
+### Changed
+
+- The Brain's Notes tab is a sortable table instead of a folder-grouped list of file paths. It shows each note's name, type, owning project and last-updated date, sorts on any of the four, and filters by project — none of which the old list could offer, because a file path is the only fact a file path carries. Notes belonging to no project are their own filter entry rather than being unfilterable.
+- Searching the vault now narrows that same table and ranks it by relevance, rather than replacing it with a separate list in a different shape. Clearing the search returns to newest-first.
+- The note reader and the Sources preview can be resized by dragging the divider beside them; the widths are remembered per pane and double-clicking the divider restores the default. They were previously fixed widths that suited neither a laptop nor a large display.
+- A note's curation date, when it has one, appears under its updated date instead of taking a column that would be empty for most of the vault.
+
+### Added
+
+- The note reader has a close button, which gives the table the full width back. Closing with unsaved edits asks first.
+
+### Fixed
+
+- Deleting a note left the reader pointing at a file that no longer existed, showing a read error where the note had been. It now closes.
+
+### Removed
+
+- The "recently curated" list of file names from the Brain's summary bar. It wrapped under the figures by an unpredictable number of lines and named files nobody had asked about; curation is still visible through "Ready to curate" and the vault's own git history.
+
 ## [0.4.148] — 2026-08-31
 
 ### Changed
