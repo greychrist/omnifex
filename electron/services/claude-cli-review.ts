@@ -29,6 +29,81 @@ import * as path from 'node:path';
  * old value and the new one, and file or fix whatever they imply. Bumping it
  * to silence the badge throws away the only drift signal we have.
  *
+ * Last review: 2.1.251 -> 2.1.252 on 2026-08-31. Findings:
+ *
+ *  Changelog coverage: the range is exactly one release, 2.1.252, and it
+ *  HAS an entry (4 lines, all fixes). No gap. Both the 2.1.251 and 2.1.252
+ *  binaries were still installed under ~/.local/share/claude/versions, so
+ *  these findings are a two-version diff, not an inference from the prose.
+ *
+ *  Wire-shape diff first, prose second, and for once it decides the whole
+ *  review: the `subtype:X("…")` set is 121 -> 121 and BYTE-IDENTICAL —
+ *  nothing added, nothing removed. So are the control_request /
+ *  control_response / control_cancel_request names, the hook event name
+ *  literals, and every `/usage` anchor we scrape (`Current session` 3,
+ *  `Current week` 8, `What's contributing` 5, `% of usage` 2, `Spend limit`
+ *  7). A release that adds no subtype and moves no anchor cannot have
+ *  broken a parser, which is why all four entries below resolve to inert.
+ *
+ *  NOTHING TO DO. No bug, no opportunity. All four entries, and why each
+ *  one is genuinely inert rather than unexamined:
+ *
+ *  1. `task output swap refused (tasks dir moved or linked)` on some Macs.
+ *     The refusal lives in the Bash background-task output layer, which our
+ *     sessions do exercise, so this was reachable THROUGH OmniFex — just
+ *     not caused by it. 2.1.252 relaxes the check: a path reaching the same
+ *     directory by another route is now "treated as an alias" on matching
+ *     device+inode by realpath, where 2.1.251 said "not the same directory
+ *     by a link-free route; refused". That is exactly the macOS /var ->
+ *     /private/var shape, which is why it was Mac-specific.
+ *
+ *     Checked rather than assumed, because we do hand the CLI tmpdir-rooted
+ *     paths: the tasks dir derives from the temp ROOT
+ *     (getTaskOutputRootDir / taskOutputDirForSession), never from session
+ *     cwd, so the `os.tmpdir()`-based scratch cwds at
+ *     sessions/summary-query.ts:238, commands-catalog.ts:128 and
+ *     models.ts:123 never fed it. And we set no temp vars at all:
+ *     buildClaudeEnv spreads process.env and overrides only
+ *     CLAUDE_CONFIG_DIR (util/claude-env.ts:67), deleting
+ *     CLAUDE_CODE_PROJECT_DIR_NAME (:79). Note the CLI's own recovery
+ *     advice is now "restart with CLAUDE_CODE_TMPDIR set to a fresh
+ *     directory" — worth knowing if a user ever reports Bash tasks failing.
+ *
+ *  2. "always allow" not saving in a project with no
+ *     .claude/settings.local.json — ALREADY HANDLED, and by deliberate
+ *     design rather than luck. This is the hedge at
+ *     sessions/permissions.ts:631-634 paying off: "the CLI may also write
+ *     these internally, but we persist ourselves so rules always land on
+ *     disk regardless of CLI behavior." Our writer creates the tree —
+ *     permissions-io.ts:148-150 mkdirSync({recursive:true}) before
+ *     writeFileSync, and :126-131 starts from {} when the read fails — so
+ *     the stdio-decider path was never exposed.
+ *
+ *     TUI mode WAS exposed, since there the CLI owns the prompt end to end
+ *     and we never see the rule. A user on a fresh project hit this through
+ *     OmniFex. Fixed upstream; no change here.
+ *
+ *  3. Remote Control sessions hosted by Claude Desktop / VS Code stalling
+ *     on a degraded claude.ai connection. `remote.control` appears nowhere
+ *     in electron/ or src/ outside this file's own review prose.
+ *
+ *  4. Background task notifications with very large failure output blowing
+ *     the API request size limit. The truncation is on what enters the
+ *     CONVERSATION, not on the wire event we read: our task_notification
+ *     consumer takes only task_id, status, summary and usage.duration_ms
+ *     (sessions/events.ts:130-143) and already clip()s summary at :139. The
+ *     task_notification schema text is identical across both binaries.
+ *
+ *  Carried forward from the 2.1.251 review, both unchanged by this range:
+ *
+ *   - PreModelSwitch / PostModelSwitch still absent from HOOK_EVENTS
+ *     (src/types/hooks.ts). The hook-name diff confirms 2.1.252 added no
+ *     new events, so the gap is still EXACTLY two — the standing trigger
+ *     ("if a LATER review finds a third such gap, stop hand-diffing and pin
+ *     HOOK_EVENTS to the CLI's array in a test") has NOT fired.
+ *   - Effort xhigh/max with thinking disabled remains cosmetic-only: the
+ *     picker reads "max" while the CLI coerces to "high".
+ *
  * Last review: 2.1.247 -> 2.1.251 on 2026-08-29. Findings:
  *
  *  Changelog coverage: the range is 2.1.248, 2.1.249, 2.1.250, 2.1.251.
@@ -524,7 +599,7 @@ import * as path from 'node:path';
  * `~/.claude.json` fix (we read-modify-write that file, never replace it), and
  * the VSCode screen-reader work.
  */
-export const REVIEWED_CLI_VERSION = '2.1.251';
+export const REVIEWED_CLI_VERSION = '2.1.252';
 
 /**
  * app_settings key holding the user's explicit OmniFex-checkout override.
