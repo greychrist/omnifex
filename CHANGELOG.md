@@ -5,6 +5,13 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.150] — 2026-08-31
+
+### Changed
+
+- Claude Code 2.1.252 has been reviewed against the app, so the Updates button no longer flags it as an unreviewed release. Nothing needed changing: the release is four fixes, and a diff of the 2.1.251 and 2.1.252 binaries found the message-subtype set byte-identical and every control-request name, hook event and `/usage` heading the app reads unchanged.
+- One of those upstream fixes is worth naming, because it could have reached you. Choosing "always allow" on a permission prompt silently failed to save in a project that had no `.claude/settings.local.json` yet. Sessions running in chat mode were never affected — the app writes permission rules itself rather than relying on the CLI to — but sessions in terminal mode, where Claude Code owns the prompt, were. Updating the CLI to 2.1.252 fixes those.
+
 ## [0.4.149] — 2026-08-31
 
 ### Changed
