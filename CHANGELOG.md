@@ -5,6 +5,13 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.148] — 2026-08-31
+
+### Changed
+
+- The "Indexing … vault" pill in the titlebar now says what it is actually doing: which item, which stage of that item, how far through the run it is, and how long the current item has been going. It previously showed the vault name and, most of the time, nothing else — the item counter was hidden whenever a run held a single item, which is what nearly every background indexing run looks like. Sessions are named by their project rather than by the UUID the pill had no room to explain, and the same detail now appears in the Brain tab's own progress banner, so the two agree.
+- Indexing progress distinguishes reading, extracting, writing and curating. One item can sit inside a single model call for minutes, so "indexing" alone could not tell a slow item from a stuck one; the elapsed timer is per item rather than per run for the same reason.
+
 ## [0.4.147] — 2026-08-29
 
 ### Fixed
