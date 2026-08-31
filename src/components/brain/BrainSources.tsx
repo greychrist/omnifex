@@ -10,6 +10,7 @@ import { BrainQueueActions } from './BrainQueuePanel';
 import { BrainSourcesTable, rowId } from './BrainSourcesTable';
 import { BrainProjectExclusions } from './BrainProjectExclusions';
 import { Popover } from '@/components/ui/popover';
+import { PHASE_LABEL, formatElapsed, useRunClock } from './runProgress';
 
 /** Bumped to re-run the listing effect after an indexing run changes a status. */
 type Nonce = number;
@@ -68,6 +69,7 @@ export const BrainSources: React.FC<{
    * frames, so a run started before this component existed still draws.
    */
   const [runProgress, setRunProgress] = useState<BrainRun | null>(null);
+  const now = useRunClock(runProgress !== null);
   const tableRef = useRef<HTMLDivElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
 
@@ -206,6 +208,10 @@ export const BrainSources: React.FC<{
       // returns. Real frames overwrite it within milliseconds.
       setRunProgress({
         accountId, total: itemKeys.length, completed: 0, item: itemKeys[0],
+        // The key stands in as the label until discovery names the item, which
+        // is what the main process's own opening frame does — this is the same
+        // frame, drawn a round trip earlier.
+        label: itemKeys[0], phase: 'preparing', startedAt: Date.now(),
         written: 0, skipped: 0,
       });
 
@@ -404,12 +410,21 @@ export const BrainSources: React.FC<{
           <div role="status" aria-live="polite" className="border-b bg-primary/5 px-3 py-2 text-xs">
             <div className="mb-1 flex items-center gap-2">
               <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+              {/* The counter is shown even at "1 of 1". A queue drain
+                  recomputes `total` per claimed entry, so the last pending item
+                  is a one-item run — which is most of them, and dropping the
+                  counter there left this banner and the titlebar pill both
+                  saying only "Indexing" for minutes at a time. */}
               <span className="font-medium">
-                {runProgress.total > 1
-                  ? `Indexing ${String(runProgress.completed + 1)} of ${String(runProgress.total)}`
-                  : 'Indexing'}
+                {`Indexing ${String(runProgress.completed + 1)} of ${String(runProgress.total)} · ${PHASE_LABEL[runProgress.phase]}`}
               </span>
-              <span className="truncate text-muted-foreground">{runProgress.item}</span>
+              {/* Name first, key second: the key is what the table highlights,
+                  the name is what a person recognises. */}
+              <span className="truncate">{runProgress.label}</span>
+              <span className="truncate font-mono text-muted-foreground">{runProgress.item}</span>
+              <span className="ml-auto tabular-nums text-muted-foreground">
+                {formatElapsed(now - runProgress.startedAt)}
+              </span>
             </div>
             {/* One item is the only unit of progress there is: `indexSource`
                 distills and extracts behind a single await and reports nothing

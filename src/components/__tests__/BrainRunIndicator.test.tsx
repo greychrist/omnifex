@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, cleanup, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, cleanup, waitFor, act } from '@testing-library/react';
 import { BrainRunIndicator } from '@/components/brain/BrainRunIndicator';
 import { api } from '@/lib/api';
 
@@ -19,7 +19,8 @@ function pushRun(): (run: unknown) => void {
 }
 
 const RUN = {
-  accountId: 1, total: 20, completed: 3, item: 'sess-abc', written: 2, skipped: 1,
+  accountId: 1, total: 20, completed: 3, item: 'sess-abc', label: 'pi-tuitive',
+  phase: 'extracting' as const, startedAt: 0, written: 2, skipped: 1,
 };
 
 const ACCOUNTS = [
@@ -33,6 +34,13 @@ describe('BrainRunIndicator', () => {
     vi.clearAllMocks();
     vi.mocked(api.brainActiveRun).mockResolvedValue(null);
     vi.mocked(api.onBrainRunProgress).mockReturnValue(() => {});
+  });
+
+  // In afterEach, not at the end of the one test that installs them: a failed
+  // assertion would otherwise leak fake timers into every later test, which
+  // hangs them on waitFor rather than failing them.
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('shows nothing when no run is in flight', async () => {
@@ -121,19 +129,64 @@ describe('BrainRunIndicator', () => {
   });
 
   /**
-   * A one-item run would read "1 of 1" for its whole life — a counter that
-   * never counts. The Brain tab drops the fraction there, and the pill has to
-   * agree with it, separator included.
+   * `total` is recomputed per claimed queue entry, so a background drain that
+   * takes the last pending item is ALWAYS a one-item run. Dropping the counter
+   * there meant the pill spent most of its life reading "Indexing Personal
+   * vault" and nothing else — the report that started this. A steady "1 of 1"
+   * is a worse counter and a better status line.
    */
-  it('drops the counter for a single-item run', async () => {
+  it('keeps the counter for a single-item run', async () => {
     vi.mocked(api.brainActiveRun).mockResolvedValue({
       ...RUN, accountId: 2, total: 1, completed: 0,
     });
 
     render(<BrainRunIndicator accounts={ACCOUNTS} />);
 
-    expect(await screen.findByText('Indexing Work vault')).toBeTruthy();
-    expect(screen.queryByText(/of 1/)).toBeNull();
+    expect(await screen.findByText(/Indexing Work vault · 1 of 1/)).toBeTruthy();
+  });
+
+  /**
+   * The whole complaint: a pill that named the vault and nothing else. The
+   * item's key is a session UUID, so the name has to come from the run.
+   */
+  it('names the item being worked on', async () => {
+    vi.mocked(api.brainActiveRun).mockResolvedValue(RUN);
+
+    render(<BrainRunIndicator accounts={ACCOUNTS} />);
+
+    expect(await screen.findByText('pi-tuitive')).toBeTruthy();
+  });
+
+  /**
+   * One item takes minutes behind a single await. Without the stage, a Sonnet
+   * call in flight and a wedged item are the same pill.
+   */
+  it('says which stage of the item is running', async () => {
+    vi.mocked(api.brainActiveRun).mockResolvedValue({ ...RUN, phase: 'curating' as const });
+
+    render(<BrainRunIndicator accounts={ACCOUNTS} />);
+
+    expect(await screen.findByText(/curating/)).toBeTruthy();
+  });
+
+  it('counts up how long the current item has been running', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-31T10:00:00.000Z'));
+    vi.mocked(api.brainActiveRun).mockResolvedValue({
+      ...RUN, startedAt: Date.now() - 64_000,
+    });
+
+    render(<BrainRunIndicator accounts={ACCOUNTS} />);
+    // Flush the seed read without waitFor, which does not mix with fake timers.
+    await act(async () => { await Promise.resolve(); });
+
+    expect(screen.getByText(/1:04/)).toBeTruthy();
+
+    // And it keeps moving on its own: run frames arrive per phase, which can be
+    // minutes apart, so a clock that only redrew on a frame would look frozen —
+    // exactly the thing it exists to rule out.
+    act(() => { vi.advanceTimersByTime(1_000); });
+    expect(screen.getByText(/1:05/)).toBeTruthy();
   });
 
   /**
@@ -153,6 +206,9 @@ describe('BrainRunIndicator', () => {
     expect(label).toMatch(/Work vault/);
     expect(label).toMatch(/sess-abc/);
     expect(label).toMatch(/4 of 20/);
+    // The key AND the name: one identifies the row, the other is readable.
+    expect(label).toMatch(/pi-tuitive/);
+    expect(label).toMatch(/extracting/);
   });
 
   it('unsubscribes on unmount', async () => {

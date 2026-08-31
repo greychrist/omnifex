@@ -1298,6 +1298,14 @@ export interface BrainIndexResult {
   reason: string;
 }
 
+/** Mirrors the backend `BrainRunPhase` in electron/services/brain/registry.ts. */
+export type BrainRunPhase =
+  | 'preparing'
+  | 'distilling'
+  | 'extracting'
+  | 'writing'
+  | 'curating';
+
 /** Mirrors the backend `BrainRun` in electron/services/brain/registry.ts. */
 export interface BrainRun {
   accountId: number;
@@ -1306,6 +1314,12 @@ export interface BrainRun {
   completed: number;
   /** The item in flight: the `completed + 1`-th. */
   item: string;
+  /** What a person would call `item` — a session's project, not its UUID. */
+  label: string;
+  /** Which stage of the current item is running. */
+  phase: BrainRunPhase;
+  /** When the CURRENT ITEM started, epoch ms. Restamped per item. */
+  startedAt: number;
   written: number;
   skipped: number;
 }

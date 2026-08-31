@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { createDatabase, type Database } from '../services/database';
 import { createBrainService, type BrainRun } from '../services/brain/registry';
 import type { BrainSource } from '../services/brain/sources/types';
+import { SESSION_SOURCE_ID } from '../services/brain/sources/session-transcripts';
 import type { AccountsService } from '../services/accounts';
 
 /**
@@ -215,9 +216,15 @@ describe('brain indexing runs', () => {
     release[1]();
     await run;
 
-    // Opens at 0, then one frame per item finished — including the last, which
-    // is a true 2-of-2 rather than a jump straight from 1-of-2 to gone.
-    expect(seen.map((r) => (r === null ? null : r.completed))).toEqual([0, 1, 2, null]);
+    // Deduped: a run also pushes a frame per PHASE change, so the same
+    // `completed` value legitimately appears several times in a row. What is
+    // asserted here is the progression — it opens at 0, then one step per item
+    // finished, including the last, which is a true 2-of-2 rather than a jump
+    // straight from 1-of-2 to gone.
+    const steps = seen
+      .map((r) => (r === null ? null : r.completed))
+      .filter((v, i, all) => i === 0 || v !== all[i - 1]);
+    expect(steps).toEqual([0, 1, 2, null]);
     // The terminating null is what tells a live pane to drop the banner; without
     // it the bar would hang at the last frame forever.
     expect(seen[seen.length - 1]).toBeNull();
@@ -355,6 +362,151 @@ describe('brain indexing runs', () => {
     // run record behind would strand the banner with nothing to finish it.
     await expect(brain.indexSelection(1, [])).rejects.toThrow(/no items/i);
     expect(brain.currentRun(1)).toBeNull();
+    brain.closeAll();
+  });
+
+  /**
+   * A raw item key is a session UUID. The titlebar pill is the only place
+   * indexing is visible from outside the Brain tab, and "Indexing Personal
+   * vault" alone said nothing about WHAT — which is what the key was supposed
+   * to answer and cannot, because nobody recognises a UUID.
+   */
+  it('carries a human label for the item in flight, not just its key', async () => {
+    const { extractor, release } = gatedExtractor();
+    const session: BrainSource = {
+      ...fakeSource(1, ['9f3c-uuid']),
+      id: SESSION_SOURCE_ID,
+      discover: () => Promise.resolve([{
+        sourceId: SESSION_SOURCE_ID, itemKey: '9f3c-uuid', accountId: 1,
+        path: join(dir, '9f3c-uuid.jsonl'), mtimeMs: 1, size: 10,
+        label: '/Users/greg/Repos/work/pi-tuitive',
+      }]),
+    };
+    const brain = createBrainService(db, {
+      execGit: stubExec, accounts: accountsStub, extractor, sources: [session],
+    });
+    brain.setVaultPath(1, join(dir, 'v-label'));
+
+    const run = brain.indexSelection(1, ['9f3c-uuid']);
+    await until(() => release.length === 1, 'the item to reach the extractor');
+
+    // The project, not the path and not the id: it is what the user calls the
+    // thing being indexed. `item` still carries the key, because that is what
+    // the Sources table matches its row on.
+    expect(brain.currentRun(1)).toMatchObject({ item: '9f3c-uuid', label: 'pi-tuitive' });
+
+    release[0]();
+    await run;
+    brain.closeAll();
+  });
+
+  /** A source with no project path behind it still has to name itself. */
+  it('falls back to the item key when there is no better label', async () => {
+    const { extractor, release } = gatedExtractor();
+    const brain = createBrainService(db, {
+      execGit: stubExec, accounts: accountsStub, extractor,
+      sources: [fakeSource(1, ['a'])],
+    });
+    brain.setVaultPath(1, join(dir, 'v-nolabel'));
+
+    const run = brain.indexSelection(1, ['a']);
+    await until(() => release.length === 1, 'the item to reach the extractor');
+    expect(brain.currentRun(1)?.label).toBe('a');
+
+    release[0]();
+    await run;
+    brain.closeAll();
+  });
+
+  /**
+   * One item takes minutes behind a single await, so "indexing" alone cannot
+   * distinguish a slow Sonnet call from a wedged one. The phase is the only
+   * thing that moves inside an item.
+   */
+  it('reports which stage of an item is running', async () => {
+    const seen: (BrainRun | null)[] = [];
+    const { extractor, release } = gatedExtractor();
+    const brain = createBrainService(db, {
+      execGit: stubExec, accounts: accountsStub, extractor,
+      sources: [fakeSource(1, ['a'])],
+      onRunProgress: (run) => { seen.push(run); },
+    });
+    brain.setVaultPath(1, join(dir, 'v-phase'));
+
+    const run = brain.indexSelection(1, ['a']);
+    await until(() => release.length === 1, 'the item to reach the extractor');
+
+    // Parked inside the model call, which is where an item spends nearly all
+    // of its wall clock and all of its money.
+    expect(brain.currentRun(1)?.phase).toBe('extracting');
+
+    release[0]();
+    await run;
+
+    const phases = seen
+      .map((r) => (r === null ? null : r.phase))
+      .filter((v, i, all) => i === 0 || v !== all[i - 1]);
+    expect(phases).toEqual(['preparing', 'distilling', 'extracting', 'writing', null]);
+    brain.closeAll();
+  });
+
+  it('reports the distilling stage while the source is still being read', async () => {
+    const release: (() => void)[] = [];
+    const slow: BrainSource = {
+      ...fakeSource(1, ['a']),
+      distill: () => new Promise((resolve) => {
+        release.push(() => { resolve({
+          prose: 'x', truncated: false,
+          metadata: {
+            kind: 'capture' as const,
+            capturedAt: '2026-08-12T00:00:00.000Z', project: null, cwd: null,
+          },
+        }); });
+      }),
+    };
+    const brain = createBrainService(db, {
+      execGit: stubExec, accounts: accountsStub,
+      extractor: () => Promise.resolve({ entities: [] }),
+      sources: [slow],
+    });
+    brain.setVaultPath(1, join(dir, 'v-distill'));
+
+    const run = brain.indexSelection(1, ['a']);
+    await until(() => release.length === 1, 'the item to reach distillation');
+    expect(brain.currentRun(1)?.phase).toBe('distilling');
+
+    release[0]();
+    await run;
+    brain.closeAll();
+  });
+
+  /**
+   * Elapsed is per ITEM, not per run: a 40-item backfill that has been going
+   * for an hour says nothing about whether the item on screen is stuck.
+   */
+  it('stamps when the current item started, and restamps for the next one', async () => {
+    let t = 1_000;
+    const { extractor, release } = gatedExtractor();
+    const brain = createBrainService(db, {
+      execGit: stubExec, accounts: accountsStub, extractor,
+      sources: [fakeSource(1, ['a', 'b'])],
+      now: () => t,
+    });
+    brain.setVaultPath(1, join(dir, 'v-elapsed'));
+
+    const run = brain.indexSelection(1, ['a', 'b']);
+    await until(() => release.length === 1, 'first item');
+    expect(brain.currentRun(1)?.startedAt).toBe(1_000);
+
+    t = 61_000;
+    release[0]();
+    await until(() => release.length === 2, 'second item');
+    // Reset, not carried: the second item has been running for zero seconds
+    // however long the first one took.
+    expect(brain.currentRun(1)?.startedAt).toBe(61_000);
+
+    release[1]();
+    await run;
     brain.closeAll();
   });
 });

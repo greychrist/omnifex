@@ -391,7 +391,8 @@ describe('BrainSources', () => {
   it('rebuilds the banner for a run that started before it mounted', async () => {
     vi.mocked(api.brainListSources).mockResolvedValue([summary()]);
     vi.mocked(api.brainCurrentRun).mockResolvedValue({
-      accountId: 1, total: 4, completed: 2, item: 'sess-c', written: 2, skipped: 0,
+      accountId: 1, total: 4, completed: 2, item: 'sess-c', label: 'omnifex',
+      phase: 'extracting', startedAt: Date.now(), written: 2, skipped: 0,
     });
     render(<BrainSources accountId={1} />);
 
@@ -405,6 +406,30 @@ describe('BrainSources', () => {
     vi.mocked(api.brainListSources).mockResolvedValue([summary()]);
     render(<BrainSources accountId={7} />);
     await waitFor(() => { expect(api.brainCurrentRun).toHaveBeenCalledWith(7); });
+  });
+
+  /**
+   * The banner and the titlebar pill report the same run and must not disagree.
+   * A one-item run used to read just "Indexing" here, which is the same hole
+   * the pill had: the counter vanished exactly when a background drain claimed
+   * the last pending entry, i.e. most of the time.
+   */
+  it('keeps the counter, and names the stage and the item, for a one-item run', async () => {
+    vi.mocked(api.brainListSources).mockResolvedValue([summary()]);
+    render(<BrainSources accountId={1} />);
+    await screen.findByText('/Users/dev/omnifex');
+
+    runProgressListener()({
+      accountId: 1, total: 1, completed: 0, item: 'sess-a', label: 'pi-tuitive',
+      phase: 'extracting', startedAt: Date.now() - 5_000, written: 0, skipped: 0,
+    });
+
+    const banner = await screen.findByRole('status');
+    expect(banner.textContent).toMatch(/1 of 1/);
+    expect(banner.textContent).toMatch(/extracting/);
+    // The human name beside the key: the key is what the table highlights, the
+    // name is what the user recognises.
+    expect(banner.textContent).toContain('pi-tuitive');
   });
 
   it('follows a run through pushed progress frames', async () => {

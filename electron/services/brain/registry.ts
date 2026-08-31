@@ -238,6 +238,13 @@ export interface IndexResult {
  * mid-run loses this summary and nothing else — the next listing reads the
  * truth off the rows themselves.
  */
+export type BrainRunPhase =
+  | 'preparing'
+  | 'distilling'
+  | 'extracting'
+  | 'writing'
+  | 'curating';
+
 export interface BrainRun {
   /** The account whose vault this run is writing into. */
   accountId: number;
@@ -247,6 +254,29 @@ export interface BrainRun {
   completed: number;
   /** The item being worked on right now: the `completed + 1`-th. */
   item: string;
+  /**
+   * What a person would call `item`.
+   *
+   * A session's key is a UUID, which is the right identity and the wrong name:
+   * the pill that reports indexing from outside the Brain tab could say only
+   * "Indexing Personal vault", because the one detail it had was unreadable.
+   * Falls back to the key for a source with nothing better.
+   */
+  label: string;
+  /**
+   * Which stage of the current item is running.
+   *
+   * The unit of work is one item and an item takes minutes behind a single
+   * await, so without this a slow model call and a wedged one look identical
+   * from outside.
+   */
+  phase: BrainRunPhase;
+  /**
+   * When the CURRENT ITEM started, epoch ms. Restamped per item on purpose: a
+   * 40-item backfill that has been running for an hour says nothing about
+   * whether the item on screen is stuck.
+   */
+  startedAt: number;
   /** Items that produced at least one note. */
   written: number;
   /** Items that were skipped or failed. Both are completed units of work. */
@@ -764,6 +794,21 @@ export function createBrainService(
     }
   }
 
+  /**
+   * Move the run in flight to a new stage, and optionally name its item.
+   *
+   * Guarded on the item key rather than applied unconditionally: `indexSource`
+   * is also callable on its own, and a direct call must not repaint the stage
+   * of whatever the queue is actually working on. Concurrency is 1, so the
+   * guard is belt-and-braces — but the alternative failure is a pill confidently
+   * reporting the wrong thing, which is worse than reporting nothing.
+   */
+  function setRunPhase(itemKey: string, phase: BrainRunPhase, label?: string): void {
+    if (!activeRun || activeRun.item !== itemKey) return;
+    activeRun = { ...activeRun, phase, ...(label === undefined ? {} : { label }) };
+    publishRun();
+  }
+
   // A crash or quit mid-item leaves a row `running` forever; without this the
   // queue silently stops draining after one bad shutdown.
   const orphans = queueStore.recoverOrphans();
@@ -792,6 +837,12 @@ export function createBrainService(
         total: queueRunStats.completed + 1 + queueStore.counts().pending,
         completed: queueRunStats.completed,
         item: entry.itemKey,
+        // The key until discovery hands back something human — which costs a
+        // `discover()` over every source, so it happens inside the work rather
+        // than being paid for twice just to fill in a label.
+        label: entry.itemKey,
+        phase: 'preparing',
+        startedAt: clock(),
         written: queueRunStats.written,
         skipped: queueRunStats.skipped,
       };
@@ -884,6 +935,20 @@ export function createBrainService(
     if (item.sourceId === SESSION_SOURCE_ID) return item.itemKey;
     const base = item.path ? basename(item.path) : '';
     return base || item.itemKey;
+  }
+
+  /**
+   * What to CALL the item while it is being worked on.
+   *
+   * Deliberately not `displayName`, which names a session by its id because
+   * that is the thing you paste to find one conversation. Progress is read at a
+   * glance and never pasted, so a session is named by its project instead —
+   * `label` is the project folder, and its last segment is what the user calls
+   * it. Everything else is already a file name.
+   */
+  function runLabel(item: SourceItem): string {
+    if (item.sourceId !== SESSION_SOURCE_ID) return displayName(item);
+    return basename(item.label) || item.label || item.itemKey;
   }
 
   /**
@@ -1386,6 +1451,10 @@ export function createBrainService(
       if (!found) throw new Error(`source item not found for this account: ${itemKey}`);
       const { source, item } = found;
 
+      // The first moment the item has a name. Everything above this is
+      // discovery, which is why the run opens labelled with the bare key.
+      setRunPhase(itemKey, 'preparing', runLabel(item));
+
       // The backstop. The queue is durable across restarts, so an exclusion
       // added after an item was queued still has to stop it — and this is the
       // last point before anything is spent.
@@ -1447,6 +1516,7 @@ export function createBrainService(
       // before both: requiring an account here would block a source that cannot
       // spend anything through the wrong subscription in the first place.
       if (source.translate) {
+        setRunPhase(itemKey, 'writing');
         const translated = await source.translate(item);
         const written: string[] = [];
         const failures: string[] = [];
@@ -1495,10 +1565,12 @@ export function createBrainService(
         return { itemKey, notesWritten: [], skipped: true, reason };
       }
 
+      setRunPhase(itemKey, 'distilling');
       const distilled = await source.distill(item);
 
       let extraction;
       try {
+        setRunPhase(itemKey, 'extracting');
         extraction = await opts.extractor(distilled, account.config_dir, {
           // Telling the model what the vault already holds is the cheap half
           // of the duplicate fix; `resolveEntityPath` below is the reliable
@@ -1512,6 +1584,8 @@ export function createBrainService(
         sourceState.record(item, { status: 'failed', error: reason });
         return { itemKey, notesWritten: [], skipped: true, reason };
       }
+
+      setRunPhase(itemKey, 'writing');
 
       // Built once per item, not per entity: it is O(vault) reads, and the
       // entities of one extraction all resolve against the same snapshot.
@@ -1616,7 +1690,8 @@ export function createBrainService(
       const results: IndexResult[] = [];
 
       activeRun = {
-        accountId, total: itemKeys.length, completed: 0, item: itemKeys[0], written, skipped,
+        accountId, total: itemKeys.length, completed: 0, item: itemKeys[0],
+        label: itemKeys[0], phase: 'preparing', startedAt: clock(), written, skipped,
       };
       publishRun();
 
@@ -1624,7 +1699,13 @@ export function createBrainService(
         for (const itemKey of itemKeys) {
           // Set before the await, so `currentRun` names the item actually in
           // flight rather than the one that finished last.
-          activeRun = { ...activeRun, item: itemKey };
+          // Every per-item field resets together. Carrying the previous item's
+          // phase or start time forward would report the new item as already
+          // minutes into a stage it has not reached.
+          activeRun = {
+            ...activeRun, item: itemKey, label: itemKey,
+            phase: 'preparing', startedAt: clock(),
+          };
           try {
             const result = await service.indexSource(accountId, itemKey);
             results.push(result);
@@ -1704,6 +1785,8 @@ export function createBrainService(
         // this account's content through the wrong subscription (spec §4).
         return { notePath: relPath, skipped: true, reason: 'no account for this note' };
       }
+
+      setRunPhase(relPath, 'curating', handle.vault.noteTitle(relPath));
 
       const entries = collapsibleEntries(note);
       const decisions = collapsibleDecisions(note);

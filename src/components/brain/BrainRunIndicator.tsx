@@ -7,6 +7,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip-modern';
 import { api, type BrainRun } from '@/lib/api';
+import { PHASE_LABEL, formatElapsed, useRunClock } from './runProgress';
 
 /**
  * "Something is indexing, and here is where it is" — everywhere in the app.
@@ -57,6 +58,8 @@ export const BrainRunIndicator: React.FC<{
     };
   }, []);
 
+  const now = useRunClock(run !== null);
+
   if (!run) return null;
 
   const name = accounts.find((a) => a.id === run.accountId)?.name;
@@ -66,10 +69,15 @@ export const BrainRunIndicator: React.FC<{
   // Item-positional, the same framing the Brain tab's own banner uses: the
   // `completed + 1`-th item is the one in flight. Reporting the completed count
   // instead made one run read "0 of 2" in the titlebar and "1 of 2" in the tab.
-  // A single-item run drops the fraction rather than sitting at "1 of 1"
-  // forever — again matching the tab.
-  const position = run.total > 1 ? `${String(run.completed + 1)} of ${String(run.total)}` : null;
-  const label = position ? `Indexing ${vault} · ${position}` : `Indexing ${vault}`;
+  //
+  // Shown always, including "1 of 1". A queue drain recomputes `total` per
+  // claimed entry, so the last pending item is a one-item run — which is most
+  // of them. Hiding the counter there left the pill reading "Indexing Personal
+  // vault" and nothing else for minutes at a time.
+  const position = `${String(run.completed + 1)} of ${String(run.total)}`;
+  const phase = PHASE_LABEL[run.phase];
+  const elapsed = formatElapsed(now - run.startedAt);
+  const label = `Indexing ${vault} · ${position} · ${phase}`;
 
   return (
     // Own provider: the titlebar has one, but this also renders in shells that
@@ -79,15 +87,17 @@ export const BrainRunIndicator: React.FC<{
         <TooltipTrigger asChild>
           <div
             data-testid="brain-run-indicator"
-            aria-label={
-              position
-                ? `Brain indexing: ${run.item} into the ${vault}, item ${position}`
-                : `Brain indexing: ${run.item} into the ${vault}`
-            }
+            // Both names: the key identifies the row in the Sources table, the
+            // label is the one a person can read.
+            aria-label={`Brain indexing: ${run.label} (${run.item}) into the ${vault}, item ${position}, ${phase}, ${elapsed} elapsed`}
             className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-violet-600/15 text-violet-400 app-no-drag"
           >
             <Brain size={13} className="animate-pulse" />
             <span className="tabular-nums">{label}</span>
+            {/* Truncated alone, so a long project name shrinks instead of
+                pushing the counter and the clock out of the titlebar. */}
+            <span className="max-w-[16ch] truncate">{run.label}</span>
+            <span className="tabular-nums opacity-70">{`· ${elapsed}`}</span>
           </div>
         </TooltipTrigger>
         {/* Below the pill: the titlebar is the top edge of the window, so a
@@ -100,9 +110,9 @@ export const BrainRunIndicator: React.FC<{
           <p className="mt-1.5 text-muted-foreground">
             Current: <span className="font-mono">{run.item}</span>
           </p>
-          {position && (
-            <p className="text-muted-foreground tabular-nums">Item {position}</p>
-          )}
+          <p className="text-muted-foreground tabular-nums">
+            Item {position} · {phase} · {elapsed} elapsed
+          </p>
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>
