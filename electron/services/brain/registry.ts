@@ -418,7 +418,15 @@ export interface BrainService {
    * Per-item failures are collected, never thrown: one bad item must not
    * abandon the rest of a selection the user explicitly ticked.
    */
-  indexSelection(accountId: number, itemKeys: string[]): Promise<RunResult>;
+  /**
+   * `force` bypasses the admission gate and change detection for every item in
+   * the selection — the semantics of a person deliberately ticking a row.
+   */
+  indexSelection(
+    accountId: number,
+    itemKeys: string[],
+    opts?: { force?: boolean },
+  ): Promise<RunResult>;
   /**
    * The run in flight for this account, or null. Account-scoped so a run
    * cannot be reported under another account's header.
@@ -834,6 +842,44 @@ export function createBrainService(
    */
   let queueRunStats = { completed: 0, written: 0, skipped: 0 };
 
+  /** What finished, the one in flight, and everything still waiting. */
+  function runTotal(): number {
+    return queueRunStats.completed + 1 + queueStore.counts().pending;
+  }
+
+  /**
+   * Republish the run in flight because the queue behind it grew.
+   *
+   * `total` is recomputed when an entry is CLAIMED, which is correct but only
+   * becomes visible at the next claim — and an item sits in the extractor for
+   * minutes. Closing a second tab mid-run therefore changed nothing on screen,
+   * so the only honest reading of the indicator was that the close had been
+   * dropped. It had not been; the queue is durable and the drain loop picks it
+   * up. Nothing said so.
+   *
+   * Silent when the count is unchanged: `enqueue` is idempotent for rows
+   * already pending, and the five-minute sweep re-offers the same backlog
+   * every time it runs.
+   */
+  function widenRunTotal(): void {
+    if (!activeRun) return;
+    const total = runTotal();
+    if (total === activeRun.total) return;
+    activeRun = { ...activeRun, total };
+    publishRun();
+  }
+
+  /**
+   * Queue an item and keep the indicator honest about the depth behind it.
+   *
+   * Every enqueue goes through here rather than calling the store directly, so
+   * there is no path that grows the queue without saying so.
+   */
+  function enqueueItem(accountId: number, sourceId: string, itemKey: string): void {
+    queueStore.enqueue(accountId, sourceId, itemKey);
+    widenRunTotal();
+  }
+
   const queueWorker = createBrainQueueWorker({
     store: queueStore,
     // The dispatch. Routed through the service's own methods rather than
@@ -845,7 +891,7 @@ export function createBrainService(
       // past 100%. The claimed entry is no longer `pending`, hence the +1.
       activeRun = {
         accountId: entry.accountId,
-        total: queueRunStats.completed + 1 + queueStore.counts().pending,
+        total: runTotal(),
         completed: queueRunStats.completed,
         item: entry.itemKey,
         // The key until discovery hands back something human — which costs a
@@ -1512,8 +1558,15 @@ export function createBrainService(
 
       // Gate first: a rejected item must not reach the model at all. This is
       // the only thing standing between "142 sessions" and "142 Haiku calls".
+      //
+      // `force` is the one way past it, and it comes only from a person
+      // ticking a row and pressing Index. The gate is a COST policy for
+      // UNATTENDED indexing, not a ruling on what the user is allowed to keep:
+      // an explicit press used to record a skip and write nothing, which left
+      // the row exactly as actionable as before and read as a broken button.
+      // The sweep never sets this, so "142 sessions" stays 142 refusals.
       const verdict = source.admit(item);
-      if (!verdict.admitted) {
+      if (!verdict.admitted && !runOpts.force) {
         sourceState.record(item, { status: 'skipped', error: verdict.reason });
         return { itemKey, notesWritten: [], skipped: true, reason: verdict.reason };
       }
@@ -1685,7 +1738,11 @@ export function createBrainService(
       return { itemKey, notesWritten, skipped: false, reason };
     },
 
-    async indexSelection(accountId: number, itemKeys: string[]): Promise<RunResult> {
+    async indexSelection(
+      accountId: number,
+      itemKeys: string[],
+      opts: { force?: boolean } = {},
+    ): Promise<RunResult> {
       requireAccountId(accountId);
       // Refused before the run record is set, so a rejected call cannot strand
       // a banner with nothing left to finish it.
@@ -1718,7 +1775,7 @@ export function createBrainService(
             phase: 'preparing', startedAt: clock(),
           };
           try {
-            const result = await service.indexSource(accountId, itemKey);
+            const result = await service.indexSource(accountId, itemKey, opts);
             results.push(result);
             if (result.skipped) skipped += 1;
             else written += 1;
@@ -1859,7 +1916,7 @@ export function createBrainService(
       candidates.sort((a, b) => b.length - a.length || a.relPath.localeCompare(b.relPath));
 
       const chosen = candidates.slice(0, MAX_NOTES_PER_RUN);
-      for (const c of chosen) queueStore.enqueue(accountId, CURATION_SOURCE_ID, c.relPath);
+      for (const c of chosen) enqueueItem(accountId, CURATION_SOURCE_ID, c.relPath);
       return chosen.length;
     },
 
@@ -1913,7 +1970,7 @@ export function createBrainService(
       if (isLiveItem(found.item)) {
         throw new Error('session is active in OmniFex — it will index once it goes idle');
       }
-      queueStore.enqueue(accountId, found.item.sourceId, found.item.itemKey);
+      enqueueItem(accountId, found.item.sourceId, found.item.itemKey);
     },
 
     async enqueueProjectSources(accountId: number, projectPath: string): Promise<number> {
@@ -1940,7 +1997,7 @@ export function createBrainService(
           if (!source.admit(item).admitted) continue;
           const prior = sourceState.get(accountId, item.sourceId, item.itemKey);
           if (prior?.status === 'indexed' && !sourceState.hasChanged(item)) continue;
-          queueStore.enqueue(accountId, item.sourceId, item.itemKey);
+          enqueueItem(accountId, item.sourceId, item.itemKey);
           queued += 1;
         }
       }
@@ -1956,9 +2013,27 @@ export function createBrainService(
         for (const item of await source.discover()) {
           if (item.accountId !== accountId) continue;
           if (isExcludedItem(accountId, item)) continue;
+          const prior = sourceState.get(accountId, item.sourceId, item.itemKey);
           // The sweep's horizon. Absent for the Backfill button, which is the
           // deliberate "everything" action and must stay one.
-          if (opts.sinceMs !== undefined && item.mtimeMs < opts.sinceMs) continue;
+          //
+          // It does NOT apply to an item already carrying state whose bytes
+          // have moved. The horizon is an age limit on the FILE, not a
+          // watermark since the last sweep, so an edit that landed while the
+          // app was closed for longer than the horizon was stranded: every
+          // later tick re-excluded it on age, while the Sources table went on
+          // reporting it as changed with nothing left to act on it. The
+          // horizon's stated job is the first tick after the opt-in — not
+          // enqueuing every transcript ever written — and an item that was
+          // already admitted and paid for once is not that case.
+          const knownAndChanged = prior !== null && sourceState.hasChanged(item);
+          if (
+            !knownAndChanged &&
+            opts.sinceMs !== undefined &&
+            item.mtimeMs < opts.sinceMs
+          ) {
+            continue;
+          }
           // Mid-conversation: `indexSource` would refuse it at claim time
           // anyway, and on a five-minute timer that refusal is pure churn.
           // Costs nothing if it goes idle before the next tick picks it up.
@@ -1966,8 +2041,7 @@ export function createBrainService(
           // Already done and unmoved: `indexSource` would short-circuit
           // anyway, but keeping it out of the queue is what makes re-running
           // backfill after a partial run cost only what is left.
-          const prior = sourceState.get(accountId, item.sourceId, item.itemKey);
-          if (prior?.status === 'indexed' && !sourceState.hasChanged(item)) continue;
+          if (prior?.status === 'indexed' && !knownAndChanged) continue;
           // Gate LAST, so the queue never holds work that would be skipped the
           // moment it was claimed — but only after every cheap predicate has
           // had its say. `admit()` reads and parses the whole transcript, and
@@ -1976,7 +2050,7 @@ export function createBrainService(
           // entire history every five minutes. Reordering is safe because
           // `admit()` is side-effect-free.
           if (!source.admit(item).admitted) continue;
-          queueStore.enqueue(accountId, item.sourceId, item.itemKey);
+          enqueueItem(accountId, item.sourceId, item.itemKey);
           queued += 1;
         }
       }
@@ -2006,7 +2080,23 @@ export function createBrainService(
 
       queueRunStats = { completed: 0, written: 0, skipped: 0 };
       try {
-        return await queueWorker.drain();
+        let outcome = await queueWorker.drain();
+        // An enqueue can land after the loop's last `claimNext()` and before
+        // this method releases the run. Neither party saw it: the loop had
+        // stopped asking, and the second caller was told `busy` because
+        // `activeRun` was still set. The item then waited for the five-minute
+        // sweep — and with the indicator now widening on enqueue, the user had
+        // already been promised it.
+        //
+        // Not while `yielded`: a rate limit parks the queue deliberately, and
+        // re-entering would spin against the same wall. `processed === 0` ends
+        // it either way, so an item that cannot be claimed cannot loop here.
+        while (!outcome.yielded && queueStore.counts().pending > 0) {
+          const again = await queueWorker.drain();
+          if (again.processed === 0) break;
+          outcome = { ...again, processed: outcome.processed + again.processed };
+        }
+        return outcome;
       } finally {
         activeRun = null;
         publishRun();

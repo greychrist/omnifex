@@ -231,7 +231,13 @@ export const BrainSources: React.FC<{
       });
 
       api
-        .brainIndexSelection(accountId, itemKeys)
+        // Forced, because this call only ever comes from a person ticking rows
+        // and pressing the button. The admission gate is a cost policy for
+        // UNATTENDED indexing; applied here it made the press a no-op on any
+        // short session, and the row came back looking exactly as it did
+        // before. Settled rows cannot be ticked, so nothing already indexed
+        // and unchanged can be re-run through this path.
+        .brainIndexSelection(accountId, itemKeys, { force: true })
         .then((result) => {
           // One item can say exactly why; a selection can only report totals.
           // "indexed 0, skipped 1" is not an answer a user can act on when

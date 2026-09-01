@@ -179,6 +179,114 @@ describe('brain indexing runs', () => {
     brain.closeAll();
   });
 
+  /**
+   * Closing a second tab while the first is still indexing.
+   *
+   * The widening above is only visible at the NEXT claim, and an item can sit
+   * in the extractor for minutes. Until then the pill kept reading "1 of 1", so
+   * the second close looked like it had been dropped — there was nothing else
+   * on screen to say otherwise.
+   */
+  it('widens the published frame as soon as work is queued, not at the next claim', async () => {
+    const seen: (BrainRun | null)[] = [];
+    const { extractor, release } = gatedExtractor();
+    const brain = createBrainService(db, {
+      execGit: stubExec, accounts: accountsStub, extractor,
+      sources: [fakeSource(1, ['a', 'second-close', 'third-close'])],
+      onRunProgress: (run) => { seen.push(run); },
+    });
+    brain.setVaultPath(1, join(dir, 'v-live-total'));
+
+    await brain.enqueueSource(1, 'a');
+    const drain = brain.drainQueue();
+    await until(() => release.length === 1, 'first queued item');
+    expect(seen[seen.length - 1]).toMatchObject({ total: 1, completed: 0, item: 'a' });
+
+    await brain.enqueueSource(1, 'second-close');
+    // Still parked on the first item, so `completed` and `item` must not move —
+    // only the total the user is being counted against.
+    expect(seen[seen.length - 1]).toMatchObject({ total: 2, completed: 0, item: 'a' });
+
+    await brain.enqueueSource(1, 'third-close');
+    expect(seen[seen.length - 1]).toMatchObject({ total: 3, completed: 0, item: 'a' });
+    expect(brain.currentRun(1)).toMatchObject({ total: 3, completed: 0 });
+
+    release[0]();
+    await until(() => release.length === 2, 'the second item to start');
+    release[1]();
+    await until(() => release.length === 3, 'the third item to start');
+    release[2]();
+    await drain;
+    brain.closeAll();
+  });
+
+  /**
+   * `enqueue` is idempotent for rows already pending, so re-queuing an item
+   * changes no count. Publishing anyway would repaint the indicator for
+   * nothing every time the five-minute sweep re-offers the same backlog.
+   */
+  it('publishes nothing when an enqueue does not change the count', async () => {
+    const seen: (BrainRun | null)[] = [];
+    const { extractor, release } = gatedExtractor();
+    const brain = createBrainService(db, {
+      execGit: stubExec, accounts: accountsStub, extractor,
+      sources: [fakeSource(1, ['a', 'b'])],
+      onRunProgress: (run) => { seen.push(run); },
+    });
+    brain.setVaultPath(1, join(dir, 'v-no-churn'));
+
+    await brain.enqueueSource(1, 'a');
+    const drain = brain.drainQueue();
+    await until(() => release.length === 1, 'first queued item');
+
+    await brain.enqueueSource(1, 'b');
+    const after = seen.length;
+    await brain.enqueueSource(1, 'b');
+    expect(seen.length).toBe(after);
+
+    release[0]();
+    await until(() => release.length === 2, 'the second item to start');
+    release[1]();
+    await drain;
+    brain.closeAll();
+  });
+
+  /**
+   * The close-two-tabs race.
+   *
+   * `drainQueue` refuses while a run is in flight, and the drain loop stops
+   * asking for work once `claimNext()` comes back empty. An enqueue landing
+   * between those two moments was seen by neither: the loop had finished
+   * asking, and the second caller was told `busy`. The item then sat until the
+   * five-minute sweep — with the pill having already promised it.
+   */
+  it('picks up work that arrives as the drain is finishing', async () => {
+    const { extractor, release } = gatedExtractor();
+    const brain = createBrainService(db, {
+      execGit: stubExec, accounts: accountsStub, extractor,
+      sources: [fakeSource(1, ['a', 'straggler'])],
+      onRunProgress: () => undefined,
+    });
+    brain.setVaultPath(1, join(dir, 'v-straggler'));
+
+    await brain.enqueueSource(1, 'a');
+    const drain = brain.drainQueue();
+    await until(() => release.length === 1, 'first queued item');
+
+    // Queued while the last item is in flight — the loop's next `claimNext()`
+    // may or may not still be coming, and the item must not depend on which.
+    await brain.enqueueSource(1, 'straggler');
+    release[0]();
+
+    await until(() => release.length === 2, 'the straggler to reach the extractor');
+    release[1]();
+    const outcome = await drain;
+
+    expect(outcome.processed).toBe(2);
+    expect(brain.queueCounts(1).pending).toBe(0);
+    brain.closeAll();
+  });
+
   it('refuses a queue drain while a manual selection owns the run', async () => {
     const { extractor, release } = gatedExtractor();
     const brain = createBrainService(db, {

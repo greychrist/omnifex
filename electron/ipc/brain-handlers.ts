@@ -263,7 +263,12 @@ export function createBrainHandlers(
       if (!Array.isArray(raw) || raw.some((k) => typeof k !== 'string')) {
         throw new Error('itemKeys must be an array of strings');
       }
-      return brain.indexSelection(requireAccountId(params), raw as string[]);
+      // `force` reaches here only from an explicit press on a ticked row, and
+      // it is what lets a short session be indexed at all. Absent means the
+      // admission gate applies, which is what every unattended path wants.
+      return brain.indexSelection(requireAccountId(params), raw as string[], {
+        force: params.force === true,
+      });
     },
 
     async brain_active_run() {

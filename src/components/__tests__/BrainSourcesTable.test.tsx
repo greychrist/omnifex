@@ -2,7 +2,9 @@
 import { useState } from 'react';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { BrainSourcesTable, comparePaths, rowId } from '@/components/brain/BrainSourcesTable';
+import {
+  BrainSourcesTable, comparePaths, isSettled, rowId,
+} from '@/components/brain/BrainSourcesTable';
 import type { BrainSourceSummary } from '@/lib/api';
 
 function row(over: Partial<BrainSourceSummary> = {}): BrainSourceSummary {
@@ -342,6 +344,48 @@ describe('BrainSourcesTable — the row being indexed', () => {
     rerender(<Harness rows={rows} indexingItemKey={null} />);
 
     expect(screen.getByTestId('source-status').textContent).toBe('indexed');
+  });
+
+  /**
+   * A short session can now be indexed on purpose, past the gate. The gate's
+   * opinion is not the record of what happened, so a row with a note behind it
+   * must not go on reporting "fewer than 2 prompts" — that reads as a press
+   * that did nothing, which is the bug the force path exists to fix.
+   */
+  it('reports an indexed row as indexed even when the gate would refuse it', () => {
+    render(
+      <Harness
+        rows={[row({
+          itemKey: 'gated',
+          admitted: false,
+          reason: 'fewer than 2 prompts (1)',
+          status: 'indexed',
+          changed: false,
+        })]}
+        indexingItemKey={null}
+      />,
+    );
+
+    expect(screen.getByTestId('source-status').textContent).toBe('indexed');
+  });
+
+  it('still shows the gate reason on a row nothing has indexed', () => {
+    render(
+      <Harness
+        rows={[row({ itemKey: 'gated', admitted: false, reason: 'fewer than 2 prompts (1)' })]}
+        indexingItemKey={null}
+      />,
+    );
+
+    expect(screen.getByTestId('source-status').textContent).toBe('fewer than 2 prompts (1)');
+  });
+
+  /** Indexed and unmoved: pressing again would spend on an identical result. */
+  it('stops offering a forced row once it is indexed', () => {
+    expect(isSettled(row({
+      admitted: false, reason: 'fewer than 2 prompts (1)',
+      status: 'indexed', changed: false,
+    }))).toBe(true);
   });
 
   it('lists projects alphabetically in the filter, with their counts', () => {

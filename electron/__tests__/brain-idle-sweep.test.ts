@@ -310,6 +310,38 @@ describe('brain: bounded sweep', () => {
     expect(brain.queueList(1).map((e) => e.itemKey)).toEqual([SESSION_B]);
   });
 
+  /**
+   * The floor is an age limit on the FILE, not a watermark since the last
+   * sweep, so an item that changed while the app was closed for longer than
+   * the floor was stranded: every later tick re-excluded it on age, and the
+   * Sources table went on reporting it as changed with nothing to act on it.
+   *
+   * The floor's stated job is the first tick after the opt-in — not enqueuing
+   * every transcript ever written. An item already carrying state was admitted
+   * and paid for once; re-reading it because its bytes moved is not that case.
+   */
+  it('re-queues a known item that changed, however old its file is', async () => {
+    const before = service([{ key: SESSION_A, mtimeMs: NOW - 48 * HOUR }]);
+    before.setVaultPath(1, join(dir, 'vault'));
+    await before.indexSource(1, SESSION_A);
+    before.closeAll();
+
+    // Same session, edited — and still older than the floor, which is what an
+    // edit that landed while the app was shut down looks like on the next run.
+    const after = service([{ key: SESSION_A, mtimeMs: NOW - 47 * HOUR }]);
+    after.setVaultPath(1, join(dir, 'vault'));
+    expect(await after.backfill(1, { sinceMs: NOW - 24 * HOUR })).toBe(1);
+    after.closeAll();
+  });
+
+  /** The escape hatch above must not become a hole in the floor itself. */
+  it('still excludes an old item it has never seen', async () => {
+    const brain = service([{ key: SESSION_B, mtimeMs: NOW - 48 * HOUR }]);
+    expect(await brain.backfill(1, { sinceMs: NOW - 24 * HOUR })).toBe(0);
+    expect(admitCalls).toEqual([]);
+    brain.closeAll();
+  });
+
   it('sees everything when called with no floor, which is the button', async () => {
     const brain = service([
       { key: SESSION_A, mtimeMs: NOW - 2 * HOUR },

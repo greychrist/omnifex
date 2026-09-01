@@ -47,6 +47,21 @@ function statusOf(r: BrainSourceSummary): string {
 }
 
 /**
+ * What the Status cell says.
+ *
+ * A row the gate refuses shows the gate's REASON — "fewer than 2 prompts (1)"
+ * says more than "skipped" about what to do next. But that only holds while
+ * nothing has indexed it: a row can now be pushed past the gate deliberately,
+ * and one with a note behind it reporting the reason it was once declined
+ * reads as a press that did nothing. The record of what happened outranks the
+ * gate's standing opinion.
+ */
+export function statusLabel(r: BrainSourceSummary): string {
+  if (r.status === 'indexed' || r.status === 'failed') return statusOf(r);
+  return r.admitted ? statusOf(r) : r.reason;
+}
+
+/**
  * True when indexing this row would do nothing.
  *
  * `indexSource` short-circuits an already-indexed item whose bytes and mtime
@@ -476,7 +491,7 @@ export const BrainSourcesTable: React.FC<BrainSourcesTableProps> = ({
                     }`}
                     title={indexing ? 'Being indexed right now' : r.reason}
                   >
-                    {indexing ? 'indexing…' : r.admitted ? statusOf(r) : r.reason}
+                    {indexing ? 'indexing…' : statusLabel(r)}
                   </td>
                 </tr>
               );

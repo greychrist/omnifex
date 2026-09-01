@@ -178,7 +178,11 @@ describe('BrainSources', () => {
     // A one-row run is still a run: it goes through the same main-process path
     // so it survives the sub-tab switch that used to erase it.
     await waitFor(() => {
-      expect(api.brainIndexSelection).toHaveBeenCalledWith(1, ['sess-a']);
+      // Forced: a press on a ticked row indexes what the unattended gate
+      // would decline, or pressing Index on a short session does nothing and
+      // leaves the row looking untouched.
+      expect(api.brainIndexSelection)
+        .toHaveBeenCalledWith(1, ['sess-a'], { force: true });
     });
     // Refreshing is what turns the row's status from null to indexed. Without
     // it the button looks like it did nothing.
@@ -522,7 +526,7 @@ describe('BrainSources', () => {
     // One call carrying the whole selection: a per-item loop in the renderer is
     // what died with the component.
     await waitFor(() => {
-      expect(api.brainIndexSelection).toHaveBeenCalledWith(1, ['a', 'b']);
+      expect(api.brainIndexSelection).toHaveBeenCalledWith(1, ['a', 'b'], { force: true });
     });
   });
 

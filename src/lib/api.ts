@@ -3448,8 +3448,18 @@ export const api = {
    * Brain tab unmounts the Sources pane on a sub-tab switch, which used to
    * take the run's progress with it.
    */
-  async brainIndexSelection(accountId: number, itemKeys: string[]): Promise<BrainRunResult> {
-    return apiCall<BrainRunResult>('brain_index_selection', { accountId, itemKeys });
+  async brainIndexSelection(
+    accountId: number,
+    itemKeys: string[],
+    opts: { force?: boolean } = {},
+  ): Promise<BrainRunResult> {
+    // A press on a ticked row is deliberate, so it indexes what the unattended
+    // gate would decline — a one-prompt session the user wants kept anyway.
+    return apiCall<BrainRunResult>('brain_index_selection', {
+      accountId,
+      itemKeys,
+      ...(opts.force === true ? { force: true } : {}),
+    });
   },
 
   /**

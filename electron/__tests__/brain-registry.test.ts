@@ -1108,6 +1108,75 @@ describe('translating sources', () => {
     });
   });
 
+  /**
+   * A source the admission gate always refuses — the "fewer than 2 prompts"
+   * shape, which is most of what a user sees sitting un-actioned in Sources.
+   */
+  function rejectedExtractor(accountId: number, itemKey: string): BrainSource {
+    return {
+      ...fakeExtractor(accountId, itemKey),
+      admit: () => ({ admitted: false, reason: 'fewer than 2 prompts (1)' }),
+    };
+  }
+
+  describe('indexing past the admission gate', () => {
+    /**
+     * The gate is a COST policy for unattended indexing, not a verdict on what
+     * the user is allowed to keep. Pressing Index on a short session used to
+     * record a skip and write nothing, so the row stayed exactly as actionable
+     * as before the press — indistinguishable from the button being broken.
+     */
+    it('indexes an item the gate refuses when the caller forces it', async () => {
+      const brain = createBrainService(db, {
+        execGit: stubExec, accounts: accountsStub,
+        extractor: () => Promise.resolve({ entities: [] }),
+        sources: [rejectedExtractor(1, 'short-session')],
+      });
+      brain.setVaultPath(1, join(dir, 'forced'));
+
+      const refused = await brain.indexSource(1, 'short-session');
+      expect(refused).toMatchObject({ skipped: true, reason: 'fewer than 2 prompts (1)' });
+
+      const forced = await brain.indexSource(1, 'short-session', { force: true });
+      expect(forced.skipped).toBe(false);
+      // Settled afterwards, which is what takes it out of the actionable set.
+      expect((await brain.listSources(1))[0]).toMatchObject({
+        status: 'indexed', changed: false,
+      });
+      brain.closeAll();
+    });
+
+    it('carries force through a selection, which is how the button reaches it', async () => {
+      const brain = createBrainService(db, {
+        execGit: stubExec, accounts: accountsStub,
+        extractor: () => Promise.resolve({ entities: [] }),
+        sources: [rejectedExtractor(1, 'short-session')],
+      });
+      brain.setVaultPath(1, join(dir, 'forced-selection'));
+
+      const run = await brain.indexSelection(1, ['short-session'], { force: true });
+      expect(run).toMatchObject({ written: 1, skipped: 0 });
+      brain.closeAll();
+    });
+
+    /**
+     * The gate still governs UNATTENDED work. Forcing is a thing a person does
+     * to one row on purpose; a sweep that ignored the gate would index every
+     * abandoned tab in the user's history and bill them for it.
+     */
+    it('leaves the gate in force for the periodic sweep', async () => {
+      const brain = createBrainService(db, {
+        execGit: stubExec, accounts: accountsStub,
+        extractor: () => Promise.resolve({ entities: [] }),
+        sources: [rejectedExtractor(1, 'short-session')],
+      });
+      brain.setVaultPath(1, join(dir, 'gate-holds'));
+
+      expect(await brain.backfill(1)).toBe(0);
+      brain.closeAll();
+    });
+  });
+
   it('backfills translating and extracting sources together', async () => {
     // Both kinds in one queue: the worker must not care which it claims.
     const brain = createBrainService(db, {
