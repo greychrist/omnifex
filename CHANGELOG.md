@@ -5,6 +5,14 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.151] — 2026-09-01
+
+### Changed
+
+- The Brain's Notes table sizes its columns for the note names rather than splitting the row four ways. Type, Project and Updated hold short, bounded strings, but the table gave each of them a quarter of the width, so a long note name truncated to half its length beside three columns of whitespace. The name column now takes everything the other three do not need.
+- Those three columns can be resized by dragging the divider beside any of them. Each divider moves only itself — widening one column narrows its neighbour rather than shifting the rest of the row — and the widths are remembered. Double-clicking a divider restores the defaults.
+- Narrowing the pane no longer empties the Updated column to spare the others; the columns give up width in proportion to the room each has to spare, so the date you sort by stays readable with a note open.
+
 ## [0.4.150] — 2026-08-31
 
 ### Changed
