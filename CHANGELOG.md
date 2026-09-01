@@ -5,6 +5,16 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.152] — 2026-09-01
+
+### Fixed
+
+- A session you edited while OmniFex was closed could sit in Sources marked "changed" forever, with nothing that would ever re-index it. The periodic sweep's window is an age limit on the file rather than a mark of when it last looked, so an edit older than that window was re-excluded on every pass. The window no longer applies to something the Brain has already indexed once and whose contents have since moved. What it exists for — not sweeping up every transcript you have ever written the first time you turn auto-indexing on — is unchanged.
+- Pressing Index on a short session did nothing. The rule that keeps unattended indexing from spending on one-prompt sessions was also being applied to your own explicit press, so the row was recorded as skipped, no note was written, and it came back looking exactly as it had. You can now index any session by selecting it, however short; the rule still governs automatic indexing, so short sessions are still not picked up on their own.
+- A row indexed that way went on displaying the reason it had once been passed over, instead of saying it was indexed.
+- Closing a second tab while the first was still indexing left the indicator reading "1 of 1", so there was no way to tell whether the second had been registered. It had been — the queue is durable — but nothing said so. The count now grows the moment work is queued.
+- Work queued in the instant an indexing run was finishing could wait up to five minutes for the next sweep to notice it. A run now checks for late arrivals before it stands down.
+
 ## [0.4.151] — 2026-09-01
 
 ### Changed
