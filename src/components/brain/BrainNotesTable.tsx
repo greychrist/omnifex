@@ -3,6 +3,7 @@ import { Search } from 'lucide-react';
 import { api, type BrainNoteMeta, type BrainSearchHit } from '@/lib/api';
 import { Popover } from '@/components/ui/popover';
 import { useDebounce } from '@/hooks/useDebounce';
+import { useColumnWidths, type ResizeSpec } from '@/hooks/useColumnWidths';
 
 /**
  * The vault as a table: name, type, project, dates.
@@ -28,6 +29,28 @@ export interface BrainNotesTableProps {
 }
 
 const SEARCH_DEBOUNCE_MS = 200;
+
+/**
+ * Name carries no width and takes whatever the other three leave.
+ *
+ * The table used to size itself: `Type`, `Project` and `Updated` hold short,
+ * bounded strings, and an auto-layout table still gave them a quarter of the
+ * row each, so a 40-character note title truncated at 20 next to three columns
+ * of whitespace. These are the widths those columns actually need, and every
+ * boundary between them can be dragged from there.
+ *
+ * The widths are sized for the pane WITH a note open — 460px by default, and
+ * as little as 260px — not for the full-width table you get before you click
+ * one. Defaults that only fit the wide case would arrive pre-squeezed the
+ * first time anyone opened a note, which is most of the time this table spends
+ * on screen.
+ */
+type NoteColKey = 'type' | 'project' | 'updated';
+const COL_DEFAULTS: Record<NoteColKey, number> = { type: 88, project: 140, updated: 128 };
+const COL_MIN = 56;
+/** Room Name keeps however the metadata columns are dragged. */
+const NAME_RESERVE = 120;
+const COL_STORAGE_KEY = 'omnifex.brain.notes.columns.v1';
 
 /** The filter bucket for notes that name no project. */
 export const NO_PROJECT = '(no project)';
@@ -79,6 +102,15 @@ export const BrainNotesTable: React.FC<BrainNotesTableProps> = ({
   const [hits, setHits] = useState<BrainSearchHit[] | null>(null);
   const [searchError, setSearchError] = useState<string | null>(null);
   const debounced = useDebounce(query, SEARCH_DEBOUNCE_MS);
+
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const { widths, startResize, reset: resetWidths } = useColumnWidths({
+    storageKey: COL_STORAGE_KEY,
+    defaults: COL_DEFAULTS,
+    min: COL_MIN,
+    reserve: NAME_RESERVE,
+    containerRef: scrollRef,
+  });
 
   /** Discards a slow response for a query the user has already moved past. */
   const searchToken = useRef(0);
@@ -162,10 +194,14 @@ export const BrainNotesTable: React.FC<BrainNotesTableProps> = ({
     setHidden(next);
   }
 
-  function header(key: NoteSortKey, label: string, className = ''): React.ReactElement {
+  /**
+   * A sortable header, optionally with the drag handle for the boundary on its
+   * right edge. `Updated` gets none: its right edge is the table's own.
+   */
+  function header(key: NoteSortKey, label: string, resize?: ResizeSpec<NoteColKey>): React.ReactElement {
     const active = sort.key === key;
     return (
-      <th className={`px-2 py-1.5 text-left font-medium ${className}`}>
+      <th className="relative overflow-hidden px-2 py-1.5 text-left font-medium">
         <button
           type="button"
           onClick={() => { setSort((s) => ({ key, desc: s.key === key ? !s.desc : true })); }}
@@ -174,6 +210,19 @@ export const BrainNotesTable: React.FC<BrainNotesTableProps> = ({
         >
           {label}{active ? (sort.desc ? ' ↓' : ' ↑') : ''}
         </button>
+        {resize !== undefined && (
+          <span
+            role="separator"
+            aria-orientation="vertical"
+            aria-label={`Resize ${label} column`}
+            onMouseDown={(e) => { startResize(e, resize); }}
+            onDoubleClick={resetWidths}
+            // Click is stopped as well as mousedown: a drag that ended without
+            // moving still fires one, and it would land on the sort button.
+            onClick={(e) => { e.stopPropagation(); }}
+            className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize select-none hover:bg-foreground/20 active:bg-foreground/30"
+          />
+        )}
       </th>
     );
   }
@@ -260,15 +309,23 @@ export const BrainNotesTable: React.FC<BrainNotesTableProps> = ({
         <p className="border-b px-3 py-2 text-xs text-destructive">{searchError}</p>
       )}
 
-      <div className="min-h-0 flex-1 overflow-auto bg-card">
-        <table className="w-full text-xs">
+      <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto bg-card">
+        {/* Fixed layout, so the widths below are the widths on screen rather
+            than a hint the browser weighs against its own content guess. */}
+        <table className="w-full table-fixed text-xs">
+          <colgroup>
+            <col data-testid="col-name" />
+            <col data-testid="col-type" style={{ width: widths.type }} />
+            <col data-testid="col-project" style={{ width: widths.project }} />
+            <col data-testid="col-updated" style={{ width: widths.updated }} />
+          </colgroup>
           {/* Opaque and shadowed, so striped rows do not scroll through the
               column names. Same header treatment as the Sources table. */}
           <thead className="sticky top-0 z-10 bg-card text-muted-foreground shadow-[0_1px_0_0_hsl(var(--border))]">
             <tr>
-              {header('name', 'Name')}
-              {header('type', 'Type')}
-              {header('project', 'Project')}
+              {header('name', 'Name', { shrink: 'type' })}
+              {header('type', 'Type', { grow: 'type', shrink: 'project' })}
+              {header('project', 'Project', { grow: 'project', shrink: 'updated' })}
               {header('updated', 'Updated')}
             </tr>
           </thead>
@@ -291,7 +348,7 @@ export const BrainNotesTable: React.FC<BrainNotesTableProps> = ({
                       : 'even:bg-muted/30 hover:bg-muted/60'
                   }`}
                 >
-                  <td className="max-w-0 px-2 py-1.5 align-top leading-tight">
+                  <td className="px-2 py-1.5 align-top leading-tight">
                     <div data-testid="note-title" className="truncate font-medium">{n.title}</div>
                     {/* Only while searching: the snippet is why THIS row is in
                         a narrowed list, and it has nothing to say otherwise. */}
@@ -301,13 +358,13 @@ export const BrainNotesTable: React.FC<BrainNotesTableProps> = ({
                   </td>
                   <td
                     data-testid="note-type"
-                    className="whitespace-nowrap px-2 py-1.5 align-top text-muted-foreground"
+                    className="truncate px-2 py-1.5 align-top text-muted-foreground"
                   >
                     {n.type}
                   </td>
                   <td
                     data-testid="note-project"
-                    className={`max-w-[12rem] truncate px-2 py-1.5 align-top ${
+                    className={`truncate px-2 py-1.5 align-top ${
                       n.project === null ? 'text-muted-foreground/60' : ''
                     }`}
                   >
@@ -317,9 +374,9 @@ export const BrainNotesTable: React.FC<BrainNotesTableProps> = ({
                       cell the Sources table uses for size over cost. Curation
                       touches 20 of 338 notes, so a column of its own would be
                       an em dash 94% of the way down. */}
-                  <td className="whitespace-nowrap px-2 py-1.5 align-top leading-tight tabular-nums">
-                    <div data-testid="note-updated">{n.updated}</div>
-                    <div data-testid="note-curated" className="text-[11px] text-muted-foreground">
+                  <td className="px-2 py-1.5 align-top leading-tight tabular-nums">
+                    <div data-testid="note-updated" className="truncate">{n.updated}</div>
+                    <div data-testid="note-curated" className="truncate text-[11px] text-muted-foreground">
                       {n.curatedAt === null ? '' : `curated ${n.curatedAt}`}
                     </div>
                   </td>

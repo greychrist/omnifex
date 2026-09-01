@@ -197,4 +197,77 @@ describe('BrainNotesTable', () => {
     fireEvent.click(screen.getByRole('button', { name: /hide all/i }));
     expect(screen.getByText(/nothing matches/i)).toBeTruthy();
   });
+
+  /**
+   * Note titles are long and similar — `omnifex-brain-notes-table-sort` and
+   * `omnifex-brain-notes-table-panes` differ in their last word — so a Name
+   * column the browser is free to squeeze truncates away the only part that
+   * tells two rows apart. The metadata columns are sized, Name takes the rest,
+   * and every boundary between them can be dragged.
+   */
+  describe('column widths', () => {
+    beforeEach(() => { window.localStorage.clear(); });
+
+    function colWidth(key: string): string {
+      return (screen.getByTestId(`col-${key}`) as HTMLTableColElement).style.width;
+    }
+
+    function drag(label: RegExp, from: number, to: number): void {
+      fireEvent.mouseDown(screen.getByLabelText(label), { clientX: from });
+      fireEvent.mouseMove(window, { clientX: to });
+      fireEvent.mouseUp(window);
+    }
+
+    it('sizes the metadata columns and lets Name take what is left', () => {
+      renderTable();
+      expect(colWidth('name')).toBe('');
+      expect(colWidth('type')).not.toBe('');
+      expect(colWidth('project')).not.toBe('');
+      expect(colWidth('updated')).not.toBe('');
+    });
+
+    it('widens Name by narrowing Type when their boundary is dragged right', () => {
+      renderTable();
+      const before = parseInt(colWidth('type'), 10);
+      drag(/resize name column/i, 300, 320);
+      expect(colWidth('type')).toBe(`${before - 20}px`);
+    });
+
+    it('moves width between two sized columns without shifting the rest', () => {
+      renderTable();
+      const type = parseInt(colWidth('type'), 10);
+      const project = parseInt(colWidth('project'), 10);
+      const updated = colWidth('updated');
+      drag(/resize type column/i, 400, 430);
+      expect(colWidth('type')).toBe(`${type + 30}px`);
+      expect(colWidth('project')).toBe(`${project - 30}px`);
+      expect(colWidth('updated')).toBe(updated);
+    });
+
+    /** The handle lives inside the header's sort button. A drag that also
+     *  re-sorted the table would make the columns effectively unresizable. */
+    it('does not re-sort when a handle is dragged', () => {
+      renderTable();
+      drag(/resize name column/i, 300, 340);
+      expect(titles()).toEqual(['beta', 'alpha', 'gamma']);
+    });
+
+    it('restores the default widths on a double-click', () => {
+      renderTable();
+      const type = colWidth('type');
+      drag(/resize type column/i, 400, 430);
+      expect(colWidth('type')).not.toBe(type);
+      fireEvent.doubleClick(screen.getByLabelText(/resize type column/i));
+      expect(colWidth('type')).toBe(type);
+    });
+
+    it('remembers dragged widths across a remount', () => {
+      renderTable();
+      drag(/resize type column/i, 400, 430);
+      const type = colWidth('type');
+      cleanup();
+      renderTable();
+      expect(colWidth('type')).toBe(type);
+    });
+  });
 });
