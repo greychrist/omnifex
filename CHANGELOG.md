@@ -5,6 +5,22 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.153] — 2026-09-02
+
+### Added
+
+- Model pricing is now editable in Settings instead of compiled into the app. A model Anthropic releases after your build — or a price that changes on one you already have — can be priced correctly without waiting for a new OmniFex. A row states only what differs, so correcting a single wrong rate is one field, not a restated model, and rates, the Cost Report legend name and the chart colour all live on that one row.
+
+### Fixed
+
+- Fable 5.1 cache reads were billed four times over. It reads at $0.25 per million tokens, the first Claude model that does not follow the standard cache formula, and OmniFex had no way to express that. Cache reads dominate token volume in long sessions, so Fable 5.1 spend was materially overstated in the session cost widget, per-message costs, and the Cost Report.
+- Fable 5.1 and Fable 5 were indistinguishable on the Cost Report — two separate series, both green, both labelled "Fable 5", in the legend, the model table and the model filter. Fable 5 keeps its colour, so existing screenshots stay comparable.
+- Permission-rule documentation was wrong in two places about how deny rules reach Bash. Input redirections (`cmd < secrets.env`) are permission-checked as of Claude Code 2.1.257, and the list of commands whose file arguments are checked grew from 21 to 40. The docs now also say what is still *not* covered, because a 40-command list reads like a boundary and is not one.
+
+### Changed
+
+- Claude Code changelog review watermark moved to 2.1.258.
+
 ## [0.4.152] — 2026-09-01
 
 ### Fixed
