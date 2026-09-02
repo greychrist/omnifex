@@ -17,7 +17,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { api, CLI_REVIEW_REPO_DIR_SETTING_KEY, type ClaudeInstallation } from "@/lib/api";
+import {
+  api,
+  CLI_REVIEW_REPO_DIR_SETTING_KEY,
+  CLI_AUTO_UPDATE_SETTING_KEY,
+  type ClaudeInstallation,
+} from "@/lib/api";
 import {
   CLI_REVIEW_PROMPT_SETTING_KEY,
   DEFAULT_CLI_REVIEW_PROMPT,
@@ -147,6 +152,8 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
   // an OmniFex checkout — which is the normal state; this is an override for
   // when discovery picks the wrong one or finds nothing.
   const [cliReviewRepoDir, setCliReviewRepoDir] = useState('');
+  // Reads `=== 'true'`, not `!== 'false'`: a missing setting must mean off.
+  const [cliAutoUpdate, setCliAutoUpdate] = useState(false);
 
   // The prompt that same launch starts its session with. Empty means "use the
   // shipped default", which is the normal state.
@@ -167,6 +174,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
       const errorRaw = await api.getSetting(NOTIFICATION_SOUND_SETTING_KEYS.error);
       setErrorSound(normalizeNotificationSoundId(errorRaw, DEFAULT_ERROR_SOUND));
       setCliReviewRepoDir((await api.getSetting(CLI_REVIEW_REPO_DIR_SETTING_KEY)) ?? '');
+      setCliAutoUpdate((await api.getSetting(CLI_AUTO_UPDATE_SETTING_KEY)) === 'true');
       setCliReviewPrompt((await api.getSetting(CLI_REVIEW_PROMPT_SETTING_KEY)) ?? '');
     })());
   }, []);
@@ -680,6 +688,31 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
                 })}
               />
             </div>
+          </div>
+
+          {/* Restores the auto-update the terminal gets for free. The CLI's
+              self-updater is part of its interactive REPL, which OmniFex's
+              headless sessions never render, so without this nothing in the
+              app ever moves the binary. Off by default: it mutates a toolchain
+              OmniFex doesn't own. */}
+          <div className="border-t border-border pt-4 mt-2" />
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <Label htmlFor="cli-auto-update">Auto-update Claude Code on launch</Label>
+              <p className="text-caption text-muted-foreground mt-1">
+                Run <code>claude update</code> at startup when a newer release is
+                available. The CLI only self-updates when launched in a terminal,
+                so OmniFex-only use otherwise falls behind.
+              </p>
+            </div>
+            <Switch
+              id="cli-auto-update"
+              checked={cliAutoUpdate}
+              onCheckedChange={fireAndLog('general-settings:checked-change', (checked) => {
+                setCliAutoUpdate(checked);
+                void api.saveSetting(CLI_AUTO_UPDATE_SETTING_KEY, checked ? 'true' : 'false');
+              })}
+            />
           </div>
 
           {/* Where the Updates popover's "Claude Code is ahead of the …

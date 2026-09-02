@@ -74,9 +74,11 @@ import { runFirstTimeDiscovery } from './services/first-run-discovery';
 import { createClaudeBinaryService } from './services/claude-binary';
 import {
   createClaudeCliReviewService,
+  execCliUpdate,
   fetchLatestCliVersion,
   probeCliVersion,
   CLI_REVIEW_REPO_DIR_SETTING_KEY,
+  CLI_AUTO_UPDATE_SETTING_KEY,
 } from './services/claude-cli-review';
 import { createSessionsService } from './services/sessions';
 import { createNotificationsService } from './services/notifications';
@@ -134,7 +136,7 @@ import { listBranches as listGitBranches } from './services/git-branches';
 import { createLimaService } from './services/lima';
 import { createCostHistoryService } from './services/cost/cost-history';
 import { createSessionCostService } from './services/cost/session-cost';
-import { parsePricingOverrides } from '../src/lib/pricing';
+import { createModelPricingService } from './services/model-pricing';
 import { registerIpcHandlers } from './ipc/handlers';
 import { createWindowRouter } from './window-router';
 import { classifyNavigation } from './navigation-policy';
@@ -623,6 +625,19 @@ app.whenReady().then(() => {
       ...(app.isPackaged ? [] : [process.cwd()]),
       ...(await claudeService.listProjects()).map((p) => p.path),
     ],
+    // Claude accounts only. Codex accounts read a single ~/.codex and have no
+    // `claude` toolchain to update, so running the updater under one would
+    // spawn a binary that has nothing to do with them.
+    claudeAccountsFn: () =>
+      accountsService
+        .listAccounts()
+        .filter((a) => a.engine === 'claude')
+        .map((a) => ({ name: a.name, configDir: a.config_dir })),
+    runUpdateFn: (configDir) =>
+      execCliUpdate(
+        claudeBinaryService.getPath() ?? claudeBinaryService.findBestBinary(),
+        configDir,
+      ),
   });
   // Logging must be constructed before sessions so the sessions service can
   // route CLI subprocess stderr into the log store. The predicate reads
@@ -921,10 +936,14 @@ app.whenReady().then(() => {
   const claudeService = createClaudeService(db, accountsService);
   const usageService = createUsageService(accountsService, loggingService);
   const costHistoryService = createCostHistoryService(db);
+  const modelPricingService = createModelPricingService(db);
   const sessionCostService = _sessionCostService = createSessionCostService({
     sendToRenderer,
     costHistory: costHistoryService,
-    getOverrides: () => parsePricingOverrides(db.getSetting('pricing_overrides')),
+    // Read per call, not captured: an edit in Settings > Pricing has to reach
+    // the next priced turn without restarting the app, which is the entire
+    // point of the table existing.
+    getOverrides: () => modelPricingService.toOverrides(),
   });
   // Backfill history from surviving transcripts shortly after startup, then
   // sweep hourly to catch sessions run outside OmniFex (terminal claude-work).
@@ -1250,6 +1269,12 @@ app.whenReady().then(() => {
 
   registerIpcHandlers({
     database: db,
+    modelPricing: {
+      list: () => modelPricingService.list(),
+      upsert: (input: any) => modelPricingService.upsert(input),
+      remove: (id: number) => modelPricingService.remove(id),
+      shipped: () => modelPricingService.shipped(),
+    },
     brain: brainService,
     brainMcp: {
       isRegistered: (configDir) => brainMcpRegistration.isRegistered(configDir),
@@ -1476,6 +1501,7 @@ app.whenReady().then(() => {
       setPath: (p: string) => claudeBinaryService.setPath(p),
       listInstallations: () => claudeBinaryService.listInstallations(),
       reviewStatus: () => claudeCliReviewService.getStatus(),
+      runUpdate: () => claudeCliReviewService.runUpdate(),
     },
     // MCP adapter — service methods match handler interface names exactly
     mcp: {
@@ -1765,6 +1791,29 @@ app.whenReady().then(() => {
   broadcastInFlight();
 
   installAppMenu();
+
+  // Opt-in: restore the auto-update a terminal user gets for free. The CLI's
+  // self-updater lives in its Ink REPL, which OmniFex's headless sessions never
+  // render, so nothing here moves the binary otherwise.
+  //
+  // Unawaited, and deliberately so: this downloads ~200MB and must never sit
+  // between startup and the window. Same posture as the Brain — auxiliary work
+  // may not block the UI or break a launch. Errors are logged, never surfaced;
+  // the user did not ask for this run, so it has nowhere to report to.
+  if (db.getSetting(CLI_AUTO_UPDATE_SETTING_KEY) === 'true') {
+    void (async () => {
+      const status = await claudeCliReviewService.getStatus();
+      // Gated on an upgrade actually being available so a launch with no new
+      // release costs one 56-byte dist-tags fetch, not a `claude update` spawn
+      // per account contending on the CLI's update lock.
+      if (!status.upgrade_available) return;
+      const result = await claudeCliReviewService.runUpdate();
+      console.log(
+        `[cli-auto-update] ${result.from ?? '?'} -> ${result.to ?? '?'}`,
+        result.accounts,
+      );
+    })().catch((err: unknown) => { console.error('[cli-auto-update]', err); });
+  }
 
   // Create the window AFTER all IPC handlers are registered so the renderer
   // cannot fire calls before the main process is ready to handle them.

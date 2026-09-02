@@ -13,7 +13,7 @@ import {
 } from 'recharts';
 import type { CostHistoryPeriodModel } from '@/lib/api';
 import {
-  compareModelsBySlot,
+  bySlot,
   modelColor,
   modelLabel,
   type ChartMode,
@@ -26,11 +26,16 @@ import {
   type StackedBucket,
 } from '@/lib/costChartData';
 import { formatPeriodTick, tickInterval, weekBoundaries } from '@/lib/costChartAxis';
+import type { ModelPricingInput } from '@/lib/pricing';
 import { fmtUsd } from '@/lib/costReportFilters';
 
 interface CostChartProps {
   rows: CostHistoryPeriodModel[];
   mode: ChartMode;
+  /** The `model_pricing` delta layer, so a model released after this build
+   *  gets its configured legend name and colour instead of a raw id and a
+   *  hashed hue. Undefined means "use what shipped". */
+  pricing?: readonly ModelPricingInput[];
 }
 
 /** Segment separation is a gap in the surface colour, not a border drawn round
@@ -84,7 +89,7 @@ const RULE: Record<ChartMode, string> = {
  * stay comparable. Series are sorted by slot too, so stack order and legend
  * order agree.
  */
-export function CostChart({ rows, mode }: CostChartProps) {
+export function CostChart({ rows, mode, pricing }: CostChartProps) {
   const { data, models } = useMemo(() => toStackedSeries(rows), [rows]);
   const periods = useMemo(() => data.map((d) => d.period), [data]);
 
@@ -137,14 +142,14 @@ export function CostChart({ rows, mode }: CostChartProps) {
               fontSize: 11,
             }}
             labelStyle={{ color: axis }}
-            formatter={(value, name) => [fmtUsd(Number(value ?? 0)), modelLabel(String(name))]}
+            formatter={(value, name) => [fmtUsd(Number(value ?? 0)), modelLabel(String(name), pricing)]}
           />
           {models.map((m) => (
             <Bar
               key={m}
               dataKey={m}
               stackId="cost"
-              fill={modelColor(m, mode)}
+              fill={modelColor(m, mode, pricing)}
               stroke={plot}
               strokeWidth={SEAM}
               isAnimationActive={false}
@@ -248,17 +253,19 @@ function StackedSegment({ models, ...p }: SegmentProps & { models: string[] }) {
 
 /** Legend for the chart — identity is never colour-alone, so every segment is
  *  also named here and in the by-model table below it. */
-export function CostChartLegend({ models, mode }: { models: string[]; mode: ChartMode }) {
+export function CostChartLegend(
+  { models, mode, pricing }: { models: string[]; mode: ChartMode; pricing?: readonly ModelPricingInput[] },
+) {
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-      {[...models].sort(compareModelsBySlot).map((m) => (
+      {[...models].sort(bySlot(pricing)).map((m) => (
         <span key={m} className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
           <span
             className="h-2.5 w-2.5 rounded-sm"
-            style={{ background: modelColor(m, mode) }}
+            style={{ background: modelColor(m, mode, pricing) }}
             aria-hidden
           />
-          {modelLabel(m)}
+          {modelLabel(m, pricing)}
         </span>
       ))}
     </div>

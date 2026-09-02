@@ -59,6 +59,9 @@ const { calls, record, failing, facetProjects, recordFresh } = vi.hoisted(() => 
 
 vi.mock('@/lib/api', () => ({
   api: {
+    // The model_pricing delta layer. Empty here — these tests assert against
+    // the shipped labels and colours, so an override would only obscure them.
+    modelPricingList: vi.fn(async () => []),
     sessionCostHistoryByModel: record('history', [
       { period: '2026-08-01', model: 'claude-opus-5', cost_usd: 800, request_count: 5000, session_count: 20, input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0, input_usd: 0, output_usd: 0, cache_read_usd: 0, cache_write_usd: 0, is_estimated: 0 },
       { period: '2026-08-02', model: 'claude-sonnet-5', cost_usd: 100, request_count: 100, session_count: 5, input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0, input_usd: 0, output_usd: 0, cache_read_usd: 0, cache_write_usd: 0, is_estimated: 0 },

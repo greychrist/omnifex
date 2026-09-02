@@ -128,6 +128,52 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
     setCliReview(await api.getClaudeCliReviewStatus());
   }, []);
 
+  // --- Forced CLI update ---
+  // The CLI's self-updater is a component of its Ink REPL, so it only ever
+  // fires when the binary is launched interactively. OmniFex's default session
+  // mode is headless stream-json, which renders no REPL — releases pile up and
+  // nothing in the app moves them. This button is the manual lever.
+  type CliUpdateState =
+    | { status: 'idle' }
+    | { status: 'running' }
+    | { status: 'done'; message: string }
+    | { status: 'error'; message: string };
+  const [cliUpdate, setCliUpdate] = useState<CliUpdateState>({ status: 'idle' });
+
+  const runCliUpdate = useCallback(async () => {
+    setCliUpdate({ status: 'running' });
+    try {
+      const result = await api.updateClaudeCli();
+      // `upgraded` comes from re-probing the binary, not from the CLI's exit
+      // code: `claude update` exits 0 both when it is already current and when
+      // a managed-settings version pin refuses the upgrade. Reporting success
+      // off a clean exit would tell the user it worked in the one case where
+      // they most need to know it didn't.
+      const failed = result.accounts.filter((a) => !a.ok);
+      if (failed.length > 0) {
+        setCliUpdate({
+          status: 'error',
+          message: failed.map((a) => `${a.account}: ${a.message}`).join('\n'),
+        });
+      } else {
+        setCliUpdate({
+          status: 'done',
+          message: result.upgraded
+            ? `Updated to ${result.to ?? 'a newer build'}.`
+            : `No change — still ${result.to ?? 'the installed build'}.`,
+        });
+      }
+      // Re-read so the row reflects the binary now on disk, which also
+      // withdraws this button once the upgrade has actually landed.
+      await checkCliReview();
+    } catch (err) {
+      setCliUpdate({
+        status: 'error',
+        message: (err as Error)?.message || 'Update failed.',
+      });
+    }
+  }, [checkCliReview]);
+
   // One-click refresh for the upgrade-check button. Checks both the app
   // release and the CLI watermark — one button, one answer.
   const checkEverything = useCallback(() => {
@@ -608,6 +654,55 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
                         ? `${cliReview.installed_version ?? 'not found'} → ${cliReview.latest_version} available`
                         : (cliReview.installed_version ?? 'not found')}
                     </span>
+                  </div>
+                )}
+                {/* Forcing the update. Gated on `latest_version` as well as
+                    `upgrade_available` so an unreachable registry — which
+                    reports "unknown", never "up to date" — can't offer an
+                    upgrade to a target we don't know. */}
+                {cliReview?.upgrade_available && cliReview.latest_version && (
+                  <button
+                    type="button"
+                    data-cli-update-run
+                    onClick={() => { void runCliUpdate(); }}
+                    disabled={cliUpdate.status === 'running'}
+                    className={cn(
+                      'flex w-full items-center justify-center gap-1.5 rounded-md px-2 py-1.5',
+                      'text-[12px] font-medium transition-colors app-no-drag',
+                      'bg-amber-500/10 text-amber-500 hover:bg-amber-500/20',
+                      'disabled:opacity-60 disabled:cursor-not-allowed',
+                    )}
+                  >
+                    {cliUpdate.status === 'running' ? (
+                      <>
+                        <Loader2 size={13} className="animate-spin" />
+                        <span>Updating…</span>
+                      </>
+                    ) : (
+                      <span>Update to {cliReview.latest_version} →</span>
+                    )}
+                  </button>
+                )}
+                {/* Result line. Lives outside the button's own gate because a
+                    successful upgrade withdraws the button — the outcome has
+                    to outlive the control that caused it. `whitespace-pre-line`
+                    because a multi-account failure is one line per account. */}
+                {(cliUpdate.status === 'done' || cliUpdate.status === 'error') && (
+                  <div
+                    data-cli-update-result
+                    className={cn(
+                      'rounded-md px-2 py-1.5 text-[12px] whitespace-pre-line',
+                      cliUpdate.status === 'error'
+                        ? 'bg-red-500/10 text-red-400'
+                        : 'bg-muted/60 text-muted-foreground',
+                    )}
+                  >
+                    {cliUpdate.message}
+                    {cliUpdate.status === 'done' && (
+                      <span className="block mt-1 opacity-70">
+                        Running sessions keep their current version.
+                      </span>
+                    )}
                   </div>
                 )}
                 {/* The warning IS the action: clicking it opens a session in

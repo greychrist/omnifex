@@ -66,7 +66,7 @@ import {
   POST_COMPACT_PROMPT_SETTING_KEY,
   resolvePostCompactPrompt,
 } from '@/lib/postCompactPrompt';
-import { parsePricingOverrides, type PricingOverrides } from '@/lib/pricing';
+import type { ModelPricingInput } from '@/lib/pricing';
 import { runStreamEffect } from '@/lib/sessionStreamEffects';
 import { appendInflightDelta } from '@/lib/inflightCoalescer';
 import { maybeAutoGenerateSummaryOnLeave } from "@/lib/sessionSummaryGate";
@@ -808,16 +808,22 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   // — they're read inside the ctx literal passed to reduceSessionStreamMessage
   // per-message and must never trigger a re-render or effect re-run.
   const costSeenKeysRef = useRef<Set<string>>(new Set());
-  const pricingOverridesRef = useRef<PricingOverrides | undefined>(undefined);
+  const pricingOverridesRef = useRef<readonly ModelPricingInput[] | undefined>(undefined);
 
-  // Load pricing_overrides once per mount. Empty dep array + ref-only writes
-  // (no setState) — this must never become a render-loop trigger like the
-  // TabContent inline-closure bug (see project memory).
+  // Load the model_pricing delta layer once per mount. Empty dep array +
+  // ref-only writes (no setState) — this must never become a render-loop
+  // trigger like the TabContent inline-closure bug (see project memory).
+  //
+  // Once per mount is deliberate: a pricing edit reaches an already-open
+  // session on its next mount, not mid-stream. The main process re-reads the
+  // table per priced turn, so the persisted cost is right either way; this ref
+  // only backs the live per-message footer.
   useEffect(() => {
     void api
-      .getSetting('pricing_overrides')
-      .then((raw) => {
-        pricingOverridesRef.current = parsePricingOverrides(raw);
+      .modelPricingList()
+      .then((rows) => {
+        // The rows ARE the layer the resolver takes — nothing to convert.
+        pricingOverridesRef.current = rows.length > 0 ? rows : undefined;
       })
       .catch(() => {});
   }, []);

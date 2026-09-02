@@ -11,7 +11,7 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import { encodeProjectId } from '../project-paths';
-import type { PricingOverrides } from '../../../src/lib/pricing';
+import type { ModelPricingInput } from '../../../src/lib/pricing';
 import { computeSessionCost, type SessionCostSnapshot } from './session-cost-core';
 import {
   collectSubagentFiles,
@@ -37,7 +37,7 @@ export interface SessionCostService {
 interface SessionCostDeps {
   sendToRenderer: (channel: string, payload: unknown) => void;
   costHistory: CostHistoryService | null;
-  getOverrides: () => PricingOverrides | undefined;
+  getOverrides: () => readonly ModelPricingInput[] | undefined;
   fs?: CostFs;
   stat?: (p: string) => { mtimeMs: number; size: number } | null;
   pollMs?: number;

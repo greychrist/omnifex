@@ -3,7 +3,7 @@ import {
   resolveRates,
   computeMessageCost,
   splitCacheWriteTokens,
-  parsePricingOverrides,
+  parseLegacyPricingOverrides,
 } from '../../src/lib/pricing';
 
 const M = 1_000_000;
@@ -50,19 +50,19 @@ describe('resolveRates', () => {
     expect(r.rates.input).toBeCloseTo(3 / M, 12);
   });
 
-  it('overrides apply per-MTok, longest pattern wins, and clear estimated', () => {
-    const overrides = {
-      opus: [{ from: '1970-01-01', input: 99 }],
-      'opus-4-8': [{ from: '1970-01-01', input: 4, output: 20 }],
-    };
-    const r = resolveRates('claude-opus-4-8', overrides);
+  it('user rows apply per-MTok, longest pattern wins, and clear estimated', () => {
+    const rows = [
+      { pattern: 'opus', effectiveFrom: '1970-01-01', inputPerM: 99 },
+      { pattern: 'opus-4-8', effectiveFrom: '1970-01-01', inputPerM: 4, outputPerM: 20 },
+    ];
+    const r = resolveRates('claude-opus-4-8', rows);
     expect(r.rates.input).toBeCloseTo(4 / M, 12);
     expect(r.rates.output).toBeCloseTo(20 / M, 12);
-    // cache rates re-derive from overridden input
+    // cache rates re-derive from the overridden input
     expect(r.rates.cacheWrite5m).toBeCloseTo((4 / M) * 1.25, 12);
-    const unknown = resolveRates('claude-newthing-9', {
-      newthing: [{ from: '1970-01-01', input: 7, output: 30 }],
-    });
+    const unknown = resolveRates('claude-newthing-9', [
+      { pattern: 'newthing', effectiveFrom: '1970-01-01', inputPerM: 7, outputPerM: 30 },
+    ]);
     expect(unknown.estimated).toBe(false);
     expect(unknown.rates.input).toBeCloseTo(7 / M, 12);
   });
@@ -106,40 +106,51 @@ describe('splitCacheWriteTokens', () => {
   });
 });
 
-describe('parsePricingOverrides', () => {
+/**
+ * The legacy reader exists only for migration 25, which folds a retired
+ * `pricing_overrides` blob into `model_pricing` and deletes it. It returns
+ * pricing rows like everything else — there is no second shape.
+ */
+describe('parseLegacyPricingOverrides', () => {
   it('parses valid JSON, rejects garbage', () => {
-    // The flat legacy shape normalises to one always-applicable period.
-    expect(parsePricingOverrides('{"opus-4-8":{"input":4}}')).toEqual({
-      'opus-4-8': [{ from: '1970-01-01', input: 4 }],
-    });
-    expect(parsePricingOverrides('not json')).toBeUndefined();
-    expect(parsePricingOverrides(null)).toBeUndefined();
-    expect(parsePricingOverrides('[1,2]')).toBeUndefined();
+    // The flat legacy shape normalises to one always-applicable row.
+    expect(parseLegacyPricingOverrides('{"opus-4-8":{"input":4}}')).toEqual([
+      { pattern: 'opus-4-8', effectiveFrom: '1970-01-01', inputPerM: 4 },
+    ]);
+    expect(parseLegacyPricingOverrides('not json')).toBeUndefined();
+    expect(parseLegacyPricingOverrides(null)).toBeUndefined();
+    expect(parseLegacyPricingOverrides('[1,2]')).toBeUndefined();
   });
 
-  it('drops a string value for a known field, leaving the entry empty and dropped', () => {
-    expect(parsePricingOverrides('{"opus":{"input":"5"}}')).toEqual({});
+  it('drops a string value for a known field, leaving the row empty and dropped', () => {
+    expect(parseLegacyPricingOverrides('{"opus":{"input":"5"}}')).toEqual([]);
   });
 
   it('drops non-finite numbers (Infinity via numeric overflow)', () => {
-    expect(parsePricingOverrides('{"opus":{"input":1e999}}')).toEqual({});
+    expect(parseLegacyPricingOverrides('{"opus":{"input":1e999}}')).toEqual([]);
   });
 
-  it('keeps valid fields alongside dropped ones in the same entry', () => {
-    expect(parsePricingOverrides('{"opus":{"input":5,"output":"bad","cacheRead":1e999}}')).toEqual({
-      opus: [{ from: '1970-01-01', input: 5 }],
-    });
+  it('keeps valid fields alongside dropped ones in the same row', () => {
+    expect(parseLegacyPricingOverrides('{"opus":{"input":5,"output":"bad","cacheRead":1e999}}')).toEqual([
+      { pattern: 'opus', effectiveFrom: '1970-01-01', inputPerM: 5 },
+    ]);
   });
 
   it('drops a non-object entry entirely while keeping valid siblings', () => {
-    expect(parsePricingOverrides('{"opus":5,"sonnet":{"input":3}}')).toEqual({
-      sonnet: [{ from: '1970-01-01', input: 3 }],
-    });
+    expect(parseLegacyPricingOverrides('{"opus":5,"sonnet":{"input":3}}')).toEqual([
+      { pattern: 'sonnet', effectiveFrom: '1970-01-01', inputPerM: 3 },
+    ]);
   });
 
   it('drops unknown fields even when numeric', () => {
-    expect(parsePricingOverrides('{"opus":{"input":5,"bogus":1}}')).toEqual({
-      opus: [{ from: '1970-01-01', input: 5 }],
-    });
+    expect(parseLegacyPricingOverrides('{"opus":{"input":5,"bogus":1}}')).toEqual([
+      { pattern: 'opus', effectiveFrom: '1970-01-01', inputPerM: 5 },
+    ]);
+  });
+
+  it('ignores fields a blob could never have carried', () => {
+    // Fast rates and display metadata arrived with the table. Accepting them
+    // here would be validating a shape that cannot occur.
+    expect(parseLegacyPricingOverrides('{"opus":{"label":"Opus","colorSlot":1}}')).toEqual([]);
   });
 });

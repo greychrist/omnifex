@@ -10,7 +10,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Database } from '../database';
-import { parsePricingOverrides } from '../../../src/lib/pricing';
+import { createModelPricingService } from '../model-pricing';
+import type { ModelPricingInput } from '../../../src/lib/pricing';
 import { computeSessionCost, type SessionCostDailyRow } from './session-cost-core';
 import {
   INTERNAL_KINDS,
@@ -600,7 +601,7 @@ export function createCostHistoryService(db: Database, fsDeps: CostFs = nodeCost
   }
 
   function backfill(accounts: AccountLike[], opts?: BackfillOptions): { sessionsScanned: number } {
-    const overrides = parsePricingOverrides(db.getSetting('pricing_overrides'));
+    const overrides = createModelPricingService(db).toOverrides();
     let sessionsScanned = 0;
     for (const account of accounts) {
       const projectsDir = path.join(account.config_dir, 'projects');
@@ -660,7 +661,7 @@ export function createCostHistoryService(db: Database, fsDeps: CostFs = nodeCost
    * guessed label: money attributed to something we made up is worse than
    * money we can see we missed.
    */
-  function backfillArchive(root: string, overrides: ReturnType<typeof parsePricingOverrides>): number {
+  function backfillArchive(root: string, overrides: readonly ModelPricingInput[] | undefined): number {
     let scanned = 0;
     for (const accountEntry of fsDeps.listDir(root)) {
       if (!accountEntry.isDirectory) continue;

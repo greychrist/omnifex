@@ -5,7 +5,9 @@ import {
   modelColor,
   modelLabel,
   compareModelsBySlot,
+  bySlot,
 } from '../costChartPalette';
+import { SHIPPED_PRICING, type ModelPricingInput } from '../pricing';
 
 /**
  * Colour follows the ENTITY, never its rank. If a filter that removes one
@@ -128,5 +130,93 @@ describe('palette safety properties', () => {
     expect(modelColor('claude-opus-4-8', 'dark')).toBe(CATEGORICAL_DARK[0]); // red
     expect(modelColor('claude-opus-5', 'dark')).toBe(CATEGORICAL_DARK[1]);   // blue
     expect(modelColor('claude-fable-5', 'dark')).toBe(CATEGORICAL_DARK[2]);  // green
+  });
+});
+
+describe('Fable 5.1 vs Fable 5', () => {
+  // `fable-5` is a substring of `claude-fable-5-1`, so before this was fixed
+  // both models matched the same MODEL_SLOT row: two separate Cost Report
+  // series, both painted green and both labelled "Fable 5" — indistinguishable
+  // in the legend, the table and the model filter.
+  it('labels Fable 5.1 distinctly from Fable 5', () => {
+    expect(modelLabel('claude-fable-5-1')).toBe('Fable 5.1');
+    expect(modelLabel('claude-fable-5')).toBe('Fable 5');
+  });
+
+  it('gives Fable 5.1 its own colour so the two series are tellable apart', () => {
+    expect(modelColor('claude-fable-5-1', 'light')).not.toBe(modelColor('claude-fable-5', 'light'));
+    expect(modelColor('claude-fable-5-1', 'dark')).not.toBe(modelColor('claude-fable-5', 'dark'));
+  });
+
+  it('orders them adjacently and totally', () => {
+    const sorted = ['claude-fable-5', 'claude-fable-5-1'].sort(compareModelsBySlot);
+    expect(sorted).toHaveLength(2);
+    expect(compareModelsBySlot('claude-fable-5-1', 'claude-fable-5')).not.toBe(0);
+  });
+});
+
+/**
+ * The Cost Report must be able to name and colour a model that shipped after
+ * this build. Display metadata rides the same override table as the rates, so
+ * adding a model is one row in Settings > Pricing, not a release.
+ */
+describe('display metadata from the pricing table', () => {
+  const table: ModelPricingInput[] = [
+    { pattern: 'brandnew-9', effectiveFrom: '1970-01-01', label: 'Brand New 9', colorSlot: 5 },
+  ];
+
+  it('labels a model the shipped table has never heard of', () => {
+    expect(modelLabel('claude-brandnew-9', table)).toBe('Brand New 9');
+    // Without the table it degrades to the raw id, as before.
+    expect(modelLabel('claude-brandnew-9')).toBe('claude-brandnew-9');
+  });
+
+  it('colours it from the requested slot rather than the stable hash', () => {
+    expect(modelColor('claude-brandnew-9', 'light', table)).toBe(CATEGORICAL_LIGHT[5]);
+    expect(modelColor('claude-brandnew-9', 'dark', table)).toBe(CATEGORICAL_DARK[5]);
+  });
+
+  it('lets a row relabel a model the shipped table already knows', () => {
+    const relabel: ModelPricingInput[] = [
+      { pattern: 'opus-5', effectiveFrom: '1970-01-01', label: 'Opus 5 (prod)' },
+    ];
+    expect(modelLabel('claude-opus-5', relabel)).toBe('Opus 5 (prod)');
+    // A row that sets no label leaves the shipped one alone.
+    const rateOnly: ModelPricingInput[] = [
+      { pattern: 'opus-5', effectiveFrom: '1970-01-01', inputPerM: 4 },
+    ];
+    expect(modelLabel('claude-opus-5', rateOnly)).toBe('Opus 5');
+  });
+
+  it('prefers the longest matching pattern, as the rate layer does', () => {
+    const both: ModelPricingInput[] = [
+      { pattern: 'fable', effectiveFrom: '1970-01-01', label: 'Any Fable' },
+      { pattern: 'fable-5-1', effectiveFrom: '1970-01-01', label: 'Fable 5.1 (pinned)' },
+    ];
+    expect(modelLabel('claude-fable-5-1', both)).toBe('Fable 5.1 (pinned)');
+    expect(modelLabel('claude-fable-5', both)).toBe('Any Fable');
+  });
+
+  it('sorts by the overridden slot so legend, stack and table still agree', () => {
+    const sorted = ['claude-brandnew-9', 'claude-opus-4-8'].sort(bySlot(table));
+    // opus-4-8 is slot 0, brandnew-9 is slot 5.
+    expect(sorted[0]).toBe('claude-opus-4-8');
+  });
+
+  it('keeps <synthetic> neutral even if a row tries to colour it', () => {
+    const t: ModelPricingInput[] = [
+      { pattern: '<synthetic>', effectiveFrom: '1970-01-01', colorSlot: 0 },
+    ];
+    expect(CATEGORICAL_LIGHT).not.toContain(modelColor('<synthetic>', 'light', t));
+  });
+
+  it('every shipped colorSlot is a real index into the palette', () => {
+    // The shipped rows are the only slots not validated on the way in.
+    for (const row of SHIPPED_PRICING) {
+      if (row.colorSlot == null) continue;
+      expect(Number.isInteger(row.colorSlot)).toBe(true);
+      expect(row.colorSlot).toBeGreaterThanOrEqual(0);
+      expect(row.colorSlot).toBeLessThan(CATEGORICAL_LIGHT.length);
+    }
   });
 });

@@ -133,6 +133,12 @@ export const INVOKE_CHANNELS: readonly string[] = [
   'session_cost_totals',
   'session_cost_history_by_model',
 
+  // Model pricing (user-editable rate + display table)
+  'model_pricing_list',
+  'model_pricing_shipped',
+  'model_pricing_upsert',
+  'model_pricing_delete',
+
   // Usage
   'get_usage_stats',
   'get_usage_by_date_range',
@@ -166,6 +172,10 @@ export const INVOKE_CHANNELS: readonly string[] = [
   // reviewed at — drives the "Claude Code moved on" flag on the Updates
   // button.
   'claude_cli_review_status',
+  // Drive the CLI's own `claude update` for every Claude account. The CLI
+  // self-updates only from inside its Ink REPL, which OmniFex's headless
+  // sessions never render, so this is the only way an OmniFex-only user moves.
+  'claude_cli_update',
 
   // MCP
   'mcp_add',

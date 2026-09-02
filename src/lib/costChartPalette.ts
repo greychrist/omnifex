@@ -1,3 +1,5 @@
+import { resolvePricing, type ModelPricingInput } from './pricing';
+
 // Cost Report chart palette — fixed model → colour, never assigned by rank.
 //
 // Hues are the dataviz categorical set, re-ordered to lead with red / blue /
@@ -12,7 +14,8 @@
 // red→blue→green and not blue→green→red, and it is not something eyeballing
 // would have caught.
 //
-// Model→slot assignment is unchanged from `ai-cost-report.py`'s MODEL_SLOT, so
+// Model→slot assignment is unchanged from `ai-cost-report.py`'s MODEL_SLOT (the
+// slots now live on the `SHIPPED_PRICING` rows in `pricing.ts`), so
 // the three models that dominate real spend (opus-4-8, opus-5, fable-5) take
 // the three leading hues. NOTE: the previous order was chosen to match the
 // Anthropic console's own model colours so the two read side by side. That
@@ -52,28 +55,26 @@ export const CATEGORICAL_DARK = [
  *  series hue would imply they are spend worth comparing. */
 const NEUTRAL: Record<ChartMode, string> = { light: '#898781', dark: '#898781' };
 
-/** Longest pattern first, so `opus-4-8` cannot be swallowed by `opus`.
+/**
+ * Display metadata for a model, resolved through the SAME table as its rates.
  *
- *  Slots are indices into the arrays above, so re-colouring the palette does
- *  not move a model relative to its peers — only the hue each slot holds
- *  changes. With the current order that puts opus-4-8 on red, opus-5 on blue
- *  and fable-5 on green: the three that carry essentially all real spend. */
-const MODEL_SLOT: Array<{ pattern: string; slot: number; label: string }> = [
-  { pattern: 'opus-4-8', slot: 0, label: 'Opus 4.8' },
-  { pattern: 'opus-4-7', slot: 6, label: 'Opus 4.7' },
-  { pattern: 'opus-4-6', slot: 6, label: 'Opus 4.6' },
-  { pattern: 'opus-4-5', slot: 6, label: 'Opus 4.5' },
-  { pattern: 'opus-5', slot: 1, label: 'Opus 5' },
-  { pattern: 'fable-5', slot: 2, label: 'Fable 5' },
-  { pattern: 'mythos-5', slot: 7, label: 'Mythos 5' },
-  { pattern: 'sonnet-4-6', slot: 5, label: 'Sonnet 4.6' },
-  { pattern: 'sonnet-5', slot: 3, label: 'Sonnet 5' },
-  { pattern: 'haiku-4-5', slot: 4, label: 'Haiku 4.5' },
-];
-
-function entryFor(model: string): (typeof MODEL_SLOT)[number] | undefined {
-  const m = (model || '').toLowerCase();
-  return MODEL_SLOT.find((e) => m.includes(e.pattern));
+ * There is no second model list here. A model's legend name and colour live on
+ * its `SHIPPED_PRICING` row next to its price, and a user's `model_pricing`
+ * row overrides both through one resolver — so naming a new model on the chart
+ * is the same one row that prices it, not a parallel edit in a second file
+ * that silently drifts.
+ *
+ * Fields resolve independently: a row that sets only a rate keeps the shipped
+ * label, and a row that sets only a label keeps the shipped colour.
+ */
+function displayFor(
+  model: string,
+  userRows?: readonly ModelPricingInput[] | null,
+): { slot?: number; label?: string } {
+  // Colours must not shift with the row date being rendered, or a chart would
+  // repaint itself mid-axis. Display metadata always resolves at today.
+  const { row } = resolvePricing(model, new Date().toISOString().slice(0, 10), userRows);
+  return { slot: row.colorSlot, label: row.label };
 }
 
 /** Stable string hash, so an unmapped model keeps one colour across renders
@@ -86,11 +87,17 @@ function hashSlot(model: string): number {
   return Math.abs(h) % CATEGORICAL_LIGHT.length;
 }
 
-export function modelColor(model: string, mode: ChartMode): string {
+export function modelColor(
+  model: string,
+  mode: ChartMode,
+  userRows?: readonly ModelPricingInput[] | null,
+): string {
+  // Checked before the table, so no row can promote bookkeeping to a series
+  // hue and make `<synthetic>` read as spend worth comparing.
   if ((model || '').toLowerCase().includes('synthetic')) return NEUTRAL[mode];
   const slots = mode === 'dark' ? CATEGORICAL_DARK : CATEGORICAL_LIGHT;
-  const entry = entryFor(model);
-  return slots[entry ? entry.slot : hashSlot(model)];
+  const { slot } = displayFor(model, userRows);
+  return slots[slot ?? hashSlot(model)];
 }
 
 /**
@@ -99,18 +106,28 @@ export function modelColor(model: string, mode: ChartMode): string {
  * alphabetically, which keeps the order total (a partial order would let two
  * renders of the same data disagree).
  */
-export function compareModelsBySlot(a: string, b: string): number {
-  const ea = entryFor(a);
-  const eb = entryFor(b);
-  if (ea && eb) return ea.slot - eb.slot || a.localeCompare(b);
-  if (ea) return -1;
-  if (eb) return 1;
-  return a.localeCompare(b);
+export function bySlot(
+  userRows?: readonly ModelPricingInput[] | null,
+): (a: string, b: string) => number {
+  return (a, b) => {
+    const sa = displayFor(a, userRows).slot;
+    const sb = displayFor(b, userRows).slot;
+    if (sa != null && sb != null) return sa - sb || a.localeCompare(b);
+    if (sa != null) return -1;
+    if (sb != null) return 1;
+    return a.localeCompare(b);
+  };
 }
+
+/** Table-free comparator, for the callers that have no pricing table to hand. */
+export const compareModelsBySlot = bySlot();
 
 /** Human label for a legend. Model ids carry a date suffix that makes a
  *  legend unreadable; an unrecognised id passes through rather than being
  *  guessed at. */
-export function modelLabel(model: string): string {
-  return entryFor(model)?.label ?? model;
+export function modelLabel(
+  model: string,
+  userRows?: readonly ModelPricingInput[] | null,
+): string {
+  return displayFor(model, userRows).label ?? model;
 }

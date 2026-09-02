@@ -1,6 +1,7 @@
-import { execSync } from 'node:child_process';
+import { execFile, execSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { buildClaudeEnv } from './util/claude-env';
 
 /**
  * Claude Code changelog watermark.
@@ -28,6 +29,116 @@ import * as path from 'node:path';
  * Bump this ONLY as part of a real review pass — read every entry between the
  * old value and the new one, and file or fix whatever they imply. Bumping it
  * to silence the badge throws away the only drift signal we have.
+ *
+ * Last review: 2.1.252 -> 2.1.258 on 2026-09-01. Findings:
+ *
+ *  Changelog coverage: 2.1.253, 2.1.254, 2.1.255 and 2.1.256 have NO
+ *  changelog entries — the file jumps 2.1.257 -> 2.1.252. 2.1.255
+ *  demonstrably shipped (2.1.258 fixes "a regression introduced in 2.1.255"),
+ *  so this is a real gap, recorded rather than skipped. Real content is
+ *  2.1.257 (~120 entries) plus 2.1.258 (2 lines). Both the 2.1.252 and
+ *  2.1.258 binaries were installed under ~/.local/share/claude/versions, so
+ *  these findings are a two-version diff, not an inference from the prose.
+ *
+ *  Wire-shape diff first: `subtype:"…"` goes 112 -> 113 with NOTHING removed.
+ *  The single addition is `update_settings`. control_request /
+ *  control_response / control_cancel_request are BYTE-IDENTICAL, as is the
+ *  CLI's canonical hook-event array (33 entries both builds). Every `/usage`
+ *  anchor we scrape is unchanged (`Current session` 3, `Current week` 6,
+ *  `What's contributing` 5, `% of usage` 2, `% used` 9); the `Spend limit`
+ *  count moved 6 -> 7 only because the binary embeds its own changelog, and
+ *  the render code (title:"Spend limit", window bar shape) is identical.
+ *  Model ids gain exactly one entry: `claude-fable-5-1`.
+ *
+ *  THREE THINGS FIXED. Unusually for this review, two were real mispricing.
+ *
+ *  1. Fable 5.1 cache reads were 4x over. It ships at Fable 5's $10/$50 but
+ *     reads at $0.25/MTok — the first model to escape the standard 0.1x
+ *     multiplier, which `CACHE_MULTIPLIERS` had no way to express. Confirmed
+ *     against the bundled claude-api skill, not just the changelog line.
+ *     Fixed with an absolute `cacheReadPerM` on the row (pricing.ts). Cache
+ *     reads dominate token volume in long sessions, so this was material.
+ *
+ *  2. Fable 5.1 collided with Fable 5 on the Cost Report. `fable-5` is a
+ *     substring of `claude-fable-5-1`, so both matched one MODEL_SLOT row:
+ *     two series, both green, both labelled "Fable 5", indistinguishable in
+ *     the legend, the table and the model filter. Fable 5.1 took slot 7;
+ *     Fable 5 KEPT green, because colour follows the entity and repainting it
+ *     would break every existing screenshot's comparability.
+ *
+ *  3. docs/permission-syntax.md was stale in two places, and this range is
+ *     what made it so. 2.1.257 landed the narrower re-try of the input-
+ *     redirection check that 2.1.233 reverted: `Input redirection` goes 0 ->
+ *     4 occurrences, `qs(…,"read","deny")` call sites 13 -> 15, and the
+ *     path-restricted command list grows 21 -> 40 (the changelog names only
+ *     `tac` and `egrep`; the other 19 include grep, strings, od, hexdump,
+ *     base64, the sha*sums). Note the doc's `cat .env` example was ALREADY
+ *     wrong before this range — `cat` was in the 2.1.252 list too. 2.1.257
+ *     widened the list, it did not create it. The doc now says what is
+ *     covered AND what is not (python -c, perl, xxd, less, dd), because a
+ *     40-command list reads as a boundary and is not one.
+ *
+ *  Findings 1 and 2 are now the SAME ROW: `fable-5-1` in `SHIPPED_PRICING`
+ *  carries rates and chart metadata together, after this pass consolidated
+ *  RATE_TABLE + MODEL_SLOT into one table. Pricing also moved out of code
+ *  into the `model_pricing` table (migration 25) so the next Fable-5.1-shaped
+ *  surprise is a row in Settings, not a release. See
+ *  services/model-pricing.ts.
+ *
+ *  Opportunity examined and DECLINED: `update_settings`, the only new
+ *  control-request subtype in range. Far narrower than the name suggests —
+ *  source must be `localSettings`, values must be strings, and the allowed
+ *  key set is literally `new Set(["outputStyle"])`. We surface no output
+ *  styles (`output_style` is an untyped passthrough at
+ *  src/types/claudeStream.ts:143), so there is nothing to take.
+ *
+ *  Checked and confirmed inert — the entries that looked like they should
+ *  have hit us:
+ *
+ *   - `defaultMode: "bypassPermissions"` in project settings is now ignored.
+ *     We never read or write `defaultMode` anywhere (only `defaultModel`).
+ *     Bypass ships as argv — CLI_ARGV_PERMISSION_MODES,
+ *     agents/claude-cli-engine.ts:30 — which the changelog explicitly keeps
+ *     supported.
+ *   - Auto-mode's new outside-working-dir read block resolves through the
+ *     normal path as `{behavior:"ask"}`, so it reaches our stdio decider as
+ *     an ordinary permission card. sessions/permissions.ts:47-50 already
+ *     reasons about exactly this handoff. The "No, block reads outside…"
+ *     option is a CLI TUI dialog choice that --permission-prompt-tool stdio
+ *     bypasses: degraded (allow/deny only), not stalled, and auto-mode only.
+ *   - Non-JSONL piped into `--input-format stream-json` now fails fast. We
+ *     only ever write JSON.stringify'd lines
+ *     (agents/claude-cli-engine.ts:365-372).
+ *   - The rendering-performance work (per-turn re-render, streaming,
+ *     keystroke input). sessions/tui.ts scrapes no text anchors at all;
+ *     control state is JSONL-detected and emitted from lifecycle.ts:696.
+ *
+ *  Carried forward, unchanged by this range:
+ *
+ *   - PreModelSwitch / PostModelSwitch still absent from HOOK_EVENTS
+ *     (src/types/hooks.ts). The hook array is byte-identical across both
+ *     binaries, so the gap is still EXACTLY two and the standing trigger
+ *     ("if a LATER review finds a third such gap, stop hand-diffing and pin
+ *     HOOK_EVENTS to the CLI's array in a test") has NOT fired.
+ *   - Effort xhigh/max with thinking disabled remains cosmetic-only.
+ *   - Watch item, not a finding: Fable is now two models, and setThinking
+ *     sends `set_max_thinking_tokens: 0` for "disabled"
+ *     (sessions/queries.ts:178) while Fable rejects disabled thinking. Not
+ *     new — true of Fable 5 before this range — but the blast radius grows
+ *     now that 5.1 is the default Fable.
+ *
+ *  Out of reach in this range: timeFormat/timeZone; the Containment Escape
+ *  auto-mode rule; CLAUDE_CODE_SUBAGENT_MODEL_FORCE (we set no subagent-model
+ *  env); `/effort s` and the --effort default-hold change; /doctor sandbox
+ *  masks; gateway model discovery and descriptions; every Remote Control fix;
+ *  every `claude agents` / background-session / --bg / --resume / --continue
+ *  fix; /schedule, /btw, /fork, /recap, /add-dir; all Bedrock/Vertex/Foundry/
+ *  gateway auth work; policyHelper and managed-settings items; agent-team and
+ *  teammate fixes; MCP FIFO/OAuth/WebSocket-logging fixes; plugin symlink
+ *  hardening; sandbox trailing-dot hosts; worktree Bash-loop and
+ *  git-common-dir fixes; the 5 MB subagent transcript resume; token-counter
+ *  and spinner TUI fixes; emoji/ANSI/width rendering; /code-review --comment
+ *  on GitLab; and all [VSCode] items.
  *
  * Last review: 2.1.251 -> 2.1.252 on 2026-08-31. Findings:
  *
@@ -599,7 +710,7 @@ import * as path from 'node:path';
  * `~/.claude.json` fix (we read-modify-write that file, never replace it), and
  * the VSCode screen-reader work.
  */
-export const REVIEWED_CLI_VERSION = '2.1.252';
+export const REVIEWED_CLI_VERSION = '2.1.258';
 
 /**
  * app_settings key holding the user's explicit OmniFex-checkout override.
@@ -607,6 +718,15 @@ export const REVIEWED_CLI_VERSION = '2.1.252';
  * renderer can't import from `electron/`.
  */
 export const CLI_REVIEW_REPO_DIR_SETTING_KEY = 'cli_review_repo_dir';
+
+/**
+ * app_settings key for "run `claude update` at launch when one is available".
+ *
+ * Defaults to OFF, and reads as `=== 'true'` rather than `!== 'false'`: this
+ * mutates a toolchain OmniFex doesn't own, so a missing setting must mean "no".
+ * Mirrored as `CLI_AUTO_UPDATE_SETTING_KEY` in `src/lib/api.ts`.
+ */
+export const CLI_AUTO_UPDATE_SETTING_KEY = 'claude_cli_auto_update_on_launch';
 
 export interface CliReviewStatus {
   /** Parsed version of the installed binary, or null if not found/probed. */
@@ -638,8 +758,44 @@ export interface CliReviewStatus {
   repo_dir: string | null;
 }
 
+/** One account's `claude update` run. */
+export interface CliAccountUpdateResult {
+  /** The account's display name, for the popover line. */
+  account: string;
+  ok: boolean;
+  /** The CLI's own output on success, or the failure text on error. */
+  message: string;
+}
+
+export interface CliUpdateResult {
+  /** Installed version before any account ran, or null if unprobeable. */
+  from: string | null;
+  /** Installed version after every account ran, or null if unprobeable. */
+  to: string | null;
+  /** True only when `to` is strictly newer than `from`. */
+  upgraded: boolean;
+  /** One entry per account attempted, in run order. */
+  accounts: CliAccountUpdateResult[];
+}
+
+/** The subset of an Account this module needs to run an update under it. */
+export interface ClaudeCliAccount {
+  name: string;
+  configDir: string;
+}
+
 export interface ClaudeCliReviewService {
   getStatus(): Promise<CliReviewStatus>;
+  /**
+   * Drive `claude update` for every Claude account, then re-probe.
+   *
+   * The CLI only self-updates from inside its Ink REPL — the updater is a
+   * component mounted by the interactive TUI, so OmniFex's headless
+   * stream-json sessions never trigger it and releases pile up unnoticed.
+   * This is the manual lever that closes that gap, driving the CLI's own
+   * `update` subcommand rather than reimplementing the download.
+   */
+  runUpdate(): Promise<CliUpdateResult>;
 }
 
 /**
@@ -663,6 +819,59 @@ export function probeCliVersion(binaryPath: string | null): string | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Generous, but the work behind it is a ~200MB download plus a checksum and an
+ * atomic swap. A timeout that fires mid-download leaves the CLI's own lock and
+ * staging to clean up after themselves — which they do — but reports a failure
+ * for an update that may yet land, so err long.
+ */
+const UPDATE_TIMEOUT_MS = 300_000;
+
+/**
+ * Default runner: `claude update` under one account's config dir.
+ *
+ * Runs the CLI's own subcommand rather than reimplementing the download, per
+ * the repo rule about driving the CLI through its own interface. `update`
+ * takes no options and needs no TTY, so `execFile` is enough — no pty.
+ *
+ * The config dir matters even though the binary is shared. `versions/` is
+ * global, but `.last-update-result.json` is written into CLAUDE_CONFIG_DIR, so
+ * running under one account leaves every other account's ledger claiming an
+ * upgrade that already happened. Each account gets its own run; the ones after
+ * the first are no-ops that still stamp their ledger.
+ *
+ * Rejects with the CLI's own stderr/stdout text when it exits non-zero —
+ * "Can't auto-update: npm global folder isn't writable" is the actionable
+ * message, and `err.message` would bury it behind "Command failed".
+ */
+export function execCliUpdate(
+  binaryPath: string | null,
+  configDir: string,
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    if (!binaryPath) {
+      reject(new Error('claude binary not found'));
+      return;
+    }
+    execFile(
+      binaryPath,
+      ['update'],
+      {
+        env: buildClaudeEnv(configDir),
+        timeout: UPDATE_TIMEOUT_MS,
+        encoding: 'utf8',
+      },
+      (err, stdout, stderr) => {
+        if (err) {
+          reject(new Error((stderr || stdout || err.message).trim()));
+          return;
+        }
+        resolve((stdout || stderr).trim());
+      },
+    );
+  });
 }
 
 /**
@@ -768,6 +977,18 @@ export interface ClaudeCliReviewDeps {
   dirExistsFn?: (dir: string) => boolean;
   /** Overridable for tests. See `isOmnifexRepo`. */
   isOmnifexRepoFn?: (dir: string) => boolean;
+  /**
+   * Claude-engine accounts to run `claude update` under, in run order. The
+   * engine filter belongs at the wiring site: Codex accounts have no `claude`
+   * toolchain, and this module has no opinion about engines.
+   */
+  claudeAccountsFn?: () => ClaudeCliAccount[];
+  /**
+   * Runs `claude update` under one account's config dir; resolves with the
+   * CLI's output, rejects on non-zero exit. Injected so tests never spawn.
+   * `execCliUpdate` is the production implementation.
+   */
+  runUpdateFn?: (configDir: string) => Promise<string>;
 }
 
 /**
@@ -828,18 +1049,22 @@ export function createClaudeCliReviewService(
     return null;
   }
 
-  async function getStatus(): Promise<CliReviewStatus> {
-    // Probed fresh every call, not cached: the user can upgrade the CLI
-    // while OmniFex is running, and a value cached at construction would
-    // stay stale until the next app restart.
-    let raw: string | null = null;
+  /**
+   * Probed fresh every call, never cached: the user can upgrade the CLI while
+   * OmniFex is running — including via `runUpdate()` below — and a value cached
+   * at construction would stay stale until the next app restart.
+   */
+  function probeInstalled(): string | null {
     try {
-      raw = deps.cliVersionFn();
+      return parseCliVersion(deps.cliVersionFn());
     } catch {
       // Binary missing, exec blocked, timeout — all "undeterminable".
-      raw = null;
+      return null;
     }
-    const installed = parseCliVersion(raw);
+  }
+
+  async function getStatus(): Promise<CliReviewStatus> {
+    const installed = probeInstalled();
 
     // Network, so it fails soft and independently: a dead registry must not
     // take out the watermark signal, which needs no network at all.
@@ -866,5 +1091,54 @@ export function createClaudeCliReviewService(
     };
   }
 
-  return { getStatus };
+  async function runUpdate(): Promise<CliUpdateResult> {
+    const from = probeInstalled();
+    const accounts = deps.claudeAccountsFn?.() ?? [];
+    const results: CliAccountUpdateResult[] = [];
+
+    const run = deps.runUpdateFn;
+    if (!run) {
+      // A missing runner is a wiring bug, not a degraded network like
+      // `latestVersionFn`. Reporting success having spawned nothing is the one
+      // outcome worse than an error, so this throws — same posture
+      // buildClaudeEnv takes on an empty configDir. With no accounts there is
+      // genuinely nothing to run, so that stays a quiet empty result.
+      if (accounts.length > 0) {
+        throw new Error(
+          '[claude-cli-review] runUpdate() called with accounts but no runUpdateFn wired',
+        );
+      }
+      return { from, to: from, upgraded: false, accounts: [] };
+    }
+
+    // Sequential, and load-bearing: the CLI takes a machine-wide `.update.lock`
+    // around the shared versions/ tree, so a second concurrent `claude update`
+    // reports lockFailed and returns having done nothing. Run in parallel and
+    // exactly one account would really update, with the rest silently no-op.
+    for (const acct of accounts) {
+      try {
+        const out = await run(acct.configDir);
+        results.push({ account: acct.name, ok: true, message: out.trim() });
+      } catch (err) {
+        results.push({
+          account: acct.name,
+          ok: false,
+          message: (err instanceof Error ? err.message : String(err)).trim(),
+        });
+      }
+    }
+
+    // Re-probe rather than parse the CLI's stdout: the binary was swapped
+    // underneath us, and the wording of "up to date" / "installed X" is exactly
+    // the kind of surface that drifts release to release.
+    const to = probeInstalled();
+    return {
+      from,
+      to,
+      upgraded: from !== null && to !== null && compareCliVersions(to, from) > 0,
+      accounts: results,
+    };
+  }
+
+  return { getStatus, runUpdate };
 }

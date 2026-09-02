@@ -46,7 +46,11 @@ describe('historical internal spend reconciliation (v24)', () => {
   }
 
   function rerun(): void {
-    db.raw.prepare('DELETE FROM schema_version WHERE version = 24').run();
+    // `>=`, not `= 24`: runMigrations gates on MAX(version), so clearing only
+    // this row leaves the max at the newest migration and 24 never re-runs.
+    // The `=` form silently stopped testing anything the moment a later
+    // migration was added.
+    db.raw.prepare('DELETE FROM schema_version WHERE version >= 24').run();
     runMigrations(db.raw);
   }
 

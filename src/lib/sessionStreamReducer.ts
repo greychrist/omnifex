@@ -1,7 +1,7 @@
 import type { JsonlNode } from '@/types/jsonl';
 import type { PermissionRequestPayload } from './types/permissionRequest';
 import { phaseLabel } from './phaseLabel';
-import { computeMessageCost, type PricingOverrides, type UsageTokens } from '@/lib/pricing';
+import { computeMessageCost, type ModelPricingInput, type UsageTokens } from '@/lib/pricing';
 
 export type { PermissionRequestPayload };
 
@@ -33,7 +33,7 @@ export interface StreamReducerContext {
   /** Current messages.length, snapshotted before this message is folded in. */
   messagesLength: number;
   /** Optional pricing overrides (per MTok), loaded once per session. */
-  pricingOverrides?: PricingOverrides;
+  pricingOverrides?: readonly ModelPricingInput[] | undefined;
   /** Dedup set for cost accounting: requestId/message.id keys already priced.
    *  Live streams re-deliver assistant messages per content block; without
    *  this, session cost inflates. Owned by the caller, reset per session. */

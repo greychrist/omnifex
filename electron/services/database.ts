@@ -2,6 +2,7 @@ import BetterSqlite3 from 'better-sqlite3';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { parseLegacyPricingOverrides } from '../../src/lib/pricing';
 
 /**
  * Wrap the cryptic `NODE_MODULE_VERSION` error that better-sqlite3 throws when
@@ -185,6 +186,40 @@ const BRAIN_SPEND_DDL = `
   CREATE INDEX IF NOT EXISTS idx_brain_spend_date ON brain_spend(date);
   CREATE INDEX IF NOT EXISTS idx_brain_spend_account_date
     ON brain_spend(account_name, date);
+`;
+
+/**
+ * User-editable model pricing — the delta layer over the rates this build
+ * shipped with. Shared by `initSchema` (fresh installs) and migration 25
+ * (existing ones) so the two cannot drift.
+ *
+ * Rows hold only what the user says differs from `src/lib/pricing.ts`. The
+ * table is deliberately NOT seeded from that constant: a seeded copy pins an
+ * install to whatever the rates were on the day it was created, so a release
+ * that corrects a price would never reach it. See `services/model-pricing.ts`.
+ */
+const MODEL_PRICING_DDL = `
+  CREATE TABLE IF NOT EXISTS model_pricing (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    -- Model-id substring, lowercased. Longest match wins at resolve time.
+    pattern TEXT NOT NULL,
+    -- YYYY-MM-DD, inclusive. Rate changes APPEND a period; editing one in
+    -- place re-prices every past row on the next cost re-scan.
+    effective_from TEXT NOT NULL DEFAULT '1970-01-01',
+    input_per_m REAL,
+    output_per_m REAL,
+    fast_input_per_m REAL,
+    fast_output_per_m REAL,
+    -- Absolute, for models that escape the standard cache multiplier the way
+    -- Fable 5.1 does ($0.25/MTok reads on a $10/MTok input rate).
+    cache_read_per_m REAL,
+    cache_write_5m_per_m REAL,
+    cache_write_1h_per_m REAL,
+    label TEXT,
+    color_slot INTEGER,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (pattern, effective_from)
+  );
 `;
 
 const migrations: Migration[] = [
@@ -991,6 +1026,73 @@ const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 25,
+    description:
+      'Move model pricing out of code and into a user-editable table. Rates '
+      + 'lived only in src/lib/pricing.ts, so a model Anthropic shipped after '
+      + 'a given build could not be priced without cutting a release — Fable '
+      + '5.1 arrived in CLI 2.1.257 with a cache-read rate no formula '
+      + 'predicted and was mispriced 4x until one did. The table is a DELTA '
+      + 'layer, not a seeded copy: the shipped constants stay the base so '
+      + 'released corrections keep landing, and rows hold only what the user '
+      + 'says differs. Folds the legacy `pricing_overrides` JSON blob in and '
+      + 'clears it, so there is one source of truth rather than two that '
+      + 'disagree the moment either is edited.',
+    up: (db) => {
+      db.exec(MODEL_PRICING_DDL);
+
+      // Migrations run against images of unknown vintage, and the v20/v21/v24
+      // tests point the runner at partial ones that have no app_settings at
+      // all. Migration 22 left a comment saying not to relearn this; consider
+      // it relearned. There is nothing to import from a database that has
+      // never had a settings table.
+      const hasSettings = db
+        .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='app_settings'")
+        .get() !== undefined;
+      if (!hasSettings) return;
+
+      const blob = db
+        .prepare("SELECT value FROM app_settings WHERE key = 'pricing_overrides'")
+        .get() as { value: string } | undefined;
+      if (!blob?.value?.trim()) return;
+
+      // Parsed with a reader scoped to exactly what a blob could contain, so
+      // a value that never applied does not silently start applying now.
+      const parsed = parseLegacyPricingOverrides(blob.value);
+      if (!parsed || parsed.length === 0) return;
+
+      // Column list is spelled out, not generated from PRICING_FIELDS: a
+      // migration must describe the schema as of ITS version forever. Deriving
+      // it would let a later field change silently rewrite what this migration
+      // did to databases that ran it months ago.
+      const ins = db.prepare(
+        `INSERT OR REPLACE INTO model_pricing (
+           pattern, effective_from,
+           input_per_m, output_per_m, fast_input_per_m, fast_output_per_m,
+           cache_read_per_m, cache_write_5m_per_m, cache_write_1h_per_m,
+           label, color_slot
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      );
+      for (const r of parsed) {
+        ins.run(
+          r.pattern,
+          r.effectiveFrom,
+          r.inputPerM ?? null,
+          r.outputPerM ?? null,
+          r.fastInputPerM ?? null,
+          r.fastOutputPerM ?? null,
+          r.cacheReadPerM ?? null,
+          r.cacheWrite5mPerM ?? null,
+          r.cacheWrite1hPerM ?? null,
+          r.label ?? null,
+          r.colorSlot ?? null,
+        );
+      }
+
+      db.prepare("DELETE FROM app_settings WHERE key = 'pricing_overrides'").run();
+    },
+  },
 ];
 
 /**
@@ -1228,7 +1330,9 @@ function initSchema(db: BetterSqlite3.Database): void {
     CREATE INDEX IF NOT EXISTS idx_app_logs_timestamp ON app_logs(timestamp);
     CREATE INDEX IF NOT EXISTS idx_app_logs_level ON app_logs(level);
     CREATE INDEX IF NOT EXISTS idx_app_logs_source ON app_logs(source);
-  `);
+    `);
+
+  db.exec(MODEL_PRICING_DDL);
 
   // Canonical post-migration shape for brain_sources/brain_queue — see
   // BRAIN_TABLES_DDL. Keeps fresh installs from needing migration v18 at all.

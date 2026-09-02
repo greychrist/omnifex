@@ -127,6 +127,14 @@ export interface Services {
     stats(): unknown;
     clear(): unknown;
   };
+  /** User-editable model pricing — the delta layer over the shipped rates.
+   *  See `services/model-pricing.ts` for why it is a delta and not a seed. */
+  modelPricing?: {
+    list(): unknown;
+    upsert(input: Record<string, unknown>): unknown;
+    remove(id: number): unknown;
+    shipped(): unknown;
+  };
   usage?: {
     getStats(params?: unknown): unknown;
     getByDateRange(params: unknown): unknown;
@@ -150,6 +158,8 @@ export interface Services {
     listInstallations(): unknown;
     /** Installed CLI version vs. the changelog watermark this build was reviewed against. */
     reviewStatus(): unknown;
+    /** Run `claude update` for every Claude account, then re-probe the version. */
+    runUpdate(): unknown;
   };
   mcp?: {
     add(data: unknown): unknown;
@@ -368,7 +378,7 @@ function costFilters(p: Record<string, unknown> | undefined): Record<string, unk
  * renderer gets a defined (but empty) response rather than a blocked channel.
  */
 export function getHandlerMap(services: Services = {}): Record<string, HandlerFn> {
-  const { brain, brainMcp, accounts, claude, sessions, cost, internalArchive, usage, rateLimits, usageRunner, claudeBinary, mcp, slashCommands, sessionsSummary, logging, database, proxy, permissionsIO, models, commands, gitWatcher, branchColors, gitBranches, lima, filesystem, notificationSounds, oneShotTerminal, codexAuth, codexSessionWalker, accountIdentity, allowRawSql } = services;
+  const { brain, brainMcp, accounts, claude, sessions, cost, internalArchive, modelPricing, usage, rateLimits, usageRunner, claudeBinary, mcp, slashCommands, sessionsSummary, logging, database, proxy, permissionsIO, models, commands, gitWatcher, branchColors, gitBranches, lima, filesystem, notificationSounds, oneShotTerminal, codexAuth, codexSessionWalker, accountIdentity, allowRawSql } = services;
 
   // Positive account-ownership guard for config-editing channels. A non-empty
   // configDir supplied by the renderer must belong to a known account, so a
@@ -584,6 +594,31 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     session_cost_unpriced: wrapWith((p: Record<string, unknown>) => cost?.unpriced(costFilters(p)) ?? []),
     session_cost_facets: wrapWith((p: Record<string, unknown>) => cost?.facets(costFilters(p)) ?? null),
 
+    // ── Model pricing (user-editable rate + display table) ─────────────────
+    // Writes are validated in the service and THROW on bad input rather than
+    // coercing: a clamped colour slot or a dropped bad date is a wrong number
+    // that looks like a right one, which is the one thing a cost report cannot
+    // afford. `wrapWith` surfaces the message to the editor.
+    model_pricing_list: wrapWith(() => modelPricing?.list() ?? []),
+    model_pricing_shipped: wrapWith(() => modelPricing?.shipped() ?? []),
+    model_pricing_upsert: wrapWith((p: Record<string, unknown>) => modelPricing?.upsert({
+      pattern: p?.pattern,
+      effectiveFrom: p?.effectiveFrom ?? p?.effective_from,
+      inputPerM: p?.inputPerM ?? p?.input_per_m,
+      outputPerM: p?.outputPerM ?? p?.output_per_m,
+      fastInputPerM: p?.fastInputPerM ?? p?.fast_input_per_m,
+      fastOutputPerM: p?.fastOutputPerM ?? p?.fast_output_per_m,
+      cacheReadPerM: p?.cacheReadPerM ?? p?.cache_read_per_m,
+      cacheWrite5mPerM: p?.cacheWrite5mPerM ?? p?.cache_write_5m_per_m,
+      cacheWrite1hPerM: p?.cacheWrite1hPerM ?? p?.cache_write_1h_per_m,
+      label: p?.label,
+      colorSlot: p?.colorSlot ?? p?.color_slot,
+    }) ?? null),
+    model_pricing_delete: wrapWith((p: Record<string, unknown>) => {
+      modelPricing?.remove(Number(p?.id));
+      return null;
+    }),
+
     // ── Standalone model list (no active session required) ─────────────────
     list_supported_models: wrapWith((p: Record<string, unknown>) => models?.listSupported((p?.configDir ?? p?.config_dir) as string) ?? []),
     list_supported_commands: wrapWith((p: Record<string, unknown>) => commands?.listSupported((p?.configDir ?? p?.config_dir) as string) ?? []),
@@ -675,6 +710,7 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     set_claude_binary_path: wrapWith((p: Record<string, unknown>) => claudeBinary?.setPath(p?.path as string) ?? null),
     list_claude_installations: wrap(() => claudeBinary?.listInstallations() ?? null),
     claude_cli_review_status: wrap(() => claudeBinary?.reviewStatus() ?? null),
+    claude_cli_update: wrap(() => claudeBinary?.runUpdate() ?? null),
 
     // ── MCP ───────────────────────────────────────────────────────────────────
     mcp_add: wrapWith((p: Record<string, unknown>) => { assertOwnedConfigDir(p?.configDir ?? p?.config_dir); return mcp?.add(p) ?? null; }),

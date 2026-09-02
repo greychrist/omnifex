@@ -387,6 +387,30 @@ export interface CliReviewStatus {
   repo_dir: string | null;
 }
 
+/** One account's `claude update` run. Mirrors `CliAccountUpdateResult`. */
+export interface CliAccountUpdateResult {
+  account: string;
+  ok: boolean;
+  message: string;
+}
+
+/** Outcome of a forced CLI update. Mirrors `CliUpdateResult` in the service. */
+export interface CliUpdateResult {
+  /** Version before the run, or null when the binary couldn't be probed. */
+  from: string | null;
+  /** Version after the run, same null caveat. */
+  to: string | null;
+  /** True only when `to` is strictly newer than `from`. */
+  upgraded: boolean;
+  /** One entry per Claude account, in run order. */
+  accounts: CliAccountUpdateResult[];
+}
+
+/** app_settings key for the auto-run-on-launch toggle. Mirrors
+ *  `CLI_AUTO_UPDATE_SETTING_KEY` in
+ *  `electron/services/claude-cli-review.ts`. */
+export const CLI_AUTO_UPDATE_SETTING_KEY = 'claude_cli_auto_update_on_launch';
+
 /** app_settings key for the OmniFex-checkout override the review launches in.
  *  Mirrors `CLI_REVIEW_REPO_DIR_SETTING_KEY` in
  *  `electron/services/claude-cli-review.ts`. */
@@ -602,6 +626,12 @@ export interface UnpricedModel {
   request_count: number;
   cost_usd: number;
 }
+
+// The pricing row shape lives in `src/lib/pricing.ts` — the pure module both
+// processes import — and is re-exported here so components keep importing
+// types from `api`. Declaring it again would be a third copy to drift.
+export type { ModelPricingInput, ModelPricingRow } from '@/lib/pricing';
+import type { ModelPricingInput, ModelPricingRow } from '@/lib/pricing';
 
 /** Range-wide totals. Separate from the period rows because `session_count`
  *  must be counted once over the range, not summed per period — a session
@@ -1931,6 +1961,33 @@ export const api = {
     return apiCall("session_cost_facets", stripUndefined(filters));
   },
 
+  // ── Model pricing ────────────────────────────────────────────────────────
+  // The delta layer over the rates this build shipped with, so a model that
+  // Anthropic releases after it can still be priced and named without a new
+  // build. `modelPricingShipped()` returns the base layer for display, so the
+  // editor can show what a row would be changing.
+
+  /** User-set pricing rows. Empty means "everything tracks the shipped rates". */
+  async modelPricingList(): Promise<ModelPricingRow[]> {
+    return apiCall("model_pricing_list", {});
+  },
+
+  /** The rates and chart metadata compiled into this build. Read-only. */
+  async modelPricingShipped(): Promise<ModelPricingInput[]> {
+    return apiCall("model_pricing_shipped", {});
+  },
+
+  /** Create or replace the row for a (pattern, effectiveFrom) pair. Rejects
+   *  rather than coerces bad input — the thrown message is user-facing. */
+  async modelPricingUpsert(row: ModelPricingInput): Promise<ModelPricingRow> {
+    return apiCall("model_pricing_upsert", stripUndefined({ ...row } as unknown as Record<string, unknown>));
+  },
+
+  /** Drop a row, restoring whatever the shipped table says for that model. */
+  async modelPricingDelete(id: number): Promise<void> {
+    return apiCall("model_pricing_delete", { id });
+  },
+
   /** Force a full re-scan of every account's surviving JSONLs into the
    *  cost-history table (same work the startup backfill / hourly sweep do). */
   async sessionCostRescan(): Promise<{ sessionsScanned: number } | null> {
@@ -2354,6 +2411,17 @@ export const api = {
       console.error("Failed to read Claude CLI review status:", error);
       return null;
     }
+  },
+
+  /**
+   * Run the CLI's own `claude update` under every Claude account.
+   *
+   * Deliberately NOT caught the way the status probe above is: this is an
+   * action the user asked for, so a failure has to reach them rather than
+   * being logged and swallowed into a silent no-op.
+   */
+  async updateClaudeCli(): Promise<CliUpdateResult> {
+    return await apiCall<CliUpdateResult>("claude_cli_update");
   },
 
   // ── Git ──────────────────────────────────────────────────────────────────

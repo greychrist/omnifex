@@ -97,7 +97,7 @@ describe('computeMessageCost', () => {
     const cost = computeMessageCost(
       'claude-opus-5',
       { input_tokens: 1_000_000, speed: 'fast' },
-      { 'opus-5': [{ from: '1970-01-01', input: 1 }] },
+      [{ pattern: 'opus-5', effectiveFrom: '1970-01-01', inputPerM: 1 }],
     );
     expect(cost.usd).toBeCloseTo(1, 6);
     expect(cost.estimated).toBe(false);
@@ -125,5 +125,36 @@ describe('totalInputTokens', () => {
   it('treats missing fields as zero', () => {
     expect(totalInputTokens({})).toBe(0);
     expect(totalInputTokens({ cache_read_input_tokens: 5 })).toBe(5);
+  });
+});
+
+describe('resolveRates — Fable 5.1', () => {
+  // Fable 5.1 (2.1.257) ships at Fable 5's $10/$50 but breaks the standard
+  // cache formula: reads are $0.25/MTok, not the 0.1x-input $1.00 that every
+  // other model gets. Cache reads dominate token volume in long sessions, so
+  // pricing it by the multiplier overstates real Fable 5.1 spend 4x.
+  it('prices claude-fable-5-1 cache reads at $0.25/MTok, not 0.1x input', () => {
+    const { rates, estimated } = resolveRates('claude-fable-5-1');
+    expect(perM(rates.input)).toBe(10);
+    expect(perM(rates.output)).toBe(50);
+    expect(perM(rates.cacheRead)).toBe(0.25);
+    expect(estimated).toBe(false);
+  });
+
+  it('leaves Fable 5 on the standard 0.1x cache-read multiplier', () => {
+    const { rates } = resolveRates('claude-fable-5');
+    expect(perM(rates.input)).toBe(10);
+    expect(perM(rates.cacheRead)).toBe(1);
+  });
+
+  it('keeps the standard cache-write multipliers on Fable 5.1', () => {
+    const { rates } = resolveRates('claude-fable-5-1');
+    expect(perM(rates.cacheWrite5m)).toBe(12.5);
+    expect(perM(rates.cacheWrite1h)).toBe(20);
+  });
+
+  it('matches the [1m] suffix and a dated id', () => {
+    expect(perM(resolveRates('claude-fable-5-1[1m]').rates.cacheRead)).toBe(0.25);
+    expect(perM(resolveRates('claude-fable-5-1-20260901').rates.cacheRead)).toBe(0.25);
   });
 });

@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest';
 import {
   resolveRates,
   computeMessageCost,
-  parsePricingOverrides,
-  RATE_TABLE,
+  parseLegacyPricingOverrides,
+  SHIPPED_PRICING,
   ratePeriodFor,
 } from '../pricing';
 
@@ -18,12 +18,21 @@ const perM = (rate: number) => Math.round(rate * MTOK * 1e6) / 1e6;
  * `scripts/pricing.json` documents at length.
  */
 describe('effective-dated rates', () => {
-  it('every RATE_TABLE entry has at least one period, sorted or not', () => {
-    for (const entry of RATE_TABLE) {
-      expect(entry.periods.length).toBeGreaterThan(0);
-      for (const p of entry.periods) {
-        expect(p.from).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-      }
+  it('every shipped row has a pattern and a well-formed effective date', () => {
+    expect(SHIPPED_PRICING.length).toBeGreaterThan(0);
+    for (const row of SHIPPED_PRICING) {
+      expect(row.pattern).toBeTruthy();
+      expect(row.pattern).toBe(row.pattern.toLowerCase());
+      expect(row.effectiveFrom).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    }
+  });
+
+  it('has no duplicate (pattern, effectiveFrom) — the table\'s primary key', () => {
+    const seen = new Set<string>();
+    for (const row of SHIPPED_PRICING) {
+      const key = `${row.pattern}@${row.effectiveFrom}`;
+      expect(seen.has(key)).toBe(false);
+      seen.add(key);
     }
   });
 
@@ -56,18 +65,12 @@ describe('effective-dated rates', () => {
 
   it('prices days either side of a rate change differently', () => {
     const usage = { output_tokens: MTOK };
-    const before = computeMessageCost('claude-test-dated', usage, {
-      'claude-test-dated': [
-        { from: '2024-01-01', input: 3, output: 15 },
-        { from: '2026-09-01', input: 2, output: 10 },
-      ],
-    }, '2026-08-31');
-    const after = computeMessageCost('claude-test-dated', usage, {
-      'claude-test-dated': [
-        { from: '2024-01-01', input: 3, output: 15 },
-        { from: '2026-09-01', input: 2, output: 10 },
-      ],
-    }, '2026-09-01');
+    const rows = [
+      { pattern: 'claude-test-dated', effectiveFrom: '2024-01-01', inputPerM: 3, outputPerM: 15 },
+      { pattern: 'claude-test-dated', effectiveFrom: '2026-09-01', inputPerM: 2, outputPerM: 10 },
+    ];
+    const before = computeMessageCost('claude-test-dated', usage, rows, '2026-08-31');
+    const after = computeMessageCost('claude-test-dated', usage, rows, '2026-09-01');
     expect(before.usd).toBeCloseTo(15, 9);
     expect(after.usd).toBeCloseTo(10, 9);
   });
@@ -145,48 +148,104 @@ describe('<synthetic>', () => {
   });
 });
 
-describe('parsePricingOverrides — period shape', () => {
-  it('normalises the flat legacy shape to one always-applicable period', () => {
-    const parsed = parsePricingOverrides('{"opus-5":{"input":4,"output":20}}');
-    expect(parsed).toEqual({ 'opus-5': [{ from: '1970-01-01', input: 4, output: 20 }] });
+/**
+ * The legacy reader, used only by migration 25 to fold a retired
+ * `pricing_overrides` blob into `model_pricing`. It emits pricing rows — the
+ * same shape as everything else.
+ */
+describe('parseLegacyPricingOverrides — row shape', () => {
+  it('normalises the flat legacy shape to one always-applicable row', () => {
+    expect(parseLegacyPricingOverrides('{"opus-5":{"input":4}}')).toEqual([
+      { pattern: 'opus-5', effectiveFrom: '1970-01-01', inputPerM: 4 },
+    ]);
   });
 
-  it('accepts an array of dated periods', () => {
-    const parsed = parsePricingOverrides(
+  it('accepts an array of dated periods as one row each', () => {
+    const parsed = parseLegacyPricingOverrides(
       '{"opus-5":[{"from":"2026-09-01","input":2},{"from":"2024-01-01","input":5}]}',
     );
-    expect(parsed?.['opus-5']).toHaveLength(2);
-    expect(parsed?.['opus-5'][0].from).toBe('2024-01-01'); // sorted
+    expect(parsed).toHaveLength(2);
+    expect(parsed?.map((r) => r.effectiveFrom).sort()).toEqual(['2024-01-01', '2026-09-01']);
   });
 
   it('drops periods with a malformed from date rather than guessing', () => {
-    const parsed = parsePricingOverrides(
+    const parsed = parseLegacyPricingOverrides(
       '{"opus-5":[{"from":"nope","input":2},{"from":"2024-01-01","input":5}]}',
     );
-    expect(parsed?.['opus-5']).toHaveLength(1);
-    expect(parsed?.['opus-5'][0].input).toBe(5);
+    expect(parsed).toHaveLength(1);
+    expect(parsed?.[0].inputPerM).toBe(5);
   });
 
   it('still rejects non-finite values inside a period', () => {
-    const parsed = parsePricingOverrides('{"opus-5":[{"from":"2024-01-01","input":"3","output":20}]}');
-    expect(parsed?.['opus-5'][0].input).toBeUndefined();
-    expect(parsed?.['opus-5'][0].output).toBe(20);
+    const parsed = parseLegacyPricingOverrides('{"opus-5":[{"from":"2024-01-01","input":"3","output":20}]}');
+    expect(parsed?.[0].inputPerM).toBeUndefined();
+    expect(parsed?.[0].outputPerM).toBe(20);
   });
 
-  it('drops a key whose periods all turn out empty', () => {
-    expect(parsePricingOverrides('{"opus-5":[{"from":"2024-01-01"}]}')).toEqual({});
+  it('drops a row that states no rate', () => {
+    expect(parseLegacyPricingOverrides('{"opus-5":[{"from":"2024-01-01"}]}')).toEqual([]);
   });
 
-  it('an override wins over the fast-mode rate, as before', () => {
-    const { rates } = resolveRates('claude-opus-5', { 'opus-5': [{ from: '1970-01-01', input: 4 }] }, {
-      speed: 'fast',
-    });
+  it('a user row wins over the fast-mode rate, as before', () => {
+    const { rates } = resolveRates(
+      'claude-opus-5',
+      [{ pattern: 'opus-5', effectiveFrom: '1970-01-01', inputPerM: 4 }],
+      { speed: 'fast' },
+    );
     expect(perM(rates.input)).toBe(4);
   });
 
-  it('an override period that has not started yet does not apply', () => {
-    const overrides = { 'opus-5': [{ from: '2027-01-01', input: 99 }] };
-    expect(perM(resolveRates('claude-opus-5', overrides, { date: '2026-08-26' }).rates.input)).toBe(5);
-    expect(perM(resolveRates('claude-opus-5', overrides, { date: '2027-02-01' }).rates.input)).toBe(99);
+  it('a user row that has not started yet does not apply', () => {
+    const rows = [{ pattern: 'opus-5', effectiveFrom: '2027-01-01', inputPerM: 99 }];
+    expect(perM(resolveRates('claude-opus-5', rows, { date: '2026-08-26' }).rates.input)).toBe(5);
+    expect(perM(resolveRates('claude-opus-5', rows, { date: '2027-02-01' }).rates.input)).toBe(99);
+  });
+});
+
+/**
+ * A genuinely new model must need no release: one row has to carry everything
+ * — rates, fast-mode rates, legend name and colour.
+ */
+describe('a user row covers a whole new model', () => {
+  it('carries fast-mode rates so a fast-capable new model needs no rebuild', () => {
+    const rows = [{ pattern: 'brandnew-9', effectiveFrom: '1970-01-01', inputPerM: 7, outputPerM: 35, fastInputPerM: 14, fastOutputPerM: 70 }];
+    const std = resolveRates('claude-brandnew-9', rows);
+    expect(perM(std.rates.input)).toBe(7);
+    expect(perM(std.rates.output)).toBe(35);
+    const fast = resolveRates('claude-brandnew-9', rows, { speed: 'fast' });
+    expect(perM(fast.rates.input)).toBe(14);
+    expect(perM(fast.rates.output)).toBe(70);
+    expect(fast.estimated).toBe(false);
+  });
+
+  it('falls back to the standard rate when a row sets no fast rate', () => {
+    const rows = [{ pattern: 'brandnew-9', effectiveFrom: '1970-01-01', inputPerM: 7, outputPerM: 35 }];
+    expect(perM(resolveRates('claude-brandnew-9', rows, { speed: 'fast' }).rates.input)).toBe(7);
+  });
+
+  it('carries an absolute cacheRead while inheriting input/output from the shipped table', () => {
+    // The Fable 5.1 shape: one field changes, everything else stays.
+    const rows = [{ pattern: 'fable-5', effectiveFrom: '1970-01-01', cacheReadPerM: 0.25 }];
+    const { rates } = resolveRates('claude-fable-5', rows);
+    expect(perM(rates.input)).toBe(10);
+    expect(perM(rates.output)).toBe(50);
+    expect(perM(rates.cacheRead)).toBe(0.25);
+  });
+
+  it('a label-only row does not clear the unpriced flag', () => {
+    // That flag is the one signal a new model is being costed at the default.
+    const rows = [{ pattern: 'brandnew-9', effectiveFrom: '1970-01-01', label: 'Brand New 9' }];
+    const r = resolveRates('claude-brandnew-9', rows);
+    expect(r.estimated).toBe(true);
+    expect(perM(r.rates.input)).toBe(3);
+  });
+
+  it('a user row restating input does not wipe a shipped ABSOLUTE cache rate', () => {
+    // Fable 5.1 reads at $0.25/MTok. Bumping its input must not silently
+    // replace that with the 0.1x formula the row exists to escape.
+    const rows = [{ pattern: 'fable-5-1', effectiveFrom: '1970-01-01', inputPerM: 12 }];
+    const { rates } = resolveRates('claude-fable-5-1', rows);
+    expect(perM(rates.input)).toBe(12);
+    expect(perM(rates.cacheRead)).toBe(0.25);
   });
 });

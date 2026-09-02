@@ -6,7 +6,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Card } from "@/components/ui/card";
-import { PricingOverridesEditor } from "@/components/PricingOverridesEditor";
+import { ModelPricingEditor } from "@/components/ModelPricingEditor";
 import { api, type ClaudeInstallation } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Toast, ToastContainer } from "@/components/ui/toast";
@@ -264,7 +264,7 @@ export const Settings: React.FC<SettingsProps> = ({
                 setToast={setToast}
               />
               <Card className="p-6">
-                <PricingOverridesEditor />
+                <ModelPricingEditor />
               </Card>
             </TabsContent>
 

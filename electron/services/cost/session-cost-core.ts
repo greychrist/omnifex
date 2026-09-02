@@ -9,7 +9,7 @@
 import {
   computeMessageCost,
   splitCacheWriteTokens,
-  type PricingOverrides,
+  type ModelPricingInput,
 } from '../../../src/lib/pricing';
 import { extractDedupedUsage, type ExtractedUsageRow } from './usage-extract';
 
@@ -70,7 +70,7 @@ export interface ComputeSessionCostArgs {
   accountName: string;
   configDir: string;
   projectPath: string | null;
-  overrides?: PricingOverrides;
+  overrides?: readonly ModelPricingInput[] | undefined;
 }
 
 export function computeSessionCost(args: ComputeSessionCostArgs): {

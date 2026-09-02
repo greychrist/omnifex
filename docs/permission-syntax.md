@@ -35,7 +35,8 @@ Bash                     → all bash commands
 - Shell operators are respected: `Bash(safe-cmd *)` does NOT cover `safe-cmd && other-cmd`. Each subcommand needs its own rule.
 - A command whose operators don't parse — a dangling `&&` or `||` — always prompts as of CLI 2.1.246, regardless of any matching allow rule. Nothing to configure; it just means a malformed command can no longer slip through on a rule that matched the parseable prefix.
 - Argument-constraining rules are fragile (option reordering, redirects, variable expansion break them). For URL filtering, deny `curl`/`wget` and use `WebFetch(domain:...)`.
-- Input redirections (`cmd < secrets.env`) are **not** separately permission-checked. The check shipped in 2.1.232 and was reverted in 2.1.233, with a narrower version expected later — until then a `Bash(...)` rule covering the command also covers whatever it reads via `<`.
+- Input redirections (`cmd < secrets.env`) **are** permission-checked as of 2.1.257. The check first shipped in 2.1.232, was reverted in 2.1.233, and the promised narrower version has now landed: the target of `<` and `<&` is matched against `Read(path)` **deny** rules, and a hit refuses the whole command. Heredocs (`<<`, `<<<`) are excluded — they read no file. Output redirection targets (`>`, `>>`, `>&`) are matched against `Edit(path)` deny rules and have been since before 2.1.252.
+  Only **deny** rules participate. An `allow` or `ask` rule on a redirect target is not consulted, so this narrows what a `Bash(...)` allow rule covers but never widens it.
 
 ## Read / Edit
 
@@ -84,7 +85,29 @@ Depth semantics (tightened in CLI 2.1.214):
   project settings, `~/.claude/` for user settings, original cwd for
   settings.local.json / CLI flags / session rules).
 
-Read/Edit deny rules apply only to Claude's built-in file tools, NOT to Bash subprocesses. `Read(./.env)` in deny blocks the Read tool but does not stop `cat .env`. For OS-level enforcement, use sandboxing.
+Read/Edit deny rules **do** reach Bash, but only for a fixed list of
+path-restricted commands and for redirect targets — not for Bash in general.
+A deny hit on any path argument refuses the whole command.
+
+The list grew from 21 commands to 40 in 2.1.257 (verified by diffing the
+2.1.252 and 2.1.258 binaries, not from the changelog, which names only `tac`
+and `egrep`):
+
+```
+awk base64 cat cd column cp cut diff egrep expand fgrep file find fmt fold
+gawk grep head hexdump ls mawk md5sum mkdir mv nawk nl od paste rev rm rmdir
+sha1sum sha256sum sort stat strings tac tail touch tr unexpand uniq wc
+```
+
+So `Read(./.env)` in deny now also stops `cat .env`, `grep x .env`,
+`strings .env`, `base64 .env` and `cmd < .env`. (`cat` was already in the
+pre-2.1.257 set — this paragraph previously claimed otherwise and was wrong;
+2.1.257 widened the list rather than creating it.)
+
+Anything **not** on that list still runs unchecked — `python -c "open('.env')"`,
+`ruby`, `perl`, `xxd`, `less`, `dd`, a shell function, or any binary the parser
+does not recognise. The list is a hardening measure, not a boundary. For real
+enforcement, use sandboxing.
 
 ## WebFetch
 

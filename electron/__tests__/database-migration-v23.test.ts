@@ -70,7 +70,11 @@ describe('session_cost_daily.internal_kind (v23)', () => {
     // prove nothing about this one. Drop just the table 23 touches, then
     // re-run: the guard is what has to keep this from throwing.
     db.raw.exec('DROP TABLE session_cost_daily');
-    db.raw.prepare('DELETE FROM schema_version WHERE version = 23').run();
+    // `>=`, not `= 23`: runMigrations gates on MAX(version), so clearing only
+    // this row leaves the max at the newest migration and 23 never re-runs.
+    // The `=` form silently stopped testing anything the moment a later
+    // migration was added.
+    db.raw.prepare('DELETE FROM schema_version WHERE version >= 23').run();
     expect(() => runMigrations(db.raw)).not.toThrow();
   });
 

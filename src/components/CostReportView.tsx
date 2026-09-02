@@ -31,6 +31,7 @@ import { AccountPicker } from '@/components/AccountPicker';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { modelColor, modelLabel, type ChartMode } from '@/lib/costChartPalette';
+import type { ModelPricingInput } from '@/lib/pricing';
 import {
   RANGE_PRESETS,
   loadFilterState,
@@ -118,6 +119,10 @@ export function CostReportView() {
   // rather than flashing the defaults.
   const [filters, setFilters] = useState<CostFilterState>(loadFilterState);
   const [facets, setFacets] = useState<CostFacets | null>(null);
+  // The model_pricing delta layer. Loaded once: it drives legend names and
+  // series colours, so a model released after this build reads as its
+  // configured name rather than a raw id on a hashed hue.
+  const [pricing, setPricing] = useState<readonly ModelPricingInput[] | undefined>(undefined);
   const [data, setData] = useState<ReportData | null>(null);
   const [loading, setLoading] = useState(true);
   const [rescanning, setRescanning] = useState(false);
@@ -182,6 +187,16 @@ export function CostReportView() {
   }, [params, filters.groupBy]);
 
   useEffect(() => { void load(); }, [load]);
+
+  // Loaded once, not per filter change: the pricing table changes only when
+  // the user edits it in Settings, and refetching it on every filter tweak
+  // would put a DB round-trip on the filter bar's hot path.
+  useEffect(() => {
+    void api
+      .modelPricingList()
+      .then((rows) => setPricing(rows.length > 0 ? rows : undefined))
+      .catch(() => {});
+  }, []);
   useEffect(() => { saveFilterState(filters); }, [filters]);
 
   // Choosing an account narrows the project list, so a project picked under a
@@ -357,7 +372,7 @@ export function CostReportView() {
                 options={facets?.models ?? []}
                 selected={filters.models}
                 onChange={(models) => patch({ models })}
-                renderOption={modelLabel}
+                renderOption={(m: string) => modelLabel(m, pricing)}
               />
               <div className="mx-0.5 h-5 w-px shrink-0 bg-border" />
               {([
@@ -469,8 +484,8 @@ export function CostReportView() {
                 ) : undefined
               }
             >
-              <CostChart rows={data?.periods ?? []} mode={mode} />
-              <CostChartLegend models={chartModels} mode={mode} />
+              <CostChart rows={data?.periods ?? []} mode={mode} pricing={pricing} />
+              <CostChartLegend models={chartModels} mode={mode} pricing={pricing} />
             </Panel>
 
             {/* ── Component split ─────────────────────────────────────── */}
@@ -600,10 +615,10 @@ export function CostReportView() {
                         <span className="inline-flex items-center gap-1.5">
                           <span
                             className="h-2.5 w-2.5 rounded-sm"
-                            style={{ background: modelColor(m.model, mode) }}
+                            style={{ background: modelColor(m.model, mode, pricing) }}
                             aria-hidden
                           />
-                          {modelLabel(m.model)}
+                          {modelLabel(m.model, pricing)}
                         </span>
                       </td>
                       <td className="py-1 pr-2 text-right font-mono">{fmtUsd(m.cost_usd)}</td>
@@ -688,10 +703,10 @@ export function CostReportView() {
                         <span className="inline-flex items-center gap-1.5">
                           <span
                             className="h-2.5 w-2.5 rounded-sm"
-                            style={{ background: modelColor(r.model, mode) }}
+                            style={{ background: modelColor(r.model, mode, pricing) }}
                             aria-hidden
                           />
-                          {modelLabel(r.model)}
+                          {modelLabel(r.model, pricing)}
                         </span>
                       </td>
                       <td className="py-1 pr-2 text-right font-mono">{fmtUsd(r.cost_usd)}</td>

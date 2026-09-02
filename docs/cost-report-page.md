@@ -137,6 +137,12 @@ rows, but any re-scan re-prices them. Port the effective-dated structure now in
 `{ from: "YYYY-MM-DD", input, output }` periods, and the applicable one is the latest `from` on
 or before the row's date. Cache multipliers need the same treatment.
 
+> **Superseded 2026-09-01.** (a) and (b) are both fixed: rates are
+> effective-dated, and unpriced models surface rather than defaulting
+> silently. `pricing_overrides` is gone — pricing now lives in the
+> `model_pricing` table (migration 25), edited in Settings > Pricing, with
+> `SHIPPED_PRICING` in `src/lib/pricing.ts` as the base layer beneath it.
+
 Note omnifex *already* has the no-recompile half of this: `pricing_overrides` in `app_settings`,
 edited via `src/components/PricingOverridesEditor.tsx`, read at `electron/main.ts:914`. It has
 **never been set** (no row in `app_settings`). The override shape needs extending with `from`
