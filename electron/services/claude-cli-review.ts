@@ -30,6 +30,130 @@ import { buildClaudeEnv } from './util/claude-env';
  * old value and the new one, and file or fix whatever they imply. Bumping it
  * to silence the badge throws away the only drift signal we have.
  *
+ * Last review: 2.1.258 -> 2.1.260 on 2026-09-03. Findings:
+ *
+ *  Changelog coverage: both releases in range have entries — 2.1.259 (37)
+ *  and 2.1.260 (71). No gap this time. The 2.1.258 and 2.1.260 binaries were
+ *  both installed under ~/.local/share/claude/versions, so the wire findings
+ *  are a real two-version diff; 2.1.259 was never installed, so anything
+ *  specific to it rests on the prose and is flagged as such below.
+ *
+ *  Wire diff first: subtypes 113 -> 114, one addition (`cloud_session_delta`,
+ *  cloud-session only, not consumed anywhere here) and nothing removed.
+ *  `hook_event_name` literals 33 -> 33, identical. Control request/response
+ *  shapes unchanged. So nothing in this range moved a shape we parse; the
+ *  three findings are all about what we WRITE.
+ *
+ *  1. Saving a slash command destroyed its `model:` frontmatter. FIXED.
+ *     `renderFrontmatter` rebuilt the block from `description` + tools alone
+ *     and `save()` wrote that over the whole file, so every other key the
+ *     user had was deleted. The CLI's own key list, read out of the 2.1.260
+ *     binary, is: name, description, model, allowed-tools, argument-hint,
+ *     arguments, disable-model-invocation, user-invocable, effort, shell,
+ *     version, when_to_use, paths, hooks, context, agent, created_by,
+ *     improved_by, mcpServers, lspServers, agents, outputStyles, themes,
+ *     workflows, channels, monitors, settings, experimental. Dropping most
+ *     of those was inert until 2.1.259 ("Fixed frontmatter `model:` on custom
+ *     commands and skills being ignored in interactive sessions") — losing
+ *     `model:` now changes which model the command runs on. 2.1.260's
+ *     "auto mode running a turn on a model it doesn't support when a command
+ *     or skill's frontmatter `model:` named one" is the same surface.
+ *     `parseFrontmatter` now keeps unmodelled lines verbatim (tracking which
+ *     top-level key is open, so a nested `hooks:` block rides along with its
+ *     children) and `save()` re-reads the file to recover them.
+ *
+ *     Found alongside and fixed in the same change, pre-existing and NOT from
+ *     this range: we wrote `allowed_tools` (underscore). The CLI reads
+ *     `e["allowed-tools"]` and has no underscore fallback for that key — only
+ *     `disallowed-tools` falls back, and to camelCase. The tools field the
+ *     editor exposes had therefore never been read by the CLI. Same class as
+ *     the `Edit(path)`-is-the-only-matched-file-rule finding. We now write
+ *     the hyphenated key and still accept the legacy one on read.
+ *
+ *  2. `formatFilePathForRule` emitted glob metacharacters raw. FIXED.
+ *     Rule content goes straight into `Edit(<content>)`, which the CLI
+ *     matches as a glob, so a literal `[` in a real path was syntax. 2.1.260:
+ *     "Fixed one file permission rule with an uncompilable pattern (e.g. an
+ *     unclosed `[`) making every file edit fail with `Invalid regular
+ *     expression`" — that was us, for any path like `~/Downloads/report[1.pdf`,
+ *     and ONE such rule broke every edit in the session. 2.1.260 contains the
+ *     blast radius, but only for users on 2.1.260+, and a balanced `[...]` is
+ *     still read as a character class, so `Edit(~/Repos/[archive]/x.ts)`
+ *     silently matches nothing on every build. `rule-paths.ts` now
+ *     bracket-quotes `*`, `?` and `[` — the CLI's own idiom, which it spells
+ *     out in a new 2.1.260 hint ("spell a literal parenthesis as [(] or [)]").
+ *     Parentheses are deliberately left unescaped; see 3.
+ *
+ *  3. Parenthesised paths in generated rules: already correct, no change.
+ *     2.1.260 fixed Edit/Write/Read rules whose path contains parentheses
+ *     being dropped as invalid (which "left read-only folders writable"), and
+ *     documents the semantics verbatim in the binary: "Rules take the form
+ *     Tool or Tool(content) and must end at the closing \")\"; parentheses
+ *     inside the content are literal". That is exactly `parseRuleString`'s
+ *     regex in src/lib/permissionCardLogic.ts — greedy `(.+)` anchored at
+ *     end-of-string. So `Edit(~/Documents/OmniFex Brain (backup)/n.md)` now
+ *     works with nothing to change here. Corollary: a user-typed `Bash(ls) x`
+ *     fails that regex and lands in settings as a bare tool name, which
+ *     2.1.260 now reports as an invalid setting rather than ignoring — the
+ *     desired outcome, so left alone.
+ *
+ *  Doc updates in docs/permission-syntax.md, all three of the above plus:
+ *  the zsh REPORTTIME / REPORTMEMORY / DIRSTACKSIZE command-substitution hole
+ *  closed in 2.1.260; and — recorded so the next reviewer does not re-derive
+ *  it — 2.1.259 briefly extended `Read()` deny rules to Bash *arguments*
+ *  (option values, git operands, `cd && cat` compounds) and 2.1.260 REVERTED
+ *  it. Net zero across the range, so the doc's redirection-only statement
+ *  stays correct. The revert could not be confirmed by binary diff (2.1.259
+ *  is not on disk, and the `ignore-revs-file` / `git grep` markers exist in
+ *  2.1.258 too, so they cannot adjudicate); this one rests on the prose.
+ *
+ *  Checked and confirmed inert, but worth knowing — upstream fixes for
+ *  failure modes OmniFex amplifies rather than causes:
+ *   - 2.1.259 concurrent sessions silently reverting each other's
+ *     `~/.claude.json` (workspace trust reset, MCP/project state lost). We
+ *     run many concurrent CLI sessions per account, so our users hit this
+ *     hardest; our own writes are read-modify-write (mcp.ts) and never
+ *     caused it.
+ *   - 2.1.260 "task output swap refused" when many sessions share a project
+ *     directory — same shape.
+ *   - 2.1.259 `--resume` failing on a session holding a payload-less
+ *     attachment entry.
+ *   - 2.1.259 managed settings now refusing to start and naming the source:
+ *     runtime.ts surfaces every non-empty CLI stderr line as a toast +
+ *     app_log, so this reports rather than hanging on "starting".
+ *
+ *  Model plumbing, checked and needing nothing: 2.1.260 fixed `/model` not
+ *  offering Fable 5.1 — our picker is fed by the session init message's
+ *  `models` array (runtime.ts modelCatalogSink), not a hardcoded list, so it
+ *  appears on its own; `prettyModelName` already renders `claude-fable-5-1`
+ *  as "Fable 5.1" and the pricing row landed in the previous review. 2.1.260
+ *  also fixed `model: fable` agents ignoring `[1m]` on an
+ *  ANTHROPIC_DEFAULT_FABLE_MODEL pin — we never set that variable, and
+ *  contextLimit.ts already assumed 1M when the suffix is present, so the
+ *  gauge was right and the CLI was wrong. They now agree. Residual, cosmetic,
+ *  pre-existing: pickModelOption's family fallback maps any unmatched `fable`
+ *  id to the FIRST fable option, so with both Fable 5 and 5.1 in the catalog
+ *  a non-exact id can display the wrong one.
+ *
+ *  Out of reach, no OmniFex surface: the `/diff` fullscreen panel; the
+ *  prompt-cache-miss cause in /cost and the status line's `prompt_cache`
+ *  field (no status-line surface); `/reload-plugins` and the text `/advisor`
+ *  in headless sessions; `--permission-prompts none`; managedMcpServers /
+ *  allowedMcpServers / deniedMcpServers (mcp.ts is .mcp.json + .claude.json
+ *  CRUD, and its status probe is a stub returning 'unknown'); every OIDC,
+ *  apps-gateway, Bedrock and enterprise-credential entry; /rewind and
+ *  --rewind-files; agent teams, the ListAgents phantom twin, SendMessage
+ *  wake-on-completion, Workflow stall and resume-duplication; Ctrl+Z and
+ *  ctrl+l / cmd+k in fullscreen (we inject no keys); the emoji/flag
+ *  last-two-columns truncation (the /usage anchors we scrape are ASCII);
+ *  Chrome, connector, artifact and Cowork entries; GitLab subgroup detection
+ *  and `glab` MR summaries; IDE line selections; skillOverrides aliases and
+ *  Skill() deny nesting; the /ultrareview 45-minute wait; auto-compact for
+ *  1M-context models; /effort no longer invalidating the cache on Fable 5.1;
+ *  blocking Stop hooks losing reasoning; OTel attributes; MCP servers that
+ *  disconnect while their tools are listed; the file-edit dialog's truncated
+ *  line (we render our own card); and all 12 [VSCode] items.
+ *
  * Last review: 2.1.252 -> 2.1.258 on 2026-09-01. Findings:
  *
  *  Changelog coverage: 2.1.253, 2.1.254, 2.1.255 and 2.1.256 have NO
@@ -710,7 +834,7 @@ import { buildClaudeEnv } from './util/claude-env';
  * `~/.claude.json` fix (we read-modify-write that file, never replace it), and
  * the VSCode screen-reader work.
  */
-export const REVIEWED_CLI_VERSION = '2.1.258';
+export const REVIEWED_CLI_VERSION = '2.1.260';
 
 /**
  * app_settings key holding the user's explicit OmniFex-checkout override.

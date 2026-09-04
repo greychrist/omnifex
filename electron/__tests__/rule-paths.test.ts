@@ -83,4 +83,48 @@ describe('formatFilePathForRule', () => {
   it('leaves already-relative paths unchanged', () => {
     expect(formatFilePathForRule('src/foo.ts', '/proj', HOME)).toBe('src/foo.ts');
   });
+
+  // --- glob metacharacter escaping ---
+  //
+  // The rule content this returns goes straight into `Edit(<content>)`, which
+  // the CLI matches as a gitignore-style glob. A path is a literal, so every
+  // glob metacharacter in it has to be spelled as one. The CLI's own escape
+  // idiom is bracket-quoting — CLI 2.1.260 tells users to "spell a literal
+  // parenthesis as [(] or [)]" — so `*`, `?` and `[` get the same treatment.
+  //
+  // Before this, an unclosed `[` produced an uncompilable pattern that made
+  // EVERY file edit in the session fail with "Invalid regular expression"
+  // (fixed CLI-side in 2.1.260, but only for users on that build), and a
+  // balanced `[...]` silently matched nothing because it read as a character
+  // class.
+
+  it('escapes a bracket so a literal [dir] is not read as a character class', () => {
+    expect(formatFilePathForRule('/Users/alice/[archive]/x.ts', '/proj', HOME)).toBe(
+      '~/[[]archive]/x.ts',
+    );
+  });
+
+  it('escapes an unclosed bracket, which used to break every edit in the session', () => {
+    expect(formatFilePathForRule('/Users/alice/report[1.pdf', '/proj', HOME)).toBe(
+      '~/report[[]1.pdf',
+    );
+  });
+
+  it('escapes * and ? so they match themselves', () => {
+    expect(formatFilePathForRule('/proj/a*b?c.ts', '/proj', HOME)).toBe('/a[*]b[?]c.ts');
+  });
+
+  it('escapes metacharacters in pass-through (home-relative and relative) inputs too', () => {
+    expect(formatFilePathForRule('~/notes/[wip].md', '/proj', HOME)).toBe('~/notes/[[]wip].md');
+    expect(formatFilePathForRule('src/a[1].ts', '/proj', HOME)).toBe('src/a[[]1].ts');
+  });
+
+  it('leaves parentheses alone — CLI 2.1.260 reads them as literal inside a rule', () => {
+    // "Rules take the form Tool or Tool(content) and must end at the closing
+    // ')'; parentheses inside the content are literal." Escaping them would
+    // make the rule wrong, not safer.
+    expect(formatFilePathForRule('/Users/alice/Brain (backup)/n.md', '/proj', HOME)).toBe(
+      '~/Brain (backup)/n.md',
+    );
+  });
 });

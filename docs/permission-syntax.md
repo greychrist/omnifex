@@ -16,6 +16,22 @@ Evaluation order: **deny → ask → allow**. First match wins. Deny always take
 
 Rule format: `Tool` (matches all uses) or `Tool(specifier)` (fine-grained).
 
+A rule ends at its **final** `)`, and parentheses inside the specifier are
+literal — `Edit(~/Brain (backup)/note.md)` is a valid rule for a directory
+whose name has parentheses in it. CLI ≤2.1.259 dropped such a rule as invalid
+(which left a "read-only" folder writable); 2.1.260 honours it.
+
+Anything after that closing `)` — `Bash(ls) x` — has never matched anything,
+and as of CLI 2.1.260 is **reported as an invalid setting** instead of being
+silently ignored.
+
+The specifier is a glob, so a literal `*`, `?` or `[` in a path has to be
+spelled as `[*]`, `[?]` or `[[]`. An unescaped `[archive]` reads as a character
+class and matches nothing; an *unclosed* `[` used to make every file edit in
+the session fail with `Invalid regular expression` (CLI 2.1.260 contains the
+blast radius to the one bad rule). OmniFex escapes these when it builds a rule
+from a file path — see `electron/services/sessions/rule-paths.ts`.
+
 ## Bash
 
 Wildcards use `*` anywhere in the pattern. `:*` is shorthand for trailing `*`.
@@ -35,8 +51,10 @@ Bash                     → all bash commands
 - Shell operators are respected: `Bash(safe-cmd *)` does NOT cover `safe-cmd && other-cmd`. Each subcommand needs its own rule.
 - A command whose operators don't parse — a dangling `&&` or `||` — always prompts as of CLI 2.1.246, regardless of any matching allow rule. Nothing to configure; it just means a malformed command can no longer slip through on a rule that matched the parseable prefix.
 - Argument-constraining rules are fragile (option reordering, redirects, variable expansion break them). For URL filtering, deny `curl`/`wget` and use `WebFetch(domain:...)`.
+- A zsh command that hides a command substitution in a `REPORTTIME`, `REPORTMEMORY` or `DIRSTACKSIZE` assignment no longer auto-approves as of CLI 2.1.260 — it prompts. These are zsh's numeric-parameter assignments, which the check previously walked past, so `REPORTTIME=$(cmd) ls` could ride in on a `Bash(ls *)` allow rule. Nothing to configure.
 - Input redirections (`cmd < secrets.env`) **are** permission-checked as of 2.1.257. The check first shipped in 2.1.232, was reverted in 2.1.233, and the promised narrower version has now landed: the target of `<` and `<&` is matched against `Read(path)` **deny** rules, and a hit refuses the whole command. Heredocs (`<<`, `<<<`) are excluded — they read no file. Output redirection targets (`>`, `>>`, `>&`) are matched against `Edit(path)` deny rules and have been since before 2.1.252.
   Only **deny** rules participate. An `allow` or `ask` rule on a redirect target is not consulted, so this narrows what a `Bash(...)` allow rule covers but never widens it.
+- Redirection targets are the *only* Bash arguments matched against file rules. CLI 2.1.259 briefly extended `Read(path)` deny rules to option values (`--ignore-revs-file=.env`), `git diff`/`git grep` file operands and `cd … && cat FILE` compounds, and **2.1.260 reverted it** — it denied `npm run build` under a `Read(./**/build/**)` rule in every mode. Don't write file rules expecting them to constrain what a shell command reads.
 
 ## Read / Edit
 

@@ -42,8 +42,27 @@ export interface SlashCommandsService {
 interface ParsedCommand {
   description: string;
   allowed_tools: string;
+  /**
+   * Frontmatter lines for keys this service does not model, verbatim and in
+   * their original order, so `save` can put them back. See `renderFrontmatter`.
+   */
+  otherFrontmatter: string[];
   content: string;
 }
+
+/**
+ * Frontmatter keys this service parses into its own fields and re-emits from
+ * them. Everything else is preserved untouched.
+ *
+ * `allowed-tools` is the spelling Claude Code reads; `allowed_tools` is what
+ * OmniFex used to write and is still accepted on the way in so existing files
+ * keep working. Both are owned, so a file carrying the legacy key is rewritten
+ * to the hyphenated one rather than ending up with both.
+ */
+const OWNED_KEYS = new Set(['description', 'allowed-tools', 'allowed_tools']);
+
+/** A `key:` line at the top level of a YAML block (not an indented child). */
+const FRONTMATTER_KEY_RE = /^([A-Za-z0-9_-]+):[ \t]*(.*)$/;
 
 function parseFrontmatter(input: string): ParsedCommand {
   // Strip a leading UTF-8 BOM before anchoring on `---`. Editors add one
@@ -55,7 +74,7 @@ function parseFrontmatter(input: string): ParsedCommand {
   const raw = input.replace(/^\uFEFF/, '');
   const frontmatterMatch = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/.exec(raw);
   if (!frontmatterMatch) {
-    return { description: '', allowed_tools: '', content: raw.trim() };
+    return { description: '', allowed_tools: '', otherFrontmatter: [], content: raw.trim() };
   }
 
   const yamlBlock = frontmatterMatch[1];
@@ -63,28 +82,66 @@ function parseFrontmatter(input: string): ParsedCommand {
 
   let description = '';
   let allowed_tools = '';
+  let sawHyphenatedTools = false;
+  const otherFrontmatter: string[] = [];
+
+  // A top-level `key:` line opens a key; anything indented or blank after it
+  // belongs to that key's value. Tracking which key is open is what lets a
+  // nested block (`hooks:` with children) survive intact while a dropped
+  // key takes its continuation lines with it.
+  let inOwnedKey = false;
 
   for (const line of yamlBlock.split('\n')) {
-    const descMatch = /^description:\s*(.*)$/.exec(line);
-    if (descMatch) {
-      description = descMatch[1].trim();
+    const keyMatch = FRONTMATTER_KEY_RE.exec(line);
+    if (keyMatch && !/^[ \t]/.test(line)) {
+      const key = keyMatch[1];
+      const value = keyMatch[2].trim();
+      inOwnedKey = OWNED_KEYS.has(key);
+      if (!inOwnedKey) {
+        otherFrontmatter.push(line);
+      } else if (key === 'description') {
+        description = value;
+      } else if (key === 'allowed-tools') {
+        allowed_tools = value;
+        sawHyphenatedTools = true;
+      } else if (!sawHyphenatedTools) {
+        // Legacy `allowed_tools`. The hyphenated key wins if the file has both.
+        allowed_tools = value;
+      }
       continue;
     }
-    const toolsMatch = /^allowed_tools:\s*(.*)$/.exec(line);
-    if (toolsMatch) {
-      allowed_tools = toolsMatch[1].trim();
-    }
+    // Continuation of whatever key is open (or stray text before the first).
+    if (!inOwnedKey) otherFrontmatter.push(line);
   }
 
-  return { description, allowed_tools, content: body };
+  return { description, allowed_tools, otherFrontmatter, content: body };
 }
 
+/**
+ * Write a command file back out, keeping frontmatter this service doesn't model.
+ *
+ * Claude Code reads far more keys than the two the editor exposes — `model`,
+ * `effort`, `argument-hint`, `arguments`, `disable-model-invocation`,
+ * `user-invocable`, `shell`, `when_to_use`, `hooks`, `agent` and more. Saving
+ * used to rebuild the block from `description` + tools alone, silently deleting
+ * every one of them. `model:` in particular stopped being harmless to drop in
+ * CLI 2.1.259, which began honouring it in interactive sessions: losing it
+ * changes the model the command runs on.
+ *
+ * The owned keys lead so the file still reads the way the editor presents it.
+ */
 function renderFrontmatter(params: {
   description: string;
   allowed_tools: string;
+  otherFrontmatter?: string[];
   content: string;
 }): string {
-  return `---\ndescription: ${params.description}\nallowed_tools: ${params.allowed_tools}\n---\n${params.content}\n`;
+  const lines = [
+    `description: ${params.description}`,
+    `allowed-tools: ${params.allowed_tools}`,
+    ...(params.otherFrontmatter ?? []),
+  ];
+  return `---\n${lines.join('\n')}\n---\n${params.content}\n`;
 }
 
 function commandFromFile(
@@ -271,9 +328,21 @@ export function createSlashCommandsService(): SlashCommandsService {
     fs.mkdirSync(dir, { recursive: true });
 
     const filePath = path.join(dir, `${name}.md`);
+
+    // Re-read the file being overwritten so keys the editor doesn't model
+    // survive the round trip. Missing file (a new command) means nothing to
+    // preserve.
+    let otherFrontmatter: string[] = [];
+    try {
+      otherFrontmatter = parseFrontmatter(fs.readFileSync(filePath, 'utf-8')).otherFrontmatter;
+    } catch {
+      otherFrontmatter = [];
+    }
+
     const fileContent = renderFrontmatter({
       description,
       allowed_tools: allowedTools,
+      otherFrontmatter,
       content,
     });
 

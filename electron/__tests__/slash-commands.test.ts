@@ -167,7 +167,10 @@ describe('slash commands service', () => {
     const content = fs.readFileSync(path.join(commandsDir, files[0]), 'utf-8');
     expect(content).toContain('---');
     expect(content).toContain('description:');
-    expect(content).toContain('allowed_tools:');
+    // The CLI reads `allowed-tools` (hyphen). It has no underscore fallback
+    // for this key, so the `allowed_tools` we used to write was never read.
+    expect(content).toContain('allowed-tools: read_file, write_file');
+    expect(content).not.toContain('allowed_tools:');
     expect(content).toContain('Content here');
   });
 
@@ -197,6 +200,131 @@ describe('slash commands service', () => {
     // rather than throwing, so the picker just shows nothing.
     const commands = service.list();
     expect(commands).toEqual([]);
+  });
+
+  describe('frontmatter round-trip', () => {
+    // The CLI's own frontmatter key list, read out of the 2.1.260 binary:
+    //   name, description, model, allowed-tools, argument-hint, arguments,
+    //   disable-model-invocation, user-invocable, effort, shell, version,
+    //   when_to_use, paths, hooks, context, agent, ...
+    // This service models exactly two of them. Rebuilding the whole block on
+    // save therefore deleted every other key the user had. That was mostly
+    // inert until CLI 2.1.259 started honouring frontmatter `model:` in
+    // interactive sessions — dropping it now changes which model the command
+    // runs on.
+
+    it('preserves frontmatter keys it does not model when re-saving a command', () => {
+      const filePath = path.join(configDir, 'commands', 'keeper.md');
+      fs.writeFileSync(
+        filePath,
+        '---\n' +
+          'description: Old text\n' +
+          'model: haiku\n' +
+          'allowed-tools: Read\n' +
+          'argument-hint: <file>\n' +
+          'disable-model-invocation: true\n' +
+          '---\n' +
+          'Body\n',
+        'utf-8',
+      );
+
+      service.save({
+        scope: 'user',
+        name: 'keeper',
+        namespace: 'user',
+        content: 'New body',
+        description: 'New text',
+        allowedTools: 'Read, Edit',
+        configDir,
+      });
+
+      const written = fs.readFileSync(filePath, 'utf-8');
+      expect(written).toContain('model: haiku');
+      expect(written).toContain('argument-hint: <file>');
+      expect(written).toContain('disable-model-invocation: true');
+      // The two keys this service does own are replaced, not duplicated.
+      expect(written).toContain('description: New text');
+      expect(written).toContain('allowed-tools: Read, Edit');
+      expect(written).not.toContain('Old text');
+      expect(written.match(/^description:/gm)).toHaveLength(1);
+      expect(written.match(/^allowed-tools:/gm)).toHaveLength(1);
+      expect(written).toContain('New body');
+    });
+
+    it('preserves a nested block value under an unmodelled key', () => {
+      const filePath = path.join(configDir, 'commands', 'nested.md');
+      fs.writeFileSync(
+        filePath,
+        '---\n' +
+          'description: d\n' +
+          'hooks:\n' +
+          '  PreToolUse:\n' +
+          '    - command: echo hi\n' +
+          '---\n' +
+          'Body\n',
+        'utf-8',
+      );
+
+      service.save({
+        scope: 'user',
+        name: 'nested',
+        namespace: 'user',
+        content: 'Body',
+        description: 'd2',
+        allowedTools: '',
+        configDir,
+      });
+
+      const written = fs.readFileSync(filePath, 'utf-8');
+      expect(written).toContain('hooks:');
+      expect(written).toContain('  PreToolUse:');
+      expect(written).toContain('    - command: echo hi');
+    });
+
+    it('reads the hyphenated allowed-tools key the CLI actually honours', () => {
+      fs.writeFileSync(
+        path.join(configDir, 'commands', 'hyphen.md'),
+        '---\ndescription: d\nallowed-tools: Read, Bash\n---\nBody\n',
+        'utf-8',
+      );
+
+      const cmd = service.list(undefined, configDir).find((c) => c.name === 'hyphen');
+      expect(cmd?.allowed_tools).toBe('Read, Bash');
+    });
+
+    it('still reads the legacy underscore key OmniFex used to write', () => {
+      fs.writeFileSync(
+        path.join(configDir, 'commands', 'legacy.md'),
+        '---\ndescription: d\nallowed_tools: Read\n---\nBody\n',
+        'utf-8',
+      );
+
+      const cmd = service.list(undefined, configDir).find((c) => c.name === 'legacy');
+      expect(cmd?.allowed_tools).toBe('Read');
+    });
+
+    it('rewrites a legacy underscore key to the hyphenated form on save', () => {
+      const filePath = path.join(configDir, 'commands', 'migrate.md');
+      fs.writeFileSync(
+        filePath,
+        '---\ndescription: d\nallowed_tools: Read\n---\nBody\n',
+        'utf-8',
+      );
+
+      service.save({
+        scope: 'user',
+        name: 'migrate',
+        namespace: 'user',
+        content: 'Body',
+        description: 'd',
+        allowedTools: 'Read',
+        configDir,
+      });
+
+      const written = fs.readFileSync(filePath, 'utf-8');
+      expect(written).toContain('allowed-tools: Read');
+      expect(written).not.toContain('allowed_tools:');
+    });
   });
 
   describe('skill discovery', () => {
