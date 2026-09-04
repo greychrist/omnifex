@@ -123,6 +123,11 @@ export interface Services {
     facets(filters: Record<string, unknown>): unknown;
     rescan(): unknown;
   };
+  /** Cost Report → PDF. See electron/services/cost-report-pdf.ts. */
+  costReportPdf?: {
+    exportPdf(params: { filters: unknown; savePath: string }): Promise<{ path: string }>;
+    reportReady(webContentsId: number, metrics: unknown): void;
+  };
   internalArchive?: {
     stats(): unknown;
     clear(): unknown;
@@ -378,7 +383,7 @@ function costFilters(p: Record<string, unknown> | undefined): Record<string, unk
  * renderer gets a defined (but empty) response rather than a blocked channel.
  */
 export function getHandlerMap(services: Services = {}): Record<string, HandlerFn> {
-  const { brain, brainMcp, accounts, claude, sessions, cost, internalArchive, modelPricing, usage, rateLimits, usageRunner, claudeBinary, mcp, slashCommands, sessionsSummary, logging, database, proxy, permissionsIO, models, commands, gitWatcher, branchColors, gitBranches, lima, filesystem, notificationSounds, oneShotTerminal, codexAuth, codexSessionWalker, accountIdentity, allowRawSql } = services;
+  const { brain, brainMcp, accounts, claude, sessions, cost, costReportPdf, internalArchive, modelPricing, usage, rateLimits, usageRunner, claudeBinary, mcp, slashCommands, sessionsSummary, logging, database, proxy, permissionsIO, models, commands, gitWatcher, branchColors, gitBranches, lima, filesystem, notificationSounds, oneShotTerminal, codexAuth, codexSessionWalker, accountIdentity, allowRawSql } = services;
 
   // Positive account-ownership guard for config-editing channels. A non-empty
   // configDir supplied by the renderer must belong to a known account, so a
@@ -593,6 +598,25 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     session_cost_subagent_split: wrapWith((p: Record<string, unknown>) => cost?.subagentSplit(costFilters(p)) ?? []),
     session_cost_unpriced: wrapWith((p: Record<string, unknown>) => cost?.unpriced(costFilters(p)) ?? []),
     session_cost_facets: wrapWith((p: Record<string, unknown>) => cost?.facets(costFilters(p)) ?? null),
+
+    // Cost Report → PDF. The filters cross as the renderer's own filter-state
+    // shape, not as query params: the print window re-runs the queries itself,
+    // so what it needs is the state, not the derived params.
+    cost_report_export_pdf: wrapWith(async (p: Record<string, unknown>) => {
+      if (!costReportPdf) throw new Error('cost_report_export_pdf: PDF export is unavailable');
+      const savePath = p?.savePath ?? p?.save_path;
+      if (typeof savePath !== 'string' || !savePath) {
+        throw new Error('cost_report_export_pdf: savePath is required');
+      }
+      return costReportPdf.exportPdf({ filters: p?.filters, savePath });
+    }),
+    // Sender-scoped: `ownerWebContentsId` is injected below, and is what tells
+    // one in-flight export's window from another's.
+    cost_report_print_ready: wrapWith((p: Record<string, unknown>) => {
+      const id = p?.ownerWebContentsId;
+      if (typeof id === 'number') costReportPdf?.reportReady(id, p);
+      return null;
+    }),
 
     // ── Model pricing (user-editable rate + display table) ─────────────────
     // Writes are validated in the service and THROW on bad input rather than
@@ -1082,7 +1106,14 @@ export function registerIpcHandlers(services: Services = {}): void {
   // params so the corresponding service can register per-window event routing.
   // (Session and agent event channels are window-scoped so streams don't leak
   // into other windows when the user has multiple open.)
-  const OWNER_INJECTED_CHANNELS = new Set(['session_start', 'session_rebind', 'execute_agent']);
+  const OWNER_INJECTED_CHANNELS = new Set([
+    'session_start',
+    'session_rebind',
+    'execute_agent',
+    // The print window identifies itself by its webContents id; that is
+    // what pairs its "I have drawn" report with the export waiting on it.
+    'cost_report_print_ready',
+  ]);
 
   for (const [channel, handler] of Object.entries(handlerMap)) {
     if (OWNER_INJECTED_CHANNELS.has(channel)) {

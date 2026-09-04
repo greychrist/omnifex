@@ -131,6 +131,10 @@ export const INVOKE_CHANNELS: readonly string[] = [
   'session_cost_unpriced',
   'session_cost_facets',
   'session_cost_totals',
+  // Cost Report → PDF. `export` is called by the visible window; `print_ready`
+  // is the hidden print window reporting that it has finished drawing.
+  'cost_report_export_pdf',
+  'cost_report_print_ready',
   'session_cost_history_by_model',
 
   // Model pricing (user-editable rate + display table)

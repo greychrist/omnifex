@@ -9,6 +9,8 @@ import { logService } from "./lib/logService";
 import { api } from "./lib/api";
 import { logAndForget } from "@/lib/fireAndLog";
 import { installRenderProfilerConsole } from "@/lib/renderProfilerConsole";
+import { parsePrintHash } from "@/lib/costReportPrint";
+import { CostReportPrintPage } from "@/components/cost-report/CostReportPrintPage";
 
 // Initialize structured logging
 logAndForget('main:initialize', logService.initialize());
@@ -55,11 +57,32 @@ api.logCount().then((count) => {
   }
 })();
 
+// The PDF export boots a hidden second window into this same bundle, marked by
+// a `#print=cost-report&…` hash. That window renders the report alone — no
+// titlebar, no tabs, no scroll box — because the app shell is what makes the
+// live document exactly one window tall. See electron/services/cost-report-pdf.ts.
+const printFilters = parsePrintHash(window.location.hash);
+
 // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- document.getElementById("root") asserted at app entry.
-ReactDOM.createRoot(document.getElementById("root")!).render(
-  <React.StrictMode>
+const root = ReactDOM.createRoot(document.getElementById("root")!);
+
+if (printFilters) {
+  // No StrictMode here: it double-invokes effects, and this window's whole job
+  // is to fire one "I have drawn, here is my size" report to the main process.
+  root.render(
     <ErrorBoundary>
-      <App />
-    </ErrorBoundary>
-  </React.StrictMode>,
-);
+      <CostReportPrintPage
+        filters={printFilters}
+        onReady={(m) => { logAndForget('cost-report:print-ready', api.costReportPrintReady(m)); }}
+      />
+    </ErrorBoundary>,
+  );
+} else {
+  root.render(
+    <React.StrictMode>
+      <ErrorBoundary>
+        <App />
+      </ErrorBoundary>
+    </React.StrictMode>,
+  );
+}

@@ -10,7 +10,7 @@
 // Design: docs/superpowers/specs/2026-08-26-cost-report-page-design.md
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, RefreshCw } from 'lucide-react';
+import { AlertTriangle, FileDown, RefreshCw } from 'lucide-react';
 import {
   api,
   type CachingRoi,
@@ -35,6 +35,7 @@ import type { ModelPricingInput } from '@/lib/pricing';
 import {
   RANGE_PRESETS,
   loadFilterState,
+  resolveRange,
   saveFilterState,
   fmtPercent,
   fmtRatio,
@@ -49,6 +50,7 @@ import { FilterCard } from '@/components/cost-report/FilterCard';
 import { Card } from '@/components/ui/card';
 import { CostChart, CostChartLegend } from '@/components/cost-report/CostChart';
 import { formatPeriodTick } from '@/lib/costChartAxis';
+import { pdfFileName } from '@/lib/costReportPrint';
 
 interface ReportData {
   periods: CostHistoryPeriodModel[];
@@ -61,6 +63,53 @@ interface ReportData {
   unpriced: UnpricedModel[];
   sessions: CostSessionRow[];
   totals: CostTotals | null;
+}
+
+/**
+ * The filter bar, restated as prose for the PDF.
+ *
+ * A cost figure with no statement of what it covers is not a report, it is a
+ * number — and the interactive filter cards do not print as anything a reader
+ * can interpret. So the controls are dropped and their *settings* are kept,
+ * which is the part that was ever information.
+ */
+function PrintCaption({ filters }: { filters: CostFilterState }) {
+  const preset = resolveRange(filters.rangeKey, utcToday());
+  const start = filters.customStart || preset.startDate;
+  const end = filters.customEnd || preset.endDate;
+  const range = start ? `${start} → ${end ?? 'today'}` : 'All time';
+
+  const list = (values: string[], all: string, map = (v: string) => v) =>
+    values.length === 0 ? all : values.map(map).join(', ');
+
+  const scope =
+    filters.scope === 'all'
+      ? 'Main loop + subagents'
+      : filters.scope === 'main'
+        ? 'Main loop only'
+        : 'Subagents only';
+
+  const rows: Array<[string, string]> = [
+    ['Range', `${range} · grouped by ${filters.groupBy}`],
+    ['Accounts', list(filters.accounts, 'All accounts')],
+    ['Projects', list(filters.projects, 'All projects', shortProject)],
+    ['Models', list(filters.models, 'All models')],
+    ['Scope', scope],
+    ['Generated', new Date().toISOString().replace('T', ' ').slice(0, 16) + ' UTC'],
+  ];
+
+  return (
+    <Card data-testid="print-caption" className="p-4">
+      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs">
+        {rows.map(([label, value]) => (
+          <div key={label} className="contents">
+            <dt className="text-muted-foreground">{label}</dt>
+            <dd className="text-foreground">{value}</dd>
+          </div>
+        ))}
+      </dl>
+    </Card>
+  );
 }
 
 /** Trim a project path to its last two segments — enough to tell repos apart
@@ -110,14 +159,35 @@ function Kpi({ label, value, hint }: { label: string; value: string; hint?: stri
   );
 }
 
-export function CostReportView() {
+export interface CostReportViewProps {
+  /**
+   * Render for PDF export: no scroll wrapper, no interactive controls, and the
+   * filter state printed as a caption instead of as a filter bar. The controls
+   * are not information; what they are *set to* is, so that survives and they
+   * do not.
+   */
+  printMode?: boolean;
+  /**
+   * Filters to open with, overriding the persisted ones. The print window is
+   * told which report to draw rather than reading this window's localStorage.
+   */
+  initialFilters?: CostFilterState;
+  /**
+   * Fired once the report has settled. `chartExpected` says whether this range
+   * has a chart to draw at all, which is what lets the export tell "the chart
+   * failed to size itself" apart from "there is no spend to plot".
+   */
+  onSettled?: (info: { chartExpected: boolean }) => void;
+}
+
+export function CostReportView({ printMode, initialFilters, onSettled }: CostReportViewProps = {}) {
   const { theme } = useThemeContext();
   const mode: ChartMode = theme === 'light' ? 'light' : 'dark';
 
   const { accounts } = useAccounts();
   // Read synchronously on first render, so the page opens already filtered
   // rather than flashing the defaults.
-  const [filters, setFilters] = useState<CostFilterState>(loadFilterState);
+  const [filters, setFilters] = useState<CostFilterState>(() => initialFilters ?? loadFilterState());
   const [facets, setFacets] = useState<CostFacets | null>(null);
   // The model_pricing delta layer. Loaded once: it drives legend names and
   // series colours, so a model released after this build reads as its
@@ -126,6 +196,7 @@ export function CostReportView() {
   const [data, setData] = useState<ReportData | null>(null);
   const [loading, setLoading] = useState(true);
   const [rescanning, setRescanning] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /** Names of the panels whose query failed on the last load. */
   const [failed, setFailed] = useState<string[]>([]);
@@ -197,7 +268,12 @@ export function CostReportView() {
       .then((rows) => setPricing(rows.length > 0 ? rows : undefined))
       .catch(() => {});
   }, []);
-  useEffect(() => { saveFilterState(filters); }, [filters]);
+  // Not in print mode: both windows share an origin, so the print window
+  // persisting the filters it was handed would overwrite what the user has
+  // selected in the window they are looking at.
+  useEffect(() => {
+    if (!printMode) saveFilterState(filters);
+  }, [filters, printMode]);
 
   // Choosing an account narrows the project list, so a project picked under a
   // different account would stay selected while no longer being on screen —
@@ -222,6 +298,36 @@ export function CostReportView() {
       setRescanning(false);
     }
   }, [load]);
+
+  /**
+   * Save the report as a PDF.
+   *
+   * The filter *state* goes to the main process, not the derived query params:
+   * the export re-renders the report in a hidden window, so what has to travel
+   * is what the filter bar is set to. Sending params would mean the PDF and
+   * the page could disagree about the range they cover.
+   */
+  const exportPdf = useCallback(async () => {
+    // Dialogs go through the preload's named helpers, as every other picker in
+    // the app does (AccountDialog, TabContent, GeneralSettings) — they are not
+    // the generic `invoke` the renderer is told to avoid.
+    const savePath = (await window.electronAPI.showSaveDialog({
+      title: 'Export Cost Report',
+      defaultPath: pdfFileName(filters, utcToday()),
+      filters: [{ name: 'PDF', extensions: ['pdf'] }],
+    })) as string | null;
+    if (!savePath) return; // cancelled
+
+    setExporting(true);
+    setError(null);
+    try {
+      await api.costReportExportPdf({ filters, savePath });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setExporting(false);
+    }
+  }, [filters]);
 
   const total = data?.components?.cost_usd ?? 0;
   const requests = data?.totals?.request_count ?? 0;
@@ -251,6 +357,15 @@ export function CostReportView() {
     [data],
   );
 
+  // Report settled state upward exactly once per load, after loading clears.
+  // The PDF export blocks on this: printing before the queries land yields a
+  // "Loading…" PDF, which looks like a successful export until it is opened.
+  const chartExpected = (data?.periods ?? []).length > 0;
+  useEffect(() => {
+    if (loading) return;
+    onSettled?.({ chartExpected });
+  }, [loading, chartExpected, onSettled]);
+
   const main = data?.subagents.find((s) => s.is_subagent === 0);
   const sub = data?.subagents.find((s) => s.is_subagent === 1);
 
@@ -270,10 +385,31 @@ export function CostReportView() {
   );
 
   return (
-    <div className="h-full overflow-auto">
-      <div className="mx-auto max-w-6xl space-y-8 p-6">
+    // Print mode drops the scroll box deliberately. It is what makes the live
+    // document exactly one window tall, and a PDF of that is one screenful of
+    // a report that is many screens long.
+    <div className={printMode ? 'w-full' : 'h-full overflow-auto'}>
+      <div
+        className="mx-auto max-w-6xl space-y-8 p-6"
+        {...(printMode ? { 'data-print-root': '' } : {})}
+      >
         <header className="space-y-1">
-          <h2 className="text-lg font-semibold">Cost Report</h2>
+          <div className="flex items-start justify-between gap-3">
+            <h2 className="text-lg font-semibold">Cost Report</h2>
+            {!printMode && (
+              <Button
+                size="sm"
+                variant="outline"
+                data-testid="export-pdf"
+                disabled={loading || exporting}
+                onClick={() => { void exportPdf(); }}
+                title="Save this report, exactly as shown, as a PDF"
+              >
+                <FileDown className={cn('mr-1 h-3.5 w-3.5', exporting && 'animate-pulse')} />
+                {exporting ? 'Exporting…' : 'Export PDF'}
+              </Button>
+            )}
+          </div>
           <p className="text-xs text-muted-foreground">
             Per-project attribution, cost by component, caching ROI, and main-loop vs subagent
             efficiency — the numbers the Anthropic console can&apos;t produce. The console remains
@@ -296,102 +432,106 @@ export function CostReportView() {
             trend is drawn, not which rows are counted, so it lives with the
             chart. Mixing a display control into the filters implies changing
             it changes the totals, and it does not. */}
-        <div data-testid="cost-filters" className="space-y-3">
-          <FilterCard label="Account & project" testId="filter-accounts">
-            <AccountPicker
-              mode="multi"
-              accounts={facets?.accounts ?? []}
-              selected={filters.accounts}
-              onChange={(next) => patch({ accounts: next })}
-            />
-            <MultiSelectFilter
-              label="Projects"
-              options={facets?.projects ?? []}
-              selected={filters.projects}
-              onChange={(projects) => patch({ projects })}
-              renderOption={shortProject}
-              searchable
-            />
-            <div className="flex-1" />
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => void rescan()}
-              disabled={rescanning}
-              title="Re-read every surviving transcript and rebuild the history rows"
-            >
-              <RefreshCw className={cn('mr-1 h-3.5 w-3.5', rescanning && 'animate-spin')} />
-              Rescan
-            </Button>
-          </FilterCard>
-
-          <div className="grid gap-3 lg:grid-cols-2">
-            <FilterCard label="Date range" testId="filter-date-range">
-              {/* Three presets, one line. w-full then drops the explicit
-                  dates onto their own row, so they read as an override of the
-                  presets rather than a fourth one. */}
-              {RANGE_PRESETS.map((r) => (
-                <Button
-                  key={r.key}
-                  size="sm"
-                  variant={filters.rangeKey === r.key && !filters.customStart && !filters.customEnd ? 'default' : 'outline'}
-                  onClick={() => patch({ rangeKey: r.key, customStart: '', customEnd: '' })}
-                >
-                  {r.label}
-                </Button>
-              ))}
-
-              <div className="flex w-full items-center gap-1.5 pt-0.5">
-                <input
-                  type="date"
-                  aria-label="Custom start date"
-                  value={filters.customStart}
-                  min={facets?.minDate ?? undefined}
-                  max={facets?.maxDate ?? undefined}
-                  onChange={(e) => patch({ customStart: e.target.value })}
-                  className="min-w-0 flex-1 rounded border border-border bg-background px-2"
-                  title="Custom start date (overrides the preset)"
-                />
-                <span className="text-[11px] text-muted-foreground">→</span>
-                <input
-                  type="date"
-                  aria-label="Custom end date"
-                  value={filters.customEnd}
-                  min={facets?.minDate ?? undefined}
-                  max={facets?.maxDate ?? undefined}
-                  onChange={(e) => patch({ customEnd: e.target.value })}
-                  className="min-w-0 flex-1 rounded border border-border bg-background px-2"
-                  title="Custom end date (overrides the preset)"
-                />
-              </div>
-            </FilterCard>
-
-            <FilterCard label="Model & scope" testId="filter-model-scope">
-              <MultiSelectFilter
-                label="Models"
-                options={facets?.models ?? []}
-                selected={filters.models}
-                onChange={(models) => patch({ models })}
-                renderOption={(m: string) => modelLabel(m, pricing)}
+        {printMode ? (
+          <PrintCaption filters={filters} />
+        ) : (
+          <div data-testid="cost-filters" className="space-y-3">
+            <FilterCard label="Account & project" testId="filter-accounts">
+              <AccountPicker
+                mode="multi"
+                accounts={facets?.accounts ?? []}
+                selected={filters.accounts}
+                onChange={(next) => patch({ accounts: next })}
               />
-              <div className="mx-0.5 h-5 w-px shrink-0 bg-border" />
-              {([
-                { key: 'all', label: 'Both' },
-                { key: 'main', label: 'Main loop' },
-                { key: 'subagent', label: 'Subagents' },
-              ] as const).map((sc) => (
-                <Button
-                  key={sc.key}
-                  size="sm"
-                  variant={filters.scope === sc.key ? 'default' : 'outline'}
-                  onClick={() => patch({ scope: sc.key })}
-                >
-                  {sc.label}
-                </Button>
-              ))}
+              <MultiSelectFilter
+                label="Projects"
+                options={facets?.projects ?? []}
+                selected={filters.projects}
+                onChange={(projects) => patch({ projects })}
+                renderOption={shortProject}
+                searchable
+              />
+              <div className="flex-1" />
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => void rescan()}
+                disabled={rescanning}
+                title="Re-read every surviving transcript and rebuild the history rows"
+              >
+                <RefreshCw className={cn('mr-1 h-3.5 w-3.5', rescanning && 'animate-spin')} />
+                Rescan
+              </Button>
             </FilterCard>
+
+            <div className="grid gap-3 lg:grid-cols-2">
+              <FilterCard label="Date range" testId="filter-date-range">
+                {/* Three presets, one line. w-full then drops the explicit
+                    dates onto their own row, so they read as an override of the
+                    presets rather than a fourth one. */}
+                {RANGE_PRESETS.map((r) => (
+                  <Button
+                    key={r.key}
+                    size="sm"
+                    variant={filters.rangeKey === r.key && !filters.customStart && !filters.customEnd ? 'default' : 'outline'}
+                    onClick={() => patch({ rangeKey: r.key, customStart: '', customEnd: '' })}
+                  >
+                    {r.label}
+                  </Button>
+                ))}
+
+                <div className="flex w-full items-center gap-1.5 pt-0.5">
+                  <input
+                    type="date"
+                    aria-label="Custom start date"
+                    value={filters.customStart}
+                    min={facets?.minDate ?? undefined}
+                    max={facets?.maxDate ?? undefined}
+                    onChange={(e) => patch({ customStart: e.target.value })}
+                    className="min-w-0 flex-1 rounded border border-border bg-background px-2"
+                    title="Custom start date (overrides the preset)"
+                  />
+                  <span className="text-[11px] text-muted-foreground">→</span>
+                  <input
+                    type="date"
+                    aria-label="Custom end date"
+                    value={filters.customEnd}
+                    min={facets?.minDate ?? undefined}
+                    max={facets?.maxDate ?? undefined}
+                    onChange={(e) => patch({ customEnd: e.target.value })}
+                    className="min-w-0 flex-1 rounded border border-border bg-background px-2"
+                    title="Custom end date (overrides the preset)"
+                  />
+                </div>
+              </FilterCard>
+
+              <FilterCard label="Model & scope" testId="filter-model-scope">
+                <MultiSelectFilter
+                  label="Models"
+                  options={facets?.models ?? []}
+                  selected={filters.models}
+                  onChange={(models) => patch({ models })}
+                  renderOption={(m: string) => modelLabel(m, pricing)}
+                />
+                <div className="mx-0.5 h-5 w-px shrink-0 bg-border" />
+                {([
+                  { key: 'all', label: 'Both' },
+                  { key: 'main', label: 'Main loop' },
+                  { key: 'subagent', label: 'Subagents' },
+                ] as const).map((sc) => (
+                  <Button
+                    key={sc.key}
+                    size="sm"
+                    variant={filters.scope === sc.key ? 'default' : 'outline'}
+                    onClick={() => patch({ scope: sc.key })}
+                  >
+                    {sc.label}
+                  </Button>
+                ))}
+              </FilterCard>
+            </div>
           </div>
-        </div>
+        )}
 
         {error && <div className="text-sm text-red-400">{error}</div>}
 
@@ -459,19 +599,23 @@ export function CostReportView() {
               title="Spend over time"
               testId="trend-panel"
               actions={
-                <>
-                  {(['day', 'week', 'month'] as const).map((g) => (
-                    <Button
-                      key={g}
-                      size="sm"
-                      data-testid={`group-by-${g}`}
-                      variant={filters.groupBy === g ? 'default' : 'outline'}
-                      onClick={() => patch({ groupBy: g })}
-                    >
-                      {g}
-                    </Button>
-                  ))}
-                </>
+                // The grouping a PDF was taken at is stated in the caption, so
+                // the buttons carry nothing the printed page needs.
+                printMode ? null : (
+                  <>
+                    {(['day', 'week', 'month'] as const).map((g) => (
+                      <Button
+                        key={g}
+                        size="sm"
+                        data-testid={`group-by-${g}`}
+                        variant={filters.groupBy === g ? 'default' : 'outline'}
+                        onClick={() => patch({ groupBy: g })}
+                      >
+                        {g}
+                      </Button>
+                    ))}
+                  </>
+                )
               }
               subtitle={
                 heaviestDays.length > 0 && burstShare >= 0.25 ? (

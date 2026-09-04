@@ -102,6 +102,7 @@ vi.mock('@/lib/api', () => ({
 }));
 
 import { CostReportView } from '../CostReportView';
+import { emptyFilterState } from '@/lib/costFilterState';
 
 describe('CostReportView', () => {
   beforeEach(() => {
@@ -279,6 +280,106 @@ describe('CostReportView', () => {
   // The filter bar was one long unlabelled flex-wrap row separated by bare
   // `|` dividers: you had to already know what each control did. These tests
   // pin the grouping so a later tidy-up can't quietly flatten it back.
+  describe('print mode (PDF export)', () => {
+    /** Every panel heading, table column and KPI label the page renders. This
+     *  is the parity assertion's alphabet: if a future panel is added and
+     *  print mode drops it, the sets stop matching and this fails. */
+    const contentLabels = (container: HTMLElement): string[] => {
+      const texts = [...container.querySelectorAll('h3, th, dt')]
+        .map((el) => el.textContent?.trim() ?? '')
+        .filter(Boolean);
+      return [...new Set(texts)].sort();
+    };
+
+    it('renders every panel, column and label the interactive report does', async () => {
+      // The feature was asked for as "shows all the information on that
+      // report", so that is what is tested — not a fixed list of panels that
+      // would silently stop covering a panel added later.
+      const normal = render(<CostReportView />);
+      await waitFor(() => { expect(screen.getByTestId('chart')).toBeTruthy(); });
+      const expected = contentLabels(normal.container);
+      cleanup();
+
+      const printed = render(<CostReportView printMode />);
+      await waitFor(() => { expect(screen.getByTestId('chart')).toBeTruthy(); });
+      const actual = contentLabels(printed.container);
+
+      expect(expected.length).toBeGreaterThan(10);
+      for (const label of expected) expect(actual).toContain(label);
+    });
+
+    it('drops the interactive controls, which are not information', async () => {
+      render(<CostReportView printMode />);
+      await waitFor(() => { expect(screen.getByTestId('chart')).toBeTruthy(); });
+
+      expect(screen.queryByTestId('cost-filters')).toBeNull();
+      expect(screen.queryByTestId('export-pdf')).toBeNull();
+      expect(screen.queryByTestId('group-by-week')).toBeNull();
+    });
+
+    it('states what the report covers, since the filter bar is gone', async () => {
+      render(
+        <CostReportView
+          printMode
+          initialFilters={{
+            ...emptyFilterState(),
+            customStart: '2026-08-01',
+            customEnd: '2026-08-31',
+            accounts: ['Work'],
+            scope: 'subagent',
+            groupBy: 'week',
+          }}
+        />,
+      );
+      const caption = await screen.findByTestId('print-caption');
+      expect(caption.textContent).toContain('2026-08-01');
+      expect(caption.textContent).toContain('2026-08-31');
+      expect(caption.textContent).toContain('grouped by week');
+      expect(caption.textContent).toContain('Work');
+      expect(caption.textContent).toContain('Subagents only');
+    });
+
+    it('opens on the filters it is given, not the ones this window persisted', async () => {
+      // The print window shares an origin with the visible one. Reading saved
+      // filters there would export a different report than the button was
+      // pressed on.
+      window.localStorage.setItem(
+        'omnifex.costReport.filters',
+        JSON.stringify({ accounts: ['Personal'], models: [], projects: [], scope: 'main', groupBy: 'month' }),
+      );
+      render(
+        <CostReportView printMode initialFilters={{ ...emptyFilterState(), accounts: ['Work'] }} />,
+      );
+      const caption = await screen.findByTestId('print-caption');
+      expect(caption.textContent).toContain('Work');
+      expect(caption.textContent).not.toContain('Personal');
+    });
+
+    it('does not overwrite this window\'s saved filters', async () => {
+      // Both windows share localStorage, so a print window persisting what it
+      // was handed would silently rewrite what the user has selected.
+      const saved = JSON.stringify({
+        accounts: ['Personal'], models: [], projects: [], scope: 'main', groupBy: 'month',
+      });
+      window.localStorage.setItem('omnifex.costReport.filters', saved);
+
+      render(
+        <CostReportView printMode initialFilters={{ ...emptyFilterState(), accounts: ['Work'] }} />,
+      );
+      await screen.findByTestId('print-caption');
+
+      expect(window.localStorage.getItem('omnifex.costReport.filters')).toBe(saved);
+    });
+
+    it('reports settled once the queries land, so the export knows when to print', async () => {
+      const onSettled = vi.fn();
+      render(<CostReportView printMode onSettled={onSettled} />);
+      await waitFor(() => { expect(onSettled).toHaveBeenCalled(); });
+      // A chart is expected here: the mocked history returns two periods.
+      expect(onSettled).toHaveBeenCalledWith({ chartExpected: true });
+    });
+  });
+
   describe('filter layout', () => {
     it('labels each filter group', async () => {
       render(<CostReportView />);

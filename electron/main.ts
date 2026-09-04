@@ -98,6 +98,7 @@ import { createProxyService } from './services/proxy';
 import { createMCPService } from './services/mcp';
 import { createModelsService, type ModelInfo } from './services/models';
 import { createCommandsCatalogService } from './services/commands-catalog';
+import { createCostReportPdfService } from './services/cost-report-pdf';
 import { createSlashCommandsService } from './services/slash-commands';
 import { createFilesystemService } from './services/filesystem';
 import { createOneShotTerminalService } from './services/one-shot-terminal';
@@ -734,6 +735,58 @@ app.whenReady().then(() => {
   const commandsCatalogService = createCommandsCatalogService(db);
 
   /**
+   * Cost Report → PDF.
+   *
+   * The print window is hidden but must keep running timers and animation
+   * frames: recharts sizes itself from a ResizeObserver, and a background-
+   * throttled renderer would leave the chart at zero width. `show: false`
+   * alone does not disable that throttling — `backgroundThrottling` does.
+   *
+   * It is sized to the report's own content width so the layout matches what
+   * the visible page produces; the PDF's page height comes from what the
+   * window measures once drawn, not from this.
+   */
+  const costReportPdfService = createCostReportPdfService({
+    createWindow: () => {
+      const win = new BrowserWindow({
+        show: false,
+        width: 1280,
+        height: 1200,
+        webPreferences: {
+          preload: path.join(__dirname, 'preload.js'),
+          contextIsolation: true,
+          nodeIntegration: false,
+          backgroundThrottling: false,
+        },
+      });
+      return {
+        webContentsId: win.webContents.id,
+        printToPDF: (options) => win.webContents.printToPDF(options),
+        destroy: () => { win.destroy(); },
+        isDestroyed: () => win.isDestroyed(),
+      };
+    },
+    load: async (_window, hash) => {
+      // `_window` is the wrapper; the real one is the last created. Resolving
+      // it through BrowserWindow keeps the wrapper free of Electron types.
+      const win = BrowserWindow.fromId(
+        BrowserWindow.getAllWindows().find((w) => w.webContents.id === _window.webContentsId)?.id ?? -1,
+      );
+      if (!win) throw new Error('cost-report-pdf: print window vanished before load');
+      if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
+        await win.loadURL(`${MAIN_WINDOW_VITE_DEV_SERVER_URL}${hash}`);
+      } else {
+        await win.loadFile(
+          path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`),
+          { hash: hash.replace(/^#/, '') },
+        );
+      }
+    },
+    writeFile: (target, data) => fs.promises.writeFile(target, data),
+    warn: (message) => { console.warn('[cost-report-pdf]', message); },
+  });
+
+  /**
    * The one place a config dir is turned into an identity verdict. Feeds the
    * session pre-flight check, the Settings row, and the session badge, so
    * "verified" means exactly one thing across the app.
@@ -1269,6 +1322,7 @@ app.whenReady().then(() => {
 
   registerIpcHandlers({
     database: db,
+    costReportPdf: costReportPdfService,
     modelPricing: {
       list: () => modelPricingService.list(),
       upsert: (input: any) => modelPricingService.upsert(input),
