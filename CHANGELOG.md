@@ -5,6 +5,21 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.154] — 2026-09-04
+
+### Added
+
+- The Cost Report can be exported as a PDF. The report on screen lives inside a fixed-height scrolling pane, so printing what you see would have produced exactly one screenful; the export instead lays the same report out a second time, unclipped, in a window you never see, and paginates it against measured content rather than an assumed page height. Your current filters carry into the export, so the PDF says what the report said.
+
+### Fixed
+
+- A permission rule for a path containing `[`, `*` or `?` did not do what it said. Those are glob syntax, and a real path containing one was being read as a pattern. Two ways it went wrong: an unclosed bracket — `~/Downloads/report[1.pdf` — made the whole rule an invalid pattern, and a single such rule failed **every** file edit for the rest of the session with "Invalid regular expression"; and a balanced pair — `~/Repos/[archive]/x.ts` — quietly compiled to a character class, so the rule matched nothing and you were asked for permission again forever with no error to explain it. Paths are now spelled literally. Claude Code 2.1.260 stopped the first cascade on its own, but only for people already on that version, and it still reads the second case as a pattern.
+
+### Changed
+
+- Claude Code changelog review watermark moved to 2.1.260. Slash-command frontmatter gained `version`, `when_to_use`, `paths`, `hooks`, `context`, `agent` and `created_by`.
+- Brain search quality can now be measured. An internal benchmark scores retrieval by the rank of the note you actually wanted, rather than by whether the search returned anything at all — the weaker question that made an earlier search fix look conclusive when it was not. It changes nothing you can see; it is what any future ranking work has to answer to.
+
 ## [0.4.153] — 2026-09-02
 
 ### Added
