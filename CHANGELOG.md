@@ -5,6 +5,12 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.155] — 2026-09-05
+
+### Changed
+
+- Claude Code changelog review watermark moved to 2.1.261, which clears the "unreviewed" marker on the Updates button for anyone already running that version. The review itself found nothing to fix: the release moved no stream shape, no control request and no hook event we read, and the `/usage` text OmniFex scrapes is byte-for-byte what 2.1.260 printed. Two things in it are worth having, and both arrive by updating Claude Code rather than OmniFex — `/usage` no longer drops a per-model weekly limit row when the usage endpoint is busy, so the weekly bars fill in more reliably; and resuming a session no longer loses context around parallel tool calls, which OmniFex leans on every time you switch a session between chat and terminal.
+
 ## [0.4.154] — 2026-09-04
 
 ### Added
