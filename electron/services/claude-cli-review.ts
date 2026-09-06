@@ -30,6 +30,116 @@ import { buildClaudeEnv } from './util/claude-env';
  * old value and the new one, and file or fix whatever they imply. Bumping it
  * to silence the badge throws away the only drift signal we have.
  *
+ * Last review: 2.1.260 -> 2.1.261 on 2026-09-04. Findings:
+ *
+ *  Changelog coverage: 2.1.261 is the only release in range and it has an
+ *  entry (68 items). No gap. Both 2.1.260 and 2.1.261 were installed under
+ *  ~/.local/share/claude/versions, so every wire claim below is a real
+ *  two-version binary diff rather than prose.
+ *
+ *  Wire diff: subtypes 114 -> 115, one addition (`reload_output_styles`)
+ *  and nothing removed. `hook_event_name` literals 43 -> 43, identical.
+ *  control_request / control_response / control_cancel_request envelopes
+ *  identical. The `/usage` TUI display anchors we scrape — `Current
+ *  session`, `Current week (...)`, `Resets`, `Loading usage data`,
+ *  `Showing last-known usage` — are BYTE-IDENTICAL across the two binaries
+ *  (the only new short "Refreshing" string is `Refreshing plugin list from
+ *  claude.ai`, unrelated). Nothing in this range moved a shape we parse.
+ *
+ *  NO CODE CHANGES. This review is a clean pass; the entries below are
+ *  recorded so the next reviewer does not re-derive them.
+ *
+ *  1. "`/usage` ... dropping a model-specific weekly limit row when the
+ *     usage endpoint is rate limited or when opened right after startup" —
+ *     already handled, upstream fix is a strict improvement.
+ *     `isUsageOutputComplete` requires only `current_session` +
+ *     `week_all_models` (usage-runner/parser.ts:247) and the per-model set
+ *     is discovered by regex (parser.ts:116), so a missing `week_sonnet`
+ *     never fails the parse. An absent window also cannot clobber stored
+ *     data: `recordUtilization` is only called for windows that DID parse
+ *     (usage-runner.ts:539). Net effect: on <=2.1.260 a rate-limited scrape
+ *     could snapshot as "complete" while silently missing a per-model bar;
+ *     2.1.261 stops that at the source.
+ *
+ *  2. "Fixed resuming a session losing hook output and other context around
+ *     parallel tool calls, which changed the resumed request" — upstream
+ *     fix we needed more than most, nothing to change. We resume constantly:
+ *     every chat<->terminal toggle respawns with `--resume`
+ *     (sessions/tui.ts:36) and warm agent restarts do the same
+ *     (agents/claude-cli-engine.ts:67).
+ *
+ *  3. "Fixed SDK and cloud sessions ignoring a Stop or interrupt sent just
+ *     after the first prompt, before the turn had started" — upstream fix
+ *     behind an existing workaround. `interrupt()`
+ *     (sessions/queries.ts:64) already ships the user-facing "if it stays
+ *     stuck" hint at queries.ts:79, which was partly papering over exactly
+ *     this. Keep the hint — other stuck causes remain — but this specific
+ *     one is gone on 2.1.261.
+ *
+ *  4. "Fixed typed or pasted characters occasionally landing out of order
+ *     or being dropped during fast input or key repeat" — checked our own
+ *     path because it would look identical if we caused it. It is clean:
+ *     TerminalView.tsx:80 -> `session_tui_write` (ipc/handlers.ts:545) ->
+ *     `tuiWrite` (sessions/lifecycle.ts:743) is fully synchronous with no
+ *     await before `pty.write`, so same-channel IPC ordering is preserved
+ *     end to end. The reordering was CLI-side.
+ *
+ *  Opportunity examined and DECLINED: `bashOutputMaxChars` /
+ *  `taskOutputMaxChars`, the two new settings.json keys. Read out of the
+ *  2.1.261 binary: bash defaults to 30000 chars inline with overflow saved
+ *  to a file (preview + path), task defaults to 32000 and keeps the TAIL
+ *  (except a still-running shell command, which keeps the head); both clamp
+ *  to 4000-128000 and both are `.catch(void 0)`, so a malformed value
+ *  silently falls back rather than erroring. Neither cap is new — they
+ *  already existed as `BASH_MAX_OUTPUT_LENGTH` / `TASK_MAX_OUTPUT_LENGTH`,
+ *  which these keys override; note the settings ceiling (128000) is LOWER
+ *  than the old env ceiling (150000), so anyone migrating from
+ *  `BASH_MAX_OUTPUT_LENGTH=150000` silently loses 22K. Relevance to us is
+ *  real but thin: in chat/stream-json mode a Bash `tool_result` over the cap
+ *  reaches our transcript as preview + path instead of full text. Declined
+ *  because exposing it means reintroducing the generic settings.json key
+ *  surface that was deliberately removed in May 2026 (see the comment at
+ *  settings-panels/GeneralSettings.tsx:57-62). Causes no errors either way.
+ *
+ *  Opportunity examined and DECLINED: `reload_output_styles`, the only new
+ *  control-request subtype in range — same reasoning as `update_settings`
+ *  last review. We surface no CLI output styles. Beware a name collision
+ *  while reading: `outputStyleToggle` (AgentSession.tsx:2880) is the
+ *  chat/terminal VIEW toggle and has nothing to do with CLI output styles.
+ *
+ *  Checked and confirmed inert — the entries that looked like they should
+ *  have hit us:
+ *   - `--append-subagent-system-prompt-file` and `/skill-doctor`: we pass no
+ *     system-prompt flags at all. Full flag set we spawn with is
+ *     `--allowed-tools --forward-subagent-text --include-partial-messages
+ *     --input-format --model --output-format --permission-mode
+ *     --permission-prompt-tool --resume --session-id --setting-sources
+ *     --verbose`, and we enumerate no builtin slash commands.
+ *   - `claude -p --resume <file>` adopting a malformed session ID: we always
+ *     pass a UUID, never a transcript path (agents/claude-cli-engine.ts:67).
+ *   - `keybindingFlavor` no longer having any effect: already recorded as
+ *     never emitted by us (see the 2.1.236 block below).
+ *   - "terminal progress indicator showing the session as finished while a
+ *     background workflow or agent was still running": we read no OSC
+ *     progress sequences, and our own rollup already counts open subagents
+ *     and tasks (docs/session-lifecycle.md:132).
+ *   - `/model` picker showing a model's name instead of a raw Bedrock /
+ *     Vertex / gateway ID: cosmetic and CLI-side. Our mirror reads raw
+ *     `message.model` off assistant JSONL lines (sessions/tui-jsonl.ts:112)
+ *     and is unaffected; `pickModelOption` already tolerates an unknown
+ *     concrete id (lib/sessionModelChange.ts:88-93).
+ *   - the `<claude-code-hint>` tag leak: no such handling anywhere here.
+ *
+ *  No OmniFex impact, the rest: all Remote Control entries, all 30 [VSCode]
+ *  entries, Claude apps gateway (403 messaging, X-Forwarded-For, OTel
+ *  protobuf, forceLoginMethod), Bedrock setup wizard, Vertex
+ *  GOOGLE_APPLICATION_CREDENTIALS, gcpAuthRefresh, `/add-dir` on a /net
+ *  automount, `/context` local token estimate, the dangerous-`rm` prompt
+ *  widening, the diagram-renderer auto-mode rule, feature-flag version
+ *  gating, `[Image #N]` chip deletion, cloud-session plugin sync, streaming
+ *  layout perf, connector fetch retry, the high-CPU background-agent retry
+ *  loop, and Claude in Chrome `file_upload`.
+ *
  * Last review: 2.1.258 -> 2.1.260 on 2026-09-03. Findings:
  *
  *  Changelog coverage: both releases in range have entries — 2.1.259 (37)
@@ -834,7 +944,7 @@ import { buildClaudeEnv } from './util/claude-env';
  * `~/.claude.json` fix (we read-modify-write that file, never replace it), and
  * the VSCode screen-reader work.
  */
-export const REVIEWED_CLI_VERSION = '2.1.260';
+export const REVIEWED_CLI_VERSION = '2.1.261';
 
 /**
  * app_settings key holding the user's explicit OmniFex-checkout override.
