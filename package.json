@@ -22,7 +22,8 @@
     "test:watch": "vitest",
     "pretest:coverage": "npm rebuild better-sqlite3 node-pty",
     "test:coverage": "vitest run --coverage",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "coverage:areas": "node scripts/coverage-areas.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",

@@ -45,7 +45,7 @@ A per-account memory vault: Markdown notes distilled from past sessions, repo ar
 
 ### Shape
 
-- **Vault** — `~/Documents/OmniFex Brain/<account>/`, one per account, path in `app_settings` under `brain.vault.<accountId>`. Deliberately outside userData so it opens in Obsidian and backs up normally. Git-versioned; the FTS index lives at `<vault>/.omnifex/index.db` and is derived and disposable.
+- **Vault** — `~/OmniFex Brain/<account>/`, one per account, path in `app_settings` under `brain.vault.<accountId>`. Deliberately outside userData so it opens in Obsidian and backs up normally, and deliberately out of `~/Documents`/`~/Desktop` so no sync client can evict it (see below). Git-versioned; the FTS index lives at `<vault>/.omnifex/index.db` and is derived and disposable.
 - **Orchestration state** — `brain_sources` (change detection), `brain_queue` (work), `brain_spend` (append-only cost ledger) in `greychrist.db`. Note *content* never lives there, only pointers and status.
 - **Pipeline** — `sources/*` discover → `admit()` → `distill()` → `extract.ts` (Sonnet, zod-validated) → `merge.ts` (pure) → note. `curate.ts` / `curation.ts` is the separate Opus-pinned pass that rewrites accumulated notes.
 - **Consumption** — `brain-mcp.ts` is a stdio MCP server the *CLI* spawns (`brain_search` / `brain_read` / `brain_remember`), plus the Brain tab and `/recall`. Nothing auto-injects vault content into a session.
@@ -58,6 +58,7 @@ A per-account memory vault: Markdown notes distilled from past sessions, repo ar
 - **The Brain is auxiliary.** Nothing in it may break a session, block the UI, or consume rate limit needed for real work. A failed item never blocks the queue.
 - **`merge.ts` must stay pure and idempotent** — indexing the same session twice produces a byte-identical note. It is the property tested hardest.
 - **Money is recorded in `brain_spend`, never inferred.** `brain_sources.cost_usd` is a per-item snapshot that re-indexing overwrites; the ledger is append-only and is what `stats.spentUsd` and the Brain tab read. It is an *audit* record, not a reporting one — the Cost Report reads `session_cost_daily` only, so nothing is counted twice.
+- **A vault must never live under a file provider.** `~/Documents` and `~/Desktop` are claimed by iCloud Drive whenever "Desktop & Documents Folders" is on; Dropbox/OneDrive/Drive claim their own folders. With storage optimisation, contents are evicted to `SF_DATALESS` stubs costing ~0.6s per read, which turns one `git add -A` into minutes of silent hang — this was the original default and it shipped the bug. `offloaded.ts` probes the flag; `status().offloadedCount` surfaces it. Null there means "not determined", never "none".
 - **Extraction transcripts are retained, not swept.** They used to be `rm -rf`'d the moment the call returned, which raced the cost watcher and left a non-deterministic fraction of the Brain's own spend in the cost table. They now move to `<userData>/internal-sessions/<account>/<kind>/<date>/` and are priced there like any other transcript, attributed as `OmniFex/Brain index` and `OmniFex/Brain curation`. Age-capped at 90 days with a Clear button; pruning never removes cost rows. The Brain must never index that archive — it would distil its own distillations and pay for it every cycle. See `docs/superpowers/specs/2026-08-26-internal-session-archive-design.md`.
 
 ## Research And Code Intelligence
@@ -221,7 +222,21 @@ Other account rules:
 ## Testing And Verification
 
 - Tests live in `electron/__tests__/*.test.ts`.
-- Coverage target is 80% lines for backend work.
+- **Coverage target is 80% lines, repo-wide** — not backend-only. The target
+  used to read "for backend work", which quietly excused the renderer and made
+  the headline number unanswerable: a blended 79% could mean anything.
+- `npm run coverage:areas` (after `npm run test:coverage`) breaks that number
+  down by area and ranks files by uncovered LINES rather than percentage. Use
+  it before concluding coverage is "low" — a 400-line file at 14% outweighs
+  twenty small files at 0%, and the summary line cannot show that.
+- Coverage is reported, not gated. See the comment in `vitest.config.ts`:
+  hard thresholds used to trip release builds on diffs that barely moved the
+  number, and there is no CI to enforce against.
+- `src/components` is the standing gap (~65%). Two things there are genuinely
+  low-value to chase and should not be padded for the metric: `src/lib/api.ts`,
+  ~3,600 lines of one-line IPC wrappers already guarded by
+  `ipc-channel-contract.test.ts` plus `npm run check`, and the presentational
+  tool widgets under `src/components/claude/tools/`.
 - Use `createDatabase(':memory:')` for DB-backed service tests.
 - Verification gate:
   - Frontend-only change: `npm run check` and `npm run build`
