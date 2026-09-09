@@ -17,6 +17,17 @@ function indexIsStale(status: BrainVaultStatus): boolean {
 }
 
 /**
+ * True only when eviction is known to be happening.
+ *
+ * `offloadedCount` is null for "not determined" — off Darwin, or the probe
+ * could not run — and reporting that as a problem would put a permanent
+ * warning on every Linux and Windows vault.
+ */
+function isOffloaded(status: BrainVaultStatus): boolean {
+  return status.offloadedCount !== null && status.offloadedCount > 0;
+}
+
+/**
  * Everything that stands between an account and a browsable vault.
  *
  * Four states, each with exactly the action that fixes it. The important one is
@@ -132,6 +143,27 @@ export const BrainVaultSetup: React.FC<BrainVaultSetupProps> = ({ vault, account
                   <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
                   Rebuild index
                 </Button>
+              </div>
+            )}
+
+            {isOffloaded(status) && (
+              <div className="space-y-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-3">
+                <p className="flex items-center gap-2 text-xs font-medium">
+                  <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
+                  {status.offloadedCount} file
+                  {status.offloadedCount === 1 ? ' has' : 's have'} been evicted to the cloud
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  This vault sits inside a folder synced by iCloud Drive, Dropbox, OneDrive
+                  or Google Drive, and storage optimisation has replaced file contents with
+                  stubs. Each one costs a round trip to read, so indexing and committing
+                  this vault will stall — often for minutes, with no error.
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Move the vault somewhere the sync client does not manage, such as a folder
+                  directly in your home directory. Disconnecting below only unlinks the
+                  account; it does not move anything.
+                </p>
               </div>
             )}
 

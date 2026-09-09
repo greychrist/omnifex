@@ -11,6 +11,7 @@ import {
 } from './search';
 import { createVaultGit, type ExecGit, type VaultGit } from './git';
 import { linkMatchesNote, parseWikilinks } from './links';
+import { countOffloadedFiles } from './offloaded';
 import { fireAndLogGitFailure } from './git-logging';
 import { canonicalPath, fsIdentity, isSameOrInside, resolveVaultRoot } from './paths';
 import { createSourceStateStore, type SourceStatus } from './sources/state';
@@ -169,6 +170,16 @@ export interface VaultStatus {
   lastGitError: string | null;
   /** Why this vault cannot be opened, when it cannot be. */
   conflict: string | null;
+  /**
+   * Files a macOS file provider has evicted to contentless stubs, or null when
+   * that could not be determined (off Darwin, or the vault is not on disk).
+   *
+   * Null is not zero. A vault under iCloud Drive, Dropbox, OneDrive or Drive
+   * with storage optimisation on reads at roughly 0.6s per stub, which makes
+   * every `git add -A` over it take minutes and the app look hung. See
+   * offloaded.ts.
+   */
+  offloadedCount: number | null;
 }
 
 /** One discovered item, with the gate's verdict and its recorded state. */
@@ -729,6 +740,8 @@ export interface BrainServiceOptions {
    * on the last frame forever, showing a bar for a run that had finished.
    */
   onRunProgress?: (run: BrainRun | null) => void;
+  /** Injectable eviction probe; see offloaded.ts. Defaults to the real one. */
+  countOffloaded?: (root: string) => Promise<number | null>;
 }
 
 export function createBrainService(
@@ -752,6 +765,7 @@ export function createBrainService(
   // wires no setting reader should behave like the product, not like a service
   // with the idle gate switched off.
   const idleMs = opts.idleMs ?? (() => DEFAULT_IDLE_MINUTES * 60_000);
+  const countOffloaded = opts.countOffloaded ?? countOffloadedFiles;
   const sourceState = createSourceStateStore(db);
   const queueStore = createBrainQueueStore(db);
   const spendStore = createBrainSpendStore(db);
@@ -1266,6 +1280,7 @@ export function createBrainService(
         gitAvailable: await createVaultGit(process.cwd()).available(),
         lastGitError: lastGitError.get(accountId) ?? null,
         conflict: null,
+        offloadedCount: null,
       };
       if (stored === null) return base;
 
@@ -1295,6 +1310,10 @@ export function createBrainService(
         initialized: existsSync(join(root, 'config', 'notes.json')),
         noteCount: createVault(root).listNotes().length,
         indexedCount: readIndexedCount(join(root, INDEX_DIR, INDEX_FILE)),
+        // Only for a vault that is actually on disk: probing an absent path
+        // would report a `find` failure as "not determined", which is true but
+        // says nothing, at the cost of a child process on every status read.
+        offloadedCount: await countOffloaded(root),
       };
     },
 

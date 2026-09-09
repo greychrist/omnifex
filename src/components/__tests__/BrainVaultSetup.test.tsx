@@ -7,13 +7,13 @@ import { api, type BrainVaultStatus } from '@/lib/api';
 
 vi.mock('@/lib/api', () => ({ api: { brainDefaultVaultPath: vi.fn() } }));
 
-const SUGGESTED = '/Users/x/Documents/OmniFex Brain/personal';
+const SUGGESTED = '/Users/x/OmniFex Brain/personal';
 
 function status(over: Partial<BrainVaultStatus> = {}): BrainVaultStatus {
   return {
     accountId: 1, configured: false, path: null, exists: false, initialized: false,
     noteCount: 0, indexedCount: null, gitAvailable: true, lastGitError: null,
-    conflict: null, ...over,
+    conflict: null, offloadedCount: null, ...over,
   };
 }
 
@@ -85,6 +85,43 @@ describe('BrainVaultSetup', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /recreate/i }));
     expect(setVaultPath).toHaveBeenCalledWith('/gone');
+  });
+
+  it('warns when a file provider has evicted the vault contents', () => {
+    const vault = makeVault({
+      status: status({
+        configured: true, path: '/v', exists: true, initialized: true,
+        noteCount: 3, indexedCount: 3, offloadedCount: 825,
+      }),
+    });
+    render(<BrainVaultSetup vault={vault} accountName="personal" />);
+
+    expect(screen.getByText(/825/)).toBeTruthy();
+    expect(screen.getByText(/iCloud Drive, Dropbox, OneDrive/i)).toBeTruthy();
+  });
+
+  it('stays quiet about eviction when nothing is evicted', () => {
+    const vault = makeVault({
+      status: status({
+        configured: true, path: '/v', exists: true, initialized: true,
+        noteCount: 3, indexedCount: 3, offloadedCount: 0,
+      }),
+    });
+    render(<BrainVaultSetup vault={vault} accountName="personal" />);
+
+    expect(screen.queryByText(/iCloud Drive, Dropbox, OneDrive/i)).toBeNull();
+  });
+
+  it('stays quiet about eviction when it could not be determined', () => {
+    const vault = makeVault({
+      status: status({
+        configured: true, path: '/v', exists: true, initialized: true,
+        noteCount: 3, indexedCount: 3, offloadedCount: null,
+      }),
+    });
+    render(<BrainVaultSetup vault={vault} accountName="personal" />);
+
+    expect(screen.queryByText(/iCloud Drive, Dropbox, OneDrive/i)).toBeNull();
   });
 
   it('shows a conflict without offering any repair button', () => {

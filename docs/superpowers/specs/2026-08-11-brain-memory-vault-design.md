@@ -108,10 +108,21 @@ session running under the personal account retrieve work content through
 enforces. Every account gets its own vault, its own git repo, and its own
 index.
 
-Default `~/Documents/OmniFex Brain/<account-name>/`, overridable per account and
+Default `~/OmniFex Brain/<account-name>/`, overridable per account and
 persisted in `app_settings` under `brain.vault.<account_id>`. Deliberately
 outside userData: a vault must be openable in Obsidian, backed up, and deletable
 without touching OmniFex.
+
+Equally deliberately NOT under `~/Documents` or `~/Desktop`, which was the
+original default and was wrong. Those are exactly the two folders iCloud Drive
+claims when "Desktop & Documents Folders" is enabled, and the other sync clients
+claim their own named folders. Under any of them with storage optimisation on,
+note bodies and `.git` loose objects get evicted to `SF_DATALESS` stubs that
+cost roughly 0.6s each to fault back in, so a single `git add -A` over the vault
+takes minutes and the app looks hung with nothing logged. The home root is
+claimed by no provider and keeps all three properties above. `offloaded.ts`
+probes for the flag and `status()` reports it as `offloadedCount`, so a vault a
+user later points at a synced folder says so instead of just being slow.
 
 ```
 OmniFex Brain/<account-name>/

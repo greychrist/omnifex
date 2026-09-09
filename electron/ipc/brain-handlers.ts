@@ -64,6 +64,7 @@ function unconfiguredStatus(accountId: number): VaultStatus {
     gitAvailable: false,
     lastGitError: null,
     conflict: null,
+    offloadedCount: null,
   };
 }
 
@@ -186,7 +187,16 @@ export function createBrainHandlers(
       if (name.includes('/') || name.includes('\\') || name.includes('\0')) {
         throw new Error(`account name is not usable as a folder name: ${name}`);
       }
-      return join(homedir(), 'Documents', 'OmniFex Brain', name);
+      // The home root, NOT ~/Documents. A vault must be openable in Obsidian,
+      // backed up, and deletable without touching OmniFex, which rules out
+      // userData — but ~/Documents and ~/Desktop are exactly the two folders
+      // iCloud Drive claims when "Desktop & Documents Folders" is on, and
+      // Dropbox/OneDrive/Drive claim their own named folders. Under a file
+      // provider with Optimize Mac Storage, note and git-object contents get
+      // evicted to dataless stubs that cost ~0.6s each to fault back in, which
+      // turns one `git add -A` over the vault into minutes of apparent hang.
+      // The home root is claimed by no provider and keeps all three properties.
+      return join(homedir(), 'OmniFex Brain', name);
     },
 
     async brain_rebuild(_event, params = {}) {

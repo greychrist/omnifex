@@ -416,7 +416,7 @@ describe('brain IPC handlers', () => {
   describe('brain_default_vault_path', () => {
     it('suggests a path under the user home, named for the account', async () => {
       expect(await handlers.brain_default_vault_path(null, { accountName: 'personal' })).toBe(
-        join(homedir(), 'Documents', 'OmniFex Brain', 'personal'),
+        join(homedir(), 'OmniFex Brain', 'personal'),
       );
     });
 

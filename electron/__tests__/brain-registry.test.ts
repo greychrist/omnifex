@@ -757,6 +757,35 @@ describe('brain registry', () => {
       expect(status.indexedCount).toBe(0);
     });
 
+    it('reports how many of the vault files a file provider has evicted', async () => {
+      const probed: string[] = [];
+      const svc = createBrainService(db, {
+        execGit: async () => '',
+        countOffloaded: async (root) => { probed.push(root); return 825; },
+      });
+      const root = join(dir, 'offloaded');
+      svc.setVaultPath(1, root);
+
+      const status = await svc.status(1);
+      expect(status.offloadedCount).toBe(825);
+      expect(probed).toEqual([root]);
+      svc.closeAll();
+    });
+
+    it('does not probe for eviction on a vault that is not there', async () => {
+      let probes = 0;
+      const svc = createBrainService(db, {
+        execGit: async () => '',
+        countOffloaded: async () => { probes += 1; return 0; },
+      });
+      db.saveSetting(vaultSettingKey(1), join(dir, 'absent'));
+
+      const status = await svc.status(1);
+      expect(status.offloadedCount).toBeNull();
+      expect(probes).toBe(0);
+      svc.closeAll();
+    });
+
     it('reports a conflict instead of throwing', async () => {
       const shared = join(dir, 'shared');
       brain.setVaultPath(1, shared);

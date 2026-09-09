@@ -140,7 +140,7 @@ function status(over: Partial<BrainVaultStatus> = {}): BrainVaultStatus {
   return {
     accountId: 7, configured: true, path: '/v', exists: true, initialized: true,
     noteCount: 2, indexedCount: 2, gitAvailable: true, lastGitError: null,
-    conflict: null, ...over,
+    conflict: null, offloadedCount: null, ...over,
   };
 }
 

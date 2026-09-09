@@ -1201,6 +1201,12 @@ export interface BrainVaultStatus {
   lastGitError: string | null;
   /** Why this vault cannot be opened, when it cannot be. */
   conflict: string | null;
+  /**
+   * Files a macOS file provider has evicted to contentless stubs, or null when
+   * that could not be determined. Null is not zero — see
+   * electron/services/brain/offloaded.ts.
+   */
+  offloadedCount: number | null;
 }
 
 /** Mirrors the backend `SourceSummary` in electron/services/brain/registry.ts. */
