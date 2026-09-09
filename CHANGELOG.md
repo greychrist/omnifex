@@ -5,6 +5,20 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.156] — 2026-09-09
+
+### Changed
+
+- The Brain's default vault location moved out of `~/Documents` to `~/OmniFex Brain/<account>/`. `~/Documents` and `~/Desktop` are exactly the two folders iCloud Drive takes over when "Desktop & Documents Folders" is switched on, and with Optimize Mac Storage the contents of a vault get evicted to placeholder stubs that have to be fetched back one file at a time. On a real vault that measured 0.5–0.9s for roughly half of the files git touches, which is what turned a single background commit into a multi-minute stall — the app looked frozen shortly after launch, with nothing in the log to say why. Existing vaults are untouched and keep working where they are; only the suggested path for a new one changed.
+
+### Added
+
+- The Brain tab now says so when a vault's files have been evicted to the cloud, naming the count and what to do about it. Any sync client can do this — iCloud Drive, Dropbox, OneDrive and Google Drive all go through the same macOS mechanism — and the previous behaviour was to simply be slow with no explanation. A vault that can't be checked stays silent rather than claiming to be healthy.
+
+### Fixed
+
+- Forked skills no longer leak a phantom prompt into the chat transcript.
+
 ## [0.4.155] — 2026-09-05
 
 ### Changed
