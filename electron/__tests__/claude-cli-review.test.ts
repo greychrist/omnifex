@@ -46,6 +46,13 @@ describe('compareCliVersions', () => {
     expect(compareCliVersions('2.2.0', '2.1.999')).toBeGreaterThan(0);
   });
 
+  // The `?? 0` guard on BOTH sides: whichever operand is shorter must read as
+  // zero, or a two-segment version compares as NaN against a three-segment one.
+  it('pads either side, whichever is shorter', () => {
+    expect(compareCliVersions('2.1', '2.1.5')).toBeLessThan(0);
+    expect(compareCliVersions('2.1.5', '2.1')).toBeGreaterThan(0);
+  });
+
   it('treats missing trailing segments as zero', () => {
     expect(compareCliVersions('2.1', '2.1.0')).toBe(0);
     expect(compareCliVersions('2.1', '2.1.1')).toBeLessThan(0);
