@@ -264,3 +264,36 @@ describe('evaluateContextJump', () => {
     expect(evaluateContextJump({ messages: nextTurn, setting })).toBeNull();
   });
 });
+
+// CLI 2.1.265: a forked skill's kickoff prompt streams as a user envelope
+// carrying `parent_tool_use_id`. It classifies as userKind 'prompt', so
+// without an exclusion it anchored the turn — splitting one real turn in two
+// and measuring the delta from the middle of it.
+describe('forked subagent / skill kickoff prompts are not turn anchors', () => {
+  const forwardedPrompt = (): JsonlNode =>
+    ({
+      kind: 'user',
+      sessionId: 's1',
+      receivedAt: '2026-07-30T10:00:00Z',
+      userKind: 'prompt',
+      raw: {
+        type: 'user',
+        uuid: 'fork1',
+        parent_tool_use_id: 'toolu_SKILL_1',
+        message: { role: 'user', content: [{ type: 'text', text: 'Base directory for this skill: /x' }] },
+      },
+    }) as unknown as JsonlNode;
+
+  it('anchors on the human prompt, not the forwarded one', () => {
+    const messages = [assistant(100_000), prompt('p1'), assistant(120_000), forwardedPrompt(), assistant(130_000)];
+    const delta = lastTurnDelta(messages);
+    expect(delta).not.toBeNull();
+    // Anchored at p1 → 130_000 - 100_000. Anchoring at the fork would give 10_000.
+    expect(delta?.deltaTokens).toBe(30_000);
+    expect(delta?.prevTotal).toBe(100_000);
+  });
+
+  it('returns null when the only prompt is a forwarded one', () => {
+    expect(lastTurnDelta([assistant(100_000), forwardedPrompt(), assistant(130_000)])).toBeNull();
+  });
+});

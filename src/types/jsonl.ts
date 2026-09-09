@@ -148,6 +148,13 @@ export type SystemSubtype =
   // Bookkeeping, not narrative — the SubagentBar is where this belongs, so
   // `filterDisplayableMessages` drops it from the transcript.
   | 'background_tasks_changed'
+  // The CLI's inference of what the user is building, emitted once per kind
+  // when it first detects one (`kind: 'ios_app'` is the only one as of
+  // 2.1.266). Bookkeeping the CLI keeps for itself — nothing to say in the
+  // transcript, so `filterDisplayableMessages` drops it. Classified rather
+  // than left to the catch-all so it doesn't draw an "Unrecognized record"
+  // card, which is exactly what `background_tasks_changed` used to do.
+  | 'dev_intent'
   // The SendFeedback tool wrote a local draft feedback report to
   // <CLAUDE_CONFIG_DIR>/feedback/drafts/. Display fields only — the body stays
   // on disk, and nothing is sent until the user approves it via `/feedback`.

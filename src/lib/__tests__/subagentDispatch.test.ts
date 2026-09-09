@@ -128,3 +128,44 @@ describe("isSubagentPrompt", () => {
     expect(isSubagentPrompt(msg, [weird, msg])).toBe(false);
   });
 });
+
+// CLI 2.1.265 made forked skills (`context: fork`) stream their kickoff
+// prompt. It arrives as a `user` envelope whose `parent_tool_use_id` names a
+// *Skill* tool_use, not Task/Agent — so the old Task/Agent-only predicate let
+// it through and it rendered as a prompt the human never typed.
+describe("isSubagentPrompt — forked skill kickoff (CLI >= 2.1.265)", () => {
+  const skillToolUse = (id: string): JsonlNode =>
+    ({
+      kind: "assistant", sessionId: "", receivedAt: "",
+      raw: {
+        type: "assistant",
+        message: {
+          role: "assistant",
+          content: [{ type: "tool_use", id, name: "Skill", input: { skill: "forkprobe" } }],
+        },
+      },
+    }) as unknown as JsonlNode;
+
+  const kickoff = (parentId: string): JsonlNode =>
+    ({
+      kind: "user", userKind: "prompt", sessionId: "", receivedAt: "",
+      raw: {
+        type: "user",
+        message: { role: "user", content: [{ type: "text", text: "Base directory for this skill: /x\n\nDo the thing\n" }] },
+        parent_tool_use_id: parentId,
+        subagent_type: "general-purpose",
+        task_description: "Use when the user says forkprobe.",
+      },
+    }) as unknown as JsonlNode;
+
+  it("treats a kickoff prompt parented to a Skill tool_use as a subagent prompt", () => {
+    const tu = skillToolUse("toolu_SKILL_1");
+    const msg = kickoff("toolu_SKILL_1");
+    expect(isSubagentPrompt(msg, [tu, msg])).toBe(true);
+  });
+
+  it("still requires the parent id to resolve to a real tool_use", () => {
+    const msg = kickoff("toolu_NOT_PRESENT");
+    expect(isSubagentPrompt(msg, [msg])).toBe(false);
+  });
+});

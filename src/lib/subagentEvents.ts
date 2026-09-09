@@ -430,6 +430,42 @@ function collectSubagentOwnedToolUses(messages: JsonlNode[]): Map<string, string
   return out;
 }
 
+/**
+ * Map each `Skill` tool_use id that actually FORKED to the metadata its
+ * kickoff prompt carried.
+ *
+ * A skill with `context: fork` runs as a `local_agent` exactly like a Task
+ * subagent, but it is dispatched by a `Skill` tool_use, so the Agent/Task
+ * dispatch scan never gave it a row — and CLI 2.1.265, which started
+ * streaming forked skills' kickoff prompt and (under
+ * `--forward-subagent-text`) their text turns, had nowhere to put either.
+ *
+ * The kickoff prompt is the only evidence a fork happened, and that is
+ * exactly why detection hangs off it rather than off the tool name. A plain
+ * skill runs inline in the main context: no kickoff, no forwarded frames,
+ * and — decisively — no `tool_result` shaped like a subagent return. Giving
+ * one a row would strand it `running` forever and pin the session's in-flight
+ * rollup to WORKING (see docs/session-lifecycle.md).
+ */
+function collectForkedSkillDispatches(
+  messages: JsonlNode[],
+): Map<string, { agentType?: string; description?: string }> {
+  const out = new Map<string, { agentType?: string; description?: string }>();
+  for (const m of messages) {
+    if (m.kind !== 'user') continue;
+    const raw = (m as unknown as { raw?: Record<string, unknown> }).raw ?? {};
+    const parentId = (raw as { parent_tool_use_id?: unknown }).parent_tool_use_id;
+    if (typeof parentId !== 'string' || parentId.length === 0) continue;
+    const agentType = (raw as { subagent_type?: unknown }).subagent_type;
+    const description = (raw as { task_description?: unknown }).task_description;
+    out.set(parentId, {
+      agentType: typeof agentType === 'string' ? agentType : undefined,
+      description: typeof description === 'string' ? description : undefined,
+    });
+  }
+  return out;
+}
+
 export function messagesToEvents(messages: JsonlNode[]): SubagentEvent[] {
   const events: SubagentEvent[] = [];
   // tool_use id -> the agent that issued it. Harvested in a pre-pass rather
@@ -439,6 +475,9 @@ export function messagesToEvents(messages: JsonlNode[]): SubagentEvent[] {
   // renderer BEFORE the forwarded frame naming its owner. Verified on a
   // recorded 2.1.235 stream — harvesting inline nested nothing.
   const subagentOwnedToolUses = collectSubagentOwnedToolUses(messages);
+  // Which `Skill` tool_uses forked. Also a pre-pass: the kickoff prompt that
+  // proves the fork arrives AFTER the tool_use block that dispatched it.
+  const forkedSkillDispatches = collectForkedSkillDispatches(messages);
 
   for (let i = 0; i < messages.length; i++) {
     const m = messages[i];
@@ -471,13 +510,30 @@ export function messagesToEvents(messages: JsonlNode[]): SubagentEvent[] {
           const isAgentTool = block.name === 'Agent' || block.name === 'Task';
           const input = block.input;
           const isBackgroundDispatch = input.run_in_background === true;
-          if (!isAgentTool && !isBackgroundDispatch) continue;
+          // A forked skill (CLI >= 2.1.265). Looked up by id and gated on the
+          // tool name so a Task's own kickoff prompt can't rewrite its row.
+          const forkedSkill =
+            block.name === 'Skill' ? forkedSkillDispatches.get(block.id) : undefined;
+          if (!isAgentTool && !isBackgroundDispatch && !forkedSkill) continue;
+          // The skill's name is the useful row label; the CLI's own
+          // `task_description` (the skill's `description:` frontmatter, a
+          // "use when..." blurb) is the fallback.
+          const forkedDescription =
+            typeof input.skill === 'string' ? input.skill : forkedSkill?.description ?? '';
           events.push({
             kind: 'Dispatched',
             toolUseId: block.id,
             messageIdx: i,
-            description: typeof input.description === 'string' ? input.description : '',
-            agentType: isAgentTool && typeof input.subagent_type === 'string' ? input.subagent_type : undefined,
+            description: forkedSkill
+              ? forkedDescription
+              : typeof input.description === 'string'
+                ? input.description
+                : '',
+            agentType: forkedSkill
+              ? forkedSkill.agentType
+              : isAgentTool && typeof input.subagent_type === 'string'
+                ? input.subagent_type
+                : undefined,
             isBackground: isBackgroundDispatch,
           });
         }

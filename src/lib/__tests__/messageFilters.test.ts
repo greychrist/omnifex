@@ -369,3 +369,48 @@ describe('forwarded subagent assistant text (--forward-subagent-text)', () => {
     });
   });
 });
+
+describe('forked skill kickoff prompt (CLI >= 2.1.265)', () => {
+  const skillToolUse = (id: string): JsonlNode =>
+    ({
+      kind: 'assistant', sessionId: '', receivedAt: '',
+      raw: {
+        type: 'assistant',
+        message: { role: 'assistant', content: [{ type: 'tool_use', id, name: 'Skill', input: { skill: 'forkprobe' } }] },
+      },
+    }) as unknown as JsonlNode;
+
+  const kickoff = (parentId: string): JsonlNode =>
+    ({
+      kind: 'user', userKind: 'prompt', sessionId: '', receivedAt: '',
+      raw: {
+        type: 'user',
+        message: { role: 'user', content: [{ type: 'text', text: 'Base directory for this skill: /x\n\nDo the thing\n' }] },
+        parent_tool_use_id: parentId,
+        subagent_type: 'general-purpose',
+        task_description: 'Use when the user says forkprobe.',
+      },
+    }) as unknown as JsonlNode;
+
+  // Live-stream only — the persisted transcript has no such line, so before
+  // this fix the same session rendered one way live and another on reload.
+  it('does not render the kickoff prompt as a user message', () => {
+    const tu = skillToolUse('toolu_SKILL_1');
+    const out = filterDisplayableMessages([tu, kickoff('toolu_SKILL_1')]);
+    expect(out).toHaveLength(1);
+    expect(out[0]).toBe(tu);
+  });
+});
+
+describe('system:dev_intent (CLI >= 2.1.266)', () => {
+  // Bookkeeping the CLI emits when it infers what the user is building
+  // (`kind: 'ios_app'` is the only one so far). Same class as
+  // background_tasks_changed: nothing to say in the transcript.
+  it('is dropped rather than drawn as an Unrecognized record card', () => {
+    const node = {
+      kind: 'system', subtype: 'dev_intent', sessionId: '', receivedAt: '',
+      raw: { type: 'system', subtype: 'dev_intent', kind: 'ios_app' },
+    } as unknown as JsonlNode;
+    expect(filterDisplayableMessages([node])).toHaveLength(0);
+  });
+});

@@ -78,11 +78,20 @@ left — treat it as a real audit, not a formality.
    by whether the current build is actually broken. Ask before implementing
    anything beyond a trivial fix.
 
-5. **Bump the watermark ONLY on explicit go-ahead.** When the user says so,
-   update \`REVIEWED_CLI_VERSION\` to \`{installedVersion}\` in
-   \`electron/services/claude-cli-review.ts\` and its "Last review:" comment line.
-   Bumping it to silence the badge without doing the work throws away the only
-   drift signal we have.
+5. **Bump the watermark. Always — it is the closing step of every review.**
+   Update \`REVIEWED_CLI_VERSION\` to \`{installedVersion}\` in
+   \`electron/services/claude-cli-review.ts\`, and add a "Last review:" block
+   above the existing ones recording what you found — including the entries
+   that turned out to be inert, so the next reviewer does not re-derive them.
+
+   This does not need its own go-ahead. An unbumped watermark means the next
+   review re-runs this same range, and the drift badge stops meaning anything.
+   Do it even when the answer is "nothing to change" — a clean pass is a
+   result, and recording it is the point.
+
+   What is forbidden is bumping it *without* doing the work. The comment block
+   is the evidence that the work happened; a bump with nothing to say is the
+   one thing that throws away the only drift signal we have.
 
 ## Notes
 

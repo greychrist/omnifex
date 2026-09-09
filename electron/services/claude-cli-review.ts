@@ -30,6 +30,129 @@ import { buildClaudeEnv } from './util/claude-env';
  * old value and the new one, and file or fix whatever they imply. Bumping it
  * to silence the badge throws away the only drift signal we have.
  *
+ * Last review: 2.1.261 -> 2.1.266 on 2026-09-09. Findings:
+ *
+ *  Changelog coverage: three entries in range — 2.1.266, 2.1.265 and a
+ *  contentless 2.1.263 ("Bug fixes and reliability improvements").
+ *  2.1.262 and 2.1.264 have NO changelog entry upstream; they are not
+ *  skipped here, they do not exist. 2.1.263 is therefore covered only by
+ *  the binary diff. Both 2.1.261 and 2.1.266 were installed under
+ *  ~/.local/share/claude/versions, so the wire claims are a real
+ *  two-version diff.
+ *
+ *  Wire diff: subtypes 115 -> 116, one addition (`dev_intent`) and nothing
+ *  removed. `hook_event_name` literals 39 -> 39, identical.
+ *  control_request / control_response envelopes identical. The `/usage` TUI
+ *  anchors we scrape are BYTE-IDENTICAL. `interruptedByShutdown` and
+ *  `toolDenialKind` are present in BOTH binaries — the interrupted-tool
+ *  marker is not new, only when it is applied.
+ *
+ *  ONE REAL REGRESSION, fixed. Everything else was inert.
+ *
+ *  1. Forked skills (`context: fork`) leaked a phantom user prompt.
+ *     FIXED. 2.1.265: "Fixed forked skills not streaming their kickoff
+ *     prompt and, with `--forward-subagent-text`, their text turns as
+ *     progress events in stream-json." We pass that flag unconditionally
+ *     (agents/claude-cli-engine.ts:62), so this landed on us immediately.
+ *
+ *     Verified by BUILDING a `context: fork` skill and capturing a real
+ *     stream-json run rather than trusting the prose — the changelog's
+ *     "as progress events" reads like a system envelope, and it is not one.
+ *     The kickoff arrives as a plain user message:
+ *       {"type":"user","message":{"content":[{"type":"text",
+ *         "text":"Base directory for this skill: ...\n\n<skill body>"}]},
+ *        "parent_tool_use_id":"toolu_...",   <- a *Skill* tool_use
+ *        "subagent_type":"general-purpose","task_description":"..."}
+ *
+ *     `isSubagentPrompt` only accepted Task/Agent parents, so it fell
+ *     through and rendered as a prompt the human never typed, and
+ *     `userKind` classified it 'prompt' (no isMeta, not tool-result-only)
+ *     so turnDelta anchored on it — splitting one real turn in two.
+ *     Chat mode only: the persisted transcript carries no such line, so
+ *     live and reloaded views of the same session disagreed.
+ *
+ *     Three fixes. `isForwardedPromptParent` (subagentDispatch.ts) now
+ *     accepts Skill as a dispatching parent — kept SEPARATE from
+ *     `isSubagentDispatch`, which the render sites use and which must not
+ *     see Skill or every ordinary skill call becomes a subagent card.
+ *     `lastPrompt` (turnDelta.ts) skips any user node carrying
+ *     parent_tool_use_id, matching `isMainUserNode`. And forked skills now
+ *     get a SubagentBar row (below).
+ *
+ *     Evidence for widening rather than gating on the parent tool at all:
+ *     across 120 persisted transcripts (8882 lines) NO main-chain user line
+ *     carries a non-null `parent_tool_use_id`, and live main-chain lines
+ *     carry an explicit null. The old comment on `isSubagentPrompt` claimed
+ *     the opposite ("the CLI persists every user message with a parent tool
+ *     reference") — that was stale and is now corrected in place. The
+ *     tool-name allowlist is kept anyway: a prompt parented to a `Read`
+ *     must still render, and there is a test pinning that.
+ *
+ *  2. Forked skills now get a SubagentBar row. NEW BEHAVIOUR, requested.
+ *     A forked skill runs as a `local_agent` exactly like a Task subagent,
+ *     but the Agent/Task-only dispatch scan gave it no row, so its narration
+ *     was collected as ForwardedText and then dropped at
+ *     subagentEvents.ts `byId.get()` for want of a row. Before 2.1.265
+ *     nothing streamed at all, so this is an opportunity the CLI opened,
+ *     not a regression.
+ *
+ *     Detection hangs off the KICKOFF PROMPT, not the tool name, and that
+ *     is load-bearing: a plain (non-forked) skill runs inline, emits no
+ *     kickoff, no forwarded frames, and no subagent-shaped tool_result. A
+ *     row for one would strand it 'running' and pin the in-flight rollup to
+ *     WORKING forever (docs/session-lifecycle.md). Test pins that a
+ *     non-forked Skill tool_use produces zero rows.
+ *
+ *  3. `system:dev_intent`, the only new subtype in range. FIXED (cosmetic).
+ *     Emitter read out of the 2.1.266 binary:
+ *     `Gc({type:"system",subtype:"dev_intent",kind:t})`, same queue as
+ *     `task_notification`; the only `kind` so far is `"ios_app"`. Not in
+ *     SYSTEM_SUBTYPES it fell to the catch-all and would have drawn an
+ *     orange "Unrecognized record: system" card — exactly what
+ *     `background_tasks_changed` used to do. Now classified and filtered.
+ *     Caveat for the next reviewer: the emitter shape is confirmed from the
+ *     binary, but it was never observed on the wire (it needs iOS-app
+ *     detection to fire).
+ *
+ *  Checked and confirmed inert — the entries that looked like they should
+ *  have hit us:
+ *   - 2.1.265 "resume after the previous process died while a tool was
+ *     running: the last prompt is no longer rewritten, and the interrupted
+ *     tool call is kept and marked interrupted". We resume constantly, but
+ *     no shape moved: the marker is an ordinary
+ *     {type:"tool_result",is_error:true} we already render, and both
+ *     `interruptedByShutdown` and `toolDenialKind` exist in 2.1.261 too.
+ *     The prompt-rewriting half is a direct win — a re-appended duplicate
+ *     prompt would have created a phantom turn in turnDelta.ts.
+ *   - 2.1.266 `CLAUDE_CODE_USE_GATEWAY` regression: we never set it;
+ *     util/claude-env.ts:24-25 only passes process.env through. Had Greg's
+ *     shell carried it, 2.1.265 would have broken every session.
+ *   - 2.1.265 `cd` now persisting across turns in stream-json input mode —
+ *     the mode we run. Behaviour change, nothing to change: we set cwd once
+ *     at spawn (claude-cli-engine.ts:300).
+ *   - 2.1.265 1 GB cap on disk-saved tool results: same surface as the
+ *     `bashOutputMaxChars` opportunity declined last review. Still declined.
+ *   - 2.1.265 `/model opusplan[1m]`: no hardcoded model ids; the picker is
+ *     fed by system:init's `models` array.
+ *   - 2.1.265 `--plugin-dir` folder-of-plugins: we pass no --plugin-dir.
+ *   - 2.1.265 prompt-cache-prefix fixes (resumed subagents, teammates,
+ *     SubagentStart hooks): cost wins on a path we drive hard.
+ *
+ *  No OmniFex impact, the rest: all Remote Control and Claude apps gateway
+ *  entries; all 33 [VSCode] entries across the range; artifact / connector /
+ *  Cowork entries; plugin symlink containment, two-dot dirs, marketplace
+ *  metadata and `/plugin` display; `--worktree` startup; `/workflows`
+ *  detail; mid-prompt slash-command matching; two-key shortcut timeout;
+ *  Ruby/Erlang/Perl sigil highlighting; fullscreen transcript row jump;
+ *  `/config` dialog height; `/login`, `/model` and `/clear` messaging; the
+ *  MCP http->SSE fallback and OAuth-client registration (mcp.ts is
+ *  .mcp.json + .claude.json CRUD and its status probe is a stub at
+ *  mcp.ts:198,213); nested-repo git clean filters; advisor tool
+ *  decisioning; image decoding and native-module extraction; `--bg` idle
+ *  timeout; Windows AppContainer file access; the `.claude` folder
+ *  permission wording (no such option in our rules UI); workflow-run
+ *  resume; and the `claude-api` skill's error-code reference.
+ *
  * Last review: 2.1.260 -> 2.1.261 on 2026-09-04. Findings:
  *
  *  Changelog coverage: 2.1.261 is the only release in range and it has an
@@ -944,7 +1067,7 @@ import { buildClaudeEnv } from './util/claude-env';
  * `~/.claude.json` fix (we read-modify-write that file, never replace it), and
  * the VSCode screen-reader work.
  */
-export const REVIEWED_CLI_VERSION = '2.1.261';
+export const REVIEWED_CLI_VERSION = '2.1.266';
 
 /**
  * app_settings key holding the user's explicit OmniFex-checkout override.

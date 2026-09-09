@@ -1581,3 +1581,88 @@ describe('forwarded subagent text (--forward-subagent-text)', () => {
     expect(subs).toHaveLength(0);
   });
 });
+
+// CLI 2.1.265 made forked skills (`context: fork`) stream their kickoff prompt
+// and, under --forward-subagent-text, their text turns. A forked skill runs as
+// a `local_agent` exactly like a Task subagent, but it is dispatched by a
+// `Skill` tool_use — so without a dispatch row its narration was collected as
+// ForwardedText and then dropped for want of a row to attach to.
+describe('forked skills (context: fork, CLI >= 2.1.265)', () => {
+  const SKILL_ID = 'toolu_SKILL_1';
+
+  function skillToolUse(id: string, skill = 'forkprobe'): JsonlNode {
+    return {
+      kind: 'assistant', sessionId: '', receivedAt: '',
+      raw: {
+        type: 'assistant',
+        message: {
+          role: 'assistant',
+          content: [{ type: 'tool_use', id, name: 'Skill', input: { skill } }],
+        },
+      },
+    } as unknown as JsonlNode;
+  }
+
+  /** The fork kickoff prompt — the only evidence that a Skill call forked. */
+  function forkKickoff(parentToolUseId: string, subagentType = 'general-purpose'): JsonlNode {
+    return {
+      kind: 'user', userKind: 'prompt', sessionId: '', receivedAt: '',
+      raw: {
+        type: 'user',
+        message: { role: 'user', content: [{ type: 'text', text: 'Base directory for this skill: /x' }] },
+        parent_tool_use_id: parentToolUseId,
+        subagent_type: subagentType,
+        task_description: 'Use when the user says forkprobe.',
+      },
+    } as unknown as JsonlNode;
+  }
+
+  function forkText(parentToolUseId: string, text: string): JsonlNode {
+    return {
+      kind: 'assistant', sessionId: '', receivedAt: '',
+      raw: {
+        type: 'assistant',
+        parent_tool_use_id: parentToolUseId,
+        message: { role: 'assistant', content: [{ type: 'text', text }] },
+      },
+    } as unknown as JsonlNode;
+  }
+
+  it('creates a row for a Skill tool_use that forked', () => {
+    const subs = deriveSubagents([skillToolUse(SKILL_ID), forkKickoff(SKILL_ID)]);
+    expect(subs).toHaveLength(1);
+    expect(subs[0].toolUseId).toBe(SKILL_ID);
+    expect(subs[0].description).toBe('forkprobe');
+    expect(subs[0].agentType).toBe('general-purpose');
+    expect(subs[0].status).toBe('running');
+  });
+
+  // A plain (non-forked) skill runs inline in the main context: no kickoff
+  // prompt, no forwarded frames, and critically no tool_result that would
+  // close a row. Creating one would strand it 'running' and hold the
+  // session's in-flight rollup on WORKING forever.
+  it('creates no row for a Skill tool_use that did not fork', () => {
+    expect(deriveSubagents([skillToolUse(SKILL_ID)])).toHaveLength(0);
+  });
+
+  it('attaches forwarded narration to the row', () => {
+    const subs = deriveSubagents([
+      skillToolUse(SKILL_ID),
+      forkKickoff(SKILL_ID),
+      forkText(SKILL_ID, 'Reading the manifest.'),
+    ]);
+    expect(subs).toHaveLength(1);
+    expect(subs[0].latest?.description).toBe('Reading the manifest.');
+  });
+
+  it("closes the row on the Skill's tool_result", () => {
+    const subs = deriveSubagents([
+      skillToolUse(SKILL_ID),
+      forkKickoff(SKILL_ID),
+      forkText(SKILL_ID, 'Reading the manifest.'),
+      toolResult(SKILL_ID),
+    ]);
+    expect(subs).toHaveLength(1);
+    expect(subs[0].status).toBe('completed');
+  });
+});

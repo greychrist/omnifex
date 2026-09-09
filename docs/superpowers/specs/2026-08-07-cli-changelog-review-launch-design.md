@@ -107,7 +107,9 @@ and restored tab doesn't re-send the prompt on the next app launch.
   requests, `/usage` rendering, hook event names, permission-rule semantics,
   session lifecycle, model/effort/fast-mode plumbing
 - report what needs work, with file pointers
-- bump `REVIEWED_CLI_VERSION` only on explicit go-ahead
+- always bump `REVIEWED_CLI_VERSION` as the closing step, with a
+  "Last review:" block recording the findings (a clean pass included); never
+  bump it without doing the work
 
 Keeping the procedure in the repo means it can be edited without rebuilding the
 app; the app only supplies the version range.

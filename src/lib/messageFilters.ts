@@ -100,6 +100,13 @@ export function filterDisplayableMessages(
       return false;
     }
 
+    // Same treatment for `system:dev_intent` (CLI >= 2.1.266) — the CLI
+    // announcing to itself that it has inferred what the user is building.
+    // Pure bookkeeping; there is no user-facing statement to make.
+    if (message.kind === "system" && message.subtype === "dev_intent") {
+      return false;
+    }
+
     // Skip live-forwarded subagent assistant text (--forward-subagent-text):
     // it belongs to the SubagentBar row keyed by parent_tool_use_id, not the
     // main transcript. A bare non-null check is safe for assistants — no

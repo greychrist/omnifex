@@ -11,6 +11,7 @@
 
 import type { JsonlNode } from '@/types/jsonl';
 import { isMainAssistant } from '@/lib/sessionDerivedState';
+import { forwardedParentToolUseId } from '@/lib/subagentDispatch';
 
 export const CONTEXT_JUMP_ENABLED_SETTING_KEY = 'context_jump_enabled';
 export const CONTEXT_JUMP_TOKENS_SETTING_KEY = 'context_jump_tokens';
@@ -109,12 +110,24 @@ export function lastTurnDelta(messages: JsonlNode[]): TurnDelta | null {
   };
 }
 
+/**
+ * The last prompt the human actually typed.
+ *
+ * `userKind === 'prompt'` alone is not enough: a forwarded subagent prompt —
+ * and, since CLI 2.1.265, a forked skill's kickoff prompt — is a plain text
+ * user envelope with no `isMeta`, so it classifies as a prompt too. Anchoring
+ * on one splits a single real turn in two and measures the delta from the
+ * middle of it. `parent_tool_use_id` is the discriminator (same rule as
+ * `isMainUserNode` in sessionDerivedState).
+ */
 function lastPrompt(
   messages: JsonlNode[],
 ): { node: Extract<JsonlNode, { kind: 'user' }>; index: number } | null {
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const node = messages[i];
-    if (node.kind === 'user' && node.userKind === 'prompt') return { node, index: i };
+    if (node.kind !== 'user' || node.userKind !== 'prompt') continue;
+    if (forwardedParentToolUseId(node.raw) !== null) continue;
+    return { node, index: i };
   }
   return null;
 }

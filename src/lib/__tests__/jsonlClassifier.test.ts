@@ -623,3 +623,16 @@ describe('CLI stream-json envelopes (engine mode)', () => {
     expect(node?.kind).toBe('system');
   });
 });
+
+describe('system:dev_intent (CLI >= 2.1.266)', () => {
+  it('classifies as a known system subtype, not unknown', () => {
+    const node = classifyJsonlLine({
+      type: 'system',
+      subtype: 'dev_intent',
+      kind: 'ios_app',
+      timestamp: '2026-09-09T10:00:00Z',
+    } as Record<string, unknown>);
+    expect(node?.kind).toBe('system');
+    if (node?.kind === 'system') expect(node.subtype).toBe('dev_intent');
+  });
+});

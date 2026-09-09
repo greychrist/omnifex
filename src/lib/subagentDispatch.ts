@@ -30,12 +30,38 @@ export function forwardedParentToolUseId(raw: unknown): string | null {
 }
 
 /**
- * True when a user-role message is a synthesized subagent prompt — i.e.
- * its `parent_tool_use_id` matches a Task/Agent tool_use somewhere in the
- * stream. The bare presence of `parent_tool_use_id` is NOT enough: the
- * Claude CLI persists *every* user message with a parent tool reference
- * for conversation-tree chaining, so a presence check would also drop
- * real user prompts on reload.
+ * Tools that can dispatch work whose prompt is then forwarded back to us.
+ *
+ * A superset of `isSubagentDispatch`, and deliberately a SEPARATE predicate:
+ * `Skill` belongs here but must not be treated as a subagent dispatch at the
+ * render sites (`StreamMessage`), where it would turn every ordinary skill
+ * call into a subagent card.
+ *
+ * `Skill` earns its place because CLI 2.1.265 made forked skills
+ * (`context: fork`) stream their kickoff prompt, parented to the `Skill`
+ * tool_use that dispatched them.
+ */
+function isForwardedPromptParent(name: unknown): boolean {
+  return isSubagentDispatch(name) || name === 'Skill';
+}
+
+/**
+ * True when a user-role message is a synthesized subagent prompt — i.e. its
+ * `parent_tool_use_id` matches a Task/Agent/Skill tool_use somewhere in the
+ * stream.
+ *
+ * Both halves of that are load-bearing:
+ *
+ *  - The parent must RESOLVE to a real tool_use. Presence of the field alone
+ *    is not enough to act on here.
+ *  - The parent must be a tool that actually dispatches forwarded work. A
+ *    user message pointing at, say, a `Read` tool_use is not a forwarded
+ *    prompt and must still render.
+ *
+ * Before CLI 2.1.265 this accepted Task/Agent only, so a forked skill's
+ * kickoff prompt fell through and rendered as a prompt the human never typed
+ * — live only, since the persisted transcript carries no such line, which
+ * made the same session look different after a reload.
  */
 export function isSubagentPrompt(
   msg: JsonlNode,
@@ -50,7 +76,7 @@ export function isSubagentPrompt(
     const content = (m.raw as { message?: { content?: unknown } }).message?.content;
     if (!Array.isArray(content)) continue;
     for (const b of content) {
-      if ((b as any)?.type === 'tool_use' && (b as any).id === parentId && isSubagentDispatch((b as any).name)) {
+      if ((b as any)?.type === 'tool_use' && (b as any).id === parentId && isForwardedPromptParent((b as any).name)) {
         return true;
       }
     }
