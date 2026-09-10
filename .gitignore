@@ -74,3 +74,6 @@ CLAUDE.local.md
 # Local-only subagent-stream sanity-check fixture — see
 # src/lib/__tests__/subagentStreams.test.ts (the test skipIf()s when absent).
 session_json/
+
+# Playwright MCP artifacts (browser snapshots/screenshots from verification runs)
+.playwright-mcp/
