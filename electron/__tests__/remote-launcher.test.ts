@@ -211,6 +211,68 @@ describe('remote launcher', () => {
     });
   });
 
+  describe('restart', () => {
+    it('stops the running daemon, waits for it to go, spawns, and waits for the new one', async () => {
+      // probe: running → gone → gone → answering
+      const { launcher, stop, spawn, probe } = make([same(), null, same()]);
+      expect(await launcher.restart()).toBe(WS);
+      expect(stop).toHaveBeenCalledTimes(1);
+      expect(spawn).toHaveBeenCalledTimes(1);
+      expect(probe).toHaveBeenCalledTimes(3);
+    });
+
+    it('restarts even when a turn is in flight — the user asked', async () => {
+      const { launcher, stop, spawn, scheduled } = make([{ version: APP, inFlight: 2 }, null, same()]);
+      expect(await launcher.restart()).toBe(WS);
+      expect(stop).toHaveBeenCalledTimes(1);
+      expect(spawn).toHaveBeenCalledTimes(1);
+      expect(scheduled).toEqual([]);
+    });
+
+    it('just spawns when nothing is running', async () => {
+      const { launcher, stop, spawn } = make([null, same()]);
+      expect(await launcher.restart()).toBe(WS);
+      expect(stop).not.toHaveBeenCalled();
+      expect(spawn).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps the running daemon when it cannot be signalled, rather than spawning onto its port', async () => {
+      const { launcher, spawn, logs } = make([same()], { stopOk: false });
+      expect(await launcher.restart()).toBe(WS);
+      expect(spawn).not.toHaveBeenCalled();
+      expect(logs.some((l) => l.includes('could not reach'))).toBe(true);
+    });
+
+    it('reports legacy when the new daemon never answers', async () => {
+      let now = 0;
+      const spy = vi.spyOn(Date, 'now').mockImplementation(() => now);
+      try {
+        const probe = vi.fn(async () => { now += 300; return null; });
+        const launcher = createRemoteLauncher({
+          config: () => CONFIG,
+          probe,
+          spawn: () => true,
+          stop: async () => true,
+          appVersion: APP,
+          sleep: async () => {},
+          startupTimeoutMs: 1000,
+          pollIntervalMs: 250,
+        });
+        expect(await launcher.restart()).toBeNull();
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it('shares the in-flight slot: an ensure() during a restart gets the restart result', async () => {
+      const { launcher, spawn } = make([same(), null, same()]);
+      const restarting = launcher.restart();
+      const ensured = launcher.ensure();
+      expect(await Promise.all([restarting, ensured])).toEqual([WS, WS]);
+      expect(spawn).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('parseDaemonHealth', () => {
     it('reads version and in-flight count', () => {
       expect(parseDaemonHealth('{"ok":true,"version":"0.4.156","sessions":{"live":2,"inFlight":1}}')).toEqual({ version: '0.4.156', inFlight: 1 });

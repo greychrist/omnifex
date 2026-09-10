@@ -3268,6 +3268,15 @@ export const api = {
   },
 
   /**
+   * Stop the OmniFex Remote daemon and start this build's. Kills any turn in
+   * flight — the caller has asked the user. `url` is null when the new daemon
+   * did not come up; this window's socket client keeps retrying regardless.
+   */
+  async restartDaemon(): Promise<{ url: string | null }> {
+    return apiCall<{ url: string | null }>('remote:restart', {});
+  },
+
+  /**
    * Subscribe to the live list of tab summaries. Fires whenever any tab
    * publishes or is removed. The list is in tab-bar order.
    */

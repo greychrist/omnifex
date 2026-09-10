@@ -36,6 +36,7 @@ const w = window as unknown as {
 
 let listeners: Array<(p: unknown) => void>;
 let fetchMock: ReturnType<typeof vi.fn>;
+let invokeMock: ReturnType<typeof vi.fn>;
 
 function remote(state: string, welcomeVersion = '0.4.156') {
   w.__omnifexRemote = {
@@ -44,6 +45,7 @@ function remote(state: string, welcomeVersion = '0.4.156') {
     client: { state, welcome: { protocolVersion: 1, daemonVersion: welcomeVersion } },
   };
   w.electronAPI = {
+    invoke: invokeMock,
     onEvent: (channel: string, cb: (p: unknown) => void) => {
       if (channel === 'remote-connection') listeners.push(cb);
       return () => {};
@@ -52,9 +54,11 @@ function remote(state: string, welcomeVersion = '0.4.156') {
 }
 
 const trigger = () => document.querySelector<HTMLButtonElement>('[data-daemon-trigger]')!;
+const restartButton = () => document.querySelector<HTMLButtonElement>('[data-daemon-restart]')!;
 
 beforeEach(() => {
   listeners = [];
+  invokeMock = vi.fn(async () => ({ url: 'ws://100.64.0.1:47700/ws' }));
   fetchMock = vi.fn(async () => ({ ok: true, status: 200, json: async () => HEALTH }));
   vi.stubGlobal('fetch', fetchMock);
   delete w.__omnifexRemote;
@@ -127,5 +131,55 @@ describe('DaemonStatusPopover', () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     fireEvent.click(document.querySelector<HTMLButtonElement>('[data-daemon-refresh]')!);
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+  });
+
+  describe('restart', () => {
+    it('restarts at once when no turn is running, then re-reads /healthz', async () => {
+      remote('connected');
+      fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => ({ ...HEALTH, sessions: { live: 3, known: 9, inFlight: 0 } }) });
+      render(<DaemonStatusPopover />);
+      fireEvent.click(trigger());
+      await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+      fireEvent.click(restartButton());
+      expect(document.querySelector('[data-daemon-restart-confirm]')).toBeNull();
+      await waitFor(() => expect(invokeMock).toHaveBeenCalledWith('remote:restart', {}));
+      await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+      expect(document.querySelector('[data-daemon-restart-error]')).toBeNull();
+    });
+
+    it('asks first when a turn is running, and restarts on confirm', async () => {
+      remote('connected');
+      render(<DaemonStatusPopover />);
+      fireEvent.click(trigger());
+      await waitFor(() => expect(screen.getByText('3 live · 1 running')).toBeTruthy());
+
+      fireEvent.click(restartButton());
+      expect(invokeMock).not.toHaveBeenCalled();
+      const confirm = document.querySelector<HTMLButtonElement>('[data-daemon-restart-confirm]')!;
+      expect(confirm).toBeTruthy();
+      expect(screen.getByText(/1 running turn will be stopped/)).toBeTruthy();
+
+      fireEvent.click(confirm);
+      await waitFor(() => expect(invokeMock).toHaveBeenCalledWith('remote:restart', {}));
+    });
+
+    it('is disabled while restarting and reports a failed restart', async () => {
+      remote('connected');
+      fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => ({ ...HEALTH, sessions: { live: 0, known: 0, inFlight: 0 } }) });
+      let finish!: (v: unknown) => void;
+      invokeMock.mockImplementation(() => new Promise((r) => { finish = r; }));
+      render(<DaemonStatusPopover />);
+      fireEvent.click(trigger());
+      await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+      fireEvent.click(restartButton());
+      await waitFor(() => expect(restartButton().disabled).toBe(true));
+      expect(screen.getByText('Restarting…')).toBeTruthy();
+
+      act(() => { finish({ url: null }); });
+      await waitFor(() => expect(document.querySelector('[data-daemon-restart-error]')).toBeTruthy());
+      expect(restartButton().disabled).toBe(false);
+    });
   });
 });

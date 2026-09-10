@@ -30,6 +30,7 @@ const DIRECTLY_REGISTERED_CHANNELS = [
   'tab_status_list',
   // main.ts — OmniFex Remote (daemon discovery + native notification relay)
   'remote:url',
+  'remote:restart',
   'notify:show',
 ] as const;
 

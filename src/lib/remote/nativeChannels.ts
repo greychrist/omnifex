@@ -40,6 +40,8 @@ export const NATIVE_INVOKE_CHANNELS: readonly string[] = [
   'tab_status_list',
   /** Where the daemon is, and whether to use it. Answered by main only. */
   'remote:url',
+  /** Stop the daemon and start this build's. Main owns the process, so main only. */
+  'remote:restart',
   /** OS notification on behalf of a daemon-side event. */
   'notify:show',
 ];

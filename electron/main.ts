@@ -1743,6 +1743,14 @@ app.whenReady().then(() => {
     remoteInUse = url !== null;
     return url;
   });
+  // The Daemon popover's Restart button. Stops whatever answers on the port,
+  // in flight or not — the popover has already asked — and starts this
+  // build's daemon. The renderer's socket client reconnects by itself.
+  ipcMain.handle('remote:restart', async () => {
+    const url = await remoteLauncher.restart();
+    remoteInUse = url !== null;
+    return { url };
+  });
   // An OS notification raised for a daemon-side event. The daemon has no
   // display; the renderer's shim forwards `claude-notification` here so the
   // laptop still gets the same banner and dock badge it always did.

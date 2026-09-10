@@ -10,9 +10,10 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { CircleCheck, CircleX, Loader2 } from 'lucide-react';
+import { CircleCheck, CircleX, Loader2, RotateCw } from 'lucide-react';
 
 import { Popover } from '@/components/ui/popover';
+import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { daemonHealthUrl, fetchDaemonHealth, formatUptime, type DaemonHealthInfo } from '@/lib/remote/daemonStatus';
 
@@ -49,6 +50,10 @@ export function DaemonStatusPopover({ appVersion }: { appVersion?: string }): Re
   const [health, setHealth] = useState<DaemonHealthInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [restarting, setRestarting] = useState(false);
+  const [restartError, setRestartError] = useState<string | null>(null);
+  // Restart with a turn running needs a second click; this is the first one.
+  const [confirmRestart, setConfirmRestart] = useState(false);
 
   useEffect(() => {
     if (!client || typeof window.electronAPI?.onEvent !== 'function') return;
@@ -78,10 +83,45 @@ export function DaemonStatusPopover({ appVersion }: { appVersion?: string }): Re
     return () => clearInterval(t);
   }, [open, healthUrl, refresh]);
 
+  // A stale "are you sure?" must not survive closing the panel.
+  useEffect(() => {
+    if (!open) setConfirmRestart(false);
+  }, [open]);
+
+  const inFlight = health?.sessions.inFlight ?? 0;
+
+  const restart = useCallback(async () => {
+    setConfirmRestart(false);
+    setRestarting(true);
+    setRestartError(null);
+    try {
+      const { url } = await api.restartDaemon();
+      if (!url) setRestartError('The daemon did not come back. See ~/Library/Logs/omnifex-server.log.');
+    } catch (err) {
+      setRestartError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRestarting(false);
+    }
+    void refresh();
+  }, [refresh]);
+
+  const onRestartClick = () => {
+    if (inFlight > 0 && !confirmRestart) {
+      setConfirmRestart(true);
+      return;
+    }
+    void restart();
+  };
+
   const busy = state === 'connecting' || state === 'reconnecting';
   const good = state === 'connected';
   const daemonVersion = health?.version ?? client?.welcome?.daemonVersion ?? null;
   const versionMismatch = !!appVersion && !!daemonVersion && appVersion !== daemonVersion;
+  const footerButton = cn(
+    'inline-flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5',
+    'text-[12px] font-medium transition-colors app-no-drag',
+    'bg-accent/60 hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed',
+  );
 
   return (
     <Popover
@@ -164,21 +204,48 @@ export function DaemonStatusPopover({ appVersion }: { appVersion?: string }): Re
                     Could not read /healthz: {error}
                   </p>
                 )}
+                {restartError && (
+                  <p data-daemon-restart-error className="rounded-md bg-red-500/10 px-2 py-1.5 text-[12px] text-red-400">
+                    Restart failed: {restartError}
+                  </p>
+                )}
+                {confirmRestart && (
+                  <div data-daemon-restart-prompt className="rounded-md bg-amber-500/10 px-2 py-1.5 text-[12px] text-amber-500 space-y-1.5">
+                    <p>
+                      {inFlight} running {inFlight === 1 ? 'turn' : 'turns'} will be stopped. Open tabs
+                      show as stopped until their next message.
+                    </p>
+                    <div className="flex gap-1.5">
+                      <button
+                        type="button"
+                        data-daemon-restart-confirm
+                        onClick={() => { void restart(); }}
+                        className="rounded px-2 py-0.5 font-medium bg-amber-500/20 hover:bg-amber-500/30 app-no-drag"
+                      >
+                        Stop and restart
+                      </button>
+                      <button
+                        type="button"
+                        data-daemon-restart-cancel
+                        onClick={() => setConfirmRestart(false)}
+                        className="rounded px-2 py-0.5 font-medium hover:bg-accent app-no-drag"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
               </>
             )}
           </div>
           {state !== 'none' && (
-            <div className="px-3.5 py-2.5 border-t border-border/50">
+            <div className="px-3.5 py-2.5 border-t border-border/50 flex gap-2">
               <button
                 type="button"
                 data-daemon-refresh
                 onClick={() => { void refresh(); }}
-                disabled={refreshing}
-                className={cn(
-                  'inline-flex w-full items-center justify-center gap-1.5 rounded-md px-2 py-1.5',
-                  'text-[12px] font-medium transition-colors app-no-drag',
-                  'bg-accent/60 hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed',
-                )}
+                disabled={refreshing || restarting}
+                className={footerButton}
               >
                 {refreshing ? (
                   <>
@@ -187,6 +254,26 @@ export function DaemonStatusPopover({ appVersion }: { appVersion?: string }): Re
                   </>
                 ) : (
                   <span>Refresh</span>
+                )}
+              </button>
+              <button
+                type="button"
+                data-daemon-restart
+                onClick={onRestartClick}
+                disabled={restarting}
+                title="Stop the daemon and start a fresh one"
+                className={footerButton}
+              >
+                {restarting ? (
+                  <>
+                    <Loader2 size={13} className="animate-spin" />
+                    <span>Restarting…</span>
+                  </>
+                ) : (
+                  <>
+                    <RotateCw size={13} />
+                    <span>Restart</span>
+                  </>
                 )}
               </button>
             </div>

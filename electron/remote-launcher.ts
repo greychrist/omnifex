@@ -61,6 +61,12 @@ export interface RemoteLauncherDeps {
 export interface RemoteLauncher {
   /** The daemon's WebSocket URL, or null when it is not available. */
   ensure(): Promise<string | null>;
+  /**
+   * Stop whatever daemon answers on the port — busy or not, the user asked —
+   * and start this build's. Same result shape as `ensure()`; the renderer's
+   * socket client reconnects on its own once the new daemon is up.
+   */
+  restart(): Promise<string | null>;
 }
 
 export function healthUrlFor(config: Pick<ServerConfig, 'host' | 'port'>): string {
@@ -128,14 +134,48 @@ export function createRemoteLauncher(deps: RemoteLauncherDeps): RemoteLauncher {
     return false;
   }
 
-  async function attempt(): Promise<string | null> {
-    let config: ServerConfig;
+  function readConfig(): ServerConfig | null {
     try {
-      config = deps.config();
+      return deps.config();
     } catch (err) {
       log('remote config unreadable; using legacy IPC', { error: String(err) });
       return null;
     }
+  }
+
+  /**
+   * Stop the running daemon and wait for the port to clear. Null once it is
+   * gone; the ws url when it has to be kept as is (unreachable, or it ignored
+   * the stop) — spawning onto an occupied port would only fail.
+   */
+  async function retire(config: ServerConfig, health: string, ws: string, meta: Record<string, unknown>): Promise<string | null> {
+    if (!(await deps.stop(config))) {
+      log('could not reach the running daemon to stop it; using it as is', meta);
+      return ws;
+    }
+    if (!(await waitUntil(async () => (await deps.probe(health)) === null))) {
+      log('daemon did not exit in time; using it as is', meta);
+      return ws;
+    }
+    return null;
+  }
+
+  async function launch(config: ServerConfig, health: string, ws: string): Promise<string | null> {
+    if (!deps.spawn(config)) {
+      log('daemon could not be spawned; using legacy IPC');
+      return null;
+    }
+    if (await waitUntil(async () => (await deps.probe(health)) !== null)) {
+      log('daemon started', { health });
+      return ws;
+    }
+    log('daemon did not answer in time; using legacy IPC', { health, startupTimeoutMs });
+    return null;
+  }
+
+  async function attempt(): Promise<string | null> {
+    const config = readConfig();
+    if (!config) return null;
     const health = healthUrlFor(config);
     const ws = wsUrlFor(config);
 
@@ -157,38 +197,48 @@ export function createRemoteLauncher(deps: RemoteLauncherDeps): RemoteLauncher {
         return ws;
       }
       log('daemon is another build and idle; replacing it', versions);
-      if (!(await deps.stop(config))) {
-        log('could not reach the running daemon to stop it; using it as is', versions);
-        return ws;
-      }
-      if (!(await waitUntil(async () => (await deps.probe(health)) === null))) {
-        log('daemon did not exit in time; using it as is', versions);
-        return ws;
-      }
+      const kept = await retire(config, health, ws, versions);
+      if (kept) return kept;
     }
+    return launch(config, health, ws);
+  }
 
-    if (!deps.spawn(config)) {
-      log('daemon could not be spawned; using legacy IPC');
-      return null;
+  async function restartAttempt(): Promise<string | null> {
+    const config = readConfig();
+    if (!config) return null;
+    const health = healthUrlFor(config);
+    const ws = wsUrlFor(config);
+
+    const running = await deps.probe(health);
+    if (running) {
+      const meta = { version: running.version, inFlight: running.inFlight };
+      log('restarting the daemon', meta);
+      const kept = await retire(config, health, ws, meta);
+      if (kept) return kept;
+    } else {
+      log('restart requested but no daemon answers; starting one', { health });
     }
-    if (await waitUntil(async () => (await deps.probe(health)) !== null)) {
-      log('daemon started', { health });
-      return ws;
-    }
-    log('daemon did not answer in time; using legacy IPC', { health, startupTimeoutMs });
-    return null;
+    return launch(config, health, ws);
+  }
+
+  /** Run `fn` as the one in-flight attempt; `after` queues behind whatever is running. */
+  function occupy(fn: () => Promise<string | null>, after: Promise<unknown> | null): Promise<string | null> {
+    const p: Promise<string | null> = (after ? after.then(fn, fn) : fn()).finally(() => {
+      // A null result is not cached: the next window (or a retry) probes
+      // again, so a daemon started by hand a minute later is picked up.
+      if (inFlight === p) inFlight = null;
+    });
+    inFlight = p;
+    return p;
   }
 
   function ensure(): Promise<string | null> {
-    if (!inFlight) {
-      inFlight = attempt().finally(() => {
-        // A null result is not cached: the next window (or a retry) probes
-        // again, so a daemon started by hand a minute later is picked up.
-        inFlight = null;
-      });
-    }
-    return inFlight;
+    return inFlight ?? occupy(attempt, null);
   }
 
-  return { ensure };
+  function restart(): Promise<string | null> {
+    return occupy(restartAttempt, inFlight);
+  }
+
+  return { ensure, restart };
 }
