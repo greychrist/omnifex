@@ -276,6 +276,10 @@ export function createRemoteServer(deps: RemoteServerDeps): RemoteServer {
       'content-type': 'application/json; charset=utf-8',
       'content-length': Buffer.byteLength(text),
       'cache-control': 'no-store',
+      // The Electron renderer (localhost in dev, its own scheme packaged)
+      // reads /healthz for the title-bar Daemon panel; that is a cross-origin
+      // GET. Reachability is the tailnet's job, so any origin may read.
+      'access-control-allow-origin': '*',
     });
     res.end(text);
   }

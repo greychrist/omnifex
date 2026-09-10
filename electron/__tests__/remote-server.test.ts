@@ -233,17 +233,26 @@ describe('remote server', () => {
 
   describe('http', () => {
     const fetchText = (path: string, method = 'GET') =>
-      new Promise<{ status: number; body: string; type: string | undefined }>((res, rej) => {
+      new Promise<{ status: number; body: string; type: string | undefined; cors: string | undefined }>((res, rej) => {
         const req = httpGet(`${base}${path}`, { method }, (r) => {
           let body = '';
           r.on('data', (d) => { body += d; });
-          r.on('end', () => res({ status: r.statusCode ?? 0, body, type: r.headers['content-type'] }));
+          r.on('end', () => res({
+            status: r.statusCode ?? 0,
+            body,
+            type: r.headers['content-type'],
+            cors: r.headers['access-control-allow-origin'],
+          }));
         });
         req.on('error', rej);
       });
 
-    it('serves /healthz, /api/sessions and /api/projects as JSON', async () => {
-      expect(JSON.parse((await fetchText('/healthz')).body)).toEqual({ ok: true });
+    it('serves /healthz, /api/sessions and /api/projects as JSON, readable cross-origin', async () => {
+      const health = await fetchText('/healthz');
+      expect(JSON.parse(health.body)).toEqual({ ok: true });
+      // The Electron renderer's title-bar Daemon panel reads this from
+      // localhost (dev) or its own scheme (packaged).
+      expect(health.cors).toBe('*');
       expect(JSON.parse((await fetchText('/api/sessions')).body)).toEqual([{ sessionId: 's1' }]);
       expect(JSON.parse((await fetchText('/api/projects')).body)).toEqual([{ projectId: 'p1' }]);
     });

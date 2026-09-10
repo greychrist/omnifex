@@ -1689,13 +1689,27 @@ app.whenReady().then(() => {
   // object knows whether launchd owns the daemon and re-points the agent at
   // this bundle when it does.
   const remoteLog = (message: string, meta?: Record<string, unknown>) => { console.log(`[remote] ${message}`, meta ?? ''); };
+  const daemonScript = path.join(__dirname, 'omnifex-server.js');
   const daemonControl = createDaemonControl({
-    invocation: { execPath: process.execPath, script: path.join(__dirname, 'omnifex-server.js') },
+    invocation: { execPath: process.execPath, script: daemonScript },
     log: remoteLog,
   });
+  // Dev only: `npm start` rebuilds the daemon script without bumping the
+  // version, so the stamp is what tells a stale daemon apart. Never in a
+  // packaged app — asar stats are synthetic and a false mismatch would kill
+  // sessions on every launch.
+  const daemonBuildStamp = (): string | undefined => {
+    if (app.isPackaged) return undefined;
+    try {
+      return String(Math.floor(fs.statSync(daemonScript).mtimeMs));
+    } catch {
+      return undefined;
+    }
+  };
   const remoteLauncher = createRemoteLauncher({
     config: () => loadServerConfig(),
     appVersion: app.getVersion(),
+    appBuild: daemonBuildStamp(),
     probe: (url) =>
       new Promise<DaemonHealth | null>((resolve) => {
         const req = httpGet(url, { timeout: 1500 }, (res) => {

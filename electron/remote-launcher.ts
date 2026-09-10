@@ -25,6 +25,8 @@ import type { ServerConfig } from './remote/config';
 /** What the launcher needs from `GET /healthz`. */
 export interface DaemonHealth {
   version: string;
+  /** Bundle stamp (script mtime), when the daemon reports one. */
+  build?: string;
   /** Sessions with a prompt currently running. */
   inFlight: number;
 }
@@ -40,6 +42,12 @@ export interface RemoteLauncherDeps {
   stop: (config: ServerConfig) => Promise<boolean>;
   /** `app.getVersion()`; a daemon reporting anything else gets replaced. */
   appVersion: string;
+  /**
+   * This bundle's stamp, dev only: the version never moves between `npm start`s,
+   * so a same-version daemon with another stamp is stale too. Packaged builds
+   * leave it undefined and compare versions alone.
+   */
+  appBuild?: string;
   sleep?: (ms: number) => Promise<void>;
   /** How long to wait for a spawned daemon to answer, or a stopped one to go. */
   startupTimeoutMs?: number;
@@ -70,10 +78,14 @@ export function wsUrlFor(config: Pick<ServerConfig, 'host' | 'port'>): string {
  */
 export function parseDaemonHealth(body: string): DaemonHealth | null {
   try {
-    const h = JSON.parse(body) as { version?: unknown; sessions?: { inFlight?: unknown } };
+    const h = JSON.parse(body) as { version?: unknown; build?: unknown; sessions?: { inFlight?: unknown } };
     if (typeof h.version !== 'string') return null;
     const inFlight = Number(h.sessions?.inFlight ?? 0);
-    return { version: h.version, inFlight: Number.isFinite(inFlight) ? inFlight : 0 };
+    return {
+      version: h.version,
+      ...(typeof h.build === 'string' ? { build: h.build } : {}),
+      inFlight: Number.isFinite(inFlight) ? inFlight : 0,
+    };
   } catch {
     return null;
   }
@@ -129,11 +141,16 @@ export function createRemoteLauncher(deps: RemoteLauncherDeps): RemoteLauncher {
 
     const running = await deps.probe(health);
     if (running) {
-      if (running.version === deps.appVersion) {
+      const sameVersion = running.version === deps.appVersion;
+      const sameBuild = !deps.appBuild || !running.build || running.build === deps.appBuild;
+      if (sameVersion && sameBuild) {
         log('daemon already running', { health, version: running.version });
         return ws;
       }
-      const versions = { running: running.version, app: deps.appVersion };
+      const versions = {
+        running: sameVersion ? `${running.version} (build ${running.build})` : running.version,
+        app: sameVersion ? `${deps.appVersion} (build ${deps.appBuild})` : deps.appVersion,
+      };
       if (running.inFlight > 0) {
         log('daemon is another build; replacing it once its turns finish', { ...versions, inFlight: running.inFlight });
         armUpgradeCheck();

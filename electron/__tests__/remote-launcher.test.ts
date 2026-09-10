@@ -174,9 +174,49 @@ describe('remote launcher', () => {
     });
   });
 
+  describe('build stamp (dev)', () => {
+    const stamped = (build: string, inFlight = 0): DaemonHealth => ({ version: APP, build, inFlight });
+
+    function makeStamped(probeResults: Array<DaemonHealth | null>, appBuild?: string) {
+      const probe = vi.fn(async () => (probeResults.length ? probeResults.shift()! : null));
+      const stop = vi.fn(async () => true);
+      const spawn = vi.fn(() => true);
+      const launcher = createRemoteLauncher({
+        config: () => CONFIG, probe, stop, spawn, appVersion: APP, appBuild,
+        sleep: async () => {}, startupTimeoutMs: 1000, pollIntervalMs: 250,
+      });
+      return { launcher, stop, spawn };
+    }
+
+    it('replaces a same-version daemon whose build stamp differs', async () => {
+      const { launcher, stop, spawn } = makeStamped([stamped('100'), null, stamped('200')], '200');
+      expect(await launcher.ensure()).toBe(WS);
+      expect(stop).toHaveBeenCalledTimes(1);
+      expect(spawn).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps a same-version daemon with the same stamp', async () => {
+      const { launcher, stop } = makeStamped([stamped('200')], '200');
+      expect(await launcher.ensure()).toBe(WS);
+      expect(stop).not.toHaveBeenCalled();
+    });
+
+    it('ignores stamps when the app has none (packaged) or the daemon reports none', async () => {
+      const a = makeStamped([stamped('100')], undefined);
+      expect(await a.launcher.ensure()).toBe(WS);
+      expect(a.stop).not.toHaveBeenCalled();
+      const b = makeStamped([same()], '200');
+      expect(await b.launcher.ensure()).toBe(WS);
+      expect(b.stop).not.toHaveBeenCalled();
+    });
+  });
+
   describe('parseDaemonHealth', () => {
     it('reads version and in-flight count', () => {
       expect(parseDaemonHealth('{"ok":true,"version":"0.4.156","sessions":{"live":2,"inFlight":1}}')).toEqual({ version: '0.4.156', inFlight: 1 });
+    });
+    it('carries the build stamp when reported', () => {
+      expect(parseDaemonHealth('{"version":"0.4.156","build":"1757520000000"}')).toEqual({ version: '0.4.156', build: '1757520000000', inFlight: 0 });
     });
     it('treats a daemon that predates inFlight as idle', () => {
       expect(parseDaemonHealth('{"ok":true,"version":"0.4.156","sessions":{"live":2}}')).toEqual({ version: '0.4.156', inFlight: 0 });

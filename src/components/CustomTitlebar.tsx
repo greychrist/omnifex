@@ -10,6 +10,7 @@ import { api, type CliReviewStatus } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import OmniFexIcon from '../../icons/icon.png';
 import { TabStatusPopover } from '@/components/TabStatusPopover';
+import { DaemonStatusPopover } from '@/components/DaemonStatusPopover';
 import { BrainRunIndicator } from '@/components/brain/BrainRunIndicator';
 import { useOptionalAccounts } from '@/contexts/AccountsContext';
 import { fireAndLog } from "@/lib/fireAndLog";
@@ -552,6 +553,8 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
               <span>Cost</span>
             </motion.button>
           )}
+
+          <DaemonStatusPopover appVersion={appVersion || undefined} />
 
           <TabStatusPopover />
 

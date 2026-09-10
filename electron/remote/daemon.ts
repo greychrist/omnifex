@@ -122,6 +122,8 @@ import { createPushService, pushPayloadFor } from './push';
 export interface DaemonOptions {
   config: ServerConfig;
   version: string;
+  /** Bundle stamp (script mtime); lets a dev app tell a stale same-version daemon. */
+  build?: string;
   log: RemoteServerLogger;
 }
 
@@ -220,6 +222,7 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
       health: () => ({
         ok: true,
         version: opts.version,
+        build: opts.build,
         protocolVersion: 1,
         uptimeSec: Math.round((Date.now() - startedAt) / 1000),
         host: config.host,

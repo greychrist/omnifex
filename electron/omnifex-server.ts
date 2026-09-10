@@ -5,7 +5,7 @@
  * on its own by `node scripts/build-daemon.mjs`. Always run as the Electron
  * binary with ELECTRON_RUN_AS_NODE=1 — `scripts/omnifex-server` does that.
  */
-import { readFileSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { loadServerConfig } from './remote/config';
@@ -34,6 +34,19 @@ function readVersion(): string {
     }
   }
   return '0.0.0';
+}
+
+/**
+ * This bundle's mtime. In a dev checkout the version never moves between
+ * builds, so the Electron launcher compares this instead to know the daemon
+ * on the port is stale. Packaged builds do not compare it (see main.ts).
+ */
+function readBuildStamp(): string | undefined {
+  try {
+    return String(Math.floor(statSync(__filename).mtimeMs));
+  } catch {
+    return undefined;
+  }
 }
 
 /** One line per event, JSON-ish, to stdout — launchd sends it to the log file. */
@@ -85,7 +98,7 @@ async function main(argv: string[]): Promise<number> {
       process.on('uncaughtException', (err) => log.error('uncaught exception', { error: err.stack ?? String(err) }));
       process.on('unhandledRejection', (err) => log.error('unhandled rejection', { error: String(err) }));
 
-      const daemon = await startDaemon({ config, version, log });
+      const daemon = await startDaemon({ config, version, build: readBuildStamp(), log });
       writePidFile(config);
 
       let closing = false;
