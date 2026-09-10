@@ -30,6 +30,134 @@ import { buildClaudeEnv } from './util/claude-env';
  * old value and the new one, and file or fix whatever they imply. Bumping it
  * to silence the badge throws away the only drift signal we have.
  *
+ * Last review: 2.1.266 -> 2.1.267 on 2026-09-09. Findings:
+ *
+ *  Changelog coverage: 2.1.267 is the only release in range and it has an
+ *  entry (53 items). No gap. Both 2.1.266 and 2.1.267 are installed under
+ *  ~/.local/share/claude/versions, so every wire claim below is a real
+ *  two-version binary diff rather than prose.
+ *
+ *  Wire diff: NOTHING MOVED. `subtype:"..."` literals 116 -> 116, byte
+ *  identical. `hook_event_name` literals identical. `type:"control_*"`
+ *  envelopes identical. The `/usage` TUI anchors we scrape — `Current
+ *  session`, `Current week (`, `Resets`, `Loading usage data`, `Showing
+ *  last-known usage` — occur the same number of times in both binaries.
+ *  The only added `<tag>` across the whole binary is `<tier>`, and it is
+ *  not a conversation tag: it appears in the hook-authoring checker's
+ *  error text about `next.to(e, "<tier>")`.
+ *
+ *  NO CODE CHANGES. This review is a clean pass. Every entry below is
+ *  recorded so the next reviewer does not re-derive it.
+ *
+ *  1. `maxEffortLevel`, the one new settings key. LATENT GAP, not a live
+ *     bug — grep says it is unset in every settings file on this machine
+ *     (both account config dirs, the repo's .claude/, managed settings).
+ *     Recorded because the day it IS set, our picker starts lying.
+ *
+ *     It caps effort from "an /effort or /model pick, --effort,
+ *     CLAUDE_CODE_EFFORT_LEVEL, a model default" and is enforced
+ *     client-side. Crucially it also clamps OUR path: the
+ *     `apply_flag_settings` handler runs the requested level through the
+ *     clamp (`s=g1(r,o)`) before applying. That call site is not new —
+ *     2.1.266 has the identical `s=tB(r,o)` — what changed is that the
+ *     clamp function now consults `maxEffortLevel` as well as model
+ *     capability. The control_response is a bare `{ok:!0}`: it does NOT
+ *     report the applied level, so there is nothing to read back at
+ *     sessions/queries.ts:128-130, which logs the response and would log
+ *     an empty one.
+ *
+ *     Why that bites only chat mode: the effort mirror is TUI-only. The
+ *     CLI stamps a top-level `effort` on every assistant JSONL line
+ *     (since 2.1.212) and tui-jsonl.ts:112 reads it, but `onControlState`
+ *     is wired solely from the TUI listener (lifecycle.ts:693, 889). In
+ *     chat mode OmniFex owns effort and the picker simply holds whatever
+ *     the user chose, so a clamp would be invisible: the picker says
+ *     `high`, the CLI runs `medium`, nothing surfaces.
+ *
+ *     For the record, the mirror gap PREDATES this release: the org-level
+ *     cap `model_access[].max_effort_level` occurs in 2.1.266 too. 2.1.267
+ *     only adds a settings-file way to trigger the same clamp. The
+ *     smallest fix, if it ever matters, is to feed chat-mode assistant
+ *     lines through the same `controlStateFromLine` the TUI path uses.
+ *
+ *  2. The spurious "Continue from where you left off." resume turn.
+ *     ALREADY HANDLED — and worth spelling out, because on the prose it
+ *     reads exactly like the 2.1.265 forked-skill phantom prompt that DID
+ *     bite us. It does not have a twin here.
+ *
+ *     We hit the bug: 12 transcripts on disk carry that turn, spanning
+ *     2.1.183 to 2.1.241, under BOTH `entrypoint:"cli"` (terminal) and
+ *     `entrypoint:"sdk-cli"` (our stream-json mode). But the CLI persists
+ *     it with `isMeta:true`, and that is the difference. messageFilters.ts
+ *     drops every isMeta user message that is not a skill injection, so it
+ *     never rendered as a prompt the human did not type; and `userKind`
+ *     never classifies an isMeta line as 'prompt', so turnDelta never
+ *     anchored on it and no turn was split. Upstream cleanup, no action.
+ *
+ *  3. Commit/PR attribution "now arrives as a conversation note that
+ *     updates on model changes". INERT — verified the envelope, not the
+ *     prose. The note text is present in the 2.1.266 binary too, and it
+ *     rides on a `type:"attachment"` record (confirmed on disk in both a
+ *     2.1.266 and a 2.1.267 transcript, `attachment.type` =
+ *     `remote_session_change`). `attachment` is a first-class classifier
+ *     kind (jsonlClassifier.ts:59,170) that renders nothing
+ *     (StreamMessage.tsx:1633). Net effect of 2.1.267 on us: our
+ *     mid-session model picker now provokes one extra invisible
+ *     attachment record per switch. No row, no phantom prompt.
+ *
+ *  4. "usage-limit warning flickering ... when requests for different
+ *     models or modes report different limit windows". INERT. That is the
+ *     CLI's in-session warning banner; our rate-limit store is fed only by
+ *     the `/usage` scrape (usage-runner.ts:537 -> recordUtilization), and
+ *     nothing in the repo parses in-session limit text. The `/usage`
+ *     anchors are unchanged (above).
+ *
+ *  Checked and confirmed inert — the entries that looked like they should
+ *  have hit us:
+ *   - `--system-prompt-snapshot off`, and the two prompt-cache entries
+ *     about `--system-prompt` / `--append-system-prompt`: we pass no
+ *     system-prompt flags at all (full spawn flag set,
+ *     agents/claude-cli-engine.ts:54-80).
+ *   - managed `allowedHttpHookUrls` / `httpHookAllowedEnvVars` /
+ *     `allowedChannelPlugins` now failing closed when unreadable: zero
+ *     references anywhere in electron/ or src/. We have no HTTP-hook or
+ *     channel-plugin surface.
+ *   - `effort:` frontmatter now honoured on effort-pinned models (Opus
+ *     4.7/4.8, Fable 5): a strict improvement we already tolerate.
+ *     slash-commands.ts:124 keeps `effort` as passthrough frontmatter (the
+ *     editor never writes it, but no longer deletes it), and
+ *     subagent-meta.ts:106-127 reports a subagent's ACTUAL effort off its
+ *     agent-*.jsonl, so a newly-honoured value shows up correctly.
+ *   - the six resume / prompt-cache fixes (5 MB transcripts keeping
+ *     parallel tool calls and hook output, `--resume` first-render time,
+ *     resumed tool-set rewrites, MCP reconnect timing, connector tool
+ *     drift, print-mode -> interactive prefix): all upstream wins on a
+ *     path we drive hard — every chat<->terminal toggle respawns with
+ *     `--resume` (sessions/tui.ts:37) and warm agent restarts do the same
+ *     (agents/claude-cli-engine.ts:67).
+ *   - mid-session MCP/plugin tools arriving as deferred definitions where
+ *     ToolSearch is supported: no ToolSearch reference in the repo and
+ *     nothing to add. Tool rendering is name-keyed
+ *     (TOOLS_WITH_WIDGETS_LOWER, StreamMessage.tsx:1340); an unfamiliar
+ *     name is simply not in the set and its result renders through the
+ *     generic text path.
+ *   - the marketplace-backslash containment bypass (security): we never
+ *     fetch marketplaces.
+ *   - "Bash tool description guidance": prose steering only. BashWidget
+ *     renders whatever `description` arrives; nothing to parse.
+ *
+ *  No OmniFex impact, the rest: Cowork scheduled tasks; `/context` on
+ *  mobile clients; tmux/ssh shift+enter inside `claude agents`; the dim
+ *  last-prompt header and the `/diff` panel (both TUI chrome we do not
+ *  scrape); Workflow `agent()` safety-classifier refusals; expired
+ *  AWS/GCP credential retries; `/login` Esc under managed gateway
+ *  sign-in; `claude agents` `@` directory menu; the four artifact-publish
+ *  entries; sandbox `/copy` guidance; prompt-input keystroke latency; the
+ *  two Remote Control entries (stale permission mode, expiring server
+ *  credential); the self-hosted-runner git proxy; the gateway
+ *  `forward_user_identity` 429; all 8 [VSCode] entries; both [Claude Code
+ *  on the web] entries; all 4 [Claude Tag] entries.
+ *
  * Last review: 2.1.261 -> 2.1.266 on 2026-09-09. Findings:
  *
  *  Changelog coverage: three entries in range — 2.1.266, 2.1.265 and a
@@ -1067,7 +1195,7 @@ import { buildClaudeEnv } from './util/claude-env';
  * `~/.claude.json` fix (we read-modify-write that file, never replace it), and
  * the VSCode screen-reader work.
  */
-export const REVIEWED_CLI_VERSION = '2.1.266';
+export const REVIEWED_CLI_VERSION = '2.1.267';
 
 /**
  * app_settings key holding the user's explicit OmniFex-checkout override.
