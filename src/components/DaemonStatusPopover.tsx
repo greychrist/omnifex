@@ -15,6 +15,7 @@ import { CircleCheck, CircleX, Loader2, RotateCw } from 'lucide-react';
 import { Popover } from '@/components/ui/popover';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import { TITLEBAR_LABEL } from '@/lib/titlebar';
 import { daemonHealthUrl, fetchDaemonHealth, formatUptime, type DaemonHealthInfo } from '@/lib/remote/daemonStatus';
 
 type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
@@ -149,7 +150,7 @@ export function DaemonStatusPopover({ appVersion }: { appVersion?: string }): Re
           ) : (
             <CircleX size={16} className="text-red-500" />
           )}
-          <span>Daemon</span>
+          <span className={TITLEBAR_LABEL}>Daemon</span>
         </motion.button>
       }
       content={

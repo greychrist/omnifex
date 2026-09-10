@@ -4,6 +4,7 @@ import { Atom, GitBranch, FilePen, FilePlus, Activity, Bot, ListChecks, Database
 import { api, type TabStatusSummary } from '@/lib/api';
 import { useTabContext } from '@/contexts/TabContext';
 import { cn } from '@/lib/utils';
+import { TITLEBAR_LABEL } from '@/lib/titlebar';
 import { TooltipSimple } from '@/components/ui/tooltip-modern';
 import { resolveBranchColors } from '@/lib/branchColors';
 import { HeaderLabel } from './HeaderLabel';
@@ -286,7 +287,7 @@ export const TabStatusPopover: React.FC = () => {
           )}
         >
           <Atom size={16} />
-          <span>Sessions</span>
+          <span className={TITLEBAR_LABEL}>Sessions</span>
           {busyCount > 0 && (
             <span className="absolute -top-0.5 -right-0.5 inline-flex items-center justify-center min-w-[14px] h-[14px] px-1 rounded-full bg-amber-500 text-[9px] font-bold text-amber-950">
               {busyCount}

@@ -8,6 +8,7 @@ import {
 import { Popover } from '@/components/ui/popover';
 import { api, type CliReviewStatus } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import { TITLEBAR_LABEL } from '@/lib/titlebar';
 import OmniFexIcon from '../../icons/icon.png';
 import { TabStatusPopover } from '@/components/TabStatusPopover';
 import { DaemonStatusPopover } from '@/components/DaemonStatusPopover';
@@ -525,10 +526,11 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
               onClick={onLimaClick}
               whileTap={{ scale: 0.97 }}
               transition={{ duration: 0.15 }}
+              title="Lima"
               className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium hover:bg-accent hover:text-accent-foreground transition-colors app-no-drag"
             >
               <HardDrive size={16} />
-              <span>Lima</span>
+              <span className={TITLEBAR_LABEL}>Lima</span>
             </motion.button>
           )}
 
@@ -537,10 +539,11 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
               onClick={onBrainClick}
               whileTap={{ scale: 0.97 }}
               transition={{ duration: 0.15 }}
+              title="Brain"
               className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium hover:bg-accent hover:text-accent-foreground transition-colors app-no-drag"
             >
               <Brain size={16} />
-              <span>Brain</span>
+              <span className={TITLEBAR_LABEL}>Brain</span>
             </motion.button>
           )}
 
@@ -549,10 +552,11 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
               onClick={onCostClick}
               whileTap={{ scale: 0.97 }}
               transition={{ duration: 0.15 }}
+              title="Cost"
               className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium hover:bg-accent hover:text-accent-foreground transition-colors app-no-drag"
             >
               <DollarSign size={16} />
-              <span>Cost</span>
+              <span className={TITLEBAR_LABEL}>Cost</span>
             </motion.button>
           )}
 
@@ -563,10 +567,11 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
               onClick={onSettingsClick}
               whileTap={{ scale: 0.97 }}
               transition={{ duration: 0.15 }}
+              title="Settings"
               className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium hover:bg-accent hover:text-accent-foreground transition-colors app-no-drag"
             >
               <Settings size={16} />
-              <span>Settings</span>
+              <span className={TITLEBAR_LABEL}>Settings</span>
             </motion.button>
           )}
 
@@ -601,6 +606,7 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
                 data-updates-trigger
                 whileTap={{ scale: 0.97 }}
                 transition={{ duration: 0.15 }}
+                title="Updates"
                 className={cn(
                   'inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium transition-colors app-no-drag',
                   'hover:bg-accent hover:text-accent-foreground',
@@ -610,7 +616,7 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
                   size={16}
                   className={isCheckingAnything ? 'animate-spin' : ''}
                 />
-                <span>Updates</span>
+                <span className={TITLEBAR_LABEL}>Updates</span>
                 {hasNews && !isCheckingAnything && (
                   <span
                     aria-hidden
