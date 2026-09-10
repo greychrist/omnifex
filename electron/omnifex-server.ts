@@ -3,7 +3,9 @@
  *
  * Built by Forge alongside main.js and brain-mcp.js (see forge.config.ts), and
  * on its own by `node scripts/build-daemon.mjs`. Always run as the Electron
- * binary with ELECTRON_RUN_AS_NODE=1 — `scripts/omnifex-server` does that.
+ * binary with ELECTRON_RUN_AS_NODE=1 — `scripts/omnifex-server` does that. In
+ * a packaged app the binary is the `omnifexd` stub beside `omnifex`, which is
+ * what names the process (see remote/daemon-exec.ts).
  */
 import { readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -14,7 +16,6 @@ import {
   installCommand,
   parseCliArgs,
   removePidFile,
-  setDaemonProcessTitle,
   statusCommand,
   stopDaemon,
   uninstallCommand,
@@ -95,7 +96,6 @@ async function main(argv: string[]): Promise<number> {
       return uninstallCommand(out);
 
     case 'start': {
-      setDaemonProcessTitle();
       const log = createLogger(process.env.OMNIFEX_LOG_LEVEL === 'debug' || args.flags.debug === true ? 'debug' : 'info');
       process.on('uncaughtException', (err) => log.error('uncaught exception', { error: err.stack ?? String(err) }));
       process.on('unhandledRejection', (err) => log.error('unhandled rejection', { error: String(err) }));

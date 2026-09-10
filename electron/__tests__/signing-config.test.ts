@@ -78,6 +78,10 @@ describe('macOS signing configuration', () => {
       expect(optionsForFile(filePath).entitlements).toBe(ENTITLEMENTS_INHERIT);
     });
 
+    it('gives the omnifexd daemon stub the main entitlements — it loads the same .node addons and spawns the CLI', () => {
+      expect(optionsForFile('/tmp/out/OmniFex.app/Contents/MacOS/omnifexd').entitlements).toBe(ENTITLEMENTS);
+    });
+
     it('points at entitlements files that actually exist', () => {
       for (const p of [ENTITLEMENTS, ENTITLEMENTS_INHERIT]) {
         expect(fs.existsSync(p)).toBe(true);

@@ -142,6 +142,7 @@ import { registerIpcHandlers } from './ipc/handlers';
 import { createRemoteLauncher, healthUrlFor, parseDaemonHealth, type DaemonHealth } from './remote-launcher';
 import { loadServerConfig } from './remote/config';
 import { createDaemonControl } from './remote/daemon-control';
+import { daemonExecPath } from './remote/daemon-exec';
 import { get as httpGet } from 'node:http';
 import { createWindowRouter } from './window-router';
 import { classifyNavigation } from './navigation-policy';
@@ -1690,8 +1691,10 @@ app.whenReady().then(() => {
   // this bundle when it does.
   const remoteLog = (message: string, meta?: Record<string, unknown>) => { console.log(`[remote] ${message}`, meta ?? ''); };
   const daemonScript = path.join(__dirname, 'omnifex-server.js');
+  // Through the `omnifexd` stub when packaged, so the process is named after
+  // it; a dev Electron has no stub and runs under its own name.
   const daemonControl = createDaemonControl({
-    invocation: { execPath: process.execPath, script: daemonScript },
+    invocation: { execPath: daemonExecPath(process.execPath, fs.existsSync), script: daemonScript },
     log: remoteLog,
   });
   // Dev only: `npm start` rebuilds the daemon script without bumping the

@@ -110,6 +110,7 @@ import { INVOKE_CHANNELS } from '../ipc/channels';
 import { classifyJsonlLine } from '../../src/lib/jsonlClassifier';
 
 import type { ServerConfig } from './config';
+import { appExecPath } from './daemon-exec';
 import { createSessionLog } from './session-log';
 import { createSessionBridge } from './bridge';
 import { createProjectRegistry } from './projects';
@@ -360,9 +361,11 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
   });
   brainRef = brainService;
 
-  // `__dirname` is `.vite/build` for this bundle, beside brain-mcp.js.
+  // `__dirname` is `.vite/build` for this bundle, beside brain-mcp.js. The
+  // command is the app's executable, not this process's `omnifexd` stub: the
+  // app registers the same server, and the two must agree on the path.
   const brainMcpEnv: BrainMcpEnvironment = {
-    execPath: process.execPath,
+    execPath: appExecPath(process.execPath),
     serverScript: path.join(__dirname, 'brain-mcp.js'),
     userDataDir: config.userDataDir,
   };

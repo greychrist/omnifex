@@ -14,6 +14,11 @@ if [ -n "$OMNIFEX_ELECTRON" ]; then
 elif [ -x "$HERE/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron" ]; then
   ELECTRON="$HERE/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron"
   SCRIPT="$HERE/.vite/build/omnifex-server.js"
+elif [ -x "/Applications/OmniFex.app/Contents/MacOS/omnifexd" ]; then
+  # The daemon stub: same binary as omnifex, named so the process is (see
+  # electron/remote/daemon-exec.ts).
+  ELECTRON="/Applications/OmniFex.app/Contents/MacOS/omnifexd"
+  SCRIPT="/Applications/OmniFex.app/Contents/Resources/app.asar/.vite/build/omnifex-server.js"
 elif [ -x "/Applications/OmniFex.app/Contents/MacOS/omnifex" ]; then
   ELECTRON="/Applications/OmniFex.app/Contents/MacOS/omnifex"
   SCRIPT="/Applications/OmniFex.app/Contents/Resources/app.asar/.vite/build/omnifex-server.js"

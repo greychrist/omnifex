@@ -7,7 +7,7 @@ import {
   launchctlCommands,
   LAUNCH_AGENT_LABEL,
 } from '../remote/launchd';
-import { DAEMON_PROCESS_TITLE, parseCliArgs, setDaemonProcessTitle } from '../remote/cli';
+import { parseCliArgs } from '../remote/cli';
 
 describe('launchd plist', () => {
   const spec = launchAgentSpecFor(
@@ -72,14 +72,5 @@ describe('cli args', () => {
     expect(parseCliArgs(['install', '--port', '5555'])).toEqual({ command: 'install', flags: { port: '5555' } });
     expect(parseCliArgs([])).toEqual({ command: 'help', flags: {} });
     expect(parseCliArgs(['frobnicate'])).toEqual({ command: 'help', flags: {}, unknown: 'frobnicate' });
-  });
-});
-
-describe('daemon process title', () => {
-  it('is the Unix daemon name, so ps and Activity Monitor show omnifexd rather than a second omnifex', () => {
-    expect(DAEMON_PROCESS_TITLE).toBe('omnifexd');
-    const proc = { title: '/Applications/OmniFex.app/Contents/MacOS/omnifex' };
-    setDaemonProcessTitle(proc);
-    expect(proc.title).toBe('omnifexd');
   });
 });

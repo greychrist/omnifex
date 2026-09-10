@@ -6,6 +6,7 @@ import path from 'node:path';
 import { optionsForFile, osxNotarizeConfig } from './signing';
 import { dmgArtifacts, notarizeDmg } from './signing/dmg';
 import { collectModuleTree } from './packaging/module-tree';
+import { appBundleFromResourcesApp, installDaemonStub } from './packaging/daemon-stub';
 
 // Copy a native module and its transitive deps into the packaged app's node_modules.
 function copyNativeModule(buildPath: string, moduleName: string) {
@@ -84,6 +85,10 @@ const config: ForgeConfig = {
         // Copy better-sqlite3 and its deps (bindings, file-uri-to-path)
         // into the packaged app so the externalized require() works.
         try {
+          // The daemon's executable: a second copy of the Electron stub named
+          // omnifexd, so its process carries that name. The stub is still
+          // called Electron at this point; the packager renames it later.
+          console.log(`[forge] Daemon stub at ${installDaemonStub(appBundleFromResourcesApp(buildPath), 'Electron')}`);
           copyNativeModule(buildPath, 'better-sqlite3');
           copyNativeModule(buildPath, 'bindings');
           copyNativeModule(buildPath, 'file-uri-to-path');
