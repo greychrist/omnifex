@@ -157,10 +157,23 @@ export function createBrainHandlers(
       // success while doing nothing when the service failed to construct. A
       // write path must not claim to have performed a write it did not do.
       if (!brain) throw new Error('brain service unavailable');
+      const accountId = requireAccountId(params);
       // Tilde expansion is the UI layer's job; the registry rejects a path
       // whose first segment is `~` and that rejection message is surfaced
       // as-is below, not special-cased.
-      brain.setVaultPath(requireAccountId(params), requireString(params, 'path', 'path'));
+      brain.setVaultPath(accountId, requireString(params, 'path', 'path'));
+      // The persistent registration bakes the vault path into
+      // <configDir>/.claude.json as OMNIFEX_VAULT. Moving the vault without
+      // rewriting it leaves every session started outside OmniFex pointed at
+      // a directory that no longer exists — which is exactly what happened
+      // when the default moved out of ~/Documents. Only an account that opted
+      // in is touched; the spawn-time config is rewritten on every launch and
+      // needs nothing here.
+      const configDir = brainMcp?.configDirFor(accountId);
+      const vaultRoot = brain.vaultPath(accountId);
+      if (brainMcp && configDir && vaultRoot && brainMcp.isRegistered(configDir)) {
+        brainMcp.register(configDir, vaultRoot);
+      }
       return null;
     },
 
@@ -168,7 +181,14 @@ export function createBrainHandlers(
       // Same reasoning as brain_set_vault_path above: a silent no-op here
       // would look like a successful clear when nothing was cleared.
       if (!brain) throw new Error('brain service unavailable');
-      brain.clearVaultPath(requireAccountId(params));
+      const accountId = requireAccountId(params);
+      brain.clearVaultPath(accountId);
+      // A registration with no vault behind it fails on every tool call and
+      // keeps the toggle reading "on" for a Brain that no longer exists.
+      const configDir = brainMcp?.configDirFor(accountId);
+      if (brainMcp && configDir && brainMcp.isRegistered(configDir)) {
+        brainMcp.unregister(configDir);
+      }
       return null;
     },
 

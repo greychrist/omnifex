@@ -565,6 +565,48 @@ describe('brain IPC handlers', () => {
       expect(await h.brain_mcp_status(null, { accountId: 1 })).toMatchObject({ registered: true });
     });
 
+    it('re-registers with the new vault root when the vault path changes', async () => {
+      // The persistent registration bakes the vault path into
+      // <configDir>/.claude.json. Moving the vault without rewriting it leaves
+      // every outside-OmniFex session pointed at a directory that no longer
+      // exists — the exact failure that surfaced after the ~/Documents move.
+      await handlers.brain_set_vault_path(null, { accountId: 1, path: join(dir, 'mcp-old') });
+      const mcp = fakeMcp();
+      const h = createBrainHandlers(brain, mcp.deps);
+      await h.brain_mcp_register(null, { accountId: 1 });
+
+      await h.brain_set_vault_path(null, { accountId: 1, path: join(dir, 'mcp-new') });
+
+      expect(mcp.calls.register).toEqual([
+        `/cfg/personal|${join(dir, 'mcp-old')}`,
+        `/cfg/personal|${join(dir, 'mcp-new')}`,
+      ]);
+      expect(await h.brain_mcp_status(null, { accountId: 1 })).toMatchObject({ registered: true });
+    });
+
+    it('does not register on a vault-path change when the account was never registered', async () => {
+      const mcp = fakeMcp();
+      const h = createBrainHandlers(brain, mcp.deps);
+
+      await h.brain_set_vault_path(null, { accountId: 1, path: join(dir, 'mcp-unreg') });
+
+      expect(mcp.calls.register).toEqual([]);
+    });
+
+    it('unregisters when the vault path is cleared', async () => {
+      // A registered server with no vault behind it fails on every call; the
+      // toggle would also keep showing "on" for a Brain that no longer exists.
+      await handlers.brain_set_vault_path(null, { accountId: 1, path: join(dir, 'mcp-clear') });
+      const mcp = fakeMcp();
+      const h = createBrainHandlers(brain, mcp.deps);
+      await h.brain_mcp_register(null, { accountId: 1 });
+
+      await h.brain_clear_vault_path(null, { accountId: 1 });
+
+      expect(mcp.calls.unregister).toEqual(['/cfg/personal']);
+      expect(await h.brain_mcp_status(null, { accountId: 1 })).toMatchObject({ registered: false });
+    });
+
     it('refuses to register an account with no vault', async () => {
       const h = createBrainHandlers(brain, fakeMcp().deps);
       await expect(h.brain_mcp_register(null, { accountId: 1 })).rejects.toThrow(
