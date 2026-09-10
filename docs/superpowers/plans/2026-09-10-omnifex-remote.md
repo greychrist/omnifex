@@ -110,7 +110,21 @@ Channel → push mapping (bridge):
 - [ ] Not verified on a device: Safari only grants push to an installed Home Screen app on HTTPS — needs the `tailscale serve` origin from Phase 4 and a real iPad.
 - [x] Commit "Phase 6".
 
+## Status at hand-off (2026-09-10, overnight run)
+
+All six phases landed on `feat/omnifex-remote` (commits ff71d73 → 1f331a7). Full suite 5311 passing; `npm run check` / `build` / `build:web` / `build:daemon` clean. The Electron app was never launched interactively tonight — see "For Greg" below.
+
+## For Greg — first things in the morning
+
+1. **Toolchain**: CLT for Xcode 27.0 installed itself at 09:57 during the run and broke every native link (`arm64e.x1` unknown to Xcode.app's `ld-1267`). Until `sudo xcode-select --switch /Library/Developer/CommandLineTools` (or a newer Xcode), prefix native builds: `SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk npm start|test`. Memory note: `project_clt27_linker_mismatch`.
+2. **Try the app**: `npm start`. `remote:url` will probe → spawn the daemon detached → the renderer connects and logs `[remote] mode=electron-remote` in devtools. If anything is off, `OMNIFEX_REMOTE=0 npm start` is the old app, untouched.
+3. **Then flip 3.5**: once a real session has run through the daemon from the desktop, remove the non-native entries from `registerIpcHandlers(...)` in `main.ts` and stop constructing the sessions service there (plan §3.5 has the list). Until then both processes share the DB and both run the cost/brain sweeps.
+4. **iPad**: `./scripts/omnifex-server install`, `tailscale serve --bg --https=443 http://127.0.0.1:47700` (set `"host": "127.0.0.1"` in `~/.omnifex/server.json` if the daemon bound the tailnet IP), open the `.ts.net` URL in Safari, Add to Home Screen, tap Enable notifications.
+
 ## Follow-ups (not in scope tonight)
 - Deduplicate service construction between `electron/main.ts` and `electron/remote/daemon.ts`.
 - Purge `raw` from `event.payload`.
 - TUI on web with takeover semantics.
+- `session.list` for the web root screen is the existing Projects → Sessions drill-down; a cross-project "all sessions" root would be a new view.
+- `stream_event` partials classify as `unknown` daemon-side (renderer coalesces from `raw`); a daemon-side `stream-event` classification would let `history.get` carry them properly.
+- The permission-card sheet, swipe, pull-to-refresh and keyboard inset were unit-tested but not seen on glass.
