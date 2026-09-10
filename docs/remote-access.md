@@ -55,6 +55,12 @@ bundle and reloaded, so `install` never has to be run again. Sessions that
 were open show as stopped after the swap; sending the next message resumes
 them.
 
+The in-app updater is daemon-aware too: its "wait for idle" gate also
+counts turns running in the daemon (a session open only on the iPad, say),
+and it stops the daemon just before quitting for the swap so nothing keeps
+running from the bundle being replaced. The relaunched app starts a fresh
+daemon from the new bundle.
+
 ## Sanity checks from the iPad
 
 ```sh

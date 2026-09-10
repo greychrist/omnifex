@@ -139,7 +139,7 @@ import { createCostHistoryService } from './services/cost/cost-history';
 import { createSessionCostService } from './services/cost/session-cost';
 import { createModelPricingService } from './services/model-pricing';
 import { registerIpcHandlers } from './ipc/handlers';
-import { createRemoteLauncher, parseDaemonHealth, type DaemonHealth } from './remote-launcher';
+import { createRemoteLauncher, healthUrlFor, parseDaemonHealth, type DaemonHealth } from './remote-launcher';
 import { loadServerConfig } from './remote/config';
 import { createDaemonControl } from './remote/daemon-control';
 import { get as httpGet } from 'node:http';
@@ -1706,35 +1706,42 @@ app.whenReady().then(() => {
       return undefined;
     }
   };
+  const probeDaemonHealth = (url: string): Promise<DaemonHealth | null> =>
+    new Promise<DaemonHealth | null>((resolve) => {
+      const req = httpGet(url, { timeout: 1500 }, (res) => {
+        if (res.statusCode !== 200) {
+          res.resume();
+          resolve(null);
+          return;
+        }
+        let body = '';
+        res.setEncoding('utf8');
+        res.on('data', (chunk: string) => { body += chunk; });
+        res.on('end', () => resolve(parseDaemonHealth(body)));
+        res.on('error', () => resolve(null));
+      });
+      req.on('timeout', () => { req.destroy(); resolve(null); });
+      req.on('error', () => resolve(null));
+    });
   const remoteLauncher = createRemoteLauncher({
     config: () => loadServerConfig(),
     appVersion: app.getVersion(),
     appBuild: daemonBuildStamp(),
-    probe: (url) =>
-      new Promise<DaemonHealth | null>((resolve) => {
-        const req = httpGet(url, { timeout: 1500 }, (res) => {
-          if (res.statusCode !== 200) {
-            res.resume();
-            resolve(null);
-            return;
-          }
-          let body = '';
-          res.setEncoding('utf8');
-          res.on('data', (chunk: string) => { body += chunk; });
-          res.on('end', () => resolve(parseDaemonHealth(body)));
-          res.on('error', () => resolve(null));
-        });
-        req.on('timeout', () => { req.destroy(); resolve(null); });
-        req.on('error', () => resolve(null));
-      }),
+    probe: probeDaemonHealth,
     spawn: (config) => daemonControl.spawn(config),
     stop: (config) => daemonControl.stop(config),
     log: remoteLog,
   });
+  // Whether a renderer is on the daemon. The installer reads it: the update
+  // gate must wait on the daemon's turns too, and the daemon must be stopped
+  // before the bundle it runs from is swapped.
+  let remoteInUse = false;
   ipcMain.handle('remote:url', async () => {
     if (process.env.OMNIFEX_REMOTE === '0') return null;
     if (db.getSetting('remote.enabled') === 'false') return null;
-    return remoteLauncher.ensure();
+    const url = await remoteLauncher.ensure();
+    remoteInUse = url !== null;
+    return url;
   });
   // An OS notification raised for a daemon-side event. The daemon has no
   // display; the renderer's shim forwards `claude-notification` here so the
@@ -1830,6 +1837,16 @@ app.whenReady().then(() => {
     },
     // Same reason as the DMG path above: the install gate already asked.
     appQuit: quitAuthorized,
+    remoteInFlight: async () => {
+      if (!remoteInUse) return null;
+      const health = await probeDaemonHealth(healthUrlFor(loadServerConfig()));
+      return health ? health.inFlight : null;
+    },
+    stopRemoteDaemon: async () => {
+      if (!remoteInUse) return;
+      const stopped = await daemonControl.stop(loadServerConfig());
+      remoteLog(stopped ? 'daemon stopped for the update' : 'no daemon to stop for the update');
+    },
     spawn: (cmd, args, opts) => spawn(cmd, args, opts),
     sendToRenderer: (channel, payload) => {
       // Send to all renderers — the install flow is global.

@@ -54,6 +54,19 @@ export interface InstallerDeps {
     stopAll: () => void;
   };
   appQuit: () => void;
+  /**
+   * OmniFex Remote. Sessions live in the daemon, and a client on another
+   * device may have one mid-turn that no tab in this window reports — so the
+   * gate also waits on the daemon's own count. Null when no daemon is in use.
+   */
+  remoteInFlight?: () => Promise<number | null>;
+  /**
+   * Stop the daemon right before quitting for the swap: it outlives the app
+   * and would otherwise keep running from a bundle the helper has deleted.
+   * The relaunched app spawns a fresh one from the new bundle; sessions
+   * resume on their next message. Best-effort, never blocks the install.
+   */
+  stopRemoteDaemon?: () => Promise<void>;
   spawn: (
     command: string,
     args: string[],
@@ -219,7 +232,11 @@ export function createInstallerService(deps: InstallerDeps): InstallerService {
         throw new WaitCancelled();
       }
       const inFlightIds = deps.sessionsService.listInFlightTabIds();
-      const sessions = inFlightIds.length;
+      // Not double-counted: a tab in this window reports its own session as
+      // busy AND the daemon counts it, but the gate only asks "is anything
+      // running", never how many distinct things.
+      const remote = (await deps.remoteInFlight?.().catch(() => null)) ?? 0;
+      const sessions = Math.max(inFlightIds.length, remote);
       const allTabs = deps.sessionsService.listSessionStatuses?.() ?? [];
       // Diagnostic: print every gate poll with the full per-tab status list
       // so we can tell *why* the gate cleared (no sessions, all idle, force,
@@ -260,6 +277,16 @@ export function createInstallerService(deps: InstallerDeps): InstallerService {
       stagedAppPath,
     });
     await fs.writeFile(helperPath, script, { mode: 0o755 });
+    // Before the helper is even spawned: the helper waits for this process to
+    // exit and then deletes the bundle the daemon is running from.
+    if (deps.stopRemoteDaemon) {
+      await Promise.race([
+        deps.stopRemoteDaemon().catch((err: unknown) => {
+          console.warn('[installer] stopping the daemon failed; installing anyway', err);
+        }),
+        new Promise<void>((r) => setTimeout(r, 5000)),
+      ]);
+    }
     const child = deps.spawn('/bin/sh', [helperPath], { detached: true, stdio: 'ignore' });
     if (child && typeof child.unref === 'function') child.unref();
     deps.appQuit();

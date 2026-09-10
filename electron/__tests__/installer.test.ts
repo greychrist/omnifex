@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
+import type { ChildProcess } from 'node:child_process';
 import { createInstallerService, type InstallerDeps } from '../services/installer';
 
 function makeDeps(overrides: Partial<InstallerDeps> = {}): InstallerDeps {
@@ -305,6 +306,30 @@ describe('InstallerService.stage default extractZip / readBundleVersion (macOS o
   });
 });
 
+describe('InstallerService.waitForIdle with a daemon', () => {
+  it('waits while the daemon reports a turn in flight that no local tab does', async () => {
+    vi.useFakeTimers();
+    const remote = vi.fn<() => Promise<number | null>>()
+      .mockResolvedValueOnce(1)
+      .mockResolvedValueOnce(1)
+      .mockResolvedValue(0);
+    const sendToRenderer = vi.fn();
+    const installer = createInstallerService(makeDeps({ remoteInFlight: remote, sendToRenderer }));
+    const p = installer.waitForIdle({ force: false });
+    await vi.advanceTimersByTimeAsync(2500);
+    await p;
+    expect(remote).toHaveBeenCalledTimes(3);
+    expect(sendToRenderer).toHaveBeenCalledWith('updater:install-status', expect.objectContaining({ phase: 'waiting', activeSessions: 1 }));
+    expect(sendToRenderer).toHaveBeenLastCalledWith('updater:install-status', { phase: 'installing' });
+    vi.useRealTimers();
+  });
+
+  it('treats an unreachable daemon as idle rather than blocking the update forever', async () => {
+    const installer = createInstallerService(makeDeps({ remoteInFlight: async () => { throw new Error('ECONNREFUSED'); } }));
+    await expect(installer.waitForIdle({ force: false })).resolves.toBeUndefined();
+  });
+});
+
 describe('InstallerService.executeInstall', () => {
   let stageDir: string;
   beforeEach(async () => {
@@ -312,6 +337,20 @@ describe('InstallerService.executeInstall', () => {
   });
   afterEach(async () => {
     await fs.rm(stageDir, { recursive: true, force: true });
+  });
+
+  it('stops the daemon before spawning the helper, and still installs when that fails', async () => {
+    const order: string[] = [];
+    const spawn = vi.fn(() => { order.push('spawn'); return { unref: () => {} } as unknown as ChildProcess; });
+    const appQuit = vi.fn(() => { order.push('quit'); });
+    const stopRemoteDaemon = vi.fn(async () => { order.push('stop'); });
+    const installer = createInstallerService(makeDeps({ spawn, appQuit, stopRemoteDaemon }));
+    await installer.executeInstall('/tmp/stage/OmniFex.app', '/Applications/OmniFex.app');
+    expect(order).toEqual(['stop', 'spawn', 'quit']);
+
+    const failing = createInstallerService(makeDeps({ spawn, appQuit, stopRemoteDaemon: async () => { throw new Error('no pid'); } }));
+    await expect(failing.executeInstall('/tmp/stage/OmniFex.app', '/Applications/OmniFex.app')).resolves.toBeUndefined();
+    expect(appQuit).toHaveBeenCalledTimes(2);
   });
 
   it('writes a helper script, spawns it detached, and calls appQuit', async () => {
