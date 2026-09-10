@@ -116,6 +116,7 @@ import { createProjectRegistry } from './projects';
 import { buildRpcAllowlist } from './rpc-allowlist';
 import { createRemoteHandlers, type RpcHandler } from './handlers';
 import { createRemoteServer, type RemoteServerLogger } from './server';
+import { resolveWebRoot } from './webroot';
 
 export interface DaemonOptions {
   config: ServerConfig;
@@ -204,12 +205,14 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
   // Server is declared before the bridge so the bridge can publish into it;
   // handlers are registered after every service exists.
   let handlersRef: ReturnType<typeof createRemoteHandlers> | null = null;
+  const webRoot = resolveWebRoot(config.webRoot, __dirname);
+  log.info('web root', { webRoot: webRoot ?? '(none — no web client served)' });
   const server = createRemoteServer({
     host: config.host,
     port: config.port,
     daemonVersion: opts.version,
-    capabilities: { tui: true, rpcInvoke: true, attachments: 'base64' },
-    webRoot: config.webRoot,
+    capabilities: { tui: true, rpcInvoke: true, attachments: 'base64', web: webRoot !== null },
+    webRoot,
     log,
     api: {
       health: () => ({

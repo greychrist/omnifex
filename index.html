@@ -2,8 +2,18 @@
 <html lang="en" class="dark">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#0b0b0f" />
+    <!-- PWA metadata for the web client (served by the OmniFex Remote daemon).
+         Relative hrefs: under Electron's file:// load they resolve to files
+         that do not exist and are ignored; under the daemon they resolve to
+         web/public/. -->
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="icon-256.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="OmniFex" />
     <title>OmniFex</title>
   </head>
 

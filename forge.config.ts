@@ -49,6 +49,10 @@ const config: ForgeConfig = {
     osxNotarize: osxNotarizeConfig(),
     extraResource: [
       './assets',
+      // The web client, served by the OmniFex Remote daemon at `/`. Beside
+      // app.asar (Contents/Resources/dist-web) so the daemon can read it with
+      // plain fs under ELECTRON_RUN_AS_NODE. Built by `prepackage`/`premake`.
+      './dist-web',
       // Also placed at Contents/Resources/ top-level so macOS NSSound
       // soundNamed: can resolve it for native Notification sound playback.
       './assets/greychrist_success.aiff',

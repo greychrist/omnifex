@@ -89,10 +89,10 @@ Channel → push mapping (bridge):
 - [x] Commit "Phase 3".
 
 ## Phase 4 — Web client build
-- [ ] 4.1 Vite web build config → `dist-web/` with web platform, server URL from `location`.
-- [ ] 4.2 `manifest.webmanifest` + minimal service worker; daemon serves at `/` from `webRoot`.
-- [ ] 4.3 Docs: `tailscale serve` fronting for HTTPS (`docs/remote-access.md`).
-- [ ] Commit "Phase 4".
+- [x] 4.1 `vite.web.config.ts` → `dist-web/` (`npm run build:web`; also run by `prepackage`/`premake`, shipped as a forge `extraResource`). Same bundle; `bootstrap.ts` picks web mode when no preload bridge exists and connects to `ws(s)://location.host/ws`.
+- [x] 4.2 `web/public/{manifest.webmanifest,sw.js,icon-256.png,icon-512.png}`; PWA meta in `index.html` (relative hrefs, inert under Electron); SW registered in web mode only, caches nothing. Daemon resolves `webRoot` from config or `dist-web` beside the bundle / beside app.asar (`electron/remote/webroot.ts`). Verified: `/`, `/manifest.webmanifest`, `/sw.js`, SPA deep link 200; missing asset 404; hashed `/assets/index-*.js` 200.
+- [x] 4.3 `docs/remote-access.md`: install as LaunchAgent, sanity curls, `tailscale serve` for HTTPS, throwaway runs, web-client limits.
+- [x] Commit "Phase 4".
 
 ## Phase 5 — iPad-first UI
 - [ ] 5.1 Narrow layout: session list root, pushed session view w/ back; wide keeps split.

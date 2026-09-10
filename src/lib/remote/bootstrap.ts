@@ -57,6 +57,19 @@ function webNotify(title: string, body: string): void {
   }
 }
 
+/**
+ * Web only. The worker exists so Safari's Add to Home Screen yields a real
+ * standalone app; it caches nothing (see web/public/sw.js). Registration is
+ * best-effort — an insecure origin (plain http on the tailnet, before
+ * `tailscale serve` is set up) refuses it, and the app still runs.
+ */
+function registerServiceWorker(): void {
+  if (!('serviceWorker' in navigator)) return;
+  navigator.serviceWorker.register('/sw.js').catch((err: unknown) => {
+    console.info('[remote] service worker not registered:', err instanceof Error ? err.message : String(err));
+  });
+}
+
 async function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => {
@@ -108,6 +121,7 @@ export async function installRemoteBridge(opts: { connectTimeoutMs?: number } = 
       console.warn('[remote] initial connect failed; will keep retrying', err);
     });
     info = { mode: 'web', url, client };
+    registerServiceWorker();
   }
 
   window.__omnifexRemote = info;

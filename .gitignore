@@ -17,6 +17,9 @@ dist-ssr
 out/
 .vite/
 
+# Web client build (served by the OmniFex Remote daemon)
+dist-web/
+
 # Vitest coverage reports
 coverage/
 
