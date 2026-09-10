@@ -33,6 +33,7 @@ import { fireAndLog, logAndForget } from "@/lib/fireAndLog";
 import { buildCliReviewLaunch } from "@/lib/cliReviewLaunch";
 import { CLI_REVIEW_PROMPT_SETTING_KEY } from "@/lib/cliReviewPrompt";
 import { seedInitialSettingsTab } from '@/lib/settingsInitialTab';
+import { APP_ROOT_HEIGHT } from '@/lib/viewport';
 
 type View = 
   | "welcome" 
@@ -515,7 +516,7 @@ function AppContent() {
   };
 
   return (
-    <div className="h-screen flex flex-col">
+    <div className={`${APP_ROOT_HEIGHT} flex flex-col`}>
       {/* Custom Titlebar */}
       <CustomTitlebar
         onLimaClick={() => createLimaTab()}
