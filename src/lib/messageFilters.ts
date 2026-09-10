@@ -35,6 +35,44 @@ function isHookLifecycleMarker(msg: JsonlNode): boolean {
  * - When `hardFilters.hideHookLifecycle` is on (default), CLI hook
  *   lifecycle events (hook_started / hook_response / user_prompt_submit).
  */
+/**
+ * Indices of the `system:thinking_tokens` pings worth rendering — the LAST one
+ * of each burst.
+ *
+ * The CLI emits a ping every few hundred tokens of extended thinking, and
+ * `estimated_tokens` is a running cumulative total for the burst, not a delta.
+ * The final ping therefore already states the burst total and every earlier one
+ * is a strictly-worse duplicate of it; unfiltered, one deep-thinking turn
+ * stacks a dozen near-identical cards down the transcript.
+ *
+ * A burst ends at the first non-`system` node — the assistant text or tool use
+ * the thinking produced, or the next user prompt. Intervening *system* nodes
+ * (`status` phase pings especially) interleave with thinking and are themselves
+ * filtered out, so they must not split one burst into two surviving rows.
+ *
+ * Collapsing rather than synthesising a summary node keeps `messages[]`
+ * byte-faithful to the JSONL, so a resumed session collapses exactly the way a
+ * live one does, and `deriveThinkingStatus` can read the in-flight total
+ * straight off the tail of the array.
+ */
+function lastThinkingTokensPerBurst(messages: JsonlNode[]): ReadonlySet<number> {
+  const keep = new Set<number>();
+  let pending: number | null = null;
+
+  for (let i = 0; i < messages.length; i++) {
+    const message = messages[i];
+    if (message.kind !== "system") {
+      if (pending !== null) keep.add(pending);
+      pending = null;
+      continue;
+    }
+    if (message.subtype === "thinking_tokens") pending = i;
+  }
+  if (pending !== null) keep.add(pending);
+
+  return keep;
+}
+
 export function filterDisplayableMessages(
   messages: JsonlNode[],
   hardFilters?: HardFilters,
@@ -42,6 +80,7 @@ export function filterDisplayableMessages(
   // Backward-compat: missing config means apply legacy defaults (everything on).
   // hideHookLifecycle replaces the old dropHookLifecycle key.
   const hideHookLifecycle = hardFilters?.hideHookLifecycle ?? true;
+  const keptThinkingTokens = lastThinkingTokensPerBurst(messages);
 
   return messages.filter((message, index) => {
     // Skill-injection user messages have isMeta:true in the persisted
@@ -78,6 +117,13 @@ export function filterDisplayableMessages(
     // transcript row.
     if (message.kind === "system" && message.subtype === "status") {
       return false;
+    }
+
+    // Collapse each `system:thinking_tokens` burst to its final ping — see
+    // lastThinkingTokensPerBurst. The survivor carries the burst total; the
+    // live running count is the ThinkingBar's job, not the transcript's.
+    if (message.kind === "system" && message.subtype === "thinking_tokens") {
+      return keptThinkingTokens.has(index);
     }
 
     // Skip the `<task-notification>` carriers. These queue-operation /

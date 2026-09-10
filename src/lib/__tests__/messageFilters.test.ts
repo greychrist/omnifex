@@ -414,3 +414,77 @@ describe('system:dev_intent (CLI >= 2.1.266)', () => {
     expect(filterDisplayableMessages([node])).toHaveLength(0);
   });
 });
+
+// ── system.thinking_tokens collapse ────────────────────────────────────────
+// The CLI emits one `thinking_tokens` ping every few hundred tokens of
+// extended thinking, and `estimated_tokens` is a RUNNING CUMULATIVE total for
+// the burst — not a delta. So the last ping of a burst already carries the
+// turn's total, and every earlier one is a strictly-worse duplicate of it.
+// Left unfiltered a single deep-thinking turn stacks a dozen near-identical
+// "~N thinking tokens" cards down the transcript. Collapsing to the last ping
+// per burst is a pure filter: no synthetic node is injected, so messages[]
+// stays byte-faithful to the JSONL and a resumed session collapses the same
+// way a live one does.
+const thinkingTokens = (estimated_tokens: number): JsonlNode =>
+  ({
+    kind: 'system', subtype: 'thinking_tokens', sessionId: '', receivedAt: '',
+    raw: { type: 'system', subtype: 'thinking_tokens', estimated_tokens },
+  }) as unknown as JsonlNode;
+
+const assistantText = (text: string): JsonlNode =>
+  ({
+    kind: 'assistant', sessionId: '', receivedAt: '',
+    raw: { type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text }] } },
+  }) as unknown as JsonlNode;
+
+const tokensOf = (nodes: JsonlNode[]): number[] =>
+  nodes
+    .filter((n) => n.kind === 'system' && n.subtype === 'thinking_tokens')
+    .map((n) => (n as { raw: { estimated_tokens?: number } }).raw.estimated_tokens ?? -1);
+
+describe('filterDisplayableMessages — system.thinking_tokens', () => {
+  it('collapses a burst to its last ping, which carries the turn total', () => {
+    const out = filterDisplayableMessages([
+      thinkingTokens(50), thinkingTokens(100), thinkingTokens(150), thinkingTokens(1300),
+    ]);
+    expect(tokensOf(out)).toEqual([1300]);
+  });
+
+  it('keeps a lone ping', () => {
+    const out = filterDisplayableMessages([thinkingTokens(800)]);
+    expect(tokensOf(out)).toEqual([800]);
+  });
+
+  it('keeps one ping per burst when bursts are split by an assistant message', () => {
+    // A tool loop thinks, answers, thinks again — two separate bursts within
+    // one user turn, each of which deserves its own surviving row.
+    const out = filterDisplayableMessages([
+      thinkingTokens(50), thinkingTokens(400),
+      assistantText('let me check'),
+      thinkingTokens(75), thinkingTokens(900),
+    ]);
+    expect(tokensOf(out)).toEqual([400, 900]);
+  });
+
+  it('treats intervening system messages as part of the same burst', () => {
+    // `system:status` pings interleave with thinking_tokens and are themselves
+    // filtered out; they must not split one burst into two surviving rows.
+    const status = ({
+      kind: 'system', subtype: 'status', sessionId: '', receivedAt: '',
+      raw: { type: 'system', subtype: 'status', status: 'requesting' },
+    }) as unknown as JsonlNode;
+    const out = filterDisplayableMessages([
+      thinkingTokens(50), status, thinkingTokens(600),
+    ]);
+    expect(tokensOf(out)).toEqual([600]);
+  });
+
+  it('does not drop the trailing ping of an in-flight burst', () => {
+    // While thinking is still streaming the last ping is the newest one, and
+    // the ThinkingBar reads exactly that node off the tail.
+    const out = filterDisplayableMessages([
+      userText('hi'), thinkingTokens(50), thinkingTokens(100),
+    ]);
+    expect(tokensOf(out)).toEqual([100]);
+  });
+});

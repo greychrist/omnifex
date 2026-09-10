@@ -34,7 +34,7 @@ export const KIND_FIXTURES: Record<string, string> = {
   "system.userPromptSubmit": "UserPromptSubmit · 1 message",
   "system.api_error": "503 Service Unavailable from api.anthropic.com — retrying.",
   "system.away_summary": "While you were away: the test suite finished (42 passed) and the build completed.",
-  "system.thinking_tokens": "~800 thinking tokens",
+  "system.thinking_tokens": "Thought ~800 tokens",
   "system.rate_limit": "5h · allowed · resets 4:00 PM",
   "system.feedback_draft_queued": "bug · Edit reported success on a no-op\nThe Edit tool returned success but the file was unchanged.",
   "system.unknown": "(unrecognized system subtype — raw payload shown above)",

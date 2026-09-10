@@ -59,6 +59,7 @@ import { normalizeJsonlNode } from "@/lib/normalizeMessage";
 import { classifyJsonlLine } from '@/lib/jsonlClassifier';
 import { lastPermissionMode, lastAssistantModel, usageLimitWait } from '@/lib/sessionDerivedState';
 import { UsageLimitBanner } from "./claude-code-session/UsageLimitBanner";
+import { ThinkingBar } from "./claude-code-session/ThinkingBar";
 import { CaughtUpPill } from "./RemoteConnectionBanner";
 import { useLayoutMode } from "@/hooks/useLayoutMode";
 import { useSwipeTabs } from "@/hooks/useSwipeTabs";
@@ -2846,6 +2847,11 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
               onDismiss={dismissSubagent}
               onDismissAllCompleted={dismissAllCompletedSubagents}
             />
+            {/* Zero height unless a thinking burst is in flight. Gated on
+                `isLoading` (CLI turn state) rather than session liveness: an
+                interrupted turn leaves a thinking_tokens ping as the permanent
+                tail of the transcript, which would otherwise pin the bar open. */}
+            <ThinkingBar messages={messages} isLive={isLoading} />
             <UsageLimitBanner resetsAt={usageLimitResetsAt} />
             <FloatingPromptInput
               ref={floatingPromptRef}

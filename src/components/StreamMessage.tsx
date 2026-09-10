@@ -477,6 +477,9 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
       // `body` is the notification-style shape some CLI warnings use.
       // thinking_tokens carries no narrative field at all — it's a running
       // numeric estimate — so its body is synthesized from `estimated_tokens`.
+      // Past tense: `messageFilters` collapses each burst to its final ping, so
+      // the only one that ever reaches the transcript is the burst's total. The
+      // live running count is the ThinkingBar's job.
       // feedback_draft_queued carries no narrative field either: the draft body
       // stays on disk under <CLAUDE_CONFIG_DIR>/feedback/drafts/ and only the
       // card's display fields cross the wire. Body is `<type> · <title>` plus
@@ -484,7 +487,9 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
       const estimatedTokens = (sysRaw as unknown as { estimated_tokens?: number }).estimated_tokens;
       const text =
         subtype === 'thinking_tokens'
-          ? (typeof estimatedTokens === 'number' ? `~${estimatedTokens} thinking tokens` : '')
+          ? (typeof estimatedTokens === 'number'
+              ? `Thought ~${estimatedTokens.toLocaleString()} tokens`
+              : '')
           : subtype === 'feedback_draft_queued'
           ? feedbackDraftBody(sysRaw)
           : (sysRaw as unknown as { message?: unknown }).message

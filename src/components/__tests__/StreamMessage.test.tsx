@@ -353,11 +353,22 @@ describe('system thinking_tokens rendering', () => {
     } as unknown as JsonlNode;
   }
 
-  it('renders a formatted "~N thinking tokens" body from estimated_tokens', () => {
+  it('renders a past-tense burst total from estimated_tokens', () => {
+    // Past tense is accurate because messageFilters collapses each burst to
+    // its final ping — the only node that reaches the transcript is the one
+    // carrying the whole burst's total. The live running count lives in the
+    // ThinkingBar instead.
     const node = makeThinkingTokensNode(800, 50);
     render(<StreamMessage message={node} streamMessages={[node]} />);
 
-    expect(screen.getByText('~800 thinking tokens')).toBeTruthy();
+    expect(screen.getByText('Thought ~800 tokens')).toBeTruthy();
+  });
+
+  it('groups the thousands separator so five-figure bursts stay readable', () => {
+    const node = makeThinkingTokensNode(12500, 50);
+    render(<StreamMessage message={node} streamMessages={[node]} />);
+
+    expect(screen.getByText('Thought ~12,500 tokens')).toBeTruthy();
   });
 
   it('keeps the mono styling and inline subtype label (same fallback mechanism as other system subtypes)', () => {
@@ -365,7 +376,7 @@ describe('system thinking_tokens rendering', () => {
     render(<StreamMessage message={node} streamMessages={[node]} />);
 
     expect(screen.getByText('system.thinking_tokens')).toBeTruthy();
-    expect(screen.getByText('~1200 thinking tokens').className).toContain('font-mono');
+    expect(screen.getByText('Thought ~1,200 tokens').className).toContain('font-mono');
   });
 });
 
