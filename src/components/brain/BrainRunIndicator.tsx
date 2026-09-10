@@ -90,14 +90,26 @@ export const BrainRunIndicator: React.FC<{
             // Both names: the key identifies the row in the Sources table, the
             // label is the one a person can read.
             aria-label={`Brain indexing: ${run.label} (${run.item}) into the ${vault}, item ${position}, ${phase}, ${elapsed} elapsed`}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-violet-600/15 text-violet-400 app-no-drag"
+            // Inline flow, clamped to two lines: the pill has only the gap
+            // between the brand and the nav buttons (see CustomTitlebar), so
+            // on a narrow window it wraps inside that gap rather than running
+            // under the buttons — and stops at two lines with an ellipsis,
+            // because the title bar is 60px tall and free wrapping to four
+            // lines spilled out of it.
+            className="max-w-full min-w-0 px-2.5 py-1 rounded-md text-xs font-medium leading-tight text-center bg-violet-600/15 text-violet-400 app-no-drag"
           >
-            <Brain size={13} className="animate-pulse" />
-            <span className="tabular-nums">{label}</span>
-            {/* Truncated alone, so a long project name shrinks instead of
-                pushing the counter and the clock out of the titlebar. */}
-            <span className="max-w-[16ch] truncate">{run.label}</span>
-            <span className="tabular-nums opacity-70">{`· ${elapsed}`}</span>
+            {/* The clamp sits on an inner element, not the padded pill: with
+                `overflow: hidden` on the padded box the third line's top
+                showed through the bottom padding. No `block` alongside it —
+                line-clamp is `display: -webkit-box`, and `block` won. */}
+            <span className="line-clamp-2">
+              <Brain size={13} className="inline-block align-[-2px] mr-1.5 animate-pulse" />
+              <span className="tabular-nums">{label}</span>{' '}
+              {/* Truncated alone, so a long project name shrinks instead of
+                  pushing the counter and the clock out of the titlebar. */}
+              <span className="inline-block align-bottom max-w-[16ch] truncate">{run.label}</span>{' '}
+              <span className="tabular-nums opacity-70">{`· ${elapsed}`}</span>
+            </span>
           </div>
         </TooltipTrigger>
         {/* Below the pill: the titlebar is the top edge of the window, so a

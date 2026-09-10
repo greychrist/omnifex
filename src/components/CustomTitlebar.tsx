@@ -388,14 +388,14 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
           here is where it is" signal. `useOptionalAccounts` because the
           titlebar renders in shells without the provider.
 
-          Absolutely centred rather than sitting in either flex group: as a
-          third child of a `justify-between` row it would only centre in the
-          leftover gap, and would slide sideways every time the nav group's
-          width changed (update button appearing, session badge, etc.).
-          `pointer-events-none` on the wrapper so the empty box cannot steal
-          drags from the title bar while no run is in flight. */}
-      <div className="absolute left-1/2 -translate-x-1/2 flex items-center pointer-events-none">
-        <div className="pointer-events-auto app-no-drag">
+          A flex child between the brand and the nav group, `flex-1 min-w-0`,
+          so it only ever has the gap between them and wraps or truncates
+          inside it. It used to be absolutely centred so it would not slide
+          when the nav group's width changed — and on a narrow window it sat
+          on top of the buttons instead. Centred within the gap is close
+          enough; colliding is not. */}
+      <div className="flex-1 min-w-0 flex items-center justify-center px-4 self-stretch">
+        <div className="min-w-0 max-w-full app-no-drag">
           <BrainRunIndicator accounts={accountsForIndicator} />
         </div>
       </div>
@@ -518,6 +518,8 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
               the Sessions popover can escape the group's bounds (otherwise
               its absolutely-positioned content gets clipped to ~32px tall). */}
           <div className="inline-flex items-center rounded-md border border-border/60 bg-background/30 [&>*+*]:border-l [&>*+*]:border-border/50">
+          <DaemonStatusPopover appVersion={appVersion || undefined} />
+
           {onLimaClick && (
             <motion.button
               onClick={onLimaClick}
@@ -553,8 +555,6 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
               <span>Cost</span>
             </motion.button>
           )}
-
-          <DaemonStatusPopover appVersion={appVersion || undefined} />
 
           <TabStatusPopover />
 
