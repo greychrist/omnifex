@@ -48,6 +48,16 @@ export interface SessionBridge {
   permissionAnswered(sessionId: string, permissionId: string): void;
   /** The connection axis plus the last control-state mirror, for summaries. */
   state(sessionId: string): SessionControlState | null;
+  /** A prompt was just sent: the turn is running until its result row lands. */
+  turnStarted(sessionId: string): void;
+  /**
+   * Whether a turn is running. Opened by `turnStarted`, closed by the CLI's
+   * `result` row (`cli-stream-result`, the same closer the renderer uses —
+   * see docs/session-lifecycle.md), by the process completing, or by the
+   * session stopping. Read by summaries and by the Electron launcher, which
+   * will not replace a daemon mid-turn.
+   */
+  inFlight(sessionId: string): boolean;
   /** Drop per-session tracking once a session is gone for good. */
   forget(sessionId: string): void;
 }
@@ -69,6 +79,7 @@ function isPermissionPayload(payload: unknown): payload is Record<string, unknow
 export function createSessionBridge(deps: SessionBridgeDeps): SessionBridge {
   const states = new Map<string, SessionControlState>();
   const pending = new Map<string, string[]>();
+  const turns = new Set<string>();
 
   function stateFor(sessionId: string): SessionControlState {
     let s = states.get(sessionId);
@@ -118,6 +129,7 @@ export function createSessionBridge(deps: SessionBridgeDeps): SessionBridge {
     const node =
       deps.classify(raw) ??
       ({ kind: 'unknown', raw: raw as Record<string, unknown>, sessionId, receivedAt: null } as JsonlNode);
+    if (node.kind === 'cli-stream-result') turns.delete(sessionId);
     emitEvent(sessionId, 'transcript', channel, node, { origin });
   }
 
@@ -172,6 +184,7 @@ export function createSessionBridge(deps: SessionBridgeDeps): SessionBridge {
       case 'session-status': {
         const next = (payload as { sessionStatus?: SessionStatus } | undefined)?.sessionStatus;
         if (next) stateFor(sessionId).sessionStatus = next;
+        if (next === 'stopped' || next === 'error') turns.delete(sessionId);
         emitState(sessionId);
         return;
       }
@@ -201,12 +214,14 @@ export function createSessionBridge(deps: SessionBridgeDeps): SessionBridge {
         emitEvent(sessionId, 'tui-data', prefix, payload);
         return;
       case 'session-tui-exit':
+        turns.delete(sessionId);
         emitEvent(sessionId, 'complete', prefix, payload);
         return;
       case 'agent-error':
         emitEvent(sessionId, 'stderr', prefix, payload);
         return;
       case 'agent-complete':
+        turns.delete(sessionId);
         emitEvent(sessionId, 'complete', prefix, payload ?? null);
         return;
       case 'elicitation-request':
@@ -231,9 +246,14 @@ export function createSessionBridge(deps: SessionBridgeDeps): SessionBridge {
       if (i >= 0) list.splice(i, 1);
     },
     state: (id) => (deps.log.isOpen(id) ? { ...stateFor(id) } : null),
+    turnStarted(id) {
+      turns.add(id);
+    },
+    inFlight: (id) => turns.has(id),
     forget(id) {
       states.delete(id);
       pending.delete(id);
+      turns.delete(id);
     },
   };
 }

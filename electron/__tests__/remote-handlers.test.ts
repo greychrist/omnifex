@@ -238,6 +238,19 @@ describe('remote handlers', () => {
     expect(live.sent).toEqual([]);
   });
 
+  it('reports a turn as in flight from send until the result row', async () => {
+    const project = await addProject();
+    await h['session.create']({ projectId: project.projectId }, fakeCtx().ctx);
+    bridge.sendToRenderer('session-status:sid-1', { sessionStatus: 'started' });
+    expect(h.summary('sid-1')).toMatchObject({ inFlight: false });
+
+    h['turn.send']({ sessionId: 'sid-1', content: 'hello' }, fakeCtx().ctx);
+    expect(h.summary('sid-1')).toMatchObject({ inFlight: true, pendingPermissions: 0 });
+
+    bridge.sendToRenderer('agent-output:sid-1', { type: 'result', subtype: 'success', is_error: false, result: 'ok', receivedAt: '2026-09-10T03:00:02.000Z' });
+    expect(h.summary('sid-1')).toMatchObject({ inFlight: false });
+  });
+
   it('answers a permission by id and reports one that is not pending', async () => {
     const project = await addProject();
     await h['session.create']({ projectId: project.projectId }, fakeCtx().ctx);

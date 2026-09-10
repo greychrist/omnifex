@@ -112,9 +112,11 @@ export function createRemoteHandlers(deps: RemoteHandlerDeps): RemoteHandlers {
       ...(state?.permissionMode !== undefined && { permissionMode: state.permissionMode }),
       lastSeq: deps.log.lastSeq(meta.sessionId),
       pendingPermissions: pending.length,
-      // Advisory: a live process with something waiting on the user. The
-      // subscribed client derives the real answer from the transcript.
-      inFlight: active && pending.length > 0,
+      // Advisory: a live process with a turn running (prompt sent, no result
+      // row yet) or a permission waiting on the user. The subscribed client
+      // derives the real answer from the transcript; the launcher and the
+      // Daemon panel read this one.
+      inFlight: active && (deps.bridge.inFlight(meta.sessionId) || pending.length > 0),
       createdAt: meta.createdAt,
       updatedAt: meta.updatedAt,
     };
@@ -279,6 +281,8 @@ export function createRemoteHandlers(deps: RemoteHandlerDeps): RemoteHandlers {
         });
       }
       const onlyText = blocks.length === 1 && blocks[0].type === 'text' && typeof blocks[0].text === 'string';
+      // Before the write, so a result row that races back cannot be missed.
+      deps.bridge.turnStarted(p.sessionId);
       if (onlyText) deps.sessions.sendMessage(p.sessionId, blocks[0].text as string);
       else deps.sessions.sendStructuredMessage(p.sessionId, blocks);
       deps.log.updateMeta(p.sessionId, {});

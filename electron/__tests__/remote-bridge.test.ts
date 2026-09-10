@@ -185,6 +185,34 @@ describe('remote session bridge', () => {
     expect(states.at(-1)).toMatchObject({ sessionStatus: 'started', mode: 'tui', model: 'claude-opus-5' });
   });
 
+  it('tracks a running turn: opened by turnStarted, closed by the result row', () => {
+    openSession(log, 's1');
+    expect(bridge.inFlight('s1')).toBe(false);
+    bridge.turnStarted('s1');
+    expect(bridge.inFlight('s1')).toBe(true);
+    // Assistant output does not close it.
+    bridge.sendToRenderer('agent-output:s1', { type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'working' }] }, receivedAt: '2026-09-10T03:00:01.000Z' });
+    expect(bridge.inFlight('s1')).toBe(true);
+    // The CLI's result row does — the same turn-closer the renderer uses.
+    bridge.sendToRenderer('agent-output:s1', { type: 'result', subtype: 'success', is_error: false, result: 'done', receivedAt: '2026-09-10T03:00:02.000Z' });
+    expect(bridge.inFlight('s1')).toBe(false);
+  });
+
+  it('closes a running turn when the process completes or the session stops', () => {
+    openSession(log, 's1');
+    bridge.turnStarted('s1');
+    bridge.sendToRenderer('agent-complete:s1');
+    expect(bridge.inFlight('s1')).toBe(false);
+
+    bridge.turnStarted('s1');
+    bridge.sendToRenderer('session-status:s1', { sessionStatus: 'stopped' });
+    expect(bridge.inFlight('s1')).toBe(false);
+
+    bridge.turnStarted('s1');
+    bridge.forget('s1');
+    expect(bridge.inFlight('s1')).toBe(false);
+  });
+
   it('routes a tab-scoped channel for a session it does not know as an app-wide broadcast', () => {
     // No open session: this is not a session frame, whatever its prefix.
     bridge.sendToRenderer('agent-output:ghost', { type: 'assistant' });
