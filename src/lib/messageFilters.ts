@@ -50,10 +50,16 @@ function isHookLifecycleMarker(msg: JsonlNode): boolean {
  * (`status` phase pings especially) interleave with thinking and are themselves
  * filtered out, so they must not split one burst into two surviving rows.
  *
- * Collapsing rather than synthesising a summary node keeps `messages[]`
- * byte-faithful to the JSONL, so a resumed session collapses exactly the way a
- * live one does, and `deriveThinkingStatus` can read the in-flight total
- * straight off the tail of the array.
+ * Collapsing rather than synthesising a summary node keeps `messages[]` a
+ * faithful subset of what the CLI actually emitted, and lets
+ * `deriveThinkingStatus` read the in-flight total straight off the tail of the
+ * array instead of maintaining a parallel one.
+ *
+ * Live-only, and there is no resumed case to reconcile: `thinking_tokens` is
+ * emitted on the stream-json output and never written to the session JSONL, so
+ * a reopened session has no pings at all and this is a no-op over it. The
+ * surviving `Thought ~N tokens` row is therefore lost on reload — that is the
+ * CLI's retention, not ours to collapse away.
  */
 function lastThinkingTokensPerBurst(messages: JsonlNode[]): ReadonlySet<number> {
   const keep = new Set<number>();

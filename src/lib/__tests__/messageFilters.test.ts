@@ -423,8 +423,12 @@ describe('system:dev_intent (CLI >= 2.1.266)', () => {
 // Left unfiltered a single deep-thinking turn stacks a dozen near-identical
 // "~N thinking tokens" cards down the transcript. Collapsing to the last ping
 // per burst is a pure filter: no synthetic node is injected, so messages[]
-// stays byte-faithful to the JSONL and a resumed session collapses the same
-// way a live one does.
+// stays a faithful subset of what the CLI emitted.
+//
+// These pings exist only on the live stream-json output — the CLI never writes
+// them to the session JSONL — so every case below is a live-stream case and
+// there is no resumed-transcript case to pin. Over a reopened session the
+// filter is a no-op because there is nothing to collapse.
 const thinkingTokens = (estimated_tokens: number): JsonlNode =>
   ({
     kind: 'system', subtype: 'thinking_tokens', sessionId: '', receivedAt: '',
