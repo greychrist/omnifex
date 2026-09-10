@@ -23,9 +23,9 @@ export interface NativeBridge {
 }
 
 export function nativeBridge(): NativeBridge | null {
-  const w = window as unknown as { __omnifexNative?: NativeBridge; electronAPI?: NativeBridge };
-  // The preload publishes the same object under both names; `__omnifexNative`
-  // is the one that survives the shim replacing `electronAPI`.
+  const w = window as unknown as { __omnifexNative?: NativeBridge };
+  // The preload publishes the bridge under this name only; `electronAPI` is
+  // whatever bootstrap installed (this bridge, or the remote shim).
   return w.__omnifexNative ?? null;
 }
 

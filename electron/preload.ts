@@ -27,11 +27,13 @@ function isAllowedEventChannel(channel: string): boolean {
   );
 }
 
-// Published twice. `electronAPI` is what the renderer has always called and
-// what the OmniFex Remote shim replaces when a daemon is reachable;
-// `__omnifexNative` is the same bridge under a name the shim leaves alone, so
-// Electron-only channels (dialogs, shell, window chrome, updater) still reach
-// main after the swap. See src/lib/remote/bootstrap.ts.
+// Published as `__omnifexNative` only. The renderer calls `window.electronAPI`,
+// and src/lib/remote/bootstrap.ts decides what that is: this bridge (legacy
+// IPC) or the OmniFex Remote shim over a WebSocket, which keeps this bridge
+// for the Electron-only channels (dialogs, shell, window chrome, updater).
+// It cannot be published under `electronAPI` here: contextBridge defines its
+// properties ReadOnly | DontDelete, so the shim could never replace it — the
+// assignment threw and every launch fell back to legacy IPC.
 const bridge = {
   invoke: (channel: string, params?: Record<string, unknown>): Promise<unknown> => {
     if (!ALLOWED_INVOKE_CHANNELS.has(channel)) {
@@ -64,5 +66,4 @@ const bridge = {
   },
 };
 
-contextBridge.exposeInMainWorld('electronAPI', bridge);
 contextBridge.exposeInMainWorld('__omnifexNative', bridge);

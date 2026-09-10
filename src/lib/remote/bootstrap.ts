@@ -4,18 +4,26 @@
  *  - Electron, daemon reachable  → the remote shim over a WebSocket; the
  *    preload bridge stays available as `window.__omnifexNative` for the
  *    channels only Electron can serve.
- *  - Electron, no daemon         → leave the preload bridge in place. This is
- *    the pre-split app, unchanged. `remote:url` answers null when the daemon
- *    is disabled (`OMNIFEX_REMOTE=0`, `remote.enabled=false`) or failed to
+ *  - Electron, no daemon         → the preload bridge itself. This is the
+ *    pre-split app, unchanged. `remote:url` answers null when the daemon is
+ *    disabled (`OMNIFEX_REMOTE=0`, `remote.enabled=false`) or failed to
  *    start, so nothing about the laptop experience depends on the daemon
  *    being healthy.
  *  - Web (no preload)            → the shim over `ws(s)://<this host>/ws`.
  *    The daemon served the page, so the daemon is where the socket goes.
  *
+ * The preload publishes the bridge as `__omnifexNative` only, and this is the
+ * one place `window.electronAPI` is defined. contextBridge properties are
+ * read-only and undeletable, so had the preload defined `electronAPI`, the
+ * shim could never take its place (it tried, threw, and the app quietly ran
+ * legacy IPC forever). The bridge is installed as `electronAPI` on the first
+ * line — before the daemon is probed — so a failure anywhere below leaves a
+ * working app, not an undefined one.
+ *
  * Must run before anything imports `api.ts` at module scope and calls it —
  * `main.tsx` awaits this before booting React.
  */
-import { createServerClient, type ServerClient } from '@/lib/remote/serverClient';
+import { createServerClient, type ServerClient, type WebSocketFactory } from '@/lib/remote/serverClient';
 import { createElectronApiShim } from '@/lib/remote/electronApiShim';
 import type { NativeBridge } from '@/lib/platform';
 
@@ -82,14 +90,24 @@ async function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<
   }
 }
 
-export async function installRemoteBridge(opts: { connectTimeoutMs?: number } = {}): Promise<RemoteBridgeInfo> {
+export interface InstallRemoteBridgeOptions {
+  connectTimeoutMs?: number;
+  /** Test seam; defaults to the global `WebSocket`. */
+  createSocket?: WebSocketFactory;
+}
+
+function setElectronApi(api: unknown): void {
+  (window as unknown as { electronAPI: unknown }).electronAPI = api;
+}
+
+export async function installRemoteBridge(opts: InstallRemoteBridgeOptions = {}): Promise<RemoteBridgeInfo> {
   const connectTimeoutMs = opts.connectTimeoutMs ?? 8_000;
-  const native: NativeBridge | null =
-    window.__omnifexNative ?? ((window as unknown as { electronAPI?: NativeBridge }).electronAPI ?? null);
+  const native: NativeBridge | null = window.__omnifexNative ?? null;
 
   let info: RemoteBridgeInfo;
 
   if (native) {
+    setElectronApi(native);
     let url: string | null = null;
     try {
       url = (await native.invoke('remote:url')) as string | null;
@@ -99,10 +117,10 @@ export async function installRemoteBridge(opts: { connectTimeoutMs?: number } = 
     if (!url) {
       info = { mode: 'electron-legacy', url: null, client: null };
     } else {
-      const client = createServerClient({ url, clientId: clientId(), clientKind: 'electron' });
+      const client = createServerClient({ url, clientId: clientId(), clientKind: 'electron', createSocket: opts.createSocket });
       try {
         await withTimeout(client.connect(), connectTimeoutMs, 'daemon handshake');
-        (window as unknown as { electronAPI: unknown }).electronAPI = createElectronApiShim({ client, native });
+        setElectronApi(createElectronApiShim({ client, native }));
         info = { mode: 'electron-remote', url, client };
       } catch (err) {
         console.warn('[remote] daemon handshake failed; staying on legacy IPC', err);
@@ -113,10 +131,10 @@ export async function installRemoteBridge(opts: { connectTimeoutMs?: number } = 
   } else {
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
     const url = `${proto}://${location.host}/ws`;
-    const client = createServerClient({ url, clientId: clientId(), clientKind: 'web' });
+    const client = createServerClient({ url, clientId: clientId(), clientKind: 'web', createSocket: opts.createSocket });
     // Install first, connect second: on the web there is nothing to fall back
     // to, and the shim queues requests while the socket comes up.
-    (window as unknown as { electronAPI: unknown }).electronAPI = createElectronApiShim({ client, native: null, webNotify });
+    setElectronApi(createElectronApiShim({ client, native: null, webNotify }));
     client.connect().catch((err: unknown) => {
       console.warn('[remote] initial connect failed; will keep retrying', err);
     });
