@@ -5,6 +5,13 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.161] — 2026-09-10
+
+### Fixed
+
+- The Brain could be billed twice for indexing the same conversation. The app and the background daemon each ran their own copy of the periodic work — the Brain sweep, the cost-history backfill, and the database compaction — and since the daemon is on by default, both were normally running at once against the same queue. Launching the app while the daemon was mid-extraction handed that item back to the queue and paid for it a second time. The notes themselves were never affected; the charge was. One process owns this work now: the daemon when it is in use, the app when it is not.
+- Signing in to Codex was impossible whenever the daemon was in use, which is the default. The app asks where the `codex` command lives, and that question was being sent to the daemon, which has no way to answer it — so the reply came back empty and the sign-in panel reported "Codex CLI not found" on machines where Codex was installed and working. The question now goes to the process that can answer it.
+
 ## [0.4.160] — 2026-09-10
 
 ### Fixed
