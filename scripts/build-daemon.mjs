@@ -37,7 +37,7 @@ await build({
     rollupOptions: {
       // Keep in step with vite.main.config.ts: `ws` must stay external or its
       // bufferutil fallback breaks inside the bundle.
-      external: [...builtins, 'electron', 'electron/main', 'better-sqlite3', 'node-pty', 'ws'],
+      external: [...builtins, 'electron', 'electron/main', 'better-sqlite3', 'node-pty', 'ws', 'web-push'],
     },
   },
 });

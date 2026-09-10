@@ -9,9 +9,63 @@
  * there is no socket to report on.
  */
 import { useEffect, useState } from 'react';
-import { RefreshCw, WifiOff } from 'lucide-react';
+import { Bell, RefreshCw, WifiOff, X } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
+import { enablePush, pushSupport, type PushSupport } from '@/lib/remote/push';
+
+const PUSH_DISMISSED_KEY = 'omnifex.remote.pushDismissed';
+
+/**
+ * One-line offer to turn on Web Push, shown on the web client only while it
+ * is still possible and not yet decided: a secure origin, permission not yet
+ * asked, and the user has not dismissed it. Electron has native banners and
+ * never shows this.
+ */
+export function PushEnableBar(): React.JSX.Element | null {
+  const [support, setSupport] = useState<PushSupport>(() => pushSupport());
+  const [dismissed, setDismissed] = useState<boolean>(() => {
+    try { return localStorage.getItem(PUSH_DISMISSED_KEY) === '1'; } catch { return false; }
+  });
+  const [busy, setBusy] = useState(false);
+
+  const isWeb = typeof window !== 'undefined' && window.__omnifexRemote?.mode === 'web';
+  if (!isWeb || dismissed || support !== 'default') return null;
+
+  const enable = async () => {
+    setBusy(true);
+    try {
+      setSupport(await enablePush());
+    } catch (err) {
+      console.warn('[remote] enabling push failed:', err);
+      setSupport(pushSupport());
+    } finally {
+      setBusy(false);
+    }
+  };
+  const dismiss = () => {
+    setDismissed(true);
+    try { localStorage.setItem(PUSH_DISMISSED_KEY, '1'); } catch { /* fine */ }
+  };
+
+  return (
+    <div className="flex items-center justify-center gap-3 px-3 py-1.5 text-xs border-b bg-primary/5 border-primary/15 text-foreground">
+      <Bell className="h-3.5 w-3.5 text-primary" />
+      <span>Get notified when a session needs permission or finishes.</span>
+      <button
+        type="button"
+        onClick={() => { void enable(); }}
+        disabled={busy}
+        className="rounded-md bg-primary text-primary-foreground px-2.5 py-1 font-medium disabled:opacity-60"
+      >
+        {busy ? 'Enabling…' : 'Enable notifications'}
+      </button>
+      <button type="button" onClick={dismiss} aria-label="Dismiss" className="text-muted-foreground hover:text-foreground">
+        <X className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  );
+}
 
 type State = 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
 

@@ -105,8 +105,10 @@ Channel → push mapping (bridge):
 - [x] Commit "Phase 5".
 
 ## Phase 6 — Web Push (optional, last)
-- [ ] VAPID keys + `~/.omnifex/push.json`; push on `permission.request` and running→idle; tap deep-links.
-- [ ] Commit "Phase 6".
+- [x] `electron/remote/push.ts`: VAPID pair generated once into `~/.omnifex/push.json` (0600), subscriptions stored there, dead endpoints (404/410) dropped on send; `pushPayloadFor()` fires for `permission.request` and for a `cli-stream-result` (turn finished / error) **only when no client is subscribed to that session**. `web-push` external in both builds; loaded lazily so a missing module costs push, not sessions. Routes: `GET /api/push/vapid-public-key`, `POST /api/push/subscribe|unsubscribe` (the only POSTs the daemon accepts). Verified live with curl: key generated, subscribe stored, unsubscribe removed, bad body 400.
+- [x] Client: `src/lib/remote/push.ts` (`pushSupport`, `enablePush`, `disablePush`, `deepLinkedSessionId`); `PushEnableBar` under the title bar on the web client while permission is undecided and the origin is secure; the service worker's `push`/`notificationclick` handlers open `/#session=<id>`; `App.tsx` focuses or opens that session's tab on load and on `hashchange`.
+- [ ] Not verified on a device: Safari only grants push to an installed Home Screen app on HTTPS — needs the `tailscale serve` origin from Phase 4 and a real iPad.
+- [x] Commit "Phase 6".
 
 ## Follow-ups (not in scope tonight)
 - Deduplicate service construction between `electron/main.ts` and `electron/remote/daemon.ts`.

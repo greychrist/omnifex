@@ -91,6 +91,20 @@ OMNIFEX_STATE_DIR=/tmp/omnifex-state OMNIFEX_USER_DATA_DIR=/tmp/omnifex-userdata
 A fresh user-data dir has no accounts; the smoke script creates one for
 `~/.claude-personal` when it finds none.
 
+## Push notifications (web client)
+
+Once the page is served over HTTPS (`tailscale serve` above), the web client
+offers **Enable notifications** in a bar under the title bar. Accepting
+subscribes the device with the daemon's VAPID key; the daemon then pushes
+when — and only when nobody has that session open on screen — a session
+needs a permission, or a turn finishes. Tapping opens the session.
+
+State: `~/.omnifex/push.json` (VAPID key pair + subscriptions, mode 0600).
+Routes: `GET /api/push/vapid-public-key`, `POST /api/push/subscribe`,
+`POST /api/push/unsubscribe`. Dead subscriptions (404/410 from the push
+service) are dropped automatically. Deleting the file rotates the key and
+invalidates every subscription — a decision, not a side effect.
+
 ## What the web client cannot do
 
 - Terminal (TUI) sessions — chat mode only. One pty cannot have two viewers.

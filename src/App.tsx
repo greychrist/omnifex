@@ -23,9 +23,10 @@ import { AccountPickerDialog } from "@/components/AccountPickerDialog";
 import { Toast, ToastContainer } from "@/components/ui/toast";
 import { TabManager } from "@/components/TabManager";
 import { TabContent } from "@/components/TabContent";
-import { RemoteConnectionBanner } from "@/components/RemoteConnectionBanner";
+import { RemoteConnectionBanner, PushEnableBar } from "@/components/RemoteConnectionBanner";
 import { useLayoutMode } from "@/hooks/useLayoutMode";
 import { useKeyboardInset } from "@/hooks/useKeyboardInset";
+import { deepLinkedSessionId } from "@/lib/remote/push";
 import { useTabState } from "@/hooks/useTabState";
 import { StartupIntro } from "@/components/StartupIntro";
 import { fireAndLog, logAndForget } from "@/lib/fireAndLog";
@@ -52,7 +53,7 @@ type View =
 function AppContent() {
   const [view, setView] = useState<View>("tabs");
   const { createSettingsTab, createLimaTab, createBrainTab, createCostReportTab } = useTabState();
-  const { activeTabId, setActiveTab, updateTab, addTab, getTabById } = useTabContext();
+  const { tabs, activeTabId, setActiveTab, updateTab, addTab, getTabById } = useTabContext();
   // OmniFex Remote: narrow/touch/web facts, and the keyboard inset that keeps
   // the composer above a software keyboard. Both no-ops under Electron.
   const layoutMode = useLayoutMode();
@@ -190,6 +191,58 @@ function AppContent() {
     window.addEventListener('keydown', handleKeyDown);
     return () => { window.removeEventListener('keydown', handleKeyDown); };
   }, [view]);
+
+  // OmniFex Remote deep link: a Web Push notification tap lands on
+  // `/#session=<id>`. Focus the tab that already shows that session, or open
+  // one for it — the daemon knows the project the session belongs to.
+  useEffect(() => {
+    const client = window.__omnifexRemote?.client;
+    if (!client) return;
+    let cancelled = false;
+    const open = async () => {
+      const id = deepLinkedSessionId();
+      if (!id) return;
+      const existing = tabs.find((t) => t.type === 'chat' && t.sessionId === id);
+      if (existing) {
+        setActiveTab(existing.id);
+        setView('tabs');
+        return;
+      }
+      try {
+        const [sessions, projects] = await Promise.all([
+          client.request('session.list', {}),
+          client.request('project.list', {}),
+        ]);
+        if (cancelled) return;
+        const summary = sessions.find((s) => s.sessionId === id);
+        const project = summary ? projects.find((p) => p.projectId === summary.projectId) : undefined;
+        if (!summary || !project) return;
+        const tabId = addTab({
+          type: 'chat',
+          title: summary.title ?? project.title ?? 'Session',
+          agent: summary.agent,
+          sessionId: id,
+          initialProjectPath: project.path,
+          status: 'idle',
+          hasUnsavedChanges: false,
+          icon: 'message-square',
+        });
+        setActiveTab(tabId);
+        setView('tabs');
+      } catch (err) {
+        console.warn('[remote] deep link failed:', err);
+      } finally {
+        // Consume the hash so a reload does not re-open the session.
+        if (location.hash.includes('session=')) history.replaceState(null, '', location.pathname + location.search);
+      }
+    };
+    void open();
+    const onHash = () => { void open(); };
+    window.addEventListener('hashchange', onHash);
+    return () => { cancelled = true; window.removeEventListener('hashchange', onHash); };
+    // Runs once per hash change; `tabs` is read fresh inside via closure at call time.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Listen for Claude not found events
   useEffect(() => {
@@ -472,6 +525,7 @@ function AppContent() {
         onCliReviewClick={handleCliReviewLaunch}
       />
       <RemoteConnectionBanner />
+      <PushEnableBar />
 
       {/* Main Content */}
       <div className="flex-1 overflow-hidden">

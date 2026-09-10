@@ -13,7 +13,7 @@ export default defineConfig({
       // fallback (bufferutil) is looked up on, and the daemon then throws
       // `bufferUtil.unmask is not a function` on the first inbound frame. It is
       // a runtime dependency, so it ships in node_modules either way.
-      external: ['better-sqlite3', 'node-pty', 'ws'],
+      external: ['better-sqlite3', 'node-pty', 'ws', 'web-push'],
     },
   },
 });

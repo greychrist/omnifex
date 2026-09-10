@@ -258,6 +258,44 @@ describe('remote server', () => {
       expect((await fetchText('/..%2f..%2fetc/passwd')).status).toBe(404);
     });
 
+    it('serves the push routes when a push api is wired, JSON in and out', async () => {
+      const subs: unknown[] = [];
+      await server.close();
+      server = createRemoteServer({
+        host: '127.0.0.1', port: 0, daemonVersion: 't', heartbeatMs: 0,
+        api: {
+          health: () => ({ ok: true }), sessions: () => [], projects: () => [],
+          push: {
+            publicKey: () => 'PUBKEY',
+            subscribe: (b) => { subs.push(b); return { added: true }; },
+            unsubscribe: () => ({ removed: true }),
+          },
+        },
+      });
+      server.register(handlers());
+      const a = await server.listen();
+      base = `http://${a.host}:${a.port}`;
+
+      expect(JSON.parse((await fetchText('/api/push/vapid-public-key')).body)).toEqual({ publicKey: 'PUBKEY' });
+      const post = (path: string, body: unknown) =>
+        new Promise<{ status: number; body: string }>((res, rej) => {
+          const req = require('node:http').request(`${base}${path}`, { method: 'POST', headers: { 'content-type': 'application/json' } }, (r: import('node:http').IncomingMessage) => {
+            let b = ''; r.on('data', (d) => { b += d; }); r.on('end', () => res({ status: r.statusCode ?? 0, body: b }));
+          });
+          req.on('error', rej); req.end(JSON.stringify(body));
+        });
+      expect(JSON.parse((await post('/api/push/subscribe', { endpoint: 'https://p/1', keys: { p256dh: 'x', auth: 'y' } })).body)).toEqual({ added: true });
+      expect(subs).toEqual([{ endpoint: 'https://p/1', keys: { p256dh: 'x', auth: 'y' } }]);
+      expect((await post('/api/push/unsubscribe', { endpoint: 'https://p/1' })).status).toBe(200);
+      expect((await post('/api/push/nope', {})).status).toBe(404);
+      // Still no other writes.
+      expect((await fetchText('/healthz', 'POST')).status).toBe(405);
+    });
+
+    it('404s the push routes when push is not wired', async () => {
+      expect((await fetchText('/api/push/vapid-public-key')).status).toBe(404);
+    });
+
     it('404s unknown routes and 405s writes', async () => {
       expect((await fetchText('/api/nope.json')).status).toBe(404);
       expect((await fetchText('/healthz', 'POST')).status).toBe(405);

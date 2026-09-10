@@ -52,6 +52,12 @@ export interface RemoteServerDeps {
     health(): unknown;
     sessions(): unknown;
     projects(): unknown;
+    /** Web Push (Phase 6). Absent → the routes 404. */
+    push?: {
+      publicKey(): string;
+      subscribe(body: unknown): unknown;
+      unsubscribe(body: unknown): unknown;
+    };
   };
   log?: RemoteServerLogger;
   /** Dead-peer ping interval. Tests shorten it; 0 disables. */
@@ -62,6 +68,8 @@ export interface RemoteServer extends ProtocolServer {
   listen(): Promise<{ host: string; port: number }>;
   close(): Promise<void>;
   readonly address: { host: string; port: number } | null;
+  /** How many clients are subscribed to a session right now. */
+  subscriberCount(sessionId: string): number;
 }
 
 const NOOP_LOG: RemoteServerLogger = { debug() {}, info() {}, warn() {}, error() {} };
@@ -315,10 +323,60 @@ export function createRemoteServer(deps: RemoteServerDeps): RemoteServer {
     return true;
   }
 
+  function readJsonBody(req: IncomingMessage, limit = 64 * 1024): Promise<unknown> {
+    return new Promise((resolvePromise, reject) => {
+      let size = 0;
+      const chunks: Buffer[] = [];
+      req.on('data', (c: Buffer) => {
+        size += c.length;
+        if (size > limit) {
+          reject(new Error('body too large'));
+          req.destroy();
+          return;
+        }
+        chunks.push(c);
+      });
+      req.on('end', () => {
+        try {
+          resolvePromise(chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {});
+        } catch (err) {
+          reject(err);
+        }
+      });
+      req.on('error', reject);
+    });
+  }
+
   function onRequest(req: IncomingMessage, res: ServerResponse): void {
     const url = new URL(req.url ?? '/', 'http://localhost');
+
+    // The only writes: push subscription management, JSON in, JSON out.
+    if (req.method === 'POST' && url.pathname.startsWith('/api/push/')) {
+      const push = deps.api.push;
+      if (!push) {
+        json(res, 404, { error: 'push not enabled' });
+        return;
+      }
+      readJsonBody(req)
+        .then((body) => {
+          if (url.pathname === '/api/push/subscribe') json(res, 200, push.subscribe(body));
+          else if (url.pathname === '/api/push/unsubscribe') json(res, 200, push.unsubscribe(body));
+          else json(res, 404, { error: 'not found' });
+        })
+        .catch((err: unknown) => {
+          json(res, 400, { error: err instanceof Error ? err.message : String(err) });
+        });
+      return;
+    }
+
     if (req.method !== 'GET' && req.method !== 'HEAD') {
       json(res, 405, { error: 'method not allowed' });
+      return;
+    }
+    if (url.pathname === '/api/push/vapid-public-key') {
+      const push = deps.api.push;
+      if (!push) json(res, 404, { error: 'push not enabled' });
+      else json(res, 200, { publicKey: push.publicKey() });
       return;
     }
     switch (url.pathname) {
@@ -347,6 +405,9 @@ export function createRemoteServer(deps: RemoteServerDeps): RemoteServer {
     },
     get address() {
       return address;
+    },
+    subscriberCount(sessionId) {
+      return subscribers.get(sessionId)?.size ?? 0;
     },
 
     register(h) {

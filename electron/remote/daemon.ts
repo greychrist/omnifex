@@ -117,6 +117,7 @@ import { buildRpcAllowlist } from './rpc-allowlist';
 import { createRemoteHandlers, type RpcHandler } from './handlers';
 import { createRemoteServer, type RemoteServerLogger } from './server';
 import { resolveWebRoot } from './webroot';
+import { createPushService, pushPayloadFor } from './push';
 
 export interface DaemonOptions {
   config: ServerConfig;
@@ -205,13 +206,14 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
   // Server is declared before the bridge so the bridge can publish into it;
   // handlers are registered after every service exists.
   let handlersRef: ReturnType<typeof createRemoteHandlers> | null = null;
+  let pushServiceRef: ReturnType<typeof createPushService> | null = null;
   const webRoot = resolveWebRoot(config.webRoot, __dirname);
   log.info('web root', { webRoot: webRoot ?? '(none — no web client served)' });
   const server = createRemoteServer({
     host: config.host,
     port: config.port,
     daemonVersion: opts.version,
-    capabilities: { tui: true, rpcInvoke: true, attachments: 'base64', web: webRoot !== null },
+    capabilities: { tui: true, rpcInvoke: true, attachments: 'base64', web: webRoot !== null, push: true },
     webRoot,
     log,
     api: {
@@ -230,13 +232,81 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
       }),
       sessions: () => handlersRef?.summaries() ?? [],
       projects: () => projects.list(),
+      push: {
+        publicKey: () => pushServiceRef?.publicKey() ?? '',
+        subscribe: (body) => {
+          const b = body as { endpoint?: unknown; keys?: { p256dh?: unknown; auth?: unknown }; label?: unknown };
+          if (typeof b.endpoint !== 'string' || typeof b.keys?.p256dh !== 'string' || typeof b.keys?.auth !== 'string') {
+            throw new Error('subscription needs endpoint and keys.p256dh/auth');
+          }
+          if (!pushServiceRef) throw new Error('push not enabled');
+          return pushServiceRef.subscribe({
+            endpoint: b.endpoint,
+            keys: { p256dh: b.keys.p256dh, auth: b.keys.auth },
+            ...(typeof b.label === 'string' && { label: b.label.slice(0, 120) }),
+          });
+        },
+        unsubscribe: (body) => {
+          const b = body as { endpoint?: unknown };
+          if (typeof b.endpoint !== 'string') throw new Error('endpoint required');
+          return { removed: pushServiceRef?.unsubscribe(b.endpoint) ?? false };
+        },
+      },
     },
   });
+
+  // Web Push (Phase 6). `web-push` is loaded lazily and the whole feature is
+  // optional: a missing module or a bad key file costs push, never sessions.
+  const pushService = (() => {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports -- optional dependency, resolved at runtime
+      const webpush = require('web-push') as typeof import('web-push');
+      return createPushService({
+        file: path.join(config.stateDir, 'push.json'),
+        generateVapidKeys: () => webpush.generateVAPIDKeys(),
+        subject: 'mailto:omnifex@localhost',
+        send: async (sub, payload) => {
+          const vapid = JSON.parse(fs.readFileSync(path.join(config.stateDir, 'push.json'), 'utf8')).vapid as {
+            publicKey: string; privateKey: string; subject: string;
+          };
+          try {
+            await webpush.sendNotification(
+              { endpoint: sub.endpoint, keys: sub.keys },
+              JSON.stringify(payload),
+              { vapidDetails: vapid, TTL: 600 },
+            );
+            return { ok: true };
+          } catch (err) {
+            return { ok: false, statusCode: (err as { statusCode?: number }).statusCode };
+          }
+        },
+        log: (m, meta) => log.info(`push: ${m}`, meta),
+      });
+    } catch (err) {
+      log.warn('web push unavailable', { error: String(err) });
+      return null;
+    }
+  })();
+
+  pushServiceRef = pushService;
 
   const bridge = createSessionBridge({
     log: sessionLog,
     classify: classifyJsonlLine,
-    publish: (push) => server.pushToSession(push.sessionId, push),
+    publish: (push) => {
+      server.pushToSession(push.sessionId, push);
+      if (!pushService) return;
+      const payload = pushPayloadFor(push, {
+        watched: (id) => server.subscriberCount(id) > 0,
+        sessionTitle: (id) => {
+          const meta = sessionLog.meta(id);
+          return meta?.title ?? path.basename(meta?.projectPath ?? '') ?? 'OmniFex';
+        },
+      });
+      if (payload) {
+        pushService.notify(payload).catch((err: unknown) => log.warn('push notify failed', { error: String(err) }));
+      }
+    },
     broadcast: (m) => server.broadcast(m),
   });
   const sendToRenderer = bridge.sendToRenderer;
