@@ -30,6 +30,22 @@ export interface CliArgs {
 
 const COMMANDS: readonly CliCommand[] = ['start', 'stop', 'status', 'install', 'uninstall', 'config', 'help'];
 
+/**
+ * What the running daemon calls itself, Unix-style (`sshd`, `launchd`).
+ *
+ * The daemon is the app's own Electron binary re-run with
+ * ELECTRON_RUN_AS_NODE, so without this it appears as a second `omnifex` in
+ * `ps` and Activity Monitor. Setting `process.title` rewrites argv[0] and,
+ * on macOS, the LaunchServices display name — which is the field Activity
+ * Monitor shows. The kernel's `p_comm` stays `omnifex`, so use `pgrep -f`,
+ * not plain `pgrep`, to find it by this name.
+ */
+export const DAEMON_PROCESS_TITLE = 'omnifexd';
+
+export function setDaemonProcessTitle(proc: { title: string } = process): void {
+  proc.title = DAEMON_PROCESS_TITLE;
+}
+
 export function parseCliArgs(argv: string[]): CliArgs {
   const [first, ...rest] = argv;
   const flags: Record<string, string | true> = {};
@@ -52,7 +68,7 @@ export function parseCliArgs(argv: string[]): CliArgs {
 
 export const HELP = `omnifex-server — the OmniFex Remote daemon
 
-  start        run the daemon in the foreground (what launchd runs)
+  start        run the daemon in the foreground (what launchd runs); shows as omnifexd
   stop         SIGTERM the running daemon (via ~/.omnifex/server.pid)
   status       ping /healthz and print the result (--json for raw)
   install      write ~/Library/LaunchAgents/com.omnifex.server.plist and load it

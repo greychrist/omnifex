@@ -14,6 +14,7 @@ import {
   installCommand,
   parseCliArgs,
   removePidFile,
+  setDaemonProcessTitle,
   statusCommand,
   stopDaemon,
   uninstallCommand,
@@ -94,6 +95,7 @@ async function main(argv: string[]): Promise<number> {
       return uninstallCommand(out);
 
     case 'start': {
+      setDaemonProcessTitle();
       const log = createLogger(process.env.OMNIFEX_LOG_LEVEL === 'debug' || args.flags.debug === true ? 'debug' : 'info');
       process.on('uncaughtException', (err) => log.error('uncaught exception', { error: err.stack ?? String(err) }));
       process.on('unhandledRejection', (err) => log.error('unhandled rejection', { error: String(err) }));
