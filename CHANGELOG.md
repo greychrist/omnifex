@@ -5,6 +5,26 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.157] — 2026-09-10
+
+### Added
+
+- **OmniFex Remote.** Claude sessions now run in a background daemon on the Mac instead of inside the app window, and the app talks to it over a local WebSocket. The daemon is started on demand and survives quitting the app, so a turn keeps running while the window is closed and the transcript catches up when it reopens. The same interface is served to the browser: over Tailscale, open the daemon's address in Safari on an iPad, Add to Home Screen, and every session is there — send prompts, approve permissions, read output, with push notifications when a session needs you and nobody has it on screen. The web client is chat-only; terminal sessions, file dialogs and the updater stay on the Mac. `docs/remote-access.md` has the setup. Set `OMNIFEX_REMOTE=0` or the `remote.enabled` setting to `false` to run the pre-split app on built-in IPC.
+- A **Daemon** button in the title bar: green check when this window is on the daemon, amber while reconnecting, red when there is no daemon or the socket is down. Its panel shows the daemon's version against the app's, address, connected clients, sessions live and running, and uptime, refreshed while open.
+- `omnifex-server` command (`install` / `uninstall` / `start` / `stop` / `status`) to run the daemon as a LaunchAgent so it is up after a reboot before the app is.
+- Upgrades take care of the daemon. It outlives the app, so it outlives an update; on launch the app compares versions and replaces an older daemon — immediately when idle, otherwise once its current turn finishes — re-pointing the LaunchAgent at the new bundle when one is installed. The in-app updater waits for turns running in the daemon too, including sessions open only on another device, and stops the daemon before swapping the bundle it runs from.
+- Extended thinking no longer stacks a row per few hundred tokens down the transcript. One running count lives in a bar at the bottom of the session while a burst is in flight, and a single `Thought ~N tokens` row survives afterwards. A resumed session collapses the same way a live one did.
+
+### Changed
+
+- Claude Code changelog review watermark moved to 2.1.267. Single release in range, no wire drift: stream subtypes, hook event names, control envelopes and every `/usage` anchor OmniFex reads are identical. Noted for later: `maxEffortLevel` in settings now silently clamps the effort OmniFex sets through the control channel.
+- The Brain indexing pill in the title bar now yields to the buttons on a narrow window, wrapping to at most two lines instead of sitting on top of them.
+
+### Fixed
+
+- Moving the Brain vault (as 0.4.156's default-location change did) left Claude Code sessions started outside OmniFex pointed at the old path, and `brain_search` failed with "no readable Brain index". Changing the vault path now re-registers the Brain MCP server for that account; clearing it unregisters.
+- Packaged builds now ship the daemon's runtime dependencies. The first packaged daemon died at launch with `Cannot find module 'ws'`.
+
 ## [0.4.156] — 2026-09-09
 
 ### Changed
