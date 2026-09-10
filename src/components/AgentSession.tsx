@@ -2696,6 +2696,14 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
             </button>
           )}
           <div className="h-full flex flex-col">
+            {/* Pinned above the transcript, where the eye already is while
+                waiting on a reply. Zero height unless a thinking burst is in
+                flight. Gated on `isLoading` (CLI turn state) rather than
+                session liveness: an interrupted turn leaves a thinking_tokens
+                ping as the permanent tail of the transcript, which would
+                otherwise pin the bar open. Right padding clears the inspector
+                toggle floating in the corner. */}
+            <ThinkingBar messages={messages} isLive={isLoading} className="border-b border-violet-500/20 pr-12" />
             {sessionMode === 'tui' ? (
               <TuiSessionLayout tabId={tabIdRef.current} />
             ) : (
@@ -2847,11 +2855,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
               onDismiss={dismissSubagent}
               onDismissAllCompleted={dismissAllCompletedSubagents}
             />
-            {/* Zero height unless a thinking burst is in flight. Gated on
-                `isLoading` (CLI turn state) rather than session liveness: an
-                interrupted turn leaves a thinking_tokens ping as the permanent
-                tail of the transcript, which would otherwise pin the bar open. */}
-            <ThinkingBar messages={messages} isLive={isLoading} />
             <UsageLimitBanner resetsAt={usageLimitResetsAt} />
             <FloatingPromptInput
               ref={floatingPromptRef}

@@ -13,8 +13,11 @@ interface ThinkingBarProps {
 }
 
 /**
- * Live readout of the current extended-thinking burst, pinned to the bottom bar
- * stack beside TaskList / SubagentBar / UsageLimitBanner.
+ * Live readout of the current extended-thinking burst, pinned above the
+ * transcript at the top of the content area. It started in the bottom bar
+ * stack beside TaskList / SubagentBar and moved: while waiting on a reply the
+ * eye is on the tail of the transcript, and the top edge is where a status
+ * strip reads as "about what is below" rather than as part of the prompt.
  *
  * The CLI emits a `system:thinking_tokens` ping every few hundred tokens of
  * thinking. Rendered as transcript cards they stack a dozen near-identical
