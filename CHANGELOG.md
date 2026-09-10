@@ -5,6 +5,16 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.158] — 2026-09-10
+
+### Added
+
+- A **Restart** button in the Daemon panel, beside Refresh. It stops the daemon and starts a fresh one from the running app, then re-reads its status. When a turn is in flight the panel asks first and says how many turns will be stopped; tabs on the old daemon show as stopped until their next message, which resumes them. Until now the only way to restart the daemon was the terminal — relaunching the app attaches to a same-version daemon rather than replacing it.
+
+### Changed
+
+- The daemon now shows up as `omnifexd` in Activity Monitor and `ps`, the way daemons are named, instead of as a second `omnifex` indistinguishable from the app. Its kernel short name is unchanged, so find it with `pgrep -f omnifexd`.
+
 ## [0.4.157] — 2026-09-10
 
 ### Added
