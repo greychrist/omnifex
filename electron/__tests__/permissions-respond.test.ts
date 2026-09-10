@@ -550,3 +550,52 @@ describe('createPermissionRequestHandler — Codex approvals', () => {
     expect(() => t.onRequest(patchReq())).not.toThrow();
   });
 });
+
+// The Remote daemon answers a permission by id, not by queue position: with two
+// clients subscribed to one session, an unaddressed Allow would resolve
+// whichever request happened to be at the head — possibly one the clicking
+// user never saw. The desktop path (no requestId) must keep its head-of-queue
+// behaviour exactly.
+describe('respondPermission — addressed by requestId', () => {
+  const byId = (t: ReturnType<typeof setup>, requestId?: string) =>
+    respondPermission(t.handle, 'tab1', t.sendToRenderer, t.hooks, 'allow', undefined, undefined, undefined, requestId);
+
+  it('answers the head and reports success when no requestId is given', () => {
+    const t = setup([
+      { requestId: 'req1' },
+      { requestId: 'req2', payload: { type: 'permission_request', request_id: 'req2', tool_name: 'Read', tool_input: {} } },
+    ]);
+    expect(byId(t)).toBe(true);
+    expect(t.responses.map((r) => r.requestId)).toEqual(['req1']);
+  });
+
+  it('answers the named request even when it is not at the head, without re-showing the head', () => {
+    const t = setup([{ requestId: 'req1', payload: { type: 'permission_request', request_id: 'req1' } }, { requestId: 'req2' }]);
+    expect(byId(t, 'req2')).toBe(true);
+    expect(t.responses.map((r) => r.requestId)).toEqual(['req2']);
+    expect(t.handle.permissionQueue.map((q) => q.requestId)).toEqual(['req1']);
+    // The head is still the head; the renderer is already showing it.
+    expect(t.sent).toEqual([]);
+  });
+
+  it('shows the next request when the head is answered by id', () => {
+    const t = setup([
+      { requestId: 'req1' },
+      { requestId: 'req2', payload: { type: 'permission_request', request_id: 'req2', tool_name: 'Bash', tool_input: {} } },
+    ]);
+    expect(byId(t, 'req1')).toBe(true);
+    expect(t.sent.some((s) => s.channel === 'agent-output:tab1')).toBe(true);
+  });
+
+  it('returns false and touches nothing for an unknown requestId', () => {
+    const t = setup([{ requestId: 'req1' }]);
+    expect(byId(t, 'nope')).toBe(false);
+    expect(t.responses).toEqual([]);
+    expect(t.handle.permissionQueue).toHaveLength(1);
+  });
+
+  it('returns false on an empty queue', () => {
+    expect(byId(setup([]), 'req1')).toBe(false);
+  });
+});
+

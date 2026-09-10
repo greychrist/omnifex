@@ -134,6 +134,10 @@ const config: ForgeConfig = {
         // it as `process.execPath` with ELECTRON_RUN_AS_NODE=1, which is what
         // keeps better-sqlite3 on the Electron ABI it was built for.
         { entry: 'electron/brain-mcp.ts', config: 'vite.main.config.ts', target: 'main' },
+        // The OmniFex Remote daemon. Same story: never loaded by the app,
+        // run by launchd (or `scripts/omnifex-server`) as the Electron binary
+        // with ELECTRON_RUN_AS_NODE=1.
+        { entry: 'electron/omnifex-server.ts', config: 'vite.main.config.ts', target: 'main' },
         { entry: 'electron/preload.ts', config: 'vite.preload.config.ts', target: 'preload' },
       ],
       renderer: [

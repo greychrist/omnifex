@@ -23,6 +23,12 @@ describe('database', () => {
     db.close();
   });
 
+  it('waits on a locked database instead of failing instantly (busy_timeout)', () => {
+    // The Remote daemon and Electron main share greychrist.db during the
+    // migration; without a busy timeout the second writer throws SQLITE_BUSY.
+    expect(db.raw.pragma('busy_timeout', { simple: true })).toBe(5000);
+  });
+
   it('migration v5 adds cli_path column to accounts', () => {
     const cols = db.raw.pragma('table_info(accounts)') as { name: string }[];
     expect(cols.some((c) => c.name === 'cli_path')).toBe(true);

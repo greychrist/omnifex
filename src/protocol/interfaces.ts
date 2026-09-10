@@ -138,8 +138,8 @@ export interface ProtocolServer {
   /** Deliver to every client subscribed to that session, in seq order. */
   pushToSession(sessionId: string, message: SessionScopedPush): void;
 
-  /** Deliver to every connected client: `project.changed`, `session.changed`. */
-  broadcast(message: Extract<ServerMessage, { type: 'project.changed' | 'session.changed' }>): void;
+  /** Deliver to every connected client: list deltas and legacy app-wide channels. */
+  broadcast(message: Extract<ServerMessage, { type: 'project.changed' | 'session.changed' | 'channel' }>): void;
 
   readonly clients: readonly ClientContext[];
 }

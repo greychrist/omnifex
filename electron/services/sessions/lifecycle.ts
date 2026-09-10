@@ -414,11 +414,12 @@ export function createSessionsService(
     behavior: 'allow' | 'deny',
     updatedInput?: Record<string, unknown>,
     updatedPermissions?: PermissionDecision['updatedPermissions'],
-  ): void {
+    requestId?: string,
+  ): boolean {
     const handle = sessions.get(tabId);
-    if (!handle || handle.permissionQueue.length === 0) return;
+    if (!handle || handle.permissionQueue.length === 0) return false;
 
-    respondPermissionImpl(
+    return respondPermissionImpl(
       handle,
       tabId,
       sendToRenderer,
@@ -427,6 +428,7 @@ export function createSessionsService(
       updatedInput,
       updatedPermissions,
       persistPermissionRule,
+      requestId,
     );
   }
 

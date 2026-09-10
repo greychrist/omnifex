@@ -11,7 +11,14 @@
     "skipLibCheck": true,
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
-    "types": ["node"]
+    "types": ["node"],
+    /* The daemon under electron/remote/ shares pure TS with the renderer
+       (src/protocol, src/lib/jsonlClassifier), and those files use the
+       renderer's `@/` alias internally. */
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"]
+    }
   },
   "include": ["electron"]
 }

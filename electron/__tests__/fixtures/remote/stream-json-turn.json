@@ -1,0 +1,74 @@
+{
+  "description": "One chat-mode turn as the sessions service hands it to sendToRenderer(channel, payload): spawn, prompt, a tool call that needs permission, the tool result, the closing assistant frame, the CLI result envelope, and the engine exit. Channel suffix is the daemon's tabId, which is the sessionId. Shapes follow CLI 2.1.267 stream-json output with --include-partial-messages off for brevity.",
+  "sessionId": "11111111-2222-4333-8444-555555555555",
+  "frames": [
+    ["session-status:11111111-2222-4333-8444-555555555555", { "sessionStatus": "started" }],
+    ["session-init:11111111-2222-4333-8444-555555555555", { "sessionId": "11111111-2222-4333-8444-555555555555", "projectPath": "/Users/greg/Repos/omnifex" }],
+    ["agent-output:11111111-2222-4333-8444-555555555555", {
+      "type": "system", "subtype": "init", "cwd": "/Users/greg/Repos/omnifex",
+      "session_id": "11111111-2222-4333-8444-555555555555", "tools": ["Bash", "Read", "Edit"],
+      "mcp_servers": [], "model": "claude-opus-5", "permissionMode": "default",
+      "apiKeySource": "none", "claude_code_version": "2.1.267", "output_style": "default",
+      "agents": [], "slash_commands": ["compact", "clear"], "skills": [], "plugins": [],
+      "uuid": "u-init", "receivedAt": "2026-09-10T02:00:00.000Z"
+    }],
+    ["agent-output:11111111-2222-4333-8444-555555555555", {
+      "type": "user", "message": { "role": "user", "content": [{ "type": "text", "text": "list the repo root" }] },
+      "parent_tool_use_id": null, "session_id": "11111111-2222-4333-8444-555555555555",
+      "uuid": "u-prompt", "receivedAt": "2026-09-10T02:00:01.000Z"
+    }],
+    ["agent-output:11111111-2222-4333-8444-555555555555", {
+      "type": "assistant",
+      "message": {
+        "model": "claude-opus-5", "id": "msg_01", "type": "message", "role": "assistant",
+        "content": [{ "type": "tool_use", "id": "toolu_01", "name": "Bash", "input": { "command": "ls", "description": "List files" } }],
+        "stop_reason": "tool_use", "stop_sequence": null,
+        "usage": { "input_tokens": 12, "output_tokens": 40, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0 }
+      },
+      "parent_tool_use_id": null, "session_id": "11111111-2222-4333-8444-555555555555",
+      "uuid": "u-a1", "receivedAt": "2026-09-10T02:00:02.000Z"
+    }],
+    ["agent-output:11111111-2222-4333-8444-555555555555", {
+      "type": "permission_request", "request_id": "req-1", "tool_name": "Bash",
+      "tool_input": { "command": "ls", "description": "List files" },
+      "permission_suggestions": [
+        { "type": "addRules", "rules": [{ "toolName": "Bash", "ruleContent": "ls:*" }], "behavior": "allow", "destination": "projectSettings" }
+      ]
+    }],
+    ["claude-notification", { "tab_id": "11111111-2222-4333-8444-555555555555", "title": "OmniFex — omnifex", "body": "Bash: ls", "is_error": false }],
+    ["agent-output:11111111-2222-4333-8444-555555555555", {
+      "type": "user",
+      "message": { "role": "user", "content": [{ "tool_use_id": "toolu_01", "type": "tool_result", "content": "CLAUDE.md\npackage.json\nsrc", "is_error": false }] },
+      "parent_tool_use_id": null, "session_id": "11111111-2222-4333-8444-555555555555",
+      "uuid": "u-tr", "receivedAt": "2026-09-10T02:00:05.000Z",
+      "toolUseResult": { "stdout": "CLAUDE.md\npackage.json\nsrc", "stderr": "", "interrupted": false, "isImage": false }
+    }],
+    ["claude-output-extra:11111111-2222-4333-8444-555555555555", {
+      "type": "queue-operation", "operation": "remove", "sessionId": "11111111-2222-4333-8444-555555555555",
+      "timestamp": "2026-09-10T02:00:05.500Z"
+    }],
+    ["agent-output:11111111-2222-4333-8444-555555555555", {
+      "type": "assistant",
+      "message": {
+        "model": "claude-opus-5", "id": "msg_02", "type": "message", "role": "assistant",
+        "content": [{ "type": "text", "text": "Three entries: CLAUDE.md, package.json, src." }],
+        "stop_reason": "end_turn", "stop_sequence": null,
+        "usage": { "input_tokens": 60, "output_tokens": 18, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0 }
+      },
+      "parent_tool_use_id": null, "session_id": "11111111-2222-4333-8444-555555555555",
+      "uuid": "u-a2", "receivedAt": "2026-09-10T02:00:06.000Z"
+    }],
+    ["agent-output:11111111-2222-4333-8444-555555555555", {
+      "type": "result", "subtype": "success", "is_error": false, "duration_ms": 6000, "duration_api_ms": 5200,
+      "num_turns": 2, "result": "Three entries: CLAUDE.md, package.json, src.",
+      "session_id": "11111111-2222-4333-8444-555555555555", "total_cost_usd": 0.0123,
+      "usage": { "input_tokens": 72, "output_tokens": 58 }, "uuid": "u-res", "receivedAt": "2026-09-10T02:00:06.100Z"
+    }],
+    ["session-control-state:11111111-2222-4333-8444-555555555555", { "model": "claude-opus-5", "effort": "high" }],
+    ["agent-error:11111111-2222-4333-8444-555555555555", "MCP server foo: auth token expired"],
+    ["rate-limits:updated", { "accountName": "Personal" }],
+    ["session-summary:updated", { "sessionUuid": "11111111-2222-4333-8444-555555555555" }],
+    ["session-status:11111111-2222-4333-8444-555555555555", { "sessionStatus": "stopped" }],
+    ["agent-complete:11111111-2222-4333-8444-555555555555"]
+  ]
+}

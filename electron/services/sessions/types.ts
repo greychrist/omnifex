@@ -169,12 +169,18 @@ export interface SessionsService {
   rebind(tabId: string, ownerWebContentsId: number): boolean;
   sendMessage(tabId: string, prompt: string): void;
   sendStructuredMessage(tabId: string, content: Record<string, unknown>[]): void;
+  /**
+   * Answer a pending permission. `requestId` addresses a specific entry (the
+   * Remote daemon always passes one); omitted, the head of the queue is
+   * answered — the desktop behaviour. Returns false when nothing matched.
+   */
   respondPermission(
     tabId: string,
     behavior: 'allow' | 'deny',
     updatedInput?: Record<string, unknown>,
     updatedPermissions?: PermissionDecision['updatedPermissions'],
-  ): void;
+    requestId?: string,
+  ): boolean;
   respondElicitation(
     tabId: string,
     action: 'accept' | 'decline' | 'cancel',

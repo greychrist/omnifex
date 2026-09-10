@@ -577,8 +577,18 @@ export function respondPermission(
   updatedInput?: Record<string, unknown>,
   updatedPermissions?: PermissionDecision['updatedPermissions'],
   persistPermissionRule?: PersistPermissionRuleFn | null,
-): void {
-  if (handle.permissionQueue.length === 0) return;
+  requestId?: string,
+): boolean {
+  if (handle.permissionQueue.length === 0) return false;
+
+  // Addressed by id when the caller has one (the Remote daemon always does:
+  // with two clients on one session, answering "the head" would resolve a
+  // request the clicking user may never have seen). The desktop path passes
+  // no id and keeps its head-of-queue behaviour exactly.
+  const index = requestId === undefined
+    ? 0
+    : handle.permissionQueue.findIndex((p) => p.requestId === requestId);
+  if (index < 0) return false;
 
   // Mirror persistent allow/deny rules with a session-destination twin so the
   // CLI applies them to the running session immediately. Without this twin,
@@ -589,9 +599,9 @@ export function respondPermission(
     ? augmentPermissionsWithSession(updatedPermissions)
     : updatedPermissions;
 
-  // Pop the head of the queue and ship the decision back to the engine.
-  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- permissionQueue.shift() guarded by length > 0 (prior check).
-  const current = handle.permissionQueue.shift()! as PendingPermission & {
+  // Take the addressed entry out of the queue and ship the decision back to
+  // the engine.
+  const current = handle.permissionQueue.splice(index, 1)[0] as PendingPermission & {
     toolInput?: Record<string, unknown>;
     payload?: { kind?: 'tool' | 'patch' | 'exec' };
   };
@@ -655,8 +665,10 @@ export function respondPermission(
     }
   }
 
-  // Show the next queued request, if any
-  if (handle.permissionQueue.length > 0) {
+  // Show the next queued request, if any — but only when the one just
+  // answered WAS the head. Answering a queued-behind request by id leaves the
+  // head where it is, and the renderer is already showing it.
+  if (index === 0 && handle.permissionQueue.length > 0) {
     const next = handle.permissionQueue[0];
     const nextPayload = (next as any).payload;
     sendToRenderer(`agent-output:${tabId}`, nextPayload);
@@ -688,5 +700,6 @@ export function respondPermission(
     }
   }
   // Queue drained — conversationStatus is now derived by the renderer.
+  return true;
 }
 

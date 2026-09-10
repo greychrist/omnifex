@@ -1166,6 +1166,11 @@ export function createDatabase(dbPath: string): Database {
   raw.pragma('auto_vacuum = INCREMENTAL');
   raw.pragma('journal_mode = WAL');
   raw.pragma('foreign_keys = ON');
+  // Two processes share this file while the OmniFex Remote daemon and the
+  // Electron main process both run (Phase 2 of the split). WAL lets readers
+  // and one writer coexist, but a second writer still gets SQLITE_BUSY
+  // instantly unless told to wait. Five seconds is far above any write here.
+  raw.pragma('busy_timeout = 5000');
 
   initSchema(raw);
   runMigrations(raw);

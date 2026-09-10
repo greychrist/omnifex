@@ -87,6 +87,8 @@ const SERVER_SAMPLES: ServerMessage[] = [
     input: { command: 'ls' },
   },
   { type: 'error', code: 'MALFORMED_MESSAGE', message: 'not a protocol message' },
+  { type: 'channel', channel: 'rate-limits:updated', payload: { accountName: 'Personal' } },
+  { type: 'event', sessionId: 's1', seq: 46, kind: 'transcript', origin: 'tail', payload: { kind: 'queue-operation' } },
 ];
 
 /** JSON is the wire format; a round trip must survive it. */

@@ -1,0 +1,30 @@
+#!/bin/sh
+# Run the OmniFex Remote daemon CLI under the Electron binary as node.
+#
+# Never system `node`: better-sqlite3 and node-pty are built for Electron's
+# ABI (see CLAUDE.md, "Spawn the MCP server as process.execPath with
+# ELECTRON_RUN_AS_NODE=1"). Resolution order: OMNIFEX_ELECTRON, the repo's
+# dev Electron, the installed app.
+set -e
+HERE="$(cd "$(dirname "$0")/.." && pwd)"
+
+if [ -n "$OMNIFEX_ELECTRON" ]; then
+  ELECTRON="$OMNIFEX_ELECTRON"
+  SCRIPT="${OMNIFEX_SERVER_SCRIPT:-$HERE/.vite/build/omnifex-server.js}"
+elif [ -x "$HERE/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron" ]; then
+  ELECTRON="$HERE/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron"
+  SCRIPT="$HERE/.vite/build/omnifex-server.js"
+elif [ -x "/Applications/OmniFex.app/Contents/MacOS/omnifex" ]; then
+  ELECTRON="/Applications/OmniFex.app/Contents/MacOS/omnifex"
+  SCRIPT="/Applications/OmniFex.app/Contents/Resources/app.asar/.vite/build/omnifex-server.js"
+else
+  echo "omnifex-server: no Electron binary found (set OMNIFEX_ELECTRON)" >&2
+  exit 1
+fi
+
+if [ ! -f "$SCRIPT" ] && [ -z "$OMNIFEX_ELECTRON" ] && [ "$SCRIPT" = "$HERE/.vite/build/omnifex-server.js" ]; then
+  echo "omnifex-server: $SCRIPT not built — run: node scripts/build-daemon.mjs" >&2
+  exit 1
+fi
+
+ELECTRON_RUN_AS_NODE=1 exec "$ELECTRON" "$SCRIPT" "$@"

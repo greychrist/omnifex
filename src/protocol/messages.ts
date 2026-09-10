@@ -177,6 +177,12 @@ export const EventKindSchema = z.enum([
   'tui-data',
   /** Something the user should be told about out of band. */
   'notification',
+  /** The pinned session id and project path, sent the moment a session spawns. */
+  'init',
+  /** The engine is gone; a client tears down its per-session listeners. */
+  'complete',
+  /** An MCP server is asking the user a question (answered via rpc.invoke). */
+  'elicitation',
 ]);
 
 // ---------------------------------------------------------------------------
@@ -347,6 +353,35 @@ export const ServerPushSchema = z.discriminatedUnion('type', [
     seq: SeqSchema,
     kind: EventKindSchema,
     payload: z.unknown(),
+    /**
+     * Where a transcript event came from. The renderer keeps engine output
+     * (`agent-output:`) and rows tailed from the CLI's JSONL
+     * (`claude-output-extra:`) on separate channels so the former stays 1:1
+     * with what the engine emitted; a client re-creating those channels needs
+     * to know which is which.
+     */
+    origin: z.enum(['engine', 'tail']).optional(),
+    /**
+     * The legacy IPC channel prefix this event was lifted from
+     * (`agent-output`, `session-control-state`, …). Lets a client shim re-emit
+     * it on exactly the channel the existing renderer subscribes to, without a
+     * kind→channel table that would drift from the daemon's.
+     */
+    channel: z.string().optional(),
+  }),
+
+  /**
+   * A non-session broadcast the desktop app already emits (`rate-limits:`,
+   * `account-identity-changed`, `brain-run-progress`, …), carried verbatim
+   * under its legacy channel name. This is the event-side twin of
+   * `rpc.invoke`: the long tail of app-wide signals reaches a client without
+   * a protocol message each, and the client-side shim re-emits them on the
+   * channel the renderer already subscribes to.
+   */
+  z.looseObject({
+    type: z.literal('channel'),
+    channel: z.string(),
+    payload: z.unknown(),
   }),
 
   z.looseObject({
@@ -359,6 +394,15 @@ export const ServerPushSchema = z.discriminatedUnion('type', [
     /** The CLI's own suggestions, plus our fallback rule, for the editor. */
     suggestions: z.array(PermissionUpdateSchema).optional(),
     toolUseId: z.string().optional(),
+    /** Codex approvals are `patch` / `exec`; Claude tool asks are `tool`. */
+    kind: z.enum(['tool', 'patch', 'exec']).optional(),
+    /**
+     * The desktop renderer's own permission-card payload, verbatim. The
+     * PermissionCard reads a dozen fields off it (title, display_name,
+     * decision_reason, blocked_path, suppress_always_allow_rule, …); carrying
+     * it whole means the existing card renders unchanged over the protocol.
+     */
+    payload: z.unknown().optional(),
   }),
 
   /** Out-of-band failure. `requestId` is absent when nothing was being answered. */
