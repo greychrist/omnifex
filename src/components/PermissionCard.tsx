@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useLayoutMode } from '@/hooks/useLayoutMode';
 import * as SelectPrimitive from "@radix-ui/react-select";
 import { Check, Clock, Shield, ShieldCheck, ShieldX } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -87,6 +88,7 @@ function formatToolInput(toolName: string | undefined, input: Record<string, unk
 }
 
 export function PermissionCard({ request, onAllow, onDeny }: PermissionCardProps) {
+  const layout = useLayoutMode();
   // Codex `patch` / `exec` approvals have a fundamentally different shape
   // than Claude's `canUseTool` payload — no tool name to format, no rules
   // to edit, no scope persistence (Codex's protocol has no per-rule store).
@@ -276,7 +278,15 @@ export function PermissionCard({ request, onAllow, onDeny }: PermissionCardProps
         )}
 
         {/* Buttons */}
-        <div className="flex items-center justify-between gap-2 pt-1">
+        <div
+          className={cn(
+            'flex items-center justify-between gap-2 pt-1',
+            // On a touch screen this is a sheet, not a toolbar: full-width,
+            // finger-sized, Deny last so the destructive choice is not the one
+            // under a resting thumb.
+            layout.touch && 'flex-col-reverse items-stretch gap-2 pt-2 [&_button]:min-h-12 [&_button]:text-sm [&_button]:justify-center',
+          )}
+        >
           <Button
             size="sm"
             variant="destructive"
@@ -286,7 +296,7 @@ export function PermissionCard({ request, onAllow, onDeny }: PermissionCardProps
             <ShieldX className="h-3.5 w-3.5 mr-1" />
             Deny
           </Button>
-          <div className="flex gap-2">
+          <div className={cn('flex gap-2', layout.touch && 'flex-col items-stretch')}>
             {suppressAlwaysAllowRule ? (
               <Button
                 size="sm"

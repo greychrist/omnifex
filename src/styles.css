@@ -1167,3 +1167,30 @@ mark[data-find].is-active {
   background-color: rgba(250, 204, 21, 0.75);
   outline: 1px solid rgba(202, 138, 4, 0.9); /* yellow-600 */
 }
+
+/* ─── OmniFex Remote: narrow / touch layouts ───────────────────────────────
+   Classes are set on <html> by useLayoutMode(). Kept unlayered on purpose so
+   they win over utilities the same way the border-color reset above does. */
+html.omnifex-touch pre,
+html.omnifex-narrow pre {
+  overflow-x: auto;
+  white-space: pre;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}
+html.omnifex-touch button,
+html.omnifex-touch [role="button"] {
+  /* Apple HIG minimum: 44pt. Icon-only 32px buttons become reachable
+     without redrawing every toolbar. */
+  min-height: 44px;
+  min-width: 44px;
+}
+html.omnifex-touch body {
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: contain;
+}
+html.omnifex-web {
+  /* Standalone PWA: the status bar overlaps the top edge. */
+  padding-top: env(safe-area-inset-top, 0px);
+}
+

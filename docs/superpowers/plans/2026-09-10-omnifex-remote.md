@@ -95,14 +95,14 @@ Channel → push mapping (bridge):
 - [x] Commit "Phase 4".
 
 ## Phase 5 — iPad-first UI
-- [ ] 5.1 Narrow layout: session list root, pushed session view w/ back; wide keeps split.
-- [ ] 5.2 Permission sheet with large Approve / Deny / Approve-and-remember.
-- [ ] 5.3 Composer anchored bottom; visualViewport resize.
-- [ ] 5.4 Swipe between sessions; pull-to-refresh list.
-- [ ] 5.5 Code/diff blocks: horizontal scroll, copy button.
-- [ ] 5.6 Reconnect: resubscribe from lastSeenSeq; "caught up N events" affordance.
-- [ ] 5.7 Keyboard: Cmd+Enter send, Cmd+[ / ] switch sessions.
-- [ ] Commit "Phase 5".
+- [x] 5.1 `useLayoutMode()` (narrow < 900px / coarse pointer / web, mirrored as `<html>` classes). On narrow, the tab strip hides while a chat tab is active — the session is a pushed view and its existing "Back to Project page" button is the way out; wide layouts unchanged. Verified in headless Chromium at 820×1180: project list → Launch → session view with no tab strip → a full turn (`web.txt` written).
+- [x] 5.2 `PermissionCard` on touch: stacked, full-width, `min-h-12` buttons, Deny last (not under a resting thumb). Class toggle only; not visually verified (headless has no coarse pointer).
+- [x] 5.3 `useKeyboardInset()` writes `--omnifex-keyboard-inset` from `visualViewport`; the composer pads by it plus `env(safe-area-inset-bottom)`. Dead band of 40px so a collapsing URL bar does not twitch it.
+- [x] 5.4 `useSwipeTabs` (dispatches the same `switch-to-next/previous-tab` events as the keyboard; ignores swipes that start in a sideways-scrolling element) on the session container; `usePullToRefresh` on the SessionList scroller with a spinner indicator. Touch only.
+- [x] 5.5 CSS: `pre` scrolls horizontally with no wrap on narrow/touch; 44px minimum tap targets on touch. Markdown code blocks already carry a copy button (`MarkdownBlock.tsx`).
+- [x] 5.6 `RemoteConnectionBanner` ("Reconnecting to OmniFex…") + `CaughtUpPill` per session. Verified live: daemon stopped under the page → banner + client state `reconnecting`; daemon restarted → client reconnected with backoff, banner gone. Found & fixed: after a reconnect the shim now reconciles session status from `session.list` (a daemon restart kills its CLI children without ever logging `stopped`).
+- [x] 5.7 Cmd/Ctrl+Enter sends from the composer (including the expanded editor); Cmd+[ / Cmd+] switch tabs.
+- [x] Commit "Phase 5".
 
 ## Phase 6 — Web Push (optional, last)
 - [ ] VAPID keys + `~/.omnifex/push.json`; push on `permission.request` and running→idle; tap deep-links.

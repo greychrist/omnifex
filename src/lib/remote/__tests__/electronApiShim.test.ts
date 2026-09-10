@@ -207,6 +207,11 @@ describe('electronAPI shim', () => {
 
       const web = createElectronApiShim({ client: f.client, native: null, storage });
       await expect(web.invoke('reveal_path_in_finder', { path: '/x' })).rejects.toThrow(/not available in the web client/);
+      // Boot-time and timer-driven native calls get a quiet, benign answer.
+      expect(await web.invoke('tab_status_list')).toEqual([]);
+      expect(await web.invoke('tab_status_publish', { tabId: 't' })).toBeNull();
+      expect(await web.invoke('updater:check', {})).toBeNull();
+      expect(await web.invoke('get_app_version')).toBe('web');
     });
 
     it('passes everything else through rpc.invoke, rewriting a tabId on session_* channels', async () => {
@@ -254,6 +259,20 @@ describe('electronAPI shim', () => {
       expect(JSON.parse(storage.getItem(TAB_MAP_STORAGE_KEY)!)).toEqual({});
     });
 
+    it('after a reconnect, reconciles a session the daemon now reports stopped', async () => {
+      const api = shim();
+      const status: unknown[] = [];
+      await api.invoke('session_start', { tabId: 'tab-A', projectPath: '/p', model: 'default', permissionMode: 'default' });
+      api.onEvent('session-status:tab-A', (p) => status.push(p));
+      f.responders['session.list'] = () => [summary('sid-1', { sessionStatus: 'stopped', lastSeq: 9 })];
+      f.setState('connected');
+      f.setState('reconnecting');
+      f.setState('connected');
+      await new Promise((r) => setTimeout(r, 0));
+      await new Promise((r) => setTimeout(r, 0));
+      expect(status).toEqual([{ sessionStatus: 'stopped' }]);
+    });
+
     it('resubscribes every live session from its last seen seq after a reconnect and reports the gap', async () => {
       const api = shim();
       const caught: unknown[] = [];
@@ -268,9 +287,12 @@ describe('electronAPI shim', () => {
       expect(f.requests).toEqual([]);
       f.setState('reconnecting');
       f.responders['session.subscribe'] = (p) => ({ fromSeq: p.fromSeq, lastSeq: 12 });
+      f.responders['session.list'] = () => [summary('sid-1', { lastSeq: 12 })];
       f.setState('connected');
       await new Promise((r) => setTimeout(r, 0));
-      expect(f.requests).toEqual([{ method: 'session.subscribe', params: { sessionId: 'sid-1', fromSeq: 7 } }]);
+      await new Promise((r) => setTimeout(r, 0));
+      expect(f.requests.map((r) => r.method)).toEqual(['session.subscribe', 'session.list']);
+      expect(f.requests[0]).toEqual({ method: 'session.subscribe', params: { sessionId: 'sid-1', fromSeq: 7 } });
       expect(caught).toEqual([{ events: 5 }]);
       expect(conn).toEqual([{ state: 'connected' }, { state: 'reconnecting' }, { state: 'connected' }]);
     });

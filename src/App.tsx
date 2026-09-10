@@ -23,6 +23,9 @@ import { AccountPickerDialog } from "@/components/AccountPickerDialog";
 import { Toast, ToastContainer } from "@/components/ui/toast";
 import { TabManager } from "@/components/TabManager";
 import { TabContent } from "@/components/TabContent";
+import { RemoteConnectionBanner } from "@/components/RemoteConnectionBanner";
+import { useLayoutMode } from "@/hooks/useLayoutMode";
+import { useKeyboardInset } from "@/hooks/useKeyboardInset";
 import { useTabState } from "@/hooks/useTabState";
 import { StartupIntro } from "@/components/StartupIntro";
 import { fireAndLog, logAndForget } from "@/lib/fireAndLog";
@@ -49,7 +52,14 @@ type View =
 function AppContent() {
   const [view, setView] = useState<View>("tabs");
   const { createSettingsTab, createLimaTab, createBrainTab, createCostReportTab } = useTabState();
-  const { activeTabId, setActiveTab, updateTab, addTab } = useTabContext();
+  const { activeTabId, setActiveTab, updateTab, addTab, getTabById } = useTabContext();
+  // OmniFex Remote: narrow/touch/web facts, and the keyboard inset that keeps
+  // the composer above a software keyboard. Both no-ops under Electron.
+  const layoutMode = useLayoutMode();
+  useKeyboardInset();
+  // On a narrow screen a session is a pushed view: the tab strip hides and
+  // the session's own "Back to Project page" button is the way out.
+  const hideTabStrip = layoutMode.narrow && getTabById(activeTabId ?? '')?.type === 'chat';
   useNotifications(activeTabId, setActiveTab, updateTab);
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
@@ -147,6 +157,15 @@ function AppContent() {
           case 'w':
             e.preventDefault();
             window.dispatchEvent(new CustomEvent('close-current-tab'));
+            break;
+          // Cmd+[ / Cmd+] — the Magic Keyboard has no Ctrl+Tab habit.
+          case '[':
+            e.preventDefault();
+            window.dispatchEvent(new CustomEvent('switch-to-previous-tab'));
+            break;
+          case ']':
+            e.preventDefault();
+            window.dispatchEvent(new CustomEvent('switch-to-next-tab'));
             break;
           case 'Tab':
             e.preventDefault();
@@ -425,7 +444,7 @@ function AppContent() {
       case "tabs":
         return (
           <div className="h-full flex flex-col">
-            <TabManager className="flex-shrink-0" />
+            {!hideTabStrip && <TabManager className="flex-shrink-0" />}
             <div className="flex-1 overflow-hidden">
               <TabContent />
             </div>
@@ -452,6 +471,7 @@ function AppContent() {
         onSettingsClick={() => createSettingsTab()}
         onCliReviewClick={handleCliReviewLaunch}
       />
+      <RemoteConnectionBanner />
 
       {/* Main Content */}
       <div className="flex-1 overflow-hidden">

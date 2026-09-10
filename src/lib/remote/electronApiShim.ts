@@ -74,6 +74,21 @@ const TYPED = new Set([
   'session_interrupt',
 ]);
 
+/**
+ * Native-only channels the renderer calls unprompted at boot or on a timer.
+ * On the web these have a benign answer rather than an error: the Updates
+ * button reads "up to date", the tab-status popover is simply empty, and
+ * nothing logs a red stack for a capability that was never going to exist.
+ * Channels absent from this table still reject, loudly, so a real gap shows.
+ */
+const WEB_FALLBACKS: Record<string, unknown> = {
+  'tab_status_list': [],
+  'tab_status_publish': null,
+  'tab_status_remove': null,
+  'updater:check': null,
+  'get_app_version': 'web',
+};
+
 /** The IPC layer's error encoding, which `apiAdapter.decodeApiError` reverses. */
 function ipcError(err: unknown): Error {
   const code = (err as { code?: unknown } | null)?.code;
@@ -247,6 +262,23 @@ export function createElectronApiShim(opts: ShimOptions): ElectronApiLike & { di
         log('resubscribe failed', { sessionId, error: String(err) });
       }
     }
+    // Replay covers what the daemon logged. It does not cover the daemon
+    // itself having restarted, which kills every CLI child without a
+    // `stopped` ever being written. Reconcile against what it reports now so
+    // the badge is honest and the next send takes the renderer's own
+    // stopped → resume path.
+    try {
+      const summaries = await client.request('session.list', {});
+      for (const summary of summaries) {
+        if (!sessionToTabs.has(summary.sessionId)) continue;
+        const prev = lastState.get(summary.sessionId);
+        if (prev?.sessionStatus === summary.sessionStatus) continue;
+        lastState.set(summary.sessionId, { sessionStatus: summary.sessionStatus, mode: summary.mode });
+        emitForSession(summary.sessionId, 'session-status', { sessionStatus: summary.sessionStatus });
+      }
+    } catch (err) {
+      log('post-reconnect reconcile failed', { error: String(err) });
+    }
   }
 
   // ------------------------------------------------------------ session ops
@@ -376,7 +408,10 @@ export function createElectronApiShim(opts: ShimOptions): ElectronApiLike & { di
       const p = params ?? {};
       try {
         if (NATIVE_INVOKE_CHANNELS.includes(channel)) {
-          if (!native) throw new Error(`${channel} is not available in the web client`);
+          if (!native) {
+            if (channel in WEB_FALLBACKS) return WEB_FALLBACKS[channel];
+            throw new Error(`${channel} is not available in the web client`);
+          }
           return await native.invoke(channel, p);
         }
         if (TYPED.has(channel)) return await typed(channel, p);

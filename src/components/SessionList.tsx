@@ -1,4 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
+import { useRef } from 'react';
+import { useLayoutMode } from '@/hooks/useLayoutMode';
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { motion, AnimatePresence } from "framer-motion";
 import { Copy, Check, RefreshCw, Hash, Trash2, ChevronDown, ChevronUp, ExternalLink, Bot } from "lucide-react";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -174,6 +177,11 @@ export const SessionList: React.FC<SessionListProps> = ({
   // away and back.
   const { accounts } = useAccounts();
   const [refreshing, setRefreshing] = useState(false);
+  // Touch: pull the list down from the top to refresh. The indicator is the
+  // only thing that moves; the list keeps its native overscroll.
+  const listRef = useRef<HTMLDivElement>(null);
+  const layout = useLayoutMode();
+  const pull = usePullToRefresh(listRef, onRefresh, layout.touch);
 
   const handleRefreshClick = async () => {
     if (!onRefresh || refreshing) return;
@@ -693,7 +701,16 @@ export const SessionList: React.FC<SessionListProps> = ({
           still painted. */}
       <AnimatePresence mode="popLayout">
         <div className="rounded-md border border-border/40 overflow-hidden flex-1 min-h-0 flex flex-col">
-          <div className="overflow-y-auto flex-1 min-h-0">
+          {(pull.progress > 0 || pull.refreshing) && (
+            <div
+              className="flex items-center justify-center text-muted-foreground overflow-hidden transition-[height]"
+              style={{ height: `${Math.min(48, Math.round(pull.progress * 48))}px` }}
+              aria-hidden
+            >
+              <RefreshCw className={cn('h-4 w-4', pull.refreshing && 'animate-spin')} style={{ opacity: Math.min(1, pull.progress) }} />
+            </div>
+          )}
+          <div ref={listRef} className="overflow-y-auto flex-1 min-h-0">
           <table className="w-full text-sm">
             {/* Fully opaque bg — `bg-muted` (no /60 alpha). The header
                 is sticky over a scrolling body, so any transparency

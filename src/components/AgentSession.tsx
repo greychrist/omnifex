@@ -59,6 +59,9 @@ import { normalizeJsonlNode } from "@/lib/normalizeMessage";
 import { classifyJsonlLine } from '@/lib/jsonlClassifier';
 import { lastPermissionMode, lastAssistantModel, usageLimitWait } from '@/lib/sessionDerivedState';
 import { UsageLimitBanner } from "./claude-code-session/UsageLimitBanner";
+import { CaughtUpPill } from "./RemoteConnectionBanner";
+import { useLayoutMode } from "@/hooks/useLayoutMode";
+import { useSwipeTabs } from "@/hooks/useSwipeTabs";
 import { changeSessionModel, mirrorControlState } from '@/lib/sessionModelChange';
 import { forwardedParentToolUseId } from '@/lib/subagentDispatch';
 import { reduceSessionStreamMessage } from '@/lib/sessionStreamReducer';
@@ -2141,6 +2144,11 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   // toggle controls it. The service's in-flight dedup map prevents
   // double-spend if both back-button and tab-close fire for the same
   // session.
+  // Touch: swipe left/right between tabs. Same events as Cmd+[ / ].
+  const swipeRef = useRef<HTMLDivElement>(null);
+  const layoutMode = useLayoutMode();
+  useSwipeTabs(swipeRef, layoutMode.touch);
+
   const handleBackToProject = () => {
     if (claudeSessionId && projectPath) {
       // Anchor the JSONL lookup to this tab's resolved account, NOT to
@@ -2216,7 +2224,8 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
 
   return (
     <TooltipProvider>
-      <div className={cn("flex flex-col h-full bg-background", className)}>
+      <div ref={swipeRef} className={cn("flex flex-col h-full bg-background", className)}>
+        <CaughtUpPill tabId={tabIdRef.current} />
         <div
           ref={headerRef}
           className="relative flex items-start gap-2 px-4 py-1.5 border-b border-border/30 bg-muted shrink-0"

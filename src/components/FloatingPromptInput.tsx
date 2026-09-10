@@ -365,6 +365,15 @@ const FloatingPromptInputInner = (
       return;
     }
 
+    // Cmd/Ctrl+Enter always sends — including from the expanded editor, and
+    // on an iPad with a Magic Keyboard where a bare Enter is a newline habit.
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !showFilePicker && !slash.showSlashCommandPicker) {
+      if (isIMEInteraction(e)) return;
+      e.preventDefault();
+      handleSend();
+      return;
+    }
+
     if (
       e.key === "Enter" &&
       !e.shiftKey &&
@@ -502,6 +511,10 @@ const FloatingPromptInputInner = (
           dragActive && "ring-2 ring-primary ring-offset-2",
           className
         )}
+        // Sits above the software keyboard (visual-viewport inset, set by
+        // useKeyboardInset) and above the home indicator (safe area). Both
+        // resolve to 0 under Electron.
+        style={{ paddingBottom: 'calc(var(--omnifex-keyboard-inset, 0px) + env(safe-area-inset-bottom, 0px))' }}
         onDragEnter={handleDrag}
         onDragLeave={handleDrag}
         onDragOver={handleDrag}
