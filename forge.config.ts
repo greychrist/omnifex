@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { optionsForFile, osxNotarizeConfig } from './signing';
 import { dmgArtifacts, notarizeDmg } from './signing/dmg';
+import { collectModuleTree } from './packaging/module-tree';
 
 // Copy a native module and its transitive deps into the packaged app's node_modules.
 function copyNativeModule(buildPath: string, moduleName: string) {
@@ -12,6 +13,20 @@ function copyNativeModule(buildPath: string, moduleName: string) {
   const dest = path.join(buildPath, 'node_modules', moduleName);
   if (!fs.existsSync(src)) return;
   fs.cpSync(src, dest, { recursive: true });
+}
+
+// Pure-JS packages the daemon bundle leaves `external` (vite.main.config.ts)
+// and therefore `require()`s at runtime from the packaged node_modules. The
+// Vite plugin ships none of node_modules, so each one and its whole
+// dependency tree is copied here, nested layout preserved.
+const EXTERNAL_JS_MODULES = ['ws', 'web-push'];
+
+function copyExternalJsModules(buildPath: string): number {
+  const dirs = collectModuleTree(EXTERNAL_JS_MODULES, process.cwd());
+  for (const rel of dirs) {
+    fs.cpSync(path.resolve(rel), path.join(buildPath, rel), { recursive: true });
+  }
+  return dirs.length;
 }
 
 const config: ForgeConfig = {
@@ -79,6 +94,7 @@ const config: ForgeConfig = {
           // 'node-addon-api'" inside the packaged app.
           copyNativeModule(buildPath, 'node-addon-api');
           console.log('[forge] Copied node-pty + deps into package');
+          console.log(`[forge] Copied ${copyExternalJsModules(buildPath)} packages for ${EXTERNAL_JS_MODULES.join(', ')}`);
 
           // Rebuild better-sqlite3 for Electron's ABI inside the package.
           // The source node_modules may have Node's ABI (from npm test),

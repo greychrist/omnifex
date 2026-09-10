@@ -122,6 +122,12 @@ All six phases landed on `feat/omnifex-remote` (commits ff71d73 → 1f331a7). Fu
 3. **Then flip 3.5**: once a real session has run through the daemon from the desktop, remove the non-native entries from `registerIpcHandlers(...)` in `main.ts` and stop constructing the sessions service there (plan §3.5 has the list). Until then both processes share the DB and both run the cost/brain sweeps.
 4. **iPad**: `./scripts/omnifex-server install`, `tailscale serve --bg --https=443 http://127.0.0.1:47700` (set `"host": "127.0.0.1"` in `~/.omnifex/server.json` if the daemon bound the tailnet IP), open the `.ts.net` URL in Safari, Add to Home Screen, tap Enable notifications.
 
+## Packaged build (verified 2026-09-10 afternoon)
+
+First `npm run package` after the launch fix: the packaged daemon died at startup with `Cannot find module 'ws'`. The Forge Vite plugin ships nothing from `node_modules`; the packager hook copied only the two native modules and their three deps, and `ws` / `web-push` are `external` in `vite.main.config.ts`. Fixed with `packaging/module-tree.ts` (`collectModuleTree`: Node-style resolution, nested layout preserved, missing optionals skipped, missing required throws) driving the copy in `forge.config.ts` — 18 packages. Verified by launching `out/OmniFex-darwin-arm64/OmniFex.app` with `OMNIFEX_STATE_DIR=/tmp/…` (port 47701, so it could not attach to the dev daemon) and `--user-data-dir=/tmp/…`: spawned its own daemon from `app.asar`, `/healthz` ok, `/` served `Contents/Resources/dist-web`, renderer `mode=electron-remote` over CDP.
+
+**Release caveat — daemon version drift.** `remote-launcher` attaches to any daemon that answers `/healthz`, whatever its version. After installing a new build, a daemon from the previous build (or the dev checkout) keeps serving until stopped (`./scripts/omnifex-server stop`, or `kill $(cat ~/.omnifex/server.pid)`). `/healthz` already reports `version`; the launcher should compare it to `app.getVersion()` and, when nothing is live, stop-and-respawn. Not done yet.
+
 ## Follow-ups (not in scope tonight)
 - Deduplicate service construction between `electron/main.ts` and `electron/remote/daemon.ts`.
 - Purge `raw` from `event.payload`.
