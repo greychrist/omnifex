@@ -139,9 +139,9 @@ import { createCostHistoryService } from './services/cost/cost-history';
 import { createSessionCostService } from './services/cost/session-cost';
 import { createModelPricingService } from './services/model-pricing';
 import { registerIpcHandlers } from './ipc/handlers';
-import { createRemoteLauncher, healthUrlFor } from './remote-launcher';
+import { createRemoteLauncher, parseDaemonHealth, type DaemonHealth } from './remote-launcher';
 import { loadServerConfig } from './remote/config';
-import { defaultLogPath } from './remote/launchd';
+import { createDaemonControl } from './remote/daemon-control';
 import { get as httpGet } from 'node:http';
 import { createWindowRouter } from './window-router';
 import { classifyNavigation } from './navigation-policy';
@@ -1684,42 +1684,38 @@ app.whenReady().then(() => {
   // `remote.enabled` setting, or the daemon could not be reached or started.
   // The daemon is spawned DETACHED so it outlives this process: quitting the
   // app mid-turn must leave the CLI running for the next window to catch up.
+  // A daemon from a previous build (it outlives the app, so it outlives an
+  // upgrade) is replaced by this one — see remote-launcher.ts. The control
+  // object knows whether launchd owns the daemon and re-points the agent at
+  // this bundle when it does.
+  const remoteLog = (message: string, meta?: Record<string, unknown>) => { console.log(`[remote] ${message}`, meta ?? ''); };
+  const daemonControl = createDaemonControl({
+    invocation: { execPath: process.execPath, script: path.join(__dirname, 'omnifex-server.js') },
+    log: remoteLog,
+  });
   const remoteLauncher = createRemoteLauncher({
     config: () => loadServerConfig(),
+    appVersion: app.getVersion(),
     probe: (url) =>
-      new Promise<boolean>((resolve) => {
+      new Promise<DaemonHealth | null>((resolve) => {
         const req = httpGet(url, { timeout: 1500 }, (res) => {
-          res.resume();
-          resolve(res.statusCode === 200);
+          if (res.statusCode !== 200) {
+            res.resume();
+            resolve(null);
+            return;
+          }
+          let body = '';
+          res.setEncoding('utf8');
+          res.on('data', (chunk: string) => { body += chunk; });
+          res.on('end', () => resolve(parseDaemonHealth(body)));
+          res.on('error', () => resolve(null));
         });
-        req.on('timeout', () => { req.destroy(); resolve(false); });
-        req.on('error', () => resolve(false));
+        req.on('timeout', () => { req.destroy(); resolve(null); });
+        req.on('error', () => resolve(null));
       }),
-    spawn: (config) => {
-      const script = path.join(__dirname, 'omnifex-server.js');
-      if (!fs.existsSync(script)) {
-        console.warn('[remote] daemon script missing:', script);
-        return false;
-      }
-      try {
-        const logPath = defaultLogPath();
-        fs.mkdirSync(path.dirname(logPath), { recursive: true });
-        const fd = fs.openSync(logPath, 'a');
-        const child = spawn(process.execPath, [script, 'start'], {
-          detached: true,
-          stdio: ['ignore', fd, fd],
-          env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
-        });
-        child.unref();
-        fs.closeSync(fd);
-        console.log(`[remote] spawned daemon pid=${child.pid} → ${healthUrlFor(config)}, log ${logPath}`);
-        return true;
-      } catch (err) {
-        console.warn('[remote] failed to spawn daemon:', err);
-        return false;
-      }
-    },
-    log: (message, meta) => { console.log(`[remote] ${message}`, meta ?? ''); },
+    spawn: (config) => daemonControl.spawn(config),
+    stop: (config) => daemonControl.stop(config),
+    log: remoteLog,
   });
   ipcMain.handle('remote:url', async () => {
     if (process.env.OMNIFEX_REMOTE === '0') return null;

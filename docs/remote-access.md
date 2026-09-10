@@ -43,6 +43,18 @@ The Electron app will also start the daemon itself if none is running
 (detached, so it survives quitting the app). Set `OMNIFEX_REMOTE=0` or the
 `remote.enabled=false` setting to make the app use its built-in IPC instead.
 
+## Upgrades
+
+Nothing to do. The daemon outlives the app, so after installing a new
+OmniFex the old daemon is still the one answering on the port. On launch the
+app compares the daemon's version (`/healthz`) with its own and, when they
+differ, replaces it: immediately if no turn is in flight, otherwise it uses
+the old one for now and checks back every 30 seconds until it is idle. When
+the LaunchAgent is installed, the plist is rewritten to point at the new
+bundle and reloaded, so `install` never has to be run again. Sessions that
+were open show as stopped after the swap; sending the next message resumes
+them.
+
 ## Sanity checks from the iPad
 
 ```sh

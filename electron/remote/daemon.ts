@@ -228,6 +228,10 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
         sessions: {
           live: sessionsRef?.listActiveTabIds().length ?? 0,
           known: sessionLog.list().length,
+          // Turns running right now. The Electron launcher reads this before
+          // replacing an outdated daemon: idle → replace at once, busy →
+          // attach and check back.
+          inFlight: (handlersRef?.summaries() ?? []).filter((s) => s.inFlight).length,
         },
       }),
       sessions: () => handlersRef?.summaries() ?? [],
