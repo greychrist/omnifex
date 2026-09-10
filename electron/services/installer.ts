@@ -41,8 +41,9 @@ export interface InstallerService {
 export interface InstallerDeps {
   sessionsService: {
     /** Tab IDs whose conversation is in-flight. Since Task 3 of the
-     *  jsonl-as-rendered refactor, main always returns []; the renderer's
-     *  derived count (via tabStatusService) is authoritative. See TODO.md. */
+     *  jsonl-as-rendered refactor main tracks no conversationStatus of its
+     *  own, so the renderer's derived count — published through
+     *  `tabStatusService` and assembled in `main.ts` — is what arrives here. */
     listInFlightTabIds: () => string[];
     /** Diagnostic: every session main knows about. Used by the gate to log a
      *  full snapshot when it polls / clears. Optional so existing callers

@@ -21,9 +21,9 @@
 
 ## Status
 
-OmniFex is **macOS (Apple Silicon) only** and ships as an **unsigned** build. macOS Gatekeeper will block the first launch — right-click → **Open** to bypass it once. A proper Developer ID signature is on the roadmap.
+OmniFex is **macOS (Apple Silicon) only**. Builds are signed with a Developer ID and notarized by Apple, so they open normally — no Gatekeeper right-click dance.
 
-The app drives the **Claude Code CLI** directly (via `node-pty` for terminal mode and `child_process` for structured streaming), so a working, authenticated Claude Code install is required. There is no web/REST mode and OmniFex bundles no model of its own.
+The app drives the **Claude Code CLI** directly (via `node-pty` for terminal mode and `child_process` for structured streaming), so a working, authenticated Claude Code install is required. OmniFex bundles no model of its own.
 
 ## Features
 
@@ -36,9 +36,9 @@ The Brain is a per-account **memory vault** distilled from those transcripts.
 - **Distilled, not archived.** Finished sessions, repo instruction files (`CLAUDE.md`, `AGENTS.md`), and Claude Code's own auto-memory are condensed into short Markdown notes — the decisions, the constraints, and the gotchas that cost real time — instead of being stored as raw transcripts.
 - **Queryable mid-session.** The vault is exposed to the CLI as an MCP server, so Claude searches it on its own initiative (`brain_search`, `brain_read`) and can save durable facts back (`brain_remember`). A `/recall` dialog and a Brain tab give you the same view by hand.
 - **Cross-project by design.** One vault spans every project under an account, so a constraint learned in one repo surfaces while you are working in another — the thing per-repo memory structurally cannot do.
-- **Plain Markdown you own.** Notes live in `~/Documents/OmniFex Brain/<account>/`, git-versioned, deliberately outside app storage so they open in Obsidian and back up normally. The search index is derived and disposable; delete it and it rebuilds.
+- **Plain Markdown you own.** Notes live in `~/OmniFex Brain/<account>/`, git-versioned, deliberately outside app storage so they open in Obsidian and back up normally — and deliberately outside `~/Documents` and `~/Desktop`, which iCloud Drive can evict to placeholder stubs. The search index is derived and disposable; delete it and it rebuilds.
 - **Per-account isolation.** Each account gets its own vault, enforced by the MCP server's process environment rather than by a query filter — a work vault is not reachable from a personal session, by construction.
-- **Auxiliary by contract.** Indexing is throttled, yields entirely while an interactive session is open, and never blocks the UI or consumes rate limit you need for real work. Every model call it makes is recorded in an append-only cost ledger you can read in the app.
+- **Auxiliary by contract.** Indexing is throttled, never touches a transcript that is still being written to, and never blocks the UI. A failed item never blocks the queue. Every model call it makes is recorded in an append-only cost ledger you can read in the app.
 - **Nothing is auto-injected.** The Brain never stuffs itself into your prompts. It costs context only when something actually asks it a question.
 
 ### Multi-account routing
@@ -54,6 +54,15 @@ The Brain is a per-account **memory vault** distilled from those transcripts.
 - **Subagent tracking** — subagent runs are surfaced inline with their model and authoritative end-of-run stats (duration, tokens, tool count).
 - Image attachments, in-session find, permission and elicitation prompts, and per-tab context-usage / cost readouts.
 - Multi-tab layout with per-tab status glyphs (session state, engine, rate-limit warnings) and an aggregate status popover.
+
+### Remote — drive it from the iPad
+
+- **A daemon owns the sessions, not the window.** OmniFex splits into a headless daemon on the Mac and thin clients. Quit the app mid-turn and the CLI keeps running; reopen and catch up.
+- **The same UI in Safari.** The daemon serves the renderer over your tailnet, so an iPad gets the real app — chat sessions, prompts, permission cards, streaming output — not a remote-desktop view of one.
+- **A Home Screen app with push.** Behind `tailscale serve` (HTTPS), it installs as a standalone app and the daemon pushes a notification when a turn wants your attention.
+- **Upgrades take care of themselves.** A new app build replaces an older daemon on launch — at once when nothing is running, otherwise once the last turn finishes.
+- Mac-only by nature and unavailable from the iPad: terminal (TUI) sessions, file dialogs, Finder reveal, and the updater.
+- See [docs/remote-access.md](docs/remote-access.md) for setup, and the `Daemon` panel in the title bar for live status.
 
 ### Context tracking & compaction
 
@@ -115,7 +124,7 @@ Grab the latest macOS arm64 build from the [Releases page](https://github.com/gr
 - `OmniFex-<version>-arm64.dmg` — drag-install to `/Applications`.
 - `OmniFex-darwin-arm64-<version>.zip` — used by the in-app auto-updater.
 
-On first launch macOS will refuse to open the app because it isn't signed by a Developer ID — right-click the app icon and choose **Open**, then confirm. You only need to do this once.
+The build is signed with a Developer ID and notarized, so it opens on first launch without a Gatekeeper prompt.
 
 Once installed, OmniFex checks `releases/latest` on launch and offers in-place updates when a new version is published.
 
@@ -152,8 +161,9 @@ npm run rebuild:electron   # rebuild better-sqlite3 / node-pty for Electron's AB
 ## Tech stack
 
 - **Runtime**: Electron 41 (Node 22, Chromium)
-- **Renderer**: React 18 + TypeScript + Vite 6 + Tailwind v4 + Radix / shadcn
+- **Renderer**: React 19 + TypeScript + Vite 6 + Tailwind v4 + Radix / shadcn
 - **Main process**: TypeScript on Node, services wired through a typed, allow-listed IPC layer
+- **Remote**: a headless daemon (the same Electron binary under `ELECTRON_RUN_AS_NODE`) speaking a versioned WebSocket protocol to the Electron app and to a browser client
 - **Persistence**: `better-sqlite3`
 - **Terminal**: `node-pty` + `@xterm/xterm`
 - **Claude/Codex integration**: drives the CLI binaries directly — `node-pty` for terminal mode, `child_process` streaming JSON for the rich engine
@@ -164,8 +174,10 @@ npm run rebuild:electron   # rebuild better-sqlite3 / node-pty for Electron's AB
 omnifex/
 ├── electron/              # Main process
 │   ├── main.ts            # App bootstrap, service wiring
-│   ├── preload.ts         # IPC allow-list
-│   ├── ipc/               # IPC handlers + channel registry
+│   ├── preload.ts         # contextBridge (publishes __omnifexNative)
+│   ├── ipc/               # IPC handlers + the channel allow-list (channels.ts)
+│   ├── remote/            # OmniFex Remote: daemon, protocol server, push
+│   ├── omnifex-server.ts  # Daemon entry point (the `omnifexd` process)
 │   ├── services/          # Business logic
 │   │   ├── accounts.ts    #   multi-account resolution & path rules
 │   │   ├── sessions/      #   session lifecycle, TUI, permissions, subagents
@@ -182,7 +194,10 @@ omnifex/
 │   ├── components/        # UI (sessions, accounts, MCP, usage, settings, …)
 │   ├── contexts/          # Theme, tabs, accounts, message rendering
 │   ├── stores/            # Zustand stores
-│   └── lib/               # Typed API surface (api.ts) + IPC adapter
+│   ├── protocol/          # Wire types shared by daemon and clients
+│   └── lib/               # Typed API surface (api.ts), IPC adapter,
+│                          #   and lib/remote/ — the WebSocket bridge
+├── web/                   # Browser-client shell (manifest, service worker)
 ├── icons/                 # App icon assets
 └── assets/                # Source design files (PSDs, audio)
 ```
@@ -190,9 +205,10 @@ omnifex/
 ## Security and privacy
 
 - All persistence is local (SQLite + your existing Claude/Codex config dirs). No telemetry, no analytics, no remote logging.
+- Remote access is opt-out, not opt-in: the daemon listens on your Tailscale address when one is up and on loopback otherwise, never on `0.0.0.0` unless you write that into `~/.omnifex/server.json` yourself. It has no login — reaching the address *is* the authentication — so the tailnet is the boundary. Set `remote.enabled=false` (or `OMNIFEX_REMOTE=0`) to keep everything in-process. The channels a remote client may reach are allow-listed server-side; dialogs, the updater, terminals and raw SQL are refused there regardless of what the client asks for.
 - OmniFex talks to model providers only through the CLI binaries you install and authenticate; it sends nothing to Anthropic or OpenAI itself.
 - Per-session permission gating for tool use, mirroring Claude Code's native permission model.
-- Brain vaults are plain files on your disk, one per account, and never leave it. Distilling a session is a call to the CLI under that account's own credentials; the scratch transcripts those calls produce are swept, and the vault a session can reach is fixed by the process it was launched with.
+- Brain vaults are plain files on your disk, one per account, and never leave it. Distilling a session is a call to the CLI under that account's own credentials; the transcripts those calls produce are archived and priced like any other session rather than discarded, and the vault a session can reach is fixed by the process it was launched with.
 
 ## License
 

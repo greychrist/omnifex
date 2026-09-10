@@ -1,12 +1,14 @@
 # CLAUDE.md — src (renderer)
 
-React 18 + TypeScript + Tailwind v4 renderer for OmniFex, built with Vite. The renderer has no Node.js access; it talks to Electron's main process only through the IPC layer.
+React 19 + TypeScript + Tailwind v4 renderer for OmniFex, built with Vite. The renderer has no Node.js access.
+
+The same bundle runs in two places: inside Electron, and in a browser served by the OmniFex Remote daemon. `src/lib/remote/bootstrap.ts` decides at boot what `window.electronAPI` is — the preload bridge, or a WebSocket shim onto the daemon that keeps the bridge for Electron-only channels. Feature code should never care which; if it does, that is a bug in the shim, not a reason to branch.
 
 See the root `CLAUDE.md` for the full architecture, build commands, and account-aware rules.
 
 ## Focus
 
-- Frontend code should call `src/lib/api.ts` (typed API surface), which routes through `src/lib/apiAdapter.ts` (`window.electronAPI.invoke`). Do not call `window.electronAPI.invoke()` directly from feature components.
+- Frontend code should call `src/lib/api.ts` (typed API surface), which routes through `src/lib/apiAdapter.ts` (`window.electronAPI.invoke`). Do not call `window.electronAPI.invoke()` directly from feature components — that is also what makes the remote shim a single seam rather than a per-component concern.
 - Strip `undefined` from optional params before they cross the IPC boundary — the main process does not distinguish `undefined` from missing.
 
 ## Rules
@@ -36,16 +38,21 @@ See the root `CLAUDE.md` for the full architecture, build commands, and account-
   Typed API surface — the only thing feature components should import from
 - `src/lib/apiAdapter.ts`
   IPC transport — thin wrapper over `window.electronAPI.invoke`
+- `src/lib/remote/`
+  The other end of that call in remote mode: `bootstrap.ts` (mode selection), `electronApiShim.ts` (channel → protocol method or `rpc.invoke`), `nativeChannels.ts` (what stays in Electron)
 
 ## Adding a New IPC Call
 
 1. Add the service method + test in `electron/services/foo.ts` and `electron/__tests__/foo.test.ts` (TDD).
 2. Wire the handler adapter in `electron/main.ts` and the interface entry in `electron/ipc/handlers.ts`.
-3. Add the channel name to the allow-list in `electron/preload.ts` (otherwise the preload layer rejects the invoke).
-4. Add the typed wrapper method in `src/lib/api.ts`.
-5. Use it from the component.
+3. Add the channel name to `INVOKE_CHANNELS` in `electron/ipc/channels.ts` — that is the list `electron/preload.ts` reads, and without an entry the preload layer rejects the invoke.
+4. Decide whether the channel is **native-only**. If serving it needs a `BrowserWindow`, a display, a pty, or the updater, add it to `NATIVE_INVOKE_CHANNELS` in `src/lib/remote/nativeChannels.ts`.
+5. Add the typed wrapper method in `src/lib/api.ts`.
+6. Use it from the component.
 
-Skipping step 3 is the most common "why is nothing happening?" bug — check preload first when a new call silently fails.
+Skipping step 3 is the most common "why is nothing happening?" bug — check `channels.ts` first when a new call silently fails.
+
+Skipping step 4 is worse, because it does not fail: remote mode is the default, so the shim sends the channel to the daemon, the daemon's adapter bag has no such service, and the optional-chained handler returns `null`. The feature reads as "not configured" instead of broken.
 
 ## Verification
 

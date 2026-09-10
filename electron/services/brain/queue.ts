@@ -113,9 +113,10 @@ export function createBrainQueueStore(db: Database): BrainQueueStore {
   /**
    * Select-then-update inside one transaction.
    *
-   * Concurrency is 1 today, but a claim that is only atomic by luck is a bug
-   * waiting for the day it is not — and double-claiming means paying twice for
-   * one item and racing two writers into the same note.
+   * One worker per process, but not one worker: the Electron app and the
+   * OmniFex Remote daemon each build this queue over the same database file,
+   * so two claimers is the normal case, not a hypothetical. Double-claiming
+   * means paying twice for one item and racing two writers into the same note.
    */
   const claimTxn = raw.transaction((): Row | null => {
     const row = raw

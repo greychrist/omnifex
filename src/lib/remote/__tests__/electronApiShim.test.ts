@@ -214,6 +214,23 @@ describe('electronAPI shim', () => {
       expect(await web.invoke('get_app_version')).toBe('web');
     });
 
+    it('answers codex_binary_path natively, and null on the web', async () => {
+      // The binary is on the machine running main, so only main can resolve
+      // it. Routed to the daemon it would come back `null` from an adapter bag
+      // that has no codexAuth — the same value as "Codex is not installed",
+      // which is why this has to be native.
+      const api = shim();
+      native.invoke.mockResolvedValueOnce('/opt/homebrew/bin/codex');
+      expect(await api.invoke('codex_binary_path', {})).toBe('/opt/homebrew/bin/codex');
+      expect(f.requests).toEqual([]);
+
+      // On the iPad there is no local codex to find. `null` is the contract
+      // api.ts documents for that, so the sign-in modal shows "not found"
+      // rather than an error toast.
+      const web = createElectronApiShim({ client: f.client, native: null, storage });
+      expect(await web.invoke('codex_binary_path', {})).toBeNull();
+    });
+
     it('passes everything else through rpc.invoke, rewriting a tabId on session_* channels', async () => {
       const api = shim();
       await api.invoke('session_start', { tabId: 'tab-A', projectPath: '/p', model: 'default', permissionMode: 'default' });

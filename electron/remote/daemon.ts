@@ -24,6 +24,7 @@ import { execSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { startPeriodicWork } from '../periodic-work';
 import { createDatabase, ensureDefaultSettings } from '../services/database';
 import { createAccountsService } from '../services/accounts';
 import { createClaudeBinaryService } from '../services/claude-binary';
@@ -65,7 +66,6 @@ import {
 import { createSummaryQueryRunner } from '../services/sessions/summary-query';
 import {
   internalArchiveRoot,
-  pruneInternalArchive,
   internalArchiveStats,
   clearInternalArchive,
 } from '../services/sessions/internal-archive';
@@ -100,9 +100,7 @@ import {
   DEFAULT_IDLE_MINUTES,
   DEFAULT_SWEEP_HOURS,
   MAX_IDLE_MINUTES,
-  MAX_SWEEP_HOURS,
   MIN_IDLE_MINUTES,
-  MIN_SWEEP_HOURS,
   readNumericSetting,
 } from '../services/brain/queue';
 import { getHandlerMap } from '../ipc/handlers';
@@ -581,61 +579,23 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
   });
 
   // ---------------------------------------------------------------------------
-  // Periodic work main.ts also runs. Kept so Phase 3 can retire it there.
+  // Periodic work, shared verbatim with electron/main.ts
   // ---------------------------------------------------------------------------
+  //
+  // The daemon owns it outright and passes no `enabled` gate; main.ts closes
+  // its own gate whenever a renderer is on this process. See
+  // electron/periodic-work.ts for why running both at once costs real money.
 
   const timers: NodeJS.Timeout[] = [];
-  timers.push(
-    setTimeout(() => {
-      try {
-        const r = costHistoryService.backfill(accountsService.listAccounts(), costBackfillOpts);
-        log.info('cost-history startup backfill', { sessionsScanned: r.sessionsScanned });
-      } catch (err) {
-        log.warn('cost-history startup backfill failed', { error: String(err) });
-      }
-    }, 30_000),
-    setInterval(() => {
-      try {
-        costHistoryService.backfill(accountsService.listAccounts(), costBackfillOpts);
-        pruneInternalArchive(
-          internalArchive,
-          Number(db.getSetting('internal.archive.retentionDays') ?? 90),
-          new Date().toISOString().slice(0, 10),
-        );
-      } catch (err) {
-        log.warn('cost-history sweep failed', { error: String(err) });
-      }
-    }, 60 * 60 * 1000),
-    setInterval(() => {
-      try {
-        db.reclaimFreePages();
-      } catch (err) {
-        log.warn('free-page reclaim failed', { error: String(err) });
-      }
-    }, 60 * 60 * 1000),
-    setInterval(() => {
-      void (async () => {
-        const autoIndexOn = db.getSetting(BRAIN_AUTO_INDEX_SETTING_KEY) === 'true';
-        const curateOn = db.getSetting(BRAIN_CURATE_SETTING_KEY) === 'true';
-        if (autoIndexOn || curateOn) {
-          const sinceMs =
-            Date.now() -
-            readNumericSetting(db.getSetting(BRAIN_SWEEP_HOURS_SETTING_KEY), DEFAULT_SWEEP_HOURS, MIN_SWEEP_HOURS, MAX_SWEEP_HOURS) *
-              60 * 60 * 1000;
-          for (const account of accountsService.listAccounts()) {
-            if (!brainRef?.vaultPath(account.id)) continue;
-            try {
-              if (autoIndexOn) await brainRef.backfill(account.id, { sinceMs });
-              if (curateOn) brainRef.enqueueCuration(account.id);
-            } catch (err) {
-              log.warn('brain sweep failed for account', { accountId: account.id, error: String(err) });
-            }
-          }
-        }
-        await brainRef?.drainQueue();
-      })().catch((err: unknown) => log.warn('brain periodic sweep failed', { error: String(err) }));
-    }, 5 * 60 * 1000),
-  );
+  const stopPeriodicWork = startPeriodicWork({
+    db,
+    listAccounts: () => accountsService.listAccounts(),
+    costHistory: costHistoryService,
+    costBackfillOpts,
+    internalArchive,
+    brain: () => brainRef,
+    log,
+  });
 
   // ---------------------------------------------------------------------------
   // The IPC handler map, reached through rpc.invoke
@@ -928,6 +888,7 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
   return {
     address,
     async close() {
+      stopPeriodicWork();
       for (const t of timers) clearInterval(t);
       for (const t of permissionTimers.values()) clearTimeout(t);
       await server.close();

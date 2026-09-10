@@ -134,7 +134,7 @@ const inFlight =
   || tasks.some(t => t.status !== 'complete');
 ```
 
-Compute this in the renderer via the selectors from `src/lib/sessionDerivedState.ts`. Do not call `listInFlightTabIds` for this — it returns `[]` now that the main process no longer tracks conversation state.
+Compute this in the renderer via the selectors from `src/lib/sessionDerivedState.ts`. There is no main-process equivalent to ask: `SessionsService.listInFlightTabIds` was deleted once the main process stopped tracking conversation state, and the installer's gate is fed from `tabStatusService.busyTabIds()` instead.
 
 Notes:
 - `sessionStatus === 'starting'` does **not** count as in-flight by itself. The header badge shows "Starting…" but no spinner — the user hasn't asked for anything yet, there's nothing to wait on.
@@ -146,13 +146,22 @@ Notes:
 - **Event:** `session-status:<tabId>` — payload: `{ sessionStatus: SessionStatus }`. Fired on every `sessionStatus` transition. `conversationStatus` is **not** in the payload; the renderer derives it.
 - **Invoke:** `session_get_health` — returns `{ alive: boolean, sessionId: string | null, sessionStatus: SessionStatus }`. Used to seed the renderer after a rebind or reload. `conversationStatus` is not included.
 
+### Across the daemon boundary
+
+OmniFex Remote does not add a fourth axis, and adding one is the mistake to avoid.
+
+- `session.state` on the wire (`src/protocol/messages.ts`) carries **`sessionStatus` only** — the connection axis — alongside mode/agent/model/permission-mode. There is deliberately no `conversationStatus` field: it is derived in the renderer, and the renderer is the same code whether it is running in Electron or in Safari.
+- `electron/remote/bridge.ts` translates the daemon's `sendToRenderer` calls into protocol pushes and keeps a per-session `sessionStatus` cache so a reconnecting client can be told where it stands. That cache mirrors the axis; it does not become a second source of truth for it.
+- `SESSION_SCOPED_PUSHES` is `['session.state', 'event', 'permission.request']`. A reconnecting client replays all three, because replaying transcript events alone would leave it at a stale status with an invisible permission prompt blocking the turn.
+- The daemon's `/healthz` reports `sessions.inFlight`. That is a **turn** count, derived the same way, and it is what the updater and the daemon-replacement logic gate on. It is not `sessionStatus`.
+
 ## Anti-patterns (do not do these)
 
 - Maintaining two booleans (`isSessionStarting` + `isSessionActive`) in a component. There is one enum, exposed by the hook.
 - Reading `sessionStatus === 'idle'` or `sessionStatus === 'running'` anywhere. Those are not values of `sessionStatus`. They're values of `conversationStatus`.
 - Maintaining `conversationStatus` as renderer-side React state (`useState`). It is a pure derived value; store `messages[]`, `tasks`, and `subagents` and recompute.
 - Subscribing to `session-status:<tabId>` expecting a `conversationStatus` field. That field is not in the payload.
-- Computing in-flight via `listInFlightTabIds`. It returns `[]` — the main process no longer tracks conversation state. Use the renderer-side selector instead.
+- Asking the main process for in-flight tabs. It does not track conversation state, and `SessionsService.listInFlightTabIds` no longer exists. Use the renderer-side selector, and publish it through `tabStatusService` if main needs the answer.
 - Renderer components subscribing to `session-status:<tabId>` directly. The hook owns that subscription; consumers read the derived state.
 - Dropping a turn-closing `cli-stream-result` row from `messages[]` (e.g. to hide a card). The trailing partial assistant carries `stop_reason: null`, so the result row is the only thing that lets `waitingOnClaude()` settle — drop it and the per-tab "Turn in flight" rollup sticks on WORKING forever, even though `isLoading` cleared. If a result must not render as-is, keep it in `messages[]` and rewrite its presentation (the user-cancel path neutralizes `is_error` via the reducer's `replaceWith`), never `append: 'skip'` it.
 

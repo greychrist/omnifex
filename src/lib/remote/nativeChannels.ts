@@ -35,6 +35,10 @@ export const NATIVE_INVOKE_CHANNELS: readonly string[] = [
   'one_shot_terminal_kill',
   'codex_auth_start_login',
   'codex_auth_cancel_login',
+  /** Resolves the `codex` binary on the machine running main. The daemon's
+   *  adapter bag has no `codexAuth`, so over the wire this answered `null` —
+   *  the same value api.ts documents for "Codex CLI not installed". */
+  'codex_binary_path',
   'tab_status_publish',
   'tab_status_remove',
   'tab_status_list',

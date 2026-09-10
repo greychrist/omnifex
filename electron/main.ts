@@ -64,9 +64,7 @@ import {
   DEFAULT_IDLE_MINUTES,
   DEFAULT_SWEEP_HOURS,
   MAX_IDLE_MINUTES,
-  MAX_SWEEP_HOURS,
   MIN_IDLE_MINUTES,
-  MIN_SWEEP_HOURS,
   readNumericSetting,
 } from './services/brain/queue';
 import { createAccountsService } from './services/accounts';
@@ -121,7 +119,6 @@ import {
 import { createSummaryQueryRunner } from './services/sessions/summary-query';
 import {
   internalArchiveRoot,
-  pruneInternalArchive,
   internalArchiveStats,
   clearInternalArchive,
 } from './services/sessions/internal-archive';
@@ -141,6 +138,7 @@ import { createModelPricingService } from './services/model-pricing';
 import { registerIpcHandlers } from './ipc/handlers';
 import { createRemoteLauncher, healthUrlFor, parseDaemonHealth, type DaemonHealth } from './remote-launcher';
 import { loadServerConfig } from './remote/config';
+import { startPeriodicWork } from './periodic-work';
 import { createDaemonControl } from './remote/daemon-control';
 import { daemonExecPath } from './remote/daemon-exec';
 import { get as httpGet } from 'node:http';
@@ -517,6 +515,11 @@ app.whenReady().then(() => {
   // duplicating the vault-path lookup: two readers of `brain.vault.<id>` would
   // be two things to keep in step.
   let brainRef: BrainService | undefined;
+  // Whether a renderer is on the daemon. Three readers: the update gate (the
+  // daemon's turns count, and it must be stopped before its bundle is
+  // swapped) and the periodic-work gate below. Declared here because that gate
+  // is armed long before `remote:url` is answered.
+  let remoteInUse = false;
   const captureSource = createCaptureSource({
     vaults: () =>
       accountsService
@@ -1003,106 +1006,28 @@ app.whenReady().then(() => {
     // point of the table existing.
     getOverrides: () => modelPricingService.toOverrides(),
   });
-  // Backfill history from surviving transcripts shortly after startup, then
-  // sweep hourly to catch sessions run outside OmniFex (terminal claude-work).
-  setTimeout(() => {
-    try {
-      const r = costHistoryService.backfill(accountsService.listAccounts(), costBackfillOpts);
-      console.log(`[cost-history] startup backfill: ${r.sessionsScanned} sessions`);
-    } catch (err) {
-      console.warn('[cost-history] startup backfill failed:', err);
-    }
-  }, 30_000);
-  setInterval(() => {
-    try {
-      costHistoryService.backfill(accountsService.listAccounts(), costBackfillOpts);
-      // Prune AFTER the sweep, never before: a transcript that has not been
-      // priced yet must not be deleted for being old. Cost rows survive the
-      // prune either way, but pruning first would drop the spend entirely.
-      pruneInternalArchive(
-        internalArchive,
-        Number(db.getSetting('internal.archive.retentionDays') ?? 90),
-        new Date().toISOString().slice(0, 10),
-      );
-    } catch (err) {
-      console.warn('[cost-history] sweep failed:', err);
-    }
-  }, 60 * 60 * 1000);
-
-  // Hand back pages freed by deletes anywhere in the database — rate-limit
-  // snapshots, brain queue rows, cost history — not just by a log prune, which
-  // compacts on its own way out. Without this, deleted space stays on SQLite's
-  // freelist and the file only ever grows: greychrist.db reached 2.15 GB
-  // holding 36 MB of live data that way.
-  //
-  // Cheap by construction: `reclaimFreePages` returns immediately when the
-  // freelist is empty (the steady state), and when it isn't, it moves free
-  // pages only and never rewrites live data. Hourly rather than on every
-  // delete so it never lands on a write path.
-  setInterval(() => {
-    try {
-      db.reclaimFreePages();
-    } catch (err) {
-      console.warn('[database] free-page reclaim failed:', err);
-    }
-  }, 60 * 60 * 1000);
-
-  // Periodic discovery, then drain.
-  //
-  // The drain half is Plan 8's: session close is the only other trigger, and
-  // it is not enough on its own — a drain that stops (paused, rate limited, or
-  // because a selection run held the worker) used to have nothing to restart
-  // it until the next session happened to close, which is how 165 items came
-  // to be pending.
-  //
-  // The discovery half is why a tab no longer has to close for its
-  // conversation to reach the vault. Session close used to be the ONLY thing
-  // that enqueued anything; a tab left open for a week held a conversation
-  // that ended on Tuesday out of the vault indefinitely. Both halves are
-  // bounded so an idle app pays nothing: an empty queue costs one indexed
-  // SELECT, and `backfill`'s cheap predicates run ahead of `admit()` so a
-  // sweep that finds nothing new reads no transcripts at all.
-  setInterval(() => {
-    void (async () => {
-      // Read fresh on every tick, matching the close-time gate: a flip in the
-      // Settings pane applies without a restart.
-      const autoIndexOn = db.getSetting(BRAIN_AUTO_INDEX_SETTING_KEY) === 'true';
-      const curateOn = db.getSetting(BRAIN_CURATE_SETTING_KEY) === 'true';
-
-      if (autoIndexOn || curateOn) {
-        const sinceMs =
-          Date.now() -
-          readNumericSetting(
-            db.getSetting(BRAIN_SWEEP_HOURS_SETTING_KEY),
-            DEFAULT_SWEEP_HOURS,
-            MIN_SWEEP_HOURS,
-            MAX_SWEEP_HOURS,
-          ) * 60 * 60 * 1000;
-
-        for (const account of accountsService.listAccounts()) {
-          // An account with no vault has nowhere to put a note, and
-          // `backfill` would only queue work that failed at claim time.
-          if (!brainRef?.vaultPath(account.id)) continue;
-          try {
-            if (autoIndexOn) await brainRef.backfill(account.id, { sinceMs });
-            // Curation has the same gap indexing had: it was close-triggered
-            // only, so a user who never closes tabs would accumulate notes
-            // that nothing ever compressed — and unlimited re-indexing is
-            // exactly what makes notes accumulate. `enqueueCuration` selects
-            // from the vault as it stands now and caps itself per run.
-            if (curateOn) brainRef.enqueueCuration(account.id);
-          } catch (err) {
-            // One account's failure must not cost the others their sweep.
-            console.warn('[brain] sweep failed for account', account.id, err);
-          }
-        }
-      }
-
-      await brainRef?.drainQueue();
-    })().catch((err: unknown) => {
-      console.warn('[brain] periodic sweep failed:', err);
-    });
-  }, 5 * 60 * 1000);
+  // Cost-history backfill, archive prune, free-page reclaim and the Brain
+  // sweep + drain — shared verbatim with the daemon, which builds the same
+  // service graph. `enabled` is what keeps them from both running: remote mode
+  // is the default, so the daemon is normally alive too, and two processes
+  // draining one Brain queue pay twice for the item `recoverOrphans` hands
+  // back. See electron/periodic-work.ts.
+  startPeriodicWork({
+    db,
+    listAccounts: () => accountsService.listAccounts(),
+    costHistory: costHistoryService,
+    costBackfillOpts,
+    internalArchive,
+    brain: () => brainRef,
+    log: {
+      info: (message, meta) => console.log(`[periodic] ${message}`, meta ?? ''),
+      warn: (message, meta) => console.warn(`[periodic] ${message}`, meta ?? ''),
+    },
+    // The daemon owns this work whenever a renderer is on it. Read per tick:
+    // `remoteInUse` is only settled once the renderer asks for `remote:url`,
+    // which happens well after these timers are armed.
+    enabled: () => !remoteInUse,
+  });
   const proxyService = createProxyService(db);
   const mcpService = createMCPService();
   // The persistent, per-account half of Brain MCP registration. Reuses
@@ -1735,10 +1660,6 @@ app.whenReady().then(() => {
     stop: (config) => daemonControl.stop(config),
     log: remoteLog,
   });
-  // Whether a renderer is on the daemon. The installer reads it: the update
-  // gate must wait on the daemon's turns too, and the daemon must be stopped
-  // before the bundle it runs from is swapped.
-  let remoteInUse = false;
   ipcMain.handle('remote:url', async () => {
     if (process.env.OMNIFEX_REMOTE === '0') return null;
     if (db.getSetting('remote.enabled') === 'false') return null;
@@ -1832,17 +1753,11 @@ app.whenReady().then(() => {
 
   const installerService = createInstallerService({
     sessionsService: {
-      // Renderer-derived busy state is the source of truth for the install
-      // gate. Falls back to the lifecycle status only if no tab has reported
-      // yet (cold-start race), so a fresh app launch can still gate correctly
-      // before any summary publishes.
-      listInFlightTabIds: () => {
-        const fromRenderer = tabStatusService.busyTabIds();
-        if (fromRenderer.length > 0 || tabStatusService.list().length > 0) {
-          return fromRenderer;
-        }
-        return sessionsService.listInFlightTabIds();
-      },
+      // Renderer-derived busy state is the only source for the install gate.
+      // Main tracks no conversationStatus of its own since Task 3 of the
+      // jsonl-as-rendered refactor, so there is nothing to fall back to: a
+      // launch with no tab reporting yet is genuinely not busy.
+      listInFlightTabIds: () => tabStatusService.busyTabIds(),
       listSessionStatuses: () => sessionsService.listSessionStatuses(),
       stopAll: () => sessionsService.stopAll(),
     },
@@ -1921,12 +1836,7 @@ app.whenReady().then(() => {
   //
   // Read by both the in-flight broadcast below and the quit guard, so the
   // titlebar's warning and the quit dialog's can never disagree.
-  const workingCount = (): number => {
-    const fromRenderer = tabStatusService.list().length > 0
-      ? tabStatusService.workingTabIds().length
-      : null;
-    return fromRenderer ?? sessionsService.listInFlightTabIds().length;
-  };
+  const workingCount = (): number => tabStatusService.workingTabIds().length;
   _workingCount = workingCount;
 
   // Broadcast in-flight session count so the titlebar can decide, before the

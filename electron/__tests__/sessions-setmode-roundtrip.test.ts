@@ -182,11 +182,8 @@ describe('setMode: rich → tui → rich round-trip', () => {
     await sessions.setMode(tabId, 'tui');
     await sessions.setMode(tabId, 'rich');
 
-    // listInFlightTabIds always returns [] after Task 3 (conversationStatus
-    // tracking moved to the renderer). Verify the engine listeners ARE
-    // re-attached by checking that result messages reach the renderer.
-    expect(sessions.listInFlightTabIds()).toEqual([]);
-
+    // Verify the engine listeners ARE re-attached by checking that result
+    // messages reach the renderer.
     sessions.sendMessage(tabId, 'hello');
     engine.__emitMessage({ type: 'result', subtype: 'success' });
 

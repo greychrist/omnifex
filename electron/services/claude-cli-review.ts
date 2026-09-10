@@ -30,6 +30,128 @@ import { buildClaudeEnv } from './util/claude-env';
  * old value and the new one, and file or fix whatever they imply. Bumping it
  * to silence the badge throws away the only drift signal we have.
  *
+ * Last review: 2.1.267 -> 2.1.268 on 2026-09-10. Findings:
+ *
+ *  Changelog coverage: 2.1.268 is the only release in range and it has an
+ *  entry (58 items). No gap. Both 2.1.267 and 2.1.268 are installed under
+ *  ~/.local/share/claude/versions, so the wire claims below are a real
+ *  two-version binary diff, not prose.
+ *
+ *  Wire diff: NOTHING MOVED. The `subtype:"..."` literal SET is identical
+ *  (occurrence count 269 -> 270 is one existing literal appearing twice,
+ *  not a new one). `hook_event_name` literals identical (102/102).
+ *  `type:"control_*"` envelopes identical per-literal. Every `/usage`
+ *  anchor parser.ts reads is unchanged: `Current session` 3/3, `Current
+ *  week (` 8/8, `Resets` 90/90, `Total cost:` 2/2, `% of usage` 2/2,
+ *  `Loading usage data` 1/1, `Showing last-known usage` 2/2. The one
+ *  count that moved, `MCP servers` 338 -> 340, is minifier variable
+ *  renaming — diffing the surrounding context shows only `${D}/${E}` ->
+ *  `${D}/${R}`, `Ae` -> `Ie` and friends, no new table header.
+ *
+ *  NO CODE CHANGES. Clean pass. Entries recorded so the next reviewer does
+ *  not re-derive them.
+ *
+ *  1. `configDirectory` added to `claude auth status --json`. OPPORTUNITY,
+ *     not a bug. account-identity.ts:109 spawns exactly this command and
+ *     parses the envelope just below, ignoring the new field. Verified
+ *     live on 2.1.268: the output now carries `configDirectory` and
+ *     `projectsDirectory` alongside the fields we already read.
+ *
+ *     Why it is worth something: probeAuthStatus sets CLAUDE_CONFIG_DIR
+ *     and then TRUSTS that the CLI honored it. `configDirectory` is the
+ *     CLI echoing back the dir it actually used, so the probe could
+ *     assert `p.configDirectory === configDir` and return LOGGED_OUT (or
+ *     surface a mismatch) instead of silently attributing one account's
+ *     identity to another. That is precisely the failure the multi-account
+ *     rules exist to prevent. Small and optional — no evidence the CLI has
+ *     ever disobeyed the env var.
+ *
+ *  2. "PermissionRequest hooks not firing in `--print` mode" — fixed
+ *     upstream, and it lands on us: OmniFex chat sessions ARE `--print`
+ *     runs. claude-cli-engine.ts:54-56 passes `--output-format
+ *     stream-json`, which implies print mode (see the CLI's own error text
+ *     quoted at claude-cli-engine.ts:41). So a user's PermissionRequest
+ *     hook that never ran inside an OmniFex chat session now runs, and can
+ *     allow/deny BEFORE our stdio decider (permissions.ts:35) ever sees a
+ *     `can_use_tool` request. That is correct behavior, not a regression.
+ *
+ *     ALREADY HANDLED on both ends. src/types/hooks.ts:29 already lists
+ *     `PermissionRequest`, and blockKind.ts:24's HOOK_FEEDBACK_PREFIX is
+ *     `/^[A-Z][A-Za-z]* hook (feedback|additional context):/` — generic
+ *     over the event name, so "PermissionRequest hook feedback:" classifies
+ *     as `user.systemContext` with no change. The doc comment above it
+ *     enumerates event names as examples only; the regex does not.
+ *
+ *  3. "policy-helper warnings not printing on headless (-p) runs" — fixed
+ *     upstream, meaning MORE output on runs we make. Inert for both
+ *     consumers. summary-query.ts:141 parses stdout as a single JSON blob
+ *     and only reads stderr on a non-zero exit; claude-cli-engine.ts:120-124
+ *     drops non-JSON stdout lines silently by design. Verified empirically
+ *     with a real 2.1.268 `-p --output-format json` run: stdout was clean
+ *     JSON, stderr empty, and every field summary-query reads (`result`,
+ *     `total_cost_usd`, `duration_ms`, `usage.*`) is still present. The
+ *     "verified against 2.1.229" note on CliResultEnvelope still holds.
+ *
+ *  4. "a running session silently switching to the organization's default
+ *     model when another Claude Code process refreshed a stale
+ *     model-access entry". Fixed upstream; we were structurally exposed —
+ *     OmniFex IS the multi-process case, running concurrent CLI processes
+ *     across accounts by construction. Not our bug and nothing to change:
+ *     our model mirror is read-only and fed from JSONL (tui-jsonl.ts), so
+ *     it would have faithfully displayed the switched-to model rather than
+ *     causing or hiding the switch.
+ *
+ *  5. "sustained high CPU usage: a busy loop in long-running idle sessions
+ *     no longer pins a CPU core". Pure benefit, no code change. Many idle
+ *     pty sessions held open at once is OmniFex's steady state, so this is
+ *     the release's largest practical win for us.
+ *
+ *  6. `--continue`/`--resume` first paint no longer waits on SessionStart
+ *     hooks. tui.ts:37 spawns with `--resume`, but this is a CLI display
+ *     ordering change; JSONL writes are unaffected and OmniFex tails the
+ *     JSONL, not the TUI. No impact on the lifecycle predicates.
+ *
+ *  Carry-over: `maxEffortLevel` (the 2.1.267 finding below) is unchanged —
+ *  13 -> 14 occurrences, still just a settings key, still unset in every
+ *  settings file on this machine. The latent chat-mode effort-mirror gap
+ *  recorded below stands as written.
+ *
+ *  No OmniFex impact: gateway pricing via managed settings,
+ *  `gatewayInternalNetworks`, gateway CIDR startup warnings,
+ *  `self-hosted-runner --remove-session-state`, `--json` on `claude plugin
+ *  install/uninstall/update/enable/disable` + `errorDetails`/`noteDetails`
+ *  on `plugin list --json` (OmniFex reads plugin config files and never
+ *  shells out to `claude plugin` or `claude mcp` — grep confirms zero call
+ *  sites), artifact tab icons, the ANTHROPIC_BASE_URL 400 from the Artifact
+ *  schema regex, WebFetch 300s deadline + `CLAUDE_CODE_WEBFETCH_DEADLINE_MS`
+ *  + dotless-hostname error text, untrusted-folder teammate respawn, the
+ *  "your message came through empty" MCP fix, deny/ask rules on symlinked
+ *  dirs and the `env -C`/`eval` deny-rule fix (CLI-side path matching;
+ *  docs/permission-syntax.md makes no symlink claim that needs correcting,
+ *  and both changes only make rules apply MORE often), secret redaction in
+ *  plugin/marketplace errors and `/mcp` + `claude mcp list/get`, SDK
+ *  `excludeDynamicSections` caching, stale model-access denials after
+ *  restart, the Fable 1M-context 429 message, WIF `jti reused`, MCP OAuth
+ *  redirect port range, `/compact` `$`-mangling and restored-file note
+ *  ordering, SDK prompt suggestions / side questions / `/rename` sending
+ *  pre-compaction context, `@` and `/` suggestions after an edited
+ *  up-arrow recall, `claude agents` ← key timing / worktree-delete
+ *  stall / multi-line row wrapping, Slack MCP allowlist, Chrome host
+ *  parsing and inline long page reads, spinner one-row wrapping,
+ *  `/bug` cursor, Remote Control session naming in `ListAgents` (OmniFex
+ *  Remote is our own daemon, unrelated to `claude remote-control`),
+ *  `plugin validate` on `..`-prefixed dirs, unreadable default monitors /
+ *  root SKILL.md, `CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS`, `/autofix-pr`
+ *  and cloud-command messaging, `/remote-control` signed-out message, Bash
+ *  sandbox instruction wording, auto-mode denial messages, fullscreen
+ *  Shift+Enter repaint, the hidden per-tool-batch reminder redraw,
+ *  `.claude/workflows/` startup parsing, the MEMORY.md truncation warning
+ *  (the Brain's auto-memory source indexes sibling notes independently and
+ *  skips MEMORY.md as an index — brain/sources/auto-memory.ts:23), the
+ *  artifact permission prompt wording, the prompt footer / selection
+ *  display, the 1M-context usage-credits restart message, and `/plugin`
+ *  taking effect without `/reload-plugins`.
+ *
  * Last review: 2.1.266 -> 2.1.267 on 2026-09-09. Findings:
  *
  *  Changelog coverage: 2.1.267 is the only release in range and it has an
@@ -1195,7 +1317,7 @@ import { buildClaudeEnv } from './util/claude-env';
  * `~/.claude.json` fix (we read-modify-write that file, never replace it), and
  * the VSCode screen-reader work.
  */
-export const REVIEWED_CLI_VERSION = '2.1.267';
+export const REVIEWED_CLI_VERSION = '2.1.268';
 
 /**
  * app_settings key holding the user's explicit OmniFex-checkout override.

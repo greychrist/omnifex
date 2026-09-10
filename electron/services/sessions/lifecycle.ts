@@ -545,14 +545,6 @@ export function createSessionsService(
     return Array.from(ids);
   }
 
-  // TODO(jsonl-as-rendered): main no longer tracks conversationStatus — the
-  // wait-for-idle gate has moved to the renderer. This always returns [] since
-  // Task 3 of the jsonl-as-rendered refactor. See TODO.md for the follow-up
-  // that wires the renderer's derived in-flight count into the installer gate.
-  function listInFlightTabIds(): string[] {
-    return [];
-  }
-
   function listSessionStatuses(): {
     tabId: string;
     sessionStatus: SessionStatus;
@@ -925,7 +917,6 @@ export function createSessionsService(
     isActive,
     listActiveTabIds,
     listActiveSessionIds,
-    listInFlightTabIds,
     listSessionStatuses,
     setMode,
     tuiWrite,

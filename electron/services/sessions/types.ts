@@ -210,16 +210,6 @@ export interface SessionsService {
   /** Session UUIDs of every open session. The Brain's live-source guard
    *  reads this to refuse indexing a transcript that is still growing. */
   listActiveSessionIds(): string[];
-  /**
-   * Return tab IDs whose conversation is in-flight.
-   *
-   * TODO(jsonl-as-rendered): main no longer tracks conversationStatus — this
-   * always returns [] since Task 3 of the jsonl-as-rendered refactor. The
-   * wait-for-idle gate has moved to the renderer (see TODO.md for the
-   * follow-up). The function is kept for the installer's hot path until that
-   * follow-up lands.
-   */
-  listInFlightTabIds(): string[];
   /** Diagnostic: every registered session. Installer logs this on gate polls. */
   listSessionStatuses(): {
     tabId: string;

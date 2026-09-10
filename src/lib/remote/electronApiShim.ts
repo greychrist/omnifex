@@ -87,6 +87,8 @@ const WEB_FALLBACKS: Record<string, unknown> = {
   'tab_status_remove': null,
   'updater:check': null,
   'get_app_version': 'web',
+  // No local codex on the tablet; `null` is api.ts's "not installed".
+  'codex_binary_path': null,
 };
 
 /** The IPC layer's error encoding, which `apiAdapter.decodeApiError` reverses. */
