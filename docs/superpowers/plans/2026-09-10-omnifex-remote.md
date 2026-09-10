@@ -116,7 +116,7 @@ All six phases landed on `feat/omnifex-remote` (commits ff71d73 → 1f331a7). Fu
 
 ## For Greg — first things in the morning
 
-1. **Toolchain**: CLT for Xcode 27.0 installed itself at 09:57 during the run and broke every native link (`arm64e.x1` unknown to Xcode.app's `ld-1267`). Until `sudo xcode-select --switch /Library/Developer/CommandLineTools` (or a newer Xcode), prefix native builds: `SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk npm start|test`. Memory note: `project_clt27_linker_mismatch`.
+1. **Toolchain** — resolved the same morning: Xcode 27.0 beta 5 installed at `/Applications/Xcode-beta.app` and selected (`xcode-select`). `npm test` / `rebuild:electron` pass with no env prefix. On Xcode 27.0 release day, install it and `sudo xcode-select --switch /Applications/Xcode.app`.
 2. **Try the app**: `npm start`. `remote:url` will probe → spawn the daemon detached → the renderer connects and logs `[remote] mode=electron-remote` in devtools. If anything is off, `OMNIFEX_REMOTE=0 npm start` is the old app, untouched.
 3. **Then flip 3.5**: once a real session has run through the daemon from the desktop, remove the non-native entries from `registerIpcHandlers(...)` in `main.ts` and stop constructing the sessions service there (plan §3.5 has the list). Until then both processes share the DB and both run the cost/brain sweeps.
 4. **iPad**: `./scripts/omnifex-server install`, `tailscale serve --bg --https=443 http://127.0.0.1:47700` (set `"host": "127.0.0.1"` in `~/.omnifex/server.json` if the daemon bound the tailnet IP), open the `.ts.net` URL in Safari, Add to Home Screen, tap Enable notifications.
