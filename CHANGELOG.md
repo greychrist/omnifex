@@ -5,6 +5,12 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.160] — 2026-09-10
+
+### Fixed
+
+- On the iPad in Safari the bottom of the app — the prompt composer — sat under the browser toolbar with no way to reach it. The app sized itself to `100vh`, which on iOS is the height with the toolbar hidden, and the page never scrolls so the toolbar never hides. The root now uses the dynamic viewport height, which follows the toolbar. The desktop app is unchanged; Home Screen mode was never affected.
+
 ## [0.4.159] — 2026-09-10
 
 ### Fixed
