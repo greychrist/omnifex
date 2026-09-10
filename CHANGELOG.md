@@ -5,6 +5,17 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.159] — 2026-09-10
+
+### Fixed
+
+- 0.4.158 made a Terminal-style icon bounce in the Dock for as long as the daemon ran. The daemon renamed itself at runtime, and on macOS that registers a process with LaunchServices as an app that is launching; one that never opens a window never finishes. The name now comes from the file instead: the app ships a second copy of its executable as `omnifexd` and runs the daemon through it, so it still shows as `omnifexd` in Activity Monitor and `ps` — and `pgrep omnifexd` finds it — with nothing in the Dock.
+
+### Changed
+
+- The thinking readout now sits at the top of the transcript rather than in the bar stack above the prompt.
+- On a window narrower than 1024px the title-bar buttons drop their words and keep their icons, so the group no longer wraps or clips. Hover shows the name.
+
 ## [0.4.158] — 2026-09-10
 
 ### Added
