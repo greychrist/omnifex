@@ -139,6 +139,10 @@ import { createCostHistoryService } from './services/cost/cost-history';
 import { createSessionCostService } from './services/cost/session-cost';
 import { createModelPricingService } from './services/model-pricing';
 import { registerIpcHandlers } from './ipc/handlers';
+import { createRemoteLauncher, healthUrlFor } from './remote-launcher';
+import { loadServerConfig } from './remote/config';
+import { defaultLogPath } from './remote/launchd';
+import { get as httpGet } from 'node:http';
 import { createWindowRouter } from './window-router';
 import { classifyNavigation } from './navigation-policy';
 import { resolveProtocolFile } from './file-protocol-policy';
@@ -1673,6 +1677,68 @@ app.whenReady().then(() => {
   });
 
   ipcMain.handle('get_app_version', () => app.getVersion());
+
+  // ── OmniFex Remote ───────────────────────────────────────────────────────
+  // The renderer asks once at boot where the daemon is. null means "use the
+  // preload bridge as before" — disabled by OMNIFEX_REMOTE=0 or the
+  // `remote.enabled` setting, or the daemon could not be reached or started.
+  // The daemon is spawned DETACHED so it outlives this process: quitting the
+  // app mid-turn must leave the CLI running for the next window to catch up.
+  const remoteLauncher = createRemoteLauncher({
+    config: () => loadServerConfig(),
+    probe: (url) =>
+      new Promise<boolean>((resolve) => {
+        const req = httpGet(url, { timeout: 1500 }, (res) => {
+          res.resume();
+          resolve(res.statusCode === 200);
+        });
+        req.on('timeout', () => { req.destroy(); resolve(false); });
+        req.on('error', () => resolve(false));
+      }),
+    spawn: (config) => {
+      const script = path.join(__dirname, 'omnifex-server.js');
+      if (!fs.existsSync(script)) {
+        console.warn('[remote] daemon script missing:', script);
+        return false;
+      }
+      try {
+        const logPath = defaultLogPath();
+        fs.mkdirSync(path.dirname(logPath), { recursive: true });
+        const fd = fs.openSync(logPath, 'a');
+        const child = spawn(process.execPath, [script, 'start'], {
+          detached: true,
+          stdio: ['ignore', fd, fd],
+          env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+        });
+        child.unref();
+        fs.closeSync(fd);
+        console.log(`[remote] spawned daemon pid=${child.pid} → ${healthUrlFor(config)}, log ${logPath}`);
+        return true;
+      } catch (err) {
+        console.warn('[remote] failed to spawn daemon:', err);
+        return false;
+      }
+    },
+    log: (message, meta) => { console.log(`[remote] ${message}`, meta ?? ''); },
+  });
+  ipcMain.handle('remote:url', async () => {
+    if (process.env.OMNIFEX_REMOTE === '0') return null;
+    if (db.getSetting('remote.enabled') === 'false') return null;
+    return remoteLauncher.ensure();
+  });
+  // An OS notification raised for a daemon-side event. The daemon has no
+  // display; the renderer's shim forwards `claude-notification` here so the
+  // laptop still gets the same banner and dock badge it always did.
+  ipcMain.handle('notify:show', (_event, data: { title?: string; body?: string; isError?: boolean; tabId?: string } = {}) => {
+    notificationsService.show(
+      String(data.title ?? 'OmniFex'),
+      String(data.body ?? ''),
+      !!data.isError,
+      data.tabId ? { tabId: data.tabId } : undefined,
+    );
+    if (!anyWindowFocused()) incrementUnread();
+    return null;
+  });
 
   // --- Updater IPC (registered separately because it uses ipcMain directly) ---
   // Anonymous GitHub API (60/hr/IP) is plenty for a desktop client that

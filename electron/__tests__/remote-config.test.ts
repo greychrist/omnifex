@@ -44,7 +44,7 @@ describe('remote server config', () => {
     afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
 
     it('binds to the Tailscale IP when one is up and the file says nothing', () => {
-      const cfg = loadServerConfig({ file: join(dir, 'server.json'), interfaces: IFACES });
+      const cfg = loadServerConfig({ file: join(dir, 'server.json'), interfaces: IFACES, env: {} });
       expect(cfg.host).toBe('100.101.102.103');
       expect(cfg.port).toBe(DEFAULT_PORT);
     });
@@ -75,7 +75,9 @@ describe('remote server config', () => {
     });
 
     it('defaults the permission timeout to never and the state dir under ~/.omnifex', () => {
-      const cfg = loadServerConfig({ file: join(dir, 'server.json'), interfaces: IFACES });
+      // `env: {}` so a shell that exported OMNIFEX_STATE_DIR for a smoke run
+      // cannot leak into this expectation.
+      const cfg = loadServerConfig({ file: join(dir, 'server.json'), interfaces: IFACES, env: {} });
       expect(cfg.permissionTimeoutMs).toBeNull();
       expect(cfg.stateDir).toBe(join(homedir(), '.omnifex'));
       expect(cfg.sessionsDir).toBe(join(homedir(), '.omnifex', 'sessions'));

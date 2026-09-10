@@ -284,6 +284,11 @@ export const INVOKE_CHANNELS: readonly string[] = [
   'updater:install-cancel',
 
   // Electron-specific
+  // OmniFex Remote: where the daemon listens (or null → legacy IPC), and an
+  // OS notification raised on behalf of a daemon-side event. Both are served
+  // by main.ts only; the daemon's rpc allowlist excludes them.
+  'remote:url',
+  'notify:show',
   'dialog:open',
   'dialog:save',
   'save_pasted_image',

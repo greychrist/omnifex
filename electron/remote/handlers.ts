@@ -235,7 +235,16 @@ export function createRemoteHandlers(deps: RemoteHandlerDeps): RemoteHandlers {
 
     'session.kill': (p) => {
       requireMeta(p.sessionId);
+      const wasActive = deps.sessions.isActive(p.sessionId);
       deps.sessions.stop(p.sessionId);
+      // `stop()` deletes the handle before the engine exits, and runtime.ts
+      // then suppresses the exit's status event as "handle replaced". Nothing
+      // downstream would ever learn the session ended, so say it here — the
+      // same two frames the renderer expects on a user stop.
+      if (wasActive) {
+        deps.bridge.sendToRenderer(`session-status:${p.sessionId}`, { sessionStatus: 'stopped' });
+        deps.bridge.sendToRenderer(`agent-complete:${p.sessionId}`);
+      }
     },
 
     'session.subscribe': (p, ctx) => {

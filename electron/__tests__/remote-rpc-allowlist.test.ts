@@ -26,6 +26,8 @@ describe('rpc allowlist', () => {
   });
 
   it('every denied channel names something that actually exists — the lists cannot rot silently', () => {
+    // `remote:url` and `notify:show` are registered inline in main.ts and
+    // listed in channels.ts like the other Electron-native channels.
     for (const ch of [...ELECTRON_ONLY_CHANNELS, ...TYPED_SESSION_CHANNELS, ...RAW_DATABASE_CHANNELS]) {
       expect(INVOKE_CHANNELS, ch).toContain(ch);
     }

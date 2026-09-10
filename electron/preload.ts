@@ -27,7 +27,12 @@ function isAllowedEventChannel(channel: string): boolean {
   );
 }
 
-contextBridge.exposeInMainWorld('electronAPI', {
+// Published twice. `electronAPI` is what the renderer has always called and
+// what the OmniFex Remote shim replaces when a daemon is reachable;
+// `__omnifexNative` is the same bridge under a name the shim leaves alone, so
+// Electron-only channels (dialogs, shell, window chrome, updater) still reach
+// main after the swap. See src/lib/remote/bootstrap.ts.
+const bridge = {
   invoke: (channel: string, params?: Record<string, unknown>): Promise<unknown> => {
     if (!ALLOWED_INVOKE_CHANNELS.has(channel)) {
       return Promise.reject(new Error(`Blocked IPC channel: ${channel}`));
@@ -57,4 +62,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     }
     return ipcRenderer.invoke('shell:openExternal', url);
   },
-});
+};
+
+contextBridge.exposeInMainWorld('electronAPI', bridge);
+contextBridge.exposeInMainWorld('__omnifexNative', bridge);

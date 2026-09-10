@@ -77,13 +77,16 @@ Channel → push mapping (bridge):
 - [x] Commit "Phase 2".
 
 ## Phase 3 — Electron becomes a client
-- [ ] 3.1 `src/lib/remote/serverClient.ts`: `ProtocolClient` over WebSocket, reconnect w/ backoff, resubscribe from `lastSeenSeq`. Tests (mock ws).
-- [ ] 3.2 `src/lib/remote/electronApiShim.ts`: `window.electronAPI`-shaped object over the client; tabId⇄sessionId map; legacy channel routing; `session_*` param rewrite. Tests.
-- [ ] 3.3 `src/lib/platform.ts`: dialogs/shell/reveal/window/save_pasted_image/updater behind `platform` with Electron + web impls.
-- [ ] 3.4 Renderer bootstrap: install shim when running in Electron (daemon on localhost) and on web (`location.host`).
-- [ ] 3.5 Electron main: spawn/attach daemon on localhost; keep platform IPC; stop registering session handlers once shim verified. Delete old handlers last, separate commit.
-- [ ] Verification: `npm run check`, `npm test`, `npm run build`, `npm run package` launches.
-- [ ] Commit "Phase 3".
+- [x] 3.1 `src/lib/remote/serverClient.ts`: `ProtocolClient` over WebSocket, reconnect w/ backoff, resubscribe from `lastSeenSeq`. Tests (mock ws).
+- [x] 3.2 `src/lib/remote/electronApiShim.ts`: `window.electronAPI`-shaped object over the client; tabId⇄sessionId map; legacy channel routing; `session_*` param rewrite. Tests.
+- [x] 3.3 `src/lib/platform.ts`: dialogs/shell/reveal/window/save_pasted_image/updater behind `platform` with Electron + web impls.
+- [x] 3.4 Renderer bootstrap: install shim when running in Electron (daemon on localhost) and on web (`location.host`).
+- [x] 3.5 Electron main spawns/attaches the daemon (`electron/remote-launcher.ts`: probe `/healthz` → spawn DETACHED → poll ≤10s → url or null), serves `remote:url` + `notify:show`; preload publishes the bridge as `electronAPI` **and** `__omnifexNative`; `main.tsx` awaits `installRemoteBridge()` before booting React.
+  - **Deferred, deliberately:** the legacy `registerIpcHandlers(...)` service bag in `main.ts` is NOT removed. It is the fallback when `remote:url` is null (`OMNIFEX_REMOTE=0`, `remote.enabled=false`, daemon unreachable). Removing it unattended, without a human having used the app through the daemon, was the wrong risk. **Flip for Greg:** once the app works via the daemon, drop the non-native entries from the `registerIpcHandlers` bag (keep dialog/shell/window/updater/tab-status/one-shot-terminal/codex-auth/notify), stop constructing the sessions service in main, and let the daemon own the DB. Until then both processes share `greychrist.db` (WAL + busy_timeout) and both run the cost/brain sweeps — duplicate work, not corruption.
+  - Verified without a UI: `src/lib/remote/__tests__/shim.integration.test.ts` (gated on `OMNIFEX_DAEMON_URL`) drove the live daemon through the shim on the legacy channel names — `session_start` → `agent-output:<tabId>` frames → Write `permission_request` card → `session_respond_permission` → `result` "ok" → `session_stop` → `session-status stopped`. Found & fixed: `session.kill` must announce `stopped` + `agent-complete` itself (`lifecycle.stop()` removes the handle before the engine exits and `runtime.ts` then suppresses the exit event).
+  - Not verified tonight: the Electron window itself booting through the shim (no interactive display). `npm run check` / `npm run build` / `npm test` pass; the bootstrap falls back to legacy IPC on any failure, so the laptop cannot be left broken by this.
+- [x] Verification: `npm run check`, `npm test`, `npm run build` (package/launch left for Greg — see 3.5).
+- [x] Commit "Phase 3".
 
 ## Phase 4 — Web client build
 - [ ] 4.1 Vite web build config → `dist-web/` with web platform, server URL from `location`.

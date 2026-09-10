@@ -20,34 +20,13 @@
  * per machine — the config is the user's, and so is the risk.
  */
 
-export const ELECTRON_ONLY_CHANNELS: readonly string[] = [
-  'dialog:open',
-  'dialog:save',
-  'shell:openExternal',
-  'reveal_path_in_finder',
-  'save_pasted_image',
-  'window:minimize',
-  'window:maximize',
-  'window:close',
-  'get_app_version',
-  'updater:check',
-  'updater:download',
-  'updater:open',
-  'updater:install',
-  'updater:install-cancel',
-  'cost_report_export_pdf',
-  'cost_report_print_ready',
-  'preview_notification_sound',
-  'one_shot_terminal_spawn',
-  'one_shot_terminal_write',
-  'one_shot_terminal_resize',
-  'one_shot_terminal_kill',
-  'codex_auth_start_login',
-  'codex_auth_cancel_login',
-  'tab_status_publish',
-  'tab_status_remove',
-  'tab_status_list',
-];
+import { NATIVE_INVOKE_CHANNELS } from '../../src/lib/remote/nativeChannels';
+
+/**
+ * Shared with the renderer shim (`src/lib/remote/nativeChannels.ts`) so the
+ * daemon's deny list and the client's native-routing list are one list.
+ */
+export const ELECTRON_ONLY_CHANNELS: readonly string[] = NATIVE_INVOKE_CHANNELS;
 
 /** Reached through `session.*` / `turn.*` / `permission.*` instead. */
 export const TYPED_SESSION_CHANNELS: readonly string[] = [

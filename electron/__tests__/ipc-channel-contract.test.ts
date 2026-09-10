@@ -28,6 +28,9 @@ const DIRECTLY_REGISTERED_CHANNELS = [
   'tab_status_publish',
   'tab_status_remove',
   'tab_status_list',
+  // main.ts — OmniFex Remote (daemon discovery + native notification relay)
+  'remote:url',
+  'notify:show',
 ] as const;
 
 describe('IPC channel contract', () => {

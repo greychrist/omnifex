@@ -38,10 +38,11 @@ function fakeSessions(send: { current: (channel: string, ...args: unknown[]) => 
     sendMessage: vi.fn((id: string, text: string) => { calls.send.push([id, text]); }),
     sendStructuredMessage: vi.fn((id: string, c: unknown[]) => { calls.structured.push([id, c]); }),
     respondPermission: vi.fn((...a: unknown[]) => { calls.respond.push(a); return respondResult; }),
+    // Like the real service: stop() removes the handle and emits NOTHING —
+    // runtime.ts suppresses the engine-exit status once the handle is gone.
     stop: vi.fn((id: string) => {
       calls.stop.push(id);
       active.delete(id);
-      send.current(`session-status:${id}`, { sessionStatus: 'stopped' });
     }),
     interrupt: vi.fn(async (id: string) => { calls.interrupt.push(id); }),
   } as unknown as SessionsService;
@@ -163,6 +164,21 @@ describe('remote handlers', () => {
       { type: 'text', text: 'see' },
       { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AAA=' } },
     ]);
+  });
+
+  it('kill announces the end of the session itself — stopped state and a complete event', async () => {
+    const project = await addProject();
+    await h['session.create']({ projectId: project.projectId }, fakeCtx().ctx);
+    published.length = 0;
+    h['session.kill']({ sessionId: 'sid-1' }, fakeCtx().ctx);
+    expect(published.map((p) => (p.type === 'event' ? `event/${p.kind}` : `${p.type}/${(p as { sessionStatus: string }).sessionStatus}`))).toEqual([
+      'session.state/stopped',
+      'event/complete',
+    ]);
+    // Killing an already-dead session says nothing twice.
+    published.length = 0;
+    h['session.kill']({ sessionId: 'sid-1' }, fakeCtx().ctx);
+    expect(published).toEqual([]);
   });
 
   it('refuses a turn on a session with no live process', async () => {

@@ -11,7 +11,17 @@ import { logAndForget } from "@/lib/fireAndLog";
 import { installRenderProfilerConsole } from "@/lib/renderProfilerConsole";
 import { parsePrintHash } from "@/lib/costReportPrint";
 import { CostReportPrintPage } from "@/components/cost-report/CostReportPrintPage";
+import { installRemoteBridge } from "@/lib/remote/bootstrap";
 
+// Everything below talks to `window.electronAPI`, so the decision about what
+// that object IS — the preload bridge, or the OmniFex Remote shim over a
+// WebSocket — has to land first. A failure here falls back to the preload
+// bridge; nothing about the laptop depends on the daemon.
+void installRemoteBridge()
+  .catch((err: unknown) => { console.warn('[remote] bootstrap failed; legacy IPC', err); })
+  .then(() => { boot(); });
+
+function boot(): void {
 // Initialize structured logging
 logAndForget('main:initialize', logService.initialize());
 
@@ -85,4 +95,5 @@ if (printFilters) {
       </ErrorBoundary>
     </React.StrictMode>,
   );
+}
 }
