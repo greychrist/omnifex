@@ -260,20 +260,24 @@ describe('ClaudeCliEngine — control requests', () => {
   it('rejects with the CLI-supplied text on an error response', async () => {
     const { engine, emit, written } = await started();
     const p = engine.sendControlRequest('set_model', {});
+    // Attach the expectation before the rejection lands, or vitest reports
+    // the momentarily-unhandled rejection as a suite error.
+    const rejected = expect(p).rejects.toThrow('unknown model');
     const id = (written().at(-1) as { request_id: string }).request_id;
     await emit({
       type: 'control_response',
       response: { subtype: 'error', request_id: id, error: 'unknown model' },
     });
-    await expect(p).rejects.toThrow('unknown model');
+    await rejected;
   });
 
   it('rejects with a fallback when an error response carries no text', async () => {
     const { engine, emit, written } = await started();
     const p = engine.sendControlRequest('set_model', {});
+    const rejected = expect(p).rejects.toThrow('unknown control_response error');
     const id = (written().at(-1) as { request_id: string }).request_id;
     await emit({ type: 'control_response', response: { subtype: 'error', request_id: id } });
-    await expect(p).rejects.toThrow('unknown control_response error');
+    await rejected;
   });
 
   it('omits the params spread when none are supplied', async () => {
@@ -301,9 +305,10 @@ describe('ClaudeCliEngine — control requests', () => {
   it('fails every in-flight request when the child exits', async () => {
     const { engine, fake } = await started();
     const p = engine.sendControlRequest('get_context_usage');
+    const rejected = expect(p).rejects.toThrow(/engine exited \(code 1, signal SIGTERM\)/);
     fake.emit('exit', 1, 'SIGTERM');
     await flush();
-    await expect(p).rejects.toThrow(/engine exited \(code 1, signal SIGTERM\)/);
+    await rejected;
   });
 
   it('drives interrupt through the control channel', async () => {
