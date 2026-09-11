@@ -142,7 +142,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
   const pressureExplanation = (() => {
     const describe = (limit: number, label: string) => {
       const budget = resolveBudgetTokens(contextPressure, limit);
-      return `${label}: amber at ${formatTokens(Math.floor(budget * 0.8))}, red at ${formatTokens(budget)}`;
+      return `${label}: amber at ${formatTokens(Math.floor(budget * 0.8))}, compact at ${formatTokens(budget)}`;
     };
     return `${describe(1_000_000, "1M session")} · ${describe(200_000, "200k session")}.`;
   })();
@@ -552,17 +552,17 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
             </div>
           </div>
 
-          {/* Session gauges — the context-pressure banner and the prompt-cache
+          {/* Session gauges — the context budget and the prompt-cache
               countdown. Both persist in app_settings and apply live to open
               sessions (see SessionGaugesContext). */}
           <div className="border-t border-border pt-4 mt-2" />
           <div className="space-y-3">
             <div>
-              <Label>Context pressure banner</Label>
+              <Label>Context budget</Label>
               <p className="text-caption text-muted-foreground mt-1">
-                Shows a banner across the top of a session once its context
-                passes your budget. Click the banner to run <code>/compact</code>.
-                Amber at 80% of the budget, red at 100%.
+                Tints the session's context meter amber at 80% of your budget,
+                and raises a <code>/compact</code> prompt above the composer at
+                100%.
               </p>
             </div>
 
@@ -636,10 +636,12 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
 
             <div className="flex items-center justify-between">
               <div className="space-y-1">
-                <Label htmlFor="context-jump-enabled">Flag large single-turn jumps</Label>
+                <Label htmlFor="context-jump-enabled">Track per-turn context growth</Label>
                 <p className="text-caption text-muted-foreground">
-                  Notes when one turn adds a lot of context at once — a skill or
-                  file load. A turn-count habit can’t catch these; only a delta can.
+                  Logs what each turn added to context, in the transcript gutter
+                  and the session widget, and highlights any turn past the
+                  threshold below — usually a skill or file load. A turn-count
+                  habit can’t catch these; only a delta can.
                 </p>
               </div>
               <Switch

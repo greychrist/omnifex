@@ -2,9 +2,9 @@ import { describe, it, expect } from 'vitest';
 import type { JsonlNode } from '@/types/jsonl';
 import { deriveThinkingStatus } from '../thinkingStatus';
 
-const thinkingTokens = (estimated_tokens: number): JsonlNode =>
+const thinkingTokens = (estimated_tokens: number, receivedAt = ''): JsonlNode =>
   ({
-    kind: 'system', subtype: 'thinking_tokens', sessionId: '', receivedAt: '',
+    kind: 'system', subtype: 'thinking_tokens', sessionId: '', receivedAt,
     raw: { type: 'system', subtype: 'thinking_tokens', estimated_tokens },
   }) as unknown as JsonlNode;
 
@@ -30,7 +30,7 @@ describe('deriveThinkingStatus', () => {
   it('reports the running total while a burst is streaming', () => {
     expect(
       deriveThinkingStatus([userText('hi'), thinkingTokens(50), thinkingTokens(1300)]),
-    ).toEqual({ tokens: 1300 });
+    ).toEqual({ tokens: 1300, startedAt: null });
   });
 
   it('returns null for an empty transcript', () => {
@@ -51,7 +51,7 @@ describe('deriveThinkingStatus', () => {
     // out mid-thought.
     expect(
       deriveThinkingStatus([thinkingTokens(600), status('requesting')]),
-    ).toEqual({ tokens: 600 });
+    ).toEqual({ tokens: 600, startedAt: null });
   });
 
   it('returns null when the session never thought', () => {
@@ -64,5 +64,28 @@ describe('deriveThinkingStatus', () => {
       raw: { type: 'system', subtype: 'thinking_tokens' },
     }) as unknown as JsonlNode;
     expect(deriveThinkingStatus([malformed])).toBeNull();
+  });
+});
+
+describe('deriveThinkingStatus — burst start', () => {
+  it('times the burst from its first ping, not its most recent', () => {
+    // The elapsed counter has to keep climbing as pings arrive. Reading the
+    // newest ping's timestamp would reset it to zero every few hundred tokens.
+    const status = deriveThinkingStatus([
+      thinkingTokens(200, '2026-09-11T10:00:00Z'),
+      thinkingTokens(900, '2026-09-11T10:00:12Z'),
+    ]);
+
+    expect(status).toEqual({ tokens: 900, startedAt: Date.parse('2026-09-11T10:00:00Z') });
+  });
+
+  it('restarts the clock on a new burst', () => {
+    const status = deriveThinkingStatus([
+      thinkingTokens(900, '2026-09-11T10:00:00Z'),
+      assistantText('done'),
+      thinkingTokens(100, '2026-09-11T10:05:00Z'),
+    ]);
+
+    expect(status?.startedAt).toBe(Date.parse('2026-09-11T10:05:00Z'));
   });
 });

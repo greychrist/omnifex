@@ -1,7 +1,8 @@
 import React from "react";
 import { cn } from "@/lib/utils";
 import { formatTokens, type ContextPressureLevel } from "@/lib/contextPressure";
-import type { ContextTimelinePoint } from "@/lib/contextTimeline";
+import { showsGutterDelta, type ContextTimelinePoint } from "@/lib/contextTimeline";
+import type { ViewMode } from "@/components/SessionViewToggle";
 
 /**
  * Green / amber / red by proximity to the budget, so a long session can be
@@ -31,6 +32,8 @@ const BAR_BG: Record<ContextPressureLevel, string> = {
 export interface ContextTimelineTickProps {
   /** Undefined for rows before the first usage reading. */
   point: ContextTimelinePoint | undefined;
+  /** Compact hides sub-2k deltas; Verbose prints every one. */
+  viewMode?: ViewMode;
 }
 
 /** Width of the gutter cell. Shared so the empty and drawn states agree. */
@@ -57,18 +60,29 @@ const RESET_DASHES =
  *
  * See docs/superpowers/specs/2026-07-30-context-timeline-design.md
  */
-export const ContextTimelineTick: React.FC<ContextTimelineTickProps> = ({ point }) => {
+export const ContextTimelineTick: React.FC<ContextTimelineTickProps> = ({
+  point,
+  viewMode = 'verbose',
+}) => {
   // The cell keeps its width before the series starts. Returning null instead
   // un-indented the opening rows while every later row was pushed right by the
   // gutter, which read as the transcript jogging sideways partway down.
   if (!point) return <div className={GUTTER} aria-hidden="true" />;
 
-  const { tokens, delta, isSample, isJump, isReset, fraction, level } = point;
+  const { tokens, delta, prevTokens, isSample, isJump, isReset, fraction, level } = point;
+
+  // The delta a reset row prints is measured across the compaction, which is
+  // why it comes from prevTokens rather than `delta` (null there by design).
+  const shownDelta = isReset && prevTokens !== null ? tokens - prevTokens : delta;
+  const showDelta = isSample && showsGutterDelta(shownDelta, viewMode);
+
+  const beforeAfter =
+    prevTokens !== null ? `${formatTokens(prevTokens)} → ${formatTokens(tokens)}` : null;
 
   const title = isReset
-    ? `Context ${formatTokens(tokens)} — reset by /compact`
-    : isSample && delta !== null
-      ? `Context ${formatTokens(tokens)} (${delta >= 0 ? '+' : ''}${formatTokens(delta)} this step)`
+    ? `Context ${formatTokens(tokens)} — reset by /compact${beforeAfter ? ` (${beforeAfter})` : ''}`
+    : isSample && beforeAfter
+      ? `Context ${formatTokens(tokens)} (${beforeAfter})`
       : `Context ${formatTokens(tokens)}`;
 
   return (
@@ -115,10 +129,20 @@ export const ContextTimelineTick: React.FC<ContextTimelineTickProps> = ({ point 
               style={{ width: `${fraction * 100}%` }}
             />
           </div>
-          {/* Only jumps get a delta. Labelling every step turns the rail into noise. */}
-          {isJump && delta !== null && (
-            <span className="font-mono text-[10px] leading-none text-amber-600 dark:text-amber-400">
-              ▲ +{formatTokens(delta)}
+          {/* Every turn's delta, not just the jumps — this is now the only
+              inline home for context growth, since the banner that used to
+              announce it is gone. Compact mode drops the sub-2k noise that
+              made "label every step" a bad idea the first time round. */}
+          {showDelta && shownDelta !== null && (
+            <span
+              className={cn(
+                "font-mono text-[10px] leading-none tabular-nums",
+                isJump
+                  ? "text-amber-600 dark:text-amber-400"
+                  : "text-muted-foreground",
+              )}
+            >
+              {shownDelta >= 0 ? `+${formatTokens(shownDelta)}` : `−${formatTokens(-shownDelta)}`}
             </span>
           )}
           {isReset && (

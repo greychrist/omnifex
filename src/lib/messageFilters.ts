@@ -127,7 +127,7 @@ export function filterDisplayableMessages(
 
     // Collapse each `system:thinking_tokens` burst to its final ping — see
     // lastThinkingTokensPerBurst. The survivor carries the burst total; the
-    // live running count is the ThinkingBar's job, not the transcript's.
+    // live running count is the activity pill's job, not the transcript's.
     if (message.kind === "system" && message.subtype === "thinking_tokens") {
       return keptThinkingTokens.has(index);
     }

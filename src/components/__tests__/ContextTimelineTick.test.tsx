@@ -12,6 +12,7 @@ afterEach(() => {
 const point = (over: Partial<ContextTimelinePoint> = {}): ContextTimelinePoint => ({
   tokens: 120_000,
   delta: 20_000,
+  prevTokens: 100_000,
   isSample: true,
   isJump: false,
   isReset: false,
@@ -50,9 +51,14 @@ describe('ContextTimelineTick', () => {
     expect(screen.getByText(/\+325k/)).toBeInTheDocument();
   });
 
-  it('does not label an ordinary step with its delta', () => {
+  it('labels an ordinary step with its delta', () => {
+    // Reversed deliberately. This used to assert the opposite, because the
+    // rail was one of several places context growth was reported and the
+    // banner carried the ordinary case. The banner is gone; the rail is now
+    // the only inline home for a delta, so every step gets one and Compact
+    // mode does the noise filtering instead.
     render(<ContextTimelineTick point={point()} />);
-    expect(screen.queryByText(/\+20k/)).toBeNull();
+    expect(screen.getByText('+20k')).toBeInTheDocument();
   });
 
   it('marks a post-compaction reset', () => {
@@ -66,9 +72,9 @@ describe('ContextTimelineTick', () => {
     expect(bar).toHaveStyle({ width: '42%' });
   });
 
-  it('exposes the step detail as a tooltip', () => {
-    render(<ContextTimelineTick point={point({ isJump: true, delta: 325_000 })} />);
-    expect(screen.getByTitle(/325k/)).toBeInTheDocument();
+  it('exposes before → after as a tooltip', () => {
+    render(<ContextTimelineTick point={point({ isJump: true, delta: 325_000, prevTokens: 477_000, tokens: 802_000 })} />);
+    expect(screen.getByTitle(/477k → 802k/)).toBeInTheDocument();
   });
 });
 
@@ -225,20 +231,55 @@ describe('ContextTimelineTick — readout order', () => {
 
   it('puts the size above the bar', () => {
     const { container } = render(<ContextTimelineTick point={point()} />);
-    expect(orderOf(container)).toEqual(['120k', 'bar']);
+    expect(orderOf(container)).toEqual(['120k', 'bar', '+20k']);
   });
 
   it('keeps the jump delta below the bar', () => {
     const { container } = render(
       <ContextTimelineTick point={point({ isJump: true, delta: 325_000 })} />,
     );
-    expect(orderOf(container)).toEqual(['120k', 'bar', '▲ +325k']);
+    expect(orderOf(container)).toEqual(['120k', 'bar', '+325k']);
   });
 
   it('keeps the compacted label below the bar', () => {
     const { container } = render(
       <ContextTimelineTick point={point({ isReset: true, delta: null })} />,
     );
-    expect(orderOf(container)).toEqual(['120k', 'bar', 'compacted']);
+    expect(orderOf(container)).toEqual(['120k', 'bar', '+20k', 'compacted']);
+  });
+});
+
+describe('ContextTimelineTick — per-turn delta', () => {
+  it('prints the delta on an ordinary step, not just on a jump', () => {
+    render(<ContextTimelineTick point={point({ delta: 8_000, isJump: false })} />);
+    expect(screen.getByText('+8k')).toBeInTheDocument();
+  });
+
+  it('prints the drop across a compaction from prevTokens', () => {
+    // `delta` is null on a reset row by design, so the number has to be
+    // reconstructed or the most interesting row in the rail shows nothing.
+    render(
+      <ContextTimelineTick
+        point={point({ tokens: 80_000, prevTokens: 500_000, delta: null, isReset: true })}
+      />,
+    );
+
+    expect(screen.getByText('−420k')).toBeInTheDocument();
+    expect(screen.getByText('compacted')).toBeInTheDocument();
+  });
+
+  it('hides sub-2k deltas in Compact and shows them in Verbose', () => {
+    const { rerender } = render(
+      <ContextTimelineTick point={point({ delta: 900 })} viewMode="compact" />,
+    );
+    expect(screen.queryByText('+900')).not.toBeInTheDocument();
+
+    rerender(<ContextTimelineTick point={point({ delta: 900 })} viewMode="verbose" />);
+    expect(screen.getByText('+900')).toBeInTheDocument();
+  });
+
+  it('offers before → after on hover', () => {
+    const { container } = render(<ContextTimelineTick point={point()} />);
+    expect(container.firstElementChild).toHaveAttribute('title', expect.stringContaining('100k → 120k'));
   });
 });

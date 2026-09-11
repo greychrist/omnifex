@@ -479,7 +479,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
       // numeric estimate — so its body is synthesized from `estimated_tokens`.
       // Past tense: `messageFilters` collapses each burst to its final ping, so
       // the only one that ever reaches the transcript is the burst's total. The
-      // live running count is the ThinkingBar's job.
+      // live running count is the session widget's activity pill.
       // feedback_draft_queued carries no narrative field either: the draft body
       // stays on disk under <CLAUDE_CONFIG_DIR>/feedback/drafts/ and only the
       // card's display fields cross the wire. Body is `<type> · <title>` plus

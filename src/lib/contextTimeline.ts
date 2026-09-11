@@ -16,13 +16,29 @@ import {
 } from '@/lib/contextPressure';
 
 export const CONTEXT_TIMELINE_ENABLED_SETTING_KEY = 'context_timeline_enabled';
-export const DEFAULT_CONTEXT_TIMELINE_ENABLED = false;
+/**
+ * On by default since the session-signals refactor.
+ *
+ * It shipped off, as an opt-in retrospective view, while the banner stack
+ * carried context growth for everyone else. With the banners gone the rail is
+ * the only inline place a delta appears, so leaving it off would have meant the
+ * default user silently lost the "this prompt added 325k" signal entirely.
+ */
+export const DEFAULT_CONTEXT_TIMELINE_ENABLED = true;
 
 export interface ContextTimelinePoint {
   /** Context size at this row; carried forward between samples. */
   tokens: number;
   /** Growth vs the previous sample. Null at carried-forward rows and resets. */
   delta: number | null;
+  /**
+   * The previous sample's total, carried even where `delta` is null.
+   *
+   * The rail needs to print the drop on a compaction row ("−420k"), but `delta`
+   * has to stay null there or `isJump` and the level colouring would start
+   * treating a reset as a step. Two fields, two meanings.
+   */
+  prevTokens: number | null;
   /** True only where a real usage reading exists. */
   isSample: boolean;
   /** A sample whose delta met the jump threshold. */
@@ -83,6 +99,7 @@ export function buildContextTimeline(
         points.set(node, {
           tokens: lastTotal,
           delta: null,
+          prevTokens: null,
           isSample: false,
           isJump: false,
           isReset: false,
@@ -95,12 +112,14 @@ export function buildContextTimeline(
 
     const isReset = pendingReset;
     const delta = isReset || lastTotal === null ? null : total - lastTotal;
+    const prevTokens = lastTotal;
     pendingReset = false;
     lastTotal = total;
 
     points.set(node, {
       tokens: total,
       delta,
+      prevTokens,
       isSample: true,
       isJump: delta !== null && delta >= jumpThresholdTokens,
       isReset,
@@ -116,4 +135,24 @@ export function buildContextTimeline(
 function windowFraction(tokens: number, limit: number): number {
   if (!Number.isFinite(limit) || limit <= 0) return 0;
   return Math.min(1, Math.max(0, tokens / limit));
+}
+
+/**
+ * Smallest gutter delta worth a row in Compact output mode.
+ *
+ * Most turns move context by a few hundred tokens. Printing all of them turns
+ * the rail into a column of noise that hides the one row that matters, which is
+ * the same failure the old jump banner existed to avoid. Verbose mode prints
+ * every delta, because that is what Verbose means.
+ */
+export const COMPACT_MODE_MIN_DELTA_TOKENS = 2_000;
+
+/** Does this delta earn a line in the gutter under the current output mode? */
+export function showsGutterDelta(
+  delta: number | null,
+  viewMode: 'compact' | 'verbose',
+): boolean {
+  if (delta === null || delta === 0) return false;
+  if (viewMode === 'verbose') return true;
+  return Math.abs(delta) >= COMPACT_MODE_MIN_DELTA_TOKENS;
 }

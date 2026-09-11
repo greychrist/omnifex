@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { JsonlNode } from '@/types/jsonl';
-import { buildContextTimeline } from '../contextTimeline';
+import { buildContextTimeline, showsGutterDelta } from '../contextTimeline';
 import { DEFAULT_CONTEXT_PRESSURE } from '../contextPressure';
 
 const LIMIT = 1_000_000;
@@ -201,5 +201,46 @@ describe('buildContextTimeline — pressure level', () => {
     const t = buildContextTimeline([before, compactBoundary(), after], opts);
     expect(t.get(before)?.level).toBe('critical');
     expect(t.get(after)?.level).toBe('none');
+  });
+});
+
+describe('buildContextTimeline — previous reading', () => {
+  it('carries the previous sample so a row can show its own delta', () => {
+    const messages = [assistant(100_000), assistant(180_000)];
+    const points = buildContextTimeline(messages, opts);
+
+    expect(points.get(messages[0])?.prevTokens).toBeNull();
+    expect(points.get(messages[1])?.prevTokens).toBe(100_000);
+  });
+
+  it('carries it across a compaction, where `delta` is deliberately null', () => {
+    // The rail needs to print "−420k" on the reset row, but `delta` stays null
+    // there so `isJump` and the level colouring keep their meaning.
+    const messages = [assistant(500_000), compactBoundary(), assistant(80_000)];
+    const points = buildContextTimeline(messages, opts);
+
+    const reset = points.get(messages[2]);
+    expect(reset?.isReset).toBe(true);
+    expect(reset?.delta).toBeNull();
+    expect(reset?.prevTokens).toBe(500_000);
+  });
+});
+
+describe('showsGutterDelta', () => {
+  it('prints every non-zero delta in Verbose', () => {
+    expect(showsGutterDelta(120, 'verbose')).toBe(true);
+    expect(showsGutterDelta(-120, 'verbose')).toBe(true);
+  });
+
+  it('hides sub-2k noise in Compact, by magnitude not sign', () => {
+    expect(showsGutterDelta(1_999, 'compact')).toBe(false);
+    expect(showsGutterDelta(-1_999, 'compact')).toBe(false);
+    expect(showsGutterDelta(2_000, 'compact')).toBe(true);
+    expect(showsGutterDelta(-2_000, 'compact')).toBe(true);
+  });
+
+  it('has nothing to print with no reading or no movement', () => {
+    expect(showsGutterDelta(null, 'verbose')).toBe(false);
+    expect(showsGutterDelta(0, 'verbose')).toBe(false);
   });
 });

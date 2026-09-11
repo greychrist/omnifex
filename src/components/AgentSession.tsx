@@ -15,15 +15,15 @@ import { SessionInspectorPanel } from "@/components/SessionInspectorPanel";
 import { Button } from "@/components/ui/button";
 import { Popover } from "@/components/ui/popover";
 import { api, type Session, type RateLimitSnapshot, type Account, type ResolvePair, type SessionMode, type AccountMismatch } from "@/lib/api";
-import { AccountMismatchBanner } from "@/components/AccountMismatchBanner";
-import { ContextPressureBanner } from "@/components/ContextPressureBanner";
+import { AttentionSlot } from "@/components/AttentionSlot";
+import { SignalBadge } from "@/components/signals/SignalBadge";
 import { useSessionGauges } from "@/contexts/SessionGaugesContext";
+import { useSessionSignals } from "@/hooks/useSessionSignals";
+import { POPOVER_EVENT_LIMIT } from "@/lib/signals/store";
 import { resolveContextLimit } from "@/lib/contextLimit";
-import { evaluateContextPressure, selectContextTokens } from "@/lib/contextPressure";
+import { selectContextTokens } from "@/lib/contextPressure";
 import { observeCacheTtlMs, lastAssistantAnchorMs, lastCacheTtlChange } from "@/lib/cacheExpiry";
 import { latestMcpServerErrors } from "@/lib/mcpServerErrors";
-import { evaluateContextJump } from "@/lib/turnDelta";
-import { SessionNotices } from "@/components/SessionNotices";
 import { useAccountVerdict } from "@/hooks/useAccountVerdict";
 import { resolveSessionVerification } from "@/lib/accountVerification";
 import { cn } from "@/lib/utils";
@@ -58,8 +58,6 @@ import type { JsonlNode } from "@/types/jsonl";
 import { normalizeJsonlNode } from "@/lib/normalizeMessage";
 import { classifyJsonlLine } from '@/lib/jsonlClassifier';
 import { lastPermissionMode, lastAssistantModel, usageLimitWait } from '@/lib/sessionDerivedState';
-import { UsageLimitBanner } from "./claude-code-session/UsageLimitBanner";
-import { ThinkingBar } from "./claude-code-session/ThinkingBar";
 import { CaughtUpPill } from "./RemoteConnectionBanner";
 import { useLayoutMode } from "@/hooks/useLayoutMode";
 import { useSwipeTabs } from "@/hooks/useSwipeTabs";
@@ -1032,6 +1030,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   // shared selector, so a banner and a gauge can never disagree.
   const {
     contextPressure: contextPressureSetting,
+    setContextPressure,
     cacheTimerEnabled,
     contextJump: contextJumpSetting,
   } = useSessionGauges();
@@ -1060,13 +1059,9 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     [messages, cacheTimerEnabled],
   );
 
-  // Informational notices. Both self-clear from their own data — the jump when
-  // an ordinary turn lands, the TTL change when a later turn writes cache — so
-  // neither needs dismissal state.
-  const contextJump = useMemo(
-    () => evaluateContextJump({ messages, setting: contextJumpSetting }),
-    [messages, contextJumpSetting],
-  );
+  // The TTL change still self-clears from its own data; the context jump moved
+  // into the signal emitters, which derive the whole per-turn series rather
+  // than only the current turn.
   const cacheTtlChange = useMemo(
     () => (cacheTimerEnabled ? lastCacheTtlChange(messages) : null),
     [messages, cacheTimerEnabled],
@@ -1481,21 +1476,11 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   const isSessionStarting = sessionStatus === 'starting';
   const isSessionActive = sessionStatus === 'started';
 
-  // Context-pressure banner. Gated on isSessionActive — the strict 'started'
-  // predicate — NOT on `sessionStarted` (= "not stopped"), which is also true
-  // while dialing and after a failed start. Its only action is running
-  // /compact, which a session whose CLI isn't up cannot do: gating it loosely
-  // flashed an un-actionable banner while a resumed session dialed, then
-  // yanked it away when the resume failed.
-  const contextPressure = useMemo(
-    () => evaluateContextPressure({
-      tokens: gaugeTokens,
-      limit: contextLimit,
-      setting: contextPressureSetting,
-      sessionLive: isSessionActive,
-    }),
-    [gaugeTokens, contextLimit, contextPressureSetting, isSessionActive],
-  );
+  // Context pressure now flows through the signal emitters (see `signals`
+  // below). The `isSessionActive` gate travels with it as `sessionLive`: it is
+  // the strict 'started' predicate, NOT `sessionStarted` (= "not stopped"),
+  // which is also true while dialing and after a failed start. The only action
+  // on offer is /compact, which a session whose CLI isn't up cannot run.
   // "Has the user committed to a session in this tab?" Gates the
   // NewSessionForm empty-state vs. the chat view. The hook seeds
   // sessionStatus to 'starting' at mount when there's a session to
@@ -2174,6 +2159,56 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
         : undefined;
 
 
+  /**
+   * Every notice this session can raise, as routed signals.
+   *
+   * This replaced a stack of five banners above the transcript. Each of them
+   * now lands on the widget it is about — the context meter, the MCP button,
+   * the account card — and only a genuine call to action reaches the
+   * AttentionSlot above the composer.
+   *
+   * Nothing is pushed here: `deriveSessionSignals` is a pure function of state
+   * this component already holds, which is why a session resumed over the
+   * remote protocol rebuilds its signals with no replay path of its own.
+   */
+  const signals = useSessionSignals({
+    tabId: tabIdRef.current,
+    messages,
+    contextTokens: gaugeTokens,
+    contextLimit,
+    pressureSetting: contextPressureSetting,
+    jumpSetting: contextJumpSetting,
+    sessionLive: isSessionActive,
+    turnInFlight: isLoading,
+    cacheTtlChange,
+    mcpErrors: mcpServerErrors,
+    usageLimitResetsAt,
+    accountMismatch,
+    // Only when restarting would actually change the credentials in use. If the
+    // expectation was simply corrected, the running session is already right.
+    accountRestartable: sessionVerification?.needsRestart === true,
+    handlers: {
+      onCompact: handleCompact,
+      // Supplied by the hook, which owns the per-tab offset.
+      onSnoozeBoundary: () => {},
+      onRaiseContextBudget: (tokens) => {
+        // "Raise limit" writes the shared budget, so it applies to every
+        // session. Snooze is the per-session escape hatch; these are
+        // deliberately different verbs for deliberately different scopes.
+        void setContextPressure({ ...contextPressureSetting, mode: 'tokens', value: tokens });
+      },
+      onRestartSession: () => { void handleRestartSession(); },
+    },
+  });
+
+  const sessionActivity = signals.stateFor('session.activity');
+  const contextLevel = signals.stateFor('context.level');
+  const sessionUnread = signals.unreadFor('session');
+  const sessionEvents = signals.eventsFor('session', POPOVER_EVENT_LIMIT);
+  const sessionAction = signals.actionsFor('session')[0] ?? null;
+  const accountUnread = signals.unreadFor('account');
+  const mcpUnread = signals.unreadFor('mcp');
+
   // Three-state display badge (legacy) derived from the canonical
   // SessionStatus enum + `sessionStarted` (has-the-user-ever-engaged).
   // 5→3 collapse: 'starting' | 'started' (session) + 'idle' | 'running'
@@ -2249,6 +2284,11 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
               AgentBadge removed; access to the account picker moves
               to the AccountCard's existing details popover (future work). */}
           {accountResolution && (
+            <div className="relative flex">
+              {/* Wrapper rather than a prop: AccountCard is shared with the
+                  projects list, which has no session and therefore no signals.
+                  Badging from outside keeps that caller unchanged. */}
+              <SignalBadge count={accountUnread} label="account" />
             <AccountCard
               accountName={accountResolution.account.name}
               hasCost={accountResolution.account.has_cost}
@@ -2271,6 +2311,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
               sessionId={claudeSessionId}
               projectPath={projectPath}
             />
+            </div>
           )}
           {gitStatus?.branch && (
             <div
@@ -2339,6 +2380,12 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
           {/* mode and output-style controls have moved to the chat bar (see FloatingPromptInput below). */}
           <SessionCard
             className="ml-auto min-w-0"
+            activitySignal={sessionActivity}
+            contextLevelSignal={contextLevel}
+            unreadEvents={sessionUnread}
+            pendingAction={sessionAction}
+            recentEvents={sessionEvents}
+            onSignalsRead={() => { signals.markRead('session'); }}
             totalTokens={totalTokens}
             model={selectedModel}
             defaultModel={accountDefaultModel}
@@ -2461,43 +2508,11 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
             <div className="absolute left-1/2 -translate-x-1/2 bottom-0 h-0.5 w-12 rounded-full bg-foreground/15 transition-colors group-hover:bg-foreground/40" />
           </div>
         </div>
-        {/* Sits outside the header, which carries an explicit resizable
-            height — putting the banner inside would eat the user's layout. */}
-        <AccountMismatchBanner
-          mismatch={accountMismatch}
-          onDismiss={() => { setAccountMismatch(null); }}
-          // Only offer a restart when it would actually change something. If
-          // the expectation was corrected and now matches the running session,
-          // needsRestart is false and the button stays away.
-          onRestart={
-            sessionVerification?.needsRestart
-              ? () => { void handleRestartSession(); }
-              : null
-          }
-          restarting={restartingSession}
-        />
-        {/* Stacks under the account banner, in the same slot outside the
-            resizable header. Not dismissible by design — see the spec.
-            No render-site gate: `contextPressure` already resolves to 'none'
-            unless the session is live, and a second gate here could only
-            disagree with it. */}
-        <ContextPressureBanner
-          pressure={contextPressure}
-          tokens={gaugeTokens}
-          limit={contextLimit}
-          busy={isLoading}
-          onCompact={fireAndLog('claude-code-session:compact', handleCompact)}
-        />
-        {/* Same live-session gate as the banner: these describe what just
-            happened in a running session, and a transcript loaded from disk
-            shouldn't announce a jump that happened days ago. */}
-        {isSessionActive && (
-          <SessionNotices
-            jump={contextJump}
-            ttlChange={cacheTtlChange}
-            mcpErrors={mcpServerErrors}
-          />
-        )}
+        {/* The banner stack that used to live here — account mismatch, context
+            pressure, context jump, cache TTL, skipped MCP servers — is gone.
+            Each of those is now a signal routed to the widget it concerns, and
+            the one kind that still needs space (an action) renders once, in the
+            AttentionSlot above the composer. */}
         {shouldShowNewSessionPanel({ sessionStarted, hasTranscript: messages.length > 0 }) && (
           <div className="flex-1 flex items-center justify-center p-8">
             <NewSessionForm
@@ -2696,14 +2711,10 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
             </button>
           )}
           <div className="h-full flex flex-col">
-            {/* Pinned above the transcript, where the eye already is while
-                waiting on a reply. Zero height unless a thinking burst is in
-                flight. Gated on `isLoading` (CLI turn state) rather than
-                session liveness: an interrupted turn leaves a thinking_tokens
-                ping as the permanent tail of the transcript, which would
-                otherwise pin the bar open. Right padding clears the inspector
-                toggle floating in the corner. */}
-            <ThinkingBar messages={messages} isLive={isLoading} className="border-b border-violet-500/20 pr-12" />
+            {/* The thinking bar that used to sit here is now the session
+                widget's activity pill ("thinking 12s"), which costs no
+                transcript height and keeps the elapsed clock visible while
+                scrolled anywhere. The token count moved to its tooltip. */}
             {sessionMode === 'tui' ? (
               <TuiSessionLayout tabId={tabIdRef.current} />
             ) : (
@@ -2850,12 +2861,16 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
               messages={messages}
               isLive={isSessionActive || isSessionStarting}
             />
+            {/* Directly above the subagents bar, and matching its row height so
+                the two read as one group. Renders nothing — not an empty box —
+                when the queue is empty. The usage-limit wait that used to have
+                its own banner here is now the activity pill's `limit · 2h`. */}
+            <AttentionSlot queue={signals.queue} onDismiss={signals.dismiss} />
             <SubagentBar
               subagents={subagents}
               onDismiss={dismissSubagent}
               onDismissAllCompleted={dismissAllCompletedSubagents}
             />
-            <UsageLimitBanner resetsAt={usageLimitResetsAt} />
             <FloatingPromptInput
               ref={floatingPromptRef}
               // In TUI mode, route the prompt straight into the CLI's PTY —
@@ -2948,10 +2963,15 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
                     />
                   )}
                   <TooltipSimple content="MCP Servers" side="top">
+                    {/* `relative` hosts the unread badge. Servers the CLI
+                        skipped over a bad config are the only emitter on this
+                        anchor today; they used to get a banner of their own. */}
                     <motion.div
+                      className="relative"
                       whileTap={{ scale: 0.97 }}
                       transition={{ duration: 0.15 }}
                     >
+                      <SignalBadge count={mcpUnread} label="MCP" />
                       <Button
                         variant="ghost"
                         size="icon"

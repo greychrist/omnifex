@@ -152,7 +152,7 @@ function ClaudeTranscriptImpl({
     if (!timeline) return body;
     return (
       <div className="flex gap-2">
-        <ContextTimelineTick point={node ? timeline.get(node) : undefined} />
+        <ContextTimelineTick point={node ? timeline.get(node) : undefined} viewMode={viewMode} />
         <div className="flex-1 min-w-0 pb-4">{body}</div>
       </div>
     );

@@ -9,6 +9,33 @@ import { Button } from "@/components/ui/button";
 import { HeaderLabel } from "./HeaderLabel";
 import { CacheTimerRow } from "./CacheTimerRow";
 import { fireAndLog } from "@/lib/fireAndLog";
+import { ActivityPill } from "./signals/ActivityPill";
+import { SignalBadge } from "./signals/SignalBadge";
+import { SignalActionCard } from "./signals/SignalActionCard";
+import { SignalEventLog } from "./signals/SignalEventLog";
+import { formatTokens, type ContextPressureLevel } from "@/lib/contextPressure";
+import type { SessionSignal } from "@/lib/signals/types";
+
+/**
+ * Meter colour by proximity to the compaction boundary.
+ *
+ * Read from `context.level`, which resolves the user's configured budget —
+ * never from a hardcoded percentage of the window. The two are not the same
+ * scale: a 250k budget on a 1M window is critical at 25% full, and a meter
+ * colouring by window percentage would still be showing green there while the
+ * attention slot asked the user to compact.
+ */
+const METER_FILL: Record<ContextPressureLevel, string> = {
+  none: "bg-emerald-500",
+  warn: "bg-amber-500",
+  critical: "bg-red-500",
+};
+
+const METER_TEXT: Record<ContextPressureLevel, string> = {
+  none: "text-foreground",
+  warn: "text-amber-500",
+  critical: "text-red-500",
+};
 
 // Palette for context-usage categories. Each category comes with its own
 // `color` from the CLI, but those default colors sometimes clash with our
@@ -63,6 +90,19 @@ interface SessionCardProps {
    *  rendered in thin small type above the context gauge so the live state is
    *  visible without opening the popover. */
   controlsSummary?: string | null;
+  /** `session.activity` state signal — drives the second status pill. */
+  activitySignal?: SessionSignal;
+  /** `context.level` state signal — drives the meter's colour and the
+   *  compact-at readout. Falls back to an uncoloured meter when absent. */
+  contextLevelSignal?: SessionSignal;
+  /** Unread `event`s anchored to `session`. */
+  unreadEvents?: number;
+  /** A pending `action` anchored here, mirrored as a card atop the popover. */
+  pendingAction?: SessionSignal | null;
+  /** The anchor's recent events, newest first, already limited by the caller. */
+  recentEvents?: SessionSignal[];
+  /** Called when the popover opens, so the caller can clear the unread badge. */
+  onSignalsRead?: () => void;
   className?: string;
 }
 
@@ -88,6 +128,12 @@ export function SessionCard({
   sessionId,
   controls,
   controlsSummary,
+  activitySignal,
+  contextLevelSignal,
+  unreadEvents = 0,
+  pendingAction = null,
+  recentEvents = [],
+  onSignalsRead,
   className,
 }: SessionCardProps) {
   const [contextPopoverOpen, setContextPopoverOpen] = React.useState(false);
@@ -152,6 +198,10 @@ export function SessionCard({
             </span>
           );
         })()}
+        {/* Second pill, deliberately below rather than merged into the one
+            above: that reports whether the CLI process is up (main-process
+            owned), this reports what the session is doing. */}
+        <ActivityPill signal={activitySignal} />
       </div>
 
       {(() => {
@@ -164,7 +214,13 @@ export function SessionCard({
         const limit = resolveContextLimit({ sdkMaxTokens: sdkLimit, model, defaultModel });
         if (tokens <= 0 || limit <= 0) return null;
         const pct = Math.min(100, (tokens / limit) * 100);
-        const color = pct > 80 ? "text-red-400" : pct > 50 ? "text-orange-400" : "text-foreground";
+        const levelMeta = contextLevelSignal?.meta as
+          | { level?: ContextPressureLevel; budgetTokens?: number; budgetPct?: number }
+          | undefined;
+        const level: ContextPressureLevel = levelMeta?.level ?? "none";
+        const color = METER_TEXT[level];
+        const budgetTokens = levelMeta?.budgetTokens ?? 0;
+        const budgetPct = levelMeta?.budgetPct ?? 0;
 
         const FREE_COLOR = "rgba(148, 163, 184, 0.35)";
         const isFreeCategory = (name: string) =>
@@ -207,7 +263,12 @@ export function SessionCard({
             </HeaderLabel>
           <Popover
             open={contextPopoverOpen}
-            onOpenChange={setContextPopoverOpen}
+            onOpenChange={(next) => {
+              setContextPopoverOpen(next);
+              // Opening the popover IS reading the events — a separate
+              // "mark read" control would be one more thing to forget.
+              if (next) onSignalsRead?.();
+            }}
             align="end"
             side="bottom"
             className="w-96"
@@ -220,15 +281,26 @@ export function SessionCard({
                   "bg-background shadow-[0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_45%,transparent)]",
                 )}
               >
+                <SignalBadge count={unreadEvents} label="session" />
                 <Database className="w-3.5 h-3.5 text-foreground" />
                 <span className={cn("font-mono", color)}>
                   {tokens >= 1000 ? `${(tokens / 1000).toFixed(1)}k` : tokens}
                 </span>
                 <div className="flex-1 min-w-11 h-1.5 bg-foreground/10 rounded-full overflow-hidden relative">
                   <div
-                    className="absolute inset-0 rounded-full bg-gradient-to-r from-green-400 via-orange-400 to-red-400 transition-[clip-path]"
-                    style={{ clipPath: `inset(0 ${100 - pct}% 0 0)` }}
+                    className={cn("absolute inset-y-0 left-0 rounded-full transition-all", METER_FILL[level])}
+                    style={{ width: `${pct}%` }}
                   />
+                  {/* Where /compact becomes the ask. Without it the meter shows
+                      a bar filling toward 100% of the WINDOW, while the colour
+                      and the attention slot answer to the budget instead —
+                      which reads as the meter contradicting itself. */}
+                  {budgetPct > 0 && budgetPct < 100 && (
+                    <div
+                      className="absolute inset-y-0 w-px bg-foreground/50"
+                      style={{ left: `${budgetPct}%` }}
+                    />
+                  )}
                 </div>
                 <span className="text-foreground font-mono">{pct.toFixed(0)}%</span>
               </button>
@@ -236,7 +308,7 @@ export function SessionCard({
             content={
               <div className="flex flex-col gap-2 text-left">
                 <div className="flex items-baseline justify-between">
-                  <span className="text-sm font-semibold">Context window</span>
+                  <span className="text-sm font-semibold">Context</span>
                   <span className={cn("font-mono text-sm", color)}>
                     {pct.toFixed(1)}%
                   </span>
@@ -244,6 +316,14 @@ export function SessionCard({
                 <div className="text-xs text-muted-foreground font-mono">
                   {tokens.toLocaleString()} / {limit.toLocaleString()} tokens
                 </div>
+                {budgetTokens > 0 && (
+                  <div className="text-[10px] text-muted-foreground font-mono">
+                    boundary {formatTokens(budgetTokens)} · compact at{" "}
+                    {budgetPct.toFixed(0)}%
+                  </div>
+                )}
+
+                {pendingAction && <SignalActionCard signal={pendingAction} />}
 
                 {controls && (
                   <div className="pt-2 mt-1 border-t border-border/50">
@@ -314,6 +394,13 @@ export function SessionCard({
                     to report per-category usage.
                   </div>
                 )}
+
+                <div className="pt-2 mt-1 border-t border-border/50">
+                  <div className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+                    Recent events
+                  </div>
+                  <SignalEventLog events={recentEvents} />
+                </div>
 
                 {sessionId && (
                   <div className="pt-1 mt-1 border-t border-border/50 flex items-center gap-2 text-[10px] text-muted-foreground">

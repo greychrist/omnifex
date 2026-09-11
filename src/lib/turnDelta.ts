@@ -1,12 +1,18 @@
 /**
- * Single-turn context growth.
+ * Per-turn context growth.
  *
  * A turn-count heuristic ("compact every ~40 turns") structurally cannot see a
  * skill or file load that adds hundreds of thousands of tokens in one turn.
- * Only a delta alarm can. This module computes that delta from the same usage
- * numbers the context gauge already sums.
+ * Only a delta can. This module computes them from the same usage numbers the
+ * context gauge already sums.
  *
- * See docs/superpowers/specs/2026-07-30-context-pressure-banner-design.md
+ * `lastTurnDelta` / `evaluateContextJump` used to live here and answered "should
+ * we interrupt the user right now?" for a banner that no longer exists. The
+ * question the app asks now is "what has each turn done?", which `turnDeltaSeries`
+ * answers for the whole transcript at once — the threshold that used to gate the
+ * banner survives as the `isJump` flag on a `context.delta` signal.
+ *
+ * See docs/superpowers/specs/2026-09-11-session-signals-design.md
  */
 
 import type { JsonlNode } from '@/types/jsonl';
@@ -38,8 +44,8 @@ export interface TurnDelta {
   newTotal: number;
   /**
    * Identity of the prompt this delta is anchored to. Stable for the whole
-   * turn and different on the next one, which is what lets the banner remember
-   * a dismissal without suppressing the next jump.
+   * turn and different on the next one, which is what makes a derived
+   * `context.delta` event de-dupe across renders instead of piling up.
    */
   anchorId: string;
 }
@@ -70,68 +76,6 @@ export function turnContextTotal(node: JsonlNode): number | null {
   );
 }
 
-/**
- * How much context has grown since the human last hit enter, or null when
- * there is no meaningful delta to report.
- *
- * The anchor is the last `userKind === 'prompt'` node, NOT the previous
- * assistant message. That distinction is the whole point: one prompt produces
- * a whole tool loop of assistant messages, so an assistant-to-assistant
- * difference measures one step of a loop rather than the turn. It also made
- * the notice useless in practice — a skill load would register on exactly one
- * message and be wiped by the next step of the same turn, seconds later.
- *
- * Null cases, each of which would otherwise produce a misleading number:
- *  - no prompt to anchor to, or no assistant usage on either side of it
- *  - a compact_boundary between the baseline and now — compaction drops
- *    context by design, so the delta means the opposite of a problem
- *  - any shrink — same reasoning, without the explicit marker
- */
-export function lastTurnDelta(messages: JsonlNode[]): TurnDelta | null {
-  const anchor = lastPrompt(messages);
-  if (anchor === null) return null;
-  const anchorIdx = anchor.index;
-
-  // Newest usage in the current turn, and the last usage before it started.
-  const next = lastTotalInRange(messages, anchorIdx + 1, messages.length - 1);
-  if (next === null) return null;
-  const base = lastTotalInRange(messages, 0, anchorIdx - 1);
-  if (base === null) return null;
-
-  if (hasCompactBoundaryAfter(messages, base.index)) return null;
-
-  const deltaTokens = next.total - base.total;
-  if (deltaTokens <= 0) return null;
-  return {
-    deltaTokens,
-    prevTotal: base.total,
-    newTotal: next.total,
-    anchorId: promptAnchorId(anchor.node, anchorIdx),
-  };
-}
-
-/**
- * The last prompt the human actually typed.
- *
- * `userKind === 'prompt'` alone is not enough: a forwarded subagent prompt —
- * and, since CLI 2.1.265, a forked skill's kickoff prompt — is a plain text
- * user envelope with no `isMeta`, so it classifies as a prompt too. Anchoring
- * on one splits a single real turn in two and measures the delta from the
- * middle of it. `parent_tool_use_id` is the discriminator (same rule as
- * `isMainUserNode` in sessionDerivedState).
- */
-function lastPrompt(
-  messages: JsonlNode[],
-): { node: Extract<JsonlNode, { kind: 'user' }>; index: number } | null {
-  for (let i = messages.length - 1; i >= 0; i -= 1) {
-    const node = messages[i];
-    if (node.kind !== 'user' || node.userKind !== 'prompt') continue;
-    if (forwardedParentToolUseId(node.raw) !== null) continue;
-    return { node, index: i };
-  }
-  return null;
-}
-
 /** Newest assistant context total in [from, to], or null if there is none. */
 function lastTotalInRange(
   messages: JsonlNode[],
@@ -145,42 +89,10 @@ function lastTotalInRange(
   return null;
 }
 
-/**
- * A compaction after the baseline invalidates it: the pre-compaction total is
- * not comparable to the current one. Scanned from the baseline rather than
- * from the prompt, because `/compact` lands between the two.
- */
-function hasCompactBoundaryAfter(messages: JsonlNode[], baseIdx: number): boolean {
-  for (let i = baseIdx + 1; i < messages.length; i += 1) {
-    const node = messages[i];
-    if (node.kind === 'system' && node.subtype === 'compact_boundary') return true;
-  }
-  return false;
-}
-
 /** Index fallback keeps the id stable within a render when the CLI omits uuid. */
 function promptAnchorId(node: Extract<JsonlNode, { kind: 'user' }>, index: number): string {
   const raw = node.raw as { uuid?: string; promptId?: string };
   return raw.uuid ?? raw.promptId ?? `${node.receivedAt}#${index}`;
-}
-
-/**
- * The jump worth telling the user about, or null.
- *
- * Reports only the current turn, so the notice lives exactly as long as the
- * prompt that caused it: it holds while that turn runs, and clears when the
- * next prompt re-anchors the delta. `SessionNotices` layers a dismissal on top
- * of that, keyed to `anchorId`.
- */
-export function evaluateContextJump(opts: {
-  messages: JsonlNode[];
-  setting: ContextJumpSetting;
-}): TurnDelta | null {
-  const { messages, setting } = opts;
-  if (!setting.enabled) return null;
-  const delta = lastTurnDelta(messages);
-  if (!delta) return null;
-  return delta.deltaTokens >= clampJumpTokens(setting.thresholdTokens) ? delta : null;
 }
 
 export function clampJumpTokens(value: number): number {
@@ -194,4 +106,85 @@ export function parseJumpTokens(raw: string | null): number {
   const n = Number.parseInt(raw, 10);
   if (!Number.isFinite(n)) return DEFAULT_CONTEXT_JUMP_TOKENS;
   return clampJumpTokens(n);
+}
+
+/** One prompt-anchored turn, as the session-widget popover logs it. */
+export interface TurnDeltaEntry extends TurnDelta {
+  /** Epoch ms of the reading that closed the turn. */
+  at: number;
+  /** A `/compact` landed inside this turn, so the delta is a reset. */
+  compacted: boolean;
+}
+
+/**
+ * Every turn's delta, oldest first — the history behind `lastTurnDelta`.
+ *
+ * The two differ in what they suppress, and deliberately so. `lastTurnDelta`
+ * answers "should we interrupt the user right now?", so it returns null across
+ * a compaction and on any shrink: both mean the opposite of a problem. This
+ * answers "what has this session done?", where a compaction dropping 420k is
+ * the single most interesting row in the log. Same anchoring rule, opposite
+ * treatment of the quiet cases.
+ */
+export function turnDeltaSeries(messages: JsonlNode[]): TurnDeltaEntry[] {
+  const anchors = promptAnchors(messages);
+  const entries: TurnDeltaEntry[] = [];
+
+  for (let n = 0; n < anchors.length; n += 1) {
+    const anchorIdx = anchors[n].index;
+    const until = n + 1 < anchors.length ? anchors[n + 1].index - 1 : messages.length - 1;
+
+    const next = lastTotalInRange(messages, anchorIdx + 1, until);
+    if (next === null) continue;
+    const base = lastTotalInRange(messages, 0, anchorIdx - 1);
+    // The opening turn of a session has nothing to be measured against. A
+    // delta equal to the whole context would read as a jump it never took.
+    if (base === null) continue;
+
+    entries.push({
+      deltaTokens: next.total - base.total,
+      prevTotal: base.total,
+      newTotal: next.total,
+      anchorId: promptAnchorId(anchors[n].node, anchorIdx),
+      at: readingTime(messages[next.index]),
+      compacted: hasCompactBoundaryBetween(messages, base.index, next.index),
+    });
+  }
+
+  return entries;
+}
+
+/** Every human prompt, in order. Same discriminator as `lastPrompt`. */
+function promptAnchors(
+  messages: JsonlNode[],
+): { node: Extract<JsonlNode, { kind: 'user' }>; index: number }[] {
+  const out: { node: Extract<JsonlNode, { kind: 'user' }>; index: number }[] = [];
+  for (let i = 0; i < messages.length; i += 1) {
+    const node = messages[i];
+    if (node.kind !== 'user' || node.userKind !== 'prompt') continue;
+    if (forwardedParentToolUseId(node.raw) !== null) continue;
+    out.push({ node, index: i });
+  }
+  return out;
+}
+
+/** Bounded form of `hasCompactBoundaryAfter` — a series needs per-turn answers. */
+function hasCompactBoundaryBetween(messages: JsonlNode[], fromIdx: number, toIdx: number): boolean {
+  for (let i = fromIdx + 1; i <= toIdx; i += 1) {
+    const node = messages[i];
+    if (node.kind === 'system' && node.subtype === 'compact_boundary') return true;
+  }
+  return false;
+}
+
+/**
+ * Epoch ms, or 0 when there is no usable timestamp — never NaN, this sorts.
+ *
+ * `receivedAt` is absent from a couple of JsonlNode variants entirely (notably
+ * `last-prompt`), so the read is guarded rather than asserted.
+ */
+function readingTime(node: JsonlNode): number {
+  const receivedAt = 'receivedAt' in node ? node.receivedAt : null;
+  const parsed = typeof receivedAt === 'string' ? Date.parse(receivedAt) : NaN;
+  return Number.isFinite(parsed) ? parsed : 0;
 }

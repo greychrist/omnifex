@@ -33,7 +33,7 @@ describe('SessionCard — context popover controls', () => {
     // Open the context popover via its trigger (shows the token count).
     fireEvent.click(screen.getByText('12.0k'));
     expect(screen.getByTestId('session-controls')).toBeTruthy();
-    expect(screen.getByText('Context window')).toBeTruthy();
+    expect(screen.getByText('Context')).toBeTruthy();
   });
 
   it('sizes a 1M Account-Default session against 1M in the client-side fallback', () => {
@@ -118,6 +118,6 @@ describe('SessionCard — context popover controls', () => {
     );
     fireEvent.click(screen.getByText('12.0k'));
     expect(screen.queryByTestId('session-controls')).toBeNull();
-    expect(screen.getByText('Context window')).toBeTruthy();
+    expect(screen.getByText('Context')).toBeTruthy();
   });
 });
