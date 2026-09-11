@@ -5,6 +5,19 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.164] — 2026-09-11
+
+### Fixed
+
+- The button to compact a session came back. Reorganising the session notices in 0.4.163 left it appearing only once context had actually reached your budget — so between 80% and 100% the meter went amber with nothing to click, which on a large session is a wide gap. Clicking the context meter now offers **Compact now** at any level, greyed out while a turn is running rather than disappearing. The prompt above the message box still waits until you reach the budget, so the row above the composer stays rare.
+
+### Changed
+
+- The context popover's doughnut chart is now a slim stacked bar in the same colours. The chart took up most of the popover's height to show one number per category — which the list underneath it already gave you, more precisely. The list is unchanged and the popover is a good deal shorter.
+- The context meter now announces itself properly to screen readers. Its label was the two numbers it displays, read aloud as "120.0k 12%" with nothing saying what they measured.
+
+Installers are signed with a Developer ID certificate and notarized by Apple.
+
 ## [0.4.163] — 2026-09-11
 
 ### Changed
