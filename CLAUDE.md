@@ -109,7 +109,14 @@ app on the iPad. Start from `docs/remote-access.md` and
 - **`electron/remote/daemon.ts` duplicates main.ts's service wiring on purpose**,
   and that duplication is a standing hazard: a service added to one and not the
   other yields a feature that works on the desktop and silently degrades over the
-  wire. Change both, or neither.
+  wire. Change both, or neither. What is deliberate is the *wiring* — imports,
+  service construction, and the adapter bags handed to the handler surface.
+  Behaviour is not: anything with a rule in it belongs in a module both roots
+  import. `periodic-work.ts`, `session-close-work.ts`, `session-jsonl-path.ts`,
+  `logging-options.ts` and `createAccountIdentityVerdict` are those modules, and
+  each one exists because the copy in one root had been re-typed by hand and the
+  reasoning survived in the other. A new callback with a branch in it goes there
+  too, not into both roots.
 - **Periodic work lives in `electron/periodic-work.ts`, and only one process
   runs it.** The cost-history backfill, the archive prune, `reclaimFreePages`
   and the Brain sweep/drain used to be copy-pasted into both composition roots

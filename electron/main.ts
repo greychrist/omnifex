@@ -87,7 +87,6 @@ import {
   type NotificationSoundId,
 } from './services/notification-sounds';
 import { createClaudeService } from './services/claude';
-import { encodeProjectId } from './services/project-paths';
 import { createUsageService } from './services/usage';
 import { createRateLimitsService } from './services/rate-limits';
 import { createUsageRunnerService } from './services/usage-runner';
@@ -106,8 +105,8 @@ import {
   readOauthIdentity,
   probeAuthStatus,
   classifyIdentity,
+  createAccountIdentityVerdict,
   watchOauthIdentity,
-  type IdentityVerdict,
 } from './services/account-identity';
 import {
   createSessionsSummaryService,
@@ -139,6 +138,9 @@ import { registerIpcHandlers } from './ipc/handlers';
 import { createRemoteLauncher, healthUrlFor, parseDaemonHealth, type DaemonHealth } from './remote-launcher';
 import { loadServerConfig } from './remote/config';
 import { startPeriodicWork } from './periodic-work';
+import { createLoggingOptions } from './logging-options';
+import { createSessionCloseWork } from './session-close-work';
+import { createSessionJsonlPathResolver } from './session-jsonl-path';
 import { createDaemonControl } from './remote/daemon-control';
 import { daemonExecPath } from './remote/daemon-exec';
 import { get as httpGet } from 'node:http';
@@ -654,30 +656,7 @@ app.whenReady().then(() => {
   // effect immediately without a restart. Defaults are "off" — info/debug
   // entries from these two noisy sources are dropped unless the user opts
   // in. Warn/error always pass through.
-  const loggingService = createLoggingService(db, {
-    shouldAccept: (entry) => {
-      if (entry.level !== 'info' && entry.level !== 'debug') return true;
-      if (entry.source === 'claude-hooks') {
-        return db.getSetting('log_verbose_claude_hooks') === 'true';
-      }
-      if (entry.source === 'usage-runner') {
-        return db.getSetting('log_verbose_usage_runner') === 'true';
-      }
-      return true;
-    },
-    onError: (entry) => {
-      // Default is ON. Only suppress when the user has explicitly set the
-      // toggle to 'false' — a missing setting (fresh install) still toasts.
-      if (db.getSetting('log_error_toast_enabled') === 'false') return;
-      sendToRenderer('log-error', {
-        source: entry.source,
-        message: entry.message,
-        category: entry.category ?? null,
-        level: entry.level,
-        timestamp: entry.timestamp,
-      });
-    },
-  });
+  const loggingService = createLoggingService(db, createLoggingOptions({ db, sendToRenderer }));
   // Resolves the user's currently-configured sound from app_settings on every
   // call so picker changes take effect without restarting the service. Falls
   // back to the historical defaults (OmniFex chime / Basso) when the keys are
@@ -802,32 +781,10 @@ app.whenReady().then(() => {
    * Cheap by construction — the `.claude.json` read, never a CLI spawn —
    * because the pre-flight path runs on every cold start.
    */
-  const accountIdentityVerdict = (configDir: string): IdentityVerdict => {
-    const account = accountsService.getAccountByConfigDir(configDir);
-    const expected = account?.expected_email ?? null;
-    // Only read the file when there's an expectation to check it against.
-    const detected =
-      account && expected ? (readOauthIdentity(configDir)?.email ?? null) : null;
-    const status = classifyIdentity({
-      accountExists: !!account,
-      expected,
-      detected,
-    });
-    if (status === 'unknown-account') {
-      // Nothing owns this config dir, so nothing can be checked. This state is
-      // indistinguishable from "passed" unless we say so — a routing or
-      // path-normalization bug would otherwise silently disable verification
-      // while looking like a clean bill of health.
-      loggingService.writeBatch([{
-        timestamp: new Date().toISOString(),
-        level: 'warn',
-        source: 'backend',
-        category: 'account-identity',
-        message: `identity check skipped: no account owns configDir=${configDir}`,
-      }]);
-    }
-    return { status, expected, detected, configDir };
-  };
+  const accountIdentityVerdict = createAccountIdentityVerdict({
+    accounts: accountsService,
+    log: loggingService,
+  });
 
   const sessionsService = _sessionsService = createSessionsService(
     sendToRenderer,
@@ -855,82 +812,18 @@ app.whenReady().then(() => {
       projectPath: params.projectPath,
     }),
     (configDir, info) => rateLimitsService.recordEvent(configDir, info),
-    (sessionId, projectPath, configDir) => {
-      // Auto-on-close summarization. Two global toggles gate this path:
-      //   - sessionsSummary.enabled (master) — off means summaries are
-      //     not used at all, so no point generating one.
-      //   - sessionsSummary.autoOnClose — off means the user wants to
-      //     hit the manual refresh button themselves.
-      // Both must be 'true' for the lifecycle hook to fire. The manual
-      // refresh path doesn't go through here — it hits the
-      // `summary_generate` IPC directly, so the autoOnClose flag has
-      // no effect on it. Read fresh on every close so flips in
-      // Settings take effect without restart.
-      //
-      // Fire-and-forget so session teardown isn't blocked by Haiku
-      // latency; the size-change gate inside the service makes "close
-      // without changes" a no-op (no API spend). configDir comes from
-      // the live SessionHandle so the JSONL lookup is anchored to the
-      // exact account that ran the session.
-      const enabled = db.getSetting(ENABLED_SETTING_KEY) === 'true';
-      const autoOn = db.getSetting(AUTO_ON_CLOSE_SETTING_KEY) === 'true';
-      // Both close-time consumers share this one callback — the sessions
-      // service takes a single `onSessionClosed`, so a second positional
-      // argument here would land in an unrelated parameter. The summary gate
-      // is therefore a branch rather than the early return it used to be:
-      // returning here would silently disable Brain indexing for anyone who
-      // has summaries turned off.
-      if (enabled && autoOn) {
-        sessionsSummaryServiceRef
-          ?.generateSummary(sessionId, projectPath, configDir)
-          .catch((err: unknown) =>
-            console.warn('[main] auto-summarize on close failed:', err),
-          );
-      }
-
-      // Brain work on close. Both switches are OFF by default — the user opts
-      // in once, after seeing real output. Read fresh on every close so a flip
-      // applies without a restart, matching the summary gate directly above.
-      //
-      // Ownership comes from the config dir the session ran under, never from
-      // resolve() (spec §4) — the same rule the session source applies, and it
-      // stays correct even if path rules changed after the session ran.
-      const autoIndexOn = db.getSetting(BRAIN_AUTO_INDEX_SETTING_KEY) === 'true';
-      const curateOn = db.getSetting(BRAIN_CURATE_SETTING_KEY) === 'true';
-      // The drain is armed by EITHER switch. Gating it on auto-index alone
-      // would leave curation-only users queueing notes that nothing ever
-      // drained.
-      if (autoIndexOn || curateOn) {
-        const account = accountsService.getAccountByConfigDir(configDir);
-        if (account) {
-          // Fire-and-forget: session teardown must never wait on Brain work.
-          Promise.resolve()
-            .then(() =>
-              autoIndexOn ? brainService?.enqueueSource(account.id, sessionId) : undefined,
-            )
-            // The session just closed in this project, which is exactly when
-            // its auto-memory notes and instruction files were most likely
-            // edited — the memory tool writes during a session, and a CLAUDE.md
-            // is edited in one. Change detection makes the ordinary case a free
-            // no-op, so this costs a directory walk and nothing else.
-            .then(() =>
-              autoIndexOn
-                ? brainService?.enqueueProjectSources(account.id, projectPath)
-                : undefined,
-            )
-            .then(() => {
-              // Selected from the vault as it stands NOW, so a note pushed over
-              // the threshold by the indexing queued just above is picked up on
-              // the NEXT close rather than this one. A one-session lag against
-              // a 7-day cooldown, and it self-corrects; selecting after the
-              // drain would mean draining twice on every close.
-              if (curateOn) brainService?.enqueueCuration(account.id);
-            })
-            .then(() => brainService?.drainQueue())
-            .catch((err: unknown) => console.warn('[main] brain work on close failed:', err));
-        }
-      }
-    },
+    createSessionCloseWork({
+      db,
+      accounts: accountsService,
+      brain: () => brainRef,
+      summary: () => sessionsSummaryServiceRef,
+      warn: (message, meta) => { console.warn(`[main] ${message}:`, meta.error); },
+      // Main owns the close-triggered drain only when no daemon answered.
+      // Same gate `startPeriodicWork` gets, for the same reason: two
+      // processes share one SQLite queue, and this was the last call site
+      // that could put a second worker on it.
+      drainEnabled: () => !remoteInUse,
+    }),
     // Account re-resolver: main re-resolves the account at session_start so
     // a path-rule change between the renderer's form-mount and the user's
     // Start-click doesn't spawn the CLI under a stale account. Skipped for
@@ -1035,69 +928,11 @@ app.whenReady().then(() => {
   const brainMcpRegistration = createBrainMcpRegistration(mcpService, brainMcpEnv);
   const slashCommandsService = createSlashCommandsService();
   const sessionsSummaryService = createSessionsSummaryService({
-    jsonlPathFor: (sessionUuid, projectPath, configDir) => {
-      // We never assume ~/.claude. The "root" is always an account's
-      // config_dir. The renderer holds it at tab level (chat tab via
-      // accountResolution; SessionList via resolveAccountForProject)
-      // and passes it explicitly. lifecycle.ts also passes the
-      // SessionHandle's configDir on the close path.
-      //
-      // Only fall back to scanning every account's projects/ when the
-      // caller passes null — handles the rare case where we don't yet
-      // know which account owns the session.
-
-      // Claude Code encodes project paths to directory names by replacing
-      // every non-alphanumeric character with '-'. Shared with the rest of the
-      // app rather than re-derived here: the old inline slash-only form missed
-      // any path with a dot, underscore or space, which silently pushed those
-      // sessions onto the rename-tolerant scan below.
-      const projectId = encodeProjectId(projectPath);
-
-      const tryAt = (cfgDir: string): string | null => {
-        // 1) Encoded path under this account's projects/
-        const encoded = path.join(cfgDir, 'projects', projectId, `${sessionUuid}.jsonl`);
-        if (fs.existsSync(encoded)) return encoded;
-        // 2) Same account's projects/<any-dir>/<uuid>.jsonl — handles
-        //    project renames within an account.
-        const projectsDir = path.join(cfgDir, 'projects');
-        let entries: import('fs').Dirent[];
-        try {
-          entries = fs.readdirSync(projectsDir, { withFileTypes: true });
-        } catch {
-          return null;
-        }
-        for (const entry of entries) {
-          if (!entry.isDirectory()) continue;
-          const candidate = path.join(projectsDir, entry.name, `${sessionUuid}.jsonl`);
-          if (fs.existsSync(candidate)) return candidate;
-        }
-        return null;
-      };
-
-      if (configDir) {
-        const found = tryAt(configDir);
-        if (found) return found;
-      }
-
-      // Caller didn't provide configDir, or the session truly isn't in
-      // that account. Search every known account.
-      const seen = new Set<string>();
-      if (configDir) seen.add(configDir);
-      for (const acct of accountsService.listAccounts()) {
-        if (seen.has(acct.config_dir)) continue;
-        seen.add(acct.config_dir);
-        const found = tryAt(acct.config_dir);
-        if (found) return found;
-      }
-
-      // Nothing found. Return a path under the resolved account when one
-      // exists, otherwise null so the caller's skipped:no-account branch
-      // fires. There is no synthetic ~/.claude fallback — see CLAUDE.md
-      // "Multi-Account Rules" and NoAccountError in claude.ts.
-      const resolvedRoot = configDir ?? accountsService.resolve(projectPath).claude?.account.config_dir;
-      if (!resolvedRoot) return null;
-      return path.join(resolvedRoot, 'projects', projectId, `${sessionUuid}.jsonl`);
-    },
+    jsonlPathFor: createSessionJsonlPathResolver({
+      listAccounts: () => accountsService.listAccounts(),
+      resolveConfigDir: (projectPath) =>
+        accountsService.resolve(projectPath).claude?.account.config_dir ?? null,
+    }),
     resolveAccount: (projectPath) => {
       const acct = accountsService.resolve(projectPath).claude?.account ?? null;
       if (!acct) return null;

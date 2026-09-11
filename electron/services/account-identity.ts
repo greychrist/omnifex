@@ -26,6 +26,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
+import type { LogEntry } from './logging';
 
 export interface OauthIdentity {
   email: string | null;
@@ -263,4 +264,48 @@ export function emailsMatch(
   const nb = (b ?? '').trim().toLowerCase();
   if (!na || !nb) return false;
   return na === nb;
+}
+
+/**
+ * The verdict both composition roots hand to the sessions service.
+ *
+ * Lives here, next to `classifyIdentity`, because `electron/main.ts` and
+ * `electron/remote/daemon.ts` each built their own identical copy of it — and
+ * only main.ts kept the reasoning for the `unknown-account` warning.
+ *
+ * Cheap by construction: the `.claude.json` read, never a CLI spawn, and an
+ * account with no `expected_email` short-circuits before any I/O. The session
+ * pre-flight path runs this on every cold start.
+ */
+export function createAccountIdentityVerdict(deps: {
+  accounts: {
+    getAccountByConfigDir(configDir: string): { expected_email?: string | null } | null | undefined;
+  };
+  /** Seam for tests; production passes `readOauthIdentity`. */
+  readIdentity?: (configDir: string) => { email: string | null } | null;
+  log: { writeBatch(entries: LogEntry[]): void };
+}): (configDir: string) => IdentityVerdict {
+  const readIdentity = deps.readIdentity ?? readOauthIdentity;
+
+  return (configDir: string): IdentityVerdict => {
+    const account = deps.accounts.getAccountByConfigDir(configDir);
+    const expected = account?.expected_email ?? null;
+    // Only read the file when there is an expectation to check it against.
+    const detected = account && expected ? (readIdentity(configDir)?.email ?? null) : null;
+    const status = classifyIdentity({ accountExists: !!account, expected, detected });
+    if (status === 'unknown-account') {
+      // Nothing owns this config dir, so nothing can be checked. That state is
+      // indistinguishable from "passed" unless we say so — a routing or
+      // path-normalization bug would otherwise silently disable verification
+      // while looking like a clean bill of health.
+      deps.log.writeBatch([{
+        timestamp: new Date().toISOString(),
+        level: 'warn',
+        source: 'backend',
+        category: 'account-identity',
+        message: `identity check skipped: no account owns configDir=${configDir}`,
+      }]);
+    }
+    return { status, expected, detected, configDir };
+  };
 }

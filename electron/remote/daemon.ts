@@ -25,6 +25,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { startPeriodicWork } from '../periodic-work';
+import { createLoggingOptions } from '../logging-options';
+import { createSessionCloseWork } from '../session-close-work';
+import { createSessionJsonlPathResolver } from '../session-jsonl-path';
 import { createDatabase, ensureDefaultSettings } from '../services/database';
 import { createAccountsService } from '../services/accounts';
 import { createClaudeBinaryService } from '../services/claude-binary';
@@ -38,7 +41,6 @@ import {
 import { createSessionsService } from '../services/sessions';
 import { findSystemClaudeBinary } from '../services/sessions/binary';
 import { createClaudeService } from '../services/claude';
-import { encodeProjectId } from '../services/project-paths';
 import { createUsageService } from '../services/usage';
 import { createRateLimitsService } from '../services/rate-limits';
 import { createUsageRunnerService } from '../services/usage-runner';
@@ -54,7 +56,7 @@ import {
   readOauthIdentity,
   probeAuthStatus,
   classifyIdentity,
-  type IdentityVerdict,
+  createAccountIdentityVerdict,
 } from '../services/account-identity';
 import {
   createSessionsSummaryService,
@@ -379,24 +381,7 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
     runUpdateFn: (configDir) => execCliUpdate(claudeBinaryService.getPath() ?? claudeBinaryService.findBestBinary(), configDir),
   });
 
-  const loggingService = createLoggingService(db, {
-    shouldAccept: (entry) => {
-      if (entry.level !== 'info' && entry.level !== 'debug') return true;
-      if (entry.source === 'claude-hooks') return db.getSetting('log_verbose_claude_hooks') === 'true';
-      if (entry.source === 'usage-runner') return db.getSetting('log_verbose_usage_runner') === 'true';
-      return true;
-    },
-    onError: (entry) => {
-      if (db.getSetting('log_error_toast_enabled') === 'false') return;
-      sendToRenderer('log-error', {
-        source: entry.source,
-        message: entry.message,
-        category: entry.category ?? null,
-        level: entry.level,
-        timestamp: entry.timestamp,
-      });
-    },
-  });
+  const loggingService = createLoggingService(db, createLoggingOptions({ db, sendToRenderer }));
 
   // No display: OS notifications are the client's job. The bridge already
   // carries `claude-notification` events, which is what a client renders.
@@ -421,22 +406,10 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
   const modelsService = createModelsService(db);
   const commandsCatalogService = createCommandsCatalogService(db);
 
-  const accountIdentityVerdict = (configDir: string): IdentityVerdict => {
-    const account = accountsService.getAccountByConfigDir(configDir);
-    const expected = account?.expected_email ?? null;
-    const detected = account && expected ? (readOauthIdentity(configDir)?.email ?? null) : null;
-    const status = classifyIdentity({ accountExists: !!account, expected, detected });
-    if (status === 'unknown-account') {
-      loggingService.writeBatch([{
-        timestamp: new Date().toISOString(),
-        level: 'warn',
-        source: 'backend',
-        category: 'account-identity',
-        message: `identity check skipped: no account owns configDir=${configDir}`,
-      }]);
-    }
-    return { status, expected, detected, configDir };
-  };
+  const accountIdentityVerdict = createAccountIdentityVerdict({
+    accounts: accountsService,
+    log: loggingService,
+  });
 
   const sessionsService = createSessionsService(
     sendToRenderer,
@@ -453,28 +426,13 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
         projectPath: params.projectPath,
       }),
     (configDir, info) => rateLimitsService.recordEvent(configDir, info),
-    (sessionId, projectPath, configDir) => {
-      const enabled = db.getSetting(ENABLED_SETTING_KEY) === 'true';
-      const autoOn = db.getSetting(AUTO_ON_CLOSE_SETTING_KEY) === 'true';
-      if (enabled && autoOn) {
-        sessionsSummaryServiceRef
-          ?.generateSummary(sessionId, projectPath, configDir)
-          .catch((err: unknown) => log.warn('auto-summarize on close failed', { error: String(err) }));
-      }
-      const autoIndexOn = db.getSetting(BRAIN_AUTO_INDEX_SETTING_KEY) === 'true';
-      const curateOn = db.getSetting(BRAIN_CURATE_SETTING_KEY) === 'true';
-      if (autoIndexOn || curateOn) {
-        const account = accountsService.getAccountByConfigDir(configDir);
-        if (account) {
-          Promise.resolve()
-            .then(() => (autoIndexOn ? brainService?.enqueueSource(account.id, sessionId) : undefined))
-            .then(() => (autoIndexOn ? brainService?.enqueueProjectSources(account.id, projectPath) : undefined))
-            .then(() => { if (curateOn) brainService?.enqueueCuration(account.id); })
-            .then(() => brainService?.drainQueue())
-            .catch((err: unknown) => log.warn('brain work on close failed', { error: String(err) }));
-        }
-      }
-    },
+    createSessionCloseWork({
+      db,
+      accounts: accountsService,
+      brain: () => brainService,
+      summary: () => sessionsSummaryServiceRef,
+      warn: (message, meta) => { log.warn(message, meta); },
+    }),
     (projectPath: string) => accountsService.resolve(projectPath).claude?.account.config_dir ?? null,
     (configDir, models) => modelsService.upsertCatalog(configDir, models as ModelInfo[]),
     (configDir: string) => {
@@ -521,39 +479,11 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
   const slashCommandsService = createSlashCommandsService();
 
   const sessionsSummaryService = createSessionsSummaryService({
-    jsonlPathFor: (sessionUuid, projectPath, configDir) => {
-      const projectId = encodeProjectId(projectPath);
-      const tryAt = (cfgDir: string): string | null => {
-        const encoded = path.join(cfgDir, 'projects', projectId, `${sessionUuid}.jsonl`);
-        if (fs.existsSync(encoded)) return encoded;
-        let entries: fs.Dirent[];
-        try {
-          entries = fs.readdirSync(path.join(cfgDir, 'projects'), { withFileTypes: true });
-        } catch {
-          return null;
-        }
-        for (const entry of entries) {
-          if (!entry.isDirectory()) continue;
-          const candidate = path.join(cfgDir, 'projects', entry.name, `${sessionUuid}.jsonl`);
-          if (fs.existsSync(candidate)) return candidate;
-        }
-        return null;
-      };
-      if (configDir) {
-        const found = tryAt(configDir);
-        if (found) return found;
-      }
-      const seen = new Set<string>(configDir ? [configDir] : []);
-      for (const acct of accountsService.listAccounts()) {
-        if (seen.has(acct.config_dir)) continue;
-        seen.add(acct.config_dir);
-        const found = tryAt(acct.config_dir);
-        if (found) return found;
-      }
-      const resolvedRoot = configDir ?? accountsService.resolve(projectPath).claude?.account.config_dir;
-      if (!resolvedRoot) return null;
-      return path.join(resolvedRoot, 'projects', projectId, `${sessionUuid}.jsonl`);
-    },
+    jsonlPathFor: createSessionJsonlPathResolver({
+      listAccounts: () => accountsService.listAccounts(),
+      resolveConfigDir: (projectPath) =>
+        accountsService.resolve(projectPath).claude?.account.config_dir ?? null,
+    }),
     resolveAccount: (projectPath) => {
       const acct = accountsService.resolve(projectPath).claude?.account ?? null;
       return acct ? { name: acct.name, configDir: acct.config_dir, summaryModel: acct.summaryModel ?? null } : null;
