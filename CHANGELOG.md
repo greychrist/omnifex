@@ -5,6 +5,19 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.163] — 2026-09-11
+
+### Changed
+
+- The stack of coloured bars above a session is gone. The app had grown five of them — a wrong-account warning, a context-is-filling-up warning, a "this prompt added 325k" notice, a cache-timing notice, a skipped-MCP-servers notice — plus a thinking bar and a usage-limit bar at the other end. Each arrived for a good reason; together they were a wall of amber that nothing could be read out of, where "you should compact now" looked no more urgent than "cache timing changed". Every one of those notices now appears on the thing it is actually about: context news lands on the context meter, MCP news on the MCP button, account news on the account card, each with a small unread count. Only something you can act on still takes space, and only one at a time, in a single row above the message box.
+- Clicking the context meter now opens a log of what each turn did to your context — the change, where it started and ended, and when — newest first, with compactions called out. Turns that added a lot are highlighted. Anything waiting on you appears at the top of the same popover, so dismissing it from the row above the message box never loses it.
+- The context meter changes colour by how close you are to your configured budget rather than to the raw window size. Those are not the same thing: with the default 250k budget on a million-token session the meter used to sit reassuringly green while the app was telling you to compact. It also marks where that budget falls, so "compact at 25%" is visible rather than implied.
+- The session header now carries a second small pill showing what the session is doing — `thinking 12s`, or how long until a usage limit resets — underneath the existing one showing whether it is connected. The thinking bar that used to sit above the transcript is gone; its token count moved to the pill's tooltip.
+- The context rail in the transcript margin is now on by default, and labels every turn's change rather than only the large ones. It was previously an opt-in view, which was fine while a banner reported context growth to everyone else — with the banner gone, leaving it off would have quietly removed that information for anyone who had never turned it on. Compact output mode hides changes under 2k; Verbose shows them all.
+- When the app asks you to compact, you can now raise the trigger by 20k for that session alone instead of changing the setting for every session. Pressing it again buys another 20k, and the prompt returns on its own once you cross the new line.
+
+Installers are signed with a Developer ID certificate and notarized by Apple.
+
 ## [0.4.162] — 2026-09-11
 
 ### Added
