@@ -69,7 +69,8 @@ interface Pending {
   method: string;
   resolve: (v: unknown) => void;
   reject: (e: unknown) => void;
-  timer: ReturnType<typeof setTimeout>;
+  /** Null for the methods that are deliberately not on a clock — see `rawRequest`. */
+  timer: ReturnType<typeof setTimeout> | null;
 }
 
 const OPEN = 1;
@@ -117,7 +118,7 @@ export function createServerClient(opts: ServerClientOptions): ServerClient {
 
   function failAll(reason: RemoteClientError): void {
     for (const [id, p] of pending) {
-      clearTimeout(p.timer);
+      if (p.timer) clearTimeout(p.timer);
       p.reject(reason);
       pending.delete(id);
     }
@@ -141,10 +142,25 @@ export function createServerClient(opts: ServerClientOptions): ServerClient {
     }
     const requestId = `c${++seq}`;
     return new Promise<T>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        pending.delete(requestId);
-        reject(new RemoteClientError('TIMEOUT', `${method} timed out after ${requestTimeoutMs}ms`));
-      }, requestTimeoutMs);
+      // The protocol's own methods answer promptly or not at all, so a clock
+      // on them turns a wedged daemon into an error instead of a spinner.
+      //
+      // `rpc.invoke` is the exception, and it is not a small one: it proxies an
+      // arbitrary IPC handler, and on the desktop those have no deadline at
+      // all. Indexing nine sessions into the Brain takes a minute, a backfill
+      // takes hours — and rejecting at 30s did not stop any of it, it only
+      // stopped the UI hearing how it ended. The call then reported
+      // "rpc.invoke timed out after 30000ms" over work that went on to finish
+      // and bill, with no completion refresh behind it. The socket is the
+      // honest liveness signal, and `onclose` below already fails everything
+      // in flight on it.
+      const timer =
+        method === 'rpc.invoke'
+          ? null
+          : setTimeout(() => {
+              pending.delete(requestId);
+              reject(new RemoteClientError('TIMEOUT', `${method} timed out after ${requestTimeoutMs}ms`));
+            }, requestTimeoutMs);
       pending.set(requestId, { method, resolve: resolve as (v: unknown) => void, reject, timer });
       sendFrame(JSON.stringify({ type: method, requestId, ...params }), immediate);
     });
@@ -168,7 +184,7 @@ export function createServerClient(opts: ServerClientOptions): ServerClient {
       const p = pending.get(m.requestId);
       if (!p) return;
       pending.delete(m.requestId);
-      clearTimeout(p.timer);
+      if (p.timer) clearTimeout(p.timer);
       if (m.ok) p.resolve(m.result);
       else p.reject(Object.assign(new Error(m.error.message), { code: m.error.code }));
       return;
@@ -246,7 +262,7 @@ export function createServerClient(opts: ServerClientOptions): ServerClient {
       // In-flight requests cannot be answered by the next socket: the daemon
       // never saw them or has no way to route the reply. Fail them now.
       for (const [id, p] of pending) {
-        clearTimeout(p.timer);
+        if (p.timer) clearTimeout(p.timer);
         p.reject(new RemoteClientError('DISCONNECTED', `${p.method}: connection lost`));
         pending.delete(id);
       }

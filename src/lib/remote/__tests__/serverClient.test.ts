@@ -214,4 +214,39 @@ describe('server client', () => {
     vi.advanceTimersByTime(1000);
     await expect(req).rejects.toMatchObject({ code: 'TIMEOUT' });
   });
+
+  /**
+   * `rpc.invoke` proxies an IPC handler, and an IPC handler has no deadline.
+   *
+   * Indexing nine sessions into the Brain takes about a minute; a backfill
+   * takes hours. The blanket 30s request timeout rejected the call while the
+   * daemon carried on spending money on it — so the UI showed
+   * "rpc.invoke timed out after 30000ms", never ran the completion refresh,
+   * and left rows reading "indexing…" for work that had already finished.
+   * Matching Electron's own semantics is the fix: a live socket means the call
+   * is still live, and only a dead one ends it.
+   */
+  it('does not time out an rpc.invoke the daemon is still working on', async () => {
+    const { client, sock } = await connected(make({ requestTimeoutMs: 1000 }));
+    const req = client.request('rpc.invoke', { channel: 'brain_index_selection', params: {} });
+
+    vi.advanceTimersByTime(10 * 60_000);
+    sock.answer('rpc.invoke', { written: 9, skipped: 0 });
+
+    await expect(req).resolves.toMatchObject({ written: 9 });
+  });
+
+  /**
+   * The liveness guarantee that replaces the timer: a call outlives any clock,
+   * but never the socket it was sent on.
+   */
+  it('rejects an in-flight rpc.invoke when the connection drops', async () => {
+    const { client, sock } = await connected(make({ requestTimeoutMs: 1000 }));
+    const req = client.request('rpc.invoke', { channel: 'brain_index_selection', params: {} });
+
+    vi.advanceTimersByTime(10 * 60_000);
+    sock.drop();
+
+    await expect(req).rejects.toMatchObject({ code: 'DISCONNECTED' });
+  });
 });
