@@ -17,6 +17,7 @@ import { Popover } from "@/components/ui/popover";
 import { api, type Session, type RateLimitSnapshot, type Account, type ResolvePair, type SessionMode, type AccountMismatch } from "@/lib/api";
 import { AttentionSlot } from "@/components/AttentionSlot";
 import { SignalBadge } from "@/components/signals/SignalBadge";
+import { SignalEventLog } from "@/components/signals/SignalEventLog";
 import { useSessionGauges } from "@/contexts/SessionGaugesContext";
 import { useSessionSignals } from "@/hooks/useSessionSignals";
 import { POPOVER_EVENT_LIMIT } from "@/lib/signals/store";
@@ -2206,8 +2207,11 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   const sessionUnread = signals.unreadFor('session');
   const sessionEvents = signals.eventsFor('session', POPOVER_EVENT_LIMIT);
   const sessionAction = signals.actionsFor('session')[0] ?? null;
-  const accountUnread = signals.unreadFor('account');
+  // No `account` badge: that anchor has only an `action` emitter, and
+  // `unreadCount` counts events — so it rendered zero forever. It is the
+  // emitter that is missing, not the badge that was needed.
   const mcpUnread = signals.unreadFor('mcp');
+  const mcpEvents = signals.eventsFor('mcp', POPOVER_EVENT_LIMIT);
 
   // Three-state display badge (legacy) derived from the canonical
   // SessionStatus enum + `sessionStarted` (has-the-user-ever-engaged).
@@ -2285,10 +2289,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
               to the AccountCard's existing details popover (future work). */}
           {accountResolution && (
             <div className="relative flex">
-              {/* Wrapper rather than a prop: AccountCard is shared with the
-                  projects list, which has no session and therefore no signals.
-                  Badging from outside keeps that caller unchanged. */}
-              <SignalBadge count={accountUnread} label="account" />
             <AccountCard
               accountName={accountResolution.account.name}
               hasCost={accountResolution.account.has_cost}
@@ -2638,6 +2638,16 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
                       </div>
                       <div className="flex-1 overflow-y-auto">
                         <SessionMCPStatus tabId={tabIdRef.current} />
+                        {/* What the badge on the Plug button was counting.
+                            Without it the panel the badge points at never
+                            mentions the events, so the number had no
+                            explanation anywhere in the app. */}
+                        <div className="p-4 border-t border-border">
+                          <div className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+                            Recent events
+                          </div>
+                          <SignalEventLog events={mcpEvents} />
+                        </div>
                       </div>
                     </div>
                   </motion.div>
@@ -2980,7 +2990,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
                       <Button
                         variant="ghost"
                         size="icon"
-                        onClick={() => { setShowMCPPanel(!showMCPPanel); if (!showMCPPanel) { setShowPluginsPanel(false); setShowPermissionsPanel(false); } }}
+                        onClick={() => { setShowMCPPanel(!showMCPPanel); if (!showMCPPanel) { setShowPluginsPanel(false); setShowPermissionsPanel(false); signals.markRead('mcp'); } }}
                         className={cn(
                           "h-8 w-8 text-muted-foreground hover:text-foreground shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_30%,transparent)]",
                           showMCPPanel ? "bg-accent" : "bg-background",

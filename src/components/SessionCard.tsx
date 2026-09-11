@@ -152,6 +152,12 @@ export function SessionCard({
 }: SessionCardProps) {
   const [contextPopoverOpen, setContextPopoverOpen] = React.useState(false);
 
+  /** What the trigger says it is, plus what the badge on it is counting. */
+  const unreadLabel =
+    unreadEvents > 0
+      ? `Context usage — ${unreadEvents} new session ${unreadEvents === 1 ? 'event' : 'events'}`
+      : 'Context usage';
+
   const [sessionIdCopied, setSessionIdCopied] = React.useState(false);
   const handleCopySessionId = React.useCallback(async () => {
     if (!sessionId) return;
@@ -272,9 +278,12 @@ export function SessionCard({
             open={contextPopoverOpen}
             onOpenChange={(next) => {
               setContextPopoverOpen(next);
-              // Opening the popover IS reading the events — a separate
-              // "mark read" control would be one more thing to forget.
-              if (next) onSignalsRead?.();
+              // Reading happens on CLOSE, not on open. Opening is still what
+              // counts as having read them — there is no separate "mark read"
+              // control to forget — but clearing on open zeroed the badge and
+              // dropped every row's unread tint before the reader could see
+              // which rows the number had been pointing at.
+              if (!next) onSignalsRead?.();
             }}
             align="end"
             side="bottom"
@@ -285,7 +294,13 @@ export function SessionCard({
                 type="button"
                 // Its visible text is "120.0k 12%", which a screen reader
                 // announces as two bare numbers with no subject.
-                aria-label="Context usage"
+                //
+                // The unread count is named here as well, because SignalBadge
+                // is pointer-events-none and can host no tooltip of its own:
+                // without this the number appears on a token meter with nothing
+                // anywhere saying it counts events rather than tokens.
+                aria-label={unreadLabel}
+                title={unreadEvents > 0 ? unreadLabel : undefined}
                 aria-expanded={contextPopoverOpen}
                 className={cn(
                   "inline-flex w-full items-center gap-1.5 px-2 py-0.5 rounded text-xs font-mono font-medium cursor-pointer text-foreground",
@@ -366,6 +381,18 @@ export function SessionCard({
                   </div>
                 )}
 
+                {/* Above the breakdown, not below it. This list is the only
+                    thing that says what the badge on the trigger was counting,
+                    and underneath the bands and the per-category table it was
+                    off the bottom of a w-96 popover — so the number cleared
+                    without its meaning ever being on screen. */}
+                <div className="pt-2 mt-1 border-t border-border/50">
+                  <div className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+                    Recent events
+                  </div>
+                  <SignalEventLog events={recentEvents} />
+                </div>
+
                 {useSdk && sortedCategories.length > 0 ? (
                   <>
                     {/* A stacked bar, not a donut. The pie cost 18rem of
@@ -418,13 +445,6 @@ export function SessionCard({
                     to report per-category usage.
                   </div>
                 )}
-
-                <div className="pt-2 mt-1 border-t border-border/50">
-                  <div className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">
-                    Recent events
-                  </div>
-                  <SignalEventLog events={recentEvents} />
-                </div>
 
                 {sessionId && (
                   <div className="pt-1 mt-1 border-t border-border/50 flex items-center gap-2 text-[10px] text-muted-foreground">

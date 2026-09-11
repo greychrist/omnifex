@@ -236,3 +236,81 @@ describe('SessionCard — category breakdown', () => {
     expect(screen.getByText('Tools')).toBeTruthy();
   });
 });
+
+describe('SessionCard — unread session events', () => {
+  const EVENTS = [
+    {
+      id: 'e1', tabId: 't', kind: 'event' as const, anchor: 'session' as const,
+      priority: 'normal' as const, key: 'context.jump', title: 'Context jump',
+      detail: 'CONTEXT-JUMP-ROW', at: Date.now(), read: false,
+    },
+  ];
+
+  it('clears the badge when the popover closes, not the moment it opens', () => {
+    // Opening used to mark everything read immediately, which zeroed the count
+    // and dropped the unread tint before the reader had scrolled to the list
+    // that explains it. The evidence destroyed itself on the way to being read.
+    let readCalls = 0;
+    render(
+      <SessionCard
+        totalTokens={12_000}
+        contextUsage={USAGE}
+        unreadEvents={3}
+        recentEvents={EVENTS}
+        onSignalsRead={() => { readCalls += 1; }}
+      />,
+    );
+
+    fireEvent.click(screen.getByText('12.0k'));
+    expect(readCalls).toBe(0);
+    expect(screen.getByText('CONTEXT-JUMP-ROW')).toBeTruthy();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(readCalls).toBe(1);
+  });
+
+  it('shows recent events above the category breakdown', () => {
+    // The list is the only thing that says what the number meant, and it sat
+    // below the context bands and the per-category table.
+    render(
+      <SessionCard
+        totalTokens={120_000}
+        contextUsage={WITH_CATEGORIES}
+        unreadEvents={1}
+        recentEvents={EVENTS}
+      />,
+    );
+    fireEvent.click(screen.getByText('120.0k'));
+
+    // The breakdown carries no heading of its own — it is the stacked bar —
+    // so order is asserted on the DOM rather than on text.
+    const heading = screen.getByText('Recent events');
+    const firstBand = document.querySelector('[data-context-band]');
+    expect(firstBand).toBeTruthy();
+    const relation = heading.compareDocumentPosition(firstBand!);
+    expect(relation & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('names the unread count in the trigger, which the badge itself cannot', () => {
+    // SignalBadge is pointer-events-none so it can carry no tooltip of its own,
+    // and its aria-label reaches screen readers only. The count appeared on a
+    // token meter with nothing anywhere saying it was about events.
+    render(
+      <SessionCard
+        totalTokens={12_000}
+        contextUsage={USAGE}
+        unreadEvents={3}
+        recentEvents={EVENTS}
+      />,
+    );
+    const trigger = screen.getByLabelText(/Context usage/);
+    expect(trigger.getAttribute('aria-label')).toContain('3 new');
+    expect(trigger.getAttribute('title')).toContain('3 new');
+  });
+
+  it('leaves the trigger unadorned when nothing is unread', () => {
+    render(<SessionCard totalTokens={12_000} contextUsage={USAGE} />);
+    const trigger = screen.getByLabelText(/Context usage/);
+    expect(trigger.getAttribute('aria-label')).toBe('Context usage');
+  });
+});
