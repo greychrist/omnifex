@@ -5,6 +5,21 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.162] — 2026-09-11
+
+### Added
+
+- When the background service stops answering, the app now offers to carry on without it instead of retrying forever behind a "Reconnecting…" banner. The offer appears after twenty seconds — long enough that restarting the service, which recovers in a couple of seconds, never triggers it — and it explains what it costs before you accept: sessions running in the background service keep running, but the window cannot see them until it reconnects. Once the service answers again, a second offer brings you back. Neither switch happens on its own, and neither survives quitting the app, so a one-off outage cannot quietly leave you disconnected for good.
+
+### Fixed
+
+- Indexing several sources into the Brain could report nonsense progress — nine selected items counting up towards a total of three. Anything queued in the background while a hand-picked selection was running rewrote that selection's total with the depth of the background queue. Only the display was ever wrong; every selected item was indexed exactly once.
+- Indexing more than a handful of sources reported "rpc.invoke timed out after 30000ms" while the work itself carried on and finished. Any request to the background service was held to a thirty-second limit, which is shorter than plenty of legitimate work. The error was never real, but it stopped the app noticing the work had ended, so rows sat reading "indexing…" for sources that were already done.
+- Restarting the background service left the session you were watching in a broken state: the new-session panel — model, effort and permission pickers — appeared directly above your own conversation, and the session itself was gone with nothing saying so. Sessions interrupted this way now resume themselves, and a conversation that already exists is never mistaken for a new tab.
+- The notification sound played on every cost update — silently, with no banner, several times a minute during an active session. Cost updates were arriving on the same internal channel as notifications and were being treated as one.
+- Reconnecting to the background service could replay an entire conversation from the beginning, duplicating every message in the transcript and firing one notification for every notification in its history.
+- The Brain could still be billed twice for one conversation in a narrower case than the one fixed in 0.4.161: closing a session triggered its own indexing run that ignored which process was meant to own that work. Both paths now answer to the same owner.
+
 ## [0.4.161] — 2026-09-10
 
 ### Fixed
