@@ -301,3 +301,57 @@ describe('openVaultIndexReadOnly', () => {
     reader.close();
   });
 });
+
+describe('projectCounts', () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'brain-counts-'));
+  });
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('buckets the index by project and type', () => {
+    const path = join(dir, 'index.db');
+    const writer = createVaultIndex(path);
+    writer.upsert('Subsystems/A.md', 'A', note({ project: '[[Projects/omnifex]]' }, 'a'));
+    writer.upsert('Subsystems/B.md', 'B', note({ project: '[[Projects/omnifex]]' }, 'b'));
+    writer.upsert('Topics/C.md', 'C', note({ type: 'Topic', project: '[[Projects/omnifex]]' }, 'c'));
+    writer.upsert('Topics/D.md', 'D', note({ type: 'Topic', project: '[[Projects/win]]' }, 'd'));
+    writer.close();
+
+    const reader = openVaultIndexReadOnly(path);
+    // Sorted so the assertion does not depend on SQLite's group ordering.
+    const rows = reader.projectCounts().sort((x, y) => (x.project + x.type).localeCompare(y.project + y.type));
+    reader.close();
+
+    expect(rows).toEqual([
+      { project: '[[Projects/omnifex]]', type: 'Subsystem', count: 2 },
+      { project: '[[Projects/omnifex]]', type: 'Topic', count: 1 },
+      { project: '[[Projects/win]]', type: 'Topic', count: 1 },
+    ]);
+  });
+
+  it('reports unattributed notes under the empty project rather than dropping them', () => {
+    // The instructions use the total to say "the vault holds N for this
+    // account". Silently omitting unattributed notes would understate it.
+    const path = join(dir, 'index.db');
+    const writer = createVaultIndex(path);
+    writer.upsert('Notes/Loose.md', 'Loose', note({ type: 'Note' }, 'loose'));
+    writer.close();
+
+    const reader = openVaultIndexReadOnly(path);
+    expect(reader.projectCounts()).toEqual([{ project: '', type: 'Note', count: 1 }]);
+    reader.close();
+  });
+
+  it('is empty for an index with no notes', () => {
+    const path = join(dir, 'index.db');
+    createVaultIndex(path).close();
+    const reader = openVaultIndexReadOnly(path);
+    expect(reader.projectCounts()).toEqual([]);
+    reader.close();
+  });
+});

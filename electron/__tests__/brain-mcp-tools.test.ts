@@ -14,8 +14,13 @@ import { createVault } from '../services/brain/vault';
 import { createVaultIndex, openVaultIndexReadOnly } from '../services/brain/search';
 import {
   createBrainMcpTools,
+  renderSearchResult,
+  renderNote,
   MAX_BODY_CHARS,
   MAX_TOTAL_BODY_CHARS,
+  MCP_DEFAULT_LIMIT,
+  MIN_USEFUL_BODY_CHARS,
+  type SearchResultHit,
 } from '../services/brain/mcp-tools';
 import type { ParsedNote } from '../services/brain/types';
 
@@ -169,6 +174,57 @@ describe('brain MCP tools', () => {
       for (const h of res.hits) {
         if (h.body === null) expect(h.bodyTruncated).toBe(true);
       }
+    });
+
+    it('returns a handful of hits when the caller names no limit', () => {
+      // The index default is 20, which is right for the Brain tab's scrollable
+      // list and wrong for a tool result: a measured default search returned
+      // 20 hits and 27,161 characters, ~6.8K tokens, of which the last seven
+      // hits carried no body at all. An explicit limit still overrides this.
+      const vault = createVault(vaultA);
+      for (let i = 0; i < 30; i++) {
+        vault.writeNote(`Subsystems/Many${String(i)}.md`, note(`drain note ${String(i)}`));
+      }
+      createVaultIndex(join(vaultA, '.omnifex', 'index.db')).rebuild(vault);
+
+      const tools = toolsFor(vaultA);
+      const res = tools.search({ query: 'drain' });
+      expect(res.ok).toBe(true);
+      if (!res.ok) return;
+      expect(res.hits.length).toBeLessThanOrEqual(MCP_DEFAULT_LIMIT);
+
+      const wider = tools.search({ query: 'drain', limit: 25 });
+      expect(wider.ok).toBe(true);
+      if (wider.ok) expect(wider.hits.length).toBeGreaterThan(MCP_DEFAULT_LIMIT);
+    });
+
+    it('gives a hit a whole body or an index line, never a fragment', () => {
+      // Measured against the real vault: with hits capped at 8 and the shared
+      // budget at 10,000, notes six through eight came back with 377, 147 and
+      // 133 characters — a heading and two bullets, formatted exactly like a
+      // body and answering nothing. The renderer already lists a bodyless hit
+      // as one cheap line naming its path, which is strictly more useful.
+      const vault = createVault(vaultA);
+      for (let i = 0; i < 12; i++) {
+        vault.writeNote(`Subsystems/Wide${String(i)}.md`, note(`drain ${'q'.repeat(1900)}`));
+      }
+      createVaultIndex(join(vaultA, '.omnifex', 'index.db')).rebuild(vault);
+
+      const res = toolsFor(vaultA).search({ query: 'drain' });
+      expect(res.ok).toBe(true);
+      if (!res.ok) return;
+      // Every body that was served had a real budget behind it, so none is a
+      // heading and two bullets. The guard is on what is left to spend, which
+      // is why a small note served whole is unaffected.
+      const served = res.hits.filter((h) => h.body !== null);
+      expect(served.length).toBeGreaterThan(0);
+      for (const h of served) {
+        expect(h.body!.length).toBeGreaterThanOrEqual(MIN_USEFUL_BODY_CHARS);
+      }
+      expect(res.hits.some((h) => h.body === null)).toBe(true);
+      // And the budget still binds, so this is not a licence to overspend.
+      const spent = res.hits.reduce((n, h) => n + (h.body?.length ?? 0), 0);
+      expect(spent).toBeLessThanOrEqual(MAX_TOTAL_BODY_CHARS);
     });
 
     it('spends an over-cap body on Key facts and Decisions, not the wikilink dump', () => {
@@ -439,5 +495,107 @@ describe('brain MCP tools', () => {
       expect(toolsFor(vaultA).remember({ text: 'still works' }).ok).toBe(true);
       expect(existsSync(join(vaultA, '.omnifex', 'index.db'))).toBe(false);
     });
+  });
+});
+
+describe('renderSearchResult', () => {
+  /** A hit in the shape `search` returns, with only what the renderer reads. */
+  function hit(over: Partial<SearchResultHit> = {}): SearchResultHit {
+    return {
+      notePath: 'Subsystems/Queue.md',
+      type: 'Subsystem',
+      title: 'Queue',
+      snippet: 'the [drain] worker',
+      score: -12.5,
+      body: '## Key facts\n- drain concurrency is 1\n',
+      bodyTruncated: false,
+      ...over,
+    };
+  }
+
+  it('renders note text as markdown rather than escaped JSON', () => {
+    // Measured on a real response: pretty-printed JSON spent 5,302 of 27,161
+    // characters — 20% — on indentation and on escaping the newlines that every
+    // markdown note is full of. The model reads markdown either way.
+    const text = renderSearchResult('drain', [hit()]);
+    expect(text).toContain('## Key facts');
+    expect(text).toContain('- drain concurrency is 1');
+    expect(text).not.toContain('\\n');
+  });
+
+  it('omits the bm25 score', () => {
+    // A raw negative float the model cannot calibrate against anything. It was
+    // ~7 characters on every hit of every search, forever.
+    expect(renderSearchResult('drain', [hit()])).not.toContain('12.5');
+  });
+
+  it('names the path of a truncated hit so brain_read needs no guessing', () => {
+    const text = renderSearchResult('drain', [hit({ bodyTruncated: true })]);
+    expect(text).toContain('brain_read');
+    expect(text).toContain('Subsystems/Queue.md');
+  });
+
+  it('lists a bodyless hit as one line instead of an empty stub', () => {
+    // The old shape returned `body: null, bodyTruncated: true` for every hit
+    // past the budget — on a default search, 7 of 20 — which reads as a note
+    // whose content was withheld rather than as one simply ranked lower.
+    const text = renderSearchResult('drain', [
+      hit(),
+      hit({ notePath: 'Topics/Later.md', title: 'Later', body: null, bodyTruncated: true }),
+    ]);
+    expect(text).toContain('Topics/Later.md');
+    // Its one line carries the snippet, which is the only thing that can stand
+    // in for a body it did not get.
+    expect(text).toContain('the [drain] worker');
+    const shown = text.slice(text.indexOf('Topics/Later.md'));
+    expect(shown.split('\n').length).toBeLessThanOrEqual(3);
+  });
+
+  it('says plainly when nothing matched', () => {
+    // `[]` is indistinguishable from a broken tool, and the empty-result rate
+    // was 44% before the OR fix — the model has met this often.
+    const text = renderSearchResult('nothing here', []);
+    expect(text.toLowerCase()).toContain('no notes');
+    expect(text).toContain('nothing here');
+    expect(text).not.toBe('[]');
+  });
+
+  it('costs far less than the JSON it replaces', () => {
+    const hits = Array.from({ length: 8 }, (_, i) =>
+      hit({ notePath: `Subsystems/N${String(i)}.md`, body: 'x'.repeat(1200) }),
+    );
+    const text = renderSearchResult('drain', hits);
+    expect(text.length).toBeLessThan(JSON.stringify(hits, null, 2).length);
+  });
+});
+
+describe('renderNote', () => {
+  const parsed: ParsedNote = {
+    frontmatter: {
+      type: 'Subsystem',
+      aliases: ['queue.ts'],
+      keywords: ['drain'],
+      created: '2026-08-01',
+      updated: '2026-08-12',
+      sources: ['session:abc'],
+      project: '[[Projects/omnifex]]',
+    },
+    body: '## Key facts\n- drain concurrency is 1\n',
+  };
+
+  it('returns the note as markdown, not as an escaped JSON object', () => {
+    const text = renderNote('Subsystems/Queue.md', parsed);
+    expect(text).toContain('## Key facts');
+    expect(text).not.toContain('\\n');
+  });
+
+  it('keeps the frontmatter a reader would act on and drops the bookkeeping', () => {
+    // `sources` is provenance for the indexer. It is a list of opaque session
+    // ids the model can do nothing with, and it grows with every reindex.
+    const text = renderNote('Subsystems/Queue.md', parsed);
+    expect(text).toContain('Subsystem');
+    expect(text).toContain('[[Projects/omnifex]]');
+    expect(text).toContain('2026-08-12');
+    expect(text).not.toContain('session:abc');
   });
 });

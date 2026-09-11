@@ -19,7 +19,14 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import { createVault } from './services/brain/vault';
 import { openVaultIndexReadOnly } from './services/brain/search';
-import { createBrainMcpTools, type ToolResult } from './services/brain/mcp-tools';
+import {
+  createBrainMcpTools,
+  renderNote,
+  renderSearchResult,
+  MCP_DEFAULT_LIMIT,
+  type ToolResult,
+} from './services/brain/mcp-tools';
+import { brainInstructions } from './services/brain/instructions';
 import { NOTE_TYPES } from './services/brain/types';
 
 /**
@@ -32,9 +39,47 @@ function reply<T>(result: ToolResult<T>, body: (ok: T) => unknown) {
     return { isError: true, content: [{ type: 'text' as const, text: result.error }] };
   }
   const { ok: _ok, ...rest } = result;
+  const rendered = body(rest as T);
   return {
-    content: [{ type: 'text' as const, text: JSON.stringify(body(rest as T), null, 2) }],
+    content: [
+      {
+        type: 'text' as const,
+        // Notes are markdown, and nothing on the other side parses this — a
+        // model reads it. JSON-encoding a note spends a fifth of the response
+        // escaping the newlines it is made of.
+        text: typeof rendered === 'string' ? rendered : JSON.stringify(rendered, null, 2),
+      },
+    ],
   };
+}
+
+/**
+ * What the server tells every session about itself, computed once at startup.
+ *
+ * The CLI spawns this process in the session's working directory, which is what
+ * makes a repo-specific directive possible from in here at all — the same fact
+ * `brain_remember` already relies on to stamp a capture's `cwd`.
+ *
+ * Every failure is silent and yields the generic text. The Brain is auxiliary:
+ * a missing index must not stop the server that still serves `brain_read`.
+ */
+function instructionsFor(dbPath: string): string {
+  let cwd: string | null = null;
+  try {
+    cwd = process.cwd();
+  } catch {
+    // A deleted working directory throws here. Unattributed is still useful.
+  }
+  try {
+    const index = openVaultIndexReadOnly(dbPath);
+    try {
+      return brainInstructions(cwd, index.projectCounts());
+    } finally {
+      index.close();
+    }
+  } catch {
+    return brainInstructions(cwd, []);
+  }
 }
 
 function main(): Promise<void> {
@@ -53,33 +98,43 @@ function main(): Promise<void> {
     now: () => new Date(),
   });
 
-  const server = new McpServer({ name: 'omnifex-brain', version: '1.0.0' });
+  // `instructions` is the whole reason a session reaches for any of this. It
+  // reaches the model whether or not a tool is ever called, and it replaces the
+  // SessionStart hook that used to do this job from outside the app — see
+  // services/brain/instructions.ts for why that was worth collapsing.
+  const server = new McpServer(
+    { name: 'omnifex-brain', version: '1.0.0' },
+    { instructions: instructionsFor(dbPath) },
+  );
 
-  // Nothing auto-injects the Brain into a session's context, so whether the
-  // model reaches for these at all depends on how they describe themselves.
-  // They state what the vault CONTAINS rather than how it works.
+  // The descriptions state what each tool IS, and leave when-to-call to the
+  // instructions above. Repeating the trigger conditions here would pay for
+  // them three times — once per tool — in every session.
   server.registerTool(
     'brain_search',
     {
       description:
-        "Search this account's OmniFex Brain: durable engineering knowledge distilled from " +
-        'its own past Claude Code sessions — subsystems, decisions, constraints and the ' +
-        'identifiers a developer would actually type. Use it before asking the user to ' +
-        're-explain earlier work, and before assuming how something in this codebase came to be. ' +
-        'Each hit carries the note text in `body`, so a result is usable as it stands — only ' +
-        'follow up with brain_read where a hit sets `bodyTruncated`.',
+        "Search this account's OmniFex Brain — durable knowledge distilled from its own past " +
+        'Claude Code sessions. Returns matching notes as markdown, best match first, with the ' +
+        'note text inline.',
       inputSchema: {
-        query: z.string().describe('Search terms. Identifiers and file names work well.'),
+        query: z.string().describe('Identifiers, file paths or error text. Two to five terms.'),
         type: z.enum(NOTE_TYPES).optional().describe('Restrict to one note type.'),
         project: z
           .string()
           .optional()
           .describe('Wikilink to a project note, e.g. "[[Projects/omnifex]]".'),
-        limit: z.number().int().positive().max(50).optional(),
+        limit: z
+          .number()
+          .int()
+          .positive()
+          .max(50)
+          .optional()
+          .describe(`Hits to return. Defaults to ${String(MCP_DEFAULT_LIMIT)}.`),
       },
     },
     ({ query, type, project, limit }) =>
-      reply(tools.search({ query, type, project, limit }), (r) => r.hits),
+      reply(tools.search({ query, type, project, limit }), (r) => renderSearchResult(query, r.hits)),
   );
 
   server.registerTool(
@@ -87,23 +142,21 @@ function main(): Promise<void> {
     {
       description:
         'Read one Brain note whole, by the vault-relative path a brain_search hit reports. ' +
-        'Needed only when that hit set `bodyTruncated` — otherwise the search result already ' +
-        'held the entire note and this call returns the same text again.',
+        'Needed only for a hit the search marked as truncated — otherwise that result already ' +
+        'held the entire note and this returns the same text again.',
       inputSchema: {
         path: z.string().describe('Vault-relative path, e.g. "Subsystems/Queue.md".'),
       },
     },
-    ({ path }) => reply(tools.read({ path }), (r) => r.note),
+    ({ path }) => reply(tools.read({ path }), (r) => renderNote(path, r.note)),
   );
 
   server.registerTool(
     'brain_remember',
     {
       description:
-        "Record a durable fact into this account's Brain. Use it for what will still matter " +
-        'in six months — a decision and the reason behind it, a constraint, a gotcha that ' +
-        'cost time. The text is queued and becomes a note after the current session ends; ' +
-        'it is not written immediately.',
+        "Record a durable fact into this account's Brain. The text is queued and becomes a " +
+        'note after the current session ends; it is not written immediately.',
       inputSchema: {
         text: z.string().describe('The fact, in prose. Include why, not only what.'),
         project: z.string().optional().describe('Project this belongs to, e.g. "omnifex".'),

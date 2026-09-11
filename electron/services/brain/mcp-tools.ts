@@ -50,15 +50,40 @@ export const MAX_BODY_CHARS = 2000;
  * Ceiling on inline bodies across one response. `limit` permits 50 hits, and
  * without this a broad query against a vault of long notes returns a wall of
  * text as a single tool result.
+ *
+ * Measured on real traffic before this was lowered from 20,000: the median
+ * search cost ~11K characters and the largest 27K — around 6.8K tokens for one
+ * call. At 10,000 the top five or six notes still arrive whole, which is where
+ * the answer has always been.
  */
-export const MAX_TOTAL_BODY_CHARS = 20000;
+export const MAX_TOTAL_BODY_CHARS = 10000;
 
 /**
- * Below this much remaining budget, serve no body at all. A 40-character
- * prefix is not worth the tokens and reads as content rather than as the stub
- * it is.
+ * Hits returned when the caller names no `limit`.
+ *
+ * Deliberately not `search.ts`'s DEFAULT_LIMIT of 20, which is right for the
+ * Brain tab: a scrollable list costs the reader nothing per row, while a tool
+ * result costs tokens per row whether or not it is read. Twenty hits against a
+ * 10,000-character body budget guarantees most of them arrive as bodyless
+ * stubs — measured, seven of twenty.
  */
-const MIN_USEFUL_BODY_CHARS = 200;
+export const MCP_DEFAULT_LIMIT = 8;
+
+/**
+ * Least remaining budget worth starting a body with. Under this the hit is
+ * listed by path instead.
+ *
+ * Raised from 200 once the total budget came down. Measured against the real
+ * vault: the sixth through eighth hits of a default search came back holding
+ * 377, 147 and 133 characters of notes that are 1,560 to 3,176 long — a heading
+ * and a bullet or two, formatted exactly like a body and answering nothing.
+ * The fragments are a symptom of an exhausted budget, not of small notes, so
+ * the guard belongs on what is left to spend rather than on what came back.
+ * `renderSearchResult` lists a hit that got no body as one line naming its path
+ * and where the query matched: a tenth the cost, and honest about being a
+ * pointer.
+ */
+export const MIN_USEFUL_BODY_CHARS = 600;
 
 /**
  * A search hit with the note's text already attached.
@@ -213,6 +238,71 @@ function condenseBody(body: string, cap: number): string {
   return out.length <= cap ? out : out.slice(0, cap);
 }
 
+/**
+ * Render a search response as the markdown the model will read anyway.
+ *
+ * The tool used to reply with `JSON.stringify(hits, null, 2)`. Notes are
+ * markdown — mostly newlines, bullets and quoted identifiers — so that encoding
+ * spent a measured 5,302 of 27,161 characters, 20% of the response, on `\\n`
+ * escapes and indentation carrying no information. The structure JSON provided
+ * was never used: nothing parses this result, a model reads it.
+ *
+ * Hits that got no body are listed rather than dropped. They are still the
+ * ranked evidence that something exists — but as one line each, not as objects
+ * whose null `body` reads like content withheld.
+ */
+export function renderSearchResult(query: string, hits: readonly SearchResultHit[]): string {
+  if (hits.length === 0) {
+    // Never a bare `[]`: that is indistinguishable from a broken tool, and
+    // before `fts-query.ts` switched to OR the model met it on 44% of searches.
+    return `No notes matched "${query}". Try fewer or different identifiers, or a related file name.`;
+  }
+
+  const full = hits.filter((h) => h.body !== null);
+  const listed = hits.filter((h) => h.body === null);
+
+  const parts: string[] = [
+    `${String(hits.length)} note${hits.length === 1 ? '' : 's'} matched "${query}".`,
+  ];
+
+  for (const h of full) {
+    parts.push(`## ${h.notePath} (${h.type})\n${h.body ?? ''}`);
+    // The condensed body already footnotes which sections it dropped, but not
+    // under which path to find them.
+    if (h.bodyTruncated) parts.push(`→ brain_read "${h.notePath}" for the rest.`);
+  }
+
+  if (listed.length > 0) {
+    parts.push(
+      ['Also matched — brain_read to open:', ...listed.map((h) => `- ${h.notePath} (${h.type}): ${h.snippet}`)].join(
+        '\n',
+      ),
+    );
+  }
+
+  return parts.join('\n\n');
+}
+
+/**
+ * Render one whole note, for the call `renderSearchResult` points at.
+ *
+ * `sources` is deliberately dropped. It is the indexer's provenance — a list of
+ * session ids that grows with every reindex and that the reader can do nothing
+ * with — and on a well-worked note it is the longest field in the frontmatter.
+ */
+export function renderNote(notePath: string, note: ParsedNote): string {
+  const { type, project, aliases, keywords, updated } = note.frontmatter;
+  const meta = [
+    `path: ${notePath}`,
+    `type: ${type}`,
+    ...(project === undefined ? [] : [`project: ${project}`]),
+    ...(aliases.length === 0 ? [] : [`aliases: ${aliases.join(', ')}`]),
+    ...(keywords.length === 0 ? [] : [`keywords: ${keywords.join(', ')}`]),
+    `updated: ${updated}`,
+  ];
+  return `${meta.join('\n')}\n\n${note.body}`;
+}
+
 export interface BrainMcpTools {
   search(args: SearchOptions & { query: string }): ToolResult<{ hits: SearchResultHit[] }>;
   read(args: { path: string }): ToolResult<{ note: ParsedNote }>;
@@ -271,7 +361,7 @@ export function createBrainMcpTools(deps: BrainMcpDeps): BrainMcpTools {
         return { ok: false, error: message(err) };
       }
       try {
-        const hits = index.search(query, { type, project, limit });
+        const hits = index.search(query, { type, project, limit: limit ?? MCP_DEFAULT_LIMIT });
         return { ok: true, hits: attachBodies(hits, deps.vault) };
       } catch (err) {
         return { ok: false, error: message(err) };

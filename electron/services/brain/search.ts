@@ -29,8 +29,24 @@ export interface SearchOptions {
  * process from the indexing worker, and a second writer is contention the
  * design deliberately avoids.
  */
+/** One `(project, type)` bucket of the index. */
+export interface ProjectTypeCount {
+  /** The frontmatter project wikilink, or '' for an unattributed note. */
+  project: string;
+  type: string;
+  count: number;
+}
+
 export interface ReadonlyVaultIndex {
   search(query: string, opts?: SearchOptions): SearchHit[];
+  /**
+   * Every `(project, type)` bucket, for the MCP server's `instructions`.
+   *
+   * Counts rather than titles: the server states how much this project knows,
+   * never what it knows. A table of contents would be thousands of tokens in
+   * every session prompt, spent guessing at relevance before the task is known.
+   */
+  projectCounts(): ProjectTypeCount[];
   close(): void;
 }
 
@@ -67,6 +83,17 @@ const BM25_WEIGHTS = '0.0, 0.0, 0.0, 10.0, 8.0, 6.0, 3.0, 1.0';
 
 /** Ordinal of the body column, for snippet(). */
 const BODY_COLUMN = 7;
+
+/** Shared by both openers, for the same reason `runSearch` is. */
+function runProjectCounts(db: BetterSqlite3.Database): ProjectTypeCount[] {
+  return db
+    .prepare(
+      `SELECT project, type, count(*) AS count
+         FROM brain_fts
+        GROUP BY project, type`,
+    )
+    .all() as ProjectTypeCount[];
+}
 
 /**
  * The one search query, shared by the read-write and read-only openers.
@@ -183,6 +210,7 @@ export function openVaultIndexReadOnly(dbPath: string): ReadonlyVaultIndex {
   }
   return {
     search: (query, opts = {}) => runSearch(db, query, opts),
+    projectCounts: () => runProjectCounts(db),
     close: () => { db.close(); },
   };
 }
@@ -250,6 +278,10 @@ export function createVaultIndex(dbPath: string): VaultIndex {
 
     search(query: string, opts: SearchOptions = {}): SearchHit[] {
       return runSearch(db, query, opts);
+    },
+
+    projectCounts(): ProjectTypeCount[] {
+      return runProjectCounts(db);
     },
 
     rebuild(vault: Vault): number {
