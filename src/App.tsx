@@ -23,7 +23,7 @@ import { AccountPickerDialog } from "@/components/AccountPickerDialog";
 import { Toast, ToastContainer } from "@/components/ui/toast";
 import { TabManager } from "@/components/TabManager";
 import { TabContent } from "@/components/TabContent";
-import { RemoteConnectionBanner, PushEnableBar } from "@/components/RemoteConnectionBanner";
+import { RemoteConnectionBanner, LocalModeBanner, PushEnableBar } from "@/components/RemoteConnectionBanner";
 import { useLayoutMode } from "@/hooks/useLayoutMode";
 import { useKeyboardInset } from "@/hooks/useKeyboardInset";
 import { deepLinkedSessionId } from "@/lib/remote/push";
@@ -526,6 +526,7 @@ function AppContent() {
         onCliReviewClick={handleCliReviewLaunch}
       />
       <RemoteConnectionBanner />
+      <LocalModeBanner />
       <PushEnableBar />
 
       {/* Main Content */}

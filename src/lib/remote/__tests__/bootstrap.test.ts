@@ -91,6 +91,36 @@ describe('installRemoteBridge (Electron)', () => {
     expect(w.__omnifexNative).toBe(native);
   });
 
+  /**
+   * "Work locally" is a flag plus a reload — there is no way to swap the
+   * transport in place — so bootstrap has to honour the flag on the way back
+   * up, before it probes anything. Probing anyway would start a daemon the
+   * user just chose to step away from.
+   */
+  it('skips the daemon entirely when local mode has been forced', async () => {
+    sessionStorage.setItem('omnifex.remote.forceLocal', '1');
+    const native = nativeBridge(URL);
+    w.__omnifexNative = native;
+
+    const info = await installRemoteBridge({ createSocket: (url) => new FakeSocket(url) });
+
+    expect(info.mode).toBe('electron-legacy');
+    expect(info.forcedLocal).toBe(true);
+    expect(w.electronAPI).toBe(native);
+    // Neither probed nor dialled: `remote:url` starts a daemon when none is
+    // running, which is the opposite of what the user asked for.
+    expect(native.invoke).not.toHaveBeenCalled();
+    expect(FakeSocket.instances).toHaveLength(0);
+    sessionStorage.clear();
+  });
+
+  it('reports forcedLocal false for an ordinary legacy launch', async () => {
+    w.__omnifexNative = nativeBridge(null);
+    const info = await installRemoteBridge({ createSocket: (url) => new FakeSocket(url) });
+    expect(info.mode).toBe('electron-legacy');
+    expect(info.forcedLocal).toBe(false);
+  });
+
   it('legacy: with no daemon, window.electronAPI is the native bridge itself', async () => {
     const native = nativeBridge(null);
     w.__omnifexNative = native;

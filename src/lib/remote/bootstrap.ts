@@ -24,6 +24,7 @@
  * `main.tsx` awaits this before booting React.
  */
 import { createServerClient, type ServerClient, type WebSocketFactory } from '@/lib/remote/serverClient';
+import { localModeForced } from '@/lib/remote/localMode';
 import { createElectronApiShim } from '@/lib/remote/electronApiShim';
 import type { NativeBridge } from '@/lib/platform';
 
@@ -33,6 +34,12 @@ export interface RemoteBridgeInfo {
   mode: RemoteMode;
   url: string | null;
   client: ServerClient | null;
+  /**
+   * Legacy because the user asked for it, not because no daemon answered.
+   * The two look identical from here and need opposite things on screen: one
+   * offers a way back, the other has nothing to go back to.
+   */
+  forcedLocal: boolean;
 }
 
 declare global {
@@ -108,6 +115,14 @@ export async function installRemoteBridge(opts: InstallRemoteBridgeOptions = {})
 
   if (native) {
     setElectronApi(native);
+    // Honoured before anything is probed. `remote:url` STARTS a daemon when
+    // none is running, so asking would resurrect the process the user just
+    // chose to step away from — see localMode.ts.
+    if (localModeForced()) {
+      window.__omnifexRemote = { mode: 'electron-legacy', url: null, client: null, forcedLocal: true };
+      console.info('[remote] mode=electron-legacy (forced by the user)');
+      return window.__omnifexRemote;
+    }
     let url: string | null = null;
     try {
       url = (await native.invoke('remote:url')) as string | null;
@@ -115,17 +130,17 @@ export async function installRemoteBridge(opts: InstallRemoteBridgeOptions = {})
       console.warn('[remote] remote:url failed; staying on legacy IPC', err);
     }
     if (!url) {
-      info = { mode: 'electron-legacy', url: null, client: null };
+      info = { mode: 'electron-legacy', url: null, client: null, forcedLocal: false };
     } else {
       const client = createServerClient({ url, clientId: clientId(), clientKind: 'electron', createSocket: opts.createSocket });
       try {
         await withTimeout(client.connect(), connectTimeoutMs, 'daemon handshake');
         setElectronApi(createElectronApiShim({ client, native }));
-        info = { mode: 'electron-remote', url, client };
+        info = { mode: 'electron-remote', url, client, forcedLocal: false };
       } catch (err) {
         console.warn('[remote] daemon handshake failed; staying on legacy IPC', err);
         client.disconnect();
-        info = { mode: 'electron-legacy', url, client: null };
+        info = { mode: 'electron-legacy', url, client: null, forcedLocal: false };
       }
     }
   } else {
@@ -138,7 +153,7 @@ export async function installRemoteBridge(opts: InstallRemoteBridgeOptions = {})
     client.connect().catch((err: unknown) => {
       console.warn('[remote] initial connect failed; will keep retrying', err);
     });
-    info = { mode: 'web', url, client };
+    info = { mode: 'web', url, client, forcedLocal: false };
     registerServiceWorker();
   }
 
