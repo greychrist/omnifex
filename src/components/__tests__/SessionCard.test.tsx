@@ -121,3 +121,118 @@ describe('SessionCard — context popover controls', () => {
     expect(screen.getByText('Context')).toBeTruthy();
   });
 });
+
+const WITH_CATEGORIES: SessionContextUsage = {
+  ...USAGE,
+  totalTokens: 120_000,
+  categories: [
+    { name: 'System prompt', tokens: 20_000, color: '#fff' },
+    { name: 'Tools', tokens: 40_000, color: '#fff' },
+    { name: 'Messages', tokens: 60_000, color: '#fff' },
+  ],
+} as SessionContextUsage;
+
+const openPopover = () => {
+  fireEvent.click(screen.getByRole('button', { name: /context/i }));
+};
+
+describe('SessionCard — compact button', () => {
+  // The refactor that removed the context-pressure banner took the only
+  // always-visible compact affordance with it: the action signal fires at 100%
+  // of budget, so between 80% and 100% there was an amber meter and nothing to
+  // click. The popover now carries a permanent one at any level.
+  it('offers Compact now at any context level', () => {
+    render(<SessionCard totalTokens={12_000} contextUsage={USAGE} onCompact={() => {}} />);
+    openPopover();
+
+    expect(screen.getByRole('button', { name: 'Compact now' })).toBeTruthy();
+  });
+
+  it('runs the handler when pressed', () => {
+    let ran = 0;
+    render(<SessionCard totalTokens={12_000} contextUsage={USAGE} onCompact={() => { ran += 1; }} />);
+    openPopover();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Compact now' }));
+    expect(ran).toBe(1);
+  });
+
+  it('goes inert while a turn is in flight, rather than vanishing', () => {
+    render(
+      <SessionCard totalTokens={12_000} contextUsage={USAGE} onCompact={() => {}} compactDisabled />,
+    );
+    openPopover();
+
+    // No jest-dom in this file; assert the DOM property directly.
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Compact now' }).disabled).toBe(true);
+  });
+
+  it('yields to the pending action card rather than offering compact twice', () => {
+    const pending = {
+      id: 'context.boundary',
+      tabId: 't1',
+      kind: 'action' as const,
+      anchor: 'session' as const,
+      priority: 'high' as const,
+      key: 'context.boundary',
+      title: 'Context past your 250k budget',
+      at: 0,
+      actions: [{ id: 'compact', label: 'Compact now', primary: true, run: () => {} }],
+    };
+
+    render(
+      <SessionCard
+        totalTokens={12_000}
+        contextUsage={USAGE}
+        onCompact={() => {}}
+        pendingAction={pending}
+      />,
+    );
+    openPopover();
+
+    expect(screen.getAllByRole('button', { name: 'Compact now' })).toHaveLength(1);
+  });
+
+  it('shows nothing when no handler is wired', () => {
+    render(<SessionCard totalTokens={12_000} contextUsage={USAGE} />);
+    openPopover();
+
+    expect(screen.queryByRole('button', { name: 'Compact now' })).toBeNull();
+  });
+});
+
+describe('SessionCard — category breakdown', () => {
+  it('draws the breakdown as a bar, not a pie', () => {
+    render(<SessionCard totalTokens={120_000} contextUsage={WITH_CATEGORIES} />);
+    openPopover();
+
+    // Queried off document, not the render container: the popover portals its
+    // content to body. The pie was 18rem of popover height for information the
+    // legend below it already carried.
+    expect(document.querySelector('.recharts-wrapper')).toBeNull();
+    expect(document.querySelectorAll('[data-context-band]').length).toBeGreaterThan(0);
+  });
+
+  it('sizes each band by its share of the window', () => {
+    render(<SessionCard totalTokens={120_000} contextUsage={WITH_CATEGORIES} />);
+    openPopover();
+
+    const bands = document.querySelectorAll<HTMLElement>('[data-context-band]');
+    // Largest first, as the legend has always ordered them: Messages is 60k of
+    // a 200k window.
+    expect(bands[0].getAttribute('data-context-band')).toBe('Messages');
+    expect(bands[0].style.width).toBe('30%');
+    expect(bands[1].style.width).toBe('20%');
+    // Trailing free space is a band too, so the bar always spans the window.
+    expect(bands[bands.length - 1].getAttribute('data-context-band')).toBe('Free');
+    expect(bands[bands.length - 1].style.width).toBe('40%');
+  });
+
+  it('keeps the legend, which is where the numbers are readable', () => {
+    render(<SessionCard totalTokens={120_000} contextUsage={WITH_CATEGORIES} />);
+    openPopover();
+
+    expect(screen.getByText('System prompt')).toBeTruthy();
+    expect(screen.getByText('Tools')).toBeTruthy();
+  });
+});

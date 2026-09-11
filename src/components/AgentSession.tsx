@@ -2386,6 +2386,11 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
             pendingAction={sessionAction}
             recentEvents={sessionEvents}
             onSignalsRead={() => { signals.markRead('session'); }}
+            // Permanent, not signal-driven: the boundary action only fires at
+            // 100% of the budget, so without this there is nothing to click
+            // through the whole amber band.
+            onCompact={fireAndLog('claude-code-session:compact', handleCompact)}
+            compactDisabled={isLoading || !isSessionActive}
             totalTokens={totalTokens}
             model={selectedModel}
             defaultModel={accountDefaultModel}

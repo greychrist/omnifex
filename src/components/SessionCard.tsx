@@ -4,7 +4,6 @@ import { cn } from "@/lib/utils";
 import { resolveContextLimit } from "@/lib/contextLimit";
 import type { SessionContextUsage } from "@/lib/api";
 import { Popover } from "@/components/ui/popover";
-import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import { Button } from "@/components/ui/button";
 import { HeaderLabel } from "./HeaderLabel";
 import { CacheTimerRow } from "./CacheTimerRow";
@@ -103,6 +102,19 @@ interface SessionCardProps {
   recentEvents?: SessionSignal[];
   /** Called when the popover opens, so the caller can clear the unread badge. */
   onSignalsRead?: () => void;
+  /**
+   * Runs `/compact` on this session. Omit and no button renders.
+   *
+   * Deliberately NOT derived from a signal. The boundary action only fires at
+   * 100% of the budget, so between 80% and 100% the meter went amber with
+   * nothing to click — the old context-pressure banner had been the only
+   * always-visible compact affordance, and removing it took that with it.
+   * Compacting is a thing you may want to do at any level, so it lives on the
+   * widget permanently rather than appearing when the app decides it matters.
+   */
+  onCompact?: () => void;
+  /** True while a turn is in flight; the button renders inert, not absent. */
+  compactDisabled?: boolean;
   className?: string;
 }
 
@@ -134,6 +146,8 @@ export function SessionCard({
   pendingAction = null,
   recentEvents = [],
   onSignalsRead,
+  onCompact,
+  compactDisabled = false,
   className,
 }: SessionCardProps) {
   const [contextPopoverOpen, setContextPopoverOpen] = React.useState(false);
@@ -149,15 +163,6 @@ export function SessionCard({
       console.error("Failed to copy session id:", err);
     }
   }, [sessionId]);
-
-  const [chartReady, setChartReady] = React.useState(false);
-  React.useEffect(() => {
-    if (contextPopoverOpen) {
-      const id = requestAnimationFrame(() => { setChartReady(true); });
-      return () => { cancelAnimationFrame(id); setChartReady(false); };
-    }
-    setChartReady(false);
-  }, [contextPopoverOpen]);
 
   return (
     <div className={cn("flex items-start gap-3 rounded-md border-0 bg-background/40 px-2 py-1 shadow-[0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_30%,transparent),2px_2px_4px_rgb(0_0_0/0.08)]", className)}>
@@ -244,7 +249,9 @@ export function SessionCard({
             : CATEGORY_COLORS[usedColorIdx++ % CATEGORY_COLORS.length];
           return { name: c.name, value: c.tokens, color: sliceColor };
         });
-        const pieData =
+        // Trailing free space is a band like any other, so the bar always
+        // spans the window and a category's width is directly comparable to it.
+        const bands =
           categoriesSum < limit
             ? [
                 ...slicesFromCategories,
@@ -276,6 +283,10 @@ export function SessionCard({
             trigger={
               <button
                 type="button"
+                // Its visible text is "120.0k 12%", which a screen reader
+                // announces as two bare numbers with no subject.
+                aria-label="Context usage"
+                aria-expanded={contextPopoverOpen}
                 className={cn(
                   "inline-flex w-full items-center gap-1.5 px-2 py-0.5 rounded text-xs font-mono font-medium cursor-pointer text-foreground",
                   "bg-background shadow-[0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_45%,transparent)]",
@@ -325,60 +336,73 @@ export function SessionCard({
 
                 {pendingAction && <SignalActionCard signal={pendingAction} />}
 
+                {/* Suppressed when the action card is up: that card leads with
+                    its own Compact now, and two identical buttons stacked is
+                    worse than either alone. */}
+                {onCompact && !pendingAction && (
+                  <button
+                    type="button"
+                    onClick={onCompact}
+                    disabled={compactDisabled}
+                    title={
+                      compactDisabled
+                        ? "Wait for the current turn to finish"
+                        : "Run /compact on this session"
+                    }
+                    className={cn(
+                      "self-start rounded-sm px-2 py-0.5 text-[11px] transition-colors",
+                      "bg-foreground/5 hover:bg-foreground/10",
+                      "focus:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+                      "disabled:opacity-40 disabled:cursor-default disabled:hover:bg-foreground/5",
+                    )}
+                  >
+                    Compact now
+                  </button>
+                )}
+
                 {controls && (
                   <div className="pt-2 mt-1 border-t border-border/50">
                     {controls}
                   </div>
                 )}
 
-                {useSdk && sortedCategories.length > 0 && chartReady ? (
+                {useSdk && sortedCategories.length > 0 ? (
                   <>
-                    <div className="h-72 w-full -mx-2">
-                      {/* minWidth/minHeight=0 silences the Recharts "width(-1)"
-                          warning that fires when the portal-rendered popover
-                          content hasn't fully laid out before the first paint.
-                          Without them, ResponsiveContainer reads its parent as
-                          unmeasured and aborts the layout pass with the warn. */}
-                      <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
-                        <PieChart>
-                          <Pie
-                            data={pieData}
-                            dataKey="value"
-                            nameKey="name"
-                            cx="50%"
-                            cy="50%"
-                            innerRadius={76}
-                            outerRadius={120}
-                            paddingAngle={1}
-                            stroke="none"
-                            isAnimationActive={false}
-                          >
-                            {pieData.map((entry, index) => (
-        // eslint-disable-next-line @typescript-eslint/no-deprecated -- recharts Cell remains the documented API for per-segment fill; deprecation guidance is not yet finalized.
-                              <Cell key={`cell-${index}`} fill={entry.color} />
-                            ))}
-                          </Pie>
-                        </PieChart>
-                      </ResponsiveContainer>
+                    {/* A stacked bar, not a donut. The pie cost 18rem of
+                        popover height to encode one number per category —
+                        exactly what the legend underneath it already lists,
+                        and more precisely. Proportions survive; the height
+                        does not. */}
+                    <div className="flex h-2.5 w-full overflow-hidden rounded-sm bg-foreground/5">
+                      {bands.map((band) => (
+                        <div
+                          key={band.name}
+                          data-context-band={band.name}
+                          title={`${band.name} — ${band.value.toLocaleString()} tokens`}
+                          style={{
+                            width: `${limit > 0 ? (band.value / limit) * 100 : 0}%`,
+                            backgroundColor: band.color,
+                          }}
+                        />
+                      ))}
                     </div>
                     <div className="flex flex-col gap-1">
-                      {pieData.map((slice) => {
-                        const catPct =
-                          limit > 0 ? (slice.value / limit) * 100 : 0;
+                      {bands.map((band) => {
+                        const catPct = limit > 0 ? (band.value / limit) * 100 : 0;
                         return (
                           <div
-                            key={slice.name}
+                            key={band.name}
                             className="flex items-center gap-2 text-xs"
                           >
                             <span
                               className="inline-block w-2 h-2 rounded-sm shrink-0"
-                              style={{ backgroundColor: slice.color }}
+                              style={{ backgroundColor: band.color }}
                             />
                             <span className="flex-1 truncate text-foreground/80">
-                              {slice.name}
+                              {band.name}
                             </span>
                             <span className="font-mono text-foreground/60 shrink-0">
-                              {slice.value.toLocaleString()}
+                              {band.value.toLocaleString()}
                             </span>
                             <span className="font-mono text-foreground/40 shrink-0 w-10 text-right">
                               {catPct.toFixed(1)}%
