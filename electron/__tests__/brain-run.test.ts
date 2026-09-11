@@ -252,6 +252,53 @@ describe('brain indexing runs', () => {
   });
 
   /**
+   * A selection's total is the size of what the user ticked, and nothing else
+   * may restate it.
+   *
+   * `widenRunTotal` recomputes the total from the QUEUE — finished drain items,
+   * plus one, plus everything pending — which is the right answer for a drain
+   * and a meaningless one for a selection. It fired on every enqueue regardless
+   * of which of the two owned the run, so a session closing behind a nine-item
+   * selection relabelled it with the queue's depth: the pill counted the
+   * selection's items against the queue's total and read "8 of 3".
+   */
+  it('leaves a manual selection total alone when the queue grows behind it', async () => {
+    const seen: (BrainRun | null)[] = [];
+    const { extractor, release } = gatedExtractor();
+    const brain = createBrainService(db, {
+      execGit: stubExec, accounts: accountsStub, extractor,
+      sources: [fakeSource(1, ['a', 'b', 'c', 'late-close'])],
+      onRunProgress: (run) => { seen.push(run); },
+    });
+    brain.setVaultPath(1, join(dir, 'v-selection-total'));
+
+    const run = brain.indexSelection(1, ['a', 'b', 'c']);
+    await until(() => release.length === 1, 'the first selected item');
+    expect(seen[seen.length - 1]).toMatchObject({ total: 3, completed: 0, item: 'a' });
+
+    // Background work lands on the queue mid-selection — a session closing, or
+    // the five-minute sweep. The queue is now one deep; the selection is still
+    // three items, and that is the number the user is being counted against.
+    await brain.enqueueSource(1, 'late-close');
+    expect(seen[seen.length - 1]).toMatchObject({ total: 3, completed: 0, item: 'a' });
+
+    release[0]();
+    await until(() => release.length === 2, 'the second selected item');
+    expect(brain.currentRun(1)).toMatchObject({ total: 3, completed: 1, item: 'b' });
+
+    release[1]();
+    await until(() => release.length === 3, 'the third selected item');
+    release[2]();
+    await run;
+
+    // The last frame before the terminating null still counts against 3: the
+    // count that reached the screen must never exceed the run it describes.
+    const last = seen.filter((f) => f !== null).at(-1);
+    expect(last).toMatchObject({ total: 3, completed: 3 });
+    brain.closeAll();
+  });
+
+  /**
    * The close-two-tabs race.
    *
    * `drainQueue` refuses while a run is in flight, and the drain loop stops

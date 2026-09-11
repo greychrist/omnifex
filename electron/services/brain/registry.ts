@@ -862,6 +862,15 @@ export function createBrainService(
   }
 
   /**
+   * Which of the two kinds of work owns `activeRun`, or nothing.
+   *
+   * The run record itself cannot say: both kinds publish the same `BrainRun`,
+   * deliberately, so the two indicators draw one thing. But only one of them
+   * is counted against the QUEUE, and `widenRunTotal` has to know which.
+   */
+  let runOwner: 'queue' | 'selection' | null = null;
+
+  /**
    * Republish the run in flight because the queue behind it grew.
    *
    * `total` is recomputed when an entry is CLAIMED, which is correct but only
@@ -874,9 +883,15 @@ export function createBrainService(
    * Silent when the count is unchanged: `enqueue` is idempotent for rows
    * already pending, and the five-minute sweep re-offers the same backlog
    * every time it runs.
+   *
+   * Silent for a SELECTION, always. `runTotal()` answers "how deep is the
+   * queue", which is the wrong question about a run whose total is the number
+   * of rows the user ticked — and answering it anyway stamped the queue's
+   * depth onto the selection while its own `completed` kept climbing past it,
+   * so a nine-item selection reported "8 of 3".
    */
   function widenRunTotal(): void {
-    if (!activeRun) return;
+    if (!activeRun || runOwner !== 'queue') return;
     const total = runTotal();
     if (total === activeRun.total) return;
     activeRun = { ...activeRun, total };
@@ -903,6 +918,7 @@ export function createBrainService(
       // `total` is recomputed per entry rather than snapshotted at drain start,
       // so an enqueue that lands mid-drain widens the bar instead of pushing it
       // past 100%. The claimed entry is no longer `pending`, hence the +1.
+      runOwner = 'queue';
       activeRun = {
         accountId: entry.accountId,
         total: runTotal(),
@@ -1776,6 +1792,7 @@ export function createBrainService(
       let skipped = 0;
       const results: IndexResult[] = [];
 
+      runOwner = 'selection';
       activeRun = {
         accountId, total: itemKeys.length, completed: 0, item: itemKeys[0],
         label: itemKeys[0], phase: 'preparing', startedAt: clock(), written, skipped,
@@ -1817,6 +1834,7 @@ export function createBrainService(
         // A stuck `activeRun` would refuse every later run for the lifetime of
         // the process, with no way to reset short of restarting the app.
         activeRun = null;
+        runOwner = null;
         publishRun();
       }
 
@@ -2118,6 +2136,7 @@ export function createBrainService(
         return outcome;
       } finally {
         activeRun = null;
+        runOwner = null;
         publishRun();
       }
     },
