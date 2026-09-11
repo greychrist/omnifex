@@ -5,6 +5,21 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.165] — 2026-09-11
+
+### Fixed
+
+- Unread counts on the session widgets now say what they are counting. A small number appeared on the context meter — the thing that otherwise shows tokens — with nothing anywhere explaining it. The list that explains it sat below the category breakdown, off the bottom of the popover, and opening the popover cleared the count before you could scroll to it. The list now sits above the breakdown, the count survives until you close the popover so you can see which entries were new, and hovering the meter names what the number means.
+- The unread count on the MCP button could only ever go up. Opening the MCP panel never cleared it, and that panel showed nothing about the events it was counting. It now clears when you open the panel, which lists the events at the bottom.
+- Removed a badge on the account chip that could never show anything — nothing in the app produced the kind of event it counted.
+
+### Changed
+
+- The Brain now tells each session what it holds for the project you are in, so it is used instead of forgotten. This moves a job that a separate start-up script had been doing into OmniFex itself, which means it also works when you open a session in a subfolder of a repo — previously the script said nothing at all in that case.
+- Brain searches cost roughly a third less to read. Results come back as text rather than as a data dump that spent a fifth of its size on punctuation, fewer notes are returned by default, and a note that could only be shown as a two-line scrap is now listed by name instead.
+
+Installers are signed with a Developer ID certificate and notarized by Apple.
+
 ## [0.4.164] — 2026-09-11
 
 ### Fixed
