@@ -1,7 +1,14 @@
 import { defineConfig } from 'vitest/config';
 import path from 'path';
 
+import pkg from './package.json' with { type: 'json' };
+
 export default defineConfig({
+  // Mirrors vite.web.config.ts, so the web client's build-time version is a
+  // real value under test rather than an undefined global.
+  define: {
+    __APP_VERSION__: JSON.stringify(pkg.version),
+  },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, 'src'),

@@ -118,6 +118,10 @@ export function DaemonStatusPopover({ appVersion }: { appVersion?: string }): Re
   const good = state === 'connected';
   const daemonVersion = health?.version ?? client?.welcome?.daemonVersion ?? null;
   const versionMismatch = !!appVersion && !!daemonVersion && appVersion !== daemonVersion;
+  // On the web this daemon is what served the page, so a mismatch means the
+  // loaded bundle is stale — the desktop's "replaced once idle" is the wrong
+  // story, and there is no separate app to name.
+  const isWeb = remote?.mode === 'web';
   const footerButton = cn(
     'inline-flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5',
     'text-[12px] font-medium transition-colors app-no-drag',
@@ -182,14 +186,16 @@ export function DaemonStatusPopover({ appVersion }: { appVersion?: string }): Re
                   value={
                     daemonVersion
                       ? versionMismatch
-                        ? `${daemonVersion} (app ${appVersion})`
+                        ? `${daemonVersion} (${isWeb ? 'page' : 'app'} ${appVersion})`
                         : daemonVersion
                       : '—'
                   }
                 />
                 {versionMismatch && (
                   <p data-daemon-version-mismatch className="rounded-md bg-amber-500/10 px-2 py-1.5 text-[12px] text-amber-500">
-                    The daemon is another build. It is replaced automatically once no turn is running.
+                    {isWeb
+                      ? 'This page is another build. Reload to pick up the daemon\u2019s.'
+                      : 'The daemon is another build. It is replaced automatically once no turn is running.'}
                   </p>
                 )}
                 <Row label="Protocol" value={health ? `v${health.protocolVersion}` : '—'} />

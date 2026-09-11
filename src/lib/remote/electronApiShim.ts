@@ -75,6 +75,14 @@ const TYPED = new Set([
 ]);
 
 /**
+ * Baked in by `vite.web.config.ts`. The Electron renderer defines nothing
+ * here — it has main to ask — so the guard is the desktop path, not a
+ * defensive branch.
+ */
+declare const __APP_VERSION__: string | undefined;
+const BUILD_VERSION = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : 'web';
+
+/**
  * Native-only channels the renderer calls unprompted at boot or on a timer.
  * On the web these have a benign answer rather than an error: the Updates
  * button reads "up to date", the tab-status popover is simply empty, and
@@ -86,7 +94,9 @@ const WEB_FALLBACKS: Record<string, unknown> = {
   'tab_status_publish': null,
   'tab_status_remove': null,
   'updater:check': null,
-  'get_app_version': 'web',
+  // The daemon served this page, so the page has a version: the build it came
+  // from. The popover compares it against the daemon's.
+  'get_app_version': BUILD_VERSION,
   // No local codex on the tablet; `null` is api.ts's "not installed".
   'codex_binary_path': null,
 };

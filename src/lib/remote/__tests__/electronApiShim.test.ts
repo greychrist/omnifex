@@ -1,9 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { readFileSync } from 'node:fs';
 
 import { createElectronApiShim, TAB_MAP_STORAGE_KEY } from '@/lib/remote/electronApiShim';
 import type { ProtocolClient, ConnectionState } from '@/protocol/interfaces';
 import type { ServerMessage, SessionSummary } from '@/protocol';
 import type { NativeBridge } from '@/lib/platform';
+
+const APP_VERSION = (JSON.parse(readFileSync(new URL('../../../../package.json', import.meta.url), 'utf8')) as { version: string }).version;
 
 /** A protocol client double: records requests, lets the test push. */
 function fakeClient() {
@@ -223,7 +226,9 @@ describe('electronAPI shim', () => {
       expect(await web.invoke('tab_status_list')).toEqual([]);
       expect(await web.invoke('tab_status_publish', { tabId: 't' })).toBeNull();
       expect(await web.invoke('updater:check', {})).toBeNull();
-      expect(await web.invoke('get_app_version')).toBe('web');
+      // The page was served by one specific daemon build; that version is
+      // baked in, so the daemon popover can compare like with like.
+      expect(await web.invoke('get_app_version')).toBe(APP_VERSION);
     });
 
     it('answers codex_binary_path natively, and null on the web', async () => {

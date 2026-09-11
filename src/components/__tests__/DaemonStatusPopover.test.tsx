@@ -38,9 +38,9 @@ let listeners: Array<(p: unknown) => void>;
 let fetchMock: ReturnType<typeof vi.fn>;
 let invokeMock: ReturnType<typeof vi.fn>;
 
-function remote(state: string, welcomeVersion = '0.4.156') {
+function remote(state: string, welcomeVersion = '0.4.156', mode = 'electron-remote') {
   w.__omnifexRemote = {
-    mode: 'electron-remote',
+    mode,
     url: 'ws://100.64.0.1:47700/ws',
     client: { state, welcome: { protocolVersion: 1, daemonVersion: welcomeVersion } },
   };
@@ -101,7 +101,20 @@ describe('DaemonStatusPopover', () => {
     render(<DaemonStatusPopover appVersion="0.5.0" />);
     fireEvent.click(trigger());
     await waitFor(() => expect(screen.getByText('0.4.156 (app 0.5.0)')).toBeTruthy());
-    expect(document.querySelector('[data-daemon-version-mismatch]')).toBeTruthy();
+    expect(document.querySelector('[data-daemon-version-mismatch]')?.textContent).toMatch(/replaced automatically/);
+  });
+
+  // On the web the daemon is what served this page, so nothing swaps it on
+  // the tablet's behalf — a mismatch means the page itself is stale, and a
+  // reload is the fix. Saying "replaced automatically" there was just wrong.
+  it('tells a stale web page to reload instead', async () => {
+    remote('connected', '0.4.156', 'web');
+    render(<DaemonStatusPopover appVersion="0.4.155" />);
+    fireEvent.click(trigger());
+    await waitFor(() => expect(screen.getByText('0.4.156 (page 0.4.155)')).toBeTruthy());
+    const note = document.querySelector('[data-daemon-version-mismatch]');
+    expect(note?.textContent).toMatch(/Reload/);
+    expect(note?.textContent).not.toMatch(/replaced automatically/);
   });
 
   it('follows the connection state pushed by the shim', () => {
