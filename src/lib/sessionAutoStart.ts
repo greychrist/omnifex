@@ -54,3 +54,26 @@ export function decideRebindTarget(args: RebindTargetArgs): RebindTarget {
   }
   return 'resume';
 }
+
+/**
+ * Whether a chat tab shows the New Session panel (model / effort / permission
+ * pickers + Start) or goes straight to the transcript.
+ *
+ * `sessionStarted` alone is not enough. It is `sessionStatus !== 'stopped'`,
+ * so any mid-life stop — a CLI crash, a daemon restart taking its children
+ * with it — flips it false on a tab that already holds a conversation, and
+ * the empty-state panel renders in a `flex-1` block directly above that
+ * conversation. A tab with a transcript is never "new": the composer's
+ * stopped → resume path (and, in remote mode, the `remote-session-died`
+ * auto-resume) is how it comes back.
+ */
+export interface NewSessionPanelArgs {
+  /** `sessionStatus !== 'stopped'` — the user has committed to a session here. */
+  sessionStarted: boolean;
+  /** The tab has at least one rendered message. */
+  hasTranscript: boolean;
+}
+
+export function shouldShowNewSessionPanel(args: NewSessionPanelArgs): boolean {
+  return !args.sessionStarted && !args.hasTranscript;
+}

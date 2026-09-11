@@ -299,6 +299,32 @@ describe('useSessionLifecycle — startPersistentSession error surface', () => {
   });
 });
 
+describe('useSessionLifecycle — session died with the daemon', () => {
+  afterEach(() => { delete (window as any).__omnifexRemote; });
+
+  it('clears the stale live-session flag and rebinds when the shim reports the session died', async () => {
+    (window as any).__omnifexRemote = { client: {} };
+    (api.sessionRebind as any).mockResolvedValueOnce(true);
+    // initialPersistent: the tab still believes it holds a live handle — no
+    // agent-complete ever arrived, the daemon just went away.
+    const { result } = renderHook(harness({ initialPersistent: true }));
+
+    expect(Object.keys(eventListeners)).toContain('remote-session-died:tab-life');
+    await act(async () => {
+      eventListeners['remote-session-died:tab-life']({ sessionId: 'sid-1' });
+      await Promise.resolve();
+    });
+
+    expect(api.sessionRebind).toHaveBeenCalledWith('tab-life');
+    expect(result.current.persistentSessionRef.current).toBe(true);
+  });
+
+  it('does not subscribe outside remote mode, where the channel does not exist', () => {
+    renderHook(harness());
+    expect(Object.keys(eventListeners)).not.toContain('remote-session-died:tab-life');
+  });
+});
+
 describe('useSessionLifecycle — rebindPersistentSession', () => {
   it('returns true and short-circuits when persistentSessionRef is already true', async () => {
     const { result } = renderHook(harness({ initialPersistent: true }));

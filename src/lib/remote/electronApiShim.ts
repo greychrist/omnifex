@@ -196,7 +196,7 @@ export function createElectronApiShim(opts: ShimOptions): ElectronApiLike & { di
           emitForSession(m.sessionId, prefix, raw);
         } else if (m.kind === 'complete') {
           emitForSession(m.sessionId, prefix);
-        } else if (m.kind === 'notification') {
+        } else if (m.kind === 'notification' && prefix === 'claude-notification') {
           const tabs = sessionToTabs.get(m.sessionId);
           const p = (m.payload ?? {}) as { title?: string; body?: string; is_error?: boolean };
           for (const tab of tabs ?? []) {
@@ -204,6 +204,14 @@ export function createElectronApiShim(opts: ShimOptions): ElectronApiLike & { di
             notifyNative(p.title ?? 'OmniFex', p.body ?? '', !!p.is_error, tab);
           }
         } else {
+          // `notification` is two things on the wire: the OS-notification
+          // channel above, and the bridge's catch-all for any tab-scoped
+          // channel it has no case for (`session-cost` today —
+          // electron/remote/bridge.ts). Routing the catch-all by kind rang
+          // the notification sound on every cost tick, with an empty body
+          // and no banner when the window was focused, and starved
+          // `useSessionCost` of the updates it was actually carrying.
+          // Branch on the channel, which every push carries.
           emitForSession(m.sessionId, prefix, m.payload);
         }
         return;
@@ -255,10 +263,17 @@ export function createElectronApiShim(opts: ShimOptions): ElectronApiLike & { di
 
   async function resubscribeAll(): Promise<void> {
     for (const sessionId of sessionToTabs.keys()) {
-      const from = lastSeq.get(sessionId) ?? 0;
+      // Only the tab map survives a reload; `lastSeq` does not. A restored
+      // tab that has not rebound yet therefore has no seq, and asking for
+      // `fromSeq: 0` made the daemon replay its ENTIRE log — every
+      // transcript row a second time, and one notification per logged
+      // notification event. Unknown means live-only, the same call
+      // `startSession` makes: the renderer loads its own history from disk.
+      const from = lastSeq.get(sessionId);
       try {
-        const r = await client.request('session.subscribe', { sessionId, fromSeq: from });
-        const caughtUp = Math.max(0, r.lastSeq - from);
+        const r = await client.request('session.subscribe', from === undefined ? { sessionId } : { sessionId, fromSeq: from });
+        if (from === undefined) lastSeq.set(sessionId, r.lastSeq);
+        const caughtUp = from === undefined ? 0 : Math.max(0, r.lastSeq - from);
         for (const tab of sessionToTabs.get(sessionId) ?? []) emit(`remote-caught-up:${tab}`, { events: caughtUp });
       } catch (err) {
         log('resubscribe failed', { sessionId, error: String(err) });
@@ -275,8 +290,19 @@ export function createElectronApiShim(opts: ShimOptions): ElectronApiLike & { di
         if (!sessionToTabs.has(summary.sessionId)) continue;
         const prev = lastState.get(summary.sessionId);
         if (prev?.sessionStatus === summary.sessionStatus) continue;
+        const diedWithDaemon =
+          summary.sessionStatus === 'stopped' &&
+          (prev?.sessionStatus === 'started' || prev?.sessionStatus === 'starting');
         lastState.set(summary.sessionId, { sessionStatus: summary.sessionStatus, mode: summary.mode });
         emitForSession(summary.sessionId, 'session-status', { sessionStatus: summary.sessionStatus });
+        // A session this client had live and the daemon no longer has: its
+        // CLI child went down with the daemon. Say so on its own channel so
+        // the tab can resume itself — the renderer owns that, because
+        // reviving the CLI without re-attaching the tab's stream listeners
+        // would leave an invisible session burning tokens. Only sessions
+        // that were actually live are announced; a tab that was already
+        // stopped stays stopped, as at launch.
+        if (diedWithDaemon) emitForSession(summary.sessionId, 'remote-session-died', { sessionId: summary.sessionId });
       }
     } catch (err) {
       log('post-reconnect reconcile failed', { error: String(err) });

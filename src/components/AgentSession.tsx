@@ -93,7 +93,7 @@ import { SubagentBar } from "./SubagentBar";
 import { TaskList } from "./claude/tools/TaskList";
 import { fireAndLog, logAndForget } from "@/lib/fireAndLog";
 import { decideResumeSeed } from "@/lib/resumeSeedDecision";
-import { decideAutoStart, decideRebindTarget } from "@/lib/sessionAutoStart";
+import { decideAutoStart, decideRebindTarget, shouldShowNewSessionPanel } from "@/lib/sessionAutoStart";
 import { exportAsJsonl, exportAsMarkdown } from "@/lib/sessionExporters";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useSessionLifecycle } from "@/hooks/useSessionLifecycle";
@@ -2498,7 +2498,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
             mcpErrors={mcpServerErrors}
           />
         )}
-        {!sessionStarted && (
+        {shouldShowNewSessionPanel({ sessionStarted, hasTranscript: messages.length > 0 }) && (
           <div className="flex-1 flex items-center justify-center p-8">
             <NewSessionForm
               resolvePair={resolvePair}

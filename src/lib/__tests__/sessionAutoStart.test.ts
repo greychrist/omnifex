@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { decideAutoStart, decideRebindTarget } from '../sessionAutoStart';
+import { decideAutoStart, decideRebindTarget, shouldShowNewSessionPanel } from '../sessionAutoStart';
 
 describe('decideAutoStart', () => {
   it('skips when the tab is not active (avoid phantom resume on app launch)', () => {
@@ -99,5 +99,19 @@ describe('decideRebindTarget', () => {
       healthSessionId: null,
       selectedSessionId: 'A',
     })).toBe('resume');
+  });
+});
+
+describe('shouldShowNewSessionPanel', () => {
+  it('shows the panel for a stopped tab with nothing in it', () => {
+    expect(shouldShowNewSessionPanel({ sessionStarted: false, hasTranscript: false })).toBe(true);
+  });
+
+  it('hides the panel once a session is running', () => {
+    expect(shouldShowNewSessionPanel({ sessionStarted: true, hasTranscript: false })).toBe(false);
+  });
+
+  it('hides the panel for a stopped tab that already has a transcript', () => {
+    expect(shouldShowNewSessionPanel({ sessionStarted: false, hasTranscript: true })).toBe(false);
   });
 });

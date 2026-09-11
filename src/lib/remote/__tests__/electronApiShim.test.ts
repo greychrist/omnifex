@@ -189,6 +189,18 @@ describe('electronAPI shim', () => {
       expect(native.invoke).toHaveBeenCalledWith('notify:show', { title: 'OmniFex — x', body: 'done', isError: false, tabId: 'tab-A' });
     });
 
+    it('re-emits a tab-scoped channel that rides the notification kind, and raises no banner for it', async () => {
+      const api = await started();
+      const cost: unknown[] = [];
+      const notif: unknown[] = [];
+      api.onEvent('session-cost:tab-A', (p) => cost.push(p));
+      api.onEvent('claude-notification', (p) => notif.push(p));
+      f.push({ type: 'event', sessionId: 'sid-1', seq: 3, kind: 'notification', channel: 'session-cost', payload: { totalUsd: 1.25, estimated: false } });
+      expect(cost).toEqual([{ totalUsd: 1.25, estimated: false }]);
+      expect(notif).toEqual([]);
+      expect(native.invoke).not.toHaveBeenCalledWith('notify:show', expect.anything());
+    });
+
     it('re-emits app-wide channel broadcasts under their own names', async () => {
       const api = shim();
       const seen: unknown[] = [];
@@ -288,6 +300,61 @@ describe('electronAPI shim', () => {
       await new Promise((r) => setTimeout(r, 0));
       await new Promise((r) => setTimeout(r, 0));
       expect(status).toEqual([{ sessionStatus: 'stopped' }]);
+    });
+
+    it('subscribes live-only when it never saw a seq for a restored tab, then from that seq on the next reconnect', async () => {
+      storage.setItem(TAB_MAP_STORAGE_KEY, JSON.stringify({ 'tab-A': 'sid-1' }));
+      const api = shim();
+      const caught: unknown[] = [];
+      api.onEvent('remote-caught-up:tab-A', (p) => caught.push(p));
+      f.responders['session.subscribe'] = (p) => ({ fromSeq: p.fromSeq ?? 40, lastSeq: 40 });
+      f.responders['session.list'] = () => [summary('sid-1', { lastSeq: 40 })];
+
+      f.setState('connected');
+      f.setState('reconnecting');
+      f.setState('connected');
+      await new Promise((r) => setTimeout(r, 0));
+      await new Promise((r) => setTimeout(r, 0));
+
+      // No fromSeq at all: a cold client asking for 0 would replay the whole log.
+      expect(f.requests[0]).toEqual({ method: 'session.subscribe', params: { sessionId: 'sid-1' } });
+      expect(caught).toEqual([{ events: 0 }]);
+
+      f.requests.length = 0;
+      f.setState('reconnecting');
+      f.setState('connected');
+      await new Promise((r) => setTimeout(r, 0));
+      await new Promise((r) => setTimeout(r, 0));
+      expect(f.requests[0]).toEqual({ method: 'session.subscribe', params: { sessionId: 'sid-1', fromSeq: 40 } });
+    });
+
+    it('reports a session that was live before the drop and came back stopped as died', async () => {
+      const api = shim();
+      const died: unknown[] = [];
+      await api.invoke('session_start', { tabId: 'tab-A', projectPath: '/p', model: 'default', permissionMode: 'default' });
+      api.onEvent('remote-session-died:tab-A', (p) => died.push(p));
+      f.responders['session.list'] = () => [summary('sid-1', { sessionStatus: 'stopped', lastSeq: 9 })];
+      f.setState('connected');
+      f.setState('reconnecting');
+      f.setState('connected');
+      await new Promise((r) => setTimeout(r, 0));
+      await new Promise((r) => setTimeout(r, 0));
+      expect(died).toEqual([{ sessionId: 'sid-1' }]);
+    });
+
+    it('does not report a session the client already knew was stopped', async () => {
+      const api = shim();
+      const died: unknown[] = [];
+      f.responders['session.create'] = () => summary('sid-1', { sessionStatus: 'stopped' });
+      await api.invoke('session_start', { tabId: 'tab-A', projectPath: '/p', model: 'default', permissionMode: 'default' });
+      api.onEvent('remote-session-died:tab-A', (p) => died.push(p));
+      f.responders['session.list'] = () => [summary('sid-1', { sessionStatus: 'stopped', lastSeq: 9 })];
+      f.setState('connected');
+      f.setState('reconnecting');
+      f.setState('connected');
+      await new Promise((r) => setTimeout(r, 0));
+      await new Promise((r) => setTimeout(r, 0));
+      expect(died).toEqual([]);
     });
 
     it('resubscribes every live session from its last seen seq after a reconnect and reports the gap', async () => {

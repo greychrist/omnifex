@@ -275,6 +275,38 @@ export function useSessionLifecycle({
     return true;
   };
 
+  // Re-read every render so the effect below never calls a rebind closed over
+  // a stale render's props (handleJsonlLine, accountResolution, …).
+  const rebindRef = useRef(rebindPersistentSession);
+  rebindRef.current = rebindPersistentSession;
+
+  // The daemon went away and took this tab's CLI child with it. The shim
+  // reconciles the badge to 'stopped' and says so here, for sessions it had
+  // live before the drop; bring the session back rather than dropping the
+  // user on the New Session panel above their own transcript.
+  //
+  // This lives in the renderer, not the shim, because resuming a session
+  // without re-attaching the tab's stream listeners would leave an invisible
+  // CLI burning tokens — `rebindPersistentSession` does both.
+  // `persistentSessionRef` is cleared first: no `agent-complete` ever
+  // arrived, so the tab may still believe it holds a live handle, and the
+  // rebind would short-circuit on that stale belief.
+  //
+  // `remote-session-died:` exists only on the shim, never on the preload
+  // bridge (which throws on unknown channels) — hence the mode guard, the
+  // same one RemoteConnectionBanner uses.
+  useEffect(() => {
+    if (!window.__omnifexRemote?.client) return;
+    return window.electronAPI.onEvent(`remote-session-died:${tabId}`, () => {
+      if (!isMountedRef.current) return;
+      persistentSessionRef.current = false;
+      setIsLoading(false);
+      void rebindRef.current().catch((err: unknown) => {
+        console.error('[remote-session-died] rebind failed:', err);
+      });
+    });
+  }, [tabId]); // eslint-disable-line react-hooks/exhaustive-deps -- rebind is read through a ref; the rest are stable refs/setters
+
   const startPersistentSession = async (resumeId?: string) => {
     if (persistentSessionRef.current) return; // Already running
     // Claim the slot synchronously — `api.startSession` awaits IPC and
