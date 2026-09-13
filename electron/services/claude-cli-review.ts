@@ -30,6 +30,251 @@ import { buildClaudeEnv } from './util/claude-env';
  * old value and the new one, and file or fix whatever they imply. Bumping it
  * to silence the badge throws away the only drift signal we have.
  *
+ * Last review: 2.1.268 -> 2.1.270 on 2026-09-13. Findings:
+ *
+ *  Changelog coverage: both 2.1.269 (a very large entry) and 2.1.270 (a
+ *  single line) are present. No gap. 2.1.269 is NOT installed on this
+ *  machine, but 2.1.268 and 2.1.270 both are, so the wire claims below are
+ *  a real binary diff spanning the whole range rather than prose.
+ *
+ *  Wire diff: ONE THING MOVED, and it is additive. `hook_event_name`
+ *  literals identical. `type:"control_*"` envelopes identical per-literal.
+ *  Every `/usage` anchor parser.ts reads is unchanged: `Current session`
+ *  3/3, `Current week (` 8/8, `Total cost:` 2/2, `% of usage` 2/2,
+ *  `Loading usage data` 1/1, `Showing last-known usage` 2/2. Two counts
+ *  moved and both are noise: bare `Resets` 90 -> 89 is minifier identifier
+ *  renaming around `lastArmedResetsAtSeconds`/`shownWallResetsAt` (the two
+ *  `` `Resets ${ `` TEMPLATE literals the TUI actually renders are 2 in
+ *  both binaries), and `MCP servers` 340 -> 352 is prose, no new table
+ *  header.
+ *
+ *  What did move: three NEW control-request subtypes, and two NEW Bash
+ *  `toolUseResult` fields. Details in 1 and 2.
+ *
+ *  ONE DOC FIX (see 3). Findings 1 and 2 were filed as opportunities and
+ *  then BUILT in the same session, at Greg's go-ahead — what shipped is
+ *  recorded inline below so the next reviewer does not re-propose them.
+ *
+ *  One wire fact worth more than either feature, found while building them:
+ *  the Bash structured result is spelled `tool_use_result` in the LIVE
+ *  stream-json stdout and `toolUseResult` on the on-disk JSONL. Same payload,
+ *  two keys. Verified with a real 2.1.270 `-p --output-format stream-json`
+ *  run. A comment in subagentEvents.ts:338 asserted the live stream carried
+ *  no structured result at all; that was wrong and is now corrected. Anything
+ *  reading only `toolUseResult` works in TUI mode and silently does nothing
+ *  in chat mode — `taskList.ts:91` already knew this, `bashToolResult.ts`
+ *  now does too, and `isAsyncLaunchEnrichment` / `resumedAgentId` still read
+ *  one spelling each (left alone deliberately: whether the live stream
+ *  carries THOSE particular fields is unconfirmed, and guessing would be the
+ *  same mistake in the other direction).
+ *
+ *  1. `get_hooks_listing`, `list_permission_rules`, `get_memory_dialog` —
+ *     three new control-request subtypes (the only `subtype:"..."` set
+ *     delta in the range). OPPORTUNITY, not a bug.
+ *
+ *     They sit on the SAME stdio control channel we already speak: the
+ *     binary shows them as methods on the same client class that carries
+ *     `apply_flag_settings`, `get_settings`, `set_model` and
+ *     `set_permission_mode` — i.e. exactly what sessions/queries.ts
+ *     already drives. They back 2.1.269's new VSCode Hooks dialog and
+ *     Permission rules dialog.
+ *
+ *     Why it is worth something: OmniFex builds both of those surfaces by
+ *     reading settings FILES itself — hooks at claude.ts:1129-1182, rules
+ *     at permissions-io.ts:36-102, each merging user/project/local by
+ *     hand. `list_permission_rules` and `get_hooks_listing` return the
+ *     CLI's OWN merged view, which is the only thing that can see managed,
+ *     plugin and session-only rules, and which cannot drift from the CLI's
+ *     precedence. That matters more after 2.1.269's `!`-scoping change
+ *     (see 3) — hand-merging is now strictly harder to get right.
+ *
+ *     BUILT: `listPermissionRules` (queries.ts) -> the
+ *     `session_list_permission_rules` channel -> `diffLiveRules`
+ *     (src/lib/livePermissionRules.ts) -> an annotation block in
+ *     SessionPermissionsEditor. It shows only the DELTA — `ask` rules and
+ *     non-file sources the panel cannot display, plus rules a settings file
+ *     lists that the session is ignoring (`notInEffect`). `flagSettings` is
+ *     excluded on purpose: that source is our own push echoed back.
+ *     Response shape is typed off the CLI's zod schema in
+ *     sessions/types.ts; null means "no answer" (TUI tab, or pre-2.1.269
+ *     CLI answering "not available on this connection"), never "no rules",
+ *     so the file view always stands alone as the fallback.
+ *
+ *     NOT built: `get_hooks_listing`. HooksEditor lives in
+ *     ProjectSettings.tsx, which has no live session to ask — it would need
+ *     one borrowed from elsewhere, for a smaller payoff. `get_memory_dialog`
+ *     is inert for us (we render no memory dialog) and the binary carries
+ *     "get_memory_dialog is not available on this connection" — it needs a
+ *     `buildMemoryDialogResponse` the host registers, which we do not.
+ *
+ *  2. `bashEditDiffEnabled` — "a diff of the files a Bash command changed"
+ *     in the Bash tool result. LATENT, correctly ignored today.
+ *
+ *     Wire shape, read off the binary rather than the prose: it is a NEW
+ *     `toolUseResult.bashEditDiff` object — `{ skipped?, unavailable?,
+ *     files[], moreFiles, changedFiles[] }`. `bashEditDiff` 0 -> 21
+ *     occurrences and `moreFiles` 0 -> 25 across the range; both genuinely
+ *     new. Its own doc string: "@internal Per-file diff of the
+ *     working-tree changes this command made, for rendering and for
+ *     PostToolUse Bash hooks ... NOT SURFACED TO THE MODEL". So it rides
+ *     the structured envelope, never the `tool_result` content block.
+ *
+ *     Default is NOT plain on. The resolver is
+ *     `if (CLAUDE_CODE_BASH_EDIT_DIFF !== undefined) return it; if
+ *     (bashEditDiffEnabled === false) return false; if (=== true) return
+ *     true; return (mode === "auto" || mode === "bypassPermissions") &&
+ *     <gate>()`. So it appears only in auto / bypassPermissions sessions.
+ *
+ *     ALREADY HANDLED, by omission: BashWidget.tsx:23 renders
+ *     `extractResultContent(result)`, which reads `tool_result.content`
+ *     only (shared.ts:53-70) and never touches `toolUseResult`. And
+ *     src/types/jsonl.ts types no Bash `toolUseResult` shape at all, so
+ *     there is nothing to break. Confirmed empirically as far as this
+ *     machine allows: the one 2.1.270 transcript on disk has the classic
+ *     Bash key set (`interrupted`/`isImage`/`noOutputExpected`/`stderr`/
+ *     `stdout`) and no `bashEditDiff` — consistent with the mode gate.
+ *     A live bypass-mode probe was attempted and refused by the auto-mode
+ *     classifier, so that leg is binary evidence, not a captured run.
+ *
+ *     BUILT: both this and `gitOperation` now render in BashWidget, via
+ *     `collectStructuredResults` / `parseGitOperation` / `parseBashEditDiff`
+ *     (src/lib/bashToolResult.ts). Full schema off the binary:
+ *     `bashEditDiff: { files: [{ filePath, hunks, created?, deleted? }],
+ *     moreFiles, changedFiles?, unavailable?, skipped?, shared? }`.
+ *     Rendered as a summary, not a diff viewer — the CLI itself calls it "a
+ *     convenience view, not a review or audit of the command". `shared`
+ *     means a concurrent command touched the repo, so attribution is
+ *     unreliable and the UI says so.
+ *
+ *     `gitOperation` is NOT new (8/8 occurrences in both binaries) and is
+ *     already flowing: 225 `push {branch}`, 79 `commit {sha, kind}`, 14
+ *     `branch {ref, action}`, 5 `pr {number, action}` across the personal
+ *     transcripts on this machine. It is NOT a replacement for
+ *     git-watcher.ts — that tracks repo STATE on an fs.watch plus a 3s
+ *     poll, whereas this records what the model just did. Different jobs.
+ *
+ *     `collectStructuredResults` skips any envelope carrying more than one
+ *     `tool_result` block: one envelope has at most one structured result
+ *     and nothing ties it to a particular block, so attributing it would put
+ *     one command's diff on another command's row. Zero such envelopes in
+ *     874 sampled — the guard is for correctness, not for a known case.
+ *
+ *  3. Two permission-rule semantics changes. DOC BUG, now FIXED — the only
+ *     edit this review made.
+ *
+ *     (a) "`Edit()` deny rules and the write-path check not applying to
+ *     the file a Bash `tee` command writes; a `Bash(tee:*)` allow rule no
+ *     longer covers destinations outside the working directories."
+ *     docs/permission-syntax.md said flatly "Redirection targets are the
+ *     *only* Bash arguments matched against file rules." That is now
+ *     false, and it is the kind of claim the doc exists to get right.
+ *     Corrected in place.
+ *
+ *     (b) "a deny or ask permission rule starting with `!` applying beyond
+ *     the settings source that wrote it; such a rule now applies only
+ *     within its own source, and a bare `!` negation is ignored."
+ *     The doc had no `!` coverage at all; added under Settings precedence.
+ *     Inert for the app itself: grep finds zero `!`-prefixed rule handling
+ *     anywhere in electron/ or src/, permissions-io.ts appends plain rule
+ *     strings into the per-source allow/deny arrays, and
+ *     SessionPermissionsEditor already displays rules per source. Only a
+ *     hand-edited settings file can contain one.
+ *
+ *     Both changes only make rules apply MORE often or NARROWER, never
+ *     wider, so no existing OmniFex-written rule changes meaning.
+ *
+ *  4. `CLAUDE_CODE_BG_TASKS_REPORT_RUNNING` / "remote and headless
+ *     sessions reporting 'waiting for your input' while background agents
+ *     were still running". ALREADY HANDLED, and worth spelling out
+ *     because "headless" means US — chat mode is `-p --output-format
+ *     stream-json` (claude-cli-engine.ts:53-65).
+ *
+ *     What it actually gates, from the binary: an idle predicate
+ *     `({inputClosed, currentState, hasActiveTeammates, hasRunningBgTasks,
+ *     hasPendingNotification}) => (bg && ls()) ? false : (!inputClosed &&
+ *     currentState === "running")`, whose telemetry event is
+ *     `cli_idle_gate_report_idle`. Default is ON (`!== false`). It is the
+ *     CLI REPORTING its own status to other sessions' agent lists. It does
+ *     not gate the `result` envelope.
+ *
+ *     Nothing in OmniFex reads CLI-reported session status — grep finds no
+ *     ListAgents / "waiting for your input" consumer. We derive it:
+ *     docs/session-lifecycle.md:99 makes the trailing `cli-stream-result`
+ *     row the turn-closer, and `hasOpenTasks`/`hasOpenSubagents`
+ *     (session-lifecycle.md:47) already hold `conversationStatus` at
+ *     'running' while background work is open. OmniFex has been doing what
+ *     2.1.269 just taught the CLI to report, independently. The installer
+ *     gate reads the same renderer-derived rollup, so it is unaffected.
+ *
+ *  5. 2.1.270 is a single-line release: "read-only git commands in Bash
+ *     unexpectedly asking for permission after a session had been running
+ *     for a while (regression in 2.1.269)". Almost certainly fallout from
+ *     2.1.269's bash-edit-diff work — the mutating-git regex
+ *     `/^[ \t]*(?:sudo[ \t]+)?git[ \t]+(?:checkout|switch|stash|pull|merge|
+ *     rebase|reset|resto.../` sits immediately beside the
+ *     `bashEditDiffEnabled` resolver in the 2.1.270 binary.
+ *
+ *     No action. It is decided CLI-side; the only OmniFex-visible symptom
+ *     on 2.1.269 was extra `can_use_tool` requests reaching our stdio
+ *     decider (permissions.ts), which is the decider working. Greg is on
+ *     2.1.270, so it is already behind us. Recorded so the next reviewer
+ *     does not chase a phantom decider bug in a 2.1.269 transcript.
+ *
+ *  6. "Fixed resumed headless sessions losing a turn's replies when the
+ *     model was switched or a request was retried mid-turn". Upstream win
+ *     on a path we drive hard and BOTH halves of which are ours: warm
+ *     restarts respawn with `--resume` (claude-cli-engine.ts:66-67) and
+ *     our mid-session model picker sends `set_model` (queries.ts). Nothing
+ *     to change — we were the exposed case, not the cause.
+ *
+ *  7. "Fixed organization policy limits not loading for the session when
+ *     another Claude Code process refreshed the login at the same moment".
+ *     Same family as the 2.1.268 multi-process model-switch fix below.
+ *     OmniFex IS the multi-process case by construction — concurrent CLI
+ *     processes across accounts, plus a daemon. Not our bug; our
+ *     rate-limit store is fed only by the `/usage` scrape
+ *     (usage-runner.ts:537), whose anchors are unchanged.
+ *
+ *  No OmniFex impact: `claude plugin eval`; `/output-style [name]` (we
+ *  surface no output styles); `OTEL_METRICS_INCLUDE_REPOSITORY` and
+ *  `vcs.*`/`vcs.ref.head.*` attributes (no OTel surface);
+ *  `CLAUDE_CODE_GATEWAY_MODEL_DISCOVERY_TIMEOUT_MS`; the `/focus` spinner
+ *  tip; `CLAUDE_CODE_WORKFLOW_MAX_CONCURRENT_AGENTS` (raises the fan-out
+ *  count, not the transcript LAYOUT — cost-history.ts:62-71 already
+ *  recurses `subagents/` to depth 6 and finds the nested
+ *  `subagents/workflows/wf_<id>/agent-<id>.jsonl` layout); the two
+ *  prompt-cache fixes (output-limit resume,
+ *  interrupt-then-resume re-send); every terminal-emulator fix (kitty
+ *  F1/F2/F4, st Delete, rxvt Alt+arrows and block cursor, WezTerm
+ *  Shift+punctuation, GNOME/Konsole synchronized output, the `^[[?1;2c`
+ *  and `22c` capability-reply stray text, double-draw after an external
+ *  editor, fullscreen resize blanking) — all of these are the CLI reading
+ *  a REAL terminal's replies, and our TUI mode drives node-pty into
+ *  xterm.js (TerminalView.tsx:49), which answers nothing it is not asked;
+ *  `permission_denials` gaining Read/Edit/Write entries (jsonl.ts:252 and
+ *  claudeStream.ts:99 type it `unknown[]` and nothing reads it); SDK/
+ *  desktop sessions showing unknown status in other sessions' agent lists
+ *  (same non-consumer as 4); background-task on-disk records leaking
+ *  escape codes into the task list; the compaction git-status fix; synced
+ *  plugin MCP servers on remote resume; CMYK JPEG attachments; the gRPC
+ *  telemetry collector dialog; plugin `headersHelper` consent URLs;
+ *  `[redacted URL]` for `@`-prefixed Windows folders; missing cursors in
+ *  CLI text fields; `/fork` receipt double-clicks; plugin LSP `shutdown`
+ *  cleanup; the attribution reminder no longer overriding CLAUDE.md;
+ *  CJK/Thai prompt-suggestion filtering; `/insights` on Bedrock/Vertex/
+ *  Foundry; Desktop turn-end notification text; MCP reconnect on query-
+ *  param reordering; the background-agent prompt-box border; "Prompt is
+ *  too long" auto-compaction deadlock; `/goal` retry-with-backoff; cloud
+ *  first-request cache warmup; `/btw` fabricated tool calls;
+ *  `CLAUDE_CODE_RESUME_INTERRUPTED_TURN` max age; org plugins in headless;
+ *  plugin-archive file permissions; the `/diff` panel one-step render;
+ *  the Skill "Unknown skill" message; SSH/kitty keyboard support;
+ *  collapsed tool-use summary rebuilds; `alwaysLoad` MCP mid-conversation;
+ *  `/ultrareview --post` posting directly; artifact scratchpad reads;
+ *  `anthropic-skills:<name>` for claude.ai-synced skills; and the entire
+ *  [VSCode], [Claude Code on the web], [Claude Tag] and [Code Review]
+ *  sections (OmniFex Remote is our own daemon, unrelated to any of them).
+ *
  * Last review: 2.1.267 -> 2.1.268 on 2026-09-10. Findings:
  *
  *  Changelog coverage: 2.1.268 is the only release in range and it has an
@@ -1317,7 +1562,7 @@ import { buildClaudeEnv } from './util/claude-env';
  * `~/.claude.json` fix (we read-modify-write that file, never replace it), and
  * the VSCode screen-reader work.
  */
-export const REVIEWED_CLI_VERSION = '2.1.268';
+export const REVIEWED_CLI_VERSION = '2.1.270';
 
 /**
  * app_settings key holding the user's explicit OmniFex-checkout override.

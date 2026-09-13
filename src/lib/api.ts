@@ -1026,6 +1026,67 @@ export interface AccountMismatch {
   source: 'oauth-file' | 'session-init';
 }
 
+/**
+ * Where a permission rule comes from, per the CLI's own taxonomy.
+ *
+ * Renderer mirror of `CliPermissionRuleSource` in
+ * `electron/services/sessions/types.ts` — the renderer can't import from
+ * `electron/`, so the two must be kept in step by hand.
+ *
+ * OmniFex's own settings-file reader models only the first three. `flagSettings`
+ * is where OmniFex's own rule push lands, as a source of its own.
+ */
+export type CliPermissionRuleSource =
+  | 'userSettings'
+  | 'projectSettings'
+  | 'localSettings'
+  | 'flagSettings'
+  | 'policySettings'
+  | 'cliArg'
+  | 'command'
+  | 'session'
+  | 'toolsNarrowing'
+  | 'mcpServerPolicy'
+  | 'hostCredential';
+
+/**
+ * The CLI's plain-language reading of a rule, split so the emphasised fragment
+ * can be bolded the way the terminal does. `emphasis` is rule content and may
+ * carry invisible characters by design — never render it unescaped.
+ */
+export interface CliPermissionRuleDescription {
+  prefix: string;
+  emphasis?: string;
+  suffix?: string;
+}
+
+/** One permission rule as the live session holds it. */
+export interface CliPermissionRule {
+  behavior: 'allow' | 'deny' | 'ask';
+  source: CliPermissionRuleSource;
+  /** The stored rule string VERBATIM — escape at display, never match raw. */
+  rule: string;
+  description?: CliPermissionRuleDescription;
+  editability: 'persistent' | 'session' | 'readonly';
+  /** True when managed settings pin policy-only mode and this rule is ignored. */
+  notInEffect?: boolean;
+}
+
+/** One additional working directory in the session's permission scope. */
+export interface CliWorkspaceDirectory {
+  path: string;
+  source: string;
+}
+
+/** The session's live permission state, as `list_permission_rules` reports it. */
+export interface CliPermissionRulesState {
+  rules: CliPermissionRule[];
+  workspaceDirectories: CliWorkspaceDirectory[];
+  originalCwd: string;
+  managedOnly: boolean;
+  errors?: unknown[];
+}
+
 export interface SessionContextUsageCategory {
   name: string;
   tokens: number;
@@ -2038,6 +2099,20 @@ export const api = {
 
   async sessionGetPermissions(tabId: string, projectPath: string, configDir: string): Promise<any[]> {
     return apiCall("session_get_permissions", { tabId, projectPath, configDir });
+  },
+
+  /**
+   * The CLI's own view of the live session's permission rules.
+   *
+   * Annotates the file-derived panel with what `permissions-io.ts` cannot see:
+   * `ask` rules, policy/managed rules, `--allowedTools` grants, session-only
+   * approvals, and the `flagSettings` source our own rule push lands in.
+   *
+   * `null` means "no answer", not "no rules" — TUI tabs and pre-2.1.269 CLIs
+   * both return it, and the caller must keep showing the file view.
+   */
+  async sessionListPermissionRules(tabId: string): Promise<CliPermissionRulesState | null> {
+    return apiCall("session_list_permission_rules", { tabId });
   },
 
   /** Switch the session between CLI mode and TUI mode. */

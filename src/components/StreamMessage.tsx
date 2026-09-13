@@ -36,6 +36,7 @@ import {
   warnUnhandledKnownTool,
 } from "@/lib/types/toolInput";
 import { extractToolResultImages, toolResultHasImages } from "@/lib/toolResultImages";
+import { collectStructuredResults } from "@/lib/bashToolResult";
 import { AnsweredAskUserQuestionCard } from "@/components/AnsweredAskUserQuestionCard";
 import { CardActionBar, CardActionButton, CardActionDivider } from "@/components/CardActionBar";
 import { MessageFrame } from "@/components/StreamMessage/MessageFrame";
@@ -379,6 +380,16 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
     });
     return results;
   }, [streamMessages]);
+
+  // The STRUCTURED half of each tool result, which lives on the envelope
+  // rather than inside the content block — `tool_use_result` in the live
+  // stream, `toolUseResult` on disk. Carries what the model is not shown:
+  // `gitOperation` and `bashEditDiff`. Same [streamMessages] trigger as the
+  // map above, for the same reason.
+  const structuredResults = useMemo(
+    () => collectStructuredResults(streamMessages as unknown as { kind: string; raw: unknown }[]),
+    [streamMessages],
+  );
 
   // Helper to get tool result for a specific tool call ID
   const getToolResult = (toolId: string | undefined): MessageContentBlock | null => {
@@ -812,7 +823,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
             const bashInput = asToolInput(toolName, 'Bash', rawInput);
             const bashCommand = toolInputString(bashInput?.command);
             if (bashCommand) {
-              return <BashWidget command={bashCommand} description={toolInputString(bashInput?.description) ?? undefined} result={toolResult} />;
+              return <BashWidget command={bashCommand} description={toolInputString(bashInput?.description) ?? undefined} result={toolResult} structured={toolId ? structuredResults.get(toolId) : undefined} />;
             }
 
             // Write

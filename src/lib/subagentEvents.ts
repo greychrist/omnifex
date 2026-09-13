@@ -335,10 +335,20 @@ const ASYNC_LAUNCH_ACK_PREFIX = 'Async agent launched';
 /**
  * Does the tool_result line carry the CLI's async-launch enrichment?
  *
- * `toolUseResult` is written onto the on-disk JSONL line (never the live
- * stream-json output), so this is the reliable signal in TUI mode — which
- * tails that file — and absent in chat mode. `status: 'async_launched'` and
- * `isAsync: true` ride together; either alone is enough.
+ * The structured result rides the ENVELOPE, not the tool_result block. Note
+ * the spelling: it is `toolUseResult` on the on-disk JSONL line and
+ * `tool_use_result` in the live stream-json stdout (verified against CLI
+ * 2.1.270 — an earlier version of this comment claimed the live stream
+ * carried no structured result at all, which is wrong). This function reads
+ * the on-disk spelling only, so it fires in TUI mode — which tails that file —
+ * and never in chat mode. That is a known asymmetry, not a deliberate
+ * narrowing: whether the live stream actually carries the async-launch
+ * enrichment has not been confirmed, so nothing here reads the other spelling
+ * on speculation. `src/lib/bashToolResult.ts` reads both, and is the place to
+ * copy from if this one ever needs to.
+ *
+ * `status: 'async_launched'` and `isAsync: true` ride together; either alone
+ * is enough.
  */
 function isAsyncLaunchEnrichment(raw: unknown): boolean {
   const tur = (raw as { toolUseResult?: unknown } | null)?.toolUseResult;
@@ -359,9 +369,11 @@ function toolResultText(content: unknown): string | undefined {
 /**
  * The agent id a SendMessage result reports having re-opened, or null.
  *
- * Structured first (`toolUseResult.resumedAgentId`, written onto the on-disk
- * JSONL), then the same field out of the JSON blob the tool returns as text,
- * which is all the live stream carries. SendMessage also addresses other
+ * Structured first (`toolUseResult.resumedAgentId`, the on-disk JSONL
+ * spelling), then the same field out of the JSON blob the tool returns as
+ * text. The text fallback is what covers chat mode: the live stream spells the
+ * structured payload `tool_use_result`, which this does not read.
+ * SendMessage also addresses other
  * Claude sessions — those results carry no `resumedAgentId`, so this stays
  * silent for them.
  */

@@ -642,6 +642,7 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
       setThinking: (id, cfg) => sessionsService.setThinking(id, cfg as any),
       getAccountInfo: (id) => sessionsService.getAccountInfo(id),
       getContextUsage: (id) => sessionsService.getContextUsage(id),
+      listPermissionRules: (id) => sessionsService.listPermissionRules(id),
       getSupportedCommands: (id) => sessionsService.getSupportedCommands(id),
       getSupportedModels: (id) => sessionsService.getSupportedModels(id),
       getMcpServerStatus: (id) => sessionsService.getMcpServerStatus(id),

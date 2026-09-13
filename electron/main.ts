@@ -1245,6 +1245,7 @@ app.whenReady().then(() => {
       setThinking: (sessionId: string, config: unknown) => sessionsService.setThinking(sessionId, config as any),
       getAccountInfo: (sessionId: string) => sessionsService.getAccountInfo(sessionId),
       getContextUsage: (sessionId: string) => sessionsService.getContextUsage(sessionId),
+      listPermissionRules: (sessionId: string) => sessionsService.listPermissionRules(sessionId),
       getSupportedCommands: (sessionId: string) => sessionsService.getSupportedCommands(sessionId),
       getSupportedModels: (sessionId: string) => sessionsService.getSupportedModels(sessionId),
       getMcpServerStatus: (sessionId: string) => sessionsService.getMcpServerStatus(sessionId),

@@ -546,3 +546,77 @@ describe('optional deps', () => {
     expect(calls).toHaveLength(1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// listPermissionRules — the read-back for applyPermissions
+// ---------------------------------------------------------------------------
+//
+// OmniFex pushes rules INTO a live session (applyPermissions -> flag_settings)
+// after reading the three settings files itself. Until CLI 2.1.269 there was
+// no way to read back what the session actually ended up with, so the
+// permissions panel showed a file-derived guess: `allow`/`deny` only, no
+// `ask`, no policy/managed rules, and no way to see that the push landed in
+// `flagSettings` as its own source rather than merging into the file sources.
+//
+// `list_permission_rules` is that read-back. It is READ-ONLY by contract
+// ("this request never changes rules"), so these tests pin that we send no
+// payload and mutate no handle state.
+describe('listPermissionRules', () => {
+  const state = {
+    rules: [
+      { behavior: 'allow', source: 'userSettings', rule: 'Bash(npm run test:*)', editability: 'persistent' },
+      { behavior: 'ask', source: 'projectSettings', rule: 'Edit(/src/**)', editability: 'persistent' },
+      { behavior: 'deny', source: 'policySettings', rule: 'Bash(curl:*)', editability: 'readonly' },
+    ],
+    workspaceDirectories: [{ path: '/proj', source: 'localSettings' }],
+    originalCwd: '/proj',
+    managedOnly: false,
+  };
+
+  it('sends a bare list_permission_rules request and unwraps `state`', async () => {
+    const { engine, calls } = createEngine({ control: () => ({ state }) });
+    const { q } = setup({ engine });
+    const got = await q.listPermissionRules('tab1');
+    expect(calls).toEqual([{ subtype: 'list_permission_rules', payload: undefined }]);
+    expect(got).toEqual(state);
+  });
+
+  // The whole point is surfacing what the file-derived view cannot: `ask`
+  // rules (permissions-io reads only allow/deny) and read-only policy rules.
+  it('carries ask rules and non-file sources through', async () => {
+    const { engine } = createEngine({ control: () => ({ state }) });
+    const { q } = setup({ engine });
+    const got = await q.listPermissionRules('tab1');
+    expect(got?.rules.map((r) => r.behavior)).toEqual(['allow', 'ask', 'deny']);
+    expect(got?.rules.map((r) => r.source)).toContain('policySettings');
+  });
+
+  // TUI mode has no engine to ask, and the panel renders in BOTH modes. The
+  // file-derived view stays the fallback, so null must mean "no answer",
+  // never "no rules".
+  it('returns null for a TUI tab rather than an empty rule set', async () => {
+    const { engine, calls } = createEngine({ control: () => ({ state }) });
+    const { q } = setup({ engine, mode: 'tui' });
+    expect(await q.listPermissionRules('tab1')).toBeNull();
+    expect(calls).toEqual([]);
+  });
+
+  // An older CLI answers "list_permission_rules is not available on this
+  // connection". That must degrade to the file view, not blank the panel.
+  it('returns null when the CLI rejects the request', async () => {
+    const { engine } = createEngine({
+      control: () => {
+        throw new Error('list_permission_rules is not available on this connection');
+      },
+    });
+    const { q } = setup({ engine });
+    expect(await q.listPermissionRules('tab1')).toBeNull();
+  });
+
+  // A success envelope with no `state` is malformed; treat it as no answer.
+  it('returns null when the response carries no state', async () => {
+    const { engine } = createEngine({ control: () => ({}) });
+    const { q } = setup({ engine });
+    expect(await q.listPermissionRules('tab1')).toBeNull();
+  });
+});
