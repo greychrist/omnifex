@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { JsonlNode } from '@/types/jsonl';
-import { deriveThinkingStatus } from '../thinkingStatus';
+import { deriveThinkingStatus, lastThinkingBurstTokens } from '../thinkingStatus';
 
 const thinkingTokens = (estimated_tokens: number, receivedAt = ''): JsonlNode =>
   ({
@@ -87,5 +87,46 @@ describe('deriveThinkingStatus — burst start', () => {
     ]);
 
     expect(status?.startedAt).toBe(Date.parse('2026-09-11T10:05:00Z'));
+  });
+});
+
+describe('lastThinkingBurstTokens', () => {
+  it('returns the newest burst total after the burst has ended', () => {
+    expect(
+      lastThinkingBurstTokens([thinkingTokens(1200), thinkingTokens(4800), assistantText('done')]),
+    ).toBe(4800);
+  });
+
+  it('returns the open burst total while it is still running', () => {
+    expect(lastThinkingBurstTokens([assistantText('x'), thinkingTokens(900)])).toBe(900);
+  });
+
+  it('returns null when the session has never thought', () => {
+    expect(lastThinkingBurstTokens([assistantText('x'), userText('hi')])).toBeNull();
+  });
+
+  it('returns null for an empty transcript', () => {
+    expect(lastThinkingBurstTokens([])).toBeNull();
+  });
+
+  it('reports the NEWEST burst, not the largest earlier one', () => {
+    expect(
+      lastThinkingBurstTokens([
+        thinkingTokens(9000), assistantText('a'), thinkingTokens(100), assistantText('b'),
+      ]),
+    ).toBe(100);
+  });
+
+  it('survives the burst closing, which is where deriveThinkingStatus gives up', () => {
+    // deriveThinkingStatus breaks on the first trailing non-system message, so
+    // the assistant's answer erases the figure. That is exactly the moment the
+    // status bar still wants to show it.
+    const closed = [thinkingTokens(4800), assistantText('here you go')];
+    expect(deriveThinkingStatus(closed)).toBeNull();
+    expect(lastThinkingBurstTokens(closed)).toBe(4800);
+  });
+
+  it('still reports through a trailing system:status ping', () => {
+    expect(lastThinkingBurstTokens([thinkingTokens(4800), status('requesting')])).toBe(4800);
   });
 });

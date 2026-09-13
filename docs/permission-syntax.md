@@ -54,7 +54,7 @@ Bash                     → all bash commands
 - A zsh command that hides a command substitution in a `REPORTTIME`, `REPORTMEMORY` or `DIRSTACKSIZE` assignment no longer auto-approves as of CLI 2.1.260 — it prompts. These are zsh's numeric-parameter assignments, which the check previously walked past, so `REPORTTIME=$(cmd) ls` could ride in on a `Bash(ls *)` allow rule. Nothing to configure.
 - Input redirections (`cmd < secrets.env`) **are** permission-checked as of 2.1.257. The check first shipped in 2.1.232, was reverted in 2.1.233, and the promised narrower version has now landed: the target of `<` and `<&` is matched against `Read(path)` **deny** rules, and a hit refuses the whole command. Heredocs (`<<`, `<<<`) are excluded — they read no file. Output redirection targets (`>`, `>>`, `>&`) are matched against `Edit(path)` deny rules and have been since before 2.1.252.
   Only **deny** rules participate. An `allow` or `ask` rule on a redirect target is not consulted, so this narrows what a `Bash(...)` allow rule covers but never widens it.
-- Redirection targets are the *only* Bash arguments matched against file rules. CLI 2.1.259 briefly extended `Read(path)` deny rules to option values (`--ignore-revs-file=.env`), `git diff`/`git grep` file operands and `cd … && cat FILE` compounds, and **2.1.260 reverted it** — it denied `npm run build` under a `Read(./**/build/**)` rule in every mode. Don't write file rules expecting them to constrain what a shell command reads.
+- Redirection targets — and, as of CLI 2.1.269, the destination a `tee` writes — are the *only* Bash arguments matched against file rules. `tee out.txt` is now checked against `Edit(path)` deny rules and the working-directory write check, so a `Bash(tee:*)` allow rule no longer covers destinations outside the working directories. CLI 2.1.259 briefly extended `Read(path)` deny rules to option values (`--ignore-revs-file=.env`), `git diff`/`git grep` file operands and `cd … && cat FILE` compounds, and **2.1.260 reverted it** — it denied `npm run build` under a `Read(./**/build/**)` rule in every mode. Don't write file rules expecting them to constrain what a shell command reads.
 
 ## Read / Edit
 
@@ -168,6 +168,12 @@ Typically used in `deny` to disable specific subagents.
 5. `~/.claude/settings.json`
 
 Denies cascade down (any level can block). Allows merge across levels.
+
+A `deny` or `ask` rule written with a leading `!` applies only within the
+settings source that wrote it, as of CLI 2.1.269 — it does not cancel a rule
+from another source. A bare `!` with nothing after it is ignored. OmniFex never
+writes `!`-prefixed rules (`permissions-io.ts` appends plain rule strings per
+source), so this only matters for rules a user hand-edited into a settings file.
 
 ## Asks that can't become rules
 

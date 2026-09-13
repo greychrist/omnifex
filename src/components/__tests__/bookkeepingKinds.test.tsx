@@ -20,7 +20,7 @@ afterEach(() => { cleanup(); });
 function renderNode(node: JsonlNode) {
   return render(
     <MessageRenderingPreviewProvider config={createDefaultConfig()}>
-      <StreamMessage message={node} streamMessages={[node]} />
+      <StreamMessage tabId="tab-test" message={node} streamMessages={[node]} />
     </MessageRenderingPreviewProvider>,
   );
 }

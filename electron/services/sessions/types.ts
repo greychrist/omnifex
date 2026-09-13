@@ -65,6 +65,83 @@ export interface McpServerStatus {
   [k: string]: unknown;
 }
 
+/**
+ * Where a permission rule comes from, per the CLI's own taxonomy.
+ *
+ * OmniFex models only the three settings FILES (user/project/local). The rest
+ * are invisible to `permissions-io.ts`, which is the gap `list_permission_rules`
+ * closes. Note `flagSettings`: that is where our own `applyPermissions` push
+ * lands (`apply_flag_settings`), as a source of its own rather than merging
+ * into the file sources.
+ *
+ * Mirrors the CLI's `PermissionRuleSource` (permissionRuleLookup.ts). Kept as a
+ * closed union deliberately — a new source appearing here is drift the next
+ * changelog review should see, and `parsePermissionRulesState` drops rows it
+ * cannot classify rather than widening silently.
+ */
+export type CliPermissionRuleSource =
+  | 'userSettings'
+  | 'projectSettings'
+  | 'localSettings'
+  | 'flagSettings'
+  | 'policySettings'
+  | 'cliArg'
+  | 'command'
+  | 'session'
+  | 'toolsNarrowing'
+  | 'mcpServerPolicy'
+  | 'hostCredential';
+
+/**
+ * The CLI's plain-language reading of a rule, split so hosts can bold the
+ * rule-derived fragment the way the terminal does. `emphasis` is rule content
+ * and may carry invisible characters by design — escape it at display.
+ */
+export interface CliPermissionRuleDescription {
+  prefix: string;
+  emphasis?: string;
+  suffix?: string;
+}
+
+/** One permission rule as the live session holds it. */
+export interface CliPermissionRule {
+  behavior: 'allow' | 'deny' | 'ask';
+  source: CliPermissionRuleSource;
+  /**
+   * The stored rule string VERBATIM. Two spellings that parse identically each
+   * get their own entry, and it can carry control characters — escape at
+   * display, never match on it without normalizing.
+   */
+  rule: string;
+  description?: CliPermissionRuleDescription;
+  /**
+   * Where the rule lives: `persistent` (a settings file), `session` (in memory
+   * for this session only), or `readonly` (policy/flag/command — what the
+   * terminal's /permissions treats as uneditable). Informational: this request
+   * never changes rules.
+   */
+  editability: 'persistent' | 'session' | 'readonly';
+  /** True when managed settings pin policy-only mode and this rule is ignored. */
+  notInEffect?: boolean;
+}
+
+/** One additional working directory in the session's permission scope. */
+export interface CliWorkspaceDirectory {
+  path: string;
+  source: string;
+}
+
+/** The session's live permission state, as `list_permission_rules` reports it. */
+export interface CliPermissionRulesState {
+  rules: CliPermissionRule[];
+  workspaceDirectories: CliWorkspaceDirectory[];
+  originalCwd: string;
+  /** True when managed settings pin `allowManagedPermissionRulesOnly`. */
+  managedOnly: boolean;
+  /** Settings files skipped by the merge — their rules are NOT in the session. */
+  errors?: unknown[];
+}
+
 export interface CliControlGetContextUsageResponse {
   total_tokens?: number;
   remaining_tokens?: number;
@@ -240,6 +317,7 @@ export interface SessionsService {
   getAccountInfo(tabId: string): Promise<AccountInfo | null>;
   /** Get the current context-window usage breakdown. Null if the tab isn't running. */
   getContextUsage(tabId: string): Promise<CliControlGetContextUsageResponse | null>;
+  listPermissionRules(tabId: string): Promise<CliPermissionRulesState | null>;
   /** Get the list of slash commands the CLI knows about for this session. Empty if no tab. */
   getSupportedCommands(tabId: string): Promise<SlashCommand[]>;
   /** Get the list of models the CLI knows about for this session. Empty if no tab. */

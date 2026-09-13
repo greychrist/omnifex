@@ -141,9 +141,9 @@ interface EffortPickerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   disabled?: boolean;
-  /** "compact" (bottom bar), "expanded" (modal), or "form" (full-name
+  /** "compact" (bottom bar), "expanded" (modal), "form" (full-name
    *  trigger that fills its container — used in NewSessionForm). */
-  variant?: "compact" | "expanded" | "form";
+  variant?: "compact" | "expanded" | "form" | "inline";
   /**
    * Levels the selected model actually supports (from the CLI model
    * catalog's `supportedEffortLevels`). Omitted/undefined shows all five —
@@ -225,6 +225,37 @@ export function EffortPicker({ effort, onEffortChange, open, onOpenChange, disab
     );
   }
 
+  // A fourth variant rather than a reuse of "compact": that one means THE
+  // BOTTOM BAR — h-9, ghost, and a ChevronUp because it opens upward. Inside a
+  // downward popover that chevron points at nothing. Two surfaces sharing a
+  // variant they disagree about is how one of them silently regresses.
+  if (variant === "inline") {
+    return (
+      <Popover
+        trigger={
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={disabled}
+            onClick={() => { onOpenChange(!open); }}
+            title={`Effort: ${currentLevel?.name ?? effort}`}
+            className="h-6 min-w-0 flex-1 justify-between gap-1 px-1.5 font-normal"
+          >
+            <span className={cn("text-[11px] truncate", currentLevel?.color)}>
+              {currentLevel?.name}
+            </span>
+            <ChevronDown className="h-3 w-3 opacity-50 shrink-0" />
+          </Button>
+        }
+        content={<EffortPickerDropdown effort={effort} onSelect={handleSelect} levels={levels} />}
+        open={open}
+        onOpenChange={onOpenChange}
+        align="start"
+        side="bottom"
+      />
+    );
+  }
+
   if (variant === "form") {
     return (
       <Popover
@@ -296,15 +327,104 @@ interface PermissionPickerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   disabled?: boolean;
-  /** "compact" (bottom bar) or "form" (full-name trigger that fills its
-   *  container — used in NewSessionForm). Defaults to "compact". */
-  variant?: "compact" | "form";
+  /** "compact" (bottom bar), "form" (full-name trigger that fills its
+   *  container — used in NewSessionForm), or "inline" (the dense one-line
+   *  control row in the session context popover). Defaults to "compact". */
+  variant?: "compact" | "form" | "inline";
+}
+
+/**
+ * The permission dropdown body. Extracted when the `inline` variant arrived:
+ * three triggers now share it, and a second hand-typed copy would have drifted
+ * on the option set (all six CLI modes) or on closing after a pick.
+ */
+function PermissionPickerDropdown({
+  normalizedMode,
+  onPermissionModeChange,
+  onOpenChange,
+}: {
+  normalizedMode: string;
+  onPermissionModeChange?: (mode: string) => void;
+  onOpenChange: (open: boolean) => void;
+}) {
+  return (
+    <div className="w-[300px] p-1">
+      <div className="text-[10px] uppercase tracking-wider text-muted-foreground px-3 pt-2 pb-1.5 border-b border-border/50 mb-1">
+        Permissions
+      </div>
+      {PERMISSION_MODES.map((mode) => {
+        const isActive = mode.id === normalizedMode;
+        return (
+          <button
+            key={mode.id}
+            onClick={() => {
+              onPermissionModeChange?.(mode.id);
+              onOpenChange(false);
+            }}
+            className={cn(
+              "w-full flex items-start gap-3 p-3 rounded-md transition-colors text-left",
+              "hover:bg-accent",
+              isActive && "bg-accent",
+            )}
+          >
+            <span className={cn("mt-0.5", mode.color)}>
+              {mode.icon}
+            </span>
+            <div className="flex-1 space-y-1">
+              <div className={cn("font-medium text-sm", mode.color)}>
+                {mode.name}
+              </div>
+              <div className="text-xs text-muted-foreground">
+                {mode.description}
+              </div>
+            </div>
+          </button>
+        );
+      })}
+    </div>
+  );
 }
 
 export function PermissionPicker({ permissionMode, onPermissionModeChange, open, onOpenChange, disabled, variant = "compact" }: PermissionPickerProps) {
   const normalizedMode = normalizePermissionMode(permissionMode);
   const selectedData = PERMISSION_MODES.find((m) => m.id === normalizedMode) || PERMISSION_MODES[0];
   const isFormVariant = variant === "form";
+
+  // See the matching note on EffortPicker for why this is a fourth variant and
+  // not a reuse of "compact".
+  if (variant === "inline") {
+    return (
+      <Popover
+        trigger={
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={disabled}
+            onClick={() => { onOpenChange(!open); }}
+            title={`Permissions: ${selectedData.name}`}
+            className="h-6 min-w-0 flex-1 justify-between gap-1 px-1.5 font-normal"
+          >
+            <span className="flex items-center gap-1 min-w-0">
+              <span className={cn("shrink-0", selectedData.color)}>{selectedData.icon}</span>
+              <span className={cn("text-[11px] truncate", selectedData.color)}>
+                {selectedData.name}
+              </span>
+            </span>
+            <ChevronDown className="h-3 w-3 opacity-50 shrink-0" />
+          </Button>
+        }
+        content={<PermissionPickerDropdown
+          normalizedMode={normalizedMode}
+          onPermissionModeChange={onPermissionModeChange}
+          onOpenChange={onOpenChange}
+        />}
+        open={open}
+        onOpenChange={onOpenChange}
+        align="start"
+        side="bottom"
+      />
+    );
+  }
 
   return (
     <Popover
@@ -362,42 +482,11 @@ export function PermissionPicker({ permissionMode, onPermissionModeChange, open,
         </Tooltip>
         )
       }
-      content={
-        <div className="w-[300px] p-1">
-          <div className="text-[10px] uppercase tracking-wider text-muted-foreground px-3 pt-2 pb-1.5 border-b border-border/50 mb-1">
-            Permissions
-          </div>
-          {PERMISSION_MODES.map((mode) => {
-            const isActive = mode.id === normalizedMode;
-            return (
-              <button
-                key={mode.id}
-                onClick={() => {
-                  onPermissionModeChange?.(mode.id);
-                  onOpenChange(false);
-                }}
-                className={cn(
-                  "w-full flex items-start gap-3 p-3 rounded-md transition-colors text-left",
-                  "hover:bg-accent",
-                  isActive && "bg-accent",
-                )}
-              >
-                <span className={cn("mt-0.5", mode.color)}>
-                  {mode.icon}
-                </span>
-                <div className="flex-1 space-y-1">
-                  <div className={cn("font-medium text-sm", mode.color)}>
-                    {mode.name}
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    {mode.description}
-                  </div>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      }
+      content={<PermissionPickerDropdown
+        normalizedMode={normalizedMode}
+        onPermissionModeChange={onPermissionModeChange}
+        onOpenChange={onOpenChange}
+      />}
       open={open}
       onOpenChange={onOpenChange}
       align="start"

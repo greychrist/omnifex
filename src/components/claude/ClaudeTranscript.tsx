@@ -476,6 +476,7 @@ function ClaudeTranscriptImpl({
                       <StreamMessage
                         message={message}
                         streamMessages={messages}
+                        tabId={tabId}
                         accountType={accountType}
                         onResend={onResend}
                       />
@@ -498,6 +499,7 @@ function ClaudeTranscriptImpl({
                           <StreamMessage
                             message={item.message}
                             streamMessages={messages}
+                            tabId={tabId}
                             accountType={accountType}
                             compact
                             onResend={onResend}
@@ -517,6 +519,7 @@ function ClaudeTranscriptImpl({
                         <HiddenEventsGroup
                           messages={item.messages}
                           streamMessages={messages}
+                          tabId={tabId}
                           accountType={accountType}
                           onResend={onResend}
                         />,

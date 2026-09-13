@@ -74,20 +74,20 @@ const kindOf = (container: HTMLElement) =>
 describe('queued feedback drafts render as their own card', () => {
   it('resolves to system.feedback_draft_queued, not the unknown catch-all', () => {
     const { container } = render(
-      <StreamMessage message={draftNode()} streamMessages={[]} />,
+      <StreamMessage tabId="tab-test" message={draftNode()} streamMessages={[]} />,
     );
     expect(kindOf(container)).toBe('system.feedback_draft_queued');
   });
 
   it('shows the draft title and the details preview', () => {
-    render(<StreamMessage message={draftNode()} streamMessages={[]} />);
+    render(<StreamMessage tabId="tab-test" message={draftNode()} streamMessages={[]} />);
     expect(screen.getByText(new RegExp(TITLE))).toBeTruthy();
     expect(screen.getByText(new RegExp(PREVIEW))).toBeTruthy();
   });
 
   it('names the draft type so a bug reads differently from an idea', () => {
     render(
-      <StreamMessage
+      <StreamMessage tabId="tab-test"
         message={draftNode({ draft_type: 'missing_capability' })}
         streamMessages={[]}
       />,
@@ -97,7 +97,7 @@ describe('queued feedback drafts render as their own card', () => {
 
   it('renders the title alone when the CLI sends no details preview', () => {
     const { container } = render(
-      <StreamMessage
+      <StreamMessage tabId="tab-test"
         message={draftNode({ details_preview: undefined })}
         streamMessages={[]}
       />,

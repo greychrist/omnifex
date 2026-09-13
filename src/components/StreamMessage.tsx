@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
+import { ConnectedToolProgressChip } from '@/components/claude/tools/ToolProgressChip';
 import {
   Terminal,
   Copy,
@@ -36,6 +37,7 @@ import {
   warnUnhandledKnownTool,
 } from "@/lib/types/toolInput";
 import { extractToolResultImages, toolResultHasImages } from "@/lib/toolResultImages";
+import { collectStructuredResults } from "@/lib/bashToolResult";
 import { AnsweredAskUserQuestionCard } from "@/components/AnsweredAskUserQuestionCard";
 import { CardActionBar, CardActionButton, CardActionDivider } from "@/components/CardActionBar";
 import { MessageFrame } from "@/components/StreamMessage/MessageFrame";
@@ -327,6 +329,10 @@ function AssistantCompletionBand({
 interface StreamMessageProps {
   message: JsonlNode;
   streamMessages: JsonlNode[];
+  /** Owning tab. Only used to let a tool row read that tab's live
+   *  `tool_progress` slice — see ConnectedToolProgressChip for why the
+   *  subscription is down there and not a map threaded through here. */
+  tabId: string;
   /** When set, cost is hidden for subscription account types (e.g. "max"). */
   accountType?: string;
   /** Rendered inside an expanded compact group. Nested collapsibles
@@ -346,7 +352,7 @@ interface StreamMessageProps {
 /**
  * Component to render a single Claude Code stream message
  */
-const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamMessages, accountType, inExpandedGroup, compact, onResend }) => {
+const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamMessages, tabId, accountType, inExpandedGroup, compact, onResend }) => {
   // Get current theme. Memoize the derived theme + components map so
   // ReactMarkdown sees stable prop references across renders — without
   // this, every render rebuilds the Prism-highlighted code DOM and the
@@ -379,6 +385,16 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
     });
     return results;
   }, [streamMessages]);
+
+  // The STRUCTURED half of each tool result, which lives on the envelope
+  // rather than inside the content block — `tool_use_result` in the live
+  // stream, `toolUseResult` on disk. Carries what the model is not shown:
+  // `gitOperation` and `bashEditDiff`. Same [streamMessages] trigger as the
+  // map above, for the same reason.
+  const structuredResults = useMemo(
+    () => collectStructuredResults(streamMessages as unknown as { kind: string; raw: unknown }[]),
+    [streamMessages],
+  );
 
   // Helper to get tool result for a specific tool call ID
   const getToolResult = (toolId: string | undefined): MessageContentBlock | null => {
@@ -812,7 +828,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
             const bashInput = asToolInput(toolName, 'Bash', rawInput);
             const bashCommand = toolInputString(bashInput?.command);
             if (bashCommand) {
-              return <BashWidget command={bashCommand} description={toolInputString(bashInput?.description) ?? undefined} result={toolResult} />;
+              return <BashWidget command={bashCommand} description={toolInputString(bashInput?.description) ?? undefined} result={toolResult} structured={toolId ? structuredResults.get(toolId) : undefined} />;
             }
 
             // Write
@@ -851,7 +867,21 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
 
           const widget = renderToolWidget();
           if (widget) {
-            return <React.Fragment key={idx}>{widget}</React.Fragment>;
+            return (
+              <React.Fragment key={idx}>
+                {widget}
+                {/* Mounted here rather than inside each of the fifteen widgets:
+                    how long a call has been running, and whether it is being
+                    retried, are properties of the CALL, not of any one tool's
+                    output. `done` is the kill switch — progress for a tool
+                    whose result has landed never paints. */}
+                <ConnectedToolProgressChip
+                  tabId={tabId}
+                  toolUseId={toolId}
+                  done={!!toolResult}
+                />
+              </React.Fragment>
+            );
           }
 
           // Fallback to basic tool display

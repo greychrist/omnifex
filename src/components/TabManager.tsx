@@ -1,9 +1,14 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence, Reorder } from 'framer-motion';
-import { X, Plus, MessageSquare, Folder, Server, Settings, FileText, HardDrive, List, Brain, Bot, DollarSign } from 'lucide-react';
+import { X, Plus, MessageSquare, Folder, Server, Settings, FileText, HardDrive, List, Brain, DollarSign } from 'lucide-react';
 import { Spinner } from '@/components/ui/spinner';
 import { useMessageRenderingConfig } from '@/contexts/MessageRenderingContext';
 import { TabStatusGlyph } from '@/components/TabStatusGlyph';
+// Re-exported: TabManager's own tests import it from here, and so does
+// anything already reaching for it. The definition moved out so the
+// session status bar can render the same glyph.
+import { AgentCountGlyph } from '@/components/AgentCountGlyph';
+export { AgentCountGlyph };
 import { AccountBadge } from './AccountBadge';
 import { useTabState } from '@/hooks/useTabState';
 import { Tab, useTabContext } from '@/contexts/TabContext';
@@ -122,23 +127,6 @@ export function resolveTabStatusIndicator(
   return null;
 }
 
-/**
- * "N agents still working" glyph. Rendered directly rather than through
- * TabStatusGlyph, like the spinner: this says what the tab is *doing*, not
- * which of the user-configurable state glyphs it is in. Exported for tests.
- */
-export const AgentCountGlyph: React.FC<{ count: number }> = ({ count }) => {
-  const label = `${count} background agent${count === 1 ? '' : 's'} working`;
-  return (
-    <span className="inline-flex items-center gap-0.5 text-sky-400" aria-label={label} title={label}>
-      <Bot className="size-3.5 animate-pulse" />
-      {/* A single agent needs no numeral — the bot itself is the message. */}
-      {count > 1 && (
-        <span className="text-[10px] font-medium tabular-nums leading-none">{count}</span>
-      )}
-    </span>
-  );
-};
 
 const TabItem: React.FC<TabItemProps> = ({ tab, isActive, onClose, onClick, isDragging = false, setDraggedTabId }) => {
   useRenderProfile('TabItem');

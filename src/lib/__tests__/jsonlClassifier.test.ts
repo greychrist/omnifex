@@ -636,3 +636,73 @@ describe('system:dev_intent (CLI >= 2.1.266)', () => {
     if (node?.kind === 'system') expect(node.subtype).toBe('dev_intent');
   });
 });
+
+describe('tool_progress', () => {
+  const base = {
+    type: 'tool_progress',
+    tool_use_id: 'toolu_01AAA-heartbeat-0',
+    tool_name: 'Bash',
+    parent_tool_use_id: 'toolu_01AAA',
+    elapsed_time_seconds: 30,
+    heartbeat: true,
+    session_id: 'fe10d371-620b-4e16-b412-62cd401ca3aa',
+    uuid: '218fefdf-5b66-4f10-b0cc-29b675e2aaae',
+  } as Record<string, unknown>;
+
+  it('classifies as the tool-progress overlay kind', () => {
+    expect(classifyJsonlLine(base)?.kind).toBe('tool-progress');
+  });
+
+  it('anchors on the real tool id, not the synthetic heartbeat id', () => {
+    const node = classifyJsonlLine(base);
+    expect(node?.kind === 'tool-progress' && node.anchorToolUseId).toBe('toolu_01AAA');
+  });
+
+  it('anchors correctly when the parent names a different tool (nested in a subagent)', () => {
+    const node = classifyJsonlLine({
+      ...base,
+      tool_use_id: 'toolu_BASH-heartbeat-3',
+      parent_tool_use_id: 'toolu_TASK',
+    });
+    expect(node?.kind === 'tool-progress' && node.anchorToolUseId).toBe('toolu_BASH');
+  });
+
+  it('carries a subagent_retry payload through untouched', () => {
+    const node = classifyJsonlLine({
+      ...base,
+      tool_use_id: 'toolu_TASK',
+      tool_name: 'Task',
+      subagent_type: 'Explore',
+      subagent_retry: {
+        agent_id: 'a1', attempt: 2, max_retries: 3, retry_delay_ms: 1500,
+        error_status: 529, error_category: 'overloaded_error',
+      },
+    });
+    expect(node?.kind === 'tool-progress' && node.raw.subagent_retry?.attempt).toBe(2);
+  });
+
+  it('rejects a frame with a non-string tool_use_id', () => {
+    expect(classifyJsonlLine({ ...base, tool_use_id: 7 })).toBeNull();
+  });
+
+  it('rejects a frame with an empty tool_use_id', () => {
+    expect(classifyJsonlLine({ ...base, tool_use_id: '' })).toBeNull();
+  });
+
+  it('rejects a frame with a non-string tool_name', () => {
+    expect(classifyJsonlLine({ ...base, tool_name: null })).toBeNull();
+  });
+
+  it('rejects a frame with a non-finite elapsed_time_seconds', () => {
+    expect(classifyJsonlLine({ ...base, elapsed_time_seconds: 'soon' })).toBeNull();
+    expect(classifyJsonlLine({ ...base, elapsed_time_seconds: Infinity })).toBeNull();
+    expect(classifyJsonlLine({ ...base, elapsed_time_seconds: Number.NaN })).toBeNull();
+  });
+
+  it('needs no timestamp — the frame carries none and is never persisted', () => {
+    const { ...noTime } = base;
+    delete noTime.timestamp;
+    delete noTime.receivedAt;
+    expect(classifyJsonlLine(noTime)?.kind).toBe('tool-progress');
+  });
+});

@@ -9,15 +9,6 @@ export interface ActivityPillProps {
   className?: string;
 }
 
-/** Elapsed as `12s` / `4m 20s` — a pill, so no decimals and no hours-first. */
-function elapsedLabel(ms: number): string {
-  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
-  if (totalSeconds < 60) return `${totalSeconds}s`;
-  const minutes = Math.floor(totalSeconds / 60);
-  if (minutes < 60) return `${minutes}m ${totalSeconds % 60}s`;
-  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
-}
-
 /** Coarse countdown to a usage-limit reset. Minutes are enough for a pill. */
 function resetLabel(resetsAtSeconds: number, nowMs: number): string {
   const remainingMs = resetsAtSeconds * 1000 - nowMs;
@@ -30,60 +21,44 @@ function resetLabel(resetsAtSeconds: number, nowMs: number): string {
 }
 
 /**
- * What the session is *doing*, as a second pill under the session-status one.
+ * The usage-limit notice, as a pill beside the session-status one.
  *
- * Deliberately not merged with the status pill above it. That one reports
- * `sessionStatus` — is the CLI process up — which the main process owns and
- * docs/session-lifecycle.md forbids the renderer from keeping a second copy of.
- * This reports the orthogonal axis. Two pills that each answer one question beat
- * one pill that blurs two.
+ * This used to carry `active` and `thinking` too. Those became glyphs in
+ * SessionStatusBar: each is a METRIC (how long, how many tokens) and reads
+ * better as an icon with a number than as a word. A usage limit is not a
+ * metric — it is the session blocked on something outside it, with a countdown
+ * to when that ends — and shrinking it to an icon would have made the one
+ * genuinely alarming state the quietest thing on the row.
  *
- * The accent is a tint only, never a colour change: this ticks every second
- * while a turn runs, and a pill that changed hue on a one-second cadence next
- * to a status pill that means something else would read as an alarm.
+ * Still deliberately not merged with the session-status pill above it. That
+ * one reports `sessionStatus` — is the CLI process up — which the main process
+ * owns and docs/session-lifecycle.md forbids the renderer from keeping a
+ * second copy of.
  */
 export function ActivityPill({ signal, className }: ActivityPillProps) {
   const meta = signal?.meta as
-    | { status?: SessionActivity; startedAt?: number | null; thinkingTokens?: number | null; resetsAt?: number | null }
+    | { status?: SessionActivity; resetsAt?: number | null }
     | undefined;
   const status = meta?.status;
 
-  // Only subscribe to the clock when something is actually counting.
-  const ticking = status === 'thinking' || status === 'usage-limit';
-  const nowMs = useSecondTick(ticking);
+  // Only subscribe to the clock while the countdown is actually running.
+  const nowMs = useSecondTick(status === 'usage-limit');
 
-  if (!status || status === 'idle' || status === 'stopped') {
-    // `idle` and `stopped` are already legible from the status pill above and
-    // the composer's own state; a second pill saying so is noise.
-    return null;
-  }
+  // Everything else the session can be doing is either legible from the status
+  // pill above and the composer's own state, or is a glyph in
+  // SessionStatusBar. A pill repeating either would be noise.
+  if (status !== 'usage-limit') return null;
 
-  let label: string;
-  let title: string;
-
-  if (status === 'thinking') {
-    const elapsed = meta?.startedAt != null ? elapsedLabel(nowMs - meta.startedAt) : null;
-    label = elapsed ? `thinking ${elapsed}` : 'thinking';
-    title =
-      meta?.thinkingTokens != null
-        ? `~${meta.thinkingTokens.toLocaleString()} thinking tokens`
-        : 'Extended thinking in progress';
-  } else if (status === 'usage-limit') {
-    label = meta?.resetsAt != null ? `limit · ${resetLabel(meta.resetsAt, nowMs)}` : 'usage limit';
-    title = 'Waiting for the usage limit to reset — the CLI still owns this turn';
-  } else {
-    label = 'working';
-    title = 'A turn is in flight';
-  }
+  const label =
+    meta?.resetsAt != null ? `limit · ${resetLabel(meta.resetsAt, nowMs)}` : 'usage limit';
 
   return (
     <span
-      title={title}
+      title="Waiting for the usage limit to reset — the CLI still owns this turn"
       className={cn(
         'inline-flex items-center gap-1 rounded px-1.5 py-0.5',
         'text-[10px] font-medium lowercase tracking-wide tabular-nums',
-        'bg-primary/10 text-primary/90',
-        status === 'thinking' && 'animate-pulse',
+        'bg-amber-500/15 text-amber-500',
         className,
       )}
     >

@@ -31,7 +31,7 @@ import {
   turnDeltaSeries,
   type ContextJumpSetting,
 } from '@/lib/turnDelta';
-import { deriveThinkingStatus } from '@/lib/thinkingStatus';
+import { deriveThinkingStatus, lastThinkingBurstTokens } from '@/lib/thinkingStatus';
 import type { SessionSignal, SignalAction } from './types';
 
 /** How much headroom one Snooze buys. Additive across presses. */
@@ -68,6 +68,15 @@ export interface SignalInput {
   sessionLive: boolean;
   /** Is a main turn in flight right now? */
   turnInFlight: boolean;
+  /** Wall clock when the in-flight turn started, or null when idle. Measured
+   *  at the isLoading transition in AgentSession, NOT from
+   *  `cli-stream-result.duration_ms` — the status bar counts live from this
+   *  and freezes on `lastTurnMs`, and two clocks would make the number jump
+   *  at the moment it stopped moving. */
+  turnStartedAt: number | null;
+  /** How long the previous turn took, wall clock. Null before the first turn
+   *  completes. */
+  lastTurnMs: number | null;
   cacheTtlChange: CacheTtlChange | null;
   mcpErrors: McpServerConfigError[] | null;
   /** Epoch SECONDS, matching `usageLimitWait`. */
@@ -128,6 +137,12 @@ function activitySignal(input: SignalInput): SessionSignal {
       thinkingTokens: thinking?.tokens ?? null,
       startedAt: thinking?.startedAt ?? null,
       resetsAt: usageLimitResetsAt,
+      // The status bar's two readouts. Both hold the PREVIOUS round's value
+      // while idle, which is the point: the figure is most worth reading right
+      // after the turn that produced it ends.
+      turnStartedAt: turnInFlight ? input.turnStartedAt : null,
+      lastTurnMs: input.lastTurnMs,
+      lastThinkingTokens: lastThinkingBurstTokens(messages),
     },
   };
 }

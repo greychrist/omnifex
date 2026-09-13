@@ -68,7 +68,7 @@ function assistantNode(content: unknown[], stop_reason: string | null = null): J
 }
 
 function renderNode(node: JsonlNode) {
-  return render(<StreamMessage message={node} streamMessages={[node]} />);
+  return render(<StreamMessage tabId="tab-test" message={node} streamMessages={[node]} />);
 }
 
 describe('StreamMessage — content block missing its narrative field (CLI 2.1.234 class)', () => {

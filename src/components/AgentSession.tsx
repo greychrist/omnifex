@@ -85,7 +85,7 @@ import { GitBranchBadge } from "./claude-code-session/GitBranchBadge";
 import { GitWatchStatusIcon } from "./claude-code-session/GitWatchStatusIcon";
 import { resolveBranchColors } from '@/lib/branchColors';
 import type { BranchColor } from '@/lib/api';
-import { deriveSubagents, applySubagentMeta, createSubagentColorAllocator, notificationStatsByToolUse, type SubagentMetaInput } from "@/lib/subagentStreams";
+import { deriveSubagents, applySubagentMeta, createSubagentColorAllocator, notificationStatsByToolUse, countActiveSubagents, type SubagentMetaInput } from '@/lib/subagentStreams';
 import { getTaskList, summarizeTaskList } from "@/lib/taskList";
 import { deriveWaitingFor, type TabWaitingFor } from "@/lib/tabWaitingFor";
 import { SubagentBar } from "./SubagentBar";
@@ -975,10 +975,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   // `conversationStatus` from `useSessionLifecycle`. Subagent count and
   // task summary are pure derivations from messages/subagents state and
   // stay here so other code below can read them.
-  const activeSubagentCount = subagents.reduce(
-    (n, s) => (s.status === 'running' ? n + 1 : n),
-    0,
-  );
+  const activeSubagentCount = countActiveSubagents(subagents);
   // taskEntries is defined above (alongside tasksInFlight) so both can share a single getTaskList call.
   const taskListSummary = useMemo(() => {
     return taskEntries.length > 0
@@ -999,6 +996,34 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   useEffect(() => {
     onStreamingChangeRef.current?.(isLoading, claudeSessionId);
   }, [isLoading, claudeSessionId]);
+
+  // Turn-boundary bookkeeping: when the round starts, when the last one took,
+  // and dropping the tool-progress map the round left behind.
+  //
+  // `lastTurnMs` is measured here rather than read off
+  // `cli-stream-result.duration_ms` on purpose. The status bar shows a LIVE
+  // counter from `turnStartedAt` while the turn runs and freezes it when the
+  // turn ends; sourcing the frozen value from a different clock (duration_ms
+  // is API time, not wall time) would make the number visibly jump at the
+  // moment it stopped moving.
+  const [turnStartedAt, setTurnStartedAt] = useState<number | null>(null);
+  const [lastTurnMs, setLastTurnMs] = useState<number | null>(null);
+  const turnStartedAtRef = useRef<number | null>(null);
+  const wasLoadingRef = useRef(false);
+  useEffect(() => {
+    if (isLoading && !wasLoadingRef.current) {
+      const at = Date.now();
+      turnStartedAtRef.current = at;
+      setTurnStartedAt(at);
+    } else if (!isLoading && wasLoadingRef.current) {
+      const startedAt = turnStartedAtRef.current;
+      if (startedAt !== null) setLastTurnMs(Date.now() - startedAt);
+      setTurnStartedAt(null);
+      // A finished turn has no running tools, so nothing is worth keeping.
+      useClaudeSessionStore.getState().pruneToolProgressFor(tabIdRef.current, new Set());
+    }
+    wasLoadingRef.current = isLoading;
+  }, [isLoading]);
 
   // Approximate current context-window occupancy from the LAST assistant turn.
   // This is the fallback the SessionCard uses when the CLI's live
@@ -1245,11 +1270,16 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
 
       // Classify. The classifier normalizes the raw JSONL line into a
       // typed JsonlNode. normalizeJsonlNode handles string→array content
-      // for assistant/user nodes. Overlay kinds (stream-event, rate-limit,
-      // lifecycle) return null from the classifier and are skipped.
+      // for assistant/user nodes. Overlay kinds never enter messages[]:
+      // stream-event / rate-limit / lifecycle are produced upstream of the
+      // classifier, while tool-progress IS classified (it needs the anchor id
+      // computed) and is routed to its own store slot below.
       const node = classifyJsonlLine(raw);
       if (!node) return;
-      // Overlay kinds never enter messages[]; skip them here too.
+      if (node.kind === 'tool-progress') {
+        useClaudeSessionStore.getState().applyToolProgress(sessionTabId, node);
+        return;
+      }
       if (node.kind === 'stream-event' || node.kind === 'rate-limit' || node.kind === 'lifecycle') return;
       const normalizedNode = normalizeJsonlNode(node);
 
@@ -2181,6 +2211,8 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     jumpSetting: contextJumpSetting,
     sessionLive: isSessionActive,
     turnInFlight: isLoading,
+    turnStartedAt,
+    lastTurnMs,
     cacheTtlChange,
     mcpErrors: mcpServerErrors,
     usageLimitResetsAt,
@@ -2398,6 +2430,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
             cacheAnchorMs={cacheAnchorMs}
             cacheTtlMs={cacheTtlMs}
             cacheBusy={isLoading}
+            activeSubagents={activeSubagentCount}
             sessionStatus={displayStatus}
             onReconnect={() => void handleReconnect()}
             onClear={() => {
@@ -2424,7 +2457,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
             controls={
               <SessionDefaultsRow
                 engine={agent}
-                direction="column"
+                density="compact"
                 // TUI mode owns these via the terminal; the pickers can't
                 // drive the CLI (no control-protocol engine in TUI), so they
                 // render read-only and mirror the auto-detected live state.

@@ -15,6 +15,7 @@ import type {
   ModelInfo,
   SlashCommand,
   CliControlGetContextUsageResponse,
+  CliPermissionRulesState,
   McpServerStatus,
   SendToRenderer,
 } from './types';
@@ -206,6 +207,41 @@ export function createQueryPassthroughs(
     }
   }
 
+  /**
+   * The session's LIVE permission rules, straight from the CLI.
+   *
+   * This is the read-back half of `applyPermissions`. That method pushes a
+   * file-derived allow/deny union into the session and has no way to confirm
+   * what the session ended up with; `permissions-io.ts` reads only `allow` and
+   * `deny` out of three settings files, so `ask` rules, policy/managed rules,
+   * `--allowedTools` grants and session-only approvals are all invisible to
+   * the panel. The CLI knows all of them.
+   *
+   * Read-only by contract ("this request never changes rules"), so it is safe
+   * to call on every panel open.
+   *
+   * `null` means "no answer" and NEVER "no rules" — the caller must fall back
+   * to the file-derived view. Three ways to get it: a TUI tab (no engine to
+   * ask, and the panel renders in both modes), a CLI older than 2.1.269
+   * (answers "list_permission_rules is not available on this connection"), or
+   * a malformed envelope.
+   */
+  async function listPermissionRules(
+    tabId: string,
+  ): Promise<CliPermissionRulesState | null> {
+    const handle = liveEngine(tabId);
+    if (!handle) return null;
+    try {
+      const res = await handle.engine!.sendControlRequest<{
+        state?: CliPermissionRulesState;
+      }>('list_permission_rules');
+      return res?.state ?? null;
+    } catch (err) {
+      console.error(`[sessions] listPermissionRules failed for tab ${tabId}:`, err);
+      return null;
+    }
+  }
+
   async function getSupportedCommands(tabId: string): Promise<SlashCommand[]> {
     const handle = sessions.get(tabId);
     if (!handle?.engine) return [];
@@ -282,6 +318,7 @@ export function createQueryPassthroughs(
     setPermissionMode,
     setEffort,
     applyPermissions,
+    listPermissionRules,
     setThinking,
     getAccountInfo,
     getContextUsage,

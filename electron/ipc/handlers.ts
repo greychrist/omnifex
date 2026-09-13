@@ -92,6 +92,7 @@ export interface Services {
     setPermissionMode(sessionId: string, mode: string): unknown;
     setEffort(sessionId: string, level: unknown): unknown;
     applyPermissions(sessionId: string, permissions: unknown): unknown;
+    listPermissionRules(sessionId: string): Promise<unknown>;
     setThinking(sessionId: string, config: unknown): unknown;
     getAccountInfo(sessionId: string): unknown;
     getContextUsage(sessionId: string): unknown;
@@ -648,6 +649,15 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     list_supported_commands: wrapWith((p: Record<string, unknown>) => commands?.listSupported((p?.configDir ?? p?.config_dir) as string) ?? []),
 
     // ── Session Permissions ────────────────────────────────────────────────
+    // The CLI's own view of the live session's rules, used to annotate the
+    // file-derived panel. Returns null in TUI mode and on a pre-2.1.269 CLI —
+    // the caller keeps showing the file view in that case.
+    session_list_permission_rules: wrapWith((p: Record<string, unknown>) => {
+      const tabId = (p?.tabId ?? p?.session_id) as string | undefined;
+      if (!tabId) return null;
+      return sessions?.listPermissionRules(tabId) ?? null;
+    }),
+
     session_get_permissions: wrapWith((p: Record<string, unknown>) => {
       const configDir = (p?.configDir ?? p?.config_dir ?? '') as string;
       const projectPath = (p?.projectPath ?? p?.project_path) as string | undefined;

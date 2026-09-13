@@ -11,7 +11,7 @@ import {
   PermissionPicker,
   type EffortLevel,
 } from '@/components/ControlBar';
-import { FormModelPicker } from '@/components/ModelPicker';
+import { FormModelPicker, InlineModelPicker } from '@/components/ModelPicker';
 import { useModelCatalog, pickModelOption, resolveActualModelName } from '@/lib/modelCatalog';
 
 export interface SessionDefaultsRowProps {
@@ -34,6 +34,14 @@ export interface SessionDefaultsRowProps {
    * context popover where a row truncates every trigger.
    */
   direction?: 'row' | 'column';
+  /**
+   * 'compact' is the session context popover's control row: one line, no
+   * field labels, and the pickers' `inline` triggers. The labels go because
+   * each picker already carries its own icon and colour and names itself in a
+   * `title` — three stacked captions were the reason the block could not fit
+   * on one line at all.
+   */
+  density?: 'default' | 'compact';
   /**
    * Renders the pickers read-only. Used for live TUI sessions, where the
    * terminal — not OmniFex — owns model / effort / permission, so the pickers
@@ -101,12 +109,17 @@ export function SessionDefaultsRow({
   setPermissionMode,
   configDir,
   direction = 'row',
+  density = 'default',
   disabled = false,
   activeDefaultModel,
   className,
 }: SessionDefaultsRowProps) {
-  const layout =
-    direction === 'column' ? 'flex flex-col items-stretch gap-2' : 'flex items-end gap-2';
+  const compact = density === 'compact';
+  const layout = compact
+    ? 'flex items-center gap-1.5'
+    : direction === 'column'
+      ? 'flex flex-col items-stretch gap-2'
+      : 'flex items-end gap-2';
   const [modelOpen, setModelOpen] = useState(false);
   const [effortOpen, setEffortOpen] = useState(false);
   const [permsOpen, setPermsOpen] = useState(false);
@@ -135,10 +148,25 @@ export function SessionDefaultsRow({
     // detected from a live TUI session) to the picker's alias options.
     const selectedModelData = pickModelOption(model, models);
     const selectedRawModel = modelCatalogRaw.find((m) => m.value === model);
+    const ModelControl = compact ? InlineModelPicker : FormModelPicker;
+    const pickerVariant = compact ? 'inline' as const : 'form' as const;
+    // Under compact density `Field` is bypassed entirely rather than rendering
+    // an empty caption: an empty <span> still occupies a grid row.
+    const wrap = (label: string, node: React.ReactNode) =>
+      compact ? node : <Field label={label}>{node}</Field>;
+    // Compact has no room for the TUI footnote, but dropping the explanation
+    // outright would leave three inert pickers with nothing saying why. It
+    // moves to the row's tooltip rather than disappearing.
+    const tuiNote = disabled
+      ? "Managed by the terminal — change model with /model, effort and permissions with the CLI's own controls. These mirror the live session."
+      : undefined;
     return (
-      <div className={`${layout} ${className ?? ''}`}>
-        <Field label="Model">
-          <FormModelPicker
+      <div
+        className={`${layout} ${className ?? ''}`}
+        {...(compact && tuiNote ? { title: tuiNote } : {})}
+      >
+        {wrap('Model', (
+          <ModelControl
             selectedModelData={selectedModelData}
             models={models}
             selectedModel={model}
@@ -147,29 +175,29 @@ export function SessionDefaultsRow({
             onOpenChange={setModelOpen}
             disabled={disabled}
           />
-        </Field>
-        <Field label="Effort">
+        ))}
+        {wrap('Effort', (
           <EffortPicker
             effort={effort as EffortLevel}
             onEffortChange={(level) => { setEffort(level); }}
             open={effortOpen}
             onOpenChange={setEffortOpen}
-            variant="form"
+            variant={pickerVariant}
             levels={selectedRawModel?.supportedEffortLevels}
             disabled={disabled}
           />
-        </Field>
-        <Field label="Permissions">
+        ))}
+        {wrap('Permissions', (
           <PermissionPicker
             permissionMode={permissionMode}
             onPermissionModeChange={setPermissionMode}
             open={permsOpen}
             onOpenChange={setPermsOpen}
-            variant="form"
+            variant={pickerVariant}
             disabled={disabled}
           />
-        </Field>
-        {disabled && (
+        ))}
+        {disabled && !compact && (
           <p className="text-[10px] leading-snug text-muted-foreground">
             Managed by the terminal — change model with <code>/model</code>,
             effort/permissions with the CLI's own controls. These mirror the

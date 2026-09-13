@@ -108,6 +108,7 @@ export const INVOKE_CHANNELS: readonly string[] = [
   'session_plugins',
   'session_subagent_meta',
   'session_get_permissions',
+  'session_list_permission_rules',
   'session_update_permission',
   'session_set_mode',
   'session_tui_write',

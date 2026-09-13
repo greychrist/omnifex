@@ -14,7 +14,9 @@ import type {
   CliInitRaw,
   CliResultRaw,
   RateLimitEventRaw,
+  ToolProgressRaw,
 } from '@/types/jsonl';
+import { anchorToolUseId } from './toolProgress';
 
 /**
  * Single source of truth for classifying a parsed JSONL line into the
@@ -75,6 +77,8 @@ export function classifyJsonlLine(raw: unknown): JsonlNode | null {
       return classifyCliResult(r, sessionId, receivedAt);
     case 'rate_limit_event':
       return classifyRateLimitEvent(r, sessionId, receivedAt);
+    case 'tool_progress':
+      return classifyToolProgress(r);
     default:
       // Catch-all: never drop. Some real record types ('summary', 'mode')
       // persist with no top-level timestamp, so unlike the content kinds
@@ -287,3 +291,29 @@ function classifyRateLimitEvent(r: Record<string, unknown>, sessionId: string, r
   return { kind: 'rate-limit-event', raw: r as unknown as RateLimitEventRaw, sessionId, receivedAt };
 }
 
+
+/**
+ * Live progress for an in-flight tool call. An OVERLAY node: it never enters
+ * `messages[]`, because the CLI never writes this frame to the JSONL on disk.
+ *
+ * The guard mirrors the CLI's own `sdkMessageAdapter`, which drops a frame
+ * "with a non-string tool_name/tool_use_id or non-finite
+ * elapsed_time_seconds" — same three fields, same verdict, so a malformed
+ * frame can never reach a chip that does arithmetic on it.
+ *
+ * No `receivedAt` requirement, unlike every content kind above: the frame
+ * carries no `timestamp` by design, and arrival is stamped by the reducer.
+ */
+function classifyToolProgress(r: Record<string, unknown>): JsonlNode | null {
+  const toolUseId = r.tool_use_id;
+  const toolName = r.tool_name;
+  const elapsed = r.elapsed_time_seconds;
+  if (typeof toolUseId !== 'string' || toolUseId.length === 0) return null;
+  if (typeof toolName !== 'string') return null;
+  if (typeof elapsed !== 'number' || !Number.isFinite(elapsed)) return null;
+  return {
+    kind: 'tool-progress',
+    raw: r as unknown as ToolProgressRaw,
+    anchorToolUseId: anchorToolUseId(toolUseId),
+  };
+}

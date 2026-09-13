@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Database, RotateCcw, RefreshCw, Copy, Check } from "lucide-react";
+import { Database, RotateCcw, RefreshCw, Copy, Check, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { resolveContextLimit } from "@/lib/contextLimit";
 import type { SessionContextUsage } from "@/lib/api";
@@ -9,6 +9,7 @@ import { HeaderLabel } from "./HeaderLabel";
 import { CacheTimerRow } from "./CacheTimerRow";
 import { fireAndLog } from "@/lib/fireAndLog";
 import { ActivityPill } from "./signals/ActivityPill";
+import { SessionStatusBar } from "./SessionStatusBar";
 import { SignalBadge } from "./signals/SignalBadge";
 import { SignalActionCard } from "./signals/SignalActionCard";
 import { SignalEventLog } from "./signals/SignalEventLog";
@@ -24,6 +25,9 @@ import type { SessionSignal } from "@/lib/signals/types";
  * colouring by window percentage would still be showing green there while the
  * attention slot asked the user to compact.
  */
+/** Legacy `greychrist.` prefix, like every other localStorage key here. */
+const DETAILS_STORAGE_KEY = "greychrist.sessionCard.detailsOpen";
+
 const METER_FILL: Record<ContextPressureLevel, string> = {
   none: "bg-emerald-500",
   warn: "bg-amber-500",
@@ -89,8 +93,13 @@ interface SessionCardProps {
    *  rendered in thin small type above the context gauge so the live state is
    *  visible without opening the popover. */
   controlsSummary?: string | null;
-  /** `session.activity` state signal — drives the second status pill. */
+  /** `session.activity` state signal — drives the status bar's readouts and
+   *  the usage-limit pill. */
   activitySignal?: SessionSignal;
+  /** Running, non-ambient subagents (`countActiveSubagents`) — the status
+   *  bar's third glyph. Ambient tasks are excluded upstream; the CLI's own
+   *  schema says they are "not activity". */
+  activeSubagents?: number;
   /** `context.level` state signal — drives the meter's colour and the
    *  compact-at readout. Falls back to an uncoloured meter when absent. */
   contextLevelSignal?: SessionSignal;
@@ -141,6 +150,7 @@ export function SessionCard({
   controls,
   controlsSummary,
   activitySignal,
+  activeSubagents = 0,
   contextLevelSignal,
   unreadEvents = 0,
   pendingAction = null,
@@ -151,6 +161,16 @@ export function SessionCard({
   className,
 }: SessionCardProps) {
   const [contextPopoverOpen, setContextPopoverOpen] = React.useState(false);
+
+  // Collapsed by default, sticky once opened — the same contract (and the same
+  // shape) as SubagentBar's COLLAPSE_STORAGE_KEY.
+  const [detailsOpen, setDetailsOpen] = React.useState<boolean>(
+    () => typeof window !== "undefined" && window.localStorage.getItem(DETAILS_STORAGE_KEY) === "1",
+  );
+  React.useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(DETAILS_STORAGE_KEY, detailsOpen ? "1" : "0");
+  }, [detailsOpen]);
 
   /** What the trigger says it is, plus what the badge on it is counting. */
   const unreadLabel =
@@ -171,7 +191,8 @@ export function SessionCard({
   }, [sessionId]);
 
   return (
-    <div className={cn("flex items-start gap-3 rounded-md border-0 bg-background/40 px-2 py-1 shadow-[0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_30%,transparent),2px_2px_4px_rgb(0_0_0/0.08)]", className)}>
+    <div className={cn("flex flex-col gap-1 rounded-md border-0 bg-background/40 px-2 py-1 shadow-[0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_30%,transparent),2px_2px_4px_rgb(0_0_0/0.08)]", className)}>
+      <div className="flex items-start gap-3">
       <div className="flex flex-col items-start gap-0.5">
         <HeaderLabel>session</HeaderLabel>
         {sessionStatus && (() => {
@@ -209,10 +230,6 @@ export function SessionCard({
             </span>
           );
         })()}
-        {/* Second pill, deliberately below rather than merged into the one
-            above: that reports whether the CLI process is up (main-process
-            owned), this reports what the session is doing. */}
-        <ActivityPill signal={activitySignal} />
       </div>
 
       {(() => {
@@ -375,79 +392,103 @@ export function SessionCard({
                   </button>
                 )}
 
-                {controls && (
-                  <div className="pt-2 mt-1 border-t border-border/50">
-                    {controls}
-                  </div>
-                )}
+                {/* Collapsed by default, and sticky once opened. The
+                    breakdown is the tallest thing in the popover and answers a
+                    question asked occasionally ("what is eating the window?"),
+                    while everything around it is read every time. */}
+                <div className="pt-2 mt-1 border-t border-border/50" data-testid="details-disclosure">
+                  <button
+                    type="button"
+                    onClick={() => { setDetailsOpen((v) => !v); }}
+                    aria-expanded={detailsOpen}
+                    className="flex w-full items-center gap-1 text-[10px] uppercase tracking-wide text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    <ChevronRight className={cn("h-3 w-3 transition-transform", detailsOpen && "rotate-90")} />
+                    Details
+                  </button>
+                  {detailsOpen && (
+                    <div className="mt-2 flex flex-col gap-2">
+                  {useSdk && sortedCategories.length > 0 ? (
+                    <>
+                      {/* A stacked bar, not a donut. The pie cost 18rem of
+                          popover height to encode one number per category —
+                          exactly what the legend underneath it already lists,
+                          and more precisely. Proportions survive; the height
+                          does not. */}
+                      <div className="flex h-2.5 w-full overflow-hidden rounded-sm bg-foreground/5">
+                        {bands.map((band) => (
+                          <div
+                            key={band.name}
+                            data-context-band={band.name}
+                            title={`${band.name} — ${band.value.toLocaleString()} tokens`}
+                            style={{
+                              width: `${limit > 0 ? (band.value / limit) * 100 : 0}%`,
+                              backgroundColor: band.color,
+                            }}
+                          />
+                        ))}
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        {bands.map((band) => {
+                          const catPct = limit > 0 ? (band.value / limit) * 100 : 0;
+                          return (
+                            <div
+                              key={band.name}
+                              className="flex items-center gap-2 text-xs"
+                            >
+                              <span
+                                className="inline-block w-2 h-2 rounded-sm shrink-0"
+                                style={{ backgroundColor: band.color }}
+                              />
+                              <span className="flex-1 truncate text-foreground/80">
+                                {band.name}
+                              </span>
+                              <span className="font-mono text-foreground/60 shrink-0">
+                                {band.value.toLocaleString()}
+                              </span>
+                              <span className="font-mono text-foreground/40 shrink-0 w-10 text-right">
+                                {catPct.toFixed(1)}%
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-xs text-muted-foreground italic">
+                      Category breakdown not yet available — waiting for the CLI
+                      to report per-category usage.
+                    </div>
+                  )}
+                    </div>
+                  )}
+                </div>
 
-                {/* Above the breakdown, not below it. This list is the only
-                    thing that says what the badge on the trigger was counting,
-                    and underneath the bands and the per-category table it was
-                    off the bottom of a w-96 popover — so the number cleared
-                    without its meaning ever being on screen. */}
-                <div className="pt-2 mt-1 border-t border-border/50">
+                {/* The badge on the trigger counts these, so the list has to
+                    be reachable without hunting. It used to sit ABOVE the
+                    category breakdown for that reason — underneath a full
+                    bands-plus-table block it fell off the bottom of a w-96
+                    popover, and the number cleared without its meaning ever
+                    being on screen. The breakdown now collapses by default,
+                    which solves that more directly and frees this to sit in
+                    reading order. */}
+                <div className="pt-2 mt-1 border-t border-border/50" data-testid="recent-events">
                   <div className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">
                     Recent events
                   </div>
                   <SignalEventLog events={recentEvents} />
                 </div>
 
-                {useSdk && sortedCategories.length > 0 ? (
-                  <>
-                    {/* A stacked bar, not a donut. The pie cost 18rem of
-                        popover height to encode one number per category —
-                        exactly what the legend underneath it already lists,
-                        and more precisely. Proportions survive; the height
-                        does not. */}
-                    <div className="flex h-2.5 w-full overflow-hidden rounded-sm bg-foreground/5">
-                      {bands.map((band) => (
-                        <div
-                          key={band.name}
-                          data-context-band={band.name}
-                          title={`${band.name} — ${band.value.toLocaleString()} tokens`}
-                          style={{
-                            width: `${limit > 0 ? (band.value / limit) * 100 : 0}%`,
-                            backgroundColor: band.color,
-                          }}
-                        />
-                      ))}
-                    </div>
-                    <div className="flex flex-col gap-1">
-                      {bands.map((band) => {
-                        const catPct = limit > 0 ? (band.value / limit) * 100 : 0;
-                        return (
-                          <div
-                            key={band.name}
-                            className="flex items-center gap-2 text-xs"
-                          >
-                            <span
-                              className="inline-block w-2 h-2 rounded-sm shrink-0"
-                              style={{ backgroundColor: band.color }}
-                            />
-                            <span className="flex-1 truncate text-foreground/80">
-                              {band.name}
-                            </span>
-                            <span className="font-mono text-foreground/60 shrink-0">
-                              {band.value.toLocaleString()}
-                            </span>
-                            <span className="font-mono text-foreground/40 shrink-0 w-10 text-right">
-                              {catPct.toFixed(1)}%
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </>
-                ) : (
-                  <div className="text-xs text-muted-foreground italic">
-                    Category breakdown not yet available — waiting for the CLI
-                    to report per-category usage.
+                {controls && (
+                  <div className="pt-1.5 mt-1 border-t border-border/50" data-testid="controls">
+                    {controls}
                   </div>
                 )}
 
+
+
                 {sessionId && (
-                  <div className="pt-1 mt-1 border-t border-border/50 flex items-center gap-2 text-[10px] text-muted-foreground">
+                  <div className="pt-1 mt-1 border-t border-border/50 flex items-center gap-2 text-[10px] text-muted-foreground" data-testid="session-id">
                     <span className="shrink-0">session</span>
                     <span
                       className="font-mono text-foreground/80 truncate"
@@ -480,15 +521,6 @@ export function SessionCard({
               </div>
             }
           />
-          {/* Prompt-cache countdown, directly under the gauge bar. Lives inside
-              this column so it sits below the bar rather than beside it, which
-              also means it needs context data to have arrived — by which point
-              a cache write has been observed anyway. */}
-          <CacheTimerRow
-            anchorMs={cacheAnchorMs}
-            ttlMs={cacheTtlMs}
-            busy={cacheBusy}
-          />
           </div>
         );
       })()}
@@ -507,6 +539,27 @@ export function SessionCard({
         </Button>
         </div>
       )}
+      </div>
+
+      {/* A real status bar, not the column coincidence it used to be: the
+          activity pill was the third element of column one and the cache row
+          the third of column two, so they lined up only as long as both
+          columns happened to have three things in them. Now it is one row that
+          spans the card — glyphs left, cache clock right. */}
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <SessionStatusBar
+            activitySignal={activitySignal}
+            activeSubagents={activeSubagents}
+          />
+          <ActivityPill signal={activitySignal} />
+        </div>
+        <CacheTimerRow
+          anchorMs={cacheAnchorMs}
+          ttlMs={cacheTtlMs}
+          busy={cacheBusy}
+        />
+      </div>
     </div>
   );
 }

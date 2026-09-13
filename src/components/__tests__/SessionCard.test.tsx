@@ -202,9 +202,19 @@ describe('SessionCard — compact button', () => {
 });
 
 describe('SessionCard — category breakdown', () => {
+  // The breakdown lives behind a collapsed `Details` disclosure, so every test
+  // in here opens it first. Its default state is asserted separately, in
+  // "SessionCard — context popover layout".
+  const openBreakdown = () => {
+    openPopover();
+    fireEvent.click(screen.getByRole('button', { name: /details/i }));
+  };
+
+  afterEach(() => { window.localStorage.removeItem('greychrist.sessionCard.detailsOpen'); });
+
   it('draws the breakdown as a bar, not a pie', () => {
     render(<SessionCard totalTokens={120_000} contextUsage={WITH_CATEGORIES} />);
-    openPopover();
+    openBreakdown();
 
     // Queried off document, not the render container: the popover portals its
     // content to body. The pie was 18rem of popover height for information the
@@ -215,7 +225,7 @@ describe('SessionCard — category breakdown', () => {
 
   it('sizes each band by its share of the window', () => {
     render(<SessionCard totalTokens={120_000} contextUsage={WITH_CATEGORIES} />);
-    openPopover();
+    openBreakdown();
 
     const bands = document.querySelectorAll<HTMLElement>('[data-context-band]');
     // Largest first, as the legend has always ordered them: Messages is 60k of
@@ -230,7 +240,7 @@ describe('SessionCard — category breakdown', () => {
 
   it('keeps the legend, which is where the numbers are readable', () => {
     render(<SessionCard totalTokens={120_000} contextUsage={WITH_CATEGORIES} />);
-    openPopover();
+    openBreakdown();
 
     expect(screen.getByText('System prompt')).toBeTruthy();
     expect(screen.getByText('Tools')).toBeTruthy();
@@ -269,9 +279,12 @@ describe('SessionCard — unread session events', () => {
     expect(readCalls).toBe(1);
   });
 
-  it('shows recent events above the category breakdown', () => {
-    // The list is the only thing that says what the number meant, and it sat
-    // below the context bands and the per-category table.
+  it('keeps the event list reachable without opening anything', () => {
+    // This list is the only thing that says what the trigger's number meant,
+    // so it must be on screen the moment the popover is. It used to be ordered
+    // ABOVE the category breakdown to guarantee that; the breakdown now
+    // collapses by default, which achieves the same thing, so the list sits in
+    // reading order and the bands are behind a disclosure.
     render(
       <SessionCard
         totalTokens={120_000}
@@ -282,13 +295,8 @@ describe('SessionCard — unread session events', () => {
     );
     fireEvent.click(screen.getByText('120.0k'));
 
-    // The breakdown carries no heading of its own — it is the stacked bar —
-    // so order is asserted on the DOM rather than on text.
-    const heading = screen.getByText('Recent events');
-    const firstBand = document.querySelector('[data-context-band]');
-    expect(firstBand).toBeTruthy();
-    const relation = heading.compareDocumentPosition(firstBand!);
-    expect(relation & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByText('Recent events')).toBeTruthy();
+    expect(document.querySelector('[data-context-band]')).toBeNull();
   });
 
   it('names the unread count in the trigger, which the badge itself cannot', () => {
@@ -312,5 +320,95 @@ describe('SessionCard — unread session events', () => {
     render(<SessionCard totalTokens={12_000} contextUsage={USAGE} />);
     const trigger = screen.getByLabelText(/Context usage/);
     expect(trigger.getAttribute('aria-label')).toBe('Context usage');
+  });
+});
+
+const DETAILS_KEY = 'greychrist.sessionCard.detailsOpen';
+
+const CATEGORY_USAGE: SessionContextUsage = {
+  totalTokens: 50_104,
+  maxTokens: 1_000_000,
+  rawMaxTokens: 1_000_000,
+  percentage: 5,
+  model: 'opus',
+  categories: [
+    { name: 'Free space', tokens: 916_896, color: '#888' },
+    { name: 'Messages', tokens: 19_339, color: '#3b82f6' },
+    { name: 'Memory files', tokens: 16_272, color: '#f59e0b' },
+  ],
+};
+
+function renderWithCategories(extra: Record<string, unknown> = {}) {
+  return render(
+    <SessionCard
+      totalTokens={50_104}
+      model="opus"
+      contextUsage={CATEGORY_USAGE}
+      sessionStatus="active"
+      {...extra}
+    />,
+  );
+}
+
+function openCategoryPopover() {
+  fireEvent.click(screen.getByText('50.1k'));
+}
+
+describe('SessionCard — context popover layout', () => {
+  afterEach(() => { window.localStorage.removeItem(DETAILS_KEY); });
+
+  it('collapses the category breakdown by default', () => {
+    window.localStorage.removeItem(DETAILS_KEY);
+    renderWithCategories();
+    openCategoryPopover();
+    expect(screen.queryByText('Messages')).toBeNull();
+    expect(screen.getByRole('button', { name: /details/i })).toBeTruthy();
+  });
+
+  it('reveals the breakdown when Details is opened', () => {
+    renderWithCategories();
+    openCategoryPopover();
+    fireEvent.click(screen.getByRole('button', { name: /details/i }));
+    expect(screen.getByText('Messages')).toBeTruthy();
+    expect(screen.getByText('Memory files')).toBeTruthy();
+  });
+
+  it('remembers that Details was opened', () => {
+    renderWithCategories();
+    openCategoryPopover();
+    fireEvent.click(screen.getByRole('button', { name: /details/i }));
+    expect(window.localStorage.getItem(DETAILS_KEY)).toBe('1');
+  });
+
+  it('starts expanded when the stored preference says so', () => {
+    window.localStorage.setItem(DETAILS_KEY, '1');
+    renderWithCategories();
+    openCategoryPopover();
+    expect(screen.getByText('Messages')).toBeTruthy();
+  });
+
+  it('orders the popover: Details, Recent events, controls, session id', () => {
+    renderWithCategories({
+      controls: <div data-testid="session-controls" />,
+      sessionId: 'fe10d371-620b-4e16-b412-62cd401ca3aa',
+    });
+    openCategoryPopover();
+    const ids = ['details-disclosure', 'recent-events', 'controls', 'session-id'];
+    const nodes = ids.map((id) => screen.getByTestId(id));
+    for (let i = 1; i < nodes.length; i++) {
+      expect(
+        nodes[i - 1].compareDocumentPosition(nodes[i]) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    }
+  });
+
+  it('keeps Compact now above the Details disclosure', () => {
+    renderWithCategories({ onCompact: () => {} });
+    openCategoryPopover();
+    const compact = screen.getByText('Compact now');
+    const details = screen.getByTestId('details-disclosure');
+    expect(
+      compact.compareDocumentPosition(details) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 });
