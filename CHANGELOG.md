@@ -5,6 +5,26 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.166] — 2026-09-13
+
+### Added
+
+- Long-running tools now say how long they have been running. A timer appears on the tool's row once a call passes thirty seconds and counts up until the result arrives, so a Bash command or a web fetch that has gone quiet is distinguishable from one that has hung. If a subagent hits an API error and is being retried, the row says which attempt it is on and why.
+- The session widget has a status bar along its bottom edge: a green icon with the elapsed time of the current turn, a purple one with the size of the current thinking burst, and a blue one with the number of subagents running. Each pulses only while its own thing is happening, and each holds the previous round's figure once the turn ends — the moment you are most likely to want to read it.
+- The permissions panel can now show what the live session actually has in force, not just what the settings files say. That includes rules a file cannot show you — ones supplied by a plugin, set for this session only, or managed centrally — and flags any rule a file lists that the session is ignoring.
+- Bash commands run in auto or bypass mode now summarise which files they changed, alongside the git operations they performed.
+
+### Changed
+
+- The context popover is reorganised. The category breakdown — the tallest thing in it — now sits behind a collapsed **Details** toggle, and the model, effort and permission pickers have moved to a single compact line just above the session id. The result fits without scrolling; opening Details is remembered.
+
+### Fixed
+
+- Progress reports from long-running tools were being rendered as unreadable "Unrecognized record" blocks in the transcript, one every thirty seconds per running tool.
+- The count of working subagents no longer includes background watchers. The Claude CLI marks those as not being activity, and counting them made the tab badge report work that was not happening.
+
+Installers are signed with a Developer ID certificate and notarized by Apple.
+
 ## [0.4.165] — 2026-09-11
 
 ### Fixed

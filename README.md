@@ -52,7 +52,9 @@ The Brain is a per-account **memory vault** distilled from those transcripts.
 - Live controls in rich mode: **model picker**, **reasoning effort** (low → max), **extended-thinking** config, and **permission mode** (default / acceptEdits / bypassPermissions / plan).
 - **Slash-command picker** (`/`) plus per-session command discovery.
 - **Subagent tracking** — subagent runs are surfaced inline with their model and authoritative end-of-run stats (duration, tokens, tool count).
-- Image attachments, in-session find, permission and elicitation prompts, and per-tab context-usage / cost readouts.
+- **Live tool progress** — a tool call that runs past thirty seconds shows a timer on its row until the result lands, and a subagent being retried after an API error says which attempt it is on.
+- **Session status bar** — elapsed time for the current turn, the size of the current thinking burst, and the number of subagents running, each holding the previous round's figure once the turn ends.
+- Image attachments, in-session find, permission and elicitation prompts, per-tab context-usage / cost readouts, and a per-command summary of the files a Bash command changed.
 - Multi-tab layout with per-tab status glyphs (session state, engine, rate-limit warnings) and an aggregate status popover.
 
 ### Remote — drive it from the iPad
@@ -91,6 +93,7 @@ The Brain is a per-account **memory vault** distilled from those transcripts.
 - Create and manage custom **slash commands** (with `description` and `allowed-tools` frontmatter) at user, local, or project scope.
 - View, edit, and validate Claude Code **hooks** across scopes.
 - Edit **permission rules** (allow/deny) at user, local, or project scope; new rules are pushed live to the active session.
+- See what the **running session** actually has in force, including rules no settings file can show you — supplied by a plugin, set for this session only, or managed centrally — plus any rule a file lists that the session is ignoring.
 
 ### Usage analytics
 - Aggregate token usage and estimated cost across every configured account.
