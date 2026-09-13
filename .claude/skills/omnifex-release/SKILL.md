@@ -118,7 +118,8 @@ If the branch is not `main`, stop and ask — the updater serves whatever
 every running OmniFex.
 
 After step 0 the tree is clean and pushed, so the "bump version" commit in
-step 4 stays a clean single-purpose diff.
+step 4 stays a clean single-purpose diff — the version, the CHANGELOG, and any
+README correction the release itself made necessary, and nothing else.
 
 ### 1. Pick the version
 
@@ -139,7 +140,7 @@ All three must pass. If `test:coverage` is wanted, run it — but there's no
 enforced threshold anymore (removed in v0.3.12); treat failures in the coverage
 tool itself as blocking and threshold drift as informational.
 
-### 3. Bump version + update CHANGELOG
+### 3. Bump version + update CHANGELOG + refresh the README
 
 - `package.json`: bump `version` to `$NEW_VERSION`.
 - `CHANGELOG.md`: add a `## [$NEW_VERSION] — YYYY-MM-DD` section at the top,
@@ -148,11 +149,46 @@ tool itself as blocking and threshold drift as informational.
   `### Added`, `### Changed`, `### Fixed`, `### Removed`. Installers are signed
   and notarized as of v0.4.135 — do not carry forward the old "Installers
   remain **unsigned**" line from earlier entries.
+- `README.md`: reconcile the **Features** section against what actually
+  shipped. See below.
+
+The README carries no version string — it uses `<version>` placeholders and
+links to `releases/latest` — so there is nothing to bump and no "What's new"
+list to append to. Do not add one; the CHANGELOG is that, and a second copy
+would drift.
+
+What it does carry is an evergreen description of how the app behaves, and that
+is what goes stale. It has only ever been corrected in occasional `docs:`
+sweeps, so by the time anyone notices, several releases' worth of behaviour is
+described wrong on the repo's front page.
+
+Read the CHANGELOG entry you just wrote and ask, per item: **does the Features
+section now describe this app incorrectly or incompletely?** Then edit only what
+that answer touches.
+
+- A behaviour change whose README sentence is now wrong → fix that sentence.
+- A capability the README never described, but a user choosing the app would
+  weigh → add it, in the voice of the section it lands in.
+- A fix restoring intended behaviour the README already describes → usually
+  nothing to do. Most releases land here, and "no README change" is a correct
+  and common outcome. Say so rather than inventing an edit.
+
+Scope it to the Features section and the prose around it. `Install`,
+`Build from source`, `Tech stack` and `Project structure` change on their own
+schedule and are not part of this step — unless the release changed them, in
+which case they are.
+
+The README is a user-facing document, not release notes: write what the app
+does now, not what changed. No version numbers, no "as of 0.4.x", no "new in
+this release" — a reader arriving cold should not be able to tell which
+release prompted the edit.
 
 ### 4. Commit the bump
 
+Include `README.md` only when step 3 actually changed it.
+
 ```bash
-git add package.json CHANGELOG.md
+git add package.json CHANGELOG.md README.md
 git commit -m "chore: bump version to $NEW_VERSION"
 ```
 
@@ -289,12 +325,17 @@ Default mode — tell Greg:
 - Local artifact paths (DMG + ZIP).
 - The step 7 results, explicitly: signed, notarized, stapled, Gatekeeper
   accepted. State it as verified output, not as an assumption.
+- What step 3 did to the README — which claims you corrected, or that you
+  checked it against the CHANGELOG and nothing needed changing. Never silent:
+  silence here is indistinguishable from having skipped it, and skipping it is
+  how the front page went several releases stale in the first place.
 - Reminder: the release is live; every running OmniFex will see it on its next
   check or restart.
 
 `local` mode — tell Greg:
 - Local artifact paths (DMG + ZIP).
 - The step 7 results, same as above.
+- The README outcome, same as above.
 - Reminder: nothing was uploaded to GitHub; users will not see this build.
 
 ## What not to do
@@ -317,7 +358,15 @@ Default mode — tell Greg:
   backstop anymore and the release goes straight to users with no draft gate.
 - **Don't** commit `package.json` bump together with unrelated feature work —
   keep the "bump version" commit clean. Step 0 exists to get unrelated work
-  committed separately first.
+  committed separately first. A README correction the release made necessary is
+  not unrelated work and belongs in this commit; a README edit you happened to
+  think of is, and belongs in its own.
+- **Don't** write release notes into the README. It describes what the app does,
+  not what changed — that is the CHANGELOG's job, and a second copy on the front
+  page is one that goes stale unnoticed.
+- **Don't** manufacture a README edit to prove the step ran. Most releases are
+  fixes to behaviour the README already describes correctly, and leaving it
+  untouched is the right outcome. Report that you checked and found nothing.
 - **Don't** start the build with uncommitted or unpushed work. Step 0 is not a
   formality: the build takes 15–25 minutes and `gh release create --latest` goes
   live the moment it returns, so a release cut from local-only source is public

@@ -39,7 +39,7 @@ The Brain is a per-account **memory vault** distilled from those transcripts.
 - **Plain Markdown you own.** Notes live in `~/OmniFex Brain/<account>/`, git-versioned, deliberately outside app storage so they open in Obsidian and back up normally — and deliberately outside `~/Documents` and `~/Desktop`, which iCloud Drive can evict to placeholder stubs. The search index is derived and disposable; delete it and it rebuilds.
 - **Per-account isolation.** Each account gets its own vault, enforced by the MCP server's process environment rather than by a query filter — a work vault is not reachable from a personal session, by construction.
 - **Auxiliary by contract.** Indexing is throttled, never touches a transcript that is still being written to, and never blocks the UI. A failed item never blocks the queue. Every model call it makes is recorded in an append-only cost ledger you can read in the app.
-- **Nothing is auto-injected.** The Brain never stuffs itself into your prompts. It costs context only when something actually asks it a question.
+- **No note is auto-injected.** The Brain never stuffs its contents into your prompts — a note costs context only when something actually asks it a question. What every session does get is a few lines saying how many notes exist for the project you are in and when consulting them is worth it, because a memory nothing remembers to open is not a memory.
 
 ### Multi-account routing
 - Bind projects to specific Claude accounts using path-prefix rules, with **longest-match-wins** resolution and explicit per-project overrides.
