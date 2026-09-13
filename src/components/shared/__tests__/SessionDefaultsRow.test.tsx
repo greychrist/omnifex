@@ -11,9 +11,11 @@ afterEach(() => { cleanup(); });
 function Harness({
   engine,
   onModel,
+  density,
 }: {
   engine: AccountEngine;
   onModel?: (v: string) => void;
+  density?: 'default' | 'compact';
 }) {
   const [model, setModel] = useState(engine === 'claude' ? 'sonnet' : 'gpt-5-codex');
   const [effort, setEffort] = useState('medium');
@@ -25,6 +27,7 @@ function Harness({
     <TooltipProvider>
       <SessionDefaultsRow
         engine={engine}
+        {...(density ? { density } : {})}
         model={model}
         setModel={(v) => { setModel(v); onModel?.(v); }}
         effort={effort}
@@ -131,5 +134,55 @@ describe('SessionDefaultsRow', () => {
     const select = screen.getByLabelText(/model/i);
     fireEvent.change(select, { target: { value: 'gpt-5' } });
     expect(onModel).toHaveBeenCalledWith('gpt-5');
+  });
+});
+
+describe('SessionDefaultsRow compact density', () => {
+  it('drops the field labels so the three controls fit one line', () => {
+    render(<Harness engine="claude" density="compact" />);
+    expect(screen.queryByText('Model')).toBeNull();
+    expect(screen.queryByText('Effort')).toBeNull();
+    expect(screen.queryByText('Permissions')).toBeNull();
+  });
+
+  it('default density keeps the field labels', () => {
+    render(<Harness engine="claude" />);
+    expect(screen.getByText('Model')).toBeTruthy();
+  });
+
+  it('still exposes all three controls', () => {
+    render(<Harness engine="claude" density="compact" />);
+    expect(screen.getAllByRole('button')).toHaveLength(3);
+  });
+
+  it('names each control in a title, since the label is gone', () => {
+    render(<Harness engine="claude" density="compact" />);
+    expect(screen.getByTitle(/^Model:/)).toBeTruthy();
+    expect(screen.getByTitle(/^Effort:/)).toBeTruthy();
+    expect(screen.getByTitle(/^Permissions:/)).toBeTruthy();
+  });
+
+  it('keeps the read-only explanation as a tooltip when the footnote has no room', () => {
+    render(
+      <TooltipProvider>
+        <SessionDefaultsRow
+          engine="claude"
+          density="compact"
+          disabled
+          model="sonnet"
+          setModel={() => {}}
+          effort="medium"
+          setEffort={() => {}}
+          permissionMode="default"
+          setPermissionMode={() => {}}
+        />
+      </TooltipProvider>,
+    );
+    expect(screen.getByTitle(/Managed by the terminal/)).toBeTruthy();
+  });
+
+  it('lays out as a row, not a column', () => {
+    const { container } = render(<Harness engine="claude" density="compact" />);
+    expect(container.querySelector('.flex-col')).toBeNull();
   });
 });

@@ -68,6 +68,8 @@ function input(over: Partial<SignalInput> = {}): SignalInput {
     jumpSetting: DEFAULT_CONTEXT_JUMP,
     boundarySnoozeTokens: 0,
     sessionLive: true,
+    turnStartedAt: null,
+    lastTurnMs: null,
     turnInFlight: false,
     cacheTtlChange: null,
     mcpErrors: null,

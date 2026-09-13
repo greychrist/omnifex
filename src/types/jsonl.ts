@@ -288,6 +288,40 @@ export interface RateLimitEventInfo {
   isUsingOverage?: boolean;
 }
 
+/**
+ * Live progress for an in-flight tool call (`type: "tool_progress"`).
+ *
+ * Typed off the SDK message schema embedded in the CLI binary (2.1.270). Four
+ * producers share the envelope: `tool_heartbeat` (every 30s while a tool runs),
+ * `agent_api_retry` (a Task being retried), `repl_tool_call`, and
+ * `bash_progress`/`powershell_progress` — the last of which is gated on
+ * CLAUDE_CODE_REMOTE / CLAUDE_CODE_CONTAINER_ID and so never fires for us.
+ *
+ * `subagent_retry` is present only while the retry is UNRESOLVED: the emitter
+ * spreads `...resolved !== true && { subagent_retry }`, so a frame carrying
+ * `subagent_type` with no `subagent_retry` is how the CLI says "it recovered".
+ */
+export interface ToolProgressRaw {
+  type: 'tool_progress';
+  tool_use_id: string;
+  tool_name: string;
+  parent_tool_use_id: string | null;
+  elapsed_time_seconds: number;
+  uuid?: string;
+  session_id?: string;
+  task_id?: string;
+  heartbeat?: boolean;
+  subagent_type?: string;
+  subagent_retry?: {
+    agent_id: string;
+    attempt: number;
+    max_retries: number;
+    retry_delay_ms: number;
+    error_status: number | null;
+    error_category: string;
+  };
+}
+
 export interface RateLimitEventRaw extends RawLineBase {
   type: 'rate_limit_event';
   session_id?: string;
@@ -341,12 +375,22 @@ export type JsonlNode =
   | { kind: 'stream-event'; uuid: string; deltaText: string }
   | { kind: 'rate-limit'; info: RateLimitInfo }
   | { kind: 'lifecycle'; eventType: LifecycleKind; raw: unknown }
+  // Live-stream only, exactly like `stream-event`: the CLI emits tool_progress
+  // on the stream-json stdout path and never writes it to the JSONL on disk
+  // (verified against every transcript on this machine). Putting it in
+  // messages[] would make a live transcript and a reloaded one disagree.
+  //
+  // `anchorToolUseId` is the REAL tool id, and it has to be carried because
+  // neither wire field gives it directly: a heartbeat's own `tool_use_id` is
+  // synthetic (`<realId>-heartbeat-<n>`), and `parent_tool_use_id` is the
+  // enclosing Task id when the tool runs inside a subagent.
+  | { kind: 'tool-progress'; raw: ToolProgressRaw; anchorToolUseId: string }
   // Synthetic control-change markers (live-session only; never produced by
   // classifyJsonlLine — injected via appendMessage when a control picker fires).
   | { kind: 'control-change'; control: 'effort' | 'model' | 'permission'; value: string; sessionId: string; receivedAt: string };
 
 /** Convenience: which kinds appear in the renderer's `messages[]`. */
-export type RenderedKind = Exclude<JsonlNode['kind'], 'stream-event' | 'rate-limit' | 'lifecycle'>;
+export type RenderedKind = Exclude<JsonlNode['kind'], 'stream-event' | 'rate-limit' | 'lifecycle' | 'tool-progress'>;
 
 /** Convenience: kinds that exist as overlay channels only. */
-export type OverlayKind = Extract<JsonlNode['kind'], 'stream-event' | 'rate-limit' | 'lifecycle'>;
+export type OverlayKind = Extract<JsonlNode['kind'], 'stream-event' | 'rate-limit' | 'lifecycle' | 'tool-progress'>;

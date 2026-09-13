@@ -107,6 +107,58 @@ describe('remote session bridge', () => {
     }
   });
 
+  it('forwards a tool_progress heartbeat as a classified transcript event', () => {
+    openSession(log, 's1');
+    bridge.sendToRenderer('agent-output:s1', {
+      type: 'tool_progress',
+      tool_use_id: 'toolu_A-heartbeat-0',
+      tool_name: 'Bash',
+      parent_tool_use_id: 'toolu_A',
+      elapsed_time_seconds: 30,
+      heartbeat: true,
+    });
+
+    expect(published).toHaveLength(1);
+    const p = published[0];
+    if (p.type !== 'event') throw new Error('expected a transcript event');
+    expect(p.kind).toBe('transcript');
+    const node = p.payload as { kind: string; anchorToolUseId?: string };
+    // Classified server-side, so the anchor id is computed once and every
+    // client sees the same one. It is the REAL tool id, not the synthetic
+    // per-beat id the frame carries.
+    expect(node.kind).toBe('tool-progress');
+    expect(node.anchorToolUseId).toBe('toolu_A');
+  });
+
+  /**
+   * Heartbeats go through the ordinary logged path, and that is deliberate.
+   *
+   * An earlier design had the bridge forward them without logging, on the
+   * theory that replay bought nothing. It does not survive the code: `emit`
+   * is `publish(log.append(push))` and `broadcast` takes only `channel`
+   * messages, so skipping the log needs either a new unsequenced push type or
+   * a stamp-without-persist method — new protocol surface to avoid one line
+   * per 30 seconds per slow tool against a 5,000-entry ring. Replaying a
+   * beat is also harmless: the chip refuses to paint progress for a tool
+   * whose result has landed, and for one still running the replayed value is
+   * simply correct.
+   */
+  it('logs a tool_progress frame like any other transcript row', () => {
+    openSession(log, 's1');
+    bridge.sendToRenderer('agent-output:s1', {
+      type: 'tool_progress',
+      tool_use_id: 'toolu_A-heartbeat-0',
+      tool_name: 'Bash',
+      parent_tool_use_id: 'toolu_A',
+      elapsed_time_seconds: 30,
+      heartbeat: true,
+    });
+
+    const replayed = log.replay('s1', 0);
+    expect(replayed).toHaveLength(1);
+    expect((replayed[0] as { payload: { kind: string } }).payload.kind).toBe('tool-progress');
+  });
+
   it('carries the renderer\'s permission-card payload whole and lifts the addressable fields', () => {
     openSession(log, 's1');
     const payload = {

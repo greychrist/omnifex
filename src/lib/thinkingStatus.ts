@@ -55,3 +55,25 @@ export function deriveThinkingStatus(messages: JsonlNode[]): ThinkingStatus | nu
 
   return tokens === null ? null : { tokens, startedAt };
 }
+
+/**
+ * The newest thinking burst's total, whether or not that burst is still open.
+ *
+ * `deriveThinkingStatus` deliberately reports only a LIVE burst — it stops at
+ * the first trailing message that is not `thinking_tokens` — so it goes null
+ * the instant the model starts answering. The session status bar needs the
+ * figure to survive the turn, so this walks back to the newest
+ * `system:thinking_tokens` wherever it sits.
+ *
+ * Within a burst the newest ping carries the running total, so the first hit
+ * scanning backwards IS that burst's total; no accumulation is needed.
+ */
+export function lastThinkingBurstTokens(messages: JsonlNode[]): number | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i];
+    if (message.kind !== "system" || message.subtype !== "thinking_tokens") continue;
+    const estimate = (message.raw as { estimated_tokens?: number }).estimated_tokens;
+    if (typeof estimate === "number") return estimate;
+  }
+  return null;
+}

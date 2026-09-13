@@ -12,6 +12,7 @@ import {
   SUBAGENT_PALETTE_SIZE,
   createSubagentColorAllocator,
   notificationStatsByToolUse,
+  countActiveSubagents,
 } from '../subagentStreams';
 
 const TOOL_USE_ID = 'toolu_TEST_1';
@@ -47,7 +48,12 @@ function agentToolUse(
   } as unknown as JsonlNode;
 }
 
-function taskStarted(toolUseId: string, taskId = 'task_1', description = 'Explore repo'): JsonlNode {
+function taskStarted(
+  toolUseId: string,
+  taskId = 'task_1',
+  description = 'Explore repo',
+  extras: { ambient?: boolean } = {},
+): JsonlNode {
   return {
     kind: 'unknown', sessionId: '', receivedAt: '',
     raw: {
@@ -57,6 +63,7 @@ function taskStarted(toolUseId: string, taskId = 'task_1', description = 'Explor
       tool_use_id: toolUseId,
       description,
       task_type: 'local_agent',
+      ...(extras.ambient !== undefined ? { ambient: extras.ambient } : {}),
     },
   } as unknown as JsonlNode;
 }
@@ -1664,5 +1671,53 @@ describe('forked skills (context: fork, CLI >= 2.1.265)', () => {
     ]);
     expect(subs).toHaveLength(1);
     expect(subs[0].status).toBe('completed');
+  });
+});
+
+/**
+ * `ambient` arrived with CLI 2.1.270. The SDK schema's own words: "True for
+ * tasks that are not activity (every skip_transcript task, plus every
+ * live-update watcher, requested or auto-started); hosts should exclude them
+ * from activity indicators."
+ */
+describe('countActiveSubagents', () => {
+  it('counts running, non-ambient subagents', () => {
+    const subs = deriveSubagents([
+      agentToolUse(TOOL_USE_ID, 'real work'),
+      taskStarted(TOOL_USE_ID, 'task_1', 'real work', { ambient: false }),
+      agentToolUse(TOOL_USE_ID_2, 'live-update watcher'),
+      taskStarted(TOOL_USE_ID_2, 'task_2', 'live-update watcher', { ambient: true }),
+    ]);
+    expect(countActiveSubagents(subs)).toBe(1);
+  });
+
+  it('still renders the ambient row — it is hidden from the COUNT, not the bar', () => {
+    const subs = deriveSubagents([
+      agentToolUse(TOOL_USE_ID_2, 'live-update watcher'),
+      taskStarted(TOOL_USE_ID_2, 'task_2', 'live-update watcher', { ambient: true }),
+    ]);
+    expect(subs).toHaveLength(1);
+    expect(subs[0].ambient).toBe(true);
+  });
+
+  it('treats a task_started with no ambient field as activity', () => {
+    const subs = deriveSubagents([
+      agentToolUse(TOOL_USE_ID, 'work'),
+      taskStarted(TOOL_USE_ID),
+    ]);
+    expect(countActiveSubagents(subs)).toBe(1);
+  });
+
+  it('counts nothing for an empty list', () => {
+    expect(countActiveSubagents([])).toBe(0);
+  });
+
+  it('does not count a completed non-ambient subagent', () => {
+    const subs = deriveSubagents([
+      agentToolUse(TOOL_USE_ID, 'work'),
+      taskStarted(TOOL_USE_ID),
+      taskNotification(TOOL_USE_ID, 'completed'),
+    ]);
+    expect(countActiveSubagents(subs)).toBe(0);
   });
 });

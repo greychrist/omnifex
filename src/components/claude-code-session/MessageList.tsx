@@ -8,6 +8,8 @@ import type { JsonlNode } from '@/types/jsonl';
 
 interface MessageListProps {
   messages: JsonlNode[];
+  /** Owning tab — forwarded to StreamMessage for its live tool-progress read. */
+  tabId: string;
   projectPath: string;
   isStreaming: boolean;
   className?: string;
@@ -16,6 +18,7 @@ interface MessageListProps {
 
 export const MessageList: React.FC<MessageListProps> = React.memo(({
   messages,
+  tabId,
   projectPath,
   isStreaming,
   className,
@@ -133,6 +136,7 @@ export const MessageList: React.FC<MessageListProps> = React.memo(({
                   <StreamMessage
                     message={message}
                     streamMessages={messages}
+                    tabId={tabId}
                     accountType={accountType}
                   />
                 </div>

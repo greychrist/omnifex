@@ -72,7 +72,7 @@ describe('AssistantCompletionBand', () => {
   it('renders token counts when stop_reason is end_turn', () => {
     const node = makeAssistantNode({ stop_reason: 'end_turn', inputTokens: 200, outputTokens: 80 });
     render(
-      <StreamMessage
+      <StreamMessage tabId="tab-test"
         message={node}
         streamMessages={[node]}
       />,
@@ -84,7 +84,7 @@ describe('AssistantCompletionBand', () => {
   it('renders cost when stop_reason is end_turn and accountType is not max', () => {
     const node = makeAssistantNode({ stop_reason: 'end_turn', inputTokens: 1000, outputTokens: 500 });
     render(
-      <StreamMessage
+      <StreamMessage tabId="tab-test"
         message={node}
         streamMessages={[node]}
         accountType="pro"
@@ -97,7 +97,7 @@ describe('AssistantCompletionBand', () => {
   it('hides cost when accountType is max', () => {
     const node = makeAssistantNode({ stop_reason: 'end_turn', inputTokens: 1000, outputTokens: 500 });
     render(
-      <StreamMessage
+      <StreamMessage tabId="tab-test"
         message={node}
         streamMessages={[node]}
         accountType="max"
@@ -113,7 +113,7 @@ describe('AssistantCompletionBand', () => {
   it('does NOT render the band when stop_reason is null', () => {
     const node = makeAssistantNode({ stop_reason: null });
     render(
-      <StreamMessage
+      <StreamMessage tabId="tab-test"
         message={node}
         streamMessages={[node]}
       />,
@@ -125,7 +125,7 @@ describe('AssistantCompletionBand', () => {
   it('does NOT render the band when stop_reason is absent (undefined)', () => {
     const node = makeAssistantNode({ stop_reason: undefined });
     render(
-      <StreamMessage
+      <StreamMessage tabId="tab-test"
         message={node}
         streamMessages={[node]}
       />,
@@ -144,7 +144,7 @@ describe('AssistantCompletionBand', () => {
     for (const reason of terminalReasons) {
       const node = makeAssistantNode({ stop_reason: reason, inputTokens: 10, outputTokens: 5 });
       const { unmount } = render(
-        <StreamMessage message={node} streamMessages={[node]} />,
+        <StreamMessage tabId="tab-test" message={node} streamMessages={[node]} />,
       );
       expect(screen.getByText(/10 in \/ 5 out/), `expected band for stop_reason="${reason}"`).toBeTruthy();
       unmount();
@@ -154,7 +154,7 @@ describe('AssistantCompletionBand', () => {
   it('shows cache-read count in the band when non-zero', () => {
     const node = makeAssistantNode({ stop_reason: 'end_turn', inputTokens: 100, outputTokens: 20, cacheRead: 500 });
     render(
-      <StreamMessage message={node} streamMessages={[node]} />,
+      <StreamMessage tabId="tab-test" message={node} streamMessages={[node]} />,
     );
     expect(screen.getByText(/500 cached/)).toBeTruthy();
   });
@@ -162,7 +162,7 @@ describe('AssistantCompletionBand', () => {
   it('does NOT show cache count in the band when zero', () => {
     const node = makeAssistantNode({ stop_reason: 'end_turn', inputTokens: 100, outputTokens: 20, cacheRead: 0 });
     render(
-      <StreamMessage message={node} streamMessages={[node]} />,
+      <StreamMessage tabId="tab-test" message={node} streamMessages={[node]} />,
     );
     expect(screen.queryByText(/cached/)).toBeNull();
   });
@@ -180,7 +180,7 @@ describe('AssistantCompletionBand', () => {
       model: 'claude-opus-4-8',
     });
     render(
-      <StreamMessage message={node} streamMessages={[node]} accountType="pro" />,
+      <StreamMessage tabId="tab-test" message={node} streamMessages={[node]} accountType="pro" />,
     );
     // cost = 100*0.000005 + 200*0.000025 + 1000*0.0000005
     //      = 0.0005 + 0.005 + 0.0005 = 0.0060
@@ -206,7 +206,7 @@ describe('final assistant text vs. result-row de-dup', () => {
     const assistant = makeAssistantNode({ stop_reason: null, text: 'Final answer for the user.' });
     const result = makeResultNode('Final answer for the user.');
     render(
-      <StreamMessage message={assistant} streamMessages={[assistant, result]} />,
+      <StreamMessage tabId="tab-test" message={assistant} streamMessages={[assistant, result]} />,
     );
     expect(screen.getByText(/Final answer for the user\./)).toBeTruthy();
   });
@@ -230,7 +230,7 @@ describe('user-role messages render markdown (matching assistant styling)', () =
     // System Context / skill-injection bodies (and user text in general) used to
     // render as raw whitespace-pre-wrap text — markdown was printed literally.
     const node = makeUserTextNode('# Big Heading\n\nSome **bold** body.');
-    const { container } = render(<StreamMessage message={node} streamMessages={[node]} />);
+    const { container } = render(<StreamMessage tabId="tab-test" message={node} streamMessages={[node]} />);
 
     const h1 = container.querySelector('h1');
     expect(h1?.textContent).toContain('Big Heading');
@@ -240,7 +240,7 @@ describe('user-role messages render markdown (matching assistant styling)', () =
   it('renders a fenced ```markdown block through the Rendered/Source tabbed control', () => {
     const fenced = '```markdown\n# Inside a fence\n```';
     const node = makeUserTextNode(fenced);
-    render(<StreamMessage message={node} streamMessages={[node]} />);
+    render(<StreamMessage tabId="tab-test" message={node} streamMessages={[node]} />);
 
     // MarkdownBlock exposes the Rendered/Source pill toggle.
     expect(screen.getByRole('button', { name: 'Rendered' })).toBeTruthy();
@@ -264,7 +264,7 @@ describe('system away_summary recap rendering', () => {
     // The generic system fallback used to read only message/title, so the recap
     // body rendered blank in chat mode.
     const node = makeAwaySummaryNode('Recap: finished the migration while you were away.');
-    render(<StreamMessage message={node} streamMessages={[node]} />);
+    render(<StreamMessage tabId="tab-test" message={node} streamMessages={[node]} />);
 
     expect(
       screen.getByText('Recap: finished the migration while you were away.'),
@@ -276,7 +276,7 @@ describe('system away_summary recap rendering', () => {
     // clipped multi-paragraph bodies to a single line and forced the card
     // into horizontal overflow. Long bodies must wrap.
     const node = makeAwaySummaryNode('A very long recap line that must wrap.');
-    render(<StreamMessage message={node} streamMessages={[node]} />);
+    render(<StreamMessage tabId="tab-test" message={node} streamMessages={[node]} />);
 
     const body = screen.getByText('A very long recap line that must wrap.');
     expect(body.className).not.toContain('truncate');
@@ -286,7 +286,7 @@ describe('system away_summary recap rendering', () => {
 
   it('renders the recap in the regular font, italic, without the subtype label', () => {
     const node = makeAwaySummaryNode('Recap body in prose.');
-    render(<StreamMessage message={node} streamMessages={[node]} />);
+    render(<StreamMessage tabId="tab-test" message={node} streamMessages={[node]} />);
 
     const body = screen.getByText('Recap body in prose.');
     expect(body.className).toContain('italic');
@@ -300,7 +300,7 @@ describe('system away_summary recap rendering', () => {
     // margins (no first-child reset in styles.css) create the visual top/bottom
     // padding. A bare span skips that rhythm and the card looks tighter.
     const node = makeAwaySummaryNode('Recap body in prose.');
-    render(<StreamMessage message={node} streamMessages={[node]} />);
+    render(<StreamMessage tabId="tab-test" message={node} streamMessages={[node]} />);
 
     const body = screen.getByText('Recap body in prose.');
     expect(body.tagName).toBe('P');
@@ -315,7 +315,7 @@ describe('system away_summary recap rendering', () => {
       receivedAt: '2026-05-27T10:00:00Z',
       raw: { type: 'system', subtype: 'compact_boundary', message: 'boundary hit' },
     } as unknown as JsonlNode;
-    render(<StreamMessage message={node} streamMessages={[node]} />);
+    render(<StreamMessage tabId="tab-test" message={node} streamMessages={[node]} />);
 
     expect(screen.getByText('system.compact_boundary')).toBeTruthy();
     expect(screen.getByText('boundary hit').className).toContain('font-mono');
@@ -336,7 +336,7 @@ describe('system away_summary recap rendering', () => {
         body: 'Transcript writes are failing (disk full)',
       },
     } as unknown as JsonlNode;
-    render(<StreamMessage message={node} streamMessages={[node]} />);
+    render(<StreamMessage tabId="tab-test" message={node} streamMessages={[node]} />);
 
     expect(screen.getByText('Transcript writes are failing (disk full)')).toBeTruthy();
   });
@@ -359,21 +359,21 @@ describe('system thinking_tokens rendering', () => {
     // carrying the whole burst's total. The live running count lives in the
     // ThinkingBar instead.
     const node = makeThinkingTokensNode(800, 50);
-    render(<StreamMessage message={node} streamMessages={[node]} />);
+    render(<StreamMessage tabId="tab-test" message={node} streamMessages={[node]} />);
 
     expect(screen.getByText('Thought ~800 tokens')).toBeTruthy();
   });
 
   it('groups the thousands separator so five-figure bursts stay readable', () => {
     const node = makeThinkingTokensNode(12500, 50);
-    render(<StreamMessage message={node} streamMessages={[node]} />);
+    render(<StreamMessage tabId="tab-test" message={node} streamMessages={[node]} />);
 
     expect(screen.getByText('Thought ~12,500 tokens')).toBeTruthy();
   });
 
   it('keeps the mono styling and inline subtype label (same fallback mechanism as other system subtypes)', () => {
     const node = makeThinkingTokensNode(1200, 50);
-    render(<StreamMessage message={node} streamMessages={[node]} />);
+    render(<StreamMessage tabId="tab-test" message={node} streamMessages={[node]} />);
 
     expect(screen.getByText('system.thinking_tokens')).toBeTruthy();
     expect(screen.getByText('Thought ~1,200 tokens').className).toContain('font-mono');
@@ -397,7 +397,7 @@ describe('rate_limit_event rendering', () => {
 
   it('renders "<rateLimitType> · <status>" from rate_limit_info', () => {
     const node = makeRateLimitEventNode({ status: 'allowed', rateLimitType: 'five_hour' });
-    render(<StreamMessage message={node} streamMessages={[node]} />);
+    render(<StreamMessage tabId="tab-test" message={node} streamMessages={[node]} />);
 
     expect(screen.getByText('five_hour · allowed')).toBeTruthy();
   });
@@ -405,7 +405,7 @@ describe('rate_limit_event rendering', () => {
   it('appends a "resets <local time>" segment when resetsAt is present', () => {
     const resetsAt = 1784362200;
     const node = makeRateLimitEventNode({ status: 'allowed', rateLimitType: 'five_hour', resetsAt });
-    render(<StreamMessage message={node} streamMessages={[node]} />);
+    render(<StreamMessage tabId="tab-test" message={node} streamMessages={[node]} />);
 
     const expectedTime = new Date(resetsAt * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
     expect(screen.getByText(`five_hour · allowed · resets ${expectedTime}`)).toBeTruthy();
@@ -419,27 +419,27 @@ describe('rate_limit_event rendering', () => {
       overageDisabledReason: 'org_level_disabled',
       isUsingOverage: false,
     });
-    render(<StreamMessage message={node} streamMessages={[node]} />);
+    render(<StreamMessage tabId="tab-test" message={node} streamMessages={[node]} />);
 
     expect(screen.getByText('five_hour · rejected · overage rejected')).toBeTruthy();
   });
 
   it('does not append an overage segment when overageStatus is not rejected', () => {
     const node = makeRateLimitEventNode({ status: 'allowed', rateLimitType: 'five_hour', overageStatus: 'allowed' });
-    render(<StreamMessage message={node} streamMessages={[node]} />);
+    render(<StreamMessage tabId="tab-test" message={node} streamMessages={[node]} />);
 
     expect(screen.getByText('five_hour · allowed')).toBeTruthy();
   });
 
   it('degrades gracefully when rate_limit_info is entirely missing (never crashes)', () => {
     const node = makeRateLimitEventNode(undefined);
-    expect(() => render(<StreamMessage message={node} streamMessages={[node]} />)).not.toThrow();
+    expect(() => render(<StreamMessage tabId="tab-test" message={node} streamMessages={[node]} />)).not.toThrow();
     expect(screen.getByText('system.rate_limit')).toBeTruthy();
   });
 
   it('keeps the mono styling and inline kind label (same fallback mechanism as thinking_tokens)', () => {
     const node = makeRateLimitEventNode({ status: 'allowed', rateLimitType: 'five_hour' });
-    render(<StreamMessage message={node} streamMessages={[node]} />);
+    render(<StreamMessage tabId="tab-test" message={node} streamMessages={[node]} />);
 
     expect(screen.getByText('system.rate_limit')).toBeTruthy();
     expect(screen.getByText('five_hour · allowed').className).toContain('font-mono');
@@ -462,7 +462,7 @@ describe('unknown-record catch-all rendering', () => {
         timestamp: '2026-07-14T10:00:00Z',
       },
     } as unknown as JsonlNode;
-    const { container } = render(<StreamMessage message={node} streamMessages={[node]} />);
+    const { container } = render(<StreamMessage tabId="tab-test" message={node} streamMessages={[node]} />);
 
     // Must name the record type so the user (and we) can see what arrived.
     expect(container.textContent).toContain('pr-link');
@@ -475,7 +475,7 @@ describe('unknown-record catch-all rendering', () => {
       receivedAt: null,
       raw: { type: 'mode', mode: 'normal' },
     } as unknown as JsonlNode;
-    const { container } = render(<StreamMessage message={node} streamMessages={[node]} />);
+    const { container } = render(<StreamMessage tabId="tab-test" message={node} streamMessages={[node]} />);
 
     expect(container.textContent).toContain('mode');
   });
@@ -497,7 +497,7 @@ describe('unknown-record catch-all rendering', () => {
         },
       },
     } as unknown as JsonlNode;
-    const { container } = render(<StreamMessage message={node} streamMessages={[node]} />);
+    const { container } = render(<StreamMessage tabId="tab-test" message={node} streamMessages={[node]} />);
 
     expect(container.textContent).toContain('claude-fable-5');
     expect(container.textContent).toContain('claude-opus-4-8');
@@ -518,7 +518,7 @@ describe('unknown-record catch-all rendering', () => {
         },
       },
     } as unknown as JsonlNode;
-    const { container } = render(<StreamMessage message={node} streamMessages={[node]} />);
+    const { container } = render(<StreamMessage tabId="tab-test" message={node} streamMessages={[node]} />);
 
     expect(container.textContent).toContain('server_tool_use');
   });
@@ -533,7 +533,7 @@ describe('input token counts include cached input', () => {
 
   it('reports total input in the completion band, not the uncached remainder', () => {
     const node = makeAssistantNode({ stop_reason: 'end_turn', ...REAL });
-    render(<StreamMessage message={node} streamMessages={[node]} />);
+    render(<StreamMessage tabId="tab-test" message={node} streamMessages={[node]} />);
     expect(screen.getByText(/45,435 in \/ 644 out/)).toBeTruthy();
     expect(screen.queryByText(/\b2 in\b/)).toBeNull();
   });
@@ -541,7 +541,7 @@ describe('input token counts include cached input', () => {
   it('shows cache-write tokens in the band, which were previously invisible', () => {
     // The largest component of that message and the most expensive per token.
     const node = makeAssistantNode({ stop_reason: 'end_turn', ...REAL });
-    render(<StreamMessage message={node} streamMessages={[node]} />);
+    render(<StreamMessage tabId="tab-test" message={node} streamMessages={[node]} />);
     expect(screen.getByText(/24,937 written/)).toBeTruthy();
     expect(screen.getByText(/20,496 cached/)).toBeTruthy();
   });
@@ -553,14 +553,14 @@ describe('input token counts include cached input', () => {
       outputTokens: 20,
       cacheCreation: 0,
     });
-    render(<StreamMessage message={node} streamMessages={[node]} />);
+    render(<StreamMessage tabId="tab-test" message={node} streamMessages={[node]} />);
     expect(screen.queryByText(/written/)).toBeNull();
   });
 
   it('reports total input on the per-message Tokens line', () => {
     // Rendered for every assistant message, not just terminal ones.
     const node = makeAssistantNode({ stop_reason: null, ...REAL });
-    render(<StreamMessage message={node} streamMessages={[node]} />);
+    render(<StreamMessage tabId="tab-test" message={node} streamMessages={[node]} />);
     expect(screen.getByText(/Tokens: 45,435 in, 644 out/)).toBeTruthy();
   });
 });

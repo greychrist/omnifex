@@ -50,6 +50,10 @@ export interface Subagent {
   /** Which carrier finalised this row, if any. `'parent_result'` indicates
    *  the inferred-closure path (no direct closure carrier was seen). */
   closureSource?: SubagentState['closureSource'];
+  /** `task_started.ambient` — a watcher or housekeeping task rather than work
+   *  the user is waiting on. Hidden from `countActiveSubagents`, not from the
+   *  bar. */
+  ambient?: boolean;
   /** The model the subagent ran on. Merged in from disk via
    *  `applySubagentMeta` — never present in the live message stream. */
   model?: string;
@@ -353,6 +357,7 @@ export function deriveSubagents(
     error: s.error,
     parentToolUseId: s.parentToolUseId,
     closureSource: s.closureSource,
+    ambient: s.ambient,
   });
 
   // Owners first, so a nested row can read its owner's colour — and so a
@@ -401,4 +406,18 @@ export function clearCompleted(subs: Subagent[]): Subagent[] {
  */
 export function hasRunningSubagent(subs: Subagent[]): boolean {
   return subs.some((s) => s.status === 'running');
+}
+
+/**
+ * How many subagents count as ACTIVITY — running, and not ambient.
+ *
+ * Deliberately separate from `hasRunningSubagent`, which means "still open".
+ * The CLI's own schema says ambient tasks — every `skip_transcript` task, plus
+ * every live-update watcher — must be excluded from activity indicators, and
+ * conflating the two predicates is how the tab badge came to count watchers as
+ * work in progress. Callers that want "is anything still open" keep the other
+ * one; callers that draw a badge want this.
+ */
+export function countActiveSubagents(subs: Subagent[]): number {
+  return subs.reduce((n, s) => (s.status === 'running' && !s.ambient ? n + 1 : n), 0);
 }

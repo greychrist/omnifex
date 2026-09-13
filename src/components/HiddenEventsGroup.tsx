@@ -11,6 +11,8 @@ import type { JsonlNode } from '@/types/jsonl';
 interface Props {
   messages: JsonlNode[];
   streamMessages: JsonlNode[];
+  /** Owning tab — forwarded so nested tool rows can read live tool progress. */
+  tabId: string;
   accountType?: string;
   onResend?: (text: string, images?: string[]) => void;
 }
@@ -24,6 +26,7 @@ interface Props {
 export const HiddenEventsGroup: React.FC<Props> = ({
   messages,
   streamMessages,
+  tabId,
   accountType,
   onResend,
 }) => {
@@ -66,6 +69,7 @@ export const HiddenEventsGroup: React.FC<Props> = ({
             <StreamMessage
               message={message}
               streamMessages={streamMessages}
+              tabId={tabId}
               accountType={accountType}
               onResend={onResend}
               inExpandedGroup

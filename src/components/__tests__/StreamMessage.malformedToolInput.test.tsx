@@ -62,7 +62,7 @@ function toolUseNode(name: string, input: unknown): JsonlNode {
 }
 
 function renderNode(node: JsonlNode) {
-  return render(<StreamMessage message={node} streamMessages={[node]} />);
+  return render(<StreamMessage tabId="tab-test" message={node} streamMessages={[node]} />);
 }
 
 describe('StreamMessage — malformed tool_use input (CLI 2.1.229 class)', () => {

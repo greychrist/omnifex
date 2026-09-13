@@ -35,6 +35,11 @@ interface CliTaskStartedMessage {
   task_id?: string;
   tool_use_id?: string;
   description?: string;
+  /** CLI 2.1.270. The SDK schema's own words: "True for tasks that are not
+   *  activity (every skip_transcript task, plus every live-update watcher,
+   *  requested or auto-started); hosts should exclude them from activity
+   *  indicators." */
+  ambient?: boolean;
   [k: string]: unknown;
 }
 interface CliTaskProgressMessage {
@@ -119,6 +124,10 @@ export interface SubagentState {
    *  `running`. Useful for tests and for tooltips on the inferred-icon
    *  variant in `SubagentBar`. */
   closureSource?: 'tool_result' | 'task_notification' | 'task_notification_xml' | 'task_updated' | 'parent_result';
+  /** `task_started.ambient` — a watcher or housekeeping task, not work the
+   *  user is waiting on. Excluded from `countActiveSubagents`, but still a
+   *  row in the bar: the flag hides it from the COUNT, not from the list. */
+  ambient?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -137,6 +146,8 @@ export type SubagentEvent =
        *  nested under it instead of as a sibling of the session's own
        *  agents. */
       ownerToolUseId?: string;
+      /** `task_started.ambient` — see SubagentState.ambient. */
+      ambient?: boolean;
     }
   | { kind: 'Progress'; toolUseId: string; description: string; lastToolName?: string; totalTokens?: number; toolUses?: number; durationMs?: number; taskId?: string }
   | {
@@ -623,6 +634,7 @@ export function messagesToEvents(messages: JsonlNode[]): SubagentEvent[] {
           taskId: tlm.task_id ?? '',
           description: tlm.description ?? '',
           ownerToolUseId: ownedBySubagent ? subagentOwnedToolUses.get(id) : undefined,
+          ambient: (tlm as { ambient?: unknown }).ambient === true,
         });
       } else if (tlm.subtype === 'task_progress') {
         const tlmProg = tlm as CliTaskProgressMessage;
@@ -747,6 +759,7 @@ export function applyEvents(events: SubagentEvent[]): Map<string, SubagentState>
         if (!s.description) s.description = ev.description;
         if (ev.ownerToolUseId && !s.parentToolUseId) s.parentToolUseId = ev.ownerToolUseId;
         if (ev.taskId) s.taskId = ev.taskId;
+        if (ev.ambient) s.ambient = true;
         if (!s.startedAt) s.startedAt = new Date().toISOString();
         break;
       }

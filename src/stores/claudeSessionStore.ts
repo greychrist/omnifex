@@ -3,6 +3,13 @@ import { create } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
 import { useShallow } from 'zustand/react/shallow';
 import type { JsonlNode } from '@/types/jsonl';
+import {
+  EMPTY_TOOL_PROGRESS,
+  pruneToolProgress,
+  reduceToolProgress,
+  type ToolProgressMap,
+  type ToolProgressNode,
+} from '@/lib/toolProgress';
 import type {
   SessionAccountInfo,
   SessionContextUsage,
@@ -34,6 +41,12 @@ export interface TabSessionState {
     text: string;
     parentToolUseId: string | null;
   } | null;
+  /** Live-only per-tool progress, keyed by the REAL tool_use id (see
+   *  src/lib/toolProgress.ts). Never persisted and never part of
+   *  `messages[]` — the CLI does not write `tool_progress` to disk, so a
+   *  transcript reloaded from disk must not show what a live one showed.
+   *  `resetTab` clears it, so clear/restart needs no separate handling. */
+  toolProgress: ToolProgressMap;
 }
 
 export const EMPTY_TAB_SESSION: TabSessionState = {
@@ -45,6 +58,7 @@ export const EMPTY_TAB_SESSION: TabSessionState = {
   supportedModels: [],
   isLoading: false,
   inflightAssistant: null,
+  toolProgress: EMPTY_TOOL_PROGRESS,
 };
 
 type MessagesUpdater =
@@ -75,6 +89,10 @@ interface ClaudeSessionStoreState {
     parentToolUseId: string | null,
   ): void;
   clearInflightAssistant(tabId: string): void;
+  /** Fold one live `tool_progress` frame into the tab's map. */
+  applyToolProgress(tabId: string, node: ToolProgressNode): void;
+  /** Drop progress for tools no longer of interest (empty set at turn end). */
+  pruneToolProgressFor(tabId: string, keepIds: Set<string>): void;
 
   /** Test-only — wipes the whole store. */
   __resetForTests(): void;
@@ -168,6 +186,27 @@ export const useClaudeSessionStore = create<ClaudeSessionStoreState>()(
         return {
           tabs: { ...state.tabs, [tabId]: { ...slice, messages } },
         };
+      }); },
+
+    // Both of these bail on an unchanged reference rather than always
+    // writing: heartbeats repeat, and a remote client's reconnect replay can
+    // redeliver a frame verbatim. A no-op set would re-render every mounted
+    // transcript for a value that did not move.
+    applyToolProgress: (tabId, node) =>
+      { set((state) => {
+        const slice = ensureTab(state.tabs, tabId);
+        const toolProgress = reduceToolProgress(slice.toolProgress, node, Date.now());
+        if (toolProgress === slice.toolProgress) return state;
+        return { tabs: { ...state.tabs, [tabId]: { ...slice, toolProgress } } };
+      }); },
+
+    pruneToolProgressFor: (tabId, keepIds) =>
+      { set((state) => {
+        const slice = state.tabs[tabId];
+        if (!slice) return state;
+        const toolProgress = pruneToolProgress(slice.toolProgress, keepIds);
+        if (toolProgress === slice.toolProgress) return state;
+        return { tabs: { ...state.tabs, [tabId]: { ...slice, toolProgress } } };
       }); },
 
     resetTab: (tabId) =>
