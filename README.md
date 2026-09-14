@@ -54,6 +54,7 @@ The Brain is a per-account **memory vault** distilled from those transcripts.
 - **Subagent tracking** — subagent runs are surfaced inline with their model and authoritative end-of-run stats (duration, tokens, tool count).
 - **Live tool progress** — a tool call that runs past thirty seconds shows a timer on its row until the result lands, and a subagent being retried after an API error says which attempt it is on.
 - **Session status bar** — elapsed time for the current turn, the size of the current thinking burst, and the number of subagents running, each holding the previous round's figure once the turn ends.
+- **Diffs render as diffs** — output from `git diff`, `git show` or a patch tool is laid out with line numbers down both sides and each changed line marked, matching the Edit and patch views rather than arriving as a wall of monospace.
 - Image attachments, in-session find, permission and elicitation prompts, per-tab context-usage / cost readouts, and a per-command summary of the files a Bash command changed.
 - Multi-tab layout with per-tab status glyphs (session state, engine, rate-limit warnings) and an aggregate status popover.
 

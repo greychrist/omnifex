@@ -5,6 +5,26 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.167] — 2026-09-13
+
+### Added
+
+- A diff printed by a command is now rendered as a diff. Run `git diff` in a session and you get the file name with its added and removed counts, line numbers down both sides, and each changed line marked and tinted — instead of the whole thing in one shade of green, which said only that the command succeeded. Ordinary output is untouched: a diff is recognised by its structure, so an installer listing packages with `+` and `-` still reads as text.
+
+### Changed
+
+- Diffs look the same everywhere in the app. The Edit, MultiEdit and Codex patch views share one renderer and one set of colours with the new one, and the colours are legible on both the light and the dark theme — the previous tints were nearly invisible on either.
+- The model picker no longer lists the account's default model twice. It used to show "Account Default (Fable 5)" above a plain "Fable 5"; now that model's own row carries an asterisk, and the key for it sits in the dropdown header. The session controls in the context popover have their captions back, above each picker rather than beside it.
+- Running OmniFex from source now uses its own background service on its own port, separate from the installed app's. Starting a development build can no longer interrupt the sessions running in the app you actually work in, and the service it starts shuts down with it.
+
+### Fixed
+
+- The model, effort and permission pickers in the session popover stretched past the edge of the card. Each one now shrinks to fit and shortens its label rather than pushing the row wider.
+- The Claude CLI writes its own bookkeeping into the same file as the conversation, and OmniFex was drawing a card for every one it did not recognise — hundreds per session in recent CLI versions. Those records are now identified and left out of the transcript. A record type nobody has seen before still gets a card, which is how these were found.
+- A session whose background service restarted underneath it reported "no live process" and refused to send. It now wakes the session and sends the message.
+
+Installers are signed with a Developer ID certificate and notarized by Apple.
+
 ## [0.4.166] — 2026-09-13
 
 ### Added
