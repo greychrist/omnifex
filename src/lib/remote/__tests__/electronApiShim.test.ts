@@ -275,6 +275,78 @@ describe('electronAPI shim', () => {
     });
   });
 
+  describe('sending to a session the daemon no longer runs', () => {
+    // The incident: a daemon swap (an upgrade, a restart, or — before the
+    // launcher fix — `npm start`) leaves every persisted session with no live
+    // process. The tab is still mapped and still connected, so the next prompt
+    // went straight to turn.send and came back "has no live process; resume it
+    // first" — with no way to act on that advice short of restarting the
+    // daemon by hand. The shim takes the advice itself.
+    const notRunning = () => {
+      throw Object.assign(new Error('session sid-1 has no live process; resume it first'), {
+        code: 'SESSION_NOT_RUNNING',
+      });
+    };
+
+    it('resumes the session and retries the send once', async () => {
+      const api = shim();
+      await api.invoke('session_start', { tabId: 'tab-A', projectPath: '/p', model: 'default', permissionMode: 'default' });
+      f.requests.length = 0;
+      f.responders['session.resume'] = () => summary('sid-1', { lastSeq: 9 });
+      let first = true;
+      f.responders['turn.send'] = () => { if (first) { first = false; notRunning(); } };
+
+      await api.invoke('session_send_message', { tabId: 'tab-A', prompt: 'hi' });
+
+      expect(f.requests.map((r) => r.method)).toEqual([
+        'turn.send', 'session.resume', 'session.subscribe', 'turn.send',
+      ]);
+      expect(f.requests.at(-1)).toEqual({ method: 'turn.send', params: { sessionId: 'sid-1', content: 'hi' } });
+    });
+
+    it('recovers a structured send the same way', async () => {
+      const api = shim();
+      await api.invoke('session_start', { tabId: 'tab-A', projectPath: '/p', model: 'default', permissionMode: 'default' });
+      f.requests.length = 0;
+      f.responders['session.resume'] = () => summary('sid-1');
+      let first = true;
+      f.responders['turn.send'] = () => { if (first) { first = false; notRunning(); } };
+
+      await api.invoke('session_send_structured_message', { tabId: 'tab-A', content: [{ type: 'text', text: 'x' }] });
+
+      expect(f.requests.filter((r) => r.method === 'turn.send')).toHaveLength(2);
+    });
+
+    it('retries once, not forever', async () => {
+      const api = shim();
+      await api.invoke('session_start', { tabId: 'tab-A', projectPath: '/p', model: 'default', permissionMode: 'default' });
+      f.requests.length = 0;
+      f.responders['session.resume'] = () => summary('sid-1');
+      f.responders['turn.send'] = () => { notRunning(); };
+
+      await expect(api.invoke('session_send_message', { tabId: 'tab-A', prompt: 'hi' })).rejects.toThrow('has no live process');
+      expect(f.requests.filter((r) => r.method === 'turn.send')).toHaveLength(2);
+    });
+
+    it('reports the original error when the session is gone for good', async () => {
+      const api = shim();
+      await api.invoke('session_start', { tabId: 'tab-A', projectPath: '/p', model: 'default', permissionMode: 'default' });
+      f.responders['session.resume'] = () => { throw Object.assign(new Error('nope'), { code: 'NOT_FOUND' }); };
+      f.responders['turn.send'] = () => { notRunning(); };
+
+      await expect(api.invoke('session_send_message', { tabId: 'tab-A', prompt: 'hi' })).rejects.toThrow('has no live process');
+    });
+
+    it('leaves other failures alone', async () => {
+      const api = shim();
+      await api.invoke('session_start', { tabId: 'tab-A', projectPath: '/p', model: 'default', permissionMode: 'default' });
+      f.requests.length = 0;
+      f.responders['turn.send'] = () => { throw new Error('boom'); };
+      await expect(api.invoke('session_send_message', { tabId: 'tab-A', prompt: 'hi' })).rejects.toThrow('boom');
+      expect(f.requests.map((r) => r.method)).toEqual(['turn.send']);
+    });
+  });
+
   describe('reload and reconnect', () => {
     it('rebinds a tab from the persisted map by resuming and subscribing', async () => {
       storage.setItem(TAB_MAP_STORAGE_KEY, JSON.stringify({ 'tab-A': 'sid-1' }));

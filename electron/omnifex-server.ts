@@ -23,6 +23,10 @@ import {
 } from './remote/cli';
 import { startDaemon } from './remote/daemon';
 import type { RemoteServerLogger } from './remote/server';
+import { createDevIdleWatch, isDevDaemon } from './remote/dev-instance';
+
+/** How often the dev daemon asks whether anyone still needs it. */
+const DEV_IDLE_CHECK_MS = 5_000;
 
 function readVersion(): string {
   // Beside the bundle in a packaged app (app.asar/package.json) and two
@@ -100,7 +104,7 @@ async function main(argv: string[]): Promise<number> {
       process.on('uncaughtException', (err) => log.error('uncaught exception', { error: err.stack ?? String(err) }));
       process.on('unhandledRejection', (err) => log.error('unhandled rejection', { error: String(err) }));
 
-      const daemon = await startDaemon({ config, version, build: readBuildStamp(), log });
+      const daemon = await startDaemon({ config, version, build: readBuildStamp(), script: __filename, log });
       writePidFile(config);
 
       let closing = false;
@@ -118,6 +122,25 @@ async function main(argv: string[]): Promise<number> {
       };
       process.on('SIGTERM', () => shutdown('SIGTERM'));
       process.on('SIGINT', () => shutdown('SIGINT'));
+
+      // A dev daemon belongs to the `npm start` that spawned it. That app
+      // SIGTERMs it on quit and shares a process group with it, so Ctrl-C
+      // reaches it too — this is the backstop for the app being killed
+      // outright, so a stale dev daemon never sits on the port running an
+      // hour-old build. See remote/dev-instance.ts.
+      if (isDevDaemon(process.env)) {
+        const startedAt = Date.now();
+        const idle = createDevIdleWatch({
+          clients: () => daemon.status().clients,
+          inFlight: () => daemon.status().inFlight,
+          everConnected: () => daemon.status().everConnected,
+          startedAt,
+        });
+        const timer = setInterval(() => {
+          if (idle.check(Date.now())) shutdown('idle');
+        }, DEV_IDLE_CHECK_MS);
+        timer.unref?.();
+      }
       // Foreground forever; launchd owns the lifecycle.
       return new Promise<number>(() => {});
     }

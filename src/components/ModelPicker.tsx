@@ -2,7 +2,8 @@ import React from "react";
 import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Popover } from "@/components/ui/popover";
+import { Popover, FIELD_TRIGGER } from "@/components/ui/popover";
+import { ACCOUNT_DEFAULT_MARK } from "@/lib/modelCatalog";
 
 export interface Model {
   id: string;
@@ -28,10 +29,18 @@ interface ModelPickerDropdownProps {
 }
 
 export function ModelPickerDropdown({ models, selectedModel, onSelect }: ModelPickerDropdownProps) {
+  // The account-default model is marked in place rather than listed twice, so
+  // the header carries the key for the mark (see withAccountDefaultLabel).
+  const marked = models.some((m) => m.name.endsWith(ACCOUNT_DEFAULT_MARK));
   return (
     <div className="w-[300px] p-1">
-      <div className="text-[10px] uppercase tracking-wider text-muted-foreground px-3 pt-2 pb-1.5 border-b border-border/50 mb-1">
-        Model
+      <div className="flex items-baseline justify-between gap-2 text-[10px] uppercase tracking-wider text-muted-foreground px-3 pt-2 pb-1.5 border-b border-border/50 mb-1">
+        <span>Model</span>
+        {marked && (
+          <span className="normal-case tracking-normal">
+            {ACCOUNT_DEFAULT_MARK} account default
+          </span>
+        )}
       </div>
       {models.map((model) => (
         <button
@@ -111,10 +120,8 @@ function ContainerModelPicker({
           onClick={() => { onOpenChange(!open); }}
           title={inline ? `Model: ${selectedModelData.name}` : undefined}
           className={cn(
-            'justify-between font-normal',
-            inline
-              ? 'h-6 min-w-0 flex-1 gap-1 px-1.5'
-              : 'w-full h-9 px-3 gap-2',
+            'justify-between font-normal w-full min-w-0',
+            inline ? 'h-6 gap-1 px-1.5' : 'h-9 px-3 gap-2',
           )}
         >
           <span className={cn('flex items-center min-w-0', inline ? 'gap-1' : 'gap-2')}>
@@ -139,6 +146,7 @@ function ContainerModelPicker({
       onOpenChange={onOpenChange}
       align="start"
       side="bottom"
+      triggerClassName={FIELD_TRIGGER}
     />
   );
 }

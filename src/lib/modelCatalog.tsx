@@ -47,38 +47,73 @@ export function effectiveModels(raw: SessionModelInfo[] | undefined | null): Mod
 }
 
 /**
- * Relabel the catalog's `default` entry so the picker tells the truth about
- * what "default" actually runs. OmniFex's "default" means "omit `--model` and
- * let the CLI decide", which makes the CLI read the `model` pin from that
- * account's settings.json. So the honest label is "Account Default", with the
- * pinned model's name in parentheses — "Account Default (Fable 5)" — so the
- * trigger shows what actually runs (resolved through the catalog, then the
- * static fallback for ids the account can't see — e.g. a stale Fable pin).
- * With nothing pinned, the CLI uses its recommended default, so we keep the
- * plain label and the catalog `default` entry's own description. Returns a
- * new array; non-default entries are passed through by reference.
+ * Marker appended to the model row that "Account Default" resolves to. The
+ * default entry used to render as its own extra line — "Account Default
+ * (Fable 5)" above a plain "Fable 5" — which said the same thing twice and
+ * cost the widest label in a row that has to fit three pickers.
+ */
+export const ACCOUNT_DEFAULT_MARK = '*';
+
+/**
+ * The concrete catalog row a default model id points at: exact id first, then
+ * the same family (a live id like `claude-fable-5` vs the catalog's
+ * `claude-fable-5[1m]`). Undefined when the account can't see that model —
+ * e.g. a stale Fable pin on a non-Fable account.
+ */
+function concreteTwin(id: string, models: Model[]): Model | undefined {
+  const others = models.filter((m) => m.id !== 'default');
+  const exact = others.find((m) => m.id === id);
+  if (exact) return exact;
+  const fam = modelFamily(id);
+  if (!fam) return undefined;
+  return others.find(
+    (m) => modelFamily(m.id) === fam || modelFamily(m.name) === fam,
+  );
+}
+
+/**
+ * Fold the catalog's `default` entry into the model it actually runs.
+ *
+ * OmniFex's "default" means "omit `--model` and let the CLI decide", which
+ * makes the CLI read the `model` pin from that account's settings.json (or,
+ * with nothing pinned, its own recommended model). So the entry is labeled
+ * with that model's name plus ACCOUNT_DEFAULT_MARK — "Fable 5 *" — and the
+ * model's own row is dropped, because it is now that row. The entry keeps the
+ * id `default`: picking it still means "omit --model", not "pin this model".
+ *
+ * `activeDefaultModel` is the concrete id a live session reports (from
+ * `get_context_usage` or the last assistant JSONL line) and beats the
+ * settings-pin/catalog inference, since it is an observation rather than a
+ * guess. When nothing identifies the model at all, the entry keeps the bare
+ * "Account Default" label and every row is passed through untouched.
  */
 export function withAccountDefaultLabel(
   models: Model[],
   pinnedModel: string | null | undefined,
   raw?: SessionModelInfo[] | null,
+  activeDefaultModel?: string | null,
 ): Model[] {
-  const hasPin = !!pinnedModel && pinnedModel !== 'default';
-  return models.map((m) => {
-    if (m.id !== 'default') return m;
-    if (!hasPin) {
-      // No pin: the CLI's recommended model runs. Name it when the catalog
-      // identifies it; only fall back to the bare label when it can't.
-      const rec = recommendedDefaultModel(raw);
-      return rec?.displayName
-        ? { ...m, name: `Account Default (${rec.displayName})` }
-        : { ...m, name: 'Account Default' };
-    }
-    const pinnedName = modelDisplayName(pinnedModel, raw);
-    const inCatalog = models.find((x) => x.id === pinnedModel)?.description;
-    const description =
-      inCatalog && inCatalog.length > 0 ? inCatalog : pinnedName;
-    return { ...m, name: `Account Default (${pinnedName})`, description };
+  const def = models.find((m) => m.id === 'default');
+  if (!def) return models;
+  const live =
+    activeDefaultModel && activeDefaultModel !== 'default' ? activeDefaultModel : null;
+  const pin = pinnedModel && pinnedModel !== 'default' ? pinnedModel : null;
+  const defaultId = live ?? pin ?? recommendedDefaultModel(raw)?.value ?? null;
+  if (!defaultId) {
+    return models.map((m) => (m.id === 'default' ? { ...m, name: 'Account Default' } : m));
+  }
+  const twin = concreteTwin(defaultId, models);
+  const name = twin?.name ?? resolveActualModelName(defaultId, models, raw);
+  const merged: Model = {
+    ...def,
+    name: `${name} ${ACCOUNT_DEFAULT_MARK}`,
+    // A model the account can't see has no row to borrow a description from,
+    // and the recommended model's copy would be a lie there — name it instead.
+    description: twin ? twin.description || def.description : name,
+  };
+  return models.flatMap((m) => {
+    if (m.id === 'default') return [merged];
+    return m === twin ? [] : [m];
   });
 }
 
@@ -204,7 +239,12 @@ export function modelDisplayName(id: string, raw?: SessionModelInfo[] | null): s
  * the static fallback. The main-process side is SQLite-cached, so repeat
  * calls are cheap; no renderer-side cache needed.
  */
-export function useModelCatalog(configDir?: string): {
+export function useModelCatalog(
+  configDir?: string,
+  /** Concrete model id a live session reports; beats the settings pin when
+   *  labeling the account-default row. */
+  activeDefaultModel?: string | null,
+): {
   models: Model[];
   raw: SessionModelInfo[];
   loading: boolean;
@@ -261,7 +301,7 @@ export function useModelCatalog(configDir?: string): {
   }, [configDir]);
 
   return {
-    models: withAccountDefaultLabel(effectiveModels(raw), pinnedModel, raw),
+    models: withAccountDefaultLabel(effectiveModels(raw), pinnedModel, raw, activeDefaultModel),
     raw,
     loading,
   };

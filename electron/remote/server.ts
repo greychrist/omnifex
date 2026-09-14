@@ -68,6 +68,9 @@ export interface RemoteServer extends ProtocolServer {
   listen(): Promise<{ host: string; port: number }>;
   close(): Promise<void>;
   readonly address: { host: string; port: number } | null;
+  /** Connections accepted since startup. Monotonic, so "was anyone ever
+   *  here?" survives a client that came and went between two observations. */
+  readonly connectionsSeen: number;
   /** How many clients are subscribed to a session right now. */
   subscriberCount(sessionId: string): number;
 }
@@ -107,6 +110,10 @@ export function createRemoteServer(deps: RemoteServerDeps): RemoteServer {
 
   let handlers: ProtocolHandlers | null = null;
   const connections = new Set<Connection>();
+  // Monotonic, unlike `connections.size`: the dev instance's idle watch has to
+  // know whether a client was EVER here, and a client that came and went
+  // between two polls leaves no trace in the set.
+  let connectionsSeen = 0;
   const subscribers = new Map<string, Set<Connection>>();
   let http: Server | null = null;
   let wss: WebSocketServer | null = null;
@@ -233,6 +240,7 @@ export function createRemoteServer(deps: RemoteServerDeps): RemoteServer {
       send: (m) => send(conn, m),
     };
     connections.add(conn);
+    connectionsSeen += 1;
 
     socket.on('pong', () => { conn.alive = true; });
     socket.on('close', () => {
@@ -406,6 +414,10 @@ export function createRemoteServer(deps: RemoteServerDeps): RemoteServer {
   return {
     get clients() {
       return [...connections];
+    },
+    /** How many connections this daemon has accepted since it started. */
+    get connectionsSeen() {
+      return connectionsSeen;
     },
     get address() {
       return address;

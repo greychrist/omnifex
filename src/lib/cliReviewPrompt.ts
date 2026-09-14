@@ -69,16 +69,44 @@ left — treat it as a real audit, not a formality.
      \`startSession\` params and the pickers that feed it
    - **Slash commands, subagents, MCP, plugins, settings.json keys**
 
-3. **Report.** For each entry that matters: what changed, which OmniFex files
+3. **Diff the binaries, not just the prose.** The changelog is not the whole
+   surface: a record type can ship without an entry. Installed versions live in
+   \`~/.local/share/claude/versions/<version>\` and are greppable JS
+   (\`rg -a\`). With two versions in the range installed, diff at least:
+
+   - **The JSONL record-type map** — the CLI's merge-strategy map. One object
+     mapping every record type it writes into a session file to a strategy, with
+     exactly four — \`user\`, \`assistant\`, \`system\`, \`attachment\` — tagged
+     \`"transcript"\` and the rest being per-session bookkeeping. Find it via a
+     key you know is in it and widen to the enclosing object:
+
+     \`\`\`sh
+     rg -a -o '\\{[^{}]{0,1200}"atis-latch":"[a-z-]+"[^{}]{0,600}\\}' \\
+       ~/.local/share/claude/versions/<version>
+     \`\`\`
+
+     A new entry is a new record type. Decide which it is: something OmniFex
+     must render (add a case to \`src/lib/jsonlClassifier.ts\`), or bookkeeping
+     (add it to \`src/lib/cliSidechannelRecords.ts\`). Left undecided it becomes
+     an orange "Unrecognized record" card on every occurrence — which is how
+     \`atis-latch\` reached hundreds of cards before anyone noticed.
+   - \`subtype:"…"\` literals, \`hook_event_name\` literals, \`type:"control_*"\`
+     envelopes, and the \`/usage\` anchors \`usage-runner/parser.ts\` reads.
+
+   Report counts both ways round. Most movement is minifier noise — identifier
+   renaming shifts occurrence counts without changing the literal set — so say
+   which it is rather than reporting a number that moved.
+
+4. **Report.** For each entry that matters: what changed, which OmniFex files
    are affected, and whether it is (a) already handled, (b) a bug we now have,
    or (c) an opportunity worth taking. Cite \`file:line\`. Group the rest under a
    one-line "no OmniFex impact" list — don't pad the report with them.
 
-4. **Recommend, don't sprawl.** Propose the smallest set of follow-ups, ordered
+5. **Recommend, don't sprawl.** Propose the smallest set of follow-ups, ordered
    by whether the current build is actually broken. Ask before implementing
    anything beyond a trivial fix.
 
-5. **Bump the watermark. Always — it is the closing step of every review.**
+6. **Bump the watermark. Always — it is the closing step of every review.**
    Update \`REVIEWED_CLI_VERSION\` to \`{installedVersion}\` in
    \`electron/services/claude-cli-review.ts\`, and add a "Last review:" block
    above the existing ones recording what you found — including the entries

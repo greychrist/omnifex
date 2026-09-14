@@ -5,6 +5,7 @@ import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { SessionDefaultsRow } from '../SessionDefaultsRow';
 import { TooltipProvider } from '../../ui/tooltip-modern';
 import type { AccountEngine } from '@/lib/api';
+import { ACCOUNT_DEFAULT_MARK } from '@/lib/modelCatalog';
 
 afterEach(() => { cleanup(); });
 
@@ -82,11 +83,12 @@ describe('SessionDefaultsRow', () => {
     render(<Harness engine="claude" />);
     fireEvent.click(screen.getByText('Sonnet'));
     expect(screen.getAllByText('Fable 5').length).toBeGreaterThan(0);
-    // The "default" entry is relabeled "Account Default" by useModelCatalog.
+    // The "default" entry is relabeled "Account Default" by useModelCatalog
+    // (nothing identifies the model without a configDir).
     expect(screen.getAllByText('Account Default').length).toBeGreaterThan(0);
   });
 
-  it("engine='claude' names the live model inside the Account Default label", () => {
+  it("engine='claude' marks the live default model instead of duplicating it", () => {
     render(
       <TooltipProvider>
         <SessionDefaultsRow
@@ -101,7 +103,11 @@ describe('SessionDefaultsRow', () => {
         />
       </TooltipProvider>,
     );
-    expect(screen.getByText('Account Default (Fable 5)')).toBeTruthy();
+    // One Fable 5 line, marked — not "Fable 5" plus "Account Default (Fable 5)".
+    expect(screen.queryByText(/Account Default \(/)).toBeNull();
+    fireEvent.click(screen.getByText(`Fable 5 ${ACCOUNT_DEFAULT_MARK}`));
+    expect(screen.getAllByText(`Fable 5 ${ACCOUNT_DEFAULT_MARK}`).length).toBe(2); // trigger + row
+    expect(screen.queryByText('Fable 5')).toBeNull();
   });
 
   it("engine='claude' permission picker lists all six CLI modes when opened", () => {
@@ -138,11 +144,11 @@ describe('SessionDefaultsRow', () => {
 });
 
 describe('SessionDefaultsRow compact density', () => {
-  it('drops the field labels so the three controls fit one line', () => {
+  it('keeps a caption above each control', () => {
     render(<Harness engine="claude" density="compact" />);
-    expect(screen.queryByText('Model')).toBeNull();
-    expect(screen.queryByText('Effort')).toBeNull();
-    expect(screen.queryByText('Permissions')).toBeNull();
+    expect(screen.getByText('Model')).toBeTruthy();
+    expect(screen.getByText('Effort')).toBeTruthy();
+    expect(screen.getByText('Permissions')).toBeTruthy();
   });
 
   it('default density keeps the field labels', () => {
@@ -155,7 +161,22 @@ describe('SessionDefaultsRow compact density', () => {
     expect(screen.getAllByRole('button')).toHaveLength(3);
   });
 
-  it('names each control in a title, since the label is gone', () => {
+  // The reported bug: the control row stretched off the right edge of the
+  // session context popover. Each picker's `flex-1` is on its BUTTON, but
+  // Popover wraps every trigger in its own div — an `inline-block` one by
+  // default, which shrink-wraps its content and never shrinks. The row's
+  // min-content was therefore 3 x (widest untruncated trigger), whatever the
+  // popover's width. The wrapper has to be the full-width block.
+  it('lets each trigger shrink with its field instead of widening the row', () => {
+    render(<Harness engine="claude" density="compact" />);
+    for (const btn of screen.getAllByRole('button')) {
+      const wrapper = btn.parentElement?.parentElement as HTMLElement;
+      expect(wrapper.className).toContain('w-full');
+      expect(wrapper.className).not.toContain('inline-block');
+    }
+  });
+
+  it('names each control in a title as well as its caption', () => {
     render(<Harness engine="claude" density="compact" />);
     expect(screen.getByTitle(/^Model:/)).toBeTruthy();
     expect(screen.getByTitle(/^Effort:/)).toBeTruthy();
@@ -181,8 +202,20 @@ describe('SessionDefaultsRow compact density', () => {
     expect(screen.getByTitle(/Managed by the terminal/)).toBeTruthy();
   });
 
-  it('lays out as a row, not a column', () => {
+  it('lays the three fields out side by side', () => {
     const { container } = render(<Harness engine="claude" density="compact" />);
-    expect(container.querySelector('.flex-col')).toBeNull();
+    const root = container.firstElementChild as HTMLElement;
+    expect(root.className).not.toContain('flex-col');
+  });
+
+  it('stacks each caption above its control', () => {
+    const { container } = render(<Harness engine="claude" density="compact" />);
+    const root = container.firstElementChild as HTMLElement;
+    const label = screen.getByText('Model');
+    const field = label.parentElement as HTMLElement;
+    expect(field.className).toContain('flex-col');
+    expect(field.parentElement).toBe(root);
+    // Caption first, control under it.
+    expect(field.firstElementChild).toBe(label);
   });
 });

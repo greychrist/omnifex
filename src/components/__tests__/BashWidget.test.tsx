@@ -86,3 +86,51 @@ describe('BashWidget — bash edit diff', () => {
     expect(screen.queryByText(/Files this command changed/)).toBeNull();
   });
 });
+
+// A `git diff` arrives as ordinary stdout: no structured payload, no Edit
+// tool, just text. It used to render as one flat block of success-green —
+// where the colour meant "exit 0" and nothing marked the changed lines.
+describe('BashWidget — diff output', () => {
+  const DIFF = `diff --git a/src/lib/api.ts b/src/lib/api.ts
+--- a/src/lib/api.ts
++++ b/src/lib/api.ts
+@@ -10,2 +10,2 @@ export const api = {
+-  getVersion: () => invoke('get_version'),
++  getVersion: () => invoke('get_app_version'),
+`;
+
+  const result = (content: string, isError = false) => ({
+    content: [{ type: 'text', text: content }],
+    is_error: isError,
+  });
+
+  it('renders diff output as a diff', () => {
+    const { container } = render(<BashWidget command="git diff src/lib/api.ts" result={result(DIFF)} />);
+    expect(screen.getByText('src/lib/api.ts')).toBeTruthy();
+    expect(container.querySelectorAll('[data-diff-line]')).toHaveLength(2);
+  });
+
+  it('leaves ordinary output as output', () => {
+    const { container } = render(<BashWidget command="npm test" result={result('5688 passed\n')} />);
+    expect(container.querySelector('[data-diff-line]')).toBeNull();
+    expect(screen.getByText(/5688 passed/)).toBeTruthy();
+  });
+
+  // +/- lines are not a diff. An installer printing them must not be
+  // rearranged into one.
+  it('leaves +/- output that is not a diff alone', () => {
+    const { container } = render(
+      <BashWidget command="npm i" result={result('+ added 4 packages\n- removed 1\n')} />,
+    );
+    expect(container.querySelector('[data-diff-line]')).toBeNull();
+  });
+
+  // A failed command's output is a failure message, whatever shape it has.
+  it('keeps a failed command in the error treatment', () => {
+    const { container } = render(
+      <BashWidget command="git diff" result={result(DIFF, true)} />,
+    );
+    expect(container.querySelector('[data-diff-line]')).toBeNull();
+    expect(container.querySelector('.text-red-400')).toBeTruthy();
+  });
+});

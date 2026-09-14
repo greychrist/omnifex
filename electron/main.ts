@@ -136,17 +136,43 @@ import { createSessionCostService } from './services/cost/session-cost';
 import { createModelPricingService } from './services/model-pricing';
 import { registerIpcHandlers } from './ipc/handlers';
 import { createRemoteLauncher, healthUrlFor, parseDaemonHealth, type DaemonHealth } from './remote-launcher';
-import { loadServerConfig } from './remote/config';
+import { loadServerConfig, type ServerConfig } from './remote/config';
 import { startPeriodicWork } from './periodic-work';
 import { createLoggingOptions } from './logging-options';
 import { createSessionCloseWork } from './session-close-work';
 import { createSessionJsonlPathResolver } from './session-jsonl-path';
 import { createDaemonControl } from './remote/daemon-control';
+import { devInstanceEnv, shouldUseDevInstance } from './remote/dev-instance';
 import { daemonExecPath } from './remote/daemon-exec';
 import { get as httpGet } from 'node:http';
 import { createWindowRouter } from './window-router';
 import { classifyNavigation } from './navigation-policy';
 import { resolveProtocolFile } from './file-protocol-policy';
+
+// A dev build runs its own daemon on its own port, beside the installed app's.
+// See remote/dev-instance.ts: the installed app's daemon owns every live CLI
+// process the user actually works in, and `npm start` used to take that port,
+// and with it those sessions.
+//
+// `serverEnv` is where that instance lives, and it is deliberately NOT
+// `process.env`: writing it there leaked the port into every child the app
+// spawns — CLI sessions, agents, Brain extraction, any shell command run in a
+// session — so `npm test` inside a dev session read a port no test had set,
+// and launching the packaged app from a dev session pointed the real product
+// at the dev daemon. Only two things are entitled to it: `serverConfig()`
+// below, and the environment `daemonControl` hands the daemon it spawns.
+const devInstance = shouldUseDevInstance({ packaged: app.isPackaged, env: process.env });
+const serverEnv: Record<string, string | undefined> = devInstance
+  ? { ...process.env, ...devInstanceEnv(process.env) }
+  : process.env;
+const serverConfig = (): ServerConfig => loadServerConfig({ env: serverEnv });
+if (devInstance) {
+  console.log(
+    '[remote] dev instance:',
+    `state ${String(serverEnv.OMNIFEX_STATE_DIR)}, port ${String(serverEnv.OMNIFEX_PORT)}`,
+    '— the installed app\'s daemon is untouched (OMNIFEX_DEV_INSTANCE=0 to share it)',
+  );
+}
 
 declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string | undefined;
 declare const MAIN_WINDOW_VITE_NAME: string;
@@ -165,6 +191,8 @@ let _notificationsService: { dismissAll(): void } | null = null;
 let _gitWatcherService: { disposeAll(): void } | null = null;
 let _sessionCostService: { stopAll(): void } | null = null;
 let _db: { close(): void } | null = null;
+/** Set when this process runs the dev instance; stops its daemon on quit. */
+let _stopDevDaemon: (() => void) | null = null;
 let _initialized = false;
 /** Set once the services exist; see the in-flight broadcaster in whenReady. */
 let _workingCount: (() => number) | null = null;
@@ -1456,6 +1484,16 @@ app.whenReady().then(() => {
   // it; a dev Electron has no stub and runs under its own name.
   const daemonControl = createDaemonControl({
     invocation: { execPath: daemonExecPath(process.execPath, fs.existsSync), script: daemonScript },
+    // What the daemon child inherits. This is how it learns which instance it
+    // belongs to, and the only path by which the dev overlay reaches a child
+    // process at all.
+    env: serverEnv,
+    // The LaunchAgent belongs to the installed app; a dev instance manages
+    // only the daemon it spawned itself — and that one is temporary: same
+    // process group (so Ctrl-C in the `npm start` terminal reaches it) and
+    // SIGTERMed on quit below.
+    allowLaunchd: !devInstance,
+    detached: !devInstance,
     log: remoteLog,
   });
   // Dev only: `npm start` rebuilds the daemon script without bumping the
@@ -1488,14 +1526,22 @@ app.whenReady().then(() => {
       req.on('error', () => resolve(null));
     });
   const remoteLauncher = createRemoteLauncher({
-    config: () => loadServerConfig(),
+    config: serverConfig,
     appVersion: app.getVersion(),
     appBuild: daemonBuildStamp(),
+    appScript: daemonScript,
     probe: probeDaemonHealth,
     spawn: (config) => daemonControl.spawn(config),
     stop: (config) => daemonControl.stop(config),
     log: remoteLog,
   });
+  if (devInstance) {
+    _stopDevDaemon = () => {
+      void daemonControl.stop(serverConfig()).catch((err: unknown) => {
+        remoteLog('stopping the dev daemon failed', { error: String(err) });
+      });
+    };
+  }
   ipcMain.handle('remote:url', async () => {
     if (process.env.OMNIFEX_REMOTE === '0') return null;
     if (db.getSetting('remote.enabled') === 'false') return null;
@@ -1601,12 +1647,12 @@ app.whenReady().then(() => {
     appQuit: quitAuthorized,
     remoteInFlight: async () => {
       if (!remoteInUse) return null;
-      const health = await probeDaemonHealth(healthUrlFor(loadServerConfig()));
+      const health = await probeDaemonHealth(healthUrlFor(serverConfig()));
       return health ? health.inFlight : null;
     },
     stopRemoteDaemon: async () => {
       if (!remoteInUse) return;
-      const stopped = await daemonControl.stop(loadServerConfig());
+      const stopped = await daemonControl.stop(serverConfig());
       remoteLog(stopped ? 'daemon stopped for the update' : 'no daemon to stop for the update');
     },
     spawn: (cmd, args, opts) => spawn(cmd, args, opts),
@@ -1737,6 +1783,11 @@ app.on('will-quit', () => {
   _sessionsService?.stopAll();
   _gitWatcherService?.disposeAll();
   _sessionCostService?.stopAll();
+  // The dev daemon exists for this run of `npm start` only. The real one is
+  // never touched here — it outliving the app is the whole point of the split.
+  // Not awaited: the SIGTERM inside is synchronous, and `will-quit` cannot
+  // wait anyway. The daemon's own idle watch covers a quit this never reaches.
+  _stopDevDaemon?.();
   _db?.close();
 });
 

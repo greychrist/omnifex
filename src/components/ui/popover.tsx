@@ -4,6 +4,16 @@ import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { computePopoverPosition } from "./popoverPosition";
 
+/**
+ * `triggerClassName` for a trigger that is a form field: a full-width block
+ * that may shrink below its content. The default wrapper is
+ * `relative inline-block`, which shrink-wraps — so a `flex-1 w-full` trigger
+ * button inside it is sized by its own text, and a row of them widens past
+ * its container instead of truncating (the session context popover's control
+ * row stretching off the card).
+ */
+export const FIELD_TRIGGER = "relative block w-full min-w-0";
+
 interface PopoverProps {
   /**
    * The trigger element
@@ -35,9 +45,8 @@ interface PopoverProps {
   side?: "top" | "bottom";
   /**
    * Optional override for the outer wrapper around the trigger. Defaults to
-   * "relative inline-block" — pass "relative block w-full" to make the
-   * trigger occupy a full row (e.g. so a form-field trigger sits below its
-   * label instead of beside it).
+   * "relative inline-block" — pass FIELD_TRIGGER (above) to make the trigger
+   * occupy a full row and shrink with it, as a form field does.
    */
   triggerClassName?: string;
 }

@@ -12,6 +12,7 @@ import {
   prettyModelName,
   recommendedDefaultModel,
   withAccountDefaultLabel,
+  ACCOUNT_DEFAULT_MARK,
   useModelCatalog,
 } from '../modelCatalog';
 import type { Model } from '@/components/ModelPicker';
@@ -211,8 +212,10 @@ describe('useModelCatalog', () => {
 
     await waitFor(() => {
       const def = result.current.models.find((m) => m.id === 'default');
-      expect(def?.name).toBe('Account Default (Opus)');
+      expect(def?.name).toBe(`Opus ${ACCOUNT_DEFAULT_MARK}`);
       expect(def?.description).toBe('Opus 4.8 with 1M context');
+      // One Opus line, not two.
+      expect(result.current.models.map((m) => m.id)).toEqual(['default', 'sonnet', 'haiku']);
     });
     expect(mockedSettings).toHaveBeenCalledWith({
       configDir: '/Users/g/.claude-personal',
@@ -226,7 +229,7 @@ describe('useModelCatalog', () => {
 
     await waitFor(() => {
       const def = result.current.models.find((m) => m.id === 'default');
-      expect(def?.name).toBe('Account Default (Fable 5)');
+      expect(def?.name).toBe(`Fable 5 ${ACCOUNT_DEFAULT_MARK}`);
       expect(def?.description).toBe('Fable 5');
     });
   });
@@ -240,7 +243,7 @@ describe('useModelCatalog', () => {
       const def = result.current.models.find((m) => m.id === 'default');
       // No pin, but the catalog's default entry identifies the recommended
       // model (opus[1m]) via its shared description — name it.
-      expect(def?.name).toBe('Account Default (Opus)');
+      expect(def?.name).toBe(`Opus ${ACCOUNT_DEFAULT_MARK}`);
       expect(def?.description).toBe('Opus 4.8 with 1M context');
     });
   });
@@ -339,16 +342,27 @@ describe('withAccountDefaultLabel', () => {
   it('renames the default entry to "Account Default" when nothing identifies the model', () => {
     const out = withAccountDefaultLabel(models, null);
     expect(out.find((m) => m.id === 'default')?.name).toBe('Account Default');
+    expect(out.map((m) => m.id)).toEqual(models.map((m) => m.id));
   });
 
-  it('names the CLI-recommended model with no pin when the raw catalog identifies it', () => {
+  it('marks the recommended model and drops the duplicate row when no model is pinned', () => {
     const out = withAccountDefaultLabel(models, null, CATALOG);
-    expect(out.find((m) => m.id === 'default')?.name).toBe('Account Default (Opus)');
+    expect(out.find((m) => m.id === 'default')?.name).toBe(`Opus ${ACCOUNT_DEFAULT_MARK}`);
+    // The standalone Opus row is gone — the marked default entry IS that row.
+    expect(out.map((m) => m.id)).toEqual(['default', 'sonnet']);
   });
 
-  it('names the pinned model in the label so the picker shows what actually runs', () => {
+  it('marks the pinned model instead of adding a second line for it', () => {
     const out = withAccountDefaultLabel(models, 'sonnet');
-    expect(out.find((m) => m.id === 'default')?.name).toBe('Account Default (Sonnet)');
+    expect(out.find((m) => m.id === 'default')?.name).toBe(`Sonnet ${ACCOUNT_DEFAULT_MARK}`);
+    expect(out.map((m) => m.id)).toEqual(['default', 'opus[1m]']);
+  });
+
+  it('keeps the merged entry selectable as "default", not as the concrete id', () => {
+    // Picking the marked row must still mean "omit --model and let the CLI
+    // read the account's pin" — the merge is a label change, not a pin.
+    const out = withAccountDefaultLabel(models, 'sonnet');
+    expect(out[0].id).toBe('default');
   });
 
   it('resolves the pinned name through the raw catalog when provided', () => {
@@ -356,22 +370,33 @@ describe('withAccountDefaultLabel', () => {
       { value: 'opus[1m]', displayName: 'Opus', description: 'Opus 4.8 with 1M context' },
     ];
     const out = withAccountDefaultLabel(models, 'opus[1m]', raw);
-    expect(out.find((m) => m.id === 'default')?.name).toBe('Account Default (Opus)');
+    expect(out.find((m) => m.id === 'default')?.name).toBe(`Opus ${ACCOUNT_DEFAULT_MARK}`);
   });
 
-  it('names a pin missing from the catalog via the static fallback', () => {
+  it('names a pin missing from the catalog via the static fallback, removing nothing', () => {
     const out = withAccountDefaultLabel(models, 'claude-fable-5[1m]');
-    expect(out.find((m) => m.id === 'default')?.name).toBe('Account Default (Fable 5)');
+    expect(out.find((m) => m.id === 'default')?.name).toBe(`Fable 5 ${ACCOUNT_DEFAULT_MARK}`);
+    expect(out.map((m) => m.id)).toEqual(models.map((m) => m.id));
   });
 
-  it('leaves non-default entries untouched', () => {
+  it('lets an active (live) default model beat the settings pin', () => {
+    const out = withAccountDefaultLabel(models, 'sonnet', CATALOG, 'claude-opus-4-8');
+    expect(out.find((m) => m.id === 'default')?.name).toBe(`Opus ${ACCOUNT_DEFAULT_MARK}`);
+    // Opus is the merged row; Sonnet keeps its own line.
+    expect(out.map((m) => m.id)).toEqual(['default', 'sonnet']);
+  });
+
+  it('ignores a literal "default" as the active model', () => {
+    const out = withAccountDefaultLabel(models, 'sonnet', null, 'default');
+    expect(out.find((m) => m.id === 'default')?.name).toBe(`Sonnet ${ACCOUNT_DEFAULT_MARK}`);
+  });
+
+  it('leaves non-default, non-merged entries untouched', () => {
     const out = withAccountDefaultLabel(models, 'opus[1m]');
-    expect(out.find((m) => m.id === 'opus[1m]')).toEqual(
-      models.find((m) => m.id === 'opus[1m]'),
-    );
+    expect(out.find((m) => m.id === 'sonnet')).toBe(models.find((m) => m.id === 'sonnet'));
   });
 
-  it('uses the pinned model catalog description when it is in the list', () => {
+  it('takes the merged entry description from the row it replaced', () => {
     const out = withAccountDefaultLabel(models, 'sonnet');
     expect(out.find((m) => m.id === 'default')?.description).toBe('Sonnet 4.6');
   });
@@ -381,13 +406,9 @@ describe('withAccountDefaultLabel', () => {
     expect(out.find((m) => m.id === 'default')?.description).toBe('Fable 5');
   });
 
-  it('keeps the recommended description when no model is pinned', () => {
-    const out = withAccountDefaultLabel(models, null);
-    expect(out.find((m) => m.id === 'default')?.description).toBe('Opus 4.8 with 1M context');
-  });
-
   it('treats a literal "default" pin as no pin', () => {
-    const out = withAccountDefaultLabel(models, 'default');
-    expect(out.find((m) => m.id === 'default')?.description).toBe('Opus 4.8 with 1M context');
+    const out = withAccountDefaultLabel(models, 'default', CATALOG);
+    // No pin, so the CLI-recommended model (Opus) is what "default" runs.
+    expect(out.find((m) => m.id === 'default')?.name).toBe(`Opus ${ACCOUNT_DEFAULT_MARK}`);
   });
 });

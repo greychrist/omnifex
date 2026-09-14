@@ -8,6 +8,15 @@ import {
 import { cn } from "@/lib/utils";
 import { extractResultContent } from "@/components/claude/tools/shared";
 import { parseGitOperation, parseBashEditDiff } from "@/lib/bashToolResult";
+import { parseUnifiedDiff } from "@/lib/unifiedDiff";
+import { UnifiedDiffView } from "@/components/shared/UnifiedDiffView";
+
+/**
+ * How many diff lines a single Bash row will render. The transcript is
+ * unvirtualised and every open tab is mounted, so an unbounded `git diff` of
+ * a large change would mount thousands of rows in a row nobody is looking at.
+ */
+const DIFF_LINE_BUDGET = 600;
 
 /**
  * Widget for Bash tool
@@ -36,6 +45,11 @@ export const BashWidget: React.FC<{
   const gitOp = parseGitOperation(structured);
   const editDiff = parseBashEditDiff(structured);
 
+  // `git diff`, `git show`, `diff -u`: the output IS a diff, so render it as
+  // one. Only on success — a failed command's output is a failure message
+  // whatever shape it happens to have, and the red treatment says so.
+  const diff = isError ? null : parseUnifiedDiff(resultContent, { maxLines: DIFF_LINE_BUDGET });
+
   return (
     <div className="rounded-lg border bg-background overflow-hidden">
       <div className="px-4 py-2 bg-muted/50 flex items-center gap-2 border-b">
@@ -61,7 +75,8 @@ export const BashWidget: React.FC<{
         </code>
 
         {/* Show result if available */}
-        {result && (
+        {result && diff && <UnifiedDiffView diff={diff} className="mt-3" />}
+        {result && !diff && (
           <div className={cn(
             "mt-3 p-3 rounded-md border text-xs font-mono whitespace-pre-wrap overflow-x-auto",
             isError

@@ -106,6 +106,14 @@ and restored tab doesn't re-send the prompt on the next app launch.
 - map each against the surfaces OmniFex depends on: JSONL shapes, control
   requests, `/usage` rendering, hook event names, permission-rule semantics,
   session lifecycle, model/effort/fast-mode plumbing
+- diff the installed binaries under `~/.local/share/claude/versions/`, not only
+  the changelog prose — added 2026-09-13, because `atis-latch` shipped as a new
+  JSONL record type with no changelog entry and drew hundreds of "Unrecognized
+  record" cards before anyone noticed. The axis that catches it is the CLI's
+  merge-strategy map: one object listing every record type it writes, four of
+  them tagged `"transcript"` and the rest bookkeeping. A new entry is a new
+  record type, and it belongs in either `src/lib/jsonlClassifier.ts` or
+  `src/lib/cliSidechannelRecords.ts` before the review closes.
 - report what needs work, with file pointers
 - always bump `REVIEWED_CLI_VERSION` as the closing step, with a
   "Last review:" block recording the findings (a clean pass included); never

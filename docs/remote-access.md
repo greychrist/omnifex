@@ -61,6 +61,44 @@ and it stops the daemon just before quitting for the swap so nothing keeps
 running from the bundle being replaced. The relaunched app starts a fresh
 daemon from the new bundle.
 
+## Dev builds get their own daemon
+
+`npm start` runs as the **dev instance**: state in `~/.omnifex-dev`, daemon on
+port **47701**, and `OMNIFEX_DEV_DAEMON=1` in the environment it spawns the
+daemon with. The installed app keeps `~/.omnifex` and 47700.
+
+This exists because the two used to share one daemon on one port. That daemon
+holds every live CLI process the user has open, so launching a dev build both
+replaced it (same version, different bundle stamp → "another build; replacing
+it") and, once that was fixed, still drove those real sessions from a build
+under test. A dev build now also refuses to retire a daemon that does not
+report its own script path in `/healthz`, and never touches the LaunchAgent —
+that plist is the installed app's.
+
+What is deliberately NOT separate is the database: the dev app sees the real
+accounts, projects and history. That is why the dev daemon passes an `enabled`
+gate that closes `startPeriodicWork` — with two daemons on one
+`greychrist.db`, a second Brain sweep would re-queue what the other is
+extracting, and `brain_spend` is append-only, so it gets billed twice.
+Maintenance belongs to the installed pair; it simply waits until that app runs.
+
+```sh
+OMNIFEX_DEV_INSTANCE=0 npm start   # share the real daemon on purpose
+curl http://<tailscale-ip>:47701/healthz
+```
+
+The dev daemon is also **temporary**, which the real one deliberately is not.
+It is spawned in the app's process group (so Ctrl-C in the `npm start`
+terminal reaches it), SIGTERMed on quit, and it runs a dead-man's switch: no
+client attached, no turn running, 30 seconds → it shuts itself down. That last
+one is the backstop for the app being killed outright, and it also collects a
+daemon whose app never connected at all (2 minutes). So every `npm start` gets
+a fresh daemon built from the current tree — no Restart needed for daemon-side
+changes, and nothing left listening on 47701 afterwards.
+
+The one thing it will not do is kill a turn: a disconnected client with a
+running CLI is an app being reloaded, so the clock starts when the turn ends.
+
 ## Sanity checks from the iPad
 
 ```sh

@@ -492,3 +492,39 @@ describe('filterDisplayableMessages — system.thinking_tokens', () => {
     expect(tokensOf(out)).toEqual([100]);
   });
 });
+
+// The CLI writes its conversation latches into the same JSONL as messages.
+// Unclassified, each drew an orange "Unrecognized record" card — 379 of them
+// across twelve sessions, all saying `atis-latch`.
+describe('CLI sidechannel records', () => {
+  const record = (raw: Record<string, unknown>): JsonlNode =>
+    ({ kind: 'unknown', sessionId: '', receivedAt: null, raw }) as unknown as JsonlNode;
+
+  const atisLatch = () =>
+    record({ type: 'atis-latch', atis: 'e6dcdfec512ad7fa', sessionId: 's1' });
+
+  it('drops a latch record from the transcript', () => {
+    expect(filterDisplayableMessages([atisLatch()])).toEqual([]);
+  });
+
+  it('drops the rest of the family too, not just the one we noticed', () => {
+    const family = ['isolation-latch', 'mode', 'worktree-state', 'cost-state', 'relocated']
+      .map((type) => record({ type, sessionId: 's1' }));
+    expect(filterDisplayableMessages(family)).toEqual([]);
+  });
+
+  it('keeps the compaction summary, which rides the same kind', () => {
+    const summary = record({ type: 'summary', summary: 'we did things', leafUuid: 'u1' });
+    expect(filterDisplayableMessages([summary])).toHaveLength(1);
+  });
+
+  it('still shows a record type it has never seen', () => {
+    const novel = record({ type: 'some-future-record', sessionId: 's1' });
+    expect(filterDisplayableMessages([novel])).toHaveLength(1);
+  });
+
+  it('leaves the messages around a latch untouched', () => {
+    const kept = filterDisplayableMessages([userText('hi'), atisLatch(), userText('bye')]);
+    expect(kept).toHaveLength(2);
+  });
+});

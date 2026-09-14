@@ -18,7 +18,7 @@ afterEach(() => {
   rmSync(home, { recursive: true, force: true });
 });
 
-function make(opts: { plist?: boolean; pid?: number | null; alive?: boolean; scriptExists?: boolean; spawnPid?: number | null } = {}) {
+function make(opts: { plist?: boolean; pid?: number | null; alive?: boolean; scriptExists?: boolean; spawnPid?: number | null; allowLaunchd?: boolean; detached?: boolean } = {}) {
   const plistPath = launchAgentPath(undefined, home);
   if (opts.plist) {
     mkdirSync(join(home, 'Library', 'LaunchAgents'), { recursive: true });
@@ -26,7 +26,7 @@ function make(opts: { plist?: boolean; pid?: number | null; alive?: boolean; scr
   }
   const run = vi.fn();
   const kill = vi.fn();
-  const spawnDetached = vi.fn(() => opts.spawnPid === undefined ? 4242 : opts.spawnPid);
+  const spawnDetached = vi.fn((_inv, _log, _env, _opts) => opts.spawnPid === undefined ? 4242 : opts.spawnPid);
   const control = createDaemonControl({
     invocation: INVOCATION,
     home,
@@ -38,6 +38,8 @@ function make(opts: { plist?: boolean; pid?: number | null; alive?: boolean; scr
     isAlive: () => opts.alive ?? false,
     kill,
     spawnDetached,
+    ...(opts.allowLaunchd === undefined ? {} : { allowLaunchd: opts.allowLaunchd }),
+    ...(opts.detached === undefined ? {} : { detached: opts.detached }),
   });
   return { control, run, kill, spawnDetached, plistPath };
 }
@@ -58,8 +60,17 @@ describe('daemon control (detached daemon, no LaunchAgent)', () => {
   it('spawn starts the script detached, logging to ~/Library/Logs', () => {
     const { control, spawnDetached, run } = make();
     expect(control.spawn(CONFIG)).toBe(true);
-    expect(spawnDetached).toHaveBeenCalledWith(INVOCATION, join(home, 'Library', 'Logs', 'omnifex-server.log'), { PATH: '/opt/bin' });
+    expect(spawnDetached).toHaveBeenCalledWith(INVOCATION, join(home, 'Library', 'Logs', 'omnifex-server.log'), { PATH: '/opt/bin' }, { detached: true });
     expect(run).not.toHaveBeenCalled();
+  });
+
+  // The dev daemon is the exception, and the whole point of it: it belongs to
+  // one `npm start`. Sharing the app's process group is what makes Ctrl-C in
+  // that terminal reach it, on top of the SIGTERM the app sends on quit.
+  it('spawns in the caller\'s process group when asked not to detach', () => {
+    const { control, spawnDetached } = make({ detached: false });
+    control.spawn(CONFIG);
+    expect(spawnDetached.mock.calls[0][3]).toEqual({ detached: false });
   });
 
   it('spawn is false when the script is missing or the child has no pid', () => {
@@ -91,6 +102,25 @@ describe('daemon control (LaunchAgent installed)', () => {
     expect(plist).toContain(INVOCATION.execPath);
     expect(plist).toContain('/opt/bin');
     expect(run).toHaveBeenCalledWith(['launchctl', 'bootstrap', 'gui/501', plistPath]);
+  });
+
+  // The LaunchAgent is the INSTALLED app's: one label, one plist, pinned to
+  // whichever build ran `install`. A dev build that re-pointed it at
+  // `~/Repos/.../omnifex-server.js` would hand the user's daemon to a working
+  // tree — and KeepAlive would keep it there after `npm start` exits.
+  it('never touches launchd when the caller disallows it (the dev instance)', () => {
+    const { control, run, spawnDetached } = make({ plist: true, allowLaunchd: false, pid: 777, alive: true });
+    expect(control.managedByLaunchd()).toBe(false);
+    expect(control.spawn(CONFIG)).toBe(true);
+    expect(spawnDetached).toHaveBeenCalledTimes(1);
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it('stops a disallowed-launchd daemon by pid alone, never by bootout', async () => {
+    const { control, run, kill } = make({ plist: true, allowLaunchd: false, pid: 777, alive: true });
+    expect(await control.stop(CONFIG)).toBe(true);
+    expect(kill).toHaveBeenCalledWith(777, 'SIGTERM');
+    expect(run).not.toHaveBeenCalled();
   });
 
   it('spawn is false when launchctl refuses the new plist', () => {

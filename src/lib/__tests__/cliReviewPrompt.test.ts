@@ -31,6 +31,16 @@ describe('DEFAULT_CLI_REVIEW_PROMPT', () => {
     expect(DEFAULT_CLI_REVIEW_PROMPT).toContain('REVIEWED_CLI_VERSION');
   });
 
+  // The changelog is not the whole surface. `atis-latch` shipped as a new
+  // JSONL record type, never appeared in a changelog entry, and drew hundreds
+  // of "Unrecognized record" cards before anyone noticed — because every step
+  // of this prompt started from the changelog.
+  it('asks for a binary diff, not just a changelog read', () => {
+    expect(DEFAULT_CLI_REVIEW_PROMPT).toContain('versions/');
+    expect(DEFAULT_CLI_REVIEW_PROMPT).toMatch(/merge-strategy map/i);
+    expect(DEFAULT_CLI_REVIEW_PROMPT).toContain('cliSidechannelRecords.ts');
+  });
+
   it('is self-contained prose, not a slash-command invocation', () => {
     // The whole point of moving it into the app: it must not depend on a file
     // under .claude/, which is gitignored and ships with nobody.

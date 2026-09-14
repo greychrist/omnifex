@@ -177,15 +177,22 @@ describe('remote launcher', () => {
   describe('build stamp (dev)', () => {
     const stamped = (build: string, inFlight = 0): DaemonHealth => ({ version: APP, build, inFlight });
 
-    function makeStamped(probeResults: Array<DaemonHealth | null>, appBuild?: string) {
+    function makeStamped(
+      probeResults: Array<DaemonHealth | null>,
+      appBuild?: string,
+      extra: Partial<Parameters<typeof createRemoteLauncher>[0]> = {},
+    ) {
       const probe = vi.fn(async () => (probeResults.length ? probeResults.shift()! : null));
       const stop = vi.fn(async () => true);
       const spawn = vi.fn(() => true);
+      const logs: string[] = [];
       const launcher = createRemoteLauncher({
         config: () => CONFIG, probe, stop, spawn, appVersion: APP, appBuild,
         sleep: async () => {}, startupTimeoutMs: 1000, pollIntervalMs: 250,
+        log: (m) => { logs.push(m); },
+        ...extra,
       });
-      return { launcher, stop, spawn };
+      return { launcher, stop, spawn, logs };
     }
 
     it('replaces a same-version daemon whose build stamp differs', async () => {
@@ -199,6 +206,67 @@ describe('remote launcher', () => {
       const { launcher, stop } = makeStamped([stamped('200')], '200');
       expect(await launcher.ensure()).toBe(WS);
       expect(stop).not.toHaveBeenCalled();
+    });
+
+    // The incident: `npm start` killed the daemon the INSTALLED app's live
+    // sessions were running in. Same version, different bundle, so the stamp
+    // mismatched and the dev app retired a daemon it had never started —
+    // every CLI process with it. A dev build is a guest on this port.
+    it("never retires another install's daemon", async () => {
+      const { launcher, stop, spawn, logs } = makeStamped(
+        [{ version: APP, build: '100', script: '/Applications/OmniFex.app/omnifex-server.js', inFlight: 0 }],
+        '200',
+        { appScript: '/repo/.vite/build/omnifex-server.js' },
+      );
+      expect(await launcher.ensure()).toBe(WS);
+      expect(stop).not.toHaveBeenCalled();
+      expect(spawn).not.toHaveBeenCalled();
+      expect(logs).toContain('daemon belongs to another install; attaching to it instead of replacing it');
+    });
+
+    it("does not retire another install's daemon over a version difference either", async () => {
+      const { launcher, stop } = makeStamped(
+        [{ version: '0.4.9', build: '100', script: '/Applications/OmniFex.app/omnifex-server.js', inFlight: 0 }],
+        '200',
+        { appScript: '/repo/.vite/build/omnifex-server.js' },
+      );
+      expect(await launcher.ensure()).toBe(WS);
+      expect(stop).not.toHaveBeenCalled();
+    });
+
+    it('still replaces a stale daemon started from the same dev bundle', async () => {
+      const script = '/repo/.vite/build/omnifex-server.js';
+      const { launcher, stop, spawn } = makeStamped(
+        [{ version: APP, build: '100', script, inFlight: 0 }, null, { version: APP, build: '200', script, inFlight: 0 }],
+        '200',
+        { appScript: script },
+      );
+      expect(await launcher.ensure()).toBe(WS);
+      expect(stop).toHaveBeenCalledTimes(1);
+      expect(spawn).toHaveBeenCalledTimes(1);
+    });
+
+    it('treats a daemon that reports no script as not ours', async () => {
+      // Pre-0.4.167 daemon: it cannot prove where it came from, and a dev app
+      // guessing wrong costs live sessions. It gets to keep the port.
+      const { launcher, stop } = makeStamped([stamped('100')], '200', {
+        appScript: '/repo/.vite/build/omnifex-server.js',
+      });
+      expect(await launcher.ensure()).toBe(WS);
+      expect(stop).not.toHaveBeenCalled();
+    });
+
+    it('the installed app keeps full authority over the port', async () => {
+      // Packaged: no stamp, and a version mismatch is a real upgrade — replace
+      // it wherever it was started from (the app may have been moved).
+      const { launcher, stop, spawn } = makeStamped(
+        [{ version: '0.4.9', script: '/Volumes/old/OmniFex.app/omnifex-server.js', inFlight: 0 }, null, same()],
+        undefined,
+        { appScript: '/Applications/OmniFex.app/omnifex-server.js' },
+      );
+      expect(await launcher.ensure()).toBe(WS);
+      expect(stop).toHaveBeenCalledTimes(1);
+      expect(spawn).toHaveBeenCalledTimes(1);
     });
 
     it('ignores stamps when the app has none (packaged) or the daemon reports none', async () => {
@@ -279,6 +347,11 @@ describe('remote launcher', () => {
     });
     it('carries the build stamp when reported', () => {
       expect(parseDaemonHealth('{"version":"0.4.156","build":"1757520000000"}')).toEqual({ version: '0.4.156', build: '1757520000000', inFlight: 0 });
+    });
+
+    it('carries the daemon script path when reported', () => {
+      expect(parseDaemonHealth('{"version":"0.4.156","script":"/Applications/OmniFex.app/omnifex-server.js"}'))
+        .toEqual({ version: '0.4.156', script: '/Applications/OmniFex.app/omnifex-server.js', inFlight: 0 });
     });
     it('treats a daemon that predates inFlight as idle', () => {
       expect(parseDaemonHealth('{"ok":true,"version":"0.4.156","sessions":{"live":2}}')).toEqual({ version: '0.4.156', inFlight: 0 });

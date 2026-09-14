@@ -25,6 +25,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { startPeriodicWork } from '../periodic-work';
+import { periodicWorkGate } from './dev-instance';
 import { createLoggingOptions } from '../logging-options';
 import { createSessionCloseWork } from '../session-close-work';
 import { createSessionJsonlPathResolver } from '../session-jsonl-path';
@@ -125,11 +126,18 @@ export interface DaemonOptions {
   version: string;
   /** Bundle stamp (script mtime); lets a dev app tell a stale same-version daemon. */
   build?: string;
+  /** Absolute path of the daemon bundle this process is running. The Electron
+   *  launcher compares it before retiring a daemon: a dev build must not kill
+   *  the installed app's daemon (and its live sessions). See remote-launcher.ts. */
+  script?: string;
   log: RemoteServerLogger;
 }
 
 export interface RunningDaemon {
   address: { host: string; port: number };
+  /** What the dev instance's idle watch reads: who is attached, what is
+   *  running, and whether anyone ever attached at all. */
+  status(): { clients: number; inFlight: number; everConnected: boolean };
   close(): Promise<void>;
 }
 
@@ -224,6 +232,7 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
         ok: true,
         version: opts.version,
         build: opts.build,
+        script: opts.script,
         protocolVersion: 1,
         uptimeSec: Math.round((Date.now() - startedAt) / 1000),
         host: config.host,
@@ -515,9 +524,14 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
   // The daemon owns it outright and passes no `enabled` gate; main.ts closes
   // its own gate whenever a renderer is on this process. See
   // electron/periodic-work.ts for why running both at once costs real money.
+  // The one daemon that does pass a gate is the dev instance's, which shares
+  // the database with the real pair and so must not sweep it — see
+  // remote/dev-instance.ts.
 
   const timers: NodeJS.Timeout[] = [];
+  const periodicGate = periodicWorkGate(process.env);
   const stopPeriodicWork = startPeriodicWork({
+    ...(periodicGate ? { enabled: periodicGate } : {}),
     db,
     listAccounts: () => accountsService.listAccounts(),
     costHistory: costHistoryService,
@@ -818,6 +832,11 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
 
   return {
     address,
+    status: () => ({
+      clients: server.clients.length,
+      inFlight: (handlersRef?.summaries() ?? []).filter((s) => s.inFlight).length,
+      everConnected: server.connectionsSeen > 0,
+    }),
     async close() {
       stopPeriodicWork();
       for (const t of timers) clearInterval(t);

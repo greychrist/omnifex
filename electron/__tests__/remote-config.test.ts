@@ -51,7 +51,7 @@ describe('remote server config', () => {
 
     it('falls back to loopback, never 0.0.0.0, with no Tailscale', () => {
       const { utun4: _utun, ...rest } = IFACES;
-      const cfg = loadServerConfig({ file: join(dir, 'server.json'), interfaces: rest });
+      const cfg = loadServerConfig({ file: join(dir, 'server.json'), interfaces: rest, env: {} });
       expect(cfg.host).toBe('127.0.0.1');
     });
 
@@ -64,7 +64,7 @@ describe('remote server config', () => {
         ringSize: 100,
         permissionTimeoutMs: 60000,
       }));
-      const cfg = loadServerConfig({ file, interfaces: IFACES });
+      const cfg = loadServerConfig({ file, interfaces: IFACES, env: {} });
       expect(cfg).toMatchObject({
         host: '0.0.0.0',
         port: 5555,
@@ -75,8 +75,11 @@ describe('remote server config', () => {
     });
 
     it('defaults the permission timeout to never and the state dir under ~/.omnifex', () => {
-      // `env: {}` so a shell that exported OMNIFEX_STATE_DIR for a smoke run
-      // cannot leak into this expectation.
+      // `env: {}` everywhere in this describe that is not deliberately
+      // testing an override: `loadServerConfig` falls back to `process.env`,
+      // so a shell exporting OMNIFEX_STATE_DIR or OMNIFEX_PORT — which the
+      // dev instance's own terminal once did — would otherwise decide the
+      // result and fail a test that never mentioned the environment.
       const cfg = loadServerConfig({ file: join(dir, 'server.json'), interfaces: IFACES, env: {} });
       expect(cfg.permissionTimeoutMs).toBeNull();
       expect(cfg.stateDir).toBe(join(homedir(), '.omnifex'));
@@ -96,10 +99,30 @@ describe('remote server config', () => {
       expect(cfg.userDataDir).toBe(join(dir, 'ud'));
     });
 
+    it('lets OMNIFEX_PORT move the daemon off the real port', () => {
+      // How the dev instance gets a daemon of its own beside the installed
+      // app's: same code, second port. The app and the daemon it spawns read
+      // the same variable, so they cannot disagree about where it is.
+      const cfg = loadServerConfig({
+        file: join(dir, 'server.json'),
+        interfaces: IFACES,
+        env: { OMNIFEX_PORT: '47701' },
+      });
+      expect(cfg.port).toBe(47701);
+    });
+
+    it('lets OMNIFEX_PORT win over the file, and ignores a nonsense value', () => {
+      const file = join(dir, 'server.json');
+      writeFileSync(file, JSON.stringify({ port: 5555 }));
+      expect(loadServerConfig({ file, interfaces: IFACES, env: { OMNIFEX_PORT: '47701' } }).port).toBe(47701);
+      expect(loadServerConfig({ file, interfaces: IFACES, env: { OMNIFEX_PORT: 'nope' } }).port).toBe(5555);
+      expect(loadServerConfig({ file, interfaces: IFACES, env: { OMNIFEX_PORT: '0' } }).port).toBe(5555);
+    });
+
     it('rejects a port outside 1–65535 and ignores unknown keys', () => {
       const file = join(dir, 'server.json');
       writeFileSync(file, JSON.stringify({ port: 70000, mystery: true }));
-      expect(() => loadServerConfig({ file, interfaces: IFACES })).toThrow(/port/);
+      expect(() => loadServerConfig({ file, interfaces: IFACES, env: {} })).toThrow(/port/);
     });
 
     it('treats a corrupt file as an error, not as defaults', () => {
@@ -107,7 +130,7 @@ describe('remote server config', () => {
       // network problem from the iPad. Fail where the user can read it.
       const file = join(dir, 'server.json');
       writeFileSync(file, '{not json');
-      expect(() => loadServerConfig({ file, interfaces: IFACES })).toThrow(/server\.json/);
+      expect(() => loadServerConfig({ file, interfaces: IFACES, env: {} })).toThrow(/server\.json/);
     });
   });
 });

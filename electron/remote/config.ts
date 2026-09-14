@@ -68,6 +68,19 @@ export interface ServerConfig {
   file: string;
 }
 
+/**
+ * `OMNIFEX_PORT`, when it is a usable port. The dev instance moves its daemon
+ * off 47700 this way (see remote/dev-instance.ts) — the app and the daemon it
+ * spawns read the same variable, so they cannot disagree about where it is.
+ * Anything unparseable is ignored rather than fatal: an env var is not a
+ * config file, and a typo in a shell profile must not stop the daemon coming
+ * up on its normal port.
+ */
+function portFromEnv(env: Record<string, string | undefined>): number | null {
+  const n = Number(env.OMNIFEX_PORT);
+  return Number.isInteger(n) && n >= 1 && n <= 65535 ? n : null;
+}
+
 export interface LoadServerConfigOptions {
   file?: string;
   interfaces?: NetworkInterfaces;
@@ -106,7 +119,7 @@ export function loadServerConfig(opts: LoadServerConfigOptions = {}): ServerConf
 
   return {
     host,
-    port: f.port ?? DEFAULT_PORT,
+    port: portFromEnv(env) ?? f.port ?? DEFAULT_PORT,
     webRoot: f.webRoot ?? null,
     ringSize: f.ringSize ?? 5_000,
     permissionTimeoutMs: f.permissionTimeoutMs ?? null,

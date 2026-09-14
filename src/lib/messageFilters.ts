@@ -4,6 +4,7 @@ import { forwardedParentToolUseId, isSubagentPrompt } from "@/lib/subagentDispat
 import { detectSkillInjection } from "@/lib/skillDetection";
 import { toolResultHasImages } from "@/lib/toolResultImages";
 import type { HardFilters } from "@/lib/messageRenderingConfig";
+import { isCliSidechannelRecord } from "@/lib/cliSidechannelRecords";
 
 // CLI subtypes the renderer treats as hook-lifecycle noise. `hook_progress`
 // (mid-hook stdout/stderr) belongs in the set because it's plumbing —
@@ -156,6 +157,16 @@ export function filterDisplayableMessages(
     // announcing to itself that it has inferred what the user is building.
     // Pure bookkeeping; there is no user-facing statement to make.
     if (message.kind === "system" && message.subtype === "dev_intent") {
+      return false;
+    }
+
+    // The CLI's conversation latches and branch bookkeeping, which it writes
+    // into the same JSONL as messages: `atis-latch`, `mode`, `worktree-state`
+    // and the rest of the family in `cliSidechannelRecords.ts`. Nothing in
+    // them is addressed to the reader — they are how the CLI carries session
+    // state across turns, branches and compaction — and there are hundreds
+    // per session, each of which drew its own catch-all card.
+    if (message.kind === "unknown" && isCliSidechannelRecord(message.raw)) {
       return false;
     }
 

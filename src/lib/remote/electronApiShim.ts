@@ -384,6 +384,29 @@ export function createElectronApiShim(opts: ShimOptions): ElectronApiLike & { di
     }
   }
 
+  /**
+   * Send a turn, and if the daemon reports no live process for the session,
+   * wake it and send once more.
+   *
+   * A daemon swap (upgrade, Restart button, crash + relaunch) ends every CLI
+   * process while the client stays mapped and connected, so the next prompt
+   * gets SESSION_NOT_RUNNING — advice the user could only follow by restarting
+   * the daemon by hand. `rebind` is exactly "follow the advice": the same
+   * session.resume + subscribe the app does at boot. One retry, then the
+   * original error stands; a session the daemon cannot resume is not one more
+   * attempt away.
+   */
+  async function sendTurn(tabId: unknown, content: string | Array<Record<string, unknown>>): Promise<void> {
+    const sessionId = requireSession(tabId);
+    try {
+      await client.request('turn.send', { sessionId, content });
+    } catch (err) {
+      if ((err as { code?: string }).code !== 'SESSION_NOT_RUNNING') throw err;
+      if (!(await rebind(String(tabId)).catch(() => false))) throw err;
+      await client.request('turn.send', { sessionId, content });
+    }
+  }
+
   function requireSession(tabId: unknown): string {
     const sid = tabToSession.get(String(tabId));
     if (!sid) throw Object.assign(new Error(`no session for tab ${String(tabId)}`), { code: 'SESSION_NOT_RUNNING' });
@@ -398,13 +421,10 @@ export function createElectronApiShim(opts: ShimOptions): ElectronApiLike & { di
       case 'session_rebind':
         return rebind(String(p.tabId));
       case 'session_send_message':
-        await client.request('turn.send', { sessionId: requireSession(p.tabId), content: String(p.prompt ?? p.message ?? '') });
+        await sendTurn(p.tabId, String(p.prompt ?? p.message ?? ''));
         return null;
       case 'session_send_structured_message':
-        await client.request('turn.send', {
-          sessionId: requireSession(p.tabId),
-          content: (p.content as Array<Record<string, unknown>>) ?? [],
-        });
+        await sendTurn(p.tabId, (p.content as Array<Record<string, unknown>>) ?? []);
         return null;
       case 'session_respond_permission': {
         const sessionId = requireSession(p.tabId);

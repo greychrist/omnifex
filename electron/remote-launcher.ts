@@ -27,6 +27,8 @@ export interface DaemonHealth {
   version: string;
   /** Bundle stamp (script mtime), when the daemon reports one. */
   build?: string;
+  /** Absolute path of the daemon script it is running, when it reports one. */
+  script?: string;
   /** Sessions with a prompt currently running. */
   inFlight: number;
 }
@@ -45,9 +47,15 @@ export interface RemoteLauncherDeps {
   /**
    * This bundle's stamp, dev only: the version never moves between `npm start`s,
    * so a same-version daemon with another stamp is stale too. Packaged builds
-   * leave it undefined and compare versions alone.
+   * leave it undefined and compare versions alone. Defined ⇒ this is a dev
+   * build, which is also what limits it to retiring its own daemon (below).
    */
   appBuild?: string;
+  /**
+   * Absolute path of the daemon script this bundle would spawn. A dev build
+   * replaces only a daemon that reports this same path.
+   */
+  appScript?: string;
   sleep?: (ms: number) => Promise<void>;
   /** How long to wait for a spawned daemon to answer, or a stopped one to go. */
   startupTimeoutMs?: number;
@@ -84,12 +92,13 @@ export function wsUrlFor(config: Pick<ServerConfig, 'host' | 'port'>): string {
  */
 export function parseDaemonHealth(body: string): DaemonHealth | null {
   try {
-    const h = JSON.parse(body) as { version?: unknown; build?: unknown; sessions?: { inFlight?: unknown } };
+    const h = JSON.parse(body) as { version?: unknown; build?: unknown; script?: unknown; sessions?: { inFlight?: unknown } };
     if (typeof h.version !== 'string') return null;
     const inFlight = Number(h.sessions?.inFlight ?? 0);
     return {
       version: h.version,
       ...(typeof h.build === 'string' ? { build: h.build } : {}),
+      ...(typeof h.script === 'string' ? { script: h.script } : {}),
       inFlight: Number.isFinite(inFlight) ? inFlight : 0,
     };
   } catch {
@@ -181,6 +190,23 @@ export function createRemoteLauncher(deps: RemoteLauncherDeps): RemoteLauncher {
 
     const running = await deps.probe(health);
     if (running) {
+      // A dev build is a guest on this port. It shares `~/.omnifex` and the
+      // DB with the INSTALLED app, whose daemon holds every live CLI process
+      // the user has open — and which differs from the dev bundle in both
+      // version and stamp, so every earlier rule said "replace it". `npm start`
+      // therefore SIGTERM'd the installed app's daemon and killed its sessions
+      // (2026-09-13). A dev build now retires only a daemon that reports the
+      // very script it would spawn itself; anything else it attaches to, old
+      // or new. The installed app keeps full authority over the port: it is
+      // the product, and it must still replace its own daemon after an
+      // upgrade even if the app moved.
+      if (deps.appBuild !== undefined && running.script !== deps.appScript) {
+        log('daemon belongs to another install; attaching to it instead of replacing it', {
+          running: `${running.version} (${running.script ?? 'unknown script'})`,
+          app: `${deps.appVersion} (${deps.appScript ?? 'unknown script'})`,
+        });
+        return ws;
+      }
       const sameVersion = running.version === deps.appVersion;
       const sameBuild = !deps.appBuild || !running.build || running.build === deps.appBuild;
       if (sameVersion && sameBuild) {

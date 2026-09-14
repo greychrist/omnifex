@@ -117,6 +117,20 @@ app on the iPad. Start from `docs/remote-access.md` and
   each one exists because the copy in one root had been re-typed by hand and the
   reasoning survived in the other. A new callback with a branch in it goes there
   too, not into both roots.
+- **A dev build is a guest: `npm start` runs its own instance, and a
+  temporary one.** `~/.omnifex-dev`, port 47701, `OMNIFEX_DEV_DAEMON=1` (see
+  `electron/remote/dev-instance.ts`, applied at the top of `main.ts` before
+  anything reads `loadServerConfig()`). Dev and the installed app used to
+  share one daemon on one port — the daemon holding every live CLI process
+  the user actually works in — so `npm start` SIGTERM'd it and killed those
+  sessions. A dev build also retires only a daemon that reports its own
+  script path in `/healthz`, and never drives the LaunchAgent. The database
+  stays shared, which is why the dev daemon is the one daemon that passes an
+  `enabled` gate to `startPeriodicWork`: two sweepers on one `brain_spend`
+  pay twice. It is also the one daemon that does not outlive its app —
+  app's process group, SIGTERM on quit, and `createDevIdleWatch` as the
+  backstop — so each `npm start` gets a fresh one and nothing is left on
+  47701. `OMNIFEX_DEV_INSTANCE=0` opts out.
 - **Periodic work lives in `electron/periodic-work.ts`, and only one process
   runs it.** The cost-history backfill, the archive prune, `reclaimFreePages`
   and the Brain sweep/drain used to be copy-pasted into both composition roots

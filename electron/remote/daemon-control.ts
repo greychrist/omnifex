@@ -34,8 +34,27 @@ export interface DaemonControlDeps {
   readPid?: (config: ServerConfig) => number | null;
   isAlive?: (pid: number) => boolean;
   kill?: (pid: number, signal: NodeJS.Signals) => void;
-  /** Start the script detached with stdio appended to `logPath`; the pid, or null. */
-  spawnDetached?: (invocation: DaemonInvocation, logPath: string, env: Record<string, string | undefined>) => number | null;
+  /**
+   * Whether this process may drive the `com.omnifex.server` LaunchAgent.
+   * False for the dev instance: that plist is the INSTALLED app's, pinned to
+   * whichever build ran `install`, and re-pointing it at a working tree would
+   * hand the user's daemon to `~/Repos` — with KeepAlive holding it there
+   * after `npm start` exits. A dev daemon is always the detached kind.
+   */
+  allowLaunchd?: boolean;
+  /** Start the script with stdio appended to `logPath`; the pid, or null. */
+  spawnDetached?: (
+    invocation: DaemonInvocation,
+    logPath: string,
+    env: Record<string, string | undefined>,
+    opts: { detached: boolean },
+  ) => number | null;
+  /**
+   * Whether the daemon gets its own process group and outlives this app.
+   * True everywhere but the dev instance, whose daemon belongs to one
+   * `npm start`: in the app's group, Ctrl-C in that terminal reaches it too.
+   */
+  detached?: boolean;
   log?: (message: string, meta?: Record<string, unknown>) => void;
 }
 
@@ -51,15 +70,18 @@ function defaultSpawnDetached(
   invocation: DaemonInvocation,
   logPath: string,
   env: Record<string, string | undefined>,
+  opts: { detached: boolean },
 ): number | null {
   mkdirSync(dirname(logPath), { recursive: true });
   const fd = openSync(logPath, 'a');
   try {
     const child = spawnChild(invocation.execPath, [invocation.script, 'start'], {
-      detached: true,
+      detached: opts.detached,
       stdio: ['ignore', fd, fd],
       env: { ...env, ELECTRON_RUN_AS_NODE: '1' },
     });
+    // Unref either way: whether the daemon shares this process group is about
+    // signals, not about holding the parent's event loop open.
     child.unref();
     return child.pid ?? null;
   } finally {
@@ -83,8 +105,11 @@ export function createDaemonControl(deps: DaemonControlDeps): DaemonControl {
   const log = deps.log ?? (() => {});
   const plistPath = launchAgentPath(undefined, deps.home);
 
+  const allowLaunchd = deps.allowLaunchd ?? true;
+  const detached = deps.detached ?? true;
+
   function managedByLaunchd(): boolean {
-    return exists(plistPath);
+    return allowLaunchd && exists(plistPath);
   }
 
   return {
@@ -132,7 +157,7 @@ export function createDaemonControl(deps: DaemonControlDeps): DaemonControl {
       }
       const logPath = defaultLogPath(deps.home);
       try {
-        const pid = spawnDetached(deps.invocation, logPath, env);
+        const pid = spawnDetached(deps.invocation, logPath, env, { detached });
         if (pid == null) {
           log('spawn returned no pid');
           return false;

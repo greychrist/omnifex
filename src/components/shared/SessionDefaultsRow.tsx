@@ -12,7 +12,7 @@ import {
   type EffortLevel,
 } from '@/components/ControlBar';
 import { FormModelPicker, InlineModelPicker } from '@/components/ModelPicker';
-import { useModelCatalog, pickModelOption, resolveActualModelName } from '@/lib/modelCatalog';
+import { useModelCatalog, pickModelOption } from '@/lib/modelCatalog';
 
 export interface SessionDefaultsRowProps {
   engine: AccountEngine;
@@ -35,11 +35,12 @@ export interface SessionDefaultsRowProps {
    */
   direction?: 'row' | 'column';
   /**
-   * 'compact' is the session context popover's control row: one line, no
-   * field labels, and the pickers' `inline` triggers. The labels go because
-   * each picker already carries its own icon and colour and names itself in a
-   * `title` — three stacked captions were the reason the block could not fit
-   * on one line at all.
+   * 'compact' is the session context popover's control row: the three fields
+   * side by side with the pickers' `inline` triggers and a smaller caption
+   * above each. The captions were dropped once, when the account-default
+   * model label ("Account Default (Fable 5)") made the row too wide to fit at
+   * all; folding that label into the model's own row (see
+   * withAccountDefaultLabel) bought the space back.
    */
   density?: 'default' | 'compact';
   /**
@@ -50,18 +51,34 @@ export interface SessionDefaultsRowProps {
   disabled?: boolean;
   /**
    * Concrete model id the live session actually runs (from get_context_usage
-   * or the last assistant JSONL line). When set, the "Account Default" entry
-   * is labeled with it — "Account Default (Fable 5)" — overriding the
+   * or the last assistant JSONL line). When set, it is the model the
+   * account-default row is folded into and marked as — overriding the
    * settings-pin/catalog inference, since the live signal is authoritative.
    */
   activeDefaultModel?: string | null;
   className?: string;
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({
+  label,
+  children,
+  compact,
+}: {
+  label: string;
+  children: React.ReactNode;
+  compact?: boolean;
+}) {
   return (
-    <div className="flex flex-col gap-1 min-w-0 flex-1">
-      <span className="text-xs text-muted-foreground">{label}</span>
+    <div className={`flex flex-col min-w-0 flex-1 ${compact ? 'gap-0.5' : 'gap-1'}`}>
+      <span
+        className={
+          compact
+            ? 'text-[10px] uppercase tracking-wide text-muted-foreground'
+            : 'text-xs text-muted-foreground'
+        }
+      >
+        {label}
+      </span>
       {children}
     </div>
   );
@@ -116,15 +133,16 @@ export function SessionDefaultsRow({
 }: SessionDefaultsRowProps) {
   const compact = density === 'compact';
   const layout = compact
-    ? 'flex items-center gap-1.5'
+    ? 'flex items-end gap-1.5'
     : direction === 'column'
       ? 'flex flex-col items-stretch gap-2'
       : 'flex items-end gap-2';
   const [modelOpen, setModelOpen] = useState(false);
   const [effortOpen, setEffortOpen] = useState(false);
   const [permsOpen, setPermsOpen] = useState(false);
-  const { models: modelList, raw: modelCatalogRaw } = useModelCatalog(
+  const { models, raw: modelCatalogRaw } = useModelCatalog(
     engine === 'claude' ? configDir : undefined,
+    activeDefaultModel,
   );
 
   // Claude reuses the same stylized, icon-bearing pickers as the new-session
@@ -132,28 +150,15 @@ export function SessionDefaultsRow({
   // set (all six CLI modes) and the per-mode colors stay in one place and any
   // fix propagates to both surfaces.
   if (engine === 'claude') {
-    // The live session's actual model beats the settings-pin/catalog
-    // inference baked into modelList's "Account Default (…)" label.
-    const models = activeDefaultModel
-      ? modelList.map((m) =>
-          m.id === 'default'
-            ? {
-                ...m,
-                name: `Account Default (${resolveActualModelName(activeDefaultModel, modelList, modelCatalogRaw)})`,
-              }
-            : m,
-        )
-      : modelList;
     // pickModelOption bridges concrete CLI ids (e.g. `claude-opus-4-8`,
     // detected from a live TUI session) to the picker's alias options.
     const selectedModelData = pickModelOption(model, models);
     const selectedRawModel = modelCatalogRaw.find((m) => m.value === model);
     const ModelControl = compact ? InlineModelPicker : FormModelPicker;
     const pickerVariant = compact ? 'inline' as const : 'form' as const;
-    // Under compact density `Field` is bypassed entirely rather than rendering
-    // an empty caption: an empty <span> still occupies a grid row.
-    const wrap = (label: string, node: React.ReactNode) =>
-      compact ? node : <Field label={label}>{node}</Field>;
+    const wrap = (label: string, node: React.ReactNode) => (
+      <Field label={label} compact={compact}>{node}</Field>
+    );
     // Compact has no room for the TUI footnote, but dropping the explanation
     // outright would leave three inert pickers with nothing saying why. It
     // moves to the row's tooltip rather than disappearing.

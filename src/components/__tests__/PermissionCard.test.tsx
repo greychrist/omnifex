@@ -167,10 +167,9 @@ describe("PermissionCard — Codex patch variant", () => {
       />,
     );
     // With N=2 files the file blocks open by default (≤ 3 heuristic).
-    // DiffViewer renders one gutter-column div per diff hunk; assert at
-    // least one is present per file block (proves diffs actually rendered).
-    const gutterChildren = container.querySelectorAll(".w-8.select-none");
-    expect(gutterChildren.length).toBeGreaterThan(0);
+    // DiffViewer marks each rendered diff part; assert at least one is
+    // present per file block (proves diffs actually rendered).
+    expect(container.querySelectorAll("[data-diff-line]").length).toBeGreaterThan(0);
   });
 
   it("does NOT render the Claude rule editor for patch kind", () => {

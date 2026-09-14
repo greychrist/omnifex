@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Popover } from "@/components/ui/popover";
+import { Popover, FIELD_TRIGGER } from "@/components/ui/popover";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip-modern";
 import { motion } from "framer-motion";
 
@@ -239,7 +239,7 @@ export function EffortPicker({ effort, onEffortChange, open, onOpenChange, disab
             disabled={disabled}
             onClick={() => { onOpenChange(!open); }}
             title={`Effort: ${currentLevel?.name ?? effort}`}
-            className="h-6 min-w-0 flex-1 justify-between gap-1 px-1.5 font-normal"
+            className="h-6 w-full min-w-0 justify-between gap-1 px-1.5 font-normal"
           >
             <span className={cn("text-[11px] truncate", currentLevel?.color)}>
               {currentLevel?.name}
@@ -252,6 +252,7 @@ export function EffortPicker({ effort, onEffortChange, open, onOpenChange, disab
         onOpenChange={onOpenChange}
         align="start"
         side="bottom"
+        triggerClassName={FIELD_TRIGGER}
       />
     );
   }
@@ -278,6 +279,7 @@ export function EffortPicker({ effort, onEffortChange, open, onOpenChange, disab
         onOpenChange={onOpenChange}
         align="start"
         side="bottom"
+        triggerClassName={FIELD_TRIGGER}
       />
     );
   }
@@ -402,7 +404,7 @@ export function PermissionPicker({ permissionMode, onPermissionModeChange, open,
             disabled={disabled}
             onClick={() => { onOpenChange(!open); }}
             title={`Permissions: ${selectedData.name}`}
-            className="h-6 min-w-0 flex-1 justify-between gap-1 px-1.5 font-normal"
+            className="h-6 w-full min-w-0 justify-between gap-1 px-1.5 font-normal"
           >
             <span className="flex items-center gap-1 min-w-0">
               <span className={cn("shrink-0", selectedData.color)}>{selectedData.icon}</span>
@@ -422,6 +424,7 @@ export function PermissionPicker({ permissionMode, onPermissionModeChange, open,
         onOpenChange={onOpenChange}
         align="start"
         side="bottom"
+        triggerClassName={FIELD_TRIGGER}
       />
     );
   }
@@ -491,6 +494,7 @@ export function PermissionPicker({ permissionMode, onPermissionModeChange, open,
       onOpenChange={onOpenChange}
       align="start"
       side={isFormVariant ? "bottom" : "top"}
+      {...(isFormVariant ? { triggerClassName: FIELD_TRIGGER } : {})}
     />
   );
 }

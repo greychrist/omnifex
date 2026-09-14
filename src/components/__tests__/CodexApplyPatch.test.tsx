@@ -92,10 +92,9 @@ describe("ApplyPatchItem", () => {
         })}
       />,
     );
-    // DiffViewer renders one gutter-column div per diff hunk; assert at
-    // least one is present (proves the diff actually rendered).
-    const gutterChildren = container.querySelectorAll(".w-8.select-none");
-    expect(gutterChildren.length).toBeGreaterThan(0);
+    // DiffViewer marks each rendered diff part; assert at least one is
+    // present (proves the diff actually rendered).
+    expect(container.querySelectorAll("[data-diff-line]").length).toBeGreaterThan(0);
   });
 
   it("collapses file blocks by default when N > 3", () => {
