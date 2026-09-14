@@ -10,6 +10,8 @@ interface UsePublishTabStatusArgs {
   tabId: string;
   title: string;
   projectPath: string | null;
+  /** CLI session GUID, or null before the session has started. */
+  sessionId: string | null;
   sessionStarted: boolean;
   isStarting: boolean;
   /** True while a main-turn is in flight (parent-turn isLoading). */
@@ -43,6 +45,7 @@ export function usePublishTabStatus({
   tabId,
   title,
   projectPath,
+  sessionId,
   sessionStarted,
   isStarting,
   // isLoading is no longer consulted here — see the mainTurnInFlight
@@ -106,6 +109,7 @@ export function usePublishTabStatus({
       tabId,
       title,
       projectPath,
+      sessionId,
       sessionStarted,
       busy,
       promptStatus,
@@ -134,6 +138,7 @@ export function usePublishTabStatus({
     tabId,
     title,
     projectPath,
+    sessionId,
     sessionStarted,
     isStarting,
     hasError,

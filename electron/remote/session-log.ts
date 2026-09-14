@@ -25,11 +25,15 @@
  */
 import {
   appendFileSync,
+  closeSync,
   existsSync,
   mkdirSync,
+  openSync,
   readdirSync,
   readFileSync,
+  readSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
@@ -146,6 +150,83 @@ export function createSessionLog(opts: { root: string; ringSize?: number }): Ses
     return out;
   }
 
+  /**
+   * How much of the tail to read looking for the last record. Comfortably
+   * larger than any ordinary push; a record bigger than this makes the
+   * search widen rather than fail.
+   */
+  const TAIL_BYTES = 64 * 1024;
+
+  /** The last parseable `seq` in `text`, or null if there is none. */
+  function lastSeqIn(text: string): number | null {
+    const lines = text.split('\n');
+    for (let i = lines.length - 1; i >= 0; i -= 1) {
+      const line = lines[i];
+      if (!line) continue;
+      try {
+        const rec = JSON.parse(line) as { seq?: unknown };
+        if (typeof rec.seq === 'number') return rec.seq;
+      } catch {
+        // A torn trailing write costs this line, not the answer — keep
+        // walking backwards, exactly as readAll skips unparseable lines.
+      }
+    }
+    return null;
+  }
+
+  /**
+   * The last seq on disk, read from the tail rather than the whole file.
+   *
+   * This used to be `readAll(id).at(-1)?.seq` — a full read plus a
+   * JSON.parse per line, for a single number off the end. That is fine for
+   * the replay and history paths readAll was written for, and ruinous here:
+   * `lastSeq` is called by `summaryOf` for EVERY known session, `summaries()`
+   * calls that, and `/healthz` calls `summaries()` on every request. One
+   * health probe therefore read and parsed every byte of every session log.
+   *
+   * With a 200MB spool and a once-per-second poll (which is what the
+   * installer's idle gate does) the daemon's single thread could not retire
+   * a tick's work within a tick, fell permanently behind, and stopped
+   * answering HTTP at all — including the very health probe the gate was
+   * waiting on.
+   */
+  function lastSeqFromDisk(id: string): number {
+    const path = eventsPath(id);
+    let size: number;
+    let fd: number;
+    try {
+      size = statSync(path).size;
+      if (size === 0) return 0;
+      fd = openSync(path, 'r');
+    } catch {
+      return 0;
+    }
+    try {
+      for (let window = TAIL_BYTES; ; window *= 8) {
+        const start = Math.max(0, size - window);
+        const length = size - start;
+        const buf = Buffer.allocUnsafe(length);
+        readSync(fd, buf, 0, length, start);
+        let text = buf.toString('utf8');
+        if (start > 0) {
+          // Reading from an arbitrary offset lands mid-line (and possibly
+          // mid-codepoint). Drop through the first newline; whatever was
+          // mangled goes with it.
+          const nl = text.indexOf('\n');
+          text = nl === -1 ? '' : text.slice(nl + 1);
+        }
+        const seq = lastSeqIn(text);
+        if (seq !== null) return seq;
+        // Nothing parseable in the window. Either every record in it was
+        // torn, or one record is bigger than the window — widen and retry
+        // until the whole file has been considered.
+        if (start === 0) return 0;
+      }
+    } finally {
+      closeSync(fd);
+    }
+  }
+
   function require(id: string): OpenSession {
     const s = open.get(id);
     if (!s) throw new Error(`session log: ${id} is not open`);
@@ -187,7 +268,7 @@ export function createSessionLog(opts: { root: string; ringSize?: number }): Ses
     },
 
     lastSeq(id) {
-      return open.get(id)?.seq ?? (readAll(id).at(-1)?.seq ?? 0);
+      return open.get(id)?.seq ?? lastSeqFromDisk(id);
     },
 
     replay(id, fromSeq) {

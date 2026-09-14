@@ -33,8 +33,27 @@ export interface TabStatusServiceDeps {
 }
 
 export interface TabStatusService {
-  publish(summary: TabStatusSummary): void;
+  /**
+   * `sourceId` identifies the renderer that published this summary — in
+   * practice `webContents.id`. It exists so a page that goes away without
+   * unmounting its tabs can have its entries retired; see `removeSource`.
+   * Optional so non-renderer callers and tests need not invent one.
+   */
+  publish(summary: TabStatusSummary, sourceId?: number): void;
   remove(tabId: string): void;
+  /**
+   * Drop every summary still attributed to `sourceId`.
+   *
+   * Tabs remove themselves on unmount, which covers closing a tab but not a
+   * renderer reload or crash: the page is gone before any unmount effect can
+   * land an IPC call. Those summaries then outlived the page forever —
+   * phantom "working" sessions in the status popover, and an install gate
+   * that waited on tabs which no longer existed.
+   *
+   * A summary re-published by a newer source is attributed to that source,
+   * so retiring the old one never deletes a live entry.
+   */
+  removeSource(sourceId: number): void;
   list(): TabStatusSummary[];
   /** Tabs that are "busy" in the install-gate sense (work in flight OR
    * waiting on the user). Use when you want to wait for everything to
@@ -54,6 +73,10 @@ export function createTabStatusService(
   // Insertion-ordered map. The renderer publishes in tab-bar order on first
   // mount, so iteration order naturally matches the visible tab order.
   const summaries = new Map<string, TabStatusSummary>();
+  // tabId → publishing renderer. Kept beside `summaries` rather than on the
+  // summary itself so the broadcast payload stays exactly what the renderer
+  // published; `sourceId` is main's bookkeeping, not part of the contract.
+  const sources = new Map<string, number>();
 
   function snapshot(): TabStatusSummary[] {
     return Array.from(summaries.values());
@@ -72,7 +95,12 @@ export function createTabStatusService(
   }
 
   return {
-    publish(summary) {
+    publish(summary, sourceId) {
+      // Reattribution happens even when the payload is unchanged: the same
+      // tab republished by a fresh renderer belongs to that renderer now, and
+      // an identical summary is exactly what a reloaded page sends first.
+      if (sourceId === undefined) sources.delete(summary.tabId);
+      else sources.set(summary.tabId, sourceId);
       const existing = summaries.get(summary.tabId);
       if (existing && shallowEqual(existing, summary)) return;
       summaries.set(summary.tabId, summary);
@@ -80,9 +108,20 @@ export function createTabStatusService(
     },
 
     remove(tabId) {
+      sources.delete(tabId);
       if (!summaries.has(tabId)) return;
       summaries.delete(tabId);
       deps.broadcast(snapshot());
+    },
+
+    removeSource(sourceId) {
+      let removed = false;
+      for (const [tabId, owner] of sources) {
+        if (owner !== sourceId) continue;
+        sources.delete(tabId);
+        removed = summaries.delete(tabId) || removed;
+      }
+      if (removed) deps.broadcast(snapshot());
     },
 
     list() {
@@ -108,6 +147,7 @@ export function createTabStatusService(
     clearAll() {
       if (summaries.size === 0) return;
       summaries.clear();
+      sources.clear();
       deps.broadcast([]);
     },
   };

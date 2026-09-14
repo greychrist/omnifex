@@ -222,7 +222,25 @@ export function createInstallerService(deps: InstallerDeps): InstallerService {
 
   async function waitForIdle(opts: { force: boolean }): Promise<void> {
     if (opts.force) {
+      // "Install anyway" is the user overriding the gate, so it installs no
+      // matter what and never enters the poll loop below.
+      //
+      // It used to call stopAll() and then poll anyway, on the assumption
+      // that stopping the sessions would drive the count to zero. It does
+      // not: stopAll() only reaches sessions THIS process owns, while the
+      // loop takes `Math.max(local, remoteInFlight())`. Remote mode is the
+      // default, so the daemon owns the sessions, keeps reporting them, and
+      // the override hung forever — failing in precisely the situation it
+      // exists to rescue.
+      //
+      // stopAll() is still best-effort courtesy for a local session; nothing
+      // downstream depends on it having worked. Any previously cancelled
+      // wait is cleared too, so a cancel followed by "Install anyway" does
+      // not leave a stale token behind.
       deps.sessionsService.stopAll();
+      cancelToken = null;
+      deps.sendToRenderer('updater:install-status', { phase: 'installing' });
+      return;
     }
     const token = { cancelled: false };
     cancelToken = token;

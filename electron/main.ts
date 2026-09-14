@@ -189,6 +189,8 @@ let _sessionsService: {
   listActiveSessionIds(): string[];
 } | null = null;
 let _notificationsService: { dismissAll(): void } | null = null;
+/** Set once the aggregator exists; windows are created before it. */
+let _tabStatusService: { removeSource(sourceId: number): void } | null = null;
 let _gitWatcherService: { disposeAll(): void } | null = null;
 let _sessionCostService: { stopAll(): void } | null = null;
 let _db: { close(): void } | null = null;
@@ -427,6 +429,24 @@ function createWindow(): BrowserWindow {
     if (decision === 'allow') return;
     event.preventDefault();
     if (decision === 'external') shell.openExternal(url).catch((err: unknown) => { console.error('[main:will-navigate-external]', err); });
+  });
+
+  // Retire this window's published tab statuses whenever its page goes away.
+  // Tabs remove themselves on unmount, which covers closing a tab but never a
+  // reload: the page is torn down before any unmount effect can land its IPC
+  // call, so those summaries used to live in the aggregator forever — phantom
+  // "working" sessions in the popover, and an install gate waiting on tabs
+  // that no longer existed.
+  //
+  // `did-start-navigation` fires before the new page can publish anything,
+  // and `webContents.id` is stable across a reload, so the fresh page simply
+  // republishes under the same source.
+  win.webContents.on('did-start-navigation', (details) => {
+    if (!details.isMainFrame || details.isSameDocument) return;
+    _tabStatusService?.removeSource(win.webContents.id);
+  });
+  win.webContents.on('destroyed', () => {
+    _tabStatusService?.removeSource(win.webContents.id);
   });
 
   win.webContents.on('context-menu', (_event, params) => {
@@ -1650,12 +1670,15 @@ app.whenReady().then(() => {
     },
   });
 
-  ipcMain.handle('tab_status_publish', async (_event, data: any) => {
+  _tabStatusService = tabStatusService;
+
+  ipcMain.handle('tab_status_publish', async (event, data: any) => {
     const summary = data?.summary as TabStatusSummary | undefined;
     if (!summary || typeof summary.tabId !== 'string') {
       throw new Error('tab_status_publish requires summary.tabId');
     }
-    tabStatusService.publish(summary);
+    // Attribute to the publishing renderer so a reload can retire it.
+    tabStatusService.publish(summary, event.sender.id);
     return { success: true };
   });
 

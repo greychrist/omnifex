@@ -165,6 +165,53 @@ describe('InstallerService.waitForIdle', () => {
     expect(stopAll).toHaveBeenCalledTimes(1);
   });
 
+  it('force=true installs even when local tabs never go idle', async () => {
+    // `stopAll` is not required to succeed. "Install anyway" is the user
+    // overriding the gate, so the override must not depend on the thing it
+    // is overriding.
+    const installer = createInstallerService(makeDeps({
+      sessionsService: {
+        listInFlightTabIds: () => ['t-1', 't-2'],
+        stopAll: () => {},
+      },
+    }));
+    await expect(installer.waitForIdle({ force: true })).resolves.toBeUndefined();
+  });
+
+  it('force=true installs even while the daemon still reports turns in flight', async () => {
+    // The regression: `stopAll()` only reaches sessions THIS process owns.
+    // Remote mode is the default, so the daemon owns them and keeps
+    // reporting a non-zero count — which left "Install anyway" polling
+    // forever, hanging exactly where the user had asked it not to.
+    const remote = vi.fn<() => Promise<number | null>>().mockResolvedValue(3);
+    const sendToRenderer = vi.fn();
+    const installer = createInstallerService(makeDeps({
+      remoteInFlight: remote,
+      sendToRenderer,
+      sessionsService: { listInFlightTabIds: () => ['t'], stopAll: () => {} },
+    }));
+
+    await expect(installer.waitForIdle({ force: true })).resolves.toBeUndefined();
+    // Never consulted: a forced install does not ask, so it cannot be
+    // talked out of it by a daemon that is still busy.
+    expect(remote).not.toHaveBeenCalled();
+    expect(sendToRenderer).toHaveBeenCalledWith('updater:install-status', { phase: 'installing' });
+    expect(sendToRenderer).not.toHaveBeenCalledWith(
+      'updater:install-status',
+      expect.objectContaining({ phase: 'waiting' }),
+    );
+  });
+
+  it('force=true is not defeated by a previously cancelled wait', async () => {
+    const installer = createInstallerService(makeDeps({
+      sessionsService: { listInFlightTabIds: () => ['t'], stopAll: () => {} },
+    }));
+    const pending = installer.waitForIdle({ force: false });
+    installer.cancelWait();
+    await expect(pending).rejects.toThrow(/WaitCancelled/);
+    await expect(installer.waitForIdle({ force: true })).resolves.toBeUndefined();
+  });
+
   it('cancelWait rejects the in-flight wait with WaitCancelled', async () => {
     const installer = createInstallerService(makeDeps({
       sessionsService: {

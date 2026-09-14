@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, readFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync, existsSync, appendFileSync, writeFileSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -145,5 +145,91 @@ describe('remote session log', () => {
     const reopened = createSessionLog({ root, ringSize: 1 });
     reopened.open({ sessionId: 's1' });
     expect(reopened.replay('s1', 0).map((p) => p.seq)).toEqual([1, 2, 3]);
+  });
+});
+
+describe('remote session log — lastSeq is O(1), not O(file)', () => {
+  let root: string;
+
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), 'omnifex-session-log-tail-'));
+  });
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  function seed(n: number, ringSize = 3): void {
+    const log = createSessionLog({ root, ringSize });
+    log.open(META);
+    for (let i = 0; i < n; i += 1) log.append(transcript(i));
+  }
+
+  it('reads the last seq of a closed session without loading the whole file', () => {
+    // The regression this pins: `lastSeq` fell through to a whole-file read +
+    // JSON.parse per line for any session not currently open. `summaryOf`
+    // calls it for EVERY known session and `/healthz` calls that on every
+    // request — so one health probe read every byte of every session log.
+    // With a 200MB spool and a once-per-second poll, the daemon's only thread
+    // saturates and it stops answering at all.
+    seed(500);
+    const reopened = createSessionLog({ root, ringSize: 3 });
+    expect(reopened.lastSeq('s1')).toBe(500);
+  });
+
+  it('is correct when the file is smaller than the tail window', () => {
+    seed(2);
+    expect(createSessionLog({ root, ringSize: 3 }).lastSeq('s1')).toBe(2);
+  });
+
+  it('is correct when a single record is larger than the tail window', () => {
+    const log = createSessionLog({ root, ringSize: 3 });
+    log.open(META);
+    log.append(transcript(1));
+    // A 256KB payload — comfortably past any fixed tail read.
+    log.append({ ...transcript(2), payload: { blob: 'x'.repeat(256 * 1024) } } as never);
+    expect(createSessionLog({ root, ringSize: 3 }).lastSeq('s1')).toBe(2);
+  });
+
+  it('ignores a torn trailing line, as readAll does', () => {
+    seed(3);
+    // Simulate the daemon being killed mid-append.
+    appendFileSync(join(root, 's1.events.jsonl'), '{"type":"event","se', 'utf8');
+    expect(createSessionLog({ root, ringSize: 3 }).lastSeq('s1')).toBe(3);
+  });
+
+  it('returns 0 for a session with no file at all', () => {
+    expect(createSessionLog({ root, ringSize: 3 }).lastSeq('nope')).toBe(0);
+  });
+
+  it('returns 0 for an empty file', () => {
+    writeFileSync(join(root, 's1.events.jsonl'), '', 'utf8');
+    expect(createSessionLog({ root, ringSize: 3 }).lastSeq('s1')).toBe(0);
+  });
+
+  it('still prefers the in-memory seq for an open session', () => {
+    const log = createSessionLog({ root, ringSize: 3 });
+    log.open(META);
+    log.append(transcript(1));
+    expect(log.lastSeq('s1')).toBe(1);
+  });
+
+  it('answers repeatedly on a 40MB log well inside the poll interval', () => {
+    // Sized to the real spool that wedged the daemon: a single session log
+    // of tens of MB, asked for its lastSeq once per second per session.
+    // Whole-file read + per-line JSON.parse is ~seconds per call here, so
+    // the margin between the two implementations is three orders of
+    // magnitude — this is a complexity assertion, not a micro-benchmark.
+    const filler = 'x'.repeat(400);
+    const lines: string[] = [];
+    for (let i = 1; i <= 100_000; i += 1) {
+      lines.push(JSON.stringify({ type: 'event', sessionId: 's1', kind: 'transcript', seq: i, payload: { filler } }));
+    }
+    writeFileSync(join(root, 's1.events.jsonl'), `${lines.join('\n')}\n`, 'utf8');
+    expect(statSync(join(root, 's1.events.jsonl')).size).toBeGreaterThan(40 * 1024 * 1024);
+
+    const reopened = createSessionLog({ root, ringSize: 3 });
+    const started = Date.now();
+    for (let i = 0; i < 50; i += 1) expect(reopened.lastSeq('s1')).toBe(100_000);
+    expect(Date.now() - started).toBeLessThan(500);
   });
 });

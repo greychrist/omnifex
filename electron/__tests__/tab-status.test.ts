@@ -131,3 +131,65 @@ describe('TabStatusService', () => {
     expect(broadcast).not.toHaveBeenCalled();
   });
 });
+
+describe('TabStatusService — source attribution', () => {
+  let broadcast: ReturnType<typeof vi.fn<(summaries: TabStatusSummary[]) => void>>;
+
+  beforeEach(() => {
+    broadcast = vi.fn<(summaries: TabStatusSummary[]) => void>();
+  });
+
+  it('drops every summary a source published when that source goes away', () => {
+    // A renderer reload tears the page down without any tab getting to call
+    // remove(), so its summaries used to outlive the page forever — showing
+    // phantom "working" sessions and wedging the install gate behind them.
+    const svc = createTabStatusService({ broadcast });
+    svc.publish(summary('tab-1', true), 7);
+    svc.publish(summary('tab-2', false), 7);
+    svc.publish(summary('tab-3', true), 9);
+
+    svc.removeSource(7);
+
+    expect(svc.list().map((s) => s.tabId)).toEqual(['tab-3']);
+    expect(svc.busyTabIds()).toEqual(['tab-3']);
+    expect(broadcast).toHaveBeenLastCalledWith(svc.list());
+  });
+
+  it('removeSource for an unknown source does not broadcast', () => {
+    const svc = createTabStatusService({ broadcast });
+    svc.publish(summary('tab-1', true), 7);
+    broadcast.mockClear();
+    svc.removeSource(42);
+    expect(broadcast).not.toHaveBeenCalled();
+    expect(svc.list()).toHaveLength(1);
+  });
+
+  it('re-publishing the same tab from a new source reattributes it', () => {
+    // Same tab id, fresh renderer after a reload. The new page owns it now,
+    // so retiring the old source must not delete the live entry.
+    const svc = createTabStatusService({ broadcast });
+    svc.publish(summary('tab-1', true), 7);
+    svc.publish(summary('tab-1', false), 9);
+
+    svc.removeSource(7);
+
+    expect(svc.list().map((s) => s.tabId)).toEqual(['tab-1']);
+    expect(svc.busyTabIds()).toEqual([]);
+  });
+
+  it('publish without a source is still stored and is immune to removeSource', () => {
+    const svc = createTabStatusService({ broadcast });
+    svc.publish(summary('tab-1', true));
+    svc.removeSource(7);
+    expect(svc.list().map((s) => s.tabId)).toEqual(['tab-1']);
+  });
+
+  it('remove() still drops the entry regardless of its source', () => {
+    const svc = createTabStatusService({ broadcast });
+    svc.publish(summary('tab-1', true), 7);
+    svc.remove('tab-1');
+    expect(svc.list()).toEqual([]);
+    svc.removeSource(7);
+    expect(svc.list()).toEqual([]);
+  });
+});

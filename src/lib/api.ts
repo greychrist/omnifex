@@ -1119,6 +1119,15 @@ export interface TabStatusSummary {
   tabId: string;
   title: string;
   projectPath: string | null;
+  /**
+   * The CLI session GUID this tab is bound to, or null before one exists.
+   *
+   * Distinct from `tabId`, which is a renderer-local `tab-<ts>-<rand>` and
+   * means nothing outside this window. The GUID is what identifies a session
+   * to the daemon, to `--resume`, and to the user reading a transcript path —
+   * so it is what the popover shows and what reopening a closed tab needs.
+   */
+  sessionId: string | null;
   /** True iff a persistent CLI session is alive for this tab. */
   sessionStarted: boolean;
   /** Roll-up: mainTurnInFlight || activeAgents > 0 || in-progress task, plus a

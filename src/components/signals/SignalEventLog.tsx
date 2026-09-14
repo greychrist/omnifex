@@ -29,7 +29,18 @@ export function SignalEventLog({ events, className }: SignalEventLogProps) {
   }
 
   return (
-    <ul className={cn('flex flex-col gap-0.5', className)}>
+    // Bounded, not truncated. The store already caps what it hands over
+    // (POPOVER_EVENT_LIMIT), but a session that runs for hours reaches that
+    // cap routinely and the list simply grew — pushing the model / effort /
+    // permission controls and the session id below the fold, which is where
+    // the popover stops being usable. ~9 rows visible, the rest a scroll
+    // away, so the popover has a fixed worst-case height.
+    <ul
+      className={cn(
+        'flex flex-col gap-0.5 max-h-[200px] overflow-y-auto overscroll-contain',
+        className,
+      )}
+    >
       {events.map((event) => {
         const meta = event.meta as
           | { delta?: number; before?: number; after?: number; compacted?: boolean; isJump?: boolean }

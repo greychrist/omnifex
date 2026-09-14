@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Atom, GitBranch, FilePen, FilePlus, Activity, Bot, ListChecks, Database } from 'lucide-react';
+import { Atom, GitBranch, FilePen, FilePlus, Activity, Bot, ListChecks, Database, Copy, Check, Unplug } from 'lucide-react';
 import { api, type TabStatusSummary } from '@/lib/api';
 import { useTabContext } from '@/contexts/TabContext';
 import { cn } from '@/lib/utils';
@@ -8,6 +8,12 @@ import { TITLEBAR_LABEL } from '@/lib/titlebar';
 import { TooltipSimple } from '@/components/ui/tooltip-modern';
 import { resolveBranchColors } from '@/lib/branchColors';
 import { HeaderLabel } from './HeaderLabel';
+import {
+  buildSessionRoster,
+  type RosterSession,
+  type RosterProject,
+  type DetachedRow,
+} from '@/lib/sessionRoster';
 
 const STATUS_LABEL: Record<TabStatusSummary['status'], string> = {
   'not-started': 'Not started',
@@ -45,6 +51,41 @@ const WAITING_LABEL: Record<NonNullable<TabStatusSummary['waitingFor']>, string>
 };
 
 const WAITING_COLOR = 'text-indigo-300 bg-indigo-500/20';
+
+/**
+ * The session GUID, copyable.
+ *
+ * `tabId` is a renderer-local `tab-<ts>-<rand>` that means nothing outside
+ * this window; the GUID is what names the session to the daemon, to
+ * `--resume`, and in the transcript path on disk. Showing it is what makes a
+ * row in this list identifiable at all.
+ */
+const SessionIdRow: React.FC<{ sessionId: string }> = ({ sessionId }) => {
+  const [copied, setCopied] = useState(false);
+  return (
+    <div className="flex items-center gap-2 min-w-0 col-span-2 text-muted-foreground">
+      <HeaderLabel className="inline-block w-28 shrink-0">Session:</HeaderLabel>
+      <span className="font-mono text-[11px] text-foreground/80 truncate" title={sessionId}>
+        {sessionId}
+      </span>
+      <button
+        type="button"
+        aria-label="Copy session id"
+        className="shrink-0 p-0.5 rounded hover:bg-accent/60 transition-colors"
+        onClick={(e) => {
+          // The card itself is a button; copying must not also navigate.
+          e.stopPropagation();
+          void navigator.clipboard?.writeText(sessionId).then(() => {
+            setCopied(true);
+            setTimeout(() => { setCopied(false); }, 1200);
+          }).catch(() => {});
+        }}
+      >
+        {copied ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+      </button>
+    </div>
+  );
+};
 
 interface TabStatusCardProps {
   summary: TabStatusSummary;
@@ -110,6 +151,7 @@ const TabStatusCard: React.FC<TabStatusCardProps> = ({ summary, branchColor, bra
       </button>
 
       <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 px-3 pb-2.5 pt-1 text-xs">
+        {summary.sessionId && <SessionIdRow sessionId={summary.sessionId} />}
         {summary.branch !== null && (
           <div className="flex items-center gap-2 min-w-0 col-span-2">
             <HeaderLabel className="inline-block w-28 shrink-0">Current Branch:</HeaderLabel>
@@ -199,12 +241,74 @@ const TabStatusCard: React.FC<TabStatusCardProps> = ({ summary, branchColor, bra
   );
 };
 
+/**
+ * A session the daemon is running that has no tab in this window.
+ *
+ * Deliberately sparser than an attached card: everything here comes from
+ * `session.list`'s advisory rollup, which the protocol documents as being
+ * for exactly this case — a list the client has no event stream for. There
+ * is no branch, context size or agent count to show honestly, so none is
+ * shown rather than showing a stale one.
+ */
+const DetachedSessionCard: React.FC<{ row: DetachedRow; onClick: () => void }> = ({ row, onClick }) => {
+  // Reattaching needs a real directory. Without one the tab would open on
+  // nothing, so the row stays visible — the session IS running and you may
+  // want its id — but is not clickable, and says why.
+  const canOpen = row.projectPath !== null;
+  return (
+  <div className="rounded-md border-0 bg-[color-mix(in_oklch,var(--color-background)_40%,var(--color-muted))] overflow-hidden shadow-[0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_25%,transparent),2px_2px_4px_rgb(0_0_0/0.08)]">
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={!canOpen}
+      title={row.projectPath ?? 'No project on record for this session — cannot reopen it here'}
+      className={cn(
+        'w-full flex items-center justify-between gap-3 px-3 py-2 bg-muted/60 shadow-[inset_0_-1px_0_0_color-mix(in_oklch,var(--color-muted-foreground)_25%,transparent)] transition-colors text-left app-no-drag',
+        canOpen ? 'hover:bg-accent/40' : 'cursor-not-allowed opacity-70',
+      )}
+    >
+      <div className="flex items-center gap-2 min-w-0">
+        <span
+          className={cn(
+            'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide',
+            row.waitingFor ? WAITING_COLOR : row.promptStatus === 'working' ? PROMPT_COLOR.working : 'text-sky-300 bg-sky-500/15',
+          )}
+        >
+          {(row.waitingFor || row.promptStatus === 'working') && (
+            <span className="inline-block h-1.5 w-1.5 rounded-full bg-current animate-pulse" />
+          )}
+          {row.waitingFor ? WAITING_LABEL.permission : row.promptStatus === 'working' ? 'Working' : 'Detached'}
+        </span>
+        <span className="truncate text-sm font-medium">{row.title}</span>
+      </div>
+      <span className="text-[10px] text-muted-foreground shrink-0 inline-flex items-center gap-1">
+        <Unplug className="w-3 h-3" />
+        {canOpen ? 'Open' : 'No path'}
+      </span>
+    </button>
+    <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 px-3 pb-2.5 pt-1 text-xs">
+      <SessionIdRow sessionId={row.sessionId} />
+      {row.projectPath && (
+        <div className="flex items-center gap-2 min-w-0 col-span-2 text-muted-foreground">
+          <HeaderLabel className="inline-block w-28 shrink-0">Project:</HeaderLabel>
+          <span className="font-mono text-[11px] text-foreground/70 truncate" title={row.projectPath}>
+            {row.projectPath}
+          </span>
+        </div>
+      )}
+    </div>
+  </div>
+  );
+};
+
 export const TabStatusPopover: React.FC = () => {
   const [open, setOpen] = useState(false);
   const [summaries, setSummaries] = useState<TabStatusSummary[]>([]);
+  const [sessions, setSessions] = useState<RosterSession[]>([]);
+  const [projects, setProjects] = useState<RosterProject[]>([]);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
-  const { tabs, setActiveTab } = useTabContext();
+  const { tabs, setActiveTab, addTab } = useTabContext();
 
   // Subscribe to live updates whenever the popover is mounted (always-on, so
   // the badge dot can update even when closed).
@@ -219,6 +323,34 @@ export const TabStatusPopover: React.FC = () => {
       off();
     };
   }, []);
+
+  // What the daemon is running. Polled only while the popover is open —
+  // this is a "what did I leave going" list, not a live feed, and the
+  // attached rows already have their own event stream. In desktop-only mode
+  // there is no client, so the list stays empty and only tabs are shown.
+  useEffect(() => {
+    if (!open) return;
+    const client = window.__omnifexRemote?.client;
+    if (!client) return;
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const [s, p] = await Promise.all([
+          client.request('session.list', {}),
+          client.request('project.list', {}),
+        ]);
+        if (cancelled) return;
+        setSessions(s as unknown as RosterSession[]);
+        setProjects(p as unknown as RosterProject[]);
+      } catch {
+        // A daemon that cannot be reached means no detached rows, not a
+        // broken popover — the tabs in this window still render.
+      }
+    };
+    void load();
+    const timer = setInterval(() => { void load(); }, 4000);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [open]);
 
   // Click-outside / Escape to close
   useEffect(() => {
@@ -244,36 +376,60 @@ export const TabStatusPopover: React.FC = () => {
     };
   }, [open]);
 
-  // Sort by tab-bar order, then drop summaries for closed tabs.
-  const tabOrder = tabs
-    .filter((t) => t.type === 'chat')
-    .sort((a, b) => a.order - b.order)
-    .map((t) => t.id);
-  const tabIdSet = new Set(tabOrder);
-  const ordered: TabStatusSummary[] = [];
-  for (const tabId of tabOrder) {
-    const s = summaries.find((x) => x.tabId === tabId);
-    if (s) ordered.push(s);
-  }
-  // Include any unknown ids at the end (defensive)
-  for (const s of summaries) {
-    if (!tabIdSet.has(s.tabId)) ordered.push(s);
-  }
+  // This window's tabs, then the live sessions that have no tab here.
+  //
+  // The aggregator's list is NOT rendered verbatim any more. Summaries
+  // outlive the page that published them, so a reload used to leave phantom
+  // rows that clicked into nothing — they were appended here "(defensively)"
+  // under a comment claiming they were dropped. `buildSessionRoster` drops
+  // them and lets the daemon re-add whatever is genuinely still running.
+  const roster = buildSessionRoster({
+    summaries: summaries as unknown as Parameters<typeof buildSessionRoster>[0]['summaries'],
+    tabs,
+    sessions,
+    projects,
+  });
 
   // Working count drives the tooltip "N working of M" — uses the same
   // promptStatus signal as the per-tab badge and the upgrade gate.
-  const busyCount = ordered.filter((s) => s.promptStatus === 'working').length;
+  const busyCount = roster.filter((r) => r.promptStatus === 'working').length;
 
   const branchResolution = resolveBranchColors({
     pins: {},
     mainFolderBranch: null,
-    branches: ordered.map((s) => s.branch).filter((b): b is string => b !== null),
+    branches: roster
+      .map((r) => (r.kind === 'attached' ? (r.summary as unknown as TabStatusSummary).branch : null))
+      .filter((b): b is string => b != null),
   });
+
+  /** Focus the tab that already shows this session, or open one for it. */
+  const openDetached = (row: DetachedRow) => {
+    if (row.projectPath === null) return;
+    const existing = tabs.find((t) => t.type === 'chat' && t.sessionId === row.sessionId);
+    if (existing) {
+      setActiveTab(existing.id);
+      setOpen(false);
+      return;
+    }
+    addTab({
+      type: 'chat',
+      title: row.title,
+      agent: (row.agent as 'claude' | 'codex') ?? 'claude',
+      sessionId: row.sessionId,
+      // What the session needs to reattach. Guaranteed non-null by the
+      // guard above and by the card being disabled without it.
+      initialProjectPath: row.projectPath,
+      status: 'idle',
+      hasUnsavedChanges: false,
+      icon: 'message-square',
+    });
+    setOpen(false);
+  };
 
   return (
     <div className="relative inline-block">
       <TooltipSimple
-        content={busyCount > 0 ? `${busyCount} working of ${ordered.length}` : 'Tab status'}
+        content={busyCount > 0 ? `${busyCount} working of ${roster.length}` : 'Sessions'}
         side="bottom"
       >
         <button
@@ -281,6 +437,7 @@ export const TabStatusPopover: React.FC = () => {
           type="button"
           onClick={() => { setOpen((v) => !v); }}
           aria-label="Sessions"
+          data-testid="sessions-trigger"
           className={cn(
             'relative inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium hover:bg-accent hover:text-accent-foreground transition-colors app-no-drag',
             open && 'bg-accent text-accent-foreground',
@@ -314,29 +471,41 @@ export const TabStatusPopover: React.FC = () => {
                   Tab Status
                 </div>
                 <div className="text-[10px] text-muted-foreground">
-                  {ordered.length} tab{ordered.length === 1 ? '' : 's'}
+                  {roster.length} session{roster.length === 1 ? '' : 's'}
                   {busyCount > 0 && ` · ${busyCount} busy`}
                 </div>
               </div>
 
-              {ordered.length === 0 ? (
+              {roster.length === 0 ? (
                 <div className="px-3 py-6 text-center text-xs text-muted-foreground">
                   No chat tabs open.
                 </div>
               ) : (
                 <div className="p-2 space-y-1.5">
-                  {ordered.map((s) => (
-                    <TabStatusCard
-                      key={s.tabId}
-                      summary={s}
-                      branchColor={s.branch ? branchResolution.colors[s.branch] ?? null : null}
-                      branchIsTrunk={s.branch ? branchResolution.trunkBlack.has(s.branch) : false}
-                      onClick={() => {
-                        setActiveTab(s.tabId);
-                        setOpen(false);
-                      }}
-                    />
-                  ))}
+                  {roster.map((row) => {
+                    if (row.kind === 'detached') {
+                      return (
+                        <DetachedSessionCard
+                          key={row.sessionId}
+                          row={row}
+                          onClick={() => { openDetached(row); }}
+                        />
+                      );
+                    }
+                    const s = row.summary as unknown as TabStatusSummary;
+                    return (
+                      <TabStatusCard
+                        key={row.tabId}
+                        summary={s}
+                        branchColor={s.branch ? branchResolution.colors[s.branch] ?? null : null}
+                        branchIsTrunk={s.branch ? branchResolution.trunkBlack.has(s.branch) : false}
+                        onClick={() => {
+                          setActiveTab(row.tabId);
+                          setOpen(false);
+                        }}
+                      />
+                    );
+                  })}
                 </div>
               )}
             </motion.div>

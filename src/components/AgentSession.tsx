@@ -1561,6 +1561,9 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     tabId: tabIdRef.current,
     title: tabTitle,
     projectPath: projectPath ?? null,
+    // The GUID, not the renderer-local tab id: it is what the popover shows,
+    // what identifies this session to the daemon, and what reopening it needs.
+    sessionId: claudeSessionId ?? null,
     sessionStarted: isSessionActive,
     isStarting: isSessionStarting,
     isLoading,

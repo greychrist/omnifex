@@ -28,7 +28,9 @@ import {
  */
 export const MAX_EVENTS = 100;
 
-/** What the session-widget popover shows without scrolling. */
+/** How many events the session-widget popover receives. The list itself is
+ * height-bounded and scrolls (see `SignalEventLog`), so this is a data cap,
+ * not a layout one. */
 export const POPOVER_EVENT_LIMIT = 20;
 
 export interface SignalState {

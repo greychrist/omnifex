@@ -32,7 +32,7 @@ const runningAgent = (overrides: Partial<Subagent> = {}): Subagent =>
 function publish(messages: JsonlNode[], subagents: Subagent[]) {
   renderHook(() =>
     usePublishTabStatus({
-      tabId: 'tab-1', title: 't', projectPath: '/p', sessionStarted: true, isStarting: false,
+      tabId: 'tab-1', title: 't', projectPath: '/p', sessionId: 'sess-1', sessionStarted: true, isStarting: false,
       isLoading: false, hasError: false, messages, subagents, contextUsage: null,
       branch: null, filesChanged: 0, filesUntracked: 0, pendingPermission: null,
     }),
