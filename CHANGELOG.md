@@ -5,6 +5,18 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.168] — 2026-09-14
+
+### Added
+
+- **View → Reload Window.** Reloading is the only way out of a window that has stopped responding to input while the session behind it is perfectly healthy, and until now there was no way to do it — the keyboard shortcuts are deliberately unbound, and they stay that way. The menu item asks first, and tells you what it costs: your sessions keep running in the background, your open tabs come back, and what you lose is unsent text in the composer and any prompts waiting in the queue.
+
+### Fixed
+
+- Reopening the app no longer closes the tabs that were busy. Any tab mid-turn was left out of the saved layout on the theory that it would be stale by the time you came back — which stopped being true once the background service took ownership of the sessions, since those sessions are still running and can be picked up where they left off. Those are the tabs most worth restoring, and they were the only ones being discarded. The tab you were last looking at is restored too, which previously went missing for the same reason.
+
+Installers are signed with a Developer ID certificate and notarized by Apple.
+
 ## [0.4.167] — 2026-09-13
 
 ### Added
