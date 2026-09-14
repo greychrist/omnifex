@@ -64,16 +64,18 @@ export class TabPersistenceService {
     if (!this.isEnabled()) return;
     
     try {
-      // Filter out tabs that shouldn't be persisted
-      const persistableTabs = tabs.filter(tab => {
-        // Don't persist tabs with running status (they're likely stale)
-        if (tab.status === 'running') return false;
-
-        return true;
-      });
+      // Every tab is persisted, including running ones. This used to drop
+      // `status === 'running'` as "likely stale", which was true under Tauri
+      // where the CLI died with the app. It is false now: the daemon owns
+      // every CLI process and they outlive the renderer, so a running tab is
+      // precisely the one worth restoring — its session is still live and
+      // resumable. Dropping it meant any reload silently closed every tab
+      // that was mid-turn, which is most of the ones you care about.
+      // The `running` → `idle` normalization below is what keeps a restored
+      // tab honest; the filter was never what did that work.
 
       // Serialize tabs (excluding complex objects)
-      const serializedTabs: SerializedTab[] = persistableTabs.map(tab => ({
+      const serializedTabs: SerializedTab[] = tabs.map(tab => ({
         id: tab.id,
         type: tab.type,
         title: tab.title,
@@ -95,8 +97,11 @@ export class TabPersistenceService {
 
       localStorage.setItem(STORAGE_KEY, JSON.stringify(serializedTabs));
       
-      // Save active tab ID
-      if (activeTabId && persistableTabs.some(tab => tab.id === activeTabId)) {
+      // Save active tab ID. Guarded against an id naming no tab in the list,
+      // not against a running one — the active tab is the likeliest to be
+      // mid-turn, and dropping the pointer landed you on an arbitrary tab
+      // after every reload.
+      if (activeTabId && tabs.some(tab => tab.id === activeTabId)) {
         localStorage.setItem(ACTIVE_TAB_KEY, activeTabId);
       }
     } catch (error) {

@@ -68,14 +68,20 @@ describe('TabPersistenceService — saveTabs / loadTabs roundtrip', () => {
     expect(loaded[0].sessionId).toBe('s1');
   });
 
-  it('drops tabs with status=running on save (likely stale)', () => {
+  it('persists tabs with status=running, normalized to idle', () => {
+    // The daemon owns the CLI process and it outlives the renderer, so a
+    // running tab is the one most worth restoring — its session is still
+    // live and resumable. Dropping it is how a reload loses real work.
     const tabs = [
       makeTab({ id: 't1', type: 'chat', title: 'Alive' }),
       makeTab({ id: 'running', type: 'chat', title: 'Was Running', status: 'running' }),
     ];
     TabPersistenceService.saveTabs(tabs, 't1');
     const { tabs: loaded } = TabPersistenceService.loadTabs();
-    expect(loaded.map((t) => t.id)).toEqual(['t1']);
+    expect(loaded.map((t) => t.id)).toEqual(['t1', 'running']);
+    // Restored, but not pretending to still be streaming — it has not
+    // reattached to the daemon yet.
+    expect(loaded.find((t) => t.id === 'running')?.status).toBe('idle');
   });
 
   it('resets hasUnsavedChanges to false on round-trip', () => {
@@ -85,12 +91,21 @@ describe('TabPersistenceService — saveTabs / loadTabs roundtrip', () => {
     expect(loaded[0].hasUnsavedChanges).toBe(false);
   });
 
-  it('does NOT persist activeTabId when the active tab itself was filtered out', () => {
+  it('persists activeTabId for a running active tab', () => {
+    // The active tab is the likeliest one to be mid-turn. Losing the
+    // pointer put you back on an arbitrary tab after every reload.
     const tabs = [
       makeTab({ id: 't1', type: 'chat', title: 'Alive' }),
       makeTab({ id: 'running', type: 'chat', title: 'Running', status: 'running' }),
     ];
     TabPersistenceService.saveTabs(tabs, 'running');
+    expect(localStorage.getItem(ACTIVE_TAB_KEY)).toBe('running');
+    expect(TabPersistenceService.loadTabs().activeTabId).toBe('running');
+  });
+
+  it('still drops an activeTabId naming a tab that is not in the list', () => {
+    const tabs = [makeTab({ id: 't1', type: 'chat', title: 'Alive' })];
+    TabPersistenceService.saveTabs(tabs, 'ghost');
     expect(localStorage.getItem(ACTIVE_TAB_KEY)).toBeNull();
   });
 

@@ -41,6 +41,7 @@ process.on('unhandledRejection', (err) => {
   console.error('Unhandled rejection:', err);
 });
 import { decideQuit } from './quit-policy';
+import { decideReload } from './reload-policy';
 import { createDatabase, ensureDefaultSettings } from './services/database';
 import { createBrainService, type BrainService } from './services/brain/registry';
 import { createSessionSource } from './services/brain/sources/session-transcripts';
@@ -239,6 +240,32 @@ function mayQuit(win?: BrowserWindow): boolean {
   return true;
 }
 
+/**
+ * Ask, then reload the renderer. The daemon owns every CLI process, so this
+ * costs renderer-local state only — drafts and queued prompts — and is the
+ * way out of a wedged renderer. `decideReload` owns the wording.
+ */
+function confirmAndReload(fromMenu?: unknown): void {
+  const win =
+    fromMenu instanceof BrowserWindow ? fromMenu : BrowserWindow.getFocusedWindow();
+  if (!win || win.isDestroyed()) return;
+
+  const { prompt } = decideReload({ workingCount: _workingCount?.() ?? 0 });
+  const choice = dialog.showMessageBoxSync(win, {
+    type: 'question' as const,
+    buttons: ['Cancel', 'Reload'],
+    // Cancel is both the default and the escape hatch, matching `mayQuit`:
+    // a stray Return should never pick the lossy option.
+    defaultId: 0,
+    cancelId: 0,
+    title: 'Reload Window',
+    message: prompt.message,
+    detail: prompt.detail,
+  });
+  if (choice !== 1) return;
+  win.webContents.reload();
+}
+
 function anyWindowFocused(): boolean {
   for (const w of windows) {
     if (!w.isDestroyed() && w.isFocused()) return true;
@@ -306,12 +333,20 @@ function installAppMenu(): void {
     ],
   });
   template.push({ role: 'editMenu' });
-  // Custom View menu that mirrors Electron's default `viewMenu` role minus
-  // Reload (Cmd+R) and Force Reload (Cmd+Shift+R). Greg lost work to an
-  // accidental Cmd+R; neither accelerator has a legitimate use in this app.
+  // Custom View menu that mirrors Electron's default `viewMenu` minus the
+  // Reload (Cmd+R) and Force Reload (Cmd+Shift+R) *accelerators*. An
+  // accidental Cmd+R used to close every tab that was mid-turn, because tab
+  // persistence dropped `status === 'running'` tabs. That filter is gone, so
+  // the menu item is back as the escape hatch from a wedged renderer — but
+  // deliberately unbound, so it stays a choice rather than a fat-finger.
   template.push({
     label: 'View',
     submenu: [
+      {
+        label: 'Reload Window',
+        click: (_item, browserWindow) => { confirmAndReload(browserWindow); },
+      },
+      { type: 'separator' },
       { role: 'toggleDevTools' },
       { type: 'separator' },
       { role: 'resetZoom' },
