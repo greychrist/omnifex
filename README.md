@@ -56,7 +56,7 @@ The Brain is a per-account **memory vault** distilled from those transcripts.
 - **Session status bar** — elapsed time for the current turn, the size of the current thinking burst, and the number of subagents running, each holding the previous round's figure once the turn ends.
 - **Diffs render as diffs** — output from `git diff`, `git show` or a patch tool is laid out with line numbers down both sides and each changed line marked, matching the Edit and patch views rather than arriving as a wall of monospace.
 - Image attachments, in-session find, permission and elicitation prompts, per-tab context-usage / cost readouts, and a per-command summary of the files a Bash command changed.
-- Multi-tab layout with per-tab status glyphs (session state, engine, rate-limit warnings) and an aggregate status popover.
+- Multi-tab layout with per-tab status glyphs (session state, engine, rate-limit warnings) and an aggregate status popover. The popover lists every session the daemon is running, not only the ones with a tab open — a session you closed the tab on, or started from the iPad, shows up as detached and opens back into a tab on click. Each row carries its session id.
 
 ### Remote — drive it from the iPad
 

@@ -5,6 +5,21 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.169] — 2026-09-14
+
+### Added
+
+- The Sessions popover now lists every session running in the background, not just the ones with a tab open. A session whose tab you closed — or lost to a reload, or started from the iPad — appears as **Detached**, and clicking it opens a tab connected back to it. Every row also shows its session id, so a session in the list can be matched against a transcript or a log by name rather than by guesswork.
+
+### Fixed
+
+- The background service could stop responding, taking the update with it. Asking it for its status made it read every stored session log in full, and the installer asks once a second while it waits for your sessions to finish — so on a machine with a large session history it fell behind faster than it could catch up, and stopped answering anything at all. It now reads only the end of each log, which is all that question ever needed.
+- **Install anyway** now installs. It stopped the sessions it could reach and then went back to waiting on the ones it could not, which meant the button did nothing in exactly the situation it exists for. It no longer waits at all — that is what pressing it says.
+- Sessions that had already finished could still be counted as active, holding up an update indefinitely. A tab that goes away without closing cleanly — which is what a reload is — used to leave its status behind permanently, where it was indistinguishable from a session still doing work.
+- The recent-events list in the context popover grew without limit as a session went on, pushing the model, effort and permission controls off the bottom of the popover. It scrolls now.
+
+Installers are signed with a Developer ID certificate and notarized by Apple.
+
 ## [0.4.168] — 2026-09-14
 
 ### Added
