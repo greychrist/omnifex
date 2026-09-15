@@ -373,12 +373,36 @@ describe('classifyStandaloneKind', () => {
         },
       }) as unknown as JsonlNode;
 
-    it('classifies a user message that follows a Skill tool_result as user.skillInjection', () => {
+    const skillCompanion = (sourceToolUseID: string, text: string): JsonlNode =>
+      ({
+        kind: 'user', userKind: 'prompt', sessionId: '', receivedAt: '',
+        raw: {
+          type: 'user',
+          isMeta: true,
+          turnCompanion: true,
+          sourceToolUseID,
+          message: { role: 'user', content: [{ type: 'text', text }] },
+        },
+      }) as unknown as JsonlNode;
+
+    it('classifies a companion of a Skill tool_use as user.skillInjection', () => {
       const tu = skillToolUse('tu_skill', 'merge-to-main');
       const tr = skillToolResult('tu_skill');
-      const injected = userText('# Merge to Main\n...');
+      const injected = skillCompanion('tu_skill', '# Merge to Main\n...');
       const msgs = [tu, tr, injected];
       expect(classifyStandaloneKind(injected, msgs)).toBe('user.skillInjection');
+    });
+
+    it('classifies the body of a re-invocation, not just the preamble', () => {
+      // CLI 2.1.270 emits a "(Re-invocation of …)" record ahead of the body.
+      // Position-based detection matched the preamble and let the body fall
+      // through to user.prompt — the skill's text rendered as the user's.
+      const tu = skillToolUse('tu_skill', 'commit');
+      const tr = skillToolResult('tu_skill');
+      const preamble = skillCompanion('tu_skill', '(Re-invocation of /commit — …)');
+      const body = skillCompanion('tu_skill', '# Commit\n\nUse this command when…');
+      const msgs = [tu, tr, preamble, body];
+      expect(classifyStandaloneKind(body, msgs)).toBe('user.skillInjection');
     });
 
     it('does not classify as skillInjection when the preceding tool_use was not Skill', () => {

@@ -172,12 +172,16 @@ describe('filterDisplayableMessages', () => {
         },
       }) as unknown as JsonlNode;
 
-    const skillBody = (text: string, isMeta = true): JsonlNode =>
+    const skillBody = (text: string, isMeta = true, sourceToolUseID = 'toolu_x'): JsonlNode =>
       ({
         kind: 'user', userKind: 'meta-other', sessionId: '', receivedAt: '',
         raw: {
           type: 'user',
           isMeta,
+          // The CLI names the originating Skill call on every companion
+          // record. Detection keys on this rather than on the record's
+          // position, so a re-invocation preamble can't displace the body.
+          sourceToolUseID,
           message: { role: 'user', content: [{ type: 'text', text }] },
         },
       }) as unknown as JsonlNode;
@@ -205,13 +209,13 @@ describe('filterDisplayableMessages', () => {
     });
 
     it('keeps a non-isMeta user message regardless of skill detection', () => {
-      // Backstop: this is the live-stream shape (isSynthetic only). Already
-      // passes today; lock it in so no future regression drops live skill
-      // bodies before they hit the renderer.
+      // Backstop: the meta-noise filter is the only thing that drops user
+      // rows here, so anything without isMeta survives whatever skill
+      // detection concludes. Locks in that the two decisions stay separate.
       const messages = [
         skillToolUse('toolu_y', 'foo'),
         skillToolResult('toolu_y'),
-        skillBody('# foo body', false),
+        skillBody('# foo body', false, 'toolu_y'),
       ];
       const out = filterDisplayableMessages(messages);
       expect(out).toHaveLength(3);

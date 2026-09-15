@@ -73,10 +73,19 @@ describe('compact summaries get their own card kind', () => {
     expect(kindOf(container)).toBe('user.compactSummary');
   });
 
-  it('renders the live stream-json shape as user.compactSummary', () => {
-    const n = node({ isReplay: false, isSynthetic: true });
+  // Since the transcript inversion a live row reaches the renderer from the
+  // CLI's JSONL, so the "live" shape IS the persisted one — it carries
+  // isCompactSummary rather than the old isReplay:false proxy.
+  it('renders a directed summarize, which omits isVisibleInTranscriptOnly', () => {
+    const n = node({ isCompactSummary: true });
     const { container } = render(<StreamMessage tabId="tab-test" message={n} streamMessages={[n]} />);
     expect(kindOf(container)).toBe('user.compactSummary');
+  });
+
+  it('does not render a bare isReplay:false row as a compact summary', () => {
+    const n = node({ isReplay: false, isSynthetic: true });
+    const { container } = render(<StreamMessage tabId="tab-test" message={n} streamMessages={[n]} />);
+    expect(kindOf(container)).not.toBe('user.compactSummary');
   });
 
   it('leaves an ordinary prompt on user.prompt', () => {

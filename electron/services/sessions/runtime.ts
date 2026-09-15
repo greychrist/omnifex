@@ -2,8 +2,11 @@
 //
 // Drives the per-session message stream by subscribing to an AgentEngine's
 // event callbacks. Owns: status transitions, stream-error recovery (engine
-// restart with --resume), JSONL-tail wiring for subagent carriers, and the
-// StrictMode / TUI-handoff identity-replace guards.
+// restart with --resume), JSONL-tail wiring, and the StrictMode /
+// TUI-handoff identity-replace guards.
+//
+// The tail is the transcript source, not a supplement to stream-json. See
+// ensureJsonlTail and ./stream-forward.ts for the split and why it exists.
 
 import path from 'node:path';
 import type {
@@ -19,7 +22,8 @@ import type { AgentMessage } from '../agents/types';
 import { classifyRuntimeEvent } from './events';
 import { dispatchAgentNotification, dispatchResultNotification } from './notifications';
 import { createBackgroundTaskTracker } from './background-tasks';
-import { createJsonlTail, type JsonlTailHandle } from './jsonl-tail';
+import { createJsonlTail, isClosureCarrier, type JsonlTailHandle } from './jsonl-tail';
+import { shouldForwardStreamMessage } from './stream-forward';
 import { encodeProjectId, hasTranscript } from '../project-paths';
 import { setStatus } from './status';
 
@@ -87,10 +91,23 @@ function ensureJsonlTail(
   );
   state.tail = createJsonlTail({
     jsonlPath,
+    // The tail is the transcript source in rich mode, not a supplement to
+    // it. stream-json strips `isMeta`, `turnCompanion` and `sourceToolUseID`
+    // from the records it carries, and classifiers that needed those fields
+    // were reduced to inferring a record's role from its neighbours — which
+    // broke the moment the CLI emitted two skill companions instead of one.
+    // Reading the file instead means the fields are simply present.
+    filter: 'all',
     onMessage: (msg) => {
-      // Surface on a separate channel so the renderer's normal
-      // agent-output:* subscription stays 1:1 with engine output.
-      sendToRenderer(`claude-output-extra:${tabId}`, msg);
+      // Same split TUI mode uses (see tui-jsonl.ts): closure carriers stay on
+      // their own channel so that subscription keeps its narrow contract,
+      // everything else joins the normal transcript pipeline. One renderer
+      // path, one normalization, both modes.
+      if (isClosureCarrier(msg)) {
+        sendToRenderer(`claude-output-extra:${tabId}`, msg);
+        return;
+      }
+      sendToRenderer(`agent-output:${tabId}`, msg);
     },
     onError: (err) => {
       console.warn('[sessions] jsonl-tail error:', err);
@@ -142,8 +159,9 @@ export function listenToMessages(
 
   // Attach the JSONL tail immediately — sessionId is pinned at spawn
   // (lifecycle minted it before calling us), so the tail path is known.
-  // The tail surfaces background-Bash queue-operation carriers and
-  // queued_command attachments that the stream-json output may not yield.
+  // This is the transcript source: every committed row reaches the renderer
+  // from here, and stream-json contributes only what the CLI never writes to
+  // disk.
   ensureJsonlTail(handle, tabId, jsonlState, sendToRenderer);
 
   // Pairs each background task's `task_started` with the `task_notification`
@@ -233,7 +251,17 @@ export function listenToMessages(
           break;
       }
 
-      sendToRenderer(`agent-output:${tabId}`, message);
+      // Transcript inversion: committed rows reach the renderer from the
+      // JSONL tail, which carries the fields stream-json strips (`isMeta`,
+      // `turnCompanion`, `sourceToolUseID`). Relaying the stream's copy too
+      // would render every row twice, so the stream keeps only the shapes
+      // the CLI never writes to disk. Note this gates FORWARDING only — the
+      // switch above has already acted on the event, and must keep doing so
+      // for messages that are not relayed (init's model catalog, the compact
+      // hint). See services/sessions/stream-forward.ts.
+      if (shouldForwardStreamMessage(message)) {
+        sendToRenderer(`agent-output:${tabId}`, message);
+      }
 
       if (event.kind === 'result') {
         dispatchResultNotification({
