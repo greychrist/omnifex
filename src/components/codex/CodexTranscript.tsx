@@ -7,8 +7,9 @@ import { ApplyPatchItem } from "@/components/codex/items/ApplyPatch";
 import { WebSearchItem } from "@/components/codex/items/WebSearch";
 import { McpToolCallItem } from "@/components/codex/items/McpToolCall";
 import { CodexItemFallback } from "@/components/codex/items/CodexItemFallback";
+import { SessionGutter, InspectorGutterButton, type InspectorGutterButtonProps } from '@/components/SessionGutter';
 
-export interface CodexTranscriptProps {
+export interface CodexTranscriptProps extends InspectorGutterButtonProps {
   /** All Codex notifications for this tab, in arrival order. */
   messages: AgentMessage[];
   /** Tab id forwarded to per-item components that may need it later. */
@@ -63,9 +64,16 @@ function getMethod(msg: AgentMessage): string | null {
  * bar, no inflight bubble. Codex transcripts may pick up similar UX in a
  * follow-up; for now the shell only needs to prove the dispatch table.
  */
-export function CodexTranscript({ messages, tabId: _tabId }: CodexTranscriptProps): React.ReactElement {
+export function CodexTranscript({ messages, tabId: _tabId, onOpenInspector, inspectorOpen }: CodexTranscriptProps): React.ReactElement {
   return (
     <div className="flex-1 min-h-0 px-10 py-2 bg-muted/30 relative">
+      {/* No steppers on this surface yet, so the rail holds one button — but
+          it is the same rail in the same place as the other two transcripts. */}
+      <SessionGutter
+        top={<InspectorGutterButton onOpenInspector={onOpenInspector} inspectorOpen={inspectorOpen} />}
+      >
+        {null}
+      </SessionGutter>
       <div className="h-full overflow-y-auto relative border border-border/50 rounded-lg bg-background">
         <div className="w-full px-4 pt-8 pb-4 space-y-4">
           {messages.map((msg, idx) => {

@@ -347,11 +347,133 @@ describe('electronAPI shim', () => {
     });
   });
 
+  // The launch path that lost three hours of answers: Electron's bootstrap
+  // `await client.connect()` BEFORE it builds the shim, and `onStateChange`
+  // does not replay the current state to a new listener. So the shim never
+  // sees the initial `connected` transition. A tab restored from the map
+  // therefore looked completely healthy — `sessionToTabs` populated, so
+  // `emitForSession` would have routed fine — while the daemon had no
+  // subscriber for it and fanned every event out to an empty set.
+  describe('subscribing restored tabs at launch', () => {
+    beforeEach(() => {
+      f.responders['session.list'] = () => [summary('sid-1', { lastSeq: 40 })];
+      f.responders['session.subscribe'] = (p) => ({ fromSeq: p.fromSeq ?? 40, lastSeq: 40 });
+    });
+
+    it('subscribes restored sessions when the client is already connected at construction', async () => {
+      storage.setItem(TAB_MAP_STORAGE_KEY, JSON.stringify({ 'tab-A': 'sid-1' }));
+      expect(f.client.state).toBe('connected');
+
+      shim();
+      await new Promise((r) => setTimeout(r, 0));
+      await new Promise((r) => setTimeout(r, 0));
+
+      // Live-only: the transcript loads from disk, so replaying from 0 would
+      // double every row.
+      expect(f.requests).toContainEqual({ method: 'session.subscribe', params: { sessionId: 'sid-1' } });
+    });
+
+    it('subscribes restored sessions on the first connect when the shim predates it (web path)', async () => {
+      storage.setItem(TAB_MAP_STORAGE_KEY, JSON.stringify({ 'tab-A': 'sid-1' }));
+      (f.client as { state: ConnectionState }).state = 'connecting';
+
+      shim();
+      await new Promise((r) => setTimeout(r, 0));
+      expect(f.requests.filter((r) => r.method === 'session.subscribe')).toEqual([]);
+
+      f.setState('connected');
+      await new Promise((r) => setTimeout(r, 0));
+      await new Promise((r) => setTimeout(r, 0));
+
+      expect(f.requests).toContainEqual({ method: 'session.subscribe', params: { sessionId: 'sid-1' } });
+    });
+
+    it('delivers a restored tab its session events, which is what the missing subscribe cost', async () => {
+      storage.setItem(TAB_MAP_STORAGE_KEY, JSON.stringify({ 'tab-A': 'sid-1' }));
+      const api = shim();
+      await new Promise((r) => setTimeout(r, 0));
+      await new Promise((r) => setTimeout(r, 0));
+
+      const out: unknown[] = [];
+      api.onEvent('agent-output:tab-A', (p) => out.push(p));
+      f.push({
+        type: 'event', sessionId: 'sid-1', seq: 41, kind: 'transcript',
+        channel: 'agent-output', payload: { raw: { type: 'assistant', text: 'hi' } },
+      } as unknown as ServerMessage);
+
+      expect(out).toEqual([{ type: 'assistant', text: 'hi' }]);
+    });
+
+    it('does not subscribe anything when no tabs were restored', async () => {
+      shim();
+      await new Promise((r) => setTimeout(r, 0));
+      await new Promise((r) => setTimeout(r, 0));
+      expect(f.requests.filter((r) => r.method === 'session.subscribe')).toEqual([]);
+    });
+  });
+
+  // Connectivity is global — one socket per client — but the daemon fans a
+  // session out only to clients that subscribed to it. A status bar that read
+  // the socket alone would have shown green for the whole outage.
+  describe('per-session delivery state', () => {
+    it('is false until the session is actually subscribed, then true', async () => {
+      const api = shim();
+      expect(f.client.state).toBe('connected');
+      expect(api.isSessionSubscribed('sid-1')).toBe(false);
+
+      await api.invoke('session_start', { tabId: 'tab-A', projectPath: '/p', model: 'default', permissionMode: 'default' });
+      expect(api.isSessionSubscribed('sid-1')).toBe(true);
+    });
+
+    it('announces delivery on the tab channel so a session can show it', async () => {
+      const api = shim();
+      const delivery: unknown[] = [];
+      api.onEvent('remote-delivery:tab-A', (p) => delivery.push(p));
+
+      await api.invoke('session_start', { tabId: 'tab-A', projectPath: '/p', model: 'default', permissionMode: 'default' });
+      expect(delivery).toEqual([{ subscribed: true }]);
+    });
+
+    it('drops to false when a resubscribe fails', async () => {
+      storage.setItem(TAB_MAP_STORAGE_KEY, JSON.stringify({ 'tab-A': 'sid-1' }));
+      f.responders['session.list'] = () => [];
+      const api = shim();
+      await new Promise((r) => setTimeout(r, 0));
+      await new Promise((r) => setTimeout(r, 0));
+      expect(api.isSessionSubscribed('sid-1')).toBe(true);
+
+      const delivery: unknown[] = [];
+      api.onEvent('remote-delivery:tab-A', (p) => delivery.push(p));
+      f.responders['session.subscribe'] = () => { throw new Error('gone'); };
+      f.setState('reconnecting');
+      f.setState('connected');
+      await new Promise((r) => setTimeout(r, 0));
+      await new Promise((r) => setTimeout(r, 0));
+
+      expect(api.isSessionSubscribed('sid-1')).toBe(false);
+      expect(delivery).toEqual([{ subscribed: false }]);
+    });
+
+    it('forgets delivery when the last tab for a session goes away', async () => {
+      const api = shim();
+      await api.invoke('session_start', { tabId: 'tab-A', projectPath: '/p', model: 'default', permissionMode: 'default' });
+      expect(api.isSessionSubscribed('sid-1')).toBe(true);
+      await api.invoke('session_stop', { tabId: 'tab-A' });
+      expect(api.isSessionSubscribed('sid-1')).toBe(false);
+    });
+  });
+
   describe('reload and reconnect', () => {
     it('rebinds a tab from the persisted map by resuming and subscribing', async () => {
       storage.setItem(TAB_MAP_STORAGE_KEY, JSON.stringify({ 'tab-A': 'sid-1' }));
       f.responders['session.resume'] = () => summary('sid-1', { lastSeq: 40 });
+      f.responders['session.list'] = () => [];
       const api = shim();
+      // Construction subscribes the restored map on its own; this test is
+      // about what `rebind` adds on top, so start counting from there.
+      await new Promise((r) => setTimeout(r, 0));
+      await new Promise((r) => setTimeout(r, 0));
+      f.requests.length = 0;
       expect(await api.invoke('session_rebind', { tabId: 'tab-A' })).toBe(true);
       expect(f.requests.map((r) => r.method)).toEqual(['session.resume', 'session.subscribe']);
       expect(await api.invoke('session_rebind', { tabId: 'unknown' })).toBe(false);
@@ -381,15 +503,16 @@ describe('electronAPI shim', () => {
 
     it('subscribes live-only when it never saw a seq for a restored tab, then from that seq on the next reconnect', async () => {
       storage.setItem(TAB_MAP_STORAGE_KEY, JSON.stringify({ 'tab-A': 'sid-1' }));
+      // Both responders must be in place before the shim exists: construction
+      // subscribes the restored map immediately, with no transition to wait on.
+      f.responders['session.subscribe'] = (p) => ({ fromSeq: p.fromSeq ?? 40, lastSeq: 40 });
+      f.responders['session.list'] = () => [summary('sid-1', { lastSeq: 40 })];
       const api = shim();
       const caught: unknown[] = [];
       api.onEvent('remote-caught-up:tab-A', (p) => caught.push(p));
-      f.responders['session.subscribe'] = (p) => ({ fromSeq: p.fromSeq ?? 40, lastSeq: 40 });
-      f.responders['session.list'] = () => [summary('sid-1', { lastSeq: 40 })];
 
-      f.setState('connected');
-      f.setState('reconnecting');
-      f.setState('connected');
+      // The restored tab is subscribed at construction, with no state
+      // transition needed — that is the launch path Electron actually takes.
       await new Promise((r) => setTimeout(r, 0));
       await new Promise((r) => setTimeout(r, 0));
 
@@ -444,8 +567,17 @@ describe('electronAPI shim', () => {
       f.push({ type: 'event', sessionId: 'sid-1', seq: 7, kind: 'transcript', channel: 'agent-output', payload: { raw: {} } });
       f.requests.length = 0;
 
-      f.setState('connected'); // first connect: nothing to redo
-      expect(f.requests).toEqual([]);
+      // Every connect resubscribes, the first one included. Gating this on
+      // "have I connected before?" is what left a restored tab subscribed to
+      // nothing: Electron connects before the shim exists, so the first
+      // transition is never seen here at all.
+      f.setState('connected');
+      await new Promise((r) => setTimeout(r, 0));
+      await new Promise((r) => setTimeout(r, 0));
+      expect(f.requests[0]).toEqual({ method: 'session.subscribe', params: { sessionId: 'sid-1', fromSeq: 7 } });
+
+      f.requests.length = 0;
+      caught.length = 0;
       f.setState('reconnecting');
       f.responders['session.subscribe'] = (p) => ({ fromSeq: p.fromSeq, lastSeq: 12 });
       f.responders['session.list'] = () => [summary('sid-1', { lastSeq: 12 })];

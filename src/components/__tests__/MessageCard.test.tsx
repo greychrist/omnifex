@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React from 'react';
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
-import { render, screen, fireEvent, cleanup, act } from '@testing-library/react';
+import { render, screen, cleanup } from '@testing-library/react';
 import { MessageFrameCard as MessageCard } from '../StreamMessage/MessageFrameCard';
 import type { JsonlNode } from '@/types/jsonl';
 
@@ -143,19 +143,16 @@ describe('MessageCard — footer (timestamp + copy)', () => {
   });
 });
 
-describe('MessageCard — debug mode footer (kind label + raw-payload viewer)', () => {
+describe('MessageCard — debug mode footer (kind label only)', () => {
   // The default config has debug.showCardKindLabel = false. The footer's
   // kind-label branch only renders when that flag is true — to exercise
   // it we need a config provider that flips it on. Easiest path: wrap a
   // local Provider stub around the card.
   const FlipDebugProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    // Use the actual provider but inject debug.showCardKindLabel = true via
-    // a side-effect mock on the hook — simpler than rebuilding the full
-    // config tree.
     return <>{children}</>;
   };
 
-  it('renders the kindId broken on dots + copy button', async () => {
+  it('renders the kindId broken on dots, and no longer carries the payload viewer', async () => {
     // Override the hook directly to flip debug.showCardKindLabel.
     const mod = await import('@/contexts/MessageRenderingContext');
     const { createDefaultConfig } = await import('@/lib/messageRenderingConfig');
@@ -188,58 +185,12 @@ describe('MessageCard — debug mode footer (kind label + raw-payload viewer)', 
     expect(labelEl).not.toBeNull();
     expect(labelEl!.textContent).toMatch(/x\s*·\s*y/);
 
-    // The payload affordance views rather than copies; copying moved
-    // inside the panel it opens.
-    expect(labelEl!.querySelector('button[aria-label="View raw JSON"]')).not.toBeNull();
-    expect(labelEl!.querySelector('button[aria-label="Copy"]')).toBeNull();
-    spy.mockRestore();
-  });
-
-  it('the viewer copies copyText (when set) to the clipboard', async () => {
-    const mod = await import('@/contexts/MessageRenderingContext');
-    const { createDefaultConfig } = await import('@/lib/messageRenderingConfig');
-    const fakeConfig = createDefaultConfig();
-    fakeConfig.debug.showCardKindLabel = true;
-    const spy = vi.spyOn(mod, 'useMessageRenderingConfig').mockReturnValue({
-      config: fakeConfig,
-      setConfig: () => {},
-      loaded: true,
-    });
-
-    const message = {
-      kind: 'system', subtype: 'notification', sessionId: 's', receivedAt: '',
-      raw: { type: 'system', subtype: 'notification' },
-    } as unknown as JsonlNode;
-    render(<MessageCard kindId="x" message={message} copyText="custom text">body</MessageCard>);
-    fireEvent.click(document.querySelector('button[aria-label="View raw JSON"]')!);
-    const btn = document.querySelector('button[aria-label="Copy"]')!;
-    await act(async () => { fireEvent.click(btn); await Promise.resolve(); });
-    expect(navigator.clipboard.writeText).toHaveBeenCalledWith('custom text');
-    spy.mockRestore();
-  });
-
-  it('the viewer falls back to JSON.stringify(message) when no copyText is set', async () => {
-    const mod = await import('@/contexts/MessageRenderingContext');
-    const { createDefaultConfig } = await import('@/lib/messageRenderingConfig');
-    const fakeConfig = createDefaultConfig();
-    fakeConfig.debug.showCardKindLabel = true;
-    const spy = vi.spyOn(mod, 'useMessageRenderingConfig').mockReturnValue({
-      config: fakeConfig,
-      setConfig: () => {},
-      loaded: true,
-    });
-
-    const message = {
-      kind: 'system', subtype: 'notification', sessionId: 's', receivedAt: '',
-      raw: { type: 'system', subtype: 'notification' },
-    } as unknown as JsonlNode;
-    render(<MessageCard kindId="x" message={message}>body</MessageCard>);
-    fireEvent.click(document.querySelector('button[aria-label="View raw JSON"]')!);
-    const btn = document.querySelector('button[aria-label="Copy"]')!;
-    await act(async () => { fireEvent.click(btn); await Promise.resolve(); });
-    expect(navigator.clipboard.writeText).toHaveBeenCalled();
-    const arg = (navigator.clipboard.writeText as ReturnType<typeof vi.fn>).mock.calls[0][0];
-    expect(arg).toContain('"type": "system"');
+    // Copy and view both live in the header action bar now, as one family of
+    // control. The footer chip is a label again, and — the reason this moved —
+    // it no longer serializes the payload on every render to feed a button
+    // almost nobody presses. Behaviour of the pair is covered by
+    // CardActionBar.test.tsx.
+    expect(labelEl!.querySelector('button')).toBeNull();
     spy.mockRestore();
   });
 });

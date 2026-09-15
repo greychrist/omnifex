@@ -93,6 +93,16 @@ interface AccountBadgeProps {
    * by the `compact` variant — that's a fixed 18px icon-only square.
    */
   size?: "xs" | "sm";
+  /**
+   * Drop the account name and type, keeping the icon. For narrow windows,
+   * where the name is the widest thing in a row that has other work to do.
+   *
+   * The trailing mark is deliberately kept: a mismatch shield is a warning
+   * about which account is about to run, and a narrow window is not a reason
+   * to stop showing it. Ignored by the `compact` variant, which is already
+   * icon-only.
+   */
+  hideName?: boolean;
   className?: string;
 }
 
@@ -105,6 +115,7 @@ export const AccountBadge: React.FC<AccountBadgeProps> = ({
   verification,
   variant = "full",
   size = "xs",
+  hideName = false,
   className,
 }) => {
   const { getColor, getIcon, getAccountType } = useAccounts();
@@ -217,6 +228,7 @@ export const AccountBadge: React.FC<AccountBadgeProps> = ({
   if (color) {
     return (
       <span
+        title={hideName ? name : undefined}
         className={cn(
           "inline-flex items-center gap-1 rounded border px-2 py-0.5 font-medium whitespace-nowrap",
           textSizeClass,
@@ -228,8 +240,8 @@ export const AccountBadge: React.FC<AccountBadgeProps> = ({
             cleaner. The pill height is driven by the line-height of the
             text, so the icon doesn't change the badge's overall size. */}
         <IconComponent className={iconSizeClass} strokeWidth={2.2} />
-        {name}
-        {resolvedType && (
+        {!hideName && name}
+        {!hideName && resolvedType && (
           <span className="opacity-70">: {resolvedType}</span>
         )}
         {trailingMark}
@@ -240,6 +252,7 @@ export const AccountBadge: React.FC<AccountBadgeProps> = ({
   const fallbackClass = getFallbackColor(name);
   return (
     <span
+      title={hideName ? name : undefined}
       className={cn(
         "inline-flex items-center gap-1 rounded border px-2 py-0.5 font-medium whitespace-nowrap",
         textSizeClass,
@@ -248,7 +261,7 @@ export const AccountBadge: React.FC<AccountBadgeProps> = ({
       )}
     >
       <IconComponent className={fallbackIconSizeClass} strokeWidth={2.2} />
-      {name}
+      {!hideName && name}
       {trailingMark}
     </span>
   );

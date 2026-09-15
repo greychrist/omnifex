@@ -13,7 +13,6 @@ import { KindHeader } from "@/components/KindHeader";
 import type { JsonlNode } from "@/types/jsonl";
 import type { BorderStyle, IconName } from "@/lib/messageRenderingConfig";
 import { resolveKind } from "@/lib/messageRenderingConfig";
-import { RawJsonPopover } from "./RawJsonPopover";
 
 interface MessageFrameCardProps {
   /** Drives icon, accent, and (via KindHeader) the configured header label.
@@ -47,10 +46,6 @@ interface MessageFrameCardProps {
   widthClassName?: string;
   /** Extra classes for the outer Card. */
   className?: string;
-  /** When provided, enables the small copy-to-clipboard button on the
-   *  card's top-right (writes this text). When omitted and `message` is
-   *  set, the debug footer's raw-JSON copy button is used instead. */
-  copyText?: string;
   /** Override the border-style on the card chrome. Defaults to the value
    *  in the kind config (usually `solid`). Pass explicitly when the caller
    *  needs to diverge from config (e.g. `dashed` for the unknown fallback). */
@@ -85,7 +80,6 @@ export const MessageFrameCard: React.FC<MessageFrameCardProps> = ({
   alignment = "left",
   widthClassName,
   className,
-  copyText,
   borderStyle,
   actionBar,
 }) => {
@@ -163,7 +157,7 @@ export const MessageFrameCard: React.FC<MessageFrameCardProps> = ({
         <CardContent className="px-4 pt-3 pb-9 min-w-0 overflow-x-auto">
           {children}
         </CardContent>
-        <CardFooter receivedAt={(message as { receivedAt?: string } | undefined)?.receivedAt} message={message} copyText={copyText} kindId={kindId} />
+        <CardFooter receivedAt={(message as { receivedAt?: string } | undefined)?.receivedAt} message={message} kindId={kindId} />
       </Card>
     </div>
   );
@@ -195,9 +189,8 @@ function formatLocalTimestamp(isoOrNumeric: string): string {
 export const CardFooter: React.FC<{
   receivedAt?: string;
   message?: JsonlNode;
-  copyText?: string;
   kindId?: string;
-}> = ({ receivedAt, message, copyText, kindId }) => {
+}> = ({ receivedAt, message, kindId }) => {
   const formatted = receivedAt ? formatLocalTimestamp(receivedAt) : null;
 
   // Kind label shows the resolved catalog kind ID broken on its dots so the
@@ -216,10 +209,6 @@ export const CardFooter: React.FC<{
     if (t) kindLabel = sub ? `${t} · ${sub}` : String(t);
   }
 
-  // The raw wire payload, serialized once for the viewer panel.
-  const payload = copyText
-    ?? (message ? JSON.stringify((message as unknown as { raw?: unknown }).raw, null, 2) : "");
-
   if (!formatted && !kindLabel) return null;
 
   return (
@@ -230,7 +219,6 @@ export const CardFooter: React.FC<{
           title="message type · subtype"
         >
           <span className="pointer-events-none">{kindLabel}</span>
-          <RawJsonPopover text={payload} label={kindLabel ?? "Raw JSON"} />
         </div>
       )}
       {formatted && (

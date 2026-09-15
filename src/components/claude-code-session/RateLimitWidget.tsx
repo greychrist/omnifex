@@ -3,6 +3,8 @@ import { Clock, CalendarDays } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { RateLimitSnapshot } from '@/lib/api';
 import { HeaderLabel } from '../HeaderLabel';
+import { useLayoutMode } from '@/hooks/useLayoutMode';
+import { InlineDivider } from '@/components/ui/inline-divider';
 
 interface RateLimitWidgetProps {
   /** Latest snapshot for this rate-limit window. Null = no data yet. */
@@ -61,6 +63,10 @@ export function RateLimitWidget({
   hideLabel,
   className,
 }: RateLimitWidgetProps) {
+  // The bar is the widest element in the pill and the least informative: the
+  // percentage beside it says the same thing exactly. First to go when the
+  // row has to fit a narrow window.
+  const { narrow } = useLayoutMode();
   const { label } = LABELS[windowType];
   const Icon = ICONS[windowType];
   const now = nowMs ?? Date.now();
@@ -79,7 +85,9 @@ export function RateLimitWidget({
         >
           <Icon className="w-3.5 h-3.5 opacity-60" />
           <span className="opacity-60 text-right tabular-nums min-w-[4ch]">—</span>
-          <div className="w-11 h-1.5 bg-foreground/10 rounded-full" />
+          {narrow
+            ? <InlineDivider data-testid="rate-limit-divider" className="bg-current opacity-30" />
+            : <div data-testid="rate-limit-bar" className="w-11 h-1.5 bg-foreground/10 rounded-full" />}
           <span className="opacity-60 text-left tabular-nums min-w-[7ch]">--</span>
         </span>
       </div>
@@ -138,12 +146,19 @@ export function RateLimitWidget({
         <span className={cn('font-mono text-right tabular-nums min-w-[4ch]', pctTextColor)}>
           {pct != null ? `${pct.toFixed(0)}%` : '?%'}
         </span>
-        <div className="w-11 h-1.5 bg-foreground/10 rounded-full overflow-hidden relative">
-          <div
-            className="absolute inset-0 rounded-full bg-gradient-to-r from-green-400 via-orange-400 to-red-400 transition-[clip-path]"
-            style={{ clipPath: `inset(0 ${pct == null ? 100 : 100 - pct}% 0 0)` }}
-          />
-        </div>
+        {/* The bar was doing double duty: a gauge, and the thing keeping the
+            percentage from running into the reset countdown. Drop one and the
+            other still has to be done. */}
+        {narrow ? (
+          <InlineDivider data-testid="rate-limit-divider" className="bg-current opacity-30" />
+        ) : (
+          <div data-testid="rate-limit-bar" className="w-11 h-1.5 bg-foreground/10 rounded-full overflow-hidden relative">
+            <div
+              className="absolute inset-0 rounded-full bg-gradient-to-r from-green-400 via-orange-400 to-red-400 transition-[clip-path]"
+              style={{ clipPath: `inset(0 ${pct == null ? 100 : 100 - pct}% 0 0)` }}
+            />
+          </div>
+        )}
         <span className="text-foreground/70 font-mono whitespace-nowrap text-left tabular-nums min-w-[7ch]">
           {tail || '—'}
         </span>

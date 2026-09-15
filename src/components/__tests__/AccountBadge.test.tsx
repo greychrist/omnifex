@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
-import { render, cleanup } from '@testing-library/react';
+import { render, cleanup, screen } from '@testing-library/react';
 import { AccountBadge } from '../AccountBadge';
 
 // AccountBadge resolves color/icon/type via useAccounts() when the props
@@ -113,5 +113,31 @@ describe('AccountBadge — theme-aware colored variants', () => {
     const styleAttr = root.getAttribute('style') ?? '';
     expect(styleAttr).toContain('white');
     expect(styleAttr).toContain('black');
+  });
+});
+
+describe('AccountBadge — hideName', () => {
+  it('shows the name by default and hides it on request, keeping the icon', () => {
+    const { container, unmount } = render(<AccountBadge name="Personal" />);
+    expect(screen.getByText(/Personal/)).toBeTruthy();
+    expect(container.querySelector('svg')).not.toBeNull();
+    unmount();
+
+    render(<AccountBadge name="Personal" hideName />);
+    expect(screen.queryByText(/Personal/)).toBeNull();
+    expect(document.querySelector('svg')).not.toBeNull();
+  });
+
+  // Losing the name must not lose which account it is.
+  it('names the account in a tooltip once the label is gone', () => {
+    const { container } = render(<AccountBadge name="Personal" hideName />);
+    expect(container.firstElementChild?.getAttribute('title')).toBe('Personal');
+  });
+
+  // A mismatch shield is a warning about which account is about to run; a
+  // narrow window is not a reason to stop showing it.
+  it('keeps the identity shield when the name is hidden', () => {
+    render(<AccountBadge name="Personal" hideName verification="mismatch" />);
+    expect(screen.getByLabelText(/DIFFERENT account/)).toBeTruthy();
   });
 });

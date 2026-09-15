@@ -9,7 +9,6 @@ import {
   Package,
   Shield,
   ArrowLeft,
-  PanelRightOpen,
 } from "lucide-react";
 import { SessionInspectorPanel } from "@/components/SessionInspectorPanel";
 import { Button } from "@/components/ui/button";
@@ -82,6 +81,8 @@ import { createTuiPromptHandler } from '@/lib/tuiPromptHandler';
 import { HeaderLabel } from "./HeaderLabel";
 import { AccountCard } from "./AccountCard";
 import { SessionCard } from "./SessionCard";
+import { ChatStatusBar } from "./ChatStatusBar";
+import { useDaemonLink } from "@/hooks/useDaemonLink";
 import { GitBranchBadge } from "./claude-code-session/GitBranchBadge";
 import { GitWatchStatusIcon } from "./claude-code-session/GitWatchStatusIcon";
 import { resolveBranchColors } from '@/lib/branchColors';
@@ -749,6 +750,9 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   useEffect(() => {
     try { localStorage.setItem(INSPECTOR_PREF_KEY, inspectorOpen ? '1' : '0'); } catch { /* private mode etc. */ }
   }, [inspectorOpen]);
+  // Stable: ClaudeTranscript is memoised, and a fresh closure per render would
+  // defeat that for the whole transcript.
+  const openInspector = useCallback(() => { setInspectorOpen(true); }, []);
   const tabIdRef = useRef(tabId || 'default');
   // Drop any per-tab inflight buffer when this tab unmounts so the
   // module-level Map doesn't leak across long-lived renderer sessions.
@@ -1077,6 +1081,10 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   // large with a deep child tree; ticking a countdown at this level would
   // re-render all of it every second. SessionCard and TabManager each own a
   // local interval instead.
+  // Socket state is global; whether the daemon is delivering THIS session is
+  // not. The status bar shows both — see useDaemonLink.
+  const daemonLink = useDaemonLink(sessionTabId, claudeSessionId ?? null);
+
   const cacheTtlMs = useMemo(
     () => (cacheTimerEnabled ? observeCacheTtlMs(messages) : null),
     [messages, cacheTimerEnabled],
@@ -1214,9 +1222,25 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     }
   }, [session, loadSessionHistory, claudeSessionId]);
 
+  /** One warning per tab for the stale-listener drop below, not one per event. */
+  const loggedUnmountedDropRef = useRef(false);
+
   const handleJsonlLine = useCallback((payload: string | object) => {
     try {
-      if (!streamCtxRef.current.isMountedRef?.current) return;
+      // Dropping events because the React tree is gone is correct; doing it
+      // silently is not. A listener outlives its component on purpose (see
+      // useSessionLifecycle's mount effect), so a stale one discards a whole
+      // live turn here and leaves no trace anywhere — spinner up, transcript
+      // frozen, nothing logged. Say it once per tab.
+      if (!streamCtxRef.current.isMountedRef?.current) {
+        if (!loggedUnmountedDropRef.current) {
+          loggedUnmountedDropRef.current = true;
+          console.warn(
+            `[AgentSession] dropping stream events for tab ${tabIdRef.current}: listener outlived its component`,
+          );
+        }
+        return;
+      }
       let raw: unknown;
       let rawString: string;
       if (typeof payload === 'string') {
@@ -2138,6 +2162,8 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     <CodexTranscript
       messages={codexMessages}
       tabId={tabIdRef.current}
+      onOpenInspector={openInspector}
+      inspectorOpen={inspectorOpen}
     />
   ) : (
     <ClaudeTranscript
@@ -2155,6 +2181,8 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
       tabId={tabIdRef.current}
       messagesEndRef={messagesEndRef}
       isNearBottomRef={isNearBottomRef}
+      onOpenInspector={openInspector}
+      inspectorOpen={inspectorOpen}
     />
   );
 
@@ -2250,7 +2278,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
 
   const sessionActivity = signals.stateFor('session.activity');
   const contextLevel = signals.stateFor('context.level');
-  const sessionUnread = signals.unreadFor('session');
   const sessionEvents = signals.eventsFor('session', POPOVER_EVENT_LIMIT);
   const sessionAction = signals.actionsFor('session')[0] ?? null;
   // No `account` badge: that anchor has only an `action` emitter, and
@@ -2428,7 +2455,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
             className="ml-auto min-w-0"
             activitySignal={sessionActivity}
             contextLevelSignal={contextLevel}
-            unreadEvents={sessionUnread}
             pendingAction={sessionAction}
             recentEvents={sessionEvents}
             onSignalsRead={() => { signals.markRead('session'); }}
@@ -2441,9 +2467,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
             model={selectedModel}
             defaultModel={accountDefaultModel}
             contextUsage={contextUsage}
-            cacheAnchorMs={cacheAnchorMs}
-            cacheTtlMs={cacheTtlMs}
-            cacheBusy={isLoading}
             activeSubagents={activeSubagentCount}
             sessionStatus={displayStatus}
             onReconnect={() => void handleReconnect()}
@@ -2759,26 +2782,28 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
           "flex-1 min-h-0 overflow-hidden transition-all duration-300 relative",
           (showMCPPanel || showPluginsPanel || showPermissionsPanel || inspectorOpen) && "sm:mr-96"
         )}>
-          {/* Session Inspector toggle — top-right of the content area.
-              Hidden while the panel is open (the panel has its own close X). */}
-          {!inspectorOpen && (
-            <button
-              type="button"
-              onClick={() => { setInspectorOpen(true); }}
-              className="absolute top-2 right-2 z-20 rounded p-1.5 bg-background/80 backdrop-blur border border-border text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shadow-sm"
-              title="Show session inspector"
-              aria-label="Show session inspector"
-            >
-              <PanelRightOpen className="w-4 h-4" />
-            </button>
-          )}
+          {/* The Session Inspector toggle used to float here at
+              `top-2 right-2`, attached to nothing and — once the chat status
+              bar arrived — sitting on top of it. It now opens from the top of
+              each transcript's own right-hand rail. */}
           <div className="h-full flex flex-col">
             {/* The thinking bar that used to sit here is now the session
                 widget's activity pill ("thinking 12s"), which costs no
                 transcript height and keeps the elapsed clock visible while
                 scrolled anywhere. The token count moved to its tooltip. */}
+            <ChatStatusBar
+              link={daemonLink}
+              activitySignal={sessionActivity}
+              cacheAnchorMs={cacheAnchorMs}
+              cacheTtlMs={cacheTtlMs}
+              cacheBusy={isLoading}
+            />
             {sessionMode === 'tui' ? (
-              <TuiSessionLayout tabId={tabIdRef.current} />
+              <TuiSessionLayout
+                tabId={tabIdRef.current}
+                onOpenInspector={openInspector}
+                inspectorOpen={inspectorOpen}
+              />
             ) : (
               messagesList
             )}

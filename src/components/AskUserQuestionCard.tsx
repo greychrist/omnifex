@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { accentStyleFor, swatchFor } from "@/lib/accentStyle";
 import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
 import { CardFooter } from "@/components/StreamMessage/MessageFrameCard";
+import { CardActionBar } from "@/components/CardActionBar";
 import type { PermissionRequestPayload } from "@/lib/types/permissionRequest";
 
 /**
@@ -187,7 +188,8 @@ export function AskUserQuestionCard({ request, onSubmit, onCancel }: AskUserQues
             <Button size="sm" variant="secondary" onClick={onCancel}>Dismiss</Button>
           </div>
         </div>
-        <CardFooter kindId="permission.askUserQuestion" copyText={requestJson} />
+        <CardActionBar text={requestJson} rawPayload={requestJson} />
+        <CardFooter kindId="permission.askUserQuestion" />
       </div>
     );
   }
@@ -388,7 +390,8 @@ export function AskUserQuestionCard({ request, onSubmit, onCancel }: AskUserQues
         </>
         )}
       </div>
-      <CardFooter kindId="permission.askUserQuestion" copyText={requestJson} />
+      <CardActionBar text={requestJson} rawPayload={requestJson} />
+      <CardFooter kindId="permission.askUserQuestion" />
     </div>
   );
 }

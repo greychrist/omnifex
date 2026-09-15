@@ -1,4 +1,5 @@
 import * as React from "react";
+import { DatabaseZap } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   evaluateCacheExpiry,
@@ -17,7 +18,7 @@ export interface CacheTimerRowProps {
 }
 
 /**
- * Prompt-cache countdown, rendered under the context gauge in SessionCard.
+ * Prompt-cache countdown, rendered in the chat status bar above the transcript.
  *
  * Owns its own one-second interval so the tick stays local: AgentSession is
  * large with a deep child tree, and ticking up there would re-render all of it
@@ -87,8 +88,11 @@ export const CacheTimerRow: React.FC<CacheTimerRowProps> = ({
   return (
     <span
       title={title}
-      className={cn("px-2 text-[10px] font-mono truncate", tone, className)}
+      className={cn("inline-flex items-center gap-1 px-2 text-[10px] font-mono truncate", tone, className)}
     >
+      {/* A cache that is counting down to a rewrite: the database is the
+          thing, the bolt is that it is live and expiring. */}
+      <DatabaseZap className="h-3.5 w-3.5 shrink-0" aria-hidden />
       {text}
     </span>
   );

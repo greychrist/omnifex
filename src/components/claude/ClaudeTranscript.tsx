@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 import { ArrowDown, ArrowUp, ChevronDown, ChevronUp, ChevronsDown, ChevronsUp, MessageSquare, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TooltipSimple } from "@/components/ui/tooltip-modern";
+import { SessionGutter, GUTTER_BUTTON, InspectorGutterButton, type InspectorGutterButtonProps } from "@/components/SessionGutter";
 import { StreamMessage } from "@/components/StreamMessage";
 import { TranscriptRowBoundary } from "@/components/claude/TranscriptRowBoundary";
 import { HiddenEventsGroup } from "@/components/HiddenEventsGroup";
@@ -25,9 +26,6 @@ import { cn } from "@/lib/utils";
 import type { JsonlNode } from "@/types/jsonl";
 import type { ViewMode } from "@/components/SessionViewToggle";
 
-/** Shared chrome for the floating scroll/step buttons on the right edge. */
-const NAV_BUTTON =
-  "h-8 w-8 hover:bg-accent/50 transition-colors bg-background/80 backdrop-blur-sm border border-border/50";
 
 /**
  * A stepper's icon: what it steps over, then which way. Both glyphs drop to
@@ -44,7 +42,7 @@ const StepIcon: React.FC<{
   </span>
 );
 
-export interface ClaudeTranscriptProps {
+export interface ClaudeTranscriptProps extends InspectorGutterButtonProps {
   /** All stream messages for this tab — passed to StreamMessage as the streamMessages context. */
   messages: JsonlNode[];
   /** Verbose vs. compact rendering mode. */
@@ -109,6 +107,8 @@ function ClaudeTranscriptImpl({
   tabId,
   messagesEndRef,
   isNearBottomRef,
+  onOpenInspector,
+  inspectorOpen,
 }: ClaudeTranscriptProps): React.ReactElement {
   useRenderProfile('ClaudeTranscript');
   const { config: renderConfig } = useMessageRenderingConfig();
@@ -362,14 +362,21 @@ function ClaudeTranscriptImpl({
         up/down arrows you have to hover to tell apart: a chat bubble steps
         one message, a person steps one user prompt. The two jump-to-end
         buttons stay bare double chevrons — they have no subject. */}
-    <div className="absolute right-1 bottom-6 z-10 flex flex-col gap-1">
+    <SessionGutter
+      top={
+        <InspectorGutterButton
+          onOpenInspector={onOpenInspector}
+          inspectorOpen={inspectorOpen}
+        />
+      }
+    >
       <TooltipSimple content="Scroll to top" side="left">
         <Button
           variant="ghost"
           size="icon"
           onClick={scrollToTop}
           aria-label="Scroll to top"
-          className={NAV_BUTTON}
+          className={GUTTER_BUTTON}
         >
           <ChevronsUp className="h-3.5 w-3.5" />
         </Button>
@@ -380,7 +387,7 @@ function ClaudeTranscriptImpl({
           size="icon"
           onClick={stepPrev}
           aria-label="Previous message"
-          className={NAV_BUTTON}
+          className={GUTTER_BUTTON}
         >
           <StepIcon subject={MessageSquare} direction={ChevronUp} />
         </Button>
@@ -391,7 +398,7 @@ function ClaudeTranscriptImpl({
           size="icon"
           onClick={stepNext}
           aria-label="Next message"
-          className={NAV_BUTTON}
+          className={GUTTER_BUTTON}
         >
           <StepIcon subject={MessageSquare} direction={ChevronDown} />
         </Button>
@@ -411,7 +418,7 @@ function ClaudeTranscriptImpl({
             onClick={promptPrev}
             aria-label="Previous prompt"
             disabled={!hasPrompt}
-            className={NAV_BUTTON}
+            className={GUTTER_BUTTON}
           >
             <StepIcon subject={User} direction={ArrowUp} />
           </Button>
@@ -425,7 +432,7 @@ function ClaudeTranscriptImpl({
             onClick={promptNext}
             aria-label="Next prompt"
             disabled={!hasPrompt}
-            className={NAV_BUTTON}
+            className={GUTTER_BUTTON}
           >
             <StepIcon subject={User} direction={ArrowDown} />
           </Button>
@@ -438,12 +445,12 @@ function ClaudeTranscriptImpl({
           size="icon"
           onClick={scrollToBottom}
           aria-label="Scroll to bottom"
-          className={NAV_BUTTON}
+          className={GUTTER_BUTTON}
         >
           <ChevronsDown className="h-3.5 w-3.5" />
         </Button>
       </TooltipSimple>
-    </div>
+    </SessionGutter>
     <div
       ref={parentRef}
       data-transcript-scroll

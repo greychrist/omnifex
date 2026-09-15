@@ -976,7 +976,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
         const blockKind = classifyBlockKind(block, message) ?? 'unknown';
         const isToolbarBlock = visibleIdx === lastCardIdx;
         const toolbar = isToolbarBlock
-          ? <CardActionBar message={msg} />
+          ? <CardActionBar message={msg} rawPayload={() => JSON.stringify(message.raw, null, 2)} />
           : undefined;
         const body = renderBlockBody(block, originalIdx);
         if (body === null) return null;
@@ -1246,11 +1246,12 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
       const userActionBar = !isToolResultOnly ? (
         <CardActionBar
           message={msg}
+          rawPayload={() => JSON.stringify(message.raw, null, 2)}
           ariaLabel="User message actions"
           extras={showResend && onResend ? <ResendExtra msg={msg} onResend={onResend} /> : undefined}
         />
       ) : (
-        <CardActionBar message={msg} />
+        <CardActionBar message={msg} rawPayload={() => JSON.stringify(message.raw, null, 2)} />
       );
 
       // MessageFrame reads alignment, icon, accent, and header from config.

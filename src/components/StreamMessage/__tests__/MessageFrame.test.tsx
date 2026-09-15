@@ -20,6 +20,58 @@ vi.mock('@/lib/api', () => ({
 describe('MessageFrame', () => {
   afterEach(() => { cleanup(); });
 
+  // Copy and payload-view were card-only affordances. "What is actually in
+  // this record?" is asked most often of the low-weight rows — tool results,
+  // bookkeeping, system signals — which are exactly the ones rendered as
+  // side-line and collapsible.
+  describe('payload affordances on every presentation variant', () => {
+    const node = {
+      kind: 'system',
+      raw: { type: 'system', subtype: 'notification', body: 'b' },
+    } as unknown as import('@/types/jsonl').JsonlNode;
+
+    const labelsFor = (container: HTMLElement) =>
+      [...container.querySelectorAll('button')]
+        .map((b) => b.getAttribute('aria-label'))
+        .filter((l): l is string => l === 'Copy content' || l === 'View raw JSON');
+
+    it('gives the side-line variant a copy and a view button', async () => {
+      const { container, findByText } = render(
+        <MessageRenderingProvider>
+          <MessageFrame streamKind="user.tool-result" message={node}>side-line body</MessageFrame>
+        </MessageRenderingProvider>
+      );
+      await findByText('side-line body');
+      expect(container.querySelector('[data-frame-variant="side-line"]')).not.toBeNull();
+      expect(labelsFor(container)).toEqual(['Copy content', 'View raw JSON']);
+    });
+
+    it('gives the collapsible variant a copy and a view button', async () => {
+      const { container, findByRole } = render(
+        <MessageRenderingProvider>
+          <MessageFrame streamKind="user.systemContext" message={node}>collapsed body</MessageFrame>
+        </MessageRenderingProvider>
+      );
+      // The provider loads its config asynchronously; the bar is the thing
+      // under test, so wait on that rather than a header label.
+      await findByRole('toolbar');
+      expect(container.querySelector('[data-frame-variant="collapsible"]')).not.toBeNull();
+      expect(labelsFor(container)).toEqual(['Copy content', 'View raw JSON']);
+    });
+
+    it('leaves a caller-supplied action bar alone', async () => {
+      const { container, findByText } = render(
+        <MessageRenderingProvider>
+          <MessageFrame streamKind="user.tool-result" message={node} actionBar={<span>MINE</span>}>
+            side-line body
+          </MessageFrame>
+        </MessageRenderingProvider>
+      );
+      await findByText('MINE');
+      expect(labelsFor(container)).toEqual([]);
+    });
+  });
+
   it('renders MessageFrameCard wrapper when the kind presentation is card', async () => {
     const { container, findByText } = render(
       <MessageRenderingProvider>

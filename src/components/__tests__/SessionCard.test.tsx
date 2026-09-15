@@ -256,16 +256,15 @@ describe('SessionCard — unread session events', () => {
     },
   ];
 
-  it('clears the badge when the popover closes, not the moment it opens', () => {
-    // Opening used to mark everything read immediately, which zeroed the count
-    // and dropped the unread tint before the reader had scrolled to the list
-    // that explains it. The evidence destroyed itself on the way to being read.
+  it('marks signals read when the popover closes, not the moment it opens', () => {
+    // Opening used to mark everything read immediately, which dropped the
+    // unread tint before the reader had scrolled to the list it applies to.
+    // The evidence destroyed itself on the way to being read.
     let readCalls = 0;
     render(
       <SessionCard
         totalTokens={12_000}
         contextUsage={USAGE}
-        unreadEvents={3}
         recentEvents={EVENTS}
         onSignalsRead={() => { readCalls += 1; }}
       />,
@@ -280,8 +279,7 @@ describe('SessionCard — unread session events', () => {
   });
 
   it('keeps the event list reachable without opening anything', () => {
-    // This list is the only thing that says what the trigger's number meant,
-    // so it must be on screen the moment the popover is. It used to be ordered
+    // The list must be on screen the moment the popover is. It used to be ordered
     // ABOVE the category breakdown to guarantee that; the breakdown now
     // collapses by default, which achieves the same thing, so the list sits in
     // reading order and the bands are behind a disclosure.
@@ -289,7 +287,6 @@ describe('SessionCard — unread session events', () => {
       <SessionCard
         totalTokens={120_000}
         contextUsage={WITH_CATEGORIES}
-        unreadEvents={1}
         recentEvents={EVENTS}
       />,
     );
@@ -299,27 +296,17 @@ describe('SessionCard — unread session events', () => {
     expect(document.querySelector('[data-context-band]')).toBeNull();
   });
 
-  it('names the unread count in the trigger, which the badge itself cannot', () => {
-    // SignalBadge is pointer-events-none so it can carry no tooltip of its own,
-    // and its aria-label reaches screen readers only. The count appeared on a
-    // token meter with nothing anywhere saying it was about events.
+  // The unread count used to ride on the token meter as a small number. It
+  // said nothing actionable — the events are one click away and the meter it
+  // sat on is about tokens, not events — so it is gone, along with the
+  // aria-label gymnastics needed to explain what it was counting.
+  it('carries no unread count on the trigger', () => {
     render(
-      <SessionCard
-        totalTokens={12_000}
-        contextUsage={USAGE}
-        unreadEvents={3}
-        recentEvents={EVENTS}
-      />,
+      <SessionCard totalTokens={12_000} contextUsage={USAGE} recentEvents={EVENTS} />,
     );
-    const trigger = screen.getByLabelText(/Context usage/);
-    expect(trigger.getAttribute('aria-label')).toContain('3 new');
-    expect(trigger.getAttribute('title')).toContain('3 new');
-  });
-
-  it('leaves the trigger unadorned when nothing is unread', () => {
-    render(<SessionCard totalTokens={12_000} contextUsage={USAGE} />);
-    const trigger = screen.getByLabelText(/Context usage/);
+    const trigger = screen.getByLabelText('Context usage');
     expect(trigger.getAttribute('aria-label')).toBe('Context usage');
+    expect(trigger.textContent).not.toMatch(/\d+\s*new/);
   });
 });
 
