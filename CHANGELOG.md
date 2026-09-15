@@ -5,6 +5,18 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.173] — 2026-09-15
+
+### Fixed
+
+- When a background command or agent finished, the notification it sends back appeared in the transcript as a message you had written — your card, your styling, a resend button on it. Claude Code records where each message came from; OmniFex was ignoring that and working it out from the text instead, so anything the guesswork could not place became "something the user typed". It now reads what Claude Code recorded. Notifications arrive collapsed and headed by their own summary, and open to show the status, whatever the task returned, and its token and timing figures as plain text — rather than the tagged markup they arrive in, which the transcript had been running together into a paragraph of angle brackets.
+
+### Changed
+
+- The payload button on a message card — the one beside the message-type label, if you have switched that label on under Appearance — now opens the record instead of copying it. The JSON appears in a scrollable panel with its own copy button, so you can read what Claude Code actually wrote for a message before deciding whether you want it on the clipboard.
+
+Installers are signed with a Developer ID certificate and notarized by Apple.
+
 ## [0.4.172] — 2026-09-15
 
 ### Fixed
