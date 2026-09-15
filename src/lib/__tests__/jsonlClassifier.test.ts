@@ -73,10 +73,15 @@ describe('classifyJsonlLine', () => {
       if (node?.kind === 'user') expect(node.userKind).toBe('compact-summary');
     });
 
-    // The live envelope has no isCompactSummary at all — only isSynthetic
-    // (which is the union isMeta||isVisibleInTranscriptOnly, so it fires for
-    // skill bodies too) and an explicit isReplay:false.
-    it('classifies the live stream-json shape as userKind=compact-summary', () => {
+    // `isReplay: false` was a stream-json-only proxy, used back when the
+    // stream delivered committed rows and stripped `isCompactSummary`. It no
+    // longer does: the transcript comes from the CLI's JSONL, which marks
+    // summaries outright. A census of all 890 personal transcripts found 21
+    // rows carrying `isCompactSummary` and ZERO carrying `isReplay: false`,
+    // across six CLI versions — the field has never appeared on disk. Keying
+    // on it now would only let some other emitter's `isReplay: false` be
+    // mistaken for a compaction.
+    it('does not treat a bare isReplay:false as a compact summary', () => {
       const node = classifyJsonlLine({
         type: 'user',
         session_id: 'sid-1',
@@ -87,18 +92,18 @@ describe('classifyJsonlLine', () => {
         message: body,
       });
       expect(node?.kind).toBe('user');
-      if (node?.kind === 'user') expect(node.userKind).toBe('compact-summary');
+      if (node?.kind === 'user') expect(node.userKind).not.toBe('compact-summary');
     });
 
     // A directed /summarize sets isCompactSummary but NOT
-    // isVisibleInTranscriptOnly, so isSynthetic is absent on the wire. It is
-    // still a compaction summary and must not read as a prompt.
-    it('catches a directed summarize, which carries no isSynthetic', () => {
+    // isVisibleInTranscriptOnly. It is still a compaction summary and must
+    // not read as a prompt.
+    it('catches a directed summarize, which carries no isVisibleInTranscriptOnly', () => {
       const node = classifyJsonlLine({
         type: 'user',
-        session_id: 'sid-1',
-        receivedAt: '2026-07-30T21:08:30.237Z',
-        isReplay: false,
+        sessionId: 'sid-1',
+        timestamp: '2026-07-30T21:08:30.237Z',
+        isCompactSummary: true,
         message: body,
       });
       expect(node?.kind).toBe('user');

@@ -48,8 +48,9 @@ export interface UserRaw extends RawLineBase {
   /** Set when a meta record was emitted on behalf of a specific tool_use (e.g. Skill bodies). */
   sourceToolUseID?: string;
   /**
-   * Persisted-JSONL marker for a /compact summary. Absent from the
-   * stream-json envelope, which is why `isReplay` is also consulted.
+   * Marker for a /compact summary, and the only thing that identifies one.
+   * Present on every persisted record; absent from the stream-json envelope,
+   * which since the transcript inversion no longer delivers committed rows.
    */
   isCompactSummary?: boolean;
   /**
@@ -58,9 +59,12 @@ export interface UserRaw extends RawLineBase {
    */
   isVisibleInTranscriptOnly?: boolean;
   /**
-   * Live-stream only. Every CLI emitter hard-codes `true` except the
-   * compact-summary yield, which emits `!isCompactSummary` — so an explicit
-   * `false` is the compact summary. `undefined` means "not a replay at all".
+   * Live-stream only, and no longer read. Every CLI emitter hard-codes `true`
+   * except the compact-summary yield, which emits `!isCompactSummary`; that
+   * made an explicit `false` a usable proxy back when stream-json carried the
+   * transcript. It never appears on disk (0 occurrences across 890 personal
+   * transcripts), so nothing classifies on it now. Declared to document the
+   * wire shape, not because anything consumes it.
    */
   isReplay?: boolean;
   /**

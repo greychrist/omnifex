@@ -119,24 +119,26 @@ function isAttachmentMarker(content: unknown): boolean {
 }
 
 /**
- * A /compact summary reaches us as a `user` record on both ingress paths, but
- * the two paths agree on nothing:
+ * A /compact summary reaches us as a `user` record, marked `isCompactSummary`
+ * (plus `isVisibleInTranscriptOnly` for a plain compaction, absent for a
+ * directed summarize).
  *
- *  - persisted JSONL → `isCompactSummary: true` (+ `isVisibleInTranscriptOnly`
- *    for a plain compaction, absent for a directed summarize)
- *  - stream-json     → neither field survives; the CLI emits
- *    `isReplay: !isCompactSummary`, and every other emitter hard-codes
- *    `isReplay: true`, so an explicit `false` is the marker
+ * This used to fall back to `isReplay === false`, because stream-json stripped
+ * `isCompactSummary` and the CLI emits `isReplay: !isCompactSummary` while
+ * every other emitter hard-codes `true`. That proxy died with the transcript
+ * inversion: committed rows now come from the CLI's JSONL, which marks
+ * summaries outright (see services/sessions/stream-forward.ts). A census of
+ * all 890 personal transcripts found 21 rows carrying `isCompactSummary` and
+ * zero carrying `isReplay: false`, across six CLI versions — the field has
+ * never appeared on disk, so the fallback could only ever have fired on a
+ * shape we no longer render from.
  *
  * `isSynthetic` is deliberately NOT consulted: the CLI defines it as
  * `isMeta || isVisibleInTranscriptOnly`, so it fires for skill bodies and
  * image markers too, and it misses a directed summarize entirely.
  */
 export function isCompactSummaryRecord(r: Record<string, unknown>): boolean {
-  if (r.isCompactSummary === true) return true;
-  // Strict `=== false`: a live prompt omits isReplay, and `undefined` must not
-  // be read as "not a replay, therefore a summary".
-  return r.isReplay === false;
+  return r.isCompactSummary === true;
 }
 
 function classifyUser(r: Record<string, unknown>, sessionId: string, receivedAt: string | null): JsonlNode | null {

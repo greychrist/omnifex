@@ -163,19 +163,25 @@ function promptText(row: Row): string | null {
  *    `tool_result`)
  *  - `isMeta` rows: skill injections, attachment markers, slash-command
  *    preludes — machine text the user never typed
- *  - compaction summaries (`isCompactSummary`, or `isReplay === false`),
- *    which are the CLI replaying its own text back into the transcript
+ *  - compaction summaries (`isCompactSummary`), which are the CLI replaying
+ *    its own text back into the transcript
  *  - sidechain rows, which belong to a subagent's conversation, not the
  *    user's
+ *
+ * This also used to exclude `isReplay === false`, copied from the renderer's
+ * classifier where it stood in for `isCompactSummary` on the stream-json
+ * envelope. That never applied here: this source reads persisted CLI
+ * transcripts, and the field appears in none of them (0 occurrences across
+ * 890 personal transcripts, against 21 rows carrying `isCompactSummary`). The
+ * branch could only ever have dropped a genuine prompt from some other writer
+ * that sets `isReplay` for its own reasons — costing that session its note via
+ * the MIN_PROMPTS gate.
  */
 export function isPromptRow(row: Row): boolean {
   if (row.type !== 'user') return false;
   if (row.isMeta === true) return false;
   if (row.isSidechain === true) return false;
   if (row.isCompactSummary === true) return false;
-  // Strict `=== false`: a live prompt omits isReplay entirely, and `undefined`
-  // must not read as "not a replay, therefore a summary".
-  if (row.isReplay === false) return false;
   return promptText(row) !== null;
 }
 

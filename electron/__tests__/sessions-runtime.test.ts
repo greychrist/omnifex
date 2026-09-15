@@ -1,5 +1,9 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
 import { listenToMessages } from '../services/sessions/runtime';
+import { encodeProjectId } from '../services/project-paths';
 import type {
   SessionHandle,
   SendToRenderer,
@@ -90,6 +94,22 @@ function makeHandle(engine: AgentEngine): SessionHandle {
     projectPath: '/p',
     configDir: '/c',
   };
+}
+
+// The tail polls with statSync on a 100ms interval, so assertions have to
+// wait for at least one cycle. Poll rather than sleep a fixed span — under
+// parallel suite load fs polling granularity degrades and a fixed sleep
+// starts missing events.
+function waitUntil(predicate: () => boolean, timeoutMs = 3000): Promise<boolean> {
+  return new Promise((resolve) => {
+    const start = Date.now();
+    const tick = (): void => {
+      if (predicate()) return resolve(true);
+      if (Date.now() - start >= timeoutMs) return resolve(predicate());
+      setTimeout(tick, 30);
+    };
+    tick();
+  });
 }
 
 function makeLoggingStub(): { service: LoggingService; entries: LogEntry[] } {
@@ -433,5 +453,235 @@ describe('runtime.listenToMessages — engine.onExit', () => {
     const sendMock = vi.mocked(sendToRenderer);
     const channels = sendMock.mock.calls.map((c) => c[0] as string);
     expect(channels).not.toContain('agent-complete:tab-1');
+  });
+});
+
+/**
+ * Transcript inversion: the CLI's own JSONL is the sole source of committed
+ * transcript rows, delivered by the tail. stream-json keeps only the shapes
+ * the CLI never writes to disk. Forwarding a committed row from BOTH sources
+ * renders it twice; forwarding neither loses it entirely.
+ *
+ * See electron/services/sessions/stream-forward.ts for how the deny-list was
+ * derived, and why an unrecognised shape forwards rather than drops.
+ */
+describe('runtime.listenToMessages — stream forwarding after the inversion', () => {
+  function setup() {
+    const engine = makeFakeEngine();
+    const handle = makeHandle(engine);
+    const sessions = new Map<string, SessionHandle>([['tab-1', handle]]);
+    const sendToRenderer: SendToRenderer = vi.fn();
+    void listenToMessages('tab-1', handle, {
+      sendToRenderer,
+      notificationHooks: {},
+      rateLimitHook: null,
+      ownership: null,
+      sessions,
+    });
+    const outputPayloads = (): unknown[] =>
+      vi.mocked(sendToRenderer).mock.calls
+        .filter((c) => c[0] === 'agent-output:tab-1')
+        .map((c) => c[1]);
+    return { engine, outputPayloads };
+  }
+
+  it('does not forward a committed assistant row', () => {
+    const { engine, outputPayloads } = setup();
+
+    engine._emitMessage({
+      type: 'assistant',
+      message: { role: 'assistant', content: [{ type: 'text', text: 'hi' }] },
+    });
+
+    expect(outputPayloads()).toHaveLength(0);
+  });
+
+  it('does not forward a committed user row', () => {
+    const { engine, outputPayloads } = setup();
+
+    engine._emitMessage({
+      type: 'user',
+      message: { role: 'user', content: [{ type: 'text', text: 'hi' }] },
+    });
+
+    expect(outputPayloads()).toHaveLength(0);
+  });
+
+  it('forwards partial token deltas, which never reach the JSONL', () => {
+    const { engine, outputPayloads } = setup();
+
+    engine._emitMessage({ type: 'stream_event', event: { type: 'content_block_delta' } });
+
+    expect(outputPayloads()).toHaveLength(1);
+  });
+
+  it('forwards the turn result, which the CLI never persists', () => {
+    const { engine, outputPayloads } = setup();
+
+    engine._emitMessage({ type: 'result', subtype: 'success', result: 'done' });
+
+    expect(outputPayloads()).toHaveLength(1);
+  });
+
+  it('forwards hook lifecycle events, which never reach the JSONL', () => {
+    const { engine, outputPayloads } = setup();
+
+    engine._emitMessage({ type: 'system', subtype: 'hook_started', hook_name: 'PreToolUse' });
+
+    expect(outputPayloads()).toHaveLength(1);
+  });
+
+  it('does not forward compact_boundary — main acts on it, the tail renders it', () => {
+    const { engine, outputPayloads } = setup();
+
+    engine._emitMessage({
+      type: 'system',
+      subtype: 'compact_boundary',
+      compact_metadata: { trigger: 'auto', pre_tokens: 1000 },
+    });
+
+    expect(outputPayloads()).toHaveLength(0);
+  });
+
+  it('still dispatches the result notification for a row it forwards', () => {
+    // The forwarding gate must not short-circuit main's own handling of an
+    // event. Acting on a message and relaying it are separate decisions.
+    const engine = makeFakeEngine();
+    const handle = makeHandle(engine);
+    const showNotification = vi.fn();
+    void listenToMessages('tab-1', handle, {
+      sendToRenderer: vi.fn(),
+      notificationHooks: { showNotification },
+      rateLimitHook: null,
+      ownership: null,
+      sessions: new Map<string, SessionHandle>([['tab-1', handle]]),
+    });
+
+    engine._emitMessage({ type: 'result', subtype: 'success', result: 'done' });
+
+    expect(showNotification).toHaveBeenCalled();
+  });
+
+  it('still captures the init model catalog for a row it does not forward', () => {
+    const engine = makeFakeEngine();
+    vi.mocked(engine.getInitData).mockReturnValue({ models: [{ value: 'x' }] as never });
+    const handle = makeHandle(engine);
+    const modelCatalogSink = vi.fn();
+    void listenToMessages('tab-1', handle, {
+      sendToRenderer: vi.fn(),
+      notificationHooks: {},
+      rateLimitHook: null,
+      ownership: null,
+      sessions: new Map<string, SessionHandle>([['tab-1', handle]]),
+      modelCatalogSink,
+    });
+
+    engine._emitMessage({ type: 'system', subtype: 'init', models: [{ value: 'x' }] });
+
+    expect(modelCatalogSink).toHaveBeenCalled();
+  });
+});
+
+/**
+ * Transcript inversion, renderer side: the tail is now the transcript source
+ * in rich mode, not just a carrier for the few closure envelopes stream-json
+ * omitted. It must split lines exactly as TUI mode already does — closure
+ * carriers to `claude-output-extra:`, everything else to `agent-output:` —
+ * so both modes feed one renderer pipeline with one normalization.
+ */
+describe('runtime.listenToMessages — JSONL tail as transcript source', () => {
+  let tmpDir: string;
+  let jsonlPath: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'omnifex-rt-tail-'));
+    const projectDir = path.join(tmpDir, 'projects', encodeProjectId('/p'));
+    fs.mkdirSync(projectDir, { recursive: true });
+    jsonlPath = path.join(projectDir, 'sess-1.jsonl');
+    fs.writeFileSync(jsonlPath, '');
+  });
+
+  afterEach(() => {
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* ignore */ }
+  });
+
+  function setup() {
+    const engine = makeFakeEngine();
+    const handle = makeHandle(engine);
+    handle.configDir = tmpDir;
+    handle.startParams.configDir = tmpDir;
+    const sendToRenderer: SendToRenderer = vi.fn();
+    void listenToMessages('tab-1', handle, {
+      sendToRenderer,
+      notificationHooks: {},
+      rateLimitHook: null,
+      ownership: null,
+      sessions: new Map<string, SessionHandle>([['tab-1', handle]]),
+    });
+    const sent = (channel: string): unknown[] =>
+      vi.mocked(sendToRenderer).mock.calls
+        .filter((c) => c[0] === channel)
+        .map((c) => c[1]);
+    return { engine, sent };
+  }
+
+  it('delivers a committed assistant row from the file on agent-output', async () => {
+    const { sent } = setup();
+
+    fs.appendFileSync(
+      jsonlPath,
+      JSON.stringify({
+        type: 'assistant',
+        uuid: 'u-1',
+        message: { role: 'assistant', content: [{ type: 'text', text: 'hi' }] },
+      }) + '\n',
+    );
+
+    await waitUntil(() => sent('agent-output:tab-1').length > 0);
+    expect(sent('agent-output:tab-1')).toEqual([
+      expect.objectContaining({ type: 'assistant', uuid: 'u-1' }),
+    ]);
+  });
+
+  it('delivers the skill companion fields stream-json strips', async () => {
+    // The whole point of the inversion: sourceToolUseID reaches the renderer,
+    // so skill detection never has to infer a record's role from position.
+    const { sent } = setup();
+
+    fs.appendFileSync(
+      jsonlPath,
+      JSON.stringify({
+        type: 'user',
+        uuid: 'u-2',
+        isMeta: true,
+        turnCompanion: true,
+        sourceToolUseID: 'toolu_011V4gwJ',
+        message: { role: 'user', content: [{ type: 'text', text: '# Commit' }] },
+      }) + '\n',
+    );
+
+    await waitUntil(() => sent('agent-output:tab-1').length > 0);
+    expect(sent('agent-output:tab-1')[0]).toMatchObject({
+      sourceToolUseID: 'toolu_011V4gwJ',
+      isMeta: true,
+      turnCompanion: true,
+    });
+  });
+
+  it('still routes closure carriers to claude-output-extra', async () => {
+    const { sent } = setup();
+
+    fs.appendFileSync(
+      jsonlPath,
+      JSON.stringify({
+        type: 'queue-operation',
+        operation: 'enqueue',
+        content: '<task-notification>done</task-notification>',
+      }) + '\n',
+    );
+
+    await waitUntil(() => sent('claude-output-extra:tab-1').length > 0);
+    expect(sent('claude-output-extra:tab-1')).toHaveLength(1);
+    expect(sent('agent-output:tab-1')).toHaveLength(0);
   });
 });

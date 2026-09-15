@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { distillTranscript, DISTILL_MAX_CHARS } from '../services/brain/distill';
+import { distillTranscript, isPromptRow, DISTILL_MAX_CHARS } from '../services/brain/distill';
 
 const FIXTURES = join(__dirname, 'fixtures', 'brain');
 const normal = readFileSync(join(FIXTURES, 'session-normal.jsonl'), 'utf-8');
@@ -322,5 +322,44 @@ describe('distillTranscript', () => {
     expect(metadata.promptCount).toBe(0);
     expect(metadata.terminalStatus).toBe('unknown');
     expect(truncated).toBe(false);
+  });
+});
+
+/**
+ * `isPromptRow` decides what counts as a HUMAN prompt, which feeds both the
+ * distilled prose and the MIN_PROMPTS admission gate (spec §7). Excluding a
+ * row that is really a prompt costs a session its note; including a CLI
+ * replay puts the CLI's own words in the vault as the user's.
+ */
+describe('isPromptRow', () => {
+  const prompt = (extra: Record<string, unknown> = {}) => ({
+    type: 'user',
+    message: { role: 'user', content: [{ type: 'text', text: 'do the thing' }] },
+    ...extra,
+  });
+
+  it('counts an ordinary user prompt', () => {
+    expect(isPromptRow(prompt())).toBe(true);
+  });
+
+  it('excludes a compaction summary', () => {
+    // The CLI replaying its own recap back into the transcript. This is the
+    // marker that actually appears on disk — 21 rows across 890 personal
+    // transcripts carry it.
+    expect(isPromptRow(prompt({ isCompactSummary: true }))).toBe(false);
+  });
+
+  it('excludes meta and sidechain rows', () => {
+    expect(isPromptRow(prompt({ isMeta: true }))).toBe(false);
+    expect(isPromptRow(prompt({ isSidechain: true }))).toBe(false);
+  });
+
+  it('does not consult isReplay', () => {
+    // `isReplay: false` was a stream-json proxy for a compact summary, copied
+    // here from the renderer. This source reads persisted CLI transcripts,
+    // where the field has never appeared: 0 occurrences across 890 files.
+    // Keying on it could only ever have dropped a real prompt emitted by some
+    // future writer that sets isReplay for its own reasons.
+    expect(isPromptRow(prompt({ isReplay: false }))).toBe(isPromptRow(prompt()));
   });
 });
