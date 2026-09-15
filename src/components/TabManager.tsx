@@ -18,6 +18,15 @@ import { renderProfiler } from '@/lib/renderProfiler';
 import { evaluateCacheExpiry } from '@/lib/cacheExpiry';
 import { cn } from '@/lib/utils';
 import { fireAndLog } from "@/lib/fireAndLog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 
 interface TabItemProps {
   tab: Tab;
@@ -125,6 +134,38 @@ export function resolveTabStatusIndicator(
     }
   }
   return null;
+}
+
+/**
+ * Glyph kinds that mean the session still has work in it — either the agent is
+ * mid-turn, or it is blocked waiting on the human and the turn is still open.
+ */
+const LIVE_WORK_KINDS: ReadonlySet<TabStatusIndicator['kind']> = new Set([
+  'spinner',
+  'agents',
+  'permission',
+  'question',
+]);
+
+/**
+ * True when closing this tab would discard work in progress, so the close
+ * should be confirmed first.
+ *
+ * Closing a tab is the ONLY path that tears down the main-process CLI session
+ * (`TabContext.removeTab` → `api.stopSession`) — a misclick on the × ends a
+ * running turn with no way back.
+ *
+ * Derived from `resolveTabStatusIndicator` rather than re-reading
+ * `promptStatus` / `activeAgents` / `waitingFor` directly: the tab strip
+ * already owns the question of what a tab is doing, and its precedence rules
+ * are load-bearing here. `error` outranking everything is what keeps a dead
+ * session from prompting (the lifecycle doc is explicit that an errored
+ * session is not in flight), and `hasUnreadResult` ranking below the working
+ * kinds is what keeps a finished turn from prompting.
+ */
+export function tabCloseNeedsConfirm(tab: Tab, nowMs: number): boolean {
+  const indicator = resolveTabStatusIndicator(tab, nowMs);
+  return indicator !== null && LIVE_WORK_KINDS.has(indicator.kind);
 }
 
 
@@ -245,6 +286,7 @@ const TabItem: React.FC<TabItemProps> = ({ tab, isActive, onClose, onClick, isDr
 
       {/* Close button */}
       <button
+        aria-label={`Close tab ${tab.title}`}
         onClick={(e) => {
           e.stopPropagation();
           onClose(tab.id);
@@ -287,6 +329,15 @@ export const TabManager: React.FC<TabManagerProps> = ({ className }) => {
   const [showLeftScroll, setShowLeftScroll] = useState(false);
   const [showRightScroll, setShowRightScroll] = useState(false);
   const [draggedTabId, setDraggedTabId] = useState<string | null>(null);
+  // Tab awaiting a "you're about to kill a running session" confirmation.
+  const [pendingCloseId, setPendingCloseId] = useState<string | null>(null);
+  // The keyboard effect is registered once and must not re-subscribe every
+  // time `tabs` changes, so it reaches the current close handler through a
+  // ref rather than a dependency. Same ref-capture pattern the tab callbacks
+  // use elsewhere — see the note in TabContext.updateTab.
+  const handleCloseTabRef = useRef<(id: string) => Promise<void>>(
+    async () => { /* replaced below on first render */ },
+  );
 
   // Listen for tab switch events
   useEffect(() => {
@@ -307,9 +358,11 @@ export const TabManager: React.FC<TabManagerProps> = ({ className }) => {
       createProjectsTab();
     };
 
-    const handleCloseTab = async () => {
+    // ⌘W goes through the same guard as the × — a keyboard shortcut is the
+    // easier of the two to fire by accident.
+    const handleCloseTab = () => {
       if (activeTabId) {
-        await closeTab(activeTabId);
+        void handleCloseTabRef.current(activeTabId);
       }
     };
 
@@ -401,8 +454,37 @@ export const TabManager: React.FC<TabManagerProps> = ({ className }) => {
     }
   };
 
+  /**
+   * Every user-initiated close funnels through here — the × and ⌘W both.
+   *
+   * Closing a tab is the only thing that tears down the main-process CLI
+   * session (`TabContext.removeTab` → `api.stopSession`), and it is not
+   * recoverable: the turn in flight is lost. So a tab with live work asks
+   * first. Everything else closes as before — a confirmation on every tab
+   * would train the reflex that makes the prompt useless on the one that
+   * matters.
+   */
   const handleCloseTab = async (id: string) => {
+    const tab = tabs.find((t) => t.id === id);
+    if (tab && tabCloseNeedsConfirm(tab, Date.now())) {
+      setPendingCloseId(id);
+      return;
+    }
     await closeTab(id);
+  };
+
+  handleCloseTabRef.current = handleCloseTab;
+
+  const pendingCloseTab = pendingCloseId
+    ? tabs.find((t) => t.id === pendingCloseId)
+    : undefined;
+
+  // `force` skips the unsaved-changes prompt in useTabState.closeTab: the user
+  // has already answered the harder question about this tab.
+  const confirmPendingClose = async () => {
+    const id = pendingCloseId;
+    setPendingCloseId(null);
+    if (id) await closeTab(id, true);
   };
 
   const handleNewTab = () => {
@@ -553,6 +635,38 @@ export const TabManager: React.FC<TabManagerProps> = ({ className }) => {
         )}
       </AnimatePresence>
 
+      {/* Closing a tab stops its CLI session, and the turn in flight does not
+          survive it. Only shown for tabs with live work — see
+          tabCloseNeedsConfirm. */}
+      <Dialog
+        open={pendingCloseId !== null}
+        onOpenChange={(open) => { if (!open) setPendingCloseId(null); }}
+      >
+        <DialogContent className="sm:max-w-[440px]">
+          <DialogHeader>
+            <DialogTitle>Stop this session?</DialogTitle>
+            <DialogDescription>
+              {pendingCloseTab
+                ? `"${pendingCloseTab.title}" is still working. Closing the tab stops the session — the turn in progress is lost and cannot be resumed.`
+                : 'This session is still working. Closing the tab stops it.'}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => { setPendingCloseId(null); }}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={fireAndLog('tab-manager:confirm-close', confirmPendingClose)}
+            >
+              Stop and close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
