@@ -5,6 +5,20 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.171] — 2026-09-15
+
+### Added
+
+- Session rows in a project are now headed by the name Claude Code gives the session itself. Claude has been naming its own sessions for a while and writing that name into the transcript; OmniFex was showing it nowhere and leading with the opening prompt instead, which for a long request is a paragraph of setup that looks identical to every other long request. Where a generated summary exists it moves underneath the name rather than replacing it, and where there is no name — sessions from before Claude Code started assigning them — the row reads exactly as it did.
+- Closing a tab whose session is still working now asks first. Closing a tab is what stops a session, and the turn in progress does not survive it, so until now a misclick on the × ended a running turn with nothing to undo it. It asks for a turn in flight, for subagents still running, and for a session waiting on a permission or a question — and stays out of the way for everything else, because a confirmation on every tab is one you learn to dismiss without reading.
+
+### Fixed
+
+- Your own prompt appeared twice in the transcript. OmniFex shows what you typed the moment you press Enter rather than waiting for Claude Code to acknowledge it, and it recently started reading the transcript from Claude Code's session record — which keeps its own copy of your prompt. Nothing connected the two, so both were drawn. The two copies are now recognised as the same message, and the one on screen is quietly replaced by the recorded one as it arrives.
+- The icons on a session row often showed no tooltip, or showed one only sometimes. They were using the tooltip the operating system draws for you, which wants the pointer to sit still for about a second over something that is not moving and not being redrawn — and session rows animate in, change height as summaries load, and rewrite the tooltip text as a summary generates. They now use the same tooltips as the rest of the app, which do not depend on any of that.
+
+Installers are signed with a Developer ID certificate and notarized by Apple.
+
 ## [0.4.170] — 2026-09-15
 
 ### Fixed
