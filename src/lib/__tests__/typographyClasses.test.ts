@@ -125,22 +125,42 @@ describe("headerClassNames / contentClassNames", () => {
 
 describe("typographyClasses (icon helpers)", () => {
   describe("iconWrapperClassName", () => {
+    // The sole caller is MessageFrameCard's header row, which is
+    // `flex flex-row items-center`. A one-sided vertical margin there
+    // decenters the chip against the header's own padding, which is
+    // visible as unequal space above and below the icon.
+    const ONE_SIDED_VERTICAL = /(^|\s)-?m[tb]-/;
+
     it("includes chip classes when bordered is true (default)", () => {
       const cfg = createDefaultConfig();
       const cls = iconWrapperClassName(cfg);
       expect(cls).toContain("border");
       expect(cls).toContain("rounded-md");
       expect(cls).toContain("p-1.5");
-      expect(cls).toContain("-mt-1");
+    });
+
+    it("pulls the chip in symmetrically so items-center can center it", () => {
+      const cfg = createDefaultConfig();
+      const cls = iconWrapperClassName(cfg);
+      // -my-1.5 cancels the chip's own p-1.5 on both axes, keeping the
+      // header row the same height it was with a bare glyph.
+      expect(cls).toContain("-my-1.5");
+      expect(cls).toContain("-mx-1.5");
+      expect(cls).not.toMatch(ONE_SIDED_VERTICAL);
     });
 
     it("uses flat layout when bordered is false", () => {
       const cfg = createDefaultConfig();
       cfg.typography.icon.bordered = false;
       const cls = iconWrapperClassName(cfg);
-      expect(cls).toContain("mt-0.5");
       expect(cls).not.toContain("border");
       expect(cls).not.toContain("rounded-md");
+    });
+
+    it("emits no one-sided vertical nudge when unbordered either", () => {
+      const cfg = createDefaultConfig();
+      cfg.typography.icon.bordered = false;
+      expect(iconWrapperClassName(cfg)).not.toMatch(ONE_SIDED_VERTICAL);
     });
 
     it("respects per-kind iconBordered override", () => {
@@ -148,7 +168,7 @@ describe("typographyClasses (icon helpers)", () => {
       cfg.typography.icon.bordered = true;
       // Helpers read the resolved kind (category base in production = cascaded).
       cfg.categories.user.iconBordered = false;
-      expect(iconWrapperClassName(cfg, "user.prompt")).toContain("mt-0.5");
+      expect(iconWrapperClassName(cfg, "user.prompt")).not.toContain("border");
     });
   });
 

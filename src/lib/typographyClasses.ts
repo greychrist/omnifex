@@ -115,13 +115,19 @@ export function iconWrapperClassName(config: MessageRenderingConfig, kindId?: st
   // box by exactly the chip's padding — net effect is that the icon glyph
   // itself stays in the same position relative to the card whether the chip
   // is on or off, while the chip border + bg extend visually around it.
-  // Vertical math: -mt-1 (-4px) + p-1.5 (+6px) = +2px = the same as the
-  // non-bordered `mt-0.5` nudge that aligns the icon with the first text
-  // line. Horizontal: -mx-1.5 (-6px) + p-1.5 (+6px) = 0, so the icon's
-  // left edge stays at the column edge.
+  // -mx-1.5 / -my-1.5 (-6px) each cancel p-1.5 (+6px), so the chip neither
+  // shifts the icon's left edge off the column nor grows the row height.
+  //
+  // Both axes must stay symmetric. The sole caller is MessageFrameCard's
+  // header, a `flex flex-row items-center` row, so any one-sided vertical
+  // margin decenters the chip against the header's own py padding and
+  // shows up as unequal space above and below the icon. This previously
+  // read `-mt-1 -mb-1.5` (a 2px lean) to align the glyph with the first
+  // line of a top-aligned text flow — a call site that no longer exists;
+  // the side-line variant styles its own chip inline.
   return resolveIconBordered(config, kindId)
-    ? `${base} -mt-1 -mx-1.5 -mb-1.5 border rounded-md p-1.5`
-    : `${base} mt-0.5`;
+    ? `${base} -my-1.5 -mx-1.5 border rounded-md p-1.5`
+    : base;
 }
 
 /**
