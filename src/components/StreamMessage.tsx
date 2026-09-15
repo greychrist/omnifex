@@ -8,8 +8,9 @@ import {
   RotateCcw,
 } from "lucide-react";
 import { detectSkillInjection } from "@/lib/skillDetection";
-import { classifyStandaloneKind } from "@/lib/messageKind";
+import { classifyStandaloneKind, originInjectedKind } from "@/lib/messageKind";
 import { parseCommandEnvelope } from "@/lib/commandEnvelope";
+import { parseTaskNotification } from "@/lib/taskNotification";
 import { classifyBlockKind, isBlockHiddenInCompact, isSystemContextText, deriveSystemContextLabel } from "@/lib/blockKind";
 import { resolveKind } from "@/lib/messageRenderingConfig";
 import { summarizeHiddenEvents } from "@/lib/hiddenEventsSummary";
@@ -57,6 +58,7 @@ import {
   EditResultWidget,
   MCPWidget,
   CommandWidget,
+  TaskNotificationWidget,
   CommandOutputWidget,
   SummaryWidget,
   MultiEditWidget,
@@ -1190,7 +1192,14 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
       const isSubagentPrompt = !isToolResultOnly
         && (userRaw as unknown as { parent_tool_use_id?: unknown }).parent_tool_use_id != null;
 
-      const skillInjection = !isToolResultOnly && !isSubagentPrompt
+      // What the CLI stamped on the record (a background task reporting in,
+      // an orchestrator messaging a subagent) outranks every inference drawn
+      // from its text — see originInjectedKind. Without this the record has
+      // nothing else claiming it and lands on `user.prompt`, putting a build
+      // notification on screen as something the user wrote.
+      const injectedKind = !isToolResultOnly ? originInjectedKind(userRaw) : null;
+
+      const skillInjection = !isToolResultOnly && !isSubagentPrompt && !injectedKind
         ? detectSkillInjection(message, streamMessages)
         : null;
 
@@ -1198,9 +1207,9 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
 
       // Pick card style from the configurable palette. Every variant now has
       // a dedicated kind id so Appearance customizations apply uniformly.
-      const isCommand = !isToolResultOnly && !isSubagentPrompt && !skillInjection
+      const isCommand = !isToolResultOnly && !isSubagentPrompt && !skillInjection && !injectedKind
         && contentStr.includes('<command-name>');
-      const isCommandOutput = !isToolResultOnly && !isSubagentPrompt && !skillInjection
+      const isCommandOutput = !isToolResultOnly && !isSubagentPrompt && !skillInjection && !injectedKind
         && !isCommand
         && contentStr.includes('<local-command-stdout>');
       // A tool result carrying images gets its own kind so the user can style
@@ -1213,6 +1222,8 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
         && (msg.content as MessageContentBlock[]).some((c) => toolResultHasImages(c));
       const userKindId = isCompactSummary
         ? "user.compactSummary"
+        : injectedKind
+        ? injectedKind
         : isImageToolResult
         ? "user.tool-result.image"
         : isToolResultOnly
@@ -1231,7 +1242,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
       // No resend on a compact summary: the button re-sends the card's text as
       // a new prompt, and here that text is the entire recap.
       const showResend = !!onResend && !isToolResultOnly && !isSubagentPrompt && !skillInjection
-        && !isCompactSummary;
+        && !isCompactSummary && !injectedKind;
       const userActionBar = !isToolResultOnly ? (
         <CardActionBar
           message={msg}
@@ -1245,8 +1256,15 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
       // MessageFrame reads alignment, icon, accent, and header from config.
       // We only need to pass the body content as children.
       const streamKind = userKindId;
+      // The collapsed row is all most readers will see, so it carries the
+      // notification's own summary ("Background command … completed") rather
+      // than the generic kind label.
+      const injectedHeader = injectedKind === 'user.taskNotification'
+        ? parseTaskNotification(contentStr)?.summary
+        : undefined;
+
       const renderedCard = (
-        <MessageFrame streamKind={streamKind} message={message} actionBar={userActionBar}>
+        <MessageFrame streamKind={streamKind} message={message} actionBar={userActionBar} headerOverride={injectedHeader}>
           {/* Skill injection label */}
           {skillInjection && (
             <div
@@ -1272,6 +1290,10 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
                   if (content.type === "text") {
                     const text = content.text ?? '';
                     renderedSomething = true;
+
+                    if (injectedKind === 'user.taskNotification') {
+                      return <TaskNotificationWidget key={idx} text={text} />;
+                    }
 
                     // Tag order and the presence of <command-args> both vary
                     // by command kind, so the envelope is parsed tag by tag

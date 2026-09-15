@@ -88,6 +88,27 @@ function findMatchingToolUseName(
  *
  * The kind IDs returned here must match entries in DEFAULT_KINDS.
  */
+/**
+ * Kind for a user record the CLI stamped as injected rather than typed.
+ *
+ * Every user record carries `origin.kind`. Three values occur in practice:
+ * `human` (you typed it), `task-notification` (a background task reporting
+ * in) and `coordinator` (an orchestrator messaging a subagent mid-run). Only
+ * the first is the user speaking; the other two were being classified as
+ * `user.prompt` purely because nothing else claimed them, which put a build
+ * notification on screen as a message you had written.
+ *
+ * Returns null for `human`, for an absent stamp, and for any value not listed
+ * here — an unrecognised origin falls through to the content rules rather
+ * than getting a kind invented for it.
+ */
+export function originInjectedKind(raw: unknown): string | null {
+  const kind = (raw as { origin?: { kind?: unknown } })?.origin?.kind;
+  if (kind === 'task-notification') return 'user.taskNotification';
+  if (kind === 'coordinator') return 'user.coordinatorMessage';
+  return null;
+}
+
 export function classifyStandaloneKind(
   msg: JsonlNode,
   allMessages: JsonlNode[],
@@ -211,6 +232,14 @@ export function classifyStandaloneKind(
   // Synthetic control-change markers (effort/model/permission) → control.<x>.
   if (msg.kind === 'control-change') {
     return `control.${msg.control}`;
+  }
+
+  // Injected user records — what the CLI recorded about the message's origin
+  // beats every inference drawn from its text, so this precedes the content
+  // rules below.
+  if (msg.kind === 'user') {
+    const injected = originInjectedKind(msg.raw);
+    if (injected) return injected;
   }
 
   // Subagent prompts: user-role messages synthesized by the Task/Agent tool.

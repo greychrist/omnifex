@@ -10,6 +10,8 @@ export const KIND_FIXTURES: Record<string, string> = {
   "user.subagentPrompt": "Subagent: review src/auth/*.ts for security issues and report findings.",
   "user.skillInjection": "# Code-Review Skill\nYou are a senior code reviewer. Look for correctness, clarity, and edge-case handling.",
   "user.systemContext": "You are a code-review subagent. Check src/auth/*.ts for security issues.",
+  "user.taskNotification": "Background command \"Build, sign, and notarize the release\" completed (exit code 0)",
+  "user.coordinatorMessage": "The coordinator sent a message while you were working: Task 8 fix round 1 — one Important finding.",
   "user.sdkSystemBracket": "[Request interrupted by user]",
   "user.tool-result": "The file src/auth/middleware.ts has been updated successfully.",
   "user.tool-result.image": "(screenshot returned by the tool)",

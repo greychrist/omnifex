@@ -20,6 +20,7 @@ export {
   EditResultWidget,
   MCPWidget,
   CommandWidget,
+  TaskNotificationWidget,
   CommandOutputWidget,
   SummaryWidget,
   MultiEditWidget,

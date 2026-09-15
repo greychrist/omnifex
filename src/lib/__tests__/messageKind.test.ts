@@ -16,6 +16,7 @@ const EMITTABLE_IDS = [
   // user
   "user.prompt", "user.command", "user.commandOutput", "user.subagentPrompt",
   "user.skillInjection", "user.systemContext", "user.sdkSystemBracket",
+  "user.taskNotification", "user.coordinatorMessage",
   "user.tool-result", "user.tool-result.image", "user.image",
   "user.compactSummary",
   // system
@@ -59,6 +60,63 @@ const permReq = (toolName?: string): JsonlNode =>
 
 const summary = (): JsonlNode =>
   ({ kind: 'unknown', sessionId: '', receivedAt: '', raw: { type: 'summary', leafUuid: 'leaf-1', summary: 'sum' } }) as unknown as JsonlNode;
+
+// The CLI stamps every user record with where it came from. Observed values
+// across this account's transcripts: `human` (typed), `task-notification`
+// (a background task reporting in) and `coordinator` (an orchestrator
+// messaging a subagent mid-run). Shapes below are copied from real records.
+const originUser = (kind: string, text: string, extra: Record<string, unknown> = {}): JsonlNode =>
+  ({
+    kind: 'user', userKind: 'prompt', sessionId: '', receivedAt: '',
+    raw: {
+      type: 'user',
+      origin: { kind },
+      message: { role: 'user', content: [{ type: 'text', text }] },
+      ...extra,
+    },
+  }) as unknown as JsonlNode;
+
+describe('classifyStandaloneKind — injected user records (origin.kind)', () => {
+  it('classifies a background task notification as its own kind, not a prompt', () => {
+    const node = originUser(
+      'task-notification',
+      '<task-notification>\n<task-id>bsj2w52p4</task-id>\n<status>completed</status>\n</task-notification>',
+      { promptSource: 'sdk', queueSkipAttachments: true },
+    );
+    expect(classifyStandaloneKind(node, [node])).toBe('user.taskNotification');
+  });
+
+  it('classifies a coordinator message to a subagent as its own kind', () => {
+    const node = originUser(
+      'coordinator',
+      'The coordinator sent a message while you were working:\nTask 8 fix round 1',
+      { isMeta: true, isSidechain: true, agentId: 'agent-a3830a6b9' },
+    );
+    expect(classifyStandaloneKind(node, [node])).toBe('user.coordinatorMessage');
+  });
+
+  it('leaves a human-origin record to the existing content rules', () => {
+    const node = originUser('human', 'what happened with this message?');
+    expect(classifyStandaloneKind(node, [node])).toBeNull();
+  });
+
+  it('leaves a record with no origin stamp alone', () => {
+    expect(classifyStandaloneKind(userText('hello'), [])).toBeNull();
+  });
+
+  // origin is what the CLI recorded; the content rules are inference over the
+  // text. When they disagree the stamp wins — that is the whole point of
+  // reading it.
+  it('prefers the origin stamp over a content match in the same record', () => {
+    const node = originUser('task-notification', '<command-name>/verify</command-name>');
+    expect(classifyStandaloneKind(node, [node])).toBe('user.taskNotification');
+  });
+
+  it('ignores an unrecognised origin kind rather than inventing a kind for it', () => {
+    const node = originUser('something-new', 'hello');
+    expect(classifyStandaloneKind(node, [node])).toBeNull();
+  });
+});
 
 describe('classifyStandaloneKind', () => {
   it('tags notification subtypes by notification_type', () => {

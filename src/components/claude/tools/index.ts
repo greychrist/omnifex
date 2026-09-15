@@ -15,6 +15,7 @@ export { GrepWidget } from "./GrepWidget";
 export { EditWidget, EditResultWidget } from "./EditWidget";
 export { MCPWidget } from "./MCPWidget";
 export { CommandWidget, CommandOutputWidget } from "./CommandWidget";
+export { TaskNotificationWidget } from "./TaskNotificationWidget";
 export { SummaryWidget } from "./SummaryWidget";
 export { MultiEditWidget, MultiEditResultWidget } from "./MultiEditWidget";
 export { SystemReminderWidget, SystemInitializedWidget } from "./SystemWidget";

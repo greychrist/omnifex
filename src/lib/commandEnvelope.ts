@@ -1,3 +1,5 @@
+import { tagText } from './xmlTags';
+
 /**
  * Parser for the pseudo-XML envelope the CLI persists in place of a typed
  * slash command.
@@ -27,18 +29,13 @@ export interface CommandEnvelope {
   args?: string;
 }
 
-function tag(text: string, name: string): string | undefined {
-  const match = new RegExp(`<${name}>([\\s\\S]*?)</${name}>`).exec(text);
-  return match ? match[1].trim() : undefined;
-}
-
 export function parseCommandEnvelope(text: string): CommandEnvelope | null {
-  const name = tag(text, 'command-name');
+  const name = tagText(text, 'command-name');
   if (!name) return null;
-  const args = tag(text, 'command-args');
+  const args = tagText(text, 'command-args');
   return {
     name,
-    message: tag(text, 'command-message') ?? '',
+    message: tagText(text, 'command-message') ?? '',
     // An empty <command-args></command-args> means "invoked with no
     // arguments" — the same thing as the tag being absent.
     args: args || undefined,
