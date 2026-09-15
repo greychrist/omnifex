@@ -882,6 +882,54 @@ describe('claude service', () => {
       }
     });
 
+    // The CLI names every session itself and persists the name as an
+    // `ai-title` record. It rewrites the record each turn, so the LAST one
+    // wins — verified across 60 transcripts, where each session carries many
+    // copies but exactly one distinct value.
+    it('extracts the CLI-generated ai-title, taking the last one written', async () => {
+      const configDir = path.join(tmpDir, '.claude-titles');
+      const projectPath = path.join(tmpDir, 'titles-test');
+      const projectId = projectPath.replace(/\//g, '-');
+      const projectDir = path.join(configDir, 'projects', projectId);
+      fs.mkdirSync(projectDir, { recursive: true });
+      const account = accounts.createAccount({ name: 'TitlesTest', configDir });
+      accounts.addPathRule(account.id, tmpDir);
+
+      fs.writeFileSync(
+        path.join(projectDir, 'sess-titled.jsonl'),
+        [
+          JSON.stringify({ type: 'user', message: { content: 'first prompt' } }),
+          JSON.stringify({ type: 'ai-title', aiTitle: 'Early guess', sessionId: 'x' }),
+          JSON.stringify({ type: 'assistant', message: { content: [] } }),
+          JSON.stringify({ type: 'ai-title', aiTitle: 'Duplicate user prompt', sessionId: 'x' }),
+        ].join('\n'),
+      );
+
+      // No ai-title at all — the common case for older transcripts.
+      fs.writeFileSync(
+        path.join(projectDir, 'sess-untitled.jsonl'),
+        JSON.stringify({ type: 'user', message: { content: 'untitled prompt' } }),
+      );
+
+      // Malformed: aiTitle present but not a string, and an empty one.
+      fs.writeFileSync(
+        path.join(projectDir, 'sess-malformed.jsonl'),
+        [
+          JSON.stringify({ type: 'user', message: { content: 'prompt' } }),
+          JSON.stringify({ type: 'ai-title', aiTitle: 42 }),
+          JSON.stringify({ type: 'ai-title', aiTitle: '' }),
+        ].join('\n'),
+      );
+
+      const sessions = await service.getProjectSessions(projectId, projectPath);
+      const byId = Object.fromEntries(sessions.map((s) => [s.id, s]));
+
+      expect(byId['sess-titled'].ai_title).toBe('Duplicate user prompt');
+      expect(byId['sess-titled'].first_message).toBe('first prompt');
+      expect(byId['sess-untitled'].ai_title).toBeUndefined();
+      expect(byId['sess-malformed'].ai_title).toBeUndefined();
+    });
+
     it('uses the explicit projectPath as a resolution hint when given', async () => {
       const configDir = path.join(tmpDir, '.claude-hint');
       const projectPath = path.join(tmpDir, 'hinted');

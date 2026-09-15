@@ -4,7 +4,7 @@ import { useLayoutMode } from '@/hooks/useLayoutMode';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { motion, AnimatePresence } from "framer-motion";
 import { Copy, Check, RefreshCw, Hash, Trash2, ChevronDown, ChevronUp, ExternalLink, Bot } from "lucide-react";
-import { TooltipProvider } from "@/components/ui/tooltip";
+import { TooltipProvider, TooltipSimple } from "@/components/ui/tooltip-modern";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -651,34 +651,36 @@ export const SessionList: React.FC<SessionListProps> = ({
             </div>
           )}
           {onOpenById && (
-            <button
-              type="button"
-              onClick={onOpenById}
-              className={cn(
-                "inline-flex items-center gap-1 h-7 px-2 rounded-md border border-border/60 text-xs",
-                "text-muted-foreground hover:text-foreground hover:bg-accent transition-colors",
-              )}
-              title="Open a session by pasting its GUID"
-            >
-              <Hash className="h-3 w-3" />
-              Open a Session by UUID
-            </button>
+            <TooltipSimple content="Open a session by pasting its GUID">
+              <button
+                type="button"
+                onClick={onOpenById}
+                className={cn(
+                  "inline-flex items-center gap-1 h-7 px-2 rounded-md border border-border/60 text-xs",
+                  "text-muted-foreground hover:text-foreground hover:bg-accent transition-colors",
+                )}
+              >
+                <Hash className="h-3 w-3" />
+                Open a Session by UUID
+              </button>
+            </TooltipSimple>
           )}
           {onRefresh && (
-            <button
-              type="button"
-              onClick={() => void handleRefreshClick()}
-              disabled={refreshing}
-              className={cn(
-                "ml-auto inline-flex items-center justify-center h-8 w-8 rounded-md border border-border/60",
-                "text-muted-foreground hover:text-foreground hover:bg-accent transition-colors",
-                "disabled:opacity-50 disabled:cursor-not-allowed",
-              )}
-              title={refreshing ? 'Refreshing…' : 'Refresh session list'}
-              aria-label="Refresh session list"
-            >
-              <RefreshCw className={cn('h-4 w-4', refreshing && 'animate-spin')} />
-            </button>
+            <TooltipSimple content={refreshing ? 'Refreshing…' : 'Refresh session list'}>
+              <button
+                type="button"
+                onClick={() => void handleRefreshClick()}
+                disabled={refreshing}
+                className={cn(
+                  "ml-auto inline-flex items-center justify-center h-8 w-8 rounded-md border border-border/60",
+                  "text-muted-foreground hover:text-foreground hover:bg-accent transition-colors",
+                  "disabled:opacity-50 disabled:cursor-not-allowed",
+                )}
+                aria-label="Refresh session list"
+              >
+                <RefreshCw className={cn('h-4 w-4', refreshing && 'animate-spin')} />
+              </button>
+            </TooltipSimple>
           )}
         </div>
       )}
@@ -809,64 +811,94 @@ export const SessionList: React.FC<SessionListProps> = ({
                           the launch affordance. Top-aligned so the icons
                           sit next to the first date line. */}
                       <div className="flex items-start gap-1.5">
-                        <span
-                          className="text-muted-foreground mt-[1px] shrink-0"
-                          title="Claude session"
-                          aria-label="Claude session"
-                        >
-                          <Bot className="h-3.5 w-3.5" aria-hidden="true" />
-                        </span>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleLaunch(session);
-                          }}
-                          className="inline-flex items-start gap-1 text-left text-muted-foreground hover:text-foreground hover:underline focus-visible:underline focus:outline-none"
-                          // aria-label fixes the accessible name to
-                          // "Launch session" so the button matches the
-                          // rightmost icon launcher in screen-reader
-                          // and test queries. Visible date text is still
-                          // there for sighted users.
-                          aria-label="Launch session"
-                          title="Launch session"
-                        >
-                          <span>
-                            {firstDate && <div>{fmt(firstDate)}</div>}
-                            <div className={firstDate ? 'text-muted-foreground/70' : ''}>
-                              {fmt(lastDate)}
-                            </div>
+                        <TooltipSimple content="Claude session">
+                          <span
+                            className="text-muted-foreground mt-[1px] shrink-0"
+                            aria-label="Claude session"
+                          >
+                            <Bot className="h-3.5 w-3.5" aria-hidden="true" />
                           </span>
-                          <ExternalLink
-                            className="h-3 w-3 opacity-60 mt-[1px]"
-                            aria-hidden="true"
-                          />
-                        </button>
+                        </TooltipSimple>
+                        <TooltipSimple content="Launch session">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleLaunch(session);
+                            }}
+                            className="inline-flex items-start gap-1 text-left text-muted-foreground hover:text-foreground hover:underline focus-visible:underline focus:outline-none"
+                            // aria-label fixes the accessible name to
+                            // "Launch session" so the button matches the
+                            // rightmost icon launcher in screen-reader
+                            // and test queries. Visible date text is still
+                            // there for sighted users.
+                            aria-label="Launch session"
+                          >
+                            <span>
+                              {firstDate && <div>{fmt(firstDate)}</div>}
+                              <div className={firstDate ? 'text-muted-foreground/70' : ''}>
+                                {fmt(lastDate)}
+                              </div>
+                            </span>
+                            <ExternalLink
+                              className="h-3 w-3 opacity-60 mt-[1px]"
+                              aria-hidden="true"
+                            />
+                          </button>
+                        </TooltipSimple>
                       </div>
                     </td>
                     <td className="py-2 px-3 text-xs text-foreground/90 max-w-0 align-top">
-                      {summary ? (
+                      {/* Label, then body.
+                          The label is the CLI's own `ai-title` when it wrote
+                          one — free, already on disk, and the session's actual
+                          identity — otherwise the summary headline, otherwise
+                          nothing. The body beneath is the summary when one
+                          exists and the opening prompt when it does not, so a
+                          paid summary always displaces the raw prompt rather
+                          than the title. */}
+                      {summary || session.ai_title ? (
                         <div className="flex items-start gap-1 min-w-0">
-                          <button
-                            type="button"
-                            aria-label={isExpanded ? 'Collapse summary' : 'Expand summary'}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              toggleExpanded(session.id);
-                            }}
-                            className="flex-none mt-[2px] text-muted-foreground hover:text-foreground"
-                          >
-                            {isExpanded ? (
-                              <ChevronUp className="h-3.5 w-3.5" />
-                            ) : (
-                              <ChevronDown className="h-3.5 w-3.5" />
-                            )}
-                          </button>
+                          {summary && (
+                            <button
+                              type="button"
+                              aria-label={isExpanded ? 'Collapse summary' : 'Expand summary'}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleExpanded(session.id);
+                              }}
+                              className="flex-none mt-[2px] text-muted-foreground hover:text-foreground"
+                            >
+                              {isExpanded ? (
+                                <ChevronUp className="h-3.5 w-3.5" />
+                              ) : (
+                                <ChevronDown className="h-3.5 w-3.5" />
+                              )}
+                            </button>
+                          )}
                           <div className="min-w-0 flex-1">
                             <div className="font-medium text-foreground truncate">
-                              {summary.headline}
+                              {session.ai_title ?? summary?.headline}
                             </div>
-                            {isExpanded && <SummaryBody text={summary.paragraph} />}
+                            {summary ? (
+                              <>
+                                {/* Only a titled row needs the headline on its
+                                    own line — untitled rows already have it as
+                                    the label. */}
+                                {session.ai_title && (
+                                  <span className="block truncate text-muted-foreground">
+                                    {summary.headline}
+                                  </span>
+                                )}
+                                {isExpanded && <SummaryBody text={summary.paragraph} />}
+                              </>
+                            ) : (
+                              session.first_message && (
+                                <span className="block truncate text-muted-foreground">
+                                  {truncateText(getFirstLine(session.first_message), 200)}
+                                </span>
+                              )
+                            )}
                           </div>
                         </div>
                       ) : session.first_message ? (
@@ -885,22 +917,24 @@ export const SessionList: React.FC<SessionListProps> = ({
                       )}
                     </td>
                     <td className="py-2 px-3 align-top">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleCopySessionId(session.id);
-                        }}
-                        className="inline-flex items-center gap-1.5 font-mono text-xs text-muted-foreground hover:text-foreground transition-colors"
-                        title={`Copy full session ID: ${session.id}`}
-                      >
-                        <span>{session.id.slice(0, 8)}</span>
-                        {copiedId === session.id ? (
-                          <Check className="h-3 w-3 text-green-500" />
-                        ) : (
-                          <Copy className="h-3 w-3" />
-                        )}
-                      </button>
+                      <TooltipSimple content={`Copy full session ID: ${session.id}`}>
+                        <button
+                          type="button"
+                          aria-label={`Copy session ID ${session.id}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleCopySessionId(session.id);
+                          }}
+                          className="inline-flex items-center gap-1.5 font-mono text-xs text-muted-foreground hover:text-foreground transition-colors"
+                        >
+                          <span>{session.id.slice(0, 8)}</span>
+                          {copiedId === session.id ? (
+                            <Check className="h-3 w-3 text-green-500" />
+                          ) : (
+                            <Copy className="h-3 w-3" />
+                          )}
+                        </button>
+                      </TooltipSimple>
                     </td>
                     {/* Size (top) + Cost (bottom), stacked and styled like
                         the Date column — same size font, second line dimmed. */}
@@ -932,23 +966,21 @@ export const SessionList: React.FC<SessionListProps> = ({
                         {/* Launch — primary action, leftmost in the
                             cluster. Mirrors the projects-row icon
                             placement / glyph for cross-page consistency. */}
-                        <button
-                          type="button"
-                          aria-label="Launch session"
-                          title="Launch session"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleLaunch(session);
-                          }}
-                          className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                        >
-                          <ExternalLink className="h-4 w-4" />
-                        </button>
-                        {summarizeEnabledForProject ? (
+                        <TooltipSimple content="Launch session">
                           <button
                             type="button"
-                            aria-label={summary ? 'Refresh summary' : 'Generate summary'}
-                            title={
+                            aria-label="Launch session"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleLaunch(session);
+                            }}
+                            className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                          >
+                            <ExternalLink className="h-4 w-4" />
+                          </button>
+                        </TooltipSimple>
+                        {summarizeEnabledForProject ? (
+                          <TooltipSimple content={
                               isRefreshing
                                 ? 'Generating…'
                                 : noChanges
@@ -956,31 +988,36 @@ export const SessionList: React.FC<SessionListProps> = ({
                                   : summary
                                     ? 'Refresh summary'
                                     : 'Generate summary'
-                            }
+                            }>
+                            <button
+                              type="button"
+                              aria-label={summary ? 'Refresh summary' : 'Generate summary'}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                void refreshSummary(session.id);
+                              }}
+                              disabled={isRefreshing || noChanges}
+                              className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted/60 disabled:opacity-40"
+                            >
+                              <RefreshCw
+                                className={cn('h-3.5 w-3.5', isRefreshing && 'animate-spin')}
+                              />
+                            </button>
+                          </TooltipSimple>
+                        ) : null}
+                        <TooltipSimple content="Delete session">
+                          <button
+                            type="button"
+                            aria-label="Delete session"
                             onClick={(e) => {
                               e.stopPropagation();
-                              void refreshSummary(session.id);
+                              setPendingDeleteId(session.id);
                             }}
-                            disabled={isRefreshing || noChanges}
-                            className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted/60 disabled:opacity-40"
+                            className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10"
                           >
-                            <RefreshCw
-                              className={cn('h-3.5 w-3.5', isRefreshing && 'animate-spin')}
-                            />
+                            <Trash2 className="h-3.5 w-3.5" />
                           </button>
-                        ) : null}
-                        <button
-                          type="button"
-                          aria-label="Delete session"
-                          title="Delete session"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setPendingDeleteId(session.id);
-                          }}
-                          className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
+                        </TooltipSimple>
                       </div>
                     </td>
                   </motion.tr>
@@ -1021,31 +1058,33 @@ export const SessionList: React.FC<SessionListProps> = ({
                   >
                     <td className="py-2 px-3 text-[11px] text-muted-foreground whitespace-nowrap leading-tight align-top">
                       <div className="flex items-start gap-1.5">
-                        <span
-                          className="text-emerald-600 dark:text-emerald-400 mt-[1px] shrink-0"
-                          title="Codex session"
-                          aria-label="Codex session"
-                        >
-                          <Bot className="h-3.5 w-3.5" aria-hidden="true" />
-                        </span>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleLaunchCodex(entry);
-                          }}
-                          className="inline-flex items-start gap-1 text-left text-muted-foreground hover:text-foreground hover:underline focus-visible:underline focus:outline-none"
-                          aria-label="Launch Codex session"
-                          title="Launch Codex session"
-                        >
-                          <span>
-                            <div>{fmt(lastDate)}</div>
+                        <TooltipSimple content="Codex session">
+                          <span
+                            className="text-emerald-600 dark:text-emerald-400 mt-[1px] shrink-0"
+                            aria-label="Codex session"
+                          >
+                            <Bot className="h-3.5 w-3.5" aria-hidden="true" />
                           </span>
-                          <ExternalLink
-                            className="h-3 w-3 opacity-60 mt-[1px]"
-                            aria-hidden="true"
-                          />
-                        </button>
+                        </TooltipSimple>
+                        <TooltipSimple content="Launch Codex session">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleLaunchCodex(entry);
+                            }}
+                            className="inline-flex items-start gap-1 text-left text-muted-foreground hover:text-foreground hover:underline focus-visible:underline focus:outline-none"
+                            aria-label="Launch Codex session"
+                          >
+                            <span>
+                              <div>{fmt(lastDate)}</div>
+                            </span>
+                            <ExternalLink
+                              className="h-3 w-3 opacity-60 mt-[1px]"
+                              aria-hidden="true"
+                            />
+                          </button>
+                        </TooltipSimple>
                       </div>
                     </td>
                     <td className="py-2 px-3 text-xs text-foreground/90 max-w-0 align-top">
@@ -1060,22 +1099,24 @@ export const SessionList: React.FC<SessionListProps> = ({
                       )}
                     </td>
                     <td className="py-2 px-3 align-top">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleCopySessionId(entry.conversationId);
-                        }}
-                        className="inline-flex items-center gap-1.5 font-mono text-xs text-muted-foreground hover:text-foreground transition-colors"
-                        title={`Copy full conversation ID: ${entry.conversationId}`}
-                      >
-                        <span>{entry.conversationId.slice(0, 8)}</span>
-                        {copiedId === entry.conversationId ? (
-                          <Check className="h-3 w-3 text-green-500" />
-                        ) : (
-                          <Copy className="h-3 w-3" />
-                        )}
-                      </button>
+                      <TooltipSimple content={`Copy full conversation ID: ${entry.conversationId}`}>
+                        <button
+                          type="button"
+                          aria-label={`Copy conversation ID ${entry.conversationId}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleCopySessionId(entry.conversationId);
+                          }}
+                          className="inline-flex items-center gap-1.5 font-mono text-xs text-muted-foreground hover:text-foreground transition-colors"
+                        >
+                          <span>{entry.conversationId.slice(0, 8)}</span>
+                          {copiedId === entry.conversationId ? (
+                            <Check className="h-3 w-3 text-green-500" />
+                          ) : (
+                            <Copy className="h-3 w-3" />
+                          )}
+                        </button>
+                      </TooltipSimple>
                     </td>
                     {/* Size (top) + Cost (bottom), stacked to match the
                         Claude rows. Size needs a stat() round-trip we don't
@@ -1092,18 +1133,19 @@ export const SessionList: React.FC<SessionListProps> = ({
                     </td>
                     <td className="py-2 px-3 align-top">
                       <div className="flex items-center justify-end gap-1">
-                        <button
-                          type="button"
-                          aria-label="Launch Codex session"
-                          title="Launch Codex session"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleLaunchCodex(entry);
-                          }}
-                          className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                        >
-                          <ExternalLink className="h-4 w-4" />
-                        </button>
+                        <TooltipSimple content="Launch Codex session">
+                          <button
+                            type="button"
+                            aria-label="Launch Codex session"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleLaunchCodex(entry);
+                            }}
+                            className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                          >
+                            <ExternalLink className="h-4 w-4" />
+                          </button>
+                        </TooltipSimple>
                         {/* Codex sessions have no sidecar summary yet and
                             no delete endpoint; surface neither button so
                             the row reads as "view-only" until Task 19+. */}

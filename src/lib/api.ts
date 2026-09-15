@@ -278,6 +278,9 @@ export interface Session {
   created_at: number;
   /** First user message content (if available) */
   first_message?: string;
+  /** The CLI's own name for the session, from the `ai-title` records it
+   *  writes into the transcript. Absent on older transcripts. */
+  ai_title?: string;
   /** ISO timestamp of the first JSONL entry that has a `timestamp` field. */
   first_timestamp?: string;
   /** ISO timestamp of the last JSONL entry that has a `timestamp` field. */

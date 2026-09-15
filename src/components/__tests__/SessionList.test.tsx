@@ -1,29 +1,17 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
 import type { Session, SessionSummary } from '@/lib/api';
 
-// Mock framer-motion to render its motion.tr as plain tr — avoids
-// async-only assertions on real animation hooks.
-vi.mock('framer-motion', () => ({
-  motion: new Proxy(
-    {},
-    {
-      get: (_, key) => {
-        const Tag = key as string;
-        return ({ children, ...rest }: any) => {
-          // Strip animation-only props
-          const { initial, animate, exit, transition, layout, ...domProps } = rest;
-          void initial; void animate; void exit; void transition; void layout;
-
-          // eslint-disable-next-line @typescript-eslint/no-require-imports -- vi.mock factory hoisted before module imports settle.
-          return require('react').createElement(Tag, domProps, children);
-        };
-      },
-    },
-  ),
-  AnimatePresence: ({ children }: any) => children,
-}));
+// framer-motion is deliberately NOT mocked here.
+//
+// There used to be a `vi.mock` that rendered `motion.tr` as a plain `tr` via
+// `require('react')`. Under Vite that resolves the CJS interop copy — a SECOND
+// React instance — so nothing inside a motion-created subtree could update
+// state. Every Radix tooltip in the list stayed `data-state="closed"` however
+// it was triggered, which reads exactly like a broken product. The real
+// library renders these rows fine in jsdom, so the mock bought nothing and
+// cost an hour.
 
 // SessionList consumes AccountsContext so it can re-trigger the
 // per-project summary-resolution when account settings change. Tests
@@ -133,6 +121,9 @@ const summaryFixture: SessionSummary = {
   // and any (or no) promptHash on the fixture is fine.
 };
 
+const isSpinning = (btn: HTMLElement): boolean =>
+  !!btn.querySelector('.animate-spin');
+
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(api.summaryGet).mockResolvedValue(summaryFixture);
@@ -178,6 +169,20 @@ beforeEach(() => {
     if (key === 'sessionsSummary.enabled') return 'true';
     return null;
   });
+});
+
+/**
+ * Radix positions tooltip content with floating-ui, which measures through
+ * ResizeObserver — absent in jsdom, so the content never mounts and every
+ * tooltip assertion times out. Same stub the CostChart test uses for recharts.
+ */
+beforeAll(() => {
+  class StubResizeObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
+  globalThis.ResizeObserver = StubResizeObserver as unknown as typeof ResizeObserver;
 });
 
 afterEach(() => { cleanup(); });
@@ -258,6 +263,117 @@ describe('SessionList summary rendering', () => {
     vi.mocked(api.summaryGet).mockResolvedValueOnce(null);
     render(<SessionList sessions={[sessionFixture]} projectPath="/x" />);
     expect(await screen.findByText(/old first message preview/)).toBeTruthy();
+  });
+
+  // The CLI names every session itself and writes the name into the
+  // transcript as an `ai-title` record; getProjectSessions surfaces it as
+  // `ai_title`. The title is the row's identity, so it always takes the label
+  // when present — what sits beneath it is the summary if one exists, and the
+  // first prompt otherwise.
+  describe('ai_title', () => {
+    const titled: Session = { ...sessionFixture, ai_title: 'Duplicate user prompt' };
+
+    it('labels the row with the CLI title when there is no sidecar summary', async () => {
+      vi.mocked(api.summaryGet).mockResolvedValueOnce(null);
+      render(<SessionList sessions={[titled]} projectPath="/x" />);
+      expect(await screen.findByText('Duplicate user prompt')).toBeTruthy();
+    });
+
+    it('falls back to the first message underneath when there is no summary', async () => {
+      vi.mocked(api.summaryGet).mockResolvedValueOnce(null);
+      render(<SessionList sessions={[titled]} projectPath="/x" />);
+      await screen.findByText('Duplicate user prompt');
+      expect(screen.getByText(/old first message preview/)).toBeTruthy();
+    });
+
+    // Await the SUMMARY first, not the title. summaryGet is async, so there
+    // is a window on mount where no summary has arrived and the title-only
+    // branch renders — asserting on the title first passes in that window and
+    // proves nothing about the settled row.
+    it('keeps the title as the label and puts the summary beneath it', async () => {
+      render(<SessionList sessions={[titled]} projectPath="/x" />);
+      await screen.findByText('Summary headline here.');
+      expect(screen.getByText('Duplicate user prompt')).toBeTruthy();
+    });
+
+    it('drops the first message once a summary can take that slot', async () => {
+      render(<SessionList sessions={[titled]} projectPath="/x" />);
+      await screen.findByText('Summary headline here.');
+      expect(screen.queryByText(/old first message preview/)).toBeNull();
+    });
+
+    it('still expands to the full summary paragraph under a title', async () => {
+      render(<SessionList sessions={[titled]} projectPath="/x" />);
+      await screen.findByText('Summary headline here.');
+      expect(screen.getByText('Duplicate user prompt')).toBeTruthy();
+      expect(screen.queryByText('Summary paragraph here, with details.')).toBeNull();
+      fireEvent.click(screen.getByRole('button', { name: /expand summary/i }));
+      expect(screen.getByText('Summary paragraph here, with details.')).toBeTruthy();
+    });
+
+    it('leaves the untitled row exactly as it was — summary headline is the label', async () => {
+      render(<SessionList sessions={[sessionFixture]} projectPath="/x" />);
+      expect(await screen.findByText('Summary headline here.')).toBeTruthy();
+      expect(screen.queryByText(/old first message preview/)).toBeNull();
+    });
+
+    it('falls back to first_message alone when the CLI never titled the session', async () => {
+      vi.mocked(api.summaryGet).mockResolvedValueOnce(null);
+      render(<SessionList sessions={[sessionFixture]} projectPath="/x" />);
+      expect(await screen.findByText(/old first message preview/)).toBeTruthy();
+    });
+  });
+
+  // The row's action icons used the native `title` attribute, which is at the
+  // mercy of the OS hover heuristic: it wants ~1s of a stationary pointer over
+  // a node that is not being re-created, is not animating, and whose `title`
+  // has not changed. Session rows break all three — `motion.tr` staggers an
+  // entry animation by `index * 0.02`, per-row summaries arrive asynchronously
+  // and change row height, and the summary button's title moves between four
+  // values. Radix opens on its own timer and describes the trigger through
+  // `aria-describedby`, which is both deterministic and assertable.
+  //
+  // Assert the description, not `role="tooltip"`: Radix gives the visible
+  // content no role, exposing it via aria-describedby instead.
+  describe('icon tooltips', () => {
+    const tipFor = (trigger: HTMLElement): string => {
+      const id = trigger.getAttribute('aria-describedby');
+      return id ? (document.getElementById(id)?.textContent ?? '') : '';
+    };
+
+    const focusAndRead = async (trigger: HTMLElement): Promise<string> => {
+      fireEvent.focus(trigger);
+      await waitFor(() => {
+        expect(trigger.getAttribute('aria-describedby')).toBeTruthy();
+      });
+      return tipFor(trigger);
+    };
+
+    it('describes the launch icon on focus instead of relying on a title attribute', async () => {
+      render(<SessionList sessions={[sessionFixture]} projectPath="/x" />);
+      const launch = (await screen.findAllByRole('button', { name: /launch session/i }))[0];
+      expect(launch.getAttribute('title')).toBeNull();
+      expect(await focusAndRead(launch)).toMatch(/launch session/i);
+    });
+
+    it('describes the delete icon', async () => {
+      render(<SessionList sessions={[sessionFixture]} projectPath="/x" />);
+      const del = await screen.findByRole('button', { name: /delete session/i });
+      expect(await focusAndRead(del)).toMatch(/delete session/i);
+    });
+
+    it('describes the copy-id control with the full session id', async () => {
+      render(<SessionList sessions={[sessionFixture]} projectPath="/x" />);
+      const copy = await screen.findByRole('button', { name: /copy session id/i });
+      expect(await focusAndRead(copy)).toContain('sess-1');
+    });
+
+    it('still explains why the summary button is disabled', async () => {
+      const unchanged: Session = { ...sessionFixture, file_size_bytes: 4096 };
+      render(<SessionList sessions={[unchanged]} projectPath="/x" />);
+      const btn = await screen.findByRole('button', { name: /refresh summary/i });
+      expect(await focusAndRead(btn)).toMatch(/no new messages/i);
+    });
   });
 
   it('clicking refresh calls summaryGenerate and updates the row on success', async () => {
@@ -384,13 +500,15 @@ describe('SessionList summary rendering', () => {
     await screen.findByText('Summary headline here.');
     const btn = screen.getByRole('button', { name: /refresh summary/i });
     expect(btn.hasAttribute('disabled')).toBe(true);
-    expect(btn.getAttribute('title')).toMatch(/no new messages/i);
+    // The "why" moved from a `title` attribute into the Radix tooltip; the
+    // 'icon tooltips' block asserts its text on focus.
   });
 
   it('spins the refresh icon when a backend "generating: true" event arrives, and stops on "generating: false"', async () => {
     // Use a session whose JSONL size differs from the cached summary so
-    // the refresh button isn't disabled by the size-gate. Title text
-    // tracks isRefreshing — that's the renderer's spinner signal.
+    // the refresh button isn't disabled by the size-gate. The spinning glyph
+    // is the renderer's signal — assert that rather than tooltip prose, which
+    // only exists in the DOM while the tooltip is open.
     const sessionWithDifferentSize: Session = {
       ...sessionFixture,
       file_size_bytes: 9999,
@@ -398,7 +516,7 @@ describe('SessionList summary rendering', () => {
     render(<SessionList sessions={[sessionWithDifferentSize]} projectPath="/x" />);
     const btn = await screen.findByRole('button', { name: /refresh summary/i });
     // Initial state: not generating.
-    expect(btn.getAttribute('title')).not.toMatch(/generating/i);
+    expect(isSpinning(btn)).toBe(false);
 
     // Simulate the backend firing "generating: true" for this session.
     expect(generatingCallbackRef.current).not.toBeNull();
@@ -408,10 +526,8 @@ describe('SessionList summary rendering', () => {
     });
     await waitFor(() => {
       expect(
-        screen
-          .getByRole('button', { name: /refresh summary/i })
-          .getAttribute('title'),
-      ).toMatch(/generating/i);
+        isSpinning(screen.getByRole('button', { name: /refresh summary/i })),
+      ).toBe(true);
     });
 
     // Now fire "generating: false" — spinner should clear.
@@ -421,10 +537,8 @@ describe('SessionList summary rendering', () => {
     });
     await waitFor(() => {
       expect(
-        screen
-          .getByRole('button', { name: /refresh summary/i })
-          .getAttribute('title'),
-      ).not.toMatch(/generating/i);
+        isSpinning(screen.getByRole('button', { name: /refresh summary/i })),
+      ).toBe(false);
     });
   });
 
@@ -443,10 +557,8 @@ describe('SessionList summary rendering', () => {
     await screen.findByText('Summary headline here.');
     await waitFor(() => {
       expect(
-        screen
-          .getByRole('button', { name: /refresh summary/i })
-          .getAttribute('title'),
-      ).toMatch(/generating/i);
+        isSpinning(screen.getByRole('button', { name: /refresh summary/i })),
+      ).toBe(true);
     });
   });
 
@@ -457,10 +569,10 @@ describe('SessionList summary rendering', () => {
     };
     render(<SessionList sessions={[sessionWithDifferentSize]} projectPath="/x" />);
     const btn = await screen.findByRole('button', { name: /refresh summary/i });
-    const initialTitle = btn.getAttribute('title');
+    expect(isSpinning(btn)).toBe(false);
 
-    // Fire an event for a session that isn't on this page — title
-    // should stay exactly the same.
+    // Fire an event for a session that isn't on this page — this row must not
+    // start spinning.
     expect(generatingCallbackRef.current).not.toBeNull();
     generatingCallbackRef.current!({
       sessionUuid: 'some-other-session',
@@ -469,8 +581,8 @@ describe('SessionList summary rendering', () => {
     // Give React a tick.
     await new Promise((r) => setTimeout(r, 50));
     expect(
-      screen.getByRole('button', { name: /refresh summary/i }).getAttribute('title'),
-    ).toBe(initialTitle);
+      isSpinning(screen.getByRole('button', { name: /refresh summary/i })),
+    ).toBe(false);
   });
 });
 
@@ -595,12 +707,9 @@ describe('SessionList — click semantics', () => {
       );
       await screen.findByText('Summary headline here.');
 
-      // copy-ID: title contains "Copy full session ID"
-      const copyBtn = screen
-        .getAllByRole('button')
-        .find((b) => /copy full session id/i.test(b.getAttribute('title') ?? ''));
-      expect(copyBtn).toBeDefined();
-      fireEvent.click(copyBtn!);
+      // copy-ID — named by aria-label now that the tooltip owns the prose.
+      const copyBtn = screen.getByRole('button', { name: /copy session id/i });
+      fireEvent.click(copyBtn);
 
       // expand chevron
       fireEvent.click(screen.getByRole('button', { name: /expand summary/i }));
