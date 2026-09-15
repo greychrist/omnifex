@@ -10,6 +10,7 @@ import {
   type ToolProgressMap,
   type ToolProgressNode,
 } from '@/lib/toolProgress';
+import { reconcilePendingPrompt } from '@/lib/promptReconciliation';
 import type {
   SessionAccountInfo,
   SessionContextUsage,
@@ -78,6 +79,11 @@ interface ClaudeSessionStoreState {
   patchTab(tabId: string, patch: Partial<TabSessionState>): void;
   setMessages(tabId: string, next: MessagesUpdater): void;
   appendMessage(tabId: string, msg: JsonlNode): void;
+  /** Append the CLI's own record of a user prompt, replacing the optimistic
+   *  echo it is a copy of when one is still pending. One action rather than
+   *  a read-then-write so the match and the write cannot straddle another
+   *  append. See src/lib/promptReconciliation.ts. */
+  appendOrReconcilePrompt(tabId: string, msg: JsonlNode): void;
   /** Splice a system:init message in before the first user message,
    *  fall back to push when there is no user yet. */
   insertMessageBeforeFirstUser(tabId: string, msg: JsonlNode): void;
@@ -171,6 +177,21 @@ export const useClaudeSessionStore = create<ClaudeSessionStoreState>()(
           tabs: {
             ...state.tabs,
             [tabId]: { ...slice, messages: [...slice.messages, msg] },
+          },
+        };
+      }); },
+
+    appendOrReconcilePrompt: (tabId, msg) =>
+      { set((state) => {
+        const slice = ensureTab(state.tabs, tabId);
+        const reconciled = reconcilePendingPrompt(slice.messages, msg);
+        return {
+          tabs: {
+            ...state.tabs,
+            [tabId]: {
+              ...slice,
+              messages: reconciled ?? [...slice.messages, msg],
+            },
           },
         };
       }); },

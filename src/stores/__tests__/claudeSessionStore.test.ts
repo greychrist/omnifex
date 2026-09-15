@@ -61,6 +61,46 @@ describe('claudeSessionStore', () => {
     expect(store.selectTab(TAB).messages).toEqual([a, b]);
   });
 
+  // The optimistic prompt echo (no uuid) is a placeholder for the CLI's own
+  // record of the same prompt. See src/lib/promptReconciliation.ts.
+  describe('appendOrReconcilePrompt', () => {
+    const cliPrompt = (text: string, uuid: string): JsonlNode =>
+      ({
+        kind: 'user', userKind: 'prompt', sessionId: 'sess-1', receivedAt: '',
+        raw: {
+          type: 'user', uuid,
+          message: { role: 'user', content: [{ type: 'text', text }] },
+        },
+      }) as unknown as JsonlNode;
+
+    it('replaces the pending echo instead of appending a second copy', () => {
+      const echo = userMsg();
+      const record = cliPrompt('hi', 'u-1');
+      const store = useClaudeSessionStore.getState();
+      store.appendMessage(TAB, echo);
+      store.appendOrReconcilePrompt(TAB, record);
+      expect(store.selectTab(TAB).messages).toEqual([record]);
+    });
+
+    it('appends when no echo matches', () => {
+      const a = assistantMsg('a');
+      const record = cliPrompt('unrelated', 'u-1');
+      const store = useClaudeSessionStore.getState();
+      store.appendMessage(TAB, a);
+      store.appendOrReconcilePrompt(TAB, record);
+      expect(store.selectTab(TAB).messages).toEqual([a, record]);
+    });
+
+    it('appends a non-prompt node untouched', () => {
+      const echo = userMsg();
+      const a = assistantMsg('a');
+      const store = useClaudeSessionStore.getState();
+      store.appendMessage(TAB, echo);
+      store.appendOrReconcilePrompt(TAB, a);
+      expect(store.selectTab(TAB).messages).toEqual([echo, a]);
+    });
+  });
+
   it('insertMessageBeforeFirstUser splices in before the first user message', () => {
     const init = initMsg();
     const a = assistantMsg('hello');

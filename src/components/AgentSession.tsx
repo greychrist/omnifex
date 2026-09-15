@@ -65,6 +65,7 @@ import { useSwipeTabs } from "@/hooks/useSwipeTabs";
 import { changeSessionModel, mirrorControlState } from '@/lib/sessionModelChange';
 import { forwardedParentToolUseId } from '@/lib/subagentDispatch';
 import { reduceSessionStreamMessage } from '@/lib/sessionStreamReducer';
+import { isCliPromptRecord } from '@/lib/promptReconciliation';
 import {
   POST_COMPACT_PROMPT_SETTING_KEY,
   resolvePostCompactPrompt,
@@ -1421,6 +1422,16 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
         const nodeToAppend = reduced.replaceWith ?? message;
         if (reduced.append === 'insertBeforeFirstUser') {
           ctx.insertMessageBeforeFirstUser(nodeToAppend);
+          return;
+        }
+        // The CLI's own record of a prompt lands on top of the optimistic echo
+        // useSendPrompt appended on Enter, rather than beside it. Since the
+        // transcript inversion the JSONL is the source of committed rows and it
+        // records your prompt; stream-json never did, so the echo used to be
+        // the only copy and nothing deduplicated it. See
+        // src/lib/promptReconciliation.ts.
+        if (isCliPromptRecord(nodeToAppend)) {
+          store.appendOrReconcilePrompt(sessionTabId, nodeToAppend);
           return;
         }
         ctx.appendMessage(nodeToAppend);
