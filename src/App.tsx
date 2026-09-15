@@ -54,14 +54,16 @@ type View =
 function AppContent() {
   const [view, setView] = useState<View>("tabs");
   const { createSettingsTab, createLimaTab, createBrainTab, createCostReportTab } = useTabState();
-  const { tabs, activeTabId, setActiveTab, updateTab, addTab, getTabById } = useTabContext();
+  const { tabs, activeTabId, setActiveTab, updateTab, addTab } = useTabContext();
   // OmniFex Remote: narrow/touch/web facts, and the keyboard inset that keeps
   // the composer above a software keyboard. Both no-ops under Electron.
-  const layoutMode = useLayoutMode();
+  //
+  // Called for the subscription, not the value: the root is where the layout
+  // store gets started, which is what mirrors `omnifex-narrow` / `-touch` /
+  // `-web` onto <html> for the plain-CSS rules in styles.css. Components that
+  // need the value call the hook themselves.
+  useLayoutMode();
   useKeyboardInset();
-  // On a narrow screen a session is a pushed view: the tab strip hides and
-  // the session's own "Back to Project page" button is the way out.
-  const hideTabStrip = layoutMode.narrow && getTabById(activeTabId ?? '')?.type === 'chat';
   useNotifications(activeTabId, setActiveTab, updateTab);
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
@@ -498,7 +500,13 @@ function AppContent() {
       case "tabs":
         return (
           <div className="h-full flex flex-col">
-            {!hideTabStrip && <TabManager className="flex-shrink-0" />}
+            {/* Always present, at every width. A narrow screen used to treat
+                a session as a pushed view and hide this, leaving the session's
+                own "Back to Project page" button as the only way out — which
+                means shrinking the window loses every other open tab. The
+                strip already scrolls horizontally (`overflow-x-auto` in
+                TabManager), so narrow costs it nothing. */}
+            <TabManager className="flex-shrink-0" />
             <div className="flex-1 overflow-hidden">
               <TabContent />
             </div>

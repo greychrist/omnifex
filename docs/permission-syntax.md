@@ -54,7 +54,7 @@ Bash                     → all bash commands
 - A zsh command that hides a command substitution in a `REPORTTIME`, `REPORTMEMORY` or `DIRSTACKSIZE` assignment no longer auto-approves as of CLI 2.1.260 — it prompts. These are zsh's numeric-parameter assignments, which the check previously walked past, so `REPORTTIME=$(cmd) ls` could ride in on a `Bash(ls *)` allow rule. Nothing to configure.
 - Input redirections (`cmd < secrets.env`) **are** permission-checked as of 2.1.257. The check first shipped in 2.1.232, was reverted in 2.1.233, and the promised narrower version has now landed: the target of `<` and `<&` is matched against `Read(path)` **deny** rules, and a hit refuses the whole command. Heredocs (`<<`, `<<<`) are excluded — they read no file. Output redirection targets (`>`, `>>`, `>&`) are matched against `Edit(path)` deny rules and have been since before 2.1.252.
   Only **deny** rules participate. An `allow` or `ask` rule on a redirect target is not consulted, so this narrows what a `Bash(...)` allow rule covers but never widens it.
-- Redirection targets — and, as of CLI 2.1.269, the destination a `tee` writes — are the *only* Bash arguments matched against file rules. `tee out.txt` is now checked against `Edit(path)` deny rules and the working-directory write check, so a `Bash(tee:*)` allow rule no longer covers destinations outside the working directories. CLI 2.1.259 briefly extended `Read(path)` deny rules to option values (`--ignore-revs-file=.env`), `git diff`/`git grep` file operands and `cd … && cat FILE` compounds, and **2.1.260 reverted it** — it denied `npm run build` under a `Read(./**/build/**)` rule in every mode. Don't write file rules expecting them to constrain what a shell command reads.
+- Redirection targets — and, as of CLI 2.1.269, the destination a `tee` writes — are the *only* Bash arguments matched against file rules. `tee out.txt` is now checked against `Edit(path)` deny rules and the working-directory write check, so a `Bash(tee:*)` allow rule no longer covers destinations outside the working directories. CLI 2.1.259 briefly extended `Read(path)` deny rules to option values (`--ignore-revs-file=.env`), `git diff`/`git grep` file operands and `cd … && cat FILE` compounds, and **2.1.260 reverted it** — it denied `npm run build` under a `Read(./**/build/**)` rule in every mode. It then happened again: 2.1.268 extended Read and Edit **deny** rules to Bash lines the checker cannot analyze (`eval`, `env -C`), and **2.1.273 reverted that too** — `time -p make build` prompts again instead of being denied. Twice now Anthropic has shipped this widening and pulled it within a few releases, so treat any future version of it as provisional rather than as the new contract. Don't write file rules expecting them to constrain what a shell command reads.
 
 ## Read / Edit
 
@@ -174,6 +174,62 @@ settings source that wrote it, as of CLI 2.1.269 — it does not cancel a rule
 from another source. A bare `!` with nothing after it is ignored. OmniFex never
 writes `!`-prefixed rules (`permissions-io.ts` appends plain rule strings per
 source), so this only matters for rules a user hand-edited into a settings file.
+
+## Reads outside the working directories
+
+`permissions.blockReadsOutsideWorkingDirectories` is a **setting, not a rule**,
+and it is the one permission control that does not follow any of the mechanics
+above. It takes a boolean:
+
+```json
+{ "permissions": { "blockReadsOutsideWorkingDirectories": true } }
+```
+
+The CLI's own schema describes it as: *"Refuse file-tool reads (Read, Grep,
+Glob, LSP) outside the working directories in every permission mode; true in any
+settings source wins. Also set when the user picks 'block' on the one-time
+auto-mode prompt for a read outside the working directories."*
+
+Four things about it are load-bearing and each one is an exception to a rule
+stated elsewhere in this document:
+
+- **It inverts settings precedence.** `true` in *any* source wins. This is the
+  only permission key where a lower-precedence file cannot be overridden by a
+  higher-precedence one — `~/.claude/settings.json` setting it true is not
+  undone by `.claude/settings.local.json` or a CLI arg. The "highest first"
+  list above does not apply.
+- **It is enforced in every mode, including `bypassPermissions`.** Not a
+  prompt, not an ask: the permission evaluator returns a hard refusal for a
+  fenced read. The usual "bypass allows everything" reasoning is wrong here.
+- **It covers Grep, Glob and LSP, not just Read.** Path-shaped rules like
+  `Read(...)` only ever governed the Read tool; this fences four tools at once.
+- **It can turn itself on.** Picking "block" on auto mode's one-time
+  outside-read prompt writes it to settings. A user can end up with it set
+  without having edited a settings file.
+
+The denial message is `Reads outside the working directories are blocked
+(permissions.blockReadsOutsideWorkingDirectories). Add the directory with
+/add-dir, or remove that setting.` Widen the fence with
+`permissions.additionalDirectories` or `--add-dir`, not with an `allow` rule —
+no rule grants past it.
+
+It also reaches Bash, but only as far as the fixed-command list below does. As
+of CLI 2.1.273, a read-only Bash command whose paths the checker cannot resolve
+no longer skips the prompt: a runtime-computed path, a `sed` script not on the
+allowlist, or an inline-interpreter invocation (`python -c`, `node -e`,
+`perl -e`, `bash -c`, `ruby -e`, `php -r`, `deno eval`, and similar) prompts
+instead. Same release, the setting also stopped a memory directory chosen by a
+repository's settings from being loaded into the prompt, recalled, indexed, or
+used by memory extraction.
+
+**OmniFex does not model this setting at all**, and the consequence is specific:
+a fenced read is refused *inside* the CLI and never becomes a `can_use_tool`, so
+it never reaches the `--permission-prompt-tool stdio` decider in
+`electron/services/sessions/permissions.ts`. The session shows a failing Read
+with no permission card and no rule to click — the permissions UI cannot
+display, explain or clear it, because there is no rule involved. If a session
+reports reads failing outside the project with no prompt, check this key in the
+account's `settings.json` by hand.
 
 ## Asks that can't become rules
 

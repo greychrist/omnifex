@@ -14,6 +14,10 @@ export interface MessageFrameSideLineProps {
   /** Chip background fill opacity (0–100) of the chat background, when
    *  `iconBordered` is true. Ignored otherwise. Defaults to 100. */
   iconBgOpacity?: number;
+  /** Optional toolbar (a `CardActionBar` with `placement="inline"`). Sits at
+   *  the end of the row rather than overlaying it: the row is ~28px tall, so
+   *  an absolutely-positioned bar would spill out of it. */
+  actionBar?: React.ReactNode;
   children: React.ReactNode;
 }
 
@@ -39,6 +43,7 @@ export const MessageFrameSideLine: React.FC<MessageFrameSideLineProps> = ({
   borderStyle,
   iconBordered = false,
   iconBgOpacity = 100,
+  actionBar,
   children,
 }) => {
   const swatch = resolveAccentSwatch(accentColor);
@@ -74,7 +79,8 @@ export const MessageFrameSideLine: React.FC<MessageFrameSideLineProps> = ({
         }}
       />
       {iconEl}
-      <span className="text-sm text-foreground/80">{children}</span>
+      <span className="text-sm text-foreground/80 min-w-0">{children}</span>
+      {actionBar}
     </div>
   );
 };

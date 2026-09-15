@@ -4,6 +4,7 @@ import { resolveKind } from '@/lib/messageRenderingConfig';
 import { MessageFrameCard } from './MessageFrameCard';
 import { MessageFrameSideLine } from './MessageFrameSideLine';
 import { MessageFrameCollapsible } from './MessageFrameCollapsible';
+import { CardActionBar } from '@/components/CardActionBar';
 
 export interface MessageFrameProps {
   /** The dotted kind ID (e.g. `'user.prompt'`, `'system.informational'`).
@@ -12,9 +13,9 @@ export interface MessageFrameProps {
    *  there is no missing-kind / unknown fallback. */
   streamKind: string;
   children: React.ReactNode;
-  /** Optional toolbar node for card-presentation frames. Forwarded to
-   *  `MessageFrameCard.actionBar` so it renders absolutely inside the card.
-   *  Ignored for side-line presentation. */
+  /** Optional toolbar node. Forwarded to whichever frame variant renders,
+   *  and it suppresses the default copy/view bar the side-line and
+   *  collapsible variants otherwise supply for themselves. */
   actionBar?: React.ReactNode;
   /** Optional message to forward to `MessageFrameCard` for the timestamp
    *  footer and debug raw-JSON copy button. */
@@ -53,6 +54,14 @@ export const MessageFrame: React.FC<MessageFrameProps> = ({ streamKind, children
     </details>
   ) : null;
 
+  // Cards get their bar from the caller (StreamMessage decides which ones
+  // deserve one). The low-weight variants had no way to offer either
+  // affordance at all — and they are the rows most often asked "what is
+  // actually in this record?", being where tool results and bookkeeping land.
+  // `message` is the only input needed: CardActionBar serializes `raw`
+  // lazily, on open.
+  const defaultBar = actionBar ?? (message ? <CardActionBar message={message} /> : undefined);
+
   let inner: React.ReactNode;
   if (kind.presentation === 'card') {
     inner = (
@@ -69,7 +78,7 @@ export const MessageFrame: React.FC<MessageFrameProps> = ({ streamKind, children
         <MessageFrameCollapsible
           kindId={streamKind}
           headerLabel={headerOverride ?? kind.headerLabel}
-          actionBar={actionBar}
+          actionBar={defaultBar}
         >
           {children}
           {rawPayload}
@@ -90,6 +99,7 @@ export const MessageFrame: React.FC<MessageFrameProps> = ({ streamKind, children
           borderStyle={kind.borderStyle}
           iconBordered={iconBordered}
           iconBgOpacity={iconBgOpacity}
+          actionBar={actionBar ?? (message ? <CardActionBar message={message} placement="inline" /> : undefined)}
         >
           {children}
         </MessageFrameSideLine>

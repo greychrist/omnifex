@@ -11,6 +11,7 @@ import type { SessionVerification } from "@/lib/accountVerification";
 import { Popover } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { AccountBadge } from "./AccountBadge";
+import { useLayoutMode } from "@/hooks/useLayoutMode";
 import { HeaderLabel } from "./HeaderLabel";
 import { RateLimitWidget } from "./claude-code-session/RateLimitWidget";
 import { CostWidget } from "./claude-code-session/CostWidget";
@@ -78,6 +79,7 @@ export function AccountCard({
   projectPath,
   className,
 }: AccountCardProps) {
+  const { narrow } = useLayoutMode();
   const [accountPopoverOpen, setAccountPopoverOpen] = React.useState(false);
   const [usagePopoverOpen, setUsagePopoverOpen] = React.useState(false);
 
@@ -140,7 +142,7 @@ export function AccountCard({
               className="rounded hover:opacity-80 transition-opacity focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               title="Click for account details"
             >
-              <AccountBadge name={accountName} agent={agent} verification={shieldStatus} />
+              <AccountBadge name={accountName} agent={agent} verification={shieldStatus} hideName={narrow} />
             </button>
           }
           content={

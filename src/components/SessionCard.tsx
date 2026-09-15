@@ -6,11 +6,11 @@ import type { SessionContextUsage } from "@/lib/api";
 import { Popover } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { HeaderLabel } from "./HeaderLabel";
-import { CacheTimerRow } from "./CacheTimerRow";
+import { useLayoutMode } from "@/hooks/useLayoutMode";
+import { InlineDivider } from "@/components/ui/inline-divider";
 import { fireAndLog } from "@/lib/fireAndLog";
 import { ActivityPill } from "./signals/ActivityPill";
 import { SessionStatusBar } from "./SessionStatusBar";
-import { SignalBadge } from "./signals/SignalBadge";
 import { SignalActionCard } from "./signals/SignalActionCard";
 import { SignalEventLog } from "./signals/SignalEventLog";
 import { formatTokens, type ContextPressureLevel } from "@/lib/contextPressure";
@@ -65,13 +65,6 @@ interface SessionCardProps {
    *  or a TUI session. See resolveContextLimit. */
   defaultModel?: string | null;
   contextUsage?: SessionContextUsage | null;
-  /** Prompt-cache clock, from AgentSession. Both null when the timer is
-   *  disabled or no turn has written cache yet — the row then hides. The
-   *  countdown itself ticks inside CacheTimerRow, not here. */
-  cacheAnchorMs?: number | null;
-  cacheTtlMs?: number | null;
-  /** True while a main turn is in flight; the cache row goes neutral. */
-  cacheBusy?: boolean;
   sessionStatus?: 'starting' | 'active' | 'ended';
   /** Force-reconnect button click handler. Renders inside the status badge
    *  while sessionStatus === 'ended'. */
@@ -103,8 +96,6 @@ interface SessionCardProps {
   /** `context.level` state signal — drives the meter's colour and the
    *  compact-at readout. Falls back to an uncoloured meter when absent. */
   contextLevelSignal?: SessionSignal;
-  /** Unread `event`s anchored to `session`. */
-  unreadEvents?: number;
   /** A pending `action` anchored here, mirrored as a card atop the popover. */
   pendingAction?: SessionSignal | null;
   /** The anchor's recent events, newest first, already limited by the caller. */
@@ -138,9 +129,6 @@ export function SessionCard({
   model,
   defaultModel,
   contextUsage,
-  cacheAnchorMs = null,
-  cacheTtlMs = null,
-  cacheBusy = false,
   sessionStatus,
   onReconnect,
   onClear,
@@ -152,7 +140,6 @@ export function SessionCard({
   activitySignal,
   activeSubagents = 0,
   contextLevelSignal,
-  unreadEvents = 0,
   pendingAction = null,
   recentEvents = [],
   onSignalsRead,
@@ -160,6 +147,7 @@ export function SessionCard({
   compactDisabled = false,
   className,
 }: SessionCardProps) {
+  const { narrow } = useLayoutMode();
   const [contextPopoverOpen, setContextPopoverOpen] = React.useState(false);
 
   // Collapsed by default, sticky once opened — the same contract (and the same
@@ -171,12 +159,6 @@ export function SessionCard({
     if (typeof window === "undefined") return;
     window.localStorage.setItem(DETAILS_STORAGE_KEY, detailsOpen ? "1" : "0");
   }, [detailsOpen]);
-
-  /** What the trigger says it is, plus what the badge on it is counting. */
-  const unreadLabel =
-    unreadEvents > 0
-      ? `Context usage — ${unreadEvents} new session ${unreadEvents === 1 ? 'event' : 'events'}`
-      : 'Context usage';
 
   const [sessionIdCopied, setSessionIdCopied] = React.useState(false);
   const handleCopySessionId = React.useCallback(async () => {
@@ -311,25 +293,24 @@ export function SessionCard({
                 type="button"
                 // Its visible text is "120.0k 12%", which a screen reader
                 // announces as two bare numbers with no subject.
-                //
-                // The unread count is named here as well, because SignalBadge
-                // is pointer-events-none and can host no tooltip of its own:
-                // without this the number appears on a token meter with nothing
-                // anywhere saying it counts events rather than tokens.
-                aria-label={unreadLabel}
-                title={unreadEvents > 0 ? unreadLabel : undefined}
+                aria-label="Context usage"
                 aria-expanded={contextPopoverOpen}
                 className={cn(
                   "inline-flex w-full items-center gap-1.5 px-2 py-0.5 rounded text-xs font-mono font-medium cursor-pointer text-foreground",
                   "bg-background shadow-[0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_45%,transparent)]",
                 )}
               >
-                <SignalBadge count={unreadEvents} label="session" />
                 <Database className="w-3.5 h-3.5 text-foreground" />
                 <span className={cn("font-mono", color)}>
                   {tokens >= 1000 ? `${(tokens / 1000).toFixed(1)}k` : tokens}
                 </span>
-                <div className="flex-1 min-w-11 h-1.5 bg-foreground/10 rounded-full overflow-hidden relative">
+                {/* The bar is the first thing to go when the card has to
+                    share a narrow row: the token count and the percentage
+                    either side of it carry the same fact in less space. A rule
+                    takes its place so those two numbers do not read as one. */}
+                {narrow && <InlineDivider data-testid="context-meter-divider" className="bg-current opacity-30" />}
+                {!narrow && (
+                <div data-testid="context-meter-bar" className="flex-1 min-w-11 h-1.5 bg-foreground/10 rounded-full overflow-hidden relative">
                   <div
                     className={cn("absolute inset-y-0 left-0 rounded-full transition-all", METER_FILL[level])}
                     style={{ width: `${pct}%` }}
@@ -345,6 +326,7 @@ export function SessionCard({
                     />
                   )}
                 </div>
+                )}
                 <span className="text-foreground font-mono">{pct.toFixed(0)}%</span>
               </button>
             }
@@ -541,24 +523,14 @@ export function SessionCard({
       )}
       </div>
 
-      {/* A real status bar, not the column coincidence it used to be: the
-          activity pill was the third element of column one and the cache row
-          the third of column two, so they lined up only as long as both
-          columns happened to have three things in them. Now it is one row that
-          spans the card — glyphs left, cache clock right. */}
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <SessionStatusBar
-            activitySignal={activitySignal}
-            activeSubagents={activeSubagents}
-          />
-          <ActivityPill signal={activitySignal} />
-        </div>
-        <CacheTimerRow
-          anchorMs={cacheAnchorMs}
-          ttlMs={cacheTtlMs}
-          busy={cacheBusy}
-        />
+      {/* One row spanning the card. The turn clock, the thinking burst and the
+          cache countdown used to live here too; they are facts about the
+          conversation rather than the session, so they moved to the chat
+          status bar above the transcript, where they stay readable without
+          this widget open. */}
+      <div className="flex items-center gap-2">
+        <SessionStatusBar activeSubagents={activeSubagents} />
+        <ActivityPill signal={activitySignal} />
       </div>
     </div>
   );

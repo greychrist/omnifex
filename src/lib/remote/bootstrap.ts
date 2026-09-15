@@ -40,6 +40,9 @@ export interface RemoteBridgeInfo {
    * offers a way back, the other has nothing to go back to.
    */
   forcedLocal: boolean;
+  /** Present in remote modes: whether a session's events are actually being
+   *  delivered to this client. Connectivity is global, delivery is not. */
+  isSessionSubscribed?: (sessionId: string) => boolean;
 }
 
 declare global {
@@ -135,8 +138,12 @@ export async function installRemoteBridge(opts: InstallRemoteBridgeOptions = {})
       const client = createServerClient({ url, clientId: clientId(), clientKind: 'electron', createSocket: opts.createSocket });
       try {
         await withTimeout(client.connect(), connectTimeoutMs, 'daemon handshake');
-        setElectronApi(createElectronApiShim({ client, native }));
-        info = { mode: 'electron-remote', url, client, forcedLocal: false };
+        const shim = createElectronApiShim({ client, native });
+        setElectronApi(shim);
+        info = {
+          mode: 'electron-remote', url, client, forcedLocal: false,
+          isSessionSubscribed: (id) => shim.isSessionSubscribed(id),
+        };
       } catch (err) {
         console.warn('[remote] daemon handshake failed; staying on legacy IPC', err);
         client.disconnect();
@@ -149,11 +156,15 @@ export async function installRemoteBridge(opts: InstallRemoteBridgeOptions = {})
     const client = createServerClient({ url, clientId: clientId(), clientKind: 'web', createSocket: opts.createSocket });
     // Install first, connect second: on the web there is nothing to fall back
     // to, and the shim queues requests while the socket comes up.
-    setElectronApi(createElectronApiShim({ client, native: null, webNotify }));
+    const shim = createElectronApiShim({ client, native: null, webNotify });
+    setElectronApi(shim);
     client.connect().catch((err: unknown) => {
       console.warn('[remote] initial connect failed; will keep retrying', err);
     });
-    info = { mode: 'web', url, client, forcedLocal: false };
+    info = {
+      mode: 'web', url, client, forcedLocal: false,
+      isSessionSubscribed: (id) => shim.isSessionSubscribed(id),
+    };
     registerServiceWorker();
   }
 
