@@ -30,6 +30,355 @@ import { buildClaudeEnv } from './util/claude-env';
  * old value and the new one, and file or fix whatever they imply. Bumping it
  * to silence the badge throws away the only drift signal we have.
  *
+ * Last review: 2.1.272 -> 2.1.273 on 2026-09-15. Findings:
+ *
+ *  Changelog coverage: 2.1.273 is the only release in range and it has a
+ *  full entry (67 items). No gap. BOTH 2.1.272 and 2.1.273 are installed
+ *  on this machine, so every wire claim below is a real binary diff of the
+ *  exact range rather than prose — the first review in a while where the
+ *  range and the installed pair line up perfectly.
+ *
+ *  Wire diff: NOTHING MOVED. This is a clean pass, and the point of
+ *  recording it is so the next reviewer does not re-derive it.
+ *
+ *  The JSONL record-type merge map is BYTE-IDENTICAL (2130 bytes, 2
+ *  matches, both binaries) — no new record types, so
+ *  cliSidechannelRecords.ts and jsonlClassifier.ts need nothing. The
+ *  `subtype:"…"` literal SET is identical (124 distinct both), which is
+ *  the check that would have caught another `peer_message_hold`; there is
+ *  no new `system` subtype this time. `hook_event_name` literals identical
+ *  (33). `type:"control_*"` envelope literal SET identical. Every `/usage`
+ *  anchor parser.ts reads is unchanged: `Current session` 3/3, `Current
+ *  week (` 5/5, `Total cost:` 2/2, `% of usage` 2/2, `Loading usage data`
+ *  1/1, `Showing last-known usage` 2/2, bare `Resets` 6/6. The Bash
+ *  path-restricted fixed-command list (the 40 names quoted at
+ *  docs/permission-syntax.md:115-118) is identical, so that doc stays
+ *  accurate — which matters more than usual this time, see finding 1.
+ *
+ *  Two counts moved and both were run down rather than waved off:
+ *
+ *   - `control_cancel_request` 13 -> 10. NOT a wire change: a pure
+ *     dependency-injection refactor. In 2.1.272 the parked-permission
+ *     rescue path wrote the envelope inline at four sites
+ *     (`this.io.write({type:"control_cancel_request", request_id:
+ *     this.parkedPermission.request_id})`). In 2.1.273 those four call
+ *     `this.withdrawCard(...)`, a new constructor-injected callback
+ *     (`withdrawCard` 0 -> 3) built at the composition site as
+ *     `(h)=>r.write({type:"control_cancel_request",request_id:h})`. Same
+ *     emissions, one fewer literal * 4 + 1. Every surrounding identifier
+ *     is unchanged in count (`parkSettledAtBoot` 2/2,
+ *     `deferredParkedPermissionRescue` 2/2, `holdingParkedPermission` 3/3,
+ *     `registrationKeepsPendingAction` 3/3, `resumeStalePromptCancel`
+ *     2/2), which is what confirms refactor rather than removal.
+ *   - `disconnected` 119 -> 120. Exactly one new literal, and it is the
+ *     TUI notice from the changelog's MCP entry: `" disconnected · open
+ *     /mcp to reconnect"`, carrying its own `color:` — a rendered status
+ *     line, not a stream record. See finding 6.
+ *
+ *  NO CODE CHANGE REQUIRED. One optional doc addition is proposed in
+ *  finding 1 and was deliberately NOT applied without Greg's go-ahead.
+ *
+ *  1. The 2.1.268 `eval` / `env -C` deny-rule widening is REVERTED.
+ *     Permission semantics, and the second time this exact thing has
+ *     happened. docs/permission-syntax.md is still CORRECT — checked line
+ *     by line, not assumed, since this is the file behind every
+ *     permissions regression we have had.
+ *
+ *     2.1.273: "Reverted a 2.1.268 change that checked Read and Edit deny
+ *     rules on Bash lines the permission checker can't analyze (`eval`,
+ *     `env -C`); commands like `time -p make build` prompt again instead
+ *     of being denied."
+ *
+ *     We reviewed the original in the 2.1.267 -> 2.1.268 pass and filed it
+ *     as no-impact "CLI-side path matching... only makes rules apply MORE
+ *     often" (see that block below). That reasoning held, and it holds
+ *     symmetrically for the revert: rules now apply LESS often, back to
+ *     pre-2.1.268 behaviour, which is what the doc already describes.
+ *     Neither `eval` nor `env -C` is on the 40-name fixed list, and
+ *     permission-syntax.md:126-129 already says in terms that anything not
+ *     on that list "still runs unchecked... The list is a hardening
+ *     measure, not a boundary."
+ *
+ *     What was NOT yet in the doc is that this is now a PATTERN.
+ *     permission-syntax.md:57 already narrated the 2.1.259 widening and
+ *     its 2.1.260 revert, and closed with "Don't write file rules
+ *     expecting them to constrain what a shell command reads." 2.1.268 ->
+ *     2.1.273 is the same ship-then-revert cycle a second time, on the
+ *     same axis.
+ *
+ *     APPLIED at Greg's go-ahead: that same bullet (line 57) now records
+ *     the 2.1.268 widening and its 2.1.273 revert alongside the
+ *     2.1.259/2.1.260 pair, and says in terms that a future version of
+ *     this widening should be treated as provisional rather than as the
+ *     new contract. The 40-name fixed list (still :115-118) and the
+ *     "runs unchecked" paragraph (:125-128) were re-read and are both
+ *     still accurate — no other part of the file needed touching.
+ *
+ *  2. Sub-agents / background agents no longer falsely reported as failed.
+ *     A BUG WE HAD, fixed upstream. Nothing for us to do.
+ *
+ *     "Fixed sub-agents and background agents being reported as failed,
+ *     with their result never delivered, when the final streamed reply
+ *     omitted token usage or carried no model id."
+ *
+ *     Both halves land on us. subagentStreams.ts:101 types a
+ *     `task-notification`'s closing status as `'completed' | 'failed'` and
+ *     line 128 stores it verbatim, so a spurious upstream `failed` was
+ *     rendered as a failed subagent with no way for us to know better. The
+ *     "result never delivered" half is the milder one only because we
+ *     already degrade gracefully: subagentStreams.ts:209 and :338 fold a
+ *     still-`running` row to `completed_inferred` rather than leaving it
+ *     open, so it did not become a stuck spinner via
+ *     sessionDerivedState.hasOpenSubagents — the session-lifecycle failure
+ *     mode docs/session-lifecycle.md:47 warns about. It rendered the
+ *     distinct inferred-completion icon instead, which is the design
+ *     working.
+ *
+ *     Confirmed to be an internal-predicate fix with NO wire shape change:
+ *     the `status:"failed"` emission sites are identical between the two
+ *     binaries (same 12 forms, same counts — `post_failed` 6/6,
+ *     `compose_failed` 5/5, and so on), so nothing new appears on the
+ *     stream. That is consistent with the subtype set not moving.
+ *
+ *  3. stream-json dropping a backgrounded subagent's tail. INERT, gated.
+ *
+ *     "Fixed SDK and `--output-format stream-json` output dropping a
+ *     subagent's remaining messages and final report after it is moved to
+ *     the background mid-run (e.g. by `CLAUDE_AUTO_BACKGROUND_TASKS`)."
+ *
+ *     `--output-format stream-json` IS our chat mode
+ *     (claude-cli-engine.ts:53-65), so this looked like the most
+ *     dangerous entry in the range. It is not reachable: the
+ *     auto-background threshold function reads
+ *     `if(Oe(process.env.CLAUDE_AUTO_BACKGROUND_TASKS))return 120000;
+ *     return 0` — zero, i.e. disabled, unless the env var is set. grep
+ *     finds zero references to it anywhere in electron/ or src/, and
+ *     buildClaudeEnv does not set it. A subagent is therefore never moved
+ *     to the background mid-run in an OmniFex session, and headless has no
+ *     UI to do it by hand. Recorded with the gate so the next reviewer
+ *     does not re-panic about a stream-json entry.
+ *
+ *  4. Context meter double-counting advisor-tool turns. INERT for this
+ *     account, established from transcripts rather than from the gate.
+ *
+ *     "Fixed the context meter and auto-compact counting advisor-tool
+ *     turns at roughly twice their real context size, which made
+ *     auto-compact fire at about half the real window."
+ *
+ *     Our gauge reads `selectContextTokens({contextUsage, fallbackTokens})`
+ *     (AgentSession.tsx:1069) over the CLI's `get_context_usage` response,
+ *     so a CLI-side miscount would have been inherited verbatim. The
+ *     `get_context_usage` control-request schema and handler are identical
+ *     across the range, as is the context-breakdown categorizer whose
+ *     `case"advisor_tool_result"` arm buckets these into `other` — so the
+ *     fix is deeper in the accumulator and changes no shape we read.
+ *
+ *     Reachability, which is what actually settles it: the Advisor tool is
+ *     a SERVER-side tool behind the statsig gate `advisor-tool-2026-03-01`
+ *     (pre-existing — `advisor_tool` 27/27, `isAdvisor` 2/2, so nothing
+ *     about it is new in this range) that surfaces as `server_tool_use`
+ *     named `advisor` plus an `advisor_tool_result` content block. Across
+ *     EVERY transcript under ~/.claude-personal and ~/.claude-work there
+ *     are ZERO occurrences of `"type":"advisor_tool_result"` and ZERO of
+ *     `"name":"advisor"`. (Bare substring greps DO hit, but only on this
+ *     and prior review sessions' own transcripts — the same false positive
+ *     `peer_message_hold` produced last pass. Match on the quoted JSON
+ *     form, not the bare word.) The gate has never fired here, so the
+ *     meter was never wrong for us.
+ *
+ *     Worth knowing if it ever flips: an `advisor_tool_result` content
+ *     block is a type jsonlClassifier.ts has no case for.
+ *
+ *  5. macOS Read refusing a dragged-in screenshot. A REAL fix for us.
+ *
+ *     "Fixed Read on macOS refusing a dragged-in screenshot, or any file
+ *     the system reports under a second path, with 'symlink resolution
+ *     changed after permission was checked'."
+ *
+ *     This is ours because of HOW OmniFex attaches images: dropped files
+ *     become `@`-mentioned PATHS in the prompt text
+ *     (ImageAttachments.tsx / FloatingPromptInput.tsx handleDrop), not
+ *     inlined base64. The CLI's Read therefore runs on the real path, and
+ *     a macOS screenshot dragged from the desktop is exactly the
+ *     second-path case. Nothing to change — recorded because the symptom
+ *     ("OmniFex can't read my screenshot") would have read as our bug.
+ *
+ *     Unrelated to electron/file-protocol-policy.ts, which has its own
+ *     symlink-resolution note for the `greychrist-file://` protocol.
+ *     Checked, since the wording collides.
+ *
+ *  6. MCP mid-session disconnect notification. TUI-only, parser safe.
+ *
+ *     The new literal is `" disconnected · open /mcp to reconnect"` with a
+ *     `color:` field — the TUI's own colored notice. The reconnection
+ *     machinery behind it is unchanged (`Max reconnection attempts
+ *     (${HG}) reached, giving up` and `mcp_reconnect` 16/16 exist in
+ *     both), so only the user-facing notice is new.
+ *
+ *     It cannot disturb usage-runner/parser.ts: that anchors the MCP table
+ *     on the HEADER regex `/^[ \t]*MCP servers\s+% of usage\s*$/m`
+ *     (parser.ts:98) and parses rows by anchoring on the `runs` column
+ *     rather than counting fields (parser.ts:500-503). A colored inline
+ *     status line matches neither. Checked because the enterprise
+ *     MCP-servers table in `/usage` is a surface we do scrape.
+ *
+ *  7. claude.ai-synced skills moving to recoverable trash. INERT,
+ *     structurally.
+ *
+ *     Trash root is `<configDir>/skills/.trash` (and
+ *     `<configDir>/plugins/.trash`), deleted after `cleanupPeriodDays`.
+ *     The mechanism is PRE-EXISTING — `.trash` 8/8, `.staging` and
+ *     `synced` unchanged — 2.1.273 only extends it to skills an org has
+ *     turned off.
+ *
+ *     scanSkillsDirectory (slash-commands.ts:213-238) iterates direct
+ *     children of `skills/` and requires `<child>/SKILL.md`. A trashed
+ *     skill lives at `.trash/<name>/SKILL.md`, one level deeper, so
+ *     `.trash` itself has no top-level manifest and is skipped — we will
+ *     never list a trashed skill. Confirmed against the real on-disk
+ *     layout: both ~/.claude-personal/skills and ~/.claude-work/skills are
+ *     flat today, with no `.trash`, `synced` or `.staging` present.
+ *
+ *  8. Managed MCP settings ignored alongside server-managed settings.
+ *     Same family as last pass's finding 4, and still inert here.
+ *
+ *     `allowManagedMcpServersOnly`, `deniedMcpServers` and
+ *     `disableClaudeAiConnectors` set via MDM or `managed-settings.json`
+ *     were being ignored. grep still finds ZERO references to any of those
+ *     three keys, to `managed-settings` or to `managedSettings` anywhere
+ *     in electron/ or src/, so as with `managed-mcp.json` the MCP tab
+ *     would show servers the CLI may be refusing to load. Takes an
+ *     enterprise managed-settings file to trigger; a personal account has
+ *     none. Still only worth acting on if OmniFex grows an enterprise
+ *     story.
+ *
+ *  9. Standing gap, now two entries larger:
+ *     `permissions.blockReadsOutsideWorkingDirectories`.
+ *
+ *     Two of this release's entries turn on it — the Bash
+ *     prompt-skipping fix, and memory directories chosen by a repo's
+ *     settings no longer being loaded, recalled, indexed or used by memory
+ *     extraction. OmniFex models the setting NOWHERE: grep finds it in no
+ *     file under electron/ or src/. Last pass noted the gap and did not
+ *     chase it; it kept accruing entries.
+ *
+ *     CHASED THIS PASS, at Greg's go-ahead — docs only, no code.
+ *     docs/permission-syntax.md:178 is a new section, "Reads outside the
+ *     working directories". It is deliberately its own section rather than
+ *     a Gotchas bullet, because FOUR of its properties each contradict
+ *     something stated elsewhere in that file, and all four are sourced
+ *     from the 2.1.273 binary's own zod `describe` string plus
+ *     code.claude.com/docs/en/permissions rather than from memory:
+ *
+ *       - It INVERTS settings precedence. `true` in any source wins; the
+ *         "highest first" list at :162 does not apply to it. It is the
+ *         only permission key like this.
+ *       - It is enforced in EVERY mode, bypassPermissions included, as a
+ *         hard refusal rather than a prompt.
+ *       - It fences Read, Grep, Glob AND LSP — four tools, where a
+ *         `Read(...)` rule only ever governed one.
+ *       - It can turn ITSELF on: picking "block" on auto mode's one-time
+ *         outside-read prompt writes it to settings, so a user can have it
+ *         set without having edited a settings file.
+ *
+ *     The OmniFex-specific consequence, and the reason it was worth
+ *     writing down: a fenced read is refused INSIDE the CLI — the
+ *     evaluator returns `{allowed:!1, decisionReason:{type:"safetyCheck",
+ *     circuitBreaker:"outsideReadsBlocked"}}` — so it never becomes a
+ *     `can_use_tool` and never reaches our stdio decider. The session
+ *     shows a failing Read with NO permission card and no rule to click,
+ *     which the permissions UI cannot explain because no rule is involved.
+ *     That is the diagnostic the section ends on.
+ *
+ *     Checked and explicitly NOT claimed: the new `behavior:"ask"`
+ *     circuit-breaker paths (runtime-computed paths, non-allowlisted `sed`
+ *     scripts, inline interpreters — `python -c`, `node -e`, `bash -c`
+ *     and ~17 more in the CLI's interpreter map) do NOT constitute a
+ *     bypassPermissions hole for us. The downgrade to `ask` is guarded by
+ *     `behavior==="deny" && !settings.some(s =>
+ *     s.permissions?.blockReadsOutsideWorkingDirectories===!0)` — i.e.
+ *     it fires only when the setting is ABSENT. With it set, the result
+ *     stays `deny`. Worth having verified, since an `ask` reaching our
+ *     decider under bypassPermissions WOULD be auto-allowed
+ *     (permissions.ts autoDecisionForMode) and would have silently
+ *     defeated a setting whose whole promise is "every permission mode".
+ *
+ *     Still unmodelled in CODE, deliberately: OmniFex writes rules, not
+ *     settings keys, and there is no permissions-UI surface for a boolean
+ *     that no rule can override. Documented so it is diagnosable.
+ *
+ *     The memory half is the CLI's own memory feature, NOT the Brain. The
+ *     Brain reaches sessions as an MCP server (brain-mcp.ts) and is
+ *     untouched by it. Checked, because "memory directory" reads like ours.
+ *
+ * 10. We have no `control_cancel_request` handler at all. PRE-EXISTING,
+ *     not a regression — recorded because finding the refactor above is
+ *     what surfaced it.
+ *
+ *     grep finds zero handling of the envelope in electron/ or src/. The
+ *     CLI writes it to withdraw a permission request it has given up on,
+ *     which for a `--permission-prompt-tool stdio` host is the signal that
+ *     an outstanding `can_use_tool` card should be torn down. We only ever
+ *     consume `control_request`/`can_use_tool`
+ *     (claude-cli-engine.ts:158-160). A withdrawn request therefore leaves
+ *     its permission card on screen until the user answers a question
+ *     nobody is listening to. Behaviour is IDENTICAL in 2.1.272, so this
+ *     is not something this release broke, and the parked-permission path
+ *     that emits it needs a resume with an in-flight permission to reach.
+ *     Worth a follow-up on its own merits; out of scope for a watermark
+ *     bump.
+ *
+ * 11. `/login`, `/upgrade`, `/extra-usage` no longer discard earlier
+ *     thinking, which forced a full prompt-cache rewrite on the next
+ *     request. Nothing to change, but it moves a number we track: the
+ *     internal-spend note already records 1h cache writes as ~90% of the
+ *     Brain/summaries bill, and this removes a class of gratuitous
+ *     full-cache rewrites from ordinary interactive sessions. Expect
+ *     slightly lower cache-creation tokens in session_cost_daily going
+ *     forward; not a reconciliation discrepancy to chase.
+ *
+ *  No OmniFex impact: the `x-claude-code-*` LLM-gateway hint headers
+ *  behind `CLAUDE_CODE_GATEWAY_HINT_HEADERS=1` (request headers only,
+ *  opt-in, invisible to anything we read); forking a `claude
+ *  --remote-control` / `/remote-control` session from the Claude app (grep:
+ *  we never pass either flag — and Anthropic's "Remote Control" is not
+ *  OmniFex Remote, a collision worth re-noting every pass); the subshell
+ *  `rm` tightening in bypass mode (CLI-side, and it runs BEFORE delegation,
+ *  so it can only reduce what reaches our decider — which returns 'allow'
+ *  for everything in bypassPermissions anyway, permissions.ts
+ *  autoDecisionForMode); the Bedrock/Vertex/Foundry and gateway 401/403
+ *  message rewording, the expired-cloud-login message, and the MCP
+ *  sign-in-expiry message (we parse no CLI error prose); auto mode
+ *  stopping for Artifact uploads and the Bedrock/Vertex/Foundry local
+ *  classifier default + `CLAUDE_CODE_AUTO_MODE_SERVER=1` (our
+ *  `PermissionMode` union has no `auto` — sessions/types.ts:16-20); the
+ *  stub `.git/info/exclude` recreation (git-watcher.ts reads state and
+ *  never mutates a repo); the leading-`!` shell-mode prompt fix, the
+ *  doubled-ellipsis spinner, the false-positive frontend-design spinner
+ *  tip, and the `/tui` teammate restart (TUI text entry and chrome, not
+ *  the JSONL we tail); `.claude/scheduled_tasks.json` running in the wrong
+ *  session after being copied into a worktree (grep: zero references — we
+ *  neither read nor write that file); `/install-github-app` SAML;
+ *  Remote Control clients being refused context-window usage; the
+ *  long-session responsiveness work for hook progress and sub-agent
+ *  activity (CLI-internal re-processing); every Artifact entry — publish
+ *  re-send, single-field database updates, page-read capabilities, the
+ *  unserved-file-type error, Markdown document rendering (there is no
+ *  Artifact widget under src/components/claude/tools/, so an Artifact call
+ *  renders through the generic path); the cloud-session GitHub IP
+ *  allow-list / suspended-installation / SSO causes, `/autofix-pr` gh and
+ *  webhook errors, and `/web-setup` token and TLS errors; the in-session
+ *  SSL/proxy error rewording naming `NODE_EXTRA_CA_CERTS` (grep: zero
+ *  references, and proxy.ts configures Electron's proxy, not the CLI's
+ *  trust store); `OTEL_LOG_TOOL_DETAILS=1` carrying real agent/skill/
+ *  plugin/MCP names on metrics (we emit no OTEL); sign-in also requesting
+ *  claude.ai plugin access (account-identity.ts reads `oauthAccount`'s
+ *  `emailAddress`/`uuid` from .claude.json and never inspects scopes);
+ *  `/bug` and `/feedback` trimming request metadata and
+ *  `CLAUDE_CODE_EXTRA_BODY`; the Windows UNC `--add-dir` permission check;
+ *  and the entire [VSCode], [Claude Code on the web] and [Claude Tag]
+ *  sections.
+ *
  * Last review: 2.1.270 -> 2.1.272 on 2026-09-15. Findings:
  *
  *  Changelog coverage: both releases are present. 2.1.271 is a very large
@@ -1824,7 +2173,7 @@ import { buildClaudeEnv } from './util/claude-env';
  * `~/.claude.json` fix (we read-modify-write that file, never replace it), and
  * the VSCode screen-reader work.
  */
-export const REVIEWED_CLI_VERSION = '2.1.272';
+export const REVIEWED_CLI_VERSION = '2.1.273';
 
 /**
  * app_settings key holding the user's explicit OmniFex-checkout override.
