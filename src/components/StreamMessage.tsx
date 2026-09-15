@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { detectSkillInjection } from "@/lib/skillDetection";
 import { classifyStandaloneKind } from "@/lib/messageKind";
+import { parseCommandEnvelope } from "@/lib/commandEnvelope";
 import { classifyBlockKind, isBlockHiddenInCompact, isSystemContextText, deriveSystemContextLabel } from "@/lib/blockKind";
 import { resolveKind } from "@/lib/messageRenderingConfig";
 import { summarizeHiddenEvents } from "@/lib/hiddenEventsSummary";
@@ -1272,15 +1273,17 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
                     const text = content.text ?? '';
                     renderedSomething = true;
 
-                    const slashMatch = /<command-name>(.+?)<\/command-name>[\s\S]*?<command-message>(.+?)<\/command-message>[\s\S]*?<command-args>(.*?)<\/command-args>/.exec(text);
-                    if (slashMatch) {
-                      const [, slashName, slashMessage, slashArgs] = slashMatch;
+                    // Tag order and the presence of <command-args> both vary
+                    // by command kind, so the envelope is parsed tag by tag
+                    // rather than with one ordered regex. See commandEnvelope.ts.
+                    const command = parseCommandEnvelope(text);
+                    if (command) {
                       return (
                         <CommandWidget
                           key={idx}
-                          commandName={slashName.trim()}
-                          commandMessage={slashMessage.trim()}
-                          commandArgs={slashArgs?.trim()}
+                          commandName={command.name}
+                          commandMessage={command.message}
+                          commandArgs={command.args}
                         />
                       );
                     }
