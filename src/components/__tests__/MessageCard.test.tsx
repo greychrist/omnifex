@@ -143,7 +143,7 @@ describe('MessageCard — footer (timestamp + copy)', () => {
   });
 });
 
-describe('MessageCard — debug mode footer (kind label + copy)', () => {
+describe('MessageCard — debug mode footer (kind label + raw-payload viewer)', () => {
   // The default config has debug.showCardKindLabel = false. The footer's
   // kind-label branch only renders when that flag is true — to exercise
   // it we need a config provider that flips it on. Easiest path: wrap a
@@ -188,13 +188,14 @@ describe('MessageCard — debug mode footer (kind label + copy)', () => {
     expect(labelEl).not.toBeNull();
     expect(labelEl!.textContent).toMatch(/x\s*·\s*y/);
 
-    // Copy button is present.
-    const copyBtn = labelEl!.querySelector('button[aria-label="Copy"]');
-    expect(copyBtn).not.toBeNull();
+    // The payload affordance views rather than copies; copying moved
+    // inside the panel it opens.
+    expect(labelEl!.querySelector('button[aria-label="View raw JSON"]')).not.toBeNull();
+    expect(labelEl!.querySelector('button[aria-label="Copy"]')).toBeNull();
     spy.mockRestore();
   });
 
-  it('copy button writes copyText (when set) to the clipboard', async () => {
+  it('the viewer copies copyText (when set) to the clipboard', async () => {
     const mod = await import('@/contexts/MessageRenderingContext');
     const { createDefaultConfig } = await import('@/lib/messageRenderingConfig');
     const fakeConfig = createDefaultConfig();
@@ -210,13 +211,14 @@ describe('MessageCard — debug mode footer (kind label + copy)', () => {
       raw: { type: 'system', subtype: 'notification' },
     } as unknown as JsonlNode;
     render(<MessageCard kindId="x" message={message} copyText="custom text">body</MessageCard>);
+    fireEvent.click(document.querySelector('button[aria-label="View raw JSON"]')!);
     const btn = document.querySelector('button[aria-label="Copy"]')!;
     await act(async () => { fireEvent.click(btn); await Promise.resolve(); });
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith('custom text');
     spy.mockRestore();
   });
 
-  it('copy button falls back to JSON.stringify(message) when no copyText is set', async () => {
+  it('the viewer falls back to JSON.stringify(message) when no copyText is set', async () => {
     const mod = await import('@/contexts/MessageRenderingContext');
     const { createDefaultConfig } = await import('@/lib/messageRenderingConfig');
     const fakeConfig = createDefaultConfig();
@@ -232,6 +234,7 @@ describe('MessageCard — debug mode footer (kind label + copy)', () => {
       raw: { type: 'system', subtype: 'notification' },
     } as unknown as JsonlNode;
     render(<MessageCard kindId="x" message={message}>body</MessageCard>);
+    fireEvent.click(document.querySelector('button[aria-label="View raw JSON"]')!);
     const btn = document.querySelector('button[aria-label="Copy"]')!;
     await act(async () => { fireEvent.click(btn); await Promise.resolve(); });
     expect(navigator.clipboard.writeText).toHaveBeenCalled();

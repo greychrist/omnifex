@@ -275,7 +275,7 @@ describe("AskUserQuestionCard", () => {
   });
 
   describe("metadata footer", () => {
-    it("shows the shared card footer (kind label + copy button) for JSON extraction", async () => {
+    it("shows the shared card footer (kind label + raw-payload viewer) for JSON extraction", async () => {
       const writeText = vi.fn().mockResolvedValue(undefined);
       Object.assign(navigator, { clipboard: { writeText } });
 
@@ -286,8 +286,9 @@ describe("AskUserQuestionCard", () => {
       // Same bottom-left chip as every other card: "category · kind".
       expect(screen.getByText("permission · askUserQuestion")).toBeTruthy();
 
-      const copyBtn = screen.getByRole("button", { name: "Copy" });
-      fireEvent.click(copyBtn);
+      // Copying moved inside the viewer panel, so open it first.
+      fireEvent.click(screen.getByRole("button", { name: "View raw JSON" }));
+      fireEvent.click(screen.getByRole("button", { name: "Copy" }));
       await waitFor(() => { expect(writeText).toHaveBeenCalledTimes(1); });
 
       const copied = JSON.parse(writeText.mock.calls[0][0] as string);
@@ -295,7 +296,7 @@ describe("AskUserQuestionCard", () => {
       expect(copied.toolInput.questions[0].question).toBe("Pick a color");
     });
 
-    it("still offers the footer copy on malformed input (no parseable questions)", () => {
+    it("still offers the footer viewer on malformed input (no parseable questions)", () => {
       const writeText = vi.fn().mockResolvedValue(undefined);
       Object.assign(navigator, { clipboard: { writeText } });
 
@@ -307,7 +308,7 @@ describe("AskUserQuestionCard", () => {
         />,
       );
       expect(screen.getByText("permission · askUserQuestion")).toBeTruthy();
-      expect(screen.getByRole("button", { name: "Copy" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "View raw JSON" })).toBeTruthy();
     });
   });
 });

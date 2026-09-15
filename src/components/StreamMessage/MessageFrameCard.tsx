@@ -1,5 +1,4 @@
-import React, { useState } from "react";
-import { Check, Copy } from "lucide-react";
+import React from "react";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
@@ -14,7 +13,7 @@ import { KindHeader } from "@/components/KindHeader";
 import type { JsonlNode } from "@/types/jsonl";
 import type { BorderStyle, IconName } from "@/lib/messageRenderingConfig";
 import { resolveKind } from "@/lib/messageRenderingConfig";
-import { fireAndLog } from "@/lib/fireAndLog";
+import { RawJsonPopover } from "./RawJsonPopover";
 
 interface MessageFrameCardProps {
   /** Drives icon, accent, and (via KindHeader) the configured header label.
@@ -187,7 +186,7 @@ function formatLocalTimestamp(isoOrNumeric: string): string {
 }
 
 /**
- * The bottom-left metadata chip (kind label + raw-JSON copy button) and the
+ * The bottom-left metadata chip (kind label + raw-payload viewer) and the
  * bottom-right timestamp shared by every message card. Exported so non-frame
  * custom cards (e.g. the live AskUserQuestionCard) can show the same affordance.
  * Position is `absolute bottom-…`, so the host container must be `relative` and
@@ -199,7 +198,6 @@ export const CardFooter: React.FC<{
   copyText?: string;
   kindId?: string;
 }> = ({ receivedAt, message, copyText, kindId }) => {
-  const [copied, setCopied] = useState(false);
   const formatted = receivedAt ? formatLocalTimestamp(receivedAt) : null;
 
   // Kind label shows the resolved catalog kind ID broken on its dots so the
@@ -218,18 +216,9 @@ export const CardFooter: React.FC<{
     if (t) kindLabel = sub ? `${t} · ${sub}` : String(t);
   }
 
-  const handleCopy = async () => {
-    try {
-      // Serialize the raw wire payload for the copy button.
-      const text = copyText ?? (message ? JSON.stringify((message as unknown as { raw?: unknown }).raw, null, 2) : "");
-      if (!text) return;
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      setTimeout(() => { setCopied(false); }, 1200);
-    } catch (err) {
-      console.error("Failed to copy:", err);
-    }
-  };
+  // The raw wire payload, serialized once for the viewer panel.
+  const payload = copyText
+    ?? (message ? JSON.stringify((message as unknown as { raw?: unknown }).raw, null, 2) : "");
 
   if (!formatted && !kindLabel) return null;
 
@@ -241,17 +230,7 @@ export const CardFooter: React.FC<{
           title="message type · subtype"
         >
           <span className="pointer-events-none">{kindLabel}</span>
-          {(message || copyText) && (
-            <button
-              type="button"
-              onClick={fireAndLog('message-card:click', handleCopy)}
-              className="p-0.5 rounded hover:bg-muted/60 hover:text-foreground transition-colors"
-              title={copied ? "Copied!" : "Copy"}
-              aria-label="Copy"
-            >
-              {copied ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}
-            </button>
-          )}
+          <RawJsonPopover text={payload} label={kindLabel ?? "Raw JSON"} />
         </div>
       )}
       {formatted && (
