@@ -30,6 +30,268 @@ import { buildClaudeEnv } from './util/claude-env';
  * old value and the new one, and file or fix whatever they imply. Bumping it
  * to silence the badge throws away the only drift signal we have.
  *
+ * Last review: 2.1.270 -> 2.1.272 on 2026-09-15. Findings:
+ *
+ *  Changelog coverage: both releases are present. 2.1.271 is a very large
+ *  entry (99 lines); 2.1.272 is the bare "Bug fixes and reliability
+ *  improvements" with no detail at all, so for that release the binary diff
+ *  is the ONLY signal — and it is what produced findings 1-3. 2.1.271 is
+ *  NOT installed on this machine; 2.1.270 and 2.1.272 both are, so the wire
+ *  claims below span the whole range but cannot attribute a change to one
+ *  release rather than the other. Said plainly rather than guessed.
+ *
+ *  Wire diff: THREE NEW `system` SUBTYPES, and nothing else moved.
+ *
+ *  The JSONL record-type merge map is BYTE-IDENTICAL between the two
+ *  binaries (2130 bytes both) — no new record types, so
+ *  cliSidechannelRecords.ts needs nothing. `hook_event_name` literals
+ *  identical. `type:"control_*"` envelope literal SET identical. Every
+ *  `/usage` anchor parser.ts reads is unchanged: `Current session` 3/3,
+ *  `Current week (` 8/8, `Total cost:` 2/2, `% of usage` 2/2, `Loading
+ *  usage data` 1/1, `Showing last-known usage` 2/2. The Bash
+ *  path-restricted command list (the 40 names quoted in
+ *  docs/permission-syntax.md) is identical, so that doc stays accurate.
+ *
+ *  Three counts moved and all three are noise, checked rather than assumed:
+ *
+ *   - `Resets` 89 -> 120. The two `` `Resets ${ `` TEMPLATE literals the
+ *     /usage TUI actually renders are 2 in BOTH binaries. The jump is
+ *     minifier identifier expansion around wall-reset state
+ *     (`continuableWallResetsAt`, `weeklyResetsAt`, `shownWallResetsAt`)
+ *     plus exactly one new string literal, `Resets can't be used while you
+ *     continue at lower priority`, which belongs to the reset-redemption
+ *     slash command's message table (beside "Your reset doesn't cover this
+ *     limit" and "No reset to use") — not to a /usage window block, so
+ *     parser.ts's `/Resets\s+(.+?)\s*$/m` never sees it.
+ *   - `control_response` 56 -> 57 and `control_request_progress` 1 -> 2.
+ *     The literal set is unchanged; the one genuinely new emitter is a
+ *     `control_request_progress` on the `side_question` case of the
+ *     **bridge:repl** channel (`onProgress` on the registered
+ *     `onSideQuestion` callback). That is the SDK bridge, not the stdio
+ *     control channel sessions/queries.ts drives. The rest of the delta is
+ *     minifier renaming (`d` -> `_`, `o` -> `d` across the same switch).
+ *   - `MCP servers` 203 -> 207 lines: prose, no new table header.
+ *
+ *  1. `peer_message_hold` — new `type:"system"` subtype. LATENT BUG, and
+ *     the only finding in the range worth acting on.
+ *
+ *     It backs 2.1.271's "Fixed cross-session messages held by the
+ *     receiving session's permission-mode policy leaving no trace". The
+ *     receiver emits it as its state machine moves an inbound peer message
+ *     through `held` (with `cause`), `released`, or `dropped` (with
+ *     `outcome`). Shape off the binary: `{ type:"system",
+ *     subtype:"peer_message_hold", state, message_uuid?, lane, from,
+ *     from_name?, cause?, outcome?, uuid, session_id }`, where `lane` is
+ *     `"socket"` or `"stdin"`.
+ *
+ *     Why it lands on US and not on a surface we don't have: the emit sits
+ *     directly beside the CLI's own log line `[cross-session-inbound]
+ *     headless: held peer message expired (no approval surface) — dropped
+ *     with an expired receipt`. HEADLESS IS US — OmniFex chat mode is
+ *     `-p --output-format stream-json` (claude-cli-engine.ts:53-65), which
+ *     is precisely a receiver with no approval surface.
+ *
+ *     It is STREAM-ONLY, never written to the JSONL. Established from the
+ *     CLI's own transcript-persistence predicate — one function in the
+ *     runHeadless path that excludes `control_response`/`control_request`/
+ *     `control_cancel_request`, the `stream_event`/`keep_alive`/
+ *     `prompt_suggestion`/`conversation_reset`/`transcript_mirror`/
+ *     `command_lifecycle`/`active_goal`/`autocompact_state` types, and a
+ *     named list of `system` subtypes. That list is worth knowing about,
+ *     because it is the upstream twin of JSONL_CARRIED_SYSTEM_SUBTYPES
+ *     read from the other direction: `session_state_changed`,
+ *     `permission_denied`, `task_notification`, `task_started`,
+ *     `task_updated`, `task_progress`, `background_tasks_changed`,
+ *     `feedback_draft_queued`, `control_request_progress`, `notification`,
+ *     `post_turn_summary`, `task_summary`, `hook_started`, `hook_progress`,
+ *     `hook_response`, `commands_changed`, `elicitation_complete`,
+ *     `files_persisted`, `mirror_error`, `code_change_published`,
+ *     `tool_host_result`, `peer_message_hold`, `vcs_state_changed`,
+ *     `dev_intent`, `turn_preempted`. stream-forward.ts:49-57 already
+ *     asserts exactly this about the hook lifecycle, task_started/
+ *     task_notification and permission_denied, from observation; this is
+ *     the same claim confirmed from the binary.
+ *
+ *     So the path is: `shouldForwardStreamMessage` is a DENY-list and
+ *     forwards it (stream-forward.ts:88) -> `classifySystem` does not know
+ *     the subtype -> `kind:'unknown'` (jsonlClassifier.ts:261-264) -> no
+ *     filter catches it, because `isCliSidechannelRecord` keys off `type`,
+ *     which here is the perfectly well-known `'system'` -> orange
+ *     "Unrecognized record: system" card (StreamMessage.tsx:615). That is
+ *     the `background_tasks_changed` / `dev_intent` failure mode verbatim,
+ *     and messageFilters.ts:146-161 records both of those as the precedent.
+ *
+ *     NOT observed in the wild: zero real occurrences across every
+ *     transcript under ~/.claude-personal and ~/.claude-work. The only
+ *     file on this machine containing the string is this review session's
+ *     own transcript, from grepping for it. So it is latent, not live —
+ *     it needs a peer to actually send a cross-session message to an
+ *     OmniFex-hosted session.
+ *
+ *     NOT FIXED — left for Greg's call, because the classification is not
+ *     mechanical. Unlike `dev_intent` (the CLI talking to itself) this one
+ *     IS addressed to the reader: it says a message someone sent you was
+ *     held or silently dropped. That argues for classifying AND rendering
+ *     it rather than adding it to the filter list, which is a real UI
+ *     decision rather than a one-line paper-over.
+ *
+ *  2. `turn_preempted` — new `type:"system"` subtype. INERT, double-gated.
+ *
+ *     Emitted when a rapid human follow-up preempts an open turn:
+ *     `{ subtype:"turn_preempted", reason:"rapid_followup",
+ *     preempted_by_uuid, preempted_message_uuids }`, telemetry event
+ *     `print_rapid_followup_preempt`. Not in any changelog entry — found
+ *     only by diffing, which is the argument for step 3 of the review.
+ *
+ *     Unreachable for us on two independent gates: the enable predicate is
+ *     `surfaceCapabilities.sdkRapidFollowupPreempt() === true &&
+ *     H("tengu_zippy_spindle", false)` — an SDK-surface capability we are
+ *     not, AND a statsig gate defaulting false. It further requires
+ *     `origin.kind === "human"` and `priority === "next"`. Also on the
+ *     stream-only list above. If that gate ever flips it draws the same
+ *     orange card as 1, so it is worth classifying in the same edit.
+ *
+ *  3. `turn_handoff_available` — new `type:"system"` subtype. INERT,
+ *     managed-cloud-worker only.
+ *
+ *     `{ subtype:"turn_handoff_available", v, tools[], worker_epoch }`.
+ *     Its admission function returns `{admitted:false,
+ *     reason:"not_managed_cloud_worker"}` unless `sdkUrl &&
+ *     remoteSessionId && environmentKind === undefined`. Note this one is
+ *     NOT on the stream-only list, so it would be persisted to the JSONL —
+ *     but it is never emitted outside a managed cloud worker, which no
+ *     OmniFex session is. Recorded so the next reviewer does not re-derive
+ *     the gate.
+ *
+ *  4. `managed-mcp.json` gaining exclusive MCP control when unreadable.
+ *     A REAL divergence, inert for this account. NOT FIXED.
+ *
+ *     2.1.271: an enterprise `managed-mcp.json` that can't be read or
+ *     parsed is no longer ignored — it keeps exclusive control, so user,
+ *     project and plugin servers do not load at all. OmniFex's MCP service
+ *     has zero knowledge of that file (grep: no hits for `managed-mcp` or
+ *     `managedSettings` anywhere in electron/ or src/), so the MCP tab
+ *     would list servers the CLI is refusing to load, with no way to tell.
+ *     It takes an enterprise managed-settings file to trigger, which a
+ *     personal account does not have. Worth knowing if OmniFex ever grows
+ *     a managed/enterprise story; not worth a change now.
+ *
+ *  5. The permission-rule entries. NO DOC CHANGE NEEDED — checked, not
+ *     assumed, since this is the file that has caused every permissions
+ *     regression.
+ *
+ *     Three Bash permission-check fixes land in the range: the file that
+ *     `fmt`, `column` and similar commands read being missed when it
+ *     follows an option the checker doesn't recognise; files a wildcard
+ *     expands to being skipped when the wildcard sits in a pattern or
+ *     option value (`grep -v dir/* file`); and shell variable declaration
+ *     flags misrepresenting the command being run. All three tighten the
+ *     EXISTING fixed-command mechanism rather than change its shape —
+ *     `fmt` and `column` are already in the 40-name list at
+ *     docs/permission-syntax.md:110-118, and that list is byte-identical
+ *     between the two binaries. All three make rules apply MORE often,
+ *     never wider, so no OmniFex-written rule changes meaning. The third
+ *     is the same family as the zsh `REPORTTIME` note already at
+ *     permission-syntax.md:54.
+ *
+ *     `permissions.blockReadsOutsideWorkingDirectories` (one more Bash fix)
+ *     is PRE-EXISTING, not new — 39 occurrences in both binaries — so it is
+ *     out of this range. docs/permission-syntax.md has never covered it.
+ *     Noted, deliberately not chased here.
+ *
+ *     The auto-mode changes (inline `!` shell commands in skills and slash
+ *     commands following default-mode rules instead of the classifier;
+ *     per-command `allowed_domains` for Bash/PowerShell/Monitor under
+ *     sandboxing; the subagent hand-back call) are all inert for us:
+ *     OmniFex's `PermissionMode` union is `default | acceptEdits |
+ *     bypassPermissions | plan` (sessions/types.ts:16-20). There is no
+ *     `auto` in it. The `allowed_domains` already in
+ *     src/lib/types/toolInput.ts:90 is WebSearchInput's, unrelated — a
+ *     coincidence of naming, and checked rather than credited.
+ *
+ *  6. Three upstream wins on paths we drive hard. Nothing to change.
+ *
+ *     (a) "Fixed resumed `claude -p` sessions whose tools all come from
+ *     MCP servers failing with 'At least one tool must have
+ *     defer_loading=false'". Both halves are ours: chat mode is `-p`, warm
+ *     restarts respawn with `--resume` (claude-cli-engine.ts:66-67), and we
+ *     manage MCP servers. The most directly-aimed fix in the range.
+ *
+ *     (b) "Fixed `--resume` dropping the 1M context window (`[1m]`) when
+ *     the resumed session's model family differs from the configured
+ *     default model". Our context gauge falls back to the `[1m]`
+ *     model-string heuristic ONLY before live data arrives
+ *     (SessionCard.tsx:239-242, resolveContextLimit). This makes the live
+ *     window right more often; the fallback is still needed for the
+ *     pre-live paint, so it is not now dead code.
+ *
+ *     (c) "Fixed a cached organization policy being reused after switching
+ *     accounts, organizations, or API keys, and the policy not refreshing
+ *     until the hourly check when the credential changes mid-session".
+ *     Same family as the 2.1.268/2.1.269 multi-process findings below —
+ *     OmniFex IS the multi-account, multi-process case by construction.
+ *     Not our bug; nothing we read is fed by org policy.
+ *
+ *  7. `omitClaudeMd` in agent frontmatter and `--agents` JSON. NO IMPACT,
+ *     confirmed rather than waved off: grep finds no `omitClaudeMd` and no
+ *     writer for `.claude/agents/*.md` anywhere in the repo. Agent
+ *     definitions are not ours to write, so a new frontmatter key is inert.
+ *
+ *  8. The hook-feedback spinner change (SessionStart / UserPromptSubmit /
+ *     PreToolUse / SessionEnd hooks announcing themselves with elapsed
+ *     time, Esc cancelling a prompt waiting on SessionStart). ALREADY
+ *     HANDLED: `hook_event_name` literals are identical across the range,
+ *     and `hook_started` / `hook_progress` / `hook_response` are already in
+ *     SYSTEM_SUBTYPES (jsonlClassifier.ts:201-203). It is a TUI spinner
+ *     change riding subtypes we already classify.
+ *
+ *  No OmniFex impact: `claude self-hosted-runner --drain-marker-file` and
+ *  `--host-config-snapshot`; `--accept-command <sha256>` on `claude plugin
+ *  install/update` (we never shell out to `claude plugin`); the
+ *  `modelPricing` managed-setting `multiplier` (model-pricing.ts is our own
+ *  SHIPPED_PRICING + model_pricing delta table, which reads no managed
+ *  setting); every fast-mode entry (`/fast off` when disabled org-wide,
+ *  `CLAUDE_CODE_SKIP_FAST_MODE_ORG_CHECK` re-sending, the retry-watchdog
+ *  fallback, fast mode in Remote sessions) — the fast-mode UI is still
+ *  unshipped and `apply_flag_settings` is unchanged; `ANTHROPIC_UNIX_SOCKET`
+ *  org-policy proxying (grep: zero references); the `list_changed` tight-loop
+ *  CPU fix, MCP OAuth client-registration fixes, bare-name MCP tool search,
+ *  `alwaysLoad` mid-conversation on Foundry, and `claude mcp serve` 30s
+ *  progress (all CLI-internal; our MCP service manages config, not
+ *  connections); `--bg`/`claude agents` artifact watching and the 5->10
+ *  watch limit; `/artifacts` surviving `--resume`; the compaction
+ *  double-start of background commands; `/model` cache warning; workflow
+ *  usage-limit pause and the default-size change to small/10 (a fan-out
+ *  COUNT, not the transcript layout cost-history.ts:62-71 already
+ *  recurses); `/reload-skills` count after `/cd`; claude.ai-synced skill
+ *  cleanup and `anthropic-skills:<name>`; `/resume`+`/teleport` file-read
+ *  tracking; `/resume`/`/continue` fullscreen row counts; inode-0 virtual
+ *  drives; `/add-dir` cursor keys; the leading-`!` text-field bug; the
+ *  `/hooks` `__proto__`/`constructor` matcher crash (CLI-side; our merge at
+ *  claude.ts:1210 is a spread of JSON.parse output, which creates own data
+ *  properties and never walks a prototype); the `[⧉ …]` IDE selection pill;
+ *  `/mobile` QR; PDF `@`-mention page counts; the Markdown-artifact document
+ *  rendering and the three Artifact publish/capability error-message
+ *  changes; the gateway `text/plain` non-streaming fix; Monitor watch
+ *  deadlines replacing `persistent` (we render no Monitor widget — see
+ *  src/components/claude/tools/); the Bedrock/Vertex/Foundry desktop-app
+ *  spinner tip, `/desktop`, and those gateways no longer refreshing a
+ *  leftover claude.ai login; `CLAUDE_CODE_BG_TASKS_REPORT_RUNNING`-adjacent
+ *  cross-session delivery notices for headless SENDERS (we are a host, not
+ *  a sender); the bundled `claude-api` skill update; the stale
+ *  `.git/config.lock` fix (Linux, and git-watcher.ts reads state rather
+ *  than running mutating git); the macOS settings-watcher polling fallback
+ *  (CLI-side; our own fs.watch flake is account-identity.ts's, unrelated);
+ *  startup model-data validation; the "deep in thought" spinner wording;
+ *  spinner-tip availability filtering; the fullscreen stale-background
+ *  glitch, st Delete, rxvt-unicode Alt+arrows, and the `^[[?1;2c`
+ *  capability-reply stray text (all real-terminal behaviour — our TUI mode
+ *  drives node-pty into xterm.js, TerminalView.tsx:49, which answers
+ *  nothing it is not asked); the Windows 260-char PowerShell temp path; and
+ *  the entire [VSCode], [Claude Code on the web], [Claude Tag] and
+ *  [Code Review] sections (OmniFex Remote is our own daemon, unrelated to
+ *  any of them).
+ *
  * Last review: 2.1.268 -> 2.1.270 on 2026-09-13. Findings:
  *
  *  Changelog coverage: both 2.1.269 (a very large entry) and 2.1.270 (a
@@ -1562,7 +1824,7 @@ import { buildClaudeEnv } from './util/claude-env';
  * `~/.claude.json` fix (we read-modify-write that file, never replace it), and
  * the VSCode screen-reader work.
  */
-export const REVIEWED_CLI_VERSION = '2.1.270';
+export const REVIEWED_CLI_VERSION = '2.1.272';
 
 /**
  * app_settings key holding the user's explicit OmniFex-checkout override.
