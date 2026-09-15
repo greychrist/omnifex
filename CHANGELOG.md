@@ -5,6 +5,15 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.172] — 2026-09-15
+
+### Fixed
+
+- Running a slash command drew the markup Claude Code writes down instead of the command. A `/timesheet-review` came out as a line of `<command-message>` and `<command-name>` tags in a box that was otherwise styled like a command. Claude Code does not record every command the same way — built-ins like `/clear` write their parts in one order, and custom commands and skills write them in another, without the arguments section at all — and OmniFex only recognised the first arrangement. It now reads each part on its own terms, so every command renders as a command. This has been the case on reload for as long as reloading has worked; it began showing up live in the previous release, when the transcript started being read back from Claude Code's own record.
+- The icon at the top of a message sat a couple of pixels below centre, leaving more space above it than below.
+
+Installers are signed with a Developer ID certificate and notarized by Apple.
+
 ## [0.4.171] — 2026-09-15
 
 ### Added
