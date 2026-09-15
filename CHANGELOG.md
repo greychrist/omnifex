@@ -5,6 +5,18 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.170] — 2026-09-15
+
+### Fixed
+
+- Using the same skill twice in one session put the skill's own instructions into the transcript as though you had typed them — a wall of text attributed to you, right where your actual request should have been. Claude Code recently started announcing a repeat invocation with a short note ahead of the instructions, and OmniFex had been identifying the instructions purely by their position after that announcement. The note took their place, and the instructions landed in the one category left over: something you said.
+
+### Changed
+
+- The transcript is now read from Claude Code's own session record rather than assembled from its live output. The two are not the same: the live output leaves out several details the session record keeps, including which tool produced a given entry, and OmniFex had been inferring those from the order entries arrived in. Those inferences are gone — the information is simply read. Live typing, permission prompts and turn results still come from the live output, because they are never written to the session record at all.
+
+Installers are signed with a Developer ID certificate and notarized by Apple.
+
 ## [0.4.169] — 2026-09-14
 
 ### Added
