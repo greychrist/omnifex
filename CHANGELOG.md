@@ -5,6 +5,28 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.174] — 2026-09-15
+
+### Fixed
+
+- A tab restored when the app reopened was subscribed to nothing, so the session it belonged to ran on and showed you none of it. The daemon held a healthy connection, wrote every event of the session to its log, and delivered them to nobody. Nothing recovered on its own: prompts kept succeeding, because the CLI on the other end was fine, and it is a failed prompt that would have triggered the repair. One session wrote three hours of answers that were never drawn. Restored tabs now subscribe on every connection, including the first, and the two places an event could previously be dropped in silence say so in the log instead.
+
+### Added
+
+- A status bar above the transcript says whether this session is actually receiving anything. Being connected to the daemon and being sent a particular session's events are two different things — that is what the bug above turned on — so a connection that is live but delivering nothing to this tab now reads `daemon no events` rather than looking like a session with nothing to say. Turn time, the size of the current thinking burst, and the prompt-cache countdown move up here beside it, since all three describe the conversation rather than the session widget they used to sit in.
+
+### Changed
+
+- The button that opens a message's underlying record moves from the card's footer to the header beside Copy, and now reaches side-line and collapsible messages — the rows most likely to prompt the question. It also stops doing the work until you ask: the record was being prepared for every card on screen, on every update, for a panel that is rarely opened.
+- The session-inspector toggle pins to the top of the transcript's right-hand rail instead of floating over the content, where it had begun landing on top of the new status bar.
+- Narrow windows now keep the tab strip. Treating the session as a pushed-in view meant that shrinking the window cost you access to every other open tab, and the strip already scrolls sideways, so its width was never the problem. The account and session widgets drop their meter bars and the account name at that width instead, with a rule in each bar's place so the figures either side stay legible as two numbers.
+
+### Removed
+
+- The unread-event count in the session widget. It was drawn as a token meter and needed a label to explain that it was counting events rather than tokens.
+
+Installers are signed with a Developer ID certificate and notarized by Apple.
+
 ## [0.4.173] — 2026-09-15
 
 ### Fixed
