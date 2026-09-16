@@ -5,6 +5,24 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.175] — 2026-09-16
+
+### Added
+
+- Sessions have names on screen. Claude Code has been naming every session it starts for a while now — a short line written from your opening prompt — and OmniFex was reading that name in the Projects list and nowhere else. It now heads the status bar above the transcript, and a pencil beside it renames the session to whatever you want. The rename goes out over Claude Code's own rename channel rather than being recorded on the side, so it is the session's real name: it persists in the transcript, survives a restart, and shows up anywhere the session is listed. Sessions Claude Code never named — every resumed one, and anything older than CLI 2.1.268 — read as `Untitled` with the same pencil beside them, which is the case renaming is most useful for.
+- Tabs carry the session's name under the project name, so two tabs open on the same project are told apart by what you are doing in each rather than by which one you clicked last. A long name is cut to fit the tab and shown in full on hover.
+
+### Changed
+
+- The status bar reorders around the name: it sits on the left, and the turn clock, thinking burst, cache countdown and daemon state group to the right. The name is set in the app's own typeface rather than the monospace the readouts use, which is there to stop counting numbers jittering.
+- The thinking readout says `thinking` while a burst is running and `thought` once it has finished, and labels the figure `tokens`. It was reading `thinking 12.4k` in both states, which described a finished turn as one still in progress and left the number unattributed.
+
+### Fixed
+
+- A typed slash command left two entries in the transcript styled as though you had written them — the echo of the command and whatever it printed — each with a resend button on it. Neither is addressed to the model and neither will ever be answered, and counting them as prompts also left the turn looking open when it was not. Both are now recognised for what they are.
+
+Installers are signed with a Developer ID certificate and notarized by Apple.
+
 ## [0.4.174] — 2026-09-15
 
 ### Fixed
