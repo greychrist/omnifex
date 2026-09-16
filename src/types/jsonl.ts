@@ -108,6 +108,16 @@ export interface AiTitleRaw extends RawLineBase {
   aiTitle: string;
 }
 
+/**
+ * A rename. Written by `/rename`, by a claude.ai rename relayed into the
+ * process, and by the `rename_session` control request the status bar's
+ * pencil sends. Outranks `ai-title` — see `pickSessionTitle`.
+ */
+export interface CustomTitleRaw extends RawLineBase {
+  type: 'custom-title';
+  customTitle: string;
+}
+
 export interface FileSnapshotRaw extends RawLineBase {
   type: 'file-history-snapshot';
   messageId?: string;
@@ -122,7 +132,13 @@ export type UserKind =
   | 'meta-attachment'
   | 'meta-other'
   /** The summary the CLI writes after /compact. A `user` record, but not a prompt. */
-  | 'compact-summary';
+  | 'compact-summary'
+  /**
+   * The echo of a typed slash command and the stdout it produced. Both persist
+   * as `user` records, but a local command runs on the client — the model never
+   * sees either one and will never reply to them.
+   */
+  | 'local-command';
 
 export type SystemSubtype =
   | 'init'
@@ -361,6 +377,7 @@ export type JsonlNode =
   | { kind: 'last-prompt'; raw: LastPromptRaw; sessionId: string }
   | { kind: 'permission-mode'; raw: PermissionModeRaw; sessionId: string }
   | { kind: 'ai-title'; raw: AiTitleRaw; sessionId: string }
+  | { kind: 'custom-title'; raw: CustomTitleRaw; sessionId: string }
   | { kind: 'file-history-snapshot'; raw: FileSnapshotRaw }
   // System sub-variants
   | { kind: 'system'; subtype: SystemSubtype; raw: SystemRaw; sessionId: string; receivedAt: string }

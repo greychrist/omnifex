@@ -233,6 +233,18 @@ describe('classifyJsonlLine', () => {
     expect(node?.kind).toBe('ai-title');
   });
 
+  // Not in JSONL_SAMPLES: the sampled corpus predates the app being able to
+  // rename anything, so no transcript had one. This is the record the CLI
+  // wrote when `rename_session` was fired at 2.1.273.
+  it('classifies custom-title lines', () => {
+    const node = classifyJsonlLine({
+      type: 'custom-title',
+      customTitle: 'Probe renamed this session',
+      sessionId: 'bd5f3041-d977-46ad-9ef9-69cddf950cfe',
+    });
+    expect(node?.kind).toBe('custom-title');
+  });
+
   it('classifies file-history-snapshot lines', () => {
     const node = classifyJsonlLine(JSONL_SAMPLES['file-history-snapshot']);
     expect(node?.kind).toBe('file-history-snapshot');

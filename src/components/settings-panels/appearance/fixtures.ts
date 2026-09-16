@@ -49,6 +49,7 @@ export const KIND_FIXTURES: Record<string, string> = {
   "permission-mode": "Permission → acceptEdits",
   "last-prompt": "Bookmarked prompt",
   "ai-title": 'Session titled "Refactor auth"',
+  "custom-title": 'Renamed to "Refactor auth"',
   "queue-operation": "Background: enqueue",
   "file-history-snapshot": "File snapshot",
 

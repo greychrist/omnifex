@@ -22,6 +22,7 @@ function makeDeps(overrides: Partial<StreamEffectDeps> = {}): StreamEffectDeps {
     setSupportedCommands: vi.fn(),
     queuedPromptsRef: { current: [] },
     setQueuedPrompts: vi.fn(),
+    isLoadingRef: { current: false },
     handleSendPrompt: vi.fn(),
     postCompactPrompt: 'RE-READ: your summary is lossy.',
     currentModel: 'opus',
@@ -142,9 +143,58 @@ describe('runStreamEffect', () => {
       queuedPromptsRef: { current: [head, tail] },
     });
     runStreamEffect({ kind: 'processQueuedPrompt' }, deps);
-    expect(setQueuedPrompts).toHaveBeenCalledWith([tail]);
     vi.advanceTimersByTime(150);
+    expect(setQueuedPrompts).toHaveBeenCalledWith([tail]);
     expect(handleSendPrompt).toHaveBeenCalledWith('hello', 'opus', undefined);
+    vi.useRealTimers();
+  });
+
+  // The drain is now triggered from more than one place (a `result` row AND a
+  // compact_boundary), so it has to be safe to fire mid-turn. Dequeuing and
+  // letting handleSendPrompt re-enqueue would push the head to the BACK of the
+  // queue — which is exactly what the post-compact directive's front-of-queue
+  // placement exists to prevent.
+  it('processQueuedPrompt leaves the queue untouched while a turn is in flight', () => {
+    vi.useFakeTimers();
+    const handleSendPrompt = vi.fn();
+    const setQueuedPrompts = vi.fn();
+    const directive = { prompt: 'RE-READ', model: 'opus' };
+    const typed = { prompt: 'what next?', model: 'opus' };
+    const queuedPromptsRef = { current: [directive, typed] };
+    const deps = makeDeps({
+      handleSendPrompt,
+      setQueuedPrompts,
+      queuedPromptsRef,
+      isLoadingRef: { current: true },
+    });
+    runStreamEffect({ kind: 'processQueuedPrompt' }, deps);
+    vi.advanceTimersByTime(150);
+    expect(handleSendPrompt).not.toHaveBeenCalled();
+    expect(setQueuedPrompts).not.toHaveBeenCalled();
+    expect(queuedPromptsRef.current).toEqual([directive, typed]);
+    vi.useRealTimers();
+  });
+
+  // Work session 3445e547: the CLI emitted the turn's `result` BEFORE the
+  // compact_boundary, so the directive was queued after the only drain trigger
+  // had already fired and sat there forever. The boundary now drains too, and
+  // by then the turn is over — so the directive must actually go out.
+  it('processQueuedPrompt drains a directive queued after the turn ended', () => {
+    vi.useFakeTimers();
+    const handleSendPrompt = vi.fn();
+    const setQueuedPrompts = vi.fn();
+    const directive = { prompt: 'RE-READ', model: 'opus' };
+    const queuedPromptsRef = { current: [directive] };
+    const deps = makeDeps({
+      handleSendPrompt,
+      setQueuedPrompts,
+      queuedPromptsRef,
+      isLoadingRef: { current: false },
+    });
+    runStreamEffect({ kind: 'processQueuedPrompt' }, deps);
+    vi.advanceTimersByTime(150);
+    expect(handleSendPrompt).toHaveBeenCalledWith('RE-READ', 'opus', undefined);
+    expect(queuedPromptsRef.current).toEqual([]);
     vi.useRealTimers();
   });
 

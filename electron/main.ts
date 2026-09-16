@@ -1320,6 +1320,7 @@ app.whenReady().then(() => {
       // Wave 2 — Query-method passthroughs
       interrupt: (sessionId: string) => sessionsService.interrupt(sessionId),
       setModel: (sessionId: string, model?: string) => sessionsService.setModel(sessionId, model),
+      setTitle: (sessionId: string, title: string) => sessionsService.setTitle(sessionId, title),
       setPermissionMode: (sessionId: string, mode: string) =>
         sessionsService.setPermissionMode(sessionId, mode as any),
       setEffort: (sessionId: string, level: unknown) => sessionsService.setEffort(sessionId, level as any),

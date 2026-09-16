@@ -1,10 +1,11 @@
 import * as React from 'react';
-import { ServerCog, Brain, Wifi, WifiLow, WifiOff } from 'lucide-react';
+import { ServerCog, Brain, Wifi, WifiLow, WifiOff, Pencil } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useSecondTick } from '@/hooks/useSecondTick';
 import { formatToolElapsed } from '@/components/claude/tools/ToolProgressChip';
 import { CacheTimerRow } from '@/components/CacheTimerRow';
 import { InlineDivider } from '@/components/ui/inline-divider';
+import { Popover } from '@/components/ui/popover';
 import type { SessionActivity } from '@/lib/signals/emitters';
 import type { SessionSignal } from '@/lib/signals/types';
 
@@ -101,6 +102,138 @@ export function LinkGlyph({ connection, delivering }: LinkState): React.JSX.Elem
   );
 }
 
+/**
+ * The session's name, and the pencil that changes it.
+ *
+ * The name comes from the transcript — the CLI's own `ai-title`, or a
+ * `custom-title` if the session was renamed (see `deriveSessionTitle`) — and
+ * the pencil sends the CLI's own `rename_session` control request, which is
+ * what writes that `custom-title` record. So the bar is not displaying a
+ * name OmniFex invented and keeps in sync; it is displaying the CLI's name
+ * for the session, and renaming through the CLI's own door.
+ *
+ * "Untitled" is shown rather than nothing because untitled is the COMMON
+ * case, not an edge one: the CLI only titles a fresh conversation, so every
+ * resumed session and everything older than CLI 2.1.268 arrives with no name
+ * at all. Those are exactly the sessions worth naming, so the affordance
+ * cannot be hidden behind already having a name.
+ */
+function SessionTitle({
+  title,
+  canRename,
+  onRename,
+}: {
+  title: string | null;
+  canRename: boolean;
+  onRename: (title: string) => Promise<boolean> | boolean;
+}): React.JSX.Element {
+  const [open, setOpen] = React.useState(false);
+  const [draft, setDraft] = React.useState('');
+  const [failed, setFailed] = React.useState(false);
+
+  const openEditor = (next: boolean): void => {
+    if (next && !canRename) return;
+    if (next) {
+      setDraft(title ?? '');
+      setFailed(false);
+    }
+    setOpen(next);
+  };
+
+  const submit = async (e: React.FormEvent): Promise<void> => {
+    e.preventDefault();
+    // A blank custom title is how the CLI CLEARS a rename — never what
+    // pressing Save on an empty field meant.
+    const next = draft.trim();
+    if (!next) return;
+    const ok = await onRename(next);
+    if (ok) setOpen(false);
+    else setFailed(true);
+  };
+
+  return (
+    <div className="flex items-center gap-1.5 min-w-0">
+      <span
+        data-testid="session-title"
+        title={title ?? 'This session has no name yet'}
+        // A size above the readouts beside it, and in the app's own typeface:
+        // the name is prose, while the bar's mono exists to stop counting
+        // numbers from jittering. `font-sans` has to be explicit to override
+        // the `font-mono` the row sets.
+        className="truncate text-sm font-sans"
+      >
+        <span className="opacity-70">Name: </span>
+        <span className={title ? 'text-foreground/80' : 'text-muted-foreground/60 italic'}>
+          {title ?? 'Untitled'}
+        </span>
+      </span>
+      <Popover
+        open={open}
+        onOpenChange={openEditor}
+        align="start"
+        side="bottom"
+        className="p-2"
+        trigger={
+          <button
+            type="button"
+            aria-label="Rename session"
+            disabled={!canRename}
+            title={
+              canRename
+                ? 'Rename this session'
+                : 'Renaming needs a running session — the CLI takes the rename over its control channel'
+            }
+            className={cn(
+              'flex-none inline-flex items-center rounded p-0.5 text-muted-foreground',
+              canRename
+                ? 'hover:text-foreground hover:bg-muted/60'
+                : 'opacity-40 cursor-not-allowed',
+            )}
+          >
+            <Pencil className="h-3 w-3" aria-hidden="true" />
+          </button>
+        }
+        content={
+          <form data-testid="rename-form" onSubmit={submit} className="flex flex-col gap-2 w-64">
+            <label htmlFor="session-rename-input" className="text-[10px] uppercase tracking-wide text-muted-foreground">
+              Session name
+            </label>
+            <input
+              id="session-rename-input"
+              autoFocus
+              value={draft}
+              onChange={(e) => { setDraft(e.target.value); }}
+              className="w-full rounded border border-border bg-background px-2 py-1 text-xs font-sans"
+              placeholder="Name this session"
+            />
+            {failed && (
+              <span className="text-[10px] text-red-400">
+                The rename didn’t reach the session.
+              </span>
+            )}
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => { setOpen(false); }}
+                className="rounded px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={!draft.trim()}
+                className="rounded bg-primary px-2 py-1 text-xs text-primary-foreground disabled:opacity-40"
+              >
+                Save
+              </button>
+            </div>
+          </form>
+        }
+      />
+    </div>
+  );
+}
+
 interface ActivityMeta {
   status?: SessionActivity;
   thinkingTokens?: number | null;
@@ -111,6 +244,12 @@ interface ActivityMeta {
 
 export interface ChatStatusBarProps {
   link: LinkState;
+  /** The session's name, resolved by `deriveSessionTitle`. Null = untitled. */
+  title?: string | null;
+  /** Whether a rename can actually be sent (a live, non-TUI session). */
+  canRename?: boolean;
+  /** Sends the rename; resolves false when it did not reach the CLI. */
+  onRename?: (title: string) => Promise<boolean> | boolean;
   /** The `session.activity` state signal, or undefined before one exists. */
   activitySignal?: SessionSignal;
   /** Last assistant turn's timestamp — when the cache TTL last restarted. */
@@ -139,6 +278,9 @@ export interface ChatStatusBarProps {
  */
 export function ChatStatusBar({
   link,
+  title = null,
+  canRename = false,
+  onRename,
   activitySignal,
   cacheAnchorMs,
   cacheTtlMs,
@@ -199,7 +341,9 @@ export function ChatStatusBar({
     items.push(
       <span
         key="thinking"
-        aria-label={thinkingLive ? 'thinking' : 'thinking — last burst'}
+        // Past tense once the burst is over: the number is what it DID think,
+        // not what it is thinking.
+        aria-label={thinkingLive ? 'thinking' : 'thought — last burst'}
         title={
           thinkingLive
             ? 'Extended thinking in progress'
@@ -211,8 +355,8 @@ export function ChatStatusBar({
         )}
       >
         <Brain className="h-3.5 w-3.5" />
-        <span className="opacity-70">thinking</span>
-        <span>{formatThinkingTokens(thinkingTokens)}</span>
+        <span className="opacity-70">{thinkingLive ? 'thinking' : 'thought'}</span>
+        <span>{formatThinkingTokens(thinkingTokens)} tokens</span>
       </span>,
     );
   }
@@ -241,12 +385,21 @@ export function ChatStatusBar({
         className,
       )}
     >
-      {items.map((item, i) => (
-        <React.Fragment key={item.key}>
-          {i > 0 && <InlineDivider data-testid="status-divider" />}
-          {item}
-        </React.Fragment>
-      ))}
+      <SessionTitle
+        title={title}
+        canRename={canRename && !!onRename}
+        onRename={onRename ?? (() => false)}
+      />
+      {/* The readouts group right, so the bar reads name-then-state and the
+          name keeps a stable left edge as readouts come and go mid-turn. */}
+      <div data-testid="chat-status-items" className="ml-auto flex items-center gap-2">
+        {items.map((item, i) => (
+          <React.Fragment key={item.key}>
+            {i > 0 && <InlineDivider data-testid="status-divider" />}
+            {item}
+          </React.Fragment>
+        ))}
+      </div>
     </div>
   );
 }

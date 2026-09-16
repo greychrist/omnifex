@@ -19,9 +19,12 @@
  *
  * Deliberately NOT here, though the CLI classifies them the same way:
  *
- *  - `queue-operation`, `last-prompt`, `permission-mode`, `ai-title` and
- *    `file-history-snapshot` — `classifyJsonlLine` gives each its own kind
- *    and something in the app reads it.
+ *  - `queue-operation`, `last-prompt`, `permission-mode`, `ai-title`,
+ *    `custom-title` and `file-history-snapshot` — `classifyJsonlLine` gives
+ *    each its own kind and something in the app reads it. `custom-title`
+ *    moved out of the list below when the status bar started showing (and
+ *    the pencil started writing) a session's name: it is the record a rename
+ *    lands as, so hiding it would hide the rename.
  *  - `summary` — it rides the `unknown` kind but `StreamMessage` renders it
  *    as the compaction SummaryWidget. It is a message in all but type.
  *
@@ -41,7 +44,6 @@ export const CLI_SIDECHANNEL_RECORD_TYPES: ReadonlySet<string> = new Set([
   'bridge-session',
   'observer-ref',
   'ended-by-model',
-  'custom-title',
   'tag',
   'relocated',
   'agent-name',

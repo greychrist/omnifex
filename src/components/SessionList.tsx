@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { truncateText, getFirstLine } from "@/lib/date-utils";
+import { pickSessionTitle } from "@/lib/sessionTitle";
 import {
   api,
   PROMPT_TEMPLATE_SETTING_KEY,
@@ -763,6 +764,12 @@ export const SessionList: React.FC<SessionListProps> = ({
                 const summary =
                   summarizeEnabledForProject === false ? null : cachedSummary;
                 const isExpanded = expanded.has(session.id);
+                // A rename outranks the CLI's own generated title, resolved
+                // the same way the CLI resolves it (pickSessionTitle).
+                const sessionTitle = pickSessionTitle({
+                  aiTitle: session.ai_title,
+                  customTitle: session.custom_title,
+                });
                 const isRefreshing = summaryRefreshing.has(session.id);
                 // Refresh button is a no-op when the JSONL size hasn't
                 // changed AND the cached summary was produced by the
@@ -850,14 +857,15 @@ export const SessionList: React.FC<SessionListProps> = ({
                     </td>
                     <td className="py-2 px-3 text-xs text-foreground/90 max-w-0 align-top">
                       {/* Label, then body.
-                          The label is the CLI's own `ai-title` when it wrote
-                          one — free, already on disk, and the session's actual
-                          identity — otherwise the summary headline, otherwise
+                          The label is the session's name — a rename if one was
+                          made, otherwise the CLI's own `ai-title` when it wrote
+                          one (free, already on disk, and the session's actual
+                          identity) — otherwise the summary headline, otherwise
                           nothing. The body beneath is the summary when one
                           exists and the opening prompt when it does not, so a
                           paid summary always displaces the raw prompt rather
                           than the title. */}
-                      {summary || session.ai_title ? (
+                      {summary || sessionTitle ? (
                         <div className="flex items-start gap-1 min-w-0">
                           {summary && (
                             <button
@@ -878,14 +886,14 @@ export const SessionList: React.FC<SessionListProps> = ({
                           )}
                           <div className="min-w-0 flex-1">
                             <div className="font-medium text-foreground truncate">
-                              {session.ai_title ?? summary?.headline}
+                              {sessionTitle ?? summary?.headline}
                             </div>
                             {summary ? (
                               <>
                                 {/* Only a titled row needs the headline on its
                                     own line — untitled rows already have it as
                                     the label. */}
-                                {session.ai_title && (
+                                {sessionTitle && (
                                   <span className="block truncate text-muted-foreground">
                                     {summary.headline}
                                   </span>

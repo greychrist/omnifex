@@ -75,6 +75,73 @@ describe('classifyUser — userKind discrimination', () => {
   });
 });
 
+describe('classifyJsonlLine — local-command envelope', () => {
+  const TS = '2026-09-16T15:05:25.269Z';
+
+  // Both halves persist as plain `user` records with no isMeta, so they used
+  // to classify as 'prompt' — a question the model never sees and will never
+  // answer, which held the turn axis open forever (work session 3445e547).
+  it('classifies a slash-command echo as local-command', () => {
+    const node = classifyJsonlLine({
+      type: 'user',
+      timestamp: TS,
+      message: {
+        role: 'user',
+        content: '<command-name>/compact</command-name>\n<command-message>compact</command-message>\n<command-args></command-args>',
+      },
+    });
+    expect(node?.kind).toBe('user');
+    if (node?.kind === 'user') expect(node.userKind).toBe('local-command');
+  });
+
+  it('classifies local-command stdout as local-command', () => {
+    const node = classifyJsonlLine({
+      type: 'user',
+      timestamp: TS,
+      message: { role: 'user', content: '<local-command-stdout>Compacted </local-command-stdout>' },
+    });
+    expect(node?.kind).toBe('user');
+    if (node?.kind === 'user') expect(node.userKind).toBe('local-command');
+  });
+
+  // The live stream hands the same record over as content blocks rather than
+  // a bare string; one shape must not classify differently from the other.
+  it('detects the envelope in block-array content too', () => {
+    const node = classifyJsonlLine({
+      type: 'user',
+      timestamp: TS,
+      message: {
+        role: 'user',
+        content: [{ type: 'text', text: '<command-name>/usage</command-name>' }],
+      },
+    });
+    expect(node?.kind).toBe('user');
+    if (node?.kind === 'user') expect(node.userKind).toBe('local-command');
+  });
+
+  // isMeta still wins: the caveat the CLI writes ahead of the echo is meta.
+  it('leaves the local-command caveat as meta-other', () => {
+    const node = classifyJsonlLine({
+      type: 'user',
+      timestamp: TS,
+      isMeta: true,
+      message: { role: 'user', content: '<local-command-caveat>Caveat: …</local-command-caveat>' },
+    });
+    expect(node?.kind).toBe('user');
+    if (node?.kind === 'user') expect(node.userKind).toBe('meta-other');
+  });
+
+  it('leaves an ordinary typed prompt as prompt', () => {
+    const node = classifyJsonlLine({
+      type: 'user',
+      timestamp: TS,
+      message: { role: 'user', content: 'run the tests please' },
+    });
+    expect(node?.kind).toBe('user');
+    if (node?.kind === 'user') expect(node.userKind).toBe('prompt');
+  });
+});
+
 describe('classifyJsonlLine — unknown fallback', () => {
   it('returns kind: unknown for an unrecognized top-level type', () => {
     const node = classifyJsonlLine({

@@ -105,7 +105,7 @@ import { useTabContext } from "@/contexts/TabContext";
 // Virtualizer removed — flat list for reliable scrolling
 import { SessionPersistenceService } from "@/services/sessionPersistence";
 import { clearInflightBuffer } from "@/lib/inflightCoalescer";
-import { useTabSession, useClaudeSessionStore } from "@/stores/claudeSessionStore";
+import { useTabSession, useClaudeSessionStore, useTabSessionTitle } from "@/stores/claudeSessionStore";
 import type { PermissionSuggestion } from "@/lib/types/permissionRequest";
 
 // Random gerund words like Claude Code CLI — hoisted to module scope so
@@ -1094,6 +1094,29 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     [messages, cacheTimerEnabled],
   );
 
+  // The session's name, read straight out of the transcript the CLI wrote —
+  // its own `ai-title`, or a `custom-title` if the session has been renamed.
+  // Deliberately not mirrored into local state on rename: the CLI persists
+  // the rename and the tail delivers the record back, so there is exactly one
+  // place a session's name comes from. Same selector the tab strip's hover
+  // uses, so the two can never disagree.
+  const sessionTitle = useTabSessionTitle(sessionTabId);
+
+  /**
+   * Rename the session through the CLI's own `rename_session` control
+   * request. The CLI persists it as a `custom-title` record, the tail
+   * delivers that record back, and `sessionTitle` above picks it up — so
+   * nothing here has to mirror the new name into local state.
+   */
+  const handleRenameSession = useCallback(async (title: string): Promise<boolean> => {
+    try {
+      return await api.sessionSetTitle(tabIdRef.current, title);
+    } catch (err) {
+      console.error('[sessions] sessionSetTitle failed:', err);
+      return false;
+    }
+  }, []);
+
   // The TTL change still self-clears from its own data; the context jump moved
   // into the signal emitters, which derive the whole per-turn series rather
   // than only the current turn.
@@ -1402,6 +1425,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
             setSupportedCommands: (commands) => { setSupportedCommands(commands as any); },
             queuedPromptsRef: ctx.queuedPromptsRef as any,
             setQueuedPrompts: ctx.setQueuedPrompts as any,
+            isLoadingRef,
             handleSendPrompt: fireAndLog(
               'claude-code-session:send-prompt-effect',
               handleSendPromptForEffect ?? undefined,
@@ -2797,6 +2821,11 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
               cacheAnchorMs={cacheAnchorMs}
               cacheTtlMs={cacheTtlMs}
               cacheBusy={isLoading}
+              title={sessionTitle}
+              // A rename rides the CLI's control channel, which only a live
+              // non-TUI session has — see queries.ts liveEngine().
+              canRename={isSessionActive && sessionMode !== 'tui'}
+              onRename={handleRenameSession}
             />
             {sessionMode === 'tui' ? (
               <TuiSessionLayout

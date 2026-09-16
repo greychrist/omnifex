@@ -930,6 +930,47 @@ describe('claude service', () => {
       expect(byId['sess-malformed'].ai_title).toBeUndefined();
     });
 
+    // A rename lands as a `custom-title` record. The CLI goes on rewriting
+    // `ai-title` afterwards, so a reader that just took the last title record
+    // in the file would show the generated name again on the next turn — the
+    // session list has to resolve the two the way the CLI does.
+    it('extracts a rename, and keeps it when an ai-title follows', async () => {
+      const configDir = path.join(tmpDir, '.claude-renames');
+      const projectPath = path.join(tmpDir, 'renames-test');
+      const projectId = projectPath.replace(/\//g, '-');
+      const projectDir = path.join(configDir, 'projects', projectId);
+      fs.mkdirSync(projectDir, { recursive: true });
+      const account = accounts.createAccount({ name: 'RenamesTest', configDir });
+      accounts.addPathRule(account.id, tmpDir);
+
+      fs.writeFileSync(
+        path.join(projectDir, 'sess-renamed.jsonl'),
+        [
+          JSON.stringify({ type: 'user', message: { content: 'first prompt' } }),
+          JSON.stringify({ type: 'ai-title', aiTitle: 'Generated name', sessionId: 'x' }),
+          JSON.stringify({ type: 'custom-title', customTitle: 'Rate-limit spike', sessionId: 'x' }),
+          JSON.stringify({ type: 'ai-title', aiTitle: 'Generated name', sessionId: 'x' }),
+        ].join('\n'),
+      );
+
+      // Renamed twice: the last rename is the session's name.
+      fs.writeFileSync(
+        path.join(projectDir, 'sess-renamed-twice.jsonl'),
+        [
+          JSON.stringify({ type: 'user', message: { content: 'prompt' } }),
+          JSON.stringify({ type: 'custom-title', customTitle: 'First name', sessionId: 'y' }),
+          JSON.stringify({ type: 'custom-title', customTitle: 'Second name', sessionId: 'y' }),
+        ].join('\n'),
+      );
+
+      const sessions = await service.getProjectSessions(projectId, projectPath);
+      const byId = Object.fromEntries(sessions.map((s) => [s.id, s]));
+
+      expect(byId['sess-renamed'].custom_title).toBe('Rate-limit spike');
+      expect(byId['sess-renamed'].ai_title).toBe('Generated name');
+      expect(byId['sess-renamed-twice'].custom_title).toBe('Second name');
+    });
+
     it('uses the explicit projectPath as a resolution hint when given', async () => {
       const configDir = path.join(tmpDir, '.claude-hint');
       const projectPath = path.join(tmpDir, 'hinted');

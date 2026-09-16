@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach } from 'vitest';
-import { render, cleanup, screen } from '@testing-library/react';
+import { render, cleanup, screen, fireEvent, waitFor } from '@testing-library/react';
 import { ChatStatusBar, LinkGlyph } from '@/components/ChatStatusBar';
 import type { SessionSignal } from '@/lib/signals/types';
 
@@ -72,6 +72,7 @@ describe('ChatStatusBar', () => {
     );
     expect(screen.getByLabelText('working — last round').textContent).toContain('12');
     expect(screen.getByLabelText('thinking').textContent).toContain('12.4k');
+    expect(screen.getByLabelText('thinking').textContent).toContain('tokens');
   });
 
   // Both readouts hold the previous round's value, so an idle session still
@@ -84,7 +85,11 @@ describe('ChatStatusBar', () => {
       />,
     );
     expect(screen.getByLabelText('working — last round')).toBeTruthy();
-    expect(screen.getByLabelText('thinking — last burst').textContent).toContain('800');
+    // Past tense once the burst is over: the number is what it DID think,
+    // not what it is thinking.
+    const burst = screen.getByLabelText('thought — last burst');
+    expect(burst.textContent).toContain('thought');
+    expect(burst.textContent).toContain('800 tokens');
   });
 
   it('omits each readout until it has a number, but still renders the bar', () => {
@@ -124,8 +129,8 @@ describe('ChatStatusBar', () => {
         })}
       />,
     );
-    expect(screen.getByText('900')).toBeTruthy();
-    expect(screen.queryByText('12.4k')).toBeNull();
+    expect(screen.getByText('900 tokens')).toBeTruthy();
+    expect(screen.queryByText('12.4k tokens')).toBeNull();
   });
 
   it('omits the thinking glyph for a turn that never thought', () => {
@@ -146,7 +151,7 @@ describe('ChatStatusBar', () => {
     expect(screen.getByText('daemon')).toBeTruthy();
     expect(screen.getByText('live')).toBeTruthy();
     expect(screen.getByText('turn')).toBeTruthy();
-    expect(screen.getByText('thinking')).toBeTruthy();
+    expect(screen.getByText('thought')).toBeTruthy();
   });
 
   it('puts a separator strictly between readouts, never at either end', () => {
@@ -192,5 +197,110 @@ describe('ChatStatusBar', () => {
       />,
     );
     expect(screen.getByText(/cache .* left \(5m\)/)).toBeTruthy();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The session's name, and renaming it
+// ---------------------------------------------------------------------------
+
+// The CLI names every session itself and a rename overrides that name; both
+// live in the transcript, and this bar is where the name is visible while you
+// read. The pencil sends the CLI's own `rename_session` control request, so
+// what the bar shows and what the CLI thinks the session is called are the
+// same fact.
+describe('ChatStatusBar — session name', () => {
+  const named = { ...base, title: 'Rate-limit spike', canRename: true, onRename: async () => true };
+
+  it('shows the session name, labelled', () => {
+    render(<ChatStatusBar {...named} />);
+    expect(screen.getByTestId('session-title').textContent).toBe('Name: Rate-limit spike');
+  });
+
+  // The name is the one thing on this bar you read rather than glance at, so
+  // it sits a step above the 10px the readouts share. jsdom cannot measure
+  // type, so this pins the classes that set it.
+  it('sets the name a size larger than the readouts', () => {
+    render(<ChatStatusBar {...named} />);
+    expect(screen.getByTestId('session-title').className).toContain('text-sm');
+  });
+
+  // The bar is mono because its readouts are numbers that must not jitter as
+  // they count. A name is prose — it belongs in the app's own typeface, and
+  // has to say so explicitly to escape the mono the bar sets on the row.
+  it('sets the name in the app font, not the readouts’ mono', () => {
+    render(<ChatStatusBar {...named} />);
+    expect(screen.getByTestId('session-title').className).toContain('font-sans');
+  });
+
+  // Untitled is the common case, not an edge one: the CLI only titles a FRESH
+  // conversation, so every resumed session and every pre-2.1.268 transcript
+  // arrives here with no name at all. Naming one is the whole point of the
+  // pencil, so the affordance cannot be hidden behind having a name already.
+  it('says a session is untitled rather than showing nothing', () => {
+    render(<ChatStatusBar {...named} title={null} />);
+    expect(screen.getByTestId('session-title').textContent).toBe('Name: Untitled');
+    expect(screen.getByRole('button', { name: /rename session/i })).toBeTruthy();
+  });
+
+  it('opens the rename field seeded with the current name', () => {
+    render(<ChatStatusBar {...named} />);
+    fireEvent.click(screen.getByRole('button', { name: /rename session/i }));
+    expect((screen.getByLabelText(/session name/i) as HTMLInputElement).value).toBe('Rate-limit spike');
+  });
+
+  it('sends the new name on submit', async () => {
+    const renames: string[] = [];
+    render(<ChatStatusBar {...named} onRename={async (t: string) => { renames.push(t); return true; }} />);
+    fireEvent.click(screen.getByRole('button', { name: /rename session/i }));
+    fireEvent.change(screen.getByLabelText(/session name/i), { target: { value: 'Cache TTL work' } });
+    fireEvent.submit(screen.getByTestId('rename-form'));
+    await waitFor(() => expect(renames).toEqual(['Cache TTL work']));
+  });
+
+  // The CLI reads an empty custom title as "clear the rename". Nothing about
+  // pressing Save on an empty field means that.
+  it('refuses to submit a blank name', () => {
+    const renames: string[] = [];
+    render(<ChatStatusBar {...named} onRename={async (t: string) => { renames.push(t); return true; }} />);
+    fireEvent.click(screen.getByRole('button', { name: /rename session/i }));
+    fireEvent.change(screen.getByLabelText(/session name/i), { target: { value: '   ' } });
+    fireEvent.submit(screen.getByTestId('rename-form'));
+    expect(renames).toEqual([]);
+  });
+
+  // A rename goes out as a control request, which needs a live engine. With
+  // no session running there is nothing to send it to — better to say so on
+  // the button than to accept the rename and drop it.
+  it('disables the pencil when the session cannot take a rename', () => {
+    render(<ChatStatusBar {...named} canRename={false} />);
+    const pencil = screen.getByRole('button', { name: /rename session/i }) as HTMLButtonElement;
+    expect(pencil.disabled).toBe(true);
+    fireEvent.click(pencil);
+    expect(screen.queryByLabelText(/session name/i)).toBeNull();
+  });
+
+  // Layout: the name anchors the left edge, the readouts group at the right.
+  // jsdom cannot see alignment, so this asserts the two things it CAN see —
+  // document order, and that the readouts carry the margin that pushes them
+  // over. A visual check belongs in a packaged build.
+  it('puts the name first and groups the readouts to the right of it', () => {
+    render(<ChatStatusBar {...named} activitySignal={signal({ status: 'idle', lastTurnMs: 3_000 })} />);
+    const title = screen.getByTestId('session-title');
+    const items = screen.getByTestId('chat-status-items');
+    expect(title.compareDocumentPosition(items) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(items.className).toContain('ml-auto');
+  });
+
+  // The pencil is disabled without a live session, so this is the narrow
+  // window where one dies between opening the field and pressing Save. The
+  // rename is gone either way; saying so beats closing as if it worked.
+  it('keeps the field open and says so when the rename does not land', async () => {
+    render(<ChatStatusBar {...named} onRename={async () => false} />);
+    fireEvent.click(screen.getByRole('button', { name: /rename session/i }));
+    fireEvent.change(screen.getByLabelText(/session name/i), { target: { value: 'Cache TTL work' } });
+    fireEvent.submit(screen.getByTestId('rename-form'));
+    expect(await screen.findByText(/didn’t reach the session/i)).toBeTruthy();
+    expect(screen.getByLabelText(/session name/i)).toBeTruthy();
   });
 });

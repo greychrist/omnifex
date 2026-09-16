@@ -48,6 +48,11 @@ export interface StreamEffectDeps<Q extends QueuedPrompt = QueuedPrompt> {
   setSupportedCommands: (commands: unknown[]) => void;
   queuedPromptsRef: { current: Q[] };
   setQueuedPrompts: (next: Q[]) => void;
+  /** Live ref to the turn-in-flight flag. Read at commit time (after the
+   *  settle delay below), never at effect time: the `result` row clears
+   *  loading via a setState that React has not flushed while these effects
+   *  run synchronously. */
+  isLoadingRef: { current: boolean };
   handleSendPrompt: (prompt: string, model: string, images?: string[]) => void;
   /** Resolved directive text (user override or shipped default) — see
    *  `resolvePostCompactPrompt`. Resolved by the caller so this module stays
@@ -110,14 +115,24 @@ export function runStreamEffect<Q extends QueuedPrompt = QueuedPrompt>(
       return;
 
     case 'processQueuedPrompt': {
-      const queue = deps.queuedPromptsRef.current;
-      if (queue.length === 0) return;
-      const [next, ...rest] = queue;
-      deps.setQueuedPrompts(rest);
+      if (deps.queuedPromptsRef.current.length === 0) return;
       // The 100ms delay matches the original inline behaviour — gives React a
-      // tick to flush the dequeue setState before the next prompt re-enters
-      // the send pipeline.
+      // tick to flush the `result` row's clearLoading before we decide whether
+      // the session will accept input.
       setTimeout(() => {
+        // Peek, then commit. This effect fires from more than one trigger (a
+        // `result` row and a compact_boundary), so it can land mid-turn.
+        // Dequeuing unconditionally and letting handleSendPrompt re-enqueue
+        // would move the head to the BACK of the queue, undoing the
+        // post-compact directive's deliberate front-of-queue placement.
+        if (deps.isLoadingRef.current) return;
+        const queue = deps.queuedPromptsRef.current;
+        if (queue.length === 0) return;
+        const [next, ...rest] = queue;
+        // Write the ref as well as state: a second trigger can arrive before
+        // React flushes, and it must not re-send the prompt just dequeued.
+        deps.queuedPromptsRef.current = rest;
+        deps.setQueuedPrompts(rest);
         deps.handleSendPrompt(next.prompt, next.model, next.images);
       }, 100);
       return;

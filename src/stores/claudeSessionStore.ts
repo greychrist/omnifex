@@ -11,6 +11,7 @@ import {
   type ToolProgressNode,
 } from '@/lib/toolProgress';
 import { reconcilePendingPrompt } from '@/lib/promptReconciliation';
+import { deriveSessionTitle } from '@/lib/sessionTitle';
 import type {
   SessionAccountInfo,
   SessionContextUsage,
@@ -271,6 +272,39 @@ function makeSetter<K extends keyof TabSessionState>(
         : next;
     store.patchTab(tabId, { [key]: value });
   };
+}
+
+/**
+ * Cache of "title for this exact messages array", keyed by array identity.
+ *
+ * `useTabSessionTitle` is a Zustand selector, so it re-runs on every store
+ * change anywhere — a tool-progress frame in another tab included. Without
+ * this the tab strip would rescan every open tab's full transcript on each
+ * frame of a running turn. A WeakMap keyed on the array means the O(n) scan
+ * happens once per actual change to that tab's messages, and every other call
+ * is a lookup. The entry dies with the array.
+ */
+const titleByMessages = new WeakMap<readonly JsonlNode[], string | null>();
+
+/**
+ * The session's name for one tab — the CLI's `ai-title`, or a `custom-title`
+ * if it has been renamed.
+ *
+ * Derived on read rather than stored beside `messages`: four separate actions
+ * mutate that array, and a cached copy would be four chances to drift from
+ * the transcript it claims to describe. The returned value is a string, so a
+ * tab only re-renders when its name actually changes.
+ */
+export function useTabSessionTitle(tabId: string): string | null {
+  return useClaudeSessionStore((s) => {
+    const messages = s.tabs[tabId]?.messages;
+    if (!messages || messages.length === 0) return null;
+    const cached = titleByMessages.get(messages);
+    if (cached !== undefined) return cached;
+    const title = deriveSessionTitle(messages);
+    titleByMessages.set(messages, title);
+    return title;
+  });
 }
 
 /**

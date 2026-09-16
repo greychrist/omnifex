@@ -98,6 +98,48 @@ export function createQueryPassthroughs(
     }
   }
 
+  /**
+   * Rename the session. The CLI persists this as a `custom-title` record and
+   * lets it outrank the `ai-title` it generated for itself, so this is what
+   * makes a rename official — verified end to end against CLI 2.1.273, which
+   * answered `{subtype:'success'}` and wrote the record to the transcript.
+   *
+   * `source: 'host'` is the CLI's own term for a rename made in the hosting
+   * application, which is what OmniFex is.
+   *
+   * Alone among the passthroughs here, this one reports back. The others can
+   * afford to no-op quietly because the next turn shows whether the model or
+   * mode changed; a rename that silently did nothing would leave the pencil
+   * looking like it worked while the session kept its old name.
+   */
+  async function setTitle(tabId: string, title: string): Promise<boolean> {
+    // The CLI reads an empty custom title as "clear the rename", dropping the
+    // session back to its generated name. Never what the pencil meant.
+    const trimmed = title.trim();
+    if (!trimmed) {
+      logControl('rename_session', tabId, { ok: false, reason: 'blank-title' });
+      return false;
+    }
+    const handle = liveEngine(tabId);
+    if (!handle) {
+      logControl('rename_session', tabId, { ok: false, reason: 'no-live-engine', title: trimmed });
+      return false;
+    }
+    try {
+      const res = await handle.engine!.sendControlRequest('rename_session', {
+        title: trimmed,
+        source: 'host',
+      });
+      logControl('rename_session', tabId, { ok: true, title: trimmed, response: res ?? null });
+      return true;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[sessions] setTitle failed for tab ${tabId}:`, err);
+      logControl('rename_session', tabId, { ok: false, title: trimmed, error: msg });
+      return false;
+    }
+  }
+
   async function setPermissionMode(tabId: string, mode: PermissionMode): Promise<void> {
     const handle = liveEngine(tabId);
     if (!handle) {
@@ -315,6 +357,7 @@ export function createQueryPassthroughs(
   return {
     interrupt,
     setModel,
+    setTitle,
     setPermissionMode,
     setEffort,
     applyPermissions,

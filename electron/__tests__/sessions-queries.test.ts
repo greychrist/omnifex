@@ -148,6 +148,62 @@ describe('setModel', () => {
   });
 });
 
+// The CLI persists a rename as a `custom-title` record and lets it outrank
+// the `ai-title` it generated itself, so this request — not a write of our
+// own into its transcript — is what makes a rename official. `source: 'host'`
+// is the CLI's own name for "the user renamed it in the hosting app", which
+// is exactly what the pencil in the status bar is.
+describe('setTitle', () => {
+  it('sends rename_session as a host rename', async () => {
+    const { engine, calls } = createEngine({ control: () => ({ ok: true }) });
+    const { q, meta } = setup({ engine });
+    await q.setTitle('tab1', 'Rate-limit spike');
+    expect(calls).toEqual([
+      { subtype: 'rename_session', payload: { title: 'Rate-limit spike', source: 'host' } },
+    ]);
+    expect(meta()).toMatchObject({ op: 'rename_session', ok: true, title: 'Rate-limit spike' });
+  });
+
+  // Unlike its neighbours, this one reports back. A rename that quietly did
+  // nothing would leave the pencil looking like it worked while the session
+  // kept its old name — the silent-no-op failure this file exists to catch.
+  it('reports whether the rename actually went out', async () => {
+    const { engine } = createEngine({ control: () => ({ ok: true }) });
+    const live = setup({ engine });
+    await expect(live.q.setTitle('tab1', 'Named')).resolves.toBe(true);
+
+    const dead = setup({ engine: null });
+    await expect(dead.q.setTitle('tab1', 'Named')).resolves.toBe(false);
+    expect(dead.meta().reason).toBe('no-live-engine');
+  });
+
+  it('reports false when the engine rejects instead of throwing', async () => {
+    const { engine } = createEngine({
+      control: () => {
+        throw new Error('control channel closed');
+      },
+    });
+    const { q, meta } = setup({ engine });
+    await expect(q.setTitle('tab1', 'Named')).resolves.toBe(false);
+    expect(meta()).toMatchObject({ ok: false, error: 'control channel closed' });
+  });
+
+  // The CLI treats an empty custom title as "clear the rename", which would
+  // silently drop the session back to its generated name — never what the
+  // pencil meant. Trim here so the intent is decided in one place.
+  it('trims the title and refuses a blank one', async () => {
+    const { engine, calls } = createEngine();
+    const { q } = setup({ engine });
+    await q.setTitle('tab1', '  Padded  ');
+    expect(calls).toEqual([
+      { subtype: 'rename_session', payload: { title: 'Padded', source: 'host' } },
+    ]);
+
+    const blank = setup({ engine: createEngine().engine });
+    await expect(blank.q.setTitle('tab1', '   ')).resolves.toBe(false);
+  });
+});
+
 describe('setPermissionMode', () => {
   it('sends set_permission_mode and updates the remembered mode', async () => {
     const { engine, calls } = createEngine();

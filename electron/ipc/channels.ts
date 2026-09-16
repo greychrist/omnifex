@@ -95,6 +95,7 @@ export const INVOKE_CHANNELS: readonly string[] = [
   // Wave 2 — Query-method passthroughs
   'session_interrupt',
   'session_set_model',
+  'session_set_title',
   'session_set_permission_mode',
   'session_set_effort',
   'session_set_thinking',

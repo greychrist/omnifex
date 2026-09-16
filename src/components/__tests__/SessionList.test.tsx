@@ -322,6 +322,24 @@ describe('SessionList summary rendering', () => {
       render(<SessionList sessions={[sessionFixture]} projectPath="/x" />);
       expect(await screen.findByText(/old first message preview/)).toBeTruthy();
     });
+
+    // A rename made in the session's status bar is the user's own word for
+    // what the session is. It has to reach this list, or renaming a session
+    // looks like it did nothing everywhere except the tab it was done in.
+    it('prefers a rename over the CLI’s generated title', async () => {
+      const renamed: Session = { ...titled, custom_title: 'Rate-limit spike' };
+      vi.mocked(api.summaryGet).mockResolvedValueOnce(null);
+      render(<SessionList sessions={[renamed]} projectPath="/x" />);
+      expect(await screen.findByText('Rate-limit spike')).toBeTruthy();
+      expect(screen.queryByText('Duplicate user prompt')).toBeNull();
+    });
+
+    it('labels a renamed session that the CLI never titled', async () => {
+      const renamed: Session = { ...sessionFixture, custom_title: 'Rate-limit spike' };
+      vi.mocked(api.summaryGet).mockResolvedValueOnce(null);
+      render(<SessionList sessions={[renamed]} projectPath="/x" />);
+      expect(await screen.findByText('Rate-limit spike')).toBeTruthy();
+    });
   });
 
   // The row's action icons used the native `title` attribute, which is at the

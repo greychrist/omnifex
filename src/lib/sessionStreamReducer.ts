@@ -407,14 +407,20 @@ export function reduceSessionStreamMessage(
   // turn's result.
   //
   // The same boundary is where the context goes lossy, so it is also where the
-  // post-compaction re-read directive gets queued. Queued rather than sent:
-  // compact_boundary arrives mid-turn, and the existing prompt queue already
-  // drains on `cli-stream-result`, which is exactly "the turn is over and the
-  // session will accept input". See postCompactPrompt.ts for why it is sent at
-  // all.
+  // post-compaction re-read directive gets queued. Queued rather than sent
+  // because the boundary usually arrives mid-turn. See postCompactPrompt.ts
+  // for why it is sent at all.
+  //
+  // It also asks for a drain, and that is not redundant with the one on
+  // `cli-stream-result`: the CLI does not guarantee the result comes after the
+  // boundary. Work session 3445e547 (2.1.273) put the result two records
+  // EARLIER, so the only drain trigger had already fired by the time the
+  // directive existed and it sat in the queue forever. The drain effect peeks
+  // before it commits, so firing it mid-turn is a noop rather than a reorder.
   if (node.kind === 'system' && node.subtype === 'compact_boundary') {
     effects.push({ kind: 'refreshContextUsage' });
     effects.push({ kind: 'queuePostCompactDirective' });
+    effects.push({ kind: 'processQueuedPrompt' });
   }
 
   // Model-fallback family — the CLI just switched (or refused and switched)

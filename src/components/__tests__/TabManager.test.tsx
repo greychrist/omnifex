@@ -5,6 +5,8 @@ import { render, screen, fireEvent, cleanup, act } from '@testing-library/react'
 import { Folder, List, MessageSquare, DollarSign } from 'lucide-react';
 import { getTabIcon, TabManager } from '../TabManager';
 import type { Tab } from '@/contexts/TabContext';
+import type { JsonlNode } from '@/types/jsonl';
+import { useClaudeSessionStore } from '@/stores/claudeSessionStore';
 
 // framer-motion's animation hooks are async by design and Reorder relies
 // on layout effects that jsdom can't measure. Render every motion.* /
@@ -134,6 +136,66 @@ function installState(overrides: StateOverrides = {}) {
 
   return { createProjectsTab, closeTab, switchToTab, canAddTab, reorderTabs };
 }
+
+// The tab strip shows the PROJECT name, because that is what you navigate by.
+// The session's own name — the CLI's `ai-title`, or a rename — is the thing
+// that tells two tabs on the same project apart, and hover is where it fits
+// without widening every tab.
+describe('tab hover shows the session name', () => {
+  const titleNode = (customTitle: string) =>
+    ({ kind: 'custom-title', raw: { type: 'custom-title', customTitle }, sessionId: 's' }) as unknown as JsonlNode;
+
+  const hoverTextFor = (id: string, container: HTMLElement): string | null =>
+    container.querySelector(`[data-tab-id="${id}"]`)?.getAttribute('title') ?? null;
+
+  afterEach(() => { useClaudeSessionStore.getState().__resetForTests(); });
+
+  it('reads the name out of that tab’s own transcript', () => {
+    useClaudeSessionStore.getState().setMessages('t1', [titleNode('Rate-limit spike')]);
+    installState({ tabs: [makeTab({ id: 't1', type: 'chat', title: 'omnifex' })] });
+    const { container } = render(<TabManager />);
+    expect(hoverTextFor('t1', container)).toBe('Rate-limit spike');
+  });
+
+  // Two tabs on one project is exactly the case this exists for, so the name
+  // must come from the hovered tab's transcript and not the active one's.
+  it('gives each tab its own name', () => {
+    useClaudeSessionStore.getState().setMessages('t1', [titleNode('Rate-limit spike')]);
+    useClaudeSessionStore.getState().setMessages('t2', [titleNode('Cache TTL work')]);
+    installState({
+      tabs: [
+        makeTab({ id: 't1', type: 'chat', title: 'omnifex' }),
+        makeTab({ id: 't2', type: 'chat', title: 'omnifex' }),
+      ],
+    });
+    const { container } = render(<TabManager />);
+    expect(hoverTextFor('t1', container)).toBe('Rate-limit spike');
+    expect(hoverTextFor('t2', container)).toBe('Cache TTL work');
+  });
+
+  // The name is ON the tab now, under the project — the hover is what
+  // recovers a long one that the subtitle truncates.
+  it('prints the name under the project name', () => {
+    useClaudeSessionStore.getState().setMessages('t1', [titleNode('Rate-limit spike')]);
+    installState({ tabs: [makeTab({ id: 't1', type: 'chat', title: 'omnifex' })] });
+    render(<TabManager />);
+    expect(screen.getByTestId('tab-session-name').textContent).toBe('Rate-limit spike');
+  });
+
+  it('leaves the second line off a session with no name', () => {
+    installState({ tabs: [makeTab({ id: 't1', type: 'chat', title: 'omnifex' })] });
+    render(<TabManager />);
+    expect(screen.queryByTestId('tab-session-name')).toBeNull();
+  });
+
+  // Untitled is the common case. A tooltip repeating the project name already
+  // printed on the tab is noise, so an unnamed session gets no hover text.
+  it('stays silent for a session with no name yet', () => {
+    installState({ tabs: [makeTab({ id: 't1', type: 'chat', title: 'omnifex' })] });
+    const { container } = render(<TabManager />);
+    expect(hoverTextFor('t1', container)).toBeNull();
+  });
+});
 
 describe('getTabIcon', () => {
   it('returns the type default when no per-tab icon override is set', () => {

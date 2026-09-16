@@ -31,7 +31,12 @@ describe('shouldForwardStreamMessage', () => {
     });
 
     it('drops the bookkeeping rows the CLI persists', () => {
-      for (const type of ['last-prompt', 'queue-operation', 'atis-latch', 'mode', 'ai-title']) {
+      // `custom-title` is the newest member and the only one not from the
+      // original census — no transcript had one until the app could rename a
+      // session. Verified against CLI 2.1.273: a `rename_session` control
+      // request writes the record to disk, so the tail delivers it and the
+      // stream's copy would be a second one.
+      for (const type of ['last-prompt', 'queue-operation', 'atis-latch', 'mode', 'ai-title', 'custom-title']) {
         expect(shouldForwardStreamMessage({ type })).toBe(false);
       }
     });

@@ -281,6 +281,9 @@ export interface Session {
   /** The CLI's own name for the session, from the `ai-title` records it
    *  writes into the transcript. Absent on older transcripts. */
   ai_title?: string;
+  /** A rename — the transcript's `custom-title`. Outranks `ai_title`; resolve
+   *  the two with `pickSessionTitle` rather than reading either directly. */
+  custom_title?: string;
   /** ISO timestamp of the first JSONL entry that has a `timestamp` field. */
   first_timestamp?: string;
   /** ISO timestamp of the last JSONL entry that has a `timestamp` field. */
@@ -1837,6 +1840,15 @@ export const api = {
   /** Switch the model used for subsequent turns in an active session. */
   async sessionSetModel(tabId: string, model?: string): Promise<void> {
     return apiCall("session_set_model", { tabId, model });
+  },
+
+  /**
+   * Rename the session. Goes out as the CLI's `rename_session` control
+   * request, which persists a `custom-title` record in the transcript —
+   * resolves false when there was no live session to take it.
+   */
+  async sessionSetTitle(tabId: string, title: string): Promise<boolean> {
+    return apiCall("session_set_title", { tabId, title });
   },
 
   /** Switch permission mode mid-session. */

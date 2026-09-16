@@ -82,6 +82,12 @@ export interface Session {
   /** The CLI's own name for the session, from its `ai-title` records. Absent
    *  on older transcripts and on sessions the CLI never got around to naming. */
   ai_title?: string;
+  /**
+   * A rename, from the transcript's `custom-title` records — written by the
+   * status bar's pencil, `/rename`, or a claude.ai rename relayed down.
+   * Outranks `ai_title`; resolve the two with `pickSessionTitle`.
+   */
+  custom_title?: string;
   first_timestamp?: string;
   last_timestamp?: string;
   /** @deprecated retained for renderer migration; use last_timestamp instead. */
@@ -345,12 +351,14 @@ function activityTimeFor(filePath: string, stat: fs.Stats): number {
 function extractSessionMetadata(filePath: string): {
   firstMessage?: string;
   aiTitle?: string;
+  customTitle?: string;
   firstTimestamp?: string;
   lastTimestamp?: string;
 } {
   const entries = readJsonlFile(filePath);
   let firstMessage: string | undefined;
   let aiTitle: string | undefined;
+  let customTitle: string | undefined;
   let firstTimestamp: string | undefined;
   let lastTimestamp: string | undefined;
 
@@ -374,6 +382,16 @@ function extractSessionMetadata(filePath: string): {
     if (obj.type === 'ai-title') {
       const title = obj.aiTitle;
       if (typeof title === 'string' && title.trim()) aiTitle = title.trim();
+      continue;
+    }
+
+    // A rename. Kept SEPARATE from the generated title rather than collapsed
+    // here: the CLI goes on rewriting `ai-title` after a rename, so the two
+    // are resolved by precedence (pickSessionTitle), never by which record
+    // came last.
+    if (obj.type === 'custom-title') {
+      const title = obj.customTitle;
+      if (typeof title === 'string' && title.trim()) customTitle = title.trim();
       continue;
     }
 
@@ -414,7 +432,7 @@ function extractSessionMetadata(filePath: string): {
     firstMessage = text.trim().slice(0, 200);
   }
 
-  return { firstMessage, aiTitle, firstTimestamp, lastTimestamp };
+  return { firstMessage, aiTitle, customTitle, firstTimestamp, lastTimestamp };
 }
 
 const EXEC_OPTIONS = {
@@ -703,7 +721,7 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
           // ignore
         }
 
-        const { firstMessage, aiTitle, firstTimestamp, lastTimestamp } =
+        const { firstMessage, aiTitle, customTitle, firstTimestamp, lastTimestamp } =
           extractSessionMetadata(filePath);
 
         sessions.push({
@@ -715,6 +733,7 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
           created_at: Math.floor(createdAt / 1000),
           first_message: firstMessage,
           ai_title: aiTitle,
+          custom_title: customTitle,
           first_timestamp: firstTimestamp,
           last_timestamp: lastTimestamp ?? mtimeFallback,
           message_timestamp: lastTimestamp ?? mtimeFallback,

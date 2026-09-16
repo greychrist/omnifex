@@ -44,6 +44,40 @@ function compactSummary(timestamp: string, sessionId = 's1'): JsonlNode {
   }) as JsonlNode;
 }
 
+// The two `user` records the CLI leaves behind after a slash command: the
+// echo of what was typed, and the command's own stdout. Built through the
+// real classifier so the userKind under test is the one production computes.
+function localCommandEcho(timestamp: string, name = '/compact', sessionId = 's1'): JsonlNode {
+  return classifyJsonlLine({
+    type: 'user',
+    sessionId,
+    timestamp,
+    message: {
+      role: 'user',
+      content: `<command-name>${name}</command-name>\n<command-message>compact</command-message>\n<command-args></command-args>`,
+    },
+  }) as JsonlNode;
+}
+
+function localCommandStdout(timestamp: string, text = 'Compacted ', sessionId = 's1'): JsonlNode {
+  return classifyJsonlLine({
+    type: 'user',
+    sessionId,
+    timestamp,
+    message: { role: 'user', content: `<local-command-stdout>${text}</local-command-stdout>` },
+  }) as JsonlNode;
+}
+
+function metaUser(timestamp: string, sessionId = 's1'): JsonlNode {
+  return classifyJsonlLine({
+    type: 'user',
+    sessionId,
+    timestamp,
+    isMeta: true,
+    message: { role: 'user', content: '<local-command-caveat>Caveat: …</local-command-caveat>' },
+  }) as JsonlNode;
+}
+
 function assistantWithStop(
   timestamp: string,
   stop_reason: string | null,
@@ -93,7 +127,7 @@ function systemStatus(timestamp: string): JsonlNode {
 
 // SessionStart hook / init plumbing that fires before (and around) any turn.
 function systemNode(
-  subtype: 'init' | 'hook_started' | 'hook_progress' | 'hook_response',
+  subtype: 'init' | 'hook_started' | 'hook_progress' | 'hook_response' | 'compact_boundary',
 ): JsonlNode {
   return {
     kind: 'system',
@@ -275,6 +309,59 @@ describe('waitingOnClaude', () => {
       compactSummary('2026-05-27T00:00:05Z'),
     ];
     expect(waitingOnClaude(msgs)).toBe(true);
+  });
+
+  // Regression — work session 3445e547 (mango, CLI 2.1.273). A manual
+  // /compact emitted its `result` row BEFORE the compact_boundary, so the
+  // turn-closing node sat *earlier* in messages[] than the bookkeeping the
+  // compaction left behind. The walk broke on <local-command-stdout>, which
+  // classified as 'prompt', and lastMainPromptIndex then found a prompt from
+  // hours earlier — pinning the spinner on a session that was idle and well.
+  it('closes the turn when a /compact envelope trails the result row', () => {
+    const msgs = [
+      userPrompt('2026-09-16T15:00:00Z'),
+      resultNode('2026-09-16T15:07:56Z'),
+      systemNode('compact_boundary'),
+      compactSummary('2026-09-16T15:07:56.5Z'),
+      metaUser('2026-09-16T15:05:25Z'),
+      localCommandEcho('2026-09-16T15:05:25Z'),
+      localCommandStdout('2026-09-16T15:07:56.8Z'),
+    ];
+    expect(waitingOnClaude(msgs)).toBe(false);
+  });
+
+  // The local-command envelope is bookkeeping in both directions: it can
+  // neither hold a turn open nor close one that is genuinely still running.
+  it('still waits when a /compact envelope trails an unanswered prompt', () => {
+    const msgs = [
+      userPrompt('2026-09-16T15:00:00Z'),
+      localCommandEcho('2026-09-16T15:05:25Z'),
+      localCommandStdout('2026-09-16T15:07:56Z'),
+    ];
+    expect(waitingOnClaude(msgs)).toBe(true);
+  });
+
+  // A lone envelope with no prompt behind it is not a turn at all.
+  it('does not treat a lone /compact envelope as an unanswered prompt', () => {
+    expect(waitingOnClaude([
+      localCommandEcho('2026-09-16T15:05:25Z'),
+      localCommandStdout('2026-09-16T15:07:56Z'),
+    ])).toBe(false);
+  });
+
+  // A trailing tool_result DOES mean the turn is live — Claude is about to
+  // speak to it. Skipping bookkeeping user records must not skip this one.
+  it('still waits on a trailing tool-result', () => {
+    const toolResult = classifyJsonlLine({
+      type: 'user',
+      sessionId: 's1',
+      timestamp: '2026-09-16T15:10:00Z',
+      message: {
+        role: 'user',
+        content: [{ type: 'tool_result', tool_use_id: 't1', content: 'ok' }],
+      },
+    }) as JsonlNode;
+    expect(waitingOnClaude([userPrompt('2026-09-16T15:00:00Z'), toolResult])).toBe(true);
   });
 });
 

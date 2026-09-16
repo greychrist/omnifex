@@ -239,6 +239,19 @@ describe('reduceSessionStreamMessage', () => {
     expect(r.effects.map((e) => e.kind)).toContain('queuePostCompactDirective');
   });
 
+  // The drain used to hang off `cli-stream-result` alone, on the assumption
+  // that the boundary always arrives mid-turn. Work session 3445e547 (CLI
+  // 2.1.273) emitted the result two records BEFORE the boundary, so the
+  // directive was queued after its only trigger had passed and never sent.
+  it('compact_boundary also asks to drain the queue', () => {
+    const r = reduceSessionStreamMessage(compactBoundary(), baseCtx);
+    const kinds = r.effects.map((e) => e.kind);
+    expect(kinds).toContain('processQueuedPrompt');
+    // Queue first, then drain — draining an empty queue is a noop.
+    expect(kinds.indexOf('queuePostCompactDirective'))
+      .toBeLessThan(kinds.indexOf('processQueuedPrompt'));
+  });
+
   it('does not queue the directive for any other system subtype', () => {
     const modelFallback: JsonlNode = {
       kind: 'system',

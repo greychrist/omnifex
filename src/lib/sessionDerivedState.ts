@@ -46,6 +46,20 @@ function isMainUserNode(node: JsonlNode): boolean {
   return node.kind === 'user' && forwardedParentToolUseId(node.raw) === null;
 }
 
+// Only two userKinds can leave a turn open: a prompt (Claude owes a reply) and
+// a tool-result (Claude is about to speak to it). Every other `user` record is
+// bookkeeping the CLI writes around a turn — the compact summary, the meta
+// caveats and skill/attachment markers, and the echo + stdout of a local slash
+// command — and none of them is addressed to the model at all.
+//
+// They are SKIPPED rather than treated as turn-closers: a compaction landing
+// mid-turn must not close a turn that is genuinely still running.
+const TURN_DECIDING_USER_KINDS = new Set(['prompt', 'tool-result']);
+
+function decidesTurn(node: Extract<JsonlNode, { kind: 'user' }>): boolean {
+  return TURN_DECIDING_USER_KINDS.has(node.userKind);
+}
+
 function isResultNode(node: JsonlNode): boolean {
   // The CLI's turn-complete `result` envelope. Since the engine-mode
   // reclassification (jsonlClassifier) it arrives as kind:'cli-stream-result';
@@ -85,8 +99,12 @@ function lastMainPromptIndex(messages: JsonlNode[]): number {
 //     null/non-terminal => still going. Resumed/persisted transcripts carry
 //     the real stop_reason here (and no result row), so loaded history settles
 //     through this branch.
-//   - a user message (prompt or tool-result) means no assistant/result has
-//     spoken since: defer to the prompt-awaiting check below.
+//   - a user message that is a prompt or a tool-result means no assistant/
+//     result has spoken since: defer to the prompt-awaiting check below. Other
+//     userKinds are bookkeeping (see TURN_DECIDING_USER_KINDS) and are skipped
+//     — a /compact whose `result` row lands BEFORE the compact_boundary leaves
+//     a summary, a caveat and the command's own stdout sitting after the only
+//     turn-closer in messages[], and breaking on those pinned the turn open.
 export function waitingOnClaude(messages: JsonlNode[]): boolean {
   if (messages.length === 0) return false;
 
@@ -101,6 +119,7 @@ export function waitingOnClaude(messages: JsonlNode[]): boolean {
     }
     if (n.kind === 'user') {
       if (!isMainUserNode(n)) continue; // forwarded subagent prompt — not main-turn traffic
+      if (!decidesTurn(n)) continue; // bookkeeping the CLI wrote around the turn
       break; // defer to the prompt-awaiting check
     }
     // anything else is not turn-significant — keep scanning backward.

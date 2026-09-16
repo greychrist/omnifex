@@ -38,6 +38,14 @@ describe('bookkeeping JSONL kinds render (were return null)', () => {
     expect(screen.getByText(/Refactor auth/)).toBeInTheDocument();
   });
 
+  // A rename is a deliberate act, so scrollback says who the session became
+  // rather than just that a title record went by.
+  it('renders a custom-title node as a rename', () => {
+    const node = { kind: 'custom-title', raw: { type: 'custom-title', customTitle: 'Rate-limit spike' }, sessionId: 's' } as unknown as JsonlNode;
+    renderNode(node);
+    expect(screen.getByText(/Renamed .*Rate-limit spike/)).toBeInTheDocument();
+  });
+
   it('renders a queue-operation node with the operation', () => {
     const node = { kind: 'queue-operation', raw: { type: 'queue-operation', operation: 'enqueue' }, sessionId: 's', receivedAt: '2026-05-31T00:00:00Z' } as unknown as JsonlNode;
     renderNode(node);

@@ -24,6 +24,7 @@ import type { JsonlNode } from '@/types/jsonl';
 import { isSubagentPrompt } from './subagentDispatch';
 import { detectSkillInjection } from './skillDetection';
 import { isSystemContextText } from './blockKind';
+import { COMMAND_NAME_TAG, LOCAL_COMMAND_STDOUT_TAG } from './commandEnvelope';
 
 /**
  * Renderable in the chat feed for the purpose of "is this message
@@ -223,6 +224,7 @@ export function classifyStandaloneKind(
     msg.kind === 'permission-mode' ||
     msg.kind === 'last-prompt' ||
     msg.kind === 'ai-title' ||
+    msg.kind === 'custom-title' ||
     msg.kind === 'queue-operation' ||
     msg.kind === 'file-history-snapshot'
   ) {
@@ -265,8 +267,11 @@ export function classifyStandaloneKind(
         text += block.text;
       }
     }
-    if (text.includes('<command-name>')) return 'user.command';
-    if (text.includes('<local-command-stdout>')) return 'user.commandOutput';
+    // Same two tags the classifier keys 'local-command' off — imported rather
+    // than re-typed so a renderer that shows a command card can never disagree
+    // with a derivation that treats it as a prompt.
+    if (text.includes(COMMAND_NAME_TAG)) return 'user.command';
+    if (text.includes(LOCAL_COMMAND_STDOUT_TAG)) return 'user.commandOutput';
 
     // System-context user messages.
     if (content.length > 0) {

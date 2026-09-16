@@ -14,6 +14,7 @@ import { useTabState } from '@/hooks/useTabState';
 import { Tab, useTabContext } from '@/contexts/TabContext';
 import { useSecondTick } from '@/hooks/useSecondTick';
 import { useRenderProfile } from '@/hooks/useRenderProfile';
+import { useTabSessionTitle } from '@/stores/claudeSessionStore';
 import { renderProfiler } from '@/lib/renderProfiler';
 import { evaluateCacheExpiry } from '@/lib/cacheExpiry';
 import { cn } from '@/lib/utils';
@@ -173,6 +174,12 @@ const TabItem: React.FC<TabItemProps> = ({ tab, isActive, onClose, onClick, isDr
   useRenderProfile('TabItem');
   const [isHovered, setIsHovered] = useState(false);
   const { config } = useMessageRenderingConfig();
+  // The strip shows the PROJECT name — that is what you navigate by — so the
+  // session's own name goes on hover, where it tells two tabs on the same
+  // project apart without widening either. Undefined when the session has no
+  // name yet: a tooltip repeating the label already printed on the tab is
+  // noise, and untitled is the common case.
+  const sessionName = useTabSessionTitle(tab.id);
 
   // Tick only while this tab has a live (unexpired) cache clock. Once the
   // countdown is done `active` goes false and the shared interval drops this
@@ -233,9 +240,12 @@ const TabItem: React.FC<TabItemProps> = ({ tab, isActive, onClose, onClick, isDr
       // produce the jumpy reorder. Limit CSS transitions to colors / bg.
       whileDrag={{ scale: 1.02, zIndex: 30, cursor: 'grabbing' }}
       className={cn(
-        "relative flex items-center gap-[7px] text-sm cursor-pointer select-none group",
+        "relative flex items-center gap-[7px] text-[15px] cursor-pointer select-none group",
         "transition-colors duration-100",
-        "rounded-md h-[26px] px-[10px]",
+        // Taller than a single-line tab: the project name now sits over the
+        // session's own name. Height is fixed rather than content-driven so an
+        // unnamed session's tab still lines up with its neighbours.
+        "rounded-md h-[38px] px-[10px]",
         // Size to content (with a sensible floor) instead of capping width:
         // the tab grows to fit the full project name. shrink-0 keeps the tab
         // from being compressed when many are open — the strip is
@@ -246,6 +256,7 @@ const TabItem: React.FC<TabItemProps> = ({ tab, isActive, onClose, onClick, isDr
           : "text-muted-foreground hover:text-foreground hover:bg-white/5",
         isDragging && "shadow-md",
       )}
+      title={sessionName ?? undefined}
       onMouseEnter={() => { setIsHovered(true); }}
       onMouseLeave={() => { setIsHovered(false); }}
       onClick={() => { onClick(tab.id); }}
@@ -257,9 +268,20 @@ const TabItem: React.FC<TabItemProps> = ({ tab, isActive, onClose, onClick, isDr
         <Icon className={cn("w-[15px] h-[15px]", isActive ? "opacity-100" : "opacity-65")} />
       </div>
 
-      {/* Title — full name, no truncation (tab sizes to content) */}
-      <span className="flex-1 whitespace-nowrap font-medium">
-        {tab.title}
+      {/* Project name over the session's own name. The project name is never
+          truncated (the tab sizes to content); the session name is, because a
+          CLI-generated title runs to a full sentence and would otherwise set
+          the width of the whole tab. The hover text carries the full one. */}
+      <span className="flex-1 min-w-0 flex flex-col justify-center leading-tight">
+        <span className="whitespace-nowrap font-medium">{tab.title}</span>
+        {sessionName && (
+          <span
+            data-testid="tab-session-name"
+            className="truncate max-w-[190px] text-[11px] font-normal text-muted-foreground"
+          >
+            {sessionName}
+          </span>
+        )}
       </span>
 
       {/* Account chip (compact) */}
@@ -551,7 +573,12 @@ export const TabManager: React.FC<TabManagerProps> = ({ className }) => {
         className="flex-1 flex overflow-x-auto scrollbar-hide"
         style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
       >
-        <div className="flex items-center h-9 gap-1 px-2">
+        {/* No fixed height here: the tabs set it. This row was pinned at `h-9`
+            (36px) from when a tab was a single 26px line, so the two-line 38px
+            tab overflowed it by a pixel top and bottom and the scroll
+            container clipped the result. Padding instead, so the strip grows
+            with whatever the tab is. */}
+        <div className="flex items-center gap-1 px-2 py-1">
           {/* The dragged tab used to blank for a frame on each crossing. It
               was not framer-motion and not StrictMode — both were blamed and
               both were wrong. `onReorder` fires per crossing, and nothing in
@@ -595,7 +622,7 @@ export const TabManager: React.FC<TabManagerProps> = ({ className }) => {
             transition={{ duration: 0.15 }}
             className={cn(
               "px-2 rounded-md flex items-center justify-center flex-shrink-0",
-              "bg-background/50 backdrop-blur-sm h-[26px]",
+              "bg-background/50 backdrop-blur-sm h-[38px]",
               "shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_75%,transparent)]",
               canAddTab()
                 ? "hover:bg-muted/60 text-muted-foreground hover:text-foreground"

@@ -8,6 +8,7 @@ import type {
   LastPromptRaw,
   PermissionModeRaw,
   AiTitleRaw,
+  CustomTitleRaw,
   FileSnapshotRaw,
   SystemRaw,
   SystemSubtype,
@@ -17,6 +18,7 @@ import type {
   ToolProgressRaw,
 } from '@/types/jsonl';
 import { anchorToolUseId } from './toolProgress';
+import { isLocalCommandEnvelope } from './commandEnvelope';
 
 /**
  * Single source of truth for classifying a parsed JSONL line into the
@@ -68,6 +70,8 @@ export function classifyJsonlLine(raw: unknown): JsonlNode | null {
       return classifyPermissionMode(r, sessionId);
     case 'ai-title':
       return classifyAiTitle(r, sessionId);
+    case 'custom-title':
+      return classifyCustomTitle(r, sessionId);
     case 'file-history-snapshot':
       return classifyFileSnapshot(r);
     case 'system':
@@ -160,6 +164,11 @@ function classifyUser(r: Record<string, unknown>, sessionId: string, receivedAt:
     userKind = 'meta-attachment';
   } else if (isMeta) {
     userKind = 'meta-other';
+  } else if (isLocalCommandEnvelope(content)) {
+    // A slash command leaves two `user` records behind — the echo of what was
+    // typed and the command's stdout. Neither carries isMeta, so without this
+    // branch both classified as 'prompt': a question nothing would ever answer.
+    userKind = 'local-command';
   } else {
     userKind = 'prompt';
   }
@@ -244,6 +253,15 @@ function classifyAiTitle(r: Record<string, unknown>, sessionId: string): JsonlNo
   return {
     kind: 'ai-title',
     raw: r as unknown as AiTitleRaw,
+    sessionId,
+  };
+}
+
+function classifyCustomTitle(r: Record<string, unknown>, sessionId: string): JsonlNode | null {
+  if (typeof r.customTitle !== 'string') return null;
+  return {
+    kind: 'custom-title',
+    raw: r as unknown as CustomTitleRaw,
     sessionId,
   };
 }

@@ -30,8 +30,8 @@ const EMITTABLE_IDS = [
   "permission.request", "permission.askUserQuestion",
   "summary.compaction", "unknown",
   // bookkeeping (real JSONL lines, rendered as side-line markers)
-  "permission-mode", "last-prompt", "ai-title", "queue-operation",
-  "file-history-snapshot",
+  "permission-mode", "last-prompt", "ai-title", "custom-title",
+  "queue-operation", "file-history-snapshot",
   // synthetic control-change markers (effort/model/permission)
   "control.effort", "control.model", "control.permission",
 ];
@@ -572,6 +572,7 @@ describe('classifyStandaloneKind — bookkeeping kinds', () => {
     ['permission-mode', { kind: 'permission-mode', raw: { type: 'permission-mode', permissionMode: 'acceptEdits' }, sessionId: 's' }],
     ['last-prompt', { kind: 'last-prompt', raw: { type: 'last-prompt', lastPrompt: 'hi', leafUuid: 'u' }, sessionId: 's' }],
     ['ai-title', { kind: 'ai-title', raw: { type: 'ai-title', aiTitle: 'T' }, sessionId: 's' }],
+    ['custom-title', { kind: 'custom-title', raw: { type: 'custom-title', customTitle: 'T' }, sessionId: 's' }],
     ['queue-operation', { kind: 'queue-operation', raw: { type: 'queue-operation', operation: 'enqueue' }, sessionId: 's', receivedAt: 't' }],
     ['file-history-snapshot', { kind: 'file-history-snapshot', raw: { type: 'file-history-snapshot', snapshot: {} } }],
   ];

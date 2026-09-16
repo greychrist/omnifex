@@ -650,6 +650,7 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
       getHealth: (id) => sessionsService.getHealth(id),
       interrupt: (id) => sessionsService.interrupt(id),
       setModel: (id, model) => sessionsService.setModel(id, model),
+      setTitle: (id, title) => sessionsService.setTitle(id, title),
       setPermissionMode: (id, mode) => sessionsService.setPermissionMode(id, mode as any),
       setEffort: (id, level) => sessionsService.setEffort(id, level as any),
       applyPermissions: (id, permissions) => sessionsService.applyPermissions(id, permissions as any),

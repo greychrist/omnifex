@@ -36,6 +36,9 @@ export const JSONL_CARRIED_TYPES: ReadonlySet<string> = new Set([
   'atis-latch',
   'mode',
   'ai-title',
+  // Not from the census — no transcript had one until the app could rename
+  // a session. Verified against CLI 2.1.273: `rename_session` persists it.
+  'custom-title',
   'pr-link',
   'permission-mode',
   'bridge-session',

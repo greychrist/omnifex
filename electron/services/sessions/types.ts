@@ -298,6 +298,12 @@ export interface SessionsService {
   interrupt(tabId: string): Promise<void>;
   /** Switch the model used for subsequent turns. */
   setModel(tabId: string, model?: string): Promise<void>;
+  /**
+   * Rename the session via the CLI's own `rename_session` control request.
+   * Resolves false when the rename could not be sent (no live engine, blank
+   * title) so the caller can say so rather than looking like it worked.
+   */
+  setTitle(tabId: string, title: string): Promise<boolean>;
   /** Switch the permission mode mid-session. */
   setPermissionMode(tabId: string, mode: PermissionMode): Promise<void>;
   /** Change effort level mid-session. null clears the override and reverts to the CLI default. */

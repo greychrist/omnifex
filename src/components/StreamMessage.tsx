@@ -429,6 +429,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
       message.kind === 'permission-mode' ||
       message.kind === 'last-prompt' ||
       message.kind === 'ai-title' ||
+      message.kind === 'custom-title' ||
       message.kind === 'queue-operation' ||
       message.kind === 'file-history-snapshot'
     ) {
@@ -440,6 +441,8 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
             return 'Bookmarked prompt';
           case 'ai-title':
             return `Session titled "${message.raw.aiTitle}"`;
+          case 'custom-title':
+            return `Renamed to "${message.raw.customTitle}"`;
           case 'queue-operation':
             return `Background: ${message.raw.operation}`;
           case 'file-history-snapshot':

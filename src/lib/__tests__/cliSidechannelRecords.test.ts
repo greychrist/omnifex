@@ -29,6 +29,7 @@ describe('isCliSidechannelRecord', () => {
       'last-prompt',
       'permission-mode',
       'ai-title',
+      'custom-title',
       'file-history-snapshot',
     ]) {
       expect(CLI_SIDECHANNEL_RECORD_TYPES.has(type)).toBe(false);
