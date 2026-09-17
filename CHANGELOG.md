@@ -5,6 +5,22 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.176] — 2026-09-17
+
+### Added
+
+- Tabs come in two densities, set in Settings → General beside the tab status indicators. Expanded is the two-line tab the last release introduced — the project name with the session's name beneath it. Compact drops back to a single line and moves the session name to the hover tooltip, for anyone who would rather fit more tabs across the strip than read what each one is doing. The session name is still resolved either way, so switching is purely a question of how much of the strip you want spent on text.
+
+### Changed
+
+- A chat tab's icon now carries the account it runs under. It used to be a generic speech bubble announcing that a chat tab was a chat tab — on a strip where nearly everything is a chat — with the account shown separately as a small coloured square further along the tab. The bubble now takes the account's own colour and holds the account's own mark, and the separate square is gone. One glyph answers the question actually worth asking at a glance, and each tab gets a little narrower. Tabs that are not chat sessions keep the plain icon and the account square, since there is no bubble there to fold an account into.
+- Claude Code changelog review watermark moved to 2.1.274. Single release in range and no drift in anything OmniFex reads: the record-type map is byte-identical, hook events and control envelopes are unchanged, and every `/usage` anchor still matches. The one real change is on Claude Code's side — assigning a shell variable that can influence what a command executes (`IFS`, `BASH_ENV`, and now `BASH_SOURCE_PATH`) makes it ask permission instead of allowing the command outright, so a Bash rule you have allowed may start prompting on commands that set one.
+
+### Fixed
+
+- Pressing Stop left the session looking like it was still working. The marker Claude Code writes when you interrupt a turn is an ordinary user message as far as the transcript is concerned, so OmniFex read it as a prompt still waiting on an answer and held the turn open — the spinner kept going, and the tab kept claiming work was in flight, until something else moved. An interrupt now ends the turn, which is what it is.
+- A long icon name in the tab status indicator settings ran out of its box and over the colour swatch beside it. The default icon for the "Question waiting" state is long enough to do this on a fresh install, so the row has been wrong for everyone since the picker shipped. Names are now cut to fit. The same picker is used for message kind icons, which had the same problem.
+
 ## [0.4.175] — 2026-09-16
 
 ### Added
