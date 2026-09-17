@@ -5,6 +5,12 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.177] — 2026-09-17
+
+### Changed
+
+- The turn-duration readout in the session status bar is a clock now, in blue. It used to be a server-and-cog glyph, which is a smear at the size it is drawn and says nothing about a duration, and it sat in the same green as the daemon-connection readout immediately beside it — so the two ran together as one stretch of green text instead of reading as two separate facts. The daemon keeps green; the turn clock is blue; the thinking burst stays violet, and the prompt-cache countdown still goes amber then red as it runs down.
+
 ## [0.4.176] — 2026-09-17
 
 ### Added
