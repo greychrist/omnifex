@@ -30,6 +30,136 @@ import { buildClaudeEnv } from './util/claude-env';
  * old value and the new one, and file or fix whatever they imply. Bumping it
  * to silence the badge throws away the only drift signal we have.
  *
+ * Last review: 2.1.273 -> 2.1.274 on 2026-09-17. Findings:
+ *
+ *  Changelog coverage: 2.1.274 is the only release in range, it is the
+ *  newest heading in CHANGELOG.md, and it has a full entry (~120 items).
+ *  No gap. BOTH 2.1.273 and 2.1.274 are installed, so every wire claim
+ *  below is a real binary diff of the exact range rather than prose.
+ *
+ *  NO CODE CHANGE REQUIRED. One optional doc addition is proposed in
+ *  finding 1 and was deliberately NOT applied without Greg's go-ahead.
+ *
+ *  Wire diff, the checks that came back clean:
+ *
+ *   - The JSONL record-type merge map is BYTE-IDENTICAL (2130 bytes, 2
+ *     matches, both binaries) — no new record types, so
+ *     cliSidechannelRecords.ts and jsonlClassifier.ts need nothing.
+ *   - `hook_event_name` literal set identical (33). `type:"control_*"`
+ *     envelope set identical (4).
+ *   - Every `/usage` anchor parser.ts reads is unchanged: `Current
+ *     session` 3/3, `Current week (` 5/5, `Total cost:` 2/2, `% of usage`
+ *     2/2, `Loading usage data` 1/1, `Showing last-known usage` 2/2, bare
+ *     `Resets` 28/28, `What's contributing` 5/5, `Total duration (API)`
+ *     2/2, `Total code changes:` 2/2.
+ *   - AskUserQuestion result prose unchanged — `Your questions have been
+ *     answered` 2/2, `You can now continue with these answers in mind`
+ *     2/2, `preview` 17/17, `annotations` 3/3. The two AskUserQuestion
+ *     entries in this release are TUI picker interaction fixes (which
+ *     option a note attaches to), not wire changes.
+ *   - The `[Request interrupted by user...]` markers are unchanged (10/10
+ *     and 2/2), which is what the new `interrupt` userKind anchors on.
+ *   - The Bash path-restricted fixed-command lists are unchanged. All
+ *     three lists diff only by minifier identifier renames (`_$t` ->
+ *     `$jt`, `Lpe` -> `Ome`, `cve` -> `yCe`, `eVn` -> `e8n`); every quoted
+ *     command name is identical, so docs/permission-syntax.md:115-118
+ *     stays accurate.
+ *
+ *  Counts that moved, each run down rather than waved off:
+ *
+ *   - `subtype:"…"` set 122 -> 123. Exactly one new literal,
+ *     `set_chrome_browser_hints`. NOT ours: it is an INBOUND
+ *     control_request, tagged `@internal`, and the handler rejects it
+ *     outright unless `isRemoteTransport()` ("set_chrome_browser_hints is
+ *     only accepted in a remote-hosted session"). It is how a cloud host
+ *     tells the CLI which Claude-in-Chrome browser to use. OmniFex never
+ *     sends it and the CLI never writes it into a transcript.
+ *   - `IFS` 33 -> 34 and `tool_use_id` 995 -> 997. Both are findings 1
+ *     and 2 below, not noise.
+ *
+ *  1. The CLI's exec-influencing shell-variable list gained
+ *     `BASH_SOURCE_PATH`. Permission semantics — the only real wire
+ *     change in this release.
+ *
+ *     2.1.274: "Fixed Bash permission checks for commands that loop over
+ *     or assign certain special shell variables; these commands now ask
+ *     for permission."
+ *
+ *     The list went 24 -> 25 names. Diffed exactly:
+ *       ["ENV","BASH_ENV","SHELLOPTS","PS4","GCONV_PATH","IFS","PWD",
+ *        "CDPATH","OLDPWD","TMOUT","POSIXLY_CORRECT","BASHOPTS",
+ *        "BASH_COMPAT","EXECIGNORE", +"BASH_SOURCE_PATH",
+ *        "BASH_LOADABLES_PATH","GLOBIGNORE","GLOBSORT","LOCPATH",
+ *        "PATH_LOCALE","NLSPATH","LANG","TMPDIR","TMP","TEMP"]
+ *     Assigning one of these yields `kind:"too-complex"` ("IFS assignment
+ *     changes word-splitting") or a `command` verdict ("writes shell
+ *     variable X (exec-influencing / integer-attr / IFS) — value cannot
+ *     be statically verified"), which makes the CLI ASK instead of
+ *     auto-allowing.
+ *
+ *     Direction is STRICTER, so no rule of ours silently stops applying;
+ *     our decider is simply consulted more often, which it already
+ *     handles. docs/permission-syntax.md does not document this list at
+ *     all (no mention of IFS / BASH_ENV / shell variables anywhere in the
+ *     file), so nothing in the doc is now false.
+ *
+ *     PROPOSED, NOT APPLIED: a short paragraph in permission-syntax.md
+ *     noting that assignment of exec-influencing shell variables forces a
+ *     prompt regardless of allow rules. This is the third tightening on
+ *     the Bash-analysis axis (2.1.259, 2.1.268, now 2.1.274) and the
+ *     first two were both reverted, so per the pattern already recorded
+ *     at permission-syntax.md:57 it should be written as provisional.
+ *
+ *  2. Transcript self-healing for "unexpected tool_use_id" 400s. NOT a
+ *     shape change; no action.
+ *
+ *     2.1.274: "Fixed sessions getting stuck endlessly retrying
+ *     'unexpected tool_use_id' 400 errors: corrupted transcripts now
+ *     self-heal where possible, and otherwise a clear error (with a
+ *     `/rewind` hint) ends the loop."
+ *
+ *     `tool_use_id` +2 is this check. The repair is on the request the
+ *     CLI builds, not on the file: the record-type merge map is
+ *     byte-identical, no new subtype carries a repair marker, and
+ *     `handleOrphanedPermission` (28/28), `toolUseID` (423/423) and
+ *     `rewind` (193/193) are all flat. Nothing OmniFex reads or renders
+ *     changes. (`selfHeal` 3/3 in both is a red herring — it is SSE
+ *     heartbeat config for cloud workers, unrelated to transcripts.)
+ *
+ *  3. Still absent from HOOK_EVENTS: `PreModelSwitch` / `PostModelSwitch`.
+ *     PRE-EXISTING, ALREADY ACCEPTED — recorded here only so it is not
+ *     re-derived. src/types/hooks.ts:21 lists 31 events; the binary has
+ *     33. Both binaries in this range have them, as does 2.1.270, so this
+ *     is not 2.1.274 drift. See the accepted-gap note further down.
+ *
+ *  4. OUT OF RANGE but found while checking finding 0: the annotation
+ *     branch at AnsweredAskUserQuestionCard.tsx:201 matches
+ *     /User selected Other:\s*"([\s\S]*?)"/ and that prose does not exist
+ *     in EITHER binary — `User selected` and `selected Other` are both 0
+ *     occurrences in 2.1.273 and 2.1.274, and `user notes:` is 0 too
+ *     (bare ` notes:` is 23). So the "Other" annotation path is dead
+ *     against the CLI we actually run. Not caused by this release, and
+ *     deliberately NOT fixed here — it needs a live capture of the
+ *     current tool_result prose to fix honestly rather than a guess. This
+ *     is the same drift the AskUserQuestion wire note has warned about:
+ *     anchor on question text, not on the surrounding sentence.
+ *
+ *  Entries with NO OmniFex impact, checked against local code rather than
+ *  assumed: `/fast on` under managed policy (fastMode appears nowhere in
+ *  this repo outside these review notes — never shipped); `claude agents`
+ *  losing --model/--effort/--permission-mode/--agent after an auto-update
+ *  relaunch (we never invoke the `agents` subcommand); `"type":"sdk"` MCP
+ *  entries now skipped with a warning (mcp.ts never writes that type);
+ *  the Stop-prompt-hook 500-character repeat label (`stop_hook_active`
+ *  7/7, hook set unchanged — message content, not payload shape); the
+ *  `--input-format stream-json` startup no longer waiting 2s on
+ *  connecting MCP servers (a free latency win for our headless path, no
+ *  action); new `CLAUDE_CODE_MCP_STARTUP_WAIT_MS` (opportunity only);
+ *  ordered-list renumbering, memory-pressure warning, click-to-expand and
+ *  the Bedrock/Vertex/Foundry subagent-model fix (TUI or non-Anthropic
+ *  paths we do not drive); and the whole OTel, Claude apps gateway,
+ *  VSCode, Claude Code on the web, Claude Tag and Code Review sections.
+ *
  * Last review: 2.1.272 -> 2.1.273 on 2026-09-15. Findings:
  *
  *  Changelog coverage: 2.1.273 is the only release in range and it has a
@@ -2173,7 +2303,7 @@ import { buildClaudeEnv } from './util/claude-env';
  * `~/.claude.json` fix (we read-modify-write that file, never replace it), and
  * the VSCode screen-reader work.
  */
-export const REVIEWED_CLI_VERSION = '2.1.273';
+export const REVIEWED_CLI_VERSION = '2.1.274';
 
 /**
  * app_settings key holding the user's explicit OmniFex-checkout override.
