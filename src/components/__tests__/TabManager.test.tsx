@@ -55,6 +55,24 @@ vi.mock('@/hooks', () => ({
   useTheme: () => ({ theme: 'gray', setTheme: async () => {} }),
 }));
 
+// Tab density lives in the rendering config. Hoisted so the mock factory can
+// see it, and reset in afterEach so a compact test can't leak into the next.
+const density = vi.hoisted((): { current: 'expanded' | 'compact' } => ({
+  current: 'expanded',
+}));
+vi.mock('@/contexts/MessageRenderingContext', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/contexts/MessageRenderingContext')>();
+  const { createDefaultConfig } = await import('@/lib/messageRenderingConfig');
+  return {
+    ...actual,
+    useMessageRenderingConfig: () => {
+      const config = createDefaultConfig();
+      config.tabs.density = density.current;
+      return { config, setConfig: () => { /* noop */ }, loaded: true };
+    },
+  };
+});
+
 // useTabState + useTabContext are the two main injection points. Stub
 // them per-test via mockReturnValue so each scenario can pin its own
 // tabs / active-tab / operation spies.
@@ -71,6 +89,7 @@ afterEach(() => {
   cleanup();
   useTabStateMock.mockReset();
   useTabContextMock.mockReset();
+  density.current = 'expanded';
 });
 
 function makeTab(partial: Partial<Tab> & Pick<Tab, 'id' | 'type' | 'title'>): Tab {
@@ -247,8 +266,8 @@ describe('TabManager — rendering', () => {
     });
 
     const { container } = render(<TabManager />);
-    // AccountBadge compact renders the name as a `title` attribute on its
-    // icon-only span — only one tab carries one.
+    // Both the merged chat glyph and the compact AccountBadge title their
+    // span with the account name — only the tab that has an account gets one.
     expect(container.querySelectorAll('span[title="work"]').length).toBe(1);
   });
 
@@ -494,5 +513,76 @@ describe('TabManager — keyboard-shortcut window events', () => {
     unmount();
     window.dispatchEvent(new CustomEvent('switch-to-tab', { detail: { tabId: 'a' } }));
     expect(switchToTab).not.toHaveBeenCalled();
+  });
+});
+
+// A chat tab used to carry two marks: a plain MessageSquare saying "this is a
+// chat" on a strip where nearly everything is a chat, plus a coloured account
+// square. They are now one glyph — a bubble in the account's colour holding
+// the account's icon.
+describe('account glyph merges into the chat tab icon', () => {
+  it('renders the merged glyph and drops the separate chip on a chat tab', () => {
+    installState({
+      tabs: [makeTab({ id: 'a', type: 'chat', title: 'With Acct', accountName: 'work' })],
+      activeTabId: 'a',
+    });
+
+    render(<TabManager />);
+    expect(screen.getAllByTestId('account-tab-glyph').length).toBe(1);
+    // The compact AccountBadge is an 18px square; the merged glyph is not.
+    // Exactly one element carries the account name, so the chip is gone.
+    expect(screen.getAllByTitle('work').length).toBe(1);
+  });
+
+  it('leaves non-chat tabs on the plain icon plus the account chip', () => {
+    installState({
+      tabs: [makeTab({ id: 'b', type: 'projects', title: 'Projects', accountName: 'work' })],
+      activeTabId: 'b',
+    });
+
+    render(<TabManager />);
+    // No bubble — a Folder tab has no chat icon to merge an account into —
+    // but the chip still reports which account the tab belongs to.
+    expect(screen.queryByTestId('account-tab-glyph')).toBeNull();
+    expect(screen.getAllByTitle('work').length).toBe(1);
+  });
+
+  it('falls back to the plain icon when a chat tab has no account', () => {
+    installState({
+      tabs: [makeTab({ id: 'a', type: 'chat', title: 'No Acct' })],
+      activeTabId: 'a',
+    });
+
+    render(<TabManager />);
+    expect(screen.queryByTestId('account-tab-glyph')).toBeNull();
+  });
+});
+
+describe('tab strip density', () => {
+  const titleNode = (customTitle: string) =>
+    ({ kind: 'custom-title', raw: { type: 'custom-title', customTitle }, sessionId: 's' }) as unknown as JsonlNode;
+
+  afterEach(() => { useClaudeSessionStore.getState().__resetForTests(); });
+
+  it('expanded shows the session name as a second line', () => {
+    density.current = 'expanded';
+    useClaudeSessionStore.getState().setMessages('a', [titleNode('Refactor the parser')]);
+    installState({ tabs: [makeTab({ id: 'a', type: 'chat', title: 'omnifex' })] });
+
+    render(<TabManager />);
+    expect(screen.getByTestId('tab-session-name').textContent).toBe('Refactor the parser');
+  });
+
+  it('compact drops the second line but keeps it on hover', () => {
+    density.current = 'compact';
+    useClaudeSessionStore.getState().setMessages('a', [titleNode('Refactor the parser')]);
+    installState({ tabs: [makeTab({ id: 'a', type: 'chat', title: 'omnifex' })] });
+
+    const { container } = render(<TabManager />);
+    expect(screen.queryByTestId('tab-session-name')).toBeNull();
+    // The name is still resolved — it just moves to the tooltip.
+    expect(container.querySelector('[data-tab-id="a"]')?.getAttribute('title')).toBe(
+      'Refactor the parser',
+    );
   });
 });

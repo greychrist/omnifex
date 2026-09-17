@@ -10,6 +10,7 @@ import { TabStatusGlyph } from '@/components/TabStatusGlyph';
 import { AgentCountGlyph } from '@/components/AgentCountGlyph';
 export { AgentCountGlyph };
 import { AccountBadge } from './AccountBadge';
+import { AccountTabGlyph } from './AccountTabGlyph';
 import { useTabState } from '@/hooks/useTabState';
 import { Tab, useTabContext } from '@/contexts/TabContext';
 import { useSecondTick } from '@/hooks/useSecondTick';
@@ -174,6 +175,10 @@ const TabItem: React.FC<TabItemProps> = ({ tab, isActive, onClose, onClick, isDr
   useRenderProfile('TabItem');
   const [isHovered, setIsHovered] = useState(false);
   const { config } = useMessageRenderingConfig();
+  // `compact` drops the second text line; the tab keeps its glyph, status and
+  // close button. The session name still feeds the hover title either way.
+  const compact = config.tabs.density === 'compact';
+  const accountName = tab.accountName;
   // The strip shows the PROJECT name — that is what you navigate by — so the
   // session's own name goes on hover, where it tells two tabs on the same
   // project apart without widening either. Undefined when the session has no
@@ -242,10 +247,11 @@ const TabItem: React.FC<TabItemProps> = ({ tab, isActive, onClose, onClick, isDr
       className={cn(
         "relative flex items-center gap-[7px] text-[15px] cursor-pointer select-none group",
         "transition-colors duration-100",
-        // Taller than a single-line tab: the project name now sits over the
-        // session's own name. Height is fixed rather than content-driven so an
-        // unnamed session's tab still lines up with its neighbours.
-        "rounded-md h-[38px] px-[10px]",
+        // Height is fixed rather than content-driven so an unnamed session's
+        // tab still lines up with its neighbours. Expanded reserves the second
+        // line for the session name; compact is a single row.
+        "rounded-md px-[10px]",
+        compact ? "h-[30px]" : "h-[38px]",
         // Size to content (with a sensible floor) instead of capping width:
         // the tab grows to fit the full project name. shrink-0 keeps the tab
         // from being compressed when many are open — the strip is
@@ -263,9 +269,21 @@ const TabItem: React.FC<TabItemProps> = ({ tab, isActive, onClose, onClick, isDr
       onDragStart={() => setDraggedTabId?.(tab.id)}
       onDragEnd={() => setDraggedTabId?.(null)}
     >
-      {/* Type icon */}
+      {/* Type icon. On a chat tab with a known account this is the merged
+          glyph — the bubble carries the account's colour and icon, and the
+          separate chip below is dropped. Every other tab type keeps the plain
+          icon: there is no chat bubble to merge an account into. */}
       <div className="flex-shrink-0">
-        <Icon className={cn("w-[15px] h-[15px]", isActive ? "opacity-100" : "opacity-65")} />
+        {tab.type === 'chat' && accountName ? (
+          <AccountTabGlyph
+            name={accountName}
+            icon={tab.accountIcon}
+            color={tab.accountColor}
+            active={isActive}
+          />
+        ) : (
+          <Icon className={cn("w-[15px] h-[15px]", isActive ? "opacity-100" : "opacity-65")} />
+        )}
       </div>
 
       {/* Project name over the session's own name. The project name is never
@@ -274,7 +292,7 @@ const TabItem: React.FC<TabItemProps> = ({ tab, isActive, onClose, onClick, isDr
           the width of the whole tab. The hover text carries the full one. */}
       <span className="flex-1 min-w-0 flex flex-col justify-center leading-tight">
         <span className="whitespace-nowrap font-medium">{tab.title}</span>
-        {sessionName && (
+        {!compact && sessionName && (
           <span
             data-testid="tab-session-name"
             className="truncate max-w-[190px] text-[11px] font-normal text-muted-foreground"
@@ -284,10 +302,11 @@ const TabItem: React.FC<TabItemProps> = ({ tab, isActive, onClose, onClick, isDr
         )}
       </span>
 
-      {/* Account chip (compact) */}
-      {tab.accountName && (
+      {/* Account chip — only on non-chat tabs. On a chat tab the glyph above
+          already carries the account's colour and icon. */}
+      {accountName && tab.type !== 'chat' && (
         <AccountBadge
-          name={tab.accountName}
+          name={accountName}
           icon={tab.accountIcon}
           color={tab.accountColor}
           variant="compact"

@@ -515,6 +515,29 @@ export const DEFAULT_TERMINAL: Terminal = {
   cursorStyle: "block",
 };
 
+// ─── tab strip ──────────────────────────────────────────────────────────────
+
+/**
+ * How much of each tab the strip spends on text.
+ *
+ * `expanded` is the two-line tab: the project name over the session's own
+ * name. `compact` drops the session line, leaving a single row — the tab still
+ * carries its glyph, status and close button, it just stops reserving vertical
+ * space for a name that is often absent anyway.
+ *
+ * Purely presentational. The session name is still resolved either way (the
+ * hover title uses it), so switching density never changes what a tab knows.
+ */
+export type TabDensity = "expanded" | "compact";
+
+export interface TabStrip {
+  density: TabDensity;
+}
+
+export const DEFAULT_TAB_STRIP: TabStrip = {
+  density: "expanded",
+};
+
 // ─── top-level config (v5) ──────────────────────────────────────────────────
 
 export interface MessageRenderingConfig {
@@ -527,6 +550,7 @@ export interface MessageRenderingConfig {
   hardFilters: HardFilters;
   typography: Typography;
   tabIndicators: TabIndicators;
+  tabs: TabStrip;
   terminal: Terminal;
   debug: DebugOptions;
 }
@@ -541,6 +565,7 @@ export function createDefaultConfig(): MessageRenderingConfig {
     hardFilters: { ...DEFAULT_HARD_FILTERS },
     typography: structuredClone(DEFAULT_TYPOGRAPHY),
     tabIndicators: structuredClone(DEFAULT_TAB_INDICATORS),
+    tabs: { ...DEFAULT_TAB_STRIP },
     terminal: { ...DEFAULT_TERMINAL },
     debug: { ...DEFAULT_DEBUG },
   };
@@ -709,6 +734,16 @@ function mergeShared(
 
   if (isRecord(saved.tabIndicators)) {
     base.tabIndicators = mergeTabIndicators(saved.tabIndicators, base.tabIndicators);
+  }
+
+  if (isRecord(saved.tabs)) {
+    const t = saved.tabs;
+    base.tabs = {
+      density:
+        t.density === "compact" || t.density === "expanded"
+          ? t.density
+          : base.tabs.density,
+    };
   }
 
   if (isRecord(saved.debug)) {

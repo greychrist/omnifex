@@ -43,7 +43,7 @@ function getFallbackColor(name: string): string {
  * `color-mix(in oklch, ...)` ships in Chromium 111+, well below the
  * Electron baseline this repo runs on, so no fallback path is needed.
  */
-function buildThemedColors(color: string, theme: "gray" | "light"): {
+export function buildThemedColors(color: string, theme: "gray" | "light"): {
   backgroundColor: string;
   color: string;
   borderColor: string;

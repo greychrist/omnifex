@@ -40,15 +40,20 @@ export const IconPicker: React.FC<{ value: IconName; onChange: (v: IconName) => 
           className="flex h-9 w-full items-center justify-between gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm ring-offset-background hover:bg-accent focus:outline-none focus:ring-1 focus:ring-ring"
           aria-label="Icon"
         >
-          <span className="flex items-center gap-2">
+          {/* `min-w-0` is load-bearing: a flex item defaults to
+              `min-width:auto`, so without it this group refuses to shrink
+              below its text and a long icon name (the shipped default
+              "MessageCircleQuestion" is one) pushes the chevron out of the
+              button and over whatever sits beside it. */}
+          <span className="flex min-w-0 items-center gap-2">
             {value === "none" ? (
               <span className="text-muted-foreground text-xs">—</span>
             ) : (
-              <IconRenderer name={value} className="h-4 w-4" />
+              <IconRenderer name={value} className="h-4 w-4 shrink-0" />
             )}
-            <span>{value}</span>
+            <span className="truncate">{value}</span>
           </span>
-          <ChevronDown className="h-4 w-4 opacity-50" />
+          <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
         </button>
       }
       content={

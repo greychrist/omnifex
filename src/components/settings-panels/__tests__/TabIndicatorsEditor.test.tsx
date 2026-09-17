@@ -69,4 +69,25 @@ describe("TabIndicatorsEditor", () => {
       expect.objectContaining({ bgOpacity: 40 }),
     );
   });
+
+  // "MessageCircleQuestion" is the shipped default for the question state and
+  // is wider than the picker's column, so a fresh install shows the overflow:
+  // the name pushed the chevron out of the button and over the colour input
+  // sitting beside it.
+  //
+  // jsdom has no layout engine, so this asserts the layout contract that makes
+  // the overflow impossible rather than measuring the overflow itself — the
+  // label must be allowed to shrink and clip, and the chevron must not be
+  // shrinkable at all.
+  it("clips a long icon name instead of pushing the chevron out", () => {
+    renderEditor();
+    const label = screen.getByText("MessageCircleQuestion");
+    expect(label.className).toContain("truncate");
+    expect(label.parentElement?.className).toContain("min-w-0");
+
+    const chevron = screen
+      .getAllByLabelText("Icon")[2]
+      .querySelector("svg:last-of-type");
+    expect(chevron?.getAttribute("class")).toContain("shrink-0");
+  });
 });

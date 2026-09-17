@@ -43,6 +43,7 @@ import { APP_FONT_CHOICES } from "@/lib/typefaceCatalog";
 import { TabPersistenceService } from "@/services/tabPersistence";
 import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
 import { TabIndicatorsEditor } from "./TabIndicatorsEditor";
+import { TabDensityControl } from "./TabDensityControl";
 import type { SettingsPanelProps } from "./types";
 import { fireAndLog, logAndForget } from "@/lib/fireAndLog";
 import {
@@ -790,6 +791,22 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
                 saveCliReviewPrompt(cliReviewPrompt),
               )}
               className="w-full rounded-md border border-border bg-background p-2 font-mono text-xs outline-none focus:border-white/30"
+            />
+          </div>
+
+          {/* Tab strip density — sits with the indicators below because both
+              shape the same strip. */}
+          <div className="flex items-center justify-between border-t border-border/50 pt-4">
+            <div>
+              <Label>Tab strip</Label>
+              <p className="text-caption text-muted-foreground mt-1">
+                Expanded puts the session name under the project name. Compact is
+                a single line — the session name moves to the hover tooltip.
+              </p>
+            </div>
+            <TabDensityControl
+              density={config.tabs.density}
+              onChange={(density) => { setConfig({ ...config, tabs: { ...config.tabs, density } }); }}
             />
           </div>
 
