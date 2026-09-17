@@ -47,6 +47,54 @@ describe('classifyJsonlLine', () => {
     }
   });
 
+  // The marker the CLI writes when the user presses Stop. A plain `user`
+  // record with no isMeta, so without a dedicated kind it read as something
+  // the user typed — see the interrupt regression in sessionDerivedState.
+  // The prefix is the CLI's own predicate (2.1.273 detects interruptions with
+  // `text.includes("[Request interrupted by user")`).
+  describe('interrupt notices', () => {
+    const notice = (text: string) => classifyJsonlLine({
+      type: 'user',
+      sessionId: 'sid-1',
+      timestamp: '2026-09-17T20:03:51.316Z',
+      message: { role: 'user', content: [{ type: 'text', text }] },
+    });
+
+    it.each([
+      '[Request interrupted by user]',
+      '[Request interrupted by user for tool use]',
+    ])('classifies %s as userKind=interrupt', (text) => {
+      const node = notice(text);
+      expect(node?.kind).toBe('user');
+      if (node?.kind === 'user') expect(node.userKind).toBe('interrupt');
+    });
+
+    it('accepts the bare-string content shape', () => {
+      const node = classifyJsonlLine({
+        type: 'user',
+        sessionId: 'sid-1',
+        timestamp: '2026-09-17T20:03:51.316Z',
+        message: { role: 'user', content: '[Request interrupted by user]' },
+      });
+      expect(node?.kind).toBe('user');
+      if (node?.kind === 'user') expect(node.userKind).toBe('interrupt');
+    });
+
+    // The CLI can prepend the marker to the prompt the user typed next. That
+    // record IS a prompt and must stay one, or the turn it opens never closes.
+    it('leaves a marker followed by typed text as userKind=prompt', () => {
+      const node = notice('[Request interrupted by user]\nUse Sonnet instead.');
+      expect(node?.kind).toBe('user');
+      if (node?.kind === 'user') expect(node.userKind).toBe('prompt');
+    });
+
+    it('leaves an unrelated bracketed prompt as userKind=prompt', () => {
+      const node = notice('[TODO] pick up where we left off');
+      expect(node?.kind).toBe('user');
+      if (node?.kind === 'user') expect(node.userKind).toBe('prompt');
+    });
+  });
+
   it('classifies attachment lines', () => {
     const node = classifyJsonlLine(JSONL_SAMPLES['attachment']);
     expect(node?.kind).toBe('attachment');

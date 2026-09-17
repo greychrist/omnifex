@@ -1172,6 +1172,11 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
       // square brackets) and render as a system notification so they're
       // visible but visually distinct from the user's actual input.
       // Skip tool-result messages — they are handled below.
+      //
+      // Presentation only. Whether a record can hold the turn open is decided
+      // by its userKind (jsonlClassifier), and only the Stop marker gets one
+      // — `interrupt`, a strict subset of what this branch catches. Do not
+      // read turn state off this test.
       if (!isToolResultOnly) {
         const trimmed = contentStr.trim();
         const isSdkSystemMessage = trimmed.startsWith('[') && trimmed.endsWith(']') && trimmed.length < 200;

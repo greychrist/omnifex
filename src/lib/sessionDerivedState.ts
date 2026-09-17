@@ -99,6 +99,9 @@ function lastMainPromptIndex(messages: JsonlNode[]): number {
 //     null/non-terminal => still going. Resumed/persisted transcripts carry
 //     the real stop_reason here (and no result row), so loaded history settles
 //     through this branch.
+//   - a user `interrupt` notice ([Request interrupted by user]) CLOSES the
+//     turn: the user stopped it, and nothing is owed a reply until they type
+//     again.
 //   - a user message that is a prompt or a tool-result means no assistant/
 //     result has spoken since: defer to the prompt-awaiting check below. Other
 //     userKinds are bookkeeping (see TURN_DECIDING_USER_KINDS) and are skipped
@@ -119,6 +122,11 @@ export function waitingOnClaude(messages: JsonlNode[]): boolean {
     }
     if (n.kind === 'user') {
       if (!isMainUserNode(n)) continue; // forwarded subagent prompt — not main-turn traffic
+      // Stop was pressed. This record IS the turn ending, so it CLOSES rather
+      // than defers — skipping it would leave the walk to break on the
+      // rejection tool_result the CLI writes just before it and defer to a
+      // prompt from minutes earlier. See the aacbd708 regression test.
+      if (n.userKind === 'interrupt') return false;
       if (!decidesTurn(n)) continue; // bookkeeping the CLI wrote around the turn
       break; // defer to the prompt-awaiting check
     }

@@ -145,6 +145,46 @@ export function isCompactSummaryRecord(r: Record<string, unknown>): boolean {
   return r.isCompactSummary === true;
 }
 
+/**
+ * The marker the CLI writes into the transcript when the user presses Stop:
+ *
+ *   [Request interrupted by user]
+ *   [Request interrupted by user for tool use]
+ *
+ * Both are plain `user` records carrying neither isMeta nor any other flag, so
+ * without this they classify as `prompt` — a prompt nothing will ever answer,
+ * which pins the turn axis open forever (work session aacbd708).
+ *
+ * The prefix is the CLI's own predicate for the same record (2.1.273 counts
+ * interruptions with `text.includes("[Request interrupted by user")`), and
+ * those two strings are the only ones in the 2.1.273 binary.
+ *
+ * Anchored end-to-end on purpose: the CLI can prepend the marker to the prompt
+ * the user typed next ("[Request interrupted by user]\nUse Sonnet instead."),
+ * and that record IS a prompt — Claude owes it a reply.
+ *
+ * `content` is accepted in both shapes the CLI persists (bare string, array of
+ * blocks) for the same reason as isLocalCommandEnvelope: the live stream and a
+ * re-read transcript normalize differently.
+ */
+const INTERRUPT_NOTICE = /^\[Request interrupted by user[^\]]*\]$/;
+
+export function isInterruptNotice(content: unknown): boolean {
+  let text: string;
+  if (typeof content === 'string') {
+    text = content;
+  } else if (Array.isArray(content)) {
+    // A non-text block means this is not a bare marker.
+    if (!content.every((b) => b && typeof b === 'object' && (b as { type?: string }).type === 'text')) {
+      return false;
+    }
+    text = content.map((b) => String((b as { text?: unknown }).text ?? '')).join('');
+  } else {
+    return false;
+  }
+  return INTERRUPT_NOTICE.test(text.trim());
+}
+
 function classifyUser(r: Record<string, unknown>, sessionId: string, receivedAt: string | null): JsonlNode | null {
   if (receivedAt === null) return null;
   const message = r.message;
@@ -164,6 +204,8 @@ function classifyUser(r: Record<string, unknown>, sessionId: string, receivedAt:
     userKind = 'meta-attachment';
   } else if (isMeta) {
     userKind = 'meta-other';
+  } else if (isInterruptNotice(content)) {
+    userKind = 'interrupt';
   } else if (isLocalCommandEnvelope(content)) {
     // A slash command leaves two `user` records behind — the echo of what was
     // typed and the command's stdout. Neither carries isMeta, so without this

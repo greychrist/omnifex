@@ -68,6 +68,41 @@ function localCommandStdout(timestamp: string, text = 'Compacted ', sessionId = 
   }) as JsonlNode;
 }
 
+// The marker the CLI writes when the user presses Stop, and the rejection
+// tool_result that precedes it when the interrupted turn was sitting on a
+// tool call. Both built through the real classifier.
+function interruptNotice(
+  timestamp: string,
+  text = '[Request interrupted by user for tool use]',
+  sessionId = 's1',
+): JsonlNode {
+  return classifyJsonlLine({
+    type: 'user',
+    sessionId,
+    timestamp,
+    message: { role: 'user', content: [{ type: 'text', text }] },
+  }) as JsonlNode;
+}
+
+function rejectedToolResult(timestamp: string, sessionId = 's1'): JsonlNode {
+  return classifyJsonlLine({
+    type: 'user',
+    sessionId,
+    timestamp,
+    toolUseResult: 'User rejected tool use',
+    toolDenialKind: 'user-rejected',
+    message: {
+      role: 'user',
+      content: [{
+        type: 'tool_result',
+        tool_use_id: 'toolu_01RXKjW24cqURqPptwqUXU4V',
+        is_error: true,
+        content: "The user doesn't want to proceed with this tool use.",
+      }],
+    },
+  }) as JsonlNode;
+}
+
 function metaUser(timestamp: string, sessionId = 's1'): JsonlNode {
   return classifyJsonlLine({
     type: 'user',
@@ -328,6 +363,48 @@ describe('waitingOnClaude', () => {
       localCommandStdout('2026-09-16T15:07:56.8Z'),
     ];
     expect(waitingOnClaude(msgs)).toBe(false);
+  });
+
+  // Regression — work session aacbd708 (management, CLI 2.1.273). Stop was
+  // pressed while an AskUserQuestion was open. The CLI emitted its `result`
+  // row FIRST, then the rejection tool_result, then the interrupt marker —
+  // so the turn-closer was no longer the last decisive node. The marker
+  // classified as 'prompt', the walk broke on it, and lastMainPromptIndex
+  // found the real prompt from minutes earlier: WORKING forever on a session
+  // that was idle. The marker closes the turn outright, because that is what
+  // pressing Stop does — skipping it is not enough, since the walk would then
+  // break on the rejection tool_result and defer to that same old prompt.
+  it('closes the turn when a user interrupt trails the result row', () => {
+    const msgs = [
+      userPrompt('2026-09-17T19:54:00Z'),
+      assistantWithStop('2026-09-17T20:02:24Z', 'tool_use'),
+      resultNode('2026-09-17T20:03:51.3Z'),
+      rejectedToolResult('2026-09-17T20:03:51.313Z'),
+      interruptNotice('2026-09-17T20:03:51.316Z'),
+    ];
+    expect(waitingOnClaude(msgs)).toBe(false);
+  });
+
+  // Stop pressed mid-text: no tool call, no rejection row, same marker.
+  it('closes the turn on a plain interrupt after an unsettled assistant', () => {
+    const msgs = [
+      userPrompt('2026-09-17T19:54:00Z'),
+      assistantWithStop('2026-09-17T20:02:24Z', null),
+      interruptNotice('2026-09-17T20:03:51Z', '[Request interrupted by user]'),
+    ];
+    expect(waitingOnClaude(msgs)).toBe(false);
+  });
+
+  // Interrupting and immediately typing again opens a new turn — the marker
+  // closes only what came before it.
+  it('waits again when a prompt follows the interrupt', () => {
+    const msgs = [
+      userPrompt('2026-09-17T19:54:00Z'),
+      resultNode('2026-09-17T20:03:51.3Z'),
+      interruptNotice('2026-09-17T20:03:51.316Z'),
+      userPrompt('2026-09-17T20:04:10Z'),
+    ];
+    expect(waitingOnClaude(msgs)).toBe(true);
   });
 
   // The local-command envelope is bookkeeping in both directions: it can

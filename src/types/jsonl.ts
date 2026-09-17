@@ -138,7 +138,14 @@ export type UserKind =
    * as `user` records, but a local command runs on the client — the model never
    * sees either one and will never reply to them.
    */
-  | 'local-command';
+  | 'local-command'
+  /**
+   * The `[Request interrupted by user]` marker the CLI writes when Stop is
+   * pressed. A `user` record with no isMeta, but nobody is owed a reply — it
+   * is the record OF the turn ending, so it closes the turn axis outright
+   * (see waitingOnClaude in sessionDerivedState.ts).
+   */
+  | 'interrupt';
 
 export type SystemSubtype =
   | 'init'
