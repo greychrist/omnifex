@@ -154,6 +154,32 @@ describe('ChatStatusBar', () => {
     expect(screen.getByText('thought')).toBeTruthy();
   });
 
+  it('marks the turn readout with a clock, not a server glyph', () => {
+    // A 14px ServerCog is a smear at this size; the readout is a duration, so
+    // the glyph should read as one.
+    render(
+      <ChatStatusBar
+        {...base}
+        activitySignal={signal({ status: 'idle', turnStartedAt: null, lastTurnMs: 3_000 })}
+      />,
+    );
+    const turn = screen.getByLabelText(/^working/i);
+    expect(turn.querySelector('.lucide-clock')).toBeTruthy();
+  });
+
+  it('colours the turn readout apart from the daemon glyph', () => {
+    // Both sat on emerald-400, so the bar read as one green run of text.
+    render(
+      <ChatStatusBar
+        {...base}
+        activitySignal={signal({ status: 'idle', turnStartedAt: null, lastTurnMs: 3_000 })}
+      />,
+    );
+    const turn = screen.getByLabelText(/^working/i);
+    expect(turn.className).toContain('text-sky-400');
+    expect(turn.className).not.toContain('emerald');
+  });
+
   it('puts a separator strictly between readouts, never at either end', () => {
     // Four readouts → three dividers.
     const { unmount } = render(

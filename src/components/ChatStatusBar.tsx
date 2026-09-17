@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { ServerCog, Brain, Wifi, WifiLow, WifiOff, Pencil } from 'lucide-react';
+import { Clock, Brain, Wifi, WifiLow, WifiOff, Pencil } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useSecondTick } from '@/hooks/useSecondTick';
 import { formatToolElapsed } from '@/components/claude/tools/ToolProgressChip';
@@ -326,11 +326,13 @@ export function ChatStatusBar({
         aria-label={running ? 'working' : 'working — last round'}
         title={running ? 'A turn is in flight' : 'How long the previous turn took'}
         className={cn(
-          'inline-flex items-center gap-1 text-emerald-400',
+          // Sky, not emerald: the daemon glyph owns emerald and the two sit
+          // side by side.
+          'inline-flex items-center gap-1 text-sky-400',
           running && 'animate-pulse',
         )}
       >
-        <ServerCog className="h-3.5 w-3.5" />
+        <Clock className="h-3.5 w-3.5" />
         <span className="opacity-70">turn</span>
         <span>{formatToolElapsed(elapsedMs / 1000)}</span>
       </span>,
