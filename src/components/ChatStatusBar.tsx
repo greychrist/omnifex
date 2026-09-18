@@ -156,14 +156,29 @@ function SessionTitle({
       <span
         data-testid="session-title"
         title={title ?? 'This session has no name yet'}
-        // A size above the readouts beside it, and in the app's own typeface:
-        // the name is prose, while the bar's mono exists to stop counting
-        // numbers from jittering. `font-sans` has to be explicit to override
-        // the `font-mono` the row sets.
-        className="truncate text-sm font-sans"
+        // One more readout, not a heading over them: the same `label value`
+        // shape as `turn 12s` and `cache 3m left (1h)` beside it, and the
+        // row's own 10px mono rather than a size and typeface of its own.
+        //
+        // It was `text-sm font-sans` before, on the reasoning that a name is
+        // prose while the bar's mono exists to stop counting numbers from
+        // jittering. True of the type, but it made the name the only thing on
+        // the bar wearing both its own size and its own family, which read as
+        // a title bolted on rather than a field in the set.
+        //
+        // No glyph, though, where the others all have one: a letter icon was
+        // tried and cut. Their glyphs stand in for a quantity you scan for,
+        // while the name is already the longest text here and a mark in front
+        // of it only crowded the left edge.
+        className="inline-flex items-center gap-1 min-w-0 text-muted-foreground"
       >
-        <span className="opacity-70">Name: </span>
-        <span className={title ? 'text-foreground/80' : 'text-muted-foreground/60 italic'}>
+        <span className="opacity-70">name</span>
+        <span
+          className={cn(
+            'truncate',
+            title ? 'text-foreground/80' : 'text-muted-foreground/60 italic',
+          )}
+        >
           {title ?? 'Untitled'}
         </span>
       </span>
@@ -377,30 +392,53 @@ export function ChatStatusBar({
   }
 
   return (
+    // The frame, not the bar. It carries the session header's own `bg-muted`,
+    // so the 4px showing around the bar is header material and the bar reads
+    // as a field SET INTO the header — the same relationship a chat composer
+    // has with the bar it sits in.
+    //
+    // AgentSession renders this INSIDE the header assembly, below the header
+    // row and above the assembly's border and resize handle. That placement is
+    // the other half of the effect: the bar is within the header's edge rather
+    // than the first thing beneath it.
     <div
-      data-testid="chat-status-bar"
-      role="status"
-      aria-label="Session status"
-      className={cn(
-        'shrink-0 flex items-center gap-2 px-3 py-1 border-b bg-background/60',
-        'text-[10px] font-mono tabular-nums',
-        className,
-      )}
+      data-testid="chat-status-frame"
+      className={cn('shrink-0 bg-muted p-[4px]', className)}
     >
-      <SessionTitle
-        title={title}
-        canRename={canRename && !!onRename}
-        onRename={onRename ?? (() => false)}
-      />
-      {/* The readouts group right, so the bar reads name-then-state and the
-          name keeps a stable left edge as readouts come and go mid-turn. */}
-      <div data-testid="chat-status-items" className="ml-auto flex items-center gap-2">
-        {items.map((item, i) => (
-          <React.Fragment key={item.key}>
-            {i > 0 && <InlineDivider data-testid="status-divider" />}
-            {item}
-          </React.Fragment>
-        ))}
+      <div
+        data-testid="chat-status-bar"
+        role="status"
+        aria-label="Session status"
+        className={cn(
+          // The same ring the account, branch and session widgets above it
+          // wear (AccountCard.tsx:130, SessionCard.tsx:176), so the header
+          // reads as one family of controls.
+          //
+          // A `shadow` ring rather than a border, with `border-0` beside it:
+          // styles.css declares an unlayered
+          // `* { border-color: var(--color-border) }` that outranks every
+          // Tailwind border-color utility, so a real border cannot carry this
+          // colour — it would come back at full `--color-border` strength.
+          'flex items-center gap-2 px-3 py-1 rounded-md border-0 bg-background/60',
+          'shadow-[0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_30%,transparent)]',
+          'text-[10px] font-mono tabular-nums',
+        )}
+      >
+        <SessionTitle
+          title={title}
+          canRename={canRename && !!onRename}
+          onRename={onRename ?? (() => false)}
+        />
+        {/* The readouts group right, so the bar reads name-then-state and the
+            name keeps a stable left edge as readouts come and go mid-turn. */}
+        <div data-testid="chat-status-items" className="ml-auto flex items-center gap-2">
+          {items.map((item, i) => (
+            <React.Fragment key={item.key}>
+              {i > 0 && <InlineDivider data-testid="status-divider" />}
+              {item}
+            </React.Fragment>
+          ))}
+        </div>
       </div>
     </div>
   );

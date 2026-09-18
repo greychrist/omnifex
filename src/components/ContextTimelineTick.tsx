@@ -34,6 +34,17 @@ export interface ContextTimelineTickProps {
   point: ContextTimelinePoint | undefined;
   /** Compact hides sub-2k deltas; Verbose prints every one. */
   viewMode?: ViewMode;
+  /**
+   * The last row that draws a rail. Caps the line off level with the final
+   * message card instead of running 1rem past it.
+   *
+   * Every row's body column carries `pb-4` so consecutive rails meet through
+   * the inter-row gap and read as one continuous line — see `withTimeline` in
+   * ClaudeTranscript. The last segment has nothing below it to meet, so that
+   * same padding is pure overshoot: the line trailed past the transcript's
+   * final card and stopped in mid-air.
+   */
+  isLast?: boolean;
 }
 
 /** Width of the gutter cell. Shared so the empty and drawn states agree. */
@@ -63,6 +74,7 @@ const RESET_DASHES =
 export const ContextTimelineTick: React.FC<ContextTimelineTickProps> = ({
   point,
   viewMode = 'verbose',
+  isLast = false,
 }) => {
   // The cell keeps its width before the series starts. Returning null instead
   // un-indented the opening rows while every later row was pushed right by the
@@ -100,7 +112,15 @@ export const ContextTimelineTick: React.FC<ContextTimelineTickProps> = ({
       <div
         data-timeline-rail
         data-timeline-reset={isReset ? "" : undefined}
-        className={cn("absolute inset-y-0 left-0 w-1", RAIL_TEXT[level], !isReset && RAIL_BG[level])}
+        className={cn(
+          "absolute left-0 w-1",
+          // `bottom-4` cancels the body column's `pb-4` exactly, so the line
+          // ends flush with the card's bottom edge; the rounded cap closes it
+          // off rather than leaving a cut stem.
+          isLast ? "top-0 bottom-4 rounded-b-full" : "inset-y-0",
+          RAIL_TEXT[level],
+          !isReset && RAIL_BG[level],
+        )}
         style={isReset ? { backgroundImage: RESET_DASHES } : undefined}
       />
       {isSample && (

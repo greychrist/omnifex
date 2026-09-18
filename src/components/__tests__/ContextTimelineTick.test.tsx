@@ -109,6 +109,26 @@ describe('ContextTimelineTick — readout cannot overrun the next row', () => {
     expect(rail.className).toMatch(/\babsolute\b/);
   });
 
+  // Every row's body column carries `pb-4` so consecutive rails meet through
+  // the inter-row gap and read as one line. On the LAST row there is no next
+  // segment to meet, so running through that padding overshoots the final
+  // message card by 1rem. `bottom-4` cancels exactly that padding.
+  it('runs edge to edge on an ordinary row', () => {
+    const { container } = render(<ContextTimelineTick point={point()} />);
+    const rail = container.querySelector('[data-timeline-rail]') as HTMLElement;
+    expect(rail.className).toMatch(/\binset-y-0\b/);
+    expect(rail.className).not.toMatch(/\brounded-b/);
+  });
+
+  it('stops level with the last card and caps the line off', () => {
+    const { container } = render(<ContextTimelineTick point={point()} isLast />);
+    const rail = container.querySelector('[data-timeline-rail]') as HTMLElement;
+    expect(rail.className).not.toMatch(/\binset-y-0\b/);
+    expect(rail.className).toMatch(/\bbottom-4\b/);
+    expect(rail.className).toMatch(/\btop-0\b/);
+    expect(rail.className).toMatch(/\brounded-b-full\b/);
+  });
+
   it('reserves room for the readout so a short row cannot collapse under it', () => {
     const { container } = render(<ContextTimelineTick point={point()} />);
     expect((container.firstChild as HTMLElement).className).toMatch(/\bmin-h-/);

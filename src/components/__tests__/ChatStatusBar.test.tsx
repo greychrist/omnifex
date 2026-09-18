@@ -240,23 +240,28 @@ describe('ChatStatusBar — session name', () => {
 
   it('shows the session name, labelled', () => {
     render(<ChatStatusBar {...named} />);
-    expect(screen.getByTestId('session-title').textContent).toBe('Name: Rate-limit spike');
+    expect(screen.getByTestId('session-title').textContent).toBe('nameRate-limit spike');
   });
 
-  // The name is the one thing on this bar you read rather than glance at, so
-  // it sits a step above the 10px the readouts share. jsdom cannot measure
-  // type, so this pins the classes that set it.
-  it('sets the name a size larger than the readouts', () => {
+  // The name reads as one more readout on this bar, not as a heading over it:
+  // same `label value` shape as `turn 12s` and `cache 3m left`, same icon
+  // size, and the row's own 10px mono rather than a size of its own. It used
+  // to be `text-sm font-sans` on the theory that a name is prose — which made
+  // it the only thing on the bar with its own typeface AND its own size.
+  it('inherits the row type rather than setting its own', () => {
     render(<ChatStatusBar {...named} />);
-    expect(screen.getByTestId('session-title').className).toContain('text-sm');
+    const el = screen.getByTestId('session-title');
+    expect(el.className).not.toContain('text-sm');
+    expect(el.className).not.toContain('font-sans');
   });
 
-  // The bar is mono because its readouts are numbers that must not jitter as
-  // they count. A name is prose — it belongs in the app's own typeface, and
-  // has to say so explicitly to escape the mono the bar sets on the row.
-  it('sets the name in the app font, not the readouts’ mono', () => {
-    render(<ChatStatusBar {...named} />);
-    expect(screen.getByTestId('session-title').className).toContain('font-sans');
+  // Deliberately no glyph, unlike every other readout on this row. A letter
+  // icon was tried here and rejected: the others' glyphs stand in for a
+  // quantity you scan for, while the name is already the longest text on the
+  // bar and a mark in front of it only crowded the left edge.
+  it('carries no icon of its own', () => {
+    const { container } = render(<ChatStatusBar {...named} />);
+    expect(container.querySelector('[data-testid="session-title"] svg')).toBeNull();
   });
 
   // Untitled is the common case, not an edge one: the CLI only titles a FRESH
@@ -265,7 +270,7 @@ describe('ChatStatusBar — session name', () => {
   // pencil, so the affordance cannot be hidden behind having a name already.
   it('says a session is untitled rather than showing nothing', () => {
     render(<ChatStatusBar {...named} title={null} />);
-    expect(screen.getByTestId('session-title').textContent).toBe('Name: Untitled');
+    expect(screen.getByTestId('session-title').textContent).toBe('nameUntitled');
     expect(screen.getByRole('button', { name: /rename session/i })).toBeTruthy();
   });
 
@@ -316,6 +321,46 @@ describe('ChatStatusBar — session name', () => {
     const items = screen.getByTestId('chat-status-items');
     expect(title.compareDocumentPosition(items) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(items.className).toContain('ml-auto');
+  });
+
+  // The bar is a field set into the session header, the way a chat composer
+  // sits in its own bar: the frame carries the header's material and the bar
+  // floats inside it on its own surface, inset evenly on all four sides.
+  //
+  // The `border-b` assertion is the load-bearing one: styles.css declares an
+  // unlayered `* { border-color: var(--color-border) }` that outranks every
+  // Tailwind border-color utility, so any border here returns at FULL strength
+  // instead of the widget ring. That is why the outline is a `shadow` ring and
+  // why `border-0` sits beside it — the same shape the account, branch and
+  // session widgets use. jsdom cannot see any of it, so only the decisions are
+  // pinned, not the tuning.
+  it('floats on its own surface inside a header-coloured frame', () => {
+    render(<ChatStatusBar {...named} activitySignal={signal({ status: 'idle' })} />);
+    const bar = screen.getByTestId('chat-status-bar');
+    expect(bar.className).toContain('bg-background/60');
+    expect(bar.className).toMatch(/\brounded-md\b/);
+    expect(bar.className).not.toContain('border-b');
+
+    const frame = screen.getByTestId('chat-status-frame');
+    expect(frame.className).toContain('bg-muted');
+    expect(frame.contains(bar)).toBe(true);
+  });
+
+  it('insets evenly on all four sides', () => {
+    render(<ChatStatusBar {...named} activitySignal={signal({ status: 'idle' })} />);
+    const frame = screen.getByTestId('chat-status-frame');
+    expect(frame.className).toMatch(/\bp-\[4px\]/);
+  });
+
+  // Same ring as the account / branch / session widgets it now sits under, so
+  // the header reads as one family of controls rather than a bar plus a strip.
+  it('wears the widget ring, not a border', () => {
+    render(<ChatStatusBar {...named} activitySignal={signal({ status: 'idle' })} />);
+    const bar = screen.getByTestId('chat-status-bar');
+    expect(bar.className).toContain('border-0');
+    expect(bar.className).toContain(
+      'shadow-[0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_30%,transparent)]',
+    );
   });
 
   // The pencil is disabled without a live session, so this is the narrow

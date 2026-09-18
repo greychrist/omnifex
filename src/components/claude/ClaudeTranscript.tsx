@@ -152,7 +152,11 @@ function ClaudeTranscriptImpl({
     if (!timeline) return body;
     return (
       <div className="flex gap-2">
-        <ContextTimelineTick point={node ? timeline.get(node) : undefined} viewMode={viewMode} />
+        <ContextTimelineTick
+          point={node ? timeline.get(node) : undefined}
+          viewMode={viewMode}
+          isLast={node !== undefined && node === lastRailNode}
+        />
         <div className="flex-1 min-w-0 pb-4">{body}</div>
       </div>
     );
@@ -164,6 +168,25 @@ function ClaudeTranscriptImpl({
     () => filterDisplayableMessages(messages, renderConfig.hardFilters),
     [messages, renderConfig.hardFilters],
   );
+  /**
+   * The last row that will actually draw a rail — the tail of the transcript
+   * can be rows the timeline has no reading for, and those render an empty
+   * gutter spacer.
+   *
+   * Derived from `displayableMessages` for BOTH view modes, which works
+   * because compact mode only ever folds those same messages: a `single` item
+   * carries one of them, and a collapsed group reports its LAST one. So the
+   * final message with a point is the final row with a rail either way.
+   */
+  const lastRailNode = useMemo(() => {
+    if (!timeline) return undefined;
+    for (let i = displayableMessages.length - 1; i >= 0; i--) {
+      const node = displayableMessages[i];
+      if (timeline.get(node)) return node;
+    }
+    return undefined;
+  }, [timeline, displayableMessages]);
+
   // The transcript is not virtualised, so every render walks this whole list.
   // Recorded as a bulk count: in verbose mode it is exactly the rows rendered,
   // in compact mode an upper bound (grouping folds some rows together).
@@ -545,7 +568,13 @@ function ClaudeTranscriptImpl({
               messagesEndRef scrolls past it instead of leaving it below the viewport.
               Also kept visible during awaiting_background so the visual "in-flight"
               cue bridges the parent's turn-end result to the eventual completion. */}
-          {outstandingWork && !hasInflightAssistant && (
+          {outstandingWork && !hasInflightAssistant && withTimeline(
+            // No node, so the gutter cell is the empty spacer and the rail
+            // still ends on the last real message. The point is purely the
+            // indent: unwrapped, the dots bubble started hard against the
+            // transcript's left edge while every message card sat a gutter's
+            // width to the right of it.
+            undefined,
             <motion.div
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
@@ -568,7 +597,7 @@ function ClaudeTranscriptImpl({
                   </div>
                 </div>
               </div>
-            </motion.div>
+            </motion.div>,
           )}
 
           {/* Error indicator */}
