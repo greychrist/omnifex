@@ -5,6 +5,20 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.178] — 2026-09-18
+
+### Changed
+
+- The session status bar is now part of the session header rather than a strip tucked beneath it. It sits inside the header's own surface, framed by a few pixels of it on every side, and wears the same outline as the account, branch and session cards above it — so the whole header reads as one family of controls. The header's divider and its drag-to-resize handle moved to the bottom of that group, below the status bar, where they close it off; previously they cut across between the header and the bar. Dragging to resize the header behaves exactly as before.
+- The session name in that bar now reads as one more readout alongside the turn clock and the cache countdown, in the same type as the rest of the row. It used to be the only thing on the bar with both its own size and its own typeface, which made it look like a title bolted on rather than a field in the set.
+- The "thinking" bubble that appears while a turn is in flight now lines up with the message cards above it. It used to start hard against the left edge of the transcript, a gutter's width to the left of everything else.
+- The context-size rail in the transcript gutter now stops level with the bottom of the last message and rounds off, instead of running past it and ending in mid-air.
+
+### Fixed
+
+- Two of the bundled typefaces, JetBrains Mono and IBM Plex Sans, were not fonts at all — the files shipped as web pages saved under a font's name, so choosing either of them silently fell back to a default face. Both are now the real thing, in the full weight range the app asks for and with the same character coverage as the other bundled faces. Every other typeface was already correct.
+- Claude Code 2.1.276 writes a new kind of bookkeeping entry into its session files. OmniFex now recognises it as bookkeeping instead of drawing an "Unrecognized record" card for each one, which it would have started doing the first time you turned the CLI's memory feature on or off.
+
 ## [0.4.177] — 2026-09-17
 
 ### Changed
