@@ -2,7 +2,7 @@
  * The record types the CLI writes into the session JSONL that are not
  * messages — conversation latches and bookkeeping it keeps for itself.
  *
- * The CLI's own merge-strategy map (verified in 2.1.270) is the source of
+ * The CLI's own merge-strategy map (verified in 2.1.276) is the source of
  * this list. Exactly four types there are marked `"transcript"` — `user`,
  * `assistant`, `system`, `attachment` — and every other entry is per-session
  * state carried across turns, branches and compaction: `"last-wins"` for a
@@ -37,6 +37,7 @@ export const CLI_SIDECHANNEL_RECORD_TYPES: ReadonlySet<string> = new Set([
   'atis-latch',
   'isolation-latch',
   'mode',
+  'memory-mode',
   'worktree-state',
   'cost-state',
   'attribution-snapshot',
@@ -58,6 +59,9 @@ export const CLI_SIDECHANNEL_RECORD_TYPES: ReadonlySet<string> = new Set([
   'content-replacement',
   'fork-context-ref',
   'frame-link',
+  // Dropped from the CLI's merge map in 2.1.276. Kept: transcripts written
+  // by 2.1.275 and earlier still carry them, and the list exists to silence
+  // records already on disk.
   'marble-origami-commit',
   'marble-origami-snapshot',
   'marble-origami-reset',

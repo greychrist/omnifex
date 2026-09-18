@@ -15,6 +15,22 @@ describe('isCliSidechannelRecord', () => {
     ).toBe(true);
   });
 
+  // New in CLI 2.1.276: a latch recording whether memory was on or off at a
+  // point in the conversation. `accumulate` in the CLI's merge map, so it is a
+  // log, not a last-wins latch — several land per session once the user
+  // toggles memory, and nothing in OmniFex reads memory state.
+  it('recognises memory-mode', () => {
+    expect(
+      isCliSidechannelRecord({
+        type: 'memory-mode',
+        mode: 'off',
+        afterUuid: null,
+        timestamp: '2026-09-18T00:00:00.000Z',
+        sessionId: '278981fd-8fbb-40dd-ac38-4b0a2371ca4f',
+      }),
+    ).toBe(true);
+  });
+
   it('never claims one of the four transcript types', () => {
     for (const type of ['user', 'assistant', 'system', 'attachment']) {
       expect(isCliSidechannelRecord({ type })).toBe(false);

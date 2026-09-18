@@ -30,6 +30,159 @@ import { buildClaudeEnv } from './util/claude-env';
  * old value and the new one, and file or fix whatever they imply. Bumping it
  * to silence the badge throws away the only drift signal we have.
  *
+ * Last review: 2.1.274 -> 2.1.276 on 2026-09-18. Findings:
+ *
+ *  Changelog coverage: BOTH releases in range have entries. 2.1.275 is a
+ *  ~120-item release; 2.1.276 is a single line reverting a 2.1.275
+ *  regression. No gap. 2.1.274 and 2.1.276 are both installed, so every
+ *  wire claim below is a real binary diff of the exact range. 2.1.275 is
+ *  NOT installed, which matters for nothing here — the range endpoints
+ *  bracket it and the literal sets are compared end to end.
+ *
+ *  ONE CODE CHANGE MADE (finding 1). Everything else is inert or already
+ *  handled.
+ *
+ *  1. NEW JSONL RECORD TYPE: `memory-mode`. FIXED.
+ *
+ *     The merge map moved for the first time since 2.1.270, and the
+ *     changelog says nothing about it — exactly the case step 3 of the
+ *     review exists to catch. 2130 -> 1950 bytes, two independent changes:
+ *
+ *       + `memory-mode`  ("always" in the write map, "accumulate" in the
+ *                         merge map — a log, not a last-wins latch)
+ *       - `marble-origami-commit` / `-snapshot` / `-reset`  (removed)
+ *
+ *     Shape, read off the writer in 2.1.276:
+ *
+ *       {type:"memory-mode", mode:"on"|"off", afterUuid:string|null,
+ *        timestamp:ISO, reason?:string, account?:string, sessionId:string}
+ *
+ *     It records whether memory was on or off at a point in the
+ *     conversation, written by `saveMemoryMode` and re-emitted per session
+ *     file. Nothing in OmniFex reads memory state, so it is bookkeeping,
+ *     not something to render: added to `cliSidechannelRecords.ts`, not to
+ *     `jsonlClassifier.ts`. Left undecided it would have drawn an orange
+ *     "Unrecognized record: memory-mode" card per occurrence — the
+ *     `atis-latch` failure mode, which reached 379 cards before anyone
+ *     noticed.
+ *
+ *     LATENT, NOT YET FIRING: zero occurrences across every transcript in
+ *     both config dirs, because the record is only written when the user
+ *     toggles memory. That is why this was fixed ahead of the symptom
+ *     rather than after it.
+ *
+ *     The three `marble-origami-*` types were KEPT in the list despite
+ *     being gone from the CLI. The list exists to silence records already
+ *     on disk, and transcripts written by 2.1.275 and earlier can still
+ *     carry them. This is the "external boundary still emits the old
+ *     shape" exemption, not accumulated dead code.
+ *
+ *  2. `/update-config` now writes `Edit(path)`, not `Write(path)`. ALREADY
+ *     HANDLED — the CLI catching up to us.
+ *
+ *     2.1.275: "Fixed `/update-config` writing `Write(path)` permission
+ *     rules, which file permission checks don't match, instead of
+ *     `Edit(path)` rules."
+ *
+ *     This is the CLI conceding the finding OmniFex made in v0.4.115 and
+ *     recorded at sessions/permissions.ts:200 — `Edit(path)` is the only
+ *     matched file rule; `Write(path)` / `MultiEdit(path)` /
+ *     `NotebookEdit(path)` load and are dead. We already build `Edit(path)`
+ *     and `permissionCardLogic.ts:76,143` already says so. Nothing to
+ *     change, and the note in docs/permission-syntax.md is now corroborated
+ *     by the CLI rather than only by our own testing.
+ *
+ *  3. `--forward-subagent-text` now delivers nested forked-skill frames.
+ *     ALREADY HANDLED, but a previously-dead path is now live.
+ *
+ *     2.1.275: "Fixed `--forward-subagent-text` stream-json and SDK output
+ *     dropping the messages of subagents spawned by a `context: fork`
+ *     skill, and of forked skills invoked by a subagent or another forked
+ *     skill."
+ *
+ *     We pass `--forward-subagent-text` (agents/claude-cli-engine.ts:62),
+ *     so these frames now arrive where they used to be dropped. Both sides
+ *     of the handling are keyed generically rather than on nesting depth:
+ *     `messageFilters.ts:178` drops any assistant with a non-null
+ *     `parent_tool_use_id` from the main transcript, and
+ *     `subagentEvents.ts:440` (`collectSubagentOwnedToolUses`) already maps
+ *     tool_use ids ISSUED BY a subagent back to their owner, which is
+ *     precisely the nested case. `collectForkedSkillDispatches` keys forked
+ *     skills off the kickoff prompt, not the tool name, so a fork nested
+ *     inside a fork is found the same way a top-level one is.
+ *
+ *     Direction is ADDITIVE: worst case a forwarded frame names a
+ *     toolUseId with no SubagentBar row and the ForwardedText event is a
+ *     no-op. No crash, no transcript leakage. Worth an eyes-on check the
+ *     next time a fork-heavy session runs — nested rows should now show
+ *     narration they previously never received.
+ *
+ *  Wire diff, the checks that came back clean:
+ *
+ *   - `hook_event_name` literal set identical (33). `type:"control_*"`
+ *     envelope set identical (4). `subtype:"…"` set identical (123) —
+ *     including `set_chrome_browser_hints`, still the remote-only inbound
+ *     control_request finding 1 of the last review ran down.
+ *   - Every `/usage` anchor parser.ts reads is unchanged: `Current session`
+ *     3/3, `Current week (` 5/5, `Total cost:` 2/2, `Total duration (API)`
+ *     2/2, `Total duration (wall)` 2/2, `Total code changes:` 2/2,
+ *     `% of usage` 2/2, `What's contributing` 5/5, `Loading usage data`
+ *     1/1, `Showing last-known usage` 2/2.
+ *
+ *  Entries checked against a surface and found inert, so the next reviewer
+ *  does not re-derive them:
+ *
+ *   - 2.1.276's `advisor_20260301` 400 (the whole release). It only fires
+ *     when `ANTHROPIC_BASE_URL` points at a proxy or gateway. OmniFex never
+ *     sets it — `util/claude-env.ts:24` deliberately PASSES THROUGH
+ *     whatever the shell carried — so we neither caused nor can fix it.
+ *     Practical note: 2.1.275 is a broken release behind a gateway and
+ *     2.1.276 is the fix, which is why the user is on 2.1.276 already.
+ *   - `/status` now shows the gateway-signed-in account. We do not scrape
+ *     `/status`. The "Manual refresh via `claude -p /status`" comment at
+ *     rate-limits.ts:506 is a stale section header over an unimplemented
+ *     path — it names no code. (Worth deleting on the next pass through
+ *     that file; not touched here, since this review is not its owner.)
+ *   - Plan-usage reads shared for a minute across "editor windows and
+ *     non-interactive sessions". usage-runner.ts:228 spawns an INTERACTIVE
+ *     pty (`spawnPty(binary, [], …)`) and types `/usage`, so it is neither
+ *     category. Even if it were, the runner is a periodic scrape and 60s of
+ *     staleness is below its cadence.
+ *   - `SubagentStop` hooks with a `matcher` firing for every subagent with
+ *     an empty agent type. We WRITE hooks config (types/hooks.ts:203 gives
+ *     SubagentStop an "Agent type" matcher) but never run hooks, and the
+ *     fix is CLI-internal matching. A matcher we wrote that was silently
+ *     over-firing now behaves as the UI always described it.
+ *   - The malformed-`mcpNeedsAuthNoticed` launch crash. We read-modify-write
+ *     `<configDir>/.claude.json` (mcp.ts:85) and never write that key, so we
+ *     were not the source; the CLI is simply more tolerant now.
+ *   - The send-now key (ctrl+enter / ctrl+x ctrl+s), queued-message graying,
+ *     and the fullscreen notice/scroll/crash fixes. All TUI-local rendering
+ *     and keybindings; we scrape neither, and `queue-operation` — the
+ *     record a queued send lands as — is already classified
+ *     (jsonl-tail.ts:75, stream-forward.ts:35).
+ *   - The malformed-transcript resume hardening (four separate entries).
+ *     Robustness in the CLI's own reader, not a shape change; our parser is
+ *     independent of it.
+ *   - `syncClaudeAiSkills` / `syncClaudeAiPlugins`, `/plugin install
+ *     --marketplace`, npm `--ignore-scripts`, marketplace credential
+ *     redaction. We manage MCP servers, not plugins, and enumerate no
+ *     settings.json key set that these would join.
+ *   - `otelHeadersHelper` warning, the `</ccmemory>` stray tag, zsh sandbox
+ *     exit codes, Read/Grep/Glob memory caps, `/rewind` backup truncation,
+ *     sandbox writes to `hooks/`/`config/`, `--drain-wait-sec`, prompt-cache
+ *     improvements, Artifact publish/read wording, image paste locations,
+ *     `/desktop` and `ListPlugins` wording, terminal backpressure, and every
+ *     [VSCode] / [Claude Code on the web] / [Claude Tag] / [Code Review]
+ *     entry — no OmniFex surface.
+ *
+ *  UNRELATED DEFECT FOUND WHILE GREPPING, not from this review and NOT
+ *  fixed here: `src/assets/fonts/jetbrains-mono/jetbrains-mono.woff2` and
+ *  `src/assets/fonts/plex-sans/plex-sans.woff2` are GitHub HTML pages, not
+ *  fonts (~306KB each, `file` reports "HTML document text"). Both are
+ *  referenced by live `@font-face` rules at styles.css:99 and :144, so those
+ *  two typefaces silently fall back. Landed in c7f31514.
+ *
  * Last review: 2.1.273 -> 2.1.274 on 2026-09-17. Findings:
  *
  *  Changelog coverage: 2.1.274 is the only release in range, it is the
@@ -2303,7 +2456,7 @@ import { buildClaudeEnv } from './util/claude-env';
  * `~/.claude.json` fix (we read-modify-write that file, never replace it), and
  * the VSCode screen-reader work.
  */
-export const REVIEWED_CLI_VERSION = '2.1.274';
+export const REVIEWED_CLI_VERSION = '2.1.276';
 
 /**
  * app_settings key holding the user's explicit OmniFex-checkout override.
