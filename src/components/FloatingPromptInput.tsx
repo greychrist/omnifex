@@ -190,11 +190,15 @@ const FloatingPromptInputInner = (
     setEmbeddedImages(imagePaths);
 
     if (textareaRef.current && !isExpanded) {
+      // Measure with the box free-height: stretched, scrollHeight reports
+      // the stretched height and the input could never shrink back down.
       textareaRef.current.style.height = 'auto';
       const scrollHeight = textareaRef.current.scrollHeight;
       const newHeight = Math.min(Math.max(scrollHeight, 72), 240);
       setTextareaHeight(newHeight);
-      textareaRef.current.style.height = `${newHeight}px`;
+      // Hand the box back to `h-full`; the measured height is now only its
+      // floor, applied as minHeight.
+      textareaRef.current.style.height = '';
     }
   }, [prompt, projectPath, isExpanded]);
 
@@ -214,11 +218,15 @@ const FloatingPromptInputInner = (
 
     // Auto-resize
     if (textareaRef.current && !isExpanded) {
+      // Measure with the box free-height: stretched, scrollHeight reports
+      // the stretched height and the input could never shrink back down.
       textareaRef.current.style.height = 'auto';
       const scrollHeight = textareaRef.current.scrollHeight;
       const newHeight = Math.min(Math.max(scrollHeight, 72), 240);
       setTextareaHeight(newHeight);
-      textareaRef.current.style.height = `${newHeight}px`;
+      // Hand the box back to `h-full`; the measured height is now only its
+      // floor, applied as minHeight.
+      textareaRef.current.style.height = '';
     }
 
     // Slash command detection (delegated to hook)
@@ -538,12 +546,14 @@ const FloatingPromptInputInner = (
           )}
 
           <div className="p-3">
-            <div className="flex items-end gap-2">
+            {/* The bar's height is whichever side stack is taller; the
+                input stretches to fill it and both stacks hug the top. */}
+            <div className="flex items-stretch gap-2">
               {/* Left side: mode + output toggles stacked vertically at equal
                   widths. The model/effort/permission pickers live in the
                   SessionCard context popover. */}
               {(modeToggle || outputStyleToggle) && (
-                <div className="flex flex-col items-stretch gap-1.5 shrink-0 mb-1 w-52">
+                <div className="flex flex-col items-stretch gap-1.5 shrink-0 self-start w-52">
                   {modeToggle}
                   {outputStyleToggle}
                 </div>
@@ -566,12 +576,12 @@ const FloatingPromptInputInner = (
                   }
                   disabled={disabled}
                   className={cn(
-                    "resize-none pr-20 pl-3 py-2.5 transition-all duration-150",
+                    "resize-none pr-20 pl-3 py-2.5 transition-all duration-150 h-full",
                     dragActive && "border-primary",
                     textareaHeight >= 240 && "overflow-y-auto scrollbar-thin"
                   )}
                   style={{
-                    height: `${textareaHeight}px`,
+                    minHeight: `${textareaHeight}px`,
                     overflowY: textareaHeight >= 240 ? 'auto' : 'hidden'
                   }}
                 />
@@ -662,7 +672,7 @@ const FloatingPromptInputInner = (
 
               {/* Right side: the extra menu items in a 2×2 square */}
               {extraMenuItems && (
-                <div className="grid grid-cols-2 gap-0.5 shrink-0 mb-1">
+                <div className="grid grid-cols-2 gap-0.5 shrink-0 self-start">
                   {extraMenuItems}
                 </div>
               )}
