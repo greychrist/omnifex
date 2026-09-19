@@ -1288,7 +1288,6 @@ app.whenReady().then(() => {
       saveSystemPrompt: (prompt: any, opts?: any) =>
         claudeService.saveSystemPrompt(typeof prompt === 'string' ? prompt : String(prompt ?? ''), opts),
       checkVersion: () => claudeService.checkClaudeVersion(),
-      findClaudeMdFiles: (projectPath: string) => claudeService.findClaudeMdFiles(projectPath),
       readClaudeMdFile: (filePath: string) => claudeService.readClaudeMdFile(filePath),
       saveClaudeMdFile: (filePath: string, content: string) =>
         claudeService.saveClaudeMdFile(filePath, content),

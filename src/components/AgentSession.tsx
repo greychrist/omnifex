@@ -9,6 +9,7 @@ import {
   Package,
   Shield,
   ArrowLeft,
+  Layers,
 } from "lucide-react";
 import { SessionInspectorPanel } from "@/components/SessionInspectorPanel";
 import { Button } from "@/components/ui/button";
@@ -82,6 +83,10 @@ import { HeaderLabel } from "./HeaderLabel";
 import { AccountCard } from "./AccountCard";
 import { SessionCard } from "./SessionCard";
 import { ChatStatusBar } from "./ChatStatusBar";
+import { SessionHeaderResizeHandle } from "./SessionHeaderResizeHandle";
+import { ResizableSidePanel } from "./ResizableSidePanel";
+import { ContextLedgerPanel } from "./ContextLedgerPanel";
+import { foldContextLedger } from "@/lib/contextLedger";
 import { useDaemonLink } from "@/hooks/useDaemonLink";
 import { GitBranchBadge } from "./claude-code-session/GitBranchBadge";
 import { GitWatchStatusIcon } from "./claude-code-session/GitWatchStatusIcon";
@@ -331,6 +336,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   const [showMCPPanel, setShowMCPPanel] = useState(false);
   const [showPluginsPanel, setShowPluginsPanel] = useState(false);
   const [showPermissionsPanel, setShowPermissionsPanel] = useState(false);
+  const [showContextPanel, setShowContextPanel] = useState(false);
 
   const [showSlashCommandsSettings, setShowSlashCommandsSettings] = useState(false);
   const [accountResolution, setAccountResolution] = useState<{
@@ -476,6 +482,10 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   const [branchPins, setBranchPins] = useState<Record<string, string>>({});
 
   // Resizable header — null = natural sizing (default), number = user pick.
+  // True for the duration of a header drag. Drives the lit grip and the
+  // assembly's lit border — both of which must survive the pointer leaving
+  // the handle, which happens immediately once the pointer is captured.
+  const [headerResizing, setHeaderResizing] = useState(false);
   const [headerHeight, setHeaderHeight] = useState<number | null>(() => {
     const raw = window.localStorage.getItem(HEADER_HEIGHT_KEY);
     if (!raw) return null;
@@ -525,6 +535,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     const prevBodyCursor = document.body.style.cursor;
     document.body.style.userSelect = 'none';
     document.body.style.cursor = 'ns-resize';
+    setHeaderResizing(true);
     const onMove = (ev: PointerEvent) => {
       const next = Math.max(
         headerMinHeight,
@@ -538,6 +549,9 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
       handleEl.removeEventListener('pointercancel', onUp);
       document.body.style.userSelect = prevBodyUserSelect;
       document.body.style.cursor = prevBodyCursor;
+      // Also on pointercancel — a cancelled drag that left this true would
+      // strand the border lit with nothing dragging.
+      setHeaderResizing(false);
     };
     handleEl.addEventListener('pointermove', onMove);
     handleEl.addEventListener('pointerup', onUp);
@@ -1128,6 +1142,16 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   // panel — the CLI omits skipped servers from `mcp_servers` entirely — so
   // this notice is the only place they surface.
   const mcpServerErrors = useMemo(() => latestMcpServerErrors(messages), [messages]);
+
+  // What shaped this session: the instruction files, MCP servers, agents,
+  // skills and deferred tools the CLI reports loading, folded into an audit
+  // in arrival order with a live flag per entry.
+  //
+  // Memoised on `messages` and nowhere near a per-message render path. The
+  // standing failure mode in this renderer is "one click re-rendered every
+  // session in the app", and a fold over every message is exactly that shape
+  // — it runs once per new record, not once per row.
+  const contextLedger = useMemo(() => foldContextLedger(messages), [messages]);
 
   // Epoch-seconds reset time when the CLI has parked this turn on a claude.ai
   // usage limit (Claude Code 2.1.234's autoContinueAtUsageLimit), else null.
@@ -2373,7 +2397,20 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
             is untouched: the status bar is a fixed-height sibling, so the
             pointer delta the handle reports is still exactly the row's delta
             even though the handle now sits below the bar. */}
-        <div className="relative shrink-0 border-b border-border/30 bg-muted">
+        <div
+          className="relative shrink-0 border-b border-border/30 bg-muted transition-shadow duration-150"
+          // Inline, not a `border-*` utility. styles.css declares an unlayered
+          // `* { border-color: var(--color-border) }` that outranks every
+          // Tailwind border-color class app-wide — which is also why the
+          // `border-border/30` above has never actually rendered at 30%. An
+          // inline style is more specific than that `*` rule, so it is the one
+          // way to colour this edge. The glow underneath it is a shadow for
+          // the same reason.
+          style={headerResizing ? {
+            borderBottomColor: 'var(--color-ring)',
+            boxShadow: '0 1px 6px -1px color-mix(in oklch, var(--color-ring) 55%, transparent)',
+          } : undefined}
+        >
           <div
             ref={headerRef}
             className="relative flex items-start gap-2 px-4 py-1.5"
@@ -2619,17 +2656,12 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
             canRename={isSessionActive && sessionMode !== 'tui'}
             onRename={handleRenameSession}
           />
-          <div
-            role="separator"
-            aria-orientation="horizontal"
-            aria-label="Resize session header (double-click to reset)"
+          <SessionHeaderResizeHandle
+            resizing={headerResizing}
+            canReset={headerHeight != null}
             onPointerDown={handleHeaderResizeStart}
             onDoubleClick={handleHeaderResizeReset}
-            className="group absolute bottom-0 left-0 right-0 h-1.5 cursor-ns-resize touch-none"
-            title={headerHeight != null ? 'Drag to resize · double-click to reset' : 'Drag to resize'}
-          >
-            <div className="absolute left-1/2 -translate-x-1/2 bottom-0 h-0.5 w-12 rounded-full bg-foreground/15 transition-colors group-hover:bg-foreground/40" />
-          </div>
+          />
         </div>
         {/* The banner stack that used to live here — account mismatch, context
             pressure, context jump, cache TTL, skipped MCP servers — is gone.
@@ -2828,8 +2860,27 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
         {/* Main Content Area */}
         <div className={cn(
           "flex-1 min-h-0 overflow-hidden transition-all duration-300 relative",
+          // The context panel is deliberately absent from this list: it
+          // OVERLAYS the transcript rather than displacing it, so the
+          // messages keep their full width underneath.
           (showMCPPanel || showPluginsPanel || showPermissionsPanel || inspectorOpen) && "sm:mr-96"
         )}>
+          {/* Mounted HERE, inside the messages area, rather than beside the
+              MCP/Plugins/Permissions panels above. Those are absolute within
+              the whole chat body, so they run down over the subagent bar and
+              the composer. This one is bounded by the transcript, which is
+              what keeps the controls at the bottom visible while it is open. */}
+          <AnimatePresence>
+            {showContextPanel && (
+              <ResizableSidePanel
+                storageKey="omnifex.contextLedger.panelWidth"
+                title="Session context"
+                onClose={() => { setShowContextPanel(false); }}
+              >
+                <ContextLedgerPanel ledger={contextLedger} />
+              </ResizableSidePanel>
+            )}
+          </AnimatePresence>
           {/* The Session Inspector toggle used to float here at
               `top-2 right-2`, attached to nothing and — once the chat status
               bar arrived — sitting on top of it. It now opens from the top of
@@ -3103,7 +3154,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
                       <Button
                         variant="ghost"
                         size="icon"
-                        onClick={() => { setShowMCPPanel(!showMCPPanel); if (!showMCPPanel) { setShowPluginsPanel(false); setShowPermissionsPanel(false); signals.markRead('mcp'); } }}
+                        onClick={() => { setShowMCPPanel(!showMCPPanel); if (!showMCPPanel) { setShowPluginsPanel(false); setShowPermissionsPanel(false); signals.markRead('mcp'); setShowContextPanel(false); } }}
                         className={cn(
                           "h-8 w-8 text-muted-foreground hover:text-foreground shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_30%,transparent)]",
                           showMCPPanel ? "bg-accent" : "bg-background",
@@ -3121,7 +3172,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
                       <Button
                         variant="ghost"
                         size="icon"
-                        onClick={() => { setShowPluginsPanel(!showPluginsPanel); if (!showPluginsPanel) { setShowMCPPanel(false); setShowPermissionsPanel(false); } }}
+                        onClick={() => { setShowPluginsPanel(!showPluginsPanel); if (!showPluginsPanel) { setShowMCPPanel(false); setShowPermissionsPanel(false); setShowContextPanel(false); } }}
                         className={cn(
                           "h-8 w-8 text-muted-foreground hover:text-foreground shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_30%,transparent)]",
                           showPluginsPanel ? "bg-accent" : "bg-background",
@@ -3139,13 +3190,31 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
                       <Button
                         variant="ghost"
                         size="icon"
-                        onClick={() => { setShowPermissionsPanel(!showPermissionsPanel); if (!showPermissionsPanel) { setShowMCPPanel(false); setShowPluginsPanel(false); } }}
+                        onClick={() => { setShowPermissionsPanel(!showPermissionsPanel); if (!showPermissionsPanel) { setShowMCPPanel(false); setShowPluginsPanel(false); setShowContextPanel(false); } }}
                         className={cn(
                           "h-8 w-8 text-muted-foreground hover:text-foreground shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_30%,transparent)]",
                           showPermissionsPanel ? "bg-accent" : "bg-background",
                         )}
                       >
                         <Shield className={cn("h-3.5 w-3.5", showPermissionsPanel && "text-primary")} />
+                      </Button>
+                    </motion.div>
+                  </TooltipSimple>
+                  <TooltipSimple content="Session context" side="top">
+                    <motion.div
+                      whileTap={{ scale: 0.97 }}
+                      transition={{ duration: 0.15 }}
+                    >
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => { setShowContextPanel(!showContextPanel); if (!showContextPanel) { setShowMCPPanel(false); setShowPluginsPanel(false); setShowPermissionsPanel(false); } }}
+                        className={cn(
+                          "h-8 w-8 text-muted-foreground hover:text-foreground shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_30%,transparent)]",
+                          showContextPanel ? "bg-accent" : "bg-background",
+                        )}
+                      >
+                        <Layers className={cn("h-3.5 w-3.5", showContextPanel && "text-primary")} />
                       </Button>
                     </motion.div>
                   </TooltipSimple>

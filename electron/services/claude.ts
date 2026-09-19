@@ -98,13 +98,6 @@ export interface Session {
   file_size_bytes?: number;
 }
 
-export interface ClaudeMdFile {
-  absolute_path: string;
-  relative_path: string;
-  size: number;
-  modified: number;
-}
-
 export interface ClaudeVersionStatus {
   installed: boolean;
   version: string | null;
@@ -181,7 +174,6 @@ export interface ClaudeService {
 
   checkClaudeVersion(): Promise<ClaudeVersionStatus>;
 
-  findClaudeMdFiles(projectPath: string): Promise<ClaudeMdFile[]>;
   readClaudeMdFile(filePath: string): Promise<string>;
   saveClaudeMdFile(filePath: string, content: string): Promise<void>;
 
@@ -1063,60 +1055,6 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
     }
   }
 
-  // -------------------------------------------------------------------------
-  // findClaudeMdFiles
-  // -------------------------------------------------------------------------
-
-  async function findClaudeMdFiles(projectPath: string): Promise<ClaudeMdFile[]> {
-    const results: ClaudeMdFile[] = [];
-
-    const tryAdd = (absolutePath: string, relativePath: string) => {
-      if (!fs.existsSync(absolutePath)) return;
-      try {
-        const stat = fs.statSync(absolutePath);
-        results.push({
-          absolute_path: absolutePath,
-          relative_path: relativePath,
-          size: stat.size,
-          modified: Math.floor(stat.mtimeMs / 1000),
-        });
-      } catch {
-        // ignore stat errors
-      }
-    };
-
-    // 1. Project root CLAUDE.md
-    tryAdd(path.join(projectPath, 'CLAUDE.md'), 'CLAUDE.md');
-
-    // 2. Project .claude/CLAUDE.md
-    tryAdd(path.join(projectPath, '.claude', 'CLAUDE.md'), '.claude/CLAUDE.md');
-
-    // 3. Recursive search for CLAUDE.md in src/ and other subdirs (depth-limited)
-    function walk(dir: string, relBase: string, depth: number) {
-      if (depth > 3) return;
-      let entries: fs.Dirent[];
-      try {
-        entries = fs.readdirSync(dir, { withFileTypes: true });
-      } catch {
-        return;
-      }
-      for (const entry of entries) {
-        if (entry.name.startsWith('.') || entry.name === 'node_modules' || entry.name === 'dist') continue;
-        const fullPath = path.join(dir, entry.name);
-        const relPath = path.join(relBase, entry.name);
-        if (entry.isDirectory()) {
-          walk(fullPath, relPath, depth + 1);
-        } else if (entry.name === 'CLAUDE.md') {
-          if (!results.some(r => r.absolute_path === fullPath)) {
-            tryAdd(fullPath, relPath);
-          }
-        }
-      }
-    }
-    walk(projectPath, '', 0);
-
-    return results;
-  }
 
   // -------------------------------------------------------------------------
   // readClaudeMdFile / saveClaudeMdFile
@@ -1308,7 +1246,6 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
     getSystemPrompt,
     saveSystemPrompt,
     checkClaudeVersion,
-    findClaudeMdFiles,
     readClaudeMdFile,
     saveClaudeMdFile,
     getHooksConfig,

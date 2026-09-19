@@ -303,6 +303,19 @@ export const KIND_REGISTRY: Record<string, KindDef> = {
   "custom-title": { id: "custom-title", category: "system", label: "Session renamed", description: "Session renamed — by the pencil in the status bar, /rename, or claude.ai.", default: { presentation: "side-line", icon: "Tag", accentColor: "info", hiddenInCompact: true } },
   "queue-operation": { id: "queue-operation", category: "system", label: "Background task", description: "Background-task enqueue (e.g. a run_in_background command).", default: { presentation: "side-line", icon: "ListOrdered", accentColor: "info", hiddenInCompact: true } },
   "file-history-snapshot": { id: "file-history-snapshot", category: "system", label: "File snapshot", description: "CLI editor undo/redo snapshot.", default: { presentation: "side-line", icon: "Clock", accentColor: "muted", hiddenInCompact: true } },
+  // ── session context sources (attachment channel) ──
+  // What the CLI reports loading into the session: instruction files, nested
+  // memory, MCP servers, agents, skills, deferred tools. Each is one arrival
+  // in the context ledger (see src/lib/contextLedger.ts); the marker is the
+  // arrival's place in the feed and the panel is where content is reviewed.
+  // Only the six in-scope sub-types get an id — the rest of the attachment
+  // channel is per-turn bookkeeping and stays unrendered.
+  "attachment.instructions": { id: "attachment.instructions", category: "system", label: "Instructions loaded", description: "Instruction files (CLAUDE.md / AGENTS.md / MEMORY.md) the CLI loaded into this session.", default: { presentation: "side-line", icon: "FileText", accentColor: "amber", hiddenInCompact: false } },
+  "attachment.nested_memory": { id: "attachment.nested_memory", category: "system", label: "Nested memory", description: "A subdirectory CLAUDE.md picked up as Claude navigated the project.", default: { presentation: "side-line", icon: "FileText", accentColor: "amber", hiddenInCompact: true } },
+  "attachment.mcp_instructions_delta": { id: "attachment.mcp_instructions_delta", category: "system", label: "MCP servers changed", description: "MCP server instructions added to or removed from the session context.", default: { presentation: "side-line", icon: "Server", accentColor: "info", hiddenInCompact: true } },
+  "attachment.agent_listing_delta": { id: "attachment.agent_listing_delta", category: "system", label: "Agents changed", description: "Available subagent types added or removed.", default: { presentation: "side-line", icon: "Bot", accentColor: "info", hiddenInCompact: true } },
+  "attachment.deferred_tools_delta": { id: "attachment.deferred_tools_delta", category: "system", label: "Deferred tools changed", description: "Tool schemas deferred behind ToolSearch, added or removed.", default: { presentation: "side-line", icon: "Package", accentColor: "muted", hiddenInCompact: true } },
+  "attachment.skill_listing": { id: "attachment.skill_listing", category: "system", label: "Skills listing", description: "The set of skills offered to this session.", default: { presentation: "side-line", icon: "Sparkles", accentColor: "muted", hiddenInCompact: true } },
   // ── synthetic control-change markers (live-session only) ──
   // Unified family: same chrome (Settings icon, info accent); distinct ids so
   // each stays independently re-stylable. Visible in compact (deliberate user

@@ -31,7 +31,6 @@ const MarkdownEditor = lazy(() => import('@/components/MarkdownEditor').then(m =
 const LimaViewer = lazy(() => import('@/components/LimaViewer').then(m => ({ default: m.LimaViewer })));
 const CostReportView = lazy(() => import('@/components/CostReportView').then(m => ({ default: m.CostReportView })));
 const BrainTab = lazy(() => import('@/components/brain/BrainTab').then(m => ({ default: m.BrainTab })));
-// const ClaudeFileEditor = lazy(() => import('@/components/ClaudeFileEditor').then(m => ({ default: m.ClaudeFileEditor })));
 
 // Import non-lazy components for projects view
 

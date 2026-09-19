@@ -196,8 +196,21 @@ export const Popover: React.FC<PopoverProps> = ({
     const raf = requestAnimationFrame(compute);
     window.addEventListener("scroll", compute, true);
     window.addEventListener("resize", compute);
+
+    // Content that changes size AFTER first paint — a disclosure opening, a
+    // user-resizable panel — moves the box's own edges without moving the
+    // trigger, so neither scroll nor window resize fires and the clamp that
+    // keeps it on screen never re-runs. The RAF above catches only the first
+    // frame. Without this, growing content runs off the bottom of the
+    // viewport and stays there.
+    const ro = typeof ResizeObserver !== "undefined"
+      ? new ResizeObserver(() => { compute(); })
+      : null;
+    if (ro && contentRef.current) ro.observe(contentRef.current);
+
     return () => {
       cancelAnimationFrame(raf);
+      ro?.disconnect();
       window.removeEventListener("scroll", compute, true);
       window.removeEventListener("resize", compute);
     };

@@ -63,7 +63,6 @@ export interface Services {
     getSystemPrompt(opts?: unknown): unknown;
     saveSystemPrompt(prompt: unknown, opts?: unknown): unknown;
     checkVersion(): unknown;
-    findClaudeMdFiles(projectPath: string): unknown;
     readClaudeMdFile(filePath: string): unknown;
     saveClaudeMdFile(filePath: string, content: string): unknown;
     getHooksConfig(scope: string, opts?: unknown): unknown;
@@ -479,7 +478,6 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
       return claude?.saveSystemPrompt(p?.content ?? p?.prompt, configDir ? { configDir } : undefined) ?? null;
     }),
     check_claude_version: wrap(() => claude?.checkVersion() ?? null),
-    find_claude_md_files: wrapWith((p: Record<string, unknown>) => claude?.findClaudeMdFiles((p?.projectPath ?? p?.project_path) as string) ?? null),
     read_claude_md_file: wrapWith((p: Record<string, unknown>) => claude?.readClaudeMdFile((p?.filePath ?? p?.file_path) as string) ?? null),
     save_claude_md_file: wrapWith((p: Record<string, unknown>) => claude?.saveClaudeMdFile((p?.filePath ?? p?.file_path) as string, p?.content as string) ?? null),
     get_hooks_config: wrapWith((p: Record<string, unknown>) => {

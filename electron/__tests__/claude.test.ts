@@ -518,53 +518,6 @@ describe('claude service', () => {
     });
   });
 
-  // -------------------------------------------------------------------------
-  // findClaudeMdFiles
-  // -------------------------------------------------------------------------
-
-  describe('findClaudeMdFiles', () => {
-    it('returns an array for any path', async () => {
-      const files = await service.findClaudeMdFiles('/some/random/path');
-      expect(Array.isArray(files)).toBe(true);
-    });
-
-    it('returns an empty array when no CLAUDE.md files exist', async () => {
-      const projectPath = path.join(tmpDir, 'myproject');
-      fs.mkdirSync(projectPath, { recursive: true });
-
-      const files = await service.findClaudeMdFiles(projectPath);
-      expect(files).toEqual([]);
-    });
-
-    it('returns entries with absolute_path, relative_path, size, and modified for existing files', async () => {
-      const projectPath = path.join(tmpDir, 'myproject');
-      fs.mkdirSync(projectPath, { recursive: true });
-      const rootFile = path.join(projectPath, 'CLAUDE.md');
-      fs.writeFileSync(rootFile, '# Project');
-
-      const files = await service.findClaudeMdFiles(projectPath);
-      const projectFile = files.find((f) => f.absolute_path === rootFile);
-
-      expect(projectFile).toBeDefined();
-      expect(projectFile!.relative_path).toBe('CLAUDE.md');
-      expect(typeof projectFile!.size).toBe('number');
-      expect(projectFile!.size).toBeGreaterThan(0);
-      expect(typeof projectFile!.modified).toBe('number');
-    });
-
-    it('finds .claude/CLAUDE.md in addition to the project root', async () => {
-      const projectPath = path.join(tmpDir, 'myproject');
-      fs.mkdirSync(path.join(projectPath, '.claude'), { recursive: true });
-      fs.writeFileSync(path.join(projectPath, 'CLAUDE.md'), '# Project');
-      fs.writeFileSync(path.join(projectPath, '.claude', 'CLAUDE.md'), '# Scoped');
-
-      const files = await service.findClaudeMdFiles(projectPath);
-      const relPaths = files.map((f) => f.relative_path).sort();
-
-      expect(relPaths).toContain('CLAUDE.md');
-      expect(relPaths).toContain('.claude/CLAUDE.md');
-    });
-  });
 
   // -------------------------------------------------------------------------
   // readClaudeMdFile

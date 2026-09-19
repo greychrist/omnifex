@@ -74,7 +74,6 @@ export const INVOKE_CHANNELS: readonly string[] = [
   'save_system_prompt',
   'check_claude_version',
   'get_cli_usage',
-  'find_claude_md_files',
   'read_claude_md_file',
   'save_claude_md_file',
   'get_hooks_config',

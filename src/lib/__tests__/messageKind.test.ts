@@ -7,8 +7,12 @@ import { KIND_REGISTRY } from '@/lib/messageRenderingConfig';
 // Every ID that the block/message classifiers and MessageFrame can emit must
 // have a registry entry so the three-layer style cascade can resolve it.
 // IDs that are only internal sentinels (tool.askUserQuestion.answered, .result)
-// or dynamically composed (attachment.*) are handled before the registry
-// lookup and are intentionally excluded from this set.
+// are handled before the registry lookup and are intentionally excluded.
+//
+// `attachment.*` is no longer wholly dynamic: the six context-source subtypes
+// are registered and emitted by StreamMessage's attachment branch, so they
+// belong here. Every other attachment subtype still returns null before the
+// registry lookup and stays out.
 const EMITTABLE_IDS = [
   // agent
   "assistant.text", "assistant.text.endTurn", "assistant.thinking",
@@ -34,6 +38,10 @@ const EMITTABLE_IDS = [
   "queue-operation", "file-history-snapshot",
   // synthetic control-change markers (effort/model/permission)
   "control.effort", "control.model", "control.permission",
+  // session context sources (attachment channel)
+  "attachment.instructions", "attachment.nested_memory",
+  "attachment.mcp_instructions_delta", "attachment.agent_listing_delta",
+  "attachment.deferred_tools_delta", "attachment.skill_listing",
 ];
 
 describe('classifier ↔ registry coverage', () => {

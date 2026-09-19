@@ -628,7 +628,6 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
       getSystemPrompt: (o?: any) => claudeService.getSystemPrompt(o),
       saveSystemPrompt: (prompt: any, o?: any) => claudeService.saveSystemPrompt(typeof prompt === 'string' ? prompt : String(prompt ?? ''), o),
       checkVersion: () => claudeService.checkClaudeVersion(),
-      findClaudeMdFiles: (projectPath) => claudeService.findClaudeMdFiles(projectPath),
       readClaudeMdFile: (filePath) => claudeService.readClaudeMdFile(filePath),
       saveClaudeMdFile: (filePath, content) => claudeService.saveClaudeMdFile(filePath, content),
       getHooksConfig: (scope, o?: any) => claudeService.getHooksConfig(scope as 'user' | 'project', o),

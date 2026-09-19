@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
+import { summariseContextAttachment } from '@/lib/contextLedger';
 import { ConnectedToolProgressChip } from '@/components/claude/tools/ToolProgressChip';
 import {
   Terminal,
@@ -1699,7 +1700,27 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
       return renderedCard;
     }
 
-    // All other kinds (attachment, queue-operation, etc.) — nothing to render.
+    // Context-source attachments: the instruction files, MCP servers, agents,
+    // skills and tools the CLI reports loading. One side-line per arrival, so
+    // a source that appeared mid-session has a place in the feed rather than
+    // only a row in the panel.
+    //
+    // `summariseContextAttachment` returns null for everything else on the
+    // attachment channel, which is the overwhelming majority — 20,969
+    // `total_tokens_reminder` records on disk against roughly ten in-scope
+    // ones per session. Those stay unrendered, as they were.
+    if (message.kind === 'attachment') {
+      const att = (message.raw as { attachment?: Record<string, unknown> }).attachment;
+      const summary = summariseContextAttachment(att);
+      if (summary === null) return null;
+      return (
+        <MessageFrame streamKind={`attachment.${String(att?.type)}`} message={message}>
+          <span className="text-xs font-mono">{summary}</span>
+        </MessageFrame>
+      );
+    }
+
+    // All other kinds (queue-operation, etc.) — nothing to render.
     return null;
   } catch (error) {
     // If any error occurs during rendering, show a safe error message

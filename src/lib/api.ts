@@ -435,20 +435,6 @@ export interface ClaudeVersionStatus {
 }
 
 /**
- * Represents a CLAUDE.md file found in the project
- */
-export interface ClaudeMdFile {
-  /** Relative path from the project root */
-  relative_path: string;
-  /** Absolute path to the file */
-  absolute_path: string;
-  /** File size in bytes */
-  size: number;
-  /** Last modified timestamp */
-  modified: number;
-}
-
-/**
  * Represents a file or directory entry
  */
 export interface FileEntry {
@@ -1708,19 +1694,6 @@ export const api = {
     }
   },
 
-  /**
-   * Finds all CLAUDE.md files in a project directory
-   * @param projectPath - The absolute path to the project
-   * @returns Promise resolving to an array of CLAUDE.md files
-   */
-  async findClaudeMdFiles(projectPath: string): Promise<ClaudeMdFile[]> {
-    try {
-      return await apiCall<ClaudeMdFile[]>("find_claude_md_files", { projectPath });
-    } catch (error) {
-      console.error("Failed to find CLAUDE.md files:", error);
-      throw error;
-    }
-  },
 
   /**
    * Reads a specific CLAUDE.md file

@@ -69,12 +69,6 @@ describe('api — channel + params mapping (table-driven)', () => {
       params: undefined,
     },
     {
-      label: 'findClaudeMdFiles',
-      call: () => api.findClaudeMdFiles('/p'),
-      channel: 'find_claude_md_files',
-      params: { projectPath: '/p' },
-    },
-    {
       label: 'readClaudeMdFile',
       call: () => api.readClaudeMdFile('/p/CLAUDE.md'),
       channel: 'read_claude_md_file',

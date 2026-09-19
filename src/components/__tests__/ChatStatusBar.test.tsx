@@ -346,10 +346,15 @@ describe('ChatStatusBar — session name', () => {
     expect(frame.contains(bar)).toBe(true);
   });
 
-  it('insets evenly on all four sides', () => {
+  // Deliberately uneven: the side margins are the only ones that read as
+  // margins, since the bar spans the header's full width.
+  it('insets twice as far horizontally as vertically', () => {
     render(<ChatStatusBar {...named} activitySignal={signal({ status: 'idle' })} />);
     const frame = screen.getByTestId('chat-status-frame');
-    expect(frame.className).toMatch(/\bp-\[4px\]/);
+    expect(frame.className).toMatch(/\bpx-\[8px\]/);
+    expect(frame.className).toMatch(/\bpy-\[4px\]/);
+    // No uniform `p-` shorthand left to override the pair.
+    expect(frame.className).not.toMatch(/\bp-\[/);
   });
 
   // Same ring as the account / branch / session widgets it now sits under, so

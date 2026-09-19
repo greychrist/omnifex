@@ -47,7 +47,6 @@ function buildMockServices() {
       'getSystemPrompt',
       'saveSystemPrompt',
       'checkVersion',
-      'findClaudeMdFiles',
       'readClaudeMdFile',
       'saveClaudeMdFile',
       'getHooksConfig',
@@ -168,7 +167,6 @@ describe('ipc handlers — structure', () => {
       'get_system_prompt',
       'save_system_prompt',
       'check_claude_version',
-      'find_claude_md_files',
       'read_claude_md_file',
       'save_claude_md_file',
       'get_hooks_config',
@@ -371,15 +369,13 @@ describe('ipc handlers — dispatch to services', () => {
     expect(services.claude.loadSessionHistory).toHaveBeenCalledWith('sid', 'pid', undefined);
   });
 
-  it('find/read/save_claude_md_file route through the claude service', async () => {
-    await invoke(handlers, 'find_claude_md_files', { projectPath: '/p' });
+  it('read/save_claude_md_file route through the claude service', async () => {
     await invoke(handlers, 'read_claude_md_file', { filePath: '/p/CLAUDE.md' });
     await invoke(handlers, 'save_claude_md_file', {
       filePath: '/p/CLAUDE.md',
       content: '# New',
     });
 
-    expect(services.claude.findClaudeMdFiles).toHaveBeenCalledWith('/p');
     expect(services.claude.readClaudeMdFile).toHaveBeenCalledWith('/p/CLAUDE.md');
     expect(services.claude.saveClaudeMdFile).toHaveBeenCalledWith('/p/CLAUDE.md', '# New');
   });

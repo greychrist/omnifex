@@ -51,6 +51,12 @@ export const KIND_FIXTURES: Record<string, string> = {
   "ai-title": 'Session titled "Refactor auth"',
   "custom-title": 'Renamed to "Refactor auth"',
   "queue-operation": "Background: enqueue",
+  "attachment.instructions": "Instructions loaded — 3 files",
+  "attachment.nested_memory": "Nested memory — src/CLAUDE.md",
+  "attachment.mcp_instructions_delta": "MCP servers +2 −1",
+  "attachment.agent_listing_delta": "Agents +9",
+  "attachment.deferred_tools_delta": "Deferred tools +197",
+  "attachment.skill_listing": "Skills listing",
   "file-history-snapshot": "File snapshot",
 
   // ── synthetic control-change markers ──

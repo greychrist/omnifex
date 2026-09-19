@@ -393,9 +393,14 @@ export function ChatStatusBar({
 
   return (
     // The frame, not the bar. It carries the session header's own `bg-muted`,
-    // so the 4px showing around the bar is header material and the bar reads
-    // as a field SET INTO the header — the same relationship a chat composer
-    // has with the bar it sits in.
+    // so the material showing around the bar is header material and the bar
+    // reads as a field SET INTO the header — the same relationship a chat
+    // composer has with the bar it sits in.
+    //
+    // 8px horizontal against 4px vertical, deliberately uneven. The bar runs
+    // the full width of the header, so its side margins are the only ones
+    // read as margins; the vertical gaps are read as the seam between the bar
+    // and what it is seated in, and widening those would unseat it.
     //
     // AgentSession renders this INSIDE the header assembly, below the header
     // row and above the assembly's border and resize handle. That placement is
@@ -403,7 +408,7 @@ export function ChatStatusBar({
     // than the first thing beneath it.
     <div
       data-testid="chat-status-frame"
-      className={cn('shrink-0 bg-muted p-[4px]', className)}
+      className={cn('shrink-0 bg-muted px-[8px] py-[4px]', className)}
     >
       <div
         data-testid="chat-status-bar"
