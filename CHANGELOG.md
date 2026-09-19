@@ -5,6 +5,18 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.179] — 2026-09-19
+
+### Added
+
+- A side-by-side diff of everything you have changed in the working tree, opened from "View changes" in the branch chip or the compare button in the transcript's right-hand rail. A file tree on the left, the old file and the new one side by side on the right, each with its own line numbers and full syntax highlighting. Directories that hold only one directory collapse to a single row, so one edit buried five levels deep costs one line in the tree rather than five, and a filter box narrows it by any part of a path. Unchanged stretches between edits stay folded with a count of what is hidden and a control to open them, first to a wider margin and then to the whole file. It covers the transcript while it is open; the header and the composer stay where they are, so the session is still reachable behind it.
+- The diff is taken against your last commit rather than against the index, so changes you have already staged are shown rather than silently reading as an unchanged file. New files that git is not yet tracking appear as all-additions instead of being left out.
+- A session-context panel, opened from the bottom bar, listing what actually shaped the session: instruction files and their scope, nested memory, MCP servers, agents, skills, and deferred tools — in the order they arrived, with what is still in effect marked as such. The list comes from Claude Code's own record of what it loaded, not from looking for files named `CLAUDE.md` on disk, so files a filename search would miss are included and whatever the CLI starts loading next appears without an update here. A session that predates the CLI keeping this record says so, rather than showing an empty list that would suggest nothing shaped it.
+
+### Fixed
+
+- The file contents of an instruction file can be read in place from that panel, and the memories dropdown and file editor it uses are now reachable. Both had been built but were not mounted anywhere.
+
 ## [0.4.178] — 2026-09-18
 
 ### Changed
