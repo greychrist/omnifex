@@ -30,6 +30,141 @@ import { buildClaudeEnv } from './util/claude-env';
  * old value and the new one, and file or fix whatever they imply. Bumping it
  * to silence the badge throws away the only drift signal we have.
  *
+ * Last review: 2.1.277 -> 2.1.278 on 2026-09-19. Findings:
+ *
+ *  Watermark note first: the review was requested as "2.1.276 -> 2.1.278",
+ *  but REVIEWED_CLI_VERSION already read 2.1.277 — the previous pass
+ *  (block below) bumped it correctly. The real unreviewed range was
+ *  therefore exactly one release, 2.1.278, and it has an entry. No gap.
+ *  BOTH endpoints installed, so every wire claim below is a real binary
+ *  diff of 2.1.277 vs 2.1.278, not an inference from prose.
+ *
+ *  NO CODE CHANGE MADE. 2.1.278 is a two-entry release and neither entry
+ *  breaks the current build. The one entry that reaches us at all lands on
+ *  a record shape we already classify.
+ *
+ *  WIRE DIFF: CLEAN, ALL AXES. Reported both ways round.
+ *
+ *    - Merge-strategy map: byte-identical (1950 bytes, 2 matches, both
+ *      the write map and the merge map). No new record type, none
+ *      removed. Nothing to add to `jsonlClassifier.ts` or
+ *      `cliSidechannelRecords.ts` this cycle.
+ *    - `subtype:` literals: 300 occurrences / 124 distinct in each,
+ *      set-identical (empty diff).
+ *    - `hook_event_name` literals: identical, counts included.
+ *    - `type:"control_*"` envelopes: identical, counts included.
+ *    - Control-request subtype names: set-identical. One occurrence-count
+ *      move, `"interrupt"` 61 -> 68, and it was RUN DOWN rather than
+ *      waved off as noise: a context set-diff of `.{45}"interrupt".{45}`
+ *      shows every 277 context reappearing in 278 under renamed minifier
+ *      identifiers (`r7e`->`o7e`, `Cm`->`wm`, `y6r`->`I6r`, `Lce`->`Mce`),
+ *      plus ONE genuinely new context — `j$e=()=>Jq("interrupt")` inside
+ *      `V$e`, the React component for the new auto-mode notice (finding 1).
+ *      That is a TUI confirmation dialog's Esc handler, not a protocol
+ *      change. `apply_flag_settings`, `set_permission_mode`, `set_model`
+ *      and `can_use_tool` are all unmoved. `permissions.ts` and
+ *      `runtime.ts` need nothing.
+ *    - `/usage` TUI anchors: "Current session" (3), "Current week (" (9),
+ *      "Resets " (6), "Total cost:" (2), "What's contributing to your
+ *      limits usage?" (3) — identical counts in both binaries.
+ *      `usage-runner/parser.ts` is safe.
+ *
+ *  1. AUTO MODE'S CLASSIFIER MOVES SERVER-SIDE. REACHES US; ALREADY
+ *     HANDLED. NO CHANGE.
+ *
+ *     The headline entry. For Enterprise plans, Claude API accounts,
+ *     Bedrock, Vertex and Foundry, auto mode now asks the SERVER to run
+ *     its safety checks as part of the session's own model requests and
+ *     does not charge for them. When the server's checks cannot reach the
+ *     session — most often an LLM gateway that strips the `safeguards`
+ *     request field or the `safeguard_results` response key — the CLI
+ *     falls back to its own billed classifier requests and warns once.
+ *     Pro, Max and Team never see it. Docs:
+ *     https://code.claude.com/docs/en/auto-mode-classifier-billing
+ *
+ *     WHY THIS IS NOT OUT OF REACH, contra the 2.1.236 note two blocks
+ *     down that filed auto mode under "no OmniFex impact" because
+ *     `PermissionMode` has no `auto`. That reasoning was about the ARGV
+ *     union, and it is incomplete. `claude-cli-engine.ts:21-31` spells
+ *     out the actual arrangement: the CLI's `--permission-mode` accepts
+ *     only four values, and OmniFex ALSO supports `'auto'` and
+ *     `'dontAsk'`, applied after spawn via the `set_permission_mode`
+ *     control_request (`lifecycle.ts:335-338`,
+ *     `engine.applyExtendedPermissionMode`). OmniFex chat sessions can
+ *     and do run in auto mode. TUI sessions can reach it too, by
+ *     shift+tab, since the CLI owns the mode there.
+ *
+ *     WHAT ARRIVES ON THE WIRE, read off the binary rather than the
+ *     prose. The notice is built by `Vmn()` (title + paragraphs, with a
+ *     gateway-naming variant) and flattened by `wBr()`. The emission site
+ *     branches on output format:
+ *
+ *       if (outputFormat === "stream-json" && verbose)  -> system message
+ *       else                                            -> process.stderr
+ *
+ *     `buildArgs()` in `claude-cli-engine.ts` passes BOTH `--output-format
+ *     stream-json` and `--verbose`, so we take the first branch and the
+ *     text arrives as a record, never as stderr we would drop. The record
+ *     is `{type:"system", subtype:"informational", level:"warning",
+ *     content}` — the CLI's generic informational builder, present
+ *     unchanged in 2.1.277 (9 occurrences) and covered by
+ *     `jsonlClassifier.ts:261` and `jsonl.ts:162`. It renders through the
+ *     existing `system.informational` kind. No orange "Unrecognized
+ *     record" card, no parser change.
+ *
+ *     AND IT DOES NOT BLOCK US. In the TUI the notice holds the action
+ *     until Enter (continue, billed as before) or Esc (cancel the turn).
+ *     Headless has nothing to press, and the binary agrees with the docs:
+ *     the gate resolves `Promise.resolve("continue")` when the
+ *     interactive predicate is false. A chat session in auto mode emits
+ *     one warning card and carries on.
+ *
+ *     Residual, cosmetic and NOT worth pre-empting: an Enterprise or API
+ *     account driving OmniFex chat in auto mode behind an incompatible
+ *     gateway gets that card once per session. It is accurate and
+ *     actionable text; suppressing it would hide a real billing fact.
+ *
+ *     Second-order, worth recording so it is not mistaken for a
+ *     regression later: where the server DOES run the checks, classifier
+ *     overhead stops being billed. Auto-mode sessions on affected plans
+ *     will report LOWER cost from 2.1.278 onward. `session_cost_daily`
+ *     and the Cost Report read what the transcript carries, so the drop
+ *     is correct, not a loss of data.
+ *
+ *     `CLAUDE_CODE_AUTO_MODE_SERVER` (0 opts out on gateways; unread on a
+ *     direct API connection; upstream calls it temporary): grep confirms
+ *     OmniFex sets it nowhere, and should not start. It is a deployment
+ *     knob for a gateway operator, not something a wrapper should decide
+ *     on the user's behalf.
+ *
+ *  2. `/status` GAINS AN `Auto mode server` ROW. NO IMPACT. VERIFIED, NOT
+ *     ASSUMED.
+ *
+ *     New literal in 2.1.278 (2 occurrences, 0 in 2.1.277), built by a
+ *     row function returning "Enabled" / "Disabled" alongside the
+ *     existing "Managed settings (remote)" and "Organization policy"
+ *     rows. We do not scrape `/status`: `usage-runner.ts` drives `/usage`
+ *     only, and its READY_MARKERS / ESC_DISMISSIBLE sets are untouched by
+ *     a row inside a panel we never open.
+ *
+ *     DELETED IN THIS PASS, pre-existing and NOT 2.1.278 drift: the
+ *     "Manual refresh via `claude -p \"/status\" --output-format json`"
+ *     banner comment formerly at `rate-limits.ts:505-507` sat directly
+ *     above the service's `return {...}` with no code beneath it — a
+ *     section header for a surface that was never built. The 2.1.274 ->
+ *     2.1.276 block below called it "a stale section header over an
+ *     unimplemented path" and deferred deletion to "the next pass through
+ *     that file"; two reviews in a row then stopped to re-derive that it
+ *     names no code, which is exactly the tax the repo rule about dead
+ *     code exists to stop. It is gone now, so the next reviewer who greps
+ *     `/status` finds only this block and the one below it.
+ *
+ * No OmniFex impact: nothing else — 2.1.278 has exactly two changelog
+ * entries and both are covered above. Recorded so the next reviewer does
+ * not re-derive it: this release moved no JSONL record type, no control
+ * request, no hook event, no permission-rule semantics, no `/usage`
+ * anchor, and no `startSession` parameter.
+ *
  * Last review: 2.1.276 -> 2.1.277 on 2026-09-18. Findings:
  *
  *  Changelog coverage: the range is exactly one release, 2.1.277, and it
@@ -2642,7 +2777,7 @@ import { buildClaudeEnv } from './util/claude-env';
  * `~/.claude.json` fix (we read-modify-write that file, never replace it), and
  * the VSCode screen-reader work.
  */
-export const REVIEWED_CLI_VERSION = '2.1.277';
+export const REVIEWED_CLI_VERSION = '2.1.278';
 
 /**
  * app_settings key holding the user's explicit OmniFex-checkout override.

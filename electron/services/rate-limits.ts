@@ -502,10 +502,6 @@ export function createRateLimitsService(deps: RateLimitsDeps): RateLimitsService
     });
   }
 
-  // -------------------------------------------------------------------------
-  // Manual refresh via `claude -p "/status" --output-format json`
-  // -------------------------------------------------------------------------
-
   return {
     recordEvent,
     recordUtilization,
