@@ -5,6 +5,12 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.180] — 2026-09-19
+
+### Fixed
+
+- The message box now fills the composer's full height. The row of panel buttons to its right had grown tall enough to set the height of the whole bar, and the box stayed its own size and sat on the bottom edge of it — leaving a band of empty grey above where you type. It stretches to whatever that height is now, and the mode and output toggles sit at the top of the bar alongside the buttons rather than being pushed to the bottom. Typing still grows the box past that height and shrinks it back as before.
+
 ## [0.4.179] — 2026-09-19
 
 ### Added
