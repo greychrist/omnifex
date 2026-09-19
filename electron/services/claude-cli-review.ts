@@ -30,6 +30,192 @@ import { buildClaudeEnv } from './util/claude-env';
  * old value and the new one, and file or fix whatever they imply. Bumping it
  * to silence the badge throws away the only drift signal we have.
  *
+ * Last review: 2.1.276 -> 2.1.277 on 2026-09-18. Findings:
+ *
+ *  Changelog coverage: the range is exactly one release, 2.1.277, and it
+ *  has an entry (a ~60-item release). No gap. BOTH endpoints are
+ *  installed, so every wire claim below is a real binary diff of the exact
+ *  range, not an inference from prose.
+ *
+ *  NO CODE CHANGE MADE. Nothing in this release breaks the current build.
+ *  The one item worth acting on is an opportunity, not a bug, and it is
+ *  gated off by default upstream — see finding 1.
+ *
+ *  WIRE DIFF: CLEAN, ALL FOUR AXES. Reported both ways round.
+ *
+ *    - Merge-strategy map: byte-identical. Both objects (write map and
+ *      merge map) match character for character across 2.1.276/2.1.277.
+ *      No new record type, none removed. `memory-mode` — added last
+ *      review, still latent — is unchanged at "always"/"accumulate".
+ *      Nothing to add to `jsonlClassifier.ts` or
+ *      `cliSidechannelRecords.ts` this cycle.
+ *    - `subtype:` literals: 126 in each, set-identical (empty diff).
+ *    - `hook_event_name` literals: 33 in each, set-identical.
+ *    - `type:"control_*"` envelopes: identical — control_request,
+ *      control_response, control_request_progress, control_cancel_request.
+ *    - Control-request subtype names: set-identical. One occurrence-count
+ *      move, `hook_callback` 7 -> 8. Minifier/callsite noise: the literal
+ *      set did not change, and `apply_flag_settings` (32),
+ *      `set_permission_mode` (22), `set_model` (12) and `can_use_tool`
+ *      (31) are all unmoved. `permissions.ts` and `runtime.ts` need
+ *      nothing.
+ *    - `/usage` TUI anchors: the strings `parser.ts` keys on
+ *      ("Current session", "Current week (", "Resets ", "Total cost:",
+ *      "What's contributing to your limits usage?", the four ranked-table
+ *      headers) occur 14 times in each binary, unchanged.
+ *      `usage-runner/parser.ts` is safe.
+ *
+ *  1. AGENTS.md AS PROJECT INSTRUCTIONS. OPPORTUNITY, NOT A BUG. NOT TAKEN.
+ *
+ *     The headline entry: "in a project with no CLAUDE.md, Claude Code
+ *     reads AGENTS.md instead". Read off the binary rather than the prose,
+ *     it ships as an internal plugin (`PLUGIN_NAME` "agents-md") with a
+ *     four-valued `instructionFiles` option:
+ *
+ *       "claude-md"                — CLAUDE.md only, today's behaviour
+ *       "claude-md-or-agents-md"   — DEFAULT; AGENTS.md only when the
+ *                                    project has no CLAUDE.md of its own
+ *       "claude-md-and-agents-md"  — both, without double-loading a file
+ *                                    CLAUDE.md already imports
+ *       "managed-only"             — drop project and user files, keep
+ *                                    the org's managed policy
+ *
+ *     Lookup paths are ["AGENTS.md", ".claude/AGENTS.md"] against
+ *     ["CLAUDE.md", ".claude/CLAUDE.md", "CLAUDE.local.md"], and the
+ *     probe `lstat`s for isFile() || isSymbolicLink() — so a symlinked
+ *     AGENTS.md counts, which is exactly this repo's own layout.
+ *
+ *     GATED OFF UPSTREAM. `isOnByDefault` is literally `false` and
+ *     `isAvailable` is `<gate>() && statsig("tengu_agents_md_mod", false)`
+ *     — a remote gate defaulting closed. So the behaviour is not live for
+ *     Greg today, which is why this is filed as an opportunity rather
+ *     than a bug we now have.
+ *
+ *     WHAT IT COSTS US WHEN THE GATE OPENS: `findClaudeMdFiles`
+ *     (`electron/services/claude.ts:1070`) hardcodes the CLAUDE.md name in
+ *     all three of its passes — root (claude.ts:1089), `.claude/`
+ *     (claude.ts:1092), and the depth-3 recursive walk
+ *     (claude.ts:1108, `entry.name === 'CLAUDE.md'`). A project carrying
+ *     only AGENTS.md therefore shows an EMPTY memory list in OmniFex while
+ *     the CLI is actively loading that file. The list is not wrong about
+ *     any file it shows; it is blind to a file that is now load-bearing.
+ *
+ *     PRE-EXISTING AND UNRELATED TO THIS RELEASE: the same function has
+ *     never listed `CLAUDE.local.md` either, though the CLI has always
+ *     read it. Same one-line fix site. Recorded here so the next reviewer
+ *     does not re-derive it and does not misattribute it to 2.1.277.
+ *
+ *     Not fixed in this pass: it is a feature change to a renderer
+ *     surface, not a drift fix, and CLAUDE.md wants a go-ahead before
+ *     implementing beyond a trivial fix.
+ *
+ *     RESOLVED the same day, and not the way this entry proposed. The fix
+ *     was not to teach `findClaudeMdFiles` more filenames — that function
+ *     is gone, along with its IPC channel. A session's instruction files
+ *     are now read from the CLI's own `attachment` records, which report
+ *     what it ACTUALLY loaded. No filename appears in that path at all, so
+ *     AGENTS.md, CLAUDE.local.md and whatever the CLI adds next are
+ *     correct without further work here. See
+ *     docs/superpowers/specs/2026-09-18-session-context-ledger-design.md.
+ *
+ *  2. `claude -p` NO LONGER HANGS AFTER AN INTERNAL ERROR. ALREADY HANDLED
+ *     — AND IT CLOSES A LATENT HANG ON OUR SIDE.
+ *
+ *     "Fixed `claude -p` and Agent SDK sessions that could hang with no
+ *     result after an internal error; they now report the error and exit
+ *     with code 1."
+ *
+ *     `runCliOnce` (`electron/services/sessions/summary-query.ts:141`) is
+ *     the single `-p` callsite in the repo, and it has NO timeout and no
+ *     `.kill()` — verified, not assumed. It resolves purely on the child's
+ *     `exit` event. So under 2.1.276 an internal CLI error left that
+ *     promise pending FOREVER, stranding whichever caller was in flight:
+ *     a session summary, a Brain `extract`, or a Brain `curation` (both
+ *     import `CliRunResult` from this module). Under 2.1.277 the child
+ *     exits 1 and the `code !== 0` branch at summary-query.ts:165 rejects
+ *     with the stderr tail, which is the behaviour that code was already
+ *     written for.
+ *
+ *     No change needed — the handling is correct and now actually gets
+ *     reached. Worth knowing that our lack of a timeout is currently
+ *     insured by a CLI-side fix rather than by our own code; if a future
+ *     release regresses it, the symptom is a Brain queue item stuck in
+ *     flight with no error, not a failure.
+ *
+ *  3. HEADLESS RESUME NOW SAVES COST/USAGE TOTALS AT EXIT. INERT FOR US.
+ *
+ *     "Fixed a headless resume (`claude -p --resume`, the SDK, a VS Code
+ *     extension window reload) starting the session's cost and usage
+ *     totals at zero; headless sessions now save their totals at exit."
+ *
+ *     Sounds like a Cost Report double-count risk; it is not. OmniFex
+ *     derives cost from per-message token counts
+ *     (`cost/session-cost-core.ts:105-107`, input/output/cache_read), and
+ *     reads the CLI's own running total NOWHERE — `cost-state` appears
+ *     only as a sidechannel record to be ignored
+ *     (`sessions/stream-forward.ts:48`, `lib/cliSidechannelRecords.ts:42`).
+ *     A changed `cost-state` payload cannot move `session_cost_daily`.
+ *     Confirmed too that this shipped no new record type (see wire diff).
+ *
+ *  4. TYPED-WHILE-BUSY MESSAGES NO LONGER DROPPED. IMPROVEMENT, NO CHANGE.
+ *
+ *     "Fixed messages typed while Claude is still working sometimes being
+ *     ignored by the model." In TUI mode OmniFex writes keystrokes into
+ *     the pty and renders an optimistic echo that the CLI's own JSONL
+ *     record is supposed to replace (see the prompt-echo reconciliation
+ *     note). A prompt the CLI silently dropped produced an echo no record
+ *     ever replaced — a user prompt that appears to have been sent and
+ *     never ran. This removes that source. Nothing to change; the
+ *     reconciliation path is unmoved.
+ *
+ *  5. ATTACHMENT RE-RENDER ON RESUME. STRICTLY BETTER, NO CHANGE.
+ *
+ *     "Fixed attachments recorded earlier in a conversation being
+ *     re-rendered after a resume or relaunch." We classify `attachment`
+ *     as a transcript record (`jsonlClassifier.ts:63`, `types/jsonl.ts:79`)
+ *     and render each occurrence. Fewer duplicate re-emissions on resume
+ *     means fewer duplicate cards. The record shape is unchanged.
+ *
+ *  6. SessionStart HOOK OUTPUT TRUNCATION. INERT BY HISTORY.
+ *
+ *     "Fixed sessions continued after `/clear` missing part of their first
+ *     message when a SessionStart hook printed output." The Brain used to
+ *     drive invocation from exactly such a hook; it was replaced by the
+ *     MCP server's `instructions` string (`brain/instructions.ts`), and
+ *     `electron/services/claude.ts` does not install a SessionStart hook
+ *     of its own. Relevant only if a hook is ever reintroduced — the
+ *     module header already argues against that.
+ *
+ *  NO OMNIFEX IMPACT (verified against the surfaces, not skimmed):
+ *  AGENTS.md on Bedrock/Vertex/Foundry carve-out; the two Claude apps
+ *  gateway items (`CLAUDE_GATEWAY_PROXY_IS_EGRESS_BOUNDARY`, upstream
+ *  `headers:`) and the gateway telemetry/NO_PROXY and loopback-message
+ *  fixes; the `/tasks` panel "update waiting" line (we read task_started /
+ *  task_notification events in `sessions/background-tasks.ts`, never the
+ *  TUI's task panel); "text content blocks must be non-empty"; the
+ *  stale-logout fix across CLI builds; the four malformed-`~/.claude.json`
+ *  crash fixes (`customApiKeyResponses`, `theme`,
+ *  `claudeAiMcpEverConnected`, the Remote Control placeholder record) — we
+ *  read that file for OAuth identity and read-modify-write it for trust
+ *  (`account-identity.ts:78`, `usage-runner/scratch-cwd.ts:52`) and write
+ *  none of those keys; the update-check/`claude update` proxy and
+ *  winget/apk fixes; every `claude plugin install` / `/plugin` / skills /
+ *  marketplace-policy item (we manage MCP servers, not plugins); Grep,
+ *  Glob, Write, Edit and null-byte tool fixes (CLI-internal tool
+ *  behaviour); `claude --bg` LSP exit; the five TUI crash/render fixes
+ *  (color codes in the prompt, string-valued assistant message on resume,
+ *  first-spinner exit, frozen screen, Windows OOM) — we scrape only
+ *  `/usage`, whose anchors are unchanged; the SendMessage row-placement
+ *  and drag-select "copied" notice fixes; `$TMPDIR` in sandboxed Bash and
+ *  the `sandbox.excludedCommands` compound-command fix (we surface no
+ *  sandbox settings — grepped, zero hits); Cowork/WebFetch refusal
+ *  reasons; the `claude agents` dispatch input scrambling; the stop-hook
+ *  summary resume crash; Windows long-path PDF reads; `--worktree` skill
+ *  loading (`git-worktrees.ts` only parses `git worktree list`); resumed
+ *  subagent MCP-definition re-render; rate-limited artifact publishes;
+ *  Console sign-in 400 message; the keybindings Enter rebind; and the two
+ *  start-up performance improvements.
+ *
  * Last review: 2.1.274 -> 2.1.276 on 2026-09-18. Findings:
  *
  *  Changelog coverage: BOTH releases in range have entries. 2.1.275 is a
@@ -2456,7 +2642,7 @@ import { buildClaudeEnv } from './util/claude-env';
  * `~/.claude.json` fix (we read-modify-write that file, never replace it), and
  * the VSCode screen-reader work.
  */
-export const REVIEWED_CLI_VERSION = '2.1.276';
+export const REVIEWED_CLI_VERSION = '2.1.277';
 
 /**
  * app_settings key holding the user's explicit OmniFex-checkout override.
