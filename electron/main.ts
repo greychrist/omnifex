@@ -131,6 +131,7 @@ import { migrateUserData } from './services/userdata-migration';
 import { createSessionGitWatcher, listWorktrees } from './services/git-watcher';
 import { createBranchColorsService } from './services/branch-colors';
 import { listBranches as listGitBranches } from './services/git-branches';
+import { listChangedFiles as listGitChangedFiles, readFileDiff as readGitFileDiff } from './services/git-diff';
 import { createLimaService } from './services/lima';
 import { createCostHistoryService } from './services/cost/cost-history';
 import { createSessionCostService } from './services/cost/session-cost';
@@ -1467,6 +1468,10 @@ app.whenReady().then(() => {
     },
     branchColors: branchColorsService,
     gitBranches: gitBranchesService,
+    gitDiff: {
+      listChangedFiles: listGitChangedFiles,
+      readFileDiff: readGitFileDiff,
+    },
     lima: {
       isInstalled: () => limaService.isInstalled(),
       listVms: () => limaService.listVms(),

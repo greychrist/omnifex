@@ -339,6 +339,24 @@ function normalizePathSnapshot(data: any, fallbackPath: string): PathSnapshot {
 }
 
 /** A worktree attached to the same repository as the currently-open project. */
+export type GitChangedFileStatus =
+  | 'modified'
+  | 'added'
+  | 'deleted'
+  | 'renamed'
+  | 'untracked';
+
+/** One entry from `git status --porcelain` with its path kept. */
+export interface GitChangedFile {
+  /** Repo-relative path, forward slashes, as git reports it. */
+  path: string;
+  status: GitChangedFileStatus;
+  /** True when the index differs from HEAD for this path. */
+  staged: boolean;
+  /** Previous path, present only on renames. */
+  origPath?: string;
+}
+
 export interface WorktreeInfo {
   /** Absolute path of the worktree directory (realpath-resolved). */
   path: string;
@@ -2592,6 +2610,39 @@ export const api = {
         callback({ project, worktrees });
       },
     );
+  },
+
+  /**
+   * List every changed path in the working tree at `projectPath`.
+   *
+   * Pull-only, on purpose. The per-tab git watch already pushes a snapshot
+   * every few seconds, but it carries COUNTS — putting a path list on that
+   * hot path would ship N paths to every open tab several times a minute.
+   * Call this when the panel opens, and on a watch event, not on a timer.
+   */
+  async listGitChangedFiles(projectPath: string): Promise<GitChangedFile[]> {
+    const result = await apiCall<GitChangedFile[]>("git_list_changed_files", { projectPath });
+    return result ?? [];
+  },
+
+  /**
+   * Read a unified patch for one file, staged and unstaged changes together.
+   * Returns '' when the file is unchanged, the path is refused, or the
+   * directory is not a repo.
+   */
+  async getGitFileDiff(
+    projectPath: string,
+    filePath: string,
+    contextLines?: number,
+  ): Promise<string> {
+    const result = await apiCall<string>("git_file_diff", {
+      projectPath,
+      filePath,
+      // Stripped rather than sent as undefined — optional params must not
+      // cross IPC as undefined (see Repo Rules).
+      ...(contextLines === undefined ? {} : { contextLines }),
+    });
+    return result ?? "";
   },
 
   // ── Lima (VM viewer) ──────────────────────────────────────────────────────

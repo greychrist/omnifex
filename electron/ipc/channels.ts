@@ -237,6 +237,8 @@ export const INVOKE_CHANNELS: readonly string[] = [
   'stop_session_git_watch',
   'reconnect_session_git_watch',
   'git_list_branches',
+  'git_list_changed_files',
+  'git_file_diff',
 
   // Lima (VM viewer)
   'lima_check_installed',

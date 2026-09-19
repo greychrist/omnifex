@@ -10,6 +10,7 @@ import {
   Shield,
   ArrowLeft,
   Layers,
+  GitCompare,
 } from "lucide-react";
 import { SessionInspectorPanel } from "@/components/SessionInspectorPanel";
 import { Button } from "@/components/ui/button";
@@ -85,6 +86,7 @@ import { SessionCard } from "./SessionCard";
 import { ChatStatusBar } from "./ChatStatusBar";
 import { SessionHeaderResizeHandle } from "./SessionHeaderResizeHandle";
 import { ResizableSidePanel } from "./ResizableSidePanel";
+import { GitDiffOverlay } from '@/components/git-diff/GitDiffOverlay';
 import { ContextLedgerPanel } from "./ContextLedgerPanel";
 import { foldContextLedger } from "@/lib/contextLedger";
 import { useDaemonLink } from "@/hooks/useDaemonLink";
@@ -337,6 +339,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   const [showPluginsPanel, setShowPluginsPanel] = useState(false);
   const [showPermissionsPanel, setShowPermissionsPanel] = useState(false);
   const [showContextPanel, setShowContextPanel] = useState(false);
+  const [showDiffOverlay, setShowDiffOverlay] = useState(false);
 
   const [showSlashCommandsSettings, setShowSlashCommandsSettings] = useState(false);
   const [accountResolution, setAccountResolution] = useState<{
@@ -689,6 +692,10 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   // `gitStatus` keeps the existing renderer ergonomics for the project badge;
   // `worktreeList` mirrors the snapshot's `worktrees[]` for the list below.
   const gitStatus = sessionGit?.project ?? null;
+  // The diff overlay is pull-only; this is how it learns the tree moved. The
+  // watcher's counts are the cheapest honest signal that something changed on
+  // disk, so a bump here re-reads the file list without the overlay polling.
+  const gitRefreshToken = (gitStatus?.changed ?? 0) * 1000 + (gitStatus?.untracked ?? 0);
   // Wrap in useMemo so the `?? []` fallback doesn't create a new array
   // identity on each render — that ripples into the gitWatchErrors useMemo
   // below and triggers unnecessary recompute on every parent re-render.
@@ -2475,6 +2482,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
                     isTrunk={branchColorResolution.trunkBlack.has(gitStatus.branch)}
                     path={projectPath}
                     error={gitStatus.error}
+                    onViewChanges={() => { setShowDiffOverlay(true); }}
                   />
                 </div>
                 {worktreeList.length > 0 && (
@@ -2881,6 +2889,17 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
               </ResizableSidePanel>
             )}
           </AnimatePresence>
+          {/* The diff viewer covers the transcript rather than sharing it with
+              a side panel: a split before/after pane plus a file tree has no
+              useful reading width at 384px. The header and composer stay
+              visible, so the session is still reachable behind it. */}
+          {showDiffOverlay && projectPath && (
+            <GitDiffOverlay
+              projectPath={projectPath}
+              refreshToken={gitRefreshToken}
+              onClose={() => { setShowDiffOverlay(false); }}
+            />
+          )}
           {/* The Session Inspector toggle used to float here at
               `top-2 right-2`, attached to nothing and — once the chat status
               bar arrived — sitting on top of it. It now opens from the top of
@@ -3197,6 +3216,24 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
                         )}
                       >
                         <Shield className={cn("h-3.5 w-3.5", showPermissionsPanel && "text-primary")} />
+                      </Button>
+                    </motion.div>
+                  </TooltipSimple>
+                  <TooltipSimple content="Working tree changes" side="top">
+                    <motion.div
+                      whileTap={{ scale: 0.97 }}
+                      transition={{ duration: 0.15 }}
+                    >
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => { setShowDiffOverlay(!showDiffOverlay); }}
+                        className={cn(
+                          "h-8 w-8 text-muted-foreground hover:text-foreground shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_30%,transparent)]",
+                          showDiffOverlay ? "bg-accent" : "bg-background",
+                        )}
+                      >
+                        <GitCompare className={cn("h-3.5 w-3.5", showDiffOverlay && "text-primary")} />
                       </Button>
                     </motion.div>
                   </TooltipSimple>

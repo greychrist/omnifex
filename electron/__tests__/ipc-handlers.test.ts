@@ -1238,6 +1238,126 @@ describe('git_list_branches handler', () => {
 });
 
 // ---------------------------------------------------------------------------
+
+describe('git diff handlers', () => {
+  it('forwards projectPath to gitDiff.listChangedFiles', async () => {
+    const files = [{ path: 'a.txt', status: 'modified', staged: false }];
+    const gitDiff = {
+      listChangedFiles: vi.fn().mockResolvedValue(files),
+      readFileDiff: vi.fn().mockResolvedValue(''),
+    };
+    const handlers = getHandlerMap({ gitDiff });
+    const result = await invoke(handlers, 'git_list_changed_files', { projectPath: '/p' });
+    expect(gitDiff.listChangedFiles).toHaveBeenCalledWith('/p');
+    expect(result).toEqual(files);
+  });
+
+  it('accepts snake_case project_path for the file list', async () => {
+    const gitDiff = {
+      listChangedFiles: vi.fn().mockResolvedValue([]),
+      readFileDiff: vi.fn().mockResolvedValue(''),
+    };
+    const handlers = getHandlerMap({ gitDiff });
+    await invoke(handlers, 'git_list_changed_files', { project_path: '/p' });
+    expect(gitDiff.listChangedFiles).toHaveBeenCalledWith('/p');
+  });
+
+  it('returns [] when the gitDiff service is missing', async () => {
+    const handlers = getHandlerMap({});
+    await expect(
+      invoke(handlers, 'git_list_changed_files', { projectPath: '/p' }),
+    ).resolves.toEqual([]);
+  });
+
+  it('forwards both params to gitDiff.readFileDiff', async () => {
+    const gitDiff = {
+      listChangedFiles: vi.fn().mockResolvedValue([]),
+      readFileDiff: vi.fn().mockResolvedValue('--- a/a.txt\n+++ b/a.txt\n'),
+    };
+    const handlers = getHandlerMap({ gitDiff });
+    const result = await invoke(handlers, 'git_file_diff', {
+      projectPath: '/p',
+      filePath: 'a.txt',
+    });
+    expect(gitDiff.readFileDiff).toHaveBeenCalledWith('/p', 'a.txt', {});
+    expect(result).toBe('--- a/a.txt\n+++ b/a.txt\n');
+  });
+
+  it('accepts snake_case file_path', async () => {
+    const gitDiff = {
+      listChangedFiles: vi.fn().mockResolvedValue([]),
+      readFileDiff: vi.fn().mockResolvedValue(''),
+    };
+    const handlers = getHandlerMap({ gitDiff });
+    await invoke(handlers, 'git_file_diff', { project_path: '/p', file_path: 'a.txt' });
+    expect(gitDiff.readFileDiff).toHaveBeenCalledWith('/p', 'a.txt', {});
+  });
+
+  it('forwards contextLines so the expand affordance can widen a hunk', async () => {
+    const gitDiff = {
+      listChangedFiles: vi.fn().mockResolvedValue([]),
+      readFileDiff: vi.fn().mockResolvedValue(''),
+    };
+    const handlers = getHandlerMap({ gitDiff });
+    await invoke(handlers, 'git_file_diff', {
+      projectPath: '/p',
+      filePath: 'a.txt',
+      contextLines: 25,
+    });
+    expect(gitDiff.readFileDiff).toHaveBeenCalledWith('/p', 'a.txt', { contextLines: 25 });
+  });
+
+  it('accepts snake_case context_lines', async () => {
+    const gitDiff = {
+      listChangedFiles: vi.fn().mockResolvedValue([]),
+      readFileDiff: vi.fn().mockResolvedValue(''),
+    };
+    const handlers = getHandlerMap({ gitDiff });
+    await invoke(handlers, 'git_file_diff', {
+      project_path: '/p',
+      file_path: 'a.txt',
+      context_lines: 25,
+    });
+    expect(gitDiff.readFileDiff).toHaveBeenCalledWith('/p', 'a.txt', { contextLines: 25 });
+  });
+
+  it('ignores a non-numeric contextLines rather than passing it to git', async () => {
+    const gitDiff = {
+      listChangedFiles: vi.fn().mockResolvedValue([]),
+      readFileDiff: vi.fn().mockResolvedValue(''),
+    };
+    const handlers = getHandlerMap({ gitDiff });
+    await invoke(handlers, 'git_file_diff', {
+      projectPath: '/p',
+      filePath: 'a.txt',
+      contextLines: 'lots',
+    });
+    expect(gitDiff.readFileDiff).toHaveBeenCalledWith('/p', 'a.txt', {});
+  });
+
+  it('returns an empty patch when the gitDiff service is missing', async () => {
+    const handlers = getHandlerMap({});
+    await expect(
+      invoke(handlers, 'git_file_diff', { projectPath: '/p', filePath: 'a.txt' }),
+    ).resolves.toBe('');
+  });
+
+  it('returns an empty patch rather than rejecting when the read throws', async () => {
+    // readFileDiff throws for a path that escapes the project. The panel is
+    // auxiliary UI — a refused path must not surface as an unhandled IPC
+    // rejection in the renderer.
+    const gitDiff = {
+      listChangedFiles: vi.fn().mockResolvedValue([]),
+      readFileDiff: vi.fn().mockRejectedValue(new Error('outside the project')),
+    };
+    const handlers = getHandlerMap({ gitDiff });
+    await expect(
+      invoke(handlers, 'git_file_diff', { projectPath: '/p', filePath: '../x' }),
+    ).resolves.toBe('');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Lima handlers
 // ---------------------------------------------------------------------------
 

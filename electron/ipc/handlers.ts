@@ -235,6 +235,14 @@ export interface Services {
   gitBranches?: {
     list(projectPath: string): Promise<string[]>;
   };
+  gitDiff?: {
+    listChangedFiles(projectPath: string): Promise<import('../services/git-diff').ChangedFile[]>;
+    readFileDiff(
+      projectPath: string,
+      filePath: string,
+      opts: import('../services/git-diff').ReadFileDiffOptions,
+    ): Promise<string>;
+  };
   lima?: {
     isInstalled(): Promise<boolean>;
     listVms(): Promise<unknown[]>;
@@ -384,7 +392,7 @@ function costFilters(p: Record<string, unknown> | undefined): Record<string, unk
  * renderer gets a defined (but empty) response rather than a blocked channel.
  */
 export function getHandlerMap(services: Services = {}): Record<string, HandlerFn> {
-  const { brain, brainMcp, accounts, claude, sessions, cost, costReportPdf, internalArchive, modelPricing, usage, rateLimits, usageRunner, claudeBinary, mcp, slashCommands, sessionsSummary, logging, database, proxy, permissionsIO, models, commands, gitWatcher, branchColors, gitBranches, lima, filesystem, notificationSounds, oneShotTerminal, codexAuth, codexSessionWalker, accountIdentity, allowRawSql } = services;
+  const { brain, brainMcp, accounts, claude, sessions, cost, costReportPdf, internalArchive, modelPricing, usage, rateLimits, usageRunner, claudeBinary, mcp, slashCommands, sessionsSummary, logging, database, proxy, permissionsIO, models, commands, gitWatcher, branchColors, gitBranches, gitDiff, lima, filesystem, notificationSounds, oneShotTerminal, codexAuth, codexSessionWalker, accountIdentity, allowRawSql } = services;
 
   // Positive account-ownership guard for config-editing channels. A non-empty
   // configDir supplied by the renderer must belong to a known account, so a
@@ -963,6 +971,36 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     git_list_branches: wrapWith((p: Record<string, unknown>) =>
       gitBranches?.list((p?.projectPath ?? p?.project_path) as string) ?? [],
     ),
+
+    // ── Git Diff (working-tree panel) ─────────────────────────────────────────
+    git_list_changed_files: wrapWith(async (p: Record<string, unknown>) => {
+      const projectPath = (p?.projectPath ?? p?.project_path) as string;
+      if (!projectPath || !gitDiff) return [];
+      return gitDiff.listChangedFiles(projectPath);
+    }),
+    git_file_diff: wrapWith(async (p: Record<string, unknown>) => {
+      const projectPath = (p?.projectPath ?? p?.project_path) as string;
+      const filePath = (p?.filePath ?? p?.file_path) as string;
+      if (!projectPath || !filePath || !gitDiff) return '';
+      // A non-numeric contextLines is dropped rather than coerced: `-UNaN`
+      // makes git fail the whole read, and the sane fallback is its default.
+      const rawContext = p?.contextLines ?? p?.context_lines;
+      const contextLines = typeof rawContext === 'number' && Number.isFinite(rawContext)
+        ? rawContext
+        : undefined;
+      try {
+        return await gitDiff.readFileDiff(
+          projectPath,
+          filePath,
+          contextLines === undefined ? {} : { contextLines },
+        );
+      } catch {
+        // readFileDiff throws for a path that escapes the project. This backs
+        // an auxiliary panel; an empty patch is the honest render, and an
+        // unhandled IPC rejection in the renderer is not.
+        return '';
+      }
+    }),
 
     // ── Lima (VM viewer) ──────────────────────────────────────────────────────
     lima_check_installed: wrap(async () => {

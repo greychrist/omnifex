@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { GitBranch, FilePen, FilePlus, Folder } from 'lucide-react';
+import { GitBranch, FilePen, FilePlus, Folder, GitCompare } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Popover } from '@/components/ui/popover';
 
@@ -18,6 +18,9 @@ export interface GitBranchBadgeProps {
   /** Per-row error string from the unified git watch — surfaced inside the
    *  popover so the user can see why a row went red without leaving it. */
   error?: string | null;
+  /** Open the working-tree diff viewer. Omitted where there is nowhere to
+   *  open it — the branch-colour preview in settings, for instance. */
+  onViewChanges?: () => void;
 }
 
 // WCAG relative luminance — used only to detect TRUE near-black picks where
@@ -46,6 +49,7 @@ export const GitBranchBadge: React.FC<GitBranchBadgeProps> = ({
   isTrunk,
   path,
   error,
+  onViewChanges,
 }) => {
   const [open, setOpen] = React.useState(false);
 
@@ -171,6 +175,16 @@ export const GitBranchBadge: React.FC<GitBranchBadgeProps> = ({
                   </div>
                 )}
               </div>
+            )}
+            {onViewChanges && (changed > 0 || untracked > 0) && (
+              <button
+                type="button"
+                onClick={() => { setOpen(false); onViewChanges(); }}
+                className="mt-2 flex w-full items-center justify-center gap-1.5 rounded border px-2 py-1 text-[11px] text-foreground/90 hover:bg-accent"
+              >
+                <GitCompare className="w-3 h-3" />
+                View changes
+              </button>
             )}
           </div>
 
