@@ -5,6 +5,27 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.181] — 2026-09-20
+
+### Added
+
+- A **Suggest** button in the rename popover. Claude Code stopped naming sessions it is driven through on its own in 2.1.277, so sessions have been arriving unnamed. Suggest asks the CLI for a name from the session's opening prompt and puts it in the field for you to accept or edit — one call per click, nothing automatic, nothing on resume, and the button only appears once there is a prompt to name from. Saving goes through the same rename path a typed name does.
+
+### Changed
+
+- The model, reasoning effort and permission mode now sit on the session status bar, reading as `model Opus · effort High · perms Accept Edits`, and each opens its picker from there. They used to be buried in a popover on the session card, which is a strange place for the three controls most likely to change mid-session. The card keeps its summary of what is set and loses the row of controls.
+- The five side panels — inspector, MCP, plugins, permissions and session context — now open over the transcript, one at a time, and can be dragged wider. They used to push the transcript and the composer 384 pixels to the left, which reflowed every message in the session just to look at a panel. The inspector's own header is gone; the panel frame supplies the title and the close button.
+
+### Fixed
+
+- Reopening a session whose process had died mid-turn showed it working forever. The spinner kept going and the tab kept claiming work was in flight, because whether a turn was running was being inferred from how the transcript happened to end — and a transcript that stops on a tool call looks identical either way. The session itself now tracks its turn: it opens when a prompt is sent and closes when the answer lands, the process stops, or you press Stop. A resumed session starts idle, which is what it is.
+- Prompts you type are now marked as typed by a person when they are handed to Claude Code. The CLI's format asks a wrapper to say so explicitly and OmniFex never did, so from 2.1.277 — which began recording where each turn came from — every prompt was filed as machine-generated.
+- The composer no longer shrinks the moment you start typing in a narrow window. An empty message box was measuring its own placeholder text as if it were content.
+
+### Removed
+
+- Terminal session mode. It ran the CLI's own full-screen interface inside a tab, and nothing it offered was still missing from the structured chat, which is where every feature since has landed. Removing it also removes the guesswork that caused the stuck-session bug above, since a terminal session gave OmniFex nothing to read but the screen. Terminal handling remains for reading account usage and signing in to Codex.
+
 ## [0.4.180] — 2026-09-19
 
 ### Fixed
