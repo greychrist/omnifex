@@ -91,6 +91,23 @@ left — treat it as a real audit, not a formality.
      \`atis-latch\` reached hundreds of cards before anyone noticed.
    - \`subtype:"…"\` literals, \`hook_event_name\` literals, \`type:"control_*"\`
      envelopes, and the \`/usage\` anchors \`usage-runner/parser.ts\` reads.
+   - **The keys on \`user\` / \`assistant\` records**, not just the record
+     \`type:\` literals. A field can appear on a record we already classify and
+     change what the CLI does with it: 2.1.277 started stamping stdin prompts
+     \`turnOrigin:"sdk"\` and stopped auto-naming sessions whose \`origin\`
+     was absent — 36 sessions went nameless while the record-type map read
+     "clean". Compare the allowed-value lists too (the \`turnOrigin\`
+     sanitizer set is one \`var\`). Fix on our side was one field:
+     \`origin:{kind:"human"}\` in \`claude-cli-engine.ts\` writeUserMessage.
+   - **The stream-json input schemas' \`.describe()\` strings** — the CLI
+     documents host obligations there ("A host wrapping keyboard input must
+     stamp {kind:'human'} explicitly"). Grep \`type:R("user")\` and read the
+     fields' descriptions, not only their names.
+   - **The SDK client's control subtypes** vs ours:
+     \`rg -a -o 'this\\.request\\(\\{subtype:"[a-z_]+"'\` in the bundle lists what
+     an SDK host can ask for; \`sendControlRequest('…')\` in
+     \`electron/services/sessions/queries.ts\` is what we ask for. A new
+     subtype is a capability we may be missing, not just noise.
 
    Report counts both ways round. Most movement is minifier noise — identifier
    renaming shifts occurrence counts without changing the literal set — so say

@@ -369,6 +369,13 @@ export function createClaudeCliEngine(
       message: { role: 'user', content },
       parent_tool_use_id: null,
       session_id: sessionId ?? '',
+      // The CLI's own schema for this message: "A host wrapping keyboard
+      // input must stamp {kind:'human'} explicitly — absent origin is treated
+      // as unattributed and fails closed at strict isHuman() trust gates."
+      // Everything the engine sends here is what the user typed. From CLI
+      // 2.1.277 an unstamped prompt no longer qualifies for the CLI's own
+      // session naming (`ai-title`), which is how 36 sessions went nameless.
+      origin: { kind: 'human' },
     };
     const line = JSON.stringify(payload) + '\n';
     await new Promise<void>((resolve, reject) => {

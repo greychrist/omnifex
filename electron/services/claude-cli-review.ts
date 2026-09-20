@@ -167,12 +167,25 @@ import { buildClaudeEnv } from './util/claude-env';
  *
  * Last review: 2.1.276 -> 2.1.277 on 2026-09-18. Findings:
  *
+ *  POST-HOC (2026-09-20): this pass MISSED a real regression. From 2.1.277
+ *  the CLI stamps stdin prompts `turnOrigin:"sdk"` and its auto-naming
+ *  (`ai-title`) only fires for a message whose `origin` is absent-or-human
+ *  under the old rule, human-only under the new one. OmniFex never stamped
+ *  `origin` on the user messages it writes, so 0 of 36 sessions on
+ *  2.1.277/278 were named (100% on 2.1.268-2.1.276). The record-type map
+ *  was genuinely unchanged — the drift was a new KEY on a record we already
+ *  classify, plus a changed gate. Fixed by stamping `origin:{kind:"human"}`
+ *  in claude-cli-engine.ts writeUserMessage, which the CLI's own input
+ *  schema documents as the host's obligation. The review prompt now diffs
+ *  record keys, input-schema `.describe()` strings and SDK control subtypes.
+ *
  *  Changelog coverage: the range is exactly one release, 2.1.277, and it
  *  has an entry (a ~60-item release). No gap. BOTH endpoints are
  *  installed, so every wire claim below is a real binary diff of the exact
  *  range, not an inference from prose.
  *
- *  NO CODE CHANGE MADE. Nothing in this release breaks the current build.
+ *  NO CODE CHANGE MADE AT THE TIME (see post-hoc note above). Nothing
+ *  else in this release breaks the current build.
  *  The one item worth acting on is an opportunity, not a bug, and it is
  *  gated off by default upstream — see finding 1.
  *
