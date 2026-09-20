@@ -165,7 +165,7 @@ describe('sessionControlSummary', () => {
     ).toBe('Sonnet | Low | Plan');
   });
 
-  it('resolves a concrete CLI id (TUI-detected) by model family', () => {
+  it('resolves a concrete CLI id by model family', () => {
     expect(
       sessionControlSummary({
         model: 'claude-sonnet-4-6-20260101',

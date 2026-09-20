@@ -54,12 +54,9 @@ const SESSION_EVENT_PREFIXES = new Set([
   'agent-complete',
   'claude-output-extra',
   'session-status',
+  'session-turn',
   'session-init',
-  'session-mode',
-  'session-control-state',
   'session-account-mismatch',
-  'session-tui-data',
-  'session-tui-exit',
   'elicitation-request',
 ]);
 
@@ -131,7 +128,7 @@ export function createElectronApiShim(opts: ShimOptions): ShimHandle {
   const sessionToTabs = new Map<string, Set<string>>();
   const lastSeq = new Map<string, number>();
   const pendingPermission = new Map<string, string>();
-  const lastState = new Map<string, { sessionStatus?: string; mode?: string }>();
+  const lastState = new Map<string, { sessionStatus?: string; turn?: { status: string; since: string | null } }>();
   /**
    * Sessions this client currently holds a daemon subscription for.
    *
@@ -269,8 +266,10 @@ export function createElectronApiShim(opts: ShimOptions): ShimHandle {
         lastSeq.set(m.sessionId, m.seq);
         const prev = lastState.get(m.sessionId) ?? {};
         if (prev.sessionStatus !== m.sessionStatus) emitForSession(m.sessionId, 'session-status', { sessionStatus: m.sessionStatus });
-        if (prev.mode !== m.mode) emitForSession(m.sessionId, 'session-mode', { mode: m.mode });
-        lastState.set(m.sessionId, { sessionStatus: m.sessionStatus, mode: m.mode });
+        if (prev.turn?.status !== m.turn.status || prev.turn?.since !== m.turn.since) {
+          emitForSession(m.sessionId, 'session-turn', { status: m.turn.status, since: m.turn.since });
+        }
+        lastState.set(m.sessionId, { sessionStatus: m.sessionStatus, turn: { status: m.turn.status, since: m.turn.since } });
         return;
       }
       case 'permission.request': {
@@ -366,7 +365,7 @@ export function createElectronApiShim(opts: ShimOptions): ShimHandle {
         const diedWithDaemon =
           summary.sessionStatus === 'stopped' &&
           (prev?.sessionStatus === 'started' || prev?.sessionStatus === 'starting');
-        lastState.set(summary.sessionId, { sessionStatus: summary.sessionStatus, mode: summary.mode });
+        lastState.set(summary.sessionId, { sessionStatus: summary.sessionStatus });
         emitForSession(summary.sessionId, 'session-status', { sessionStatus: summary.sessionStatus });
         // A session this client had live and the daemon no longer has: its
         // CLI child went down with the daemon. Say so on its own channel so
@@ -384,7 +383,7 @@ export function createElectronApiShim(opts: ShimOptions): ShimHandle {
 
   // ------------------------------------------------------------ session ops
   function announce(tabId: string, summary: SessionSummary, projectPath: string): void {
-    lastState.set(summary.sessionId, { sessionStatus: summary.sessionStatus, mode: summary.mode });
+    lastState.set(summary.sessionId, { sessionStatus: summary.sessionStatus });
     emit(`session-status:${tabId}`, { sessionStatus: summary.sessionStatus });
     emit(`session-init:${tabId}`, { sessionId: summary.sessionId, projectPath });
   }
@@ -398,7 +397,6 @@ export function createElectronApiShim(opts: ShimOptions): ShimHandle {
       permissionMode: p.permissionMode,
       effort: p.effort,
       thinking: p.thinking,
-      mode: p.mode,
       agent: p.agent,
       configDir: p.configDir,
       manualAccountOverride: p.manualAccountOverride,
@@ -438,7 +436,7 @@ export function createElectronApiShim(opts: ShimOptions): ShimHandle {
       await client.request('session.subscribe', { sessionId });
       markSubscribed(sessionId, true);
       lastSeq.set(sessionId, summary.lastSeq);
-      lastState.set(sessionId, { sessionStatus: summary.sessionStatus, mode: summary.mode });
+      lastState.set(sessionId, { sessionStatus: summary.sessionStatus });
       return true;
     } catch (err) {
       if ((err as { code?: string }).code === 'NOT_FOUND') {

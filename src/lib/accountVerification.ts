@@ -35,13 +35,13 @@ function normalize(v: string | null | undefined): string {
  * the world as it is now rather than as the session started. When the session
  * reports one, it wins outright.
  *
- * TUI sessions produce no init payload, so `sessionEmail` is null there and we
- * fall back to the config-dir verdict. That can't distinguish the two cases,
- * so a mismatch conservatively offers a restart.
+ * Before `system:init` lands `sessionEmail` is null and we fall back to the
+ * config-dir verdict. That can't distinguish the two cases, so a mismatch
+ * conservatively offers a restart.
  */
 export function resolveSessionVerification(opts: {
   verdict: IdentityVerdict | null;
-  /** From `system:init`; null in TUI mode or before init lands. */
+  /** From `system:init`; null before init lands. */
   sessionEmail: string | null;
   loaded: boolean;
   error: boolean;
@@ -77,7 +77,7 @@ export function resolveSessionVerification(opts: {
     };
   }
 
-  // No session identity available (TUI). Fall back to the config dir, and
+  // No session identity available yet. Fall back to the config dir, and
   // assume a restart is needed on any failure — the safe direction.
   return {
     status: verdict.status,

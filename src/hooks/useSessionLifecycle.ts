@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState, useMemo } from "react";
-import { api, type AgentKind, type SessionMode, type SessionStatus } from "@/lib/api";
+import { api, type AgentKind, type SessionStatus, type TurnState } from "@/lib/api";
 import type { JsonlNode } from "@/types/jsonl";
 import type { EffortLevel, ThinkingConfig } from "@/components/FloatingPromptInput";
 import { conversationStatus as deriveConversationStatus, type ConversationStatus } from "@/lib/sessionDerivedState";
@@ -13,6 +13,8 @@ function isIgnorableStderr(msg: string): boolean {
   );
 }
 
+const IDLE_TURN: TurnState = { status: 'idle', since: null };
+
 /** Loose structural type — only `.status` is read by the derivation. */
 type WithStatus = { status: string };
 
@@ -23,7 +25,6 @@ interface UseSessionLifecycleArgs {
   permissionMode: string;
   effort: EffortLevel;
   thinkingConfig: ThinkingConfig;
-  sessionStartMode?: SessionMode;
   /**
    * Which engine to launch. Optional for back-compat with older callers
    * that haven't been threaded yet; main process treats missing values as
@@ -54,12 +55,6 @@ interface UseSessionLifecycleArgs {
    * without waiting for the CLI's eventual `system:init` stream message.
    */
   onSessionInit: (sessionId: string) => void;
-  /**
-   * Current renderer messages array. `JsonlNode[]` as of Task 6 (adapter
-   * deleted, messages are now real JSONL nodes). The derivation reads
-   * `kind`, `userKind`, and `raw.message.stop_reason` directly.
-   */
-  messages: JsonlNode[];
   /**
    * Active task list. Only `.status` is read — pass `TaskListEntry[]` or
    * any `{ status: string }[]` compatible slice. Used by
@@ -92,11 +87,15 @@ interface UseSessionLifecycleReturn {
    */
   sessionStatus: SessionStatus;
   /**
-   * Turn axis. Null whenever `sessionStatus !== 'started'`. Derived from
-   * `messages`, `tasks`, and `subagents` via `sessionDerivedState.conversationStatus`
-   * rather than read from the IPC payload. The `conversationStatus` field on
-   * `session-status:<tabId>` events is discarded — main no longer emits it
-   * (Task 3 removed it from the IPC contract).
+   * The session's turn axis, mirrored from main via `session-turn:<tabId>`
+   * (and seeded from `sessionGetHealth` on rebind). Never inferred from the
+   * transcript: a resumed session is idle until the user sends.
+   */
+  turn: TurnState;
+  /**
+   * Conversation rollup. Null whenever `sessionStatus !== 'started'`.
+   * `'running'` when the turn is running or a task / subagent is still open
+   * (those two are transcript content and stay derived).
    */
   conversationStatus: ConversationStatus | null;
   /**
@@ -118,7 +117,6 @@ export function useSessionLifecycle({
   permissionMode,
   effort,
   thinkingConfig,
-  sessionStartMode,
   agent,
   accountResolution,
   persistentSessionRef,
@@ -127,7 +125,6 @@ export function useSessionLifecycle({
   setIsLoading,
   setMessages,
   onSessionInit,
-  messages,
   tasks,
   subagents,
 }: UseSessionLifecycleArgs): UseSessionLifecycleReturn {
@@ -136,14 +133,17 @@ export function useSessionLifecycle({
   const [sessionStatus, setSessionStatus] = useState<SessionStatus>(
     () => hasPendingStart ? 'starting' : 'stopped',
   );
+  const [turn, setTurn] = useState<TurnState>(IDLE_TURN);
 
   // `conversationStatus` is now derived, not stored. The `conversationStatus`
   // field on `session-status:<tabId>` IPC events was removed from the IPC
   // contract in Task 3 (jsonl-as-rendered refactor).
   const resetStatus = (next: { sessionStatus: SessionStatus; conversationStatus: ConversationStatus | null }) => {
-    // `next.conversationStatus` is accepted for back-compat but ignored —
-    // the turn axis is now computed from messages/tasks/subagents.
+    // `next.conversationStatus` is accepted for back-compat but ignored.
+    // A reset is a teardown: whatever turn was running belongs to the
+    // process that just went away.
     setSessionStatus(next.sessionStatus);
+    setTurn(IDLE_TURN);
   };
 
   // Attach the tab-scoped event listeners. Idempotent: tears down any prior
@@ -205,10 +205,7 @@ export function useSessionLifecycle({
     );
 
     // Single source of truth for the connection-axis badge. Main process emits
-    // `session-status:<tabId>` on every transition. The payload's
-    // `conversationStatus` field is discarded here — the turn axis is now
-    // derived from messages/tasks/subagents (Task 2). Task 3 removes the field
-    // from the IPC contract. See docs/session-lifecycle.md.
+    // `session-status:<tabId>` on every transition. See docs/session-lifecycle.md.
     const statusUnlisten = window.electronAPI.onEvent(
       `session-status:${tabId}`,
       (...args: unknown[]) => {
@@ -218,6 +215,22 @@ export function useSessionLifecycle({
         } | undefined;
         if (!payload?.sessionStatus) return;
         setSessionStatus(payload.sessionStatus);
+        // Main announces the idle turn alongside a stop/error, but the two
+        // ride separate channels; a dead process is idle regardless.
+        if (payload.sessionStatus === 'stopped' || payload.sessionStatus === 'error') setTurn(IDLE_TURN);
+      },
+    );
+
+    // The turn axis, announced by the session itself: opened when a prompt
+    // is handed to the CLI, closed by its result row or the process going
+    // away. Mirrored, never derived.
+    const turnUnlisten = window.electronAPI.onEvent(
+      `session-turn:${tabId}`,
+      (...args: unknown[]) => {
+        if (!isMountedRef.current) return;
+        const payload = args[0] as TurnState | undefined;
+        if (payload?.status !== 'idle' && payload?.status !== 'running') return;
+        setTurn({ status: payload.status, since: payload.since ?? null });
       },
     );
 
@@ -241,6 +254,7 @@ export function useSessionLifecycle({
       errorUnlisten,
       completeUnlisten,
       statusUnlisten,
+      turnUnlisten,
       initUnlisten,
     ];
   };
@@ -264,8 +278,9 @@ export function useSessionLifecycle({
     api.sessionGetHealth(tabId).then((health) => {
       if (!isMountedRef.current || !health.alive) return;
       setSessionStatus(health.sessionStatus);
-      // conversationStatus is now derived from messages/tasks/subagents — no
-      // need to seed it from health. The turn axis auto-updates as messages flow.
+      // The renderer just reloaded; the turn it missed is still the main
+      // process's to report.
+      if (health.turn) setTurn(health.turn);
       // Re-seed claudeSessionId on rebind — the renderer just reloaded and
       // may have lost it. The main process still holds the pinned id.
       if (health.sessionId) onSessionInit(health.sessionId);
@@ -322,9 +337,10 @@ export function useSessionLifecycle({
     // `session-status: starting` event once `start()` runs, but that may
     // fire before the listener below has attached — set it eagerly so the
     // UI reflects the user's action regardless. Subsequent main-process
-    // events overwrite this. conversationStatus derives to null per invariant
-    // (sessionStatus !== 'started').
+    // events overwrite this. A start — fresh or `--resume` — is a new
+    // process, and a new process is not working on anything.
     setSessionStatus('starting');
+    setTurn(IDLE_TURN);
     attachStreamListeners();
 
     // Resolve account fresh at session start (the cached state may not be ready yet)
@@ -375,7 +391,6 @@ export function useSessionLifecycle({
         configDir,
         sdkEffort,
         sdkThinking,
-        sessionStartMode,
         manualAccountOverride,
         agent,
       );
@@ -453,16 +468,14 @@ export function useSessionLifecycle({
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps -- mount-only effect; tabId is stable per hook instance
 
-  // Derive conversationStatus from the current messages/tasks/subagents.
-  // Null whenever sessionStatus !== 'started' — the turn axis is meaningless
-  // without an active connection. The IPC payload's `conversationStatus` field
-  // is intentionally discarded in the `session-status:` listener above.
-  // messages is now JsonlNode[] directly — no shim needed (Task 6).
+  // The rollup: the session's own turn axis plus the transcript-derived
+  // task / subagent rows. Null whenever sessionStatus !== 'started' — a
+  // conversation is meaningless without a connection.
   const derivedConversationStatus: ConversationStatus | null = useMemo(
     () => sessionStatus === 'started'
-      ? deriveConversationStatus(messages, tasks, subagents)
+      ? deriveConversationStatus(turn.status === 'running', tasks, subagents)
       : null,
-    [sessionStatus, messages, tasks, subagents],
+    [sessionStatus, turn.status, tasks, subagents],
   );
 
   return {
@@ -471,6 +484,7 @@ export function useSessionLifecycle({
     startPersistentSession,
     rebindPersistentSession,
     sessionStatus,
+    turn,
     conversationStatus: derivedConversationStatus,
     resetStatus,
   };

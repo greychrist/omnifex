@@ -22,7 +22,7 @@ export {
   SessionSummarySchema,
   SessionOptionsSchema,
   SessionStatusSchema,
-  SessionModeSchema,
+  TurnStateSchema,
   AgentKindSchema,
   AttachmentSchema,
   PermissionUpdateSchema,

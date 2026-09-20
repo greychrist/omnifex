@@ -106,17 +106,15 @@ export function createRemoteHandlers(deps: RemoteHandlerDeps): RemoteHandlers {
       projectId: meta.projectId,
       ...(meta.title !== undefined && { title: meta.title }),
       agent: meta.agent,
-      mode: state?.mode ?? meta.mode,
       sessionStatus,
-      ...(state?.model !== undefined && { model: state.model }),
-      ...(state?.permissionMode !== undefined && { permissionMode: state.permissionMode }),
+      ...(typeof meta.options.model === 'string' && { model: meta.options.model }),
+      ...(typeof meta.options.permissionMode === 'string' && { permissionMode: meta.options.permissionMode }),
       lastSeq: deps.log.lastSeq(meta.sessionId),
       pendingPermissions: pending.length,
-      // Advisory: a live process with a turn running (prompt sent, no result
-      // row yet) or a permission waiting on the user. The subscribed client
-      // derives the real answer from the transcript; the launcher and the
-      // Daemon panel read this one.
-      inFlight: active && (deps.bridge.inFlight(meta.sessionId) || pending.length > 0),
+      // A live process with a turn running (the session's own axis) or a
+      // permission waiting on the user. The launcher and the Daemon panel
+      // read this; a subscribed client gets `turn` on `session.state`.
+      inFlight: active && (deps.sessions.getTurn(meta.sessionId).status === 'running' || pending.length > 0),
       createdAt: meta.createdAt,
       updatedAt: meta.updatedAt,
     };
@@ -152,7 +150,6 @@ export function createRemoteHandlers(deps: RemoteHandlerDeps): RemoteHandlers {
       resumeSessionId: meta.sessionId,
       ...(o.effort && { effort: o.effort }),
       ...(o.thinking && { thinking: o.thinking }),
-      ...(o.mode && { mode: o.mode }),
       ...(o.manualAccountOverride !== undefined && { manualAccountOverride: o.manualAccountOverride }),
       agent: meta.agent,
     };
@@ -206,7 +203,6 @@ export function createRemoteHandlers(deps: RemoteHandlerDeps): RemoteHandlers {
         );
       }
       const agent = options.agent === 'codex' ? 'codex' : 'claude';
-      const mode = options.mode === 'tui' ? 'tui' : 'rich';
       const stamp = now();
       const meta: SessionMeta = {
         sessionId: (options.resumeSessionId as string | undefined) ?? newId(),
@@ -214,7 +210,6 @@ export function createRemoteHandlers(deps: RemoteHandlerDeps): RemoteHandlers {
         projectPath: project.path,
         configDir,
         agent,
-        mode,
         ...(p.title && { title: p.title }),
         options: { ...options, configDir },
         createdAt: stamp,
@@ -281,8 +276,6 @@ export function createRemoteHandlers(deps: RemoteHandlerDeps): RemoteHandlers {
         });
       }
       const onlyText = blocks.length === 1 && blocks[0].type === 'text' && typeof blocks[0].text === 'string';
-      // Before the write, so a result row that races back cannot be missed.
-      deps.bridge.turnStarted(p.sessionId);
       if (onlyText) deps.sessions.sendMessage(p.sessionId, blocks[0].text as string);
       else deps.sessions.sendStructuredMessage(p.sessionId, blocks);
       deps.log.updateMeta(p.sessionId, {});

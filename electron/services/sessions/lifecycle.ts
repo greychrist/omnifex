@@ -10,7 +10,7 @@ import type {
   SessionHandle,
   SessionStartParams,
   SessionStatus,
-  SessionMode,
+  TurnState,
   SessionsService,
   SendToRenderer,
   NotificationHooks,
@@ -27,27 +27,26 @@ import {
   respondPermission as respondPermissionImpl,
 } from './permissions';
 import { createQueryPassthroughs } from './queries';
-import { createTuiSession } from './tui';
 import { findSystemClaudeBinary, findSystemCodexBinary } from './binary';
 import {
   listenToMessages,
   restartQuery,
   type RuntimeDeps,
 } from './runtime';
-import { createTuiJsonlListener } from './tui-jsonl';
-import { encodeProjectId, hasTranscript } from '../project-paths';
+import { hasTranscript } from '../project-paths';
 import { createClaudeCliEngine } from '../agents/claude-cli-engine';
 import { createCodexCliEngine } from '../agents/codex-cli-engine';
 import type { AgentEngine, AgentKind } from '../agents/types';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { setStatus } from './status';
+import { setStatus, setTurn } from './status';
+import { IDLE_TURN } from './types';
 
 
 /**
  * Single source of truth for "what sessionId will this session use?" —
- * shared by CLI cold-start, CLI resume, and TUI cold-start so all three
- * paths agree on the resolution rule. Resume keeps the caller's id;
+ * shared by CLI cold-start and CLI resume so both paths agree on the
+ * resolution rule. Resume keeps the caller's id;
  * cold-start mints a fresh UUID synchronously so handle.sessionId is
  * never null after start() returns.
  */
@@ -168,10 +167,9 @@ export function createSessionsService(
     }
 
     // Secondary confirmation: is this config dir actually logged in as the
-    // account we think it is? Deliberately sits ABOVE the mode branch so TUI
-    // and rich sessions share one call site, and runs against the RE-RESOLVED
-    // configDir — checking the renderer-supplied one would verify the wrong
-    // account exactly when a path rule just changed. Never blocks: the session
+    // account we think it is? Runs against the RE-RESOLVED configDir —
+    // checking the renderer-supplied one would verify the wrong account
+    // exactly when a path rule just changed. Never blocks: the session
     // starts either way. See
     // docs/superpowers/specs/2026-07-27-account-email-verification-design.md
     if (verifyAccountIdentity && configDir) {
@@ -194,16 +192,10 @@ export function createSessionsService(
       }
     }
 
-    if (params.mode === 'tui') {
-      return startTuiColdStart({ ...params, configDir });
-    }
-
     // Close any existing session for this tab
     const existing = sessions.get(tabId);
     if (existing) {
-      existing.tuiJsonl?.stop();
-      existing.tuiDetach?.();
-      if (existing.engine) { void existing.engine.close().catch(() => { /* ignore */ }); }
+      void existing.engine.close().catch(() => { /* ignore */ });
       sessions.delete(tabId);
       ownership?.unregister(tabId);
       queryPassthroughs.evictPluginCache(tabId);
@@ -277,10 +269,7 @@ export function createSessionsService(
       },
       sessionId,
       sessionStatus: 'started',
-      mode: 'rich',
-      tui: null,
-      tuiDetach: null,
-      tuiJsonl: null,
+      turn: IDLE_TURN,
       permissionResolver: null,
       permissionQueue: [],
       elicitationResolver: null,
@@ -368,11 +357,12 @@ export function createSessionsService(
   function sendMessage(tabId: string, prompt: string): void {
     const handle = sessions.get(tabId);
     if (!handle) return;
-    if (!handle.engine) return; // TUI cold-start — input goes through PTY
-    if (handle.mode === 'tui') return;
 
     ensureLiveEngine(tabId, handle);
 
+    // The turn opens the moment the prompt is handed over, before the write,
+    // so a result row that races back cannot be missed.
+    setTurn(handle, 'running', tabId, sendToRenderer);
     void handle.engine.send(prompt).catch((err: unknown) => {
       console.error(`[sessions] engine.send failed for tab ${tabId}:`, err);
     });
@@ -384,11 +374,10 @@ export function createSessionsService(
   ): void {
     const handle = sessions.get(tabId);
     if (!handle) return;
-    if (!handle.engine) return;
-    if (handle.mode === 'tui') return;
 
     ensureLiveEngine(tabId, handle);
 
+    setTurn(handle, 'running', tabId, sendToRenderer);
     void handle.engine.sendStructured(content).catch((err: unknown) => {
       console.error(`[sessions] engine.sendStructured failed for tab ${tabId}:`, err);
     });
@@ -460,11 +449,10 @@ export function createSessionsService(
     const closedProjectPath = handle.projectPath;
     const closedConfigDir = handle.configDir;
 
-    handle.tuiJsonl?.stop();
-    handle.tuiDetach?.();
-    if (handle.engine) {
-      void handle.engine.close().catch(() => { /* ignore */ });
-    }
+    // A stopped session is not working on anything. Announce before the
+    // handle goes, so whoever mirrors the axis learns it.
+    setTurn(handle, 'idle', tabId, sendToRenderer);
+    void handle.engine.close().catch(() => { /* ignore */ });
     sessions.delete(tabId);
     ownership?.unregister(tabId);
     // Evict the per-tab plugin cache so closed-tab entries don't accumulate
@@ -566,334 +554,23 @@ export function createSessionsService(
     alive: boolean;
     sessionId: string | null;
     sessionStatus: SessionStatus;
+    turn: TurnState;
   } {
     const handle = sessions.get(tabId);
     if (!handle) {
-      return { alive: false, sessionId: null, sessionStatus: 'stopped' };
+      return { alive: false, sessionId: null, sessionStatus: 'stopped', turn: IDLE_TURN };
     }
     return {
       alive: true,
       sessionId: handle.sessionId,
       sessionStatus: handle.sessionStatus,
+      turn: { ...handle.turn },
     };
   }
 
-  async function setMode(tabId: string, mode: SessionMode): Promise<void> {
+  function getTurn(tabId: string): TurnState {
     const handle = sessions.get(tabId);
-    if (!handle) throw new Error(`setMode: unknown tab ${tabId}`);
-    if (handle.mode === mode) return;
-
-    // Gate: allow switching on a live or initializing session.
-    // Block when the session is dead (stopped/error).
-    const conn = handle.sessionStatus;
-    const allowed = conn === 'starting' || conn === 'started';
-    if (!allowed) {
-      throw new Error(
-        `setMode: not allowed while sessionStatus="${conn}"`,
-      );
-    }
-
-    if (handle.permissionQueue.length > 0) {
-      // Drain any in-flight permission requests with 'deny' so resolvers don't dangle.
-      // The renderer's modeToggleDisabled gate normally prevents reaching this path while
-      // waitingForPermission is true, but a programmatic / IPC caller could still hit it.
-      for (const pending of handle.permissionQueue) {
-        pending.resolve({ behavior: 'deny' });
-      }
-      handle.permissionQueue.length = 0;
-      if (handle.permissionResolver) {
-        handle.permissionResolver({ behavior: 'deny' });
-        handle.permissionResolver = null;
-      }
-    }
-
-    if (mode === 'tui') {
-      if (!handle.sessionId) {
-        throw new Error('setMode("tui"): session has no sessionId yet');
-      }
-
-      const binaryPath = findSystemClaudeBinary();
-      if (!binaryPath) throw new Error('setMode("tui"): claude binary not found');
-
-      // Mark as tui BEFORE closing the engine so that the runtime's
-      // cleanup guard sees mode === 'tui' and skips the session deletion.
-      handle.mode = 'tui';
-
-      // Close the engine cleanly.
-      if (handle.engine) {
-        try { await handle.engine.close(); } catch { /* best effort */ }
-      }
-
-      // If the user toggles to TUI before any messages were sent in rich
-      // mode, the CLI hasn't written a JSONL for this sessionId yet. Passing
-      // `--resume <id>` in that case makes the CLI emit
-      // "No conversation found with session ID …" and exit, which then
-      // boots the user out of the session via the TUI exit handler below.
-      // Detect the JSONL's absence and pin the existing sessionId via
-      // `--session-id <id>` instead — same UUID, fresh transcript, no error.
-      const resumeExistingTranscript = hasTranscript(
-        handle.configDir,
-        handle.projectPath,
-        handle.sessionId,
-      );
-
-      const tui = createTuiSession({
-        tabId,
-        projectPath: handle.projectPath,
-        configDir: handle.configDir,
-        sessionId: handle.sessionId,
-        resume: resumeExistingTranscript,
-        claudeBinaryPath: binaryPath,
-        extraArgs: extraSpawnArgs?.(handle.configDir) ?? [],
-      });
-
-      tui.onData((data: string) => sendToRenderer(`session-tui-data:${tabId}`, data));
-      tui.onExit((r: { exitCode: number }) => {
-        sendToRenderer(`session-tui-exit:${tabId}`, r);
-        handle.tuiJsonl?.stop();
-        handle.tuiJsonl = null;
-        // Auto-revert to rich mode.
-        void setMode(tabId, 'rich').catch((e: unknown) =>
-          console.error('[sessions] auto-revert to rich failed:', e)
-        );
-      });
-
-      handle.tui = tui;
-      handle.tuiDetach = () => { try { tui.kill(); } catch { /* best effort */ } };
-      sendToRenderer(`session-mode:${tabId}`, { mode: 'tui' });
-
-      // Wire up the JSONL listener so mid-session toggle gets the same
-      // message rendering and status tracking as cold-start TUI mode.
-      const jsonlPath = path.join(
-        handle.configDir,
-        'projects',
-        encodeProjectId(handle.projectPath),
-        `${handle.sessionId}.jsonl`,
-      );
-      handle.tuiJsonl = createTuiJsonlListener({
-        tabId,
-        projectPath: handle.projectPath,
-        jsonlPath,
-        sendToRenderer,
-        notificationHooks,
-        onInit: () => {
-          // sessionId is already known (precondition for the toggle); ignore.
-        },
-        onStatusChange: (_status) => {
-          // TUI JSONL reports turn-level idle/running. Connection axis
-          // is already 'started' for a mid-session toggle; conversationStatus
-          // is now derived by the renderer, so no update needed.
-        },
-        onControlState: (state) => {
-          // Mirror in-terminal model / permission-mode switches to the
-          // renderer's read-only pickers (TUI mode owns these, not OmniFex).
-          sendToRenderer(`session-control-state:${tabId}`, state);
-        },
-      });
-    } else {
-      // tui -> rich: kill the pty, then re-start the engine with --resume.
-      handle.tuiJsonl?.stop();
-      handle.tuiJsonl = null;
-      handle.tuiDetach?.();
-      handle.tui = null;
-      handle.tuiDetach = null;
-      handle.mode = 'rich';
-      sendToRenderer(`session-mode:${tabId}`, { mode: 'rich' });
-
-      // Re-start the engine on the same session id. start() is re-entrant.
-      if (!handle.engine) {
-        // Cold-start TUI sessions never had an engine. Build one now and
-        // wire the permission handler — it lives on the engine's
-        // permissionCallbacks for the engine's whole life and is never
-        // disposed during mode toggles, so a fresh engine needs it once.
-        // TUI cold-start is Claude-only in v1, so we don't need to branch
-        // on handle.agent here — but use it anyway for forward-compat.
-        if (handle.agent === 'codex') {
-          const codexPath = findSystemCodexBinary();
-          if (!codexPath) throw new Error('setMode("rich"): codex binary not found');
-          handle.engine = createCodexCliEngine({ tabId, codexBinaryPath: codexPath });
-        } else {
-          const binaryPath = findSystemClaudeBinary();
-          if (!binaryPath) throw new Error('setMode("rich"): claude binary not found');
-          handle.engine = createClaudeCliEngine({ tabId, claudeBinaryPath: binaryPath });
-        }
-        handle.engine.onPermissionRequest(
-          createPermissionRequestHandler(handle, tabId, sendToRenderer, notificationHooks, logging),
-        );
-      }
-      // Always (re-)attach the runtime listener loop. The prior loop's
-      // onMessage/onError/onExit subscriptions were disposed when the
-      // engine.onExit fired during the rich→tui transition (see
-      // runtime.ts's tui-mode early-return). Without re-attachment the
-      // resumed engine's stdout would emit into the void —
-      // agent-output:<tabId> would never reach the renderer.
-      listenToMessages(tabId, handle, runtimeDeps).catch((err: unknown) => {
-        console.error(`[sessions] Unhandled error in listenToMessages for tab ${tabId}:`, err);
-      });
-      restartQuery(tabId, handle, runtimeDeps);
-    }
-  }
-
-  function tuiWrite(tabId: string, data: string): void {
-    sessions.get(tabId)?.tui?.write(data);
-  }
-
-  function tuiResize(tabId: string, cols: number, rows: number): void {
-    sessions.get(tabId)?.tui?.resize(cols, rows);
-  }
-
-  function getMode(tabId: string): SessionMode | null {
-    return sessions.get(tabId)?.mode ?? null;
-  }
-
-  // -------------------------------------------------------------------------
-  // startTuiColdStart()
-  // -------------------------------------------------------------------------
-
-  async function startTuiColdStart(params: SessionStartParams): Promise<void> {
-    const { tabId, projectPath, configDir } = params;
-    if (!configDir) throw new Error(`configDir is required to start session for tab ${tabId}`);
-
-    // Close any existing session for this tab
-    const existing = sessions.get(tabId);
-    if (existing) {
-      existing.tuiJsonl?.stop();
-      existing.tuiDetach?.();
-      if (existing.engine) {
-        void existing.engine.close().catch(() => { /* ignore */ });
-      }
-      sessions.delete(tabId);
-      ownership?.unregister(tabId);
-      queryPassthroughs.evictPluginCache(tabId);
-    }
-
-    const binaryPath = findSystemClaudeBinary();
-    if (!binaryPath) throw new Error('startTuiColdStart: claude binary not found');
-
-    // TUI pre-mints the UUID and passes it to the CLI via `--session-id`
-    // so the JSONL file path is known up front (no discovery race, no
-    // resume-picker dialog). The CLI in pty mode handles `--session-id`
-    // cleanly — unlike the CLI's stream-json mode, where pinning makes
-    // the CLI suppress init and the control channel. When the caller
-    // passes resumeSessionId, reuse it and switch the CLI to `--resume`
-    // so the prior conversation continues instead of starting fresh.
-    const resuming = !!params.resumeSessionId;
-    const sessionId = resolveSessionId(params.resumeSessionId);
-    const jsonlPath = path.join(
-      configDir,
-      'projects',
-      encodeProjectId(projectPath),
-      `${sessionId}.jsonl`,
-    );
-
-    const handle: SessionHandle = {
-      // Codex has no TUI surface in v1 — TUI cold-start is always Claude.
-      agent: 'claude',
-      engine: null,
-      initData: null,
-      permissionMode: params.permissionMode,
-      startParams: {
-        projectPath,
-        configDir,
-        model: params.model,
-        permissionMode: params.permissionMode,
-      },
-      sessionId,
-      sessionStatus: 'starting',
-      mode: 'tui',
-      tui: null,
-      tuiDetach: null,
-      tuiJsonl: null,
-      permissionResolver: null,
-      permissionQueue: [],
-      elicitationResolver: null,
-      projectPath,
-      configDir,
-    };
-    sessions.set(tabId, handle);
-    if (params.ownerWebContentsId !== undefined) {
-      ownership?.register(tabId, params.ownerWebContentsId);
-    }
-
-    // The handle is already in the map (sessions.set above) so a rebind during
-    // spawn can find it. createTuiSession → ptySpawn can throw synchronously
-    // (bad binary/env), which would otherwise strand a 'starting' zombie handle
-    // with no tui and no JSONL listener — getHealth would keep reporting it
-    // alive. Wrap the spawn + wiring so any throw cleans the handle up before
-    // it propagates to the caller's reject path.
-    let tui: ReturnType<typeof createTuiSession>;
-    try {
-      tui = createTuiSession({
-        tabId,
-        projectPath,
-        configDir,
-        sessionId,
-        // resume=true → CLI spawns with `--resume <id>` (continues prior turns).
-        // resume=false → CLI spawns with `--session-id <id>` (fresh session
-        // with a caller-chosen UUID so the JSONL path is known up front).
-        resume: resuming,
-        claudeBinaryPath: binaryPath,
-        extraArgs: extraSpawnArgs?.(configDir) ?? [],
-      });
-    } catch (err) {
-      if (sessions.get(tabId) === handle) {
-        sessions.delete(tabId);
-        ownership?.unregister(tabId);
-      }
-      throw err;
-    }
-
-    tui.onData((data: string) => sendToRenderer(`session-tui-data:${tabId}`, data));
-    tui.onExit((r: { exitCode: number }) => {
-      sendToRenderer(`session-tui-exit:${tabId}`, r);
-      handle.tuiJsonl?.stop();
-      handle.tuiJsonl = null;
-      setStatus(handle, { sessionStatus: 'stopped' }, tabId, sendToRenderer);
-      sendToRenderer(`agent-complete:${tabId}`);
-      // Only mutate the shared map if we are still the current session for this tab.
-      // A `stop()` followed by a new `start()` on the same tabId will have already
-      // registered a different handle; deleting here would orphan it.
-      if (sessions.get(tabId) === handle) {
-        sessions.delete(tabId);
-        ownership?.unregister(tabId);
-      }
-    });
-
-    handle.tui = tui;
-    handle.tuiDetach = () => { try { tui.kill(); } catch { /* ignore */ } };
-
-    // Attach the JSONL listener immediately. `createJsonlTail` handles the
-    // ENOENT case — it polls until the CLI creates the file, then starts
-    // forwarding lines. No race, no timeout.
-    handle.tuiJsonl = createTuiJsonlListener({
-      tabId,
-      projectPath,
-      jsonlPath,
-      sendToRenderer,
-      notificationHooks,
-      onInit: () => {
-        // sessionId is already set on the handle; ignore CLI re-inits.
-      },
-      onStatusChange: (_status) => {
-        // First JSONL line means the CLI has spun up — sessionStatus
-        // flips to 'started' here. conversationStatus is now derived
-        // by the renderer from JSONL content.
-        setStatus(handle, { sessionStatus: 'started' }, tabId, sendToRenderer);
-      },
-      onControlState: (state) => {
-        // Mirror in-terminal model / permission-mode switches to the
-        // renderer's read-only pickers (TUI mode owns these, not OmniFex).
-        sendToRenderer(`session-control-state:${tabId}`, state);
-      },
-    });
-
-    // TUI cold-start: handle is up, CLI is being spawned, JSONL listener
-    // attached. Once the CLI writes its first JSONL line, the listener's
-    // onStatusChange will flip us to started. For now we're 'starting'.
-    sendToRenderer(`session-status:${tabId}`, {
-      sessionStatus: 'starting',
-    });
-    sendToRenderer(`session-mode:${tabId}`, { mode: 'tui' });
+    return handle ? { ...handle.turn } : IDLE_TURN;
   }
 
   // -------------------------------------------------------------------------
@@ -914,14 +591,11 @@ export function createSessionsService(
     getStatus,
     getInfo,
     getHealth,
+    getTurn,
     isActive,
     listActiveTabIds,
     listActiveSessionIds,
     listSessionStatuses,
-    setMode,
-    tuiWrite,
-    tuiResize,
-    getMode,
     ...queryPassthroughs,
   };
 }

@@ -112,7 +112,6 @@ function harness(overrides: HarnessOverrides = {}) {
             : updater;
         }) as any,
         onSessionInit: (overrides.onSessionInit ?? vi.fn()) as any,
-        messages: overrides.messages ?? [],
         tasks: overrides.tasks ?? [],
         subagents: overrides.subagents ?? [],
       }),
@@ -140,14 +139,13 @@ describe('useSessionLifecycle — startPersistentSession happy path', () => {
       '/cfg',
       'medium',
       { type: 'adaptive' },
-      undefined,
       false,
       undefined, // agent — harness doesn't pass one; lifecycle forwards undefined
     );
     expect(result.current.persistentSessionRef.current).toBe(true);
     // Listeners attached on the three agent-* tab-scoped channels plus
-    // claude-output-extra (closure carriers) and session-status /
-    // session-init (sessionId pinned at spawn).
+    // claude-output-extra (closure carriers), session-status / session-turn
+    // (the two axes main owns) and session-init (sessionId pinned at spawn).
     expect(Object.keys(eventListeners).sort()).toEqual([
       'agent-complete:tab-life',
       'agent-error:tab-life',
@@ -155,6 +153,7 @@ describe('useSessionLifecycle — startPersistentSession happy path', () => {
       'claude-output-extra:tab-life',
       'session-init:tab-life',
       'session-status:tab-life',
+      'session-turn:tab-life',
     ]);
     // No placeholder init is rendered — the chat stays empty until the
     // CLI iterator yields its real system:init via agent-output.
@@ -219,7 +218,6 @@ describe('useSessionLifecycle — startPersistentSession happy path', () => {
             messagesRef.current = typeof updater === 'function' ? updater(messagesRef.current) : updater;
           }) as any,
           onSessionInit: vi.fn(),
-          messages: [],
           tasks: [],
           subagents: [],
         }),
@@ -247,7 +245,6 @@ describe('useSessionLifecycle — startPersistentSession happy path', () => {
         handleJsonlLine: vi.fn(), setIsLoading: vi.fn(),
         setMessages: ((u: any) => { messagesRef.current = typeof u === 'function' ? u(messagesRef.current) : u; }) as any,
         onSessionInit: vi.fn(),
-        messages: [],
         tasks: [],
         subagents: [],
       });
@@ -348,7 +345,7 @@ describe('useSessionLifecycle — rebindPersistentSession', () => {
     (api.sessionGetHealth as any).mockResolvedValueOnce({
       alive: true, sessionId: 'uuid-warm', sessionStatus: 'started',
     });
-    // No messages → waitingOnClaude([]) = false, no tasks/subagents → derived 'idle'.
+    // Health reports no turn, no tasks/subagents → 'idle'.
     const { result } = renderHook(harness());
     let rebound = false;
     await act(async () => { rebound = await result.current.lifecycle.rebindPersistentSession(); });
@@ -501,6 +498,48 @@ describe('useSessionLifecycle — session-init event', () => {
   });
 });
 
+describe('useSessionLifecycle — the turn axis is the session\'s, mirrored', () => {
+  function truncatedTranscript(): JsonlNode[] {
+    // What a `--resume` of a session whose process died mid-turn loads: a
+    // prompt, an assistant tool_use, and nothing closing it.
+    return [makeUserPrompt(), makeAssistantMsg('tool_use')];
+  }
+
+  it('reads idle on a resumed transcript that ends mid-turn — the new process is not working', async () => {
+    (api.startSession as any).mockResolvedValueOnce(undefined);
+    const { result } = renderHook(harness({ messages: truncatedTranscript() }));
+    await act(async () => { await result.current.lifecycle.startPersistentSession('sid-old'); });
+    act(() => { eventListeners['session-status:tab-life']({ sessionStatus: 'started' }); });
+    expect(result.current.lifecycle.turn).toEqual({ status: 'idle', since: null });
+    expect(result.current.lifecycle.conversationStatus).toBe('idle');
+  });
+
+  it('follows session-turn events and exposes them as conversationStatus', async () => {
+    (api.startSession as any).mockResolvedValueOnce(undefined);
+    const { result } = renderHook(harness());
+    await act(async () => { await result.current.lifecycle.startPersistentSession(); });
+    act(() => { eventListeners['session-status:tab-life']({ sessionStatus: 'started' }); });
+    const running = { status: 'running', since: '2026-09-20T00:00:00.000Z' };
+    act(() => { eventListeners['session-turn:tab-life'](running); });
+    expect(result.current.lifecycle.turn).toEqual(running);
+    expect(result.current.lifecycle.conversationStatus).toBe('running');
+    act(() => { eventListeners['session-turn:tab-life']({ status: 'idle', since: null }); });
+    expect(result.current.lifecycle.conversationStatus).toBe('idle');
+  });
+
+  it('seeds the turn from sessionGetHealth on rebind', async () => {
+    (api.sessionRebind as any).mockResolvedValueOnce(true);
+    (api.sessionGetHealth as any).mockResolvedValueOnce({
+      alive: true, sessionId: 'uuid-warm', sessionStatus: 'started', turn: { status: 'running', since: '2026-09-20T00:00:00.000Z' },
+    });
+    const { result } = renderHook(harness());
+    await act(async () => { await result.current.lifecycle.rebindPersistentSession(); });
+    await act(async () => { await Promise.resolve(); });
+    expect(result.current.lifecycle.turn.status).toBe('running');
+    expect(result.current.lifecycle.conversationStatus).toBe('running');
+  });
+});
+
 describe('useSessionLifecycle — sessionStatus + conversationStatus', () => {
   it('defaults to sessionStatus=stopped, conversationStatus=null before any activity', () => {
     const { result } = renderHook(harness());
@@ -539,16 +578,16 @@ describe('useSessionLifecycle — sessionStatus + conversationStatus', () => {
     expect(result.current.lifecycle.conversationStatus).toBe('idle');
   });
 
-  it('derives conversationStatus="running" from messages — user prompt with no assistant reply yet', async () => {
-    // Hook starts with a user prompt but no assistant response → waitingOnClaude → running.
+  it('reports conversationStatus="running" only when the session says its turn is running', async () => {
+    // A user prompt with no reply in the transcript is NOT enough — the
+    // transcript never decides the turn. The session does.
     const messages = [makeUserPrompt()];
     const { result } = renderHook(harness({ messages, tasks: [], subagents: [] }));
-    // Drive sessionStatus to 'started' via IPC after starting the session.
     (api.startSession as any).mockResolvedValueOnce(undefined);
     await act(async () => { await result.current.lifecycle.startPersistentSession(); });
-    act(() => {
-      eventListeners['session-status:tab-life']({ sessionStatus: 'started' });
-    });
+    act(() => { eventListeners['session-status:tab-life']({ sessionStatus: 'started' }); });
+    expect(result.current.lifecycle.conversationStatus).toBe('idle');
+    act(() => { eventListeners['session-turn:tab-life']({ status: 'running', since: '2026-09-20T00:00:00.000Z' }); });
     expect(result.current.lifecycle.conversationStatus).toBe('running');
   });
 
@@ -605,16 +644,18 @@ describe('useSessionLifecycle — sessionStatus + conversationStatus', () => {
 
     act(() => {
       eventListeners['session-status:tab-life']({ sessionStatus: 'started' });
+      eventListeners['session-turn:tab-life']({ status: 'running', since: '2026-09-20T00:00:00.000Z' });
     });
-    // Prompt with no reply → running.
     expect(result.current.lifecycle.conversationStatus).toBe('running');
 
-    // Session transitions to error — derivation must gate and return null.
+    // Session transitions to error — the rollup gates to null and the turn
+    // that was running belongs to the process that just died.
     act(() => {
       eventListeners['session-status:tab-life']({ sessionStatus: 'error' });
     });
     expect(result.current.lifecycle.sessionStatus).toBe('error');
     expect(result.current.lifecycle.conversationStatus).toBeNull();
+    expect(result.current.lifecycle.turn.status).toBe('idle');
   });
 
   it('ignores payloads without a sessionStatus field', async () => {
@@ -637,25 +678,15 @@ describe('useSessionLifecycle — sessionStatus + conversationStatus', () => {
     expect(result.current.lifecycle.conversationStatus).toBe('idle');
   });
 
-  it('conversationStatus payload in session-status event is discarded (derivation takes over)', async () => {
-    // This is the key Task 2 assertion: even if main still sends a
-    // conversationStatus in the IPC payload, the hook ignores it and
-    // returns the locally-derived value.
+  it('ignores a conversationStatus field on session-status — the turn arrives on its own channel', async () => {
     (api.startSession as any).mockResolvedValueOnce(undefined);
-    const messages = [makeUserPrompt()]; // → waitingOnClaude → 'running'
-    const { result } = renderHook(harness({ messages }));
+    const { result } = renderHook(harness());
     await act(async () => { await result.current.lifecycle.startPersistentSession(); });
-
     act(() => {
-      // Emit sessionStatus='started'. The wire format no longer carries
-      // conversationStatus — the hook derives it locally from messages.
-      // Expect 'running' (derived from the user-prompt-with-no-reply messages),
-      // NOT any stale value that an older main-process payload might have sent.
-      eventListeners['session-status:tab-life']({ sessionStatus: 'started' });
+      eventListeners['session-status:tab-life']({ sessionStatus: 'started', conversationStatus: 'running' });
     });
     expect(result.current.lifecycle.sessionStatus).toBe('started');
-    // Derived from messages (user prompt, no assistant) → 'running', NOT 'idle' from payload.
-    expect(result.current.lifecycle.conversationStatus).toBe('running');
+    expect(result.current.lifecycle.conversationStatus).toBe('idle');
   });
 
   it('user message with a parent_tool_use_id is forwarded subagent traffic and does not drive the turn axis', async () => {
@@ -681,22 +712,6 @@ describe('useSessionLifecycle — sessionStatus + conversationStatus', () => {
     expect(result.current.lifecycle.conversationStatus).toBe('idle');
   });
 
-  it('assistant message with a parent_tool_use_id is forwarded subagent text and cannot close the parent turn', async () => {
-    // Same contract change: the subagent's own end_turn brackets ITS turn,
-    // not the parent's. The parent is still waiting on its Task tool call,
-    // so the unanswered main prompt keeps the derivation at 'running'.
-    (api.startSession as any).mockResolvedValueOnce(undefined);
-    const messages = [
-      makeUserPrompt(),
-      makeAssistantMsg('end_turn', { parent_tool_use_id: 'toolu_xyz789' }),
-    ];
-    const { result } = renderHook(harness({ messages, tasks: [], subagents: [] }));
-    await act(async () => { await result.current.lifecycle.startPersistentSession(); });
-    act(() => {
-      eventListeners['session-status:tab-life']({ sessionStatus: 'started' });
-    });
-    expect(result.current.lifecycle.conversationStatus).toBe('running');
-  });
 });
 
 describe('useSessionLifecycle — StrictMode-safe', () => {

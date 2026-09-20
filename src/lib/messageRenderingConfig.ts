@@ -492,7 +492,7 @@ export const DEFAULT_DEBUG: DebugOptions = {
 
 // ─── terminal ───────────────────────────────────────────────────────────────
 //
-// Settings specific to the xterm surface in TUI mode.
+// Settings for the embedded xterm surface (Codex sign-in and other one-shot terminals).
 
 export type TerminalCursorStyle = "block" | "underline" | "bar";
 

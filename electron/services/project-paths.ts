@@ -14,9 +14,9 @@ import path from 'node:path';
 /**
  * Has the CLI written a transcript for this session id yet?
  *
- * Three separate paths spawn the CLI against an existing session id — cold
- * start with `resumeSessionId` (reconnect / restart), `restartQuery` after a
- * stream death, and `setMode('tui')`. All three must answer the same question
+ * Two separate paths spawn the CLI against an existing session id — cold
+ * start with `resumeSessionId` (reconnect / restart) and `restartQuery` after
+ * a stream death. Both must answer the same question
  * first, because `--resume` against an id with no JSONL makes the CLI print
  * "No conversation found with session ID …" and exit. Passing `--session-id`
  * instead keeps the id and starts a fresh transcript.

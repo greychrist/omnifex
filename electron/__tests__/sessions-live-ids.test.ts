@@ -78,7 +78,6 @@ describe('listActiveSessionIds', () => {
       configDir: tmpConfig,
       model: '',
       permissionMode: '',
-      mode: 'rich',
     });
     const idA = sessions.getSessionId('tab-a');
     expect(idA).toBeTruthy();
@@ -90,7 +89,6 @@ describe('listActiveSessionIds', () => {
       configDir: tmpConfig,
       model: '',
       permissionMode: '',
-      mode: 'rich',
     });
     const idB = sessions.getSessionId('tab-b');
     expect(new Set(sessions.listActiveSessionIds())).toEqual(new Set([idA, idB]));
@@ -125,7 +123,6 @@ describe('listActiveSessionIds', () => {
       configDir: tmpConfig,
       model: '',
       permissionMode: '',
-      mode: 'rich',
     });
     const id = sessions.getSessionId('tab-close');
     sessions.stop('tab-close');

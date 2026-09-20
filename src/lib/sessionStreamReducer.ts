@@ -110,7 +110,7 @@ export interface StreamReducerResult {
   /**
    * When set, the caller appends THIS node instead of the original message.
    * Used to keep a turn-closer in messages[] while rewriting its presentation
-   * (e.g. a user-cancel result kept so waitingOnClaude() can settle, but with
+   * (e.g. a user-cancel result kept in the transcript, but with
    * is_error stripped so it renders as a benign completion, not a failure).
    */
   replaceWith?: JsonlNode;
@@ -460,7 +460,7 @@ export function reduceSessionStreamMessage(
       if (raw.is_error === true) {
         // Deliberate user cancel. Keep the result row in messages[] — it is
         // the only turn-closer there (the trailing partial assistant carries
-        // stop_reason:null), and without it waitingOnClaude() stays true
+        // stop_reason:null), and without it the transcript reads as open
         // forever, leaving the tab stuck on "Turn in flight"/WORKING after
         // Stop. Neutralize is_error so it renders as a benign completion badge
         // (like any normal turn) instead of a red "failed" card — a cancel is

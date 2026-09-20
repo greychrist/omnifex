@@ -21,7 +21,6 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { classifyJsonlLine } from '../jsonlClassifier';
-import { conversationStatus } from '../sessionDerivedState';
 import type { JsonlNode } from '@/types/jsonl';
 
 // ---------------------------------------------------------------------------
@@ -48,46 +47,6 @@ function loadFixtureNodes(): JsonlNode[] {
 // Helper: produce a modified fixture where the last main-chain assistant's
 // stop_reason is removed, simulating a mid-turn snapshot (incomplete session).
 // ---------------------------------------------------------------------------
-
-function loadFixtureWithTruncatedFinalAssistant(): JsonlNode[] {
-  const raw = readFileSync(FIXTURE_PATH, 'utf8');
-  const lines = raw.split('\n').filter((l) => l.trim());
-
-  // Find the last line whose type=assistant (not isSidechain) with stop_reason=end_turn
-  let lastEndTurnIdx = -1;
-  for (let i = lines.length - 1; i >= 0; i -= 1) {
-    const obj = JSON.parse(lines[i]) as Record<string, unknown>;
-    if (
-      obj.type === 'assistant' &&
-      obj.isSidechain !== true &&
-      (obj as { message?: { stop_reason?: string } }).message?.stop_reason === 'end_turn'
-    ) {
-      lastEndTurnIdx = i;
-      break;
-    }
-  }
-
-  if (lastEndTurnIdx === -1) {
-    throw new Error('Fixture has no assistant with stop_reason=end_turn — fixture may be stale');
-  }
-
-  // Clone the line and strip stop_reason
-  const modified = lines.map((line, idx) => {
-    if (idx !== lastEndTurnIdx) return line;
-    const obj = JSON.parse(line) as Record<string, unknown>;
-    const msg = obj.message as Record<string, unknown>;
-    const modifiedMsg = { ...msg, stop_reason: null };
-    return JSON.stringify({ ...obj, message: modifiedMsg });
-  });
-
-  const nodes: JsonlNode[] = [];
-  for (const line of modified) {
-    const parsed = JSON.parse(line) as unknown;
-    const node = classifyJsonlLine(parsed);
-    if (node !== null) nodes.push(node);
-  }
-  return nodes;
-}
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -119,26 +78,6 @@ describe('c0e34556 session regression (jsonl-as-rendered refactor)', () => {
     for (const node of nodes) {
       expect(VALID_KINDS.has(node.kind)).toBe(true);
     }
-  });
-
-  it('produces conversationStatus === "idle" when final assistant has stop_reason=end_turn', () => {
-    const nodes = loadFixtureNodes();
-
-    // Confirm the fixture actually ends with an end_turn assistant.
-    const lastAssistant = [...nodes].reverse().find((n) => n.kind === 'assistant');
-    expect(lastAssistant).toBeDefined();
-    const stopReason = (lastAssistant?.raw as { message?: { stop_reason?: string | null } })
-      .message?.stop_reason;
-    expect(stopReason).toBe('end_turn');
-
-    // The key assertion: derived status is idle, not running.
-    expect(conversationStatus(nodes, [], [])).toBe('idle');
-  });
-
-  it('produces conversationStatus === "running" when the final end_turn is stripped', () => {
-    const nodes = loadFixtureWithTruncatedFinalAssistant();
-    // With the stop_reason removed, the conversation looks like it's still in-flight.
-    expect(conversationStatus(nodes, [], [])).toBe('running');
   });
 
   it('fixture contains the expected structural shape: meta-skill, tool-results, and assistants', () => {

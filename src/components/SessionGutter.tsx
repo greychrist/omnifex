@@ -4,10 +4,10 @@ import { Button } from '@/components/ui/button';
 import { TooltipSimple } from '@/components/ui/tooltip-modern';
 
 /**
- * Chrome for a button in the right-hand rail. Exported because the three
- * surfaces that have a rail — rendered chat, TUI and Codex — were each
- * carrying their own copy of this string, and two of them had already drifted
- * from being one declaration.
+ * Chrome for a button in the right-hand rail. Exported because the surfaces
+ * that have a rail — rendered chat and Codex — were each carrying their own
+ * copy of this string, and they had already drifted from being one
+ * declaration.
  */
 export const GUTTER_BUTTON =
   'h-8 w-8 hover:bg-accent/50 transition-colors bg-background/80 backdrop-blur-sm border border-border/50';

@@ -351,8 +351,8 @@ const ASYNC_LAUNCH_ACK_PREFIX = 'Async agent launched';
  * `tool_use_result` in the live stream-json stdout (verified against CLI
  * 2.1.270 — an earlier version of this comment claimed the live stream
  * carried no structured result at all, which is wrong). This function reads
- * the on-disk spelling only, so it fires in TUI mode — which tails that file —
- * and never in chat mode. That is a known asymmetry, not a deliberate
+ * the on-disk spelling only, so it fires from the JSONL tail and never from
+ * the live stream. That is a known asymmetry, not a deliberate
  * narrowing: whether the live stream actually carries the async-launch
  * enrichment has not been confirmed, so nothing here reads the other spelling
  * on speculation. `src/lib/bashToolResult.ts` reads both, and is the place to

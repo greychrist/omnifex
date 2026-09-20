@@ -13,7 +13,7 @@ import {
   type EffortLevel,
 } from "./ControlBar";
 import { useModelCatalog } from "@/lib/modelCatalog";
-import type { AgentKind, CodexAuthStatus, ResolvePair, SessionMode } from "@/lib/api";
+import type { AgentKind, CodexAuthStatus, ResolvePair } from "@/lib/api";
 
 interface NewSessionFormProps {
   /**
@@ -30,8 +30,6 @@ interface NewSessionFormProps {
   setEffort: (effort: EffortLevel) => void;
   permissionMode: string;
   setPermissionMode: (mode: string) => void;
-  sessionStartMode: SessionMode;
-  setSessionStartMode: (mode: SessionMode) => void;
   /**
    * Which engine drives the session. Lifted to the parent so the form's
    * caller can seed it from the path-rule resolver (`api.resolveAccountForProject`
@@ -149,8 +147,6 @@ export const NewSessionForm: React.FC<NewSessionFormProps> = ({
   setEffort,
   permissionMode,
   setPermissionMode,
-  sessionStartMode,
-  setSessionStartMode,
   agent,
   setAgent,
   agentPickerDisabled = false,
@@ -381,19 +377,6 @@ export const NewSessionForm: React.FC<NewSessionFormProps> = ({
             }
           />
         </div>
-      </div>
-
-      <div className="flex items-center gap-2 text-sm pt-1">
-        <input
-          id="start-in-terminal"
-          type="checkbox"
-          checked={sessionStartMode === 'tui'}
-          onChange={(e) => { setSessionStartMode(e.target.checked ? 'tui' : 'rich'); }}
-          className="rounded border-input"
-        />
-        <label htmlFor="start-in-terminal" className="cursor-pointer text-muted-foreground">
-          Start in Terminal mode (embedded terminal — same CLI, no structured chat UI)
-        </label>
       </div>
 
       {showCodexAuthBanner && (

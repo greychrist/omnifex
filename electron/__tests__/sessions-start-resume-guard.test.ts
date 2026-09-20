@@ -55,8 +55,8 @@ afterEach(() => {
 // sent a message, there is no JSONL, and `--resume` makes the CLI exit with
 // "No conversation found with session ID: …" — the session dies on the spot.
 //
-// restartQuery() and setMode('tui') already guard this by checking the JSONL;
-// start() is the third resume path and was missing the same check.
+// restartQuery() already guards this by checking the JSONL; start() is the
+// other resume path and was missing the same check.
 describe('start() with resumeSessionId — resume vs fresh transcript', () => {
   const projectPath = '/Users/test/proj';
 
@@ -75,7 +75,6 @@ describe('start() with resumeSessionId — resume vs fresh transcript', () => {
       configDir: tmpConfig,
       model: '',
       permissionMode: '',
-      mode: 'rich',
       resumeSessionId: orphanId,
     });
 
@@ -96,7 +95,6 @@ describe('start() with resumeSessionId — resume vs fresh transcript', () => {
       configDir: tmpConfig,
       model: '',
       permissionMode: '',
-      mode: 'rich',
       resumeSessionId: orphanId,
     });
 
@@ -120,7 +118,6 @@ describe('start() with resumeSessionId — resume vs fresh transcript', () => {
       configDir: tmpConfig,
       model: '',
       permissionMode: '',
-      mode: 'rich',
       resumeSessionId: realId,
     });
 
@@ -136,7 +133,6 @@ describe('start() with resumeSessionId — resume vs fresh transcript', () => {
       configDir: tmpConfig,
       model: '',
       permissionMode: '',
-      mode: 'rich',
     });
 
     expect(startSpy.mock.calls[0]?.[0]).toMatchObject({ resume: false });

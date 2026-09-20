@@ -15,8 +15,8 @@
  * helpers turn that into the delta worth showing the user, rather than a second
  * copy of a list they already have.
  *
- * Everything here is pure. `null` in means "the CLI gave no answer" (a TUI tab
- * or a pre-2.1.269 CLI) and must yield an empty delta, never a claim that the
+ * Everything here is pure. `null` in means "the CLI gave no answer" (a
+ * pre-2.1.269 CLI) and must yield an empty delta, never a claim that the
  * session has no rules.
  */
 import type { CliPermissionRule, CliPermissionRuleSource, CliPermissionRulesState } from '@/lib/api';

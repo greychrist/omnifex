@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { JsonlNode } from '@/types/jsonl';
 import {
-  waitingOnClaude,
   hasOpenTasks,
   hasOpenSubagents,
   conversationStatus,
@@ -11,7 +10,6 @@ import {
   lastAssistantModel,
   usageLimitWait,
 } from '../sessionDerivedState';
-import { classifyJsonlLine } from '../jsonlClassifier';
 
 // Minimal helpers — these build JsonlNodes with the fields the derivation reads.
 function userPrompt(timestamp: string, sessionId = 's1'): JsonlNode {
@@ -29,88 +27,6 @@ function userPrompt(timestamp: string, sessionId = 's1'): JsonlNode {
       timestamp,
     } as never,
   };
-}
-
-// The summary the CLI writes after /compact. Built through the real
-// classifier so the userKind under test is the one production computes.
-function compactSummary(timestamp: string, sessionId = 's1'): JsonlNode {
-  return classifyJsonlLine({
-    type: 'user',
-    sessionId,
-    timestamp,
-    isCompactSummary: true,
-    isVisibleInTranscriptOnly: true,
-    message: { role: 'user', content: 'Session continued…' },
-  }) as JsonlNode;
-}
-
-// The two `user` records the CLI leaves behind after a slash command: the
-// echo of what was typed, and the command's own stdout. Built through the
-// real classifier so the userKind under test is the one production computes.
-function localCommandEcho(timestamp: string, name = '/compact', sessionId = 's1'): JsonlNode {
-  return classifyJsonlLine({
-    type: 'user',
-    sessionId,
-    timestamp,
-    message: {
-      role: 'user',
-      content: `<command-name>${name}</command-name>\n<command-message>compact</command-message>\n<command-args></command-args>`,
-    },
-  }) as JsonlNode;
-}
-
-function localCommandStdout(timestamp: string, text = 'Compacted ', sessionId = 's1'): JsonlNode {
-  return classifyJsonlLine({
-    type: 'user',
-    sessionId,
-    timestamp,
-    message: { role: 'user', content: `<local-command-stdout>${text}</local-command-stdout>` },
-  }) as JsonlNode;
-}
-
-// The marker the CLI writes when the user presses Stop, and the rejection
-// tool_result that precedes it when the interrupted turn was sitting on a
-// tool call. Both built through the real classifier.
-function interruptNotice(
-  timestamp: string,
-  text = '[Request interrupted by user for tool use]',
-  sessionId = 's1',
-): JsonlNode {
-  return classifyJsonlLine({
-    type: 'user',
-    sessionId,
-    timestamp,
-    message: { role: 'user', content: [{ type: 'text', text }] },
-  }) as JsonlNode;
-}
-
-function rejectedToolResult(timestamp: string, sessionId = 's1'): JsonlNode {
-  return classifyJsonlLine({
-    type: 'user',
-    sessionId,
-    timestamp,
-    toolUseResult: 'User rejected tool use',
-    toolDenialKind: 'user-rejected',
-    message: {
-      role: 'user',
-      content: [{
-        type: 'tool_result',
-        tool_use_id: 'toolu_01RXKjW24cqURqPptwqUXU4V',
-        is_error: true,
-        content: "The user doesn't want to proceed with this tool use.",
-      }],
-    },
-  }) as JsonlNode;
-}
-
-function metaUser(timestamp: string, sessionId = 's1'): JsonlNode {
-  return classifyJsonlLine({
-    type: 'user',
-    sessionId,
-    timestamp,
-    isMeta: true,
-    message: { role: 'user', content: '<local-command-caveat>Caveat: …</local-command-caveat>' },
-  }) as JsonlNode;
 }
 
 function assistantWithStop(
@@ -160,288 +76,6 @@ function systemStatus(timestamp: string): JsonlNode {
   } as unknown as JsonlNode;
 }
 
-// SessionStart hook / init plumbing that fires before (and around) any turn.
-function systemNode(
-  subtype: 'init' | 'hook_started' | 'hook_progress' | 'hook_response' | 'compact_boundary',
-): JsonlNode {
-  return {
-    kind: 'system',
-    subtype,
-    receivedAt: '2026-05-27T00:00:00Z',
-    raw: { type: 'system', subtype } as never,
-  } as unknown as JsonlNode;
-}
-
-describe('waitingOnClaude', () => {
-  it('returns false for an empty message list', () => {
-    expect(waitingOnClaude([])).toBe(false);
-  });
-
-  it('returns true when the only message is a user prompt', () => {
-    expect(waitingOnClaude([userPrompt('2026-05-27T00:00:00Z')])).toBe(true);
-  });
-
-  it('returns false after assistant with terminal stop_reason', () => {
-    const msgs = [
-      userPrompt('2026-05-27T00:00:00Z'),
-      assistantWithStop('2026-05-27T00:00:01Z', 'end_turn'),
-    ];
-    expect(waitingOnClaude(msgs)).toBe(false);
-  });
-
-  it('returns true when the last assistant has stop_reason: null (stuck turn)', () => {
-    const msgs = [
-      userPrompt('2026-05-27T00:00:00Z'),
-      assistantWithStop('2026-05-27T00:00:01Z', null),
-    ];
-    expect(waitingOnClaude(msgs)).toBe(true);
-  });
-
-  it('treats max_tokens, stop_sequence, refusal, model_context_window_exceeded as terminal', () => {
-    for (const stop of ['stop_sequence', 'max_tokens', 'refusal', 'model_context_window_exceeded']) {
-      const msgs = [
-        userPrompt('2026-05-27T00:00:00Z'),
-        assistantWithStop('2026-05-27T00:00:01Z', stop),
-      ];
-      expect(waitingOnClaude(msgs), `stop=${stop}`).toBe(false);
-    }
-  });
-
-  it('ignores isSidechain assistants when looking for the last assistant', () => {
-    // Sidechain assistant streams without terminal stop; main assistant terminated cleanly.
-    // Status must be 'not waiting' because the main turn ended.
-    const msgs = [
-      userPrompt('2026-05-27T00:00:00Z'),
-      assistantWithStop('2026-05-27T00:00:01Z', 'end_turn'),
-      assistantWithStop('2026-05-27T00:00:02Z', null, { isSidechain: true }),
-    ];
-    expect(waitingOnClaude(msgs)).toBe(false);
-  });
-
-  it('multiple sequential terminal-stop assistants resolve to not waiting', () => {
-    const msgs = [
-      userPrompt('2026-05-27T00:00:00Z'),
-      assistantWithStop('2026-05-27T00:00:01Z', 'end_turn'),
-      assistantWithStop('2026-05-27T00:00:02Z', 'end_turn'),
-    ];
-    expect(waitingOnClaude(msgs)).toBe(false);
-  });
-
-  it('returns false when messages contain only non-prompt user nodes', () => {
-    // No user.prompt and no assistant — nothing to wait on.
-    const msgs: JsonlNode[] = [
-      {
-        kind: 'user',
-        userKind: 'tool-result',
-        sessionId: 's1',
-        receivedAt: '2026-05-27T00:00:00Z',
-        raw: {
-          type: 'user',
-          message: { role: 'user', content: [] },
-          sessionId: 's1',
-          timestamp: '2026-05-27T00:00:00Z',
-        } as never,
-      },
-    ];
-    expect(waitingOnClaude(msgs)).toBe(false);
-  });
-
-  // --- result-row terminal signal (--include-partial-messages) -------------
-  // Under --include-partial-messages the committed `assistant` message carries
-  // stop_reason: null — the terminal reason rides the message_delta
-  // stream_event, which never enters messages[]. The CLI's `result` row
-  // (kind:'unknown', raw.type:'result') is therefore the authoritative
-  // "turn complete" marker for a live-streamed turn.
-  it('returns false when a result row follows a null-stop_reason assistant', () => {
-    const msgs = [
-      userPrompt('2026-05-27T00:00:00Z'),
-      assistantWithStop('2026-05-27T00:00:01Z', null),
-      resultNode('2026-05-27T00:00:02Z'),
-    ];
-    expect(waitingOnClaude(msgs)).toBe(false);
-  });
-
-  it('ignores trailing system.status after a result row', () => {
-    // system.status frequently lands AFTER the result row but does not mean
-    // the conversation resumed — plumbing must not reopen a closed turn.
-    const msgs = [
-      userPrompt('2026-05-27T00:00:00Z'),
-      assistantWithStop('2026-05-27T00:00:01Z', null),
-      resultNode('2026-05-27T00:00:02Z'),
-      systemStatus('2026-05-27T00:00:03Z'),
-    ];
-    expect(waitingOnClaude(msgs)).toBe(false);
-  });
-
-  it('ignores trailing rate-limit / lifecycle overlays after a result row', () => {
-    const msgs: JsonlNode[] = [
-      userPrompt('2026-05-27T00:00:00Z'),
-      assistantWithStop('2026-05-27T00:00:01Z', null),
-      resultNode('2026-05-27T00:00:02Z'),
-      { kind: 'rate-limit' } as unknown as JsonlNode,
-    ];
-    expect(waitingOnClaude(msgs)).toBe(false);
-  });
-
-  it('still waits on a null-stop_reason assistant when no result row has landed', () => {
-    // Mid-stream (deltas flowing, no result yet) AND resumed-history rely on
-    // this: without a result row the assistant's stop_reason is the only
-    // signal, so a non-terminal one keeps the turn open.
-    const msgs = [
-      userPrompt('2026-05-27T00:00:00Z'),
-      assistantWithStop('2026-05-27T00:00:01Z', null),
-    ];
-    expect(waitingOnClaude(msgs)).toBe(true);
-  });
-
-  it('settles resumed history via terminal stop_reason when no result row exists', () => {
-    // Persisted JSONL records the real end_turn on the assistant (it has no
-    // result row), so loaded transcripts must read as not-waiting.
-    const msgs = [
-      userPrompt('2026-05-27T00:00:00Z'),
-      assistantWithStop('2026-05-27T00:00:01Z', 'end_turn'),
-      systemStatus('2026-05-27T00:00:02Z'),
-    ];
-    expect(waitingOnClaude(msgs)).toBe(false);
-  });
-
-  // Ported from the retired deriveConversationStatus module (now that this is
-  // the single source of truth for both useSessionLifecycle and
-  // usePublishTabStatus). SessionStart hooks emit init + hook events BEFORE any
-  // user turn — a transcript of only plumbing must NOT read as waiting, or the
-  // spinner/prompt status sticks on a fresh idle session.
-  it('does not wait on a fresh session whose only messages are SessionStart hook events', () => {
-    const msgs = [
-      systemNode('init'),
-      systemNode('hook_started'),
-      systemNode('hook_progress'),
-      systemNode('hook_response'),
-    ];
-    expect(waitingOnClaude(msgs)).toBe(false);
-  });
-
-  it('still waits when a hook event trails an unanswered user prompt', () => {
-    const msgs = [
-      userPrompt('2026-05-27T00:00:00Z'),
-      systemNode('hook_started'),
-    ];
-    expect(waitingOnClaude(msgs)).toBe(true);
-  });
-
-  // A /compact summary is a `user` record. It used to classify as 'prompt',
-  // which meant a resumed transcript whose history begins at the compaction
-  // had a "prompt" nothing would ever answer — a spinner with no turn behind
-  // it. The summary is now its own userKind and cannot hold the turn open.
-  it('does not treat a lone compact summary as an unanswered prompt', () => {
-    expect(waitingOnClaude([compactSummary('2026-05-27T00:00:00Z')])).toBe(false);
-  });
-
-  // The inverse: a real prompt that a compaction interrupted is still
-  // unanswered, and the summary trailing it must not close the turn either.
-  it('still waits when a compaction interrupted an unanswered prompt', () => {
-    const msgs = [
-      userPrompt('2026-05-27T00:00:00Z'),
-      compactSummary('2026-05-27T00:00:05Z'),
-    ];
-    expect(waitingOnClaude(msgs)).toBe(true);
-  });
-
-  // Regression — work session 3445e547 (mango, CLI 2.1.273). A manual
-  // /compact emitted its `result` row BEFORE the compact_boundary, so the
-  // turn-closing node sat *earlier* in messages[] than the bookkeeping the
-  // compaction left behind. The walk broke on <local-command-stdout>, which
-  // classified as 'prompt', and lastMainPromptIndex then found a prompt from
-  // hours earlier — pinning the spinner on a session that was idle and well.
-  it('closes the turn when a /compact envelope trails the result row', () => {
-    const msgs = [
-      userPrompt('2026-09-16T15:00:00Z'),
-      resultNode('2026-09-16T15:07:56Z'),
-      systemNode('compact_boundary'),
-      compactSummary('2026-09-16T15:07:56.5Z'),
-      metaUser('2026-09-16T15:05:25Z'),
-      localCommandEcho('2026-09-16T15:05:25Z'),
-      localCommandStdout('2026-09-16T15:07:56.8Z'),
-    ];
-    expect(waitingOnClaude(msgs)).toBe(false);
-  });
-
-  // Regression — work session aacbd708 (management, CLI 2.1.273). Stop was
-  // pressed while an AskUserQuestion was open. The CLI emitted its `result`
-  // row FIRST, then the rejection tool_result, then the interrupt marker —
-  // so the turn-closer was no longer the last decisive node. The marker
-  // classified as 'prompt', the walk broke on it, and lastMainPromptIndex
-  // found the real prompt from minutes earlier: WORKING forever on a session
-  // that was idle. The marker closes the turn outright, because that is what
-  // pressing Stop does — skipping it is not enough, since the walk would then
-  // break on the rejection tool_result and defer to that same old prompt.
-  it('closes the turn when a user interrupt trails the result row', () => {
-    const msgs = [
-      userPrompt('2026-09-17T19:54:00Z'),
-      assistantWithStop('2026-09-17T20:02:24Z', 'tool_use'),
-      resultNode('2026-09-17T20:03:51.3Z'),
-      rejectedToolResult('2026-09-17T20:03:51.313Z'),
-      interruptNotice('2026-09-17T20:03:51.316Z'),
-    ];
-    expect(waitingOnClaude(msgs)).toBe(false);
-  });
-
-  // Stop pressed mid-text: no tool call, no rejection row, same marker.
-  it('closes the turn on a plain interrupt after an unsettled assistant', () => {
-    const msgs = [
-      userPrompt('2026-09-17T19:54:00Z'),
-      assistantWithStop('2026-09-17T20:02:24Z', null),
-      interruptNotice('2026-09-17T20:03:51Z', '[Request interrupted by user]'),
-    ];
-    expect(waitingOnClaude(msgs)).toBe(false);
-  });
-
-  // Interrupting and immediately typing again opens a new turn — the marker
-  // closes only what came before it.
-  it('waits again when a prompt follows the interrupt', () => {
-    const msgs = [
-      userPrompt('2026-09-17T19:54:00Z'),
-      resultNode('2026-09-17T20:03:51.3Z'),
-      interruptNotice('2026-09-17T20:03:51.316Z'),
-      userPrompt('2026-09-17T20:04:10Z'),
-    ];
-    expect(waitingOnClaude(msgs)).toBe(true);
-  });
-
-  // The local-command envelope is bookkeeping in both directions: it can
-  // neither hold a turn open nor close one that is genuinely still running.
-  it('still waits when a /compact envelope trails an unanswered prompt', () => {
-    const msgs = [
-      userPrompt('2026-09-16T15:00:00Z'),
-      localCommandEcho('2026-09-16T15:05:25Z'),
-      localCommandStdout('2026-09-16T15:07:56Z'),
-    ];
-    expect(waitingOnClaude(msgs)).toBe(true);
-  });
-
-  // A lone envelope with no prompt behind it is not a turn at all.
-  it('does not treat a lone /compact envelope as an unanswered prompt', () => {
-    expect(waitingOnClaude([
-      localCommandEcho('2026-09-16T15:05:25Z'),
-      localCommandStdout('2026-09-16T15:07:56Z'),
-    ])).toBe(false);
-  });
-
-  // A trailing tool_result DOES mean the turn is live — Claude is about to
-  // speak to it. Skipping bookkeeping user records must not skip this one.
-  it('still waits on a trailing tool-result', () => {
-    const toolResult = classifyJsonlLine({
-      type: 'user',
-      sessionId: 's1',
-      timestamp: '2026-09-16T15:10:00Z',
-      message: {
-        role: 'user',
-        content: [{ type: 'tool_result', tool_use_id: 't1', content: 'ok' }],
-      },
-    }) as JsonlNode;
-    expect(waitingOnClaude([userPrompt('2026-09-16T15:00:00Z'), toolResult])).toBe(true);
-  });
-});
-
 describe('hasOpenTasks / hasOpenSubagents', () => {
   it('returns false for empty arrays', () => {
     expect(hasOpenTasks([])).toBe(false);
@@ -465,40 +99,23 @@ describe('hasOpenTasks / hasOpenSubagents', () => {
 
 describe('conversationStatus', () => {
   it('idle when nothing is pending', () => {
-    const msgs = [
-      userPrompt('2026-05-27T00:00:00Z'),
-      assistantWithStop('2026-05-27T00:00:01Z', 'end_turn'),
-    ];
-    expect(conversationStatus(msgs, [], [])).toBe('idle');
+    expect(conversationStatus(false, [], [])).toBe('idle');
   });
 
   it('running when waiting on Claude', () => {
-    const msgs = [userPrompt('2026-05-27T00:00:00Z')];
-    expect(conversationStatus(msgs, [], [])).toBe('running');
+    expect(conversationStatus(true, [], [])).toBe('running');
   });
 
   it('running when an open subagent exists even if assistant terminated', () => {
-    const msgs = [
-      userPrompt('2026-05-27T00:00:00Z'),
-      assistantWithStop('2026-05-27T00:00:01Z', 'end_turn'),
-    ];
-    expect(conversationStatus(msgs, [], [{ status: 'running' }] as never)).toBe('running');
+    expect(conversationStatus(false, [], [{ status: 'running' }] as never)).toBe('running');
   });
 
   it('running when an in_progress task exists even if assistant terminated', () => {
-    const msgs = [
-      userPrompt('2026-05-27T00:00:00Z'),
-      assistantWithStop('2026-05-27T00:00:01Z', 'end_turn'),
-    ];
-    expect(conversationStatus(msgs, [{ status: 'in_progress' }] as never, [])).toBe('running');
+    expect(conversationStatus(false, [{ status: 'in_progress' }] as never, [])).toBe('running');
   });
 
   it('idle when only pending tasks exist (a closed session with planned-but-unstarted todos)', () => {
-    const msgs = [
-      userPrompt('2026-05-27T00:00:00Z'),
-      assistantWithStop('2026-05-27T00:00:01Z', 'end_turn'),
-    ];
-    expect(conversationStatus(msgs, [{ status: 'pending' }, { status: 'completed' }] as never, [])).toBe('idle');
+    expect(conversationStatus(false, [{ status: 'pending' }, { status: 'completed' }] as never, [])).toBe('idle');
   });
 });
 
@@ -538,52 +155,6 @@ describe('turnDuration', () => {
       assistantWithStop('2026-05-27T00:00:01Z', 'end_turn'),
     ];
     expect(turnDuration(msgs, 1)).toBeNull();
-  });
-});
-
-describe('cli-stream envelope derivation', () => {
-  it('treats a trailing cli-stream-result as the turn ender', () => {
-    const msgs: JsonlNode[] = [
-      userPrompt('2026-05-27T00:00:00Z'),
-      {
-        kind: 'cli-stream-result',
-        sessionId: 's1',
-        receivedAt: '2026-05-27T00:00:01Z',
-        raw: { type: 'result', subtype: 'success' } as never,
-      },
-    ];
-    expect(waitingOnClaude(msgs)).toBe(false); // result envelope closes the turn
-  });
-
-  it('closes the turn even when the committed assistant carries stop_reason:null', () => {
-    // The real --include-partial-messages shape: the committed assistant frame
-    // has stop_reason:null (terminal reason rides the message_delta overlay),
-    // and the cli-stream-result row is what actually ends the turn. Without
-    // honoring it, the null-stop_reason assistant pins waitingOnClaude true
-    // forever. This is the regression that left sessions stuck on "Working".
-    const msgs: JsonlNode[] = [
-      userPrompt('2026-05-27T00:00:00Z'),
-      assistantWithStop('2026-05-27T00:00:01Z', null),
-      {
-        kind: 'cli-stream-result',
-        sessionId: 's1',
-        receivedAt: '2026-05-27T00:00:02Z',
-        raw: { type: 'result', subtype: 'success' } as never,
-      },
-    ];
-    expect(waitingOnClaude(msgs)).toBe(false);
-  });
-
-  it('does not treat cli-stream-init as a turn start', () => {
-    const msgs: JsonlNode[] = [
-      {
-        kind: 'cli-stream-init',
-        sessionId: 's1',
-        receivedAt: '2026-05-27T00:00:00Z',
-        raw: { type: 'system', subtype: 'init' } as never,
-      },
-    ];
-    expect(waitingOnClaude(msgs)).toBe(false); // no user prompt — not waiting
   });
 });
 
@@ -727,25 +298,6 @@ describe('forwarded subagent messages (--forward-subagent-text)', () => {
       } as never,
     };
   }
-
-  it('waitingOnClaude: a forwarded assistant with a terminal stop_reason does not close the parent turn', () => {
-    // Parent dispatched a Task and is still waiting; the subagent finished
-    // its own message. The turn is still open.
-    const msgs = [
-      userPrompt('2026-07-22T10:00:00Z'),
-      forwardedAssistant('2026-07-22T10:00:10Z', 'end_turn'),
-    ];
-    expect(waitingOnClaude(msgs)).toBe(true);
-  });
-
-  it('waitingOnClaude: a forwarded user prompt after the result does not reopen the turn', () => {
-    const msgs = [
-      userPrompt('2026-07-22T10:00:00Z'),
-      resultNode('2026-07-22T10:00:20Z'),
-      forwardedUserPrompt('2026-07-22T10:00:25Z'),
-    ];
-    expect(waitingOnClaude(msgs)).toBe(false);
-  });
 
   it('lastAssistantModel skips forwarded subagent assistants', () => {
     const mainAssistant: JsonlNode = {

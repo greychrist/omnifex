@@ -44,12 +44,6 @@ export interface SessionDefaultsRowProps {
    */
   density?: 'default' | 'compact';
   /**
-   * Renders the pickers read-only. Used for live TUI sessions, where the
-   * terminal — not OmniFex — owns model / effort / permission, so the pickers
-   * mirror the CLI's state (auto-detected) but can't drive it.
-   */
-  disabled?: boolean;
-  /**
    * Concrete model id the live session actually runs (from get_context_usage
    * or the last assistant JSONL line). When set, it is the model the
    * account-default row is folded into and marked as — overriding the
@@ -127,7 +121,6 @@ export function SessionDefaultsRow({
   configDir,
   direction = 'row',
   density = 'default',
-  disabled = false,
   activeDefaultModel,
   className,
 }: SessionDefaultsRowProps) {
@@ -150,8 +143,8 @@ export function SessionDefaultsRow({
   // set (all six CLI modes) and the per-mode colors stay in one place and any
   // fix propagates to both surfaces.
   if (engine === 'claude') {
-    // pickModelOption bridges concrete CLI ids (e.g. `claude-opus-4-8`,
-    // detected from a live TUI session) to the picker's alias options.
+    // pickModelOption bridges concrete CLI ids (e.g. `claude-opus-4-8`) to
+    // the picker's alias options.
     const selectedModelData = pickModelOption(model, models);
     const selectedRawModel = modelCatalogRaw.find((m) => m.value === model);
     const ModelControl = compact ? InlineModelPicker : FormModelPicker;
@@ -159,17 +152,8 @@ export function SessionDefaultsRow({
     const wrap = (label: string, node: React.ReactNode) => (
       <Field label={label} compact={compact}>{node}</Field>
     );
-    // Compact has no room for the TUI footnote, but dropping the explanation
-    // outright would leave three inert pickers with nothing saying why. It
-    // moves to the row's tooltip rather than disappearing.
-    const tuiNote = disabled
-      ? "Managed by the terminal — change model with /model, effort and permissions with the CLI's own controls. These mirror the live session."
-      : undefined;
     return (
-      <div
-        className={`${layout} ${className ?? ''}`}
-        {...(compact && tuiNote ? { title: tuiNote } : {})}
-      >
+      <div className={`${layout} ${className ?? ''}`}>
         {wrap('Model', (
           <ModelControl
             selectedModelData={selectedModelData}
@@ -178,7 +162,6 @@ export function SessionDefaultsRow({
             onSelect={setModel}
             open={modelOpen}
             onOpenChange={setModelOpen}
-            disabled={disabled}
           />
         ))}
         {wrap('Effort', (
@@ -189,7 +172,6 @@ export function SessionDefaultsRow({
             onOpenChange={setEffortOpen}
             variant={pickerVariant}
             levels={selectedRawModel?.supportedEffortLevels}
-            disabled={disabled}
           />
         ))}
         {wrap('Permissions', (
@@ -199,16 +181,8 @@ export function SessionDefaultsRow({
             open={permsOpen}
             onOpenChange={setPermsOpen}
             variant={pickerVariant}
-            disabled={disabled}
           />
         ))}
-        {disabled && !compact && (
-          <p className="text-[10px] leading-snug text-muted-foreground">
-            Managed by the terminal — change model with <code>/model</code>,
-            effort/permissions with the CLI's own controls. These mirror the
-            live session.
-          </p>
-        )}
       </div>
     );
   }

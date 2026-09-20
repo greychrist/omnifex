@@ -39,8 +39,8 @@ export interface CreateJsonlTailArgs {
    * existing stream-json call sites keep their narrow surface.
    * - `'closure-carriers'`: only `queue-operation`/`attachment` lines that
    *   carry `<task-notification>` XML (today's behavior).
-   * - `'all'`: every parsed line, regardless of type. Used by TUI mode to
-   *   drive the rich-message panel and notifications from JSONL.
+   * - `'all'`: every parsed line, regardless of type. The transcript source
+   *   for a live session (see runtime.ts ensureJsonlTail).
    */
   filter?: 'closure-carriers' | 'all';
 }

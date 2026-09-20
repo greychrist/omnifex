@@ -78,7 +78,7 @@ describe('resolveSessionVerification', () => {
     });
   });
 
-  describe('when the session has no identity to report (TUI mode)', () => {
+  describe('when the session has no identity to report yet', () => {
     it('falls back to the config-dir verdict and demands a restart on mismatch', () => {
       const r = resolveSessionVerification({
         ...BASE,

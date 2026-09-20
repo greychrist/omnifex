@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { changeSessionModel, mirrorControlState } from '../sessionModelChange';
+import { changeSessionModel } from '../sessionModelChange';
 import type { SessionContextUsage } from '@/lib/api';
 
 const USAGE_OPUS: SessionContextUsage = {
@@ -94,77 +94,5 @@ describe('changeSessionModel', () => {
     await changeSessionModel('sonnet', deps);
     expect(deps.onError).toHaveBeenCalledWith(boom);
     expect(deps.setContextUsage).not.toHaveBeenCalled();
-  });
-});
-
-describe('mirrorControlState', () => {
-  function makeMirrorDeps(prev: SessionContextUsage | null = USAGE_OPUS) {
-    let usage = prev;
-    return {
-      setSelectedModel: vi.fn(),
-      setPermissionMode: vi.fn(),
-      setEffort: vi.fn(),
-      setContextUsage: vi.fn(
-        (updater: SessionContextUsage | null | ((p: SessionContextUsage | null) => SessionContextUsage | null)) => {
-          usage = typeof updater === 'function' ? updater(usage) : updater;
-        },
-      ),
-      readUsage: () => usage,
-    };
-  }
-
-  it('mirrors a detected model into the selection and patches the stale live usage model', () => {
-    // Same staleness class as the picker path, TUI flavor: /model in the
-    // terminal fires session-control-state, but a contextUsage snapshot
-    // left over from a rich-mode stint still names the old model and wins
-    // in the header summary. No engine exists in TUI mode to refetch, so
-    // the detected model is patched onto the snapshot directly.
-    const deps = makeMirrorDeps();
-    mirrorControlState({ model: 'claude-fable-5' }, deps);
-    expect(deps.setSelectedModel).toHaveBeenCalledWith('claude-fable-5');
-    expect(deps.readUsage()?.model).toBe('claude-fable-5');
-    // Token figures are untouched — only the model name is known to change.
-    expect(deps.readUsage()?.totalTokens).toBe(USAGE_OPUS.totalTokens);
-  });
-
-  it('leaves a null usage null (nothing to patch on a TUI cold start)', () => {
-    const deps = makeMirrorDeps(null);
-    mirrorControlState({ model: 'claude-fable-5' }, deps);
-    expect(deps.setSelectedModel).toHaveBeenCalledWith('claude-fable-5');
-    expect(deps.readUsage()).toBeNull();
-  });
-
-  it('mirrors permission mode', () => {
-    const deps = makeMirrorDeps();
-    mirrorControlState({ permissionMode: 'acceptEdits' }, deps);
-    expect(deps.setPermissionMode).toHaveBeenCalledWith('acceptEdits');
-    expect(deps.setSelectedModel).not.toHaveBeenCalled();
-  });
-
-  it('mirrors a detected effort level', () => {
-    // CLI ≥2.1.212 stamps `effort` on assistant JSONL lines, so TUI-mode
-    // effort changes (`/effort` etc. in the terminal) are now detectable —
-    // the old "never reaches the JSONL" limitation is gone.
-    const deps = makeMirrorDeps();
-    mirrorControlState({ effort: 'max' }, deps);
-    expect(deps.setEffort).toHaveBeenCalledWith('max');
-    expect(deps.setSelectedModel).not.toHaveBeenCalled();
-  });
-
-  it('ignores effort values outside the known EffortLevel set', () => {
-    // A future CLI value must not be pushed into the typed picker state.
-    const deps = makeMirrorDeps();
-    mirrorControlState({ effort: 'ultracode' }, deps);
-    expect(deps.setEffort).not.toHaveBeenCalled();
-  });
-
-  it('ignores empty and missing fields', () => {
-    const deps = makeMirrorDeps();
-    mirrorControlState({ model: '', permissionMode: '', effort: '' }, deps);
-    mirrorControlState(undefined, deps);
-    expect(deps.setSelectedModel).not.toHaveBeenCalled();
-    expect(deps.setPermissionMode).not.toHaveBeenCalled();
-    expect(deps.setEffort).not.toHaveBeenCalled();
-    expect(deps.readUsage()?.model).toBe(USAGE_OPUS.model);
   });
 });

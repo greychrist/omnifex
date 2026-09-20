@@ -5,7 +5,6 @@ import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { NewSessionForm } from '../NewSessionForm';
 import type { Account, AgentKind, CodexAuthStatus, ResolvePair, ResolveSlot } from '@/lib/api';
 import type { EffortLevel } from '../ControlBar';
-import type { SessionMode } from '@/lib/api';
 
 // AccountBadge consumes useAccounts() + useTheme(). Stub both so the
 // form renders without a real provider tree.
@@ -97,7 +96,6 @@ function Harness({
   const [model, setModel] = useState('sonnet');
   const [effort, setEffort] = useState<EffortLevel>('high');
   const [perm, setPerm] = useState('acceptEdits');
-  const [mode, setMode] = useState<SessionMode>('rich');
   return (
     <NewSessionForm
       resolvePair={pair}
@@ -107,8 +105,6 @@ function Harness({
       setEffort={setEffort}
       permissionMode={perm}
       setPermissionMode={setPerm}
-      sessionStartMode={mode}
-      setSessionStartMode={setMode}
       agent={agent}
       setAgent={setAgent}
       onStart={onStart ?? (() => {})}

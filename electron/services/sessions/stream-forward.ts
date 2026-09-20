@@ -9,8 +9,7 @@
 // CLI 2.1.270 started emitting two companion records instead of one.
 //
 // So the JSONL is the sole source of committed transcript rows, delivered by
-// the tail (see jsonl-tail.ts / tui-jsonl.ts, which already does exactly this
-// for TUI mode through the same renderer pipeline). This predicate decides
+// the tail (see jsonl-tail.ts). This predicate decides
 // what is left for stream-json to carry: only the shapes the CLI never writes
 // to disk.
 //

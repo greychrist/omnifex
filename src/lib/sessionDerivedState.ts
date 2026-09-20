@@ -2,23 +2,13 @@ import type { JsonlNode } from '@/types/jsonl';
 import { forwardedParentToolUseId } from '@/lib/subagentDispatch';
 
 /**
- * Turn axis of the session — derived by the renderer from JSONL content +
- * task/subagent stores. 'waiting_permission' from the old FSM is collapsed
- * into 'running' (the permission card is still present in JSONL as an open
- * task entry while it is pending).
- *
- * This type lives in sessionDerivedState.ts (not api.ts) because the main
- * process no longer produces or tracks it — it is renderer-only state.
+ * Conversation rollup: the session's own turn axis (mirrored from main, see
+ * docs/session-lifecycle.md) OR'd with the transcript-derived task / subagent
+ * rows. 'waiting_permission' from the old FSM is collapsed into 'running'
+ * (the permission card is still present in JSONL as an open task entry while
+ * it is pending).
  */
 export type ConversationStatus = 'idle' | 'running';
-
-const TERMINAL_STOP_REASONS = new Set([
-  'end_turn',
-  'stop_sequence',
-  'max_tokens',
-  'refusal',
-  'model_context_window_exceeded',
-]);
 
 // Treat the value of TaskRow / SubagentRow loosely — we only read `.status`.
 // If/when the repo's canonical types are typed strictly, swap these aliases.
@@ -46,96 +36,12 @@ function isMainUserNode(node: JsonlNode): boolean {
   return node.kind === 'user' && forwardedParentToolUseId(node.raw) === null;
 }
 
-// Only two userKinds can leave a turn open: a prompt (Claude owes a reply) and
-// a tool-result (Claude is about to speak to it). Every other `user` record is
-// bookkeeping the CLI writes around a turn — the compact summary, the meta
-// caveats and skill/attachment markers, and the echo + stdout of a local slash
-// command — and none of them is addressed to the model at all.
-//
-// They are SKIPPED rather than treated as turn-closers: a compaction landing
-// mid-turn must not close a turn that is genuinely still running.
-const TURN_DECIDING_USER_KINDS = new Set(['prompt', 'tool-result']);
-
-function decidesTurn(node: Extract<JsonlNode, { kind: 'user' }>): boolean {
-  return TURN_DECIDING_USER_KINDS.has(node.userKind);
-}
-
 function isResultNode(node: JsonlNode): boolean {
-  // The CLI's turn-complete `result` envelope. Since the engine-mode
-  // reclassification (jsonlClassifier) it arrives as kind:'cli-stream-result';
-  // older/persisted transcripts never carried result rows at all, so there is
-  // no legacy `unknown`+`type:'result'` shape left to honor. This row is the
-  // authoritative turn-closer under --include-partial-messages, where the
-  // committed assistant carries stop_reason:null (the terminal reason rides
-  // the message_delta overlay, which never enters messages[]).
+  // The CLI's turn-complete `result` envelope (kind:'cli-stream-result' since
+  // the engine-mode reclassification in jsonlClassifier). Not a turn-closer
+  // here — the session owns the turn axis — but it does bracket what a
+  // transcript walk may read as "this turn's" content.
   return node.kind === 'cli-stream-result';
-}
-
-function lastMainPromptIndex(messages: JsonlNode[]): number {
-  for (let i = messages.length - 1; i >= 0; i -= 1) {
-    const n = messages[i];
-    if (n.kind === 'user' && n.userKind === 'prompt' && isMainUserNode(n)) return i;
-  }
-  return -1;
-}
-
-// True iff the conversation is "expecting more from Claude". Walks messages[]
-// from the end; only THREE kinds of node have the power to decide the turn
-// axis, and the first one encountered wins. Everything else is skipped — that
-// deliberately includes bookkeeping/overlay nodes that routinely TRAIL a
-// completed turn (system status/init/hooks, stream-event / rate-limit /
-// lifecycle overlays, last-prompt / queue-operation / ai-title /
-// file-history-snapshot / permission-mode entries, non-result `unknown`
-// nodes, and sidechain subagent assistants). Skipping by default — rather than
-// matching a hardcoded plumbing list — means a new bookkeeping kind can't
-// silently reopen a closed turn.
-//
-//   - a `result` row (kind:'cli-stream-result') CLOSES the turn.
-//     Under --include-partial-messages the committed assistant carries
-//     stop_reason: null (the terminal reason rides the message_delta
-//     stream_event, which never enters messages[]), so the result row — not
-//     the assistant — is what ends a live-streamed turn.
-//   - a main-chain assistant settles by stop_reason: terminal => done,
-//     null/non-terminal => still going. Resumed/persisted transcripts carry
-//     the real stop_reason here (and no result row), so loaded history settles
-//     through this branch.
-//   - a user `interrupt` notice ([Request interrupted by user]) CLOSES the
-//     turn: the user stopped it, and nothing is owed a reply until they type
-//     again.
-//   - a user message that is a prompt or a tool-result means no assistant/
-//     result has spoken since: defer to the prompt-awaiting check below. Other
-//     userKinds are bookkeeping (see TURN_DECIDING_USER_KINDS) and are skipped
-//     — a /compact whose `result` row lands BEFORE the compact_boundary leaves
-//     a summary, a caveat and the command's own stdout sitting after the only
-//     turn-closer in messages[], and breaking on those pinned the turn open.
-export function waitingOnClaude(messages: JsonlNode[]): boolean {
-  if (messages.length === 0) return false;
-
-  for (let i = messages.length - 1; i >= 0; i -= 1) {
-    const n = messages[i];
-    if (isResultNode(n)) return false;
-    if (n.kind === 'assistant') {
-      if (!isMainAssistant(n)) continue; // sidechain subagent — doesn't bracket the main turn
-      const stop = (n.raw as { message?: { stop_reason?: string | null } }).message?.stop_reason ?? null;
-      if (stop === null) return true;
-      return !TERMINAL_STOP_REASONS.has(stop);
-    }
-    if (n.kind === 'user') {
-      if (!isMainUserNode(n)) continue; // forwarded subagent prompt — not main-turn traffic
-      // Stop was pressed. This record IS the turn ending, so it CLOSES rather
-      // than defers — skipping it would leave the walk to break on the
-      // rejection tool_result the CLI writes just before it and defer to a
-      // prompt from minutes earlier. See the aacbd708 regression test.
-      if (n.userKind === 'interrupt') return false;
-      if (!decidesTurn(n)) continue; // bookkeeping the CLI wrote around the turn
-      break; // defer to the prompt-awaiting check
-    }
-    // anything else is not turn-significant — keep scanning backward.
-  }
-
-  // No assistant or result has spoken since the most recent prompt — waiting
-  // only if a prompt is actually awaiting a reply (a lone tool-result is not).
-  return lastMainPromptIndex(messages) >= 0;
 }
 
 // "Open" means actively in flight, not merely "not done." Pending tasks
@@ -152,15 +58,18 @@ export function hasOpenSubagents(subagents: WithStatus[]): boolean {
   return subagents.some((s) => s.status === 'running');
 }
 
-// 'waiting_permission' from the old FSM collapses into 'running':
-// while a permission request is open, the corresponding task/subagent
-// entry keeps hasOpenTasks / hasOpenSubagents true.
+// The main turn is the SESSION's axis (`turn.status === 'running'`, mirrored
+// from main — see docs/session-lifecycle.md), never read off the transcript
+// here. Tasks and subagents are transcript content and stay derived.
+// 'waiting_permission' from the old FSM collapses into 'running': while a
+// permission request is open, the corresponding task/subagent entry keeps
+// hasOpenTasks / hasOpenSubagents true.
 export function conversationStatus(
-  messages: JsonlNode[],
+  turnRunning: boolean,
   tasks: WithStatus[],
   subagents: WithStatus[],
 ): 'running' | 'idle' {
-  return waitingOnClaude(messages) || hasOpenTasks(tasks) || hasOpenSubagents(subagents)
+  return turnRunning || hasOpenTasks(tasks) || hasOpenSubagents(subagents)
     ? 'running'
     : 'idle';
 }

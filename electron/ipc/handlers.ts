@@ -84,6 +84,7 @@ export interface Services {
       alive: boolean;
       sessionId: string | null;
       sessionStatus: string;
+      turn: { status: 'idle' | 'running'; since: string | null };
     };
     // Wave 2 — Query-method passthroughs
     interrupt(sessionId: string): unknown;
@@ -101,10 +102,6 @@ export interface Services {
     getMcpServerStatus(sessionId: string): unknown;
     getPlugins(sessionId: string, force?: boolean): unknown;
     getSubagentMeta(args: { configDir: string; projectPath: string; sessionId: string }): unknown;
-    setMode(tabId: string, mode: 'rich' | 'tui'): Promise<unknown>;
-    tuiWrite(tabId: string, data: string): unknown;
-    tuiResize(tabId: string, cols: number, rows: number): unknown;
-    getMode(tabId: string): unknown;
   };
   cost?: {
     get(args: { configDir: string; projectPath: string; sessionId: string; accountName: string }): unknown;
@@ -526,7 +523,7 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     session_respond_elicitation: wrapWith((p: Record<string, unknown>) => sessions?.respondElicitation((p?.tabId ?? p?.tab_id) as string, (p?.action) as string, p?.content as Record<string, unknown> | undefined) ?? null),
     session_stop: wrapWith((p: Record<string, unknown>) => sessions?.stop((p?.tabId ?? p?.session_id) as string) ?? null),
     session_get_info: wrapWith((p: Record<string, unknown>) => sessions?.getInfo((p?.tabId ?? p?.session_id) as string) ?? null),
-    session_get_health: wrapWith((p: Record<string, unknown>) => sessions?.getHealth((p?.tabId ?? p?.session_id) as string) ?? { alive: false, sessionId: null, sessionStatus: 'stopped' }),
+    session_get_health: wrapWith((p: Record<string, unknown>) => sessions?.getHealth((p?.tabId ?? p?.session_id) as string) ?? { alive: false, sessionId: null, sessionStatus: 'stopped', turn: { status: 'idle', since: null } }),
     // Wave 2 — Query-method passthroughs
     session_interrupt: wrapWith((p: Record<string, unknown>) => sessions?.interrupt((p?.tabId ?? p?.session_id) as string) ?? null),
     session_set_model: wrapWith((p: Record<string, unknown>) => sessions?.setModel((p?.tabId ?? p?.session_id) as string, p?.model as string | undefined) ?? null),
@@ -545,25 +542,6 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
       projectPath: (p?.projectPath ?? p?.project_path) as string,
       sessionId: (p?.sessionId ?? p?.session_id) as string,
     }) ?? null),
-    session_set_mode: wrapWith((p: Record<string, unknown>) =>
-      sessions?.setMode(
-        (p?.tabId ?? p?.session_id) as string,
-        (p?.mode ?? p?.session_mode) as 'rich' | 'tui',
-      ) ?? null
-    ),
-    session_tui_write: wrapWith((p: Record<string, unknown>) =>
-      sessions?.tuiWrite(
-        (p?.tabId ?? p?.session_id) as string,
-        (p?.data ?? p?.tui_data) as string,
-      ) ?? null
-    ),
-    session_tui_resize: wrapWith((p: Record<string, unknown>) =>
-      sessions?.tuiResize(
-        (p?.tabId ?? p?.session_id) as string,
-        (p?.cols ?? p?.num_cols) as number,
-        (p?.rows ?? p?.num_rows) as number,
-      ) ?? null
-    ),
 
     // ── Session Cost ─────────────────────────────────────────────────────────
     session_cost_get: wrapWith((p: Record<string, unknown>) => cost?.get({
@@ -658,8 +636,8 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
 
     // ── Session Permissions ────────────────────────────────────────────────
     // The CLI's own view of the live session's rules, used to annotate the
-    // file-derived panel. Returns null in TUI mode and on a pre-2.1.269 CLI —
-    // the caller keeps showing the file view in that case.
+    // file-derived panel. Returns null on a pre-2.1.269 CLI — the caller
+    // keeps showing the file view in that case.
     session_list_permission_rules: wrapWith((p: Record<string, unknown>) => {
       const tabId = (p?.tabId ?? p?.session_id) as string | undefined;
       if (!tabId) return null;

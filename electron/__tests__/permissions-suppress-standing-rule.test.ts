@@ -20,7 +20,6 @@ import type { AgentPermissionRequest } from '../services/agents/types';
 
 function handlerHarness() {
   const handle = {
-    mode: 'rich',
     engine: { respondPermission: vi.fn(async () => {}) },
     permissionMode: 'default',
     projectPath: '/Users/test/proj',

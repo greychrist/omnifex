@@ -60,8 +60,7 @@ left — treat it as a real audit, not a formality.
      \`electron/services/sessions/\`, \`src/components/StreamMessage.tsx\`
    - **Control requests / responses** — \`electron/services/sessions/runtime.ts\`,
      \`permissions.ts\` (permission-prompt-tool stdio decider, \`apply_flag_settings\`)
-   - **TUI rendering we scrape** — \`electron/services/usage-runner.ts\` (\`/usage\`),
-     the session-control-state detection in \`electron/services/sessions/tui.ts\`
+   - **TUI rendering we scrape** — \`electron/services/usage-runner.ts\` (\`/usage\`)
    - **Hook event names + payloads** — \`electron/services/claude.ts\` hooks config
    - **Permission-rule semantics** — \`docs/permission-syntax.md\`, the rules UI
    - **Session lifecycle / status** — \`docs/session-lifecycle.md\`

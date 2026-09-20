@@ -38,11 +38,10 @@ function createEngine(opts: {
   return { engine, calls };
 }
 
-function handle(engine: AgentEngine | null, mode: 'rich' | 'tui' = 'rich'): SessionHandle {
+function handle(engine: AgentEngine): SessionHandle {
   return {
     agent: 'claude',
     engine,
-    mode,
     initData: null,
     permissionMode: 'default',
     configDir: '/cfg',
@@ -64,13 +63,12 @@ function createLogging() {
 }
 
 function setup(opts: {
-  engine?: AgentEngine | null;
-  mode?: 'rich' | 'tui';
+  engine?: AgentEngine;
   registered?: boolean;
 } = {}) {
   const sessions = new Map<string, SessionHandle>();
   if (opts.registered !== false) {
-    sessions.set('tab1', handle(opts.engine ?? null, opts.mode ?? 'rich'));
+    sessions.set('tab1', handle(opts.engine ?? createEngine().engine));
   }
   const sent: { channel: string; args: unknown[] }[] = [];
   const sendToRenderer: SendToRenderer = (channel, ...args) => {
@@ -90,25 +88,8 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 describe('live-engine gating', () => {
-  // TUI mode speaks to the CLI over the PTY, and the CLI owns model /
-  // permission there (the OmniFex pickers are read-only mirrors). Firing a
-  // control_request at a TUI tab would be talking to a channel nobody reads.
-  it('treats a TUI tab as having no live engine', async () => {
-    const { engine, calls } = createEngine();
-    const { q, meta } = setup({ engine, mode: 'tui' });
-    await q.setModel('tab1', 'claude-opus-5');
-    expect(calls).toEqual([]);
-    expect(meta().reason).toBe('no-live-engine');
-  });
-
   it('treats an unknown tab as having no live engine', async () => {
     const { q, meta } = setup({ registered: false });
-    await q.setModel('tab1', 'claude-opus-5');
-    expect(meta().reason).toBe('no-live-engine');
-  });
-
-  it('treats a registered tab with no engine as having no live engine', async () => {
-    const { q, meta } = setup({ engine: null });
     await q.setModel('tab1', 'claude-opus-5');
     expect(meta().reason).toBe('no-live-engine');
   });
@@ -172,7 +153,7 @@ describe('setTitle', () => {
     const live = setup({ engine });
     await expect(live.q.setTitle('tab1', 'Named')).resolves.toBe(true);
 
-    const dead = setup({ engine: null });
+    const dead = setup({ registered: false });
     await expect(dead.q.setTitle('tab1', 'Named')).resolves.toBe(false);
     expect(dead.meta().reason).toBe('no-live-engine');
   });
@@ -229,12 +210,6 @@ describe('setPermissionMode', () => {
     expect(sessions.get('tab1')!.permissionMode).toBe('plan');
     expect(meta()).toMatchObject({ op: 'set_permission_mode', ok: false, error: 'nope' });
   });
-
-  it('does not touch the remembered mode when there is no live engine', async () => {
-    const { q, sessions } = setup({ engine: null });
-    await q.setPermissionMode('tab1', 'plan');
-    expect(sessions.get('tab1')!.permissionMode).toBe('default');
-  });
 });
 
 describe('setEffort', () => {
@@ -273,7 +248,7 @@ describe('setEffort', () => {
   // The no-engine path logs rather than sending. This is the trace that was
   // missing when mid-session effort changes silently did nothing.
   it('logs a no-live-engine miss instead of failing silently', async () => {
-    const { q, meta } = setup({ engine: null });
+    const { q, meta } = setup({ registered: false });
     await q.setEffort('tab1', 'high');
     expect(meta()).toMatchObject({ op: 'set_effort', ok: false, reason: 'no-live-engine', level: 'high' });
   });
@@ -351,13 +326,6 @@ describe('interrupt', () => {
     });
     expect(String((sent[0].args[0] as { body: string }).body)).toContain('pipe closed');
   });
-
-  it('is a silent no-op on a TUI tab', async () => {
-    const { engine } = createEngine();
-    const { q, sent } = setup({ engine, mode: 'tui' });
-    await q.interrupt('tab1');
-    expect(sent).toEqual([]);
-  });
 });
 
 describe('applyPermissions', () => {
@@ -421,22 +389,6 @@ describe('init-data readers', () => {
     await expect(q.getSupportedModels('tab1')).resolves.toEqual([]);
     await expect(q.getSupportedAgents('tab1')).resolves.toEqual([]);
   });
-
-  it('returns empty answers for a tab with no engine', async () => {
-    const { q } = setup({ engine: null });
-    await expect(q.getAccountInfo('tab1')).resolves.toBeNull();
-    await expect(q.getSupportedCommands('tab1')).resolves.toEqual([]);
-    await expect(q.getSupportedModels('tab1')).resolves.toEqual([]);
-    await expect(q.getSupportedAgents('tab1')).resolves.toEqual([]);
-  });
-
-  // Deliberately NOT gated on liveEngine: the init payload is cached data,
-  // and a TUI tab that was previously rich still has a usable catalog.
-  it('answers on a TUI tab, unlike the control requests', async () => {
-    const { engine } = createEngine({ initData });
-    const { q } = setup({ engine, mode: 'tui' });
-    await expect(q.getSupportedModels('tab1')).resolves.toEqual([{ id: 'claude-opus-5' }]);
-  });
 });
 
 describe('getContextUsage', () => {
@@ -457,7 +409,7 @@ describe('getContextUsage', () => {
   });
 
   it('returns null with no live engine', async () => {
-    const { q } = setup({ engine: null });
+    const { q } = setup({ registered: false });
     await expect(q.getContextUsage('tab1')).resolves.toBeNull();
   });
 });
@@ -568,7 +520,7 @@ describe('getPlugins', () => {
   });
 
   it('returns empty for a tab with no live engine', async () => {
-    const { q } = setup({ engine: null });
+    const { q } = setup({ registered: false });
     await expect(q.getPlugins('tab1')).resolves.toEqual([]);
   });
 });
@@ -645,16 +597,6 @@ describe('listPermissionRules', () => {
     const got = await q.listPermissionRules('tab1');
     expect(got?.rules.map((r) => r.behavior)).toEqual(['allow', 'ask', 'deny']);
     expect(got?.rules.map((r) => r.source)).toContain('policySettings');
-  });
-
-  // TUI mode has no engine to ask, and the panel renders in BOTH modes. The
-  // file-derived view stays the fallback, so null must mean "no answer",
-  // never "no rules".
-  it('returns null for a TUI tab rather than an empty rule set', async () => {
-    const { engine, calls } = createEngine({ control: () => ({ state }) });
-    const { q } = setup({ engine, mode: 'tui' });
-    expect(await q.listPermissionRules('tab1')).toBeNull();
-    expect(calls).toEqual([]);
   });
 
   // An older CLI answers "list_permission_rules is not available on this

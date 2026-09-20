@@ -3,7 +3,7 @@ import path from 'node:path';
 
 /**
  * Single source of truth for the env passed to every Claude Code subprocess
- * spawned by OmniFex (interactive sessions, TUI mode, session-summary one-shot,
+ * spawned by OmniFex (interactive sessions, session-summary one-shot,
  * usage runner, model picker, CLI usage probe, …).
  *
  * Why this needs to be one helper rather than five copies of

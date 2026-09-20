@@ -15,7 +15,7 @@ import {
 import { SessionInspectorPanel } from "@/components/SessionInspectorPanel";
 import { Button } from "@/components/ui/button";
 import { Popover } from "@/components/ui/popover";
-import { api, type Session, type RateLimitSnapshot, type Account, type ResolvePair, type SessionMode, type AccountMismatch } from "@/lib/api";
+import { api, type Session, type RateLimitSnapshot, type Account, type ResolvePair, type AccountMismatch } from "@/lib/api";
 import { AttentionSlot } from "@/components/AttentionSlot";
 import { SignalBadge } from "@/components/signals/SignalBadge";
 import { SignalEventLog } from "@/components/signals/SignalEventLog";
@@ -63,7 +63,7 @@ import { lastPermissionMode, lastAssistantModel, usageLimitWait } from '@/lib/se
 import { CaughtUpPill } from "./RemoteConnectionBanner";
 import { useLayoutMode } from "@/hooks/useLayoutMode";
 import { useSwipeTabs } from "@/hooks/useSwipeTabs";
-import { changeSessionModel, mirrorControlState } from '@/lib/sessionModelChange';
+import { changeSessionModel } from '@/lib/sessionModelChange';
 import { forwardedParentToolUseId } from '@/lib/subagentDispatch';
 import { reduceSessionStreamMessage } from '@/lib/sessionStreamReducer';
 import { isCliPromptRecord } from '@/lib/promptReconciliation';
@@ -75,17 +75,14 @@ import type { ModelPricingInput } from '@/lib/pricing';
 import { runStreamEffect } from '@/lib/sessionStreamEffects';
 import { appendInflightDelta } from '@/lib/inflightCoalescer';
 import { maybeAutoGenerateSummaryOnLeave } from "@/lib/sessionSummaryGate";
-import { SessionModeToggle } from "./SessionModeToggle";
 import { SessionViewToggle, type ViewMode } from "./SessionViewToggle";
-import { TuiSessionLayout } from './TuiSessionLayout';
-import { createTuiPromptHandler } from '@/lib/tuiPromptHandler';
 // deriveConversationStatus import removed — derivation moved into useSessionLifecycle (Task 2).
 import { HeaderLabel } from "./HeaderLabel";
 import { AccountCard } from "./AccountCard";
 import { SessionCard } from "./SessionCard";
 import { ChatStatusBar } from "./ChatStatusBar";
 import { SessionHeaderResizeHandle } from "./SessionHeaderResizeHandle";
-import { ResizableSidePanel } from "./ResizableSidePanel";
+import { SessionSidePanels, type SessionSidePanelKey } from "./SessionSidePanels";
 import { GitDiffOverlay } from '@/components/git-diff/GitDiffOverlay';
 import { ContextLedgerPanel } from "./ContextLedgerPanel";
 import { foldContextLedger } from "@/lib/contextLedger";
@@ -163,7 +160,6 @@ interface AgentSessionProps {
     effort: EffortLevel;
     thinkingConfig?: ThinkingConfig;
     permissionMode: string;
-    sessionStartMode?: SessionMode;
     accountResolution?: {
       account: {
         name: string;
@@ -327,7 +323,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   // The account's resolved default model from its settings.json (`model` key,
   // e.g. "opus[1m]"). When the context gauge is on its client-side fallback —
   // e.g. a resumed session before its next turn (history loads statically, so
-  // live usage isn't fetched), or a TUI session — an "Account Default"
+  // live usage isn't fetched) — an "Account Default"
   // session's own model string carries no [1m] suffix, so this is the only
   // signal that the resolved default is a 1M model. Feeds the fallback
   // denominator. See resolveContextLimit.
@@ -335,10 +331,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   // Pre-fetched built-in slash commands from the CLI, loaded alongside models
   // during session init so the picker has them immediately.
   const [supportedCommands, setSupportedCommands] = useState<import('@/lib/api').SessionSlashCommand[]>([]);
-  const [showMCPPanel, setShowMCPPanel] = useState(false);
-  const [showPluginsPanel, setShowPluginsPanel] = useState(false);
-  const [showPermissionsPanel, setShowPermissionsPanel] = useState(false);
-  const [showContextPanel, setShowContextPanel] = useState(false);
   const [showDiffOverlay, setShowDiffOverlay] = useState(false);
 
   const [showSlashCommandsSettings, setShowSlashCommandsSettings] = useState(false);
@@ -394,11 +386,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     // tightened two-state schema.
     normalizeThinkingConfig(initialSessionConfig?.thinkingConfig),
   );
-  // Session start mode — chosen in the pre-session form. Defaults to 'rich'
-  // (engine-driven chat). Set to 'tui' to start via local CLI in a PTY.
-  const [sessionStartMode, setSessionStartMode] = useState<SessionMode>(
-    initialSessionConfig?.sessionStartMode ?? 'rich',
-  );
   // Agent picker — early `useTabContext` call (the main one further down
   // is for tabTitle / updateTab; both consume the same context, so no
   // ordering hazard). The form-level state seeds from `tab.agent` so a
@@ -437,7 +424,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
       resolveSessionVerification({
         verdict: identityVerdict,
         // The session's own reported identity outranks the config-dir file.
-        // Null in TUI mode (no init payload) or before init lands.
+        // Null before init lands.
         sessionEmail: sdkAccountInfo?.email ?? null,
         loaded: identityLoaded,
         error: identityError,
@@ -597,8 +584,8 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
 
   // Resolve the account's default model so the context-gauge fallback can
   // size a 1M-context "Account Default" session correctly (the live window is
-  // unavailable in TUI mode, and the session's own model string never carries
-  // the [1m] suffix). Re-reads on account change rather than persisting, so a
+  // unavailable before the first turn, and the session's own model string
+  // never carries the [1m] suffix). Re-reads on account change rather than persisting, so a
   // later settings.json edit isn't stale.
   //
   // Goes through `getClaudeDefaultModel`, not `getClaudeSettings().model`:
@@ -756,24 +743,28 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   // `session-status:<tabId>` events. We derive the legacy boolean flags
   // (isSessionStarting / isSessionActive) below — they keep call sites
   // readable but are no longer independent state.
-  const [sessionMode, setSessionMode] = useState<SessionMode>('rich');
   // Set when this session's config dir turns out to be signed in as somebody
   // other than the account's expected email. Cleared on session reset so a
   // stale warning can't outlive the session that produced it.
   const [accountMismatch, setAccountMismatch] = useState<AccountMismatch | null>(null);
   const [restartingSession, setRestartingSession] = useState(false);
-  // Open/close state for the SessionInspectorPanel — persisted across
-  // app sessions so the user's preference sticks.
+  // Which side panel overlays the transcript — one at a time. Only the
+  // inspector's open state is persisted across app sessions, so that
+  // preference sticks; the rest open fresh.
   const INSPECTOR_PREF_KEY = 'omnifex_session_inspector_open';
-  const [inspectorOpen, setInspectorOpen] = useState<boolean>(() => {
-    try { return localStorage.getItem(INSPECTOR_PREF_KEY) === '1'; } catch { return false; }
+  const [sidePanel, setSidePanel] = useState<SessionSidePanelKey | null>(() => {
+    try { return localStorage.getItem(INSPECTOR_PREF_KEY) === '1' ? 'inspector' : null; } catch { return null; }
   });
+  const inspectorOpen = sidePanel === 'inspector';
   useEffect(() => {
     try { localStorage.setItem(INSPECTOR_PREF_KEY, inspectorOpen ? '1' : '0'); } catch { /* private mode etc. */ }
   }, [inspectorOpen]);
+  const toggleSidePanel = (key: SessionSidePanelKey) => {
+    setSidePanel((prev) => (prev === key ? null : key));
+  };
   // Stable: ClaudeTranscript is memoised, and a fresh closure per render would
   // defeat that for the whole transcript.
-  const openInspector = useCallback(() => { setInspectorOpen(true); }, []);
+  const openInspector = useCallback(() => { setSidePanel('inspector'); }, []);
   const tabIdRef = useRef(tabId || 'default');
   // Drop any per-tab inflight buffer when this tab unmounts so the
   // module-level Map doesn't leak across long-lived renderer sessions.
@@ -798,9 +789,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   // that lands before the setting resolves still gets the directive.
   const postCompactPromptRef = useRef<string>(resolvePostCompactPrompt(null));
   const selectedModelRef = useRef<string>(selectedModel);
-  const sessionModeRef = useRef<SessionMode>(sessionMode);
   useEffect(() => { selectedModelRef.current = selectedModel; }, [selectedModel]);
-  useEffect(() => { sessionModeRef.current = sessionMode; }, [sessionMode]);
   useEffect(() => {
     let cancelled = false;
     // A failed read must not disable the directive — the shipped default is
@@ -1023,33 +1012,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     onStreamingChangeRef.current?.(isLoading, claudeSessionId);
   }, [isLoading, claudeSessionId]);
 
-  // Turn-boundary bookkeeping: when the round starts, when the last one took,
-  // and dropping the tool-progress map the round left behind.
-  //
-  // `lastTurnMs` is measured here rather than read off
-  // `cli-stream-result.duration_ms` on purpose. The status bar shows a LIVE
-  // counter from `turnStartedAt` while the turn runs and freezes it when the
-  // turn ends; sourcing the frozen value from a different clock (duration_ms
-  // is API time, not wall time) would make the number visibly jump at the
-  // moment it stopped moving.
-  const [turnStartedAt, setTurnStartedAt] = useState<number | null>(null);
-  const [lastTurnMs, setLastTurnMs] = useState<number | null>(null);
-  const turnStartedAtRef = useRef<number | null>(null);
-  const wasLoadingRef = useRef(false);
-  useEffect(() => {
-    if (isLoading && !wasLoadingRef.current) {
-      const at = Date.now();
-      turnStartedAtRef.current = at;
-      setTurnStartedAt(at);
-    } else if (!isLoading && wasLoadingRef.current) {
-      const startedAt = turnStartedAtRef.current;
-      if (startedAt !== null) setLastTurnMs(Date.now() - startedAt);
-      setTurnStartedAt(null);
-      // A finished turn has no running tools, so nothing is worth keeping.
-      useClaudeSessionStore.getState().pruneToolProgressFor(tabIdRef.current, new Set());
-    }
-    wasLoadingRef.current = isLoading;
-  }, [isLoading]);
 
   // Approximate current context-window occupancy from the LAST assistant turn.
   // This is the fallback the SessionCard uses when the CLI's live
@@ -1227,7 +1189,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
       // the permission mode above). Without this, selectedModel keeps its
       // hardcoded mount seed — the header summary names the wrong model and
       // a relaunch would even spawn with it. Concrete CLI ids are an accepted
-      // selectedModel state (the TUI control mirror sets them too).
+      // selectedModel state.
       const resumedModel = lastAssistantModel(nodes);
       if (resumedModel) setSelectedModel(resumedModel);
 
@@ -1461,11 +1423,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
               'claude-code-session:send-prompt-effect',
               handleSendPromptForEffect ?? undefined,
             ),
-            // Empty in TUI mode, which no-ops the directive: there the CLI owns
-            // the conversation and prompts go through createTuiPromptHandler,
-            // so queueing one for this rich-mode sender would send it nowhere.
-            postCompactPrompt:
-              sessionModeRef.current === 'tui' ? '' : postCompactPromptRef.current,
+            postCompactPrompt: postCompactPromptRef.current,
             currentModel: selectedModelRef.current,
             onError: (kind, err) =>
               { console.error(`[sessions] effect ${kind} failed:`, err); },
@@ -1551,9 +1509,9 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     startPersistentSession,
     rebindPersistentSession,
     sessionStatus,
-    // conversationStatus is now derived inside the hook from messages/tasks/subagents
-    // via sessionDerivedState.conversationStatus (Task 2). The old FSM-driven approach
-    // (reading the IPC payload's conversationStatus field) has been removed.
+    // The session's own turn axis, mirrored from main; conversationStatus
+    // folds it with the transcript-derived task / subagent rows.
+    turn,
     conversationStatus,
     resetStatus,
   } = useSessionLifecycle({
@@ -1563,7 +1521,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     permissionMode,
     effort,
     thinkingConfig,
-    sessionStartMode,
     agent,
     accountResolution,
     persistentSessionRef,
@@ -1584,8 +1541,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
       streamCtxRef.current.setExtractedSessionInfo({ sessionId, projectId });
       SessionPersistenceService.saveSession(sessionId, projectId, projectPath, 0);
     }, [projectPath]),
-    // Inputs for conversationStatus derivation. Messages are JsonlNode[] end-to-end; no adapter layer.
-    messages,
+    // Transcript-derived inputs for the conversation rollup.
     tasks: taskEntries,
     subagents,
   });
@@ -1608,6 +1564,38 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   // resume or a preconfigured fresh start (see hasPendingStart above),
   // so this single check covers all cases without a one-frame flash.
   const sessionStarted = sessionStatus !== 'stopped';
+
+  // Turn-boundary bookkeeping: when the round started, how long the last one
+  // took, and dropping the tool-progress map the round left behind. The
+  // start is the session's own `turn.since` — the moment main handed the
+  // prompt to the CLI — so a reloaded or remote client counts from the same
+  // instant the daemon does.
+  //
+  // `lastTurnMs` is measured here rather than read off
+  // `cli-stream-result.duration_ms` on purpose. The status bar shows a LIVE
+  // counter from `turnStartedAt` while the turn runs and freezes it when the
+  // turn ends; sourcing the frozen value from a different clock (duration_ms
+  // is API time, not wall time) would make the number visibly jump at the
+  // moment it stopped moving.
+  const turnStartedAt = useMemo<number | null>(() => {
+    if (turn.status !== 'running' || turn.since === null) return null;
+    const at = Date.parse(turn.since);
+    return Number.isFinite(at) ? at : null;
+  }, [turn.status, turn.since]);
+  const [lastTurnMs, setLastTurnMs] = useState<number | null>(null);
+  const turnStartedAtRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (turnStartedAt !== null) {
+      turnStartedAtRef.current = turnStartedAt;
+      return;
+    }
+    const startedAt = turnStartedAtRef.current;
+    if (startedAt === null) return;
+    turnStartedAtRef.current = null;
+    setLastTurnMs(Date.now() - startedAt);
+    // A finished turn has no running tools, so nothing is worth keeping.
+    useClaudeSessionStore.getState().pruneToolProgressFor(tabIdRef.current, new Set());
+  }, [turnStartedAt]);
   const isConversationInFlight =
     conversationStatus !== null && conversationStatus !== 'idle';
   const promptStatus: 'working' | 'ready' =
@@ -1656,7 +1644,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     sessionId: claudeSessionId ?? null,
     sessionStarted: isSessionActive,
     isStarting: isSessionStarting,
-    isLoading,
+    turnRunning: turn.status === 'running',
     hasError: error !== null,
     messages,
     subagents,
@@ -1699,17 +1687,11 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     [sendPromptRaw],
   );
 
-  // Run /compact from the context-pressure banner. Branches on session mode
-  // exactly as FloatingPromptInput's onSend does: TUI mode writes into the pty
-  // (the TUI subprocess isn't listening on stream-json stdin), chat mode goes
-  // through handleSendPrompt so it inherits the existing queueing behavior.
+  // Run /compact from the context-pressure banner through handleSendPrompt so
+  // it inherits the existing queueing behavior.
   const handleCompact = useCallback(() => {
-    if (sessionMode === 'tui') {
-      createTuiPromptHandler(tabIdRef.current)('/compact', selectedModel);
-      return;
-    }
     void handleSendPrompt('/compact', selectedModel);
-  }, [sessionMode, selectedModel, handleSendPrompt]);
+  }, [selectedModel, handleSendPrompt]);
 
   // Stable resend callback. Without memoization, every render of this
   // component handed every `StreamMessage` a fresh `onResend` function ref,
@@ -1894,57 +1876,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     };
   }, [activeAccountName]);
 
-  // Ref-indirected reload so the session-mode effect can stay [] while
-  // reading the latest claudeSessionId / projectId / projectPath.
-  const reloadHistoryRef = useRef<() => void>(() => {});
-  useEffect(() => {
-    reloadHistoryRef.current = () => {
-      if (!claudeSessionId || !extractedSessionInfo?.projectId) return;
-      api.loadSessionHistory(
-        claudeSessionId,
-        extractedSessionInfo.projectId,
-        projectPath,
-      )
-        .then((history) => {
-          if (!history || history.length === 0) return;
-          // Mirror loadSessionHistory(): classify → normalize.
-          const loaded: JsonlNode[] = history
-            .map((entry: unknown) => classifyJsonlLine(entry))
-            .filter((n): n is NonNullable<typeof n> => n !== null)
-            .map((n) => normalizeJsonlNode(n));
-          setMessages(loaded);
-        })
-        .catch((err: unknown) => {
-          console.error('Failed to reload history on TUI->Chat:', err);
-        });
-    };
-  }, [claudeSessionId, extractedSessionInfo, projectPath, setMessages]);
-
-  // Listen for session mode changes from main process
-  useEffect(() => {
-    const unlisten = window.electronAPI.onEvent(
-      `session-mode:${tabIdRef.current}`,
-      (...args: unknown[]) => {
-        const payload = args[0] as { mode?: SessionMode } | undefined;
-        if (payload?.mode === 'rich' || payload?.mode === 'tui') {
-          setSessionMode(payload.mode);
-          // A mode switch means the main process has a live session handle
-          // on the other side of the toggle. Keep the header badge active
-          // rather than dropping back to 'Starting…' while the restarted
-          // CLI query waits for its first message.
-          resetStatus({ sessionStatus: 'started', conversationStatus: 'idle' });
-          // On return to CLI mode, reload history from the JSONL file.
-          // TUI-mode turns wrote to the session file but never flowed
-          // through our claude-output events, so they're missing from
-          // messages[]. The ref indirection keeps this stable across
-          // the effect's [] deps while reading live state.
-          if (payload.mode === 'rich') reloadHistoryRef.current();
-        }
-      },
-    );
-    return () => { unlisten(); };
-  }, []);
-
   // Secondary account confirmation. Main emits this when the session's config
   // dir turns out to be authenticated as somebody other than the account's
   // recorded email — from the pre-flight `.claude.json` read at start, and
@@ -1970,26 +1901,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
       setAccountMismatch(null);
     }
   }, [sessionVerification?.status, accountMismatch]);
-
-  // Mirror model / permission-mode / effort changes the user makes inside a
-  // live TUI session. In TUI mode the terminal owns these — the popover
-  // pickers are read-only there — so this keeps them in sync when the user
-  // switches model (`/model`), cycles permission mode (shift+tab), or changes
-  // effort in the terminal. The main process detects the change from the
-  // session JSONL and emits here. Thinking isn't covered (never reaches the
-  // JSONL).
-  useEffect(() => {
-    const unlisten = window.electronAPI.onEvent(
-      `session-control-state:${tabIdRef.current}`,
-      (...args: unknown[]) => {
-        mirrorControlState(
-          args[0] as { model?: string; permissionMode?: string; effort?: string } | undefined,
-          { setSelectedModel, setPermissionMode, setEffort, setContextUsage },
-        );
-      },
-    );
-    return () => { unlisten(); };
-  }, [setContextUsage]);
 
   // session-status events are now consumed by useSessionLifecycle, which
   // exposes the resulting `sessionStatus` enum. Derived `isSessionStarting`
@@ -2277,14 +2188,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     window.dispatchEvent(new CustomEvent('back-to-project'));
   };
 
-  const modeToggleDisabled = !isSessionActive || waitingForPermission || !claudeSessionId;
-  const modeToggleReason = !isSessionActive
-    ? 'Start a session first'
-    : !claudeSessionId
-      ? 'Session ID not yet available — wait a moment'
-      : waitingForPermission
-        ? 'Resolve the permission dialog first'
-        : undefined;
 
 
   /**
@@ -2307,7 +2210,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     pressureSetting: contextPressureSetting,
     jumpSetting: contextJumpSetting,
     sessionLive: isSessionActive,
-    turnInFlight: isLoading,
+    turnInFlight: turn.status === 'running',
     turnStartedAt,
     lastTurnMs,
     cacheTtlChange,
@@ -2575,10 +2478,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
                 <SessionDefaultsRow
                   engine={agent}
                   density="compact"
-                  // TUI mode owns these via the terminal; the pickers can't
-                  // drive the CLI (no control-protocol engine in TUI), so they
-                  // render read-only and mirror the auto-detected live state.
-                  disabled={sessionMode === 'tui'}
                   configDir={accountResolution?.account.config_dir}
                   activeDefaultModel={liveDefaultModel}
                   model={selectedModel}
@@ -2660,8 +2559,8 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
             cacheBusy={isLoading}
             title={sessionTitle}
             // A rename rides the CLI's control channel, which only a live
-            // non-TUI session has — see queries.ts liveEngine().
-            canRename={isSessionActive && sessionMode !== 'tui'}
+            // session has — see queries.ts liveEngine().
+            canRename={isSessionActive}
             onRename={handleRenameSession}
           />
           <SessionHeaderResizeHandle
@@ -2686,8 +2585,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
               setEffort={setEffort}
               permissionMode={permissionMode}
               setPermissionMode={setPermissionMode}
-              sessionStartMode={sessionStartMode}
-              setSessionStartMode={setSessionStartMode}
               agent={agent}
               setAgent={setAgent}
               agentPickerDisabled={isSessionStarting}
@@ -2731,164 +2628,71 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
         )}
         <div className="flex-1 min-h-0 w-full flex flex-col relative">
 
-        {/* Side panels — all positioned absolutely inside this chat-body
-            wrapper so they stay within the content area (below the session
-            header, above the prompt input). The messages list gets
-            `sm:mr-96` to slide out of the way; the prompt input is below
-            the wrapper and stays full width. Shared `panelClass` keeps
-            every panel in lockstep. */}
-        {(() => {
-          const panelClass = "absolute right-0 top-0 bottom-0 w-full sm:w-96 bg-background border-l border-border shadow-xl z-20 overflow-hidden";
-          const panelMotion = {
-            initial: { x: "100%" },
-            animate: { x: 0 },
-            exit: { x: "100%" },
-            transition: { duration: 0.2, ease: "easeOut" as const },
-          };
-          return (
-            <>
-              <AnimatePresence>
-                {inspectorOpen && (
-                  <motion.div {...panelMotion} className={panelClass}>
-                    <SessionInspectorPanel
-                      open={inspectorOpen}
-                      onClose={() => { setInspectorOpen(false); }}
-                      sessionId={claudeSessionId}
-                      status={displayStatus}
-                      sessionStatus={sessionStatus}
-                      conversationStatus={conversationStatus}
-                      mode={sessionMode}
-                      model={selectedModel}
-                      account={accountResolution ? {
-                        name: accountResolution.account.name,
-                        configDir: accountResolution.account.config_dir,
-                      } : null}
-                      projectPath={projectPath ?? null}
-                      branch={gitStatus?.branch ?? null}
-                      promptStatus={promptStatus}
-                      mainTurnInFlight={isLoading}
-                      activeAgents={activeSubagentCount}
-                      tasks={{
-                        total: taskListSummary.total,
-                        inProgress: taskListSummary.inProgress,
-                        completed: taskListSummary.done,
-                        pending: taskListSummary.pending,
-                      }}
-                    />
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
-              <AnimatePresence>
-                {showMCPPanel && (
-                  <motion.div {...panelMotion} className={panelClass}>
-                    <div className="h-full flex flex-col">
-                      <div className="flex items-center justify-between p-4 border-b border-border">
-                        <h3 className="text-lg font-semibold">MCP Servers</h3>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => { setShowMCPPanel(false); }}
-                          className="h-8 w-8"
-                        >
-                          <X className="h-4 w-4" />
-                        </Button>
-                      </div>
-                      <div className="flex-1 overflow-y-auto">
-                        <SessionMCPStatus tabId={tabIdRef.current} />
-                        {/* What the badge on the Plug button was counting.
-                            Without it the panel the badge points at never
-                            mentions the events, so the number had no
-                            explanation anywhere in the app. */}
-                        <div className="p-4 border-t border-border">
-                          <div className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">
-                            Recent events
-                          </div>
-                          <SignalEventLog events={mcpEvents} />
-                        </div>
-                      </div>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
-              <AnimatePresence>
-                {showPluginsPanel && (
-                  <motion.div {...panelMotion} className={panelClass}>
-                    <div className="h-full flex flex-col">
-                      <div className="flex items-center justify-between p-4 border-b border-border">
-                        <h3 className="text-lg font-semibold">Plugins</h3>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => { setShowPluginsPanel(false); }}
-                          className="h-8 w-8"
-                        >
-                          <X className="h-4 w-4" />
-                        </Button>
-                      </div>
-                      <div className="flex-1 overflow-y-auto">
-                        <SessionPluginStatus tabId={tabIdRef.current} />
-                      </div>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
-              <AnimatePresence>
-                {showPermissionsPanel && (
-                  <motion.div {...panelMotion} className={panelClass}>
-                    <div className="h-full flex flex-col">
-                      <div className="flex items-center justify-between p-4 border-b border-border">
-                        <h3 className="text-lg font-semibold">Permissions</h3>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => { setShowPermissionsPanel(false); }}
-                          className="h-8 w-8"
-                        >
-                          <X className="h-4 w-4" />
-                        </Button>
-                      </div>
-                      <div className="flex-1 overflow-y-auto">
-                        <SessionPermissionsEditor
-                          tabId={tabIdRef.current}
-                          projectPath={projectPath}
-                          configDir={accountResolution?.account.config_dir || ''}
-                        />
-                      </div>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </>
-          );
-        })()}
-
         {/* Main Content Area */}
-        <div className={cn(
-          "flex-1 min-h-0 overflow-hidden transition-all duration-300 relative",
-          // The context panel is deliberately absent from this list: it
-          // OVERLAYS the transcript rather than displacing it, so the
-          // messages keep their full width underneath.
-          (showMCPPanel || showPluginsPanel || showPermissionsPanel || inspectorOpen) && "sm:mr-96"
-        )}>
-          {/* Mounted HERE, inside the messages area, rather than beside the
-              MCP/Plugins/Permissions panels above. Those are absolute within
-              the whole chat body, so they run down over the subagent bar and
-              the composer. This one is bounded by the transcript, which is
-              what keeps the controls at the bottom visible while it is open. */}
-          <AnimatePresence>
-            {showContextPanel && (
-              <ResizableSidePanel
-                storageKey="omnifex.contextLedger.panelWidth"
-                title="Session context"
-                onClose={() => { setShowContextPanel(false); }}
-              >
-                <ContextLedgerPanel ledger={contextLedger} />
-              </ResizableSidePanel>
-            )}
-          </AnimatePresence>
+        <div className="flex-1 min-h-0 overflow-hidden relative">
+          {/* Mounted HERE, inside the messages area: the panel overlays the
+              transcript and is bounded by it, which keeps the subagent bar
+              and the composer visible while it is open. Nothing pushes the
+              transcript aside. */}
+          <SessionSidePanels
+            open={sidePanel}
+            onClose={() => { setSidePanel(null); }}
+            content={{
+              inspector: (
+                <SessionInspectorPanel
+                  sessionId={claudeSessionId}
+                  status={displayStatus}
+                  sessionStatus={sessionStatus}
+                  conversationStatus={conversationStatus}
+                  model={selectedModel}
+                  account={accountResolution ? {
+                    name: accountResolution.account.name,
+                    configDir: accountResolution.account.config_dir,
+                  } : null}
+                  projectPath={projectPath ?? null}
+                  branch={gitStatus?.branch ?? null}
+                  promptStatus={promptStatus}
+                  turn={turn}
+                  activeAgents={activeSubagentCount}
+                  tasks={{
+                    total: taskListSummary.total,
+                    inProgress: taskListSummary.inProgress,
+                    completed: taskListSummary.done,
+                    pending: taskListSummary.pending,
+                  }}
+                />
+              ),
+              mcp: (
+                <div className="h-full overflow-y-auto">
+                  <SessionMCPStatus tabId={tabIdRef.current} />
+                  {/* What the badge on the Plug button was counting. Without
+                      it the panel the badge points at never mentions the
+                      events, so the number had no explanation anywhere. */}
+                  <div className="p-4 border-t border-border">
+                    <div className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+                      Recent events
+                    </div>
+                    <SignalEventLog events={mcpEvents} />
+                  </div>
+                </div>
+              ),
+              plugins: (
+                <div className="h-full overflow-y-auto">
+                  <SessionPluginStatus tabId={tabIdRef.current} />
+                </div>
+              ),
+              permissions: (
+                <div className="h-full overflow-y-auto">
+                  <SessionPermissionsEditor
+                    tabId={tabIdRef.current}
+                    projectPath={projectPath}
+                    configDir={accountResolution?.account.config_dir || ''}
+                  />
+                </div>
+              ),
+              context: <ContextLedgerPanel ledger={contextLedger} />,
+            }}
+          />
           {/* The diff viewer covers the transcript rather than sharing it with
               a side panel: a split before/after pane plus a file tree has no
               useful reading width at 384px. The header and composer stay
@@ -2909,15 +2713,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
                 widget's activity pill ("thinking 12s"), which costs no
                 transcript height and keeps the elapsed clock visible while
                 scrolled anywhere. The token count moved to its tooltip. */}
-            {sessionMode === 'tui' ? (
-              <TuiSessionLayout
-                tabId={tabIdRef.current}
-                onOpenInspector={openInspector}
-                inspectorOpen={inspectorOpen}
-              />
-            ) : (
-              messagesList
-            )}
+            {messagesList}
             
             {isLoading && messages.length === 0 && (
               <div className="flex items-center justify-center h-full">
@@ -3015,14 +2811,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
             }}
           />
 
-          <div className={cn(
-            "shrink-0 transition-all duration-300 z-50",
-            // Match the Main Content Area's shrinkage so TaskList,
-            // SubagentBar, and the prompt input slide out from under any
-            // open side panel instead of overlaying it. Without this the
-            // panel is visible behind the (translucent) bar backgrounds.
-            (showMCPPanel || showPluginsPanel || showPermissionsPanel || inspectorOpen) && "sm:mr-96",
-          )}>
+          <div className="shrink-0 z-50">
             {pendingPermission && (
               // The CLI gates the built-in `AskUserQuestion` tool through the
               // same canUseTool / permission_request channel as Bash / Read /
@@ -3071,16 +2860,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
             />
             <FloatingPromptInput
               ref={floatingPromptRef}
-              // In TUI mode, route the prompt straight into the CLI's PTY —
-              // identical to the user typing it into xterm and pressing
-              // Enter. The rich-mode handleSendPrompt path uses the engine's
-              // stream-json stdin, which the TUI subprocess isn't listening
-              // on. See src/lib/tuiPromptHandler.ts.
-              onSend={
-                sessionMode === 'tui'
-                  ? fireAndLog('claude-code-session:send-tui', createTuiPromptHandler(tabIdRef.current))
-                  : fireAndLog('claude-code-session:send', handleSendPrompt)
-              }
+              onSend={fireAndLog('claude-code-session:send', handleSendPrompt)}
               onCancel={fireAndLog('claude-code-session:cancel', handleCancelExecution)}
               isLoading={isLoading}
               disabled={!projectPath}
@@ -3089,25 +2869,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
               tabId={tabIdRef.current}
               defaultModel={selectedModel}
               supportedCommands={supportedCommands}
-              modeToggle={
-                <div className="flex items-center gap-1.5 w-full">
-                  <HeaderLabel className="w-12 shrink-0">mode</HeaderLabel>
-                  <SessionModeToggle
-                    className="flex-1"
-                    mode={sessionMode}
-                    onChange={(next) => {
-                      api.setSessionMode(tabIdRef.current, next).catch((err: unknown) => {
-                        console.error('Failed to switch mode:', err);
-                        const msg = err instanceof Error ? err.message : String(err);
-                        setError(`Mode switch failed: ${msg}`);
-                        setTimeout(() => { setError(null); }, 5000);
-                      });
-                    }}
-                    disabled={modeToggleDisabled}
-                    disabledReason={modeToggleReason}
-                  />
-                </div>
-              }
               outputStyleToggle={
                 <div className="flex items-center gap-1.5 w-full">
                   <HeaderLabel className="w-12 shrink-0">output</HeaderLabel>
@@ -3173,13 +2934,13 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
                       <Button
                         variant="ghost"
                         size="icon"
-                        onClick={() => { setShowMCPPanel(!showMCPPanel); if (!showMCPPanel) { setShowPluginsPanel(false); setShowPermissionsPanel(false); signals.markRead('mcp'); setShowContextPanel(false); } }}
+                        onClick={() => { if (sidePanel !== 'mcp') signals.markRead('mcp'); toggleSidePanel('mcp'); }}
                         className={cn(
                           "h-8 w-8 text-muted-foreground hover:text-foreground shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_30%,transparent)]",
-                          showMCPPanel ? "bg-accent" : "bg-background",
+                          sidePanel === 'mcp' ? "bg-accent" : "bg-background",
                         )}
                       >
-                        <Plug className={cn("h-3.5 w-3.5", showMCPPanel && "text-primary")} />
+                        <Plug className={cn("h-3.5 w-3.5", sidePanel === 'mcp' && "text-primary")} />
                       </Button>
                     </motion.div>
                   </TooltipSimple>
@@ -3191,13 +2952,13 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
                       <Button
                         variant="ghost"
                         size="icon"
-                        onClick={() => { setShowPluginsPanel(!showPluginsPanel); if (!showPluginsPanel) { setShowMCPPanel(false); setShowPermissionsPanel(false); setShowContextPanel(false); } }}
+                        onClick={() => { toggleSidePanel('plugins'); }}
                         className={cn(
                           "h-8 w-8 text-muted-foreground hover:text-foreground shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_30%,transparent)]",
-                          showPluginsPanel ? "bg-accent" : "bg-background",
+                          sidePanel === 'plugins' ? "bg-accent" : "bg-background",
                         )}
                       >
-                        <Package className={cn("h-3.5 w-3.5", showPluginsPanel && "text-primary")} />
+                        <Package className={cn("h-3.5 w-3.5", sidePanel === 'plugins' && "text-primary")} />
                       </Button>
                     </motion.div>
                   </TooltipSimple>
@@ -3209,13 +2970,13 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
                       <Button
                         variant="ghost"
                         size="icon"
-                        onClick={() => { setShowPermissionsPanel(!showPermissionsPanel); if (!showPermissionsPanel) { setShowMCPPanel(false); setShowPluginsPanel(false); setShowContextPanel(false); } }}
+                        onClick={() => { toggleSidePanel('permissions'); }}
                         className={cn(
                           "h-8 w-8 text-muted-foreground hover:text-foreground shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_30%,transparent)]",
-                          showPermissionsPanel ? "bg-accent" : "bg-background",
+                          sidePanel === 'permissions' ? "bg-accent" : "bg-background",
                         )}
                       >
-                        <Shield className={cn("h-3.5 w-3.5", showPermissionsPanel && "text-primary")} />
+                        <Shield className={cn("h-3.5 w-3.5", sidePanel === 'permissions' && "text-primary")} />
                       </Button>
                     </motion.div>
                   </TooltipSimple>
@@ -3245,13 +3006,13 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
                       <Button
                         variant="ghost"
                         size="icon"
-                        onClick={() => { setShowContextPanel(!showContextPanel); if (!showContextPanel) { setShowMCPPanel(false); setShowPluginsPanel(false); setShowPermissionsPanel(false); } }}
+                        onClick={() => { toggleSidePanel('context'); }}
                         className={cn(
                           "h-8 w-8 text-muted-foreground hover:text-foreground shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_30%,transparent)]",
-                          showContextPanel ? "bg-accent" : "bg-background",
+                          sidePanel === 'context' ? "bg-accent" : "bg-background",
                         )}
                       >
-                        <Layers className={cn("h-3.5 w-3.5", showContextPanel && "text-primary")} />
+                        <Layers className={cn("h-3.5 w-3.5", sidePanel === 'context' && "text-primary")} />
                       </Button>
                     </motion.div>
                   </TooltipSimple>

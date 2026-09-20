@@ -261,7 +261,7 @@ export interface ChatStatusBarProps {
   link: LinkState;
   /** The session's name, resolved by `deriveSessionTitle`. Null = untitled. */
   title?: string | null;
-  /** Whether a rename can actually be sent (a live, non-TUI session). */
+  /** Whether a rename can actually be sent (a live session). */
   canRename?: boolean;
   /** Sends the rename; resolves false when it did not reach the CLI. */
   onRename?: (title: string) => Promise<boolean> | boolean;

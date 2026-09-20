@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import { FloatingPromptInput } from '../FloatingPromptInput';
 
 vi.mock('@/lib/api', async (importOriginal) => {
@@ -23,11 +23,10 @@ describe('FloatingPromptInput — chat bar layout', () => {
     expect(screen.queryByText('Default')).toBeNull();
   });
 
-  it('stacks the mode and output toggles vertically on the left at equal widths', () => {
+  it('keeps the output toggle in a full-width column on the left', () => {
     render(
       <FloatingPromptInput
         onSend={vi.fn()}
-        modeToggle={<div data-testid="mode-toggle" />}
         outputStyleToggle={<div data-testid="output-toggle" />}
         extraMenuItems={
           <>
@@ -38,12 +37,9 @@ describe('FloatingPromptInput — chat bar layout', () => {
       />,
     );
 
-    const mode = screen.getByTestId('mode-toggle');
     const output = screen.getByTestId('output-toggle');
-    // Same vertical stack, full-width children → equal widths.
-    expect(mode.parentElement).toBe(output.parentElement);
-    expect(mode.parentElement?.className).toContain('flex-col');
-    expect(mode.parentElement?.className).toContain('items-stretch');
+    expect(output.parentElement?.className).toContain('flex-col');
+    expect(output.parentElement?.className).toContain('items-stretch');
     // Extras keep their square grid on the right.
     expect(screen.getByTestId('extra-1').parentElement?.className).toContain('grid-cols-2');
   });
@@ -52,7 +48,6 @@ describe('FloatingPromptInput — chat bar layout', () => {
     render(
       <FloatingPromptInput
         onSend={vi.fn()}
-        modeToggle={<div data-testid="mode-toggle" />}
         outputStyleToggle={<div data-testid="output-toggle" />}
         extraMenuItems={
           <>
@@ -63,7 +58,7 @@ describe('FloatingPromptInput — chat bar layout', () => {
       />,
     );
 
-    const stack = screen.getByTestId('mode-toggle').parentElement!;
+    const stack = screen.getByTestId('output-toggle').parentElement!;
     const row = stack.parentElement!;
     // The bar's height is set by whichever side stack is taller; the row
     // must stretch its children rather than sit them on the baseline.
@@ -79,5 +74,27 @@ describe('FloatingPromptInput — chat bar layout', () => {
     expect(textarea.className).toContain('h-full');
     expect(textarea.style.minHeight).toBe('72px');
     expect(textarea.style.height).toBe('');
+  });
+
+  it('keeps the 72px floor while empty: the placeholder must not size the bar', () => {
+    // A narrow textarea wraps the placeholder onto several lines, and the
+    // auto-grow used to read THAT as content height. The first keystroke
+    // removes the placeholder, the floor drops, and the whole bar shrinks.
+    const original = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollHeight');
+    Object.defineProperty(HTMLElement.prototype, 'scrollHeight', { configurable: true, get: () => 130 });
+    try {
+      render(<FloatingPromptInput onSend={vi.fn()} />);
+      const textarea = screen.getByPlaceholderText(/Message Claude/) as HTMLTextAreaElement;
+      expect(textarea.style.minHeight).toBe('72px');
+
+      fireEvent.change(textarea, { target: { value: 'hello' } });
+      expect(textarea.style.minHeight).toBe('130px');
+
+      fireEvent.change(textarea, { target: { value: '' } });
+      expect(textarea.style.minHeight).toBe('72px');
+    } finally {
+      if (original) Object.defineProperty(HTMLElement.prototype, 'scrollHeight', original);
+      else delete (HTMLElement.prototype as unknown as Record<string, unknown>).scrollHeight;
+    }
   });
 });

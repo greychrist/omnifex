@@ -27,7 +27,9 @@ function fakeSessions(send: { current: (channel: string, ...args: unknown[]) => 
     interrupt: [] as string[],
   };
   let respondResult = true;
+  const turns = new Map<string, { status: 'idle' | 'running'; since: string | null }>();
   const svc = {
+    getTurn: (id: string) => turns.get(id) ?? { status: 'idle', since: null },
     start: vi.fn(async (p: SessionStartParams) => {
       calls.start.push(p);
       active.add(p.tabId);
@@ -35,7 +37,10 @@ function fakeSessions(send: { current: (channel: string, ...args: unknown[]) => 
       send.current(`session-init:${p.tabId}`, { sessionId: p.tabId, projectPath: p.projectPath });
     }),
     isActive: (id: string) => active.has(id),
-    sendMessage: vi.fn((id: string, text: string) => { calls.send.push([id, text]); }),
+    sendMessage: vi.fn((id: string, text: string) => {
+      calls.send.push([id, text]);
+      turns.set(id, { status: 'running', since: '2026-09-20T00:00:00.000Z' });
+    }),
     sendStructuredMessage: vi.fn((id: string, c: unknown[]) => { calls.structured.push([id, c]); }),
     respondPermission: vi.fn((...a: unknown[]) => { calls.respond.push(a); return respondResult; }),
     // Like the real service: stop() removes the handle and emits NOTHING —
@@ -46,7 +51,7 @@ function fakeSessions(send: { current: (channel: string, ...args: unknown[]) => 
     }),
     interrupt: vi.fn(async (id: string) => { calls.interrupt.push(id); }),
   } as unknown as SessionsService;
-  return { svc, calls, active, setRespondResult: (v: boolean) => { respondResult = v; } };
+  return { svc, calls, active, turns, setRespondResult: (v: boolean) => { respondResult = v; } };
 }
 
 function fakeCtx() {
@@ -117,7 +122,7 @@ describe('remote handlers', () => {
     const project = await addProject();
     const summary = await h['session.create']({ projectId: project.projectId, options: { model: 'claude-opus-5' } }, fakeCtx().ctx);
 
-    expect(summary).toMatchObject({ sessionId: 'sid-1', projectId: project.projectId, sessionStatus: 'started', agent: 'claude', mode: 'rich' });
+    expect(summary).toMatchObject({ sessionId: 'sid-1', projectId: project.projectId, sessionStatus: 'started', agent: 'claude' });
     expect(fake.calls.start[0]).toMatchObject({
       tabId: 'sid-1',
       resumeSessionId: 'sid-1',
@@ -245,9 +250,10 @@ describe('remote handlers', () => {
     expect(h.summary('sid-1')).toMatchObject({ inFlight: false });
 
     h['turn.send']({ sessionId: 'sid-1', content: 'hello' }, fakeCtx().ctx);
+    // The session opened the turn when the prompt went out; the summary reads it from there.
     expect(h.summary('sid-1')).toMatchObject({ inFlight: true, pendingPermissions: 0 });
 
-    bridge.sendToRenderer('agent-output:sid-1', { type: 'result', subtype: 'success', is_error: false, result: 'ok', receivedAt: '2026-09-10T03:00:02.000Z' });
+    fake.turns.set('sid-1', { status: 'idle', since: null });
     expect(h.summary('sid-1')).toMatchObject({ inFlight: false });
   });
 

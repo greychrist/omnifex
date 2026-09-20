@@ -177,17 +177,26 @@ export interface CliUserMessage {
  * task/subagent stores (see src/lib/sessionDerivedState.ts). Main process
  * owns sessionStatus only — the "is the CLI process up?" axis.
  */
+/**
+ * The turn axis, owned by the session. `running` from the moment a prompt is
+ * handed to the CLI until its `result` row lands or the process goes away.
+ * Never inferred from the transcript: a `--resume` of a session whose process
+ * died mid-turn starts `idle`, because the new process is not working on
+ * anything. See docs/session-lifecycle.md.
+ */
+export interface TurnState {
+  status: 'idle' | 'running';
+  /** ISO timestamp the running turn started; null while idle. */
+  since: string | null;
+}
+
+export const IDLE_TURN: TurnState = { status: 'idle', since: null };
+
 export type SessionStatus =
   | 'starting'
   | 'started'
   | 'error'
   | 'stopped';
-
-/**
- * Session backend toggle. `'rich'` is the structured engine-driven chat
- * UX (Claude CLI in stream-json mode); `'tui'` spawns the CLI in a PTY.
- */
-export type SessionMode = 'rich' | 'tui';
 
 export interface SessionStartParams {
   tabId: string;
@@ -202,13 +211,6 @@ export interface SessionStartParams {
     | { type: 'disabled' };
   /** webContents.id of the window that started this session — used to route tab-scoped events back to that window only. */
   ownerWebContentsId?: number;
-  /**
-   * Choose the session backend. Defaults to `'rich'` (engine-driven chat).
-   * `'tui'` spawns the CLI in a PTY without `--resume` and drives the
-   * renderer from the session's JSONL file. Use TUI mode when the user
-   * prefers terminal-primary UX.
-   */
-  mode?: SessionMode;
   /**
    * True when the user explicitly picked a non-default account for this
    * session on the new-session form (`match_type === 'manual_override'`).
@@ -280,7 +282,10 @@ export interface SessionsService {
     alive: boolean;
     sessionId: string | null;
     sessionStatus: SessionStatus;
+    turn: TurnState;
   };
+  /** The turn axis for a tab; idle for a tab the service does not know. */
+  getTurn(tabId: string): TurnState;
   isActive(tabId: string): boolean;
   /** Return all tab IDs that currently have a registered session handle. */
   listActiveTabIds(): string[];
@@ -334,10 +339,6 @@ export interface SessionsService {
   getMcpServerStatus(tabId: string): Promise<McpServerStatus[]>;
   /** Get loaded plugins for an active session, enriched with manifest data. */
   getPlugins(tabId: string, force?: boolean): Promise<import('./plugins').EnrichedPlugin[]>;
-  setMode(tabId: string, mode: SessionMode): Promise<void>;
-  tuiWrite(tabId: string, data: string): void;
-  tuiResize(tabId: string, cols: number, rows: number): void;
-  getMode(tabId: string): SessionMode | null;
 }
 
 export type SendToRenderer = (channel: string, ...args: unknown[]) => void;
@@ -410,15 +411,11 @@ export interface SessionHandle {
   /**
    * Which agent powers this session. Pinned at handle construction so
    * the restart path knows which factory to call without re-resolving
-   * from start-params. TUI cold-start sessions are always `'claude'`
-   * in v1 (Codex doesn't have a TUI surface).
+   * from start-params.
    */
   agent: AgentKind;
-  /**
-   * Drives the live session. Null only in TUI cold-start sessions, where
-   * the CLI is spoken to via PTY (TuiSession), not via stream-json.
-   */
-  engine: AgentEngine | null;
+  /** Drives the live session over stream-json. */
+  engine: AgentEngine;
   /**
    * Cached system:init payload (account, commands, models, agents).
    * Mirrors `engine.getInitData()` so queries.ts can read it synchronously.
@@ -444,12 +441,8 @@ export interface SessionHandle {
   sessionId: string | null;
   /** Connection axis. See docs/session-lifecycle.md. */
   sessionStatus: SessionStatus;
-  mode: SessionMode;
-  tui: import('./tui').TuiSession | null;
-  /** Cleanup hook that detaches the current tui's data/exit forwarders. */
-  tuiDetach: (() => void) | null;
-  /** Stop handle for the TUI JSONL listener (null in rich mode). */
-  tuiJsonl: import('./tui-jsonl').TuiJsonlHandle | null;
+  /** Turn axis. See docs/session-lifecycle.md. */
+  turn: TurnState;
   permissionResolver: ((decision: PermissionDecision) => void) | null;
   /** Queue of permission requests waiting for user response */
   permissionQueue: PendingPermission[];

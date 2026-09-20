@@ -16,7 +16,7 @@
  * <watchId>`) is an app-wide signal, and goes out as a `channel` broadcast —
  * the prefix alone is not evidence of scope.
  */
-import type { SendToRenderer } from '../services/sessions/types';
+import { IDLE_TURN, type SendToRenderer, type TurnState } from '../services/sessions/types';
 import type { JsonlNode } from '../../src/types/jsonl';
 import type { ServerMessage, SessionScopedPush, SessionStatus } from '../../src/protocol';
 import type { SessionLog, UnsequencedPush } from './session-log';
@@ -33,10 +33,8 @@ export interface SessionBridgeDeps {
 
 export interface SessionControlState {
   sessionStatus: SessionStatus;
-  mode?: 'rich' | 'tui';
-  model?: string;
-  permissionMode?: string;
-  effort?: string;
+  /** Mirrored from the session's `session-turn:<id>` announcements. */
+  turn: TurnState;
   error?: string;
 }
 
@@ -46,18 +44,8 @@ export interface SessionBridge {
   pendingPermissions(sessionId: string): string[];
   /** Forget a permission the handler has successfully answered. */
   permissionAnswered(sessionId: string, permissionId: string): void;
-  /** The connection axis plus the last control-state mirror, for summaries. */
+  /** Both axes as last announced, for summaries. */
   state(sessionId: string): SessionControlState | null;
-  /** A prompt was just sent: the turn is running until its result row lands. */
-  turnStarted(sessionId: string): void;
-  /**
-   * Whether a turn is running. Opened by `turnStarted`, closed by the CLI's
-   * `result` row (`cli-stream-result`, the same closer the renderer uses —
-   * see docs/session-lifecycle.md), by the process completing, or by the
-   * session stopping. Read by summaries and by the Electron launcher, which
-   * will not replace a daemon mid-turn.
-   */
-  inFlight(sessionId: string): boolean;
   /** Drop per-session tracking once a session is gone for good. */
   forget(sessionId: string): void;
 }
@@ -79,7 +67,6 @@ function isPermissionPayload(payload: unknown): payload is Record<string, unknow
 export function createSessionBridge(deps: SessionBridgeDeps): SessionBridge {
   const states = new Map<string, SessionControlState>();
   const pending = new Map<string, string[]>();
-  const turns = new Set<string>();
 
   function stateFor(sessionId: string): SessionControlState {
     let s = states.get(sessionId);
@@ -87,7 +74,7 @@ export function createSessionBridge(deps: SessionBridgeDeps): SessionBridge {
       // A session the log knows but the bridge has not seen a status for is
       // still dialing — the same optimistic 'starting' the renderer assumes.
       const meta = deps.log.meta(sessionId);
-      s = { sessionStatus: 'starting', mode: meta?.mode ?? 'rich' };
+      s = { sessionStatus: 'starting', turn: IDLE_TURN };
       states.set(sessionId, s);
     }
     return s;
@@ -104,11 +91,8 @@ export function createSessionBridge(deps: SessionBridgeDeps): SessionBridge {
       type: 'session.state',
       sessionId,
       sessionStatus: s.sessionStatus,
-      mode: s.mode ?? meta?.mode ?? 'rich',
       agent: meta?.agent ?? 'claude',
-      ...(s.model !== undefined && { model: s.model }),
-      ...(s.permissionMode !== undefined && { permissionMode: s.permissionMode }),
-      ...(s.effort !== undefined && { effort: s.effort }),
+      turn: { ...s.turn },
       ...(s.error !== undefined && { error: s.error }),
     });
   }
@@ -129,7 +113,6 @@ export function createSessionBridge(deps: SessionBridgeDeps): SessionBridge {
     const node =
       deps.classify(raw) ??
       ({ kind: 'unknown', raw: raw as Record<string, unknown>, sessionId, receivedAt: null } as JsonlNode);
-    if (node.kind === 'cli-stream-result') turns.delete(sessionId);
     emitEvent(sessionId, 'transcript', channel, node, { origin });
   }
 
@@ -184,23 +167,17 @@ export function createSessionBridge(deps: SessionBridgeDeps): SessionBridge {
       case 'session-status': {
         const next = (payload as { sessionStatus?: SessionStatus } | undefined)?.sessionStatus;
         if (next) stateFor(sessionId).sessionStatus = next;
-        if (next === 'stopped' || next === 'error') turns.delete(sessionId);
         emitState(sessionId);
         return;
       }
-      case 'session-mode': {
-        const mode = (payload as { mode?: 'rich' | 'tui' } | undefined)?.mode;
-        if (mode) stateFor(sessionId).mode = mode;
+      case 'session-turn': {
+        // The session announces its own turn axis; the bridge never infers
+        // one from the transcript (a result row is content, not state).
+        const turn = payload as TurnState | undefined;
+        if (turn && (turn.status === 'idle' || turn.status === 'running')) {
+          stateFor(sessionId).turn = { status: turn.status, since: turn.since ?? null };
+        }
         emitState(sessionId);
-        return;
-      }
-      case 'session-control-state': {
-        const s = stateFor(sessionId);
-        const p = (payload ?? {}) as { model?: string; permissionMode?: string; effort?: string };
-        if (p.model) s.model = p.model;
-        if (p.permissionMode) s.permissionMode = p.permissionMode;
-        if (p.effort) s.effort = p.effort;
-        emitEvent(sessionId, 'control-state', prefix, payload);
         return;
       }
 
@@ -210,18 +187,10 @@ export function createSessionBridge(deps: SessionBridgeDeps): SessionBridge {
       case 'session-account-mismatch':
         emitEvent(sessionId, 'account-mismatch', prefix, payload);
         return;
-      case 'session-tui-data':
-        emitEvent(sessionId, 'tui-data', prefix, payload);
-        return;
-      case 'session-tui-exit':
-        turns.delete(sessionId);
-        emitEvent(sessionId, 'complete', prefix, payload);
-        return;
       case 'agent-error':
         emitEvent(sessionId, 'stderr', prefix, payload);
         return;
       case 'agent-complete':
-        turns.delete(sessionId);
         emitEvent(sessionId, 'complete', prefix, payload ?? null);
         return;
       case 'elicitation-request':
@@ -246,14 +215,9 @@ export function createSessionBridge(deps: SessionBridgeDeps): SessionBridge {
       if (i >= 0) list.splice(i, 1);
     },
     state: (id) => (deps.log.isOpen(id) ? { ...stateFor(id) } : null),
-    turnStarted(id) {
-      turns.add(id);
-    },
-    inFlight: (id) => turns.has(id),
     forget(id) {
       states.delete(id);
       pending.delete(id);
-      turns.delete(id);
     },
   };
 }

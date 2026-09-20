@@ -45,8 +45,18 @@ import { PROTOCOL_VERSION } from './version';
 export const SessionStatusSchema = z.enum(['starting', 'started', 'error', 'stopped']);
 export type SessionStatus = z.infer<typeof SessionStatusSchema>;
 
-export const SessionModeSchema = z.enum(['rich', 'tui']);
 export const AgentKindSchema = z.enum(['claude', 'codex']);
+
+/**
+ * The turn axis, owned by the session (see docs/session-lifecycle.md). A
+ * client renders it; it never infers a turn from the transcript.
+ */
+export const TurnStateSchema = z.looseObject({
+  status: z.enum(['idle', 'running']),
+  /** ISO timestamp the running turn started; null while idle. */
+  since: z.string().nullable(),
+});
+export type TurnState = z.infer<typeof TurnStateSchema>;
 
 /** Positive, monotonic per session, starting at 1. */
 export const SeqSchema = z.number().int().positive();
@@ -94,17 +104,15 @@ export type Project = z.infer<typeof ProjectSchema>;
 /**
  * List-view snapshot of a session.
  *
- * `inFlight` and `pendingPermissions` are an ADVISORY rollup for rendering a
- * list, where the client has no event stream to derive from. A client that is
- * subscribed derives the truth itself; these fields must never become the
- * source of truth for a session the client is watching.
+ * `inFlight` is the session's own turn axis OR'd with a pending permission —
+ * a list-view rollup. A subscribed client reads `turn` off `session.state`
+ * instead; nothing derives either from the transcript.
  */
 export const SessionSummarySchema = z.looseObject({
   sessionId: z.string(),
   projectId: z.string(),
   title: z.string().optional(),
   agent: AgentKindSchema,
-  mode: SessionModeSchema,
   sessionStatus: SessionStatusSchema,
   model: z.string().optional(),
   permissionMode: z.string().optional(),
@@ -119,7 +127,6 @@ export type SessionSummary = z.infer<typeof SessionSummarySchema>;
 /** Start options, mirroring what `session_start` accepts today. */
 export const SessionOptionsSchema = z.looseObject({
   agent: AgentKindSchema.optional(),
-  mode: SessionModeSchema.optional(),
   model: z.string().optional(),
   permissionMode: z.string().optional(),
   effort: z.string().optional(),
@@ -167,14 +174,10 @@ export const PermissionUpdateSchema = z.union([
 export const EventKindSchema = z.enum([
   /** A classified `JsonlNode` — the transcript. Carries `raw`; see the note above. */
   'transcript',
-  /** Model / permission-mode / effort the CLI is actually running. */
-  'control-state',
   /** The resolved config dir is not signed in as the account we expected. */
   'account-mismatch',
   /** A non-fatal CLI stderr line. Surfaced, never a status change. */
   'stderr',
-  /** Raw pty bytes. Electron-only: the web client is chat-mode. */
-  'tui-data',
   /** Something the user should be told about out of band. */
   'notification',
   /** The pinned session id and project path, sent the moment a session spawns. */
@@ -339,11 +342,8 @@ export const ServerPushSchema = z.discriminatedUnion('type', [
     sessionId: z.string(),
     seq: SeqSchema,
     sessionStatus: SessionStatusSchema,
-    mode: SessionModeSchema,
     agent: AgentKindSchema,
-    model: z.string().optional(),
-    permissionMode: z.string().optional(),
-    effort: z.string().optional(),
+    turn: TurnStateSchema,
     error: z.string().optional(),
   }),
 
@@ -363,7 +363,7 @@ export const ServerPushSchema = z.discriminatedUnion('type', [
     origin: z.enum(['engine', 'tail']).optional(),
     /**
      * The legacy IPC channel prefix this event was lifted from
-     * (`agent-output`, `session-control-state`, …). Lets a client shim re-emit
+     * (`agent-output`, `session-init`, …). Lets a client shim re-emit
      * it on exactly the channel the existing renderer subscribes to, without a
      * kind→channel table that would drift from the daemon's.
      */

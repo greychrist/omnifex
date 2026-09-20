@@ -41,15 +41,7 @@ interface FloatingPromptInputProps {
   className?: string;
   onCancel?: () => void;
   extraMenuItems?: React.ReactNode;
-  /**
-   * Chat ↔ Terminal mode toggle, stacked with `outputStyleToggle` in the
-   * left-side column. Renders nothing when omitted.
-   */
-  modeToggle?: React.ReactNode;
-  /**
-   * Compact ↔ Verbose output toggle, stacked beneath `modeToggle` in the
-   * left-side column at equal width.
-   */
+  /** Compact ↔ Verbose output toggle, in the left-side column. */
   outputStyleToggle?: React.ReactNode;
   configDir?: string;
   tabId?: string;
@@ -59,6 +51,30 @@ interface FloatingPromptInputProps {
 
 export interface FloatingPromptInputRef {
   addImage: (imagePath: string) => void;
+}
+
+const GROW_FLOOR_PX = 72;
+const GROW_CEILING_PX = 240;
+
+/**
+ * The composer's auto-grow floor for `value`: what the textarea would need to
+ * show it, clamped, and applied as `minHeight` (the box itself stays `h-full`
+ * so the taller side stack can stretch it).
+ *
+ * An EMPTY composer is the floor, unmeasured. Measuring it reads the
+ * placeholder, and in a narrow bar (a side panel open, a larger chat font)
+ * that wraps onto enough lines to set the whole bar's height — until the
+ * first keystroke removes the placeholder and the bar visibly shrinks.
+ */
+function measureGrowFloor(el: HTMLTextAreaElement | null, value: string): number {
+  if (!el || value.length === 0) return GROW_FLOOR_PX;
+  // Measure with the box free-height: stretched, scrollHeight reports the
+  // stretched height and the input could never shrink back down.
+  el.style.height = 'auto';
+  const scrollHeight = el.scrollHeight;
+  // Hand the box back to `h-full`; the measurement is only its floor.
+  el.style.height = '';
+  return Math.min(Math.max(scrollHeight, GROW_FLOOR_PX), GROW_CEILING_PX);
 }
 
 const FloatingPromptInputInner = (
@@ -71,7 +87,6 @@ const FloatingPromptInputInner = (
     className,
     onCancel,
     extraMenuItems,
-    modeToggle,
     outputStyleToggle,
     configDir,
     tabId,
@@ -95,7 +110,7 @@ const FloatingPromptInputInner = (
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const expandedTextareaRef = useRef<HTMLTextAreaElement>(null);
-  const [textareaHeight, setTextareaHeight] = useState<number>(72);
+  const [textareaHeight, setTextareaHeight] = useState<number>(GROW_FLOOR_PX);
   const isIMEComposingRef = useRef(false);
 
   // -- Slash command autocomplete hook --
@@ -189,17 +204,7 @@ const FloatingPromptInputInner = (
     const imagePaths = extractImagePaths(prompt, projectPath);
     setEmbeddedImages(imagePaths);
 
-    if (textareaRef.current && !isExpanded) {
-      // Measure with the box free-height: stretched, scrollHeight reports
-      // the stretched height and the input could never shrink back down.
-      textareaRef.current.style.height = 'auto';
-      const scrollHeight = textareaRef.current.scrollHeight;
-      const newHeight = Math.min(Math.max(scrollHeight, 72), 240);
-      setTextareaHeight(newHeight);
-      // Hand the box back to `h-full`; the measured height is now only its
-      // floor, applied as minHeight.
-      textareaRef.current.style.height = '';
-    }
+    if (!isExpanded) setTextareaHeight(measureGrowFloor(textareaRef.current, prompt));
   }, [prompt, projectPath, isExpanded]);
 
   // Focus textarea when expand state changes
@@ -217,17 +222,7 @@ const FloatingPromptInputInner = (
     const newCursorPosition = e.target.selectionStart || 0;
 
     // Auto-resize
-    if (textareaRef.current && !isExpanded) {
-      // Measure with the box free-height: stretched, scrollHeight reports
-      // the stretched height and the input could never shrink back down.
-      textareaRef.current.style.height = 'auto';
-      const scrollHeight = textareaRef.current.scrollHeight;
-      const newHeight = Math.min(Math.max(scrollHeight, 72), 240);
-      setTextareaHeight(newHeight);
-      // Hand the box back to `h-full`; the measured height is now only its
-      // floor, applied as minHeight.
-      textareaRef.current.style.height = '';
-    }
+    if (!isExpanded) setTextareaHeight(measureGrowFloor(textareaRef.current, newValue));
 
     // Slash command detection (delegated to hook)
     slash.handleTextChangeForSlash(newValue, newCursorPosition, prompt);
@@ -549,12 +544,10 @@ const FloatingPromptInputInner = (
             {/* The bar's height is whichever side stack is taller; the
                 input stretches to fill it and both stacks hug the top. */}
             <div className="flex items-stretch gap-2">
-              {/* Left side: mode + output toggles stacked vertically at equal
-                  widths. The model/effort/permission pickers live in the
-                  SessionCard context popover. */}
-              {(modeToggle || outputStyleToggle) && (
+              {/* Left side: the output toggle. The model/effort/permission
+                  pickers live in the SessionCard context popover. */}
+              {outputStyleToggle && (
                 <div className="flex flex-col items-stretch gap-1.5 shrink-0 self-start w-52">
-                  {modeToggle}
                   {outputStyleToggle}
                 </div>
               )}
@@ -578,11 +571,11 @@ const FloatingPromptInputInner = (
                   className={cn(
                     "resize-none pr-20 pl-3 py-2.5 transition-all duration-150 h-full",
                     dragActive && "border-primary",
-                    textareaHeight >= 240 && "overflow-y-auto scrollbar-thin"
+                    textareaHeight >= GROW_CEILING_PX && "overflow-y-auto scrollbar-thin"
                   )}
                   style={{
                     minHeight: `${textareaHeight}px`,
-                    overflowY: textareaHeight >= 240 ? 'auto' : 'hidden'
+                    overflowY: textareaHeight >= GROW_CEILING_PX ? 'auto' : 'hidden'
                   }}
                 />
 

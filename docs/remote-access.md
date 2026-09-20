@@ -163,7 +163,6 @@ invalidates every subscription — a decision, not a side effect.
 
 ## What the web client cannot do
 
-- Terminal (TUI) sessions — chat mode only. One pty cannot have two viewers.
 - File dialogs, Reveal in Finder, pasting an image to a temp file, the
   updater, window chrome — Electron-only, behind `src/lib/platform.ts`.
 - Anything on the daemon's `rpcDeny` list (raw SQL and row editing by default).

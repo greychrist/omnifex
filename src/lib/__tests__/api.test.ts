@@ -125,13 +125,13 @@ describe('api — channel + params mapping (table-driven)', () => {
         api.startSession(
           'tab-1', '/p', 'sonnet', 'default',
           undefined, '/cfg', 'medium',
-          { type: 'adaptive' }, 'rich', false, 'codex',
+          { type: 'adaptive' }, false, 'codex',
         ),
       channel: 'session_start',
       params: {
         tabId: 'tab-1', projectPath: '/p', model: 'sonnet', permissionMode: 'default',
         resumeSessionId: undefined, configDir: '/cfg', effort: 'medium',
-        thinking: { type: 'adaptive' }, mode: 'rich', manualAccountOverride: false,
+        thinking: { type: 'adaptive' }, manualAccountOverride: false,
         agent: 'codex',
       },
     },

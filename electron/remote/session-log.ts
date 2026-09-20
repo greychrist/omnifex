@@ -46,7 +46,6 @@ export interface SessionMeta {
   projectPath: string;
   configDir: string;
   agent: 'claude' | 'codex';
-  mode: 'rich' | 'tui';
   title?: string;
   /** The `session.create` options, kept so a resume can respawn the same way. */
   options: Record<string, unknown>;

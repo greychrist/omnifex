@@ -10,7 +10,7 @@ import type { SessionModelInfo } from '@/lib/api';
 
 export interface SessionControlSummaryInput {
   /** Current model selection — an alias ('default', 'sonnet'), a concrete CLI
-   *  id detected from a live TUI session, or 'default' for Account Default. */
+   *  id, or 'default' for Account Default. */
   model: string;
   /** Concrete model id the session is actually running — from the CLI's
    *  get_context_usage response or the last assistant JSONL line. Resolves a

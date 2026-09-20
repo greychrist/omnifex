@@ -131,10 +131,10 @@ export function modelFamily(id: string): string | null {
 
 /**
  * Resolve the catalog option to display for a given model id. Exact id match
- * wins (the normal alias case, e.g. `opus`). For a concrete CLI id detected
- * from a live TUI session (`claude-opus-4-8`), fall back to the option in the
- * same family so the read-only picker still shows "Opus" rather than the
- * first option. Last resort is the first option.
+ * wins (the normal alias case, e.g. `opus`). For a concrete CLI id
+ * (`claude-opus-4-8`), fall back to the option in the same family so the
+ * picker still shows "Opus" rather than the first option. Last resort is the
+ * first option.
  */
 export function pickModelOption(model: string, models: Model[]): Model {
   const exact = models.find((m) => m.id === model);

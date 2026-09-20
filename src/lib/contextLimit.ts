@@ -20,9 +20,7 @@
  * The fallback is reached more often than you'd think: resuming a session loads
  * its history statically (loadSessionHistory) and never fetches live usage —
  * that only happens on a stream init/result/compact_boundary — so an idle
- * resumed session sits on the fallback until its next turn, even in chat mode.
- * (TUI mode never reports a live window at all; `get_context_usage` is a no-op
- * there — see electron/services/sessions/queries.ts `liveEngine`.)
+ * resumed session sits on the fallback until its next turn.
  *
  * In that fallback, an "Account Default" session's own model string never
  * carries "[1m]" (it's the base id from the JSONL, or the "default" sentinel),

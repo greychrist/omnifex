@@ -76,7 +76,7 @@ export const MessageRenderingProvider: React.FC<{ children: React.ReactNode }> =
     root.setProperty("--chat-content-weight", String(FONT_WEIGHT_VALUE[weight]));
   }, [typeface, size, weight]);
 
-  // Same pattern for the TUI terminal. TerminalView reads `--font-terminal`
+  // Same pattern for the embedded terminal. OneShotTerminal reads `--font-terminal`
   // first, falling back to `--font-mono`, so a missing var (e.g. context
   // not wrapped) means the user gets the global mono default instead of an
   // empty stack.

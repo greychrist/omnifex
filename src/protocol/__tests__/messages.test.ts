@@ -45,7 +45,7 @@ const SERVER_SAMPLES: ServerMessage[] = [
     type: 'welcome',
     protocolVersion: PROTOCOL_VERSION,
     daemonVersion: '0.4.156',
-    capabilities: { tui: true, rpcInvoke: true },
+    capabilities: { rpcInvoke: true },
   },
   { type: 'response', requestId: 'r1', ok: true, result: { projects: [] } },
   { type: 'response', requestId: 'r2', ok: false, error: { code: 'NOT_FOUND', message: 'no such session' } },
@@ -68,7 +68,6 @@ const SERVER_SAMPLES: ServerMessage[] = [
         sessionId: 's1',
         projectId: 'p1',
         agent: 'claude',
-        mode: 'rich',
         sessionStatus: 'started',
         lastSeq: 42,
         pendingPermissions: 0,
@@ -76,7 +75,7 @@ const SERVER_SAMPLES: ServerMessage[] = [
       },
     ],
   },
-  { type: 'session.state', sessionId: 's1', seq: 43, sessionStatus: 'started', mode: 'rich', agent: 'claude' },
+  { type: 'session.state', sessionId: 's1', seq: 43, sessionStatus: 'started', agent: 'claude', turn: { status: 'running', since: '2026-09-20T00:00:00.000Z' } },
   { type: 'event', sessionId: 's1', seq: 44, kind: 'transcript', payload: { kind: 'assistant' } },
   {
     type: 'permission.request',
@@ -185,8 +184,8 @@ describe('protocol messages', () => {
         sessionId: 's1',
         seq: 1,
         sessionStatus: 'started',
-        mode: 'rich',
         agent: 'claude',
+        turn: { status: 'idle', since: null },
         futureAxis: 'from a newer daemon',
       });
       expect(parsed).toHaveProperty('futureAxis', 'from a newer daemon');
@@ -202,10 +201,17 @@ describe('protocol messages', () => {
           sessionId: 's1',
           seq: 1,
           sessionStatus: 'running',
-          mode: 'rich',
           agent: 'claude',
+          turn: { status: 'idle', since: null },
         }).success,
       ).toBe(false);
+    });
+
+    it('requires the turn axis on session.state — a client must never infer it', () => {
+      const base = { type: 'session.state', sessionId: 's1', seq: 1, sessionStatus: 'started', agent: 'claude' };
+      expect(ServerMessageSchema.safeParse(base).success).toBe(false);
+      expect(ServerMessageSchema.safeParse({ ...base, turn: { status: 'running', since: null } }).success).toBe(true);
+      expect(ServerMessageSchema.safeParse({ ...base, turn: { status: 'busy', since: null } }).success).toBe(false);
     });
   });
 

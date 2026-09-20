@@ -453,7 +453,7 @@ typography:
 # TERMINAL
 # ─────────────────────────────────────────────────────────────────────────────
 #
-# Settings for the xterm surface in TUI mode.
+# Settings for the embedded xterm surface (Codex sign-in and other one-shot terminals).
 # fontSize is clamped to [8, 32] px on load; out-of-range values are corrected.
 
 terminal:

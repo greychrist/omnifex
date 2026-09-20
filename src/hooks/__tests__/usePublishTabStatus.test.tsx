@@ -18,7 +18,7 @@ const { usePublishTabStatus } = await import('../usePublishTabStatus');
 const userPrompt = (): JsonlNode =>
   ({ kind: 'user', userKind: 'prompt', sessionId: '', receivedAt: '', raw: { type: 'user', message: { role: 'user', content: 'go' } } }) as unknown as JsonlNode;
 
-// The turn that launched the agent, closed. `waitingOnClaude` reads this as
+// The turn that launched the agent, closed. The session's turn axis reads this as
 // settled — which is correct: the CLI is not mid-turn, the agent is.
 const turnClosed = (): JsonlNode =>
   ({ kind: 'cli-stream-result', sessionId: '', receivedAt: '', raw: { type: 'result', subtype: 'success' } }) as unknown as JsonlNode;
@@ -33,7 +33,7 @@ function publish(messages: JsonlNode[], subagents: Subagent[]) {
   renderHook(() =>
     usePublishTabStatus({
       tabId: 'tab-1', title: 't', projectPath: '/p', sessionId: 'sess-1', sessionStarted: true, isStarting: false,
-      isLoading: false, hasError: false, messages, subagents, contextUsage: null,
+      turnRunning: false, hasError: false, messages, subagents, contextUsage: null,
       branch: null, filesChanged: 0, filesUntracked: 0, pendingPermission: null,
     }),
   );

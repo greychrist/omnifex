@@ -45,7 +45,6 @@ const summary = (sessionId: string, over: Partial<SessionSummary> = {}): Session
   sessionId,
   projectId: 'p1',
   agent: 'claude',
-  mode: 'rich',
   sessionStatus: 'started',
   lastSeq: 2,
   pendingPermissions: 0,
@@ -84,13 +83,13 @@ describe('electronAPI shim', () => {
 
       await api.invoke('session_start', {
         tabId: 'tab-A', projectPath: '/Users/greg/Repos/x', model: 'claude-opus-5', permissionMode: 'default',
-        resumeSessionId: undefined, configDir: '/cfg', effort: 'high', thinking: { type: 'adaptive' }, mode: 'rich', manualAccountOverride: false, agent: 'claude',
+        resumeSessionId: undefined, configDir: '/cfg', effort: 'high', thinking: { type: 'adaptive' }, manualAccountOverride: false, agent: 'claude',
       });
 
       expect(f.requests.map((r) => r.method)).toEqual(['project.add', 'session.create', 'session.subscribe']);
       expect(f.requests[1].params).toEqual({
         projectId: 'p1',
-        options: { model: 'claude-opus-5', permissionMode: 'default', effort: 'high', thinking: { type: 'adaptive' }, mode: 'rich', agent: 'claude', configDir: '/cfg', manualAccountOverride: false },
+        options: { model: 'claude-opus-5', permissionMode: 'default', effort: 'high', thinking: { type: 'adaptive' }, agent: 'claude', configDir: '/cfg', manualAccountOverride: false },
       });
       // Live-only: no fromSeq.
       expect(f.requests[2].params).toEqual({ sessionId: 'sid-1' });
@@ -123,6 +122,8 @@ describe('electronAPI shim', () => {
   });
 
   describe('pushes → legacy channels', () => {
+    const IDLE = { status: 'idle', since: null } as const;
+
     async function started() {
       const api = shim();
       await api.invoke('session_start', { tabId: 'tab-A', projectPath: '/p', model: 'default', permissionMode: 'default' });
@@ -142,26 +143,34 @@ describe('electronAPI shim', () => {
       expect(extra).toEqual([{ type: 'queue-operation' }]);
     });
 
-    it('re-emits status only on change, mode only on change, complete with no args, and stderr as a string', async () => {
+    it('re-emits the turn axis as session-turn, only on change', async () => {
+      const api = await started();
+      const turns: unknown[] = [];
+      api.onEvent('session-turn:tab-A', (p) => turns.push(p));
+      const running = { status: 'running', since: '2026-09-20T00:00:00.000Z' } as const;
+      f.push({ type: 'session.state', sessionId: 'sid-1', seq: 3, sessionStatus: 'started', agent: 'claude', turn: running });
+      f.push({ type: 'session.state', sessionId: 'sid-1', seq: 4, sessionStatus: 'started', agent: 'claude', turn: running });
+      f.push({ type: 'session.state', sessionId: 'sid-1', seq: 5, sessionStatus: 'started', agent: 'claude', turn: IDLE });
+      expect(turns).toEqual([running, IDLE]);
+    });
+
+    it('re-emits status only on change, complete with no args, and stderr as a string', async () => {
       const api = await started();
       const status: unknown[] = [];
-      const mode: unknown[] = [];
       const complete = vi.fn();
       const stderr: unknown[] = [];
       api.onEvent('session-status:tab-A', (p) => status.push(p));
-      api.onEvent('session-mode:tab-A', (p) => mode.push(p));
       api.onEvent('agent-complete:tab-A', complete);
       api.onEvent('agent-error:tab-A', (p) => stderr.push(p));
 
-      f.push({ type: 'session.state', sessionId: 'sid-1', seq: 3, sessionStatus: 'started', mode: 'rich', agent: 'claude' });
-      f.push({ type: 'session.state', sessionId: 'sid-1', seq: 4, sessionStatus: 'started', mode: 'tui', agent: 'claude' });
-      f.push({ type: 'session.state', sessionId: 'sid-1', seq: 5, sessionStatus: 'stopped', mode: 'tui', agent: 'claude' });
+      f.push({ type: 'session.state', sessionId: 'sid-1', seq: 3, sessionStatus: 'started', agent: 'claude', turn: IDLE });
+      f.push({ type: 'session.state', sessionId: 'sid-1', seq: 4, sessionStatus: 'started', agent: 'claude', turn: IDLE });
+      f.push({ type: 'session.state', sessionId: 'sid-1', seq: 5, sessionStatus: 'stopped', agent: 'claude', turn: IDLE });
       f.push({ type: 'event', sessionId: 'sid-1', seq: 6, kind: 'stderr', channel: 'agent-error', payload: 'MCP: token expired' });
       f.push({ type: 'event', sessionId: 'sid-1', seq: 7, kind: 'complete', channel: 'agent-complete', payload: null });
 
       // The announce at start already emitted 'started'; the first push repeats it and is suppressed.
       expect(status).toEqual([{ sessionStatus: 'stopped' }]);
-      expect(mode).toEqual([{ mode: 'tui' }]);
       expect(stderr).toEqual(['MCP: token expired']);
       expect(complete).toHaveBeenCalledTimes(1);
       expect(complete).toHaveBeenCalledWith();

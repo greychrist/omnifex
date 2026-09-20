@@ -10,7 +10,7 @@ OmniFex (by GreyChrist) is an **Electron** desktop app for Claude Code. The curr
 
 The shipping app is OmniFex. Internal identifiers like `greychrist.db`, the `greychrist-file://` protocol, and localStorage keys retain the legacy name to avoid migration churn — only the user-facing brand and the repo/folder name changed.
 
-The repo migrated from Tauri 2 (Rust) to Electron (Node.js/TypeScript) in April 2026. The app drives the Claude CLI binary directly via `node-pty` (TUI mode) and `child_process` (non-interactive), which is why a Node runtime is required. Any reference to `src-tauri/`, `cargo`, `just`, `nix-shell`, or an Axum web server in source code is legacy noise. (The `@anthropic-ai/claude-agent-sdk-*` package names that remain in `electron/services/claude-binary.ts` are intentional — they name the npm packages the binary resolver searches for, not a live dependency.)
+The repo migrated from Tauri 2 (Rust) to Electron (Node.js/TypeScript) in April 2026. The app drives the Claude CLI binary directly via `child_process` (stream-json), plus `node-pty` for the `/usage` scraper and Codex sign-in, which is why a Node runtime is required. Any reference to `src-tauri/`, `cargo`, `just`, `nix-shell`, or an Axum web server in source code is legacy noise. (The `@anthropic-ai/claude-agent-sdk-*` package names that remain in `electron/services/claude-binary.ts` are intentional — they name the npm packages the binary resolver searches for, not a live dependency.)
 
 ## No worktrees
 
@@ -37,7 +37,7 @@ Any change that touches Claude Code permission rules, path-rule formatting, or t
 
 ## Session Lifecycle
 
-Any change that touches session status, conversation status, the spinner / in-flight predicate, the status popover, `useSessionLifecycle`, or anything under `electron/services/sessions/`: read `docs/session-lifecycle.md` first. It defines the three orthogonal state axes (`sessionStatus`, `conversationStatus`, per-item task/subagent status), the invariants between them, the canonical in-flight rollup, and the anti-patterns that have repeatedly caused session-stuck-on-starting bugs.
+Any change that touches session status, conversation status, the spinner / in-flight predicate, the status popover, `useSessionLifecycle`, or anything under `electron/services/sessions/`: read `docs/session-lifecycle.md` first. It defines the three orthogonal state axes (`sessionStatus`, `turn` — both owned by the session in main — and per-item task/subagent status), the `conversationStatus` rollup, the invariants between them, and the anti-patterns that have repeatedly caused session-stuck bugs. The turn is never inferred from the transcript.
 
 ## The Brain
 
@@ -214,8 +214,8 @@ app on the iPad. Start from `docs/remote-access.md` and
   Multi-account CRUD, path rules, project overrides, resolution, discovery.
 - `electron/services/claude.ts`
   Project listing, Claude settings, CLAUDE.md file ops, hooks config, version checks.
-- `electron/services/sessions/` (split across `tui.ts`, `lifecycle.ts`, `runtime.ts`, `permissions.ts`, etc.)
-  Interactive sessions, spawned via `node-pty` (TUI mode) / `child_process` (stream-json). Engine selection (Claude vs Codex) lives here; the binary is located at runtime via `electron/services/claude-binary.ts`.
+- `electron/services/sessions/` (split across `lifecycle.ts`, `runtime.ts`, `permissions.ts`, `queries.ts`, etc.)
+  Interactive sessions, spawned via `child_process` (stream-json). There is no terminal/TUI session mode — it was removed 2026-09-20; the only ptys left are the `/usage` scraper and Codex sign-in. Engine selection (Claude vs Codex) lives here; the binary is located at runtime via `electron/services/claude-binary.ts`.
 - `electron/services/agents/`
   Multi-engine agent runtime behind a shared `AgentEngine` interface: `claude-cli-engine.ts`, `codex-cli-engine.ts`, `json-rpc-client.ts`, `codex-binary.ts`. (There is no `electron/services/agents.ts` — agent/session execution moved into `sessions/lifecycle.ts` + this engine layer.)
 - `electron/services/usage.ts` / `usage-runner.ts`

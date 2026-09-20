@@ -5,7 +5,7 @@ import { useTabState } from '@/hooks/useTabState';
 import { Tab } from '@/contexts/TabContext';
 import { Plus, ArrowLeft } from 'lucide-react';
 import { Spinner } from '@/components/ui/spinner';
-import { api, type AgentKind, type Project, type ResolvePair, type Session, type SessionMode } from '@/lib/api';
+import { api, type AgentKind, type Project, type ResolvePair, type Session } from '@/lib/api';
 import { ProjectList } from '@/components/ProjectList';
 import { ProjectSettings } from '@/components/ProjectSettings';
 import { SessionList } from '@/components/SessionList';
@@ -68,7 +68,6 @@ const TabPanelImpl: React.FC<TabPanelProps> = ({ tab, isActive }) => {
   const [formEffort, setFormEffort] = React.useState<EffortLevel>('high');
   const [formThinkingConfig, setFormThinkingConfig] = React.useState<ThinkingConfig>('adaptive');
   const [formPermissionMode, setFormPermissionMode] = React.useState<string>('acceptEdits');
-  const [formSessionStartMode, setFormSessionStartMode] = React.useState<SessionMode>('rich');
   // Form-level agent selection. Seeded from the path-rule resolver in
   // handleProjectClick — codex path rules pre-pick Codex so the user doesn't
   // have to flip it manually for projects that already route there.
@@ -323,7 +322,6 @@ const TabPanelImpl: React.FC<TabPanelProps> = ({ tab, isActive }) => {
         effort: formEffort,
         thinkingConfig: formThinkingConfig,
         permissionMode: formPermissionMode,
-        sessionStartMode: formSessionStartMode,
         accountResolution: projectAccountResolution ?? undefined,
       },
     });
@@ -383,7 +381,6 @@ const TabPanelImpl: React.FC<TabPanelProps> = ({ tab, isActive }) => {
           effort: d?.effort ?? 'high',
           thinkingConfig: d?.thinkingConfig ? normalizeThinkingConfig(d.thinkingConfig) : undefined,
           permissionMode: d?.permissionMode ?? 'acceptEdits',
-          sessionStartMode: 'rich',
           accountResolution: resolution ?? undefined,
         },
       });
@@ -491,8 +488,6 @@ const TabPanelImpl: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                             setEffort={setFormEffort}
                             permissionMode={formPermissionMode}
                             setPermissionMode={setFormPermissionMode}
-                            sessionStartMode={formSessionStartMode}
-                            setSessionStartMode={setFormSessionStartMode}
                             agent={formAgent}
                             setAgent={handleFormAgentChange}
                             agentPickerDisabled={loading}

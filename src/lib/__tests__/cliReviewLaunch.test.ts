@@ -70,7 +70,6 @@ describe('buildCliReviewLaunch', () => {
     });
     expect(result.tab.initialPrompt).toContain('2.1.222');
     expect(result.tab.initialPrompt).toContain('2.1.224');
-    expect(result.tab.initialSessionConfig?.sessionStartMode).toBe('rich');
   });
 
   it('titles the tab for the job, not the folder', () => {

@@ -88,7 +88,6 @@ export function buildCliReviewLaunch({
         effort: d?.effort ?? 'high',
         thinkingConfig: d?.thinkingConfig ? normalizeThinkingConfig(d.thinkingConfig) : undefined,
         permissionMode: d?.permissionMode ?? 'acceptEdits',
-        sessionStartMode: 'rich',
         accountResolution: resolution,
       },
     },

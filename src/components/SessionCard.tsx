@@ -61,8 +61,8 @@ interface SessionCardProps {
   /** The account's resolved default model (settings.json `model`, e.g.
    *  "opus[1m]"). Lets the client-side fallback detect a 1M window for an
    *  "Account Default" session whose own model string lacks the [1m] suffix —
-   *  notably a resumed session (history loaded statically, no live usage yet)
-   *  or a TUI session. See resolveContextLimit. */
+   *  notably a resumed session (history loaded statically, no live usage yet).
+   *  See resolveContextLimit. */
   defaultModel?: string | null;
   contextUsage?: SessionContextUsage | null;
   sessionStatus?: 'starting' | 'active' | 'ended';

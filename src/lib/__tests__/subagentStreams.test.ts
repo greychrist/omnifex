@@ -506,7 +506,7 @@ describe('deriveSubagents', () => {
     // background flag at all — the only signals are on the result side:
     //   - `toolUseResult.status === 'async_launched'` (+ `isAsync: true`),
     //     the enrichment the CLI writes onto the on-disk JSONL line, which is
-    //     what TUI mode tails; and
+    //     what the JSONL tail reads; and
     //   - the ACK text itself, which is all the live stream-json path gets.
     // The CLI's own agent panel reads both. Without them a launched agent
     // reads as finished for its entire run.

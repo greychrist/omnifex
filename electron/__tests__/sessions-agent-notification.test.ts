@@ -21,6 +21,7 @@ function harness() {
     projectPath: '/Users/test/pi-tuitive',
     configDir: '/cfg',
     sessionId: null,
+    turn: { status: 'idle', since: null },
   } as unknown as SessionHandle;
 
   void listenToMessages('tab-1', handle, {

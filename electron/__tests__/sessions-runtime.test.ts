@@ -84,10 +84,7 @@ function makeHandle(engine: AgentEngine): SessionHandle {
     },
     sessionId: 'sess-1',
     sessionStatus: 'started',
-    mode: 'rich',
-    tui: null,
-    tuiDetach: null,
-    tuiJsonl: null,
+    turn: { status: 'idle', since: null },
     permissionResolver: null,
     permissionQueue: [],
     elicitationResolver: null,
@@ -585,9 +582,9 @@ describe('runtime.listenToMessages — stream forwarding after the inversion', (
 /**
  * Transcript inversion, renderer side: the tail is now the transcript source
  * in rich mode, not just a carrier for the few closure envelopes stream-json
- * omitted. It must split lines exactly as TUI mode already does — closure
- * carriers to `claude-output-extra:`, everything else to `agent-output:` —
- * so both modes feed one renderer pipeline with one normalization.
+ * omitted. It must split lines — closure carriers to `claude-output-extra:`,
+ * everything else to `agent-output:` — so the renderer sees one pipeline
+ * with one normalization.
  */
 describe('runtime.listenToMessages — JSONL tail as transcript source', () => {
   let tmpDir: string;

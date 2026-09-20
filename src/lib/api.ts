@@ -902,9 +902,6 @@ export interface LogEntry {
 export type LogOrderBy = 'timestamp' | 'level' | 'source' | 'category' | 'message';
 export type LogOrderDir = 'asc' | 'desc';
 
-/** Session execution mode: 'rich' (engine-driven chat) or 'tui' (terminal UI). */
-export type SessionMode = 'rich' | 'tui';
-
 /**
  * Connection axis of the session. See `docs/session-lifecycle.md`.
  * Mirrors `SessionStatus` in `electron/services/sessions/types.ts` —
@@ -915,6 +912,14 @@ export type SessionStatus =
   | 'started'
   | 'error'
   | 'stopped';
+
+/**
+ * The session's turn axis, mirrored from main (`session-turn:<tabId>`).
+ * `running` from prompt hand-off to the CLI's result row or process exit.
+ * Mirrors `TurnState` in `electron/services/sessions/types.ts`. See
+ * docs/session-lifecycle.md.
+ */
+export type TurnState = { status: 'idle' | 'running'; since: string | null };
 
 /**
  * Turn axis of the session. Derived by the renderer from JSONL content +
@@ -1766,8 +1771,8 @@ export const api = {
 
   // ─── Persistent Session API ───────────────────────────────────────
 
-  async startSession(tabId: string, projectPath: string, model: string, permissionMode: string, resumeSessionId?: string, configDir?: string, effort?: string, thinking?: Record<string, unknown>, mode?: SessionMode, manualAccountOverride?: boolean, agent?: AgentKind): Promise<void> {
-    return apiCall("session_start", { tabId, projectPath, model, permissionMode, resumeSessionId, configDir, effort, thinking, mode, manualAccountOverride, agent });
+  async startSession(tabId: string, projectPath: string, model: string, permissionMode: string, resumeSessionId?: string, configDir?: string, effort?: string, thinking?: Record<string, unknown>, manualAccountOverride?: boolean, agent?: AgentKind): Promise<void> {
+    return apiCall("session_start", { tabId, projectPath, model, permissionMode, resumeSessionId, configDir, effort, thinking, manualAccountOverride, agent });
   },
 
   /**
@@ -1813,11 +1818,13 @@ export const api = {
     alive: boolean;
     sessionId: string | null;
     sessionStatus: SessionStatus;
+    turn: TurnState;
   }> {
     return apiCall("session_get_health", { tabId }) as Promise<{
       alive: boolean;
       sessionId: string | null;
       sessionStatus: SessionStatus;
+      turn: TurnState;
     }>;
   },
 
@@ -2123,26 +2130,11 @@ export const api = {
    * `ask` rules, policy/managed rules, `--allowedTools` grants, session-only
    * approvals, and the `flagSettings` source our own rule push lands in.
    *
-   * `null` means "no answer", not "no rules" — TUI tabs and pre-2.1.269 CLIs
+   * `null` means "no answer", not "no rules" — pre-2.1.269 CLIs
    * both return it, and the caller must keep showing the file view.
    */
   async sessionListPermissionRules(tabId: string): Promise<CliPermissionRulesState | null> {
     return apiCall("session_list_permission_rules", { tabId });
-  },
-
-  /** Switch the session between CLI mode and TUI mode. */
-  async setSessionMode(tabId: string, mode: SessionMode): Promise<void> {
-    return apiCall('session_set_mode', { tabId, mode });
-  },
-
-  /** Write raw bytes to the TUI pty (only valid in TUI mode). */
-  async tuiWrite(tabId: string, data: string): Promise<void> {
-    return apiCall('session_tui_write', { tabId, data });
-  },
-
-  /** Notify the TUI pty of a terminal resize. */
-  async tuiResize(tabId: string, cols: number, rows: number): Promise<void> {
-    return apiCall('session_tui_resize', { tabId, cols, rows });
   },
 
   async sessionUpdatePermission(tabId: string, projectPath: string, configDir: string, update: {

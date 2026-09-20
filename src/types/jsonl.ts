@@ -380,7 +380,7 @@ export type JsonlNode =
   | { kind: 'unknown'; raw: Record<string, unknown>; sessionId: string; receivedAt: string | null }
   // Closure carriers (background-bash plumbing)
   | { kind: 'queue-operation'; raw: QueueOpRaw; sessionId: string; receivedAt: string }
-  // CLI bookkeeping (TUI-only in practice)
+  // CLI bookkeeping
   | { kind: 'last-prompt'; raw: LastPromptRaw; sessionId: string }
   | { kind: 'permission-mode'; raw: PermissionModeRaw; sessionId: string }
   | { kind: 'ai-title'; raw: AiTitleRaw; sessionId: string }

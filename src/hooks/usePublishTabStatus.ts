@@ -4,7 +4,6 @@ import type { JsonlNode } from '@/types/jsonl';
 import type { Subagent } from '@/lib/subagentStreams';
 import { getTaskList, summarizeTaskList } from '@/lib/taskList';
 import { deriveWaitingFor } from '@/lib/tabWaitingFor';
-import { waitingOnClaude } from '@/lib/sessionDerivedState';
 
 interface UsePublishTabStatusArgs {
   tabId: string;
@@ -14,8 +13,8 @@ interface UsePublishTabStatusArgs {
   sessionId: string | null;
   sessionStarted: boolean;
   isStarting: boolean;
-  /** True while a main-turn is in flight (parent-turn isLoading). */
-  isLoading: boolean;
+  /** The session's turn axis — `turn.status === 'running'`, mirrored from main. */
+  turnRunning: boolean;
   hasError: boolean;
   messages: JsonlNode[];
   /** Subagents already filtered through dismissals — same set the spinner sees. */
@@ -48,12 +47,7 @@ export function usePublishTabStatus({
   sessionId,
   sessionStarted,
   isStarting,
-  // isLoading is no longer consulted here — see the mainTurnInFlight
-  // assignment below. Kept on the interface to keep the call site
-  // (ClaudeCodeSession) unchanged and to preserve a single shared
-  // vocabulary of "what defines a busy tab". Renamed to `_isLoading`
-  // in the destructure to silence the unused-param lint.
-  isLoading: _isLoading,
+  turnRunning,
   hasError,
   messages,
   subagents,
@@ -72,14 +66,12 @@ export function usePublishTabStatus({
       (n, s) => (s.status === 'running' ? n + 1 : n),
       0,
     );
-    // "Waiting on Claude" is derived from the transcript, not the renderer's
-    // optimistic isLoading flag. This is the SAME `waitingOnClaude` that
-    // useSessionLifecycle uses for the prompt-input spinner — one source of
-    // truth, so the tab popover and the in-session spinner can't disagree.
-    // It closes the turn on a result row OR a terminal assistant stop_reason
-    // (so resumed history without result rows also settles), and skips
-    // trailing plumbing so a closed turn never reads as busy.
-    const mainTurnInFlight = waitingOnClaude(messages);
+    // The main turn is the session's own axis (see docs/session-lifecycle.md)
+    // — the same bit useSessionLifecycle folds into conversationStatus, so the
+    // tab popover and the in-session spinner can't disagree. Never read off
+    // the transcript: a resumed session whose old process died mid-turn
+    // loads a transcript that ends open, and is idle.
+    const mainTurnInFlight = turnRunning;
     const waitingFor = deriveWaitingFor(pendingPermission);
     // promptStatus: is the agent actually doing work right now?
     // Spec: working iff (waiting on Claude response) OR (any in-progress

@@ -2,7 +2,7 @@
 //
 // Each method looks up the session handle for the tab and forwards to the
 // engine's stream-json control protocol (sendControlRequest) or its cached
-// init data (getInitData). Unknown / TUI tabs are no-ops. Engine errors
+// init data (getInitData). Unknown tabs are no-ops. Engine errors
 // are swallowed and reported as null/[] so a CLI hiccup doesn't crash the
 // IPC layer.
 
@@ -54,11 +54,6 @@ export function createQueryPassthroughs(
   function liveEngine(tabId: string): SessionHandle | null {
     const handle = sessions.get(tabId);
     if (!handle) return null;
-    // TUI mode: the live conversation is the PTY, not the engine. Treat
-    // control_requests as no-ops while in TUI; the renderer's queries.ts
-    // calls already silently fall through when no engine was available.
-    if (handle.mode === 'tui') return null;
-    if (!handle.engine) return null;
     return handle;
   }
 
@@ -66,7 +61,7 @@ export function createQueryPassthroughs(
     const handle = liveEngine(tabId);
     if (!handle) return;
     try {
-      await handle.engine!.interrupt();
+      await handle.engine.interrupt();
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error(`[sessions] interrupt failed for tab ${tabId}:`, err);
@@ -89,7 +84,7 @@ export function createQueryPassthroughs(
       return;
     }
     try {
-      const res = await handle.engine!.sendControlRequest('set_model', { model });
+      const res = await handle.engine.sendControlRequest('set_model', { model });
       logControl('set_model', tabId, { ok: true, model, response: res ?? null });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -126,7 +121,7 @@ export function createQueryPassthroughs(
       return false;
     }
     try {
-      const res = await handle.engine!.sendControlRequest('rename_session', {
+      const res = await handle.engine.sendControlRequest('rename_session', {
         title: trimmed,
         source: 'host',
       });
@@ -148,7 +143,7 @@ export function createQueryPassthroughs(
     }
     handle.permissionMode = mode;
     try {
-      const res = await handle.engine!.sendControlRequest('set_permission_mode', { mode });
+      const res = await handle.engine.sendControlRequest('set_permission_mode', { mode });
       logControl('set_permission_mode', tabId, { ok: true, mode, response: res ?? null });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -167,7 +162,7 @@ export function createQueryPassthroughs(
       return;
     }
     try {
-      const res = await handle.engine!.sendControlRequest('apply_flag_settings', {
+      const res = await handle.engine.sendControlRequest('apply_flag_settings', {
         settings: { effortLevel: level ?? undefined },
       });
       logControl('set_effort', tabId, { ok: true, level, response: res ?? null });
@@ -192,7 +187,7 @@ export function createQueryPassthroughs(
     const handle = liveEngine(tabId);
     if (!handle) return;
     try {
-      await handle.engine!.sendControlRequest('apply_flag_settings', {
+      await handle.engine.sendControlRequest('apply_flag_settings', {
         settings: { permissions },
       });
     } catch (err) {
@@ -219,7 +214,7 @@ export function createQueryPassthroughs(
       // Non-zero values collapse to adaptive on Opus 4.6+ so we don't
       // bother distinguishing fixed-budget vs adaptive on the wire.
       const value = !config || config.type === 'disabled' ? 0 : null;
-      await handle.engine!.sendControlRequest('set_max_thinking_tokens', {
+      await handle.engine.sendControlRequest('set_max_thinking_tokens', {
         max_thinking_tokens: value,
       });
     } catch (err) {
@@ -229,7 +224,7 @@ export function createQueryPassthroughs(
 
   async function getAccountInfo(tabId: string): Promise<AccountInfo | null> {
     const handle = sessions.get(tabId);
-    if (!handle?.engine) return null;
+    if (!handle) return null;
     const init = handle.engine.getInitData();
     return (init?.account as AccountInfo | undefined) ?? null;
   }
@@ -240,7 +235,7 @@ export function createQueryPassthroughs(
     const handle = liveEngine(tabId);
     if (!handle) return null;
     try {
-      return await handle.engine!.sendControlRequest<CliControlGetContextUsageResponse>(
+      return await handle.engine.sendControlRequest<CliControlGetContextUsageResponse>(
         'get_context_usage',
       );
     } catch (err) {
@@ -263,8 +258,7 @@ export function createQueryPassthroughs(
    * to call on every panel open.
    *
    * `null` means "no answer" and NEVER "no rules" — the caller must fall back
-   * to the file-derived view. Three ways to get it: a TUI tab (no engine to
-   * ask, and the panel renders in both modes), a CLI older than 2.1.269
+   * to the file-derived view. Two ways to get it: a CLI older than 2.1.269
    * (answers "list_permission_rules is not available on this connection"), or
    * a malformed envelope.
    */
@@ -274,7 +268,7 @@ export function createQueryPassthroughs(
     const handle = liveEngine(tabId);
     if (!handle) return null;
     try {
-      const res = await handle.engine!.sendControlRequest<{
+      const res = await handle.engine.sendControlRequest<{
         state?: CliPermissionRulesState;
       }>('list_permission_rules');
       return res?.state ?? null;
@@ -286,21 +280,21 @@ export function createQueryPassthroughs(
 
   async function getSupportedCommands(tabId: string): Promise<SlashCommand[]> {
     const handle = sessions.get(tabId);
-    if (!handle?.engine) return [];
+    if (!handle) return [];
     const init = handle.engine.getInitData();
     return (init?.commands as SlashCommand[] | undefined) ?? [];
   }
 
   async function getSupportedModels(tabId: string): Promise<ModelInfo[]> {
     const handle = sessions.get(tabId);
-    if (!handle?.engine) return [];
+    if (!handle) return [];
     const init = handle.engine.getInitData();
     return (init?.models as ModelInfo[] | undefined) ?? [];
   }
 
   async function getSupportedAgents(tabId: string): Promise<AgentInfo[]> {
     const handle = sessions.get(tabId);
-    if (!handle?.engine) return [];
+    if (!handle) return [];
     const init = handle.engine.getInitData();
     return (init?.agents as AgentInfo[] | undefined) ?? [];
   }
@@ -310,7 +304,7 @@ export function createQueryPassthroughs(
     if (!handle) return [];
     try {
       const result = await Promise.race([
-        handle.engine!.sendControlRequest<{ mcpServers: McpServerStatus[] }>('mcp_status'),
+        handle.engine.sendControlRequest<{ mcpServers: McpServerStatus[] }>('mcp_status'),
         new Promise<null>((resolve) => setTimeout(() => resolve(null), 3000)),
       ]);
       if (result?.mcpServers && result.mcpServers.length > 0) return result.mcpServers;
@@ -336,7 +330,7 @@ export function createQueryPassthroughs(
     }
     try {
       const result = await Promise.race([
-        handle.engine!.sendControlRequest<{ plugins: unknown[] }>('reload_plugins'),
+        handle.engine.sendControlRequest<{ plugins: unknown[] }>('reload_plugins'),
         new Promise<null>((resolve) => setTimeout(() => resolve(null), 3000)),
       ]);
       if (!result) return pluginCache.get(tabId) ?? [];

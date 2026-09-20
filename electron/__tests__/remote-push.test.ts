@@ -122,7 +122,7 @@ describe('push triggers', () => {
       pushPayloadFor({ type: 'event', sessionId: 's1', seq: 1, kind: 'transcript', payload: { kind: 'assistant' } }, ctx(false)),
     ).toBeNull();
     expect(
-      pushPayloadFor({ type: 'session.state', sessionId: 's1', seq: 2, sessionStatus: 'started', mode: 'rich', agent: 'claude' }, ctx(false)),
+      pushPayloadFor({ type: 'session.state', sessionId: 's1', seq: 2, sessionStatus: 'started', agent: 'claude', turn: { status: 'idle', since: null } }, ctx(false)),
     ).toBeNull();
   });
 });

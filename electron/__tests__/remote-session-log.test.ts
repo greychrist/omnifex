@@ -11,7 +11,6 @@ const META: SessionMeta = {
   projectPath: '/Users/greg/Repos/omnifex',
   configDir: '/Users/greg/.claude-personal',
   agent: 'claude',
-  mode: 'rich',
   options: {},
   createdAt: '2026-09-10T00:00:00.000Z',
   updatedAt: '2026-09-10T00:00:00.000Z',

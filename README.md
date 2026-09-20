@@ -23,7 +23,7 @@
 
 OmniFex is **macOS (Apple Silicon) only**. Builds are signed with a Developer ID and notarized by Apple, so they open normally — no Gatekeeper right-click dance.
 
-The app drives the **Claude Code CLI** directly (via `node-pty` for terminal mode and `child_process` for structured streaming), so a working, authenticated Claude Code install is required. OmniFex bundles no model of its own.
+The app drives the **Claude Code CLI** directly (`child_process` with structured streaming), so a working, authenticated Claude Code install is required. OmniFex bundles no model of its own.
 
 ## Features
 
@@ -48,8 +48,8 @@ The Brain is a per-account **memory vault** distilled from those transcripts.
 - An account-resolution explainer shows exactly why a given project maps to a given account.
 
 ### Interactive sessions
-- **Two view modes** for the same live session: a structured **rich chat** (streaming JSON) with tool-call widgets, and a full **terminal (TUI)** view backed by the real CLI. Toggle between them mid-session.
-- Live controls in rich mode: **model picker**, **reasoning effort** (low → max), **extended-thinking** config, and **permission mode** (default / acceptEdits / bypassPermissions / plan).
+- A structured **rich chat** (streaming JSON) with tool-call widgets, backed by the real CLI.
+- Live controls: **model picker**, **reasoning effort** (low → max), **extended-thinking** config, and **permission mode** (default / acceptEdits / bypassPermissions / plan).
 - **Slash-command picker** (`/`) plus per-session command discovery.
 - **Subagent tracking** — subagent runs are surfaced inline with their model and authoritative end-of-run stats (duration, tokens, tool count).
 - **Live tool progress** — a tool call that runs past thirty seconds shows a timer on its row until the result lands, and a subagent being retried after an API error says which attempt it is on.
@@ -66,7 +66,7 @@ The Brain is a per-account **memory vault** distilled from those transcripts.
 - **The same UI in Safari.** The daemon serves the renderer over your tailnet, so an iPad gets the real app — chat sessions, prompts, permission cards, streaming output — not a remote-desktop view of one.
 - **A Home Screen app with push.** Behind `tailscale serve` (HTTPS), it installs as a standalone app and the daemon pushes a notification when a turn wants your attention.
 - **Upgrades take care of themselves.** A new app build replaces an older daemon on launch — at once when nothing is running, otherwise once the last turn finishes.
-- Mac-only by nature and unavailable from the iPad: terminal (TUI) sessions, file dialogs, Finder reveal, and the updater.
+- Mac-only by nature and unavailable from the iPad: file dialogs, Finder reveal, and the updater.
 - See [docs/remote-access.md](docs/remote-access.md) for setup, and the `Daemon` panel in the title bar for live status.
 
 ### Context tracking & compaction
@@ -171,8 +171,8 @@ npm run rebuild:electron   # rebuild better-sqlite3 / node-pty for Electron's AB
 - **Main process**: TypeScript on Node, services wired through a typed, allow-listed IPC layer
 - **Remote**: a headless daemon (the same Electron binary under `ELECTRON_RUN_AS_NODE`) speaking a versioned WebSocket protocol to the Electron app and to a browser client
 - **Persistence**: `better-sqlite3`
-- **Terminal**: `node-pty` + `@xterm/xterm`
-- **Claude/Codex integration**: drives the CLI binaries directly — `node-pty` for terminal mode, `child_process` streaming JSON for the rich engine
+- **Terminal**: `node-pty` + `@xterm/xterm` (the `/usage` scraper and Codex sign-in)
+- **Claude/Codex integration**: drives the CLI binaries directly over `child_process` streaming JSON
 
 ## Project structure
 
@@ -186,7 +186,7 @@ omnifex/
 │   ├── omnifex-server.ts  # Daemon entry point (the `omnifexd` process)
 │   ├── services/          # Business logic
 │   │   ├── accounts.ts    #   multi-account resolution & path rules
-│   │   ├── sessions/      #   session lifecycle, TUI, permissions, subagents
+│   │   ├── sessions/      #   session lifecycle, permissions, subagents
 │   │   ├── agents/        #   Claude & Codex engine layer
 │   │   ├── auth/          #   Codex auth
 │   │   ├── usage*.ts      #   usage aggregation + /usage scraping

@@ -24,7 +24,6 @@ function openSession(log: SessionLog, sessionId: string) {
     projectPath: '/Users/greg/Repos/omnifex',
     configDir: '/Users/greg/.claude-personal',
     agent: 'claude',
-    mode: 'rich',
     options: {},
     createdAt: '2026-09-10T00:00:00.000Z',
     updatedAt: '2026-09-10T00:00:00.000Z',
@@ -88,10 +87,9 @@ describe('remote session bridge', () => {
       '9:event/transcript@tail:queue-operation',
       '10:event/transcript@engine:assistant',
       '11:event/transcript@engine:cli-stream-result',
-      '12:event/control-state',
-      '13:event/stderr',
-      '14:session.state/stopped',
-      '15:event/complete',
+      '12:event/stderr',
+      '13:session.state/stopped',
+      '14:event/complete',
     ]);
 
     // Two frames in the fixture are app-wide, not session-scoped, even though
@@ -220,65 +218,38 @@ describe('remote session bridge', () => {
     expect(p.type === 'event' && p.payload).toMatchObject({ kind: 'unknown', raw: { weird: true } });
   });
 
-  it('tracks the connection axis and control state for the summary', () => {
+  it('tracks the connection axis for the summary', () => {
     openSession(log, 's1');
     expect(bridge.state('s1')).toMatchObject({ sessionStatus: 'starting' });
     bridge.sendToRenderer('session-status:s1', { sessionStatus: 'started' });
-    bridge.sendToRenderer('session-control-state:s1', { model: 'claude-opus-5', permissionMode: 'acceptEdits' });
-    bridge.sendToRenderer('session-mode:s1', { mode: 'tui' });
-    expect(bridge.state('s1')).toEqual({
-      sessionStatus: 'started',
-      mode: 'tui',
-      model: 'claude-opus-5',
-      permissionMode: 'acceptEdits',
-    });
-    // session.state pushes reflect the merged view, not just the delta.
+    expect(bridge.state('s1')).toEqual({ sessionStatus: 'started', turn: { status: 'idle', since: null } });
     const states = published.filter((p) => p.type === 'session.state');
-    expect(states.at(-1)).toMatchObject({ sessionStatus: 'started', mode: 'tui', model: 'claude-opus-5' });
+    expect(states.at(-1)).toMatchObject({ sessionStatus: 'started' });
   });
 
-  it('tracks a running turn: opened by turnStarted, closed by the result row', () => {
+  it('mirrors the session\'s turn axis into session.state, idle until told otherwise', () => {
     openSession(log, 's1');
-    expect(bridge.inFlight('s1')).toBe(false);
-    bridge.turnStarted('s1');
-    expect(bridge.inFlight('s1')).toBe(true);
-    // Assistant output does not close it.
-    bridge.sendToRenderer('agent-output:s1', { type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'working' }] }, receivedAt: '2026-09-10T03:00:01.000Z' });
-    expect(bridge.inFlight('s1')).toBe(true);
-    // The CLI's result row does — the same turn-closer the renderer uses.
+    bridge.sendToRenderer('session-status:s1', { sessionStatus: 'started' });
+    expect(bridge.state('s1')).toMatchObject({ turn: { status: 'idle', since: null } });
+
+    bridge.sendToRenderer('session-turn:s1', { status: 'running', since: '2026-09-20T00:00:00.000Z' });
+    expect(bridge.state('s1')).toMatchObject({ turn: { status: 'running', since: '2026-09-20T00:00:00.000Z' } });
+    const states = published.filter((p) => p.type === 'session.state');
+    expect(states.at(-1)).toMatchObject({ sessionStatus: 'started', turn: { status: 'running', since: '2026-09-20T00:00:00.000Z' } });
+
+    // The bridge does not close turns itself — a result row is transcript,
+    // and the session announces its own idle.
     bridge.sendToRenderer('agent-output:s1', { type: 'result', subtype: 'success', is_error: false, result: 'done', receivedAt: '2026-09-10T03:00:02.000Z' });
-    expect(bridge.inFlight('s1')).toBe(false);
-  });
-
-  it('closes a running turn when the process completes or the session stops', () => {
-    openSession(log, 's1');
-    bridge.turnStarted('s1');
-    bridge.sendToRenderer('agent-complete:s1');
-    expect(bridge.inFlight('s1')).toBe(false);
-
-    bridge.turnStarted('s1');
-    bridge.sendToRenderer('session-status:s1', { sessionStatus: 'stopped' });
-    expect(bridge.inFlight('s1')).toBe(false);
-
-    bridge.turnStarted('s1');
-    bridge.forget('s1');
-    expect(bridge.inFlight('s1')).toBe(false);
-  });
-
-  it('routes a tab-scoped channel for a session it does not know as an app-wide broadcast', () => {
-    // No open session: this is not a session frame, whatever its prefix.
-    bridge.sendToRenderer('agent-output:ghost', { type: 'assistant' });
-    expect(published).toEqual([]);
-    expect(broadcast).toEqual([{ type: 'channel', channel: 'agent-output:ghost', payload: { type: 'assistant' } }]);
+    expect(bridge.state('s1')).toMatchObject({ turn: { status: 'running' } });
+    bridge.sendToRenderer('session-turn:s1', { status: 'idle', since: null });
+    expect(bridge.state('s1')).toMatchObject({ turn: { status: 'idle', since: null } });
   });
 
   it('stamps every event with the legacy channel prefix it came from', () => {
     openSession(log, 's1');
-    bridge.sendToRenderer('session-tui-data:s1', 'x1b[2J');
     bridge.sendToRenderer('elicitation-request:s1', { id: 'e1', message: 'Pick one' });
     bridge.sendToRenderer('session-account-mismatch:s1', { expected: 'a@b', detected: null });
     expect(published.map((p) => (p.type === 'event' ? [p.kind, p.channel] : null))).toEqual([
-      ['tui-data', 'session-tui-data'],
       ['elicitation', 'elicitation-request'],
       ['account-mismatch', 'session-account-mismatch'],
     ]);

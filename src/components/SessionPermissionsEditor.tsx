@@ -35,7 +35,7 @@ export function SessionPermissionsEditor({
   const [newRule, setNewRule] = useState<{ scope: string; behavior: "allow" | "deny"; value: string } | null>(null);
   const [saving, setSaving] = useState(false);
   // The CLI's own view of the live session. `null` means it gave no answer —
-  // a TUI tab (no control channel) or a CLI older than 2.1.269 — in which case
+  // a CLI older than 2.1.269 — in which case
   // the file-derived view above stands alone, exactly as it always did.
   const [liveRules, setLiveRules] = useState<CliPermissionRulesState | null>(null);
 

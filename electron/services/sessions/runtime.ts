@@ -2,8 +2,8 @@
 //
 // Drives the per-session message stream by subscribing to an AgentEngine's
 // event callbacks. Owns: status transitions, stream-error recovery (engine
-// restart with --resume), JSONL-tail wiring, and the StrictMode /
-// TUI-handoff identity-replace guards.
+// restart with --resume), JSONL-tail wiring, and the StrictMode
+// identity-replace guard.
 //
 // The tail is the transcript source, not a supplement to stream-json. See
 // ensureJsonlTail and ./stream-forward.ts for the split and why it exists.
@@ -25,7 +25,7 @@ import { createBackgroundTaskTracker } from './background-tasks';
 import { createJsonlTail, isClosureCarrier, type JsonlTailHandle } from './jsonl-tail';
 import { shouldForwardStreamMessage } from './stream-forward';
 import { encodeProjectId, hasTranscript } from '../project-paths';
-import { setStatus } from './status';
+import { setStatus, setTurn } from './status';
 
 export interface RuntimeDeps {
   sendToRenderer: SendToRenderer;
@@ -61,8 +61,7 @@ export interface RuntimeDeps {
    * (configDir, observedEmail) on `system:init`. Returns a mismatch to report,
    * or null. Stronger evidence than the pre-flight `.claude.json` read in
    * lifecycle.start(): this is the identity of the process actually running
-   * the session, so it catches a stale credential file. Rich mode only — TUI
-   * sessions produce no init data. See
+   * the session, so it catches a stale credential file. See
    * docs/superpowers/specs/2026-07-27-account-email-verification-design.md
    */
   accountMismatchSink?:
@@ -99,10 +98,9 @@ function ensureJsonlTail(
     // Reading the file instead means the fields are simply present.
     filter: 'all',
     onMessage: (msg) => {
-      // Same split TUI mode uses (see tui-jsonl.ts): closure carriers stay on
-      // their own channel so that subscription keeps its narrow contract,
-      // everything else joins the normal transcript pipeline. One renderer
-      // path, one normalization, both modes.
+      // Closure carriers stay on their own channel so that subscription
+      // keeps its narrow contract; everything else joins the normal
+      // transcript pipeline.
       if (isClosureCarrier(msg)) {
         sendToRenderer(`claude-output-extra:${tabId}`, msg);
         return;
@@ -271,7 +269,8 @@ export function listenToMessages(
           sendToRenderer,
           notificationHooks,
         });
-        // conversationStatus is now derived by the renderer; no status flip needed.
+        // The CLI's result row is the turn-closer while the process lives.
+        setTurn(handle, 'idle', tabId, sendToRenderer);
       }
     }),
 
@@ -296,7 +295,6 @@ export function listenToMessages(
     // separate from the backend-source app_log we write below, and both
     // serve different attribution lookups in the Log tab.
     engine.onError((err: Error) => {
-      if (handle.mode === 'tui') return;
       if (sessions.get(tabId) !== handle) return;
       const errMsg = err instanceof Error ? err.message : String(err);
       sendToRenderer(`agent-error:${tabId}`, errMsg);
@@ -316,13 +314,6 @@ export function listenToMessages(
     }),
 
     engine.onExit(() => {
-      // TUI mid-switch: lifecycle owns cleanup, do nothing.
-      if (handle.mode === 'tui') {
-        teardownJsonlTail(jsonlState);
-        for (const s of subscriptions) s.dispose();
-        if (exitResolve) exitResolve();
-        return;
-      }
       // start() replaced the handle (StrictMode / explicit re-start)?
       // Suppress all renderer-facing events.
       if (sessions.get(tabId) !== handle) {
@@ -352,16 +343,13 @@ export function listenToMessages(
  *
  * The JSONL check exists because the CLI exits with "No conversation found
  * with session ID …" if `--resume <id>` is passed against a non-existent
- * transcript. That happens on the tui → rich return path when the user
- * never sent a message in either mode, so no JSONL was ever written. The
- * same protection lives at setMode('tui') around its createTuiSession call.
+ * transcript — a session whose user never sent a message has none.
  */
 export function restartQuery(
   tabId: string,
   handle: SessionHandle,
   deps: RuntimeDeps,
 ): void {
-  if (!handle.engine) return;
   if (!handle.sessionId) {
     console.error(`[sessions] restartQuery: no sessionId for tab ${tabId}`);
     return;

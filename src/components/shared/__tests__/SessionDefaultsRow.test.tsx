@@ -183,25 +183,6 @@ describe('SessionDefaultsRow compact density', () => {
     expect(screen.getByTitle(/^Permissions:/)).toBeTruthy();
   });
 
-  it('keeps the read-only explanation as a tooltip when the footnote has no room', () => {
-    render(
-      <TooltipProvider>
-        <SessionDefaultsRow
-          engine="claude"
-          density="compact"
-          disabled
-          model="sonnet"
-          setModel={() => {}}
-          effort="medium"
-          setEffort={() => {}}
-          permissionMode="default"
-          setPermissionMode={() => {}}
-        />
-      </TooltipProvider>,
-    );
-    expect(screen.getByTitle(/Managed by the terminal/)).toBeTruthy();
-  });
-
   it('lays the three fields out side by side', () => {
     const { container } = render(<Harness engine="claude" density="compact" />);
     const root = container.firstElementChild as HTMLElement;

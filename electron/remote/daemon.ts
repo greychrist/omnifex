@@ -225,7 +225,7 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
     host: config.host,
     port: config.port,
     daemonVersion: opts.version,
-    capabilities: { tui: true, rpcInvoke: true, attachments: 'base64', web: webRoot !== null, push: true },
+    capabilities: { rpcInvoke: true, attachments: 'base64', web: webRoot !== null, push: true },
     webRoot,
     log,
     api: {
@@ -663,10 +663,6 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
       getMcpServerStatus: (id) => sessionsService.getMcpServerStatus(id),
       getPlugins: (id, force) => sessionsService.getPlugins(id, force),
       getSubagentMeta: (args) => readSubagentMeta(args),
-      setMode: (id, mode) => sessionsService.setMode(id, mode),
-      tuiWrite: (id, data) => sessionsService.tuiWrite(id, data),
-      tuiResize: (id, cols, rows) => sessionsService.tuiResize(id, cols, rows),
-      getMode: (id) => sessionsService.getMode(id),
     },
     cost: {
       get: (a) => sessionCostService.get(a),
@@ -796,7 +792,7 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
       allow: buildRpcAllowlist(INVOKE_CHANNELS, { allow: config.rpcAllow, deny: config.rpcDeny }),
     },
     daemonVersion: opts.version,
-    capabilities: { tui: true, rpcInvoke: true, attachments: 'base64' },
+    capabilities: { rpcInvoke: true, attachments: 'base64' },
   });
   handlersRef = handlers;
   server.register(handlers);

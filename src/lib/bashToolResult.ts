@@ -16,9 +16,9 @@
  *
  * THE SPELLING TRAP: the same payload is keyed `tool_use_result` in the live
  * stream-json stdout and `toolUseResult` in the on-disk JSONL. Verified against
- * CLI 2.1.270. OmniFex renders chat mode from the stream and TUI mode from the
- * file, so reading only one spelling yields a feature that works in exactly one
- * mode. `src/lib/taskList.ts` hit this first and handles both; so does this.
+ * CLI 2.1.270. OmniFex reads both the stream and the file, so reading only one
+ * spelling yields a feature that works on exactly one path. `src/lib/taskList.ts`
+ * hit this first and handles both; so does this.
  */
 
 /** One tool-result-bearing node as the renderer holds it. */

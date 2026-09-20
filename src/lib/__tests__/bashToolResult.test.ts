@@ -18,8 +18,8 @@ const envelope = (toolIds: string[], extra: Record<string, unknown> = {}) => ({
 describe('collectStructuredResults — the two spellings', () => {
   // The live stream-json stdout and the on-disk JSONL carry the SAME payload
   // under different keys: `tool_use_result` live, `toolUseResult` on disk.
-  // Verified against CLI 2.1.270. Chat mode reads the stream, TUI mode tails
-  // the file, so a widget that reads one spelling works in exactly one mode.
+  // Verified against CLI 2.1.270. Both the stream and the file feed the
+  // renderer, so a widget that reads one spelling works on exactly one path.
   it('reads tool_use_result, as the live stream spells it', () => {
     const got = collectStructuredResults([
       userNode(envelope(['t1'], { tool_use_result: { stdout: 'hello' } })),

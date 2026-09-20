@@ -1336,11 +1336,6 @@ app.whenReady().then(() => {
       getPlugins: (sessionId: string, force?: boolean) => sessionsService.getPlugins(sessionId, force),
       getSubagentMeta: (args: { configDir: string; projectPath: string; sessionId: string }) =>
         readSubagentMeta(args),
-      setMode: (tabId: string, mode: 'rich' | 'tui') => sessionsService.setMode(tabId, mode),
-      tuiWrite: (tabId: string, data: string) => sessionsService.tuiWrite(tabId, data),
-      tuiResize: (tabId: string, cols: number, rows: number) =>
-        sessionsService.tuiResize(tabId, cols, rows),
-      getMode: (tabId: string) => sessionsService.getMode(tabId),
     },
     // Session cost adapter
     cost: {

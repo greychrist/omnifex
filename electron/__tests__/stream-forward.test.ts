@@ -67,8 +67,8 @@ describe('shouldForwardStreamMessage', () => {
     });
 
     it('forwards turn results', () => {
-      // The CLI never writes a top-level `result` line; tui-jsonl.ts has to
-      // synthesise one from a terminal stop_reason precisely because of this.
+      // The CLI never writes a top-level `result` line to disk; the stream is
+      // the only place it exists.
       expect(shouldForwardStreamMessage({ type: 'result', subtype: 'success' })).toBe(true);
     });
 
