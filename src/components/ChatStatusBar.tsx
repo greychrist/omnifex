@@ -273,6 +273,10 @@ export interface ChatStatusBarProps {
   cacheTtlMs: number | null;
   /** True while a main turn is in flight. */
   cacheBusy: boolean;
+  /** The session's live controls (model / effort / permissions) as readouts
+   *  that open pickers — `SessionControlPickers`. Seated before the state
+   *  readouts: what you can change, then what is happening. */
+  controls?: React.ReactNode;
   className?: string;
 }
 
@@ -300,6 +304,7 @@ export function ChatStatusBar({
   cacheAnchorMs,
   cacheTtlMs,
   cacheBusy,
+  controls,
   className,
 }: ChatStatusBarProps): React.JSX.Element {
   const meta = activitySignal?.meta as ActivityMeta | undefined;
@@ -329,6 +334,10 @@ export function ChatStatusBar({
   // screen. Every readout is conditional, so hard-coding separators into the
   // markup puts a stray hairline at either end of a half-empty bar.
   const items: React.JSX.Element[] = [];
+
+  if (controls) {
+    items.push(<React.Fragment key="controls">{controls}</React.Fragment>);
+  }
 
   if (link.connection !== null) {
     items.push(<LinkGlyph key="link" {...link} />);

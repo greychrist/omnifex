@@ -80,7 +80,6 @@ interface HarnessOverrides {
   tasks?: { status: string }[];
   subagents?: { status: string }[];
   initialPersistent?: boolean;
-  setIsLoading?: ReturnType<typeof vi.fn>;
   handleJsonlLine?: ReturnType<typeof vi.fn>;
   onSessionInit?: ReturnType<typeof vi.fn>;
 }
@@ -105,7 +104,6 @@ function harness(overrides: HarnessOverrides = {}) {
         },
         persistentSessionRef,
         handleJsonlLine: (overrides.handleJsonlLine ?? vi.fn()) as any,
-        setIsLoading: (overrides.setIsLoading ?? vi.fn()) as any,
         setMessages: ((updater: any) => {
           messagesRef.current = typeof updater === 'function'
             ? updater(messagesRef.current)
@@ -213,7 +211,6 @@ describe('useSessionLifecycle — startPersistentSession happy path', () => {
           accountResolution: null,
           persistentSessionRef,
           handleJsonlLine: vi.fn(),
-          setIsLoading: vi.fn(),
           setMessages: ((updater: any) => {
             messagesRef.current = typeof updater === 'function' ? updater(messagesRef.current) : updater;
           }) as any,
@@ -242,7 +239,7 @@ describe('useSessionLifecycle — startPersistentSession happy path', () => {
         permissionMode: 'default', effort: 'medium', thinkingConfig: 'disabled',
         accountResolution: { account: { name: 'a', subscription_label: 'pro', config_dir: '/c' }, match_type: 'rule', match_detail: '' },
         persistentSessionRef,
-        handleJsonlLine: vi.fn(), setIsLoading: vi.fn(),
+        handleJsonlLine: vi.fn(),
         setMessages: ((u: any) => { messagesRef.current = typeof u === 'function' ? u(messagesRef.current) : u; }) as any,
         onSessionInit: vi.fn(),
         tasks: [],
@@ -260,8 +257,7 @@ describe('useSessionLifecycle — startPersistentSession error surface', () => {
     (api.startSession as any).mockRejectedValueOnce(
       new Error('No Claude account could be resolved for project'),
     );
-    const setIsLoading = vi.fn();
-    const { result } = renderHook(harness({ setIsLoading }));
+    const { result } = renderHook(harness());
 
     expect(result.current.lifecycle.sessionStatus).toBe('stopped');
     expect(result.current.messagesRef.current).toHaveLength(0);
@@ -271,7 +267,7 @@ describe('useSessionLifecycle — startPersistentSession error surface', () => {
     });
 
     expect(result.current.lifecycle.sessionStatus).toBe('error');
-    expect(setIsLoading).toHaveBeenCalledWith(false);
+    expect(result.current.lifecycle.turn.status).toBe('idle');
 
     const msgs = result.current.messagesRef.current as any[];
     const errMsg = msgs[msgs.length - 1];
@@ -420,8 +416,7 @@ describe('useSessionLifecycle — event listener behavior', () => {
     // ordering), so the renderer has already reflected the stopped state by
     // the time the disposal runs.
     (api.startSession as any).mockResolvedValueOnce(undefined);
-    const setIsLoading = vi.fn();
-    const { result } = renderHook(harness({ setIsLoading }));
+    const { result } = renderHook(harness());
     await act(async () => { await result.current.lifecycle.startPersistentSession(); });
     expect(result.current.persistentSessionRef.current).toBe(true);
 
@@ -433,7 +428,7 @@ describe('useSessionLifecycle — event listener behavior', () => {
     // Then main emits claude-complete; renderer clears state AND disposes
     // its listeners.
     act(() => { eventListeners['agent-complete:tab-life'](undefined); });
-    expect(setIsLoading).toHaveBeenCalledWith(false);
+    expect(result.current.lifecycle.turn.status).toBe('idle');
     expect(result.current.persistentSessionRef.current).toBe(false);
     // The unsubscribe functions registered with electronAPI.onEvent removed
     // their channel entries from the test's eventListeners map.

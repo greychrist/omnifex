@@ -33,13 +33,13 @@ describe('claudeSessionStore', () => {
   });
 
   it('patchTab merges fields and creates a tab on first write', () => {
-    useClaudeSessionStore.getState().patchTab(TAB, { isLoading: true });
-    expect(useClaudeSessionStore.getState().selectTab(TAB).isLoading).toBe(true);
+    useClaudeSessionStore.getState().patchTab(TAB, { contextUsage: { used: 1 } as never });
+    expect((useClaudeSessionStore.getState().selectTab(TAB).contextUsage as { used?: number })?.used).toBe(1);
     useClaudeSessionStore
       .getState()
       .patchTab(TAB, { claudeSessionId: 'sess-1' });
     const slice = useClaudeSessionStore.getState().selectTab(TAB);
-    expect(slice.isLoading).toBe(true);
+    expect((slice.contextUsage as { used?: number })?.used).toBe(1);
     expect(slice.claudeSessionId).toBe('sess-1');
   });
 
@@ -122,7 +122,7 @@ describe('claudeSessionStore', () => {
 
   it('resetTab clears all per-tab state', () => {
     const store = useClaudeSessionStore.getState();
-    store.patchTab(TAB, { isLoading: true, claudeSessionId: 'x' });
+    store.patchTab(TAB, { claudeSessionId: 'x' });
     store.appendMessage(TAB, assistantMsg());
     store.resetTab(TAB);
     expect(store.selectTab(TAB)).toEqual(EMPTY_TAB_SESSION);
@@ -136,9 +136,9 @@ describe('claudeSessionStore', () => {
     expect(store.selectTab('tab-b').claudeSessionId).toBe('b');
   });
 
-  it('setInflightAssistantText populates the inflight slot without touching isLoading', () => {
+  it('setInflightAssistantText populates the inflight slot and nothing else', () => {
     const store = useClaudeSessionStore.getState();
-    store.patchTab(TAB, { isLoading: true });
+    store.patchTab(TAB, { claudeSessionId: 'x' });
     store.setInflightAssistantText(TAB, 'msg-uuid-1', 'Hello world', null);
     const slice = store.selectTab(TAB);
     expect(slice.inflightAssistant).toEqual({
@@ -146,21 +146,11 @@ describe('claudeSessionStore', () => {
       text: 'Hello world',
       parentToolUseId: null,
     });
-    // isLoading represents the parent-turn lifecycle (true between prompt
-    // send and the CLI's result message). Streaming a partial text delta
-    // does NOT end the turn — the in-chat typing-dots spinner is
-    // suppressed independently via hasInflightAssistant in
-    // ClaudeCodeSession.tsx, so this action must not touch isLoading or
-    // the per-tab busy indicator (mainTurnInFlight in usePublishTabStatus)
-    // clears prematurely and the tab spinner disappears mid-turn.
-    expect(slice.isLoading).toBe(true);
-  });
-
-  it('setInflightAssistantText preserves isLoading when it was already false', () => {
-    const store = useClaudeSessionStore.getState();
-    // No prior patchTab — isLoading defaults to false in EMPTY_TAB_SESSION.
-    store.setInflightAssistantText(TAB, 'msg-uuid-1', 'Hello', null);
-    expect(store.selectTab(TAB).isLoading).toBe(false);
+    // The turn is the session's axis (useSessionLifecycle), not a slot here:
+    // a streamed partial delta cannot end it, so the per-tab busy indicator
+    // cannot clear mid-turn — the 0.4.17 partial-messages bug.
+    expect(slice.claudeSessionId).toBe('x');
+    expect('isLoading' in slice).toBe(false);
   });
 
   it('setInflightAssistantText replaces the slot when re-called with new uuid/text', () => {

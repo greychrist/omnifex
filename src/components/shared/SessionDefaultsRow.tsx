@@ -11,7 +11,7 @@ import {
   PermissionPicker,
   type EffortLevel,
 } from '@/components/ControlBar';
-import { FormModelPicker, InlineModelPicker } from '@/components/ModelPicker';
+import { FormModelPicker } from '@/components/ModelPicker';
 import { useModelCatalog, pickModelOption } from '@/lib/modelCatalog';
 
 export interface SessionDefaultsRowProps {
@@ -30,49 +30,16 @@ export interface SessionDefaultsRowProps {
   configDir?: string;
   /**
    * 'row' (default) lays the three fields out side by side; 'column' stacks
-   * them full-width — used in narrow containers like the SessionCard
-   * context popover where a row truncates every trigger.
+   * them full-width for narrow containers.
    */
   direction?: 'row' | 'column';
-  /**
-   * 'compact' is the session context popover's control row: the three fields
-   * side by side with the pickers' `inline` triggers and a smaller caption
-   * above each. The captions were dropped once, when the account-default
-   * model label ("Account Default (Fable 5)") made the row too wide to fit at
-   * all; folding that label into the model's own row (see
-   * withAccountDefaultLabel) bought the space back.
-   */
-  density?: 'default' | 'compact';
-  /**
-   * Concrete model id the live session actually runs (from get_context_usage
-   * or the last assistant JSONL line). When set, it is the model the
-   * account-default row is folded into and marked as — overriding the
-   * settings-pin/catalog inference, since the live signal is authoritative.
-   */
-  activeDefaultModel?: string | null;
   className?: string;
 }
 
-function Field({
-  label,
-  children,
-  compact,
-}: {
-  label: string;
-  children: React.ReactNode;
-  compact?: boolean;
-}) {
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className={`flex flex-col min-w-0 flex-1 ${compact ? 'gap-0.5' : 'gap-1'}`}>
-      <span
-        className={
-          compact
-            ? 'text-[10px] uppercase tracking-wide text-muted-foreground'
-            : 'text-xs text-muted-foreground'
-        }
-      >
-        {label}
-      </span>
+    <div className="flex flex-col min-w-0 flex-1 gap-1">
+      <span className="text-xs text-muted-foreground">{label}</span>
       {children}
     </div>
   );
@@ -120,22 +87,16 @@ export function SessionDefaultsRow({
   setPermissionMode,
   configDir,
   direction = 'row',
-  density = 'default',
-  activeDefaultModel,
   className,
 }: SessionDefaultsRowProps) {
-  const compact = density === 'compact';
-  const layout = compact
-    ? 'flex items-end gap-1.5'
-    : direction === 'column'
-      ? 'flex flex-col items-stretch gap-2'
-      : 'flex items-end gap-2';
+  const layout = direction === 'column'
+    ? 'flex flex-col items-stretch gap-2'
+    : 'flex items-end gap-2';
   const [modelOpen, setModelOpen] = useState(false);
   const [effortOpen, setEffortOpen] = useState(false);
   const [permsOpen, setPermsOpen] = useState(false);
   const { models, raw: modelCatalogRaw } = useModelCatalog(
     engine === 'claude' ? configDir : undefined,
-    activeDefaultModel,
   );
 
   // Claude reuses the same stylized, icon-bearing pickers as the new-session
@@ -147,15 +108,13 @@ export function SessionDefaultsRow({
     // the picker's alias options.
     const selectedModelData = pickModelOption(model, models);
     const selectedRawModel = modelCatalogRaw.find((m) => m.value === model);
-    const ModelControl = compact ? InlineModelPicker : FormModelPicker;
-    const pickerVariant = compact ? 'inline' as const : 'form' as const;
     const wrap = (label: string, node: React.ReactNode) => (
-      <Field label={label} compact={compact}>{node}</Field>
+      <Field label={label}>{node}</Field>
     );
     return (
       <div className={`${layout} ${className ?? ''}`}>
         {wrap('Model', (
-          <ModelControl
+          <FormModelPicker
             selectedModelData={selectedModelData}
             models={models}
             selectedModel={model}
@@ -170,7 +129,7 @@ export function SessionDefaultsRow({
             onEffortChange={(level) => { setEffort(level); }}
             open={effortOpen}
             onOpenChange={setEffortOpen}
-            variant={pickerVariant}
+            variant="form"
             levels={selectedRawModel?.supportedEffortLevels}
           />
         ))}
@@ -180,7 +139,7 @@ export function SessionDefaultsRow({
             onPermissionModeChange={setPermissionMode}
             open={permsOpen}
             onOpenChange={setPermsOpen}
-            variant={pickerVariant}
+            variant="form"
           />
         ))}
       </div>

@@ -196,9 +196,8 @@ describe('reduceSessionStreamMessage', () => {
     );
   });
 
-  it('result message (unknown kind) clears loading and requests context usage refresh + queued prompt drain', () => {
+  it('result message requests context usage refresh + queued prompt drain', () => {
     const r = reduceSessionStreamMessage(resultOk(), baseCtx);
-    expect(r.clearLoading).toBe(true);
     expect(r.append).toBe('append');
     const kinds = r.effects.map((e) => e.kind);
     expect(kinds).toEqual(
@@ -221,7 +220,6 @@ describe('reduceSessionStreamMessage', () => {
     expect(r.replaceWith).toBeDefined();
     expect(r.replaceWith!.kind).toBe('cli-stream-result');
     expect((r.replaceWith as { raw?: { is_error?: boolean } }).raw?.is_error).not.toBe(true);
-    expect(r.clearLoading).toBe(true);
     expect(r.clearUserInterrupted).toBe(true);
     // A deliberate cancel must not auto-drain queued prompts.
     expect(r.effects.map((e) => e.kind)).not.toContain('processQueuedPrompt');
@@ -270,7 +268,6 @@ describe('reduceSessionStreamMessage', () => {
       userInterrupted: true,
     });
     expect(r.append).toBe('append');
-    expect(r.clearLoading).toBe(true);
     expect(r.clearUserInterrupted).toBe(true);
   });
 
@@ -283,7 +280,6 @@ describe('reduceSessionStreamMessage', () => {
     };
     const r = reduceSessionStreamMessage(node, { ...baseCtx, userInterrupted: true });
     expect(r.append).toBe('append');
-    expect(r.clearLoading).toBe(true);
     expect(r.clearUserInterrupted).toBe(true);
   });
 

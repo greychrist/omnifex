@@ -48,11 +48,12 @@ export interface StreamEffectDeps<Q extends QueuedPrompt = QueuedPrompt> {
   setSupportedCommands: (commands: unknown[]) => void;
   queuedPromptsRef: { current: Q[] };
   setQueuedPrompts: (next: Q[]) => void;
-  /** Live ref to the turn-in-flight flag. Read at commit time (after the
-   *  settle delay below), never at effect time: the `result` row clears
-   *  loading via a setState that React has not flushed while these effects
-   *  run synchronously. */
-  isLoadingRef: { current: boolean };
+  /** Live ref to the session's turn axis (`turn.status === 'running'`,
+   *  mirrored by useSessionLifecycle). Read at commit time (after the settle
+   *  delay below), never at effect time: main announces the idle turn right
+   *  after forwarding the `result` row, and React has not flushed that
+   *  mirror while these effects run synchronously. */
+  turnRunningRef: { current: boolean };
   handleSendPrompt: (prompt: string, model: string, images?: string[]) => void;
   /** Resolved directive text (user override or shipped default) — see
    *  `resolvePostCompactPrompt`. Resolved by the caller so this module stays
@@ -116,8 +117,8 @@ export function runStreamEffect<Q extends QueuedPrompt = QueuedPrompt>(
 
     case 'processQueuedPrompt': {
       if (deps.queuedPromptsRef.current.length === 0) return;
-      // The 100ms delay matches the original inline behaviour — gives React a
-      // tick to flush the `result` row's clearLoading before we decide whether
+      // The 100ms delay gives React a tick to flush the session's idle-turn
+      // announcement (it follows the `result` row) before we decide whether
       // the session will accept input.
       setTimeout(() => {
         // Peek, then commit. This effect fires from more than one trigger (a
@@ -125,7 +126,7 @@ export function runStreamEffect<Q extends QueuedPrompt = QueuedPrompt>(
         // Dequeuing unconditionally and letting handleSendPrompt re-enqueue
         // would move the head to the BACK of the queue, undoing the
         // post-compact directive's deliberate front-of-queue placement.
-        if (deps.isLoadingRef.current) return;
+        if (deps.turnRunningRef.current) return;
         const queue = deps.queuedPromptsRef.current;
         if (queue.length === 0) return;
         const [next, ...rest] = queue;

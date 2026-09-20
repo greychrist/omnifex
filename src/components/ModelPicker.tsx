@@ -84,15 +84,9 @@ interface FormModelPickerProps {
   disabled?: boolean;
 }
 
-/**
- * Shared body for the two container-filling model triggers.
- *
- * `size` changes only the trigger's metrics. Everything else — the dropdown,
- * and crucially the apply-AND-close behaviour below — stays in one place: a
- * second hand-typed copy is exactly how the "it changes but doesn't close" bug
- * would come back on one surface and not the other.
- */
-function ContainerModelPicker({
+/** Full-name trigger that fills its container. Used by NewSessionForm and
+ *  the account dialog's defaults row. */
+export function FormModelPicker({
   selectedModelData,
   models,
   selectedModel,
@@ -100,8 +94,7 @@ function ContainerModelPicker({
   open,
   onOpenChange,
   disabled,
-  size,
-}: FormModelPickerProps & { size: 'form' | 'inline' }) {
+}: FormModelPickerProps) {
   // Apply the pick AND close the dropdown, matching EffortPicker /
   // PermissionPicker (ControlBar handleSelect). Without the close, selecting a
   // model left the popover open ("it changes but doesn't close").
@@ -109,7 +102,6 @@ function ContainerModelPicker({
     onSelect(modelId);
     onOpenChange(false);
   };
-  const inline = size === 'inline';
   return (
     <Popover
       trigger={
@@ -118,17 +110,13 @@ function ContainerModelPicker({
           size="sm"
           disabled={disabled}
           onClick={() => { onOpenChange(!open); }}
-          title={inline ? `Model: ${selectedModelData.name}` : undefined}
-          className={cn(
-            'justify-between font-normal w-full min-w-0',
-            inline ? 'h-6 gap-1 px-1.5' : 'h-9 px-3 gap-2',
-          )}
+          className="justify-between font-normal w-full min-w-0 h-9 px-3 gap-2"
         >
-          <span className={cn('flex items-center min-w-0', inline ? 'gap-1' : 'gap-2')}>
+          <span className="flex items-center min-w-0 gap-2">
             <span className={cn("shrink-0", selectedModelData.color)}>
               {selectedModelData.icon}
             </span>
-            <span className={cn('truncate', inline ? 'text-[11px]' : 'text-xs font-semibold')}>
+            <span className="truncate text-xs font-semibold">
               {selectedModelData.name}
             </span>
           </span>
@@ -149,14 +137,4 @@ function ContainerModelPicker({
       triggerClassName={FIELD_TRIGGER}
     />
   );
-}
-
-/** Full-name trigger that fills its container. Used by NewSessionForm. */
-export function FormModelPicker(props: FormModelPickerProps) {
-  return <ContainerModelPicker {...props} size="form" />;
-}
-
-/** Dense one-line trigger for the session context popover's control row. */
-export function InlineModelPicker(props: FormModelPickerProps) {
-  return <ContainerModelPicker {...props} size="inline" />;
 }

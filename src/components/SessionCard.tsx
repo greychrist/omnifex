@@ -76,12 +76,6 @@ interface SessionCardProps {
   /** Current Claude session id (GUID). When present, surfaces in the context
    *  popover with a copy button. */
   sessionId?: string | null;
-  /**
-   * Live session controls (model / effort / permission pickers) rendered
-   * inside the context popover. Injected by AgentSession so this card stays
-   * presentation-only.
-   */
-  controls?: React.ReactNode;
   /** One-line rollup of the active controls ("Fable 5 | High | Auto Review"),
    *  rendered in thin small type above the context gauge so the live state is
    *  visible without opening the popover. */
@@ -135,7 +129,6 @@ export function SessionCard({
   clearDisabled,
   clearReason,
   sessionId,
-  controls,
   controlsSummary,
   activitySignal,
   activeSubagents = 0,
@@ -460,12 +453,6 @@ export function SessionCard({
                   </div>
                   <SignalEventLog events={recentEvents} />
                 </div>
-
-                {controls && (
-                  <div className="pt-1.5 mt-1 border-t border-border/50" data-testid="controls">
-                    {controls}
-                  </div>
-                )}
 
 
 

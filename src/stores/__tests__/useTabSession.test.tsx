@@ -47,7 +47,7 @@ describe('useTabSession', () => {
     expect(captured).not.toBeNull();
     expect(captured!.messages).toEqual(EMPTY_TAB_SESSION.messages);
     expect(captured!.claudeSessionId).toBeNull();
-    expect(captured!.isLoading).toBe(false);
+    expect('isLoading' in captured!).toBe(false);
   });
 
   it('keeps setter identity stable across re-renders (root-cause of the streamCtxRef shim)', () => {
@@ -56,16 +56,16 @@ describe('useTabSession', () => {
 
     // Force a re-render that also mutates the slice — setters must NOT change
     // identity even as the data does.
-    act(() => { useClaudeSessionStore.getState().patchTab(TAB, { isLoading: true }); });
+    act(() => { useClaudeSessionStore.getState().patchTab(TAB, { claudeSessionId: 's-rerender' }); });
     rerender(<HookHarness tabId={TAB} capture={(s) => { captures.push(s); }} />);
 
     const first = captures[0]!;
     const last = captures[captures.length - 1]!;
     expect(last.setMessages).toBe(first.setMessages);
     expect(last.appendMessage).toBe(first.appendMessage);
-    expect(last.setIsLoading).toBe(first.setIsLoading);
+    expect(last.setClaudeSessionId).toBe(first.setClaudeSessionId);
     // ...while the data still updated.
-    expect(last.isLoading).toBe(true);
+    expect(last.claudeSessionId).toBe('s-rerender');
   });
 
   it('setMessages with a value writes through to the store', () => {
@@ -98,24 +98,22 @@ describe('useTabSession', () => {
     expect((s.sdkAccountInfo as any)?.email).toBe('a@b.c');
   });
 
-  it('setContextUsage, setSupportedModels, setIsLoading write through', () => {
+  it('setContextUsage and setSupportedModels write through', () => {
     let captured: ReturnType<typeof useTabSession> | null = null;
     render(<HookHarness tabId={TAB} capture={(s) => { captured = s; }} />);
     act(() => { captured!.setContextUsage({ used: 1, total: 2 } as any); });
     act(() => { captured!.setSupportedModels([{ id: 'opus' }] as any); });
-    act(() => { captured!.setIsLoading(true); });
     const s = useClaudeSessionStore.getState().selectTab(TAB);
     expect((s.contextUsage as any)?.used).toBe(1);
     expect(s.supportedModels.length).toBe(1);
-    expect(s.isLoading).toBe(true);
   });
 
-  it('setIsLoading with a function gets the previous value', () => {
+  it('setClaudeSessionId with a function gets the previous value', () => {
     let captured: ReturnType<typeof useTabSession> | null = null;
     render(<HookHarness tabId={TAB} capture={(s) => { captured = s; }} />);
-    act(() => { captured!.setIsLoading(true); });
-    act(() => { captured!.setIsLoading((prev) => !prev); });
-    expect(useClaudeSessionStore.getState().selectTab(TAB).isLoading).toBe(false);
+    act(() => { captured!.setClaudeSessionId('a'); });
+    act(() => { captured!.setClaudeSessionId((prev) => `${prev}-b`); });
+    expect(useClaudeSessionStore.getState().selectTab(TAB).claudeSessionId).toBe('a-b');
   });
 
   it('appendMessage adds to the tab', () => {
@@ -141,7 +139,7 @@ describe('useTabSession', () => {
   it('resetTab clears the slice', () => {
     let captured: ReturnType<typeof useTabSession> | null = null;
     render(<HookHarness tabId={TAB} capture={(s) => { captured = s; }} />);
-    act(() => { captured!.setIsLoading(true); });
+    act(() => { captured!.setContextUsage({ used: 1, total: 2 } as any); });
     act(() => { captured!.setClaudeSessionId('s1'); });
     act(() => { captured!.resetTab(); });
     const s = useClaudeSessionStore.getState().selectTab(TAB);

@@ -10,6 +10,7 @@ import type { AgentMessage, AgentEngineExit } from '../services/agents/types';
 // transcript — see docs/session-lifecycle.md.
 
 const messageCbs: Array<(m: AgentMessage) => void> = [];
+const sendImpl = { current: async (_p: string): Promise<void> => {} };
 const exitCbs: Array<(info: AgentEngineExit) => void> = [];
 
 vi.mock('../services/agents/claude-cli-engine', () => ({
@@ -17,7 +18,7 @@ vi.mock('../services/agents/claude-cli-engine', () => ({
     kind: 'claude',
     applyExtendedPermissionMode: vi.fn(async () => {}),
     start: vi.fn(async () => {}),
-    send: vi.fn(async () => {}),
+    send: vi.fn((p: string) => sendImpl.current(p)),
     sendStructured: vi.fn(async () => {}),
     sendControlRequest: vi.fn(async () => undefined),
     respondPermission: vi.fn(async () => {}),
@@ -44,6 +45,7 @@ let tmpConfig: string;
 const projectPath = '/Users/test/proj';
 
 beforeEach(() => {
+  sendImpl.current = async () => {};
   messageCbs.length = 0;
   exitCbs.length = 0;
   tmpConfig = fs.mkdtempSync(path.join(os.tmpdir(), 'omnifex-turn-'));
@@ -94,6 +96,16 @@ describe('sessions — the turn axis', () => {
     expect(sessions.getTurn('t1').status).toBe('running');
     emitResult();
     expect(sessions.getTurn('t1')).toEqual({ status: 'idle', since: null });
+    expect(turnEvents().map((t) => (t as { status: string }).status)).toEqual(['running', 'idle']);
+  });
+
+  it('closes again when the CLI refuses the prompt — a send that never happened is not a turn', async () => {
+    const { sessions, turnEvents } = setup();
+    sessions.start({ tabId: 't1', projectPath, configDir: tmpConfig, model: 'opus', permissionMode: 'default' });
+    sendImpl.current = async () => { throw new Error('stdin closed'); };
+    sessions.sendMessage('t1', 'hello');
+    await new Promise((r) => setTimeout(r, 0));
+    expect(sessions.getTurn('t1').status).toBe('idle');
     expect(turnEvents().map((t) => (t as { status: string }).status)).toEqual(['running', 'idle']);
   });
 

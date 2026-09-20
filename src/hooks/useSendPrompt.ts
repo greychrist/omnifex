@@ -13,13 +13,13 @@ interface UseSendPromptArgs {
   projectPath: string;
   tabId: string;
   /**
-   * Live ref to the parent's `isLoading`. Read at call-time so the queue-drain
-   * path (which holds onto handleSendPrompt across renders via setTimeout)
-   * sees the current value rather than a stale closure capture. Reading from
-   * a closure-captured `isLoading` boolean caused the queue to silently
-   * re-enqueue drained prompts instead of sending them.
+   * Live ref to the session's turn axis (`turn.status === 'running'`). Read
+   * at call-time so the queue-drain path (which holds onto handleSendPrompt
+   * across renders via setTimeout) sees the current value rather than a
+   * stale closure capture. Reading from a closure-captured boolean caused
+   * the queue to silently re-enqueue drained prompts instead of sending them.
    */
-  isLoadingRef: React.MutableRefObject<boolean>;
+  turnRunningRef: React.MutableRefObject<boolean>;
   selectedModel: string;
   persistentSessionRef: React.MutableRefObject<boolean>;
   unlistenRefs: React.MutableRefObject<(() => void)[]>;
@@ -35,7 +35,6 @@ interface UseSendPromptArgs {
   }>;
   startPersistentSession: (resumeId?: string) => Promise<void>;
   pickGerund: () => string;
-  setIsLoading: React.Dispatch<React.SetStateAction<boolean>>;
   setError: React.Dispatch<React.SetStateAction<string | null>>;
   setCurrentActivity: React.Dispatch<React.SetStateAction<string>>;
   setSelectedModel: React.Dispatch<React.SetStateAction<string>>;
@@ -53,7 +52,7 @@ interface UseSendPromptReturn {
 export function useSendPrompt({
   projectPath,
   tabId,
-  isLoadingRef,
+  turnRunningRef,
   selectedModel,
   persistentSessionRef,
   unlistenRefs,
@@ -62,7 +61,6 @@ export function useSendPrompt({
   sessionMetrics,
   startPersistentSession,
   pickGerund,
-  setIsLoading,
   setError,
   setCurrentActivity,
   setSelectedModel,
@@ -71,6 +69,11 @@ export function useSendPrompt({
   const [queuedPrompts, setQueuedPrompts] = useState<QueuedPromptItem[]>([]);
   const queuedPromptsRef = useRef<QueuedPromptItem[]>([]);
   const lastPromptRef = useRef<{ prompt: string; model: string } | null>(null);
+  // A send in progress: from the call until main has taken the prompt. The
+  // session opens its turn only once the prompt is handed over, so between
+  // here and that round-trip `turnRunningRef` still reads idle; this latch
+  // is the other fact that must gate a second prompt into the queue.
+  const sendingRef = useRef(false);
 
   const handleSendPrompt = async (
     prompt: string,
@@ -82,10 +85,11 @@ export function useSendPrompt({
       return;
     }
 
-    // If already loading, queue the prompt. Read from the ref (not a closure
-    // boolean) so a stale reference held by the queue-drain setTimeout sees
-    // the current loading state, not whatever value was captured at render.
-    if (isLoadingRef.current) {
+    // A running turn or a send still in flight: queue the prompt. Read from
+    // the refs (not closure booleans) so a stale reference held by the
+    // queue-drain setTimeout sees the current state, not whatever was
+    // captured at render.
+    if (turnRunningRef.current || sendingRef.current) {
       const newPrompt: QueuedPromptItem = {
         id: `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
         prompt,
@@ -96,8 +100,8 @@ export function useSendPrompt({
       return;
     }
 
+    sendingRef.current = true;
     try {
-      setIsLoading(true);
       setError(null);
       setCurrentActivity(pickGerund());
       lastPromptRef.current = { prompt, model };
@@ -198,7 +202,8 @@ export function useSendPrompt({
     } catch (err) {
       console.error("Failed to send prompt:", err);
       setError(String(err) || "Failed to send prompt");
-      setIsLoading(false);
+    } finally {
+      sendingRef.current = false;
     }
   };
 

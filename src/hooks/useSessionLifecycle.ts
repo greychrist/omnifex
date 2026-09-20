@@ -45,7 +45,6 @@ interface UseSessionLifecycleArgs {
    */
   hasPendingStart?: boolean;
   handleJsonlLine: (payload: string | object) => void;
-  setIsLoading: React.Dispatch<React.SetStateAction<boolean>>;
   setMessages: React.Dispatch<React.SetStateAction<JsonlNode[]>>;
   /**
    * Called when the main process emits `session-init:<tabId>` — i.e. the
@@ -122,7 +121,6 @@ export function useSessionLifecycle({
   persistentSessionRef,
   hasPendingStart,
   handleJsonlLine,
-  setIsLoading,
   setMessages,
   onSessionInit,
   tasks,
@@ -189,7 +187,7 @@ export function useSessionLifecycle({
       `agent-complete:${tabId}`,
       () => {
         if (isMountedRef.current) {
-          setIsLoading(false);
+          setTurn(IDLE_TURN);
           persistentSessionRef.current = false;
           // Status flip is owned by main process — it emits a final
           // `session-status:<tabId>` with 'stopped' on clean close. The
@@ -315,7 +313,7 @@ export function useSessionLifecycle({
     return window.electronAPI.onEvent(`remote-session-died:${tabId}`, () => {
       if (!isMountedRef.current) return;
       persistentSessionRef.current = false;
-      setIsLoading(false);
+      setTurn(IDLE_TURN);
       void rebindRef.current().catch((err: unknown) => {
         console.error('[remote-session-died] rebind failed:', err);
       });
@@ -410,7 +408,7 @@ export function useSessionLifecycle({
       // Release the slot we claimed above so the user can retry.
       persistentSessionRef.current = false;
       setSessionStatus('error');
-      setIsLoading(false);
+      setTurn(IDLE_TURN);
       setMessages((prev) => [
         ...prev,
         {

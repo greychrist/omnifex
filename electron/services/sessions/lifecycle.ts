@@ -365,6 +365,8 @@ export function createSessionsService(
     setTurn(handle, 'running', tabId, sendToRenderer);
     void handle.engine.send(prompt).catch((err: unknown) => {
       console.error(`[sessions] engine.send failed for tab ${tabId}:`, err);
+      // The prompt never reached the CLI, so there is no turn to wait on.
+      setTurn(handle, 'idle', tabId, sendToRenderer);
     });
   }
 
@@ -380,6 +382,7 @@ export function createSessionsService(
     setTurn(handle, 'running', tabId, sendToRenderer);
     void handle.engine.sendStructured(content).catch((err: unknown) => {
       console.error(`[sessions] engine.sendStructured failed for tab ${tabId}:`, err);
+      setTurn(handle, 'idle', tabId, sendToRenderer);
     });
   }
 

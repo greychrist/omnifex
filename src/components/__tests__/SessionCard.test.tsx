@@ -15,27 +15,7 @@ const USAGE: SessionContextUsage = {
   categories: [],
 };
 
-describe('SessionCard — context popover controls', () => {
-  it('renders the injected session controls inside the context popover', () => {
-    render(
-      <SessionCard
-        totalTokens={12_000}
-        model="sonnet"
-        contextUsage={USAGE}
-        sessionStatus="active"
-        controls={<div data-testid="session-controls" />}
-      />,
-    );
-
-    // Closed: controls are not in the document.
-    expect(screen.queryByTestId('session-controls')).toBeNull();
-
-    // Open the context popover via its trigger (shows the token count).
-    fireEvent.click(screen.getByText('12.0k'));
-    expect(screen.getByTestId('session-controls')).toBeTruthy();
-    expect(screen.getByText('Context')).toBeTruthy();
-  });
-
+describe('SessionCard — context gauge', () => {
   it('sizes a 1M Account-Default session against 1M in the client-side fallback', () => {
     // The reported bug: a resumed chat-mode "Account Default" session (history
     // loaded statically, so live contextUsage hasn't been fetched) whose own
@@ -374,13 +354,12 @@ describe('SessionCard — context popover layout', () => {
     expect(screen.getByText('Messages')).toBeTruthy();
   });
 
-  it('orders the popover: Details, Recent events, controls, session id', () => {
+  it('orders the popover: Details, Recent events, session id', () => {
     renderWithCategories({
-      controls: <div data-testid="session-controls" />,
       sessionId: 'fe10d371-620b-4e16-b412-62cd401ca3aa',
     });
     openCategoryPopover();
-    const ids = ['details-disclosure', 'recent-events', 'controls', 'session-id'];
+    const ids = ['details-disclosure', 'recent-events', 'session-id'];
     const nodes = ids.map((id) => screen.getByTestId(id));
     for (let i = 1; i < nodes.length; i++) {
       expect(

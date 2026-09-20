@@ -22,7 +22,7 @@ function makeDeps(overrides: Partial<StreamEffectDeps> = {}): StreamEffectDeps {
     setSupportedCommands: vi.fn(),
     queuedPromptsRef: { current: [] },
     setQueuedPrompts: vi.fn(),
-    isLoadingRef: { current: false },
+    turnRunningRef: { current: false },
     handleSendPrompt: vi.fn(),
     postCompactPrompt: 'RE-READ: your summary is lossy.',
     currentModel: 'opus',
@@ -165,7 +165,7 @@ describe('runStreamEffect', () => {
       handleSendPrompt,
       setQueuedPrompts,
       queuedPromptsRef,
-      isLoadingRef: { current: true },
+      turnRunningRef: { current: true },
     });
     runStreamEffect({ kind: 'processQueuedPrompt' }, deps);
     vi.advanceTimersByTime(150);
@@ -189,7 +189,7 @@ describe('runStreamEffect', () => {
       handleSendPrompt,
       setQueuedPrompts,
       queuedPromptsRef,
-      isLoadingRef: { current: false },
+      turnRunningRef: { current: false },
     });
     runStreamEffect({ kind: 'processQueuedPrompt' }, deps);
     vi.advanceTimersByTime(150);

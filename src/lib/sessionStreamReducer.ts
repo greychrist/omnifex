@@ -121,8 +121,6 @@ export interface StreamReducerResult {
   extractedSessionInfo?: { sessionId: string; projectId: string };
   /** Permission UI payload extracted from a permission_request message. */
   pendingPermission?: PermissionRequestPayload;
-  /** Tell the caller to clear the isLoading spinner. */
-  clearLoading?: boolean;
   /** Tell the caller to clear userInterruptedRef. */
   clearUserInterrupted?: boolean;
   /** Updated activity label, or `gerund` to ask the caller to pick one. */
@@ -458,15 +456,12 @@ export function reduceSessionStreamMessage(
     if (ctx.userInterrupted) {
       result.clearUserInterrupted = true;
       if (raw.is_error === true) {
-        // Deliberate user cancel. Keep the result row in messages[] — it is
-        // the only turn-closer there (the trailing partial assistant carries
-        // stop_reason:null), and without it the transcript reads as open
-        // forever, leaving the tab stuck on "Turn in flight"/WORKING after
-        // Stop. Neutralize is_error so it renders as a benign completion badge
-        // (like any normal turn) instead of a red "failed" card — a cancel is
-        // not a failure. Don't drain the prompt queue: the user stopped on
-        // purpose, so queued prompts must not auto-fire.
-        result.clearLoading = true;
+        // Deliberate user cancel. Keep the result row in messages[] (it is
+        // the reducer's context-refresh trigger and the transcript's own
+        // turn bracket) but neutralize is_error so it renders as a benign
+        // completion badge instead of a red "failed" card — a cancel is not a
+        // failure. Don't drain the prompt queue: the user stopped on purpose,
+        // so queued prompts must not auto-fire.
         result.replaceWith = {
           ...node,
           raw: { ...(node.raw as Record<string, unknown>), is_error: false },
@@ -476,7 +471,6 @@ export function reduceSessionStreamMessage(
       }
     }
 
-    result.clearLoading = true;
     effects.push({ kind: 'refreshContextUsage' });
     effects.push({ kind: 'processQueuedPrompt' });
   }

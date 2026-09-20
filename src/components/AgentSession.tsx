@@ -45,7 +45,7 @@ import {
 import { normalizeThinkingConfig } from "@/lib/thinkingConfig";
 import { modelDisplayName, effectiveModels } from "@/lib/modelCatalog";
 import { sessionControlSummary } from "@/lib/sessionControlSummary";
-import { SessionDefaultsRow } from "@/components/shared/SessionDefaultsRow";
+import { SessionControlPickers } from "@/components/SessionControlPickers";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { SlashCommandsManager } from "./SlashCommandsManager";
 import { SessionMCPStatus } from "./SessionMCPStatus";
@@ -237,8 +237,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     setMessages,
     appendMessage,
     insertMessageBeforeFirstUser,
-    isLoading,
-    setIsLoading,
     extractedSessionInfo,
     setExtractedSessionInfo,
     claudeSessionId,
@@ -270,7 +268,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     setClaudeSessionId: typeof setClaudeSessionId;
     setContextUsage: typeof setContextUsage;
     setExtractedSessionInfo: typeof setExtractedSessionInfo;
-    setIsLoading: typeof setIsLoading;
     setSdkAccountInfo: typeof setSdkAccountInfo;
     setSupportedModels: typeof setSupportedModels;
     setMessages: typeof setMessages;
@@ -285,7 +282,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     setClaudeSessionId,
     setContextUsage,
     setExtractedSessionInfo,
-    setIsLoading,
     setSdkAccountInfo,
     setSupportedModels,
     setMessages,
@@ -301,7 +297,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   streamCtxRef.current.setClaudeSessionId = setClaudeSessionId;
   streamCtxRef.current.setContextUsage = setContextUsage;
   streamCtxRef.current.setExtractedSessionInfo = setExtractedSessionInfo;
-  streamCtxRef.current.setIsLoading = setIsLoading;
   streamCtxRef.current.setSdkAccountInfo = setSdkAccountInfo;
   streamCtxRef.current.setSupportedModels = setSupportedModels;
   streamCtxRef.current.setMessages = setMessages;
@@ -732,12 +727,12 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   } | null>(null);
 
   const persistentSessionRef = useRef(false);
-  // Live mirror of `isLoading` for call-time reads inside useSendPrompt's
-  // queue gate. The drain path holds onto a captured handleSendPrompt
-  // across renders; reading from the ref avoids the stale-closure bug
-  // where drained prompts silently re-queue.
-  const isLoadingRef = useRef(false);
-  useEffect(() => { isLoadingRef.current = isLoading; }, [isLoading]);
+  // Live mirror of the session's turn axis for call-time reads inside
+  // useSendPrompt's queue gate and the stream effects' drain. The drain path
+  // holds onto a captured handleSendPrompt across renders; reading from the
+  // ref avoids the stale-closure bug where drained prompts silently re-queue.
+  // Written below, once useSessionLifecycle has produced `turn`.
+  const turnRunningRef = useRef(false);
   // Session lifecycle status comes from the useSessionLifecycle hook
   // (single source of truth), which subscribes to main-process
   // `session-status:<tabId>` events. We derive the legacy boolean flags
@@ -931,11 +926,11 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [completedSubagentSig, claudeSessionId, accountConfigDir, projectPath]);
   // Typing bubble used to bridge on `hasRunningSubagent(subagents)` so a
-  // stuck-running row would keep the spinner on after `isLoading` flipped
-  // false. That coupled visual session activity to outstanding-subagent
-  // state and faked a live turn whenever the subagent-tracking pipeline
-  // missed a closure carrier. Decoupled now — the bubble follows
-  // `isLoading` (driven by CLI turn state) and `tasksInFlight`. The
+  // stuck-running row would keep the spinner on after the turn ended. That
+  // coupled visual session activity to outstanding-subagent state and faked
+  // a live turn whenever the subagent-tracking pipeline missed a closure
+  // carrier. Decoupled now — the bubble follows the session's turn and
+  // `tasksInFlight` (see `outstandingWork`, below the lifecycle hook). The
   // SubagentBar's per-row spinner remains the scoped indicator that a
   // particular dispatch is in flight. See design spec
   // docs/superpowers/specs/2026-05-11-subagent-tracking-refactor-design.md.
@@ -957,7 +952,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     () => summarizeTaskList(taskEntries).inProgress > 0,
     [taskEntries],
   );
-  const outstandingWork = isLoading || tasksInFlight;
   const dismissSubagent = useCallback((toolUseId: string) => {
     colorAllocatorRef.current.release(toolUseId);
     setDismissedSubagents((prev) => {
@@ -1005,12 +999,10 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   // Report streaming state changes — onStreamingChange is excluded from deps
   // because it's an event callback from the parent that may not be memoized.
   // Including it causes infinite re-render loops when the parent recreates
-  // the callback on state change.
+  // the callback on state change. The effect itself lives below the
+  // lifecycle hook, where the turn is known.
   const onStreamingChangeRef = useRef(onStreamingChange);
   onStreamingChangeRef.current = onStreamingChange;
-  useEffect(() => {
-    onStreamingChangeRef.current?.(isLoading, claudeSessionId);
-  }, [isLoading, claudeSessionId]);
 
 
   // Approximate current context-window occupancy from the LAST assistant turn.
@@ -1145,11 +1137,14 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   // render — without that indirection, this callback would re-create on
   // every render and re-trigger the effect below, re-fetching history
   // every frame.
+  // The transcript is being read off disk — a fetch, not a turn. Drives the
+  // empty-transcript placeholder only.
+  const [historyLoading, setHistoryLoading] = useState(false);
   const loadSessionHistory = useCallback(async () => {
     if (!session) return;
 
     try {
-      streamCtxRef.current.setIsLoading(true);
+      setHistoryLoading(true);
       setError(null);
 
       const history = await api.loadSessionHistory(session.id, session.project_id, session.project_path);
@@ -1201,7 +1196,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
       console.error("Failed to load session history:", err);
       setError("Failed to load session history");
     } finally {
-      streamCtxRef.current.setIsLoading(false);
+      setHistoryLoading(false);
     }
   }, [session]);
 
@@ -1395,9 +1390,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
         if (reduced.clearUserInterrupted) {
           userInterruptedRef.current = false;
         }
-        if (reduced.clearLoading) {
-          ctx.setIsLoading(false);
-        }
 
         const handleSendPromptForEffect = ctx.handleSendPrompt;
         for (const effect of reduced.effects) {
@@ -1418,7 +1410,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
             setSupportedCommands: (commands) => { setSupportedCommands(commands as any); },
             queuedPromptsRef: ctx.queuedPromptsRef as any,
             setQueuedPrompts: ctx.setQueuedPrompts as any,
-            isLoadingRef,
+            turnRunningRef,
             handleSendPrompt: fireAndLog(
               'claude-code-session:send-prompt-effect',
               handleSendPromptForEffect ?? undefined,
@@ -1530,7 +1522,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     // skips the one-frame flash of the empty-state form.
     hasPendingStart: !!session || !!initialSessionConfig,
     handleJsonlLine,
-    setIsLoading,
     setMessages,
     // session-init:<tabId> seeds claudeSessionId + extractedSessionInfo the
     // moment the CLI subprocess spawns, instead of waiting for the
@@ -1564,6 +1555,14 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   // resume or a preconfigured fresh start (see hasPendingStart above),
   // so this single check covers all cases without a one-frame flash.
   const sessionStarted = sessionStatus !== 'stopped';
+  // The session's turn, as the rest of this component has always named it.
+  // It is the daemon's fact, mirrored — never an optimistic renderer flag.
+  const isLoading = turn.status === 'running';
+  useEffect(() => { turnRunningRef.current = isLoading; }, [isLoading]);
+  useEffect(() => {
+    onStreamingChangeRef.current?.(isLoading, claudeSessionId);
+  }, [isLoading, claudeSessionId]);
+  const outstandingWork = isLoading || tasksInFlight;
 
   // Turn-boundary bookkeeping: when the round started, how long the last one
   // took, and dropping the tool-progress map the round left behind. The
@@ -1659,7 +1658,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   const { handleSendPrompt: sendPromptRaw, queuedPrompts, setQueuedPrompts, queuedPromptsRef } = useSendPrompt({
     projectPath,
     tabId: tabIdRef.current,
-    isLoadingRef,
+    turnRunningRef,
     selectedModel,
     persistentSessionRef,
     unlistenRefs,
@@ -1668,7 +1667,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     sessionMetrics,
     startPersistentSession,
     pickGerund,
-    setIsLoading,
     setError,
     setCurrentActivity,
     setSelectedModel,
@@ -1942,9 +1940,8 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
       await api.sessionInterrupt(tid);
 
       // Session stays alive — don't clean up listeners, don't unset
-      // persistentSessionRef. The CLI will emit a result message with
-      // stop_reason "interrupted" which the normal message loop handles.
-      setIsLoading(false);
+      // persistentSessionRef. The CLI emits a result row for the interrupted
+      // turn, and the session closes its turn on it.
       setError(null);
       setQueuedPrompts([]);
 
@@ -1978,7 +1975,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
       unlistenRefs.current.forEach((unlisten) => { unlisten(); });
       unlistenRefs.current = [];
 
-      setIsLoading(false);
       persistentSessionRef.current = false;
       resetStatus({ sessionStatus: 'stopped', conversationStatus: null });
       setError(null);
@@ -2038,7 +2034,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     unlistenRefs.current = [];
 
     resetStatus({ sessionStatus: 'stopped', conversationStatus: null });
-    setIsLoading(false);
     setError(null);
 
     try {
@@ -2068,7 +2063,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
       unlistenRefs.current = [];
 
       resetStatus({ sessionStatus: 'stopped', conversationStatus: null });
-      setIsLoading(false);
       setError(null);
       // Clear the stale verdict; the fresh session re-reports its identity.
       setAccountMismatch(null);
@@ -2100,7 +2094,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     // Session-state flags
     persistentSessionRef.current = false;
     resetStatus({ sessionStatus: 'stopped', conversationStatus: null });
-    setIsLoading(false);
     setError(null);
     setQueuedPrompts([]);
 
@@ -2474,81 +2467,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
                     })
                   : undefined
               }
-              controls={
-                <SessionDefaultsRow
-                  engine={agent}
-                  density="compact"
-                  configDir={accountResolution?.account.config_dir}
-                  activeDefaultModel={liveDefaultModel}
-                  model={selectedModel}
-                  setModel={(newModel) => {
-                    // Updates selectedModel AND, if a session is running, pushes
-                    // the switch to the CLI immediately via sessionSetModel(),
-                    // then refreshes context usage so the header summary's live
-                    // model signal tracks the switch (see sessionModelChange.ts).
-                    void changeSessionModel(newModel, {
-                      tabId: tabIdRef.current,
-                      hasLiveSession: !!persistentSessionRef.current,
-                      api,
-                      setSelectedModel,
-                      setContextUsage,
-                      appendMessage,
-                      onError: (err) => {
-                        console.error('[sessions] sessionSetModel failed:', err);
-                      },
-                    });
-                  }}
-                  effort={effort}
-                  setEffort={(level) => {
-                    setEffort(level as EffortLevel);
-                    if (persistentSessionRef.current) {
-                      const tid = tabIdRef.current;
-                      api.sessionSetEffort(tid, level as EffortLevel).then(() => {
-                        // Drop a live transcript marker so the change is visible in
-                        // scrollback. Effort never reaches the JSONL, so this is the
-                        // only record — live-session only (not persisted).
-                        appendMessage({
-                          kind: 'control-change',
-                          control: 'effort',
-                          value: String(level),
-                          sessionId: tid,
-                          receivedAt: new Date().toISOString(),
-                        });
-                      }).catch((err: unknown) => {
-                        console.error('[sessions] sessionSetEffort failed:', err);
-                      });
-                    }
-                  }}
-                  permissionMode={permissionMode}
-                  setPermissionMode={(mode) => {
-                    // Update local state AND, if a session is running, push the
-                    // change to the CLI via sessionSetPermissionMode(). Swallow
-                    // errors so a bad mode doesn't revert the UI.
-                    setPermissionMode(mode);
-                    if (persistentSessionRef.current) {
-                      const tid = tabIdRef.current;
-                      api.sessionSetPermissionMode(tid, mode).then(() => {
-                        // Live transcript marker. The CLI DOES persist a
-                        // `permission-mode` JSONL line, but jsonl-tail only forwards
-                        // closure-carriers (queue-operation/attachment) to the live
-                        // stream — so the persisted line shows up only on resume,
-                        // never live. This synthetic marker gives the immediate
-                        // feedback; the persisted line covers scrollback after
-                        // resume. They never coexist in one view, so no double.
-                        appendMessage({
-                          kind: 'control-change',
-                          control: 'permission',
-                          value: String(mode),
-                          sessionId: tid,
-                          receivedAt: new Date().toISOString(),
-                        });
-                      }).catch((err: unknown) => {
-                        console.error('[sessions] sessionSetPermissionMode failed:', err);
-                      });
-                    }
-                  }}
-                />
-              }
             />
           </div>
           <ChatStatusBar
@@ -2562,6 +2480,80 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
             // session has — see queries.ts liveEngine().
             canRename={isSessionActive}
             onRename={handleRenameSession}
+            controls={
+              <SessionControlPickers
+                engine={agent}
+                configDir={accountResolution?.account.config_dir}
+                activeDefaultModel={liveDefaultModel}
+                model={selectedModel}
+                setModel={(newModel) => {
+                  // Updates selectedModel AND, if a session is running, pushes
+                  // the switch to the CLI immediately via sessionSetModel(),
+                  // then refreshes context usage so the header summary's live
+                  // model signal tracks the switch (see sessionModelChange.ts).
+                  void changeSessionModel(newModel, {
+                    tabId: tabIdRef.current,
+                    hasLiveSession: !!persistentSessionRef.current,
+                    api,
+                    setSelectedModel,
+                    setContextUsage,
+                    appendMessage,
+                    onError: (err) => {
+                      console.error('[sessions] sessionSetModel failed:', err);
+                    },
+                  });
+                }}
+                effort={effort}
+                setEffort={(level) => {
+                  setEffort(level as EffortLevel);
+                  if (persistentSessionRef.current) {
+                    const tid = tabIdRef.current;
+                    api.sessionSetEffort(tid, level as EffortLevel).then(() => {
+                      // Drop a live transcript marker so the change is visible in
+                      // scrollback. Effort never reaches the JSONL, so this is the
+                      // only record — live-session only (not persisted).
+                      appendMessage({
+                        kind: 'control-change',
+                        control: 'effort',
+                        value: String(level),
+                        sessionId: tid,
+                        receivedAt: new Date().toISOString(),
+                      });
+                    }).catch((err: unknown) => {
+                      console.error('[sessions] sessionSetEffort failed:', err);
+                    });
+                  }
+                }}
+                permissionMode={permissionMode}
+                setPermissionMode={(mode) => {
+                  // Update local state AND, if a session is running, push the
+                  // change to the CLI via sessionSetPermissionMode(). Swallow
+                  // errors so a bad mode doesn't revert the UI.
+                  setPermissionMode(mode);
+                  if (persistentSessionRef.current) {
+                    const tid = tabIdRef.current;
+                    api.sessionSetPermissionMode(tid, mode).then(() => {
+                      // Live transcript marker. The CLI DOES persist a
+                      // `permission-mode` JSONL line, but jsonl-tail only forwards
+                      // closure-carriers (queue-operation/attachment) to the live
+                      // stream — so the persisted line shows up only on resume,
+                      // never live. This synthetic marker gives the immediate
+                      // feedback; the persisted line covers scrollback after
+                      // resume. They never coexist in one view, so no double.
+                      appendMessage({
+                        kind: 'control-change',
+                        control: 'permission',
+                        value: String(mode),
+                        sessionId: tid,
+                        receivedAt: new Date().toISOString(),
+                      });
+                    }).catch((err: unknown) => {
+                      console.error('[sessions] sessionSetPermissionMode failed:', err);
+                    });
+                  }
+                }}
+              />
+            }
           />
           <SessionHeaderResizeHandle
             resizing={headerResizing}
@@ -2715,7 +2707,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
                 scrolled anywhere. The token count moved to its tooltip. */}
             {messagesList}
             
-            {isLoading && messages.length === 0 && (
+            {historyLoading && messages.length === 0 && (
               <div className="flex items-center justify-center h-full">
                 <div className="flex items-center gap-3">
                   <div className="rotating-symbol text-primary" />

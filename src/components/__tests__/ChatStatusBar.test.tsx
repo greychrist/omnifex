@@ -235,6 +235,28 @@ describe('ChatStatusBar', () => {
 // read. The pencil sends the CLI's own `rename_session` control request, so
 // what the bar shows and what the CLI thinks the session is called are the
 // same fact.
+describe('ChatStatusBar — session controls', () => {
+  it('seats the controls with the readouts, hairline between, and none when there are no readouts', () => {
+    const { unmount } = render(
+      <ChatStatusBar
+        {...base}
+        controls={<span data-testid="controls">model Opus</span>}
+        activitySignal={signal({ status: 'idle', lastTurnMs: 3_000 })}
+      />,
+    );
+    expect(screen.getByTestId('controls')).toBeTruthy();
+    // link glyph + turn readout + controls → controls | link | turn = 2 dividers
+    expect(screen.getAllByTestId('status-divider')).toHaveLength(2);
+    // Controls come first: what you can change, then what is happening.
+    const group = screen.getByTestId('chat-status-items');
+    expect(group.firstElementChild).toBe(screen.getByTestId('controls'));
+    unmount();
+
+    render(<ChatStatusBar {...base} link={{ connection: null, delivering: false }} controls={<span data-testid="controls" />} />);
+    expect(screen.queryAllByTestId('status-divider')).toHaveLength(0);
+  });
+});
+
 describe('ChatStatusBar — session name', () => {
   const named = { ...base, title: 'Rate-limit spike', canRename: true, onRename: async () => true };
 

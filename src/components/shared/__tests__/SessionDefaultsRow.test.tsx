@@ -5,18 +5,15 @@ import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { SessionDefaultsRow } from '../SessionDefaultsRow';
 import { TooltipProvider } from '../../ui/tooltip-modern';
 import type { AccountEngine } from '@/lib/api';
-import { ACCOUNT_DEFAULT_MARK } from '@/lib/modelCatalog';
 
 afterEach(() => { cleanup(); });
 
 function Harness({
   engine,
   onModel,
-  density,
 }: {
   engine: AccountEngine;
   onModel?: (v: string) => void;
-  density?: 'default' | 'compact';
 }) {
   const [model, setModel] = useState(engine === 'claude' ? 'sonnet' : 'gpt-5-codex');
   const [effort, setEffort] = useState('medium');
@@ -28,7 +25,6 @@ function Harness({
     <TooltipProvider>
       <SessionDefaultsRow
         engine={engine}
-        {...(density ? { density } : {})}
         model={model}
         setModel={(v) => { setModel(v); onModel?.(v); }}
         effort={effort}
@@ -88,28 +84,6 @@ describe('SessionDefaultsRow', () => {
     expect(screen.getAllByText('Account Default').length).toBeGreaterThan(0);
   });
 
-  it("engine='claude' marks the live default model instead of duplicating it", () => {
-    render(
-      <TooltipProvider>
-        <SessionDefaultsRow
-          engine="claude"
-          model="default"
-          setModel={() => {}}
-          effort="high"
-          setEffort={() => {}}
-          permissionMode="default"
-          setPermissionMode={() => {}}
-          activeDefaultModel="claude-fable-5"
-        />
-      </TooltipProvider>,
-    );
-    // One Fable 5 line, marked — not "Fable 5" plus "Account Default (Fable 5)".
-    expect(screen.queryByText(/Account Default \(/)).toBeNull();
-    fireEvent.click(screen.getByText(`Fable 5 ${ACCOUNT_DEFAULT_MARK}`));
-    expect(screen.getAllByText(`Fable 5 ${ACCOUNT_DEFAULT_MARK}`).length).toBe(2); // trigger + row
-    expect(screen.queryByText('Fable 5')).toBeNull();
-  });
-
   it("engine='claude' permission picker lists all six CLI modes when opened", () => {
     render(<Harness engine="claude" />);
     // Open the permissions picker (its trigger shows the current mode "Default").
@@ -140,63 +114,5 @@ describe('SessionDefaultsRow', () => {
     const select = screen.getByLabelText(/model/i);
     fireEvent.change(select, { target: { value: 'gpt-5' } });
     expect(onModel).toHaveBeenCalledWith('gpt-5');
-  });
-});
-
-describe('SessionDefaultsRow compact density', () => {
-  it('keeps a caption above each control', () => {
-    render(<Harness engine="claude" density="compact" />);
-    expect(screen.getByText('Model')).toBeTruthy();
-    expect(screen.getByText('Effort')).toBeTruthy();
-    expect(screen.getByText('Permissions')).toBeTruthy();
-  });
-
-  it('default density keeps the field labels', () => {
-    render(<Harness engine="claude" />);
-    expect(screen.getByText('Model')).toBeTruthy();
-  });
-
-  it('still exposes all three controls', () => {
-    render(<Harness engine="claude" density="compact" />);
-    expect(screen.getAllByRole('button')).toHaveLength(3);
-  });
-
-  // The reported bug: the control row stretched off the right edge of the
-  // session context popover. Each picker's `flex-1` is on its BUTTON, but
-  // Popover wraps every trigger in its own div — an `inline-block` one by
-  // default, which shrink-wraps its content and never shrinks. The row's
-  // min-content was therefore 3 x (widest untruncated trigger), whatever the
-  // popover's width. The wrapper has to be the full-width block.
-  it('lets each trigger shrink with its field instead of widening the row', () => {
-    render(<Harness engine="claude" density="compact" />);
-    for (const btn of screen.getAllByRole('button')) {
-      const wrapper = btn.parentElement?.parentElement as HTMLElement;
-      expect(wrapper.className).toContain('w-full');
-      expect(wrapper.className).not.toContain('inline-block');
-    }
-  });
-
-  it('names each control in a title as well as its caption', () => {
-    render(<Harness engine="claude" density="compact" />);
-    expect(screen.getByTitle(/^Model:/)).toBeTruthy();
-    expect(screen.getByTitle(/^Effort:/)).toBeTruthy();
-    expect(screen.getByTitle(/^Permissions:/)).toBeTruthy();
-  });
-
-  it('lays the three fields out side by side', () => {
-    const { container } = render(<Harness engine="claude" density="compact" />);
-    const root = container.firstElementChild as HTMLElement;
-    expect(root.className).not.toContain('flex-col');
-  });
-
-  it('stacks each caption above its control', () => {
-    const { container } = render(<Harness engine="claude" density="compact" />);
-    const root = container.firstElementChild as HTMLElement;
-    const label = screen.getByText('Model');
-    const field = label.parentElement as HTMLElement;
-    expect(field.className).toContain('flex-col');
-    expect(field.parentElement).toBe(root);
-    // Caption first, control under it.
-    expect(field.firstElementChild).toBe(label);
   });
 });

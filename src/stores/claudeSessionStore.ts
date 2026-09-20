@@ -34,7 +34,6 @@ export interface TabSessionState {
   sdkAccountInfo: SessionAccountInfo | null;
   contextUsage: SessionContextUsage | null;
   supportedModels: SessionModelInfo[];
-  isLoading: boolean;
   /** Text-streaming slot for partial messages. Populated by the
    *  inflight coalescer's RAF flush; cleared when the complete assistant
    *  message lands (matching uuid), on stream error, or on tab close. */
@@ -58,7 +57,6 @@ export const EMPTY_TAB_SESSION: TabSessionState = {
   sdkAccountInfo: null,
   contextUsage: null,
   supportedModels: [],
-  isLoading: false,
   inflightAssistant: null,
   toolProgress: EMPTY_TOOL_PROGRESS,
 };
@@ -135,16 +133,12 @@ export const useClaudeSessionStore = create<ClaudeSessionStoreState>()(
             [tabId]: {
               ...existing,
               inflightAssistant: { uuid, text, parentToolUseId },
-              // isLoading intentionally not touched. The in-chat
-              // typing-dots spinner is suppressed independently via
-              // `hasInflightAssistant` in ClaudeCodeSession.tsx (so
-              // dots and bubble never co-exist on screen). Meanwhile
-              // `isLoading` represents the parent-turn lifecycle and
-              // feeds the per-tab busy indicator via
-              // usePublishTabStatus → mainTurnInFlight; flipping it
-              // false on the first delta clears the tab spinner
-              // mid-turn — the bug that the original 0.4.17 partial-
-              // messages implementation introduced.
+              // The in-chat typing-dots spinner is suppressed independently
+              // via `hasInflightAssistant` in AgentSession (so dots and bubble
+              // never co-exist on screen). The turn itself is the session's
+              // axis (useSessionLifecycle), so a first delta cannot clear the
+              // tab spinner mid-turn — the bug the original 0.4.17
+              // partial-messages implementation introduced.
             },
           },
         };
@@ -253,7 +247,6 @@ export interface UseTabSessionResult extends TabSessionState {
   setSdkAccountInfo: Setter<SessionAccountInfo | null>;
   setContextUsage: Setter<SessionContextUsage | null>;
   setSupportedModels: Setter<SessionModelInfo[]>;
-  setIsLoading: Setter<boolean>;
   appendMessage: (msg: JsonlNode) => void;
   insertMessageBeforeFirstUser: (msg: JsonlNode) => void;
   resetTab: () => void;
@@ -339,7 +332,6 @@ export function useTabSession(tabId: string): UseTabSessionResult {
       setSdkAccountInfo: makeSetter(tabId, 'sdkAccountInfo'),
       setContextUsage: makeSetter(tabId, 'contextUsage'),
       setSupportedModels: makeSetter(tabId, 'supportedModels'),
-      setIsLoading: makeSetter(tabId, 'isLoading'),
       appendMessage: (msg: JsonlNode) => { appendMessage(tabId, msg); },
       insertMessageBeforeFirstUser: (msg: JsonlNode) => { insertBefore(tabId, msg); },
       resetTab: () => { resetTab(tabId); },

@@ -15,11 +15,11 @@ vi.mock('@/lib/api', () => ({
 import { api } from '@/lib/api';
 import { useSendPrompt } from '../useSendPrompt';
 
-function makeHarness(initialIsLoading: boolean) {
+function makeHarness(initialTurnRunning: boolean) {
   return () => {
     const persistentSessionRef = useRef(true);
     const unlistenRefs = useRef<(() => void)[]>([]);
-    const isLoadingRef = useRef(initialIsLoading);
+    const turnRunningRef = useRef(initialTurnRunning);
     const sessionMetrics = useRef({
       promptsSent: 0,
       lastActivityTime: 0,
@@ -27,7 +27,6 @@ function makeHarness(initialIsLoading: boolean) {
       modelChanges: [] as { from: string; to: string; timestamp: number }[],
       wasResumed: false,
     });
-    const [, setIsLoading] = useState(initialIsLoading);
     const [, setError] = useState<string | null>(null);
     const [, setCurrentActivity] = useState('');
     const [, setSelectedModel] = useState('opus');
@@ -35,7 +34,7 @@ function makeHarness(initialIsLoading: boolean) {
     const hook = useSendPrompt({
       projectPath: '/repo',
       tabId: 'tab-1',
-      isLoadingRef,
+      turnRunningRef,
       selectedModel: 'opus',
       persistentSessionRef,
       unlistenRefs,
@@ -44,13 +43,12 @@ function makeHarness(initialIsLoading: boolean) {
       sessionMetrics,
       startPersistentSession: vi.fn().mockResolvedValue(undefined),
       pickGerund: () => 'thinking',
-      setIsLoading,
       setError,
       setCurrentActivity,
       setSelectedModel,
       setMessages,
     });
-    return { hook, isLoadingRef };
+    return { hook, turnRunningRef };
   };
 }
 
@@ -59,7 +57,7 @@ describe('useSendPrompt', () => {
     vi.clearAllMocks();
   });
 
-  it('queues a prompt (with images) when isLoadingRef.current is true', async () => {
+  it('queues a prompt (with images) while the session reports a running turn', async () => {
     const { result } = renderHook(makeHarness(true));
     await act(async () => {
       await result.current.hook.handleSendPrompt('queued', 'opus', ['data:image/png;base64,AAAA']);
@@ -71,20 +69,20 @@ describe('useSendPrompt', () => {
     expect(result.current.hook.queuedPrompts[0].images).toEqual(['data:image/png;base64,AAAA']);
   });
 
-  it('reads isLoadingRef.current at call-time, not from a captured render', async () => {
+  it('reads turnRunningRef.current at call-time, not from a captured render', async () => {
     // Reproduces the stale-closure bug: the queue drain path holds onto
     // handleSendPrompt across renders and invokes it later. With a ref-based
-    // gate, flipping isLoadingRef.current to false makes the very next call
+    // gate, flipping turnRunningRef.current to false makes the very next call
     // dispatch instead of re-queueing — even though no rerender happened.
     const { result } = renderHook(makeHarness(true));
 
-    // Stale capture: grab the function while isLoading was true.
+    // Stale capture: grab the function while the turn was running.
     const stale = result.current.hook.handleSendPrompt;
 
-    // Caller flips the ref to false (mirroring `setIsLoading(false)` + sync
-    // effect in ClaudeCodeSession). No rerender of the hook needed.
+    // The session's turn closes (mirrored into the ref by AgentSession). No
+    // rerender of the hook needed.
     act(() => {
-      result.current.isLoadingRef.current = false;
+      result.current.turnRunningRef.current = false;
     });
 
     await act(async () => {
@@ -92,6 +90,26 @@ describe('useSendPrompt', () => {
     });
     expect(api.sendMessage).toHaveBeenCalledWith('tab-1', 'drain');
     expect(result.current.hook.queuedPrompts).toHaveLength(0);
+  });
+
+  it('queues a second prompt while the first send is still in flight, before the session has opened the turn', async () => {
+    // The turn opens in main when the prompt is handed over; until that
+    // round-trip lands the ref still reads idle. A send in progress is its
+    // own fact, owned here, and it must gate exactly like a running turn.
+    let release!: () => void;
+    (api.sendMessage as any).mockImplementationOnce(() => new Promise<void>((r) => { release = r; }));
+    const { result } = renderHook(makeHarness(false));
+    let first!: Promise<void>;
+    act(() => { first = result.current.hook.handleSendPrompt('one', 'opus'); });
+    await act(async () => { await Promise.resolve(); });
+    await act(async () => { await result.current.hook.handleSendPrompt('two', 'opus'); });
+    expect(api.sendMessage).toHaveBeenCalledTimes(1);
+    expect(result.current.hook.queuedPrompts.map((q) => q.prompt)).toEqual(['two']);
+    release();
+    await act(async () => { await first; });
+    // Once the send has landed the latch drops; a further prompt goes straight out.
+    await act(async () => { await result.current.hook.handleSendPrompt('three', 'opus'); });
+    expect(api.sendMessage).toHaveBeenCalledTimes(2);
   });
 
   it('passes images through as structured content blocks when sending', async () => {
