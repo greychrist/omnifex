@@ -134,6 +134,40 @@ describe('setModel', () => {
 // own into its transcript — is what makes a rename official. `source: 'host'`
 // is the CLI's own name for "the user renamed it in the hosting app", which
 // is exactly what the pencil in the status bar is.
+// Naming is user-triggered: the CLI stopped auto-naming stdin-driven sessions
+// in 2.1.277, and Greg does not want a model call fired on his behalf. The
+// Suggest button asks for a name and writes NOTHING (`persist: false`); the
+// user saves it through the ordinary rename path if they like it.
+describe('suggestTitle', () => {
+  it('asks the CLI for a title without persisting it and returns the suggestion', async () => {
+    const { engine, calls } = createEngine({ control: () => ({ title: 'Tomato watering schedule' }) });
+    const { q, meta } = setup({ engine });
+    await expect(q.suggestTitle('tab1', 'How often should I water tomatoes in late summer?')).resolves.toBe('Tomato watering schedule');
+    expect(calls).toEqual([
+      { subtype: 'generate_session_title', payload: { description: 'How often should I water tomatoes in late summer?', persist: false } },
+    ]);
+    expect(meta()).toMatchObject({ op: 'generate_session_title', ok: true, title: 'Tomato watering schedule' });
+  });
+
+  it('returns null for a blank description, an unknown tab, or a CLI that answers without a title', async () => {
+    const { engine, calls } = createEngine({ control: () => ({}) });
+    const live = setup({ engine });
+    await expect(live.q.suggestTitle('tab1', '   ')).resolves.toBeNull();
+    expect(calls).toEqual([]);
+    await expect(live.q.suggestTitle('tab1', 'real prompt')).resolves.toBeNull();
+    const dead = setup({ registered: false });
+    await expect(dead.q.suggestTitle('tab1', 'real prompt')).resolves.toBeNull();
+    expect(dead.meta().reason).toBe('no-live-engine');
+  });
+
+  it('returns null when the engine rejects instead of throwing', async () => {
+    const { engine } = createEngine({ control: () => { throw new Error('control channel closed'); } });
+    const { q, meta } = setup({ engine });
+    await expect(q.suggestTitle('tab1', 'real prompt')).resolves.toBeNull();
+    expect(meta()).toMatchObject({ op: 'generate_session_title', ok: false, error: 'control channel closed' });
+  });
+});
+
 describe('setTitle', () => {
   it('sends rename_session as a host rename', async () => {
     const { engine, calls } = createEngine({ control: () => ({ ok: true }) });

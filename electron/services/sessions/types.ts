@@ -309,6 +309,8 @@ export interface SessionsService {
    * title) so the caller can say so rather than looking like it worked.
    */
   setTitle(tabId: string, title: string): Promise<boolean>;
+  /** Ask the CLI for a name from `description`; nothing is persisted. Null when it had none. */
+  suggestTitle(tabId: string, description: string): Promise<string | null>;
   /** Switch the permission mode mid-session. */
   setPermissionMode(tabId: string, mode: PermissionMode): Promise<void>;
   /** Change effort level mid-session. null clears the override and reverts to the CLI default. */

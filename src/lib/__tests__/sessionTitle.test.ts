@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { pickSessionTitle, deriveSessionTitle } from '../sessionTitle';
+import { pickSessionTitle, deriveSessionTitle, firstPromptText } from '../sessionTitle';
 import type { JsonlNode } from '@/types/jsonl';
 
 const aiTitle = (aiTitle: string): JsonlNode =>
@@ -57,5 +57,31 @@ describe('deriveSessionTitle', () => {
 
   it('returns null for a transcript with no title records', () => {
     expect(deriveSessionTitle([])).toBeNull();
+  });
+});
+
+describe('firstPromptText', () => {
+  const user = (content: unknown, extra: Record<string, unknown> = {}): JsonlNode =>
+    ({ kind: 'user', userKind: 'prompt', sessionId: 's', receivedAt: '', raw: { type: 'user', message: { role: 'user', content }, ...extra } } as unknown as JsonlNode);
+
+  it('returns the first main prompt, joining its text blocks', () => {
+    const msgs = [
+      { kind: 'cli-stream-init', sessionId: 's', receivedAt: '', raw: {} } as unknown as JsonlNode,
+      user([{ type: 'text', text: 'How often ' }, { type: 'image', source: {} }, { type: 'text', text: 'should I water?' }]),
+      user('a later prompt'),
+    ];
+    expect(firstPromptText(msgs)).toBe('How often should I water?');
+  });
+
+  it('accepts string content', () => {
+    expect(firstPromptText([user('plain string prompt')])).toBe('plain string prompt');
+  });
+
+  it('skips tool results and forwarded subagent prompts, and returns null with no prompt', () => {
+    const toolResult = { kind: 'user', userKind: 'tool-result', sessionId: 's', receivedAt: '', raw: { type: 'user', message: { role: 'user', content: [{ type: 'tool_result' }] } } } as unknown as JsonlNode;
+    const forwarded = user('subagent prompt', { parent_tool_use_id: 'toolu_1' });
+    expect(firstPromptText([toolResult, forwarded])).toBeNull();
+    expect(firstPromptText([toolResult, forwarded, user('the real one')])).toBe('the real one');
+    expect(firstPromptText([])).toBeNull();
   });
 });

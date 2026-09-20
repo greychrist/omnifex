@@ -322,6 +322,42 @@ describe('ChatStatusBar — session name', () => {
     expect(renames).toEqual([]);
   });
 
+  // Naming is on demand: Suggest asks the CLI for a name and puts it in the
+  // field. Nothing is written until Save — the same rename path as typing.
+  it('offers Suggest, which fills the field with the CLI\'s proposal and writes nothing', async () => {
+    const renames: string[] = [];
+    let asked = 0;
+    render(
+      <ChatStatusBar
+        {...named}
+        title={null}
+        onRename={async (t: string) => { renames.push(t); return true; }}
+        onSuggest={async () => { asked += 1; return 'Cache TTL work'; }}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /rename session/i }));
+    fireEvent.click(screen.getByRole('button', { name: /suggest/i }));
+    await waitFor(() => expect((screen.getByLabelText(/session name/i) as HTMLInputElement).value).toBe('Cache TTL work'));
+    expect(asked).toBe(1);
+    expect(renames).toEqual([]);
+    fireEvent.submit(screen.getByTestId('rename-form'));
+    await waitFor(() => expect(renames).toEqual(['Cache TTL work']));
+  });
+
+  it('says so when the CLI had no suggestion, and leaves the field alone', async () => {
+    render(<ChatStatusBar {...named} onSuggest={async () => null} />);
+    fireEvent.click(screen.getByRole('button', { name: /rename session/i }));
+    fireEvent.click(screen.getByRole('button', { name: /suggest/i }));
+    await waitFor(() => expect(screen.getByText(/no suggestion/i)).toBeTruthy());
+    expect((screen.getByLabelText(/session name/i) as HTMLInputElement).value).toBe('Rate-limit spike');
+  });
+
+  it('has no Suggest button when there is nothing to suggest from', () => {
+    render(<ChatStatusBar {...named} />);
+    fireEvent.click(screen.getByRole('button', { name: /rename session/i }));
+    expect(screen.queryByRole('button', { name: /suggest/i })).toBeNull();
+  });
+
   // A rename goes out as a control request, which needs a live engine. With
   // no session running there is nothing to send it to — better to say so on
   // the button than to accept the rename and drop it.

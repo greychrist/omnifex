@@ -42,3 +42,29 @@ export function deriveSessionTitle(messages: readonly JsonlNode[]): string | nul
   }
   return pickSessionTitle({ aiTitle, customTitle });
 }
+
+/**
+ * The text of the session's first real prompt — what a name should be
+ * suggested from. Tool results and forwarded subagent prompts are not the
+ * user asking anything; image blocks contribute nothing. Null when the
+ * transcript has no prompt yet.
+ */
+export function firstPromptText(messages: readonly JsonlNode[]): string | null {
+  for (const node of messages) {
+    if (node.kind !== 'user' || node.userKind !== 'prompt') continue;
+    const raw = node.raw as { parent_tool_use_id?: unknown; message?: { content?: unknown } };
+    if (raw.parent_tool_use_id) continue;
+    const content = raw.message?.content;
+    const text = typeof content === 'string'
+      ? content
+      : Array.isArray(content)
+        ? content
+            .filter((b): b is { type: 'text'; text: string } => !!b && typeof b === 'object' && (b as { type?: unknown }).type === 'text' && typeof (b as { text?: unknown }).text === 'string')
+            .map((b) => b.text)
+            .join('')
+        : '';
+    const trimmed = text.trim();
+    if (trimmed) return trimmed;
+  }
+  return null;
+}

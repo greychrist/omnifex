@@ -135,6 +135,41 @@ export function createQueryPassthroughs(
     }
   }
 
+  /**
+   * Ask the CLI to propose a name for this session, from `description`
+   * (the first prompt), WITHOUT persisting it — `persist: false` makes the
+   * CLI return the title and write nothing. The user saves it through
+   * `setTitle` if they want it. Naming is on demand by design: the CLI
+   * stopped auto-naming stdin-driven sessions in 2.1.277, and nothing here
+   * spends a model call the user did not ask for.
+   */
+  async function suggestTitle(tabId: string, description: string): Promise<string | null> {
+    const trimmed = description.trim();
+    if (!trimmed) {
+      logControl('generate_session_title', tabId, { ok: false, reason: 'blank-description' });
+      return null;
+    }
+    const handle = liveEngine(tabId);
+    if (!handle) {
+      logControl('generate_session_title', tabId, { ok: false, reason: 'no-live-engine' });
+      return null;
+    }
+    try {
+      const res = await handle.engine.sendControlRequest<{ title?: unknown }>('generate_session_title', {
+        description: trimmed,
+        persist: false,
+      });
+      const title = typeof res?.title === 'string' ? res.title.trim() : '';
+      logControl('generate_session_title', tabId, { ok: true, title: title || null, response: res ?? null });
+      return title || null;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[sessions] suggestTitle failed for tab ${tabId}:`, err);
+      logControl('generate_session_title', tabId, { ok: false, error: msg });
+      return null;
+    }
+  }
+
   async function setPermissionMode(tabId: string, mode: PermissionMode): Promise<void> {
     const handle = liveEngine(tabId);
     if (!handle) {
@@ -352,6 +387,7 @@ export function createQueryPassthroughs(
     interrupt,
     setModel,
     setTitle,
+    suggestTitle,
     setPermissionMode,
     setEffort,
     applyPermissions,

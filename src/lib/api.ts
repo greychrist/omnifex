@@ -1849,6 +1849,16 @@ export const api = {
     return apiCall("session_set_title", { tabId, title });
   },
 
+  /**
+   * Ask the CLI to propose a name from `description` (the first prompt).
+   * `generate_session_title` with `persist: false` — nothing is written;
+   * the user saves it via `sessionSetTitle` if they like it. Null when the
+   * session is not live or the CLI had no suggestion.
+   */
+  async sessionSuggestTitle(tabId: string, description: string): Promise<string | null> {
+    return apiCall("session_suggest_title", { tabId, description });
+  },
+
   /** Switch permission mode mid-session. */
   async sessionSetPermissionMode(tabId: string, mode: string): Promise<void> {
     return apiCall("session_set_permission_mode", { tabId, mode });

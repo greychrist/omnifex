@@ -1321,6 +1321,7 @@ app.whenReady().then(() => {
       interrupt: (sessionId: string) => sessionsService.interrupt(sessionId),
       setModel: (sessionId: string, model?: string) => sessionsService.setModel(sessionId, model),
       setTitle: (sessionId: string, title: string) => sessionsService.setTitle(sessionId, title),
+      suggestTitle: (sessionId: string, description: string) => sessionsService.suggestTitle(sessionId, description),
       setPermissionMode: (sessionId: string, mode: string) =>
         sessionsService.setPermissionMode(sessionId, mode as any),
       setEffort: (sessionId: string, level: unknown) => sessionsService.setEffort(sessionId, level as any),

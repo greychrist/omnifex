@@ -90,6 +90,7 @@ export interface Services {
     interrupt(sessionId: string): unknown;
     setModel(sessionId: string, model?: string): unknown;
     setTitle(sessionId: string, title: string): unknown;
+    suggestTitle(sessionId: string, description: string): unknown;
     setPermissionMode(sessionId: string, mode: string): unknown;
     setEffort(sessionId: string, level: unknown): unknown;
     applyPermissions(sessionId: string, permissions: unknown): unknown;
@@ -528,6 +529,7 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     session_interrupt: wrapWith((p: Record<string, unknown>) => sessions?.interrupt((p?.tabId ?? p?.session_id) as string) ?? null),
     session_set_model: wrapWith((p: Record<string, unknown>) => sessions?.setModel((p?.tabId ?? p?.session_id) as string, p?.model as string | undefined) ?? null),
     session_set_title: wrapWith((p: Record<string, unknown>) => sessions?.setTitle((p?.tabId ?? p?.session_id) as string, (p?.title ?? '') as string) ?? null),
+    session_suggest_title: wrapWith((p: Record<string, unknown>) => sessions?.suggestTitle((p?.tabId ?? p?.session_id) as string, (p?.description ?? '') as string) ?? null),
     session_set_permission_mode: wrapWith((p: Record<string, unknown>) => sessions?.setPermissionMode((p?.tabId ?? p?.session_id) as string, (p?.mode ?? p?.permissionMode) as string) ?? null),
     session_set_effort: wrapWith((p: Record<string, unknown>) => sessions?.setEffort((p?.tabId ?? p?.session_id) as string, (p?.level ?? p?.effort) as any) ?? null),
     session_set_thinking: wrapWith((p: Record<string, unknown>) => sessions?.setThinking((p?.tabId ?? p?.session_id) as string, (p?.config ?? p?.thinking) as any) ?? null),

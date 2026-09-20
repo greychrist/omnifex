@@ -60,6 +60,7 @@ import type { JsonlNode } from "@/types/jsonl";
 import { normalizeJsonlNode } from "@/lib/normalizeMessage";
 import { classifyJsonlLine } from '@/lib/jsonlClassifier';
 import { lastPermissionMode, lastAssistantModel, usageLimitWait } from '@/lib/sessionDerivedState';
+import { firstPromptText } from '@/lib/sessionTitle';
 import { CaughtUpPill } from "./RemoteConnectionBanner";
 import { useLayoutMode } from "@/hooks/useLayoutMode";
 import { useSwipeTabs } from "@/hooks/useSwipeTabs";
@@ -1091,6 +1092,23 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
       return false;
     }
   }, []);
+  // Suggest-a-name is user-triggered (the CLI stopped naming stdin-driven
+  // sessions in 2.1.277, and a model call should not fire unasked). Only
+  // offered once there is a prompt to name from.
+  const firstPrompt = useMemo(() => firstPromptText(messages), [messages]);
+  const handleSuggestTitle = useMemo(
+    () => (firstPrompt
+      ? async (): Promise<string | null> => {
+          try {
+            return await api.sessionSuggestTitle(tabIdRef.current, firstPrompt);
+          } catch (err) {
+            console.error('[sessions] sessionSuggestTitle failed:', err);
+            return null;
+          }
+        }
+      : undefined),
+    [firstPrompt],
+  );
 
   // The TTL change still self-clears from its own data; the context jump moved
   // into the signal emitters, which derive the whole per-turn series rather
@@ -2480,6 +2498,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
             // session has — see queries.ts liveEngine().
             canRename={isSessionActive}
             onRename={handleRenameSession}
+            onSuggest={handleSuggestTitle}
             controls={
               <SessionControlPickers
                 engine={agent}

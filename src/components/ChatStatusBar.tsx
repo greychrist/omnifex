@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Clock, Brain, Wifi, WifiLow, WifiOff, Pencil } from 'lucide-react';
+import { Clock, Brain, Wifi, WifiLow, WifiOff, Pencil, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useSecondTick } from '@/hooks/useSecondTick';
 import { formatToolElapsed } from '@/components/claude/tools/ToolProgressChip';
@@ -122,22 +122,44 @@ function SessionTitle({
   title,
   canRename,
   onRename,
+  onSuggest,
 }: {
   title: string | null;
   canRename: boolean;
   onRename: (title: string) => Promise<boolean> | boolean;
+  /** Ask the CLI for a name; resolves null when it has none. Absent when
+   *  there is nothing to suggest from (no prompt yet, no live session). */
+  onSuggest?: () => Promise<string | null>;
 }): React.JSX.Element {
   const [open, setOpen] = React.useState(false);
   const [draft, setDraft] = React.useState('');
   const [failed, setFailed] = React.useState(false);
+  const [suggesting, setSuggesting] = React.useState(false);
+  const [noSuggestion, setNoSuggestion] = React.useState(false);
 
   const openEditor = (next: boolean): void => {
     if (next && !canRename) return;
     if (next) {
       setDraft(title ?? '');
       setFailed(false);
+      setNoSuggestion(false);
     }
     setOpen(next);
+  };
+
+  // On demand, and it writes nothing: the proposal lands in the field, and
+  // only Save sends it — through the same rename the user could have typed.
+  const suggest = async (): Promise<void> => {
+    if (!onSuggest || suggesting) return;
+    setSuggesting(true);
+    setNoSuggestion(false);
+    try {
+      const proposed = await onSuggest();
+      if (proposed) setDraft(proposed);
+      else setNoSuggestion(true);
+    } finally {
+      setSuggesting(false);
+    }
   };
 
   const submit = async (e: React.FormEvent): Promise<void> => {
@@ -213,17 +235,37 @@ function SessionTitle({
             <label htmlFor="session-rename-input" className="text-[10px] uppercase tracking-wide text-muted-foreground">
               Session name
             </label>
-            <input
-              id="session-rename-input"
-              autoFocus
-              value={draft}
-              onChange={(e) => { setDraft(e.target.value); }}
-              className="w-full rounded border border-border bg-background px-2 py-1 text-xs font-sans"
-              placeholder="Name this session"
-            />
+            <div className="flex items-center gap-1.5">
+              <input
+                id="session-rename-input"
+                autoFocus
+                value={draft}
+                onChange={(e) => { setDraft(e.target.value); }}
+                className="min-w-0 flex-1 rounded border border-border bg-background px-2 py-1 text-xs font-sans"
+                placeholder="Name this session"
+              />
+              {onSuggest && (
+                <button
+                  type="button"
+                  aria-label="Suggest a name"
+                  title="Ask the CLI to suggest a name from the first prompt. Nothing is saved until you press Save."
+                  disabled={suggesting}
+                  onClick={() => { void suggest(); }}
+                  className="flex-none inline-flex items-center gap-1 rounded border border-border px-1.5 py-1 text-[10px] text-muted-foreground hover:text-foreground hover:bg-muted/60 disabled:opacity-40"
+                >
+                  <Sparkles className={cn('h-3 w-3', suggesting && 'animate-pulse')} aria-hidden="true" />
+                  Suggest
+                </button>
+              )}
+            </div>
             {failed && (
               <span className="text-[10px] text-red-400">
                 The rename didn’t reach the session.
+              </span>
+            )}
+            {noSuggestion && (
+              <span className="text-[10px] text-muted-foreground">
+                No suggestion came back.
               </span>
             )}
             <div className="flex justify-end gap-2">
@@ -265,6 +307,9 @@ export interface ChatStatusBarProps {
   canRename?: boolean;
   /** Sends the rename; resolves false when it did not reach the CLI. */
   onRename?: (title: string) => Promise<boolean> | boolean;
+  /** Asks the CLI for a name (nothing persisted). Omit when there is no
+   *  prompt to suggest from. */
+  onSuggest?: () => Promise<string | null>;
   /** The `session.activity` state signal, or undefined before one exists. */
   activitySignal?: SessionSignal;
   /** Last assistant turn's timestamp — when the cache TTL last restarted. */
@@ -300,6 +345,7 @@ export function ChatStatusBar({
   title = null,
   canRename = false,
   onRename,
+  onSuggest,
   activitySignal,
   cacheAnchorMs,
   cacheTtlMs,
@@ -442,6 +488,7 @@ export function ChatStatusBar({
           title={title}
           canRename={canRename && !!onRename}
           onRename={onRename ?? (() => false)}
+          onSuggest={canRename ? onSuggest : undefined}
         />
         {/* The readouts group right, so the bar reads name-then-state and the
             name keeps a stable left edge as readouts come and go mid-turn. */}
