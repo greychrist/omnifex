@@ -248,8 +248,10 @@ describe('ChatStatusBar — session controls', () => {
     // link glyph + turn readout + controls → controls | link | turn = 2 dividers
     expect(screen.getAllByTestId('status-divider')).toHaveLength(2);
     // Controls come first: what you can change, then what is happening.
+    // Each readout is wrapped with the divider that introduces it, so the
+    // first child is that pair rather than the controls node itself.
     const group = screen.getByTestId('chat-status-items');
-    expect(group.firstElementChild).toBe(screen.getByTestId('controls'));
+    expect(group.firstElementChild?.contains(screen.getByTestId('controls'))).toBe(true);
     unmount();
 
     render(<ChatStatusBar {...base} link={{ connection: null, delivering: false }} controls={<span data-testid="controls" />} />);
@@ -436,5 +438,54 @@ describe('ChatStatusBar — session name', () => {
     fireEvent.submit(screen.getByTestId('rename-form'));
     expect(await screen.findByText(/didn’t reach the session/i)).toBeTruthy();
     expect(screen.getByLabelText(/session name/i)).toBeTruthy();
+  });
+});
+
+// The bar has outgrown one line: three pickers, the daemon glyph, the turn
+// clock, the thinking burst and the cache countdown do not fit beside a name
+// in a narrow window. It wraps rather than squeezing, and the name is the one
+// thing that never gives up room — it is the only readout that cannot be
+// reconstructed from a glyph and a number.
+//
+// jsdom has no layout, so these pin the flex decisions that produce the
+// behaviour. The visual check belongs in a packaged build.
+describe('ChatStatusBar — wrapping', () => {
+  const named = { ...base, title: 'Rate-limit spike', canRename: true, onRename: async () => true };
+
+  it('wraps onto another line instead of overflowing one', () => {
+    render(<ChatStatusBar {...named} activitySignal={signal({ status: 'idle', lastTurnMs: 3_000 })} />);
+    const bar = screen.getByTestId('chat-status-bar');
+    expect(bar.className).toContain('flex-wrap');
+    // A row gap, or wrapped lines sit flush against each other.
+    expect(bar.className).toMatch(/\bgap-y-/);
+  });
+
+  it('keeps the readouts wrapping among themselves, not just as one block', () => {
+    render(<ChatStatusBar {...named} activitySignal={signal({ status: 'idle', lastTurnMs: 3_000 })} />);
+    const items = screen.getByTestId('chat-status-items');
+    expect(items.className).toContain('flex-wrap');
+    expect(items.className).toMatch(/\bgap-y-/);
+    // Still right-grouped: wrapping changed where they sit, not which edge.
+    expect(items.className).toContain('ml-auto');
+  });
+
+  // The name is never the thing that gives: no `truncate` anywhere under it,
+  // and no `min-w-0` letting the flex line shrink it below its content.
+  it('never truncates the session name to make room', () => {
+    render(
+      <ChatStatusBar
+        {...named}
+        title="A very long session name that would have been clipped at the old width"
+        activitySignal={signal({ status: 'idle', lastTurnMs: 3_000 })}
+      />,
+    );
+    const title = screen.getByTestId('session-title');
+    const marked = [title, ...Array.from(title.querySelectorAll('*'))] as HTMLElement[];
+    for (const el of marked) {
+      expect(el.className).not.toContain('truncate');
+      expect(el.className).not.toMatch(/\bmin-w-0\b/);
+    }
+    // And the whole name is in the DOM, not an ellipsis of it.
+    expect(title.textContent).toContain('clipped at the old width');
   });
 });

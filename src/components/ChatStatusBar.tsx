@@ -174,7 +174,13 @@ function SessionTitle({
   };
 
   return (
-    <div className="flex items-center gap-1.5 min-w-0">
+    // No `min-w-0`, unlike every other item on the bar: that is what lets a
+    // flex line shrink a child below its content, and the name is the one
+    // readout that must not give up room — `turn 12s` survives being read as
+    // a glyph and a number, a clipped name does not. Left shrinkable only to
+    // its min-content width, so a name too long for the whole bar wraps its
+    // own text instead of being cut.
+    <div className="flex items-center gap-1.5">
       <span
         data-testid="session-title"
         title={title ?? 'This session has no name yet'}
@@ -192,12 +198,16 @@ function SessionTitle({
         // tried and cut. Their glyphs stand in for a quantity you scan for,
         // while the name is already the longest text here and a mark in front
         // of it only crowded the left edge.
-        className="inline-flex items-center gap-1 min-w-0 text-muted-foreground"
+        className="inline-flex items-center gap-1 text-muted-foreground"
       >
         <span className="opacity-70">name</span>
         <span
           className={cn(
-            'truncate',
+            // `break-words`, not `truncate`: the bar wraps now, so the name
+            // has a second line to grow into and an ellipsis buys nothing.
+            // The break only ever fires on an unbroken token wider than the
+            // bar itself.
+            'break-words',
             title ? 'text-foreground/80' : 'text-muted-foreground/60 italic',
           )}
         >
@@ -479,7 +489,13 @@ export function ChatStatusBar({
           // `* { border-color: var(--color-border) }` that outranks every
           // Tailwind border-color utility, so a real border cannot carry this
           // colour — it would come back at full `--color-border` strength.
-          'flex items-center gap-2 px-3 py-1 rounded-md border-0 bg-background/60',
+          // Wraps rather than compressing: three pickers, the daemon glyph,
+          // the turn clock, the thinking burst and the cache countdown do not
+          // fit beside a name in a narrow window, and the readouts have no
+          // spare width to surrender — each is already a label and a value.
+          // The row gap is half the column gap so a wrapped line reads as a
+          // continuation of the same bar, not as a second bar under it.
+          'flex flex-wrap items-center gap-x-2 gap-y-1 px-3 py-1 rounded-md border-0 bg-background/60',
           'shadow-[0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_30%,transparent)]',
           'text-[10px] font-mono tabular-nums',
         )}
@@ -491,13 +507,26 @@ export function ChatStatusBar({
           onSuggest={canRename ? onSuggest : undefined}
         />
         {/* The readouts group right, so the bar reads name-then-state and the
-            name keeps a stable left edge as readouts come and go mid-turn. */}
-        <div data-testid="chat-status-items" className="ml-auto flex items-center gap-2">
+            name keeps a stable left edge as readouts come and go mid-turn.
+            `flex-wrap` here as well as on the bar: the group wraps to the
+            next line as a block when the name leaves it no room, and its own
+            readouts wrap among themselves when even a full line is too
+            narrow. */}
+        <div
+          data-testid="chat-status-items"
+          className="ml-auto flex flex-wrap items-center justify-end gap-x-2 gap-y-1"
+        >
           {items.map((item, i) => (
-            <React.Fragment key={item.key}>
+            // Divider and the readout it introduces travel as one flex item,
+            // so a wrap never strands a hairline at the end of a line with
+            // nothing after it.
+            // `flex-wrap` on the pair too: `controls` is a fragment of three
+            // pickers and two dividers, so this span is where they would
+            // otherwise be pinned to one line — the widest item on the bar.
+            <span key={item.key} className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
               {i > 0 && <InlineDivider data-testid="status-divider" />}
               {item}
-            </React.Fragment>
+            </span>
           ))}
         </div>
       </div>
