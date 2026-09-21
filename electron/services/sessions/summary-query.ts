@@ -35,6 +35,9 @@ import {
 //       summarization runs as a one-shot, no human in the loop.
 //     - `--disallowed-tools '*'` blocks every tool — the summary prompt
 //       has no need to read or write.
+//     - `--strict-mcp-config` with an empty `--mcp-config` starts no MCP
+//       servers at all. A call that may use no tools has no use for their
+//       schemas either, and loading them cost seconds and tokens per call.
 //
 //   Concurrency note: if two summary calls overlap, they share the same
 //   projects dir. The cleanup `rm -rf` of one call may unlink the other's
@@ -143,6 +146,18 @@ export async function runCliOnce(p: RunPromptParams): Promise<CliRunResult> {
   if (p.model) args.push('--model', p.model);
   args.push('--permission-mode', 'bypassPermissions');
   args.push('--disallowed-tools', '*');
+  // No MCP servers. Measured against the personal config dir with a four-token
+  // reply: 5.4s wall / 11,456 cache-creation tokens / $0.047 with the account's
+  // servers loaded, 3.5s / 3,878 / $0.017 without — ~1.9s and ~7.6k prompt
+  // tokens of tool schemas on EVERY call, for tools `--disallowed-tools '*'`
+  // has already forbidden. On Brain extraction that is a fixed tax per item,
+  // paid the same whether the item is a 2MB transcript or one line.
+  //
+  // `--strict-mcp-config` is the load-bearing half: `--mcp-config` MERGES with
+  // the account's own configuration rather than replacing it, which is what
+  // brain/mcp-registration.ts depends on when it adds the Brain's server to a
+  // real session. Only strict mode makes an empty set authoritative.
+  args.push('--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}');
 
   const child: ChildProcessByStdio<null, Readable, Readable> = spawn(
     p.claudeBinary,

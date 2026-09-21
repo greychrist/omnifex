@@ -359,6 +359,45 @@ describe('runCliOnce (default RunPromptFn)', () => {
     await expect(pending).resolves.toMatchObject({ result: 'a short summary.' });
   });
 
+  // Measured, not assumed. A probe of `claude -p 'Reply with exactly: OK'`
+  // against the personal config dir: 5.4s wall / 11,456 cache-creation tokens
+  // / $0.047 as this runner invoked it, against 3.5s / 3,878 / $0.017 with the
+  // MCP config emptied — ~1.9s and ~7.6k prompt tokens per call, on a reply of
+  // four tokens. That is the account's plugin MCP servers being spawned and
+  // their tool schemas entering the prompt, for a call that already passes
+  // `--disallowed-tools '*'` and so can never invoke one of them.
+  //
+  // `--mcp-config` alone does not do it: both it and `--allowedTools` MERGE
+  // with what the account already configures (see brain/mcp-registration.ts,
+  // which relies on exactly that). `--strict-mcp-config` is what makes the
+  // empty set authoritative.
+  it('starts no MCP servers — they cost seconds and tokens a tool-less call cannot use', async () => {
+    const fake = makeFakeChild();
+    mockedSpawn.mockReturnValue(fake as never);
+
+    const pending = runCliOnce({
+      claudeBinary: '/usr/local/bin/claude',
+      prompt: 'p',
+      configDir: '/tmp/conf',
+      cwd: '/tmp/scratch',
+    });
+
+    const [, args] = mockedSpawn.mock.calls[0] as [
+      string,
+      string[],
+      { cwd: string; env: NodeJS.ProcessEnv },
+    ];
+    expect(args).toEqual(expect.arrayContaining(['--strict-mcp-config']));
+    // The empty set has to be ADJACENT to its flag, not merely present.
+    expect(args[args.indexOf('--mcp-config') + 1]).toBe('{"mcpServers":{}}');
+
+    fake.stdout.push(JSON.stringify({ result: 'ok' }));
+    fake.stdout.push(null);
+    await flush();
+    fake.emit('exit', 0, null);
+    await expect(pending).resolves.toMatchObject({ result: 'ok' });
+  });
+
   it('rejects with stderr context on non-zero exit', async () => {
     const fake = makeFakeChild();
     mockedSpawn.mockReturnValue(fake as never);
