@@ -5,6 +5,16 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.182] — 2026-09-21
+
+### Changed
+
+- The session status bar wraps now. Three pickers, the daemon glyph, the turn clock, the thinking burst and the cache countdown do not fit beside a session name in a narrow window, and the readouts had been squeezing to fit. They drop to a second line instead, and the name keeps whatever room it needs — it is the one thing on the bar that cannot be read from a glyph and a number, so it is no longer the thing that gives way.
+
+### Fixed
+
+- Indexing a note into the Brain is faster and cheaper. Every model call OmniFex makes on its own behalf was starting the account's full set of MCP servers and carrying their tool descriptions in the prompt, even though those calls are forbidden from using any tool. Measured on one call: about two seconds and seven thousand tokens of the prompt, paid the same whether the Brain was reading a two-megabyte transcript or a single line. Session summaries and the Brain's own curation pass were paying it too.
+
 ## [0.4.181] — 2026-09-20
 
 ### Added
