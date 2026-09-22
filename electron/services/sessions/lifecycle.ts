@@ -34,6 +34,7 @@ import {
   type RuntimeDeps,
 } from './runtime';
 import { hasTranscript } from '../project-paths';
+import { shouldAutoTitle, autoTitleDescription } from './auto-title';
 import { createClaudeCliEngine } from '../agents/claude-cli-engine';
 import { createCodexCliEngine } from '../agents/codex-cli-engine';
 import type { AgentEngine, AgentKind } from '../agents/types';
@@ -275,6 +276,10 @@ export function createSessionsService(
       elicitationResolver: null,
       projectPath,
       configDir,
+      // A resumed conversation is never auto-named: it either already carries
+      // a title or predates the CLI's naming gap, and a name derived from a
+      // prompt landing mid-conversation is worse than none. See auto-title.ts.
+      autoTitleAttempted: resume,
     };
 
     sessions.set(tabId, handle);
@@ -354,6 +359,29 @@ export function createSessionsService(
     }
   }
 
+  /**
+   * Ask the CLI to name the session from its first prompt, fire-and-forget.
+   *
+   * Sent alongside the prompt rather than after the turn: the tab label's job
+   * is telling open tabs apart WHILE the turn runs, and a name that arrives
+   * five minutes in has missed it. `persist: true` makes the CLI write the
+   * `ai-title` record itself, so `extractSessionMetadata` and the tab subtitle
+   * pick it up with no further plumbing. Auxiliary work — it must never block
+   * the prompt or fail the turn.
+   */
+  function maybeAutoTitle(tabId: string, handle: SessionHandle, description: string): void {
+    if (!shouldAutoTitle({ attempted: handle.autoTitleAttempted, prompt: description })) return;
+    handle.autoTitleAttempted = true;
+    void handle.engine
+      .sendControlRequest('generate_session_title', {
+        description: description.trim(),
+        persist: true,
+      })
+      .catch((err: unknown) => {
+        console.error(`[sessions] auto-title failed for tab ${tabId}:`, err);
+      });
+  }
+
   function sendMessage(tabId: string, prompt: string): void {
     const handle = sessions.get(tabId);
     if (!handle) return;
@@ -368,6 +396,7 @@ export function createSessionsService(
       // The prompt never reached the CLI, so there is no turn to wait on.
       setTurn(handle, 'idle', tabId, sendToRenderer);
     });
+    maybeAutoTitle(tabId, handle, prompt);
   }
 
   function sendStructuredMessage(
@@ -384,6 +413,7 @@ export function createSessionsService(
       console.error(`[sessions] engine.sendStructured failed for tab ${tabId}:`, err);
       setTurn(handle, 'idle', tabId, sendToRenderer);
     });
+    maybeAutoTitle(tabId, handle, autoTitleDescription(content));
   }
 
   // -------------------------------------------------------------------------

@@ -90,6 +90,7 @@ function makeHandle(engine: AgentEngine): SessionHandle {
     elicitationResolver: null,
     projectPath: '/p',
     configDir: '/c',
+    autoTitleAttempted: true,
   };
 }
 

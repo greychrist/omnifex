@@ -452,6 +452,12 @@ export interface SessionHandle {
   elicitationResolver: ((decision: ElicitationDecision) => void) | null;
   projectPath: string;
   configDir: string;
+  /**
+   * Auto-naming latch: true once this session has asked the CLI for a name,
+   * or was resumed (a resumed conversation names itself by hand — see
+   * `auto-title.ts`). Fires at most once per handle.
+   */
+  autoTitleAttempted: boolean;
 }
 
 /**
