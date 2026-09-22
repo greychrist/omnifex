@@ -5,19 +5,31 @@ import type { SlashCommand } from '@/lib/api';
 
 // Stub framer-motion so motion.* renders as a plain element. The picker only
 // uses motion.div, but proxy every key for safety.
+//
+// The component per tag is CACHED. A proxy that builds a fresh function on
+// every `get` hands React a new component TYPE on every render, which
+// unmounts and remounts the subtree and wipes its state — here, the picker's
+// selected index, so Enter selected nothing and `onSelect` never fired. It
+// presented as a flake because it only bites when a re-render lands between
+// the `waitFor` and the keypress.
+const motionComponents = new Map<string, any>();
 vi.mock('framer-motion', () => ({
   motion: new Proxy(
     {},
     {
       get: (_, key) => {
         const Tag = key as string;
-        return ({ children, ...rest }: any) => {
+        const cached = motionComponents.get(Tag);
+        if (cached) return cached;
+        const Component = ({ children, ...rest }: any) => {
           const { initial, animate, exit, transition, layout, ...domProps } = rest;
           void initial; void animate; void exit; void transition; void layout;
 
           // eslint-disable-next-line @typescript-eslint/no-require-imports -- vi.mock factory hoisted before module imports settle.
           return require('react').createElement(Tag, domProps, children);
         };
+        motionComponents.set(Tag, Component);
+        return Component;
       },
     },
   ),
