@@ -40,8 +40,13 @@ describe('FloatingPromptInput — chat bar layout', () => {
     const output = screen.getByTestId('output-toggle');
     expect(output.parentElement?.className).toContain('flex-col');
     expect(output.parentElement?.className).toContain('items-stretch');
-    // Extras keep their square grid on the right.
-    expect(screen.getByTestId('extra-1').parentElement?.className).toContain('grid-cols-2');
+    // Narrow enough for the toggle alone: its label stacks above it rather
+    // than sitting beside it, so the column no longer pays for both.
+    expect(output.parentElement?.className).toContain('w-40');
+    expect(output.parentElement?.className).not.toContain('w-52');
+    // Extras sit in a 3-up grid on the right: six of them are two rows, not
+    // three, which is what sets the bar's height.
+    expect(screen.getByTestId('extra-1').parentElement?.className).toContain('grid-cols-3');
   });
 
   it('lets the input fill the bar height and pins both side stacks to the top', () => {

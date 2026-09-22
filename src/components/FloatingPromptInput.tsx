@@ -547,7 +547,7 @@ const FloatingPromptInputInner = (
               {/* Left side: the output toggle. The model/effort/permission
                   pickers live in the SessionCard context popover. */}
               {outputStyleToggle && (
-                <div className="flex flex-col items-stretch gap-1.5 shrink-0 self-start w-52">
+                <div className="flex flex-col items-stretch gap-1.5 shrink-0 self-start w-40">
                   {outputStyleToggle}
                 </div>
               )}
@@ -663,9 +663,11 @@ const FloatingPromptInputInner = (
                 </AnimatePresence>
               </div>
 
-              {/* Right side: the extra menu items in a 2×2 square */}
+              {/* Right side: the extra menu items, three per row. Two columns
+                  put six of them in three rows, and that stack — not the
+                  input — was what set the bar's height. */}
               {extraMenuItems && (
-                <div className="grid grid-cols-2 gap-0.5 shrink-0 self-start">
+                <div className="grid grid-cols-3 gap-0.5 shrink-0 self-start">
                   {extraMenuItems}
                 </div>
               )}

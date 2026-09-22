@@ -2881,9 +2881,12 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
               defaultModel={selectedModel}
               supportedCommands={supportedCommands}
               outputStyleToggle={
-                <div className="flex items-center gap-1.5 w-full">
-                  <HeaderLabel className="w-12 shrink-0">output</HeaderLabel>
-                  <SessionViewToggle className="flex-1" mode={viewMode} onChange={setViewMode} />
+                <div className="flex flex-col gap-0.5 w-full">
+                  {/* Label above the toggle, not beside it: side by side, the
+                      column had to be wide enough for both and the composer
+                      paid for it. */}
+                  <HeaderLabel className="px-0.5">chat format</HeaderLabel>
+                  <SessionViewToggle className="w-full" mode={viewMode} onChange={setViewMode} />
                 </div>
               }
               extraMenuItems={
@@ -2899,7 +2902,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-9 w-9 bg-background text-muted-foreground hover:text-foreground shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_30%,transparent)]"
+                              className="h-8 w-8 bg-background text-muted-foreground hover:text-foreground shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_30%,transparent)]"
                             >
                               <Copy className="h-3.5 w-3.5" />
                             </Button>
