@@ -5,6 +5,16 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.183] — 2026-09-22
+
+### Added
+
+- **A new session names itself from your first prompt.** Claude Code named its own sessions until 2.1.277 and has not since — across 534 transcripts, every version through 2.1.276 named nearly all of them and every version after named none — which is why sessions have been arriving blank in the tab strip and the session list. OmniFex now asks the CLI for the name itself, alongside the first prompt rather than after the answer: the name is what tells six open tabs apart while a turn is running, and one that arrives five minutes in has missed the moment. It runs once per session, never on a resumed conversation, and skips a first prompt that is a slash command or empty. A name you type always wins over a generated one, and generating one never interrupts or slows the turn. Sessions that are already open and unnamed keep the **Suggest** button from 0.4.181.
+
+### Changed
+
+- **The chat bar is shorter.** The buttons to the right of the composer sat two to a row, which made that block three rows tall — and since it was the tallest thing in the bar, it, rather than the box you type in, decided how much of the window the bar ate. Three to a row makes it two. The **chat format** toggle on the left moved its label above the control instead of beside it, which gives the composer back the width the label was reserving.
+
 ## [0.4.182] — 2026-09-21
 
 ### Changed
