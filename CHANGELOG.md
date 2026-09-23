@@ -5,6 +5,16 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.186] — 2026-09-23
+
+### Added
+
+- **Sign in and out of a Claude account from inside OmniFex.** The account badge in the session header gains **Re-authenticate** and **Sign out** (just **Sign in** when the account is signed out). Sign out runs Claude Code's own `claude auth logout` for that account's config directory and asks for a second click first, since it cuts off every session on that account. Re-authenticate runs `claude auth login` in a terminal window inside the app, which closes once the CLI reports success. A session already running keeps the credentials it started with and needs a restart to pick up a different account. Desktop only — the iPad client has no terminal to log in with.
+
+### Fixed
+
+- **Codex Sign out did nothing in remote mode.** The request went to the daemon, which has no Codex auth service, and came back as a silent no-op. It now runs in the app itself.
+
 ## [0.4.185] — 2026-09-23
 
 ### Added

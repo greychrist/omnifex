@@ -46,6 +46,7 @@ The Brain is a per-account **memory vault** distilled from those transcripts.
 - Auto-discover existing accounts on your machine and scan for new ones.
 - Every session, agent, hook, MCP call, usage read, and CLAUDE.md edit runs under the resolved account's `CLAUDE_CONFIG_DIR`.
 - An account-resolution explainer shows exactly why a given project maps to a given account.
+- Sign an account in or out from its badge in the session header — the same `claude auth login` / `logout` you would run in a terminal, scoped to that account's config directory, with the login running in a terminal window inside the app.
 
 ### Interactive sessions
 - A structured **rich chat** (streaming JSON) with tool-call widgets, backed by the real CLI.
@@ -172,7 +173,7 @@ npm run rebuild:electron   # rebuild better-sqlite3 / node-pty for Electron's AB
 - **Main process**: TypeScript on Node, services wired through a typed, allow-listed IPC layer
 - **Remote**: a headless daemon (the same Electron binary under `ELECTRON_RUN_AS_NODE`) speaking a versioned WebSocket protocol to the Electron app and to a browser client
 - **Persistence**: `better-sqlite3`
-- **Terminal**: `node-pty` + `@xterm/xterm` (the `/usage` scraper and Codex sign-in)
+- **Terminal**: `node-pty` + `@xterm/xterm` (the `/usage` scraper and Claude / Codex sign-in)
 - **Claude/Codex integration**: drives the CLI binaries directly over `child_process` streaming JSON
 
 ## Project structure
