@@ -615,6 +615,11 @@ app.whenReady().then(() => {
         .filter((v) => v.root !== ''),
   });
 
+  // Every CLI spawn resolves its binary through findBestBinary(): the binary
+  // picked in Settings if it exists, else discovery. getPath() alone is only
+  // the saved pick — null for anyone who never opened the selector.
+  const claudeBinaryService = createClaudeBinaryService(db);
+
   // Built once: it resolves the claude binary and pins a scratch cwd, and both
   // the Brain's extractor and session summarization run through it.
   // One runner for every internal CLI call. It owns the archive root, so
@@ -625,6 +630,7 @@ app.whenReady().then(() => {
   const costBackfillOpts = { archiveRoot: internalArchive };
   const summaryQueryRunner = createSummaryQueryRunner({
     archiveRoot: internalArchive,
+    resolveClaudeBinary: () => claudeBinaryService.findBestBinary(),
     // Ownership from the config dir the run was launched with, never
     // resolve(): the same rule the Brain applies to its own sources.
     resolveAccountName: (configDir) =>
@@ -703,18 +709,15 @@ app.whenReady().then(() => {
     console.error('[first-run-discovery] failed:', err);
   });
 
-  const claudeBinaryService = createClaudeBinaryService(db);
   // Compares the CLI the user is actually running against the changelog
-  // watermark this build was reviewed at. Prefers the explicitly-chosen
-  // binary, falling back to discovery so the check works before the user
-  // ever visits the binary picker.
+  // watermark this build was reviewed at.
   // Also resolves where to run the changelog review: the `cli_review_repo_dir`
   // override if set, else the dev cwd, else whichever known project is an
   // OmniFex checkout. `claudeService` is declared further down — the closure
   // is only ever called from an IPC handler, long after construction.
   const claudeCliReviewService = createClaudeCliReviewService({
     cliVersionFn: () =>
-      probeCliVersion(claudeBinaryService.getPath() ?? claudeBinaryService.findBestBinary()),
+      probeCliVersion(claudeBinaryService.findBestBinary()),
     latestVersionFn: fetchLatestCliVersion,
     repoDirOverrideFn: () => db.getSetting(CLI_REVIEW_REPO_DIR_SETTING_KEY),
     repoCandidatesFn: async () => [
@@ -730,10 +733,7 @@ app.whenReady().then(() => {
         .filter((a) => a.engine === 'claude')
         .map((a) => ({ name: a.name, configDir: a.config_dir })),
     runUpdateFn: (configDir) =>
-      execCliUpdate(
-        claudeBinaryService.getPath() ?? claudeBinaryService.findBestBinary(),
-        configDir,
-      ),
+      execCliUpdate(claudeBinaryService.findBestBinary(), configDir),
   });
   // Logging must be constructed before sessions so the sessions service can
   // route CLI subprocess stderr into the log store. The predicate reads
@@ -803,8 +803,8 @@ app.whenReady().then(() => {
   // Constructed before sessionsService so live sessions can write their
   // init-time model catalog through to the persisted cache (Task: dynamic
   // model catalog — see docs/superpowers/specs/2026-06-09-dynamic-model-catalog-design.md).
-  const modelsService = createModelsService(db);
-  const commandsCatalogService = createCommandsCatalogService(db);
+  const modelsService = createModelsService(db, { resolveClaudeBinary: () => claudeBinaryService.findBestBinary() });
+  const commandsCatalogService = createCommandsCatalogService(db, { resolveClaudeBinary: () => claudeBinaryService.findBestBinary() });
 
   /**
    * Cost Report → PDF.
@@ -971,6 +971,8 @@ app.whenReady().then(() => {
         return [];
       }
     },
+    // The binary picked in Settings, else discovery.
+    () => claudeBinaryService.findBestBinary(),
   );
   const claudeService = createClaudeService(db, accountsService);
   const usageService = createUsageService(accountsService, loggingService);
@@ -1093,7 +1095,7 @@ app.whenReady().then(() => {
   };
   const claudeAuthService = createClaudeAuthService({
     spawnTerminal: spawnOneShotTerminal,
-    resolveBinary: () => claudeBinaryService.getPath(),
+    resolveBinary: () => claudeBinaryService.findBestBinary(),
   });
   const codexSessionWalkerService = createCodexSessionWalker({
     listCodexAccounts: () => accountsService.listAccounts().filter((a) => a.engine === 'codex'),
@@ -1529,7 +1531,7 @@ app.whenReady().then(() => {
       read: (configDir: string) => readOauthIdentity(configDir),
       probe: (configDir: string) =>
         probeAuthStatus(configDir, {
-          resolveBinary: () => claudeBinaryService.getPath(),
+          resolveBinary: () => claudeBinaryService.findBestBinary(),
         }),
       verdict: (configDir: string) => accountIdentityVerdict(configDir),
     },

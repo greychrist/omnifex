@@ -192,6 +192,28 @@ export function findBundledSdkBinaryAuto(): string | null {
   });
 }
 
+/**
+ * Find an installed claude binary without consulting the Settings pick:
+ * which → nvm → standard install paths → the SDK-bundled binary.
+ *
+ * Anything that launches the CLI wants `ClaudeBinaryService.findBestBinary()`
+ * instead, which tries the Settings pick first. This is the half of that rule
+ * that needs no database.
+ */
+export function discoverClaudeBinary(): string | null {
+  const whichResult = tryWhich();
+  if (whichResult) return whichResult;
+
+  const nvmPaths = findNvmInstallations();
+  if (nvmPaths.length > 0) return nvmPaths[0];
+
+  const standardPaths = findStandardInstallations();
+  if (standardPaths.length > 0) return standardPaths[0];
+
+  // Final fallback — used when the user has no system Claude Code install.
+  return findBundledSdkBinaryAuto();
+}
+
 // ---------------------------------------------------------------------------
 // Factory
 // ---------------------------------------------------------------------------
@@ -239,33 +261,12 @@ export function createClaudeBinaryService(db: Database): ClaudeBinaryService {
   }
 
   function findBestBinary(): string | null {
-    // 1. Custom configured path — only if it actually exists on disk
+    // The binary picked in Settings — only if it actually exists on disk
     const custom = getPath();
     if (custom && fs.existsSync(custom)) {
       return custom;
     }
-
-    // 2. which / where
-    const whichResult = tryWhich();
-    if (whichResult) {
-      return whichResult;
-    }
-
-    // 3. NVM installations (first found)
-    const nvmPaths = findNvmInstallations();
-    if (nvmPaths.length > 0) {
-      return nvmPaths[0];
-    }
-
-    // 4. Standard install paths (first found)
-    const standardPaths = findStandardInstallations();
-    if (standardPaths.length > 0) {
-      return standardPaths[0];
-    }
-
-    // 5. Per-platform binary bundled with @anthropic-ai/claude-agent-sdk.
-    //    Final fallback — used when the user has no system Claude Code install.
-    return findBundledSdkBinaryAuto();
+    return discoverClaudeBinary();
   }
 
   return { getPath, setPath, listInstallations, findBestBinary };

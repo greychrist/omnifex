@@ -98,8 +98,22 @@ describe('modelsService.listSupported', () => {
   });
 
   function createService(opts: Parameters<typeof createModelsService>[1] = {}) {
-    return createModelsService(db, { cliVersionFn: () => '2.1.170', ...opts });
+    return createModelsService(db, { cliVersionFn: () => '2.1.170', resolveClaudeBinary: () => '/usr/local/bin/claude', ...opts });
   }
+
+  it('launches the binary resolveClaudeBinary returns', async () => {
+    mockedCreate.mockReturnValue(makeFakeEngine());
+    await createService({ resolveClaudeBinary: () => '/picked/in/settings/claude' }).listSupported('/tmp/c');
+    expect(mockedCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ claudeBinaryPath: '/picked/in/settings/claude' }),
+    );
+  });
+
+  it('returns [] without spawning when no binary resolves', async () => {
+    const result = await createService({ resolveClaudeBinary: () => null }).listSupported('/tmp/c');
+    expect(result).toEqual([]);
+    expect(mockedCreate).not.toHaveBeenCalled();
+  });
 
   it('returns the CLI-reported model list from init data', async () => {
     const fake = makeFakeEngine();
@@ -323,7 +337,9 @@ describe('modelsService.getCatalog (SQLite-persisted)', () => {
   it('default version probe runs `claude --version` once and caches it', async () => {
     const { execSync } = await import('node:child_process');
     vi.mocked(execSync).mockReset().mockReturnValue('2.1.170 (Claude Code)\n');
-    const service = createModelsService(db); // no cliVersionFn — real probe path
+    // No cliVersionFn — real probe path. The binary is pinned so the only
+    // execSync is the version probe, not discovery's `which`.
+    const service = createModelsService(db, { resolveClaudeBinary: () => '/usr/local/bin/claude' });
 
     service.upsertCatalog(CONFIG, SEEDED);
     service.upsertCatalog('/other/config', SEEDED);
@@ -339,7 +355,7 @@ describe('modelsService.getCatalog (SQLite-persisted)', () => {
     const seeder = createModelsService(db, { cliVersionFn: () => '1.0.0' });
     seeder.upsertCatalog(CONFIG, SEEDED);
 
-    const service = createModelsService(db); // probe throws → version null
+    const service = createModelsService(db, { resolveClaudeBinary: () => '/usr/local/bin/claude' }); // probe throws → version null
     const result = await service.getCatalog(CONFIG);
 
     expect(result).toEqual(SEEDED);

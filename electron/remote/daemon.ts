@@ -40,7 +40,6 @@ import {
   CLI_REVIEW_REPO_DIR_SETTING_KEY,
 } from '../services/claude-cli-review';
 import { createSessionsService } from '../services/sessions';
-import { findSystemClaudeBinary } from '../services/sessions/binary';
 import { createClaudeService } from '../services/claude';
 import { createUsageService } from '../services/usage';
 import { createRateLimitsService } from '../services/rate-limits';
@@ -172,17 +171,6 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
 
   fixPath(log);
 
-  // Fail loudly before touching anything else: a daemon that came up without
-  // the CLI would accept sessions and error on every one of them.
-  const claudeBinary = findSystemClaudeBinary();
-  if (!claudeBinary) {
-    throw new Error(
-      '`claude` was not found on PATH. The daemon runs sessions through the Claude CLI and cannot start without it. ' +
-        `PATH=${process.env.PATH ?? '(unset)'}`,
-    );
-  }
-  log.info('claude binary', { path: claudeBinary });
-
   fs.mkdirSync(config.sessionsDir, { recursive: true });
   fs.mkdirSync(config.userDataDir, { recursive: true });
 
@@ -200,6 +188,21 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
     [BRAIN_IDLE_MINUTES_SETTING_KEY]: String(DEFAULT_IDLE_MINUTES),
     [BRAIN_SWEEP_HOURS_SETTING_KEY]: String(DEFAULT_SWEEP_HOURS),
   });
+
+  // Fail loudly before building anything on top: a daemon that came up without
+  // the CLI would accept sessions and error on every one of them. Resolved
+  // after the database opens so the binary picked in Settings counts — every
+  // spawn below goes through the same findBestBinary().
+  const claudeBinaryService = createClaudeBinaryService(db);
+  const claudeBinary = claudeBinaryService.findBestBinary();
+  if (!claudeBinary) {
+    throw new Error(
+      '`claude` was not found — not in Settings, on PATH, or in any standard install location. ' +
+        'The daemon runs sessions through the Claude CLI and cannot start without it. ' +
+        `PATH=${process.env.PATH ?? '(unset)'}`,
+    );
+  }
+  log.info('claude binary', { path: claudeBinary });
   const accountsService = createAccountsService(db);
 
   // ---------------------------------------------------------------------------
@@ -350,6 +353,7 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
   const costBackfillOpts = { archiveRoot: internalArchive };
   const summaryQueryRunner = createSummaryQueryRunner({
     archiveRoot: internalArchive,
+    resolveClaudeBinary: () => claudeBinaryService.findBestBinary(),
     resolveAccountName: (configDir) => accountsService.getAccountByConfigDir(configDir)?.name ?? null,
   });
 
@@ -380,15 +384,14 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
     userDataDir: config.userDataDir,
   };
 
-  const claudeBinaryService = createClaudeBinaryService(db);
   const claudeCliReviewService = createClaudeCliReviewService({
-    cliVersionFn: () => probeCliVersion(claudeBinaryService.getPath() ?? claudeBinaryService.findBestBinary()),
+    cliVersionFn: () => probeCliVersion(claudeBinaryService.findBestBinary()),
     latestVersionFn: fetchLatestCliVersion,
     repoDirOverrideFn: () => db.getSetting(CLI_REVIEW_REPO_DIR_SETTING_KEY),
     repoCandidatesFn: async () => (await claudeService.listProjects()).map((p) => p.path),
     claudeAccountsFn: () =>
       accountsService.listAccounts().filter((a) => a.engine === 'claude').map((a) => ({ name: a.name, configDir: a.config_dir })),
-    runUpdateFn: (configDir) => execCliUpdate(claudeBinaryService.getPath() ?? claudeBinaryService.findBestBinary(), configDir),
+    runUpdateFn: (configDir) => execCliUpdate(claudeBinaryService.findBestBinary(), configDir),
   });
 
   const loggingService = createLoggingService(db, createLoggingOptions({ db, sendToRenderer }));
@@ -413,8 +416,8 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
   });
 
   let sessionsSummaryServiceRef: import('../services/sessions-summary').SessionsSummaryService | null = null;
-  const modelsService = createModelsService(db);
-  const commandsCatalogService = createCommandsCatalogService(db);
+  const modelsService = createModelsService(db, { resolveClaudeBinary: () => claudeBinaryService.findBestBinary() });
+  const commandsCatalogService = createCommandsCatalogService(db, { resolveClaudeBinary: () => claudeBinaryService.findBestBinary() });
 
   const accountIdentityVerdict = createAccountIdentityVerdict({
     accounts: accountsService,
@@ -470,6 +473,7 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
         return [];
       }
     },
+    () => claudeBinaryService.findBestBinary(),
   );
   sessionsRef = sessionsService;
 
@@ -776,7 +780,7 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
     codexSessionWalker: { listSessions: () => codexSessionWalkerService.listSessions() },
     accountIdentity: {
       read: (configDir) => readOauthIdentity(configDir),
-      probe: (configDir) => probeAuthStatus(configDir, { resolveBinary: () => claudeBinaryService.getPath() }),
+      probe: (configDir) => probeAuthStatus(configDir, { resolveBinary: () => claudeBinaryService.findBestBinary() }),
       verdict: (configDir) => accountIdentityVerdict(configDir),
     },
   }) as Record<string, RpcHandler>;

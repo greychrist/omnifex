@@ -249,9 +249,9 @@ export interface SummaryQueryDeps {
   /** Injected in tests so the date partition is deterministic. */
   now?: () => Date;
   /**
-   * Resolve the Claude Code binary. Defaults to `findSystemClaudeBinary`
-   * (system installs → app-bundled per-platform binary). Injected in
-   * tests so they can pin to a fake path without depending on disk state.
+   * Resolve the Claude Code binary. main and the daemon wire this to
+   * `ClaudeBinaryService.findBestBinary()` so the binary picked in Settings
+   * wins; unset, it falls back to plain discovery (`findSystemClaudeBinary`).
    */
   resolveClaudeBinary?: () => string | null;
 }

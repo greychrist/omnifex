@@ -5,6 +5,7 @@ import path from 'node:path';
 import { createDatabase, type Database } from '../services/database';
 import {
   createClaudeBinaryService,
+  discoverClaudeBinary,
   findBundledSdkBinary,
   type ClaudeBinaryService,
 } from '../services/claude-binary';
@@ -71,6 +72,20 @@ describe('claude binary service', () => {
     fs.chmodSync(fakeBin, 0o755);
     try {
       service.setPath(fakeBin);
+      expect(service.findBestBinary()).toBe(fakeBin);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('discoverClaudeBinary ignores the saved path — only findBestBinary honours it', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-bin-'));
+    const fakeBin = path.join(tmpDir, 'claude');
+    fs.writeFileSync(fakeBin, '#!/bin/sh\nexit 0\n');
+    fs.chmodSync(fakeBin, 0o755);
+    try {
+      service.setPath(fakeBin);
+      expect(discoverClaudeBinary()).not.toBe(fakeBin);
       expect(service.findBestBinary()).toBe(fakeBin);
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });

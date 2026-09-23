@@ -116,6 +116,12 @@ export function createSessionsService(
    * without this module growing a dependency on either.
    */
   extraSpawnArgs: ((configDir: string) => string[]) | null = null,
+  /**
+   * Resolve the claude binary to spawn. main and the daemon wire this to
+   * `ClaudeBinaryService.findBestBinary()` so the binary picked in Settings
+   * wins; unset, sessions fall back to plain discovery.
+   */
+  resolveClaudeBinary: (() => string | null) | null = null,
 ): SessionsService {
   const sessions = new Map<string, SessionHandle>();
   // Hoisted so both the public return and stop()'s plugin-cache eviction
@@ -223,7 +229,7 @@ export function createSessionsService(
       }
       engine = createCodexCliEngine({ tabId, codexBinaryPath: codexPath });
     } else {
-      const binaryPath = findSystemClaudeBinary();
+      const binaryPath = (resolveClaudeBinary ?? findSystemClaudeBinary)();
       if (!binaryPath) {
         sendToRenderer(`session-status:${tabId}`, {
           sessionStatus: 'error',

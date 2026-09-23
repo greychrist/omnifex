@@ -65,8 +65,22 @@ describe('commandsCatalogService.listSupported', () => {
   });
 
   function createService(opts: Parameters<typeof createCommandsCatalogService>[1] = {}) {
-    return createCommandsCatalogService(db, { cliVersionFn: () => '2.1.181', ...opts });
+    return createCommandsCatalogService(db, { cliVersionFn: () => '2.1.181', resolveClaudeBinary: () => '/usr/local/bin/claude', ...opts });
   }
+
+  it('launches the binary resolveClaudeBinary returns', async () => {
+    mockedCreate.mockReturnValue(makeFakeEngine());
+    await createService({ resolveClaudeBinary: () => '/picked/in/settings/claude' }).listSupported('/tmp/c');
+    expect(mockedCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ claudeBinaryPath: '/picked/in/settings/claude' }),
+    );
+  });
+
+  it('returns [] without spawning when no binary resolves', async () => {
+    const result = await createService({ resolveClaudeBinary: () => null }).listSupported('/tmp/c');
+    expect(result).toEqual([]);
+    expect(mockedCreate).not.toHaveBeenCalled();
+  });
 
   it('returns the CLI-reported command list from the initialize control_request', async () => {
     mockedCreate.mockReturnValue(makeFakeEngine());

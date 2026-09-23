@@ -17,11 +17,10 @@
 // are only ever sourced from a fresh ephemeral `initialize` — which always runs
 // the current binary and reports the current catalog.
 
-import fs from 'node:fs';
 import os from 'node:os';
 import { execSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { findBundledSdkBinaryAuto } from './claude-binary';
+import { discoverClaudeBinary } from './claude-binary';
 import { createClaudeCliEngine } from './agents/claude-cli-engine';
 import type { Database } from './database';
 
@@ -57,21 +56,15 @@ export interface CommandsCatalogServiceOptions {
    * `null` means "undeterminable" — cached rows then match any version.
    */
   cliVersionFn?: () => string | null;
+  /**
+   * The claude binary to spawn. main and the daemon wire this to
+   * `ClaudeBinaryService.findBestBinary()` so the binary picked in Settings
+   * wins; unset, this falls back to plain discovery.
+   */
+  resolveClaudeBinary?: () => string | null;
 }
 
 const DEFAULT_TTL_MS = 24 * 60 * 60 * 1000;
-
-function findSystemClaudeBinary(): string | null {
-  const candidates = [
-    `${os.homedir()}/.local/bin/claude`,
-    '/usr/local/bin/claude',
-    '/opt/homebrew/bin/claude',
-  ];
-  for (const p of candidates) {
-    if (fs.existsSync(p)) return p;
-  }
-  return findBundledSdkBinaryAuto();
-}
 
 function safeParse(json: string): CommandInfo[] | null {
   try {
@@ -89,12 +82,13 @@ export function createCommandsCatalogService(
   const timeoutMs = opts.timeoutMs ?? 8000;
   const ttlMs = opts.ttlMs ?? DEFAULT_TTL_MS;
   const now = opts.nowFn ?? Date.now;
+  const resolveClaudeBinary = opts.resolveClaudeBinary ?? discoverClaudeBinary;
 
   let cachedVersion: string | null | undefined;
   function cliVersion(): string | null {
     if (opts.cliVersionFn) return opts.cliVersionFn();
     if (cachedVersion !== undefined) return cachedVersion;
-    const binaryPath = findSystemClaudeBinary();
+    const binaryPath = resolveClaudeBinary();
     if (!binaryPath) {
       cachedVersion = null;
       return cachedVersion;
@@ -109,7 +103,7 @@ export function createCommandsCatalogService(
   }
 
   async function listSupported(configDir: string): Promise<CommandInfo[]> {
-    const binaryPath = findSystemClaudeBinary();
+    const binaryPath = resolveClaudeBinary();
     if (!binaryPath) {
       console.error('[commands] listSupported: claude binary not found');
       return [];

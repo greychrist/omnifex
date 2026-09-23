@@ -87,6 +87,20 @@ describe('sessions.start — engine factory dispatch on params.agent', () => {
     );
   });
 
+  it('launches the binary the injected resolver returns', () => {
+    vi.mocked(createClaudeCliEngine).mockClear();
+
+    const sessions = createSessionsService(
+      vi.fn(), {}, null, null, null, null, null, null, null, null, null, null,
+      () => '/picked/in/settings/claude',
+    );
+    sessions.start({ ...baseParams, agent: 'claude' });
+
+    expect(vi.mocked(createClaudeCliEngine)).toHaveBeenCalledWith(
+      expect.objectContaining({ claudeBinaryPath: '/picked/in/settings/claude' }),
+    );
+  });
+
   it('no agent param defaults to claude (back-compat)', () => {
     vi.mocked(createClaudeCliEngine).mockClear();
     vi.mocked(createCodexCliEngine).mockClear();
