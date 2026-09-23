@@ -130,4 +130,20 @@ describe('listActiveSessionIds', () => {
     expect(closedId).toBe(id);
     expect(seen).toEqual([[]]);
   });
+
+  it('tells the close hook whether a tab closed or the process is shutting down', () => {
+    // A summary started during shutdown is killed by process.exit before it can
+    // write anything, so the hook needs to know which kind of close this is.
+    const reasons: string[] = [];
+    const sessions = createSessionsService(
+      vi.fn(), {}, null, null, null, null,
+      (_id, _p, _c, reason) => { reasons.push(reason); },
+    );
+    for (const tabId of ['t1', 't2', 't3']) {
+      sessions.start({ tabId, projectPath: '/Users/test/proj', configDir: tmpConfig, model: '', permissionMode: '' });
+    }
+    sessions.stop('t1');
+    sessions.stopAll();
+    expect(reasons).toEqual(['closed', 'shutdown', 'shutdown']);
+  });
 });

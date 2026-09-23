@@ -1,7 +1,6 @@
 import * as React from "react";
 import { Database, RotateCcw, RefreshCw, Copy, Check, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { resolveContextLimit } from "@/lib/contextLimit";
 import type { SessionContextUsage } from "@/lib/api";
 import { Popover } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
@@ -57,13 +56,9 @@ const CATEGORY_COLORS = [
 
 interface SessionCardProps {
   totalTokens: number;
-  model?: string;
-  /** The account's resolved default model (settings.json `model`, e.g.
-   *  "opus[1m]"). Lets the client-side fallback detect a 1M window for an
-   *  "Account Default" session whose own model string lacks the [1m] suffix —
-   *  notably a resumed session (history loaded statically, no live usage yet).
-   *  See resolveContextLimit. */
-  defaultModel?: string | null;
+  /** The window to size the gauge against, from resolveContextLimit in the
+   *  parent — one computation, so the card and the pressure signals agree. */
+  contextLimit: number;
   contextUsage?: SessionContextUsage | null;
   sessionStatus?: 'starting' | 'active' | 'ended';
   /** Force-reconnect button click handler. Renders inside the status badge
@@ -120,8 +115,7 @@ interface SessionCardProps {
  */
 export function SessionCard({
   totalTokens,
-  model,
-  defaultModel,
+  contextLimit,
   contextUsage,
   sessionStatus,
   onReconnect,
@@ -211,10 +205,7 @@ export function SessionCard({
         const useSdk = contextUsage !== undefined && contextUsage !== null;
         const tokens = useSdk ? contextUsage.totalTokens : totalTokens;
         const sdkLimit = useSdk ? contextUsage.maxTokens : null;
-        // Trust the live CLI window when present; only fall back to the model
-        // "[1m]" heuristic before any live data arrives. (Fixes resume pinning
-        // the gauge to 200k — see resolveContextLimit for the full rationale.)
-        const limit = resolveContextLimit({ sdkMaxTokens: sdkLimit, model, defaultModel });
+        const limit = contextLimit;
         if (tokens <= 0 || limit <= 0) return null;
         const pct = Math.min(100, (tokens / limit) * 100);
         const levelMeta = contextLevelSignal?.meta as

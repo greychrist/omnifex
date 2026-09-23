@@ -21,6 +21,8 @@ import type {
   RateLimitHook,
   ElicitationDecision,
   AccountMismatch,
+  SessionCloseReason,
+  SessionClosedHook,
 } from './types';
 import {
   createPermissionRequestHandler,
@@ -67,7 +69,7 @@ export function createSessionsService(
   ownership: SessionOwnership | null = null,
   persistPermissionRule: PersistPermissionRuleFn | null = null,
   rateLimitHook: RateLimitHook | null = null,
-  onSessionClosed: ((sessionId: string, projectPath: string, configDir: string) => void) | null = null,
+  onSessionClosed: SessionClosedHook | null = null,
   /**
    * Optional account resolver. When provided, main re-resolves the configDir
    * for cold-start CLI sessions at the moment of `start()` so a path-rule
@@ -323,6 +325,10 @@ export function createSessionsService(
       configDir,
       model: params.model,
       permissionMode: params.permissionMode,
+      // Carried by session_start all along and dropped here, so a fresh
+      // session ran at the model's default effort, not the picker's.
+      effort: params.effort,
+      thinking: params.thinking,
       sessionId,
       resume,
     }).then(async () => {
@@ -472,7 +478,7 @@ export function createSessionsService(
   // stop() / stopAll()
   // -------------------------------------------------------------------------
 
-  function stop(tabId: string): void {
+  function stop(tabId: string, reason: SessionCloseReason = 'closed'): void {
     const handle = sessions.get(tabId);
     if (!handle) return;
 
@@ -496,16 +502,19 @@ export function createSessionsService(
       // Fire-and-forget — auto-on-close summarization shouldn't block
       // session teardown, and any errors are logged inside the hook.
       try {
-        onSessionClosed(closedSessionId, closedProjectPath, closedConfigDir);
+        onSessionClosed(closedSessionId, closedProjectPath, closedConfigDir, reason);
       } catch (err) {
         console.warn('[sessions] onSessionClosed hook threw:', err);
       }
     }
   }
 
+  // Every caller of stopAll is a process going away (app quit, daemon
+  // SIGTERM, installer swap), so its closes are 'shutdown': the close hook
+  // must not start work the imminent exit would kill.
   function stopAll(): void {
     for (const tabId of sessions.keys()) {
-      stop(tabId);
+      stop(tabId, 'shutdown');
     }
   }
 

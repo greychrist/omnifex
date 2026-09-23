@@ -1047,8 +1047,17 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     [contextUsage, totalTokens],
   );
   const contextLimit = useMemo(
-    () => resolveContextLimit({ sdkMaxTokens, model: selectedModel, defaultModel: accountDefaultModel }),
-    [sdkMaxTokens, selectedModel, accountDefaultModel],
+    () => resolveContextLimit({
+      sdkMaxTokens,
+      model: selectedModel,
+      defaultModel: accountDefaultModel,
+      runningModel: liveDefaultModel,
+      catalog: supportedModels,
+      // A ref, read at compute time: a user context-window override is rare
+      // and lands on the next recompute rather than forcing a render.
+      pricingOverrides: pricingOverridesRef.current,
+    }),
+    [sdkMaxTokens, selectedModel, accountDefaultModel, liveDefaultModel, supportedModels],
   );
   // (contextPressure itself is derived below, once sessionStatus exists — it
   // gates on the live-session predicate.)
@@ -1296,6 +1305,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
           description: msg.description,
           decisionReason: msg.decision_reason,
           blockedPath: msg.blocked_path,
+          directoryGrant: Array.isArray(msg.directory_grant) ? msg.directory_grant : undefined,
           suggestions: msg.permission_suggestions ?? [],
           suppressAlwaysAllowRule: msg.suppress_always_allow_rule === true,
           agent: msg.agent,
@@ -2458,8 +2468,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
               onCompact={fireAndLog('claude-code-session:compact', handleCompact)}
               compactDisabled={isLoading || !isSessionActive}
               totalTokens={totalTokens}
-              model={selectedModel}
-              defaultModel={accountDefaultModel}
+              contextLimit={contextLimit}
               contextUsage={contextUsage}
               activeSubagents={activeSubagentCount}
               sessionStatus={displayStatus}

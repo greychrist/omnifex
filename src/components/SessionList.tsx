@@ -15,7 +15,6 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
-import { truncateText, getFirstLine } from "@/lib/date-utils";
 import { pickSessionTitle } from "@/lib/sessionTitle";
 import {
   api,
@@ -311,8 +310,8 @@ export const SessionList: React.FC<SessionListProps> = ({
   );
 
   // ── Per-session summaries ────────────────────────────────────────────
-  // Map keyed by session.id. `null` = no summary on disk (fall back to
-  // first_message); `undefined` = not yet fetched.
+  // Map keyed by session.id. `null` = no summary on disk; `undefined` =
+  // not yet fetched.
   const [summaries, setSummaries] = useState<Map<string, SessionSummary | null>>(
     new Map(),
   );
@@ -859,65 +858,53 @@ export const SessionList: React.FC<SessionListProps> = ({
                       {/* Label, then body.
                           The label is the session's name — a rename if one was
                           made, otherwise the CLI's own `ai-title` when it wrote
-                          one (free, already on disk, and the session's actual
-                          identity) — otherwise the summary headline, otherwise
-                          nothing. The body beneath is the summary when one
-                          exists and the opening prompt when it does not, so a
-                          paid summary always displaces the raw prompt rather
-                          than the title. */}
-                      {summary || sessionTitle ? (
-                        <div className="flex items-start gap-1 min-w-0">
-                          {summary && (
-                            <button
-                              type="button"
-                              aria-label={isExpanded ? 'Collapse summary' : 'Expand summary'}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                toggleExpanded(session.id);
-                              }}
-                              className="flex-none mt-[2px] text-muted-foreground hover:text-foreground"
-                            >
-                              {isExpanded ? (
-                                <ChevronUp className="h-3.5 w-3.5" />
-                              ) : (
-                                <ChevronDown className="h-3.5 w-3.5" />
-                              )}
-                            </button>
-                          )}
-                          <div className="min-w-0 flex-1">
+                          one — otherwise the summary headline, otherwise a
+                          literal "No name". There is deliberately no fallback to
+                          the opening prompt: it hid sessions the CLI never
+                          titled and the summary never reached, and those are
+                          exactly the rows worth noticing. The body beneath is
+                          the summary, when there is one. */}
+                      <div className="flex items-start gap-1 min-w-0">
+                        {summary && (
+                          <button
+                            type="button"
+                            aria-label={isExpanded ? 'Collapse summary' : 'Expand summary'}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleExpanded(session.id);
+                            }}
+                            className="flex-none mt-[2px] text-muted-foreground hover:text-foreground"
+                          >
+                            {isExpanded ? (
+                              <ChevronUp className="h-3.5 w-3.5" />
+                            ) : (
+                              <ChevronDown className="h-3.5 w-3.5" />
+                            )}
+                          </button>
+                        )}
+                        <div className="min-w-0 flex-1">
+                          {sessionTitle || summary ? (
                             <div className="font-medium text-foreground truncate">
                               {sessionTitle ?? summary?.headline}
                             </div>
-                            {summary ? (
-                              <>
-                                {/* Only a titled row needs the headline on its
-                                    own line — untitled rows already have it as
-                                    the label. */}
-                                {sessionTitle && (
-                                  <span className="block truncate text-muted-foreground">
-                                    {summary.headline}
-                                  </span>
-                                )}
-                                {isExpanded && <SummaryBody text={summary.paragraph} />}
-                              </>
-                            ) : (
-                              session.first_message && (
+                          ) : (
+                            <div className="italic text-muted-foreground/70">No name</div>
+                          )}
+                          {summary && (
+                            <>
+                              {/* Only a titled row needs the headline on its
+                                  own line — untitled rows already have it as
+                                  the label. */}
+                              {sessionTitle && (
                                 <span className="block truncate text-muted-foreground">
-                                  {truncateText(getFirstLine(session.first_message), 200)}
+                                  {summary.headline}
                                 </span>
-                              )
-                            )}
-                          </div>
+                              )}
+                              {isExpanded && <SummaryBody text={summary.paragraph} />}
+                            </>
+                          )}
                         </div>
-                      ) : session.first_message ? (
-                        <span className="block truncate">
-                          {truncateText(getFirstLine(session.first_message), 200)}
-                        </span>
-                      ) : (
-                        <span className="italic text-muted-foreground/60">
-                          No messages yet
-                        </span>
-                      )}
+                      </div>
                       {summaryErrors.has(session.id) && (
                         <p className="mt-1 text-[11px] text-red-400">
                           Summary failed: {summaryErrors.get(session.id)}

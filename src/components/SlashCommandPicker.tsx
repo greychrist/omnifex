@@ -200,7 +200,7 @@ export const SlashCommandPicker: React.FC<SlashCommandPickerProps> = ({
       // OmniFex's own commands go in last and are never deduped away: they
       // have no CLI counterpart to collide with, and they are the only entries
       // in this list that no config dir knows about.
-      setCommands([...unique, ...localSlashCommands({ hasVault: hasBrainVault })]);
+      setCommands([...unique, ...localSlashCommands({ hasVault: hasBrainVault, hasSession: !!tabId })]);
     } catch (err) {
       console.error("Failed to load slash commands:", err);
       setError(err instanceof Error ? err.message : 'Failed to load commands');

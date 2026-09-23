@@ -15,6 +15,7 @@ import type {
   ModelInfo,
   SlashCommand,
   CliControlGetContextUsageResponse,
+  CliStatusReport,
   CliPermissionRulesState,
   McpServerStatus,
   SendToRenderer,
@@ -280,6 +281,42 @@ export function createQueryPassthroughs(
   }
 
   /**
+   * The CLI's `/status` screen, as the rows it would draw (`get_status`, CLI
+   * 2.1.280+ — the request the VSCode extension's Status dialog uses). Chat
+   * mode has no TUI to type `/status` into, so this is the only way to see it.
+   *
+   * Filtered to the documented shape rather than passed through: the rows are
+   * rendered as-is, and a malformed one should vanish, not crash the dialog.
+   * An older CLI rejects the subtype, which reads as null ("unavailable").
+   */
+  async function getCliStatus(tabId: string): Promise<CliStatusReport | null> {
+    const handle = liveEngine(tabId);
+    if (!handle) return null;
+    let raw: unknown;
+    try {
+      raw = await handle.engine.sendControlRequest<unknown>('get_status');
+    } catch (err) {
+      console.error(`[sessions] getCliStatus failed for tab ${tabId}:`, err);
+      return null;
+    }
+    const sections = (raw as { sections?: unknown } | null)?.sections;
+    if (!Array.isArray(sections)) return null;
+    const out: CliStatusReport['sections'] = [];
+    for (const sec of sections) {
+      const title = (sec as { title?: unknown } | null)?.title;
+      const rows = (sec as { rows?: unknown } | null)?.rows;
+      if (typeof title !== 'string' || !Array.isArray(rows)) continue;
+      const clean = rows.flatMap((r) => {
+        const { label, value } = (r ?? {}) as { label?: unknown; value?: unknown };
+        if (typeof value !== 'string') return [];
+        return [typeof label === 'string' ? { label, value } : { value }];
+      });
+      out.push({ title, rows: clean });
+    }
+    return { sections: out };
+  }
+
+  /**
    * The session's LIVE permission rules, straight from the CLI.
    *
    * This is the read-back half of `applyPermissions`. That method pushes a
@@ -395,6 +432,7 @@ export function createQueryPassthroughs(
     setThinking,
     getAccountInfo,
     getContextUsage,
+    getCliStatus,
     getSupportedCommands,
     getSupportedModels,
     getSupportedAgents,

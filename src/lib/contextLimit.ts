@@ -1,3 +1,5 @@
+import { hasOneMillionSuffix, resolveContextWindow, type ModelPricingInput } from './pricing';
+
 /**
  * Resolve the context-window size to render the usage gauge against.
  *
@@ -22,12 +24,31 @@
  * that only happens on a stream init/result/compact_boundary — so an idle
  * resumed session sits on the fallback until its next turn.
  *
- * In that fallback, an "Account Default" session's own model string never
- * carries "[1m]" (it's the base id from the JSONL, or the "default" sentinel),
- * so the only signal that the resolved default is a 1M model is the account's
- * settings.json `model` value (e.g. "opus[1m]"). `defaultModel` carries that,
- * so a resumed Account-Default 1M session isn't pinned to 200k.
+ * The fallback no longer guesses from the suffix alone. It used to return
+ * 200k for anything without "[1m]", which was wrong for every natively-1M
+ * model (Opus 4.7+, Sonnet 5, Fable, Mythos — the JSONL records their bare
+ * id). The window is now DATA: `contextWindow` on the model rows in
+ * `pricing.ts` (shipped + the user's `model_pricing` overrides), read off the
+ * CLI's own model table. In order:
+ *
+ *  1. An explicit "[1m]" on the selection (or what the catalog resolves it to)
+ *     is the user's opt-in and wins.
+ *  2. The model that actually ran (`runningModel`, from the transcript), then
+ *     the catalog's resolution of the selected alias, then the selection
+ *     itself — the first concrete `claude-*` id whose row states a window.
+ *  3. An "Account Default" session also honours the account's settings.json
+ *     pin ("opus[1m]"), which is the only place that opt-in survives a resume.
+ *  4. 200k — the smallest window any current model has.
  */
+export interface ContextCatalogEntry {
+  value: string;
+  /** The concrete id the CLI maps this picker value to (`claude-opus-5-5[1m]`). */
+  resolvedModel?: string;
+}
+
+const ONE_MILLION = 1_000_000;
+const SMALLEST_WINDOW = 200_000;
+
 export function resolveContextLimit(opts: {
   /** `contextUsage.maxTokens` from the live CLI, or null when no live data yet. */
   sdkMaxTokens: number | null;
@@ -36,26 +57,38 @@ export function resolveContextLimit(opts: {
   /** The account's resolved default model (settings.json `model`), used when
    *  the session runs "Account Default" and its own model string lacks [1m]. */
   defaultModel?: string | null;
+  /** The concrete model id the transcript says actually ran. */
+  runningModel?: string | null;
+  /** The account's CLI model catalog, to resolve aliases (`default`, `opus`). */
+  catalog?: readonly ContextCatalogEntry[] | null;
+  /** The user's `model_pricing` rows, which may override a shipped window. */
+  pricingOverrides?: readonly ModelPricingInput[] | null;
 }): number {
-  const { sdkMaxTokens, model, defaultModel } = opts;
+  const { sdkMaxTokens, model, defaultModel, runningModel, catalog, pricingOverrides } = opts;
 
   if (sdkMaxTokens != null && sdkMaxTokens > 0) {
     return sdkMaxTokens;
   }
 
-  const has1m = (s: string | null | undefined): boolean => !!s && s.includes('[1m]');
+  const usingDefault = !model || model === 'default';
+  const resolveAlias = (value: string | undefined): string | undefined =>
+    catalog?.find((e) => e.value === (value || 'default'))?.resolvedModel;
+  const selectedResolved = resolveAlias(model);
 
-  let expectsLargeContext = has1m(model);
-  if (!expectsLargeContext && has1m(defaultModel)) {
-    // Only let the account's 1M default size this session when the session is
-    // actually running that default: no explicit model, the "default" sentinel,
-    // or the same model family. An explicit cross-family pick (e.g. sonnet on an
-    // opus[1m]-default account) must NOT inherit the 1M window.
-    const usingDefault =
-      !model || model === 'default' || familyOf(model) === familyOf(defaultModel);
-    expectsLargeContext = usingDefault;
+  if (hasOneMillionSuffix(model) || hasOneMillionSuffix(selectedResolved)) return ONE_MILLION;
+
+  // The account pin only speaks for a session running that default: no
+  // explicit model, the "default" sentinel, or the same family. An explicit
+  // cross-family pick (sonnet on an opus[1m]-default account) must not inherit.
+  if (hasOneMillionSuffix(defaultModel)) {
+    if (usingDefault || familyOf(model) === familyOf(defaultModel)) return ONE_MILLION;
   }
-  return expectsLargeContext ? 1_000_000 : 200_000;
+
+  for (const candidate of [runningModel, selectedResolved, model]) {
+    const window = resolveContextWindow(candidate, pricingOverrides);
+    if (window != null && window > 0) return window;
+  }
+  return SMALLEST_WINDOW;
 }
 
 /** The model-family token (opus/sonnet/haiku/fable) within a model string, or

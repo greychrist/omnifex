@@ -61,6 +61,78 @@ describe('permission-mode decider (auto allow/deny vs prompt)', () => {
     expect(handle.permissionQueue).toHaveLength(0);
   });
 
+  // In acceptEdits the CLI approves in-project edits itself; what it still
+  // sends is what it chose to ask a human about. Payloads below are verbatim
+  // shapes captured from CLI 2.1.280 in acceptEdits mode.
+  describe('acceptEdits: edits the CLI escalated reach the card', () => {
+    function escalated(input: Record<string, unknown>, extra: Record<string, unknown>): AgentPermissionRequest {
+      return {
+        agent: 'claude',
+        requestId: 'req-esc',
+        kind: 'tool',
+        summary: 'Write',
+        payload: { tool_name: 'Write', input, tool_use_id: 'tu-esc', ...extra },
+      };
+    }
+
+    it('prompts for a write outside the working directories', () => {
+      const { fn, handle, respondPermission } = handlerFor('acceptEdits');
+      fn(escalated({ file_path: '/opt/shared/a.txt' }, {
+        decision_reason: 'Path is outside allowed working directories',
+        decision_reason_type: 'workingDir',
+        permission_suggestions: [
+          { type: 'addDirectories', directories: ['/opt/shared'], destination: 'session' },
+        ],
+      }));
+      expect(respondPermission).not.toHaveBeenCalled();
+      expect(handle.permissionQueue).toHaveLength(1);
+    });
+
+    it('prompts for a write that escapes through a symlink', () => {
+      const { fn, handle, respondPermission } = handlerFor('acceptEdits');
+      fn(escalated({ file_path: '/Users/test/proj/linked/b.txt' }, {
+        blocked_path: '/private/tmp/outside/b.txt',
+        decision_reason_type: 'safetyCheck',
+      }));
+      expect(respondPermission).not.toHaveBeenCalled();
+      expect(handle.permissionQueue).toHaveLength(1);
+    });
+
+    it('still auto-allows an in-project edit the CLI did not escalate (mode out of sync)', () => {
+      // The decider enforces the dropdown even when the CLI never received
+      // set_permission_mode — the "kept asking after I set it" fix.
+      const { fn, handle, respondPermission } = handlerFor('acceptEdits');
+      fn(escalated({ file_path: '/Users/test/proj/src/a.ts' }, {}));
+      expect(respondPermission).toHaveBeenCalledWith('req-esc', 'allow', expect.anything());
+      expect(handle.permissionQueue).toHaveLength(0);
+    });
+
+    it('offers the containing folder as the rule for an outside write, so it asks once', () => {
+      const { fn, sendToRenderer } = handlerFor('acceptEdits');
+      fn(escalated({ file_path: '/opt/shared/a.txt' }, { decision_reason_type: 'workingDir' }));
+      const payload = sendToRenderer.mock.calls[0][1] as { permission_suggestions: Array<{ type: string; rules?: unknown[] }> };
+      expect(payload.permission_suggestions[0]).toMatchObject({
+        type: 'addRules',
+        rules: [{ toolName: 'Edit', ruleContent: '//opt/shared/**' }],
+      });
+    });
+
+    it('offers the CLI folder grant for a symlink escape — no Edit rule stops that ask', () => {
+      const { fn, sendToRenderer } = handlerFor('acceptEdits');
+      fn(escalated({ file_path: '/Users/test/proj/linked/b.txt' }, {
+        blocked_path: '/private/tmp/outside/b.txt',
+        decision_reason_type: 'safetyCheck',
+        permission_suggestions: [{
+          type: 'addDirectories',
+          directories: ['/Users/test/proj/linked', '/tmp/outside', '/private/tmp/outside'],
+          destination: 'session',
+        }],
+      }));
+      const payload = sendToRenderer.mock.calls[0][1] as Record<string, unknown>;
+      expect(payload.directory_grant).toEqual(['/Users/test/proj/linked', '/tmp/outside', '/private/tmp/outside']);
+    });
+  });
+
   it('acceptEdits: still prompts for non-edit tools (e.g. Bash)', () => {
     const { fn, handle, respondPermission, sendToRenderer } = handlerFor('acceptEdits');
     fn(req('Bash', { command: 'curl example.com' }));

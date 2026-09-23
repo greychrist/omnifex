@@ -142,6 +142,28 @@ export interface CliPermissionRulesState {
   errors?: unknown[];
 }
 
+/**
+ * Why a session's handle went away. `'shutdown'` is every close `stopAll()`
+ * makes — the process is exiting, so work started from the close hook dies
+ * with it.
+ */
+export type SessionCloseReason = 'closed' | 'shutdown';
+
+export type SessionClosedHook = (
+  sessionId: string,
+  projectPath: string,
+  configDir: string,
+  reason: SessionCloseReason,
+) => void;
+
+/**
+ * The CLI's `/status` screen as data (`get_status`, CLI >= 2.1.280). Every
+ * value is already rendered text — for display, not for parsing.
+ */
+export interface CliStatusReport {
+  sections: Array<{ title: string; rows: Array<{ label?: string; value: string }> }>;
+}
+
 export interface CliControlGetContextUsageResponse {
   total_tokens?: number;
   remaining_tokens?: number;
@@ -330,6 +352,9 @@ export interface SessionsService {
   getAccountInfo(tabId: string): Promise<AccountInfo | null>;
   /** Get the current context-window usage breakdown. Null if the tab isn't running. */
   getContextUsage(tabId: string): Promise<CliControlGetContextUsageResponse | null>;
+  /** The CLI's `/status` rows for a live session; null when there is no live
+   *  engine or the CLI predates `get_status`. */
+  getCliStatus(tabId: string): Promise<CliStatusReport | null>;
   listPermissionRules(tabId: string): Promise<CliPermissionRulesState | null>;
   /** Get the list of slash commands the CLI knows about for this session. Empty if no tab. */
   getSupportedCommands(tabId: string): Promise<SlashCommand[]>;

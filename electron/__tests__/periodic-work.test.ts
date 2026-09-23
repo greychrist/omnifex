@@ -13,12 +13,22 @@ vi.mock('../services/sessions/internal-archive', () => ({
 }));
 import { pruneInternalArchive } from '../services/sessions/internal-archive';
 
+const { sweepTick, sweepDeps } = vi.hoisted(() => ({
+  sweepTick: vi.fn(async () => 0),
+  sweepDeps: [] as unknown[],
+}));
+vi.mock('../services/summary-sweep', () => ({
+  createSummarySweep: vi.fn((d: unknown) => { sweepDeps.push(d); return { tick: sweepTick }; }),
+}));
+
 function harness(over: Partial<PeriodicWorkDeps> = {}) {
   const settings: Record<string, string> = {
     'brain.autoIndex': 'true',
     'brain.curate': 'true',
     'brain.sweepHours': '24',
     'internal.archive.retentionDays': '90',
+    'sessionsSummary.enabled': 'true',
+    'sessionsSummary.autoOnClose': 'true',
   };
   const brain = {
     vaultPath: vi.fn((_id: number): string | null => '/vault'),
@@ -36,6 +46,8 @@ function harness(over: Partial<PeriodicWorkDeps> = {}) {
     costBackfillOpts: { archiveRoot: '/archive' },
     internalArchive: '/archive',
     brain: () => brain,
+    summary: () => ({ generateSummary: vi.fn(async () => ({ status: 'generated' })) }),
+    activeSessionIds: () => ['live-1'],
     log: { info: vi.fn(), warn: vi.fn() },
     ...over,
   };
@@ -43,7 +55,12 @@ function harness(over: Partial<PeriodicWorkDeps> = {}) {
 }
 
 describe('startPeriodicWork', () => {
-  beforeEach(() => { vi.useFakeTimers(); vi.mocked(pruneInternalArchive).mockClear(); });
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.mocked(pruneInternalArchive).mockClear();
+    sweepTick.mockClear();
+    sweepDeps.length = 0;
+  });
   afterEach(() => { vi.useRealTimers(); });
 
   it('backfills cost history 30s after start, then hourly, pruning the archive after each sweep', async () => {
@@ -60,6 +77,37 @@ describe('startPeriodicWork', () => {
     // Prune AFTER pricing, never before — an unpriced transcript deleted for
     // being old takes its spend with it.
     expect(pruneInternalArchive).toHaveBeenCalledWith('/archive', 90, expect.any(String));
+    stop();
+  });
+
+  it('sweeps for missing session summaries every five minutes, over every account', async () => {
+    const { deps } = harness();
+    const stop = startPeriodicWork(deps);
+    await vi.advanceTimersByTimeAsync(FIVE_MIN);
+    expect(sweepTick).toHaveBeenCalledTimes(1);
+    const d = sweepDeps[0] as { listConfigDirs(): string[]; activeSessionIds(): string[] };
+    expect(d.listConfigDirs()).toEqual(['/cfg/1', '/cfg/2']);
+    expect(d.activeSessionIds()).toEqual(['live-1']);
+    stop();
+  });
+
+  it('does not sweep summaries when summaries or auto-on-close are off', async () => {
+    for (const key of ['sessionsSummary.enabled', 'sessionsSummary.autoOnClose']) {
+      sweepTick.mockClear();
+      const { deps, settings } = harness();
+      settings[key] = 'false';
+      const stop = startPeriodicWork(deps);
+      await vi.advanceTimersByTimeAsync(FIVE_MIN);
+      expect(sweepTick).not.toHaveBeenCalled();
+      stop();
+    }
+  });
+
+  it('does not sweep summaries in a process that does not own periodic work', async () => {
+    const { deps } = harness({ enabled: () => false });
+    const stop = startPeriodicWork(deps);
+    await vi.advanceTimersByTimeAsync(FIVE_MIN);
+    expect(sweepTick).not.toHaveBeenCalled();
     stop();
   });
 

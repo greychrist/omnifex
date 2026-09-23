@@ -101,6 +101,7 @@ export const INVOKE_CHANNELS: readonly string[] = [
   'session_set_thinking',
   'session_account_info',
   'session_context_usage',
+  'session_cli_status',
   'session_supported_commands',
   'session_supported_models',
   'list_supported_models',

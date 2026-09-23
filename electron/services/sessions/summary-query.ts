@@ -57,6 +57,17 @@ import {
 export const SCRATCH_DIR_NAME = 'omnifex-summary-scratch';
 
 /**
+ * A `projects/<encoded>/` directory that is really this scratch cwd. The CLI's
+ * encoding replaces every non-alphanumeric character with `-`, so the name
+ * survives as a substring — anything stricter would have to reconstruct the
+ * per-machine tmpdir. Shared by every walker that must not treat OmniFex's own
+ * summary runs as user sessions (the Brain, the summary sweep).
+ */
+export function isSummaryScratchProject(projectDirName: string): boolean {
+  return projectDirName.includes(SCRATCH_DIR_NAME);
+}
+
+/**
  * Account segment used when `resolveAccountName` comes back empty. Visible on
  * purpose: an unattributed transcript is a problem to notice, and keeping it
  * beats deleting it.

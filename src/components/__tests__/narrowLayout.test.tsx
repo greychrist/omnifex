@@ -33,14 +33,14 @@ afterEach(() => { cleanup(); });
 
 describe('narrow windows drop the meter bars', () => {
   it('keeps the session widget bar at full width and drops it when narrow', () => {
-    const { unmount } = render(<SessionCard totalTokens={12_000} contextUsage={USAGE} />);
+    const { unmount } = render(<SessionCard totalTokens={12_000} contextLimit={200_000} contextUsage={USAGE} />);
     expect(screen.getByTestId('context-meter-bar')).toBeTruthy();
     // The numbers either side of it stay — they carry the same fact.
     expect(screen.getByText('12.0k')).toBeTruthy();
     unmount();
 
     layout.narrow = true;
-    render(<SessionCard totalTokens={12_000} contextUsage={USAGE} />);
+    render(<SessionCard totalTokens={12_000} contextLimit={200_000} contextUsage={USAGE} />);
     expect(screen.queryByTestId('context-meter-bar')).toBeNull();
     expect(screen.getByText('12.0k')).toBeTruthy();
     expect(screen.getByText('6%')).toBeTruthy();
@@ -49,7 +49,7 @@ describe('narrow windows drop the meter bars', () => {
   });
 
   it('shows no divider while the bar itself is doing the separating', () => {
-    render(<SessionCard totalTokens={12_000} contextUsage={USAGE} />);
+    render(<SessionCard totalTokens={12_000} contextLimit={200_000} contextUsage={USAGE} />);
     expect(screen.getByTestId('context-meter-bar')).toBeTruthy();
     expect(screen.queryByTestId('context-meter-divider')).toBeNull();
   });

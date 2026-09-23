@@ -277,7 +277,6 @@ export interface Session {
   /** Unix timestamp when the session file was created */
   created_at: number;
   /** First user message content (if available) */
-  first_message?: string;
   /** The CLI's own name for the session, from the `ai-title` records it
    *  writes into the transcript. Absent on older transcripts. */
   ai_title?: string;
@@ -1218,8 +1217,8 @@ export interface SessionSummary {
 export const PROMPT_TEMPLATE_SETTING_KEY = 'sessionsSummary.promptTemplate';
 
 /** app_settings key for the master "summaries on/off" toggle. When
- *  off, sessions list rows show first_message instead of any cached
- *  sidecar, the manual refresh button is hidden, and the auto-on-close
+ *  off, sessions list rows show no summary — just the name, or "No name" —
+ *  instead of any cached sidecar, the manual refresh button is hidden, and the auto-on-close
  *  lifecycle hook also bails (it gates on enabled AND autoOnClose).
  *  Mirrors the backend constant in sessions-summary.ts. Stored as
  *  `'true'` or `'false'`. */
@@ -1249,8 +1248,16 @@ export type SummaryGenerateResult =
     }
   | { status: 'malformed-response' };
 
+/** Mirrors `CliStatusReport` in electron/services/sessions/types.ts. Values
+ *  are the CLI's own rendered text — display them, don't parse them. */
+export interface SessionStatusReport {
+  sections: Array<{ title: string; rows: Array<{ label?: string; value: string }> }>;
+}
+
 export interface SessionModelInfo {
   value: string;
+  /** The concrete id the CLI maps this picker value to (`claude-opus-5-5[1m]`). */
+  resolvedModel?: string;
   displayName: string;
   description: string;
   supportsEffort?: boolean;
@@ -1928,6 +1935,12 @@ export const api = {
   /** Get the current context-window usage for an active session. */
   async sessionContextUsage(tabId: string): Promise<SessionContextUsage | null> {
     return apiCall("session_context_usage", { tabId });
+  },
+
+  /** The CLI's `/status` rows for a live session (CLI 2.1.280+); null when
+   *  there is no live session or the CLI predates `get_status`. */
+  async sessionCliStatus(tabId: string): Promise<SessionStatusReport | null> {
+    return apiCall("session_cli_status", { tabId });
   },
 
   /** Get the list of slash commands the CLI knows about for this session. */

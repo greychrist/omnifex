@@ -40,7 +40,8 @@ const FILE_EDIT_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
  * nothing: the label changed but the decider prompted identically.)
  *
  *  - `bypassPermissions` → allow everything
- *  - `acceptEdits`       → allow file-edit tools; prompt for the rest
+ *  - `acceptEdits`       → allow file-edit tools the CLI did not escalate;
+ *                          prompt for the rest (see `isEscalatedEdit`)
  *  - `dontAsk`           → deny everything that reached the prompt tool
  *                          (the CLI already short-circuits pre-approved tools)
  *  - `default` / `plan` / `auto` → prompt (null). `auto`'s CLI-side safety
@@ -50,17 +51,63 @@ const FILE_EDIT_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
 function autoDecisionForMode(
   mode: string,
   toolName: string,
+  escalated = false,
 ): 'allow' | 'deny' | null {
   switch (mode) {
     case 'bypassPermissions':
       return 'allow';
     case 'acceptEdits':
-      return FILE_EDIT_TOOLS.has(toolName) ? 'allow' : null;
+      return FILE_EDIT_TOOLS.has(toolName) && !escalated ? 'allow' : null;
     case 'dontAsk':
       return 'deny';
     default:
       return null;
   }
+}
+
+/**
+ * Whether the CLI itself chose to ask a human about this request, rather than
+ * delegating a decision its mode would have made anyway.
+ *
+ * In acceptEdits the CLI approves in-project edits on its own; the file edits
+ * it still sends are the ones it refused to auto-accept. Captured from CLI
+ * 2.1.280 in acceptEdits:
+ *   - a write outside the working directories: `decision_reason_type:
+ *     'workingDir'`, no `blocked_path`
+ *   - a write whose path resolves through a symlink to outside them:
+ *     `decision_reason_type: 'safetyCheck'`, `blocked_path` = the real target
+ * Auto-allowing those overrode the CLI's own ask with nobody looking — the
+ * decider answers in the human's place, so its answer is final.
+ *
+ * An edit with neither marker is one the CLI would have accepted had it known
+ * the mode; allowing it keeps the dropdown effective even if the CLI never
+ * received `set_permission_mode`.
+ */
+function isEscalatedEdit(payload: { blocked_path?: string; decision_reason_type?: string }): boolean {
+  return (
+    !!payload.blocked_path ||
+    payload.decision_reason_type === 'workingDir' ||
+    payload.decision_reason_type === 'safetyCheck'
+  );
+}
+
+/**
+ * The folders to grant for a symlink escape: the CLI's own `addDirectories`
+ * suggestion, else the real target's folder. No `Edit(...)` allow rule stops
+ * this ask — verified on 2.1.280 against both the link's and the target's
+ * spelling — only adding the directory does, so the card offers that instead
+ * of a rule. Null when the request is not a symlink escape.
+ */
+function directoryGrantFor(payload: {
+  blocked_path?: string;
+  permission_suggestions?: unknown[];
+}): string[] | null {
+  if (!payload.blocked_path) return null;
+  const fromCli = payload.permission_suggestions?.find(
+    (s: any) => s?.type === 'addDirectories' && Array.isArray(s.directories) && s.directories.length > 0,
+  ) as { directories: unknown[] } | undefined;
+  const dirs = fromCli?.directories.filter((d): d is string => typeof d === 'string' && d.length > 0);
+  return dirs && dirs.length > 0 ? dirs : [path.dirname(payload.blocked_path)];
 }
 
 const NOTIF_BODY_CAP = 140;
@@ -181,6 +228,10 @@ export function augmentPermissionsWithSession(
   const out: any[] = [];
   for (const u of updates) {
     out.push(u);
+    // Rules only. A folder grant (`addDirectories`) needs no twin: CLI
+    // 2.1.280 applies it to the running session at any destination and writes
+    // `additionalDirectories` to disk itself (verified: a localSettings-only
+    // grant stopped the next write in the same session from asking).
     if (u?.type === 'addRules' && u.destination !== 'session') {
       out.push({ ...u, destination: 'session' });
     }
@@ -208,6 +259,7 @@ export function buildDefaultRule(
   toolName: string,
   toolInput: Record<string, unknown>,
   projectPath: string,
+  opts: { folder?: boolean } = {},
 ): ParsedRule | null {
   if (toolName === 'Bash' && typeof toolInput.command === 'string') {
     const cmd = (toolInput.command).trim();
@@ -223,6 +275,13 @@ export function buildDefaultRule(
   ) {
     const fp = typeof toolInput.file_path === 'string' ? toolInput.file_path : undefined;
     if (!fp) return { toolName };
+    // An edit outside the working directories grants its folder, not the one
+    // file: "allow" there means "you may write here", and a per-file rule made
+    // the next file in the same folder ask again.
+    if (opts.folder && path.isAbsolute(fp)) {
+      const dir = formatFilePathForRule(path.dirname(fp), projectPath);
+      return canonicalizeRule({ toolName, ruleContent: `${dir.replace(/\/+$/, '')}/**` });
+    }
     return canonicalizeRule({
       toolName,
       ruleContent: formatFilePathForRule(fp, projectPath),
@@ -442,6 +501,7 @@ export function createPermissionRequestHandler(
       permission_suggestions?: unknown[];
       blocked_path?: string;
       decision_reason?: string;
+      decision_reason_type?: string;
       title?: string;
       display_name?: string;
       description?: string;
@@ -456,7 +516,7 @@ export function createPermissionRequestHandler(
     // Auto-resolve per the live permission mode (the bottom-bar dropdown sets
     // handle.permissionMode, read fresh above). Only modes that don't need a
     // prompt return non-null here; everything else falls through to the card.
-    const autoDecision = autoDecisionForMode(permissionMode, toolName);
+    const autoDecision = autoDecisionForMode(permissionMode, toolName, isEscalatedEdit(rawPayload));
     if (autoDecision) {
       logEntry({
         level: 'info',
@@ -494,8 +554,11 @@ export function createPermissionRequestHandler(
       ? rawPayload.permission_suggestions
       : withDefaultRuleSuggestion(
           rawPayload.permission_suggestions,
-          buildDefaultRule(toolName, toolInput, handle.projectPath),
+          buildDefaultRule(toolName, toolInput, handle.projectPath, {
+            folder: rawPayload.decision_reason_type === 'workingDir',
+          }),
         );
+    const directoryGrant = suppressAlwaysAllowRule ? null : directoryGrantFor(rawPayload);
 
     const payload = {
       type: 'permission_request',
@@ -508,6 +571,9 @@ export function createPermissionRequestHandler(
       decision_reason: rawPayload.decision_reason,
       blocked_path: rawPayload.blocked_path,
       permission_suggestions: suggestions,
+      // Present only for a symlink escape: the card grants these folders
+      // instead of a rule, since no rule stops that ask.
+      directory_grant: directoryGrant ?? undefined,
       // Omitted rather than `false` so the wire stays the CLI's shape.
       suppress_always_allow_rule: suppressAlwaysAllowRule || undefined,
     };

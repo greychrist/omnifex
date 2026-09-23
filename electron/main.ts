@@ -996,6 +996,8 @@ app.whenReady().then(() => {
     costBackfillOpts,
     internalArchive,
     brain: () => brainRef,
+    summary: () => sessionsSummaryServiceRef,
+    activeSessionIds: () => sessionsService.listActiveSessionIds(),
     log: {
       info: (message, meta) => console.log(`[periodic] ${message}`, meta ?? ''),
       warn: (message, meta) => console.warn(`[periodic] ${message}`, meta ?? ''),
@@ -1330,6 +1332,7 @@ app.whenReady().then(() => {
       setThinking: (sessionId: string, config: unknown) => sessionsService.setThinking(sessionId, config as any),
       getAccountInfo: (sessionId: string) => sessionsService.getAccountInfo(sessionId),
       getContextUsage: (sessionId: string) => sessionsService.getContextUsage(sessionId),
+      getCliStatus: (sessionId: string) => sessionsService.getCliStatus(sessionId),
       listPermissionRules: (sessionId: string) => sessionsService.listPermissionRules(sessionId),
       getSupportedCommands: (sessionId: string) => sessionsService.getSupportedCommands(sessionId),
       getSupportedModels: (sessionId: string) => sessionsService.getSupportedModels(sessionId),

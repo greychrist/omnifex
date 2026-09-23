@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   RECALL_COMMAND_ID,
+  STATUS_COMMAND_ID,
   formatRecalledNotes,
   isLocalSlashCommand,
   localSlashCommands,
@@ -10,6 +11,14 @@ describe('localSlashCommands', () => {
   it('offers /recall only when the account has a vault', () => {
     expect(localSlashCommands({ hasVault: true }).map((c) => c.id)).toEqual([RECALL_COMMAND_ID]);
     expect(localSlashCommands({ hasVault: false })).toEqual([]);
+  });
+
+  it('offers /status only inside a session, since it reads the live CLI', () => {
+    expect(localSlashCommands({ hasVault: false, hasSession: true }).map((c) => c.full_command)).toEqual(['/status']);
+    expect(localSlashCommands({ hasVault: true, hasSession: true }).map((c) => c.id)).toEqual([
+      RECALL_COMMAND_ID,
+      STATUS_COMMAND_ID,
+    ]);
   });
 
   it('marks the command as OmniFex-local so the picker can badge it', () => {
@@ -23,6 +32,7 @@ describe('localSlashCommands', () => {
 
   it('identifies its own commands and nothing else', () => {
     expect(isLocalSlashCommand(RECALL_COMMAND_ID)).toBe(true);
+    expect(isLocalSlashCommand(STATUS_COMMAND_ID)).toBe(true);
     expect(isLocalSlashCommand('user:default:commit')).toBe(false);
     expect(isLocalSlashCommand('')).toBe(false);
   });

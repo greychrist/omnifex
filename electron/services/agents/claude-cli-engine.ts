@@ -24,6 +24,10 @@ export interface CreateClaudeCliEngineParams {
  * makes the CLI exit 1. For unsupported values we omit the argv flag (CLI
  * defaults to 'default') and reapply via control_request post-spawn.
  */
+/** `--effort` values the CLI accepts (2.1.280). Anything else it ignores with
+ *  a stderr warning, so we omit the flag rather than send one. */
+const CLI_EFFORT_LEVELS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
+
 const CLI_ARGV_PERMISSION_MODES = new Set([
   'default',
   'acceptEdits',
@@ -75,6 +79,20 @@ function buildArgs(p: AgentStartParams): string[] {
   }
   if (p.permissionMode && CLI_ARGV_PERMISSION_MODES.has(p.permissionMode)) {
     args.push('--permission-mode', p.permissionMode);
+  }
+  // Effort and thinking picked before the session started. Only a mid-session
+  // change used to reach the CLI (apply_flag_settings), so a fresh session ran
+  // at the model's default while the picker showed its own default — invisible
+  // until Opus 5.5 shipped defaulting to `medium` against the picker's `high`.
+  // Sent on resume as well: the picker shows a level, and the session runs it.
+  if (p.effort && CLI_EFFORT_LEVELS.has(p.effort)) {
+    args.push('--effort', p.effort);
+  }
+  // Adaptive is the CLI's default, and a fixed budget collapses to adaptive on
+  // every current model (see setThinking in sessions/queries.ts), so only
+  // "off" needs saying.
+  if (p.thinking?.type === 'disabled') {
+    args.push('--thinking', 'disabled');
   }
   if (p.allowedTools && p.allowedTools.length > 0) {
     args.push('--allowed-tools', p.allowedTools.join(','));

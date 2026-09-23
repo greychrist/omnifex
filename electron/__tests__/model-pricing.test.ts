@@ -48,6 +48,20 @@ describe('model_pricing schema', () => {
     expect(svc.list()[0]).toMatchObject(saved);
   });
 
+  it('round-trips a context window, and accepts a row that states only that', () => {
+    const svc = createModelPricingService(db);
+    const saved = svc.upsert({ pattern: 'opus-4-6', effectiveFrom: '1970-01-01', contextWindow: 1_000_000 });
+    expect(saved.contextWindow).toBe(1_000_000);
+    expect(svc.list()[0].contextWindow).toBe(1_000_000);
+  });
+
+  it('rejects a context window that is not a positive integer', () => {
+    const svc = createModelPricingService(db);
+    for (const bad of [0, -1, 1.5, Number.NaN]) {
+      expect(() => svc.upsert({ pattern: 'x-1', effectiveFrom: '1970-01-01', contextWindow: bad })).toThrow(/contextWindow/);
+    }
+  });
+
   it('exists on a fresh install, not only after a migration', () => {
     const t = db.raw
       .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='model_pricing'")

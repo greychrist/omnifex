@@ -49,6 +49,7 @@ export interface SessionSuggestion {
 export interface IncomingSuggestion {
   type?: string;
   rules?: ParsedRule[];
+  directories?: string[];
   behavior?: string;
   destination?: string;
 }
@@ -124,6 +125,19 @@ export function buildPersistedSuggestion(
     behavior: 'allow',
     destination: scope,
   };
+}
+
+/**
+ * Build the `updatedPermissions` entry for a folder grant — the only answer
+ * that stops the CLI re-asking about a write through a symlink. The CLI writes
+ * a persisted grant to `additionalDirectories` itself and applies it to the
+ * running session at any destination (verified on 2.1.280).
+ */
+export function buildDirectoryGrant(
+  directories: string[],
+  destination: PersistedScopeValue | 'session',
+): IncomingSuggestion {
+  return { type: 'addDirectories', directories, destination };
 }
 
 /** Build the `updatedPermissions` entry for the current CLI session only. */

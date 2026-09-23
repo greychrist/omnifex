@@ -83,6 +83,10 @@ export interface ModelPricingInput {
   label?: string;
   /** Index into the Cost Report palette; omitted keeps the stable hash. */
   colorSlot?: number;
+  /** The model's native context window in tokens, WITHOUT a `[1m]` opt-in —
+   *  what the context gauge sizes against before the live CLI reports one.
+   *  Read off the CLI's own model table (`context.window`), not inferred. */
+  contextWindow?: number;
 }
 
 /** A persisted row — the shipped table's entries have no id, being code. */
@@ -138,6 +142,11 @@ const MTOK = 1_000_000;
  * warning stays meaningful — a flag that fires on every scan is a flag nobody
  * reads.
  */
+//
+// `contextWindow` is the NATIVE window from the CLI's baked model table
+// (`context.window`; 2.1.280). It sits on the generic family rows where a whole
+// family agrees (every Fable and Mythos is 1M, every pre-4.7 Opus/Sonnet and
+// every Haiku is 200k) and on the specific rows where a generation changed it.
 export const SHIPPED_PRICING: ModelPricingInput[] = [
   { pattern: '<synthetic>', effectiveFrom: '2024-01-01', inputPerM: 0, outputPerM: 0 },
 
@@ -154,25 +163,34 @@ export const SHIPPED_PRICING: ModelPricingInput[] = [
   // editable per-row in Settings > Pricing if they ever do.
   { pattern: 'fable-5-1', effectiveFrom: '2024-01-01', inputPerM: 10, outputPerM: 50, cacheReadPerM: 0.25, label: 'Fable 5.1', colorSlot: 7 },
   { pattern: 'fable-5', effectiveFrom: '2024-01-01', label: 'Fable 5', colorSlot: 2 },
-  { pattern: 'fable', effectiveFrom: '2024-01-01', inputPerM: 10, outputPerM: 50 },
+  { pattern: 'fable', effectiveFrom: '2024-01-01', inputPerM: 10, outputPerM: 50, contextWindow: 1_000_000 },
 
   { pattern: 'mythos-5', effectiveFrom: '2024-01-01', label: 'Mythos 5', colorSlot: 7 },
-  { pattern: 'mythos', effectiveFrom: '2024-01-01', inputPerM: 10, outputPerM: 50 },
+  { pattern: 'mythos', effectiveFrom: '2024-01-01', inputPerM: 10, outputPerM: 50, contextWindow: 1_000_000 },
 
-  // Fast-mode rates are set only on the models that actually have one (Opus 5
-  // and Opus 4.8; 4.7's was removed upstream).
-  { pattern: 'opus-5', effectiveFrom: '2024-01-01', inputPerM: 5, outputPerM: 25, fastInputPerM: 10, fastOutputPerM: 50, label: 'Opus 5', colorSlot: 1 },
-  { pattern: 'opus-4-8', effectiveFrom: '2024-01-01', inputPerM: 5, outputPerM: 25, fastInputPerM: 10, fastOutputPerM: 50, label: 'Opus 4.8', colorSlot: 0 },
-  { pattern: 'opus-4-7', effectiveFrom: '2024-01-01', inputPerM: 5, outputPerM: 25, label: 'Opus 4.7', colorSlot: 6 },
+  // Fast-mode rates are set only on the models that actually have one (Opus
+  // 5.5, Opus 5 and Opus 4.8; 4.7's was removed upstream).
+  //
+  // Opus 5.5 (CLI 2.1.280) is cheaper than Opus 5 and, like Fable 5.1, breaks
+  // the cache formula: reads are $0.20/MTok (0.05x input). Without its own
+  // row it substring-matched `opus-5` and priced at $5/$25 with $0.50 reads.
+  // Known gap: fast-mode reads are $0.40 upstream, but an absolute
+  // `cacheReadPerM` has no fast variant, so fast turns price reads at $0.20.
+  // Slot 6 is shared with the legacy Opus 4.5-4.7 rows, which are unlikely to
+  // share a chart with it.
+  { pattern: 'opus-5-5', effectiveFrom: '2024-01-01', inputPerM: 4, outputPerM: 20, cacheReadPerM: 0.2, fastInputPerM: 8, fastOutputPerM: 40, label: 'Opus 5.5', colorSlot: 6, contextWindow: 1_000_000 },
+  { pattern: 'opus-5', effectiveFrom: '2024-01-01', inputPerM: 5, outputPerM: 25, fastInputPerM: 10, fastOutputPerM: 50, label: 'Opus 5', colorSlot: 1, contextWindow: 1_000_000 },
+  { pattern: 'opus-4-8', effectiveFrom: '2024-01-01', inputPerM: 5, outputPerM: 25, fastInputPerM: 10, fastOutputPerM: 50, label: 'Opus 4.8', colorSlot: 0, contextWindow: 1_000_000 },
+  { pattern: 'opus-4-7', effectiveFrom: '2024-01-01', inputPerM: 5, outputPerM: 25, label: 'Opus 4.7', colorSlot: 6, contextWindow: 1_000_000 },
   { pattern: 'opus-4-6', effectiveFrom: '2024-01-01', inputPerM: 5, outputPerM: 25, label: 'Opus 4.6', colorSlot: 6 },
   { pattern: 'opus-4-5', effectiveFrom: '2024-01-01', inputPerM: 5, outputPerM: 25, label: 'Opus 4.5', colorSlot: 6 },
   // LEGACY catch-all, priced for Opus 3. Every modern Opus needs its own row:
   // `claude-opus-5` matched none of the `opus-4-x` patterns once and fell
   // through to 15/75, inflating its cost 3x.
-  { pattern: 'opus', effectiveFrom: '2024-01-01', inputPerM: 15, outputPerM: 75 },
+  { pattern: 'opus', effectiveFrom: '2024-01-01', inputPerM: 15, outputPerM: 75, contextWindow: 200_000 },
 
   { pattern: 'haiku-4-5', effectiveFrom: '2024-01-01', inputPerM: 1, outputPerM: 5, label: 'Haiku 4.5', colorSlot: 4 },
-  { pattern: 'haiku', effectiveFrom: '2024-01-01', inputPerM: 0.25, outputPerM: 1.25 },
+  { pattern: 'haiku', effectiveFrom: '2024-01-01', inputPerM: 0.25, outputPerM: 1.25, contextWindow: 200_000 },
 
   { pattern: 'sonnet-4-6', effectiveFrom: '2024-01-01', label: 'Sonnet 4.6', colorSlot: 5 },
   // Sonnet 5 is cheaper than every Sonnet before it. The $2/$10 launched as
@@ -180,8 +198,8 @@ export const SHIPPED_PRICING: ModelPricingInput[] = [
   // and the scheduled rise to $3/$15 was cancelled, so there is one period,
   // not two. A single generic entry priced Sonnet 5 at $3/$15 once and
   // overstated it by 1.5x.
-  { pattern: 'sonnet-5', effectiveFrom: '2024-01-01', inputPerM: 2, outputPerM: 10, label: 'Sonnet 5', colorSlot: 3 },
-  { pattern: 'sonnet', effectiveFrom: '2024-01-01', inputPerM: 3, outputPerM: 15 },
+  { pattern: 'sonnet-5', effectiveFrom: '2024-01-01', inputPerM: 2, outputPerM: 10, label: 'Sonnet 5', colorSlot: 3, contextWindow: 1_000_000 },
+  { pattern: 'sonnet', effectiveFrom: '2024-01-01', inputPerM: 3, outputPerM: 15, contextWindow: 200_000 },
 ];
 
 /** Cache pricing as multipliers on the input rate, effective-dated for the
@@ -331,6 +349,7 @@ export function resolvePricing(
   for (const r of ordered) {
     if (out.label == null && r.label != null) out.label = r.label;
     if (out.colorSlot == null && r.colorSlot != null) out.colorSlot = r.colorSlot;
+    if (out.contextWindow == null && r.contextWindow != null) out.contextWindow = r.contextWindow;
   }
 
   return { row: out };
@@ -510,3 +529,26 @@ export function parseLegacyPricingOverrides(
   }
   return out;
 }
+
+/** Opt-in suffix the CLI accepts for a 1M window on models that are not
+ *  natively 1M (`claude-opus-4-6[1m]`, `opus[1m]`). */
+export function hasOneMillionSuffix(model: string | null | undefined): boolean {
+  return !!model && /\[1m\]/i.test(model);
+}
+
+/**
+ * A model's native context window from the model rows, or undefined when no
+ * row states one.
+ *
+ * Only concrete `claude-*` ids are looked up. A bare alias (`opus`, `sonnet`)
+ * names whatever the CLI currently maps it to, and would otherwise land on the
+ * legacy family catch-all row and report that generation's window.
+ */
+export function resolveContextWindow(
+  model: string | null | undefined,
+  userRows?: readonly ModelPricingInput[] | null,
+): number | undefined {
+  if (!model || !/^claude-/i.test(model)) return undefined;
+  return resolvePricing(model.replace(/\[1m\]$/i, ''), today(), userRows).row.contextWindow;
+}
+

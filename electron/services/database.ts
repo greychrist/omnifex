@@ -217,6 +217,8 @@ const MODEL_PRICING_DDL = `
     cache_write_1h_per_m REAL,
     label TEXT,
     color_slot INTEGER,
+    -- Native context window in tokens (v26). Display metadata, not a rate.
+    context_window INTEGER,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE (pattern, effective_from)
   );
@@ -1091,6 +1093,24 @@ const migrations: Migration[] = [
       }
 
       db.prepare("DELETE FROM app_settings WHERE key = 'pricing_overrides'").run();
+    },
+  },
+  {
+    version: 26,
+    description:
+      'Give model rows a native context window. The context gauge sized '
+      + 'itself from a "[1m]" suffix before live usage arrived, so every '
+      + 'natively-1M model (Opus 4.7+, Sonnet 5, Fable) read as 200k on '
+      + 'resume. The window is now data on the model row, shipped in '
+      + 'pricing.ts and overridable here.',
+    up: (db) => {
+      // Guarded: fresh installs get the column from MODEL_PRICING_DDL, and so
+      // does a pre-v25 image, whose v25 runs the current DDL.
+      const cols = (db.prepare('PRAGMA table_info(model_pricing)').all() as Array<{ name: string }>)
+        .map((c) => c.name);
+      if (cols.length > 0 && !cols.includes('context_window')) {
+        db.exec('ALTER TABLE model_pricing ADD COLUMN context_window INTEGER');
+      }
     },
   },
 ];

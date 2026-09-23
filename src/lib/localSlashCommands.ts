@@ -11,35 +11,57 @@ import type { SlashCommand } from '@/lib/api';
  * is not bolted onto the first.
  */
 export const RECALL_COMMAND_ID = 'omnifex:brain:recall';
+export const STATUS_COMMAND_ID = 'omnifex:status';
 
 /** Scope value that marks a command as OmniFex-local rather than CLI-sourced. */
 export const LOCAL_SCOPE = 'omnifex';
 
-export function localSlashCommands(opts: { hasVault: boolean }): SlashCommand[] {
+function localCommand(
+  fields: Pick<SlashCommand, 'id' | 'name' | 'full_command' | 'description'> & { namespace?: string },
+): SlashCommand {
+  return {
+    ...fields,
+    scope: LOCAL_SCOPE,
+    // No file backs it — that is the point.
+    file_path: '',
+    content: '',
+    allowed_tools: [],
+    has_bash_commands: false,
+    has_file_references: false,
+    accepts_arguments: false,
+  };
+}
+
+export function localSlashCommands(opts: { hasVault: boolean; hasSession?: boolean }): SlashCommand[] {
+  const out: SlashCommand[] = [];
   // An account with no vault gets no /recall: the dialog would open onto a
   // vault that does not exist and every search would come back empty.
-  if (!opts.hasVault) return [];
-  return [
-    {
+  if (opts.hasVault) {
+    out.push(localCommand({
       id: RECALL_COMMAND_ID,
       name: 'recall',
       full_command: '/recall',
-      scope: LOCAL_SCOPE,
       namespace: 'brain',
-      // No file backs it — that is the point.
-      file_path: '',
-      content: '',
       description: "Search this account's Brain and insert notes into the prompt",
-      allowed_tools: [],
-      has_bash_commands: false,
-      has_file_references: false,
-      accepts_arguments: false,
-    },
-  ];
+    }));
+  }
+  // The CLI's /status is a TUI screen, so chat mode cannot type it; OmniFex
+  // asks the live CLI for the same rows (`get_status`) and draws them. The CLI
+  // does not advertise /status in stream-json, so there is nothing to collide
+  // with.
+  if (opts.hasSession) {
+    out.push(localCommand({
+      id: STATUS_COMMAND_ID,
+      name: 'status',
+      full_command: '/status',
+      description: 'Show the CLI status: version, account, model, MCP servers, settings',
+    }));
+  }
+  return out;
 }
 
 export function isLocalSlashCommand(id: string): boolean {
-  return id === RECALL_COMMAND_ID;
+  return id === RECALL_COMMAND_ID || id === STATUS_COMMAND_ID;
 }
 
 /**

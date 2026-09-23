@@ -98,6 +98,7 @@ export interface Services {
     setThinking(sessionId: string, config: unknown): unknown;
     getAccountInfo(sessionId: string): unknown;
     getContextUsage(sessionId: string): unknown;
+    getCliStatus(sessionId: string): unknown;
     getSupportedCommands(sessionId: string): unknown;
     getSupportedModels(sessionId: string): unknown;
     getMcpServerStatus(sessionId: string): unknown;
@@ -535,6 +536,7 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     session_set_thinking: wrapWith((p: Record<string, unknown>) => sessions?.setThinking((p?.tabId ?? p?.session_id) as string, (p?.config ?? p?.thinking) as any) ?? null),
     session_account_info: wrapWith((p: Record<string, unknown>) => sessions?.getAccountInfo((p?.tabId ?? p?.session_id) as string) ?? null),
     session_context_usage: wrapWith((p: Record<string, unknown>) => sessions?.getContextUsage((p?.tabId ?? p?.session_id) as string) ?? null),
+    session_cli_status: wrapWith((p: Record<string, unknown>) => sessions?.getCliStatus((p?.tabId ?? p?.session_id) as string) ?? null),
     session_supported_commands: wrapWith((p: Record<string, unknown>) => sessions?.getSupportedCommands((p?.tabId ?? p?.session_id) as string) ?? null),
     session_supported_models: wrapWith((p: Record<string, unknown>) => sessions?.getSupportedModels((p?.tabId ?? p?.session_id) as string) ?? null),
     session_mcp_server_status: wrapWith((p: Record<string, unknown>) => sessions?.getMcpServerStatus((p?.tabId ?? p?.session_id) as string) ?? null),
@@ -626,6 +628,7 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
       cacheWrite1hPerM: p?.cacheWrite1hPerM ?? p?.cache_write_1h_per_m,
       label: p?.label,
       colorSlot: p?.colorSlot ?? p?.color_slot,
+      contextWindow: p?.contextWindow ?? p?.context_window,
     }) ?? null),
     model_pricing_delete: wrapWith((p: Record<string, unknown>) => {
       modelPricing?.remove(Number(p?.id));

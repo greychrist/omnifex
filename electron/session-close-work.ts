@@ -68,12 +68,13 @@ export type SessionCloseHandler = (
   sessionId: string,
   projectPath: string,
   configDir: string,
+  reason?: 'closed' | 'shutdown',
 ) => void;
 
 export function createSessionCloseWork(deps: SessionCloseWorkDeps): SessionCloseHandler {
   const drainEnabled = deps.drainEnabled ?? (() => true);
 
-  return (sessionId, projectPath, configDir) => {
+  return (sessionId, projectPath, configDir, reason = 'closed') => {
     // Auto-on-close summarization. Two global toggles gate this path:
     //   - sessionsSummary.enabled (master) — off means summaries are not used
     //     at all, so no point generating one.
@@ -93,7 +94,13 @@ export function createSessionCloseWork(deps: SessionCloseWorkDeps): SessionClose
     // indexing for everyone who had summaries turned off — both consumers
     // share this one callback, because the sessions service takes a single
     // `onSessionClosed`.
-    if (summaryOn && autoOnClose) {
+    //
+    // Never on shutdown. `stopAll()` closes every tab as the process exits, and
+    // the summary's `claude -p` call was killed by the exit a moment later —
+    // every update restart lost a batch, and a tab open across several
+    // restarts was attempted and killed each time. The periodic summary sweep
+    // (`services/summary-sweep.ts`) generates those once the next process is up.
+    if (summaryOn && autoOnClose && reason !== 'shutdown') {
       deps
         .summary()
         ?.generateSummary(sessionId, projectPath, configDir)

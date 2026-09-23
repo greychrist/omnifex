@@ -298,7 +298,6 @@ describe('claude service', () => {
         const sessions = await service.getProjectSessions(rootId, REAL);
         const dups = sessions.filter((s) => s.id === 'dup-session');
         expect(dups).toHaveLength(1);
-        expect(dups[0].first_message).toBe('fresh worktree copy');
         expect(dups[0].last_timestamp).toBe('2026-07-14T00:00:00.000Z');
       });
 
@@ -748,7 +747,7 @@ describe('claude service', () => {
       expect(result).toEqual([]);
     });
 
-    it('lists sessions and extracts the first user message from JSONL', async () => {
+    it('lists every session in the project, without a first-prompt preview', async () => {
       const configDir = path.join(tmpDir, '.claude-sessions');
       const projectPath = path.join(tmpDir, 'sessions-test');
       const projectId = projectPath.replace(/\//g, '-');
@@ -824,10 +823,9 @@ describe('claude service', () => {
       const byId = Object.fromEntries(sessions.map((s) => [s.id, s]));
 
       expect(sessions).toHaveLength(4);
-      expect(byId['sess-a'].first_message).toBe('Hello world from session A');
-      expect(byId['sess-b'].first_message).toBe('Array content body');
-      expect(byId['sess-c'].first_message).toBe('Real first user message');
-      expect(byId['sess-d'].first_message).toBeUndefined();
+      // No first-prompt preview: the project page shows a name, a summary,
+      // or "No name" — never the opening prompt — so nothing carries one.
+      for (const s of sessions) expect('first_message' in s).toBe(false);
       // Sessions should carry decoded path and timestamps
       for (const s of sessions) {
         expect(s.project_id).toBe(projectId);
@@ -878,7 +876,6 @@ describe('claude service', () => {
       const byId = Object.fromEntries(sessions.map((s) => [s.id, s]));
 
       expect(byId['sess-titled'].ai_title).toBe('Duplicate user prompt');
-      expect(byId['sess-titled'].first_message).toBe('first prompt');
       expect(byId['sess-untitled'].ai_title).toBeUndefined();
       expect(byId['sess-malformed'].ai_title).toBeUndefined();
     });

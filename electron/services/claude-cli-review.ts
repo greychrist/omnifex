@@ -30,6 +30,148 @@ import { buildClaudeEnv } from './util/claude-env';
  * old value and the new one, and file or fix whatever they imply. Bumping it
  * to silence the badge throws away the only drift signal we have.
  *
+ * Last review: 2.1.278 -> 2.1.280 on 2026-09-22. Findings:
+ *
+ *  Changelog coverage: 2.1.279 has NO entry in CHANGELOG.md and was never
+ *  installed here (versions/ holds 277, 278, 280). The wire diff below is
+ *  2.1.278 vs 2.1.280 directly, so whatever 279 shipped is inside it.
+ *  2.1.280 is a ~120-entry release.
+ *
+ *  Finding 1 fixed in the pass; findings 2 and 3 fixed the same day on
+ *  request.
+ *
+ *  WIRE DIFF, reported both ways round:
+ *
+ *    - Merge-strategy map: byte-identical (1950 bytes, both objects). No
+ *      new record type. Nothing for `jsonlClassifier.ts` /
+ *      `cliSidechannelRecords.ts`.
+ *    - `hook_event_name` literals: 33 distinct in each, set- and
+ *      count-identical.
+ *    - `type:"control_*"`: same 4 envelopes; `control_response` 58 -> 60 is
+ *      the two new handlers below, not a new envelope.
+ *    - `subtype:` literals: 123 -> 133 distinct, nothing removed. Ten new,
+ *      all SDK host requests backing the VSCode extension's new native
+ *      dialogs: `get_status`, `get_skills_dialog`, `get_sandbox_dialog`,
+ *      `get_chrome_dialog`, `get_chrome_browsers`, `select_chrome_browser`,
+ *      `export_conversation`, `get_plan` (now also an SDK method, was
+ *      CLI-internal), `mcp_read_resource` (ui:// only, MCP Apps),
+ *      `set_prompt_suggestions_paused`; plus `remote_tools_reannounce`
+ *      (worker-epoch plumbing, cloud only). Other count moves (`success`,
+ *      `error`, `api_retry`, `set_permission_mode`) are those handlers'
+ *      responses. We send none of them; see opportunities.
+ *    - User-record `origin` gates: every `kind==="human"` site in 278 has
+ *      a renamed twin in 280, plus one new site (image-path inlining).
+ *      The `origin:{kind:"human"}` stamp in writeUserMessage stays correct.
+ *      turnOrigin sanitizer set unchanged; the 6 -> 10 `turnOrigin`
+ *      occurrence move is a new prompt-suggestion controller that skips
+ *      suggestions for non-user-started turns, behind a flag defaulting
+ *      off (`tengu_chomp_sable`). We do not render prompt suggestions.
+ *    - stream-json input schema: `client_composed` lost its @internal tag
+ *      and now documents that it skips `@path` expansion, slash dispatch
+ *      AND the turn-start attachment pass (nested CLAUDE.md, reminders).
+ *      We never set it — correct, since OmniFex prompts are typed. New
+ *      optional `inline_pastes: string[]` on user input (see opp. B).
+ *      `can_use_tool` request fields and the `decision_reason_code` enum
+ *      are unchanged.
+ *    - `/usage` anchors: identical counts in both binaries. NB `rg -c`
+ *      counts LINES, so "Current week (" reads 5 here vs the 9
+ *      occurrences the block below reported — a method difference, not
+ *      drift. `usage-runner/parser.ts` is safe.
+ *
+ *  1. OPUS 5.5 MIS-PRICED. BUG, FIXED IN THIS PASS.
+ *
+ *     `claude-opus-5-5` ($4/$20, cache reads $0.20 = 0.05x input; fast
+ *     $8/$40, reads $0.40 — read off the CLI's own cost table `Lh`) had no
+ *     row, so longest-pattern resolution matched `opus-5` and priced it at
+ *     $5/$25 with $0.50 reads: +25% on input/output, 2.5x on reads. It is
+ *     the new `opus` alias default, so every Opus session from 2.1.280
+ *     was overstated. Added an `opus-5-5` row to SHIPPED_PRICING
+ *     (`src/lib/pricing.ts`) with tests in `pricing.test.ts`; backfill
+ *     re-prices history. Residual: `cacheReadPerM` has no fast variant,
+ *     so fast-mode reads price at $0.20, not $0.40.
+ *
+ *  2. SPAWN-TIME EFFORT (AND THINKING) NEVER REACH THE CLI. PRE-EXISTING
+ *     BUG, NOW VISIBLE. FIXED the same day: lifecycle start() forwards
+ *     both, buildArgs sends `--effort <level>` and `--thinking disabled`.
+ *
+ *     `session_start` carries `effort` and `thinking`, but
+ *     `lifecycle.ts` start() hands the engine only model + permissionMode;
+ *     neither is read in main since the SDK was removed (the SDK used to
+ *     take `options.effort`). Only a mid-session picker change is sent
+ *     (`apply_flag_settings {effortLevel}`). It went unnoticed because
+ *     Opus 5 / Fable 5 default to `high`, which is also the picker's
+ *     default. Opus 5.5's catalog `default_effort` is `medium`, and the
+ *     changelog says pre-per-model saved effort no longer applies to it —
+ *     so a fresh Opus 5.5 session shows "High" and runs medium. Seen in
+ *     real transcripts: this review's own session records
+ *     `"effort":"medium"` on claude-opus-5-5; prior Opus 5 sessions
+ *     `"high"`. Fix: pass `--effort <level>` (and `--thinking`) in
+ *     buildArgs. Related entry, inert on its own: Opus 4.7/4.8/Fable 5 no
+ *     longer hold their launch-default effort over flag-settings
+ *     `effortLevel`, so mid-session changes now stick on those models.
+ *
+ *  3. SYMLINKED-WRITE FIX IS UNDONE BY OUR acceptEdits DECIDER.
+ *     PRE-EXISTING GAP, SECURITY-RELEVANT. FIXED the same day: escalated
+ *     edits reach the card (`isEscalatedEdit`), with a folder rule or a
+ *     folder grant so one answer sticks. Payloads captured live; see
+ *     docs/permission-syntax.md "Edits outside the working directories".
+ *
+ *     2.1.280 stops `acceptEdits`/allow rules approving a write whose
+ *     symlinked path lands outside the tree; it now prompts. A prompt
+ *     reaches OmniFex's stdio decider, and `autoDecisionForMode`
+ *     (`permissions.ts`) returns 'allow' for ANY Write/Edit/MultiEdit/
+ *     NotebookEdit in acceptEdits, path unseen. The CLI auto-accepts
+ *     in-tree edits before delegating, so what reaches us in acceptEdits
+ *     is exactly the set it refused: out-of-tree and now symlink-escaping
+ *     writes. We approve them all. Fix: in acceptEdits, fall through to
+ *     the card (null) — or allow only when `blocked_path` is absent and
+ *     the realpath is inside the session cwd.
+ *
+ *  Opportunities, not bugs:
+ *
+ *   A. `get_status` returns the /status rows (version, account,
+ *      provider, model, settings) as text. TAKEN the same day: `/status`
+ *      in chat mode opens `CliStatusDialog`, fed by `session_cli_status`
+ *      (`queries.ts` getCliStatus). `export_conversation` and `get_plan`
+ *      similarly map onto features we build from the JSONL today.
+ *   B. `inline_pastes` lets a host name pasted spans; the CLI wraps them
+ *      in `<pasted_content>` tags. Tradeoff: the model then treats pasted
+ *      text as possibly not the user's instructions — a behaviour change,
+ *      not just labelling. Needs paste tracking in the composer.
+ *   C. `resolveContextLimit` fell back to 200k unless the id carried
+ *      `[1m]`; Opus 5.5 (like Fable 5) is `native_1m`. FIXED the same
+ *      day: `contextWindow` is a field on the model rows (SHIPPED_PRICING
+ *      + `model_pricing`, migration v26), read off the CLI's baked
+ *      `context.window`.
+ *
+ *  Checked and inert:
+ *
+ *   - `CLAUDE_CODE_MAX_MCP_DESCRIPTION_LENGTH`: the 2,048 cap already
+ *     existed; the Brain server's `instructions` string is well under it.
+ *   - `PermissionRequest` agent-type hooks now refused: HooksEditor only
+ *     writes `type:'command'`.
+ *   - Ctrl+C/Ctrl+D in dialogs, stray `y`/`n`, text fields losing keys,
+ *     Home/End: the /usage scraper sends only `\r`, Esc, `/usage\r`,
+ *     `/quit\r`, then kills the pty. None of those changed meaning.
+ *   - Model switch from a host no longer misses cache; background-subagent
+ *     messages no longer lost in SDK sessions; resumed sessions with
+ *     unfinished background work no longer start a turn unprompted — all
+ *     upstream fixes in our favour, nothing to change (the last one
+ *     removes a turn we could only have displayed, never inferred).
+ *   - Write calls with `path`/`file_text` aliases now validate: the
+ *     transcript's tool_use may carry the aliased keys, so a Write
+ *     widget reading `file_path` could render blank. Unverified — no
+ *     sample in hand; revisit if one appears.
+ *   - Default model on Pro/Team Standard -> Opus: we omit `--model` for
+ *     "default", so the CLI decides; the dynamic catalog labels it.
+ *
+ * No OmniFex impact: fullscreen/mouse/keybinding fixes, voice dictation,
+ * Windows/VSCode/web/Claude Tag/Code Review entries, plugin-marketplace and
+ * `installed_plugins.json` fixes, artifact and /ultrareview fixes,
+ * self-hosted-runner changes, OTel hook-size fields, auto-mode retry
+ * backoff, resume crash fixes for malformed system messages, advisor
+ * gateway retry, `/cost` cache-miss naming, `@` suggestion ranking.
+ *
  * Last review: 2.1.277 -> 2.1.278 on 2026-09-19. Findings:
  *
  *  Watermark note first: the review was requested as "2.1.276 -> 2.1.278",
@@ -2790,7 +2932,7 @@ import { buildClaudeEnv } from './util/claude-env';
  * `~/.claude.json` fix (we read-modify-write that file, never replace it), and
  * the VSCode screen-reader work.
  */
-export const REVIEWED_CLI_VERSION = '2.1.278';
+export const REVIEWED_CLI_VERSION = '2.1.280';
 
 /**
  * app_settings key holding the user's explicit OmniFex-checkout override.

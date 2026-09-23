@@ -24,8 +24,9 @@ import {
   useImageDropZone,
 } from "./ImageAttachments";
 import { useSlashCommandAutocomplete } from "@/hooks/useSlashCommandAutocomplete";
-import { RECALL_COMMAND_ID } from "@/lib/localSlashCommands";
+import { RECALL_COMMAND_ID, STATUS_COMMAND_ID } from "@/lib/localSlashCommands";
 import { RecallDialog } from "./brain/RecallDialog";
+import { CliStatusDialog } from "./CliStatusDialog";
 import { useOptionalAccounts } from "@/contexts/AccountsContext";
 
 // Re-export types so existing consumers don't break. The model / effort /
@@ -128,6 +129,7 @@ const FloatingPromptInputInner = (
   );
   const [hasBrainVault, setHasBrainVault] = useState(false);
   const [recallOpen, setRecallOpen] = useState(false);
+  const [statusOpen, setStatusOpen] = useState(false);
 
   useEffect(() => {
     if (brainAccountId === null) {
@@ -148,6 +150,7 @@ const FloatingPromptInputInner = (
 
   const handleLocalCommand = useCallback((commandId: string) => {
     if (commandId === RECALL_COMMAND_ID) setRecallOpen(true);
+    if (commandId === STATUS_COMMAND_ID) setStatusOpen(true);
   }, []);
 
   /**
@@ -642,6 +645,10 @@ const FloatingPromptInputInner = (
                     onOpenChange={setRecallOpen}
                     onInsert={insertRecalledNotes}
                   />
+                )}
+
+                {tabId && (
+                  <CliStatusDialog open={statusOpen} tabId={tabId} onOpenChange={setStatusOpen} />
                 )}
 
                 {/* Slash Command Picker */}

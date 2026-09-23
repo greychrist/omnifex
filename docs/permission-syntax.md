@@ -246,6 +246,33 @@ signal it gets — the CLI's internal `contentWithheld` never crosses the wire.
 `permissions.ts` forwards it and withholds its own fallback rule; `PermissionCard`
 then renders allow-once / deny with no rule editor or scope picker.
 
+## Edits outside the working directories, and symlink escapes
+
+Verified against CLI 2.1.280 over the `--permission-prompt-tool stdio`
+channel, in `acceptEdits` mode:
+
+| Write | Reaches the decider? | Payload | What stops the next ask |
+|---|---|---|---|
+| inside the project | no — the CLI accepts it itself | — | — |
+| outside the working directories | yes | `decision_reason_type: 'workingDir'`, no `blocked_path`, suggests `addDirectories` | an `Edit(//dir/**)` allow rule, or adding the directory |
+| through a symlink that lands outside (2.1.280+) | yes | `decision_reason_type: 'safetyCheck'`, `blocked_path` = the real target, suggests `addDirectories` | **only** adding the directory — no `Edit(...)` rule works, on either the link's or the target's spelling |
+
+`addDirectories` is persisted by the CLI itself (`additionalDirectories` in the
+chosen settings file) and applies to the running session at any destination,
+so it needs no `session` twin — unlike `addRules`.
+
+OmniFex's decider (`electron/services/sessions/permissions.ts`) therefore:
+
+- auto-allows a file edit in `acceptEdits` only when the CLI did not escalate
+  it (`isEscalatedEdit`). An unescalated edit is one the CLI would have
+  accepted had it known the mode, so the dropdown still works if
+  `set_permission_mode` never landed. The escalated ones used to be approved
+  silently, which overrode the CLI's own ask.
+- offers the containing folder, `Edit(<dir>/**)`, as the default rule for a
+  `workingDir` ask, so a grant covers the next file in that folder too.
+- offers a folder grant (`directory_grant`) instead of a rule for a symlink
+  escape; `PermissionCard` sends it as `addDirectories`.
+
 ## Gotchas
 
 - Invalid rules (bad tool names, typos) are silently filtered at load time. The rest of the file still loads. Check `/permissions` to see what actually got parsed.

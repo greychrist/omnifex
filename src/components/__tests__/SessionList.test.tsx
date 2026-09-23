@@ -101,7 +101,6 @@ import { SessionList } from '../SessionList';
 
 const sessionFixture: Session = {
   id: 'sess-1',
-  first_message: 'old first message preview',
   first_timestamp: '2026-05-05T10:00:00Z',
   last_timestamp: '2026-05-05T11:00:00Z',
   created_at: 1714900000,
@@ -259,17 +258,20 @@ describe('SessionList summary rendering', () => {
     expect(screen.queryByText('Second paragraph body.')).toBeNull();
   });
 
-  it('falls back to first_message when no sidecar exists', async () => {
+  // No first-prompt fallback: a row with neither a name nor a summary says so
+  // plainly, so a missing summary or title is noticeable rather than papered
+  // over with the opening prompt.
+  it('shows "No name" — never the first prompt — when there is no title and no summary', async () => {
     vi.mocked(api.summaryGet).mockResolvedValueOnce(null);
     render(<SessionList sessions={[sessionFixture]} projectPath="/x" />);
-    expect(await screen.findByText(/old first message preview/)).toBeTruthy();
+    expect(await screen.findByText('No name')).toBeTruthy();
   });
 
   // The CLI names every session itself and writes the name into the
   // transcript as an `ai-title` record; getProjectSessions surfaces it as
   // `ai_title`. The title is the row's identity, so it always takes the label
-  // when present — what sits beneath it is the summary if one exists, and the
-  // first prompt otherwise.
+  // when present — what sits beneath it is the summary if one exists, and
+  // nothing otherwise.
   describe('ai_title', () => {
     const titled: Session = { ...sessionFixture, ai_title: 'Duplicate user prompt' };
 
@@ -279,11 +281,11 @@ describe('SessionList summary rendering', () => {
       expect(await screen.findByText('Duplicate user prompt')).toBeTruthy();
     });
 
-    it('falls back to the first message underneath when there is no summary', async () => {
+    it('shows nothing underneath the title when there is no summary', async () => {
       vi.mocked(api.summaryGet).mockResolvedValueOnce(null);
       render(<SessionList sessions={[titled]} projectPath="/x" />);
       await screen.findByText('Duplicate user prompt');
-      expect(screen.getByText(/old first message preview/)).toBeTruthy();
+      expect(screen.queryByText('No name')).toBeNull();
     });
 
     // Await the SUMMARY first, not the title. summaryGet is async, so there
@@ -296,11 +298,6 @@ describe('SessionList summary rendering', () => {
       expect(screen.getByText('Duplicate user prompt')).toBeTruthy();
     });
 
-    it('drops the first message once a summary can take that slot', async () => {
-      render(<SessionList sessions={[titled]} projectPath="/x" />);
-      await screen.findByText('Summary headline here.');
-      expect(screen.queryByText(/old first message preview/)).toBeNull();
-    });
 
     it('still expands to the full summary paragraph under a title', async () => {
       render(<SessionList sessions={[titled]} projectPath="/x" />);
@@ -314,13 +311,12 @@ describe('SessionList summary rendering', () => {
     it('leaves the untitled row exactly as it was — summary headline is the label', async () => {
       render(<SessionList sessions={[sessionFixture]} projectPath="/x" />);
       expect(await screen.findByText('Summary headline here.')).toBeTruthy();
-      expect(screen.queryByText(/old first message preview/)).toBeNull();
     });
 
-    it('falls back to first_message alone when the CLI never titled the session', async () => {
+    it('shows "No name" when the CLI never titled the session and there is no summary', async () => {
       vi.mocked(api.summaryGet).mockResolvedValueOnce(null);
       render(<SessionList sessions={[sessionFixture]} projectPath="/x" />);
-      expect(await screen.findByText(/old first message preview/)).toBeTruthy();
+      expect(await screen.findByText('No name')).toBeTruthy();
     });
 
     // A rename made in the session's status bar is the user's own word for
@@ -461,14 +457,14 @@ describe('SessionList summary rendering', () => {
     });
     render(<SessionList sessions={[sessionFixture]} projectPath="/x" />);
     // Global toggle off → cached sidecars on disk are NOT shown; the row
-    // falls back to the first-message preview. summaryGet's mock might
+    // reads "No name". summaryGet's mock might
     // land before or after resolveAccountForProject's mock — we wait
     // until BOTH have been called AND React has flushed the resulting
     // state (signal: the resolved fallback span has fully rendered).
     await waitFor(() => {
       expect(api.summaryGet).toHaveBeenCalled();
       expect(api.resolveAccountForProject).toHaveBeenCalled();
-      expect(screen.queryByText(/old first message preview/)).not.toBeNull();
+      expect(screen.queryByText('No name')).not.toBeNull();
       expect(screen.queryByText('Summary headline here.')).toBeNull();
     });
     expect(screen.queryByRole('button', { name: /refresh summary/i })).toBeNull();
@@ -503,7 +499,7 @@ describe('SessionList summary rendering', () => {
     await waitFor(() => {
       expect(api.summaryGet).toHaveBeenCalled();
       expect(api.resolveAccountForProject).toHaveBeenCalled();
-      expect(screen.queryByText(/old first message preview/)).not.toBeNull();
+      expect(screen.queryByText('No name')).not.toBeNull();
       expect(screen.queryByText('Summary headline here.')).toBeNull();
     });
     expect(screen.queryByRole('button', { name: /refresh summary/i })).toBeNull();
@@ -617,7 +613,7 @@ describe('SessionList — click semantics', () => {
     );
 
     // Wait for the row to render fully (resolution + summaryGet flush).
-    await screen.findByText(/old first message preview/);
+    await screen.findByText('No name');
 
     // Click the cells whose chrome is purely informational. The Date
     // cell IS a launch target now (its own test below), so it's
@@ -861,7 +857,7 @@ describe('SessionList cost column + agent icon', () => {
 
   it('renders a merged Size / Cost column header', async () => {
     render(<SessionList sessions={[sessionFixture]} projectPath="/x" />);
-    await screen.findByText('old first message preview');
+    await screen.findByText('No name');
     expect(screen.getByText('Size / Cost')).toBeTruthy();
   });
 
@@ -878,14 +874,14 @@ describe('SessionList cost column + agent icon', () => {
   it('shows an em-dash when no cost row exists for a session', async () => {
     vi.mocked(api.sessionCostSessions).mockResolvedValueOnce([]);
     render(<SessionList sessions={[sessionFixture]} projectPath="/x" />);
-    await screen.findByText('old first message preview');
+    await screen.findByText('No name');
     // Size and Cost both fall back to em-dash; at least one present.
     expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(1);
   });
 
   it('no longer renders a standalone "Claude" agent-type label, but keeps the icon', async () => {
     render(<SessionList sessions={[sessionFixture]} projectPath="/x" />);
-    await screen.findByText('old first message preview');
+    await screen.findByText('No name');
     // The old dedicated agent column rendered the literal text "Claude".
     expect(screen.queryByText('Claude', { exact: true })).toBeNull();
     // The engine is still identified by an icon with an accessible name.

@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import type { AccountsService } from '../../accounts';
-import { SCRATCH_DIR_NAME } from '../../sessions/summary-query';
+import { isSummaryScratchProject } from '../../sessions/summary-query';
 import { recoverProjectPath } from '../../project-paths';
 import { distillTranscript } from '../distill';
 import { pathsOf, type AdmitVerdict, type BrainSource, type DistilledItem, type SourceItem } from './types';
@@ -17,21 +17,6 @@ export const SESSION_SOURCE_ID = 'session';
 
 /** Minimum prompts for a session to be worth a note (spec §7). */
 const MIN_PROMPTS = 2;
-
-/**
- * A project directory that is really OmniFex's own summary scratch.
- *
- * `sessions/summary-query.ts` pins every summary call to
- * `<os.tmpdir()>/omnifex-summary-scratch`, and the CLI encodes that cwd into a
- * `projects/<encoded>/` directory exactly like a user's repo. The encoding
- * replaces every non-alphanumeric character with `-`, so the scratch name
- * survives as a substring — which is what this matches. Anything stricter
- * would either miss it (exact match against an unencoded name) or be brittle
- * (reconstructing the whole encoded tmpdir path, which varies per machine).
- */
-function isScratchProject(projectDirName: string): boolean {
-  return projectDirName.includes(SCRATCH_DIR_NAME);
-}
 
 function listDirSafe(path: string): { name: string; isDirectory: boolean }[] {
   try {
@@ -72,7 +57,7 @@ export function createSessionSource(deps: SessionSourceDeps): BrainSource {
 
       for (const project of listDirSafe(projectsDir)) {
         if (!project.isDirectory) continue;
-        if (isScratchProject(project.name)) continue;
+        if (isSummaryScratchProject(project.name)) continue;
         const projectDir = join(projectsDir, project.name);
         // Once per project, not once per transcript: this reads a file, and a
         // busy project holds hundreds of them.

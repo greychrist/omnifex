@@ -65,6 +65,7 @@ type RawRow = {
   effective_from: string;
   label: string | null;
   color_slot: number | null;
+  context_window: number | null;
   updated_at: string;
 } & Record<string, number | string | null>;
 
@@ -81,6 +82,7 @@ function toRow(r: RawRow): ModelPricingRow {
   }
   if (r.label !== null) out.label = r.label;
   if (r.color_slot !== null) out.colorSlot = r.color_slot;
+  if (r.context_window != null) out.contextWindow = r.context_window;
   return out;
 }
 
@@ -131,9 +133,18 @@ function validate(input: ModelPricingInput): ModelPricingInput {
     states = true;
   }
 
+  if (input.contextWindow != null) {
+    const w = input.contextWindow;
+    if (!Number.isInteger(w) || w <= 0) {
+      throw new Error(`model pricing: contextWindow must be a positive integer, got ${String(w)}`);
+    }
+    clean.contextWindow = w;
+    states = true;
+  }
+
   // A row that states nothing would shadow the shipped entry with silence and
   // read as "this model has no price", which is worse than having no row.
-  if (!states) throw new Error('model pricing: a row must set at least one rate or label');
+  if (!states) throw new Error('model pricing: a row must set at least one rate, label or context window');
 
   return clean;
 }
@@ -143,9 +154,9 @@ function validate(input: ModelPricingInput): ModelPricingInput {
 // list that falls one column behind the schema does not fail — it silently
 // stops persisting that rate.
 const RATE_COLUMNS = PRICING_FIELDS.map((f) => f.column);
-const INSERT_COLUMNS = ['pattern', 'effective_from', ...RATE_COLUMNS, 'label', 'color_slot'];
-const INSERT_PARAMS = ['@pattern', '@effectiveFrom', ...PRICING_FIELDS.map((f) => `@${f.row}`), '@label', '@colorSlot'];
-const UPDATE_ASSIGNMENTS = [...RATE_COLUMNS, 'label', 'color_slot']
+const INSERT_COLUMNS = ['pattern', 'effective_from', ...RATE_COLUMNS, 'label', 'color_slot', 'context_window'];
+const INSERT_PARAMS = ['@pattern', '@effectiveFrom', ...PRICING_FIELDS.map((f) => `@${f.row}`), '@label', '@colorSlot', '@contextWindow'];
+const UPDATE_ASSIGNMENTS = [...RATE_COLUMNS, 'label', 'color_slot', 'context_window']
   .map((c) => `${c} = excluded.${c}`)
   .join(', ');
 
@@ -172,6 +183,7 @@ export function createModelPricingService(db: Database): ModelPricingService {
       effectiveFrom: v.effectiveFrom,
       label: v.label ?? null,
       colorSlot: v.colorSlot ?? null,
+      contextWindow: v.contextWindow ?? null,
     };
     for (const { row: field } of PRICING_FIELDS) params[field] = v[field] ?? null;
 

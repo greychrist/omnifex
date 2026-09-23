@@ -158,3 +158,31 @@ describe('resolveRates — Fable 5.1', () => {
     expect(perM(resolveRates('claude-fable-5-1-20260901').rates.cacheRead)).toBe(0.25);
   });
 });
+
+describe('resolveRates — Opus 5.5', () => {
+  // Opus 5.5 (2.1.280) is CHEAPER than Opus 5 at $4/$20, with cache reads at
+  // $0.20/MTok (0.05x input). Without its own row `claude-opus-5-5` matches
+  // the `opus-5` substring and prices at $5/$25 with $0.50 reads.
+  it('prices claude-opus-5-5 at $4/$20 with $0.20 cache reads, not as Opus 5', () => {
+    const { rates, estimated } = resolveRates('claude-opus-5-5');
+    expect(perM(rates.input)).toBe(4);
+    expect(perM(rates.output)).toBe(20);
+    expect(perM(rates.cacheRead)).toBeCloseTo(0.2, 9);
+    expect(perM(rates.cacheWrite5m)).toBe(5);
+    expect(perM(rates.cacheWrite1h)).toBe(8);
+    expect(estimated).toBe(false);
+  });
+
+  it('prices fast mode at $8/$40, per the CLI cost table', () => {
+    const { rates } = resolveRates('claude-opus-5-5', undefined, { speed: 'fast' });
+    expect(perM(rates.input)).toBe(8);
+    expect(perM(rates.output)).toBe(40);
+    expect(perM(rates.cacheWrite5m)).toBe(10);
+    expect(perM(rates.cacheWrite1h)).toBe(16);
+  });
+
+  it('matches the [1m] suffix and leaves Opus 5 alone', () => {
+    expect(perM(resolveRates('claude-opus-5-5[1m]').rates.input)).toBe(4);
+    expect(perM(resolveRates('claude-opus-5').rates.input)).toBe(5);
+  });
+});

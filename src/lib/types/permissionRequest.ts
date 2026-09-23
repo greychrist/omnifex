@@ -34,6 +34,12 @@ export interface PermissionRequestPayload {
   description?: string;
   decisionReason?: string;
   blockedPath?: string;
+  /**
+   * Folders to grant when the write escapes the working directories through a
+   * symlink. No `Edit(...)` rule stops that ask, so the card grants these
+   * (`addDirectories`) instead of offering a rule. Absent otherwise.
+   */
+  directoryGrant?: string[];
   suggestions: PermissionSuggestion[];
   /**
    * The CLI refuses a persistent rule for this ask — accepting one would
@@ -62,9 +68,16 @@ export interface PermissionRequestPayload {
  * the in-memory variant (rule applies to the running query only); the
  * three settings destinations also persist the rule to disk.
  */
-export interface PermissionSuggestion {
-  type: 'addRules';
-  rules: { toolName: string; ruleContent?: string }[];
-  behavior: 'allow' | 'deny';
-  destination: 'session' | 'projectSettings' | 'userSettings' | 'localSettings';
-}
+export type PermissionSuggestion =
+  | {
+      type: 'addRules';
+      rules: { toolName: string; ruleContent?: string }[];
+      behavior: 'allow' | 'deny';
+      destination: 'session' | 'projectSettings' | 'userSettings' | 'localSettings';
+    }
+  | {
+      /** Widen the working directories; the CLI persists and applies it itself. */
+      type: 'addDirectories';
+      directories: string[];
+      destination: 'session' | 'projectSettings' | 'userSettings' | 'localSettings';
+    };

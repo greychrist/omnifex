@@ -448,6 +448,59 @@ describe('getContextUsage', () => {
   });
 });
 
+describe('getCliStatus', () => {
+  const REPORT = {
+    sections: [
+      { title: 'Session', rows: [{ label: 'Version', value: '2.1.280' }, { label: 'Email', value: 'a@b.c' }] },
+      { title: 'Environment', rows: [{ label: 'Model', value: 'claude-opus-5-5[1m]' }, { value: 'A sentence row' }] },
+    ],
+  };
+
+  it('asks the CLI for get_status and returns its sections', async () => {
+    const { engine, calls } = createEngine({ control: () => REPORT });
+    const { q } = setup({ engine });
+    await expect(q.getCliStatus('tab1')).resolves.toEqual(REPORT);
+    expect(calls.map((c) => c.subtype)).toEqual(['get_status']);
+  });
+
+  it('drops rows and sections that are not the documented shape', async () => {
+    const { engine } = createEngine({
+      control: () => ({
+        sections: [
+          { title: 'Session', rows: [{ label: 'Version', value: '2.1.280' }, { label: 'Bad', value: 7 }, null] },
+          { rows: [] },
+          'junk',
+        ],
+      }),
+    });
+    const { q } = setup({ engine });
+    await expect(q.getCliStatus('tab1')).resolves.toEqual({
+      sections: [{ title: 'Session', rows: [{ label: 'Version', value: '2.1.280' }] }],
+    });
+  });
+
+  it('returns null when the CLI predates get_status (the request errors)', async () => {
+    const { engine } = createEngine({
+      control: () => {
+        throw new Error('Unsupported control request subtype: get_status');
+      },
+    });
+    const { q } = setup({ engine });
+    await expect(q.getCliStatus('tab1')).resolves.toBeNull();
+  });
+
+  it('returns null for a response with no sections', async () => {
+    const { engine } = createEngine({ control: () => ({}) });
+    const { q } = setup({ engine });
+    await expect(q.getCliStatus('tab1')).resolves.toBeNull();
+  });
+
+  it('returns null with no live engine', async () => {
+    const { q } = setup({ registered: false });
+    await expect(q.getCliStatus('tab1')).resolves.toBeNull();
+  });
+});
+
 describe('getMcpServerStatus', () => {
   it('returns the reported servers', async () => {
     const { engine } = createEngine({ control: () => ({ mcpServers: [{ name: 'brain' }] }) });

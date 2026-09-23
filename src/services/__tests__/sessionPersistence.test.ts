@@ -152,7 +152,7 @@ describe('SessionPersistenceService — createSessionFromRestoreData', () => {
     expect(session.project_id).toBe('p');
     expect(session.project_path).toBe('/x');
     expect(session.created_at).toBe(2_000_000_000);
-    expect(session.first_message).toBe('Restored session');
+    expect('first_message' in session).toBe(false);
   });
 });
 

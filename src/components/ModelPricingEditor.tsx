@@ -31,6 +31,7 @@ interface DraftRow {
   effectiveFrom: string;
   label: string;
   colorSlot: string;
+  contextWindow: string;
   rates: Partial<Record<RateField, string>>;
 }
 
@@ -39,6 +40,7 @@ const EMPTY_DRAFT: DraftRow = {
   effectiveFrom: '1970-01-01',
   label: '',
   colorSlot: '',
+  contextWindow: '',
   rates: {},
 };
 
@@ -54,6 +56,13 @@ function toNumber(v: string | undefined): number | undefined {
 
 function fmt(v: number | undefined): string {
   return v == null ? '—' : `$${v}`;
+}
+
+function fmtWindow(v: number | undefined): string {
+  if (v == null) return '—';
+  if (v >= 1_000_000 && v % 1_000_000 === 0) return `${v / 1_000_000}M`;
+  if (v >= 1_000 && v % 1_000 === 0) return `${v / 1_000}k`;
+  return String(v);
 }
 
 export function ModelPricingEditor() {
@@ -89,6 +98,10 @@ export function ModelPricingEditor() {
       }
       const slot = toNumber(draft.colorSlot);
       if (slot !== undefined && Number.isNaN(slot)) throw new Error('Colour is not a number');
+      const contextWindow = toNumber(draft.contextWindow);
+      if (contextWindow !== undefined && Number.isNaN(contextWindow)) {
+        throw new Error('Context window is not a number');
+      }
 
       await api.modelPricingUpsert({
         pattern: draft.pattern,
@@ -96,6 +109,7 @@ export function ModelPricingEditor() {
         ...rates,
         ...(draft.label.trim() ? { label: draft.label.trim() } : {}),
         ...(slot !== undefined ? { colorSlot: slot } : {}),
+        ...(contextWindow !== undefined ? { contextWindow } : {}),
       });
       setDraft(EMPTY_DRAFT);
       setStatus('Saved — applies to the next priced turn and the next cost rescan.');
@@ -158,6 +172,7 @@ export function ModelPricingEditor() {
                     {PRICING_FIELDS.map(({ row: f, label }) => (
                       <th key={f} className="p-2 text-right font-medium">{label}</th>
                     ))}
+                    <th className="p-2 text-right font-medium">Context</th>
                     <th className="p-2 text-left font-medium">Label</th>
                     <th className="p-2 text-left font-medium">Colour</th>
                     <th className="p-2" />
@@ -171,6 +186,7 @@ export function ModelPricingEditor() {
                       {PRICING_FIELDS.map(({ row: f }) => (
                         <td key={f} className="p-2 text-right tabular-nums">{fmt(r[f])}</td>
                       ))}
+                      <td className="p-2 text-right tabular-nums">{fmtWindow(r.contextWindow)}</td>
                       <td className="p-2">{r.label ?? '—'}</td>
                       <td className="p-2">
                         {r.colorSlot == null ? (
@@ -241,6 +257,13 @@ export function ModelPricingEditor() {
                 value={draft.colorSlot}
                 onChange={(e) => setDraft((d) => ({ ...d, colorSlot: e.target.value }))}
               />
+              <Input
+                className="h-8 w-32 text-xs"
+                placeholder="Context e.g. 1000000"
+                aria-label="Context window"
+                value={draft.contextWindow}
+                onChange={(e) => setDraft((d) => ({ ...d, contextWindow: e.target.value }))}
+              />
             </div>
             <div className="flex items-center gap-2">
               <Button size="sm" onClick={() => void save()}>
@@ -270,6 +293,7 @@ export function ModelPricingEditor() {
                       {PRICING_FIELDS.map(({ row: f, label }) => (
                         <th key={f} className="p-2 text-right font-medium">{label}</th>
                       ))}
+                      <th className="p-2 text-right font-medium">Context</th>
                       <th className="p-2 text-left font-medium">Label</th>
                     </tr>
                   </thead>
@@ -281,6 +305,7 @@ export function ModelPricingEditor() {
                         {PRICING_FIELDS.map(({ row: f }) => (
                           <td key={f} className="p-2 text-right tabular-nums">{fmt(s[f])}</td>
                         ))}
+                        <td className="p-2 text-right tabular-nums">{fmtWindow(s.contextWindow)}</td>
                         <td className="p-2">{s.label ?? '—'}</td>
                       </tr>
                     ))}

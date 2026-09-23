@@ -16,32 +16,14 @@ const USAGE: SessionContextUsage = {
 };
 
 describe('SessionCard — context gauge', () => {
-  it('sizes a 1M Account-Default session against 1M in the client-side fallback', () => {
-    // The reported bug: a resumed chat-mode "Account Default" session (history
-    // loaded statically, so live contextUsage hasn't been fetched) whose own
-    // model string carries no [1m] suffix. Without the account default it was
-    // pinned to 200k → 181.9k read as 91%. With the account default ("opus[1m]")
-    // the gauge sizes against 1M → ~18%.
-    render(
-      <SessionCard
-        totalTokens={181_886}
-        model="claude-opus-4-8"
-        defaultModel="opus[1m]"
-        sessionStatus="active"
-      />,
-    );
+  it('sizes the gauge against the window it is handed (1M)', () => {
+    render(<SessionCard totalTokens={181_886} contextLimit={1_000_000} sessionStatus="active" />);
     expect(screen.getByText('18%')).toBeTruthy();
     expect(screen.queryByText('91%')).toBeNull();
   });
 
-  it('still pins to 200k when no live usage and no 1M account default (regression guard)', () => {
-    render(
-      <SessionCard
-        totalTokens={181_886}
-        model="claude-opus-4-8"
-        sessionStatus="active"
-      />,
-    );
+  it('sizes the gauge against the window it is handed (200k)', () => {
+    render(<SessionCard totalTokens={181_886} contextLimit={200_000} sessionStatus="active" />);
     expect(screen.getByText('91%')).toBeTruthy();
   });
 
@@ -49,7 +31,7 @@ describe('SessionCard — context gauge', () => {
     render(
       <SessionCard
         totalTokens={12_000}
-        model="sonnet"
+        contextLimit={200_000}
         contextUsage={USAGE}
         sessionStatus="active"
         controlsSummary="Fable 5 | High | Auto Review"
@@ -62,7 +44,7 @@ describe('SessionCard — context gauge', () => {
     render(
       <SessionCard
         totalTokens={12_000}
-        model="sonnet"
+        contextLimit={200_000}
         contextUsage={USAGE}
         sessionStatus="active"
       />,
@@ -74,7 +56,7 @@ describe('SessionCard — context gauge', () => {
     render(
       <SessionCard
         totalTokens={12_000}
-        model="sonnet"
+        contextLimit={200_000}
         contextUsage={USAGE}
         sessionStatus="active"
       />,
@@ -91,7 +73,7 @@ describe('SessionCard — context gauge', () => {
     render(
       <SessionCard
         totalTokens={12_000}
-        model="sonnet"
+        contextLimit={200_000}
         contextUsage={USAGE}
         sessionStatus="active"
       />,
@@ -122,7 +104,7 @@ describe('SessionCard — compact button', () => {
   // of budget, so between 80% and 100% there was an amber meter and nothing to
   // click. The popover now carries a permanent one at any level.
   it('offers Compact now at any context level', () => {
-    render(<SessionCard totalTokens={12_000} contextUsage={USAGE} onCompact={() => {}} />);
+    render(<SessionCard totalTokens={12_000} contextLimit={200_000} contextUsage={USAGE} onCompact={() => {}} />);
     openPopover();
 
     expect(screen.getByRole('button', { name: 'Compact now' })).toBeTruthy();
@@ -130,7 +112,7 @@ describe('SessionCard — compact button', () => {
 
   it('runs the handler when pressed', () => {
     let ran = 0;
-    render(<SessionCard totalTokens={12_000} contextUsage={USAGE} onCompact={() => { ran += 1; }} />);
+    render(<SessionCard totalTokens={12_000} contextLimit={200_000} contextUsage={USAGE} onCompact={() => { ran += 1; }} />);
     openPopover();
 
     fireEvent.click(screen.getByRole('button', { name: 'Compact now' }));
@@ -139,7 +121,7 @@ describe('SessionCard — compact button', () => {
 
   it('goes inert while a turn is in flight, rather than vanishing', () => {
     render(
-      <SessionCard totalTokens={12_000} contextUsage={USAGE} onCompact={() => {}} compactDisabled />,
+      <SessionCard totalTokens={12_000} contextLimit={200_000} contextUsage={USAGE} onCompact={() => {}} compactDisabled />,
     );
     openPopover();
 
@@ -163,7 +145,7 @@ describe('SessionCard — compact button', () => {
     render(
       <SessionCard
         totalTokens={12_000}
-        contextUsage={USAGE}
+        contextLimit={200_000} contextUsage={USAGE}
         onCompact={() => {}}
         pendingAction={pending}
       />,
@@ -174,7 +156,7 @@ describe('SessionCard — compact button', () => {
   });
 
   it('shows nothing when no handler is wired', () => {
-    render(<SessionCard totalTokens={12_000} contextUsage={USAGE} />);
+    render(<SessionCard totalTokens={12_000} contextLimit={200_000} contextUsage={USAGE} />);
     openPopover();
 
     expect(screen.queryByRole('button', { name: 'Compact now' })).toBeNull();
@@ -193,7 +175,7 @@ describe('SessionCard — category breakdown', () => {
   afterEach(() => { window.localStorage.removeItem('greychrist.sessionCard.detailsOpen'); });
 
   it('draws the breakdown as a bar, not a pie', () => {
-    render(<SessionCard totalTokens={120_000} contextUsage={WITH_CATEGORIES} />);
+    render(<SessionCard totalTokens={120_000} contextLimit={200_000} contextUsage={WITH_CATEGORIES} />);
     openBreakdown();
 
     // Queried off document, not the render container: the popover portals its
@@ -204,7 +186,7 @@ describe('SessionCard — category breakdown', () => {
   });
 
   it('sizes each band by its share of the window', () => {
-    render(<SessionCard totalTokens={120_000} contextUsage={WITH_CATEGORIES} />);
+    render(<SessionCard totalTokens={120_000} contextLimit={200_000} contextUsage={WITH_CATEGORIES} />);
     openBreakdown();
 
     const bands = document.querySelectorAll<HTMLElement>('[data-context-band]');
@@ -219,7 +201,7 @@ describe('SessionCard — category breakdown', () => {
   });
 
   it('keeps the legend, which is where the numbers are readable', () => {
-    render(<SessionCard totalTokens={120_000} contextUsage={WITH_CATEGORIES} />);
+    render(<SessionCard totalTokens={120_000} contextLimit={200_000} contextUsage={WITH_CATEGORIES} />);
     openBreakdown();
 
     expect(screen.getByText('System prompt')).toBeTruthy();
@@ -244,7 +226,7 @@ describe('SessionCard — unread session events', () => {
     render(
       <SessionCard
         totalTokens={12_000}
-        contextUsage={USAGE}
+        contextLimit={200_000} contextUsage={USAGE}
         recentEvents={EVENTS}
         onSignalsRead={() => { readCalls += 1; }}
       />,
@@ -266,7 +248,7 @@ describe('SessionCard — unread session events', () => {
     render(
       <SessionCard
         totalTokens={120_000}
-        contextUsage={WITH_CATEGORIES}
+        contextLimit={200_000} contextUsage={WITH_CATEGORIES}
         recentEvents={EVENTS}
       />,
     );
@@ -282,7 +264,7 @@ describe('SessionCard — unread session events', () => {
   // aria-label gymnastics needed to explain what it was counting.
   it('carries no unread count on the trigger', () => {
     render(
-      <SessionCard totalTokens={12_000} contextUsage={USAGE} recentEvents={EVENTS} />,
+      <SessionCard totalTokens={12_000} contextLimit={200_000} contextUsage={USAGE} recentEvents={EVENTS} />,
     );
     const trigger = screen.getByLabelText('Context usage');
     expect(trigger.getAttribute('aria-label')).toBe('Context usage');
@@ -309,7 +291,7 @@ function renderWithCategories(extra: Record<string, unknown> = {}) {
   return render(
     <SessionCard
       totalTokens={50_104}
-      model="opus"
+      contextLimit={1_000_000}
       contextUsage={CATEGORY_USAGE}
       sessionStatus="active"
       {...extra}

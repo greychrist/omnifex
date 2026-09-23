@@ -539,6 +539,8 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
     costBackfillOpts,
     internalArchive,
     brain: () => brainRef,
+    summary: () => sessionsSummaryServiceRef,
+    activeSessionIds: () => sessionsService.listActiveSessionIds(),
     log,
   });
 
@@ -658,6 +660,7 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
       setThinking: (id, cfg) => sessionsService.setThinking(id, cfg as any),
       getAccountInfo: (id) => sessionsService.getAccountInfo(id),
       getContextUsage: (id) => sessionsService.getContextUsage(id),
+      getCliStatus: (id) => sessionsService.getCliStatus(id),
       listPermissionRules: (id) => sessionsService.listPermissionRules(id),
       getSupportedCommands: (id) => sessionsService.getSupportedCommands(id),
       getSupportedModels: (id) => sessionsService.getSupportedModels(id),

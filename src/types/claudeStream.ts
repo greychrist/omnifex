@@ -284,6 +284,8 @@ export interface PermissionRequestMessage extends OmnifexEnvelope {
   description?: string;
   decision_reason?: string;
   blocked_path?: string;
+  /** Folders the card grants for a symlink escape (set by OmniFex's decider). */
+  directory_grant?: string[];
   permission_suggestions?: PermissionSuggestion[];
   /**
    * CLI-set: a persistent grant for this ask would be broader than the ask

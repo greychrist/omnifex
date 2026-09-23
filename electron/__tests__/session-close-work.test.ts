@@ -50,6 +50,16 @@ describe('session close work', () => {
   /** Fire-and-forget by design, so the assertions need the microtasks drained. */
   const settled = () => new Promise((r) => setTimeout(r, 0));
 
+  it('does not start a summary on shutdown, but still does the Brain work', async () => {
+    // process.exit follows within milliseconds and kills the summary's CLI
+    // call; the periodic summary sweep picks the session up instead.
+    const h = harness(ALL_ON);
+    h.onClose('s1', '/repo', '/cfg/personal', 'shutdown');
+    await settled();
+    expect(h.summary.generateSummary).not.toHaveBeenCalled();
+    expect(h.brain.enqueueSource).toHaveBeenCalledWith(7, 's1');
+  });
+
   it('summarizes, indexes, curates and drains when every switch is on', async () => {
     const h = harness(ALL_ON);
     h.onClose('s1', '/repo', '/cfg/personal');

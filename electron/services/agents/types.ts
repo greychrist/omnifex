@@ -29,6 +29,10 @@ export interface AgentStartParams {
    *  continue. False for fresh sessions. */
   resume: boolean;
   allowedTools?: string[];
+  /** Reasoning effort chosen before the session started. */
+  effort?: string;
+  /** Thinking mode chosen before the session started. */
+  thinking?: { type: string };
   /** Engine-specific extras. Claude reads its own keys; others ignore. */
   claude?: Record<string, unknown>;
   /** Engine-specific extras. Codex reads its own keys; others ignore. */

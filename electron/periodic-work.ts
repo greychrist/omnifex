@@ -1,7 +1,8 @@
 /**
  * The background work that has to happen whether or not anyone is looking:
  * cost-history backfill, internal-archive pruning, SQLite free-page reclaim,
- * and the Brain's discovery sweep + queue drain.
+ * the Brain's discovery sweep + queue drain, and the catch-up sweep for
+ * session summaries the close path never delivered.
  *
  * One module, two composition roots. `electron/main.ts` and
  * `electron/remote/daemon.ts` build the same service graph, and until this
@@ -32,6 +33,8 @@ import {
   readNumericSetting,
 } from './services/brain/queue';
 import { pruneInternalArchive } from './services/sessions/internal-archive';
+import { AUTO_ON_CLOSE_SETTING_KEY, ENABLED_SETTING_KEY } from './services/sessions-summary';
+import { createSummarySweep, type SummarySweepDeps } from './services/summary-sweep';
 import type { AccountLike as CostAccountLike, CostHistoryService } from './services/cost/cost-history';
 
 const THIRTY_SECONDS = 30_000;
@@ -67,6 +70,10 @@ export interface PeriodicWorkDeps {
    * service graph is built, and the daemon can be running before it resolves.
    */
   brain: () => BrainLike | undefined;
+  /** Read per tick, like `brain`: both roots assign the summary service late. */
+  summary: SummarySweepDeps['summary'];
+  /** Session UUIDs open in a tab; their transcripts are still being written. */
+  activeSessionIds: () => string[];
   log: {
     info(message: string, meta?: Record<string, unknown>): void;
     warn(message: string, meta?: Record<string, unknown>): void;
@@ -195,6 +202,27 @@ export function startPeriodicWork(deps: PeriodicWorkDeps): () => void {
         await brain()?.drainQueue();
       })().catch((err: unknown) => {
         log.warn('brain periodic sweep failed', { error: String(err) });
+      });
+    }, FIVE_MINUTES),
+  );
+
+  // Session summaries the close path never delivered — above all the ones a
+  // shutdown closed, which no longer start a summary the exit would kill.
+  // Same two switches as auto-on-close, read per tick: this IS auto-on-close,
+  // run late.
+  const summarySweep = createSummarySweep({
+    listConfigDirs: () => listAccounts().map((a) => a.config_dir),
+    activeSessionIds: deps.activeSessionIds,
+    summary: deps.summary,
+    log,
+  });
+  timers.push(
+    setInterval(() => {
+      if (!owned()) return;
+      if (db.getSetting(ENABLED_SETTING_KEY) !== 'true') return;
+      if (db.getSetting(AUTO_ON_CLOSE_SETTING_KEY) !== 'true') return;
+      summarySweep.tick().catch((err: unknown) => {
+        log.warn('summary sweep failed', { error: String(err) });
       });
     }, FIVE_MINUTES),
   );

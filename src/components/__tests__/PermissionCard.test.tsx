@@ -483,3 +483,42 @@ describe("PermissionCard — suppressAlwaysAllowRule", () => {
     expect(screen.queryByTestId("permission-no-standing-rule")).toBeNull();
   });
 });
+
+// A write that resolves through a symlink to outside the working directories.
+// No Edit(...) rule stops the CLI asking again (verified on 2.1.280); only a
+// folder grant does, so the card offers the CLI's addDirectories instead.
+describe("PermissionCard — symlink escape folder grant", () => {
+  const symlinkRequest = () =>
+    makeClaudeRequest({
+      toolName: "Write",
+      toolInput: { file_path: "/p/linked/b.txt" },
+      blockedPath: "/private/tmp/outside/b.txt",
+      directoryGrant: ["/p/linked", "/tmp/outside"],
+      suggestions: [],
+    });
+
+  it("shows the folders instead of a rule editor", () => {
+    render(<PermissionCard request={symlinkRequest()} onAllow={vi.fn()} onDeny={vi.fn()} />);
+    expect(screen.getByText("/p/linked")).toBeTruthy();
+    expect(screen.getByText("/tmp/outside")).toBeTruthy();
+    expect(screen.queryByPlaceholderText(/Bash\(git:\*\)/)).toBeNull();
+  });
+
+  it("grants the folders for the session", () => {
+    const onAllow = vi.fn();
+    render(<PermissionCard request={symlinkRequest()} onAllow={onAllow} onDeny={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /allow for session/i }));
+    expect(onAllow).toHaveBeenCalledWith([
+      { type: "addDirectories", directories: ["/p/linked", "/tmp/outside"], destination: "session" },
+    ]);
+  });
+
+  it("saves the folders to the chosen settings scope (default: this project, just me)", () => {
+    const onAllow = vi.fn();
+    render(<PermissionCard request={symlinkRequest()} onAllow={onAllow} onDeny={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /save permission/i }));
+    expect(onAllow).toHaveBeenCalledWith([
+      { type: "addDirectories", directories: ["/p/linked", "/tmp/outside"], destination: "localSettings" },
+    ]);
+  });
+});

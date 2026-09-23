@@ -18,6 +18,7 @@ import {
   type ScopeValue,
   buildPersistedSuggestion,
   buildSessionSuggestion,
+  buildDirectoryGrant,
   getInitialRuleString,
   firstRuleSuggestion,
   buildCommandPreview,
@@ -112,7 +113,12 @@ export function PermissionCard({ request, onAllow, onDeny }: PermissionCardProps
     decisionReason,
     suggestions,
     suppressAlwaysAllowRule,
+    directoryGrant,
   } = request;
+  // A symlink escape grants folders, not a rule: no Edit(...) rule stops the
+  // CLI asking about a write that lands outside the working directories
+  // through a link, so a rule here would ask again every time.
+  const grantsFolders = !suppressAlwaysAllowRule && !!directoryGrant && directoryGrant.length > 0;
   const { config } = useMessageRenderingConfig();
   const accentStyle = accentStyleFor(config, "permission.request");
   const accentSwatch = swatchFor(config, "permission.request");
@@ -141,9 +147,12 @@ export function PermissionCard({ request, onAllow, onDeny }: PermissionCardProps
   const activeScope =
     SCOPE_OPTIONS.find((o) => o.value === scope) ?? SCOPE_OPTIONS[0];
 
-  const handleSaveForSession = () => { onAllow([buildSessionSuggestion(rule)]); };
-  const handleSavePermission = () =>
-    { onAllow([buildPersistedSuggestion(rule, scope)]); };
+  const handleSaveForSession = () => {
+    onAllow([grantsFolders ? buildDirectoryGrant(directoryGrant, 'session') : buildSessionSuggestion(rule)]);
+  };
+  const handleSavePermission = () => {
+    onAllow([grantsFolders ? buildDirectoryGrant(directoryGrant, scope) : buildPersistedSuggestion(rule, scope)]);
+  };
   // No suggestions at all: allow this one use and persist nothing.
   const handleAllowOnce = () => { onAllow([]); };
 
@@ -208,8 +217,22 @@ export function PermissionCard({ request, onAllow, onDeny }: PermissionCardProps
           </p>
         )}
 
+        {/* Folder grant (symlink escape) */}
+        {grantsFolders && (
+        <div className="space-y-1">
+          <label className="text-[11px] uppercase tracking-wide text-muted-foreground font-medium">
+            Allow writes in
+          </label>
+          <ul className="rounded-md border border-border bg-muted/30 p-2 space-y-0.5">
+            {directoryGrant.map((d) => (
+              <li key={d} className="text-xs font-mono break-all">{d}</li>
+            ))}
+          </ul>
+        </div>
+        )}
+
         {/* Editable rule */}
-        {!suppressAlwaysAllowRule && (
+        {!suppressAlwaysAllowRule && !grantsFolders && (
         <div className="space-y-1">
           <label className="text-[11px] uppercase tracking-wide text-muted-foreground font-medium">
             Rule
@@ -313,7 +336,7 @@ export function PermissionCard({ request, onAllow, onDeny }: PermissionCardProps
                   variant="secondary"
                   className="text-xs"
                   onClick={handleSaveForSession}
-                  disabled={!rule.trim()}
+                  disabled={!grantsFolders && !rule.trim()}
                 >
                   <Clock className="h-3.5 w-3.5 mr-1" />
                   Allow for Session
@@ -322,7 +345,7 @@ export function PermissionCard({ request, onAllow, onDeny }: PermissionCardProps
                   size="sm"
                   className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs"
                   onClick={handleSavePermission}
-                  disabled={!rule.trim()}
+                  disabled={!grantsFolders && !rule.trim()}
                 >
                   <ShieldCheck className="h-3.5 w-3.5 mr-1" />
                   Save Permission

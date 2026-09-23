@@ -108,6 +108,48 @@ describe('ClaudeCliEngine', () => {
     expect(args).not.toContain('--model');
   });
 
+  // The effort picked before the session starts used to be dropped in main:
+  // only a mid-session change reached the CLI. Invisible while every default
+  // model defaulted to `high` (the picker's own default); Opus 5.5 defaults to
+  // `medium`, so the picker said High while the session ran medium.
+  describe('spawn-time effort and thinking', () => {
+    async function argsFor(extra: Partial<typeof baseParams> & { effort?: string; thinking?: unknown }) {
+      const fake = makeFakeChild();
+      mockedSpawn.mockReturnValue(fake as never);
+      const engine = createClaudeCliEngine({ tabId: 't', claudeBinaryPath: '/bin/claude' });
+      await engine.start({ ...baseParams, ...extra } as never);
+      return mockedSpawn.mock.calls[0]![1] as string[];
+    }
+
+    it('passes --effort for every level the CLI accepts', async () => {
+      for (const level of ['low', 'medium', 'high', 'xhigh', 'max']) {
+        mockedSpawn.mockClear();
+        const args = await argsFor({ effort: level });
+        expect(args[args.indexOf('--effort') + 1]).toBe(level);
+      }
+    });
+
+    it('passes it on a resume too, so the picker and the session agree', async () => {
+      const args = await argsFor({ effort: 'high', resume: true });
+      expect(args[args.indexOf('--effort') + 1]).toBe('high');
+    });
+
+    it('omits --effort when none was chosen or the value is not a CLI level', async () => {
+      expect(await argsFor({})).not.toContain('--effort');
+      mockedSpawn.mockClear();
+      expect(await argsFor({ effort: 'auto' })).not.toContain('--effort');
+    });
+
+    it('passes --thinking disabled, and leaves adaptive to the CLI default', async () => {
+      const off = await argsFor({ thinking: { type: 'disabled' } });
+      expect(off[off.indexOf('--thinking') + 1]).toBe('disabled');
+      mockedSpawn.mockClear();
+      expect(await argsFor({ thinking: { type: 'adaptive' } })).not.toContain('--thinking');
+      mockedSpawn.mockClear();
+      expect(await argsFor({ thinking: { type: 'enabled', budgetTokens: 10000 } })).not.toContain('--thinking');
+    });
+  });
+
   it('uses --resume (not --session-id) on a warm restart', async () => {
     const fake = makeFakeChild();
     mockedSpawn.mockReturnValue(fake as never);
