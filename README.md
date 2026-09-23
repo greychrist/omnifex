@@ -50,7 +50,7 @@ The Brain is a per-account **memory vault** distilled from those transcripts.
 ### Interactive sessions
 - A structured **rich chat** (streaming JSON) with tool-call widgets, backed by the real CLI.
 - Live controls, changeable mid-session: **model picker**, **reasoning effort** (low → max), and **permission mode** (default / acceptEdits / bypassPermissions / plan) read out on the session status bar and open their pickers from there, plus **extended-thinking** config.
-- **Slash-command picker** (`/`) plus per-session command discovery.
+- **Slash-command picker** (`/`) plus per-session command discovery. `/status` opens Claude Code's own status screen (version, login, model, MCP servers, settings sources), read from the running session.
 - **Subagent tracking** — subagent runs are surfaced inline with their model and authoritative end-of-run stats (duration, tokens, tool count).
 - **Live tool progress** — a tool call that runs past thirty seconds shows a timer on its row until the result lands, and a subagent being retried after an API error says which attempt it is on.
 - **Status bar in the session header** — set into the header alongside the account, branch and session cards rather than sitting over the transcript: the session's name on the left, with a pencil to rename it; the readouts to the right. A new session names itself from your first prompt, so the tab strip and the session list are readable without your doing anything; a Suggest button in the rename popover asks for a fresh name on demand, and anything you type yourself always wins. Renaming goes back through Claude Code's own rename channel, so the name is the session's real one and shows up wherever the session is listed. The readouts: the model, the reasoning effort and the permission mode, each opening its picker; how long the current turn has run, the size of the current thinking burst, and the prompt-cache countdown, each holding the previous round's figure once the turn ends. Beside them, whether this session is receiving anything: connectivity is global but delivery is per-session, so a live daemon connection that is sending this tab no events says so instead of looking like a quiet session. The session widget keeps the count of subagents running.
@@ -71,7 +71,7 @@ The Brain is a per-account **memory vault** distilled from those transcripts.
 
 ### Context tracking & compaction
 
-- **Live context gauge** per tab, measured against the session's *real* window — the size the running CLI reports, not a guess from the model name, so resumed 1M-window sessions read correctly.
+- **Live context gauge** per tab, measured against the session's *real* window: the size the running CLI reports. Before that figure arrives, as on a resumed session, it uses the window recorded for each model (taken from Claude Code's own model list and editable in Settings › Pricing) rather than guessing from the model name.
 - **Context-pressure banner** with a budget you set: either a percentage of the window or an absolute token count. It escalates in two steps — amber at 80% of your budget, red at 100% — and applies live, so you can retune it mid-session.
 - **Context timeline rail** (opt-in) plots context size per message down the transcript, answering the question the live gauges can't: *which message made this session expensive?*
 - **Post-compaction directive.** Compaction replaces earlier turns with a summary, and a model working from that summary will still answer confidently about exact line numbers and literal output — reconstructing specifics from the gist, which reads exactly like a memory. OmniFex sends a short directive on the near side of every compaction boundary telling the model its context just went lossy and to re-read before quoting. It fires on auto-compaction and a hand-typed `/compact`, not just OmniFex's own banner, and the text is editable in settings.
@@ -81,7 +81,7 @@ The Brain is a per-account **memory vault** distilled from those transcripts.
 - **Durable cost history** in local SQLite. Rows survive the CLI's own transcript pruning, so a session's cost is still there after the JSONL that produced it is gone.
 - **Backfill across every configured account**, including sessions run outside OmniFex entirely — monthly totals reconcile against what Anthropic's console reports rather than counting only what this app launched.
 - A dedicated **Costs view**: preset ranges (this month, last 30/90 days, all time), grouped by day, week, or month, drilling into per-session rows.
-- **Pricing overrides** for when published rates change or your account is priced differently.
+- **Pricing overrides** for when published rates change or your account is priced differently. The same table records each model's context window.
 
 ### Multi-engine (Claude + Codex)
 - **Claude Code** is fully wired: sessions, agents, MCP, hooks, slash commands, permissions, and usage.
@@ -96,6 +96,7 @@ The Brain is a per-account **memory vault** distilled from those transcripts.
 - Create and manage custom **slash commands** (with `description` and `allowed-tools` frontmatter) at user, local, or project scope.
 - View, edit, and validate Claude Code **hooks** across scopes.
 - Edit **permission rules** (allow/deny) at user, local, or project scope; new rules are pushed live to the active session.
+- **Auto-accept edits stays within what Claude Code accepts.** Edits in the project go through silently. A write outside the working directories, or one that leads through a symlink to outside them, shows a permission card. The card's grant covers the whole folder, so you are asked once per folder, not per file.
 - See what the **running session** actually has in force, including rules no settings file can show you — supplied by a plugin, set for this session only, or managed centrally — plus any rule a file lists that the session is ignoring.
 
 ### Usage analytics
@@ -108,7 +109,7 @@ The Brain is a per-account **memory vault** distilled from those transcripts.
 
 ### CLAUDE.md, summaries & editable prompts
 - Inline editor with live preview for CLAUDE.md files.
-- Session rows are headed by the session's name — the one Claude Code gave it, or the one you gave it — with an **on-demand, cached summary** generated by a model call sitting underneath it.
+- Session rows are headed by the session's name — the one Claude Code gave it, or the one you gave it — with a **cached summary** generated by a model call sitting underneath it. Summaries are written when a session closes and caught up in the background for sessions left idle, and can be refreshed on demand. A session with neither a name nor a summary says **No name** instead of showing its opening prompt, so the gap is visible.
 - **CLI drift review.** OmniFex tracks which Claude Code version it has been reviewed against. When the CLI you have installed moves past that watermark, the Updates popover says so and can launch a changelog-review session — the wrapper tells you when the thing it wraps has changed underneath it.
 - Every prompt OmniFex sends on your behalf — session summary, post-compaction directive, CLI drift review — ships as a documented default with an **override you can edit in settings**, no rebuild required.
 

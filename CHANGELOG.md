@@ -5,6 +5,25 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.184] — 2026-09-22
+
+### Added
+
+- **`/status` in a chat session.** Claude Code's status screen is a terminal view, so there was no way to see it from OmniFex. Typing `/status` now opens a dialog showing the same rows: CLI version, session id, how you are logged in and as whom, the model actually running, the MCP servers and which settings files were loaded. It reads them from the running session (Claude Code 2.1.280 or newer), with a Refresh button.
+- **Missed session summaries catch up on their own.** Every five minutes OmniFex looks for sessions from the last two weeks that have been idle for ten minutes and have no summary, or have grown since theirs, and summarises a couple of them.
+
+### Changed
+
+- **A session with neither a name nor a summary now reads "No name"** on the project page instead of showing its opening prompt. The prompt made it look as though everything was fine when a session had never been named or summarised, which is how the two problems fixed in this release went unnoticed.
+- **The context gauge knows each model's window.** Before a session reports its live figure, which on a resumed session is until its next turn, the gauge used to assume 200k for anything without a `[1m]` suffix. That was wrong for every model with a 1M window of its own: Opus 4.7 and later, Opus 5, Opus 5.5, Sonnet 5 and Fable. The window is now part of each model's entry in the pricing table, taken from Claude Code's own model list, and Settings › Pricing has a **Context** column for correcting one.
+- **Auto-accept edits no longer approves writes Claude Code refused to.** In this mode Claude Code accepts edits inside the project itself and asks about the rest: writes outside the working directories and, from 2.1.280, writes that lead through a symlink to somewhere outside. OmniFex was answering those questions "yes" without showing you. They now show a permission card. One answer covers the folder: the card offers the whole folder as the rule, and for a symlink it grants the folder, the only answer that stops Claude Code asking again. Edits inside the project are still accepted silently, so switching to auto-accept keeps working even when Claude Code missed the mode change.
+
+### Fixed
+
+- **Session summaries were being killed on every restart.** Summaries ran when a session closed. In remote mode tabs outlive the daemon, so for most sessions the only close was the daemon shutting down, usually for an update. That started a summary per open tab and then exited, killing all of them. Some sessions were attempted and killed five times. Shutdown no longer starts summaries; the new catch-up sweep writes them once the next daemon is running.
+- **The effort you pick before starting a session is now the effort it runs at.** It was only ever sent to Claude Code when changed mid-session, so a new session ran at the model's own default. Nobody noticed while that default was High, the same as the picker's. Opus 5.5 defaults to medium, so the picker read High while the session ran medium. Switching thinking off before starting was dropped the same way.
+- **Opus 5.5 was priced as Opus 5.** It costs $4/$20 per million tokens, with cache reads at $0.20, against Opus 5's $5/$25 and $0.50. With no entry of its own it was matched to Opus 5, overstating every Opus 5.5 session by a quarter, and cache reads by two and a half times. Past costs are recalculated at the right rate on the next rescan. Cache reads in fast mode are still priced at the standard rate.
+
 ## [0.4.183] — 2026-09-22
 
 ### Added
