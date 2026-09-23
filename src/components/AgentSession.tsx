@@ -2373,6 +2373,14 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
                 matchType={accountResolution.match_type}
                 matchDetail={accountResolution.match_detail}
                 verification={sessionVerification}
+                signedInEmail={
+                  // The config dir's current login — what Sign in / Sign out act
+                  // on — not the session's own reported identity.
+                  identityLoaded && !identityError && identityVerdict &&
+                  identityVerdict.status !== "unknown-account"
+                    ? identityVerdict.detected
+                    : undefined
+                }
                 onRecheck={recheckIdentity}
                 onRestart={
                   sessionVerification?.needsRestart

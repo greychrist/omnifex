@@ -290,8 +290,10 @@ export function createAccountIdentityVerdict(deps: {
   return (configDir: string): IdentityVerdict => {
     const account = deps.accounts.getAccountByConfigDir(configDir);
     const expected = account?.expected_email ?? null;
-    // Only read the file when there is an expectation to check it against.
-    const detected = account && expected ? (readIdentity(configDir)?.email ?? null) : null;
+    // Read even with no expectation: who is signed in drives the account
+    // popover's Sign in / Sign out choice. It is one small file, and the status
+    // still comes out 'unverified' — detecting is not verifying.
+    const detected = account ? (readIdentity(configDir)?.email ?? null) : null;
     const status = classifyIdentity({ accountExists: !!account, expected, detected });
     if (status === 'unknown-account') {
       // Nothing owns this config dir, so nothing can be checked. That state is

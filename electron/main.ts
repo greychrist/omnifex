@@ -921,7 +921,7 @@ app.whenReady().then(() => {
     (configDir, models) => modelsService.upsertCatalog(configDir, models as ModelInfo[]),
     // Account identity pre-flight. Cheap by construction — the `.claude.json`
     // read, never a CLI spawn — because this runs on every cold start. An
-    // account with no expected_email short-circuits before any I/O.
+    // account with no expected_email comes back 'unverified' and passes.
     (configDir: string) => {
       const verdict = accountIdentityVerdict(configDir);
       if (verdict.status !== 'mismatch' && verdict.status !== 'signed-out') return null;

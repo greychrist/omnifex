@@ -93,10 +93,42 @@ describe('AccountCard — sign in / sign out', () => {
     expect(screen.getByRole('button', { name: /re-authenticate/i })).toBeTruthy();
   });
 
-  it('offers only Sign in when the account is signed out', () => {
-    renderCard({ verification: verification('signed-out') });
+  it('offers only Sign in when nobody is signed in to the config dir', () => {
+    renderCard({ verification: verification('signed-out'), signedInEmail: null });
     expect(screen.getByRole('button', { name: /^sign in$/i })).toBeTruthy();
     expect(screen.queryByRole('button', { name: /sign out/i })).toBeNull();
+  });
+
+  // An account with no expected email resolves to no verification at all.
+  // Signing in and out does not depend on that check, so the controls must
+  // not either — they follow who is signed in.
+  it('offers Sign in with no expected email when nobody is signed in', () => {
+    renderCard({ verification: null, signedInEmail: null });
+    expect(screen.getByText('Not signed in')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^sign in$/i })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /sign out/i })).toBeNull();
+  });
+
+  it('names the signed-in account with no expected email, and offers Sign out', () => {
+    renderCard({ verification: null, signedInEmail: 'colby@work.com' });
+    expect(screen.getByText('colby@work.com')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /re-authenticate/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /sign out/i })).toBeTruthy();
+  });
+
+  it('offers both controls while who is signed in is still unknown', () => {
+    renderCard({ verification: null, signedInEmail: undefined });
+    expect(screen.getByRole('button', { name: /sign out/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /re-authenticate/i })).toBeTruthy();
+  });
+
+  // The identity verdict is only re-read on an on-disk login change. Editing
+  // the expected email in Settings is neither, so the card's refresh button
+  // must re-run the check too — with no expected email there is no Re-check.
+  it('re-checks the account identity from the card refresh button', () => {
+    const { onRecheck } = renderCard({ verification: null });
+    fireEvent.click(screen.getByTitle('Refresh account identity and usage'));
+    expect(onRecheck).toHaveBeenCalledTimes(1);
   });
 
   it('asks for confirmation before signing out, then re-checks', async () => {

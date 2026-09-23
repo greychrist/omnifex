@@ -103,17 +103,14 @@ describe('shared composition-root blocks', () => {
       expect(fn('/cfg/personal').status).toBe('mismatch');
     });
 
-    /** Cheap by construction: no expectation means the file is never read. */
-    it('does not read the identity file when there is nothing to check against', () => {
-      const readIdentity = vi.fn(() => ({ email: 'a@b.com' }));
-      const fn = createAccountIdentityVerdict({
-        accounts: { getAccountByConfigDir: () => ({ expected_email: null }) },
-        readIdentity,
-        log: { writeBatch: vi.fn() },
-      });
-
-      expect(fn('/cfg/personal').detected).toBeNull();
-      expect(readIdentity).not.toHaveBeenCalled();
+    /**
+     * No expectation means nothing to compare, but who is signed in is still
+     * worth knowing: the account popover uses it to offer Sign in vs Sign out.
+     * The status stays 'unverified' — detecting is not verifying.
+     */
+    it('reports who is signed in even when there is nothing to check against', () => {
+      const { fn } = verdict({ expected_email: null }, 'a@b.com');
+      expect(fn('/cfg/personal')).toMatchObject({ status: 'unverified', expected: null, detected: 'a@b.com' });
     });
 
     /**

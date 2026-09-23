@@ -40,6 +40,13 @@ interface AccountCardProps {
   verification?: SessionVerification | null;
   /** Force a fresh identity check. */
   onRecheck?: () => void;
+  /**
+   * Who is signed in to `configDir` right now, from its `.claude.json`.
+   * `undefined` = not known yet (or the read failed), `null` = nobody. Drives
+   * Sign in vs Re-authenticate / Sign out, independent of `verification`,
+   * which only exists for accounts with an expected email.
+   */
+  signedInEmail?: string | null;
   /** Supplied only when the running process actually holds wrong credentials. */
   onRestart?: (() => void) | null;
   restarting?: boolean;
@@ -68,6 +75,7 @@ export function AccountCard({
   hasCost,
   agent,
   verification,
+  signedInEmail,
   onRecheck,
   onRestart,
   restarting = false,
@@ -144,10 +152,14 @@ export function AccountCard({
   });
   const sessionCostUsd = computedCost?.totalUsd ?? null;
 
+  // Also re-runs the identity check: the verdict is otherwise re-read only on
+  // an on-disk login change, so an expected email edited in Settings would
+  // stay stale in an open session until this.
   const handleRefreshClick = React.useCallback(async () => {
+    onRecheck?.();
     if (usageLoading) return;
     await refreshUsage();
-  }, [refreshUsage, usageLoading]);
+  }, [onRecheck, refreshUsage, usageLoading]);
 
   const sdkMismatch =
     sdkAccount?.apiProvider !== undefined &&
@@ -260,43 +272,57 @@ export function AccountCard({
                       </Button>
                     )}
                   </div>
-
-                  {canManageAuth && (
-                    <div className="flex items-center gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-6 px-2 text-[11px]"
-                        onClick={() => {
-                          // Close the popover first: the dialog would otherwise
-                          // count a click in it as outside the popover.
-                          handleAccountPopoverChange(false);
-                          setSignInOpen(true);
-                        }}
-                        title="Run `claude auth login` for this account's config directory."
-                      >
-                        <LogIn className="w-3 h-3 mr-1" />
-                        {verification.status === "signed-out" ? "Sign in" : "Re-authenticate"}
-                      </Button>
-                      {verification.status !== "signed-out" && (
-                        <Button
-                          variant={signOutArmed ? "destructive" : "outline"}
-                          size="sm"
-                          className="h-6 px-2 text-[11px]"
-                          onClick={() => void handleSignOut()}
-                          disabled={signingOut}
-                          title="Run `claude auth logout` for this account. Every session on this account loses its credentials."
-                        >
-                          <LogOut className="w-3 h-3 mr-1" />
-                          {signingOut ? "Signing out…" : signOutArmed ? "Confirm sign out" : "Sign out"}
-                        </Button>
-                      )}
-                    </div>
-                  )}
-                  {authError && (
-                    <div className="text-[11px] text-red-500 break-words">{authError}</div>
+                </div>
+              )}
+              {/* Outside the identity block on purpose: an account with no
+                  expected email has no verification to show, and signing
+                  in or out does not depend on that check. */}
+              {canManageAuth && !verification && signedInEmail !== undefined && (
+                // The identity block above already shows Detected when there
+                // is a verification; this covers accounts with no expected email.
+                <div className="flex justify-between gap-2 text-xs">
+                  <span className="text-foreground/50">Signed in as</span>
+                  {signedInEmail === null ? (
+                    <span className="text-foreground/60">Not signed in</span>
+                  ) : (
+                    <span className="font-mono text-foreground/90 truncate">{signedInEmail}</span>
                   )}
                 </div>
+              )}
+              {canManageAuth && (
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-6 px-2 text-[11px]"
+                    onClick={() => {
+                      // Close the popover first: the dialog would otherwise
+                      // count a click in it as outside the popover.
+                      handleAccountPopoverChange(false);
+                      setSignInOpen(true);
+                    }}
+                    title="Run `claude auth login` for this account's config directory."
+                  >
+                    <LogIn className="w-3 h-3 mr-1" />
+                    {signedInEmail === null ? "Sign in" : "Re-authenticate"}
+                  </Button>
+                  {signedInEmail !== null && (
+                    <Button
+                      variant={signOutArmed ? "destructive" : "outline"}
+                      size="sm"
+                      className="h-6 px-2 text-[11px]"
+                      onClick={() => void handleSignOut()}
+                      disabled={signingOut}
+                      title="Run `claude auth logout` for this account. Every session on this account loses its credentials."
+                    >
+                      <LogOut className="w-3 h-3 mr-1" />
+                      {signingOut ? "Signing out…" : signOutArmed ? "Confirm sign out" : "Sign out"}
+                    </Button>
+                  )}
+                </div>
+              )}
+              {authError && (
+                <div className="text-[11px] text-red-500 break-words">{authError}</div>
               )}
               {sdkAccount && (
                 <div>
@@ -428,12 +454,11 @@ export function AccountCard({
             size="sm"
             variant="outline"
             onClick={() => void handleRefreshClick()}
-            disabled={usageLoading}
             className="h-5 w-5 p-0 rounded-sm border-0 shadow-[0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_45%,transparent)]"
             title={
               usageLoading
                 ? 'Refreshing /usage…'
-                : 'Pull fresh account stats'
+                : 'Refresh account identity and usage'
             }
           >
             <RefreshCw className={cn('h-3.5 w-3.5', usageLoading && 'animate-spin')} />
