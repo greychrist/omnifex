@@ -5,6 +5,19 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.185] — 2026-09-23
+
+### Added
+
+- **Opus 5 and Opus 5.5 are separate picks.** Claude Code publishes one entry per model family and quietly moves which model it resolves to — the same `opus` entry was Opus 5 last week and is Opus 5.5 now, with no way to ask for either by name. The model menu gains a **More models** panel listing every model OmniFex knows a price for, and those pick a specific version. They are not checked against your account first, so one your account cannot use will fail when the turn runs; the models above the divider are the ones your account advertised.
+
+### Changed
+
+- **Models are named by version.** A menu entry called "Opus" does not say which Opus, and Claude Code puts the answer in the small print underneath. Entries now read **Opus 5.5** in the name, with the small print saying what the model is for instead of repeating it.
+- **The model readout names the model that actually ran.** Claude Code's own label for an entry can lag what its servers serve — an entry called "Opus 5" answering as Opus 5.5 — which left the status bar and the session's summary line disagreeing on screen. The readout now follows the model that answered, unless you have just switched to something else and it has not run yet.
+- **Model and effort are one control.** They are chosen together, and two readouts side by side spent a second label to say one word. The status bar reads `model Opus 5.5 High`, and effort is a panel inside the model menu.
+- **"(1M context)" is gone from model names.** Every current model has a 1M window, so it distinguished nothing and took the widest label in a row that has to fit beside everything else.
+
 ## [0.4.184] — 2026-09-22
 
 ### Added
