@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
-import { FormModelPicker, type Model } from "../ModelPicker";
+import { FormModelPicker, ModelPickerDropdown, type Model } from "../ModelPicker";
 
 afterEach(() => { cleanup(); });
 
@@ -38,5 +38,63 @@ describe("FormModelPicker", () => {
     fireEvent.click(screen.getByText("Sonnet"));
     expect(onSelect).toHaveBeenCalledWith("sonnet");
     expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+});
+
+describe("ModelPickerDropdown — effort and more-models panels", () => {
+  function renderDropdown(overrides: Partial<React.ComponentProps<typeof ModelPickerDropdown>> = {}) {
+    const onSelect = vi.fn();
+    const onEffortSelect = vi.fn();
+    render(
+      <ModelPickerDropdown
+        models={MODELS}
+        selectedModel="opus"
+        onSelect={onSelect}
+        effort="medium"
+        onEffortSelect={onEffortSelect}
+        extras={[{ id: "claude-opus-5-5", name: "Opus 5.5", description: "", icon: null, shortName: "O", color: "" }]}
+        {...overrides}
+      />,
+    );
+    return { onSelect, onEffortSelect };
+  }
+
+  it("shows the current effort on a row of its own, under the models", () => {
+    renderDropdown();
+    const row = screen.getByRole("button", { name: /effort/i });
+    expect(row.textContent).toContain("Medium");
+  });
+
+  it("swaps to the effort list and pushes the pick through", () => {
+    const { onEffortSelect } = renderDropdown();
+    fireEvent.click(screen.getByRole("button", { name: /effort/i }));
+    // The model rows are gone — this is one panel, not a nested popover.
+    expect(screen.queryByText("Sonnet")).toBeNull();
+    // The row's accessible name starts with the level's short tag ("Hi"),
+    // so match the label text and let the click bubble to the button.
+    fireEvent.click(screen.getByText("High"));
+    expect(onEffortSelect).toHaveBeenCalledWith("high");
+  });
+
+  it("goes back to the models from the effort list", () => {
+    renderDropdown();
+    fireEvent.click(screen.getByRole("button", { name: /effort/i }));
+    // Not /back/i — the xhigh level's description says "falls back to High".
+    fireEvent.click(screen.getByRole("button", { name: /back to models/i }));
+    expect(screen.getByText("Sonnet")).toBeTruthy();
+  });
+
+  it("offers the extra models behind their own row", () => {
+    const { onSelect } = renderDropdown();
+    expect(screen.queryByText("Opus 5.5")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /more models/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Opus 5\.5/ }));
+    expect(onSelect).toHaveBeenCalledWith("claude-opus-5-5");
+  });
+
+  it("hides both rows when the caller supplies neither", () => {
+    renderDropdown({ effort: undefined, onEffortSelect: undefined, extras: [] });
+    expect(screen.queryByRole("button", { name: /effort/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /more models/i })).toBeNull();
   });
 });

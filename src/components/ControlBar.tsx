@@ -152,13 +152,17 @@ interface EffortPickerProps {
   levels?: EffortLevel[];
 }
 
-export function EffortPickerDropdown({ effort, onSelect, levels }: { effort: EffortLevel; onSelect: (level: EffortLevel) => void; levels?: EffortLevel[] }) {
+export function EffortPickerDropdown({ effort, onSelect, levels, bare = false }: { effort: EffortLevel; onSelect: (level: EffortLevel) => void; levels?: EffortLevel[]; bare?: boolean }) {
   const visible = levels ? EFFORT_LEVELS.filter((l) => levels.includes(l.id)) : EFFORT_LEVELS;
+  // `bare` drops the frame and heading so the model dropdown can host this
+  // list under its own back header — one panel, not a box inside a box.
   return (
-    <div className="w-[280px] p-1">
-      <div className="text-[10px] uppercase tracking-wider text-muted-foreground px-3 pt-2 pb-1.5 border-b border-border/50 mb-1">
-        Effort
-      </div>
+    <div className={bare ? undefined : "w-[280px] p-1"}>
+      {!bare && (
+        <div className="text-[10px] uppercase tracking-wider text-muted-foreground px-3 pt-2 pb-1.5 border-b border-border/50 mb-1">
+          Effort
+        </div>
+      )}
       {visible.map((level) => (
         <button
           key={level.id}

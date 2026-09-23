@@ -8,17 +8,99 @@
 import { useEffect, useState } from 'react';
 import { Zap } from 'lucide-react';
 import { api, type SessionModelInfo } from '@/lib/api';
+import { SHIPPED_PRICING } from '@/lib/pricing';
 import type { Model } from '@/components/ModelPicker';
 
 const icon = <Zap className="h-3.5 w-3.5" />;
 
+/**
+ * Drop a context-window parenthetical from a model name — "Opus 5 (1M
+ * context)" → "Opus 5". Every current model is 1M, so the suffix no longer
+ * distinguishes anything; it just takes the widest label in a row that has to
+ * fit beside two other readouts. Deliberately narrow: only a `(<n>M|K
+ * context)` tail goes, never "(recommended)".
+ */
+export function stripContextSuffix(name: string): string {
+  return name
+    .replace(/\s*\(\d+[MK]\s+context\)\s*$/i, '')
+    .replace(/\s+with\s+\d+[MK]\s+context\s*$/i, '')
+    .trim();
+}
+
+/**
+ * The version-bearing name for a catalog row.
+ *
+ * The CLI's `displayName` is sometimes a bare alias — the personal account
+ * lists `opus[1m]` as "Opus (1M context)", which says nothing about WHICH
+ * Opus, while claude.ai offers 5 and 5.5 as separate picks. The version is in
+ * the description in that case ("Opus 5.5 with 1M context · …"), so take it
+ * from there. The `default` row is left alone: withAccountDefaultLabel owns
+ * its name.
+ */
+export function catalogModelName(info: SessionModelInfo): string {
+  const display = info.displayName || info.value;
+  if (info.value === 'default') return display;
+  const base = stripContextSuffix(display);
+  if (/\d/.test(base)) return base;
+  const detail = stripContextSuffix((info.description ?? '').split('·')[0].trim());
+  // Only borrow a detail that names this same family with a version —
+  // "Best for everyday, complex tasks" must not become the model's name.
+  if (/\d/.test(detail) && modelFamily(detail) && modelFamily(detail) === modelFamily(base)) {
+    return detail;
+  }
+  return base;
+}
+
+/**
+ * Models OmniFex knows about that this account's catalog does not list.
+ *
+ * The CLI publishes one alias per family, and which concrete model that alias
+ * resolves to moves underneath it — `opus[1m]` was Opus 5 and is now Opus 5.5.
+ * The CLI does accept a concrete id for `--model` regardless of whether it is
+ * in the catalog (verified against 2.1.280: `--model claude-opus-5-5` is
+ * served by claude-opus-5-5), so these are pickable, and they are the only way
+ * to pin a specific version.
+ *
+ * Sourced from SHIPPED_PRICING because that is already the app's list of
+ * models-it-knows, maintained as data — a new model becomes pickable by
+ * adding a pricing row, with no release. Rows without a `label` are the
+ * generic family fallbacks, not models.
+ *
+ * These are NOT verified against the account: one the account cannot use
+ * fails when the turn runs. That is the accepted cost of the escape hatch.
+ */
+export function extraModelOptions(existing: Model[]): Model[] {
+  const taken = new Set(existing.map((m) => stripContextSuffix(m.name.replace(/\s*\*$/, ''))));
+  const seen = new Set<string>();
+  return SHIPPED_PRICING.flatMap((row) => {
+    if (!row.label || taken.has(row.label) || seen.has(row.label)) return [];
+    seen.add(row.label);
+    return [{
+      id: `claude-${row.pattern}`,
+      name: row.label,
+      description: '',
+      icon,
+      shortName: (row.label[0] ?? '?').toUpperCase(),
+      color: 'text-primary',
+    }];
+  });
+}
+
 /** Map a CLI catalog entry to the picker's display shape. */
 export function toPickerModel(info: SessionModelInfo): Model {
-  const name = info.displayName || info.value;
+  const name = catalogModelName(info);
   // CLI descriptions are "·"-separated, detail first ("Opus 4.8 with 1M
   // context · Best for everyday, complex tasks"). The detail segment is the
-  // part that identifies the model; keep it, drop the marketing tail.
-  const description = (info.description ?? '').split('·')[0].trim();
+  // part that identifies the model; keep it, drop the marketing tail —
+  // UNLESS the name was taken from that same detail, in which case printing
+  // it again beneath the name says one thing twice, and the tail (what the
+  // model is FOR) is the useful half.
+  const segments = (info.description ?? '').split('·').map((seg) => seg.trim());
+  const detail = segments[0] ?? '';
+  const description =
+    stripContextSuffix(detail) === name && segments.length > 1
+      ? segments.slice(1).join(' · ').trim()
+      : detail;
   return {
     id: info.value,
     name,
@@ -103,7 +185,11 @@ export function withAccountDefaultLabel(
     return models.map((m) => (m.id === 'default' ? { ...m, name: 'Account Default' } : m));
   }
   const twin = concreteTwin(defaultId, models);
-  const name = twin?.name ?? resolveActualModelName(defaultId, models, raw);
+  // `live` is an observation of what ran; the twin is the catalog's guess at
+  // what that id is called, and the two disagree whenever the CLI's label is
+  // behind the server. Reconcile rather than trusting the label.
+  const twinName = twin ? reconcileLiveModelName(twin, live) : null;
+  const name = twinName ?? resolveActualModelName(defaultId, models, raw);
   const merged: Model = {
     ...def,
     name: `${name} ${ACCOUNT_DEFAULT_MARK}`,
@@ -195,6 +281,45 @@ export function prettyModelName(id: string): string {
   const name = words.map((w) => w[0].toUpperCase() + w.slice(1)).join(' ');
   if (!name) return id;
   return version ? `${name} ${version}` : name;
+}
+
+/**
+ * The name to show for a catalog row when the session is running something
+ * else under it.
+ *
+ * The CLI's catalog labels are its own, and they lag: the work account
+ * advertises `claude-opus-5[1m]` as "Opus 5 (1M context)" while the server
+ * resolves that id to `claude-opus-5-5`, and the personal account's `opus[1m]`
+ * alias flipped from Opus 5 to Opus 5.5 underneath the same label. The
+ * session card already reports what ran (`sessionControlSummary` reads
+ * `liveModel`); this is how the status-bar readout agrees with it.
+ *
+ * A family match is deliberately NOT enough to call them the same model —
+ * `opus` matches both `claude-opus-5` and `claude-opus-5-5`, which is exactly
+ * the confusion being fixed. The comparison is on the VERSION each id
+ * spells, so a row that names a different version loses to the live id and a
+ * row that names the same one keeps its richer label ("Opus 5 (1M context)"
+ * says more than "Opus 5").
+ */
+export function reconcileLiveModelName(
+  row: { id: string; name: string },
+  liveId: string | null | undefined,
+): string {
+  if (!liveId || liveId === 'default') return row.name;
+  if (liveId === row.id) return row.name;
+  // The merged account-default row was already resolved against this same
+  // live id by withAccountDefaultLabel, and its name carries
+  // ACCOUNT_DEFAULT_MARK. Reconciling it again would rewrite the name and
+  // drop the mark.
+  if (row.id === 'default') return row.name;
+  // Different families are not a stale label, they are a selection the next
+  // turn has not used yet: switching the picker mid-session leaves the
+  // previous turn's model live until the new one runs. Naming the row after
+  // it would misreport what the next turn will use.
+  const fam = modelFamily(row.id) ?? modelFamily(row.name);
+  if (fam && modelFamily(liveId) !== fam) return row.name;
+  const live = prettyModelName(liveId);
+  return live === prettyModelName(row.id) ? row.name : live;
 }
 
 /**

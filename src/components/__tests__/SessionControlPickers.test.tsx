@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, cleanup, screen, fireEvent, within } from '@testing-library/react';
+import { render, cleanup, screen, fireEvent, within, waitFor } from '@testing-library/react';
 import { SessionControlPickers } from '@/components/SessionControlPickers';
 import { ACCOUNT_DEFAULT_MARK } from '@/lib/modelCatalog';
 
@@ -33,26 +33,36 @@ function setup(overrides: Partial<React.ComponentProps<typeof SessionControlPick
 const item = (label: string) => screen.getByTestId(`control-${label}`);
 
 describe('SessionControlPickers — status-bar readouts that open pickers', () => {
-  it('reads as three `label value` readouts, like the readouts beside them', () => {
+  it('reads model and effort as one readout under the `model` label', () => {
     setup();
     expect(within(item('model')).getByText('model')).toBeTruthy();
     expect(within(item('model')).getByText('Sonnet')).toBeTruthy();
-    expect(within(item('effort')).getByText('effort')).toBeTruthy();
-    expect(within(item('effort')).getByText('High')).toBeTruthy();
+    // Effort rides along in the same control, as `Sonnet High`.
+    expect(within(item('model')).getByText('High')).toBeTruthy();
+    expect(screen.queryByTestId('control-effort')).toBeNull();
     expect(within(item('perms')).getByText('perms')).toBeTruthy();
     expect(within(item('perms')).getByText('Accept Edits')).toBeTruthy();
   });
 
-  it('separates the three with the same hairline the readouts use', () => {
+  it('separates the two with the same hairline the readouts use', () => {
     setup();
-    expect(screen.getAllByTestId('status-divider')).toHaveLength(2);
+    expect(screen.getAllByTestId('status-divider')).toHaveLength(1);
   });
 
-  it('opens the effort menu on click and pushes the pick through', () => {
+  it('reaches effort through the model dropdown', () => {
     const { setEffort } = setup();
-    fireEvent.click(within(item('effort')).getByRole('button'));
-    fireEvent.click(screen.getByText('Maximum effort (Opus 4.6/4.7 only)'));
-    expect(setEffort).toHaveBeenCalledWith('max');
+    fireEvent.click(within(item('model')).getByRole('button'));
+    fireEvent.click(screen.getByRole('button', { name: /effort/i }));
+    fireEvent.click(screen.getByText('Low'));
+    expect(setEffort).toHaveBeenCalledWith('low');
+  });
+
+  it('offers the models the account catalog leaves out', () => {
+    const { setModel } = setup();
+    fireEvent.click(within(item('model')).getByRole('button'));
+    fireEvent.click(screen.getByRole('button', { name: /more models/i }));
+    fireEvent.click(screen.getByText('Opus 5.5'));
+    expect(setModel).toHaveBeenCalledWith('claude-opus-5-5');
   });
 
   it('opens the permission menu on click and pushes the pick through', () => {
@@ -76,8 +86,27 @@ describe('SessionControlPickers — status-bar readouts that open pickers', () =
     expect(within(item('model')).getByText(`Fable 5 ${ACCOUNT_DEFAULT_MARK}`)).toBeTruthy();
   });
 
+  it('names the model readout after the model that actually ran', async () => {
+    // The CLI advertises `claude-opus-5[1m]` as "Opus 5 (1M context)" while
+    // the server resolves it to claude-opus-5-5, so the catalog label alone
+    // disagreed with the session card's own "opus 5.5" summary.
+    const { api } = await import('@/lib/api');
+    vi.mocked(api.listSupportedModels).mockResolvedValueOnce([
+      { value: 'claude-opus-5[1m]', displayName: 'Opus 5 (1M context)', description: 'Best for everyday, complex tasks' },
+    ] as never);
+    setup({
+      model: 'claude-opus-5[1m]',
+      configDir: '/cfg',
+      activeDefaultModel: 'claude-opus-5-5',
+    });
+    await waitFor(() => {
+      expect(within(item('model')).getByText('Opus 5.5')).toBeTruthy();
+    });
+  });
+
   it('names each readout for assistive tech, value included', () => {
     setup();
-    expect(within(item('effort')).getByRole('button', { name: /effort.*high/i })).toBeTruthy();
+    expect(within(item('model')).getByRole('button', { name: /model.*sonnet/i })).toBeTruthy();
+    expect(within(item('perms')).getByRole('button', { name: /perms.*accept edits/i })).toBeTruthy();
   });
 });

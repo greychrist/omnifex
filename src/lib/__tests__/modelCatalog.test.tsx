@@ -12,6 +12,10 @@ import {
   prettyModelName,
   recommendedDefaultModel,
   withAccountDefaultLabel,
+  reconcileLiveModelName,
+  stripContextSuffix,
+  catalogModelName,
+  extraModelOptions,
   ACCOUNT_DEFAULT_MARK,
   useModelCatalog,
 } from '../modelCatalog';
@@ -81,6 +85,18 @@ describe('toPickerModel', () => {
     const m = toPickerModel({ value: 'sonnet', displayName: '', description: '' });
     expect(m.name).toBe('sonnet');
     expect(m.shortName).toBe('S');
+  });
+
+  it('uses the purpose tail as the description when the NAME came from the detail', () => {
+    // "Sonnet 5 · Efficient for routine tasks" names the model in the detail
+    // segment, so the name becomes "Sonnet 5" — printing the detail beneath
+    // it as well said the same thing twice.
+    const m = toPickerModel({
+      value: 'sonnet', displayName: 'Sonnet',
+      description: 'Sonnet 5 · Efficient for routine tasks',
+    } as SessionModelInfo);
+    expect(m.name).toBe('Sonnet 5');
+    expect(m.description).toBe('Efficient for routine tasks');
   });
 
   it('keeps only the detail segment of the description (text before the first ·)', () => {
@@ -205,6 +221,8 @@ describe('useModelCatalog', () => {
     );
   });
 
+  // Rows mapped through toPickerModel now carry the version the CLI puts in
+  // the description, so the bare "Opus" alias reads "Opus 4.8".
   it('relabels "default" to the account-pinned model from settings.json', async () => {
     mockedList.mockResolvedValue(CATALOG);
     mockedSettings.mockResolvedValue({ model: 'opus[1m]' });
@@ -212,8 +230,9 @@ describe('useModelCatalog', () => {
 
     await waitFor(() => {
       const def = result.current.models.find((m) => m.id === 'default');
-      expect(def?.name).toBe(`Opus ${ACCOUNT_DEFAULT_MARK}`);
-      expect(def?.description).toBe('Opus 4.8 with 1M context');
+      expect(def?.name).toBe(`Opus 4.8 ${ACCOUNT_DEFAULT_MARK}`);
+      // The name already says "Opus 4.8"; the description carries the purpose.
+      expect(def?.description).toBe('Best for everyday, complex tasks');
       // One Opus line, not two.
       expect(result.current.models.map((m) => m.id)).toEqual(['default', 'sonnet', 'haiku']);
     });
@@ -243,8 +262,9 @@ describe('useModelCatalog', () => {
       const def = result.current.models.find((m) => m.id === 'default');
       // No pin, but the catalog's default entry identifies the recommended
       // model (opus[1m]) via its shared description — name it.
-      expect(def?.name).toBe(`Opus ${ACCOUNT_DEFAULT_MARK}`);
-      expect(def?.description).toBe('Opus 4.8 with 1M context');
+      expect(def?.name).toBe(`Opus 4.8 ${ACCOUNT_DEFAULT_MARK}`);
+      // The name already says "Opus 4.8"; the description carries the purpose.
+      expect(def?.description).toBe('Best for everyday, complex tasks');
     });
   });
 });
@@ -381,8 +401,11 @@ describe('withAccountDefaultLabel', () => {
 
   it('lets an active (live) default model beat the settings pin', () => {
     const out = withAccountDefaultLabel(models, 'sonnet', CATALOG, 'claude-opus-4-8');
-    expect(out.find((m) => m.id === 'default')?.name).toBe(`Opus ${ACCOUNT_DEFAULT_MARK}`);
-    // Opus is the merged row; Sonnet keeps its own line.
+    // Named for the version that actually ran, not the `opus[1m]` row's bare
+    // "Opus" — the alias says nothing about which Opus, and that ambiguity is
+    // what reconcileLiveModelName exists to remove.
+    expect(out.find((m) => m.id === 'default')?.name).toBe(`Opus 4.8 ${ACCOUNT_DEFAULT_MARK}`);
+    // Opus is still the merged row; Sonnet keeps its own line.
     expect(out.map((m) => m.id)).toEqual(['default', 'sonnet']);
   });
 
@@ -410,5 +433,150 @@ describe('withAccountDefaultLabel', () => {
     const out = withAccountDefaultLabel(models, 'default', CATALOG);
     // No pin, so the CLI-recommended model (Opus) is what "default" runs.
     expect(out.find((m) => m.id === 'default')?.name).toBe(`Opus ${ACCOUNT_DEFAULT_MARK}`);
+  });
+});
+
+describe('reconcileLiveModelName', () => {
+  const row = { id: 'claude-opus-5[1m]', name: 'Opus 5 (1M context)' };
+
+  it('keeps the catalog name when nothing has run yet', () => {
+    expect(reconcileLiveModelName(row, null)).toBe('Opus 5 (1M context)');
+    expect(reconcileLiveModelName(row, undefined)).toBe('Opus 5 (1M context)');
+    expect(reconcileLiveModelName(row, 'default')).toBe('Opus 5 (1M context)');
+  });
+
+  it('keeps the catalog name when the live model IS that row', () => {
+    expect(reconcileLiveModelName(row, 'claude-opus-5[1m]')).toBe('Opus 5 (1M context)');
+  });
+
+  it('keeps the richer catalog name when the two name the same model', () => {
+    // `claude-opus-5` and `claude-opus-5[1m]` are one model; the catalog's
+    // name says more (the context window), so it wins.
+    expect(reconcileLiveModelName(row, 'claude-opus-5')).toBe('Opus 5 (1M context)');
+  });
+
+  it('names the live model when the catalog row is a different version', () => {
+    // The real case: the work account advertises `claude-opus-5[1m]` as
+    // "Opus 5 (1M context)" and the server runs claude-opus-5-5 for it.
+    expect(reconcileLiveModelName(row, 'claude-opus-5-5')).toBe('Opus 5.5');
+  });
+
+  it('leaves the merged account-default row alone', () => {
+    // withAccountDefaultLabel already resolved that row against the same
+    // live id, and its name carries the account-default mark. Reconciling a
+    // second time would rewrite the name and drop the mark.
+    expect(reconcileLiveModelName({ id: 'default', name: 'Fable 5 *' }, 'claude-fable-5'))
+      .toBe('Fable 5 *');
+  });
+
+  it('keeps the catalog name when the live model is a different FAMILY', () => {
+    // Switching the picker mid-session leaves the previous turn's model as
+    // the live one until the next turn lands. Relabeling "Sonnet" as
+    // "Opus 5.5" in that window would misreport what the next turn will use.
+    expect(reconcileLiveModelName({ id: 'sonnet', name: 'Sonnet' }, 'claude-opus-5-5'))
+      .toBe('Sonnet');
+  });
+
+  it('resolves a bare alias to the concrete model that ran', () => {
+    expect(reconcileLiveModelName({ id: 'opus[1m]', name: 'Opus (1M context)' }, 'claude-opus-5-5'))
+      .toBe('Opus 5.5');
+    expect(reconcileLiveModelName({ id: 'sonnet', name: 'Sonnet' }, 'claude-sonnet-5'))
+      .toBe('Sonnet 5');
+  });
+});
+
+describe('withAccountDefaultLabel — live model beats a stale catalog label', () => {
+  const WORK_RAW: SessionModelInfo[] = [
+    { value: 'default', displayName: 'Default (recommended)', description: 'Best for everyday, complex tasks (claude-opus-5[1m])' },
+    { value: 'claude-opus-5[1m]', displayName: 'Opus 5 (1M context)', description: 'Best for everyday, complex tasks (claude-opus-5[1m])' },
+  ] as SessionModelInfo[];
+
+  it('names the folded default row after the model that actually ran', () => {
+    const out = withAccountDefaultLabel(
+      effectiveModels(WORK_RAW), null, WORK_RAW, 'claude-opus-5-5',
+    );
+    expect(out.find((m) => m.id === 'default')?.name).toBe(`Opus 5.5 ${ACCOUNT_DEFAULT_MARK}`);
+  });
+
+  it('keeps the catalog label when the live model matches it', () => {
+    const out = withAccountDefaultLabel(
+      effectiveModels(WORK_RAW), null, WORK_RAW, 'claude-opus-5',
+    );
+    expect(out.find((m) => m.id === 'default')?.name)
+      .toBe(`Opus 5 ${ACCOUNT_DEFAULT_MARK}`);
+  });
+});
+
+describe('stripContextSuffix', () => {
+  it('drops a context-window parenthetical', () => {
+    expect(stripContextSuffix('Opus 5 (1M context)')).toBe('Opus 5');
+    expect(stripContextSuffix('Opus (1M context)')).toBe('Opus');
+    expect(stripContextSuffix('Sonnet (200K context)')).toBe('Sonnet');
+    // The CLI also writes it unparenthesised, in descriptions.
+    expect(stripContextSuffix('Opus 5.5 with 1M context')).toBe('Opus 5.5');
+  });
+
+  it('leaves every other parenthetical alone', () => {
+    expect(stripContextSuffix('Default (recommended)')).toBe('Default (recommended)');
+    expect(stripContextSuffix('Opus 5.5')).toBe('Opus 5.5');
+  });
+});
+
+describe('catalogModelName', () => {
+  it('keeps a displayName that already names the version', () => {
+    expect(catalogModelName({
+      value: 'claude-opus-5[1m]', displayName: 'Opus 5 (1M context)',
+      description: 'Best for everyday, complex tasks',
+    } as SessionModelInfo)).toBe('Opus 5');
+  });
+
+  it('takes the version from the description when the name has none', () => {
+    // The personal account's `opus[1m]` row: the alias name says nothing
+    // about which Opus, and the description is where the CLI puts it.
+    expect(catalogModelName({
+      value: 'opus[1m]', displayName: 'Opus (1M context)',
+      description: 'Opus 5.5 with 1M context · Best for everyday, complex tasks',
+    } as SessionModelInfo)).toBe('Opus 5.5');
+    expect(catalogModelName({
+      value: 'sonnet', displayName: 'Sonnet',
+      description: 'Sonnet 5 · Efficient for routine tasks',
+    } as SessionModelInfo)).toBe('Sonnet 5');
+  });
+
+  it('falls back to the bare name when nothing names a version', () => {
+    expect(catalogModelName({
+      value: 'haiku', displayName: 'Haiku', description: 'Fastest',
+    } as SessionModelInfo)).toBe('Haiku');
+  });
+
+  it('never rewrites the default entry', () => {
+    expect(catalogModelName({
+      value: 'default', displayName: 'Default (recommended)',
+      description: 'Opus 5.5 with 1M context · Best for everyday',
+    } as SessionModelInfo)).toBe('Default (recommended)');
+  });
+});
+
+describe('extraModelOptions', () => {
+  it('offers every priced model the catalog does not already list', () => {
+    const names = extraModelOptions([]).map((m) => m.name);
+    expect(names).toContain('Opus 5.5');
+    expect(names).toContain('Opus 5');
+    expect(names).toContain('Sonnet 5');
+    expect(names).toContain('Haiku 4.5');
+  });
+
+  it('uses ids the CLI accepts for --model', () => {
+    const opus55 = extraModelOptions([]).find((m) => m.name === 'Opus 5.5');
+    expect(opus55?.id).toBe('claude-opus-5-5');
+  });
+
+  it('drops the ones already on the catalog list, by name', () => {
+    const existing: Model[] = [
+      { id: 'opus[1m]', name: 'Opus 5.5', description: '', icon: null, shortName: 'O', color: '' },
+    ];
+    expect(extraModelOptions(existing).map((m) => m.name)).not.toContain('Opus 5.5');
+    // A different Opus is still a distinct pick — that is the whole point.
+    expect(extraModelOptions(existing).map((m) => m.name)).toContain('Opus 5');
   });
 });

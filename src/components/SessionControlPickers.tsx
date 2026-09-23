@@ -7,13 +7,11 @@ import { InlineDivider } from '@/components/ui/inline-divider';
 import {
   EFFORT_LEVELS,
   PERMISSION_MODES,
-  EffortPickerDropdown,
   PermissionPickerDropdown,
   normalizePermissionMode,
-  type EffortLevel,
 } from '@/components/ControlBar';
 import { ModelPickerDropdown } from '@/components/ModelPicker';
-import { useModelCatalog, pickModelOption } from '@/lib/modelCatalog';
+import { useModelCatalog, pickModelOption, reconcileLiveModelName, extraModelOptions } from '@/lib/modelCatalog';
 import { MODEL_OPTIONS, EFFORT_OPTIONS, PERMISSION_OPTIONS, type DropdownOption } from '@/lib/sessionDefaultOptions';
 
 /**
@@ -30,6 +28,7 @@ function StatusBarPicker({
   label,
   value,
   valueClassName,
+  trailing,
   title,
   content,
 }: {
@@ -37,6 +36,8 @@ function StatusBarPicker({
   label: string;
   value: string;
   valueClassName?: string;
+  /** A second value sharing this readout — effort beside the model. */
+  trailing?: React.ReactNode;
   title: string;
   content: (close: () => void) => React.ReactNode;
 }): React.JSX.Element {
@@ -64,6 +65,7 @@ function StatusBarPicker({
           >
             <span className="opacity-70">{label}</span>
             <span className={cn('truncate max-w-[9rem]', valueClassName)}>{value}</span>
+            {trailing}
           </button>
         }
         content={content(close)}
@@ -158,34 +160,36 @@ export function SessionControlPickers({
   }
 
   const modelData = pickModelOption(model, models);
+  // The catalog's label is the CLI's and it lags the server — see
+  // reconcileLiveModelName. The session card already reports what ran; this
+  // keeps the readout beside it from saying something different.
+  const modelName = reconcileLiveModelName(modelData, activeDefaultModel);
   const rawModel = raw.find((m) => m.value === model);
   const effortData = EFFORT_LEVELS.find((l) => l.id === effort);
+  const effortName = effortData?.name ?? effort;
   const normalizedMode = normalizePermissionMode(permissionMode);
   const modeData = PERMISSION_MODES.find((m) => m.id === normalizedMode) ?? PERMISSION_MODES[0];
 
   return (
     <>
+      {/* Model and effort are one control: they are picked together, and two
+          separate readouts spent the bar's width on a second `effort` label
+          to say one word. */}
       <StatusBarPicker
         id="model"
         label="model"
-        value={modelData.name}
-        title={`Model: ${modelData.name}`}
+        value={modelName}
+        trailing={<span className={cn('opacity-80', effortData?.color)}>{effortName}</span>}
+        title={`Model: ${modelName} · Effort: ${effortName}`}
         content={(close) => (
-          <ModelPickerDropdown models={models} selectedModel={model} onSelect={(id) => { setModel(id); close(); }} />
-        )}
-      />
-      <InlineDivider data-testid="status-divider" />
-      <StatusBarPicker
-        id="effort"
-        label="effort"
-        value={effortData?.name ?? effort}
-        valueClassName={effortData?.color}
-        title={`Effort: ${effortData?.name ?? effort}`}
-        content={(close) => (
-          <EffortPickerDropdown
-            effort={effort as EffortLevel}
-            levels={rawModel?.supportedEffortLevels}
-            onSelect={(level) => { setEffort(level); close(); }}
+          <ModelPickerDropdown
+            models={models}
+            selectedModel={model}
+            onSelect={(id) => { setModel(id); close(); }}
+            effort={effort}
+            effortLevels={rawModel?.supportedEffortLevels}
+            onEffortSelect={(level) => { setEffort(level); }}
+            extras={extraModelOptions(models)}
           />
         )}
       />

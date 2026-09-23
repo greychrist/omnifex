@@ -1,9 +1,10 @@
-import React from "react";
-import { ChevronDown } from "lucide-react";
+import React, { useState } from "react";
+import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Popover, FIELD_TRIGGER } from "@/components/ui/popover";
 import { ACCOUNT_DEFAULT_MARK } from "@/lib/modelCatalog";
+import { EFFORT_LEVELS, EffortPickerDropdown, type EffortLevel } from "@/components/ControlBar";
 
 export interface Model {
   id: string;
@@ -26,9 +27,117 @@ interface ModelPickerDropdownProps {
   models: Model[];
   selectedModel: string;
   onSelect: (modelId: string) => void;
+  /** Current effort. Supply with `onEffortSelect` to put effort in this
+   *  dropdown instead of a readout of its own. */
+  effort?: string;
+  onEffortSelect?: (level: EffortLevel) => void;
+  /** Effort levels this model supports, from the CLI catalog. */
+  effortLevels?: EffortLevel[];
+  /** Models the account's catalog does not list but the CLI will accept —
+   *  see `extraModelOptions`. Behind a row of their own: they are the escape
+   *  hatch, not the normal choice. */
+  extras?: Model[];
 }
 
-export function ModelPickerDropdown({ models, selectedModel, onSelect }: ModelPickerDropdownProps) {
+/**
+ * Panels swap IN PLACE rather than opening nested popovers. A popover inside
+ * a popover inside the status bar is three stacked dismiss layers, and the
+ * custom Popover portals to body (see the `data-omnifex-popover` note in
+ * Popover) — the outer one closes when the inner one is pressed. One panel
+ * with a back row has neither problem and is testable without layout.
+ */
+type Panel = 'models' | 'effort' | 'more';
+
+export function ModelPickerDropdown({
+  models,
+  selectedModel,
+  onSelect,
+  effort,
+  onEffortSelect,
+  effortLevels,
+  extras,
+}: ModelPickerDropdownProps) {
+  const [panel, setPanel] = useState<Panel>('models');
+  const showEffort = effort !== undefined && onEffortSelect !== undefined;
+  const showMore = (extras?.length ?? 0) > 0;
+
+  if (panel === 'effort' && showEffort) {
+    return (
+      <div className="w-[300px] p-1">
+        <PanelHeader title="Effort" onBack={() => { setPanel('models'); }} />
+        <EffortPickerDropdown
+          effort={effort as EffortLevel}
+          levels={effortLevels}
+          onSelect={(level) => { onEffortSelect(level); setPanel('models'); }}
+          bare
+        />
+      </div>
+    );
+  }
+
+  if (panel === 'more' && showMore) {
+    return (
+      <div className="w-[300px] p-1">
+        <PanelHeader title="More models" onBack={() => { setPanel('models'); }} />
+        {extras!.map((model) => (
+          <button
+            key={model.id}
+            onClick={() => { onSelect(model.id); }}
+            className={cn(
+              'w-full flex items-center gap-3 px-3 py-2 rounded-md transition-colors text-left',
+              'hover:bg-accent',
+              selectedModel === model.id && 'bg-accent',
+            )}
+          >
+            <span className="font-medium text-sm">{model.name}</span>
+          </button>
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <ModelList
+      models={models}
+      selectedModel={selectedModel}
+      onSelect={onSelect}
+      effortName={showEffort ? (EFFORT_LEVELS.find((l) => l.id === effort)?.name ?? effort) : null}
+      onOpenEffort={showEffort ? () => { setPanel('effort'); } : null}
+      onOpenMore={showMore ? () => { setPanel('more'); } : null}
+    />
+  );
+}
+
+/** Back row + title, shared by the two secondary panels. */
+function PanelHeader({ title, onBack }: { title: string; onBack: () => void }) {
+  return (
+    <button
+      type="button"
+      aria-label={`Back to models (${title})`}
+      onClick={onBack}
+      className="w-full flex items-center gap-1.5 px-3 pt-2 pb-1.5 mb-1 border-b border-border/50 text-[10px] uppercase tracking-wider text-muted-foreground hover:text-foreground transition-colors"
+    >
+      <ChevronLeft className="h-3 w-3" />
+      <span>{title}</span>
+    </button>
+  );
+}
+
+function ModelList({
+  models,
+  selectedModel,
+  onSelect,
+  effortName,
+  onOpenEffort,
+  onOpenMore,
+}: {
+  models: Model[];
+  selectedModel: string;
+  onSelect: (modelId: string) => void;
+  effortName: string | null;
+  onOpenEffort: (() => void) | null;
+  onOpenMore: (() => void) | null;
+}) {
   // The account-default model is marked in place rather than listed twice, so
   // the header carries the key for the mark (see withAccountDefaultLabel).
   const marked = models.some((m) => m.name.endsWith(ACCOUNT_DEFAULT_MARK));
@@ -65,6 +174,35 @@ export function ModelPickerDropdown({ models, selectedModel, onSelect }: ModelPi
           </div>
         </button>
       ))}
+      {onOpenEffort && (
+        <>
+          <div className="my-1 border-t border-border/50" />
+          <button
+            type="button"
+            onClick={onOpenEffort}
+            className="w-full flex items-center justify-between gap-3 px-3 py-2 rounded-md hover:bg-accent transition-colors text-left"
+          >
+            <span className="font-medium text-sm">Effort</span>
+            <span className="flex items-center gap-1 text-xs text-muted-foreground">
+              {effortName}
+              <ChevronRight className="h-3 w-3" />
+            </span>
+          </button>
+        </>
+      )}
+      {onOpenMore && (
+        <>
+          <div className="my-1 border-t border-border/50" />
+          <button
+            type="button"
+            onClick={onOpenMore}
+            className="w-full flex items-center justify-between gap-3 px-3 py-2 rounded-md hover:bg-accent transition-colors text-left"
+          >
+            <span className="font-medium text-sm">More models</span>
+            <ChevronRight className="h-3 w-3 text-muted-foreground" />
+          </button>
+        </>
+      )}
     </div>
   );
 }
