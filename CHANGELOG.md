@@ -5,6 +5,13 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.188] — 2026-09-23
+
+### Fixed
+
+- **Sign in / Sign out failed with "claude binary not found" while Settings showed Claude Code installed.** Signing in and out, and the check of who is signed in, only used a Claude Code path explicitly saved in Settings → Claude Installation, not the install Settings detects on its own. Anyone who had never picked one got the error, and saw every account as signed out. They now use the same install Settings shows.
+- **The Claude Installation setting was ignored by sessions.** Sessions, the model and slash-command lists, and session summaries each searched three fixed locations and never read the Settings choice. Every launch now uses the install picked in Settings if it exists, and otherwise finds one on `PATH`, under nvm, or in the usual install locations. The background server checks the same way at startup, so a Claude Code install that only Settings knows about no longer stops it from starting.
+
 ## [0.4.187] — 2026-09-23
 
 ### Changed
