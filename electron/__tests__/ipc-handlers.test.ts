@@ -104,6 +104,7 @@ function buildMockServices() {
       'getBinaryPath',
       'logout',
     ] as const),
+    claudeAuth: mockService(['startLoginFlow', 'logout'] as const),
     proxy: mockService(['getSettings', 'saveSettings'] as const),
     permissionsIO: createPermissionsIOService(),
     gitWatcher: mockService(['startSession', 'stopSession', 'reconnectSession', 'listWorktrees'] as const),
@@ -339,6 +340,30 @@ describe('ipc handlers — dispatch to services', () => {
   it('codex_auth_start_login forwards configDir (+ optional binary path)', async () => {
     await invoke(handlers, 'codex_auth_start_login', { configDir: '/tmp/.codex-a' });
     expect(services.codexAuth.startLoginFlow).toHaveBeenCalledWith({ configDir: '/tmp/.codex-a' });
+  });
+
+  // ── Claude auth (per-configDir) ───────────────────────────────────────────
+
+  it('claude_auth_start_login forwards configDir (both case styles) and terminal size', async () => {
+    await invoke(handlers, 'claude_auth_start_login', { configDir: '/tmp/.claude-a', cols: 90, rows: 20 });
+    await invoke(handlers, 'claude_auth_start_login', { config_dir: '/tmp/.claude-b' });
+    expect(services.claudeAuth.startLoginFlow).toHaveBeenNthCalledWith(1, '/tmp/.claude-a', { cols: 90, rows: 20 });
+    expect(services.claudeAuth.startLoginFlow).toHaveBeenNthCalledWith(2, '/tmp/.claude-b', {});
+  });
+
+  it('claude_auth_start_login rejects a missing configDir', async () => {
+    await expect(invoke(handlers, 'claude_auth_start_login', {})).rejects.toThrow(/configDir is required/);
+    expect(services.claudeAuth.startLoginFlow).not.toHaveBeenCalled();
+  });
+
+  it('claude_auth_logout forwards configDir to the service', async () => {
+    await invoke(handlers, 'claude_auth_logout', { config_dir: '/tmp/.claude-a' });
+    expect(services.claudeAuth.logout).toHaveBeenCalledWith('/tmp/.claude-a');
+  });
+
+  it('claude_auth_logout rejects a missing configDir', async () => {
+    await expect(invoke(handlers, 'claude_auth_logout', {})).rejects.toThrow(/configDir is required/);
+    expect(services.claudeAuth.logout).not.toHaveBeenCalled();
   });
 
   // ── Claude ──────────────────────────────────────────────────────────────

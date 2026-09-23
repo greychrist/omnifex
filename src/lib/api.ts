@@ -3478,6 +3478,31 @@ export const api = {
     return apiCall<{ exists: boolean }>('fs_exists', { path: filePath });
   },
 
+  // ── Claude auth ─────────────────────────────────────────────────────────
+  /**
+   * Spawn `claude auth login` for one account in a one-shot pty. Main builds
+   * the env (CLAUDE_CONFIG_DIR + the inherited shell env the Keychain needs),
+   * so the renderer never names a binary or an env. Attach an xterm to the
+   * returned handle via the `one-shot-terminal-data:<handle>` events.
+   */
+  async startClaudeLoginFlow(
+    configDir: string,
+    size: { cols?: number; rows?: number } = {},
+  ): Promise<{ ptyHandle: string }> {
+    const params: Record<string, unknown> = { configDir };
+    if (size.cols !== undefined) params.cols = size.cols;
+    if (size.rows !== undefined) params.rows = size.rows;
+    return apiCall<{ ptyHandle: string }>('claude_auth_start_login', params);
+  },
+  /**
+   * `claude auth logout` for one account. Rejects with the CLI's stderr. The
+   * CLI drops `oauthAccount` from `.claude.json`, so `subscribeAccountIdentity`
+   * consumers see the change without a separate broadcast.
+   */
+  async claudeLogout(configDir: string): Promise<void> {
+    return apiCall<void>('claude_auth_logout', { configDir });
+  },
+
   // ── Codex auth ──────────────────────────────────────────────────────────
   /**
    * Snapshot of Codex auth status. Reads `~/.codex/auth.json` and falls back

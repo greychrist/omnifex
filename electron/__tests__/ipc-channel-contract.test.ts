@@ -91,6 +91,7 @@ const MAIN_ONLY_ADAPTERS = [
   'notificationSounds',
   'oneShotTerminal',
   'codexAuth',
+  'claudeAuth',
 ] as const;
 
 /**

@@ -274,6 +274,8 @@ export const INVOKE_CHANNELS: readonly string[] = [
   'codex_auth_cancel_login',
   'codex_binary_path',
   'codex_logout',
+  'claude_auth_start_login',
+  'claude_auth_logout',
 
   // Codex sessions (rollout discovery under ~/.codex/sessions)
   'codex_session_list',

@@ -282,6 +282,12 @@ export interface Services {
     getBinaryPath(): string | null;
     logout(configDir: string): Promise<void>;
   };
+  /** `claude auth login` / `logout` for one account's config dir. Main only:
+   *  login needs the one-shot pty and its event forwarding. */
+  claudeAuth?: {
+    startLoginFlow(configDir: string, size: { cols?: number; rows?: number }): { ptyHandle: string };
+    logout(configDir: string): Promise<void>;
+  };
   codexSessionWalker?: {
     listSessions(): Promise<import('../services/codex-session-walker').CodexSessionEntry[]>;
   };
@@ -391,7 +397,7 @@ function costFilters(p: Record<string, unknown> | undefined): Record<string, unk
  * renderer gets a defined (but empty) response rather than a blocked channel.
  */
 export function getHandlerMap(services: Services = {}): Record<string, HandlerFn> {
-  const { brain, brainMcp, accounts, claude, sessions, cost, costReportPdf, internalArchive, modelPricing, usage, rateLimits, usageRunner, claudeBinary, mcp, slashCommands, sessionsSummary, logging, database, proxy, permissionsIO, models, commands, gitWatcher, branchColors, gitBranches, gitDiff, lima, filesystem, notificationSounds, oneShotTerminal, codexAuth, codexSessionWalker, accountIdentity, allowRawSql } = services;
+  const { brain, brainMcp, accounts, claude, sessions, cost, costReportPdf, internalArchive, modelPricing, usage, rateLimits, usageRunner, claudeBinary, mcp, slashCommands, sessionsSummary, logging, database, proxy, permissionsIO, models, commands, gitWatcher, branchColors, gitBranches, gitDiff, lima, filesystem, notificationSounds, oneShotTerminal, codexAuth, claudeAuth, codexSessionWalker, accountIdentity, allowRawSql } = services;
 
   // Positive account-ownership guard for config-editing channels. A non-empty
   // configDir supplied by the renderer must belong to a known account, so a
@@ -1104,6 +1110,24 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
       const configDir = (p?.configDir ?? p?.config_dir) as string | undefined;
       if (!codexAuth || !configDir) return null;
       await codexAuth.logout(configDir);
+      return null;
+    }),
+
+    // ── Claude auth ──────────────────────────────────────────────────────────
+    claude_auth_start_login: wrapWith((p: Record<string, unknown>) => {
+      const configDir = (p?.configDir ?? p?.config_dir) as string | undefined;
+      if (!configDir) throw new Error('claude_auth_start_login: configDir is required');
+      if (!claudeAuth) throw new Error('claude_auth_start_login: claude auth service not available');
+      const size: { cols?: number; rows?: number } = {};
+      if (typeof p.cols === 'number') size.cols = p.cols;
+      if (typeof p.rows === 'number') size.rows = p.rows;
+      return claudeAuth.startLoginFlow(configDir, size);
+    }),
+    claude_auth_logout: wrapWith(async (p: Record<string, unknown>) => {
+      const configDir = (p?.configDir ?? p?.config_dir) as string | undefined;
+      if (!configDir) throw new Error('claude_auth_logout: configDir is required');
+      if (!claudeAuth) throw new Error('claude_auth_logout: claude auth service not available');
+      await claudeAuth.logout(configDir);
       return null;
     }),
 

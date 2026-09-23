@@ -7,9 +7,10 @@ import { api } from '@/lib/api';
 import type { JSX } from 'react';
 
 interface OneShotTerminalProps {
-  /** Subprocess to spawn (absolute path or PATH-resolvable name). */
-  binary: string;
-  args: string[];
+  /** Subprocess to spawn (absolute path or PATH-resolvable name). Ignored
+   *  when `spawn` is supplied. */
+  binary?: string;
+  args?: string[];
   env?: Record<string, string | undefined>;
   cwd?: string;
   /**
@@ -21,6 +22,13 @@ interface OneShotTerminalProps {
   watchPath?: string;
   onWatchFire?: (path: string) => void;
   onExit?: (info: { exitCode: number; signal?: number }) => void;
+  /**
+   * Spawn through a purpose-built channel instead of the generic
+   * `one_shot_terminal_spawn`, for flows where main must own the command and
+   * its env (e.g. `claude auth login`, whose env carries the account's
+   * config dir). Captured at mount; must resolve to a one-shot pty handle.
+   */
+  spawn?: (size: { cols: number; rows: number }) => Promise<{ ptyHandle: string }>;
   /** Fired when the consumer closes the modal manually (not used here;
    *  exposed so callers can wire close buttons without a second prop). */
   onCancel?: () => void;
@@ -49,7 +57,8 @@ const POLL_INTERVAL_MS = 250;
  */
 export function OneShotTerminal({
   binary,
-  args,
+  args = [],
+  spawn,
   env,
   cwd,
   watchPath,
@@ -64,6 +73,7 @@ export function OneShotTerminal({
   // every time the parent re-renders.
   const onExitRef = useRef(onExit);
   const onWatchFireRef = useRef(onWatchFire);
+  const spawnRef = useRef(spawn);
   onExitRef.current = onExit;
   onWatchFireRef.current = onWatchFire;
 
@@ -119,18 +129,24 @@ export function OneShotTerminal({
     void (async () => {
       let handle: { ptyHandle: string };
       try {
-        handle = await api.oneShotTerminalSpawn({
-          binary,
-          args,
-          env,
-          cwd,
-          cols: term.cols,
-          rows: term.rows,
-        });
+        const customSpawn = spawnRef.current;
+        if (customSpawn) {
+          handle = await customSpawn({ cols: term.cols, rows: term.rows });
+        } else {
+          if (!binary) throw new Error('no binary to spawn');
+          handle = await api.oneShotTerminalSpawn({
+            binary,
+            args,
+            env,
+            cwd,
+            cols: term.cols,
+            rows: term.rows,
+          });
+        }
       } catch (err) {
         // Surface the spawn failure inside xterm itself — the modal stays
         // mounted so the user can read it before closing.
-        term.write(`\r\n\x1b[31mFailed to launch ${binary}: ${(err as Error).message}\x1b[0m\r\n`);
+        term.write(`\r\n\x1b[31mFailed to launch ${binary ?? 'process'}: ${(err as Error).message}\x1b[0m\r\n`);
         return;
       }
       if (disposed) {

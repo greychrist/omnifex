@@ -35,6 +35,14 @@ export const NATIVE_INVOKE_CHANNELS: readonly string[] = [
   'one_shot_terminal_kill',
   'codex_auth_start_login',
   'codex_auth_cancel_login',
+  /** Deletes auth.json on the machine running main. The daemon's adapter bag
+   *  has no `codexAuth`, so over the wire Sign out answered `null` and did
+   *  nothing. */
+  'codex_logout',
+  /** `claude auth login` runs in main's one-shot pty; `logout` sits beside
+   *  it on the same main-only adapter. */
+  'claude_auth_start_login',
+  'claude_auth_logout',
   /** Resolves the `codex` binary on the machine running main. The daemon's
    *  adapter bag has no `codexAuth`, so over the wire this answered `null` —
    *  the same value api.ts documents for "Codex CLI not installed". */

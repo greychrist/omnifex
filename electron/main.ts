@@ -100,6 +100,7 @@ import { createCostReportPdfService } from './services/cost-report-pdf';
 import { createSlashCommandsService } from './services/slash-commands';
 import { createFilesystemService } from './services/filesystem';
 import { createOneShotTerminalService } from './services/one-shot-terminal';
+import { createClaudeAuthService } from './services/auth/claude-auth';
 import { createCodexAuthService } from './services/auth/codex-auth';
 import { createCodexSessionWalker } from './services/codex-session-walker';
 import {
@@ -1074,6 +1075,26 @@ app.whenReady().then(() => {
   const codexAuthService = createCodexAuthService({
     oneShotTerminal: oneShotTerminalService,
   });
+  // Spawns a one-shot pty and forwards its stream to the renderer's
+  // `one-shot-terminal-data:<handle>` / `one-shot-terminal-exit:<handle>`
+  // subscriptions. Subscriptions persist until the pty exits or the renderer
+  // calls kill(); the service tears down its own subscribers on exit.
+  const spawnOneShotTerminal = (
+    opts: Parameters<typeof oneShotTerminalService.spawn>[0],
+  ): { ptyHandle: string } => {
+    const handle = oneShotTerminalService.spawn(opts);
+    oneShotTerminalService.onData(handle.ptyHandle, (data) => {
+      sendToRenderer(`one-shot-terminal-data:${handle.ptyHandle}`, data);
+    });
+    oneShotTerminalService.onExit(handle.ptyHandle, (info) => {
+      sendToRenderer(`one-shot-terminal-exit:${handle.ptyHandle}`, info);
+    });
+    return handle;
+  };
+  const claudeAuthService = createClaudeAuthService({
+    spawnTerminal: spawnOneShotTerminal,
+    resolveBinary: () => claudeBinaryService.getPath(),
+  });
   const codexSessionWalkerService = createCodexSessionWalker({
     listCodexAccounts: () => accountsService.listAccounts().filter((a) => a.engine === 'codex'),
   });
@@ -1484,22 +1505,10 @@ app.whenReady().then(() => {
     },
     filesystem: filesystemService,
     notificationSounds: notificationSoundsService,
-    // One-shot terminal adapter. spawn() also wires data/exit forwarding so
-    // the renderer's `one-shot-terminal-data:<handle>` /
-    // `one-shot-terminal-exit:<handle>` subscriptions receive the pty's
-    // stream. Subscriptions persist until the pty exits or the renderer
-    // calls kill(); the service tears down its own subscribers on exit.
+    // One-shot terminal adapter. spawn() also wires data/exit forwarding —
+    // see spawnOneShotTerminal.
     oneShotTerminal: {
-      spawn: (opts) => {
-        const handle = oneShotTerminalService.spawn(opts);
-        oneShotTerminalService.onData(handle.ptyHandle, (data) => {
-          sendToRenderer(`one-shot-terminal-data:${handle.ptyHandle}`, data);
-        });
-        oneShotTerminalService.onExit(handle.ptyHandle, (info) => {
-          sendToRenderer(`one-shot-terminal-exit:${handle.ptyHandle}`, info);
-        });
-        return handle;
-      },
+      spawn: spawnOneShotTerminal,
       write: (ptyHandle, data) => oneShotTerminalService.write(ptyHandle, data),
       resize: (ptyHandle, cols, rows) => oneShotTerminalService.resize(ptyHandle, cols, rows),
       kill: (ptyHandle) => oneShotTerminalService.kill(ptyHandle),
@@ -1512,6 +1521,7 @@ app.whenReady().then(() => {
       getBinaryPath: () => codexAuthService.getBinaryPath(),
       logout: (configDir: string) => codexAuthService.logout(configDir),
     },
+    claudeAuth: claudeAuthService,
     codexSessionWalker: {
       listSessions: () => codexSessionWalkerService.listSessions(),
     },

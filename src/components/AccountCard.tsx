@@ -1,5 +1,5 @@
 import * as React from "react";
-import { ShieldCheck, ShieldAlert, ShieldQuestion, RefreshCw, RotateCw } from "lucide-react";
+import { ShieldCheck, ShieldAlert, ShieldQuestion, RefreshCw, RotateCw, LogIn, LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type {
   AgentKind,
@@ -10,6 +10,9 @@ import type {
 import type { SessionVerification } from "@/lib/accountVerification";
 import { Popover } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
+import { api } from "@/lib/api";
+import { platform } from "@/lib/platform";
+import { ClaudeSignInModal } from "./ClaudeSignInModal";
 import { AccountBadge } from "./AccountBadge";
 import { useLayoutMode } from "@/hooks/useLayoutMode";
 import { HeaderLabel } from "./HeaderLabel";
@@ -82,6 +85,42 @@ export function AccountCard({
   const { narrow } = useLayoutMode();
   const [accountPopoverOpen, setAccountPopoverOpen] = React.useState(false);
   const [usagePopoverOpen, setUsagePopoverOpen] = React.useState(false);
+  const [signInOpen, setSignInOpen] = React.useState(false);
+  // Sign out is two clicks: it cuts off every session on this account, not
+  // just this one. The armed state resets whenever the popover closes.
+  const [signOutArmed, setSignOutArmed] = React.useState(false);
+  const [signingOut, setSigningOut] = React.useState(false);
+  const [authError, setAuthError] = React.useState<string | null>(null);
+
+  // Claude only — Codex signs in from Account Settings. And desktop only: the
+  // login runs in a pty on this machine, which the web client does not have.
+  const canManageAuth = platform.isElectron && agent !== "codex";
+
+  const handleAccountPopoverChange = React.useCallback((next: boolean) => {
+    setAccountPopoverOpen(next);
+    if (!next) {
+      setSignOutArmed(false);
+      setAuthError(null);
+    }
+  }, []);
+
+  const handleSignOut = React.useCallback(async () => {
+    if (!signOutArmed) {
+      setSignOutArmed(true);
+      return;
+    }
+    setSigningOut(true);
+    setAuthError(null);
+    try {
+      await api.claudeLogout(configDir);
+      setSignOutArmed(false);
+      onRecheck?.();
+    } catch (err) {
+      setAuthError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSigningOut(false);
+    }
+  }, [signOutArmed, configDir, onRecheck]);
 
   const shieldStatus: IdentityStatus | null = verification?.status ?? null;
 
@@ -132,7 +171,7 @@ export function AccountCard({
         <HeaderLabel>account</HeaderLabel>
         <Popover
           open={accountPopoverOpen}
-          onOpenChange={setAccountPopoverOpen}
+          onOpenChange={handleAccountPopoverChange}
           align="start"
           side="bottom"
           className="w-96"
@@ -221,6 +260,42 @@ export function AccountCard({
                       </Button>
                     )}
                   </div>
+
+                  {canManageAuth && (
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-6 px-2 text-[11px]"
+                        onClick={() => {
+                          // Close the popover first: the dialog would otherwise
+                          // count a click in it as outside the popover.
+                          handleAccountPopoverChange(false);
+                          setSignInOpen(true);
+                        }}
+                        title="Run `claude auth login` for this account's config directory."
+                      >
+                        <LogIn className="w-3 h-3 mr-1" />
+                        {verification.status === "signed-out" ? "Sign in" : "Re-authenticate"}
+                      </Button>
+                      {verification.status !== "signed-out" && (
+                        <Button
+                          variant={signOutArmed ? "destructive" : "outline"}
+                          size="sm"
+                          className="h-6 px-2 text-[11px]"
+                          onClick={() => void handleSignOut()}
+                          disabled={signingOut}
+                          title="Run `claude auth logout` for this account. Every session on this account loses its credentials."
+                        >
+                          <LogOut className="w-3 h-3 mr-1" />
+                          {signingOut ? "Signing out…" : signOutArmed ? "Confirm sign out" : "Sign out"}
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                  {authError && (
+                    <div className="text-[11px] text-red-500 break-words">{authError}</div>
+                  )}
                 </div>
               )}
               {sdkAccount && (
@@ -292,6 +367,15 @@ export function AccountCard({
           }
         />
       </div>
+      {canManageAuth && (
+        <ClaudeSignInModal
+          open={signInOpen}
+          onClose={() => { setSignInOpen(false); }}
+          configDir={configDir}
+          accountName={accountName}
+          onAuthenticated={() => { onRecheck?.(); }}
+        />
+      )}
       <UsageDetailPopover
         open={usagePopoverOpen}
         onOpenChange={setUsagePopoverOpen}
