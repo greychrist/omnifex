@@ -5,6 +5,17 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.187] — 2026-09-23
+
+### Changed
+
+- **The account popover says who is signed in, and offers the matching action.** It names the account currently logged in to the session's config directory, or says **Not signed in**. With nobody signed in the popover offers **Sign in**; otherwise **Re-authenticate** and **Sign out**. Accounts that authenticate with an API key have no login email to read, so they show as not signed in even though their sessions work.
+- **The refresh button beside the account badge also re-checks the account's identity**, not just usage. An expected email changed in Settings now shows up in an already-open session after one click, instead of waiting for the next login change.
+
+### Fixed
+
+- **Sign in and Sign out were missing for most accounts.** They only appeared for accounts with an expected email set in Settings, which most people never fill in. They now appear for every Claude account.
+
 ## [0.4.186] — 2026-09-23
 
 ### Added

@@ -46,7 +46,7 @@ The Brain is a per-account **memory vault** distilled from those transcripts.
 - Auto-discover existing accounts on your machine and scan for new ones.
 - Every session, agent, hook, MCP call, usage read, and CLAUDE.md edit runs under the resolved account's `CLAUDE_CONFIG_DIR`.
 - An account-resolution explainer shows exactly why a given project maps to a given account.
-- Sign an account in or out from its badge in the session header — the same `claude auth login` / `logout` you would run in a terminal, scoped to that account's config directory, with the login running in a terminal window inside the app.
+- See who is signed in to an account, and sign it in or out, from its badge in the session header — the same `claude auth login` / `logout` you would run in a terminal, scoped to that account's config directory, with the login running in a terminal window inside the app.
 
 ### Interactive sessions
 - A structured **rich chat** (streaming JSON) with tool-call widgets, backed by the real CLI.
