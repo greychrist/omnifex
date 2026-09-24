@@ -60,7 +60,7 @@ async function pickFolder(defaultPath?: string): Promise<string | null> {
 }
 
 // Per-engine session-default seeds applied when the engine radio flips in
-// add mode. Codex has no Thinking axis; Claude does.
+// add mode.
 const ENGINE_DEFAULTS: Record<
   AccountEngine,
   { permission: string; effort: string }
@@ -103,7 +103,6 @@ export const AccountDialog: React.FC<AccountDialogProps> = ({
   // SessionDefaultsRow.
   const [model, setModel] = useState("");
   const [effort, setEffort] = useState(ENGINE_DEFAULTS.claude.effort);
-  const [thinking, setThinking] = useState<string>("adaptive");
   const [permission, setPermission] = useState(ENGINE_DEFAULTS.claude.permission);
 
   const [showIconPicker, setShowIconPicker] = useState(false);
@@ -125,7 +124,6 @@ export const AccountDialog: React.FC<AccountDialogProps> = ({
       const sd = account.session_defaults ?? {};
       setModel(sd.model ?? "");
       setEffort(sd.effort ?? ENGINE_DEFAULTS[account.engine].effort);
-      setThinking(sd.thinkingConfig ?? "adaptive");
       setPermission(sd.permissionMode ?? ENGINE_DEFAULTS[account.engine].permission);
     } else {
       setName("");
@@ -138,7 +136,6 @@ export const AccountDialog: React.FC<AccountDialogProps> = ({
       setIcon("user");
       setModel("");
       setEffort(ENGINE_DEFAULTS.claude.effort);
-      setThinking("adaptive");
       setPermission(ENGINE_DEFAULTS.claude.permission);
     }
     // mode/account are intentionally the only seed triggers; subsequent
@@ -174,10 +171,6 @@ export const AccountDialog: React.FC<AccountDialogProps> = ({
       sessionDefaults: {
         model: model || undefined,
         effort: (effort || undefined) as SessionDefaults["effort"],
-        thinkingConfig:
-          engine === "claude"
-            ? (thinking as SessionDefaults["thinkingConfig"])
-            : undefined,
         permissionMode: permission,
       },
     });

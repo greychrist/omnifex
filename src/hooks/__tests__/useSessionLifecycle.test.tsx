@@ -96,7 +96,6 @@ function harness(overrides: HarnessOverrides = {}) {
         selectedModel: 'sonnet',
         permissionMode: 'default',
         effort: 'medium',
-        thinkingConfig: 'adaptive',
         accountResolution: {
           account: { name: 'A', subscription_label: 'pro', config_dir: '/cfg' },
           match_type: 'override',
@@ -136,7 +135,6 @@ describe('useSessionLifecycle — startPersistentSession happy path', () => {
       undefined,
       '/cfg',
       'medium',
-      { type: 'adaptive' },
       false,
       undefined, // agent — harness doesn't pass one; lifecycle forwards undefined
     );
@@ -207,8 +205,7 @@ describe('useSessionLifecycle — startPersistentSession happy path', () => {
           selectedModel: 'sonnet',
           permissionMode: 'default',
           effort: 'medium',
-          thinkingConfig: 'adaptive',
-          accountResolution: null,
+            accountResolution: null,
           persistentSessionRef,
           handleJsonlLine: vi.fn(),
           setMessages: ((updater: any) => {
@@ -227,28 +224,6 @@ describe('useSessionLifecycle — startPersistentSession happy path', () => {
     });
     expect(api.resolveAccountForProject).toHaveBeenCalledWith('/repo');
     expect((api.startSession as any).mock.calls[0][5]).toBe('/fallback-cfg');
-  });
-
-  it('passes thinking="disabled" when thinkingConfig is "disabled"', async () => {
-    (api.startSession as any).mockResolvedValueOnce(undefined);
-    const useLocal = () => {
-      const persistentSessionRef = useRef(false);
-      const messagesRef = useRef<JsonlNode[]>([]);
-      return useSessionLifecycle({
-        tabId: 't1', projectPath: '/r', selectedModel: 'sonnet',
-        permissionMode: 'default', effort: 'medium', thinkingConfig: 'disabled',
-        accountResolution: { account: { name: 'a', subscription_label: 'pro', config_dir: '/c' }, match_type: 'rule', match_detail: '' },
-        persistentSessionRef,
-        handleJsonlLine: vi.fn(),
-        setMessages: ((u: any) => { messagesRef.current = typeof u === 'function' ? u(messagesRef.current) : u; }) as any,
-        onSessionInit: vi.fn(),
-        tasks: [],
-        subagents: [],
-      });
-    };
-    const { result } = renderHook(useLocal);
-    await act(async () => { await result.current.startPersistentSession(); });
-    expect((api.startSession as any).mock.calls[0][7]).toEqual({ type: 'disabled' });
   });
 });
 

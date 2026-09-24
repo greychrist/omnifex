@@ -40,9 +40,7 @@ import {
   FloatingPromptInput,
   type FloatingPromptInputRef,
   type EffortLevel,
-  type ThinkingConfig,
 } from "./FloatingPromptInput";
-import { normalizeThinkingConfig } from "@/lib/thinkingConfig";
 import { modelDisplayName, effectiveModels } from "@/lib/modelCatalog";
 import { sessionControlSummary } from "@/lib/sessionControlSummary";
 import { SessionControlPickers } from "@/components/SessionControlPickers";
@@ -52,7 +50,7 @@ import { SessionMCPStatus } from "./SessionMCPStatus";
 import { SessionPluginStatus } from "./SessionPluginStatus";
 import { PermissionCard } from "./PermissionCard";
 import { AskUserQuestionCard } from "./AskUserQuestionCard";
-import { ElicitationDialog } from "./ElicitationDialog";
+import { ElicitationDialog, type ElicitationRequest } from "./ElicitationDialog";
 import { SessionPermissionsEditor } from "./SessionPermissionsEditor";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { TooltipProvider, TooltipSimple } from "@/components/ui/tooltip-modern";
@@ -159,7 +157,6 @@ interface AgentSessionProps {
   initialSessionConfig?: {
     model: string;
     effort: EffortLevel;
-    thinkingConfig?: ThinkingConfig;
     permissionMode: string;
     accountResolution?: {
       account: {
@@ -374,14 +371,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   // Default 'high' matches the CLI's own default (EffortLevel docs).
   // There is no 'auto' — the CLI's EffortLevel is strictly low/medium/high/xhigh/max.
   const [effort, setEffort] = useState<EffortLevel>(initialSessionConfig?.effort ?? 'high');
-  // Thinking config — controls extended thinking behavior.
-  const [thinkingConfig, setThinkingConfig] = useState<ThinkingConfig>(
-    // initialSessionConfig may carry a legacy `'budget'` value if the
-    // tab was launched from a pre-v0.4.21 saved-session form. Normalize
-    // at the seed point so the rest of the component works in the
-    // tightened two-state schema.
-    normalizeThinkingConfig(initialSessionConfig?.thinkingConfig),
-  );
   // Agent picker — early `useTabContext` call (the main one further down
   // is for tabTitle / updateTab; both consume the same context, so no
   // ordering hazard). The form-level state seeds from `tab.agent` so a
@@ -624,7 +613,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     if (!defaults) return;
     accountDefaultsApplied.current = true;
     if (defaults.model) setSelectedModel(defaults.model);
-    if (defaults.thinkingConfig) setThinkingConfig(normalizeThinkingConfig(defaults.thinkingConfig));
     if (defaults.permissionMode) setPermissionMode(defaults.permissionMode);
     if (defaults.effort) setEffort(defaults.effort);
   }, [accountResolution, session, initialSessionConfig]);
@@ -719,13 +707,9 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     handlePermissionAllowWithInput,
   } = usePermissions();
 
-  // Elicitation state — MCP servers requesting user input
-  const [elicitationRequest, setElicitationRequest] = useState<{
-    serverName: string;
-    message: string;
-    mode?: 'form' | 'url';
-    url?: string;
-  } | null>(null);
+  // The MCP elicitation on screen — main pushes the head of its queue, or
+  // null once the queue drains (answered, or withdrawn by the CLI).
+  const [elicitationRequest, setElicitationRequest] = useState<ElicitationRequest | null>(null);
 
   const persistentSessionRef = useRef(false);
   // Live mirror of the session's turn axis for call-time reads inside
@@ -1540,7 +1524,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     selectedModel,
     permissionMode,
     effort,
-    thinkingConfig,
     agent,
     accountResolution,
     persistentSessionRef,
@@ -1819,8 +1802,8 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   useEffect(() => {
     const unlisten = window.electronAPI.onEvent(
       `elicitation-request:${tabIdRef.current}`,
-      (payload: any) => {
-        setElicitationRequest(payload);
+      (payload: unknown) => {
+        setElicitationRequest((payload as ElicitationRequest | null) ?? null);
       },
     );
     return () => { unlisten(); };
@@ -2824,17 +2807,18 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
         {/* Floating Prompt Input - Only after session started */}
         {sessionStarted && <ErrorBoundary>
           <ElicitationDialog
-            open={!!elicitationRequest}
-            serverName={elicitationRequest?.serverName ?? ''}
-            message={elicitationRequest?.message ?? ''}
-            mode={elicitationRequest?.mode}
-            url={elicitationRequest?.url}
-            onAccept={() => {
-              logAndForget('claude-code-session:respond-elicitation', api.respondElicitation(tabIdRef.current, 'accept'));
+            request={elicitationRequest}
+            openUrl={(url) => window.electronAPI.openExternal(url)}
+            onAccept={(requestId, content) => {
+              logAndForget('claude-code-session:respond-elicitation', api.respondElicitation(tabIdRef.current, 'accept', content, requestId));
               setElicitationRequest(null);
             }}
-            onDecline={() => {
-              logAndForget('claude-code-session:respond-elicitation', api.respondElicitation(tabIdRef.current, 'decline'));
+            onDecline={(requestId) => {
+              logAndForget('claude-code-session:respond-elicitation', api.respondElicitation(tabIdRef.current, 'decline', undefined, requestId));
+              setElicitationRequest(null);
+            }}
+            onCancel={(requestId) => {
+              logAndForget('claude-code-session:respond-elicitation', api.respondElicitation(tabIdRef.current, 'cancel', undefined, requestId));
               setElicitationRequest(null);
             }}
           />

@@ -30,6 +30,165 @@ import { buildClaudeEnv } from './util/claude-env';
  * old value and the new one, and file or fix whatever they imply. Bumping it
  * to silence the badge throws away the only drift signal we have.
  *
+ * Last review: 2.1.280 -> 2.1.281 on 2026-09-23. Findings:
+ *
+ *  Changelog coverage: one version in range, 2.1.281, and it has an entry
+ *  (~175 lines). Both endpoints are installed, so every wire claim below is
+ *  a real binary diff of 2.1.280 vs 2.1.281.
+ *
+ *  Finding 1 fixed in the pass. Findings 2 and 3 predate this release;
+ *  2.1.281 only widens them. Findings 2 and 3 and opportunity B were fixed
+ *  the same day on request.
+ *
+ *  WIRE DIFF, reported both ways round:
+ *
+ *    - Merge-strategy map: byte-identical (1950 bytes). No new record type.
+ *    - `hook_event_name` literals: 33 distinct in each, set-identical.
+ *    - `type:"control_*"`: same 4 envelopes. The count moves
+ *      (`control_request` 19 -> 20, `control_response` 60 -> 64,
+ *      `control_cancel_request` 10 -> 7) come from the claim_session handler
+ *      and minifier churn, not from a new envelope.
+ *    - `subtype:` literals: 133 -> 135 distinct, nothing removed. New:
+ *      `claim_session` (SDK host request; see opp. A) and
+ *      `per_turn_effort_changed` (stream-only system frame; finding 1).
+ *      `error`/`success`/`initialize`/`notification` count moves are the
+ *      claim handler's responses.
+ *    - SDK `this.request({subtype})`: 52 -> 53, the one addition being
+ *      `claim_session`.
+ *    - `{parentUuid:` record-builder keys: set-identical. The
+ *      `origin:{kind}` literal counts are identical (`human` 8 in each).
+ *      `turnOrigin` count is unchanged. One NEW wrapper-level key on user
+ *      rows: `commandOutcome: {kind}` on `<local-command-stdout>` rows,
+ *      with kind one of `unavailable_headless`, `unknown`, `failed` or
+ *      `restart_required`. It is additive and we ignore it (see opp. C).
+ *    - New `"sdk"`-bearing enum arrays are a Remote Control bridge scope
+ *      (`auto_default`/`auto_settings`/`explicit`/`sdk`) and an MCP transport
+ *      list. Neither is `turnOrigin`.
+ *    - `.describe()` strings: 1838 -> 1866. New: the claim_session schema
+ *      (+ `--await-claim`), `per_turn_effort_active` on init, `view_mode`
+ *      (`focus`|`default`) on init (a new `/focus` command), set_model /
+ *      set_permission_mode refusal reason codes (`restricted_by_org`,
+ *      `unavailable_for_account`, `bypass_disabled`, …), `restoredCwd` on
+ *      resume, `conversation_reset` gaining an `onboarding` trigger and a
+ *      /clear uuid. Removed: the object-only `attribution` description
+ *      (now also takes `false`).
+ *    - New `"--…"` literals (`--no-advice`, `--no-lazy-fetch`,
+ *      `--no-reuse-object`, `--timestamp`) are git/docker entries in the
+ *      Bash read-only flag tables, not CLI flags.
+ *    - `/usage` anchors: identical counts. `usage-runner/parser.ts` is safe.
+ *    - Elicitation control_request shape: field-identical.
+ *
+ *  1. `system:per_turn_effort_changed` DREW AN "UNRECOGNIZED RECORD" CARD.
+ *     FIXED IN THIS PASS.
+ *
+ *     The frame is stream-only (queued via the SDK event queue, never in
+ *     the JSONL) and always `per_turn_effort_active:false`. The CLI emits
+ *     it when the API refuses per-turn effort or mid-conversation system
+ *     messages and it retries without them. `stream-forward.ts` forwards
+ *     unknown system subtypes by design, and `classifySystem` sent it to
+ *     the catch-all. It is now in `SystemSubtype`/`SYSTEM_SUBTYPES` and
+ *     dropped in `filterDisplayableMessages`. Tests are in
+ *     jsonlClassifier/messageFilters.
+ *
+ *  2. MCP ELICITATIONS ARE NEVER ANSWERED. PRE-EXISTING. 2.1.281 WIDENS IT.
+ *     FIXED the same day. The engine routes `elicitation` and
+ *     `control_cancel_request`, and answers any other inbound request with
+ *     an error. `sessions/elicitations.ts` queues requests per tab, and
+ *     `ElicitationDialog` renders the schema as a form. URL mode opens the
+ *     page and accepts; dismissing sends `cancel`. `system:elicitation_complete`
+ *     is classified and hidden.
+ *
+ *     `hostAnswersElicitations` defaults to TRUE in stream-json mode (only
+ *     `--permission-prompts none` turns it off). So an MCP server's
+ *     elicitation becomes a `control_request {subtype:"elicitation"}` to
+ *     us. `claude-cli-engine.ts` routes only `can_use_tool`, so the request
+ *     falls through to the message path: nothing answers it, and the
+ *     renderer draws an "Unrecognized record: control_request" card. The
+ *     CLI parks the session in `requires_action` and waits. The renderer
+ *     side (`ElicitationDialog`, `respondElicitation`,
+ *     `handle.elicitationResolver`) exists, but nothing ever assigns the
+ *     resolver, so that code is dead. 2.1.281 adds URL-mode elicitation
+ *     (fields `mode`/`url`/`elicitation_id`, already present in 280's
+ *     frame) for browser sign-in flows on 2026-07-28 protocol servers, so
+ *     hitting this gets likelier. No occurrence yet in `app_logs`.
+ *
+ *  3. THE BYPASS-MODE DECIDER APPROVES THE CLI'S DANGEROUS-rm ASK.
+ *     PRE-EXISTING, SECURITY-RELEVANT. 2.1.281 WIDENS IT.
+ *     FIXED the same day. A live capture (2.1.281, bypassPermissions,
+ *     `rm -rf "$(pwd)"`) carries `decision_reason_type:'safetyCheck'`;
+ *     `autoDecisionForMode` now sends every safetyCheck to the card in
+ *     bypass. Same capture: `rm -rf "$PWD"` and Writes into `.git/` or
+ *     `.claude/` never reach the decider at all, because the CLI runs them.
+ *     See docs/permission-syntax.md "Safety checks in bypassPermissions".
+ *
+ *     In bypassPermissions we pass `--permission-mode bypassPermissions`,
+ *     so the only asks that reach the stdio decider are the ones the CLI
+ *     won't auto-approve even in bypass, and `autoDecisionForMode`
+ *     (`permissions.ts`) returns 'allow' for all of them without reading
+ *     the payload. 2.1.281 extends that ask to `rm -rf "$(pwd)"`-style
+ *     substitution targets and to working-dir-derived variables, and makes
+ *     the CLI deny it after 2 minutes. Our instant 'allow' pre-empts both.
+ *     This is the bypass twin of the 2.1.280 acceptEdits finding. It is
+ *     unverified live: there is no captured payload, so the
+ *     `decision_reason_type` to key on is unknown. Capture one before
+ *     fixing.
+ *
+ *  Opportunities, not bugs:
+ *
+ *   A. `--await-claim` + `claim_session`: a pre-warmed spare CLI that
+ *      binds to a cwd/session on claim, which would make session start
+ *      near-instant. Constraints: `CLAUDE_CONFIG_DIR` and the other
+ *      consumed env keys must be in the spare's spawn env, which means one
+ *      spare per account. Model, thinking and flag settings are follow-up
+ *      control requests sent after the claim. The spare's permission mode
+ *      is a claim field. Everything is `@internal`.
+ *   B. `rejects_disabled_thinking` catalog capability (Fable 5, Fable 5.1,
+ *      Opus 5.5): the CLI now keeps thinking on for these models. TAKEN the
+ *      same day, by deletion. No UI could set "off" after v0.4.70, but the
+ *      plumbing (`thinkingConfig`, `--thinking disabled`,
+ *      `session_set_thinking`) still ran. It is gone end to end, and
+ *      migration v27 strips the key from stored account defaults. Thinking
+ *      is always the CLI's adaptive default.
+ *   C. `commandOutcome.kind` / `restart_required` / refusal reason codes
+ *      on set_model: a host can offer a fix instead of relaying text. Today
+ *      a typed TUI-only command (e.g. `/config`) renders its stdout.
+ *   D. `view_mode:'focus'` (`/focus`): the model is told the user sees
+ *      only final messages, while OmniFex still renders everything. That
+ *      only matters if someone types `/focus`.
+ *
+ *  Checked and inert:
+ *
+ *   - `"attribution": false`: nothing in OmniFex reads or writes the key.
+ *   - `--setting-sources` forwarding: we pass it, and we spawn no
+ *     teammates or `/bg` ourselves.
+ *   - `--agents` file path, `--add-dir` CLAUDE.md double-send,
+ *     `--system-prompt-file` for runners: we pass none of those flags.
+ *   - Resume fixes (hidden "Continue" gone, unknown-outcome tool call,
+ *     large-session restore, cache-stable history): nothing here depends
+ *     on the old behaviour. The unknown-outcome note rides an ordinary
+ *     tool_result.
+ *   - stream-json plain-string assistant content failing every turn, cwd
+ *     deleted mid-session (`restoredCwd`), SDK MCP handshake stall, proxy
+ *     stream truncation and stop-reason fixes: upstream fixes in our
+ *     favour.
+ *   - `mcp_tool` hooks waiting for their server: HooksEditor writes only
+ *     `type:'command'`.
+ *   - NUL-byte permission rules: the rules UI never produces one.
+ *   - send-now backgrounding tools, queued-message placement, Shift+Tab
+ *     mode cycling, stale effort in `/effort` over bursty input: TUI-only.
+ *     OmniFex drives these through control requests.
+ *   - Ctrl+C/Ctrl+D, tabbed-dialog focus, `/usage` tab ↑/↓: the scraper
+ *     sends only `\r`, Esc, `/usage\r`, `/quit\r`, and its anchors are
+ *     unchanged.
+ *
+ * No OmniFex impact: Claude apps gateway keys, Bedrock assume_role /
+ * guardrail, `/insights`, fullscreen scrollbars and list/hover polish, vim
+ * mode, plugin validate/uninstall/update, sandbox excludedCommands and
+ * TMPDIR, `claude --bg` trust, Remote Control/cloud/scheduled-task fixes,
+ * keychain/OAuth writes, PDF read delays, `/heapdump`, artifact and
+ * `/deep-research` changes, auto-mode classifier changes, Windows, VSCode,
+ * web, Claude Tag and Code Review entries.
+ *
  * Last review: 2.1.278 -> 2.1.280 on 2026-09-22. Findings:
  *
  *  Changelog coverage: 2.1.279 has NO entry in CHANGELOG.md and was never
@@ -2932,7 +3091,7 @@ import { buildClaudeEnv } from './util/claude-env';
  * `~/.claude.json` fix (we read-modify-write that file, never replace it), and
  * the VSCode screen-reader work.
  */
-export const REVIEWED_CLI_VERSION = '2.1.280';
+export const REVIEWED_CLI_VERSION = '2.1.281';
 
 /**
  * app_settings key holding the user's explicit OmniFex-checkout override.

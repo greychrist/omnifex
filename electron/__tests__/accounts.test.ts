@@ -115,12 +115,11 @@ describe('accounts service', () => {
       accounts.createAccount({
         name: 'Personal',
         configDir: '/home/user/.claude',
-        sessionDefaults: { model: 'sonnet', thinkingConfig: 'disabled', permissionMode: 'acceptEdits' },
+        sessionDefaults: { model: 'sonnet', permissionMode: 'acceptEdits' },
       });
       const [acct] = accounts.listAccounts();
       expect(acct.session_defaults).toEqual({
         model: 'sonnet',
-        thinkingConfig: 'disabled',
         permissionMode: 'acceptEdits',
       });
     });
@@ -131,13 +130,12 @@ describe('accounts service', () => {
       accounts.updateAccount(created.id, {
         name: 'Personal',
         configDir: '/home/user/.claude',
-        sessionDefaults: { model: 'opus[1m]', thinkingConfig: 'adaptive', permissionMode: 'default' },
+        sessionDefaults: { model: 'opus[1m]', permissionMode: 'default' },
       });
 
       const updated = accounts.listAccounts().find((a) => a.id === created.id)!;
       expect(updated.session_defaults).toEqual({
         model: 'opus[1m]',
-        thinkingConfig: 'adaptive',
         permissionMode: 'default',
       });
     });
@@ -149,24 +147,6 @@ describe('accounts service', () => {
 
       const updated = accounts.listAccounts().find((a) => a.id === created.id)!;
       expect(updated.session_defaults).toEqual({ model: 'sonnet' });
-    });
-
-    it("normalizes a legacy 'budget' thinkingConfig in stored session_defaults to 'adaptive' on read", () => {
-      const created = accounts.createAccount({ name: 'Legacy', configDir: '/home/user/.claude' });
-      const legacyJson = JSON.stringify({ model: 'sonnet', thinkingConfig: 'budget', permissionMode: 'default' });
-      db.raw.prepare('UPDATE accounts SET session_defaults = ? WHERE id = ?').run(legacyJson, created.id);
-
-      const reloaded = accounts.listAccounts().find((a) => a.id === created.id)!;
-      expect(reloaded.session_defaults).toEqual({ model: 'sonnet', thinkingConfig: 'adaptive', permissionMode: 'default' });
-    });
-
-    it('strips an unknown thinkingConfig value rather than passing it through', () => {
-      const created = accounts.createAccount({ name: 'Garbage', configDir: '/home/user/.claude' });
-      const garbageJson = JSON.stringify({ thinkingConfig: 'totally-unknown' });
-      db.raw.prepare('UPDATE accounts SET session_defaults = ? WHERE id = ?').run(garbageJson, created.id);
-
-      const reloaded = accounts.listAccounts().find((a) => a.id === created.id)!;
-      expect(reloaded.session_defaults?.thinkingConfig).toBeUndefined();
     });
 
     it('clears session_defaults when explicitly set to null', () => {

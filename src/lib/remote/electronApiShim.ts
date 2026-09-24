@@ -396,7 +396,6 @@ export function createElectronApiShim(opts: ShimOptions): ShimHandle {
       model: p.model,
       permissionMode: p.permissionMode,
       effort: p.effort,
-      thinking: p.thinking,
       agent: p.agent,
       configDir: p.configDir,
       manualAccountOverride: p.manualAccountOverride,

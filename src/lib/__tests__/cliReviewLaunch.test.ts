@@ -81,14 +81,13 @@ describe('buildCliReviewLaunch', () => {
 
   it("seeds the session from the resolved account's defaults", () => {
     const acc = account({
-      session_defaults: { model: 'sonnet', effort: 'max', permissionMode: 'plan', thinkingConfig: 'disabled' },
+      session_defaults: { model: 'sonnet', effort: 'max', permissionMode: 'plan' },
     });
     const cfg = buildCliReviewLaunch({ ...base, pair: pair(slot(acc)) }).tab.initialSessionConfig;
     expect(cfg).toMatchObject({
       model: 'sonnet',
       effort: 'max',
       permissionMode: 'plan',
-      thinkingConfig: 'disabled',
     });
   });
 

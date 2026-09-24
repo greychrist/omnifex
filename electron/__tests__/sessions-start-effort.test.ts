@@ -47,7 +47,7 @@ beforeEach(() => {
 afterEach(() => { fs.rmSync(tmpConfig, { recursive: true, force: true }); });
 
 describe('sessions.start → engine.start', () => {
-  it('forwards the chosen effort and thinking mode', () => {
+  it('forwards the chosen effort', () => {
     const sessions = createSessionsService(vi.fn());
     sessions.start({
       tabId: 't1',
@@ -56,18 +56,16 @@ describe('sessions.start → engine.start', () => {
       model: 'opus',
       permissionMode: 'default',
       effort: 'high',
-      thinking: { type: 'disabled' },
     });
     expect(engine.start).toHaveBeenCalledWith(
-      expect.objectContaining({ model: 'opus', effort: 'high', thinking: { type: 'disabled' } }),
+      expect.objectContaining({ model: 'opus', effort: 'high' }),
     );
   });
 
-  it('forwards nothing when neither was chosen', () => {
+  it('forwards no effort when none was chosen', () => {
     const sessions = createSessionsService(vi.fn());
     sessions.start({ tabId: 't2', projectPath: '/Users/test/proj', configDir: tmpConfig, model: '', permissionMode: '' });
     const params = (engine.start.mock.calls[0] as unknown[])[0] as Record<string, unknown>;
     expect(params.effort).toBeUndefined();
-    expect(params.thinking).toBeUndefined();
   });
 });

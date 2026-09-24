@@ -72,6 +72,7 @@ import {
   clearInternalArchive,
 } from '../services/sessions/internal-archive';
 import { readSubagentMeta } from '../services/sessions/subagent-meta';
+import { toElicitationAction } from '../services/sessions/elicitations';
 import { createPermissionsIOService } from '../services/permissions-io';
 import { createSessionGitWatcher, listWorktrees } from '../services/git-watcher';
 import { createBranchColorsService } from '../services/branch-colors';
@@ -650,7 +651,7 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
       sendStructuredMessage: (id, content: any) => sessionsService.sendStructuredMessage(id, content),
       respondPermission: (id, behavior, updatedInput, updatedPermissions?: any[]) =>
         sessionsService.respondPermission(id, behavior as 'allow' | 'deny', updatedInput, updatedPermissions),
-      respondElicitation: (id, action, content) => sessionsService.respondElicitation(id, action as 'accept' | 'decline' | 'cancel', content),
+      respondElicitation: (id, action, content, requestId) => sessionsService.respondElicitation(id, toElicitationAction(action), content, requestId),
       stop: (id) => sessionsService.stop(id),
       getInfo: (id) => sessionsService.getInfo(id),
       getHealth: (id) => sessionsService.getHealth(id),
@@ -661,7 +662,6 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
       setPermissionMode: (id, mode) => sessionsService.setPermissionMode(id, mode as any),
       setEffort: (id, level) => sessionsService.setEffort(id, level as any),
       applyPermissions: (id, permissions) => sessionsService.applyPermissions(id, permissions as any),
-      setThinking: (id, cfg) => sessionsService.setThinking(id, cfg as any),
       getAccountInfo: (id) => sessionsService.getAccountInfo(id),
       getContextUsage: (id) => sessionsService.getContextUsage(id),
       getCliStatus: (id) => sessionsService.getCliStatus(id),

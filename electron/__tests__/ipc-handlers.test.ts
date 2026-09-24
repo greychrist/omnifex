@@ -62,7 +62,6 @@ function buildMockServices() {
       'stop',
       'getInfo',
       'setEffort',
-      'setThinking',
       'applyPermissions',
     ] as const),
     usage: mockService([
@@ -182,7 +181,6 @@ describe('ipc handlers — structure', () => {
       'session_stop',
       'session_get_info',
       'session_set_effort',
-      'session_set_thinking',
       'session_mcp_server_status',
       'session_plugins',
       'session_get_permissions',
@@ -471,15 +469,6 @@ describe('ipc handlers — dispatch to services', () => {
     await invoke(handlers, 'session_set_effort', { session_id: 's2', effort: 'low' });
     expect(services.sessions.setEffort).toHaveBeenNthCalledWith(1, 't1', 'high');
     expect(services.sessions.setEffort).toHaveBeenNthCalledWith(2, 's2', 'low');
-  });
-
-  it('session_set_thinking accepts tabId or session_id and config or thinking', async () => {
-    const adaptive = { type: 'adaptive' };
-    const enabled = { type: 'enabled', budgetTokens: 10000 };
-    await invoke(handlers, 'session_set_thinking', { tabId: 't1', config: adaptive });
-    await invoke(handlers, 'session_set_thinking', { session_id: 's2', thinking: enabled });
-    expect(services.sessions.setThinking).toHaveBeenNthCalledWith(1, 't1', adaptive);
-    expect(services.sessions.setThinking).toHaveBeenNthCalledWith(2, 's2', enabled);
   });
 
   // ── Session Permissions (file-based) ────────────────────────────────────

@@ -31,8 +31,6 @@ export interface AgentStartParams {
   allowedTools?: string[];
   /** Reasoning effort chosen before the session started. */
   effort?: string;
-  /** Thinking mode chosen before the session started. */
-  thinking?: { type: string };
   /** Engine-specific extras. Claude reads its own keys; others ignore. */
   claude?: Record<string, unknown>;
   /** Engine-specific extras. Codex reads its own keys; others ignore. */
@@ -58,6 +56,27 @@ export interface AgentPermissionRequest {
   summary: string;
   payload: unknown;
 }
+
+/**
+ * An MCP server asking the user something, relayed by the CLI as a
+ * `control_request {subtype:'elicitation'}`. Form mode carries a flat JSON
+ * schema for the answer; URL mode (MCP 2026-07-28) carries a page to open —
+ * a sign-in, typically — and the server confirms completion on its own.
+ */
+export interface AgentElicitationRequest {
+  requestId: string;
+  serverName: string;
+  message: string;
+  mode: 'form' | 'url';
+  url?: string;
+  elicitationId?: string;
+  requestedSchema?: Record<string, unknown>;
+  title?: string;
+  displayName?: string;
+  description?: string;
+}
+
+export type ElicitationAction = 'accept' | 'decline' | 'cancel';
 
 export interface Disposable {
   dispose(): void;
@@ -133,6 +152,18 @@ export interface AgentEngine {
 
   onMessage(cb: (m: AgentMessage) => void): Disposable;
   onPermissionRequest(cb: (r: AgentPermissionRequest) => void): Disposable;
+  /**
+   * MCP elicitations. Claude-only, hence optional: Codex has no equivalent
+   * request, and an engine without these never receives one.
+   */
+  onElicitationRequest?(cb: (r: AgentElicitationRequest) => void): Disposable;
+  respondElicitation?(
+    requestId: string,
+    action: ElicitationAction,
+    content?: Record<string, unknown>,
+  ): Promise<void>;
+  /** The CLI withdrew a request it sent us (turn interrupted, server gave up). */
+  onControlCancel?(cb: (requestId: string) => void): Disposable;
   onError(cb: (err: Error) => void): Disposable;
   onExit(cb: (info: AgentEngineExit) => void): Disposable;
 }

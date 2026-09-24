@@ -39,7 +39,8 @@ const FILE_EDIT_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
  * switching the bottom-bar dropdown to acceptEdits / dontAsk appeared to do
  * nothing: the label changed but the decider prompted identically.)
  *
- *  - `bypassPermissions` → allow everything
+ *  - `bypassPermissions` → allow everything except the CLI's own safety
+ *                          checks, which prompt (see `isSafetyCheck`)
  *  - `acceptEdits`       → allow file-edit tools the CLI did not escalate;
  *                          prompt for the rest (see `isEscalatedEdit`)
  *  - `dontAsk`           → deny everything that reached the prompt tool
@@ -51,18 +52,35 @@ const FILE_EDIT_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
 function autoDecisionForMode(
   mode: string,
   toolName: string,
-  escalated = false,
+  payload: { blocked_path?: string; decision_reason_type?: string } = {},
 ): 'allow' | 'deny' | null {
   switch (mode) {
     case 'bypassPermissions':
-      return 'allow';
+      return isSafetyCheck(payload) ? null : 'allow';
     case 'acceptEdits':
-      return FILE_EDIT_TOOLS.has(toolName) && !escalated ? 'allow' : null;
+      return FILE_EDIT_TOOLS.has(toolName) && !isEscalatedEdit(payload) ? 'allow' : null;
     case 'dontAsk':
       return 'deny';
     default:
       return null;
   }
+}
+
+/**
+ * Whether the CLI flagged this request as a safety check — an ask it makes
+ * even under `--dangerously-skip-permissions`. Captured from CLI 2.1.281 in
+ * bypassPermissions:
+ *   - `rm -rf "$(pwd)"`: `decision_reason_type: 'safetyCheck'`,
+ *     `decision_reason: 'Dangerous rm operation on statically-unresolvable
+ *     target: command substitution output'`, `classifier_approvable: false`
+ *   - a write escaping the tree through a symlink (2.1.280): the same type,
+ *     plus `blocked_path`
+ * The dropdown's bypass is still honoured for everything else: switching to
+ * it mid-session relies on this decider, since the CLI refuses a
+ * set_permission_mode to bypass it was not launched with.
+ */
+function isSafetyCheck(payload: { decision_reason_type?: string }): boolean {
+  return payload.decision_reason_type === 'safetyCheck';
 }
 
 /**
@@ -87,7 +105,7 @@ function isEscalatedEdit(payload: { blocked_path?: string; decision_reason_type?
   return (
     !!payload.blocked_path ||
     payload.decision_reason_type === 'workingDir' ||
-    payload.decision_reason_type === 'safetyCheck'
+    isSafetyCheck(payload)
   );
 }
 
@@ -112,7 +130,7 @@ function directoryGrantFor(payload: {
 
 const NOTIF_BODY_CAP = 140;
 
-function truncate(s: string): string {
+export function truncate(s: string): string {
   const t = s.trim();
   return t.length > NOTIF_BODY_CAP ? t.slice(0, NOTIF_BODY_CAP - 1) + '…' : t;
 }
@@ -516,7 +534,7 @@ export function createPermissionRequestHandler(
     // Auto-resolve per the live permission mode (the bottom-bar dropdown sets
     // handle.permissionMode, read fresh above). Only modes that don't need a
     // prompt return non-null here; everything else falls through to the card.
-    const autoDecision = autoDecisionForMode(permissionMode, toolName, isEscalatedEdit(rawPayload));
+    const autoDecision = autoDecisionForMode(permissionMode, toolName, rawPayload);
     if (autoDecision) {
       logEntry({
         level: 'info',

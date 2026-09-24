@@ -54,6 +54,74 @@ describe('permission-mode decider (auto allow/deny vs prompt)', () => {
     expect(handle.permissionQueue).toHaveLength(0);
   });
 
+  // Bypass mode passes --permission-mode bypassPermissions, so what the CLI
+  // still sends is what it refuses to bypass: its safety checks. The decider
+  // answers in the human's place, so auto-allowing those removed the CLI's
+  // last safety net with nobody looking. Payload verbatim from CLI 2.1.281,
+  // bypassPermissions, `rm -rf "$(pwd)"`.
+  describe('bypassPermissions: the CLI\'s safety checks reach the card', () => {
+    const dangerousRm: AgentPermissionRequest = {
+      agent: 'claude',
+      requestId: '115bd648-a8a8-4215-a25a-d90e56e42792',
+      kind: 'tool',
+      summary: 'Permission requested for tool: Bash',
+      payload: {
+        subtype: 'can_use_tool',
+        tool_name: 'Bash',
+        display_name: 'Bash',
+        input: { command: 'rm -rf "$(pwd)"', description: 'Delete current working directory recursively' },
+        description: 'Delete current working directory recursively',
+        permission_suggestions: [],
+        decision_reason: 'Dangerous rm operation on statically-unresolvable target: command substitution output',
+        decision_reason_type: 'safetyCheck',
+        classifier_approvable: false,
+        tool_use_id: 'toolu_01SW8BvU4a6AbAYLeJzNQZP5',
+        suppress_always_allow_rule: true,
+      },
+    };
+
+    it('prompts for a dangerous rm instead of auto-allowing it', () => {
+      const { fn, handle, respondPermission, sendToRenderer } = handlerFor('bypassPermissions');
+      fn(dangerousRm);
+      expect(respondPermission).not.toHaveBeenCalled();
+      expect(handle.permissionQueue).toHaveLength(1);
+      expect(sendToRenderer).toHaveBeenCalledWith(
+        'agent-output:tab-1',
+        expect.objectContaining({
+          type: 'permission_request',
+          tool_name: 'Bash',
+          decision_reason: 'Dangerous rm operation on statically-unresolvable target: command substitution output',
+          suppress_always_allow_rule: true,
+        }),
+      );
+    });
+
+    it('prompts for a write the CLI flagged as escaping through a symlink', () => {
+      const { fn, handle, respondPermission } = handlerFor('bypassPermissions');
+      fn({
+        ...req('Write', { file_path: '/Users/test/proj/linked/b.txt', content: 'x' }),
+        payload: {
+          tool_name: 'Write',
+          input: { file_path: '/Users/test/proj/linked/b.txt', content: 'x' },
+          tool_use_id: 'tu-w',
+          decision_reason_type: 'safetyCheck',
+          blocked_path: '/opt/shared/b.txt',
+        },
+      });
+      expect(respondPermission).not.toHaveBeenCalled();
+      expect(handle.permissionQueue).toHaveLength(1);
+    });
+
+    // dontAsk denies a safety check like anything else — denying is already
+    // the safe answer, and prompting would contradict the mode.
+    it('dontAsk still denies it without prompting', () => {
+      const { fn, handle, respondPermission } = handlerFor('dontAsk');
+      fn(dangerousRm);
+      expect(respondPermission).toHaveBeenCalledWith(dangerousRm.requestId, 'deny', expect.anything());
+      expect(handle.permissionQueue).toHaveLength(0);
+    });
+  });
+
   it('acceptEdits: auto-allows file-edit tools without prompting', () => {
     const { fn, handle, respondPermission } = handlerFor('acceptEdits');
     fn(req('Edit', { file_path: '/Users/test/proj/src/a.ts' }));

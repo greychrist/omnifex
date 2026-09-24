@@ -39,7 +39,6 @@ export interface Tab {
   initialSessionConfig?: {
     model: string;
     effort: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
-    thinkingConfig?: 'adaptive' | 'disabled';
     permissionMode: string;
     /**
      * Account override selected by the user on the project landing page.

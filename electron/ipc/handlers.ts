@@ -77,7 +77,7 @@ export interface Services {
     sendMessage(sessionId: string, message: unknown): unknown;
     sendStructuredMessage(sessionId: string, content: unknown): unknown;
     respondPermission(sessionId: string, behavior: string, updatedInput?: Record<string, unknown>, updatedPermissions?: unknown[]): unknown;
-    respondElicitation(tabId: string, action: string, content?: Record<string, unknown>): unknown;
+    respondElicitation(tabId: string, action: string, content?: Record<string, unknown>, requestId?: string): unknown;
     stop(sessionId: string): unknown;
     getInfo(sessionId: string): unknown;
     getHealth(sessionId: string): {
@@ -95,7 +95,6 @@ export interface Services {
     setEffort(sessionId: string, level: unknown): unknown;
     applyPermissions(sessionId: string, permissions: unknown): unknown;
     listPermissionRules(sessionId: string): Promise<unknown>;
-    setThinking(sessionId: string, config: unknown): unknown;
     getAccountInfo(sessionId: string): unknown;
     getContextUsage(sessionId: string): unknown;
     getCliStatus(sessionId: string): unknown;
@@ -528,7 +527,7 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     session_send_message: wrapWith((p: Record<string, unknown>) => sessions?.sendMessage((p?.tabId ?? p?.session_id) as string, (p?.prompt ?? p?.message) as string) ?? null),
     session_send_structured_message: wrapWith((p: Record<string, unknown>) => sessions?.sendStructuredMessage((p?.tabId ?? p?.session_id) as string, p?.content as Record<string, unknown>[]) ?? null),
     session_respond_permission: wrapWith((p: Record<string, unknown>) => sessions?.respondPermission((p?.tabId ?? p?.session_id) as string, p?.behavior as string, p?.updatedInput as Record<string, unknown> | undefined, p?.updatedPermissions as any) ?? null),
-    session_respond_elicitation: wrapWith((p: Record<string, unknown>) => sessions?.respondElicitation((p?.tabId ?? p?.tab_id) as string, (p?.action) as string, p?.content as Record<string, unknown> | undefined) ?? null),
+    session_respond_elicitation: wrapWith((p: Record<string, unknown>) => sessions?.respondElicitation((p?.tabId ?? p?.tab_id) as string, (p?.action) as string, p?.content as Record<string, unknown> | undefined, (p?.requestId ?? p?.request_id) as string | undefined) ?? null),
     session_stop: wrapWith((p: Record<string, unknown>) => sessions?.stop((p?.tabId ?? p?.session_id) as string) ?? null),
     session_get_info: wrapWith((p: Record<string, unknown>) => sessions?.getInfo((p?.tabId ?? p?.session_id) as string) ?? null),
     session_get_health: wrapWith((p: Record<string, unknown>) => sessions?.getHealth((p?.tabId ?? p?.session_id) as string) ?? { alive: false, sessionId: null, sessionStatus: 'stopped', turn: { status: 'idle', since: null } }),
@@ -539,7 +538,6 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     session_suggest_title: wrapWith((p: Record<string, unknown>) => sessions?.suggestTitle((p?.tabId ?? p?.session_id) as string, (p?.description ?? '') as string) ?? null),
     session_set_permission_mode: wrapWith((p: Record<string, unknown>) => sessions?.setPermissionMode((p?.tabId ?? p?.session_id) as string, (p?.mode ?? p?.permissionMode) as string) ?? null),
     session_set_effort: wrapWith((p: Record<string, unknown>) => sessions?.setEffort((p?.tabId ?? p?.session_id) as string, (p?.level ?? p?.effort) as any) ?? null),
-    session_set_thinking: wrapWith((p: Record<string, unknown>) => sessions?.setThinking((p?.tabId ?? p?.session_id) as string, (p?.config ?? p?.thinking) as any) ?? null),
     session_account_info: wrapWith((p: Record<string, unknown>) => sessions?.getAccountInfo((p?.tabId ?? p?.session_id) as string) ?? null),
     session_context_usage: wrapWith((p: Record<string, unknown>) => sessions?.getContextUsage((p?.tabId ?? p?.session_id) as string) ?? null),
     session_cli_status: wrapWith((p: Record<string, unknown>) => sessions?.getCliStatus((p?.tabId ?? p?.session_id) as string) ?? null),

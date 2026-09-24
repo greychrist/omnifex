@@ -112,8 +112,8 @@ describe('ClaudeCliEngine', () => {
   // only a mid-session change reached the CLI. Invisible while every default
   // model defaulted to `high` (the picker's own default); Opus 5.5 defaults to
   // `medium`, so the picker said High while the session ran medium.
-  describe('spawn-time effort and thinking', () => {
-    async function argsFor(extra: Partial<typeof baseParams> & { effort?: string; thinking?: unknown }) {
+  describe('spawn-time effort', () => {
+    async function argsFor(extra: Partial<typeof baseParams> & { effort?: string }) {
       const fake = makeFakeChild();
       mockedSpawn.mockReturnValue(fake as never);
       const engine = createClaudeCliEngine({ tabId: 't', claudeBinaryPath: '/bin/claude' });
@@ -140,13 +140,11 @@ describe('ClaudeCliEngine', () => {
       expect(await argsFor({ effort: 'auto' })).not.toContain('--effort');
     });
 
-    it('passes --thinking disabled, and leaves adaptive to the CLI default', async () => {
-      const off = await argsFor({ thinking: { type: 'disabled' } });
-      expect(off[off.indexOf('--thinking') + 1]).toBe('disabled');
-      mockedSpawn.mockClear();
-      expect(await argsFor({ thinking: { type: 'adaptive' } })).not.toContain('--thinking');
-      mockedSpawn.mockClear();
-      expect(await argsFor({ thinking: { type: 'enabled', budgetTokens: 10000 } })).not.toContain('--thinking');
+    // Thinking is the CLI's adaptive default, always. There is no off switch
+    // to forward: the picker went in v0.4.70, and Fable 5, Fable 5.1 and
+    // Opus 5.5 refuse thinking-off anyway (`rejects_disabled_thinking`).
+    it('never passes --thinking', async () => {
+      expect(await argsFor({ effort: 'high' })).not.toContain('--thinking');
     });
   });
 
@@ -584,5 +582,108 @@ describe('ClaudeCliEngine — stdin writes and lifecycle', () => {
     await flush();
     expect(msgs).toEqual([]);
     expect(exits).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// MCP elicitations. The CLI asks the host by default (`hostAnswersElicitations`
+// is true in stream-json mode) and parks the session until it answers, so an
+// elicitation that falls through to the transcript is a hang plus an orange
+// "Unrecognized record: control_request" card.
+// ---------------------------------------------------------------------------
+
+describe('ClaudeCliEngine — elicitations', () => {
+  const formElicitation = (requestId = 'e1') => ({
+    type: 'control_request',
+    request_id: requestId,
+    request: {
+      subtype: 'elicitation',
+      mcp_server_name: 'github',
+      message: 'Which repo?',
+      mode: 'form',
+      requested_schema: { type: 'object', properties: { repo: { type: 'string' } }, required: ['repo'] },
+      display_name: 'GitHub',
+    },
+  });
+
+  it('routes an elicitation to elicitation subscribers, not the transcript', async () => {
+    const { engine, emit } = await started();
+    const seen: unknown[] = [];
+    const msgs: AgentMessage[] = [];
+    engine.onElicitationRequest!((r) => seen.push(r));
+    engine.onMessage((m) => msgs.push(m));
+    await emit(formElicitation());
+    expect(msgs).toHaveLength(0);
+    expect(seen).toEqual([
+      {
+        requestId: 'e1',
+        serverName: 'github',
+        message: 'Which repo?',
+        mode: 'form',
+        requestedSchema: { type: 'object', properties: { repo: { type: 'string' } }, required: ['repo'] },
+        displayName: 'GitHub',
+      },
+    ]);
+  });
+
+  it('carries the url and elicitation id of a URL-mode request', async () => {
+    const { engine, emit } = await started();
+    const seen: { mode: string; url?: string; elicitationId?: string }[] = [];
+    engine.onElicitationRequest!((r) => seen.push(r));
+    await emit({
+      type: 'control_request',
+      request_id: 'e2',
+      request: {
+        subtype: 'elicitation',
+        mcp_server_name: 'linear',
+        message: 'Sign in to Linear',
+        mode: 'url',
+        url: 'https://linear.app/oauth',
+        elicitation_id: 'el-9',
+      },
+    });
+    expect(seen[0]).toMatchObject({ mode: 'url', url: 'https://linear.app/oauth', elicitationId: 'el-9' });
+  });
+
+  it('answers with the action and content the CLI schema expects', async () => {
+    const { engine, emit, written } = await started();
+    await emit(formElicitation('e1'));
+    await engine.respondElicitation!('e1', 'accept', { repo: 'omnifex' });
+    expect(written().at(-1)).toEqual({
+      type: 'control_response',
+      response: { subtype: 'success', request_id: 'e1', response: { action: 'accept', content: { repo: 'omnifex' } } },
+    });
+  });
+
+  it('omits content on decline and cancel', async () => {
+    const { engine, written } = await started();
+    await engine.respondElicitation!('e1', 'decline');
+    expect((written().at(-1) as { response: { response: unknown } }).response.response).toEqual({ action: 'decline' });
+  });
+
+  it('reports a control_cancel_request to cancel subscribers, not the transcript', async () => {
+    const { engine, emit } = await started();
+    const cancelled: string[] = [];
+    const msgs: AgentMessage[] = [];
+    engine.onControlCancel!((id) => cancelled.push(id));
+    engine.onMessage((m) => msgs.push(m));
+    await emit({ type: 'control_cancel_request', request_id: 'e1' });
+    expect(cancelled).toEqual(['e1']);
+    expect(msgs).toHaveLength(0);
+  });
+
+  // Anything else the CLI asks a host (hook_callback, mcp_message, …) is for
+  // capabilities we never declare. An error reply fails it now; silence
+  // would park the session until the CLI's own deadline.
+  it('answers an unhandled inbound control_request with an error instead of forwarding it', async () => {
+    const { engine, emit, written } = await started();
+    const msgs: AgentMessage[] = [];
+    engine.onMessage((m) => msgs.push(m));
+    await emit({ type: 'control_request', request_id: 'x1', request: { subtype: 'hook_callback' } });
+    expect(msgs).toHaveLength(0);
+    expect(written().at(-1)).toEqual({
+      type: 'control_response',
+      response: { subtype: 'error', request_id: 'x1', error: 'OmniFex does not handle control_request subtype: hook_callback' },
+    });
   });
 });

@@ -149,7 +149,6 @@ export function createRemoteHandlers(deps: RemoteHandlerDeps): RemoteHandlers {
       // true and the engine spawns with --resume.
       resumeSessionId: meta.sessionId,
       ...(o.effort && { effort: o.effort }),
-      ...(o.thinking && { thinking: o.thinking }),
       ...(o.manualAccountOverride !== undefined && { manualAccountOverride: o.manualAccountOverride }),
       agent: meta.agent,
     };

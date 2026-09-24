@@ -37,19 +37,6 @@ export const EFFORT_LEVELS: { id: EffortLevel; name: string; description: string
   { id: 'max', name: 'Max', description: 'Maximum effort (Opus 4.6/4.7 only)', shortName: 'Max', color: 'text-red-600' },
 ];
 
-// ── Thinking ────────────────────────────────────────────────────────────
-
-/**
- * Thinking config — controls extended thinking behavior. Re-exported
- * from the renderer-shared `lib/thinkingConfig` module so every UI
- * touch-point stays on the same canonical type. The legacy `'budget'`
- * variant was removed in v0.4.21; see lib/thinkingConfig.ts for why.
- *
- * The user-facing Thinking picker was removed in v0.4.70 — thinking now
- * always stays adaptive. The type is retained because session start params
- * and persisted session defaults still carry the (pinned-adaptive) value.
- */
-export type { ThinkingConfig } from '@/lib/thinkingConfig';
 
 // ── Permission ──────────────────────────────────────────────────────────
 

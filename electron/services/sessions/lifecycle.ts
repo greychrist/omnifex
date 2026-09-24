@@ -19,7 +19,6 @@ import type {
   SessionOwnership,
   PersistPermissionRuleFn,
   RateLimitHook,
-  ElicitationDecision,
   AccountMismatch,
   SessionCloseReason,
   SessionClosedHook,
@@ -29,6 +28,7 @@ import {
   respondPermission as respondPermissionImpl,
 } from './permissions';
 import { createQueryPassthroughs } from './queries';
+import { createElicitationHandlers, respondToElicitation } from './elicitations';
 import { findSystemClaudeBinary, findSystemCodexBinary } from './binary';
 import {
   listenToMessages,
@@ -39,7 +39,7 @@ import { hasTranscript } from '../project-paths';
 import { shouldAutoTitle, autoTitleDescription } from './auto-title';
 import { createClaudeCliEngine } from '../agents/claude-cli-engine';
 import { createCodexCliEngine } from '../agents/codex-cli-engine';
-import type { AgentEngine, AgentKind } from '../agents/types';
+import type { AgentEngine, AgentKind, ElicitationAction } from '../agents/types';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { setStatus, setTurn } from './status';
@@ -281,7 +281,7 @@ export function createSessionsService(
       turn: IDLE_TURN,
       permissionResolver: null,
       permissionQueue: [],
-      elicitationResolver: null,
+      elicitationQueue: [],
       projectPath,
       configDir,
       // A resumed conversation is never auto-named: it either already carries
@@ -303,6 +303,9 @@ export function createSessionsService(
     engine.onPermissionRequest(
       createPermissionRequestHandler(handle, tabId, sendToRenderer, notificationHooks, logging),
     );
+    const elicitations = createElicitationHandlers(handle, tabId, sendToRenderer, notificationHooks);
+    engine.onElicitationRequest?.(elicitations.onRequest);
+    engine.onControlCancel?.(elicitations.onCancel);
     listenToMessages(tabId, handle, runtimeDeps).catch((err: unknown) => {
       console.error(`[sessions] Unhandled error in listenToMessages for tab ${tabId}:`, err);
     });
@@ -334,7 +337,6 @@ export function createSessionsService(
       // Carried by session_start all along and dropped here, so a fresh
       // session ran at the model's default effort, not the picker's.
       effort: params.effort,
-      thinking: params.thinking,
       sessionId,
       resume,
     }).then(async () => {
@@ -470,14 +472,15 @@ export function createSessionsService(
   // respondElicitation()
   // -------------------------------------------------------------------------
 
-  function respondElicitation(
+  async function respondElicitation(
     tabId: string,
-    action: 'accept' | 'decline' | 'cancel',
+    action: ElicitationAction,
     content?: Record<string, unknown>,
-  ): void {
+    requestId?: string,
+  ): Promise<void> {
     const handle = sessions.get(tabId);
-    if (!handle?.elicitationResolver) return;
-    handle.elicitationResolver({ action, content });
+    if (!handle) return;
+    await respondToElicitation(handle, tabId, sendToRenderer, action, content, requestId);
   }
 
   // -------------------------------------------------------------------------

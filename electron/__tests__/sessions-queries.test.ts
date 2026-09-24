@@ -288,44 +288,6 @@ describe('setEffort', () => {
   });
 });
 
-describe('setThinking', () => {
-  // Two states only: 0 disables, null means adaptive default. Non-zero
-  // budgets collapse to adaptive on Opus 4.6+, so nothing else is on the wire.
-  it('maps a disabled config to a zero token budget', async () => {
-    const { engine, calls } = createEngine();
-    const { q } = setup({ engine });
-    await q.setThinking('tab1', { type: 'disabled' });
-    expect(calls).toEqual([
-      { subtype: 'set_max_thinking_tokens', payload: { max_thinking_tokens: 0 } },
-    ]);
-  });
-
-  it('maps an absent config to a zero token budget', async () => {
-    const { engine, calls } = createEngine();
-    const { q } = setup({ engine });
-    await q.setThinking('tab1', undefined);
-    expect((calls[0].payload as { max_thinking_tokens: number }).max_thinking_tokens).toBe(0);
-  });
-
-  it('maps an enabled config to the adaptive default', async () => {
-    const { engine, calls } = createEngine();
-    const { q } = setup({ engine });
-    await q.setThinking('tab1', { type: 'enabled', budget_tokens: 10_000 } as never);
-    expect((calls[0].payload as { max_thinking_tokens: number | null }).max_thinking_tokens)
-      .toBeNull();
-  });
-
-  it('swallows an engine error', async () => {
-    const { engine } = createEngine({
-      control: () => {
-        throw new Error('x');
-      },
-    });
-    const { q } = setup({ engine });
-    await expect(q.setThinking('tab1', { type: 'disabled' })).resolves.toBeUndefined();
-  });
-});
-
 // ---------------------------------------------------------------------------
 // The two paths that tell the USER something went wrong
 // ---------------------------------------------------------------------------

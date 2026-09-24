@@ -1,7 +1,7 @@
 import { useRef, useEffect, useState, useMemo } from "react";
 import { api, type AgentKind, type SessionStatus, type TurnState } from "@/lib/api";
 import type { JsonlNode } from "@/types/jsonl";
-import type { EffortLevel, ThinkingConfig } from "@/components/FloatingPromptInput";
+import type { EffortLevel } from "@/components/FloatingPromptInput";
 import { conversationStatus as deriveConversationStatus, type ConversationStatus } from "@/lib/sessionDerivedState";
 
 /** Filter out noisy stderr messages that aren't real errors. */
@@ -24,7 +24,6 @@ interface UseSessionLifecycleArgs {
   selectedModel: string;
   permissionMode: string;
   effort: EffortLevel;
-  thinkingConfig: ThinkingConfig;
   /**
    * Which engine to launch. Optional for back-compat with older callers
    * that haven't been threaded yet; main process treats missing values as
@@ -115,7 +114,6 @@ export function useSessionLifecycle({
   selectedModel,
   permissionMode,
   effort,
-  thinkingConfig,
   agent,
   accountResolution,
   persistentSessionRef,
@@ -365,12 +363,6 @@ export function useSessionLifecycle({
     // Effort is always a CLI-supported level now (low/medium/high/xhigh/max) —
     // no more 'auto' sentinel that needed stripping.
     const sdkEffort = effort;
-    const sdkThinking =
-      thinkingConfig === "adaptive"
-        ? { type: "adaptive" as const }
-        : thinkingConfig === "disabled"
-          ? { type: "disabled" as const }
-          : { type: "enabled" as const, budgetTokens: 10000 };
     // Signal "user explicitly picked this account on the form" so main
     // doesn't re-resolve and overwrite their choice. `manual_override`
     // is set by AccountPickerDialog → setProjectAccountResolution in
@@ -388,7 +380,6 @@ export function useSessionLifecycle({
         resumeId,
         configDir,
         sdkEffort,
-        sdkThinking,
         manualAccountOverride,
         agent,
       );

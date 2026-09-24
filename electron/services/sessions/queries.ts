@@ -241,23 +241,6 @@ export function createQueryPassthroughs(
     }
   }
 
-  async function setThinking(tabId: string, config: SessionStartParams['thinking']): Promise<void> {
-    const handle = liveEngine(tabId);
-    if (!handle) return;
-    try {
-      // Two states only — see memory reference_thinking_sdk_deprecation:
-      // 0 means "disabled" across versions; null means "adaptive default."
-      // Non-zero values collapse to adaptive on Opus 4.6+ so we don't
-      // bother distinguishing fixed-budget vs adaptive on the wire.
-      const value = !config || config.type === 'disabled' ? 0 : null;
-      await handle.engine.sendControlRequest('set_max_thinking_tokens', {
-        max_thinking_tokens: value,
-      });
-    } catch (err) {
-      console.error(`[sessions] setThinking failed for tab ${tabId}:`, err);
-    }
-  }
-
   async function getAccountInfo(tabId: string): Promise<AccountInfo | null> {
     const handle = sessions.get(tabId);
     if (!handle) return null;
@@ -429,7 +412,6 @@ export function createQueryPassthroughs(
     setEffort,
     applyPermissions,
     listPermissionRules,
-    setThinking,
     getAccountInfo,
     getContextUsage,
     getCliStatus,

@@ -702,6 +702,32 @@ describe('system:dev_intent (CLI >= 2.1.266)', () => {
   });
 });
 
+describe('system:elicitation_complete', () => {
+  it('classifies a live frame as a known system subtype, not unknown', () => {
+    const node = classifyJsonlLine({
+      type: 'system',
+      subtype: 'elicitation_complete',
+      mcp_server_name: 'linear',
+      elicitation_id: 'el-9',
+      receivedAt: '2026-09-23T10:00:00Z',
+    } as Record<string, unknown>);
+    expect(node?.kind).toBe('system');
+  });
+});
+
+describe('system:per_turn_effort_changed (CLI >= 2.1.281)', () => {
+  it('classifies a live frame as a known system subtype, not unknown', () => {
+    const node = classifyJsonlLine({
+      type: 'system',
+      subtype: 'per_turn_effort_changed',
+      per_turn_effort_active: false,
+      receivedAt: '2026-09-23T10:00:00Z',
+    } as Record<string, unknown>);
+    expect(node?.kind).toBe('system');
+    if (node?.kind === 'system') expect(node.subtype).toBe('per_turn_effort_changed');
+  });
+});
+
 describe('tool_progress', () => {
   const base = {
     type: 'tool_progress',

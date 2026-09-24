@@ -13,7 +13,6 @@ export type AccountEngine = 'claude' | 'codex';
 
 export interface SessionDefaults {
   model?: string;
-  thinkingConfig?: 'adaptive' | 'disabled';
   permissionMode?: string;
   effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 }
@@ -219,24 +218,6 @@ interface PathRuleRow {
 // Helper: map a raw SQLite row to the public Account shape
 // ---------------------------------------------------------------------------
 
-// The thinking-config schema tightened in v0.4.21 — the legacy
-// `'budget'` value is no longer reachable from the picker. Stored
-// account rows from before that release may still carry it; coerce to
-// `'adaptive'` (which is what the CLI collapses every non-zero budget
-// to anyway) at the deserialize boundary so the renderer never sees an
-// out-of-schema value.
-function normalizeSessionDefaults(raw: unknown): SessionDefaults | undefined {
-  if (!raw || typeof raw !== 'object') return undefined;
-  const obj = raw as Record<string, unknown>;
-  const out: SessionDefaults = { ...obj };
-  if (obj.thinkingConfig === 'budget') {
-    out.thinkingConfig = 'adaptive';
-  } else if (obj.thinkingConfig !== 'adaptive' && obj.thinkingConfig !== 'disabled') {
-    delete out.thinkingConfig;
-  }
-  return out;
-}
-
 function rowToAccount(row: AccountRow): Account {
   return {
     id: row.id,
@@ -248,7 +229,7 @@ function rowToAccount(row: AccountRow): Account {
     color: row.color,
     icon: row.icon,
     session_defaults: row.session_defaults
-      ? normalizeSessionDefaults(JSON.parse(row.session_defaults))
+      ? (JSON.parse(row.session_defaults) as SessionDefaults)
       : undefined,
     cli_path: row.cli_path,
     expected_email: row.expected_email ?? null,

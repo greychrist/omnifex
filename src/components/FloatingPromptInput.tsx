@@ -16,7 +16,7 @@ import { ImagePreview } from "./ImagePreview";
 import { api, type FileEntry, type SlashCommand } from "@/lib/api";
 
 // Sub-components
-import type { EffortLevel, ThinkingConfig, PermissionMode } from "./ControlBar";
+import type { EffortLevel, PermissionMode } from "./ControlBar";
 import {
   extractImagePaths,
   handleImagePaste,
@@ -31,7 +31,7 @@ import { useOptionalAccounts } from "@/contexts/AccountsContext";
 
 // Re-export types so existing consumers don't break. The model / effort /
 // permission pickers themselves moved to the SessionCard context popover.
-export type { EffortLevel, ThinkingConfig, PermissionMode };
+export type { EffortLevel, PermissionMode };
 
 interface FloatingPromptInputProps {
   onSend: (prompt: string, model: string, images?: string[]) => void;

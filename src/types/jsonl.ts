@@ -182,6 +182,18 @@ export type SystemSubtype =
   // than left to the catch-all so it doesn't draw an "Unrecognized record"
   // card, which is exactly what `background_tasks_changed` used to do.
   | 'dev_intent'
+  // Stream-only (CLI >= 2.1.281): per-turn effort went inactive for the
+  // session's model because the API refused it, so an effort change now
+  // rewrites the cached prefix. Always `per_turn_effort_active: false`; a
+  // change to true arrives only on `init`. Cache plumbing for a host that
+  // warns before an effort change — nothing to say in the transcript, so
+  // `filterDisplayableMessages` drops it.
+  | 'per_turn_effort_changed'
+  // Stream-only: an MCP server confirmed a URL-mode elicitation (a browser
+  // sign-in, typically) finished. The ElicitationDialog closed when the user
+  // opened the page, so there is nothing left to show — dropped by
+  // `filterDisplayableMessages`.
+  | 'elicitation_complete'
   // The SendFeedback tool wrote a local draft feedback report to
   // <CLAUDE_CONFIG_DIR>/feedback/drafts/. Display fields only — the body stays
   // on disk, and nothing is sent until the user approves it via `/feedback`.

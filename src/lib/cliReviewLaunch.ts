@@ -1,6 +1,5 @@
 import type { ResolvePair } from '@/lib/api';
 import type { Tab } from '@/contexts/TabContext';
-import { normalizeThinkingConfig } from '@/lib/thinkingConfig';
 import { slotToResolution } from '@/lib/accountResolution';
 import { renderCliReviewPrompt } from '@/lib/cliReviewPrompt';
 
@@ -86,7 +85,6 @@ export function buildCliReviewLaunch({
       initialSessionConfig: {
         model: d?.model ?? 'opus',
         effort: d?.effort ?? 'high',
-        thinkingConfig: d?.thinkingConfig ? normalizeThinkingConfig(d.thinkingConfig) : undefined,
         permissionMode: d?.permissionMode ?? 'acceptEdits',
         accountResolution: resolution,
       },

@@ -2,7 +2,7 @@
 // Extracted from electron/services/sessions.ts (pure refactor)
 
 import type { LoggingService } from '../logging';
-import type { AgentEngine, AgentKind, InitData } from '../agents/types';
+import type { AgentElicitationRequest, AgentEngine, AgentKind, ElicitationAction, InitData } from '../agents/types';
 
 // ---------------------------------------------------------------------------
 // CLI payload shapes (defined locally)
@@ -228,9 +228,6 @@ export interface SessionStartParams {
   permissionMode: string;
   resumeSessionId?: string;
   effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
-  thinking?: { type: 'adaptive'; display?: 'summarized' | 'omitted' }
-    | { type: 'enabled'; budgetTokens?: number; display?: 'summarized' | 'omitted' }
-    | { type: 'disabled' };
   /** webContents.id of the window that started this session — used to route tab-scoped events back to that window only. */
   ownerWebContentsId?: number;
   /**
@@ -282,11 +279,17 @@ export interface SessionsService {
     updatedPermissions?: PermissionDecision['updatedPermissions'],
     requestId?: string,
   ): boolean;
+  /**
+   * Answer the MCP elicitation on screen. `requestId` names the request the
+   * dialog was showing; a stale one (withdrawn by the CLI meanwhile) is
+   * dropped rather than applied to the next in line.
+   */
   respondElicitation(
     tabId: string,
-    action: 'accept' | 'decline' | 'cancel',
+    action: ElicitationAction,
     content?: Record<string, unknown>,
-  ): void;
+    requestId?: string,
+  ): Promise<void>;
   stop(tabId: string): void;
   stopAll(): void;
   getSessionId(tabId: string): string | null;
@@ -347,7 +350,6 @@ export interface SessionsService {
     permissions: { allow?: string[]; deny?: string[]; ask?: string[] },
   ): Promise<void>;
   /** Change thinking mode mid-session. */
-  setThinking(tabId: string, config: SessionStartParams['thinking']): Promise<void>;
   /** Get the CLI-reported authenticated account for an active tab. Null if the tab isn't running. */
   getAccountInfo(tabId: string): Promise<AccountInfo | null>;
   /** Get the current context-window usage breakdown. Null if the tab isn't running. */
@@ -429,11 +431,6 @@ export interface PendingPermission {
   resolve: (decision: PermissionDecision) => void;
 }
 
-export interface ElicitationDecision {
-  action: 'accept' | 'decline' | 'cancel';
-  content?: Record<string, unknown>;
-}
-
 export interface SessionHandle {
   /**
    * Which agent powers this session. Pinned at handle construction so
@@ -473,8 +470,11 @@ export interface SessionHandle {
   permissionResolver: ((decision: PermissionDecision) => void) | null;
   /** Queue of permission requests waiting for user response */
   permissionQueue: PendingPermission[];
-  /** Resolver for a pending elicitation (MCP server asking the user a question). */
-  elicitationResolver: ((decision: ElicitationDecision) => void) | null;
+  /**
+   * MCP elicitations awaiting the user, oldest first. The head is the one on
+   * screen. See sessions/elicitations.ts.
+   */
+  elicitationQueue: AgentElicitationRequest[];
   projectPath: string;
   configDir: string;
   /**

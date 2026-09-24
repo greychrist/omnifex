@@ -124,6 +124,7 @@ import {
   clearInternalArchive,
 } from './services/sessions/internal-archive';
 import { readSubagentMeta } from './services/sessions/subagent-meta';
+import { toElicitationAction } from './services/sessions/elicitations';
 import { createPermissionsIOService } from './services/permissions-io';
 import { createUpdaterService } from './services/updater';
 import { createInstallerService } from './services/installer';
@@ -1337,8 +1338,8 @@ app.whenReady().then(() => {
         sessionsService.sendStructuredMessage(sessionId, content),
       respondPermission: (sessionId: string, behavior: string, updatedInput?: Record<string, unknown>, updatedPermissions?: any[]) =>
         sessionsService.respondPermission(sessionId, behavior as 'allow' | 'deny', updatedInput, updatedPermissions),
-      respondElicitation: (tabId: string, action: string, content?: Record<string, unknown>) =>
-        sessionsService.respondElicitation(tabId, action as 'accept' | 'decline' | 'cancel', content),
+      respondElicitation: (tabId: string, action: string, content?: Record<string, unknown>, requestId?: string) =>
+        sessionsService.respondElicitation(tabId, toElicitationAction(action), content, requestId),
       stop: (sessionId: string) => sessionsService.stop(sessionId),
       getInfo: (sessionId: string) => sessionsService.getInfo(sessionId),
       getHealth: (sessionId: string) => sessionsService.getHealth(sessionId),
@@ -1352,7 +1353,6 @@ app.whenReady().then(() => {
       setEffort: (sessionId: string, level: unknown) => sessionsService.setEffort(sessionId, level as any),
       applyPermissions: (sessionId: string, permissions: unknown) =>
         sessionsService.applyPermissions(sessionId, permissions as any),
-      setThinking: (sessionId: string, config: unknown) => sessionsService.setThinking(sessionId, config as any),
       getAccountInfo: (sessionId: string) => sessionsService.getAccountInfo(sessionId),
       getContextUsage: (sessionId: string) => sessionsService.getContextUsage(sessionId),
       getCliStatus: (sessionId: string) => sessionsService.getCliStatus(sessionId),

@@ -14,8 +14,7 @@ import { OpenSessionByIdDialog } from '@/components/OpenSessionByIdDialog';
 import { AccountBadge } from '@/components/AccountBadge';
 import { Button } from '@/components/ui/button';
 import { NewSessionForm } from '@/components/NewSessionForm';
-import type { EffortLevel, ThinkingConfig } from '@/components/FloatingPromptInput';
-import { normalizeThinkingConfig } from '@/lib/thinkingConfig';
+import type { EffortLevel } from '@/components/FloatingPromptInput';
 import { useClaudeSessionStore } from '@/stores/claudeSessionStore';
 import { BranchColorsCard } from '@/components/BranchColorsCard';
 import { CodexSignInModal } from '@/components/codex/CodexSignInModal';
@@ -66,7 +65,6 @@ const TabPanelImpl: React.FC<TabPanelProps> = ({ tab, isActive }) => {
   // and ClaudeCodeSession seeds its state from them.
   const [formModel, setFormModel] = React.useState<string>('opus');
   const [formEffort, setFormEffort] = React.useState<EffortLevel>('high');
-  const [formThinkingConfig, setFormThinkingConfig] = React.useState<ThinkingConfig>('adaptive');
   const [formPermissionMode, setFormPermissionMode] = React.useState<string>('acceptEdits');
   // Form-level agent selection. Seeded from the path-rule resolver in
   // handleProjectClick — codex path rules pre-pick Codex so the user doesn't
@@ -186,11 +184,6 @@ const TabPanelImpl: React.FC<TabPanelProps> = ({ tab, isActive }) => {
         if (d) {
           if (d.model) setFormModel(d.model);
           if (d.effort) setFormEffort(d.effort);
-          // Stored session_defaults may carry the legacy `'budget'`
-          // value for accounts last edited before v0.4.21. Normalize at
-          // the read boundary so the form always lands on a valid
-          // current-schema state.
-          if (d.thinkingConfig) setFormThinkingConfig(normalizeThinkingConfig(d.thinkingConfig));
           if (d.permissionMode) setFormPermissionMode(d.permissionMode);
         }
       }).catch(() => {
@@ -320,7 +313,6 @@ const TabPanelImpl: React.FC<TabPanelProps> = ({ tab, isActive }) => {
       initialSessionConfig: {
         model: formModel,
         effort: formEffort,
-        thinkingConfig: formThinkingConfig,
         permissionMode: formPermissionMode,
         accountResolution: projectAccountResolution ?? undefined,
       },
@@ -379,7 +371,6 @@ const TabPanelImpl: React.FC<TabPanelProps> = ({ tab, isActive }) => {
         initialSessionConfig: {
           model: d?.model ?? 'opus',
           effort: d?.effort ?? 'high',
-          thinkingConfig: d?.thinkingConfig ? normalizeThinkingConfig(d.thinkingConfig) : undefined,
           permissionMode: d?.permissionMode ?? 'acceptEdits',
           accountResolution: resolution ?? undefined,
         },

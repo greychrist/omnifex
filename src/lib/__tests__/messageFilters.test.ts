@@ -419,6 +419,31 @@ describe('system:dev_intent (CLI >= 2.1.266)', () => {
   });
 });
 
+describe('system:elicitation_complete', () => {
+  // An MCP server confirming a URL-mode elicitation (a browser sign-in)
+  // finished. The dialog already closed when the user opened the page.
+  it('is dropped rather than drawn as an Unrecognized record card', () => {
+    const node = {
+      kind: 'system', subtype: 'elicitation_complete', sessionId: '', receivedAt: '',
+      raw: { type: 'system', subtype: 'elicitation_complete', mcp_server_name: 'linear', elicitation_id: 'el-9' },
+    } as unknown as JsonlNode;
+    expect(filterDisplayableMessages([node])).toHaveLength(0);
+  });
+});
+
+describe('system:per_turn_effort_changed (CLI >= 2.1.281)', () => {
+  // Stream-only notice that per-turn effort went inactive for the model (the
+  // API refused it), so an effort change now rewrites the cached prefix.
+  // Cache plumbing, not narrative.
+  it('is dropped rather than drawn as an Unrecognized record card', () => {
+    const node = {
+      kind: 'system', subtype: 'per_turn_effort_changed', sessionId: '', receivedAt: '',
+      raw: { type: 'system', subtype: 'per_turn_effort_changed', per_turn_effort_active: false },
+    } as unknown as JsonlNode;
+    expect(filterDisplayableMessages([node])).toHaveLength(0);
+  });
+});
+
 // ── system.thinking_tokens collapse ────────────────────────────────────────
 // The CLI emits one `thinking_tokens` ping every few hundred tokens of
 // extended thinking, and `estimated_tokens` is a RUNNING CUMULATIVE total for

@@ -83,7 +83,6 @@ export interface Project {
  */
 export interface SessionDefaults {
   model?: string;
-  thinkingConfig?: 'adaptive' | 'disabled';
   permissionMode?: string;
   effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 }
@@ -1778,8 +1777,8 @@ export const api = {
 
   // ─── Persistent Session API ───────────────────────────────────────
 
-  async startSession(tabId: string, projectPath: string, model: string, permissionMode: string, resumeSessionId?: string, configDir?: string, effort?: string, thinking?: Record<string, unknown>, manualAccountOverride?: boolean, agent?: AgentKind): Promise<void> {
-    return apiCall("session_start", { tabId, projectPath, model, permissionMode, resumeSessionId, configDir, effort, thinking, manualAccountOverride, agent });
+  async startSession(tabId: string, projectPath: string, model: string, permissionMode: string, resumeSessionId?: string, configDir?: string, effort?: string, manualAccountOverride?: boolean, agent?: AgentKind): Promise<void> {
+    return apiCall("session_start", { tabId, projectPath, model, permissionMode, resumeSessionId, configDir, effort, manualAccountOverride, agent });
   },
 
   /**
@@ -1809,8 +1808,16 @@ export const api = {
     return apiCall("session_respond_permission", { tabId, behavior, updatedInput, updatedPermissions });
   },
 
-  async respondElicitation(tabId: string, action: 'accept' | 'decline' | 'cancel', content?: Record<string, unknown>): Promise<void> {
-    return apiCall("session_respond_elicitation", { tabId, action, content });
+  // Unlike respondPermission, this IS request-targeted: main drops an answer
+  // whose requestId is no longer at the head of the queue (the CLI withdrew
+  // it while the dialog was open), so it cannot land on the next request.
+  async respondElicitation(tabId: string, action: 'accept' | 'decline' | 'cancel', content?: Record<string, unknown>, requestId?: string): Promise<void> {
+    return apiCall("session_respond_elicitation", {
+      tabId,
+      action,
+      ...(content !== undefined && { content }),
+      ...(requestId !== undefined && { requestId }),
+    });
   },
 
   async stopSession(tabId: string): Promise<void> {
@@ -1874,11 +1881,6 @@ export const api = {
   /** Change the effort level for subsequent turns in an active session. */
   async sessionSetEffort(tabId: string, level: 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null): Promise<void> {
     return apiCall("session_set_effort", { tabId, level });
-  },
-
-  /** Change the thinking configuration for subsequent turns in an active session. */
-  async sessionSetThinking(tabId: string, config: { type: 'adaptive' } | { type: 'enabled'; budgetTokens?: number } | { type: 'disabled' } | null): Promise<void> {
-    return apiCall("session_set_thinking", { tabId, config });
   },
 
   /** Get the CLI-reported authenticated account for an active session. */

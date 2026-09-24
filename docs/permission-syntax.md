@@ -273,11 +273,33 @@ OmniFex's decider (`electron/services/sessions/permissions.ts`) therefore:
 - offers a folder grant (`directory_grant`) instead of a rule for a symlink
   escape; `PermissionCard` sends it as `addDirectories`.
 
+## Safety checks in `bypassPermissions`
+
+OmniFex launches a Bypass session with `--permission-mode bypassPermissions`,
+so what the CLI still sends the decider is what it refuses to bypass. Verified
+against CLI 2.1.281:
+
+| Request | Reaches the decider? | Payload |
+|---|---|---|
+| `rm -rf "$(pwd)"` | yes | `decision_reason_type: 'safetyCheck'`, `decision_reason: 'Dangerous rm operation on statically-unresolvable target: command substitution output'`, `classifier_approvable: false`, `suppress_always_allow_rule: true`, no suggestions |
+| `rm -rf "$PWD"` | **no** — the CLI runs it | — |
+| Write into `.git/` or `.claude/` | **no** — the CLI writes it | — |
+
+The decider's bypass auto-allow exists for the dropdown: switching to Bypass
+mid-session works only because the decider honours it, since the CLI refuses
+a `set_permission_mode` to bypass it was not launched with. It used to allow
+the `safetyCheck` asks too, answering "yes" in the human's place to the one
+question the CLI insists on asking. It now lets every `safetyCheck` reach the
+card (`isSafetyCheck`). `dontAsk` still denies them without prompting.
+
+The `$PWD` row is the CLI's gap, not ours: nothing reaches the decider, so
+there is nothing for OmniFex to stop.
+
 ## Gotchas
 
 - Invalid rules (bad tool names, typos) are silently filtered at load time. The rest of the file still loads. Check `/permissions` to see what actually got parsed.
 - For cross-project file access, prefer `additionalDirectories` over scattered `Read(//...)` rules. It grants read + edit-per-mode to extra paths.
 - Windows paths normalize to POSIX before matching: `C:\Users\x` → `/c/Users/x`. Use `//c/**/.env`.
-- `bypassPermissions` mode still prompts for writes to `.git`, `.claude`, `.vscode`, `.idea`, `.husky` — but exempts `.claude/commands`, `.claude/agents`, `.claude/skills`.
+- The official docs say `bypassPermissions` still prompts for writes to `.git`, `.claude`, `.vscode`, `.idea`, `.husky` (exempting `.claude/commands`, `.claude/agents`, `.claude/skills`). CLI 2.1.281 under OmniFex's flags did **not** prompt for a Write to `.git/probe.txt` or `.claude/settings.local.json` — see the table above. Don't rely on that protection.
 
 Source: https://code.claude.com/docs/en/permissions

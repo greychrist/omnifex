@@ -1113,6 +1113,36 @@ const migrations: Migration[] = [
       }
     },
   },
+  {
+    version: 27,
+    description:
+      'Drop thinkingConfig from account session defaults. The Thinking '
+      + 'picker was removed in v0.4.70 and the setting itself is gone; the '
+      + 'CLI now refuses thinking-off on Fable 5, Fable 5.1 and Opus 5.5 '
+      + 'anyway. Stripped here once so nothing has to ignore it on read.',
+    up: (db) => {
+      // Guarded like v26: an image old enough to predate the column (or the
+      // table) has nothing to strip.
+      const cols = (db.prepare('PRAGMA table_info(accounts)').all() as Array<{ name: string }>)
+        .map((c) => c.name);
+      if (!cols.includes('session_defaults')) return;
+      const rows = db
+        .prepare("SELECT id, session_defaults FROM accounts WHERE session_defaults LIKE '%thinkingConfig%'")
+        .all() as Array<{ id: number; session_defaults: string }>;
+      const update = db.prepare('UPDATE accounts SET session_defaults = ? WHERE id = ?');
+      for (const row of rows) {
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(row.session_defaults);
+        } catch {
+          continue; // not ours to repair; leave it exactly as found
+        }
+        if (!parsed || typeof parsed !== 'object') continue;
+        const { thinkingConfig: _dropped, ...rest } = parsed as Record<string, unknown>;
+        update.run(JSON.stringify(rest), row.id);
+      }
+    },
+  },
 ];
 
 /**

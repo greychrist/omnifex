@@ -130,7 +130,6 @@ export const SessionOptionsSchema = z.looseObject({
   model: z.string().optional(),
   permissionMode: z.string().optional(),
   effort: z.string().optional(),
-  thinking: z.looseObject({}).optional(),
   /** Adopt an existing CLI transcript instead of minting a new session id. */
   resumeSessionId: z.string().optional(),
   /** The user picked an account explicitly; skip path-rule re-resolution. */

@@ -4,11 +4,13 @@ import { createAssistantResolver } from './assistantMeta';
 import { createControlRequestRegistry } from './control-request-registry';
 import type {
   AgentEngine,
+  AgentElicitationRequest,
   AgentEngineExit,
   AgentMessage,
   AgentPermissionRequest,
   AgentStartParams,
   Disposable,
+  ElicitationAction,
   InitData,
 } from './types';
 
@@ -80,7 +82,7 @@ function buildArgs(p: AgentStartParams): string[] {
   if (p.permissionMode && CLI_ARGV_PERMISSION_MODES.has(p.permissionMode)) {
     args.push('--permission-mode', p.permissionMode);
   }
-  // Effort and thinking picked before the session started. Only a mid-session
+  // Effort picked before the session started. Only a mid-session
   // change used to reach the CLI (apply_flag_settings), so a fresh session ran
   // at the model's default while the picker showed its own default — invisible
   // until Opus 5.5 shipped defaulting to `medium` against the picker's `high`.
@@ -88,16 +90,38 @@ function buildArgs(p: AgentStartParams): string[] {
   if (p.effort && CLI_EFFORT_LEVELS.has(p.effort)) {
     args.push('--effort', p.effort);
   }
-  // Adaptive is the CLI's default, and a fixed budget collapses to adaptive on
-  // every current model (see setThinking in sessions/queries.ts), so only
-  // "off" needs saying.
-  if (p.thinking?.type === 'disabled') {
-    args.push('--thinking', 'disabled');
-  }
   if (p.allowedTools && p.allowedTools.length > 0) {
     args.push('--allowed-tools', p.allowedTools.join(','));
   }
   return args;
+}
+
+/**
+ * The CLI's elicitation request body, camelCased. Absent optional fields stay
+ * absent rather than becoming `undefined` keys.
+ */
+function toElicitationRequest(requestId: string, r: Record<string, unknown>): AgentElicitationRequest {
+  const str = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined);
+  const out: AgentElicitationRequest = {
+    requestId,
+    serverName: str(r.mcp_server_name) ?? 'MCP server',
+    message: str(r.message) ?? '',
+    mode: r.mode === 'url' ? 'url' : 'form',
+  };
+  const optional: Array<[keyof AgentElicitationRequest, string | Record<string, unknown> | undefined]> = [
+    ['url', str(r.url)],
+    ['elicitationId', str(r.elicitation_id)],
+    ['requestedSchema', r.requested_schema && typeof r.requested_schema === 'object'
+      ? (r.requested_schema as Record<string, unknown>)
+      : undefined],
+    ['title', str(r.title)],
+    ['displayName', str(r.display_name)],
+    ['description', str(r.description)],
+  ];
+  for (const [key, value] of optional) {
+    if (value !== undefined) (out as unknown as Record<string, unknown>)[key] = value;
+  }
+  return out;
 }
 
 export function createClaudeCliEngine(
@@ -108,6 +132,8 @@ export function createClaudeCliEngine(
   let initData: InitData | null = null;
   const messageCallbacks: Array<(m: AgentMessage) => void> = [];
   const permissionCallbacks: Array<(r: AgentPermissionRequest) => void> = [];
+  const elicitationCallbacks: Array<(r: AgentElicitationRequest) => void> = [];
+  const cancelCallbacks: Array<(requestId: string) => void> = [];
   const exitCallbacks: Array<(info: AgentEngineExit) => void> = [];
   const errorCallbacks: Array<(err: Error) => void> = [];
   // In-flight control_requests, with a hard timeout + exit cleanup so a
@@ -191,6 +217,51 @@ export function createClaudeCliEngine(
       for (const cb of permissionCallbacks) {
         try {
           cb(req);
+        } catch {
+          /* subscriber threw */
+        }
+      }
+      return;
+    }
+
+    // An MCP server asking the user something. The CLI parks the session
+    // until we answer, so this must reach the dialog, never the transcript.
+    if (p?.type === 'control_request' && p?.request?.subtype === 'elicitation') {
+      const req = toElicitationRequest(String(p.request_id ?? ''), p.request as Record<string, unknown>);
+      for (const cb of elicitationCallbacks) {
+        try {
+          cb(req);
+        } catch {
+          /* subscriber threw */
+        }
+      }
+      return;
+    }
+
+    // Every other request the CLI can send a host (hook_callback,
+    // mcp_message, request_user_dialog, …) belongs to a capability we never
+    // declare. Fail it now: unanswered, it parks the session until the CLI's
+    // own deadline, and forwarded, it draws an Unrecognized-record card.
+    if (p?.type === 'control_request') {
+      const subtype = p.request?.subtype ?? 'unknown';
+      void writeLine({
+        type: 'control_response',
+        response: {
+          subtype: 'error',
+          request_id: String(p.request_id ?? ''),
+          error: `OmniFex does not handle control_request subtype: ${subtype}`,
+        },
+      }).catch(() => { /* child gone — nothing is waiting any more */ });
+      return;
+    }
+
+    // The CLI withdrawing a request it sent us — an interrupted turn, or an
+    // MCP server that stopped waiting. Bookkeeping, never transcript.
+    if (p?.type === 'control_cancel_request') {
+      const requestId = String(p.request_id ?? '');
+      for (const cb of cancelCallbacks) {
+        try {
+          cb(requestId);
         } catch {
           /* subscriber threw */
         }
@@ -457,6 +528,33 @@ export function createClaudeCliEngine(
     });
   }
 
+  function writeLine(envelope: unknown): Promise<void> {
+    if (!child || !child.stdin.writable) return Promise.resolve();
+    const stdin = child.stdin;
+    return new Promise<void>((resolve, reject) => {
+      stdin.write(JSON.stringify(envelope) + '\n', (err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+  }
+
+  /** Answer an MCP elicitation. Content only rides an accept. */
+  async function respondElicitation(
+    requestId: string,
+    action: ElicitationAction,
+    content?: Record<string, unknown>,
+  ): Promise<void> {
+    await writeLine({
+      type: 'control_response',
+      response: {
+        subtype: 'success',
+        request_id: requestId,
+        response: action === 'accept' && content ? { action, content } : { action },
+      },
+    });
+  }
+
   function sendControlRequest<T = unknown>(
     subtype: string,
     params?: Record<string, unknown>,
@@ -532,6 +630,24 @@ export function createClaudeCliEngine(
       },
     };
   }
+  function onElicitationRequest(cb: (r: AgentElicitationRequest) => void): Disposable {
+    elicitationCallbacks.push(cb);
+    return {
+      dispose() {
+        const i = elicitationCallbacks.indexOf(cb);
+        if (i !== -1) elicitationCallbacks.splice(i, 1);
+      },
+    };
+  }
+  function onControlCancel(cb: (requestId: string) => void): Disposable {
+    cancelCallbacks.push(cb);
+    return {
+      dispose() {
+        const i = cancelCallbacks.indexOf(cb);
+        if (i !== -1) cancelCallbacks.splice(i, 1);
+      },
+    };
+  }
   function onError(cb: (err: Error) => void): Disposable {
     errorCallbacks.push(cb);
     return {
@@ -559,6 +675,7 @@ export function createClaudeCliEngine(
     sendStructured,
     sendControlRequest,
     respondPermission,
+    respondElicitation,
     interrupt,
     close,
     kill,
@@ -566,6 +683,8 @@ export function createClaudeCliEngine(
     getInitData,
     onMessage,
     onPermissionRequest,
+    onElicitationRequest,
+    onControlCancel,
     onError,
     onExit,
   };

@@ -83,13 +83,13 @@ describe('electronAPI shim', () => {
 
       await api.invoke('session_start', {
         tabId: 'tab-A', projectPath: '/Users/greg/Repos/x', model: 'claude-opus-5', permissionMode: 'default',
-        resumeSessionId: undefined, configDir: '/cfg', effort: 'high', thinking: { type: 'adaptive' }, manualAccountOverride: false, agent: 'claude',
+        resumeSessionId: undefined, configDir: '/cfg', effort: 'high', manualAccountOverride: false, agent: 'claude',
       });
 
       expect(f.requests.map((r) => r.method)).toEqual(['project.add', 'session.create', 'session.subscribe']);
       expect(f.requests[1].params).toEqual({
         projectId: 'p1',
-        options: { model: 'claude-opus-5', permissionMode: 'default', effort: 'high', thinking: { type: 'adaptive' }, agent: 'claude', configDir: '/cfg', manualAccountOverride: false },
+        options: { model: 'claude-opus-5', permissionMode: 'default', effort: 'high', agent: 'claude', configDir: '/cfg', manualAccountOverride: false },
       });
       // Live-only: no fromSeq.
       expect(f.requests[2].params).toEqual({ sessionId: 'sid-1' });

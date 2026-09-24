@@ -87,7 +87,7 @@ function makeHandle(engine: AgentEngine): SessionHandle {
     turn: { status: 'idle', since: null },
     permissionResolver: null,
     permissionQueue: [],
-    elicitationResolver: null,
+    elicitationQueue: [],
     projectPath: '/p',
     configDir: '/c',
     autoTitleAttempted: true,

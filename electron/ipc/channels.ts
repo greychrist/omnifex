@@ -98,7 +98,6 @@ export const INVOKE_CHANNELS: readonly string[] = [
   'session_suggest_title',
   'session_set_permission_mode',
   'session_set_effort',
-  'session_set_thinking',
   'session_account_info',
   'session_context_usage',
   'session_cli_status',

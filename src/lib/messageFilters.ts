@@ -160,6 +160,20 @@ export function filterDisplayableMessages(
       return false;
     }
 
+    // And for `system:per_turn_effort_changed` (CLI >= 2.1.281) — the CLI
+    // telling a host that effort changes stopped being cache-safe after the
+    // API refused per-turn effort. Plumbing, not a statement to the reader.
+    if (message.kind === "system" && message.subtype === "per_turn_effort_changed") {
+      return false;
+    }
+
+    // `system:elicitation_complete` — an MCP server confirming a URL-mode
+    // elicitation finished. The ElicitationDialog closed when the page was
+    // opened; the tool call's own result says what happened next.
+    if (message.kind === "system" && message.subtype === "elicitation_complete") {
+      return false;
+    }
+
     // The CLI's conversation latches and branch bookkeeping, which it writes
     // into the same JSONL as messages: `atis-latch`, `mode`, `worktree-state`
     // and the rest of the family in `cliSidechannelRecords.ts`. Nothing in
