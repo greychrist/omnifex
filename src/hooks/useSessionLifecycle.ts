@@ -360,8 +360,8 @@ export function useSessionLifecycle({
         console.error("[startPersistentSession] resolve error:", e);
       }
     }
-    // Effort is always a CLI-supported level now (low/medium/high/xhigh/max) —
-    // no more 'auto' sentinel that needed stripping.
+    // 'auto' goes through as-is: the engine omits `--effort` for anything that
+    // is not a CLI level, so the model's own default applies.
     const sdkEffort = effort;
     // Signal "user explicitly picked this account on the form" so main
     // doesn't re-resolve and overwrite their choice. `manual_override`

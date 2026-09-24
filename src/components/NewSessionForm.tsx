@@ -10,6 +10,8 @@ import { cn } from "@/lib/utils";
 import {
   EFFORT_LEVELS,
   PERMISSION_MODES,
+  catalogEffortLevels,
+  visibleEffortLevels,
   type EffortLevel,
 } from "./ControlBar";
 import { useModelCatalog } from "@/lib/modelCatalog";
@@ -182,9 +184,7 @@ export const NewSessionForm: React.FC<NewSessionFormProps> = ({
   );
   const selectedModelData = modelList.find((m) => m.id === selectedModel) ?? modelList[0];
   const selectedRawModel = modelCatalogRaw.find((m) => m.value === selectedModel);
-  const effortLevelList = selectedRawModel?.supportedEffortLevels
-    ? EFFORT_LEVELS.filter((l) => selectedRawModel.supportedEffortLevels!.includes(l.id))
-    : EFFORT_LEVELS;
+  const effortLevelList = visibleEffortLevels(catalogEffortLevels(selectedRawModel));
   const selectedEffort = EFFORT_LEVELS.find((e) => e.id === effort);
   const selectedPermission =
     PERMISSION_MODES.find((m) => m.id === permissionMode) ?? PERMISSION_MODES[0];

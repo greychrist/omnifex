@@ -7,6 +7,8 @@ import {
   EffortPicker,
   PermissionPicker,
   normalizePermissionMode,
+  catalogEffortLevels,
+  visibleEffortLevels,
 } from "../ControlBar";
 import { TooltipProvider } from "../ui/tooltip-modern";
 
@@ -29,8 +31,20 @@ describe("normalizePermissionMode", () => {
 });
 
 describe("static option lists", () => {
-  it("EFFORT_LEVELS exposes the five CLI effort levels", () => {
-    expect(EFFORT_LEVELS.map((e) => e.id)).toEqual(["low", "medium", "high", "xhigh", "max"]);
+  it("EFFORT_LEVELS exposes Auto plus the five CLI effort levels", () => {
+    expect(EFFORT_LEVELS.map((e) => e.id)).toEqual(["auto", "low", "medium", "high", "xhigh", "max"]);
+  });
+
+  // Which model supports which level comes from the CLI catalog, and the
+  // default level is decided per model at runtime (Opus 5.5 is medium, most
+  // others high). Copy that names either goes stale on the next model launch
+  // — "Opus 4.7 only" and "(CLI default)" both did.
+  it("effort descriptions name no model, version or fixed default", () => {
+    for (const level of EFFORT_LEVELS) {
+      expect(level.description).not.toMatch(/\b(opus|sonnet|fable|haiku|mythos|claude)\b/i);
+      expect(level.description).not.toMatch(/\d\.\d/);
+      expect(level.description).not.toMatch(/CLI default|\(default\)/i);
+    }
   });
 
   it("PERMISSION_MODES exposes all six permission modes", () => {
@@ -93,6 +107,14 @@ describe("EffortPicker (compact)", () => {
     for (const name of ["Low", "Medium", "High"]) {
       expect(screen.getAllByText(name).length).toBeGreaterThan(0);
     }
+  });
+
+  it("keeps Auto when filtering, even for a model with no effort levels", () => {
+    renderInProvider(
+      <EffortPicker effort="auto" open={true} onOpenChange={vi.fn()} levels={[]} />,
+    );
+    expect(screen.getAllByText("Auto").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Low")).toBeNull();
   });
 
   it("shows all levels when `levels` is omitted", () => {
@@ -326,5 +348,37 @@ describe("PermissionPicker (form)", () => {
       />,
     );
     expect((screen.getAllByRole("button")[0] as HTMLButtonElement).disabled).toBe(true);
+  });
+});
+
+describe("visibleEffortLevels", () => {
+  it("returns every level when the catalog has nothing for the model", () => {
+    expect(visibleEffortLevels(undefined)).toBe(EFFORT_LEVELS);
+  });
+
+  it("returns Auto plus the supported levels, in picker order", () => {
+    expect(visibleEffortLevels(["max", "low"]).map((l) => l.id)).toEqual(["auto", "low", "max"]);
+  });
+});
+
+describe("catalogEffortLevels", () => {
+  it("is undefined when the model is not in the catalog", () => {
+    expect(catalogEffortLevels(undefined)).toBeUndefined();
+  });
+
+  it("is empty for a catalogued model that does not support effort", () => {
+    expect(catalogEffortLevels({ value: "haiku", displayName: "Haiku", description: "" })).toEqual([]);
+  });
+
+  it("passes the catalog's levels through", () => {
+    expect(
+      catalogEffortLevels({
+        value: "sonnet",
+        displayName: "Sonnet",
+        description: "",
+        supportsEffort: true,
+        supportedEffortLevels: ["low", "high"],
+      }),
+    ).toEqual(["low", "high"]);
   });
 });

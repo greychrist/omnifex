@@ -257,15 +257,16 @@ describe('setEffort', () => {
     ]);
   });
 
-  // null means "back to the default", which on the wire is an absent key —
-  // sending `effortLevel: null` would be a different instruction.
-  it('maps a null level to an absent effortLevel key', async () => {
+  // null and 'auto' both mean "back to the model's default". On the wire that
+  // is an explicit `effortLevel: null`: the CLI (2.1.281) clears the session
+  // effort on null and deletes the key from the flag layer. An absent key is
+  // nothing to apply — `{ effortLevel: undefined }` serialises to `{}`, which
+  // was how a reset silently did nothing.
+  it.each([null, 'auto'] as const)('sends %s as an explicit effortLevel: null', async (level) => {
     const { engine, calls } = createEngine();
     const { q } = setup({ engine });
-    await q.setEffort('tab1', null);
-    const settings = (calls[0].payload as { settings: Record<string, unknown> }).settings;
-    expect(settings.effortLevel).toBeUndefined();
-    expect('effortLevel' in settings).toBe(true);
+    await q.setEffort('tab1', level);
+    expect(JSON.parse(JSON.stringify(calls[0].payload))).toEqual({ settings: { effortLevel: null } });
   });
 
   it('records the engine error instead of throwing', async () => {

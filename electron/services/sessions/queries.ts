@@ -190,7 +190,7 @@ export function createQueryPassthroughs(
 
   async function setEffort(
     tabId: string,
-    level: 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null,
+    level: 'auto' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null,
   ): Promise<void> {
     const handle = liveEngine(tabId);
     if (!handle) {
@@ -198,8 +198,12 @@ export function createQueryPassthroughs(
       return;
     }
     try {
+      // 'auto' and null both hand effort back to the model's default. The CLI
+      // does that on an explicit `effortLevel: null`; an absent key (what
+      // `undefined` serialises to) is nothing to apply, and silently no-ops.
+      const effortLevel = level === 'auto' ? null : level;
       const res = await handle.engine.sendControlRequest('apply_flag_settings', {
-        settings: { effortLevel: level ?? undefined },
+        settings: { effortLevel },
       });
       logControl('set_effort', tabId, { ok: true, level, response: res ?? null });
     } catch (err) {

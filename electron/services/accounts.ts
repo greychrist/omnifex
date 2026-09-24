@@ -14,7 +14,7 @@ export type AccountEngine = 'claude' | 'codex';
 export interface SessionDefaults {
   model?: string;
   permissionMode?: string;
-  effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+  effort?: 'auto' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 }
 
 export interface Account {

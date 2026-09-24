@@ -9,6 +9,7 @@ import {
 import {
   EffortPicker,
   PermissionPicker,
+  catalogEffortLevels,
   type EffortLevel,
 } from '@/components/ControlBar';
 import { FormModelPicker } from '@/components/ModelPicker';
@@ -130,7 +131,7 @@ export function SessionDefaultsRow({
             open={effortOpen}
             onOpenChange={setEffortOpen}
             variant="form"
-            levels={selectedRawModel?.supportedEffortLevels}
+            levels={catalogEffortLevels(selectedRawModel)}
           />
         ))}
         {wrap('Permissions', (

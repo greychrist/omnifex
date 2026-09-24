@@ -84,7 +84,7 @@ export interface Project {
 export interface SessionDefaults {
   model?: string;
   permissionMode?: string;
-  effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+  effort?: 'auto' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 }
 
 /** Which CLI engine an account drives. Mirrors backend AccountEngine. */
@@ -1879,7 +1879,7 @@ export const api = {
   },
 
   /** Change the effort level for subsequent turns in an active session. */
-  async sessionSetEffort(tabId: string, level: 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null): Promise<void> {
+  async sessionSetEffort(tabId: string, level: 'auto' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null): Promise<void> {
     return apiCall("session_set_effort", { tabId, level });
   },
 

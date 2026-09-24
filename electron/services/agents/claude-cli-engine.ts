@@ -27,7 +27,8 @@ export interface CreateClaudeCliEngineParams {
  * defaults to 'default') and reapply via control_request post-spawn.
  */
 /** `--effort` values the CLI accepts (2.1.280). Anything else it ignores with
- *  a stderr warning, so we omit the flag rather than send one. */
+ *  a stderr warning, so we omit the flag rather than send one — which is also
+ *  exactly what OmniFex's `auto` means: no level, the model's own default. */
 const CLI_EFFORT_LEVELS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
 
 const CLI_ARGV_PERMISSION_MODES = new Set([

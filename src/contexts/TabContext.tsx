@@ -38,7 +38,7 @@ export interface Tab {
    */
   initialSessionConfig?: {
     model: string;
-    effort: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+    effort: 'auto' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
     permissionMode: string;
     /**
      * Account override selected by the user on the project landing page.

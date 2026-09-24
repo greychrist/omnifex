@@ -227,7 +227,7 @@ export interface SessionStartParams {
   model: string;
   permissionMode: string;
   resumeSessionId?: string;
-  effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+  effort?: 'auto' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
   /** webContents.id of the window that started this session — used to route tab-scoped events back to that window only. */
   ownerWebContentsId?: number;
   /**
@@ -338,8 +338,8 @@ export interface SessionsService {
   suggestTitle(tabId: string, description: string): Promise<string | null>;
   /** Switch the permission mode mid-session. */
   setPermissionMode(tabId: string, mode: PermissionMode): Promise<void>;
-  /** Change effort level mid-session. null clears the override and reverts to the CLI default. */
-  setEffort(tabId: string, level: 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null): Promise<void>;
+  /** Change effort level mid-session. 'auto' and null clear the override and revert to the model's default. */
+  setEffort(tabId: string, level: 'auto' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null): Promise<void>;
   /**
    * Push permission rule lists into the live CLI session. Send the full
    * effective allow/deny list — applyFlagSettings shallow-replaces the

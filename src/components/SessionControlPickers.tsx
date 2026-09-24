@@ -6,6 +6,7 @@ import { Popover } from '@/components/ui/popover';
 import { InlineDivider } from '@/components/ui/inline-divider';
 import {
   EFFORT_LEVELS,
+  catalogEffortLevels,
   PERMISSION_MODES,
   PermissionPickerDropdown,
   normalizePermissionMode,
@@ -187,7 +188,7 @@ export function SessionControlPickers({
             selectedModel={model}
             onSelect={(id) => { setModel(id); close(); }}
             effort={effort}
-            effortLevels={rawModel?.supportedEffortLevels}
+            effortLevels={catalogEffortLevels(rawModel)}
             onEffortSelect={(level) => { setEffort(level); }}
             extras={extraModelOptions(models)}
           />

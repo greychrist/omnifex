@@ -14,28 +14,50 @@ import { Button } from "@/components/ui/button";
 import { Popover, FIELD_TRIGGER } from "@/components/ui/popover";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip-modern";
 import { motion } from "framer-motion";
+import type { SessionModelInfo } from "@/lib/api";
 
 // ── Effort ──────────────────────────────────────────────────────────────
 
 /**
- * Effort level — maps to the CLI's reasoning_effort parameter.
+ * Effort level — the CLI's `--effort` / `effortLevel` (`low | medium | high |
+ * xhigh | max`), plus `auto`: send no level and let the CLI pick the model's
+ * own default. That default is decided per model at runtime — org setting,
+ * server flag, settings.json, then the model's capability, then `high` — and
+ * differs between models (Opus 5.5 is `medium`), so no fixed level can stand
+ * in for it. `auto` never reaches the CLI as a value: the engine omits
+ * `--effort` and a mid-session change sends `effortLevel: null`.
  *
- * Mirrors the CLI's `EffortLevel` type exactly (`low | medium | high | xhigh | max`).
- * No `auto` — the CLI has no `'auto'` value, so it was a renderer-only sentinel
- * that meant "don't set effort, let the CLI default (high) apply." Removed
- * 2026-04-16 in favor of an explicit default of `high`.
+ * Which levels a model accepts comes from the CLI catalog's
+ * `supportedEffortLevels`, never from these descriptions — keep them free of
+ * model names, versions and "default" claims (pinned in ControlBar.test.tsx).
  *
- * @see https://docs.anthropic.com/en/docs/build-with-claude/effort
+ * @see https://platform.claude.com/docs/en/build-with-claude/effort
  */
-export type EffortLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+export type EffortLevel = 'auto' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
 export const EFFORT_LEVELS: { id: EffortLevel; name: string; description: string; shortName: string; color: string }[] = [
-  { id: 'low', name: 'Low', description: 'Minimal thinking, fastest responses', shortName: 'Lo', color: 'text-blue-600' },
-  { id: 'medium', name: 'Medium', description: 'Moderate thinking', shortName: 'Med', color: 'text-green-600' },
-  { id: 'high', name: 'High', description: 'Deep reasoning (CLI default)', shortName: 'Hi', color: 'text-yellow-600' },
-  { id: 'xhigh', name: 'Extra High', description: 'Deeper than high (Opus 4.7 only; falls back to High elsewhere)', shortName: 'Xhi', color: 'text-orange-600' },
-  { id: 'max', name: 'Max', description: 'Maximum effort (Opus 4.6/4.7 only)', shortName: 'Max', color: 'text-red-600' },
+  { id: 'auto', name: 'Auto', description: "The model's own default level", shortName: 'Auto', color: 'text-muted-foreground' },
+  { id: 'low', name: 'Low', description: 'Fastest and cheapest; thinks only when it has to', shortName: 'Lo', color: 'text-blue-600' },
+  { id: 'medium', name: 'Medium', description: 'Balances speed and depth', shortName: 'Med', color: 'text-green-600' },
+  { id: 'high', name: 'High', description: 'Spends what the task needs', shortName: 'Hi', color: 'text-yellow-600' },
+  { id: 'xhigh', name: 'Extra High', description: 'For long-running agentic and coding work', shortName: 'Xhi', color: 'text-orange-600' },
+  { id: 'max', name: 'Max', description: 'No cap on token spend', shortName: 'Max', color: 'text-red-600' },
 ];
+
+/**
+ * The levels a catalogued model accepts. `undefined` means the model is not
+ * in the catalog (no data — show everything); a catalogued model without
+ * effort support (Haiku) gets `[]`, which leaves only Auto.
+ */
+export function catalogEffortLevels(model: SessionModelInfo | undefined): EffortLevel[] | undefined {
+  if (!model) return undefined;
+  return model.supportedEffortLevels ?? [];
+}
+
+/** Picker rows for a model's `levels`. Auto is always offered. */
+export function visibleEffortLevels(levels: EffortLevel[] | undefined): typeof EFFORT_LEVELS {
+  return levels ? EFFORT_LEVELS.filter((l) => l.id === 'auto' || levels.includes(l.id)) : EFFORT_LEVELS;
+}
 
 
 // ── Permission ──────────────────────────────────────────────────────────
@@ -132,15 +154,15 @@ interface EffortPickerProps {
    *  trigger that fills its container — used in NewSessionForm). */
   variant?: "compact" | "expanded" | "form";
   /**
-   * Levels the selected model actually supports (from the CLI model
-   * catalog's `supportedEffortLevels`). Omitted/undefined shows all five —
-   * the fallback when no catalog data exists for the selection.
+   * Levels the selected model actually supports — see `catalogEffortLevels`.
+   * Omitted/undefined shows every level, the fallback when no catalog data
+   * exists for the selection. Auto is shown either way.
    */
   levels?: EffortLevel[];
 }
 
 export function EffortPickerDropdown({ effort, onSelect, levels, bare = false }: { effort: EffortLevel; onSelect: (level: EffortLevel) => void; levels?: EffortLevel[]; bare?: boolean }) {
-  const visible = levels ? EFFORT_LEVELS.filter((l) => levels.includes(l.id)) : EFFORT_LEVELS;
+  const visible = visibleEffortLevels(levels);
   // `bare` drops the frame and heading so the model dropdown can host this
   // list under its own back header — one panel, not a box inside a box.
   return (

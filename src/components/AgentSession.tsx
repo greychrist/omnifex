@@ -367,9 +367,8 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   // Default is acceptEdits per user preference — safer than bypass,
   // smoother than ask-every-time.
   const [permissionMode, setPermissionMode] = useState<string>(initialSessionConfig?.permissionMode ?? "acceptEdits");
-  // Effort level — maps to the CLI's reasoning_effort parameter.
-  // Default 'high' matches the CLI's own default (EffortLevel docs).
-  // There is no 'auto' — the CLI's EffortLevel is strictly low/medium/high/xhigh/max.
+  // Effort level — maps to the CLI's `--effort`. 'auto' sends none, leaving
+  // the model's own default; see EffortLevel in ControlBar.
   const [effort, setEffort] = useState<EffortLevel>(initialSessionConfig?.effort ?? 'high');
   // Agent picker — early `useTabContext` call (the main one further down
   // is for tabTitle / updateTab; both consume the same context, so no
