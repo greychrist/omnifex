@@ -59,6 +59,13 @@ export const CLI_SIDECHANNEL_RECORD_TYPES: ReadonlySet<string> = new Set([
   'content-replacement',
   'fork-context-ref',
   'frame-link',
+  // Request replay (CLI >= 2.1.282, behind the `tengu_elegant_meadow` flag):
+  // the exact API request per model call, plus its deduplicated system+tools
+  // shape and message blobs. `api-request-blob` carries a `message`, but it
+  // is a request param, not a turn.
+  'api-request',
+  'api-request-shape',
+  'api-request-blob',
   // Dropped from the CLI's merge map in 2.1.276. Kept: transcripts written
   // by 2.1.275 and earlier still carry them, and the list exists to silence
   // records already on disk.

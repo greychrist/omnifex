@@ -31,6 +31,26 @@ describe('isCliSidechannelRecord', () => {
     ).toBe(true);
   });
 
+  // New in CLI 2.1.282: request-replay records — the exact API request
+  // (`api-request`), its deduplicated system+tools shape and message blobs.
+  // `boundary-cleared` in the CLI's merge map. Written only while the
+  // `tengu_elegant_meadow` flag is on, one `api-request` per model call, so
+  // unlisted they would draw a card per API request. `api-request-blob`
+  // carries a `message`, but it is a request param, not a turn.
+  it('recognises the 2.1.282 request-replay records', () => {
+    for (const type of ['api-request', 'api-request-shape', 'api-request-blob']) {
+      expect(isCliSidechannelRecord({ type, sessionId: 's' })).toBe(true);
+    }
+    expect(
+      isCliSidechannelRecord({
+        type: 'api-request-blob',
+        sessionId: 's',
+        hash: 'h',
+        message: { role: 'user', content: 'hi' },
+      }),
+    ).toBe(true);
+  });
+
   it('never claims one of the four transcript types', () => {
     for (const type of ['user', 'assistant', 'system', 'attachment']) {
       expect(isCliSidechannelRecord({ type })).toBe(false);

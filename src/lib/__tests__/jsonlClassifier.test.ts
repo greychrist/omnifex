@@ -728,6 +728,19 @@ describe('system:per_turn_effort_changed (CLI >= 2.1.281)', () => {
   });
 });
 
+describe('system:session_metadata (CLI >= 2.1.282)', () => {
+  it('classifies a live frame as a known system subtype, not unknown', () => {
+    const node = classifyJsonlLine({
+      type: 'system',
+      subtype: 'session_metadata',
+      metadata: { artifacts: [] },
+      receivedAt: '2026-09-24T10:00:00Z',
+    } as Record<string, unknown>);
+    expect(node?.kind).toBe('system');
+    if (node?.kind === 'system') expect(node.subtype).toBe('session_metadata');
+  });
+});
+
 describe('tool_progress', () => {
   const base = {
     type: 'tool_progress',

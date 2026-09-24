@@ -444,6 +444,18 @@ describe('system:per_turn_effort_changed (CLI >= 2.1.281)', () => {
   });
 });
 
+describe('system:session_metadata (CLI >= 2.1.282)', () => {
+  // Stream-only external_metadata patch for SDK hosts; today it carries only
+  // the session's published-artifact list. Nothing in OmniFex reads it.
+  it('is dropped rather than drawn as an Unrecognized record card', () => {
+    const node = {
+      kind: 'system', subtype: 'session_metadata', sessionId: '', receivedAt: '',
+      raw: { type: 'system', subtype: 'session_metadata', metadata: { artifacts: null } },
+    } as unknown as JsonlNode;
+    expect(filterDisplayableMessages([node])).toHaveLength(0);
+  });
+});
+
 // ── system.thinking_tokens collapse ────────────────────────────────────────
 // The CLI emits one `thinking_tokens` ping every few hundred tokens of
 // extended thinking, and `estimated_tokens` is a RUNNING CUMULATIVE total for

@@ -174,6 +174,13 @@ export function filterDisplayableMessages(
       return false;
     }
 
+    // `system:session_metadata` (CLI >= 2.1.282) — the published-artifact
+    // list a cloud session's summary shows, re-sent to SDK hosts on every
+    // change. OmniFex keeps no such summary.
+    if (message.kind === "system" && message.subtype === "session_metadata") {
+      return false;
+    }
+
     // The CLI's conversation latches and branch bookkeeping, which it writes
     // into the same JSONL as messages: `atis-latch`, `mode`, `worktree-state`
     // and the rest of the family in `cliSidechannelRecords.ts`. Nothing in

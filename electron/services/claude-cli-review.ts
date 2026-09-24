@@ -30,6 +30,96 @@ import { buildClaudeEnv } from './util/claude-env';
  * old value and the new one, and file or fix whatever they imply. Bumping it
  * to silence the badge throws away the only drift signal we have.
  *
+ * Last review: 2.1.281 -> 2.1.282 on 2026-09-24. Findings:
+ *
+ *  Changelog coverage: one version in range, 2.1.282, and it has an entry
+ *  (~95 lines). Both endpoints are installed, so the wire claims below are a
+ *  real binary diff of 2.1.281 vs 2.1.282.
+ *
+ *  Findings 1 and 2 fixed in the pass. Both are latent: neither has fired
+ *  on this machine yet.
+ *
+ *  WIRE DIFF, reported both ways round:
+ *
+ *    - Merge-strategy map: THREE NEW RECORD TYPES, nothing removed.
+ *      `api-request`, `api-request-shape`, `api-request-blob`, each
+ *      `boundary-cleared` / `route-by-agent`. See finding 1.
+ *    - `hook_event_name` literals: 33 distinct in each, set-identical.
+ *    - `type:"control_*"`: same 4 envelopes, identical counts.
+ *    - `subtype:` literals: 135 -> 136 distinct, nothing removed. New:
+ *      `session_metadata` (stream-only system frame; finding 2).
+ *    - SDK `this.request({subtype})`: 53 in each, set-identical.
+ *    - `origin:{kind}` literal counts identical; `turnOrigin` count
+ *      unchanged. The model-consent `choice:` literal set is identical.
+ *    - `.describe()` strings: 1710 -> 1712 distinct. New: the
+ *      `session_metadata` schema (@internal), `maxProseWidth`,
+ *      `allowClaudeInChromeWithManagedMcp`. Reworded: marketplace
+ *      look-alike names, MCP content-item `_meta` (the CLI now strips the
+ *      `com.anthropic/` prefix), and `allowManagedPermissionRulesOnly`'s
+ *      text moved. None is a host obligation.
+ *    - New `"--…"` literal: `--ita-invisible-in-index`, a git flag in the
+ *      Bash read-only tables, not a CLI flag.
+ *    - `/usage` anchors: the `Total …:` lines, `Current session`,
+ *      `Current week`, `Resets`, `Extra usage` and `% of usage` are
+ *      count-identical. `Usage:` (176 -> 178) and `MCP servers`
+ *      (232 -> 229) move with help text and minified identifiers, not the
+ *      render. `usage-runner/parser.ts` is safe.
+ *
+ *  1. REQUEST-REPLAY RECORDS WOULD DRAW A CARD PER API CALL. FIXED IN THIS
+ *     PASS (cliSidechannelRecords.ts).
+ *
+ *     The CLI can now write the exact API request into the session file:
+ *     one `api-request` per model call (params, `querySource`, a
+ *     `shapeHash`), an `api-request-shape` per distinct system+tools shape,
+ *     and `api-request-blob` per new message (`{hash, message}`). Gated on
+ *     `CLAUDE_CODE_ELEGANT_MEADOW` or the GrowthBook flag
+ *     `tengu_elegant_meadow` (default false), so it can switch on
+ *     server-side with no CLI release. Zero occurrences on disk today.
+ *     Every JSONL reader in main (cost, Brain `distill.ts`, turn logic)
+ *     keys on `type === 'user'|'assistant'`, so the blob's `message` is
+ *     not mistaken for a turn. The only exposure was the renderer's
+ *     catch-all card, at one per request.
+ *
+ *  2. `system:session_metadata` WOULD DRAW AN "UNRECOGNIZED RECORD" CARD.
+ *     FIXED IN THIS PASS (jsonl.ts, jsonlClassifier.ts, messageFilters.ts).
+ *
+ *     Stream-only, emitted from the same session-state reporter as
+ *     `task_summary` whenever the published-artifact list (`frameUrls`)
+ *     changes: `{metadata:{artifacts: [...] | null}}`. `stream-forward.ts`
+ *     forwards it (deny-list), and `classifySystem` sent it to the
+ *     catch-all. Fires only when a session publishes an artifact.
+ *
+ *  Checked and inert:
+ *
+ *   - Fable usage-credits prompt in SDK-hosted sessions now ends the turn
+ *     instead of switching models: the turn still ends in a `result`, the
+ *     path OmniFex already uses. `model_consent_fallback` remains
+ *     classified (jsonlClassifier.ts, sessionStreamReducer.ts); its
+ *     `choice` set is unchanged.
+ *   - Mid-pattern `:*` Bash rules now honoured from settings files: OmniFex
+ *     only generates trailing `:*` (permissions.ts `${base}:*`), and
+ *     docs/permission-syntax.md already calls `:*` a trailing shorthand.
+ *   - `Skill(anthropic-skills:*)` / `claude-ai` namespace narrowing: we
+ *     write no Skill rules and ship no skills in those namespaces.
+ *   - Project/local settings ignoring OTEL/telemetry env: OmniFex writes
+ *     none of those keys.
+ *   - Resume/continue fixes (thinking preserved over `/model` and
+ *     `/rename`, `--tools`, `redacted_thinking` retry, undecryptable web
+ *     search results, compaction refusal fallback, the xhigh-with-thinking-
+ *     off failure): upstream fixes in our favour. We pass no `--tools` or
+ *     `--continue`, and we render `redacted_thinking` only.
+ *   - Auto mode server classifier default, sandbox `excludedCommands`,
+ *     managed-settings validation, `allowManagedPermissionRulesOnly`
+ *     `allowed-tools`: decided inside the CLI; the decider sees only asks.
+ *
+ * No OmniFex impact: `maxProseWidth` and every other TUI render fix (full-
+ * screen, diff, cursor, bracketed paste, vim mode, `/skills`, `/tasks`,
+ * `/artifacts`, `/feedback`), Claude in Chrome managed MCP, apps gateway
+ * `readiness_grace_seconds`, login-refresh lock, CLAUDE.md symlink paths,
+ * Bedrock/Vertex, disk-quota Bash output, tool-input validation messages,
+ * plugin uninstall, `/install-github-app`, `claude-api` skill text,
+ * ultracode styling, Windows, VSCode, cloud sessions and Claude Tag.
+ *
  * Last review: 2.1.280 -> 2.1.281 on 2026-09-23. Findings:
  *
  *  Changelog coverage: one version in range, 2.1.281, and it has an entry
@@ -3091,7 +3181,7 @@ import { buildClaudeEnv } from './util/claude-env';
  * `~/.claude.json` fix (we read-modify-write that file, never replace it), and
  * the VSCode screen-reader work.
  */
-export const REVIEWED_CLI_VERSION = '2.1.281';
+export const REVIEWED_CLI_VERSION = '2.1.282';
 
 /**
  * app_settings key holding the user's explicit OmniFex-checkout override.

@@ -194,6 +194,11 @@ export type SystemSubtype =
   // opened the page, so there is nothing left to show — dropped by
   // `filterDisplayableMessages`.
   | 'elicitation_complete'
+  // Stream-only (CLI >= 2.1.282): the external_metadata patch a cloud worker
+  // sends, re-emitted for SDK hosts. Today it carries only the session's
+  // published-artifact list (`metadata.artifacts`, null once empty). Nothing
+  // in OmniFex reads it — dropped by `filterDisplayableMessages`.
+  | 'session_metadata'
   // The SendFeedback tool wrote a local draft feedback report to
   // <CLAUDE_CONFIG_DIR>/feedback/drafts/. Display fields only — the body stays
   // on disk, and nothing is sent until the user approves it via `/feedback`.
