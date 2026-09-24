@@ -16,6 +16,7 @@ import {
   stripContextSuffix,
   catalogModelName,
   extraModelOptions,
+  splitLatestModels,
   ACCOUNT_DEFAULT_MARK,
   useModelCatalog,
 } from '../modelCatalog';
@@ -578,5 +579,59 @@ describe('extraModelOptions', () => {
     expect(extraModelOptions(existing).map((m) => m.name)).not.toContain('Opus 5.5');
     // A different Opus is still a distinct pick — that is the whole point.
     expect(extraModelOptions(existing).map((m) => m.name)).toContain('Opus 5');
+  });
+});
+
+describe('splitLatestModels', () => {
+  const m = (id: string, name: string): Model => ({ id, name, description: '', icon: null, shortName: name[0], color: '' });
+  // The personal account's real 2.1.280 catalog, after withAccountDefaultLabel
+  // folded `opus` into the default row.
+  const CATALOG = [
+    m('default', `Opus 5.5 ${ACCOUNT_DEFAULT_MARK}`),
+    m('claude-fable-5-1', 'Fable 5.1'),
+    m('sonnet', 'Sonnet 5'),
+    m('haiku', 'Haiku 4.5'),
+    m('claude-opus-5', 'Opus 5'),
+    m('claude-fable-5', 'Fable 5'),
+    m('claude-opus-4-8', 'Opus 4.8'),
+    m('claude-opus-4-7', 'Opus 4.7'),
+    m('claude-opus-4-6', 'Opus 4.6'),
+    m('claude-sonnet-4-6', 'Sonnet 4.6'),
+    m('opus[1m]', 'Opus 5.5'),
+  ];
+
+  it('keeps the newest version of each family on the main list', () => {
+    const { latest } = splitLatestModels(CATALOG);
+    expect(latest.map((x) => x.id)).toEqual(['default', 'claude-fable-5-1', 'sonnet', 'haiku']);
+  });
+
+  it('moves the older versions behind More, in catalog order', () => {
+    const { older } = splitLatestModels(CATALOG);
+    expect(older.map((x) => x.id)).toEqual([
+      'claude-opus-5', 'claude-fable-5', 'claude-opus-4-8', 'claude-opus-4-7', 'claude-opus-4-6', 'claude-sonnet-4-6',
+    ]);
+  });
+
+  it('drops a second row that names the same model', () => {
+    // `opus[1m]` resolves to the model the default row already names; a
+    // second "Opus 5.5" anywhere says one thing twice.
+    const { latest, older } = splitLatestModels(CATALOG);
+    expect([...latest, ...older].map((x) => x.id)).not.toContain('opus[1m]');
+  });
+
+  it('keeps an older account default on the main list beside the newest', () => {
+    const { latest, older } = splitLatestModels([
+      m('default', `Opus 4.8 ${ACCOUNT_DEFAULT_MARK}`),
+      m('opus', 'Opus 5.5'),
+      m('claude-opus-5', 'Opus 5'),
+    ]);
+    expect(latest.map((x) => x.id)).toEqual(['default', 'opus']);
+    expect(older.map((x) => x.id)).toEqual(['claude-opus-5']);
+  });
+
+  it('leaves rows with no family or version on the main list', () => {
+    const { latest, older } = splitLatestModels(FALLBACK_MODELS);
+    expect(latest).toEqual(FALLBACK_MODELS);
+    expect(older).toEqual([]);
   });
 });

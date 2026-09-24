@@ -86,6 +86,58 @@ export function extraModelOptions(existing: Model[]): Model[] {
   });
 }
 
+/** The dotted version a model name spells ("Opus 5.5" → [5, 5]), or null. */
+function nameVersion(name: string): number[] | null {
+  const match = /(\d+(?:\.\d+)*)/.exec(name);
+  return match ? match[1].split('.').map(Number) : null;
+}
+
+function compareVersions(a: number[], b: number[]): number {
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const diff = (a[i] ?? 0) - (b[i] ?? 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
+}
+
+/**
+ * Split the picker's list into the newest model of each family — the main
+ * list — and every older version, which goes behind "More models".
+ *
+ * The CLI catalog lists every version an account can use (Opus 5.5, 5, 4.8,
+ * 4.7, 4.6 …) as peers, so the pick nearly everyone wants was buried in a
+ * list of eleven. The account-default row always stays on the main list, even
+ * when it names an older version. A second row with the same name as one
+ * already kept is dropped outright: `opus[1m]` resolves to the model the
+ * default row already names. Rows with no family or version (the static
+ * fallback's "Sonnet", "Account Default") are never moved.
+ */
+export function splitLatestModels(models: Model[]): { latest: Model[]; older: Model[] } {
+  const bare = (m: Model) => m.name.replace(new RegExp(`\\s*\\${ACCOUNT_DEFAULT_MARK}$`), '');
+  const newest = new Map<string, number[]>();
+  for (const m of models) {
+    const fam = modelFamily(bare(m));
+    const version = nameVersion(bare(m));
+    if (!fam || !version) continue;
+    const best = newest.get(fam);
+    if (!best || compareVersions(version, best) > 0) newest.set(fam, version);
+  }
+  const seen = new Set<string>();
+  const latest: Model[] = [];
+  const older: Model[] = [];
+  for (const m of models) {
+    const name = bare(m);
+    if (seen.has(name)) continue;
+    seen.add(name);
+    const fam = modelFamily(name);
+    const version = nameVersion(name);
+    const isOlder =
+      m.id !== 'default' && !!fam && !!version && compareVersions(version, newest.get(fam)!) < 0;
+    (isOlder ? older : latest).push(m);
+  }
+  return { latest, older };
+}
+
 /** Map a CLI catalog entry to the picker's display shape. */
 export function toPickerModel(info: SessionModelInfo): Model {
   const name = catalogModelName(info);

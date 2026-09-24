@@ -3,7 +3,7 @@ import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Popover, FIELD_TRIGGER } from "@/components/ui/popover";
-import { ACCOUNT_DEFAULT_MARK } from "@/lib/modelCatalog";
+import { ACCOUNT_DEFAULT_MARK, splitLatestModels } from "@/lib/modelCatalog";
 import { EFFORT_LEVELS, EffortPickerDropdown, type EffortLevel } from "@/components/ControlBar";
 
 export interface Model {
@@ -34,8 +34,9 @@ interface ModelPickerDropdownProps {
   /** Effort levels this model supports, from the CLI catalog. */
   effortLevels?: EffortLevel[];
   /** Models the account's catalog does not list but the CLI will accept —
-   *  see `extraModelOptions`. Behind a row of their own: they are the escape
-   *  hatch, not the normal choice. */
+   *  see `extraModelOptions`. Behind the "More models" row with the catalog's
+   *  older versions (splitLatestModels): they are the escape hatch, not the
+   *  normal choice. */
   extras?: Model[];
 }
 
@@ -59,7 +60,11 @@ export function ModelPickerDropdown({
 }: ModelPickerDropdownProps) {
   const [panel, setPanel] = useState<Panel>('models');
   const showEffort = effort !== undefined && onEffortSelect !== undefined;
-  const showMore = (extras?.length ?? 0) > 0;
+  // Older versions of a family the catalog does list come first under More;
+  // the uncatalogued extras are the further-out escape hatch.
+  const { latest, older } = splitLatestModels(models);
+  const more = [...older, ...(extras ?? [])];
+  const showMore = more.length > 0;
 
   if (panel === 'effort' && showEffort) {
     return (
@@ -79,7 +84,7 @@ export function ModelPickerDropdown({
     return (
       <div className="w-[300px] p-1">
         <PanelHeader title="More models" onBack={() => { setPanel('models'); }} />
-        {extras!.map((model) => (
+        {more.map((model) => (
           <button
             key={model.id}
             onClick={() => { onSelect(model.id); }}
@@ -98,7 +103,7 @@ export function ModelPickerDropdown({
 
   return (
     <ModelList
-      models={models}
+      models={latest}
       selectedModel={selectedModel}
       onSelect={onSelect}
       effortName={showEffort ? (EFFORT_LEVELS.find((l) => l.id === effort)?.name ?? effort) : null}

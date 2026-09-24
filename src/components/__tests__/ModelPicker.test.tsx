@@ -92,6 +92,33 @@ describe("ModelPickerDropdown — effort and more-models panels", () => {
     expect(onSelect).toHaveBeenCalledWith("claude-opus-5-5");
   });
 
+  it("puts older versions behind More models, ahead of the extras", () => {
+    const { onSelect } = renderDropdown({
+      models: [
+        { id: "opus", name: "Opus 5.5", description: "", icon: null, shortName: "O", color: "" },
+        { id: "claude-opus-5", name: "Opus 5", description: "", icon: null, shortName: "O", color: "" },
+      ],
+      extras: [{ id: "claude-opus-4-5", name: "Opus 4.5", description: "", icon: null, shortName: "O", color: "" }],
+    });
+    expect(screen.queryByText("Opus 5")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /more models/i }));
+    const names = screen.getAllByRole("button").map((b) => b.textContent);
+    expect(names.indexOf("Opus 5")).toBeLessThan(names.indexOf("Opus 4.5"));
+    fireEvent.click(screen.getByRole("button", { name: "Opus 5" }));
+    expect(onSelect).toHaveBeenCalledWith("claude-opus-5");
+  });
+
+  it("offers More models for older versions even with no extras", () => {
+    renderDropdown({
+      extras: undefined,
+      models: [
+        { id: "opus", name: "Opus 5.5", description: "", icon: null, shortName: "O", color: "" },
+        { id: "claude-opus-5", name: "Opus 5", description: "", icon: null, shortName: "O", color: "" },
+      ],
+    });
+    expect(screen.getByRole("button", { name: /more models/i })).toBeTruthy();
+  });
+
   it("hides both rows when the caller supplies neither", () => {
     renderDropdown({ effort: undefined, onEffortSelect: undefined, extras: [] });
     expect(screen.queryByRole("button", { name: /effort/i })).toBeNull();
