@@ -5,6 +5,18 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.190] — 2026-09-23
+
+### Fixed
+
+- **Bypass mode approved the commands Claude Code insists on asking about.** In bypassPermissions, Claude Code still stops for its own safety checks, such as `rm -rf "$(pwd)"` or a write that escapes the project through a symlink. OmniFex answered those automatically with "allow", so the one question meant for a person never reached one. They now show a permission card. Everything else in Bypass is still approved without asking.
+- **MCP servers that asked a question left the session stuck.** When an MCP server needed input mid-tool-call, Claude Code handed the question to OmniFex and waited, but nothing answered it and an "Unrecognized record" card appeared instead. The question now opens a dialog: a form built from the server's own fields, or, for a browser sign-in, the full address and an **Open in browser** button. Several questions wait their turn, one dialog at a time, and a question Claude Code withdraws closes on its own.
+- **Two Claude Code 2.1.281 notices drew "Unrecognized record" cards**: the one saying effort changes will no longer keep the prompt cache, and the one confirming an MCP browser sign-in finished. Both are now recognised and kept out of the transcript.
+
+### Removed
+
+- **The hidden thinking on/off setting.** The Thinking picker was removed in v0.4.70, but an account default saved before then still turned thinking off. Fable 5, Fable 5.1 and Opus 5.5 now refuse to run with thinking off, so the setting is gone: thinking always follows Claude Code's adaptive default, and stored account defaults are cleaned up on upgrade.
+
 ## [0.4.189] — 2026-09-23
 
 ### Changed
