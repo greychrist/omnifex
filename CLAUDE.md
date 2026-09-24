@@ -345,20 +345,20 @@ Other account rules:
   - Cross-cutting or risky change: `npm run check`, `npm run build`, and `npm run test:coverage`
 - If verification cannot run, say exactly why.
 
-## Commands And Skills
+## Skills
 
-Repo-local commands live in `.claude/commands/`:
+Repo-local skills live in `.claude/skills/` (there is no `.claude/commands/`;
+commands were folded into skills 2026-09-24). Deterministic steps live in each
+skill's `scripts/` and are invoked as `bash ${CLAUDE_SKILL_DIR}/scripts/<x>.sh`;
+the prose in `SKILL.md` covers only the judgment calls.
 
-- `/verify`
-- `/commit`
-- `/resume`
-- `/account-trace`
-
-Repo-local skills live in `.claude/skills/`:
-
-- `version-aware-research`
-- `multi-account-debugging`
-- `omnifex-release`
+- `verify` — the verification gate (`scripts/verify.sh`, `--quick` for check + test); always ends with `rebuild:electron`
+- `commit` — verify, commit, optionally push; no approval step
+- `resume` — "where were we"; git state is pre-injected
+- `omnifex-release` — the release runbook; preflight is pre-injected, gatekeeper and publish checks are scripts
+- `session-trace` — one session UUID → daemon state, CLI transcript, `app_logs`; run before reading code for a stuck session
+- `multi-account-debugging` — project path → account resolution trace
+- `version-aware-research` — when to confirm version-sensitive syntax before relying on memory
 
 ## Legacy Notes
 

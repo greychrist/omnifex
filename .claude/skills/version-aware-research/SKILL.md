@@ -1,49 +1,34 @@
 ---
 name: version-aware-research
-description: Use when syntax, configuration, APIs, or library behavior may be version-sensitive. Guides Claude to use Context7 selectively so research stays current without wasting tokens.
+description: Use when syntax, configuration, CLI flags, APIs, or library behavior may have changed since training — Claude Code settings/hooks/skills/MCP, Electron, Vite, React 19, better-sqlite3, node-pty, Electron Forge — and the exact current form matters.
 ---
 
 # Version-Aware Research
 
-Use this skill when working with libraries, frameworks, or tools whose behavior may have changed since training data.
+Training data is stale for anything that moves monthly. Confirm before relying on memory.
 
-## When To Use
+## When
 
-- React, Vite, Tauri, Tailwind, Axum, rusqlite, MCP, Claude Code settings/plugins
-- Build config, CLI flags, plugin manifests, or JSON schema details
-- Any time the exact syntax or current recommendation matters
+- Claude Code: settings keys, hook events, skill frontmatter, permission rule
+  syntax, stream-json record shapes, MCP server config. Prefer the official
+  docs at code.claude.com over Context7 for these.
+- Electron / Electron Forge / Vite / React 19 / Tailwind / better-sqlite3 /
+  node-pty / vitest: config schema, CLI flags, migration behaviour.
+- Any time two plausible spellings exist (`allowed-tools` vs `allowed_tools`)
+  and the wrong one is silently ignored.
 
-## Research Strategy
+## How
 
-1. Check repo-local patterns first.
-2. If the answer is version-sensitive or uncertain, use Context7.
-3. Pull only the specific docs needed for the decision.
-4. Return to the code and implement immediately.
+1. Check what the repo already does (`rg` for the API or key).
+2. If still uncertain or version-sensitive, look it up: Context7
+   (`resolve-library-id` → `query-docs`) for libraries; WebFetch of the official
+   page for Claude Code.
+3. Ask one narrow question — the flag, the schema, the signature — not "read
+   the docs".
+4. Implement immediately; summarise only the decision-relevant line.
 
-## Context7 Discipline
+## Don't
 
-- Use Context7 for targeted lookup, not broad reading.
-- Ask focused questions like:
-  - exact CLI flag usage
-  - current config schema
-  - current recommended API call
-  - version-specific migration behavior
-- Do not fetch docs for libraries whose usage is already clear from the repo.
-
-## Good Examples
-
-- "What is the current Claude Code plugin manifest shape?"
-- "What does the latest Tauri 2 command signature expect here?"
-- "What is the right TypeScript language server command/config now?"
-
-## Bad Examples
-
-- "Read all React docs"
-- "Read all Tauri docs"
-- "Research this stack generally"
-
-## Output Style
-
-- Summarize only the decision-relevant part.
-- Prefer a short conclusion over long copied excerpts.
-- After research, make the code change instead of stopping at notes.
+- Don't fetch docs for a library whose usage is already clear in the repo.
+- Don't research the stack "generally".
+- Don't stop at notes; the point is the code change.

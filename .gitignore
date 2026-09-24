@@ -58,7 +58,6 @@ temp_lib/
 # never be evaluated.
 .claude/*
 !.claude/skills/
-!.claude/commands/
 
 .superpowers/
 .env.superpowers/
