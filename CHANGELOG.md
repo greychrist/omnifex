@@ -5,6 +5,16 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.189] — 2026-09-23
+
+### Changed
+
+- **The model picker leads with the newest version of each model.** Claude Code lists every version your account can use side by side, so the usual pick sat in a list of eleven. The main list now shows one row per family — for example Opus 5.5, Fable 5.1, Sonnet 5, Haiku 4.5 — plus your account default even when it is an older version. Older versions move under **More models**, ahead of the versions only OmniFex's pricing table knows. The new-session form and the account defaults picker behave the same way.
+
+### Fixed
+
+- **The model picker listed Opus 5.5 twice.** Claude Code's `opus[1m]` entry runs the same model as the account-default row and showed up as a second, identical "Opus 5.5". It is no longer listed.
+
 ## [0.4.188] — 2026-09-23
 
 ### Fixed
