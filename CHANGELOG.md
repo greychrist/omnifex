@@ -5,6 +5,20 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.191] — 2026-09-24
+
+### Added
+
+- **Auto effort.** The effort picker now leads with **Auto**, which sends no level and lets Claude Code use the model's own default. That default differs by model (Opus 5.5 runs at Medium, others at High), so no fixed level could stand in for it. Auto is always offered, including for models with no effort levels of their own, such as Haiku, and it works as an account default, on the new-session form and mid-session.
+
+### Changed
+
+- **Effort descriptions no longer name models.** Which levels a model accepts comes from Claude Code's own model list, so the descriptions now say what each level does rather than which models support it.
+
+### Fixed
+
+- **Two Claude Code 2.1.282 records would have drawn "Unrecognized record" cards**: the API-request records Claude Code can now write into a session file (one per model call, off by default), and a notice sent whenever a session's published artifacts change. Both are now recognised and kept out of the transcript.
+
 ## [0.4.190] — 2026-09-23
 
 ### Fixed
