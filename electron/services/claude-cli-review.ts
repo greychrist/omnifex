@@ -30,6 +30,15 @@ import { buildClaudeEnv } from './util/claude-env';
  * old value and the new one, and file or fix whatever they imply. Bumping it
  * to silence the badge throws away the only drift signal we have.
  *
+ * Undocumented surface OmniFex drives, to diff on every pass:
+ *
+ *  - `side_question` (the side chat, sessions/side-chat.ts). Request
+ *    `{question, history?: {question, response}[]}`; reply
+ *    `{response: string|null, synthetic, usage, refusalFallback?}`;
+ *    cancelled by a host-sent `control_cancel_request {request_id}`, which
+ *    the CLI answers with the error "Side question cancelled". Its own
+ *    deadline is 600 s. Only the SDK's `askSideQuestion()` documents it.
+ *
  * Last review: 2.1.281 -> 2.1.282 on 2026-09-24. Findings:
  *
  *  Changelog coverage: one version in range, 2.1.282, and it has an entry
