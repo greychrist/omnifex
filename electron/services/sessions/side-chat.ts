@@ -12,7 +12,8 @@
 // so a reply that arrives after a close (or a close-and-ask-again) can never
 // land in the new thread.
 
-import type { SideChat, SideChatExchange } from '../../../src/lib/sideChat';
+import { EMPTY_SIDE_CHAT, type SideChat, type SideChatExchange } from '../../../src/lib/sideChat';
+import type { SendToRenderer } from './types';
 
 export const SIDE_CHAT_HISTORY_LIMIT = 20;
 
@@ -88,4 +89,15 @@ export function createSideChatStore(now: () => Date = () => new Date()): SideCha
       return { exchanges: exchanges.map((e) => ({ ...e })) };
     },
   };
+}
+
+/**
+ * End a session's side chat because its engine is going: discard the thread
+ * (bumping the generation, so a question still in flight cannot refill it
+ * when its rejection lands) and tell clients it is empty. Called on engine
+ * exit, on stop(), and when a fresh start replaces a live session.
+ */
+export function endSideChat(store: SideChatStore, tabId: string, sendToRenderer: SendToRenderer | null): void {
+  store.close();
+  sendToRenderer?.(`session-side-chat:${tabId}`, EMPTY_SIDE_CHAT);
 }

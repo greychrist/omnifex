@@ -27,8 +27,18 @@ export interface SideChatPanelProps {
  * The side chat: questions about the session, answered from the conversation
  * so far without interrupting it. Docked beside the messages area rather than
  * overlaying it, since it stays open while you keep working.
+ *
+ * Memoised: AgentSession re-renders on every stream event and every tab stays
+ * mounted, so an open panel would otherwise re-parse all its answers each time.
+ * Every prop the session passes is state or a stable callback.
  */
-export function SideChatPanel({ sideChat, askError, onAsk, onClose, focusRequest = 0 }: SideChatPanelProps): React.JSX.Element {
+export const SideChatPanel = React.memo(function SideChatPanel({
+  sideChat,
+  askError,
+  onAsk,
+  onClose,
+  focusRequest = 0,
+}: SideChatPanelProps): React.JSX.Element {
   const [draft, setDraft] = React.useState('');
   const [confirming, setConfirming] = React.useState(false);
   const inputRef = React.useRef<HTMLTextAreaElement>(null);
@@ -131,7 +141,7 @@ export function SideChatPanel({ sideChat, askError, onAsk, onClose, focusRequest
       </div>
     </ResizableSidePanel>
   );
-}
+});
 
 function Exchange({
   exchange,

@@ -28,7 +28,7 @@ import {
   respondPermission as respondPermissionImpl,
 } from './permissions';
 import { createQueryPassthroughs } from './queries';
-import { createSideChatStore } from './side-chat';
+import { createSideChatStore, endSideChat } from './side-chat';
 import { createElicitationHandlers, respondToElicitation } from './elicitations';
 import { findSystemClaudeBinary, findSystemCodexBinary } from './binary';
 import {
@@ -205,6 +205,7 @@ export function createSessionsService(
     // Close any existing session for this tab
     const existing = sessions.get(tabId);
     if (existing) {
+      endSideChat(existing.sideChat, tabId, sendToRenderer);
       void existing.engine.close().catch(() => { /* ignore */ });
       sessions.delete(tabId);
       ownership?.unregister(tabId);
@@ -502,6 +503,7 @@ export function createSessionsService(
     // A stopped session is not working on anything. Announce before the
     // handle goes, so whoever mirrors the axis learns it.
     setTurn(handle, 'idle', tabId, sendToRenderer);
+    endSideChat(handle.sideChat, tabId, sendToRenderer);
     void handle.engine.close().catch(() => { /* ignore */ });
     sessions.delete(tabId);
     ownership?.unregister(tabId);

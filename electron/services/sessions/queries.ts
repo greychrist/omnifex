@@ -21,7 +21,7 @@ import type {
   SendToRenderer,
 } from './types';
 import { enrichPlugin, type EnrichedPlugin } from './plugins';
-import type { SideChatAsk } from './side-chat';
+import { endSideChat, type SideChatAsk } from './side-chat';
 import { EMPTY_SIDE_CHAT, type SideChat, type SideChatAskResult } from '../../../src/lib/sideChat';
 import type { LoggingService } from '../logging';
 
@@ -144,6 +144,8 @@ export function createQueryPassthroughs(
   const sideChatAborts = new Map<string, AbortController>();
 
   function emitSideChat(tabId: string, handle: SessionHandle): void {
+    // A handle that has been stopped or replaced no longer speaks for the tab.
+    if (sessions.get(tabId) !== handle) return;
     sendToRenderer?.(`session-side-chat:${tabId}`, handle.sideChat.snapshot());
   }
 
@@ -202,10 +204,11 @@ export function createQueryPassthroughs(
   function closeSideChat(tabId: string): void {
     sideChatAborts.get(tabId)?.abort();
     sideChatAborts.delete(tabId);
+    // Even with no session left, a client showing a thread must be told it
+    // is gone — otherwise its panel cannot close.
     const handle = sessions.get(tabId);
-    if (!handle) return;
-    handle.sideChat.close();
-    emitSideChat(tabId, handle);
+    if (handle) endSideChat(handle.sideChat, tabId, sendToRenderer);
+    else sendToRenderer?.(`session-side-chat:${tabId}`, EMPTY_SIDE_CHAT);
   }
 
   function getSideChat(tabId: string): SideChat {
