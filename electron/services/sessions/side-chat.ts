@@ -41,7 +41,7 @@ export function createSideChatStore(now: () => Date = () => new Date()): SideCha
   function pendingExchange(id: string, gen: number): SideChatExchange | null {
     if (gen !== generation) return null;
     const ex = exchanges.find((e) => e.id === id);
-    return ex && ex.status === 'pending' ? ex : null;
+    return ex?.status === 'pending' ? ex : null;
   }
 
   return {

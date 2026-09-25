@@ -19,7 +19,8 @@ export interface SideChatPanelProps {
   onAsk: (question: string) => Promise<boolean>;
   /** Discard the side chat. Only called after confirmation when there is a thread. */
   onClose: () => void;
-  autoFocus?: boolean;
+  /** Bumped by the caller to focus the input — each open, button or `/btw`. */
+  focusRequest?: number;
 }
 
 /**
@@ -27,7 +28,7 @@ export interface SideChatPanelProps {
  * so far without interrupting it. Docked beside the messages area rather than
  * overlaying it, since it stays open while you keep working.
  */
-export function SideChatPanel({ sideChat, askError, onAsk, onClose, autoFocus }: SideChatPanelProps): React.JSX.Element {
+export function SideChatPanel({ sideChat, askError, onAsk, onClose, focusRequest = 0 }: SideChatPanelProps): React.JSX.Element {
   const [draft, setDraft] = React.useState('');
   const [confirming, setConfirming] = React.useState(false);
   const inputRef = React.useRef<HTMLTextAreaElement>(null);
@@ -38,8 +39,8 @@ export function SideChatPanel({ sideChat, askError, onAsk, onClose, autoFocus }:
   const lastStatus = exchanges.at(-1)?.status;
 
   React.useEffect(() => {
-    if (autoFocus) inputRef.current?.focus();
-  }, [autoFocus]);
+    if (focusRequest > 0) inputRef.current?.focus();
+  }, [focusRequest]);
 
   React.useEffect(() => {
     endRef.current?.scrollIntoView?.({ block: 'end' });

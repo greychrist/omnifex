@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Copy,
   ChevronDown,
   ChevronUp,
   X,
@@ -11,10 +10,10 @@ import {
   ArrowLeft,
   Layers,
   GitCompare,
+  MessageCircleQuestion,
 } from "lucide-react";
 import { SessionInspectorPanel } from "@/components/SessionInspectorPanel";
 import { Button } from "@/components/ui/button";
-import { Popover } from "@/components/ui/popover";
 import { api, type Session, type RateLimitSnapshot, type Account, type ResolvePair, type AccountMismatch } from "@/lib/api";
 import { AttentionSlot } from "@/components/AttentionSlot";
 import { SignalBadge } from "@/components/signals/SignalBadge";
@@ -82,6 +81,9 @@ import { SessionCard } from "./SessionCard";
 import { ChatStatusBar } from "./ChatStatusBar";
 import { SessionHeaderResizeHandle } from "./SessionHeaderResizeHandle";
 import { SessionSidePanels, type SessionSidePanelKey } from "./SessionSidePanels";
+import { SideChatPanel } from "./SideChatPanel";
+import { useSideChat } from "@/hooks/useSideChat";
+import { parseBtw } from "@/lib/sideChat";
 import { GitDiffOverlay } from '@/components/git-diff/GitDiffOverlay';
 import { ContextLedgerPanel } from "./ContextLedgerPanel";
 import { foldContextLedger } from "@/lib/contextLedger";
@@ -98,7 +100,6 @@ import { TaskList } from "./claude/tools/TaskList";
 import { fireAndLog, logAndForget } from "@/lib/fireAndLog";
 import { decideResumeSeed } from "@/lib/resumeSeedDecision";
 import { decideAutoStart, decideRebindTarget, shouldShowNewSessionPanel } from "@/lib/sessionAutoStart";
-import { exportAsJsonl, exportAsMarkdown } from "@/lib/sessionExporters";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useSessionLifecycle } from "@/hooks/useSessionLifecycle";
 import { useSendPrompt } from "@/hooks/useSendPrompt";
@@ -301,7 +302,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
 
   const [currentActivity, setCurrentActivity] = useState<string>("Honking");
   const [error, setError] = useState<string | null>(null);
-  const [rawJsonlOutput, setRawJsonlOutput] = useState<string[]>([]);
   // Parallel transcript buffer for Codex tabs. The shared `agent-output:`
   // channel carries both Claude stream-json (handled by `handleJsonlLine`
   // via the JSONL classifier) and Codex notifications (shape `{ method,
@@ -311,7 +311,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   // consolidate the two accumulators behind a single reducer; for now the
   // parallel buffer keeps Task 19 a zero-touch change to the Claude reducer.
   const [codexMessages, setCodexMessages] = useState<AgentMessage[]>([]);
-  const [copyPopoverOpen, setCopyPopoverOpen] = useState(false);
   const [totalTokens, setTotalTokens] = useState(0);
   // The account's resolved default model from its settings.json (`model` key,
   // e.g. "opus[1m]"). When the context gauge is on its client-side fallback —
@@ -744,6 +743,24 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   // Stable: ClaudeTranscript is memoised, and a fresh closure per render would
   // defeat that for the whole transcript.
   const openInspector = useCallback(() => { setSidePanel('inspector'); }, []);
+  // Side chat (the CLI's /btw). Docked beside the messages area and outside
+  // the one-at-a-time overlay rule: it stays open while you keep working.
+  const sideChat = useSideChat(tabId || 'default');
+  const [sideChatOpen, setSideChatOpen] = useState(false);
+  const [sideChatFocus, setSideChatFocus] = useState(0);
+  // Visible while opened here OR while a thread exists — a reload or a second
+  // client shows a side chat in progress without being asked.
+  const sideChatVisible = agent !== 'codex' && (sideChatOpen || sideChat.sideChat.exchanges.length > 0);
+  // The button and a bare `/btw` are one action: open and focus, send nothing.
+  const openSideChat = useCallback(() => {
+    setSideChatOpen(true);
+    setSideChatFocus((n) => n + 1);
+  }, []);
+  const { close: closeSideChatThread, ask: askSideChat } = sideChat;
+  const closeSideChat = useCallback(() => {
+    closeSideChatThread();
+    setSideChatOpen(false);
+  }, [closeSideChatThread]);
   const tabIdRef = useRef(tabId || 'default');
   // Drop any per-tab inflight buffer when this tab unmounts so the
   // module-level Map doesn't leak across long-lived renderer sessions.
@@ -1179,7 +1196,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
         .map((n) => normalizeJsonlNode(n));
 
       streamCtxRef.current.setMessages(nodes);
-      setRawJsonlOutput(history.map(h => JSON.stringify(h)));
 
       // Restore the permission mode the session was last in (resume fidelity).
       // Priority: last mode recorded in the JSONL → account default → leave the
@@ -1262,15 +1278,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
         }
         return;
       }
-      let raw: unknown;
-      let rawString: string;
-      if (typeof payload === 'string') {
-        rawString = payload;
-        raw = JSON.parse(payload);
-      } else {
-        raw = payload;
-        rawString = JSON.stringify(payload);
-      }
+      const raw: unknown = typeof payload === 'string' ? JSON.parse(payload) : payload;
 
       // permission_request — OmniFex-synthetic envelope from the main-process
       // permissions service. Not a JSONL record; classifier doesn't know it.
@@ -1329,9 +1337,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
       }
       if (node.kind === 'stream-event' || node.kind === 'rate-limit' || node.kind === 'lifecycle') return;
       const normalizedNode = normalizeJsonlNode(node);
-
-      // Store raw line.
-      setRawJsonlOutput((prev) => [...prev, rawString]);
 
       const ctx = streamCtxRef.current;
 
@@ -1689,10 +1694,18 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   const handleSendPrompt = useCallback(
     // eslint-disable-next-line react-hooks/preserve-manual-memoization -- preserved as-is.
     (prompt: string, model: string, images?: string[]) => {
+      // `/btw` is the side chat, not a prompt: open it, and ask inline when
+      // there is a question. Codex has no side_question, so it passes through.
+      const btw = agent !== 'codex' ? parseBtw(prompt) : null;
+      if (btw !== null) {
+        openSideChat();
+        if (btw) void askSideChat(btw);
+        return Promise.resolve();
+      }
       isNearBottomRef.current = true;
       return sendPromptRaw(prompt, model, images);
     },
-    [sendPromptRaw],
+    [sendPromptRaw, agent, openSideChat, askSideChat],
   );
 
   // Run /compact from the context-pressure banner through handleSendPrompt so
@@ -1919,16 +1932,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     queuedPromptsRef.current = queuedPrompts;
   }, [queuedPrompts, queuedPromptsRef]);
 
-  const handleCopyAsJsonl = async () => {
-    await exportAsJsonl(rawJsonlOutput);
-    setCopyPopoverOpen(false);
-  };
-
-  const handleCopyAsMarkdown = async () => {
-    await exportAsMarkdown(messages, projectPath);
-    setCopyPopoverOpen(false);
-  };
-
   // Wave 2.3 — "cancel" is now a soft interrupt. The old behavior called
   // api.stopSession() which fully tore down the CLI session, killing the
   // Claude subprocess, losing conversation history, and forcing a restart
@@ -2109,7 +2112,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
 
     // Conversation state
     setMessages([]);
-    setRawJsonlOutput([]);
     setTotalTokens(0);
     setSessionCost(0);
     costSeenKeysRef.current = new Set();
@@ -2636,7 +2638,8 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
             }}
           />
         )}
-        <div className="flex-1 min-h-0 w-full flex flex-col relative">
+        <div className="flex-1 min-h-0 w-full flex flex-row">
+        <div className="flex-1 min-h-0 min-w-0 flex flex-col relative">
 
         {/* Main Content Area */}
         <div className="flex-1 min-h-0 overflow-hidden relative">
@@ -2891,49 +2894,26 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
               }
               extraMenuItems={
                 <>
-                  {messages.length > 0 && (
-                    <Popover
-                      trigger={
-                        <TooltipSimple content="Copy conversation" side="top">
-                          <motion.div
-                            whileTap={{ scale: 0.97 }}
-                            transition={{ duration: 0.15 }}
-                          >
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 bg-background text-muted-foreground hover:text-foreground shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_30%,transparent)]"
-                            >
-                              <Copy className="h-3.5 w-3.5" />
-                            </Button>
-                          </motion.div>
-                        </TooltipSimple>
-                      }
-                      content={
-                        <div className="w-44 p-1">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={fireAndLog('claude-code-session:click', handleCopyAsMarkdown)}
-                            className="w-full justify-start text-xs"
-                          >
-                            Copy as Markdown
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={fireAndLog('claude-code-session:click', handleCopyAsJsonl)}
-                            className="w-full justify-start text-xs"
-                          >
-                            Copy as JSONL
-                          </Button>
-                        </div>
-                      }
-                      open={copyPopoverOpen}
-                      onOpenChange={setCopyPopoverOpen}
-                      side="top"
-                      align="end"
-                    />
+                  {agent !== 'codex' && (
+                    <TooltipSimple content="Side chat" side="top">
+                      <motion.div
+                        whileTap={{ scale: 0.97 }}
+                        transition={{ duration: 0.15 }}
+                      >
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label="Side chat"
+                          onClick={openSideChat}
+                          className={cn(
+                            "h-8 w-8 text-muted-foreground hover:text-foreground shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_30%,transparent)]",
+                            sideChatVisible ? "bg-accent" : "bg-background",
+                          )}
+                        >
+                          <MessageCircleQuestion className={cn("h-3.5 w-3.5", sideChatVisible && "text-primary")} />
+                        </Button>
+                      </motion.div>
+                    </TooltipSimple>
                   )}
                   <TooltipSimple content="MCP Servers" side="top">
                     {/* `relative` hosts the unread badge. Servers the CLI
@@ -3037,6 +3017,18 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
 
         </ErrorBoundary>}
 
+      </div>
+        <AnimatePresence>
+          {sideChatVisible && (
+            <SideChatPanel
+              sideChat={sideChat.sideChat}
+              askError={sideChat.askError}
+              onAsk={sideChat.ask}
+              onClose={closeSideChat}
+              focusRequest={sideChatFocus}
+            />
+          )}
+        </AnimatePresence>
       </div>
 
       {/* Slash Commands Settings Dialog */}

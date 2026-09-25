@@ -80,4 +80,14 @@ describe('SideChatPanel', () => {
     render(<SideChatPanel askError="No live session" onAsk={vi.fn()} onClose={vi.fn()} sideChat={chat([])} />);
     expect(screen.getByText('No live session')).toBeTruthy();
   });
+
+  it('focuses the input on each new focus request', () => {
+    const props = { askError: null, onAsk: vi.fn(), onClose: vi.fn(), sideChat: chat([]) };
+    const { rerender } = render(<SideChatPanel {...props} focusRequest={1} />);
+    const box = screen.getByRole('textbox');
+    expect(document.activeElement).toBe(box);
+    box.blur();
+    rerender(<SideChatPanel {...props} focusRequest={2} />);
+    expect(document.activeElement).toBe(box);
+  });
 });
