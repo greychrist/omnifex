@@ -15,7 +15,7 @@ vi.mock('@/lib/api', () => ({
 import { api } from '@/lib/api';
 import { useSendPrompt } from '../useSendPrompt';
 
-function makeHarness(initialTurnRunning: boolean) {
+function makeHarness(initialTurnRunning: boolean, onSideChat?: (question: string) => void) {
   return () => {
     const persistentSessionRef = useRef(true);
     const unlistenRefs = useRef<(() => void)[]>([]);
@@ -47,6 +47,7 @@ function makeHarness(initialTurnRunning: boolean) {
       setCurrentActivity,
       setSelectedModel,
       setMessages,
+      onSideChat,
     });
     return { hook, turnRunningRef };
   };
@@ -128,4 +129,49 @@ describe('useSendPrompt', () => {
   });
 
   afterEach(() => { cleanup(); });
+
+  // `/btw` is the side chat, never a prompt. This hook is the only place a
+  // prompt is queued, so the check lives here — ahead of the queue — and no
+  // entry path (composer, resend, queue drain, launch prompt) can queue one.
+  describe('/btw', () => {
+    it('routes /btw <q> to the side chat during a running turn, queueing nothing', async () => {
+      const onSideChat = vi.fn();
+      const { result } = renderHook(makeHarness(true, onSideChat));
+      await act(async () => {
+        await result.current.hook.handleSendPrompt('/btw foo', 'opus');
+      });
+      expect(onSideChat).toHaveBeenCalledWith('foo');
+      expect(result.current.hook.queuedPrompts).toHaveLength(0);
+      expect(api.sendMessage).not.toHaveBeenCalled();
+    });
+
+    it('routes a bare /btw mid-turn as an open with nothing to ask', async () => {
+      const onSideChat = vi.fn();
+      const { result } = renderHook(makeHarness(true, onSideChat));
+      await act(async () => {
+        await result.current.hook.handleSendPrompt('/btw', 'opus');
+      });
+      expect(onSideChat).toHaveBeenCalledWith('');
+      expect(result.current.hook.queuedPrompts).toHaveLength(0);
+    });
+
+    it('routes /btw <q> when idle too, sending nothing to the CLI', async () => {
+      const onSideChat = vi.fn();
+      const { result } = renderHook(makeHarness(false, onSideChat));
+      await act(async () => {
+        await result.current.hook.handleSendPrompt('/btw foo', 'opus');
+      });
+      expect(onSideChat).toHaveBeenCalledWith('foo');
+      expect(api.sendMessage).not.toHaveBeenCalled();
+      expect(api.sendStructuredMessage).not.toHaveBeenCalled();
+    });
+
+    it('leaves /btw alone when there is no side chat (Codex): it queues like any prompt', async () => {
+      const { result } = renderHook(makeHarness(true));
+      await act(async () => {
+        await result.current.hook.handleSendPrompt('/btw foo', 'opus');
+      });
+      expect(result.current.hook.queuedPrompts.map((q) => q.prompt)).toEqual(['/btw foo']);
+    });
+  });
 });

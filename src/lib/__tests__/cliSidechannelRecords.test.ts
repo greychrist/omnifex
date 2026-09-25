@@ -51,6 +51,20 @@ describe('isCliSidechannelRecord', () => {
     ).toBe(true);
   });
 
+  // New in CLI 2.1.283: a latch naming the session's plugin "dev mods"
+  // folder (`<config>/dev-mods/<sessionId>`, hot-reloaded as a plugin dir).
+  // `last-wins` in the CLI's merge map; written when dev mods are enabled
+  // and re-emitted on branch writes, like every other latch.
+  it('recognises dev-mods', () => {
+    expect(
+      isCliSidechannelRecord({
+        type: 'dev-mods',
+        folder: '278981fd-8fbb-40dd-ac38-4b0a2371ca4f',
+        sessionId: '278981fd-8fbb-40dd-ac38-4b0a2371ca4f',
+      }),
+    ).toBe(true);
+  });
+
   it('never claims one of the four transcript types', () => {
     for (const type of ['user', 'assistant', 'system', 'attachment']) {
       expect(isCliSidechannelRecord({ type })).toBe(false);

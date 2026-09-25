@@ -22,6 +22,7 @@ import type {
 } from './types';
 import { enrichPlugin, type EnrichedPlugin } from './plugins';
 import { endSideChat, type SideChatAsk } from './side-chat';
+import { refreshCliUsage, type CliUsageSink } from './cli-usage';
 import { EMPTY_SIDE_CHAT, type SideChat, type SideChatAskResult } from '../../../src/lib/sideChat';
 import type { LoggingService } from '../logging';
 
@@ -29,6 +30,7 @@ export function createQueryPassthroughs(
   sessions: Map<string, SessionHandle>,
   sendToRenderer: SendToRenderer | null = null,
   logging: LoggingService | null = null,
+  cliUsageSink: CliUsageSink | null = null,
 ) {
   // Persist a control-protocol diagnostic to app_logs. console.error alone
   // never reaches the DB, which is why mid-session setting changes that
@@ -170,7 +172,9 @@ export function createQueryPassthroughs(
     const abort = new AbortController();
     sideChatAborts.set(tabId, abort);
     handle.engine
-      .sendControlRequest<{ response?: unknown; synthetic?: unknown; usage?: unknown; refusalFallback?: { fallbackModel?: string } }>(
+      // The print-mode wire shape (2.1.282): no usage — the wrapper drops the
+      // fork's token totals — and a snake_case refusal_fallback.
+      .sendControlRequest<{ response?: unknown; synthetic?: unknown; refusal_fallback?: { fallback_model?: string } }>(
         'side_question',
         { question: exchange.question, ...(history.length > 0 && { history }) },
         { timeoutMs: SIDE_QUESTION_TIMEOUT_MS, signal: abort.signal },
@@ -183,8 +187,7 @@ export function createQueryPassthroughs(
           // request's cache-safe params, so the last assistant model is the
           // one that answered — unless the CLI fell back after a refusal.
           model: handle.lastModel ?? null,
-          fallback_model: res?.refusalFallback?.fallbackModel ?? null,
-          usage: res?.usage ?? null,
+          fallback_model: res?.refusal_fallback?.fallback_model ?? null,
           synthetic: res?.synthetic ?? null,
           response_chars: response?.length ?? 0,
         });
@@ -197,6 +200,9 @@ export function createQueryPassthroughs(
       })
       .finally(() => {
         if (sideChatAborts.get(tabId) === abort) sideChatAborts.delete(tabId);
+        // The reply carries no usage, and no result may follow a question
+        // asked between turns: read the CLI's totals now so the spend lands.
+        if (cliUsageSink && sessions.get(tabId) === handle) refreshCliUsage(handle, cliUsageSink);
       });
     return { ok: true };
   }

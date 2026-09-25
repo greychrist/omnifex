@@ -83,7 +83,7 @@ import { SessionHeaderResizeHandle } from "./SessionHeaderResizeHandle";
 import { SessionSidePanels, type SessionSidePanelKey } from "./SessionSidePanels";
 import { SideChatPanel } from "./SideChatPanel";
 import { useSideChat } from "@/hooks/useSideChat";
-import { parseBtw } from "@/lib/sideChat";
+import { useGitWatchVisibility } from "@/hooks/useGitWatchVisibility";
 import { GitDiffOverlay } from '@/components/git-diff/GitDiffOverlay';
 import { ContextLedgerPanel } from "./ContextLedgerPanel";
 import { foldContextLedger } from "@/lib/contextLedger";
@@ -657,6 +657,9 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     };
   }, [projectPath]);
 
+  // Poll git only while someone can see this tab's badges.
+  useGitWatchVisibility(gitWatchId, isActive);
+
   // Project status + sibling worktrees derived from the unified snapshot.
   // `gitStatus` keeps the existing renderer ergonomics for the project badge;
   // `worktreeList` mirrors the snapshot's `worktrees[]` for the list below.
@@ -757,6 +760,12 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     setSideChatFocus((n) => n + 1);
   }, []);
   const { close: closeSideChatThread, ask: askSideChat } = sideChat;
+  // `/btw` from any send path lands here (useSendPrompt checks it before
+  // queueing): open the panel, and ask when there is a question.
+  const routeToSideChat = useCallback((question: string) => {
+    openSideChat();
+    if (question) void askSideChat(question);
+  }, [openSideChat, askSideChat]);
   const closeSideChat = useCallback(() => {
     closeSideChatThread();
     setSideChatOpen(false);
@@ -1686,6 +1695,8 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     setCurrentActivity,
     setSelectedModel,
     setMessages,
+    // Codex has no side_question: `/btw` stays an ordinary prompt there.
+    onSideChat: agent === 'codex' ? undefined : routeToSideChat,
   });
 
   // Wrap sendPrompt so that sending a new prompt always re-engages bottom-stickiness.
@@ -1694,18 +1705,10 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   const handleSendPrompt = useCallback(
     // eslint-disable-next-line react-hooks/preserve-manual-memoization -- preserved as-is.
     (prompt: string, model: string, images?: string[]) => {
-      // `/btw` is the side chat, not a prompt: open it, and ask inline when
-      // there is a question. Codex has no side_question, so it passes through.
-      const btw = agent !== 'codex' ? parseBtw(prompt) : null;
-      if (btw !== null) {
-        openSideChat();
-        if (btw) void askSideChat(btw);
-        return Promise.resolve();
-      }
       isNearBottomRef.current = true;
       return sendPromptRaw(prompt, model, images);
     },
-    [sendPromptRaw, agent, openSideChat, askSideChat],
+    [sendPromptRaw],
   );
 
   // Run /compact from the context-pressure banner through handleSendPrompt so

@@ -13,6 +13,9 @@ import type { Database } from '../database';
 import { createModelPricingService } from '../model-pricing';
 import type { ModelPricingInput } from '../../../src/lib/pricing';
 import { computeSessionCost, type SessionCostDailyRow } from './session-cost-core';
+import { extractDedupedUsage } from './usage-extract';
+import { createCliProcessUsageStore, type CliProcessUsage } from './cli-process-usage';
+import { computeUnloggedRows, UNLOGGED_SESSION_PREFIX } from './unlogged-spend';
 import {
   INTERNAL_KINDS,
   INTERNAL_LABEL,
@@ -314,6 +317,16 @@ function whereClause(filters: CostHistoryFilters): { sql: string; params: unknow
   return { sql: clauses.length ? `WHERE ${clauses.join(' AND ')}` : '', params };
 }
 
+/**
+ * The session a row belongs to. `cli-unlogged-<id>` rows are that session's
+ * spend the transcript never recorded; they carry their own id only so the
+ * transcript rescan (`replaceSession(<id>)`) cannot delete them. Every count
+ * and per-session grouping reads through this, so they are never a session of
+ * their own.
+ */
+const SESSION_KEY = `CASE WHEN session_id LIKE '${UNLOGGED_SESSION_PREFIX}%'
+  THEN substr(session_id, ${UNLOGGED_SESSION_PREFIX.length + 1}) ELSE session_id END`;
+
 /** The SUM columns every grouped query shares.
  *
  *  `session_count` is COUNT(DISTINCT ...), not a SUM — a session spanning two
@@ -322,7 +335,7 @@ function whereClause(filters: CostHistoryFilters): { sql: string; params: unknow
 const SUM_COLUMNS = `
   SUM(cost_usd) AS cost_usd,
   SUM(request_count) AS request_count,
-  COUNT(DISTINCT session_id) AS session_count,
+  COUNT(DISTINCT ${SESSION_KEY}) AS session_count,
   SUM(input_tokens) AS input_tokens,
   SUM(output_tokens) AS output_tokens,
   SUM(cache_read_tokens) AS cache_read_tokens,
@@ -358,6 +371,11 @@ function recoverProjectPath(content: string, dirName: string): string {
 function sessionFileSignature(fsDeps: CostFs, mainPath: string, subagentsDir: string): string {
   const main = fsDeps.stat(mainPath);
   return `${main?.size ?? 0}:${main?.mtimeMs ?? 0}|${subagentSignature(fsDeps, subagentsDir)}`;
+}
+
+/** What changes when the CLI reports a new figure for any of the session's processes. */
+function cliUsageSignature(processes: readonly CliProcessUsage[]): string {
+  return processes.map((p) => `${p.processId}:${p.baselineAt ?? ''}:${p.latestAt ?? ''}`).join(',');
 }
 
 export function createCostHistoryService(db: Database, fsDeps: CostFs = nodeCostFs): CostHistoryService {
@@ -452,7 +470,7 @@ export function createCostHistoryService(db: Database, fsDeps: CostFs = nodeCost
       .prepare(`
         SELECT COALESCE(SUM(cost_usd), 0) AS cost_usd,
                COALESCE(SUM(request_count), 0) AS request_count,
-               COUNT(DISTINCT session_id) AS session_count,
+               COUNT(DISTINCT ${SESSION_KEY}) AS session_count,
                COALESCE(SUM(input_tokens), 0) AS input_tokens,
                COALESCE(SUM(output_tokens), 0) AS output_tokens,
                COALESCE(SUM(cache_read_tokens), 0) AS cache_read_tokens,
@@ -587,7 +605,7 @@ export function createCostHistoryService(db: Database, fsDeps: CostFs = nodeCost
     const { sql, params } = whereClause(filters);
     return db.raw
       .prepare(`
-        SELECT session_id, account_name, project_path,
+        SELECT ${SESSION_KEY} AS session_id, account_name, project_path,
                MIN(date) AS first_date, MAX(date) AS last_date,
                SUM(cost_usd) AS cost_usd,
                SUM(input_tokens) AS input_tokens,
@@ -595,13 +613,18 @@ export function createCostHistoryService(db: Database, fsDeps: CostFs = nodeCost
                SUM(cache_read_tokens) AS cache_read_tokens,
                SUM(cache_write_5m_tokens + cache_write_1h_tokens) AS cache_write_tokens
         FROM session_cost_daily ${sql}
-        GROUP BY session_id ORDER BY cost_usd DESC LIMIT 500
+        GROUP BY ${SESSION_KEY} ORDER BY cost_usd DESC LIMIT 500
       `)
       .all(...params) as CostSessionRow[];
   }
 
   function backfill(accounts: AccountLike[], opts?: BackfillOptions): { sessionsScanned: number } {
     const overrides = createModelPricingService(db).toOverrides();
+    // The CLI's own per-process totals, read once per sweep. A new figure
+    // (a side question after the last turn) changes nothing on disk, so it
+    // joins the file signature below — otherwise the session would be skipped
+    // as unchanged and the spend would wait for its next transcript write.
+    const cliUsage = createCliProcessUsageStore(db).listBySession();
     let sessionsScanned = 0;
     for (const account of accounts) {
       const projectsDir = path.join(account.config_dir, 'projects');
@@ -615,7 +638,8 @@ export function createCostHistoryService(db: Database, fsDeps: CostFs = nodeCost
           const mainPath = path.join(projectDir, entry.name);
           const subagentsDir = path.join(projectDir, sessionId, 'subagents');
 
-          const signature = sessionFileSignature(fsDeps, mainPath, subagentsDir);
+          const processes = cliUsage.get(sessionId) ?? [];
+          const signature = `${sessionFileSignature(fsDeps, mainPath, subagentsDir)}|${cliUsageSignature(processes)}`;
           if (scannedSignatures.get(mainPath) === signature) continue; // unchanged, skip entirely
 
           const sessionContent = fsDeps.readFile(mainPath);
@@ -634,6 +658,21 @@ export function createCostHistoryService(db: Database, fsDeps: CostFs = nodeCost
             overrides,
           });
           replaceSession(sessionId, dailyRows);
+          if (processes.length > 0) {
+            const { rows, skipped } = computeUnloggedRows({
+              sessionId,
+              accountName: account.name,
+              configDir: account.config_dir,
+              projectPath,
+              processes,
+              transcript: [sessionContent, ...subagentContents].flatMap((c) => extractDedupedUsage(c)),
+              overrides,
+            });
+            for (const skip of skipped) {
+              console.warn(`[cost-history] unlogged CLI spend not priced for session ${sessionId}, process ${skip.processId}: ${skip.reason}`);
+            }
+            replaceSession(`${UNLOGGED_SESSION_PREFIX}${sessionId}`, rows);
+          }
           scannedSignatures.set(mainPath, signature);
           sessionsScanned += 1;
         }

@@ -3,6 +3,7 @@ import path from 'node:path';
 import { createDatabase, type Database } from '../services/database';
 import { createCostHistoryService, type CostFs } from '../services/cost/cost-history';
 import type { SessionCostDailyRow } from '../services/cost/session-cost-core';
+import { createCliProcessUsageStore } from '../services/cost/cli-process-usage';
 
 function row(partial: Partial<SessionCostDailyRow>): SessionCostDailyRow {
   return {
@@ -191,5 +192,69 @@ describe('cost-history', () => {
     expect(weeks[0].cost_usd).toBeCloseTo(3, 10);
     expect(weeks[1].cost_usd).toBeCloseTo(5, 10);
     expect(weeks[0].period).not.toBe(weeks[1].period);
+  });
+
+  // Spend the CLI counted but no transcript records — side questions, title
+  // generation — priced from cli_process_usage as cli-unlogged-<session> rows.
+  describe('unlogged CLI spend', () => {
+    const CFG = '/cfg';
+    const PROJ_DIR = path.join(CFG, 'projects', '-Users-me-proj');
+    const SESSION = path.join(PROJ_DIR, 'sessA.jsonl');
+    const line = JSON.stringify({
+      type: 'assistant', requestId: 'r1', timestamp: '2026-09-25T10:30:00Z', cwd: '/Users/me/proj',
+      message: { id: 'm1', model: 'claude-opus-5-5', usage: { output_tokens: 100 } },
+    });
+    const world = () => {
+      const files: Record<string, string> = { [SESSION]: line };
+      const fakeFs: CostFs = {
+        readFile: (p) => files[p] ?? null,
+        listDir: (p) => ({
+          [path.join(CFG, 'projects')]: [{ name: '-Users-me-proj', isDirectory: true }],
+          [PROJ_DIR]: [{ name: 'sessA.jsonl', isDirectory: false }],
+        } as Record<string, Array<{ name: string; isDirectory: boolean }>>)[p] ?? [],
+        stat: (p) => (p in files ? { mtimeMs: 1, size: files[p].length } : null),
+      };
+      return fakeFs;
+    };
+    const record = (outputTokens: number, at: string) => {
+      const store = createCliProcessUsageStore(db);
+      store.record({ sessionId: 'sessA', processId: 'p1', startedAt: '2026-09-25T10:00:00.000Z', phase: 'baseline', at: '2026-09-25T10:00:01.000Z', modelUsage: {} });
+      store.record({
+        sessionId: 'sessA', processId: 'p1', startedAt: '2026-09-25T10:00:00.000Z', phase: 'latest', at,
+        modelUsage: { 'claude-opus-5-5[1m]': { inputTokens: 0, outputTokens, cacheReadInputTokens: 0, cacheCreationInputTokens: 0 } },
+      });
+    };
+    const unlogged = () => db.raw
+      .prepare("SELECT * FROM session_cost_daily WHERE session_id = 'cli-unlogged-sessA'")
+      .all() as (SessionCostDailyRow & { internal_kind: string })[];
+
+    it('backfill writes the unlogged remainder under the session\'s project and account', () => {
+      record(160, '2026-09-25T11:00:00.000Z');
+      createCostHistoryService(db, world()).backfill([{ name: 'Work', config_dir: CFG }]);
+      expect(unlogged()).toEqual([expect.objectContaining({
+        output_tokens: 60, project_path: '/Users/me/proj', account_name: 'Work',
+        config_dir: CFG, internal_kind: 'cli-unlogged', model: 'claude-opus-5-5',
+      })]);
+    });
+
+    it('a newer CLI figure rescans the session even when its transcript did not change', () => {
+      record(160, '2026-09-25T11:00:00.000Z');
+      const svc = createCostHistoryService(db, world());
+      svc.backfill([{ name: 'Work', config_dir: CFG }]);
+      record(260, '2026-09-25T11:05:00.000Z'); // a side question after the last turn
+      expect(svc.backfill([{ name: 'Work', config_dir: CFG }]).sessionsScanned).toBe(1);
+      expect(unlogged()[0].output_tokens).toBe(160);
+    });
+
+    it('reports unlogged spend as part of its session, not as a session of its own', () => {
+      record(160, '2026-09-25T11:00:00.000Z');
+      const svc = createCostHistoryService(db, world());
+      svc.backfill([{ name: 'Work', config_dir: CFG }]);
+      const sessions = svc.sessions({});
+      expect(sessions.map((s) => s.session_id)).toEqual(['sessA']);
+      expect(svc.totals({}).session_count).toBe(1);
+      const expectedTotal = (db.raw.prepare('SELECT SUM(cost_usd) AS c FROM session_cost_daily').get() as { c: number }).c;
+      expect(sessions[0].cost_usd).toBeCloseTo(expectedTotal, 10);
+    });
   });
 });

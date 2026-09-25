@@ -681,7 +681,8 @@ describe('side chat', () => {
     sent.filter((e) => e.channel === 'session-side-chat:tab1').map((e) => e.args[0] as { exchanges: Record<string, unknown>[] });
 
   it('sends side_question with a 600s timeout and emits pending then answered', async () => {
-    const { engine, calls } = createEngine({ control: () => ({ response: 'It is 42.', synthetic: false, usage: { output_tokens: 5 } }) });
+    // The wire shape as 2.1.282's print-mode handler sends it: no usage.
+    const { engine, calls } = createEngine({ control: () => ({ response: 'It is 42.', synthetic: false }) });
     const { q, sent, meta, sessions } = setup({ engine });
     (sessions.get('tab1') as unknown as { lastModel: string }).lastModel = 'claude-fable-5-1';
     await expect(q.askSideQuestion('tab1', 'meaning?')).resolves.toEqual({ ok: true });
@@ -692,13 +693,19 @@ describe('side chat', () => {
     expect(pushes[0].exchanges[0].status).toBe('pending');
     expect(pushes.at(-1)?.exchanges[0]).toMatchObject({ status: 'answered', answer: 'It is 42.' });
     expect(meta()).toMatchObject({
-      op: 'side_question', ok: true, model: 'claude-fable-5-1', fallback_model: null,
-      usage: { output_tokens: 5 }, response_chars: 9,
+      op: 'side_question', ok: true, model: 'claude-fable-5-1', fallback_model: null, response_chars: 9,
     });
+    // The reply carries no usage on stdio, so the log does not pretend to.
+    expect(meta()).not.toHaveProperty('usage');
   });
 
   it('logs the refusal fallback model when the CLI switched', async () => {
-    const { engine } = createEngine({ control: () => ({ response: 'x', refusalFallback: { fallbackModel: 'claude-opus-5-5' } }) });
+    // snake_case on the wire: the print-mode wrapper renames the fork's
+    // camelCase refusalFallback before replying.
+    const { engine } = createEngine({ control: () => ({
+      response: 'x', synthetic: false,
+      refusal_fallback: { original_model: 'claude-fable-5-1', fallback_model: 'claude-opus-5-5', content: 'x' },
+    }) });
     const { q, meta } = setup({ engine });
     await q.askSideQuestion('tab1', 'q');
     await flush();

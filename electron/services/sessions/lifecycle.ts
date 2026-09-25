@@ -29,6 +29,7 @@ import {
 } from './permissions';
 import { createQueryPassthroughs } from './queries';
 import { createSideChatStore, endSideChat } from './side-chat';
+import { beginCliProcess, type CliUsageSink } from './cli-usage';
 import { createElicitationHandlers, respondToElicitation } from './elicitations';
 import { findSystemClaudeBinary, findSystemCodexBinary } from './binary';
 import {
@@ -123,11 +124,18 @@ export function createSessionsService(
    * wins; unset, sessions fall back to plain discovery.
    */
   resolveClaudeBinary: (() => string | null) | null = null,
+  /**
+   * Optional recorder for the CLI's own running token totals — the spend the
+   * transcript never shows (side questions, title generation). main and the
+   * daemon both wire it to `createCliProcessUsageStore(db).record`; the cost
+   * sweep prices what the transcript lacks. See sessions/cli-usage.ts.
+   */
+  cliUsageSink: CliUsageSink | null = null,
 ): SessionsService {
   const sessions = new Map<string, SessionHandle>();
   // Hoisted so both the public return and stop()'s plugin-cache eviction
   // share the same instance.
-  const queryPassthroughs = createQueryPassthroughs(sessions, sendToRenderer, logging);
+  const queryPassthroughs = createQueryPassthroughs(sessions, sendToRenderer, logging, cliUsageSink);
 
   const runtimeDeps: RuntimeDeps = {
     sendToRenderer,
@@ -138,6 +146,7 @@ export function createSessionsService(
     logging,
     modelCatalogSink,
     accountMismatchSink,
+    cliUsageSink,
   };
 
   // -------------------------------------------------------------------------
@@ -344,6 +353,8 @@ export function createSessionsService(
       resume,
     }).then(async () => {
       if (sessions.get(tabId) !== handle) return;
+      // Baseline the CLI's running totals before this process spends anything.
+      if (cliUsageSink) beginCliProcess(handle, cliUsageSink);
       // Apply OmniFex-extended permission modes ('auto', 'dontAsk') the
       // CLI's argv parser doesn't accept. No-op for argv-valid modes.
       if (params.permissionMode) {

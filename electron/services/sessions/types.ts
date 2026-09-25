@@ -494,6 +494,12 @@ export interface SessionHandle {
    * side question's fork runs on.
    */
   lastModel?: string;
+  /**
+   * The CLI process running this session now: set by `beginCliProcess` on
+   * every engine start, so the CLI's running totals can be tied to a process
+   * and a baseline. See sessions/cli-usage.ts.
+   */
+  cliProcess?: { id: string; startedAt: string };
   projectPath: string;
   configDir: string;
   /**

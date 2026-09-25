@@ -227,6 +227,8 @@ export interface Services {
     }>;
     reconnectSession(watchId: string): Promise<import('../services/git-watcher').SessionGitSnapshot | null>;
     stopSession(watchId: string): void;
+    /** Whether anyone is looking at the watch; polling pauses while nobody is. */
+    setSessionVisible(watchId: string, visible: boolean): void;
   };
   branchColors?: {
     listForProject(projectPath: string): unknown;
@@ -937,6 +939,12 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
       const watchId = (p?.watchId ?? p?.watch_id) as string;
       if (!watchId || !gitWatcher) return null;
       gitWatcher.stopSession(watchId);
+      return null;
+    }),
+    set_session_git_watch_visible: wrapWith(async (p: Record<string, unknown>) => {
+      const watchId = (p?.watchId ?? p?.watch_id) as string;
+      if (!watchId || !gitWatcher) return null;
+      gitWatcher.setSessionVisible(watchId, p?.visible !== false);
       return null;
     }),
     reconnect_session_git_watch: wrapWith(async (p: Record<string, unknown>) => {

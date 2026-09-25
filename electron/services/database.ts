@@ -189,6 +189,35 @@ const BRAIN_SPEND_DDL = `
 `;
 
 /**
+ * The CLI's own running per-model token totals, one row per CLI process
+ * (`docs/superpowers/specs/2026-09-25-side-chat-design.md`, "Cost").
+ *
+ * The transcript is not the whole bill: the CLI runs forks with
+ * `skipTranscript` — side questions, title generation — that never reach a
+ * JSONL, but it does count them in the totals it reports on every `result`
+ * and from `get_usage`. `baseline_json` is taken before the process spends
+ * anything (a `--resume` may restore an earlier process's totals, or may
+ * not); `latest_json` is the newest figure. Their difference is what the
+ * process spent; what the transcript lacks of it is priced as
+ * `cli-unlogged-<session>` rows by the cost sweep.
+ *
+ * Kept apart from session_cost_daily for the same reason brain_spend is: that
+ * table is derived and replaced wholesale per session_id, this is evidence.
+ */
+const CLI_PROCESS_USAGE_DDL = `
+  CREATE TABLE IF NOT EXISTS cli_process_usage (
+    session_id TEXT NOT NULL,
+    process_id TEXT NOT NULL,
+    started_at TEXT NOT NULL,
+    baseline_json TEXT,
+    baseline_at TEXT,
+    latest_json TEXT,
+    latest_at TEXT,
+    PRIMARY KEY (session_id, process_id)
+  );
+`;
+
+/**
  * User-editable model pricing — the delta layer over the rates this build
  * shipped with. Shared by `initSchema` (fresh installs) and migration 25
  * (existing ones) so the two cannot drift.
@@ -1143,6 +1172,20 @@ const migrations: Migration[] = [
       }
     },
   },
+  {
+    version: 28,
+    description:
+      'Add cli_process_usage: the CLI\'s own running per-model token totals '
+      + 'for each CLI process, a baseline and the latest figure. The '
+      + 'transcript-derived cost table cannot see forks the CLI runs with '
+      + 'skipTranscript (side questions, title generation), but the CLI counts '
+      + 'them; the difference is priced into cli-unlogged-<session> rows. '
+      + 'Shared with initSchema via CLI_PROCESS_USAGE_DDL so the two cannot '
+      + 'drift.',
+    up: (db) => {
+      db.exec(CLI_PROCESS_USAGE_DDL);
+    },
+  },
 ];
 
 /**
@@ -1394,4 +1437,5 @@ function initSchema(db: BetterSqlite3.Database): void {
   db.exec(BRAIN_TABLES_DDL);
   // Likewise for the spend ledger and migration v20.
   db.exec(BRAIN_SPEND_DDL);
+  db.exec(CLI_PROCESS_USAGE_DDL);
 }

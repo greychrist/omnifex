@@ -2618,6 +2618,14 @@ export const api = {
   },
 
   /**
+   * Whether anyone can see this watch. The watcher polls a repository only
+   * while at least one of its watches is visible. See useGitWatchVisibility.
+   */
+  async setSessionGitWatchVisible(watchId: string, visible: boolean): Promise<void> {
+    await apiCall("set_session_git_watch_visible", { watchId, visible });
+  },
+
+  /**
    * Tear down + recreate the watch's internal fs.watch handles and force a
    * fresh refresh cycle (re-list peers, re-read every path). Returns the
    * latest snapshot, or null if the watchId is unknown.

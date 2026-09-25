@@ -1,6 +1,7 @@
 import { useState, useRef } from "react";
 import { api, type Session } from "@/lib/api";
 import type { JsonlNode } from "@/types/jsonl";
+import { parseBtw } from "@/lib/sideChat";
 
 export interface QueuedPromptItem {
   id: string;
@@ -39,6 +40,12 @@ interface UseSendPromptArgs {
   setCurrentActivity: React.Dispatch<React.SetStateAction<string>>;
   setSelectedModel: React.Dispatch<React.SetStateAction<string>>;
   setMessages: React.Dispatch<React.SetStateAction<JsonlNode[]>>;
+  /**
+   * The side chat. `/btw <q>` goes here with `q`, a bare `/btw` with `''`,
+   * instead of being sent or queued. Omitted for engines with no side chat
+   * (Codex), where `/btw` stays an ordinary prompt.
+   */
+  onSideChat?: (question: string) => void;
 }
 
 interface UseSendPromptReturn {
@@ -65,6 +72,7 @@ export function useSendPrompt({
   setCurrentActivity,
   setSelectedModel,
   setMessages,
+  onSideChat,
 }: UseSendPromptArgs): UseSendPromptReturn {
   const [queuedPrompts, setQueuedPrompts] = useState<QueuedPromptItem[]>([]);
   const queuedPromptsRef = useRef<QueuedPromptItem[]>([]);
@@ -82,6 +90,16 @@ export function useSendPrompt({
   ) => {
     if (!projectPath) {
       setError("Please select a project directory first");
+      return;
+    }
+
+    // `/btw` is the side chat, not a prompt. Checked here, ahead of the
+    // queue, because this is the one place a prompt is queued: every entry
+    // path (composer, resend, queue drain, launch prompt) comes through, so
+    // none of them can queue a side question behind a running turn.
+    const btw = onSideChat ? parseBtw(prompt) : null;
+    if (btw !== null) {
+      onSideChat?.(btw);
       return;
     }
 

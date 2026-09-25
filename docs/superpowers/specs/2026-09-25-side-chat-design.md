@@ -19,9 +19,11 @@ Verified against the installed binary, 2.1.282.
 
 - A `side_question` control request on the stdio control channel:
   `{subtype:'side_question', question: string, history?: {question, response}[]}`.
-- Reply: `{response: string | null, synthetic: boolean, usage, refusalFallback?}`.
-  `response: null` means no answer. `usage` is the fork's token total; side
-  chat does not read it (see "Cost").
+- Reply: `{response: string | null, synthetic: boolean, refusal_fallback?:
+  {original_model, fallback_model, content}}`. `response: null` means no
+  answer. The fork computes a `usage`, but the print-mode wrapper drops it
+  before replying (verified in 2.1.282's binary, and `null` in both real
+  replies logged 2026-09-25), so no per-call spend reaches the host. See "Cost".
 - Implementation: forks the current context with cache-safe params (reads the
   warm prompt cache), `maxTurns: 1`, every tool denied ("Side questions cannot
   use tools"), `skipCacheWrite`, `skipTranscript`. Nothing lands in the JSONL.
@@ -223,27 +225,64 @@ the panel and adds the button — the state does not go into that component.
 
 ## Cost
 
-Side chat does not track its own spend.
+Side-chat spend is counted, but not per question: the CLI never tells the host
+what a side question cost. The print-mode wrapper drops the fork's `usage`
+(verified in 2.1.282; `null` in both real replies logged 2026-09-25). What the
+CLI does report is its own running per-model token totals for the process —
+`modelUsage` on every `result`, `session.model_usage` from `get_usage` — and
+those include every call it keeps out of the transcript: side questions, title
+generation, anything run with `skipTranscript`. So the fix counts that whole
+gap at once, which side chat is one instance of.
 
-Observed in session `cf57222a-931a-4502-9a20-531f80cd4b0f` (TUI, three `/btw`
-calls): the JSONL holds nothing from the side questions, but the CLI's
-`cost-state` record — its own running total — counts them. Its Opus
-`cacheReadInputTokens` ran 447k over the transcript's (about six extra reads of
-the ~75k context: the three side questions plus, likely, three prompt
-suggestions), ≈ $0.19 of a $0.87 session.
+**Capture** — `electron/services/sessions/cli-usage.ts`, shared by main and
+the daemon (both pass `createCliProcessUsageStore(db).record` as the sessions
+service's last argument; `claude-binary-wiring.test.ts` pins it in both roots):
 
-So side-question spend is one instance of a wider gap: every fork the CLI runs
-with `skipTranscript` (side questions, prompt suggestions, and the like) is
-invisible to the transcript-derived Cost Report. That gap is fixed once, for all
-of them, by reconciling against `cost-state` — separate work with its own spec.
-Side chat adds no cost code. Until that fix exists, side-chat spend is
-unreported (a few cents a question). The one concession: the ask path logs the
-reply's `usage`, `synthetic` and answer length (not the text), plus the model —
-the handle's last assistant model, since the reply names none and sessions
-switch models mid-way, and the refusal-fallback model when the CLI used one —
-through
-`logControl`, as `setTitle` does, so real per-question numbers are in
-`app_logs` if the reconciliation is ever weighed.
+- `beginCliProcess` on every engine start (first start, resume, restart): a new
+  process id, then a **baseline** from `get_usage {skip_behaviors:true}`,
+  before the process spends anything. A baseline is required because
+  `--resume` restores an earlier process's saved totals when its `cost-state`
+  record exists, and does not when it doesn't.
+- `recordResultUsage` on every `result`: the **latest** totals.
+- `refreshCliUsage` after every side question settles: the latest totals
+  again, because no `result` follows a question asked between turns.
+- Stored in `cli_process_usage` (migration v28): one row per
+  `(session_id, process_id)` with `baseline_json` / `latest_json`.
+- Auxiliary: every path swallows and logs. A failed read or a failing store
+  never fails or delays the side question or the session.
+
+**Pricing** — `electron/services/cost/unlogged-spend.ts`, run by the hourly cost
+sweep (`cost-history.ts` `backfill`):
+
+- Per process and model: `latest − baseline − transcript usage inside the
+  process window` (main JSONL + every subagent JSONL, from the process's
+  `startedAt` to the next process's), clamped at zero per token category.
+- Priced with `computeMessageCost` and the user's `model_pricing` overrides,
+  like any transcript row. The CLI's totals carry no cache-write TTL split, so
+  those tokens take the existing rule for unsplit usage
+  (`splitCacheWriteTokens`: the 5-minute rate, stored in the 5-minute column).
+- Written as `session_cost_daily` rows with `session_id = cli-unlogged-<id>`,
+  `internal_kind = 'cli-unlogged'`, the session's own account, config dir and
+  project, dated by the process's latest figure. `request_count` is 0 — the
+  CLI reports totals, not calls.
+- A process missing its baseline or its latest figure is skipped and logged,
+  never estimated.
+- A new figure with no transcript change still rescans the session: the
+  process ids and timestamps are part of the sweep's skip signature.
+
+**Nothing counted twice.** `replaceSession(<id>)` deletes a session's rows
+wholesale on every rescan, so the CLI-derived rows carry their own id and
+survive it. They are the complement of the transcript by construction. The
+rule: nothing else may record CLI spend that lacks a transcript — not a
+per-call side-question ledger, not a `cost-state` reconciliation — because
+it is already inside the CLI's totals and so already in these rows. The Cost
+Report counts `cli-unlogged-<id>` as part of `<id>` (`SESSION_KEY` in
+`cost-history.ts`), so it never appears as a session of its own.
+
+**Limits.** Hourly, not live: the rows land on the next cost sweep. Sessions
+from before this change have no baselines and gain no rows. The ask path still
+logs `synthetic`, the answer length and the answering model through
+`logControl`; it cannot log tokens, since the reply carries none.
 
 ## Accepted consequences
 

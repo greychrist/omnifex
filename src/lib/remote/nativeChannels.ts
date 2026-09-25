@@ -71,6 +71,8 @@ export const NATIVE_EVENT_PREFIXES: readonly string[] = [
   'tab-status:',
   'codex-auth-status-changed',
   'account-identity-changed',
+  // powerMonitor lives in main; the daemon never sees a lock screen.
+  'system-power-state',
 ];
 
 export function isNativeEventChannel(channel: string): boolean {

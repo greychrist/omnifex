@@ -34,10 +34,101 @@ import { buildClaudeEnv } from './util/claude-env';
  *
  *  - `side_question` (the side chat, sessions/side-chat.ts). Request
  *    `{question, history?: {question, response}[]}`; reply
- *    `{response: string|null, synthetic, usage, refusalFallback?}`;
+ *    `{response: string|null, synthetic, refusal_fallback?: {original_model,
+ *    fallback_model, content}}` — the print-mode wrapper drops the fork's
+ *    `usage` and renames `refusalFallback` to snake_case, so no per-call
+ *    spend reaches the host;
  *    cancelled by a host-sent `control_cancel_request {request_id}`, which
  *    the CLI answers with the error "Side question cancelled". Its own
  *    deadline is 600 s. Only the SDK's `askSideQuestion()` documents it.
+ *
+ * Last review: 2.1.282 -> 2.1.283 on 2026-09-25. Findings:
+ *
+ *  Changelog coverage: one version in range, 2.1.283, and it has an entry
+ *  (~90 lines). Both endpoints are installed, so the wire claims below are a
+ *  real binary diff of 2.1.282 vs 2.1.283.
+ *
+ *  Finding 1 fixed in the pass; latent (zero `dev-mods` records on disk in
+ *  either account). Nothing else needs a change.
+ *
+ *  WIRE DIFF, reported both ways round:
+ *
+ *    - Merge-strategy map: 30 -> 31, ONE NEW RECORD TYPE, nothing removed.
+ *      `dev-mods` (`last-wins`, `always`). See finding 1.
+ *    - `hook_event_name` literals: 33 in each, set-identical.
+ *    - `subtype:` literals: 136 in each, set-identical.
+ *    - SDK `this.request({subtype})`: 53 in each, set-identical;
+ *      `side_question` still present.
+ *    - `type:"control_*"`: same 4 envelopes. `control_request` 20 -> 21 is
+ *      bundle reshuffling (remote-session hook code moved in) plus one
+ *      cloud-session `initialize` posted over HTTP — not our wire.
+ *    - `origin:{kind}`: one new literal, `remote`, on cross-session tool
+ *      calls (`remoteCall.origin`, with transport / callerSessionId). Not a
+ *      prompt origin; `human` count unchanged (8), `turnOrigin` count
+ *      unchanged (23).
+ *    - `.describe()` strings: 1712 -> 1713 (all quote styles). Reworded: the
+ *      internal share-URL field. Removed: the artifact `db_op` paging
+ *      options. New: an `@internal` "attached machine" tool-leg field (the
+ *      `--attach-serve` remote tool path), and GetTask's `taskId` ("The
+ *      taskId from the result that moved the command to the background";
+ *      tool gated on `tengu_violin_rosin`, default false — an unknown tool
+ *      renders generically). None is a host obligation.
+ *    - New `"--…"` literals: `--attach-serve` (the CLI's own tool-host
+ *      helper spawn), `--client-data-url` (a pass-through list entry), and
+ *      `--no-t` (a Bash read-only-table prefix check). None is a flag we
+ *      should pass.
+ *    - `/usage` anchors: `Current session`, `Current week`, `Resets`,
+ *      `Extra usage`, `% of usage`, `Total cost` count-identical. `Usage:`
+ *      (250 -> 252), `MCP servers` (396 -> 417) and `Fable` (175 -> 160) move
+ *      with help text and the `/mcp` list rework, not the render.
+ *      `usage-runner/parser.ts` is safe; the weekly-Fable fix only affects
+ *      telemetry-off accounts, and the parser already takes any
+ *      `Current week (…)` header.
+ *
+ *  1. `dev-mods` WOULD DRAW AN "UNRECOGNIZED RECORD" CARD. FIXED IN THIS
+ *     PASS (cliSidechannelRecords.ts).
+ *
+ *     A latch naming the session's plugin "dev mods" folder
+ *     (`<config>/dev-mods/<sessionId>`, joined as a hot-reloaded plugin
+ *     dir): `{type:"dev-mods", folder, sessionId}`. Written when dev mods
+ *     are enabled and restored/re-emitted like every other latch.
+ *
+ *  Checked and inert:
+ *
+ *   - "Interactive sessions on third-party providers or with telemetry off
+ *     start in auto mode when no permission mode is configured". Probed
+ *     2.1.283 with our exact argv and an empty config dir under
+ *     `DISABLE_TELEMETRY=1` and `CLAUDE_CODE_USE_BEDROCK=1`: `system/init`
+ *     reports `permissionMode:"default"` in both. `get_status` does call a
+ *     stream-json host "Session kind: interactive", so re-probe if this ever
+ *     widens. Caveat: the probe was unauthenticated.
+ *   - `plugin_errors[].path` in `system/init`: nothing in OmniFex reads
+ *     `plugin_errors`.
+ *   - `--system-prompt` / `--append-system-prompt` now combinable with
+ *     `-file` forms: we pass no system-prompt flags.
+ *   - SDK fixes (deferred tool call / finished tool result lost on early
+ *     turn end, held approval prompt after worker restart, non-streaming
+ *     fallback `result.usage`): upstream fixes in our favour.
+ *   - MCP fixes (background progress, stdio servers left running, 404 on
+ *     stateless remote, sign-in with no URL, `claude mcp add` false
+ *     success), images saved to file: CLI-internal.
+ *   - `availableModelsMatch` / `deniedModels` managed settings, `/model`
+ *     `[1m]` suffix fix: decided inside the CLI; a refused `--model` fails
+ *     the session the way it already could.
+ *   - `Skill(...)` deny-rule widening and the `claude-ai` name revert: we
+ *     write no Skill rules.
+ *   - Compaction spinner now counts summary tokens: TUI only; no new
+ *     `subtype:` literal.
+ *
+ * No OmniFex impact: gateway hint headers and `load_test_mode` / `mantle`,
+ * OTEL `tool.output`, `/doctor prompt-audit`, fullscreen click-to-expand,
+ * workflow model fallback, `DISABLE_PROMPT_CACHING_HAIKU`, every `claude
+ * plugin` CLI fix, `installed_plugins.json` recovery, screen-reader dialogs,
+ * `/context` MCP instructions row, Warp links, keybindings and vim mode,
+ * sandbox git / managed sandbox, auto-memory edit in subdirectories, Remote
+ * Control, list/picker UI, artifact reads and watch expiry, startup and
+ * first-reply latency, `/ultrareview` text, prompt suggestions, self-hosted
+ * runner, Windows, VSCode, cloud sessions, Claude Tag and Code Review.
  *
  * Last review: 2.1.281 -> 2.1.282 on 2026-09-24. Findings:
  *
@@ -3190,7 +3281,7 @@ import { buildClaudeEnv } from './util/claude-env';
  * `~/.claude.json` fix (we read-modify-write that file, never replace it), and
  * the VSCode screen-reader work.
  */
-export const REVIEWED_CLI_VERSION = '2.1.282';
+export const REVIEWED_CLI_VERSION = '2.1.283';
 
 /**
  * app_settings key holding the user's explicit OmniFex-checkout override.

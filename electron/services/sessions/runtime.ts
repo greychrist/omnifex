@@ -27,6 +27,7 @@ import { shouldForwardStreamMessage } from './stream-forward';
 import { encodeProjectId, hasTranscript } from '../project-paths';
 import { setStatus, setTurn } from './status';
 import { endSideChat } from './side-chat';
+import { beginCliProcess, recordResultUsage, type CliUsageSink } from './cli-usage';
 
 export interface RuntimeDeps {
   sendToRenderer: SendToRenderer;
@@ -68,6 +69,12 @@ export interface RuntimeDeps {
   accountMismatchSink?:
     | ((configDir: string, observedEmail: string | null) => AccountMismatch | null)
     | null;
+  /**
+   * Optional recorder for the CLI's own running token totals (a baseline per
+   * process, then every result). Both roots wire it to
+   * `createCliProcessUsageStore(db).record`. See sessions/cli-usage.ts.
+   */
+  cliUsageSink?: CliUsageSink | null;
 }
 
 interface JsonlTailState {
@@ -252,6 +259,7 @@ export function listenToMessages(
         }
         case 'result':
           // status flip after notification dispatch below
+          if (deps.cliUsageSink) recordResultUsage(handle, message, deps.cliUsageSink);
           break;
       }
 
@@ -377,6 +385,8 @@ export function restartQuery(
     resume,
   }).then(() => {
     setStatus(handle, { sessionStatus: 'started' }, tabId, deps.sendToRenderer);
+    // A restart is a new CLI process, with totals of its own.
+    if (deps.cliUsageSink) beginCliProcess(handle, deps.cliUsageSink);
   }).catch((err: unknown) => {
     console.error(`[sessions] engine.start (restart) failed for tab ${tabId}:`, err);
     setStatus(handle, { sessionStatus: 'error' }, tabId, deps.sendToRenderer);

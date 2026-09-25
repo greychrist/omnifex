@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, protocol, Notification, shell, Menu, clipboard } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, protocol, Notification, shell, Menu, clipboard, powerMonitor } from 'electron';
 import type { MenuItemConstructorOptions } from 'electron';
 import { buildContextMenuTemplate } from './context-menu-template';
 import { execSync, spawn } from 'node:child_process';
@@ -131,11 +131,13 @@ import { createInstallerService } from './services/installer';
 import { createTabStatusService, type TabStatusSummary } from './services/tab-status';
 import { migrateUserData } from './services/userdata-migration';
 import { createSessionGitWatcher, listWorktrees } from './services/git-watcher';
+import { forwardPowerState } from './power-state';
 import { createBranchColorsService } from './services/branch-colors';
 import { listBranches as listGitBranches } from './services/git-branches';
 import { listChangedFiles as listGitChangedFiles, readFileDiff as readGitFileDiff } from './services/git-diff';
 import { createLimaService } from './services/lima';
 import { createCostHistoryService } from './services/cost/cost-history';
+import { createCliProcessUsageStore } from './services/cost/cli-process-usage';
 import { createSessionCostService } from './services/cost/session-cost';
 import { createModelPricingService } from './services/model-pricing';
 import { registerIpcHandlers } from './ipc/handlers';
@@ -974,6 +976,9 @@ app.whenReady().then(() => {
     },
     // The binary picked in Settings, else discovery.
     () => claudeBinaryService.findBestBinary(),
+    // The CLI's own running token totals — the spend no transcript records
+    // (side questions, title generation). Same recorder as the daemon's.
+    createCliProcessUsageStore(db).record,
   );
   const claudeService = createClaudeService(db, accountsService);
   const usageService = createUsageService(accountsService, loggingService);
@@ -1070,6 +1075,10 @@ app.whenReady().then(() => {
   const sessionGitWatcher = _gitWatcherService = createSessionGitWatcher({
     sendToRenderer,
   });
+  // Lock and suspend reach the renderer, which folds them into each git
+  // watch's visibility — the watcher (here or in the daemon) stops polling a
+  // repository nobody can see.
+  forwardPowerState(powerMonitor, sendToRenderer);
   const branchColorsService = createBranchColorsService(db);
   const gitBranchesService = { list: listGitBranches };
   const limaService = createLimaService();
@@ -1490,6 +1499,7 @@ app.whenReady().then(() => {
       startSession: (projectPath: string) => sessionGitWatcher.start(projectPath),
       reconnectSession: (watchId: string) => sessionGitWatcher.reconnect(watchId),
       stopSession: (watchId: string) => sessionGitWatcher.stop(watchId),
+      setSessionVisible: (watchId: string, visible: boolean) => { sessionGitWatcher.setVisible(watchId, visible); },
     },
     branchColors: branchColorsService,
     gitBranches: gitBranchesService,

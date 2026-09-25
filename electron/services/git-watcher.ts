@@ -31,18 +31,22 @@ export async function listWorktrees(projectPath: string): Promise<WorktreeInfo[]
   } catch {
     selfReal = projectPath;
   }
+  return runWorktreeList(projectPath, selfReal);
+}
 
+/** `git worktree list`, parsed, minus `excludeReal` (pass '' to keep every entry). */
+function runWorktreeList(cwd: string, excludeReal: string): Promise<WorktreeInfo[]> {
   return new Promise((resolve) => {
     execFile(
       'git',
       ['worktree', 'list', '--porcelain'],
-      { cwd: projectPath, maxBuffer: 4 * 1024 * 1024, windowsHide: true },
+      { cwd, maxBuffer: 4 * 1024 * 1024, windowsHide: true },
       (err, stdout) => {
         if (err) {
           resolve([]);
           return;
         }
-        resolve(parseWorktreePorcelain(stdout, selfReal));
+        resolve(parseWorktreePorcelain(stdout, excludeReal));
       },
     );
   });
@@ -165,7 +169,11 @@ function readStatusCounts(
   return new Promise((resolve) => {
     execFile(
       'git',
-      ['status', '--porcelain=v1', '-z', '--ignore-submodules=dirty'],
+      // --no-optional-locks: a plain `git status` refreshes .git/index, and
+      // the index watcher below would see that write and schedule another
+      // refresh — every poll triggering a second one. Background readers
+      // (VS Code's included) run it this way for exactly that reason.
+      ['--no-optional-locks', 'status', '--porcelain=v1', '-z', '--ignore-submodules=dirty'],
       {
         cwd: projectPath,
         maxBuffer: 16 * 1024 * 1024,
@@ -217,11 +225,28 @@ function resolveCommondir(projectPath: string, gitdir: string): Promise<string> 
 }
 
 
+
+
 // ---------------------------------------------------------------------------
-// SessionGitWatcher — one watcher per session tab. Replaces N per-peer
-// `start()` watches plus the standalone `startWorktreeListWatch`. Exposes a
-// single event channel `session-git-changed:<watchId>` carrying the full
-// {project, worktrees[]} snapshot whenever anything observable changes.
+// SessionGitWatcher — the branch/changes badges for every session tab.
+//
+// Each `start()` returns a watch id, and every snapshot for it arrives on
+// `session-git-changed:<watchId>` as {project, worktrees[]}. Behind the ids,
+// ONE reader per repository (keyed by the realpath of its commondir, so every
+// worktree of a repo and every symlinked path to it share it) runs git once
+// per path per refresh and fans the result out to every watch on it.
+//
+// Every `git` is a short-lived process, and on macOS each one costs syspolicyd
+// two log errors — measured at ~3.4M a day from an idle app polling 20 paths
+// every 3 s. So:
+//   - watches share a reader (above), reference-counted by stop();
+//   - the reader polls only while at least one of its watches is visible
+//     (`setVisible`, driven by the renderer: active tab, visible document,
+//     screen unlocked). Hidden, nothing runs; what changed meanwhile is
+//     remembered and read once, the moment a watch becomes visible again;
+//   - a poll tick reads status only. `git worktree list` runs when the reader
+//     is created, on reconnect, and when the commondir / `worktrees/`
+//     watchers say the set of worktrees changed.
 // ---------------------------------------------------------------------------
 
 export interface PathSnapshot {
@@ -242,38 +267,57 @@ export interface SessionGitWatcherService {
   start(projectPath: string): Promise<{ watchId: string; snapshot: SessionGitSnapshot }>;
   reconnect(watchId: string): Promise<SessionGitSnapshot | null>;
   stop(watchId: string): void;
+  /**
+   * Whether anyone is looking at this watch. A new watch starts visible, so a
+   * client that never calls this keeps today's behaviour.
+   */
+  setVisible(watchId: string, visible: boolean): void;
   disposeAll(): void;
-}
-
-interface ActiveSessionWatch {
-  projectPath: string;
-  /** Resolved gitdir per path (project + each peer). */
-  gitdirs: Map<string, string>;
-  /** fs.watch on each gitdir for HEAD/index. */
-  gitdirWatchers: Map<string, fs.FSWatcher>;
-  /** Watcher on the shared commondir (so we notice `worktrees/` being created). */
-  commondirWatcher: fs.FSWatcher | null;
-  /** Watcher on `<commondir>/worktrees/` for peer add/remove. */
-  worktreesDirWatcher: fs.FSWatcher | null;
-  /** Resolved commondir for this watch (constant for the project's lifetime). */
-  commondir: string | null;
-  /** Branch hint per path from `git worktree list` — used as a fallback. */
-  branchHints: Map<string, string | null>;
-  /** Last emitted snapshot, kept so we can diff and skip no-op emits. */
-  last: SessionGitSnapshot;
-  pollTimer: NodeJS.Timeout | null;
-  refreshDebounceTimer: NodeJS.Timeout | null;
-  /** Per-`git status` timeout — caps any single peer's stall. */
-  readTimeoutMs: number;
-  /** Whether refresh() is currently running (in-flight guard). */
-  refreshing: boolean;
-  /** Set true while a refresh is running and a new trigger arrives — re-runs once current finishes. */
-  refreshAgain: boolean;
 }
 
 export interface SessionGitWatcherDeps extends GitWatcherDeps {
   /** Per-`git status` timeout in ms. Defaults to 5000. */
   readTimeoutMs?: number;
+}
+
+/** A status read covers known paths; a full one re-lists worktrees first. */
+type RefreshKind = 'status' | 'full';
+
+const mergeKind = (a: RefreshKind | null, b: RefreshKind | null): RefreshKind | null =>
+  a === 'full' || b === 'full' ? 'full' : a ?? b;
+
+interface Subscriber {
+  watchId: string;
+  /** As the caller gave it — echoed back as `project.path`. */
+  projectPath: string;
+  projectReal: string;
+  visible: boolean;
+  /** Last snapshot sent to this watch, to skip no-op emits. */
+  last: SessionGitSnapshot;
+}
+
+interface RepoReader {
+  key: string;
+  /** Where `git worktree list` runs; any path in the repository will do. */
+  anchor: string;
+  commondir: string | null;
+  /** Real paths of every worktree from the last `git worktree list`. */
+  worktreePaths: string[];
+  branchHints: Map<string, string | null>;
+  /** Latest reading per real path. */
+  readings: Map<string, PathSnapshot>;
+  gitdirs: Map<string, string>;
+  gitdirWatchers: Map<string, fs.FSWatcher>;
+  commondirWatcher: fs.FSWatcher | null;
+  worktreesDirWatcher: fs.FSWatcher | null;
+  subscribers: Map<string, Subscriber>;
+  pollTimer: NodeJS.Timeout | null;
+  debounceTimer: NodeJS.Timeout | null;
+  /** Work deferred while nobody was looking, or while a refresh was running. */
+  pending: RefreshKind | null;
+  refreshing: boolean;
+  /** Settles when the reader's first full read has landed. */
+  seeded: Promise<void>;
 }
 
 /** Per-path read with timeout + try/catch — never throws, always returns a PathSnapshot. */
@@ -286,13 +330,7 @@ async function readPathSnapshot(
   try {
     const branch = readBranch(gitdir);
     const { changed, untracked, error } = await readStatusCounts(p, gitdir, timeoutMs);
-    return {
-      path: p,
-      branch: branch ?? branchHint,
-      changed,
-      untracked,
-      error,
-    };
+    return { path: p, branch: branch ?? branchHint, changed, untracked, error };
   } catch (err) {
     return {
       path: p,
@@ -323,254 +361,287 @@ function snapshotEqual(a: SessionGitSnapshot, b: SessionGitSnapshot): boolean {
   return true;
 }
 
+function realpathOr(p: string): string {
+  try {
+    return fs.realpathSync(p);
+  } catch {
+    return p;
+  }
+}
+
+const emptyReading = (p: string): PathSnapshot => ({ path: p, branch: null, changed: 0, untracked: 0, error: null });
+
 const SESSION_REFRESH_DEBOUNCE_MS = 80;
 
 export function createSessionGitWatcher(deps: SessionGitWatcherDeps): SessionGitWatcherService {
-  const active = new Map<string, ActiveSessionWatch>();
+  const readers = new Map<string, RepoReader>();
+  const readerByWatch = new Map<string, RepoReader>();
   const pollIntervalMs = deps.pollIntervalMs ?? DEFAULT_POLL_MS;
   const readTimeoutMs = deps.readTimeoutMs ?? 5000;
 
-  function emit(watchId: string, state: ActiveSessionWatch, snapshot: SessionGitSnapshot): void {
-    state.last = snapshot;
-    deps.sendToRenderer(`session-git-changed:${watchId}`, snapshot);
-  }
+  const anyVisible = (r: RepoReader): boolean => {
+    for (const s of r.subscribers.values()) if (s.visible) return true;
+    return false;
+  };
 
-  function scheduleRefresh(watchId: string, state: ActiveSessionWatch): void {
-    if (state.refreshDebounceTimer) clearTimeout(state.refreshDebounceTimer);
-    state.refreshDebounceTimer = setTimeout(() => {
-      void runRefresh(watchId, state);
-    }, SESSION_REFRESH_DEBOUNCE_MS);
-  }
-
-  /** Remove + close gitdir watchers for paths no longer tracked. */
-  function pruneGitdirWatchers(state: ActiveSessionWatch, wantedPaths: Set<string>): void {
-    for (const [p, w] of Array.from(state.gitdirWatchers.entries())) {
-      if (!wantedPaths.has(p)) {
-        try { w.close(); } catch { /* best effort */ }
-        state.gitdirWatchers.delete(p);
-        state.gitdirs.delete(p);
-      }
-    }
-  }
-
-  /** Attach gitdir watchers for any newly-tracked paths. */
-  function attachGitdirWatchers(state: ActiveSessionWatch, watchId: string, paths: string[]): void {
-    for (const p of paths) {
-      if (state.gitdirWatchers.has(p)) continue;
-      const gitdir = resolveGitdir(p);
-      if (!gitdir) continue;
-      state.gitdirs.set(p, gitdir);
-      try {
-        const w = fs.watch(gitdir, { persistent: false }, (_event, filename) => {
-          if (filename && filename !== 'HEAD' && filename !== 'index') return;
-          scheduleRefresh(watchId, state);
-        });
-        w.on('error', (err) => console.error('[session-git-watcher] gitdir watch error:', err));
-        state.gitdirWatchers.set(p, w);
-      } catch (err) {
-        console.error('[session-git-watcher] failed to watch gitdir:', err);
-      }
-    }
-  }
-
-  /** Attach the worktrees/ directory watcher once the dir exists. */
-  function attachWorktreesDirWatcher(state: ActiveSessionWatch, watchId: string): void {
-    if (state.worktreesDirWatcher || !state.commondir) return;
-    const wtDir = path.join(state.commondir, 'worktrees');
-    if (!fs.existsSync(wtDir)) return;
-    try {
-      const w = fs.watch(wtDir, { persistent: false }, () => scheduleRefresh(watchId, state));
-      w.on('error', (err) => console.error('[session-git-watcher] worktrees-dir watch error:', err));
-      state.worktreesDirWatcher = w;
-    } catch (err) {
-      console.error('[session-git-watcher] failed to watch worktrees dir:', err);
-    }
-  }
-
-  /** Re-enumerate worktrees + read all paths in parallel. Builds a fresh snapshot. */
-  async function buildSnapshot(state: ActiveSessionWatch): Promise<SessionGitSnapshot> {
-    // Re-list worktrees so we always reflect the current set. listWorktrees
-    // never throws; on git failure it returns []. The project path is always
-    // included separately so the project never disappears even if git failed.
-    const peers = await listWorktrees(state.projectPath);
-    const peerPaths = peers.map((p) => p.path);
-
-    state.branchHints.clear();
-    for (const p of peers) state.branchHints.set(p.path, p.branch);
-
-    const allPaths = [state.projectPath, ...peerPaths];
-
-    // Read each path in parallel with allSettled so a slow / failed peer
-    // doesn't block the others. readPathSnapshot already never throws, so
-    // allSettled is belt-and-suspenders.
-    const results = await Promise.allSettled(
-      allPaths.map((p) =>
-        readPathSnapshot(
-          p,
-          state.gitdirs.get(p) ?? resolveGitdir(p),
-          state.branchHints.get(p) ?? null,
-          state.readTimeoutMs,
-        ),
-      ),
-    );
-
-    const byPath = new Map<string, PathSnapshot>();
-    for (let i = 0; i < allPaths.length; i++) {
-      const r = results[i];
-      if (r.status === 'fulfilled') {
-        byPath.set(allPaths[i], r.value);
-      } else {
-        // readPathSnapshot has a try/catch that should make this unreachable.
-        byPath.set(allPaths[i], {
-          path: allPaths[i],
-          branch: state.branchHints.get(allPaths[i]) ?? null,
-          changed: 0,
-          untracked: 0,
-          error: r.reason instanceof Error ? r.reason.message : String(r.reason),
-        });
-      }
-    }
-
+  function snapshotFor(r: RepoReader, sub: Subscriber): SessionGitSnapshot {
+    const own = r.readings.get(sub.projectReal) ?? emptyReading(sub.projectReal);
     return {
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- state.projectPath was added to byPath earlier in this fn.
-      project: byPath.get(state.projectPath)!,
-      worktrees: peerPaths
-        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- peerPaths derived from byPath; lookup is guaranteed.
-        .map((p) => byPath.get(p)!)
+      project: { ...own, path: sub.projectPath },
+      worktrees: r.worktreePaths
+        .filter((p) => p !== sub.projectReal)
+        .map((p) => r.readings.get(p) ?? { ...emptyReading(p), branch: r.branchHints.get(p) ?? null })
         .sort((a, b) => a.path.localeCompare(b.path)),
     };
   }
 
-  /** Refresh cycle: re-list peers, reconcile watchers, read all, emit if changed. */
-  async function runRefresh(watchId: string, state: ActiveSessionWatch): Promise<SessionGitSnapshot> {
-    if (state.refreshing) {
-      // Another refresh is in flight — coalesce by setting refreshAgain so it
-      // re-runs once after the current one completes. The caller still gets
-      // the in-flight snapshot back when this is called from reconnect, but
-      // that's fine — reconnect just wants something fresh-ish.
-      state.refreshAgain = true;
-      return state.last;
+  function emitAll(r: RepoReader): void {
+    for (const sub of r.subscribers.values()) {
+      const snap = snapshotFor(r, sub);
+      if (snapshotEqual(sub.last, snap)) continue;
+      sub.last = snap;
+      deps.sendToRenderer(`session-git-changed:${sub.watchId}`, snap);
     }
-    state.refreshing = true;
-    try {
-      const snapshot = await buildSnapshot(state);
+  }
 
-      // Reconcile fs.watch handles against the snapshot's path set.
-      const wantedPaths = new Set([state.projectPath, ...snapshot.worktrees.map((w) => w.path)]);
-      pruneGitdirWatchers(state, wantedPaths);
-      attachGitdirWatchers(state, watchId, Array.from(wantedPaths));
-      // The first `git worktree add` creates `commondir/worktrees/`; pick it
-      // up here so subsequent peers fire HEAD/index watches.
-      attachWorktreesDirWatcher(state, watchId);
+  /** Ask for a refresh. Nobody looking: remember it for when someone is. */
+  function schedule(r: RepoReader, kind: RefreshKind): void {
+    if (!anyVisible(r)) {
+      r.pending = mergeKind(r.pending, kind);
+      return;
+    }
+    r.pending = mergeKind(r.pending, kind);
+    if (r.debounceTimer) clearTimeout(r.debounceTimer);
+    r.debounceTimer = setTimeout(() => {
+      r.debounceTimer = null;
+      const k = r.pending ?? 'status';
+      r.pending = null;
+      void refresh(r, k);
+    }, SESSION_REFRESH_DEBOUNCE_MS);
+  }
 
-      if (!snapshotEqual(state.last, snapshot)) emit(watchId, state, snapshot);
-      return snapshot;
-    } finally {
-      state.refreshing = false;
-      if (state.refreshAgain) {
-        state.refreshAgain = false;
-        // Schedule a follow-up cycle; don't await so we don't deepen the stack.
-        scheduleRefresh(watchId, state);
+  function reconcileWatchers(r: RepoReader, paths: string[]): void {
+    const wanted = new Set(paths);
+    for (const [p, w] of Array.from(r.gitdirWatchers.entries())) {
+      if (wanted.has(p)) continue;
+      try { w.close(); } catch { /* best effort */ }
+      r.gitdirWatchers.delete(p);
+      r.gitdirs.delete(p);
+    }
+    for (const p of paths) {
+      if (r.gitdirWatchers.has(p)) continue;
+      const gitdir = resolveGitdir(p);
+      if (!gitdir) continue;
+      r.gitdirs.set(p, gitdir);
+      try {
+        const w = fs.watch(gitdir, { persistent: false }, (_event, filename) => {
+          if (filename && filename !== 'HEAD' && filename !== 'index') return;
+          schedule(r, 'status');
+        });
+        w.on('error', (err) => console.error('[session-git-watcher] gitdir watch error:', err));
+        r.gitdirWatchers.set(p, w);
+      } catch (err) {
+        console.error('[session-git-watcher] failed to watch gitdir:', err);
       }
     }
+    // The first `git worktree add` creates `commondir/worktrees/`; pick it up
+    // here so later adds and removes are seen without a poll.
+    if (!r.worktreesDirWatcher && r.commondir) {
+      const wtDir = path.join(r.commondir, 'worktrees');
+      if (fs.existsSync(wtDir)) {
+        try {
+          const w = fs.watch(wtDir, { persistent: false }, () => { schedule(r, 'full'); });
+          w.on('error', (err) => console.error('[session-git-watcher] worktrees-dir watch error:', err));
+          r.worktreesDirWatcher = w;
+        } catch (err) {
+          console.error('[session-git-watcher] failed to watch worktrees dir:', err);
+        }
+      }
+    }
+  }
+
+  /** Read every path once (after re-listing worktrees, for a full refresh) and fan out. */
+  async function refresh(r: RepoReader, kind: RefreshKind): Promise<void> {
+    if (r.refreshing) {
+      r.pending = mergeKind(r.pending, kind);
+      return;
+    }
+    r.refreshing = true;
+    try {
+      if (kind === 'full' && r.commondir) {
+        const listed = await runWorktreeList(r.anchor, '');
+        r.worktreePaths = listed.map((w) => w.path);
+        r.branchHints = new Map(listed.map((w) => [w.path, w.branch]));
+      }
+      const paths = Array.from(new Set([
+        ...r.worktreePaths,
+        ...Array.from(r.subscribers.values(), (s) => s.projectReal),
+      ]));
+      const results = await Promise.all(paths.map((p) =>
+        readPathSnapshot(p, r.gitdirs.get(p) ?? resolveGitdir(p), r.branchHints.get(p) ?? null, readTimeoutMs),
+      ));
+      r.readings = new Map(paths.map((p, i) => [p, results[i]]));
+      reconcileWatchers(r, paths);
+      emitAll(r);
+    } finally {
+      r.refreshing = false;
+      // Anything asked for mid-read runs next — through schedule(), so it
+      // waits again if everyone has looked away in the meantime.
+      if (r.pending && readers.get(r.key) === r) {
+        const next = r.pending;
+        r.pending = null;
+        schedule(r, next);
+      }
+    }
+  }
+
+  /** Poll while someone is looking; stop the moment nobody is. */
+  function syncPolling(r: RepoReader): void {
+    const want = anyVisible(r);
+    if (want && !r.pollTimer) {
+      r.pollTimer = setInterval(() => { schedule(r, 'status'); }, pollIntervalMs);
+      if (typeof r.pollTimer.unref === 'function') r.pollTimer.unref();
+    } else if (!want && r.pollTimer) {
+      clearInterval(r.pollTimer);
+      r.pollTimer = null;
+    }
+  }
+
+  function dispose(r: RepoReader): void {
+    if (r.debounceTimer) clearTimeout(r.debounceTimer);
+    if (r.pollTimer) clearInterval(r.pollTimer);
+    for (const w of r.gitdirWatchers.values()) {
+      try { w.close(); } catch { /* best effort */ }
+    }
+    for (const w of [r.commondirWatcher, r.worktreesDirWatcher]) {
+      if (!w) continue;
+      try { w.close(); } catch { /* best effort */ }
+    }
+    readers.delete(r.key);
+  }
+
+  async function readerFor(projectReal: string): Promise<{ r: RepoReader; created: boolean }> {
+    const gitdir = resolveGitdir(projectReal);
+    const commondir = gitdir ? realpathOr(await resolveCommondir(projectReal, gitdir)) : null;
+    const key = commondir ? `git:${commondir}` : `path:${projectReal}`;
+    const existing = readers.get(key);
+    if (existing) return { r: existing, created: false };
+
+    const r: RepoReader = {
+      key,
+      anchor: projectReal,
+      commondir,
+      worktreePaths: [],
+      branchHints: new Map(),
+      readings: new Map(),
+      gitdirs: new Map(),
+      gitdirWatchers: new Map(),
+      commondirWatcher: null,
+      worktreesDirWatcher: null,
+      subscribers: new Map(),
+      pollTimer: null,
+      debounceTimer: null,
+      pending: null,
+      refreshing: false,
+      seeded: Promise.resolve(),
+    };
+    readers.set(key, r);
+    if (commondir) {
+      try {
+        const w = fs.watch(commondir, { persistent: false }, (_e, filename) => {
+          // A tripwire for `worktrees/` appearing or going; the full refresh
+          // it schedules re-lists everything else.
+          if (filename === 'worktrees' || filename === null) schedule(r, 'full');
+        });
+        w.on('error', (err) => console.error('[session-git-watcher] commondir watch error:', err));
+        r.commondirWatcher = w;
+      } catch (err) {
+        console.error('[session-git-watcher] failed to watch commondir:', err);
+      }
+    }
+    // Seeded as a full read, whatever the visibility: the first paint needs data.
+    r.seeded = refresh(r, 'full');
+    return { r, created: true };
   }
 
   return {
     async start(projectPath) {
       const watchId = crypto.randomUUID();
-
-      const initialEmpty: SessionGitSnapshot = {
-        project: { path: projectPath, branch: null, changed: 0, untracked: 0, error: null },
-        worktrees: [],
-      };
-
-      const state: ActiveSessionWatch = {
+      const projectReal = realpathOr(projectPath);
+      const { r, created } = await readerFor(projectReal);
+      const wasVisible = anyVisible(r);
+      const sub: Subscriber = {
+        watchId,
         projectPath,
-        gitdirs: new Map(),
-        gitdirWatchers: new Map(),
-        commondirWatcher: null,
-        worktreesDirWatcher: null,
-        commondir: null,
-        branchHints: new Map(),
-        last: initialEmpty,
-        pollTimer: null,
-        refreshDebounceTimer: null,
-        readTimeoutMs,
-        refreshing: false,
-        refreshAgain: false,
+        projectReal,
+        visible: true,
+        last: { project: emptyReading(projectPath), worktrees: [] },
       };
-
-      // Resolve the project's commondir up-front so we can watch it for the
-      // worktrees/ directory being created on the first `git worktree add`.
-      const projectGitdir = resolveGitdir(projectPath);
-      if (projectGitdir) {
-        state.commondir = await resolveCommondir(projectPath, projectGitdir);
-        try {
-          const cmw = fs.watch(state.commondir, { persistent: false }, (_e, filename) => {
-            // The commondir watcher is just a tripwire for `worktrees/` being
-            // created/removed. The peer-list refresh covers the rest.
-            if (filename === 'worktrees' || filename === null) scheduleRefresh(watchId, state);
-          });
-          cmw.on('error', (err) => console.error('[session-git-watcher] commondir watch error:', err));
-          state.commondirWatcher = cmw;
-        } catch (err) {
-          console.error('[session-git-watcher] failed to watch commondir:', err);
-        }
+      r.subscribers.set(watchId, sub);
+      readerByWatch.set(watchId, r);
+      await r.seeded;
+      // Read now if this path was never read (a worktree not yet re-listed),
+      // or if the reader sat unwatched — its readings are as old as the last
+      // time anyone looked, and working-tree edits never woke it. A reader
+      // created just now was seeded a moment ago; joining a watched one costs
+      // nothing.
+      if (!r.readings.has(projectReal) || (!created && !wasVisible)) {
+        const kind = mergeKind(r.pending, 'status') ?? 'status';
+        r.pending = null;
+        await refresh(r, kind);
       }
-
-      active.set(watchId, state);
-
-      // Seed: build the initial snapshot synchronously (well, in a single
-      // await) so the renderer renders with real data on its first paint.
-      const snapshot = await runRefresh(watchId, state);
-
-      // Working-tree edits don't touch any .git/ — poll periodically.
-      state.pollTimer = setInterval(() => {
-        scheduleRefresh(watchId, state);
-      }, pollIntervalMs);
-      if (typeof state.pollTimer.unref === 'function') state.pollTimer.unref();
-
-      return { watchId, snapshot };
+      syncPolling(r);
+      sub.last = snapshotFor(r, sub);
+      return { watchId, snapshot: sub.last };
     },
 
     async reconnect(watchId) {
-      const state = active.get(watchId);
-      if (!state) return null;
-
-      // Tear down stale gitdir + worktrees-dir watchers; runRefresh will
-      // recreate them based on the freshly-listed peer set.
-      for (const [p, w] of Array.from(state.gitdirWatchers.entries())) {
+      const r = readerByWatch.get(watchId);
+      const sub = r?.subscribers.get(watchId);
+      if (!r || !sub) return null;
+      await r.seeded;
+      // Tear down the per-path and worktrees/ watchers; the full refresh
+      // re-creates them from a freshly listed set.
+      for (const w of r.gitdirWatchers.values()) {
         try { w.close(); } catch { /* best effort */ }
-        state.gitdirWatchers.delete(p);
-        state.gitdirs.delete(p);
       }
-      if (state.worktreesDirWatcher) {
-        try { state.worktreesDirWatcher.close(); } catch { /* best effort */ }
-        state.worktreesDirWatcher = null;
+      r.gitdirWatchers.clear();
+      r.gitdirs.clear();
+      if (r.worktreesDirWatcher) {
+        try { r.worktreesDirWatcher.close(); } catch { /* best effort */ }
+        r.worktreesDirWatcher = null;
       }
+      await refresh(r, 'full');
+      return snapshotFor(r, sub);
+    },
 
-      return runRefresh(watchId, state);
+    setVisible(watchId, visible) {
+      const r = readerByWatch.get(watchId);
+      const sub = r?.subscribers.get(watchId);
+      if (!r || !sub || sub.visible === visible) return;
+      const wasVisible = anyVisible(r);
+      sub.visible = visible;
+      syncPolling(r);
+      if (!wasVisible && visible) {
+        // Back in view: one read now, covering whatever was deferred.
+        const kind = mergeKind(r.pending, 'status') ?? 'status';
+        r.pending = null;
+        void refresh(r, kind);
+      }
     },
 
     stop(watchId) {
-      const state = active.get(watchId);
-      if (!state) return;
-      if (state.refreshDebounceTimer) clearTimeout(state.refreshDebounceTimer);
-      if (state.pollTimer) clearInterval(state.pollTimer);
-      for (const w of state.gitdirWatchers.values()) {
-        try { w.close(); } catch { /* best effort */ }
-      }
-      if (state.commondirWatcher) {
-        try { state.commondirWatcher.close(); } catch { /* best effort */ }
-      }
-      if (state.worktreesDirWatcher) {
-        try { state.worktreesDirWatcher.close(); } catch { /* best effort */ }
-      }
-      active.delete(watchId);
+      const r = readerByWatch.get(watchId);
+      readerByWatch.delete(watchId);
+      if (!r) return;
+      r.subscribers.delete(watchId);
+      if (r.subscribers.size === 0) dispose(r);
+      else syncPolling(r);
     },
 
     disposeAll() {
-      for (const id of Array.from(active.keys())) this.stop(id);
+      for (const r of Array.from(readers.values())) dispose(r);
+      readerByWatch.clear();
     },
   };
 }

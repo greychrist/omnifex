@@ -53,6 +53,8 @@ export const CLI_SIDECHANNEL_RECORD_TYPES: ReadonlySet<string> = new Set([
   'pr-link',
   'artifact-comment-monitor',
   'artifact-autoreact-ledger',
+  // The session's plugin "dev mods" folder (CLI >= 2.1.283).
+  'dev-mods',
   // Structural bookkeeping — branch plumbing and file-history deltas.
   'file-history-delta',
   'continued-in',

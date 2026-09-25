@@ -80,6 +80,7 @@ import { listBranches as listGitBranches } from '../services/git-branches';
 import { listChangedFiles as listGitChangedFiles, readFileDiff as readGitFileDiff } from '../services/git-diff';
 import { createLimaService } from '../services/lima';
 import { createCostHistoryService } from '../services/cost/cost-history';
+import { createCliProcessUsageStore } from '../services/cost/cli-process-usage';
 import { createSessionCostService } from '../services/cost/session-cost';
 import { createModelPricingService } from '../services/model-pricing';
 import { createBrainService, type BrainService } from '../services/brain/registry';
@@ -475,6 +476,9 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
       }
     },
     () => claudeBinaryService.findBestBinary(),
+    // The CLI's own running token totals — the spend no transcript records
+    // (side questions, title generation). Same recorder as main's.
+    createCliProcessUsageStore(db).record,
   );
   sessionsRef = sessionsService;
 
@@ -763,6 +767,7 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
       startSession: (projectPath) => sessionGitWatcher.start(projectPath),
       reconnectSession: (watchId) => sessionGitWatcher.reconnect(watchId),
       stopSession: (watchId) => sessionGitWatcher.stop(watchId),
+      setSessionVisible: (watchId, visible) => { sessionGitWatcher.setVisible(watchId, visible); },
     },
     branchColors: branchColorsService,
     gitBranches: { list: listGitBranches },

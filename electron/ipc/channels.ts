@@ -237,6 +237,7 @@ export const INVOKE_CHANNELS: readonly string[] = [
   'start_session_git_watch',
   'stop_session_git_watch',
   'reconnect_session_git_watch',
+  'set_session_git_watch_visible',
   'git_list_branches',
   'git_list_changed_files',
   'git_file_diff',
@@ -340,6 +341,8 @@ export const EVENT_CHANNEL_EXACT: readonly string[] = [
   // disk, so verification badges self-correct after a logout/login performed
   // outside OmniFex. Payload: { configDir, verdict }.
   'account-identity-changed',
+  // Main's powerMonitor: screen lock / suspend (src/lib/powerState.ts).
+  'system-power-state',
   // Progress of the Brain indexing run in flight, or null when it ends. Sent
   // to every window: the run outlives the pane that started it, so any mount
   // must be able to pick it up. Payload: BrainRun | null.
