@@ -19,8 +19,9 @@ Verified against the installed binary, 2.1.282.
 
 - A `side_question` control request on the stdio control channel:
   `{subtype:'side_question', question: string, history?: {question, response}[]}`.
-- Reply: `{response: string | null, synthetic: boolean, refusal_fallback?}`.
-  `response: null` means no answer.
+- Reply: `{response: string | null, synthetic: boolean, usage, refusalFallback?}`.
+  `response: null` means no answer. `usage` is the fork's token total; side
+  chat does not read it (see "Cost").
 - Implementation: forks the current context with cache-safe params (reads the
   warm prompt cache), `maxTurns: 1`, every tool denied ("Side questions cannot
   use tools"), `skipCacheWrite`, `skipTranscript`. Nothing lands in the JSONL.
@@ -118,11 +119,13 @@ and keeps 10 s.
 
 ### CLI-side cancel on close
 
-Best-effort and to be verified at plan time: whether the CLI honours a
-host-sent `{type:'control_cancel_request', request_id}` for `side_question`
-(the binary has a "Side question cancelled" path). If it does, close sends it
-and rejects the pending promise locally. If it does not, close relies on the
-generation check alone and the answer is paid for and dropped.
+Verified in 2.1.282: the stdio handler registers each side question's abort
+controller under its `request_id`, and a host-sent
+`{type:'control_cancel_request', request_id}` aborts it; the CLI then replies
+with the error "Side question cancelled". So close sends the cancel for a
+pending exchange, and the generation check drops that error reply. This needs
+the engine to expose the request id of an in-flight `sendControlRequest` (or a
+`cancelControlRequest(id)`), since today it only returns a promise.
 
 ### What side chat never touches
 
@@ -214,11 +217,25 @@ the panel and adds the button — the state does not go into that component.
 | Reply after close | Dropped by generation. |
 | CLI without the handler | The CLI's error reply → `failed` with its text. No version gate. |
 
+## Cost
+
+Side chat does not track its own spend.
+
+Observed in session `cf57222a-931a-4502-9a20-531f80cd4b0f` (TUI, three `/btw`
+calls): the JSONL holds nothing from the side questions, but the CLI's
+`cost-state` record — its own running total — counts them. Its Opus
+`cacheReadInputTokens` ran 447k over the transcript's (about six extra reads of
+the ~75k context: the three side questions plus, likely, three prompt
+suggestions), ≈ $0.19 of a $0.87 session.
+
+So side-question spend is one instance of a wider gap: every fork the CLI runs
+with `skipTranscript` (side questions, prompt suggestions, and the like) is
+invisible to the transcript-derived Cost Report. That gap is fixed once, for all
+of them, by reconciling against `cost-state` — separate work with its own spec.
+Side chat adds no cost code, and its spend is covered by that fix.
+
 ## Accepted consequences
 
-- **Unpriced spend.** No transcript, and the reply carries no usage, so the
-  Cost Report never sees side-chat spend. It is small — it reads the warm
-  cache and skips the cache write — but invisible.
 - **Side-chat text in the daemon's event log.** `~/.omnifex/sessions/<id>.events.jsonl`
   records the snapshots, as it already records the transcript. It is not a CLI
   transcript, so the Brain's sources do not read it — to be confirmed at plan
