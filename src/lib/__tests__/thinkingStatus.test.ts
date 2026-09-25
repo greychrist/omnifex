@@ -26,6 +26,19 @@ const userText = (text: string): JsonlNode =>
     raw: { type: 'user', message: { role: 'user', content: [{ type: 'text', text }] } },
   }) as unknown as JsonlNode;
 
+const toolResult = (): JsonlNode =>
+  ({
+    kind: 'user', userKind: 'tool-result', sessionId: '', receivedAt: '',
+    raw: { type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't1', content: 'ok' }] } },
+  }) as unknown as JsonlNode;
+
+/** A subagent's task prompt, forwarded into the main stream. */
+const subagentPrompt = (text: string): JsonlNode =>
+  ({
+    kind: 'user', userKind: 'prompt', sessionId: '', receivedAt: '',
+    raw: { type: 'user', parent_tool_use_id: 'toolu_task', message: { role: 'user', content: [{ type: 'text', text }] } },
+  }) as unknown as JsonlNode;
+
 describe('deriveThinkingStatus', () => {
   it('reports the running total while a burst is streaming', () => {
     expect(
@@ -111,6 +124,26 @@ describe('lastTurnThinkingTokens', () => {
         thinkingTokens(50), thinkingTokens(100), status('requesting'), assistantText('b'),
       ]),
     ).toBe(9100);
+  });
+
+  it('counts across tool round trips, the usual shape of a multi-burst turn', () => {
+    expect(
+      lastTurnThinkingTokens([
+        userText('go'),
+        thinkingTokens(414), assistantText('calling a tool'), toolResult(),
+        thinkingTokens(225), assistantText('calling another'), toolResult(),
+        thinkingTokens(235),
+      ]),
+    ).toBe(874);
+  });
+
+  it("does not stop at a subagent's forwarded prompt — that is still the same turn", () => {
+    expect(
+      lastTurnThinkingTokens([
+        userText('go'), thinkingTokens(300), assistantText('dispatching'),
+        subagentPrompt('investigate'), thinkingTokens(100), assistantText('done'),
+      ]),
+    ).toBe(400);
   });
 
   it('stops at the last prompt, leaving earlier turns out', () => {
