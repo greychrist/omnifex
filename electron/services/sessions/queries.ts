@@ -21,6 +21,8 @@ import type {
   SendToRenderer,
 } from './types';
 import { enrichPlugin, type EnrichedPlugin } from './plugins';
+import type { SideChatAsk } from './side-chat';
+import { EMPTY_SIDE_CHAT, type SideChat, type SideChatAskResult } from '../../../src/lib/sideChat';
 import type { LoggingService } from '../logging';
 
 export function createQueryPassthroughs(
@@ -134,6 +136,80 @@ export function createQueryPassthroughs(
       logControl('rename_session', tabId, { ok: false, title: trimmed, error: msg });
       return false;
     }
+  }
+
+  // Side questions are slow — a fork of the whole context — and the CLI gives
+  // them 600 s against 75 s for other subtypes. The registry default is 10 s.
+  const SIDE_QUESTION_TIMEOUT_MS = 600_000;
+  const sideChatAborts = new Map<string, AbortController>();
+
+  function emitSideChat(tabId: string, handle: SessionHandle): void {
+    sendToRenderer?.(`session-side-chat:${tabId}`, handle.sideChat.snapshot());
+  }
+
+  /**
+   * Ask the CLI a side question — its `/btw`. Answered from the conversation
+   * so far, no tools, never written to the transcript. Returns once the
+   * exchange is pending; the answer arrives as a snapshot on
+   * `session-side-chat:<tabId>`.
+   */
+  async function askSideQuestion(tabId: string, question: string): Promise<SideChatAskResult> {
+    const handle = liveEngine(tabId);
+    if (!handle) return { ok: false, error: 'No live session' };
+    if (handle.agent !== 'claude') return { ok: false, error: 'Side chat is not available for Codex sessions' };
+    let asked: SideChatAsk;
+    try {
+      asked = handle.sideChat.ask(question);
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+    emitSideChat(tabId, handle);
+    const { exchange, generation, history } = asked;
+    const abort = new AbortController();
+    sideChatAborts.set(tabId, abort);
+    handle.engine
+      .sendControlRequest<{ response?: unknown; synthetic?: unknown; usage?: unknown; refusalFallback?: { fallbackModel?: string } }>(
+        'side_question',
+        { question: exchange.question, ...(history.length > 0 && { history }) },
+        { timeoutMs: SIDE_QUESTION_TIMEOUT_MS, signal: abort.signal },
+      )
+      .then((res) => {
+        const response = typeof res?.response === 'string' ? res.response : null;
+        logControl('side_question', tabId, {
+          ok: true,
+          // The reply names no model. The fork reuses the last main-loop
+          // request's cache-safe params, so the last assistant model is the
+          // one that answered — unless the CLI fell back after a refusal.
+          model: handle.lastModel ?? null,
+          fallback_model: res?.refusalFallback?.fallbackModel ?? null,
+          usage: res?.usage ?? null,
+          synthetic: res?.synthetic ?? null,
+          response_chars: response?.length ?? 0,
+        });
+        if (handle.sideChat.settle(exchange.id, generation, response)) emitSideChat(tabId, handle);
+      })
+      .catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        logControl('side_question', tabId, { ok: false, error: msg });
+        if (handle.sideChat.fail(exchange.id, generation, msg)) emitSideChat(tabId, handle);
+      })
+      .finally(() => {
+        if (sideChatAborts.get(tabId) === abort) sideChatAborts.delete(tabId);
+      });
+    return { ok: true };
+  }
+
+  function closeSideChat(tabId: string): void {
+    sideChatAborts.get(tabId)?.abort();
+    sideChatAborts.delete(tabId);
+    const handle = sessions.get(tabId);
+    if (!handle) return;
+    handle.sideChat.close();
+    emitSideChat(tabId, handle);
+  }
+
+  function getSideChat(tabId: string): SideChat {
+    return sessions.get(tabId)?.sideChat.snapshot() ?? EMPTY_SIDE_CHAT;
   }
 
   /**
@@ -411,6 +487,9 @@ export function createQueryPassthroughs(
     interrupt,
     setModel,
     setTitle,
+    askSideQuestion,
+    closeSideChat,
+    getSideChat,
     suggestTitle,
     setPermissionMode,
     setEffort,

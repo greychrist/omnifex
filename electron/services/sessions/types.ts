@@ -3,6 +3,8 @@
 
 import type { LoggingService } from '../logging';
 import type { AgentElicitationRequest, AgentEngine, AgentKind, ElicitationAction, InitData } from '../agents/types';
+import type { SideChatStore } from './side-chat';
+import type { SideChat, SideChatAskResult } from '../../../src/lib/sideChat';
 
 // ---------------------------------------------------------------------------
 // CLI payload shapes (defined locally)
@@ -334,6 +336,15 @@ export interface SessionsService {
    * title) so the caller can say so rather than looking like it worked.
    */
   setTitle(tabId: string, title: string): Promise<boolean>;
+  /**
+   * Ask a side question (the CLI's `/btw`). Resolves once the exchange is
+   * pending; the answer arrives on `session-side-chat:<tabId>`.
+   */
+  askSideQuestion(tabId: string, question: string): Promise<SideChatAskResult>;
+  /** Discard the side chat, cancelling a pending question. */
+  closeSideChat(tabId: string): void;
+  /** The current side chat — empty for an unknown tab. */
+  getSideChat(tabId: string): SideChat;
   /** Ask the CLI for a name from `description`; nothing is persisted. Null when it had none. */
   suggestTitle(tabId: string, description: string): Promise<string | null>;
   /** Switch the permission mode mid-session. */
@@ -475,6 +486,14 @@ export interface SessionHandle {
    * screen. See sessions/elicitations.ts.
    */
   elicitationQueue: AgentElicitationRequest[];
+  /** The side chat thread (the CLI's `/btw`). Not a state axis — see side-chat.ts. */
+  sideChat: SideChatStore;
+  /**
+   * Model of the latest real assistant message. Sessions switch models
+   * mid-way; this is the one that answered most recently, and so the one a
+   * side question's fork runs on.
+   */
+  lastModel?: string;
   projectPath: string;
   configDir: string;
   /**

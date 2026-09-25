@@ -26,6 +26,7 @@ import { createJsonlTail, isClosureCarrier, type JsonlTailHandle } from './jsonl
 import { shouldForwardStreamMessage } from './stream-forward';
 import { encodeProjectId, hasTranscript } from '../project-paths';
 import { setStatus, setTurn } from './status';
+import { EMPTY_SIDE_CHAT } from '../../../src/lib/sideChat';
 
 export interface RuntimeDeps {
   sendToRenderer: SendToRenderer;
@@ -173,6 +174,11 @@ export function listenToMessages(
       const message = agentMsg.payload as Record<string, unknown>;
       const event = classifyRuntimeEvent(message);
       (message as Record<string, unknown>).receivedAt = agentMsg.receivedAt;
+
+      if (message.type === 'assistant') {
+        const model = (message.message as { model?: unknown } | undefined)?.model;
+        if (typeof model === 'string' && model !== '<synthetic>') handle.lastModel = model;
+      }
 
       switch (event.kind) {
         case 'init': {
@@ -324,6 +330,8 @@ export function listenToMessages(
       }
       setStatus(handle, { sessionStatus: 'stopped' }, tabId, sendToRenderer);
       sendToRenderer(`agent-complete:${tabId}`);
+      // The side chat lives exactly as long as the engine. Tell clients it is gone.
+      sendToRenderer(`session-side-chat:${tabId}`, EMPTY_SIDE_CHAT);
       sessions.delete(tabId);
       ownership?.unregister(tabId);
       teardownJsonlTail(jsonlState);

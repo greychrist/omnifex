@@ -28,6 +28,7 @@ import {
   respondPermission as respondPermissionImpl,
 } from './permissions';
 import { createQueryPassthroughs } from './queries';
+import { createSideChatStore } from './side-chat';
 import { createElicitationHandlers, respondToElicitation } from './elicitations';
 import { findSystemClaudeBinary, findSystemCodexBinary } from './binary';
 import {
@@ -282,6 +283,7 @@ export function createSessionsService(
       permissionResolver: null,
       permissionQueue: [],
       elicitationQueue: [],
+      sideChat: createSideChatStore(),
       projectPath,
       configDir,
       // A resumed conversation is never auto-named: it either already carries

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { createSideChatStore } from '../services/sessions/side-chat';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -88,6 +89,7 @@ function makeHandle(engine: AgentEngine): SessionHandle {
     permissionResolver: null,
     permissionQueue: [],
     elicitationQueue: [],
+    sideChat: createSideChatStore(),
     projectPath: '/p',
     configDir: '/c',
     autoTitleAttempted: true,
@@ -410,6 +412,28 @@ describe('runtime.listenToMessages — hook lifecycle messages', () => {
 });
 
 describe('runtime.listenToMessages — engine.onExit', () => {
+  it('clears the side chat on exit', () => {
+    const engine = makeFakeEngine();
+    const handle = makeHandle(engine);
+    const sendToRenderer: SendToRenderer = vi.fn();
+    const sessions = new Map<string, SessionHandle>([['tab-1', handle]]);
+    void listenToMessages('tab-1', handle, { sendToRenderer, notificationHooks: {}, rateLimitHook: null, ownership: null, sessions });
+    engine._emitExit({ code: 0 });
+    expect(sendToRenderer).toHaveBeenCalledWith('session-side-chat:tab-1', { exchanges: [] });
+  });
+
+  it('tracks the model of the latest real assistant message on the handle', () => {
+    const engine = makeFakeEngine();
+    const handle = makeHandle(engine);
+    const sessions = new Map<string, SessionHandle>([['tab-1', handle]]);
+    void listenToMessages('tab-1', handle, { sendToRenderer: vi.fn(), notificationHooks: {}, rateLimitHook: null, ownership: null, sessions });
+    engine._emitMessage({ type: 'assistant', message: { model: 'claude-opus-5-5', content: [] } });
+    engine._emitMessage({ type: 'assistant', message: { model: '<synthetic>', content: [] } });
+    expect(handle.lastModel).toBe('claude-opus-5-5');
+    engine._emitMessage({ type: 'assistant', message: { model: 'claude-fable-5-1', content: [] } });
+    expect(handle.lastModel).toBe('claude-fable-5-1');
+  });
+
   it('emits agent-complete on clean exit (preserved)', () => {
     const engine = makeFakeEngine();
     const handle = makeHandle(engine);

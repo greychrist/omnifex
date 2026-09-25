@@ -17,6 +17,7 @@ import { createQueryPassthroughs } from '../services/sessions/queries';
 import type { AgentEngine } from '../services/agents/types';
 import type { SessionHandle, SendToRenderer } from '../services/sessions/types';
 import type { LoggingService } from '../services/logging';
+import { createSideChatStore } from '../services/sessions/side-chat';
 
 type ControlCall = { subtype: string; payload: unknown };
 
@@ -46,6 +47,7 @@ function handle(engine: AgentEngine): SessionHandle {
     permissionMode: 'default',
     configDir: '/cfg',
     projectPath: '/proj',
+    sideChat: createSideChatStore(),
   } as unknown as SessionHandle;
 }
 
@@ -668,3 +670,89 @@ describe('listPermissionRules', () => {
     expect(await q.listPermissionRules('tab1')).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Side chat — the CLI's /btw over side_question
+// ---------------------------------------------------------------------------
+
+describe('side chat', () => {
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+  const sideChatPushes = (sent: { channel: string; args: unknown[] }[]) =>
+    sent.filter((e) => e.channel === 'session-side-chat:tab1').map((e) => e.args[0] as { exchanges: Record<string, unknown>[] });
+
+  it('sends side_question with a 600s timeout and emits pending then answered', async () => {
+    const { engine, calls } = createEngine({ control: () => ({ response: 'It is 42.', synthetic: false, usage: { output_tokens: 5 } }) });
+    const { q, sent, meta, sessions } = setup({ engine });
+    (sessions.get('tab1') as unknown as { lastModel: string }).lastModel = 'claude-fable-5-1';
+    await expect(q.askSideQuestion('tab1', 'meaning?')).resolves.toEqual({ ok: true });
+    expect(calls[0]).toEqual({ subtype: 'side_question', payload: { question: 'meaning?' } });
+    expect(vi.mocked(engine.sendControlRequest).mock.calls[0][2]).toMatchObject({ timeoutMs: 600_000 });
+    await flush();
+    const pushes = sideChatPushes(sent);
+    expect(pushes[0].exchanges[0].status).toBe('pending');
+    expect(pushes.at(-1)?.exchanges[0]).toMatchObject({ status: 'answered', answer: 'It is 42.' });
+    expect(meta()).toMatchObject({
+      op: 'side_question', ok: true, model: 'claude-fable-5-1', fallback_model: null,
+      usage: { output_tokens: 5 }, response_chars: 9,
+    });
+  });
+
+  it('logs the refusal fallback model when the CLI switched', async () => {
+    const { engine } = createEngine({ control: () => ({ response: 'x', refusalFallback: { fallbackModel: 'claude-opus-5-5' } }) });
+    const { q, meta } = setup({ engine });
+    await q.askSideQuestion('tab1', 'q');
+    await flush();
+    expect(meta()).toMatchObject({ fallback_model: 'claude-opus-5-5' });
+  });
+
+  it('sends earlier answered exchanges as history', async () => {
+    const { engine, calls } = createEngine({ control: () => ({ response: 'A' }) });
+    const { q } = setup({ engine });
+    await q.askSideQuestion('tab1', 'first');
+    await flush();
+    await q.askSideQuestion('tab1', 'second');
+    expect(calls[1].payload).toEqual({ question: 'second', history: [{ question: 'first', response: 'A' }] });
+  });
+
+  it('a CLI error marks the exchange failed', async () => {
+    const { engine } = createEngine({ control: () => { throw new Error('side_question is not supported'); } });
+    const { q } = setup({ engine });
+    await q.askSideQuestion('tab1', 'q');
+    await flush();
+    expect(q.getSideChat('tab1').exchanges[0]).toMatchObject({ status: 'failed', error: 'side_question is not supported' });
+  });
+
+  it('rejects with no live session, on Codex, and while one is pending', async () => {
+    expect(await setup({ registered: false }).q.askSideQuestion('tab1', 'q')).toEqual({ ok: false, error: 'No live session' });
+    const codex = setup();
+    (codex.sessions.get('tab1') as unknown as { agent: string }).agent = 'codex';
+    expect(await codex.q.askSideQuestion('tab1', 'q')).toEqual({ ok: false, error: 'Side chat is not available for Codex sessions' });
+    const { engine } = createEngine({ control: () => new Promise(() => {}) });
+    const busy = setup({ engine });
+    await busy.q.askSideQuestion('tab1', 'one');
+    expect(await busy.q.askSideQuestion('tab1', 'two')).toEqual({ ok: false, error: 'A side question is already pending' });
+  });
+
+  it('close aborts the in-flight request, empties the thread and ignores the late rejection', async () => {
+    let signal: AbortSignal | undefined;
+    const engine = {
+      kind: 'claude',
+      sendControlRequest: vi.fn((_s: string, _p: unknown, o?: { signal?: AbortSignal }) => {
+        signal = o?.signal;
+        return new Promise((_r, rej) => o?.signal?.addEventListener('abort', () => { rej(new Error('cancelled')); }));
+      }),
+    } as unknown as AgentEngine;
+    const { q, sent } = setup({ engine });
+    await q.askSideQuestion('tab1', 'q');
+    q.closeSideChat('tab1');
+    expect(signal?.aborted).toBe(true);
+    await flush();
+    expect(q.getSideChat('tab1')).toEqual({ exchanges: [] });
+    expect(sideChatPushes(sent).at(-1)).toEqual({ exchanges: [] });
+  });
+
+  it('getSideChat on an unknown tab is empty', () => {
+    expect(setup({ registered: false }).q.getSideChat('nope')).toEqual({ exchanges: [] });
+  });
+});
+

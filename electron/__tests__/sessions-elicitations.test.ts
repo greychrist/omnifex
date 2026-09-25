@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+import { createSideChatStore } from '../services/sessions/side-chat';
 import {
   createElicitationHandlers,
   respondToElicitation,
@@ -18,6 +19,7 @@ function harness() {
     engine: { respondElicitation },
     projectPath: '/Users/test/omnifex',
     elicitationQueue: [],
+    sideChat: createSideChatStore(),
   } as unknown as SessionHandle;
   const sendToRenderer = vi.fn();
   const showNotification = vi.fn();
