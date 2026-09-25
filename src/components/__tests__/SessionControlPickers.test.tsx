@@ -44,6 +44,35 @@ describe('SessionControlPickers — status-bar readouts that open pickers', () =
     expect(within(item('perms')).getByText('Accept Edits')).toBeTruthy();
   });
 
+  it('leads each readout with a glyph, like the rest of the bar', () => {
+    setup();
+    expect(item('model').querySelector('svg.lucide-zap')).toBeTruthy();
+    // One glyph that means "permissions", whatever the mode — not the
+    // mode's own, which would change under you and collide with Default's.
+    for (const permissionMode of ['acceptEdits', 'plan', 'default', 'auto']) {
+      cleanup();
+      setup({ permissionMode });
+      expect(item('perms').querySelectorAll('svg')).toHaveLength(1);
+      expect(item('perms').querySelector('svg.lucide-shield-check')).toBeTruthy();
+    }
+  });
+
+  it('tints the whole perms readout — glyph, label and value — in the mode color', () => {
+    setup({ permissionMode: 'auto' });
+    const button = within(item('perms')).getByRole('button');
+    expect(button.className).toContain('text-yellow-600');
+    for (const el of button.querySelectorAll('[class*="text-"]')) {
+      expect(el.getAttribute('class')).not.toMatch(/text-(purple|muted|foreground)/);
+    }
+  });
+
+  it('gives the Codex readouts glyphs too', () => {
+    setup({ engine: 'codex', model: 'gpt-5', effort: 'medium', permissionMode: 'default' });
+    expect(item('model').querySelector('svg')).toBeTruthy();
+    expect(item('effort').querySelector('svg')).toBeTruthy();
+    expect(item('perms').querySelector('svg')).toBeTruthy();
+  });
+
   it('separates the two with the same hairline the readouts use', () => {
     setup();
     expect(screen.getAllByTestId('status-divider')).toHaveLength(1);

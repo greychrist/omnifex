@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { useState } from 'react';
+import { Gauge, ShieldCheck, Zap } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { AccountEngine } from '@/lib/api';
 import { Popover } from '@/components/ui/popover';
@@ -26,17 +27,21 @@ import { MODEL_OPTIONS, EFFORT_OPTIONS, PERMISSION_OPTIONS, type DropdownOption 
  */
 function StatusBarPicker({
   id,
+  icon,
   label,
   value,
-  valueClassName,
+  tone,
   trailing,
   title,
   content,
 }: {
   id: string;
+  /** Leads the readout, as the bar's other readouts lead with theirs. */
+  icon: React.ReactNode;
   label: string;
   value: string;
-  valueClassName?: string;
+  /** Text color for the whole readout — glyph, label and value as one. */
+  tone?: string;
   /** A second value sharing this readout — effort beside the model. */
   trailing?: React.ReactNode;
   title: string;
@@ -62,10 +67,12 @@ function StatusBarPicker({
               'inline-flex items-center gap-1 rounded-sm px-0.5 -mx-0.5 cursor-pointer',
               'hover:bg-foreground/10 transition-colors',
               open && 'bg-foreground/10',
+              tone,
             )}
           >
+            <span aria-hidden="true" className="inline-flex">{icon}</span>
             <span className="opacity-70">{label}</span>
-            <span className={cn('truncate max-w-[9rem]', valueClassName)}>{value}</span>
+            <span className="truncate max-w-[9rem]">{value}</span>
             {trailing}
           </button>
         }
@@ -148,13 +155,13 @@ export function SessionControlPickers({
     const labelOf = (opts: DropdownOption[], id: string) => opts.find((o) => o.id === id)?.label ?? id;
     return (
       <>
-        <StatusBarPicker id="model" label="model" value={labelOf(MODEL_OPTIONS[engine], model)} title="Model"
+        <StatusBarPicker id="model" icon={<Zap className="h-3.5 w-3.5" />} label="model" value={labelOf(MODEL_OPTIONS[engine], model)} title="Model"
           content={(close) => <OptionList heading="Model" options={MODEL_OPTIONS[engine]} value={model} onSelect={(id) => { setModel(id); close(); }} />} />
         <InlineDivider data-testid="status-divider" />
-        <StatusBarPicker id="effort" label="effort" value={labelOf(EFFORT_OPTIONS[engine], effort)} title="Effort"
+        <StatusBarPicker id="effort" icon={<Gauge className="h-3.5 w-3.5" />} label="effort" value={labelOf(EFFORT_OPTIONS[engine], effort)} title="Effort"
           content={(close) => <OptionList heading="Effort" options={EFFORT_OPTIONS[engine]} value={effort} onSelect={(id) => { setEffort(id); close(); }} />} />
         <InlineDivider data-testid="status-divider" />
-        <StatusBarPicker id="perms" label="perms" value={labelOf(PERMISSION_OPTIONS[engine], permissionMode)} title="Permissions"
+        <StatusBarPicker id="perms" icon={<ShieldCheck className="h-3.5 w-3.5" />} label="perms" value={labelOf(PERMISSION_OPTIONS[engine], permissionMode)} title="Permissions"
           content={(close) => <OptionList heading="Permissions" options={PERMISSION_OPTIONS[engine]} value={permissionMode} onSelect={(id) => { setPermissionMode(id); close(); }} />} />
       </>
     );
@@ -178,6 +185,7 @@ export function SessionControlPickers({
           to say one word. */}
       <StatusBarPicker
         id="model"
+        icon={<Zap className="h-3.5 w-3.5" />}
         label="model"
         value={modelName}
         trailing={<span className={cn('opacity-80', effortData?.color)}>{effortName}</span>}
@@ -197,9 +205,13 @@ export function SessionControlPickers({
       <InlineDivider data-testid="status-divider" />
       <StatusBarPicker
         id="perms"
+        // One glyph for "permissions" whatever the mode — the mode's own would
+        // change under you, and Default's is a plain Shield. ShieldCheck is
+        // what PermissionCard wears for a permission request.
+        icon={<ShieldCheck className="h-3.5 w-3.5" />}
         label="perms"
         value={modeData.name}
-        valueClassName={modeData.color}
+        tone={modeData.color}
         title={`Permissions: ${modeData.name}`}
         content={(close) => (
           <PermissionPickerDropdown
