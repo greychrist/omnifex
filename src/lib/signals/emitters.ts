@@ -31,7 +31,7 @@ import {
   turnDeltaSeries,
   type ContextJumpSetting,
 } from '@/lib/turnDelta';
-import { deriveThinkingStatus, lastThinkingBurstTokens } from '@/lib/thinkingStatus';
+import { deriveThinkingStatus, lastTurnThinkingTokens } from '@/lib/thinkingStatus';
 import type { SessionSignal, SignalAction } from './types';
 
 /** How much headroom one Snooze buys. Additive across presses. */
@@ -142,7 +142,7 @@ function activitySignal(input: SignalInput): SessionSignal {
       // after the turn that produced it ends.
       turnStartedAt: turnInFlight ? input.turnStartedAt : null,
       lastTurnMs: input.lastTurnMs,
-      lastThinkingTokens: lastThinkingBurstTokens(messages),
+      turnThinkingTokens: lastTurnThinkingTokens(messages),
     },
   };
 }

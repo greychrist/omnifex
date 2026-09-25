@@ -1,4 +1,5 @@
 import type { JsonlNode } from "@/types/jsonl";
+import { forwardedParentToolUseId } from "@/lib/subagentDispatch";
 
 /** A thinking burst currently in flight. `tokens` is the CLI's running estimate. */
 export interface ThinkingStatus {
@@ -57,23 +58,37 @@ export function deriveThinkingStatus(messages: JsonlNode[]): ThinkingStatus | nu
 }
 
 /**
- * The newest thinking burst's total, whether or not that burst is still open.
+ * Every thinking burst since the last prompt, summed — open burst included.
  *
  * `deriveThinkingStatus` deliberately reports only a LIVE burst — it stops at
  * the first trailing message that is not `thinking_tokens` — so it goes null
  * the instant the model starts answering. The session status bar needs the
- * figure to survive the turn, so this walks back to the newest
- * `system:thinking_tokens` wherever it sits.
+ * figure to survive the turn, and a turn that thinks, calls a tool, and
+ * thinks again spent both bursts, so this walks back to the prompt.
  *
- * Within a burst the newest ping carries the running total, so the first hit
- * scanning backwards IS that burst's total; no accumulation is needed.
+ * Within a burst the newest ping carries that burst's running total, so the
+ * first ping met scanning backwards after a burst boundary (any non-`system`
+ * node, the same boundary `deriveThinkingStatus` uses) is added and the rest
+ * of that burst skipped.
+ *
+ * Null when the latest turn did not think: the previous turn's figure would
+ * be read as this one's.
  */
-export function lastThinkingBurstTokens(messages: JsonlNode[]): number | null {
+export function lastTurnThinkingTokens(messages: JsonlNode[]): number | null {
+  let total: number | null = null;
+  let inBurst = false;
   for (let i = messages.length - 1; i >= 0; i--) {
     const message = messages[i];
-    if (message.kind !== "system" || message.subtype !== "thinking_tokens") continue;
+    if (message.kind === "user" && message.userKind === "prompt" && forwardedParentToolUseId(message.raw) === null) break;
+    if (message.kind !== "system") {
+      inBurst = false;
+      continue;
+    }
+    if (message.subtype !== "thinking_tokens" || inBurst) continue;
     const estimate = (message.raw as { estimated_tokens?: number }).estimated_tokens;
-    if (typeof estimate === "number") return estimate;
+    if (typeof estimate !== "number") continue;
+    total = (total ?? 0) + estimate;
+    inBurst = true;
   }
-  return null;
+  return total;
 }

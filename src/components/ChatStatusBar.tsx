@@ -306,7 +306,7 @@ interface ActivityMeta {
   thinkingTokens?: number | null;
   turnStartedAt?: number | null;
   lastTurnMs?: number | null;
-  lastThinkingTokens?: number | null;
+  turnThinkingTokens?: number | null;
 }
 
 export interface ChatStatusBarProps {
@@ -376,9 +376,9 @@ export function ChatStatusBar({
     ? Math.max(0, nowMs - turnStartedAt)
     : (meta?.lastTurnMs ?? null);
 
-  // The live burst total wins over the frozen one: mid-burst, the frozen value
-  // is the PREVIOUS burst and showing it would be stale by a whole round.
-  const thinkingTokens = meta?.thinkingTokens ?? meta?.lastThinkingTokens ?? null;
+  // The turn's tally wins: it already counts the open burst, plus every burst
+  // before it since the prompt. The live burst alone is only a fallback.
+  const thinkingTokens = meta?.turnThinkingTokens ?? meta?.thinkingTokens ?? null;
   const thinkingLive = status === 'thinking';
 
   // `CacheTimerRow` hides itself when it has nothing to count; the same
@@ -425,11 +425,11 @@ export function ChatStatusBar({
         key="thinking"
         // Past tense once the burst is over: the number is what it DID think,
         // not what it is thinking.
-        aria-label={thinkingLive ? 'thinking' : 'thought — last burst'}
+        aria-label={thinkingLive ? 'thinking' : 'thought — last turn'}
         title={
           thinkingLive
             ? 'Extended thinking in progress'
-            : "The previous turn's thinking burst"
+            : "Thinking tokens across the previous turn"
         }
         className={cn(
           'inline-flex items-center gap-1 text-violet-400',

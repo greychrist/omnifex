@@ -81,13 +81,13 @@ describe('ChatStatusBar', () => {
     render(
       <ChatStatusBar
         {...base}
-        activitySignal={signal({ status: 'idle', turnStartedAt: null, lastTurnMs: 3_000, lastThinkingTokens: 800 })}
+        activitySignal={signal({ status: 'idle', turnStartedAt: null, lastTurnMs: 3_000, turnThinkingTokens: 800 })}
       />,
     );
     expect(screen.getByLabelText('working — last round')).toBeTruthy();
     // Past tense once the burst is over: the number is what it DID think,
     // not what it is thinking.
-    const burst = screen.getByLabelText('thought — last burst');
+    const burst = screen.getByLabelText('thought — last turn');
     expect(burst.textContent).toContain('thought');
     expect(burst.textContent).toContain('800 tokens');
   });
@@ -118,19 +118,18 @@ describe('ChatStatusBar', () => {
     expect(screen.getByLabelText(/^thinking/i).className).toContain('animate-pulse');
   });
 
-  // Mid-burst the frozen value is the PREVIOUS burst, so showing it would be
-  // stale by a whole round.
-  it('shows the live thinking total in preference to the frozen one', () => {
+  // The turn tally already includes the open burst, plus the bursts before it.
+  it("shows the turn's thinking tally in preference to the live burst alone", () => {
     render(
       <ChatStatusBar
         {...base}
         activitySignal={signal({
-          status: 'thinking', thinkingTokens: 900, lastThinkingTokens: 12_400, turnStartedAt: Date.now(),
+          status: 'thinking', thinkingTokens: 900, turnThinkingTokens: 12_400, turnStartedAt: Date.now(),
         })}
       />,
     );
-    expect(screen.getByText('900 tokens')).toBeTruthy();
-    expect(screen.queryByText('12.4k tokens')).toBeNull();
+    expect(screen.getByText('12.4k tokens')).toBeTruthy();
+    expect(screen.queryByText('900 tokens')).toBeNull();
   });
 
   it('omits the thinking glyph for a turn that never thought', () => {
@@ -145,7 +144,7 @@ describe('ChatStatusBar', () => {
     render(
       <ChatStatusBar
         {...base}
-        activitySignal={signal({ status: 'idle', turnStartedAt: null, lastTurnMs: 3_000, lastThinkingTokens: 800 })}
+        activitySignal={signal({ status: 'idle', turnStartedAt: null, lastTurnMs: 3_000, turnThinkingTokens: 800 })}
       />,
     );
     expect(screen.getByText('daemon')).toBeTruthy();
@@ -185,7 +184,7 @@ describe('ChatStatusBar', () => {
     const { unmount } = render(
       <ChatStatusBar
         {...base}
-        activitySignal={signal({ status: 'idle', lastTurnMs: 3_000, lastThinkingTokens: 800 })}
+        activitySignal={signal({ status: 'idle', lastTurnMs: 3_000, turnThinkingTokens: 800 })}
         cacheAnchorMs={Date.now() - 60_000}
         cacheTtlMs={5 * 60_000}
       />,

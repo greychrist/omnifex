@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { JsonlNode } from '@/types/jsonl';
-import { deriveThinkingStatus, lastThinkingBurstTokens } from '../thinkingStatus';
+import { deriveThinkingStatus, lastTurnThinkingTokens } from '../thinkingStatus';
 
 const thinkingTokens = (estimated_tokens: number, receivedAt = ''): JsonlNode =>
   ({
@@ -90,43 +90,55 @@ describe('deriveThinkingStatus — burst start', () => {
   });
 });
 
-describe('lastThinkingBurstTokens', () => {
-  it('returns the newest burst total after the burst has ended', () => {
+describe('lastTurnThinkingTokens', () => {
+  it('returns the burst total after the burst has ended', () => {
     expect(
-      lastThinkingBurstTokens([thinkingTokens(1200), thinkingTokens(4800), assistantText('done')]),
+      lastTurnThinkingTokens([userText('go'), thinkingTokens(1200), thinkingTokens(4800), assistantText('done')]),
     ).toBe(4800);
   });
 
   it('returns the open burst total while it is still running', () => {
-    expect(lastThinkingBurstTokens([assistantText('x'), thinkingTokens(900)])).toBe(900);
+    expect(lastTurnThinkingTokens([userText('go'), assistantText('x'), thinkingTokens(900)])).toBe(900);
   });
 
-  it('returns null when the session has never thought', () => {
-    expect(lastThinkingBurstTokens([assistantText('x'), userText('hi')])).toBeNull();
+  it('tallies every burst since the last prompt, not just the newest', () => {
+    // Each burst's pings are a running total for THAT burst; a turn that
+    // thinks, calls a tool, and thinks again spent both.
+    expect(
+      lastTurnThinkingTokens([
+        userText('go'),
+        thinkingTokens(300), thinkingTokens(9000), assistantText('a'),
+        thinkingTokens(50), thinkingTokens(100), status('requesting'), assistantText('b'),
+      ]),
+    ).toBe(9100);
+  });
+
+  it('stops at the last prompt, leaving earlier turns out', () => {
+    expect(
+      lastTurnThinkingTokens([
+        userText('one'), thinkingTokens(5000), assistantText('a'),
+        userText('two'), thinkingTokens(200), assistantText('b'),
+      ]),
+    ).toBe(200);
+  });
+
+  it("returns null when the latest turn did not think, rather than the previous turn's figure", () => {
+    expect(
+      lastTurnThinkingTokens([userText('one'), thinkingTokens(5000), assistantText('a'), userText('two'), assistantText('b')]),
+    ).toBeNull();
   });
 
   it('returns null for an empty transcript', () => {
-    expect(lastThinkingBurstTokens([])).toBeNull();
-  });
-
-  it('reports the NEWEST burst, not the largest earlier one', () => {
-    expect(
-      lastThinkingBurstTokens([
-        thinkingTokens(9000), assistantText('a'), thinkingTokens(100), assistantText('b'),
-      ]),
-    ).toBe(100);
+    expect(lastTurnThinkingTokens([])).toBeNull();
   });
 
   it('survives the burst closing, which is where deriveThinkingStatus gives up', () => {
-    // deriveThinkingStatus breaks on the first trailing non-system message, so
-    // the assistant's answer erases the figure. That is exactly the moment the
-    // status bar still wants to show it.
-    const closed = [thinkingTokens(4800), assistantText('here you go')];
+    const closed = [userText('go'), thinkingTokens(4800), assistantText('here you go')];
     expect(deriveThinkingStatus(closed)).toBeNull();
-    expect(lastThinkingBurstTokens(closed)).toBe(4800);
+    expect(lastTurnThinkingTokens(closed)).toBe(4800);
   });
 
   it('still reports through a trailing system:status ping', () => {
-    expect(lastThinkingBurstTokens([thinkingTokens(4800), status('requesting')])).toBe(4800);
+    expect(lastTurnThinkingTokens([userText('go'), thinkingTokens(4800), status('requesting')])).toBe(4800);
   });
 });
