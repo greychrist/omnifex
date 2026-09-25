@@ -1,5 +1,6 @@
 import { apiCall } from './apiAdapter';
 import type { HooksConfiguration } from '@/types/hooks';
+import type { SideChat, SideChatAskResult } from '@/lib/sideChat';
 
 /** Drop `undefined` optional params before an object crosses the IPC
  *  boundary — the main process can't distinguish `undefined` from missing. */
@@ -1861,6 +1862,24 @@ export const api = {
    */
   async sessionSetTitle(tabId: string, title: string): Promise<boolean> {
     return apiCall("session_set_title", { tabId, title });
+  },
+
+  /**
+   * Ask a side question (the CLI's `/btw`). Resolves once it is pending; the
+   * answer arrives on `session-side-chat:<tabId>`.
+   */
+  async sessionSideChatAsk(tabId: string, question: string): Promise<SideChatAskResult> {
+    return apiCall("session_side_chat_ask", { tabId, question });
+  },
+
+  /** Discard the side chat, cancelling a pending question. */
+  async sessionSideChatClose(tabId: string): Promise<void> {
+    return apiCall("session_side_chat_close", { tabId });
+  },
+
+  /** The current side chat, to seed a panel after a reload. */
+  async sessionGetSideChat(tabId: string): Promise<SideChat> {
+    return apiCall("session_get_side_chat", { tabId });
   },
 
   /**

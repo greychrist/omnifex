@@ -90,6 +90,9 @@ export interface Services {
     interrupt(sessionId: string): unknown;
     setModel(sessionId: string, model?: string): unknown;
     setTitle(sessionId: string, title: string): unknown;
+    askSideQuestion(sessionId: string, question: string): unknown;
+    closeSideChat(sessionId: string): unknown;
+    getSideChat(sessionId: string): unknown;
     suggestTitle(sessionId: string, description: string): unknown;
     setPermissionMode(sessionId: string, mode: string): unknown;
     setEffort(sessionId: string, level: unknown): unknown;
@@ -535,6 +538,9 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     session_interrupt: wrapWith((p: Record<string, unknown>) => sessions?.interrupt((p?.tabId ?? p?.session_id) as string) ?? null),
     session_set_model: wrapWith((p: Record<string, unknown>) => sessions?.setModel((p?.tabId ?? p?.session_id) as string, p?.model as string | undefined) ?? null),
     session_set_title: wrapWith((p: Record<string, unknown>) => sessions?.setTitle((p?.tabId ?? p?.session_id) as string, (p?.title ?? '') as string) ?? null),
+    session_side_chat_ask: wrapWith((p: Record<string, unknown>) => sessions?.askSideQuestion((p?.tabId ?? p?.tab_id) as string, (p?.question ?? '') as string) ?? { ok: false, error: 'No live session' }),
+    session_side_chat_close: wrapWith((p: Record<string, unknown>) => sessions?.closeSideChat((p?.tabId ?? p?.tab_id) as string) ?? null),
+    session_get_side_chat: wrapWith((p: Record<string, unknown>) => sessions?.getSideChat((p?.tabId ?? p?.tab_id) as string) ?? { exchanges: [] }),
     session_suggest_title: wrapWith((p: Record<string, unknown>) => sessions?.suggestTitle((p?.tabId ?? p?.session_id) as string, (p?.description ?? '') as string) ?? null),
     session_set_permission_mode: wrapWith((p: Record<string, unknown>) => sessions?.setPermissionMode((p?.tabId ?? p?.session_id) as string, (p?.mode ?? p?.permissionMode) as string) ?? null),
     session_set_effort: wrapWith((p: Record<string, unknown>) => sessions?.setEffort((p?.tabId ?? p?.session_id) as string, (p?.level ?? p?.effort) as any) ?? null),

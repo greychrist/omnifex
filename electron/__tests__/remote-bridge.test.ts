@@ -254,4 +254,12 @@ describe('remote session bridge', () => {
       ['account-mismatch', 'session-account-mismatch'],
     ]);
   });
+
+  it('forwards session-side-chat:<id> snapshots as a session event', () => {
+    openSession(log, 's1');
+    bridge.sendToRenderer('session-side-chat:s1', { exchanges: [] });
+    expect(published.at(-1)).toMatchObject({
+      type: 'event', sessionId: 's1', channel: 'session-side-chat', payload: { exchanges: [] },
+    });
+  });
 });

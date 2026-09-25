@@ -1347,6 +1347,9 @@ app.whenReady().then(() => {
       interrupt: (sessionId: string) => sessionsService.interrupt(sessionId),
       setModel: (sessionId: string, model?: string) => sessionsService.setModel(sessionId, model),
       setTitle: (sessionId: string, title: string) => sessionsService.setTitle(sessionId, title),
+      askSideQuestion: (sessionId: string, question: string) => sessionsService.askSideQuestion(sessionId, question),
+      closeSideChat: (sessionId: string) => { sessionsService.closeSideChat(sessionId); },
+      getSideChat: (sessionId: string) => sessionsService.getSideChat(sessionId),
       suggestTitle: (sessionId: string, description: string) => sessionsService.suggestTitle(sessionId, description),
       setPermissionMode: (sessionId: string, mode: string) =>
         sessionsService.setPermissionMode(sessionId, mode as any),
