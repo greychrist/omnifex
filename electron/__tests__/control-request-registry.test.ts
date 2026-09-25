@@ -57,4 +57,13 @@ describe('createControlRequestRegistry', () => {
     expect(() => reg.fail('nope', new Error('x'))).not.toThrow();
     expect(reg.size()).toBe(0);
   });
+
+  it('honours a per-call timeout over the registry default', async () => {
+    const reg = createControlRequestRegistry({ timeoutMs: 10_000 });
+    const p = reg.create('a', 'side_question', 600_000);
+    vi.advanceTimersByTime(10_001);
+    expect(reg.size()).toBe(1);
+    vi.advanceTimersByTime(600_000);
+    await expect(p).rejects.toThrow("control_request 'side_question' timed out after 600000ms");
+  });
 });

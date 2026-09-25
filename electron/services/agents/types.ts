@@ -104,6 +104,14 @@ export interface InitData {
   agents?: unknown[];
 }
 
+/** Per-call knobs for `sendControlRequest`. */
+export interface ControlRequestOptions {
+  /** Overrides the registry's 10 s default — `side_question` needs 600 s. */
+  timeoutMs?: number;
+  /** Aborting sends the CLI a `control_cancel_request` and rejects locally. */
+  signal?: AbortSignal;
+}
+
 export interface AgentEngine {
   readonly kind: AgentKind;
 
@@ -134,6 +142,7 @@ export interface AgentEngine {
   sendControlRequest<T = unknown>(
     subtype: string,
     params?: Record<string, unknown>,
+    opts?: ControlRequestOptions,
   ): Promise<T>;
   respondPermission(
     requestId: string,

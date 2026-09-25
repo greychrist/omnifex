@@ -356,6 +356,31 @@ describe('ClaudeCliEngine — control requests', () => {
     void engine.interrupt().catch(() => {});
     expect((written().at(-1) as { request: { subtype: string } }).request.subtype).toBe('interrupt');
   });
+
+  it('aborting the signal writes control_cancel_request and rejects locally', async () => {
+    const { engine, written } = await started();
+    const ac = new AbortController();
+    const p = engine.sendControlRequest('side_question', { question: 'q' }, { signal: ac.signal });
+    const id = (written().at(-1) as { request_id: string }).request_id;
+    ac.abort();
+    await expect(p).rejects.toThrow("control_request 'side_question' cancelled");
+    expect(written().at(-1)).toEqual({ type: 'control_cancel_request', request_id: id });
+  });
+
+  it('passes timeoutMs through to the pending registry', async () => {
+    const { engine } = await started();
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const settled = vi.fn();
+      engine.sendControlRequest('side_question', {}, { timeoutMs: 600_000 }).catch(settled);
+      await vi.advanceTimersByTimeAsync(10_001);
+      expect(settled).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(600_000);
+      expect(settled).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe('ClaudeCliEngine — applyExtendedPermissionMode', () => {

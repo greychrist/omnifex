@@ -2,6 +2,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { createJsonRpcClient, type JsonRpcClient } from './json-rpc-client';
 import type {
   AgentEngine,
+  ControlRequestOptions,
   AgentEngineExit,
   AgentMessage,
   AgentPermissionRequest,
@@ -228,6 +229,7 @@ export function createCodexCliEngine(
   async function sendControlRequest<T = unknown>(
     _subtype: string,
     _params?: Record<string, unknown>,
+    _opts?: ControlRequestOptions,
   ): Promise<T> {
     throw new Error('CodexCliEngine.sendControlRequest: not yet wired');
   }

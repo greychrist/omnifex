@@ -4,6 +4,7 @@ import { createAssistantResolver } from './assistantMeta';
 import { createControlRequestRegistry } from './control-request-registry';
 import type {
   AgentEngine,
+  ControlRequestOptions,
   AgentElicitationRequest,
   AgentEngineExit,
   AgentMessage,
@@ -559,6 +560,7 @@ export function createClaudeCliEngine(
   function sendControlRequest<T = unknown>(
     subtype: string,
     params?: Record<string, unknown>,
+    opts?: ControlRequestOptions,
   ): Promise<T> {
     if (!child || !child.stdin.writable) {
       return Promise.reject(new Error('ClaudeCliEngine.sendControlRequest: child not running'));
@@ -570,12 +572,27 @@ export function createClaudeCliEngine(
       request: { subtype, ...(params ?? {}) },
     };
     const line = JSON.stringify(envelope) + '\n';
-    const promise = pendingControlRequests.create<T>(requestId, subtype);
+    const promise = pendingControlRequests.create<T>(requestId, subtype, opts?.timeoutMs);
     child.stdin.write(line, (err) => {
       // A failed write means no response will ever come — reject now rather
       // than waiting for the timeout.
       if (err) pendingControlRequests.fail(requestId, err);
     });
+    // The CLI keys an in-flight request's abort controller by request_id and
+    // aborts it on a host-sent control_cancel_request (verified for
+    // side_question in 2.1.282). Reject locally too: the CLI's own reply to a
+    // cancel is an error the caller should not have to wait for.
+    const signal = opts?.signal;
+    if (signal) {
+      const onAbort = () => {
+        if (child?.stdin.writable) {
+          child.stdin.write(JSON.stringify({ type: 'control_cancel_request', request_id: requestId }) + '\n', () => {});
+        }
+        pendingControlRequests.fail(requestId, new Error(`control_request '${subtype}' cancelled`));
+      };
+      if (signal.aborted) onAbort();
+      else signal.addEventListener('abort', onAbort, { once: true });
+    }
     return promise;
   }
 

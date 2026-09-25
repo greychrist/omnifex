@@ -30,8 +30,9 @@ export interface ControlRequestRegistry {
    * Register a pending request and return a promise that settles when the CLI
    * responds (`settle`/`fail`), the request times out, or the engine exits
    * (`failAll`). `subtype` is only used to make the timeout error legible.
+   * `timeoutMs` overrides the registry default for this one request.
    */
-  create<T = unknown>(id: string, subtype?: string): Promise<T>;
+  create<T = unknown>(id: string, subtype?: string, timeoutMs?: number): Promise<T>;
   /** Resolve a pending request by id (from a non-error `control_response`). */
   settle(id: string, value: unknown): void;
   /** Reject a single pending request by id (e.g. an error `control_response`). */
@@ -57,17 +58,18 @@ export function createControlRequestRegistry(opts?: {
   }
 
   return {
-    create<T = unknown>(id: string, subtype?: string): Promise<T> {
+    create<T = unknown>(id: string, subtype?: string, perCallTimeoutMs?: number): Promise<T> {
+      const ms = perCallTimeoutMs ?? timeoutMs;
       return new Promise<T>((resolve, reject) => {
         const timer = setTimeout(() => {
           if (drop(id)) {
             reject(
               new Error(
-                `control_request${subtype ? ` '${subtype}'` : ''} timed out after ${timeoutMs}ms`,
+                `control_request${subtype ? ` '${subtype}'` : ''} timed out after ${ms}ms`,
               ),
             );
           }
-        }, timeoutMs);
+        }, ms);
         // Don't keep the event loop alive solely for a control-request timeout.
         if (typeof timer.unref === 'function') timer.unref();
         pending.set(id, { resolve: resolve as (v: unknown) => void, reject, timer });
