@@ -232,7 +232,11 @@ So side-question spend is one instance of a wider gap: every fork the CLI runs
 with `skipTranscript` (side questions, prompt suggestions, and the like) is
 invisible to the transcript-derived Cost Report. That gap is fixed once, for all
 of them, by reconciling against `cost-state` — separate work with its own spec.
-Side chat adds no cost code, and its spend is covered by that fix.
+Side chat adds no cost code. Until that fix exists, side-chat spend is
+unreported (a few cents a question). The one concession: the ask path logs the
+reply's `usage`, `synthetic` and answer length (not the text) through
+`logControl`, as `setTitle` does, so real per-question numbers are in
+`app_logs` if the reconciliation is ever weighed.
 
 ## Accepted consequences
 
