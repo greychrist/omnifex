@@ -176,8 +176,12 @@ the engine to expose the request id of an in-flight `sendControlRequest` (or a
 
 ### Open / close
 
-- Toolbar button beside MCP/Plugins/Permissions/Context
-  (`MessageCircleQuestion`). Hidden for Codex sessions.
+- A button in the composer's button row, in the slot the Copy-conversation
+  popover held (`MessageCircleQuestion`). Hidden for Codex sessions. Copy
+  session (Markdown/JSONL) is removed outright — unused.
+- Button and bare `/btw` are the same action: open the panel, focus its input,
+  send nothing. The question goes to the CLI only when sent from the panel
+  (or typed inline as `/btw <question>`).
 - `/btw <question>` in the main composer opens the panel and asks, instead of
   sending a prompt. `/btw` alone opens the panel with focus in its input.
 - Visible when the local open flag is set **or** the side chat has any
@@ -234,7 +238,10 @@ invisible to the transcript-derived Cost Report. That gap is fixed once, for all
 of them, by reconciling against `cost-state` — separate work with its own spec.
 Side chat adds no cost code. Until that fix exists, side-chat spend is
 unreported (a few cents a question). The one concession: the ask path logs the
-reply's `usage`, `synthetic` and answer length (not the text) through
+reply's `usage`, `synthetic` and answer length (not the text), plus the model —
+the handle's last assistant model, since the reply names none and sessions
+switch models mid-way, and the refusal-fallback model when the CLI used one —
+through
 `logControl`, as `setTitle` does, so real per-question numbers are in
 `app_logs` if the reconciliation is ever weighed.
 
