@@ -5,6 +5,25 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.193] — 2026-09-25
+
+### Added
+
+- **Side chat.** Ask Claude something about the session without derailing it — Claude Code's `/btw`. A side-chat button in the composer (or `/btw` on its own) opens a panel beside the transcript; `/btw <question>` opens it and asks straight away, even while a turn is running. Answers come from the conversation so far, use no tools and are never added to the session. The thread lasts until you close it or the session ends, and follows the session to a reload and to the iPad. Closing the panel with a question still waiting cancels it. Not available for Codex sessions.
+- **Spend Claude Code keeps out of the transcript now reaches the Cost Report.** Side questions, session-title generation and other calls Claude Code runs without writing them to the session file used to cost money the report never showed. OmniFex now reads Claude Code's own running token totals for each session, prices the part no transcript records the same way as everything else, and adds it to that session's project and account on the next hourly cost sweep.
+
+### Changed
+
+- **Far less background git.** The branch and changes badges used to run `git` for every open tab every three seconds, whether or not anyone was looking. Tabs on the same repository, including its worktrees, now share one reader, polling runs only while a tab is actually on screen (paused when the window is hidden or minimised and when the screen is locked or the Mac sleeps), and the worktree list is re-read only when worktrees change. In a typical six-tab setup that is 1 git process per poll instead of 10, and none while hidden. On macOS each of those processes also cost two system-log errors, which were crowding older history out of the log.
+
+### Fixed
+
+- **A poll no longer triggers a second poll.** Reading git status rewrote the repository's index, which the watcher saw as a change and read again. It now reads without taking optional locks.
+
+### Removed
+
+- **Copy conversation** (Copy as Markdown / Copy as JSONL). Its slot in the composer now holds the side-chat button.
+
 ## [0.4.192] — 2026-09-25
 
 ### Added
