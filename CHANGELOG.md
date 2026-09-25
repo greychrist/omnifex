@@ -5,6 +5,14 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.192] — 2026-09-25
+
+### Added
+- Status bar: the model/effort readout now leads with a glyph, and the permissions readout with a shield that means "permissions" whatever the mode. The whole permissions readout — glyph, label and mode name — takes the mode's color.
+
+### Fixed
+- Status bar: the "thought" readout now tallies every thinking burst since the last prompt, not just the most recent one, and hides when the latest turn did not think instead of showing the previous turn's figure.
+
 ## [0.4.191] — 2026-09-24
 
 ### Added
