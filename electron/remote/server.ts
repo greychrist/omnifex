@@ -102,6 +102,7 @@ interface Connection extends ClientContext {
   clientId: string;
   clientKind: 'electron' | 'web';
   subscriptions: Set<string>;
+  closeListeners: (() => void)[];
 }
 
 export function createRemoteServer(deps: RemoteServerDeps): RemoteServer {
@@ -164,6 +165,11 @@ export function createRemoteServer(deps: RemoteServerDeps): RemoteServer {
   function dropConnection(conn: Connection): void {
     for (const id of [...conn.subscriptions]) unsubscribe(conn, id);
     connections.delete(conn);
+    for (const fn of conn.closeListeners.splice(0)) {
+      try { fn(); } catch (err) {
+        log.warn('close listener failed', { clientId: conn.clientId, error: err instanceof Error ? err.message : String(err) });
+      }
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -235,6 +241,8 @@ export function createRemoteServer(deps: RemoteServerDeps): RemoteServer {
       clientId: 'anonymous',
       clientKind: 'web',
       subscriptions: new Set(),
+      closeListeners: [],
+      onClose: (fn) => { conn.closeListeners.push(fn); },
       subscribe: (id) => subscribe(conn, id),
       unsubscribe: (id) => unsubscribe(conn, id),
       send: (m) => send(conn, m),

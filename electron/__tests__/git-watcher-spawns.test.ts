@@ -11,12 +11,13 @@ import path from 'node:path';
 // worktrees.
 
 const gitCalls = vi.hoisted(() => [] as string[][]);
+const gitFiles = vi.hoisted(() => [] as string[]);
 vi.mock('node:child_process', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:child_process')>();
   return {
     ...actual,
     execFile: ((file: string, args: string[], ...rest: unknown[]) => {
-      if (file === 'git') gitCalls.push(args);
+      if (file === 'git' || file.endsWith('/git')) { gitCalls.push(args); gitFiles.push(file); }
       return (actual.execFile as (...a: unknown[]) => unknown)(file, args, ...rest);
     }) as typeof actual.execFile,
   };
@@ -55,6 +56,7 @@ describe('git watcher — process churn', () => {
 
   beforeEach(() => {
     gitCalls.length = 0;
+    gitFiles.length = 0;
     send = vi.fn<(channel: string, ...args: unknown[]) => void>();
     // Only the poll interval is faked: ticks fire when the test says so.
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
@@ -200,5 +202,81 @@ describe('git watcher — process churn', () => {
     await w.start(repo);
     expect(statusCalls()).toBe(1);
     w.disposeAll();
+  });
+
+  it('runs git by absolute path, so libuv does not posix_spawn once per PATH entry', async () => {
+    const repo = makeTempRepo(); dirs.push(repo);
+    const w = createSessionGitWatcher({ sendToRenderer: send, pollIntervalMs: INTERVAL });
+    await w.start(repo);
+    await settle();
+    expect(gitFiles.length).toBeGreaterThan(0);
+    for (const f of gitFiles) expect(path.isAbsolute(f)).toBe(true);
+    w.disposeAll();
+  });
+
+  describe('a watch held by a client connection', () => {
+    function holder() {
+      const listeners: (() => void)[] = [];
+      return {
+        onClose: (fn: () => void) => { listeners.push(fn); },
+        close: () => { for (const fn of listeners.splice(0)) fn(); },
+      };
+    }
+
+    it('stops polling when the connection that holds it closes', async () => {
+      const repo = makeTempRepo(); dirs.push(repo);
+      const w = createSessionGitWatcher({ sendToRenderer: send, pollIntervalMs: INTERVAL });
+      const conn = holder();
+      await w.start(repo, conn);
+      await settle();
+      gitCalls.length = 0;
+      await tick();
+      expect(statusCalls()).toBe(1);
+
+      conn.close();
+      gitCalls.length = 0;
+      await tick(3);
+      expect(gitCalls).toEqual([]);
+      w.disposeAll();
+    });
+
+    it('resumes when a reconnected client reports it visible, and the old connection no longer holds it', async () => {
+      const repo = makeTempRepo(); dirs.push(repo);
+      const w = createSessionGitWatcher({ sendToRenderer: send, pollIntervalMs: INTERVAL });
+      const first = holder();
+      const a = await w.start(repo, first);
+      await settle();
+      first.close();
+
+      const second = holder();
+      w.setVisible(a.watchId, true, second);
+      await settle();
+      gitCalls.length = 0;
+      await tick();
+      expect(statusCalls()).toBe(1);
+
+      // A late close from the first connection must not hide it again.
+      first.close();
+      gitCalls.length = 0;
+      await tick();
+      expect(statusCalls()).toBe(1);
+
+      second.close();
+      gitCalls.length = 0;
+      await tick(2);
+      expect(gitCalls).toEqual([]);
+      w.disposeAll();
+    });
+
+    it('a watch with no holder (the in-process IPC path) is unaffected', async () => {
+      const repo = makeTempRepo(); dirs.push(repo);
+      const w = createSessionGitWatcher({ sendToRenderer: send, pollIntervalMs: INTERVAL });
+      await w.start(repo);
+      await settle();
+      gitCalls.length = 0;
+      await tick(2);
+      expect(statusCalls()).toBe(2);
+      w.disposeAll();
+    });
   });
 });

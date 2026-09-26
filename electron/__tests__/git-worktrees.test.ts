@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { discoverWorktrees, parseWorktreeListPorcelain } from '../services/git-worktrees';
+import { gitBinary } from '../services/git-binary';
 
 describe('parseWorktreeListPorcelain', () => {
   it('extracts worktree paths from canonical porcelain output', () => {
@@ -65,7 +66,7 @@ describe('discoverWorktrees', () => {
 
     expect(result).toEqual(['/repo/wt-a', '/repo/wt-b']);
     expect(exec).toHaveBeenCalledWith(
-      'git',
+      gitBinary(),
       ['-C', '/repo/main', 'worktree', 'list', '--porcelain'],
       expect.objectContaining({ cwd: '/repo/main', timeout: 2000 }),
     );

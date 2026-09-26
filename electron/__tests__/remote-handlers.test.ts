@@ -54,6 +54,8 @@ function fakeSessions(send: { current: (channel: string, ...args: unknown[]) => 
   return { svc, calls, active, turns, setRespondResult: (v: boolean) => { respondResult = v; } };
 }
 
+const rpcSeen: { event: unknown; params: unknown }[] = [];
+
 function fakeCtx() {
   const sent: ServerMessage[] = [];
   const subs = new Set<string>();
@@ -64,6 +66,7 @@ function fakeCtx() {
     subscribe: (id) => { subs.add(id); },
     unsubscribe: (id) => { subs.delete(id); },
     send: (m) => { sent.push(m); },
+    onClose: () => {},
   };
   return { ctx, sent, subs };
 }
@@ -100,7 +103,7 @@ describe('remote handlers', () => {
       projects,
       rpc: {
         handlers: {
-          list_accounts: async () => [{ id: 1 }],
+          list_accounts: async (event: unknown, params?: Record<string, unknown>) => { rpcSeen.push({ event, params }); return [{ id: 1 }]; },
           explode: async () => { throw new Error('[NO_ACCOUNT_FOR_PROJECT] nothing owns /x'); },
           plain_fail: async () => { throw new Error('disk full'); },
         },
@@ -296,6 +299,12 @@ describe('remote handlers', () => {
   describe('rpc.invoke', () => {
     it('dispatches an allowed channel', async () => {
       expect(await h['rpc.invoke']({ channel: 'list_accounts' }, fakeCtx().ctx)).toEqual([{ id: 1 }]);
+    });
+
+    it('hands the handler the client context as its event, so a watch can live and die with the connection', async () => {
+      const { ctx } = fakeCtx();
+      await h['rpc.invoke']({ channel: 'list_accounts', params: { a: 1 } }, ctx);
+      expect(rpcSeen.at(-1)).toEqual({ event: ctx, params: { a: 1 } });
     });
 
     it('refuses a channel outside the allowlist before looking it up', async () => {

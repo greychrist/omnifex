@@ -121,6 +121,8 @@ export interface ClientContext {
   unsubscribe(sessionId: string): void;
   /** Push to this one client, outside any request/response pair. */
   send(message: ServerMessage): void;
+  /** Run `listener` once, when this client's connection closes. */
+  onClose(listener: () => void): void;
 }
 
 /**

@@ -106,7 +106,7 @@ function buildMockServices() {
     claudeAuth: mockService(['startLoginFlow', 'logout'] as const),
     proxy: mockService(['getSettings', 'saveSettings'] as const),
     permissionsIO: createPermissionsIOService(),
-    gitWatcher: mockService(['startSession', 'stopSession', 'reconnectSession', 'listWorktrees'] as const),
+    gitWatcher: mockService(['startSession', 'stopSession', 'reconnectSession', 'setSessionVisible', 'listWorktrees'] as const),
   };
 }
 
@@ -767,13 +767,13 @@ describe('ipc handlers — dispatch to services', () => {
     services.gitWatcher.startSession.mockResolvedValueOnce({ watchId: 'w-1', snapshot: snap });
     const result = await invoke(handlers, 'start_session_git_watch', { projectPath: '/tmp/x' });
     expect(result).toEqual({ watchId: 'w-1', snapshot: snap });
-    expect(services.gitWatcher.startSession).toHaveBeenCalledWith('/tmp/x');
+    expect(services.gitWatcher.startSession).toHaveBeenCalledWith('/tmp/x', undefined);
   });
 
   it('start_session_git_watch accepts snake_case project_path param', async () => {
     services.gitWatcher.startSession.mockResolvedValueOnce({ watchId: 'w-2', snapshot: null });
     await invoke(handlers, 'start_session_git_watch', { project_path: '/tmp/y' });
-    expect(services.gitWatcher.startSession).toHaveBeenCalledWith('/tmp/y');
+    expect(services.gitWatcher.startSession).toHaveBeenCalledWith('/tmp/y', undefined);
   });
 
   it('start_session_git_watch returns null when projectPath is missing', async () => {
@@ -798,7 +798,22 @@ describe('ipc handlers — dispatch to services', () => {
     services.gitWatcher.reconnectSession.mockResolvedValueOnce(snap);
     const result = await invoke(handlers, 'reconnect_session_git_watch', { watchId: 'w-1' });
     expect(result).toEqual(snap);
-    expect(services.gitWatcher.reconnectSession).toHaveBeenCalledWith('w-1');
+    expect(services.gitWatcher.reconnectSession).toHaveBeenCalledWith('w-1', undefined);
+  });
+
+  it('a git watch called over the remote protocol is held by that client connection', async () => {
+    // rpc.invoke hands the client context over as the event; an Electron
+    // IpcMainInvokeEvent has no onClose and holds nothing.
+    const conn = { onClose: vi.fn() };
+    services.gitWatcher.startSession.mockResolvedValueOnce({ watchId: 'w-1', snapshot: null });
+    await handlers.start_session_git_watch(conn, { projectPath: '/tmp/x' });
+    expect(services.gitWatcher.startSession).toHaveBeenCalledWith('/tmp/x', conn);
+    await handlers.set_session_git_watch_visible(conn, { watchId: 'w-1', visible: false });
+    expect(services.gitWatcher.setSessionVisible).toHaveBeenCalledWith('w-1', false, conn);
+    await handlers.reconnect_session_git_watch(conn, { watchId: 'w-1' });
+    expect(services.gitWatcher.reconnectSession).toHaveBeenCalledWith('w-1', conn);
+    await handlers.start_session_git_watch({ sender: {} }, { projectPath: '/tmp/y' });
+    expect(services.gitWatcher.startSession).toHaveBeenLastCalledWith('/tmp/y', undefined);
   });
 
   it('list_git_worktrees forwards the project path and returns the service result', async () => {

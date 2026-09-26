@@ -2,6 +2,8 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { gitBinary } from './git-binary';
+
 /** Injectable exec for testing. Mirrors execFileSync's shape but returns a string. */
 export type ExecSyncFn = (
   cmd: string,
@@ -46,7 +48,7 @@ export function discoverWorktrees(
 
   let stdout: string;
   try {
-    stdout = exec('git', ['-C', cwd, 'worktree', 'list', '--porcelain'], { cwd, timeout: 2000 });
+    stdout = exec(gitBinary(), ['-C', cwd, 'worktree', 'list', '--porcelain'], { cwd, timeout: 2000 });
   } catch {
     return [];
   }

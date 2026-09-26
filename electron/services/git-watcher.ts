@@ -3,6 +3,8 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { execFile } from 'node:child_process';
 
+import { gitBinary } from './git-binary';
+
 export interface GitWatcherDeps {
   sendToRenderer: (channel: string, ...args: unknown[]) => void;
   /** Working-tree poll interval (ms). Defaults to 3000. */
@@ -38,7 +40,7 @@ export async function listWorktrees(projectPath: string): Promise<WorktreeInfo[]
 function runWorktreeList(cwd: string, excludeReal: string): Promise<WorktreeInfo[]> {
   return new Promise((resolve) => {
     execFile(
-      'git',
+      gitBinary(),
       ['worktree', 'list', '--porcelain'],
       { cwd, maxBuffer: 4 * 1024 * 1024, windowsHide: true },
       (err, stdout) => {
@@ -168,7 +170,7 @@ function readStatusCounts(
   if (!gitdir) return Promise.resolve({ changed: 0, untracked: 0, error: null });
   return new Promise((resolve) => {
     execFile(
-      'git',
+      gitBinary(),
       // --no-optional-locks: a plain `git status` refreshes .git/index, and
       // the index watcher below would see that write and schedule another
       // refresh — every poll triggering a second one. Background readers
@@ -205,7 +207,7 @@ function readStatusCounts(
 function resolveCommondir(projectPath: string, gitdir: string): Promise<string> {
   return new Promise((resolve) => {
     execFile(
-      'git',
+      gitBinary(),
       ['rev-parse', '--git-common-dir'],
       { cwd: projectPath, windowsHide: true },
       (err, stdout) => {
@@ -244,6 +246,12 @@ function resolveCommondir(projectPath: string, gitdir: string): Promise<string> 
 //     (`setVisible`, driven by the renderer: active tab, visible document,
 //     screen unlocked). Hidden, nothing runs; what changed meanwhile is
 //     remembered and read once, the moment a watch becomes visible again;
+//   - a watch started over the remote protocol is held by that client's
+//     connection; when the connection closes, the watch goes hidden. A window
+//     closed on a daemon-only machine otherwise left every watch it had
+//     "visible" and polling forever. The next call from a (re)connected
+//     client re-claims it;
+//   - `git` runs by absolute path (see git-binary.ts);
 //   - a poll tick reads status only. `git worktree list` runs when the reader
 //     is created, on reconnect, and when the commondir / `worktrees/`
 //     watchers say the set of worktrees changed.
@@ -263,15 +271,24 @@ export interface SessionGitSnapshot {
   worktrees: PathSnapshot[];
 }
 
+/**
+ * The client connection a call arrived on. The last one to call about a watch
+ * holds it; when that connection closes, the watch goes hidden. Absent on the
+ * in-process IPC path, whose renderer dies with the app.
+ */
+export interface WatchHolder {
+  onClose(listener: () => void): void;
+}
+
 export interface SessionGitWatcherService {
-  start(projectPath: string): Promise<{ watchId: string; snapshot: SessionGitSnapshot }>;
-  reconnect(watchId: string): Promise<SessionGitSnapshot | null>;
+  start(projectPath: string, holder?: WatchHolder): Promise<{ watchId: string; snapshot: SessionGitSnapshot }>;
+  reconnect(watchId: string, holder?: WatchHolder): Promise<SessionGitSnapshot | null>;
   stop(watchId: string): void;
   /**
    * Whether anyone is looking at this watch. A new watch starts visible, so a
    * client that never calls this keeps today's behaviour.
    */
-  setVisible(watchId: string, visible: boolean): void;
+  setVisible(watchId: string, visible: boolean, holder?: WatchHolder): void;
   disposeAll(): void;
 }
 
@@ -292,6 +309,7 @@ interface Subscriber {
   projectPath: string;
   projectReal: string;
   visible: boolean;
+  holder: WatchHolder | null;
   /** Last snapshot sent to this watch, to skip no-op emits. */
   last: SessionGitSnapshot;
 }
@@ -507,6 +525,20 @@ export function createSessionGitWatcher(deps: SessionGitWatcherDeps): SessionGit
     }
   }
 
+  /** Make `holder` the connection this watch lives and dies with. */
+  function claim(sub: Subscriber, holder: WatchHolder | undefined): void {
+    if (!holder || sub.holder === holder) return;
+    sub.holder = holder;
+    holder.onClose(() => {
+      if (sub.holder !== holder) return;
+      sub.holder = null;
+      const r = readerByWatch.get(sub.watchId);
+      if (!r || !sub.visible) return;
+      sub.visible = false;
+      syncPolling(r);
+    });
+  }
+
   function dispose(r: RepoReader): void {
     if (r.debounceTimer) clearTimeout(r.debounceTimer);
     if (r.pollTimer) clearInterval(r.pollTimer);
@@ -565,7 +597,7 @@ export function createSessionGitWatcher(deps: SessionGitWatcherDeps): SessionGit
   }
 
   return {
-    async start(projectPath) {
+    async start(projectPath, holder) {
       const watchId = crypto.randomUUID();
       const projectReal = realpathOr(projectPath);
       const { r, created } = await readerFor(projectReal);
@@ -575,8 +607,10 @@ export function createSessionGitWatcher(deps: SessionGitWatcherDeps): SessionGit
         projectPath,
         projectReal,
         visible: true,
+        holder: null,
         last: { project: emptyReading(projectPath), worktrees: [] },
       };
+      claim(sub, holder);
       r.subscribers.set(watchId, sub);
       readerByWatch.set(watchId, r);
       await r.seeded;
@@ -595,10 +629,11 @@ export function createSessionGitWatcher(deps: SessionGitWatcherDeps): SessionGit
       return { watchId, snapshot: sub.last };
     },
 
-    async reconnect(watchId) {
+    async reconnect(watchId, holder) {
       const r = readerByWatch.get(watchId);
       const sub = r?.subscribers.get(watchId);
       if (!r || !sub) return null;
+      claim(sub, holder);
       await r.seeded;
       // Tear down the per-path and worktrees/ watchers; the full refresh
       // re-creates them from a freshly listed set.
@@ -615,10 +650,12 @@ export function createSessionGitWatcher(deps: SessionGitWatcherDeps): SessionGit
       return snapshotFor(r, sub);
     },
 
-    setVisible(watchId, visible) {
+    setVisible(watchId, visible, holder) {
       const r = readerByWatch.get(watchId);
       const sub = r?.subscribers.get(watchId);
-      if (!r || !sub || sub.visible === visible) return;
+      if (!r || !sub) return;
+      claim(sub, holder);
+      if (sub.visible === visible) return;
       const wasVisible = anyVisible(r);
       sub.visible = visible;
       syncPolling(r);

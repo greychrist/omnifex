@@ -1,6 +1,8 @@
 import { execFile } from 'node:child_process';
 import * as path from 'node:path';
 
+import { gitBinary } from './git-binary';
+
 /**
  * Working-tree file list and per-file patches for the git diff side panel.
  *
@@ -62,7 +64,7 @@ interface RunResult {
 function run(args: string[], cwd: string, timeoutMs: number): Promise<RunResult> {
   return new Promise((resolve) => {
     execFile(
-      'git',
+      gitBinary(),
       args,
       { cwd, maxBuffer: DIFF_MAX_BUFFER, windowsHide: true, timeout: timeoutMs },
       (err, stdout, stderr) => {

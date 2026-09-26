@@ -11,6 +11,8 @@
 import type { Database } from '../services/database';
 import type { PermissionsIOService } from '../services/permissions-io';
 import { validateCliPath } from '../services/cli-path-validator';
+import { gitBinary } from '../services/git-binary';
+import type { WatchHolder } from '../services/git-watcher';
 import { createBrainHandlers, type BrainMcpHandlerDeps } from './brain-handlers';
 import type { BrainService } from '../services/brain/registry';
 
@@ -221,14 +223,14 @@ export interface Services {
   };
   gitWatcher?: {
     listWorktrees(projectPath: string): Promise<{ path: string; branch: string | null }[]>;
-    startSession(projectPath: string): Promise<{
+    startSession(projectPath: string, holder: WatchHolder | undefined): Promise<{
       watchId: string;
       snapshot: import('../services/git-watcher').SessionGitSnapshot;
     }>;
-    reconnectSession(watchId: string): Promise<import('../services/git-watcher').SessionGitSnapshot | null>;
+    reconnectSession(watchId: string, holder: WatchHolder | undefined): Promise<import('../services/git-watcher').SessionGitSnapshot | null>;
     stopSession(watchId: string): void;
     /** Whether anyone is looking at the watch; polling pauses while nobody is. */
-    setSessionVisible(watchId: string, visible: boolean): void;
+    setSessionVisible(watchId: string, visible: boolean, holder: WatchHolder | undefined): void;
   };
   branchColors?: {
     listForProject(projectPath: string): unknown;
@@ -366,14 +368,24 @@ function wrap(fn: () => unknown): HandlerFn {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-parameters -- API surface stability — generic param documents intent.
-function wrapWith<P>(fn: (params: P) => unknown): HandlerFn {
-  return async (_event: unknown, params?: Record<string, unknown>) => {
+function wrapWith<P>(fn: (params: P, event: unknown) => unknown): HandlerFn {
+  return async (event: unknown, params?: Record<string, unknown>) => {
     try {
-      return await fn(params as unknown as P);
+      return await fn(params as unknown as P, event);
     } catch (err) {
       throw repackageError(err);
     }
   };
+}
+
+/**
+ * Over rpc.invoke the event is the remote client's context, which can say when
+ * its connection closes; an Electron IpcMainInvokeEvent cannot, and its
+ * renderer dies with the app anyway.
+ */
+function watchHolderOf(event: unknown): WatchHolder | undefined {
+  const onClose = (event as { onClose?: unknown } | null)?.onClose;
+  return typeof onClose === 'function' ? (event as WatchHolder) : undefined;
 }
 
 /**
@@ -916,7 +928,7 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
       try {
         // eslint-disable-next-line @typescript-eslint/no-require-imports -- intentional lazy load; eager import slows IPC startup.
         const { execFileSync } = require('node:child_process') as typeof import('node:child_process');
-        return execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: projectPath, encoding: 'utf8' }).trim();
+        return execFileSync(gitBinary(), ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: projectPath, encoding: 'utf8' }).trim();
       } catch { return null; }
     }),
 
@@ -930,10 +942,10 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
       if (!projectPath || !gitWatcher) return [];
       return gitWatcher.listWorktrees(projectPath);
     }),
-    start_session_git_watch: wrapWith(async (p: Record<string, unknown>) => {
+    start_session_git_watch: wrapWith(async (p: Record<string, unknown>, event) => {
       const projectPath = (p?.projectPath ?? p?.project_path) as string;
       if (!projectPath || !gitWatcher) return null;
-      return gitWatcher.startSession(projectPath);
+      return gitWatcher.startSession(projectPath, watchHolderOf(event));
     }),
     stop_session_git_watch: wrapWith(async (p: Record<string, unknown>) => {
       const watchId = (p?.watchId ?? p?.watch_id) as string;
@@ -941,16 +953,16 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
       gitWatcher.stopSession(watchId);
       return null;
     }),
-    set_session_git_watch_visible: wrapWith(async (p: Record<string, unknown>) => {
+    set_session_git_watch_visible: wrapWith(async (p: Record<string, unknown>, event) => {
       const watchId = (p?.watchId ?? p?.watch_id) as string;
       if (!watchId || !gitWatcher) return null;
-      gitWatcher.setSessionVisible(watchId, p?.visible !== false);
+      gitWatcher.setSessionVisible(watchId, p?.visible !== false, watchHolderOf(event));
       return null;
     }),
-    reconnect_session_git_watch: wrapWith(async (p: Record<string, unknown>) => {
+    reconnect_session_git_watch: wrapWith(async (p: Record<string, unknown>, event) => {
       const watchId = (p?.watchId ?? p?.watch_id) as string;
       if (!watchId || !gitWatcher) return null;
-      return gitWatcher.reconnectSession(watchId);
+      return gitWatcher.reconnectSession(watchId, watchHolderOf(event));
     }),
 
     // ── Branch Colors ─────────────────────────────────────────────────────────

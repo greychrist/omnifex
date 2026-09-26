@@ -1496,10 +1496,10 @@ app.whenReady().then(() => {
     },
     gitWatcher: {
       listWorktrees: (projectPath: string) => listWorktrees(projectPath),
-      startSession: (projectPath: string) => sessionGitWatcher.start(projectPath),
-      reconnectSession: (watchId: string) => sessionGitWatcher.reconnect(watchId),
+      startSession: (projectPath: string, holder) => sessionGitWatcher.start(projectPath, holder),
+      reconnectSession: (watchId: string, holder) => sessionGitWatcher.reconnect(watchId, holder),
       stopSession: (watchId: string) => sessionGitWatcher.stop(watchId),
-      setSessionVisible: (watchId: string, visible: boolean) => { sessionGitWatcher.setVisible(watchId, visible); },
+      setSessionVisible: (watchId: string, visible: boolean, holder) => { sessionGitWatcher.setVisible(watchId, visible, holder); },
     },
     branchColors: branchColorsService,
     gitBranches: gitBranchesService,

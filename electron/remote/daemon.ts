@@ -764,10 +764,10 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
     commands: { listSupported: (configDir) => commandsCatalogService.getCatalog(configDir) },
     gitWatcher: {
       listWorktrees: (projectPath) => listWorktrees(projectPath),
-      startSession: (projectPath) => sessionGitWatcher.start(projectPath),
-      reconnectSession: (watchId) => sessionGitWatcher.reconnect(watchId),
+      startSession: (projectPath, holder) => sessionGitWatcher.start(projectPath, holder),
+      reconnectSession: (watchId, holder) => sessionGitWatcher.reconnect(watchId, holder),
       stopSession: (watchId) => sessionGitWatcher.stop(watchId),
-      setSessionVisible: (watchId, visible) => { sessionGitWatcher.setVisible(watchId, visible); },
+      setSessionVisible: (watchId, visible, holder) => { sessionGitWatcher.setVisible(watchId, visible, holder); },
     },
     branchColors: branchColorsService,
     gitBranches: { list: listGitBranches },

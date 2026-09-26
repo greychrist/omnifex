@@ -311,14 +311,16 @@ export function createRemoteHandlers(deps: RemoteHandlerDeps): RemoteHandlers {
     },
 
     // --------------------------------------------------------------------- rpc
-    'rpc.invoke': async (p) => {
+    'rpc.invoke': async (p, ctx) => {
       if (!deps.rpc.allow.has(p.channel)) {
         throw protocolError('CHANNEL_NOT_ALLOWED', `${p.channel} is not exposed over the protocol`);
       }
       const handler = deps.rpc.handlers[p.channel];
       if (!handler) throw protocolError('NOT_FOUND', `no handler for ${p.channel}`);
       try {
-        return await handler(null, p.params);
+        // The client context stands in for the IPC event: a handler whose
+        // state should die with the connection (the git watch) holds it.
+        return await handler(ctx, p.params);
       } catch (err) {
         throw rpcErrorToProtocol(err);
       }

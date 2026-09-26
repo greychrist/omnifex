@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -145,6 +145,18 @@ describe('remote server', () => {
     const res = await c.request('session.list');
     expect(res).toMatchObject({ ok: false, error: { code: 'MALFORMED_MESSAGE' } });
     c.close();
+  });
+
+  it('runs a context\'s onClose listeners once, when that client disconnects', async () => {
+    const closed = vi.fn();
+    server.register(handlers({ 'rpc.invoke': (_p, ctx) => { ctx.onClose(closed); return null; } }));
+    const c = new TestClient(url);
+    await c.open();
+    await c.hello('electron');
+    await c.request('rpc.invoke', { channel: 'x' });
+    expect(closed).not.toHaveBeenCalled();
+    c.close();
+    await vi.waitFor(() => { expect(closed).toHaveBeenCalledTimes(1); });
   });
 
   it('dispatches to the handler and echoes the requestId', async () => {

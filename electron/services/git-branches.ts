@@ -1,6 +1,8 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
+import { gitBinary } from './git-binary';
+
 const execFileAsync = promisify(execFile);
 
 /**
@@ -11,7 +13,7 @@ const execFileAsync = promisify(execFile);
 export async function listBranches(projectPath: string): Promise<string[]> {
   try {
     const { stdout } = await execFileAsync(
-      'git',
+      gitBinary(),
       ['for-each-ref', 'refs/heads', '--format=%(refname:short)'],
       { cwd: projectPath },
     );

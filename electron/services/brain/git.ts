@@ -1,6 +1,8 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
+import { gitBinary } from '../git-binary';
+
 const execFileAsync = promisify(execFile);
 
 /** Injectable git runner, resolving with the command's stdout. Matches the
@@ -8,7 +10,7 @@ const execFileAsync = promisify(execFile);
 export type ExecGit = (args: string[], cwd: string) => Promise<string>;
 
 const defaultExec: ExecGit = async (args, cwd) => {
-  const { stdout } = await execFileAsync('git', args, { cwd });
+  const { stdout } = await execFileAsync(gitBinary(), args, { cwd });
   return stdout;
 };
 
