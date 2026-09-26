@@ -5,6 +5,13 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.195] — 2026-09-26
+
+### Fixed
+- The usage widget's background refresh no longer starts every MCP server you have configured. Reading `/usage` launched Claude Code with all of them, only to close it seconds later, every five minutes; each server started by bare name made macOS create and assess a throwaway process per `PATH` entry, about 84 per refresh. The refresh now runs with no MCP servers, and shows the same figures.
+- The usage widget now uses the Claude Code binary picked in Settings, like every other launch, instead of its own lookup.
+- Finding the `claude` and `codex` binaries no longer runs `which` through a shell.
+
 ## [0.4.194] — 2026-09-26
 
 ### Fixed
