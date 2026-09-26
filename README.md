@@ -118,7 +118,7 @@ The Brain is a per-account **memory vault** distilled from those transcripts.
 
 ### Git awareness
 - Show the current branch per project, list **git worktrees**, and assign **per-project branch colors**.
-- A lightweight watcher refreshes the branch badge as your working tree changes — one reader per repository however many tabs are open on it, and none at all while the tab is off screen, the window hidden or the screen locked.
+- A lightweight watcher refreshes the branch badge as your working tree changes — one reader per repository however many tabs are open on it, and none at all while the tab is off screen, the window hidden or closed, or the screen locked.
 
 ### Appearance & the rest
 - Deep theming: color palettes, typography, terminal fonts, and per-message-kind icons, with JSON export/import.

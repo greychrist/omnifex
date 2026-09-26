@@ -5,6 +5,12 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.194] — 2026-09-26
+
+### Fixed
+- Git status badges no longer spawn a storm of short-lived processes. Every `git` call now runs by absolute path; a bare `git` made macOS create a throwaway process for each `PATH` entry before the real one, roughly eleven per status read, each one extra work for `syspolicyd`.
+- Branch and change badges stop polling once the window that showed them is closed. A watch now belongs to the client connection that opened it and pauses when that connection closes; a reconnecting window reports its visibility again.
+
 ## [0.4.193] — 2026-09-25
 
 ### Added
