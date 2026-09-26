@@ -5,6 +5,19 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.196] — 2026-09-26
+
+### Added
+- **Local command output** has its own entry in Appearance. Claude Code 2.1.283 records what a slash command such as `/usage` or `/cost` prints as a system message; it used to land in "System (other)" with its raw `<local-command-stdout>` tags showing, and now renders as clean command output.
+
+### Changed
+- Copy and view-raw-JSON buttons sit in the card header, centred with its icon and title, instead of hanging over the card's corner.
+- Slash commands and their output render as plain text inside their card, at the same size as other system cards, rather than as a second bordered card nested inside it.
+
+### Fixed
+- Every message card offers copy and view-raw-JSON; cards that did not ask for them explicitly had neither.
+- Downloaded updates no longer pile up in the temporary folder, about 140 MB each. Update archives for the version you are running, or older, are removed at launch, and the install no longer leaves an empty staging folder behind.
+
 ## [0.4.195] — 2026-09-26
 
 ### Fixed
