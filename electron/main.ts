@@ -1663,6 +1663,7 @@ app.whenReady().then(() => {
     getGitHubRepo: () => 'greychrist/omnifex',
     logging: loggingService,
   });
+  void updaterService.pruneDownloads();
 
   ipcMain.handle('updater:check', async () => {
     return updaterService.checkForUpdate();

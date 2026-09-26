@@ -12,6 +12,13 @@ export interface HelperScriptParams {
 }
 
 export function buildHelperScript(params: HelperScriptParams): string {
+  // The stage dir is the mkdtemp folder stage() made; it holds nothing but the
+  // staged app. Remove it whole — but only when it is recognisably ours, so a
+  // caller passing some other layout never gets its parent deleted.
+  const stageDir = params.stagedAppPath.replace(/\/[^/]+$/, '');
+  const removeStaged = /\/omnifex-stage-[^/]+$/.test(stageDir)
+    ? `rm -rf "${stageDir}"`
+    : 'rm -rf "$STAGED_APP"';
   const DANGEROUS_CHARS = /["`\\\n\r\t\0$]/;
   if (DANGEROUS_CHARS.test(params.targetAppPath) || DANGEROUS_CHARS.test(params.stagedAppPath)) {
     // Reject shell-unsafe characters defensively. Paths produced by the
@@ -33,7 +40,7 @@ export function buildHelperScript(params: HelperScriptParams): string {
     'ditto "$STAGED_APP" "$TARGET_APP" || exit 1',
     'open "$TARGET_APP"',
     '',
-    'rm -rf "$STAGED_APP"',
+    removeStaged,
     'rm -f "$SELF"',
     '',
   ].join('\n');

@@ -311,3 +311,43 @@ describe('updater service', () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// pruneDownloads
+// ---------------------------------------------------------------------------
+
+describe('pruneDownloads', () => {
+  // Downloaded update zips (~140 MB each) were never removed: one per version
+  // piled up in $TMPDIR. Pruning at launch drops every zip the running app has
+  // already caught up with, and keeps a newer one a retried install still needs.
+  it('removes downloaded zips at or below the running version, keeping newer ones and anything else', async () => {
+    const fs = await import('node:fs');
+    const os = await import('node:os');
+    const path = await import('node:path');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-updater-prune-'));
+    try {
+      for (const f of [
+        'OmniFex-darwin-arm64-0.4.40.zip',
+        'OmniFex-darwin-arm64-0.4.42.zip',
+        'OmniFex-darwin-arm64-0.4.43.zip',
+        'OmniFex-0.4.40-arm64.dmg',
+        'unrelated.zip',
+      ]) fs.writeFileSync(path.join(dir, f), 'x');
+
+      const svc = createUpdaterService('0.4.42', { getGitHubRepo: () => null, tmpdir: () => dir });
+      expect(await svc.pruneDownloads()).toBe(2);
+      expect(fs.readdirSync(dir).sort()).toEqual([
+        'OmniFex-0.4.40-arm64.dmg',
+        'OmniFex-darwin-arm64-0.4.43.zip',
+        'unrelated.zip',
+      ]);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('is a no-op when the download dir cannot be read', async () => {
+    const svc = createUpdaterService('0.4.42', { getGitHubRepo: () => null, tmpdir: () => '/nonexistent-gc-updater' });
+    expect(await svc.pruneDownloads()).toBe(0);
+  });
+});

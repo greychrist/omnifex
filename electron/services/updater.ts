@@ -52,6 +52,11 @@ export interface UpdaterService {
     onProgress: (data: ProgressData) => void,
     assetName?: string,
   ): Promise<string>;
+  /**
+   * Delete downloaded update zips for versions at or below the running one.
+   * Returns how many were removed. Never throws.
+   */
+  pruneDownloads(): Promise<number>;
 }
 
 // ---------------------------------------------------------------------------
@@ -234,7 +239,35 @@ export function createUpdaterService(
     return destPath;
   }
 
-  return { checkForUpdate, downloadUpdate };
+  // A downloaded zip is never deleted at install time: a retried install (the
+  // user cancelled the busy-session wait, then pressed Install again) stages
+  // from the same file. By the next launch the running version says which
+  // ones are spent. Only the updater's own names in its own download dir are
+  // touched — a dev local-update dir (out/make) is never pruned.
+  async function pruneDownloads(): Promise<number> {
+    const fsp = await import('node:fs/promises');
+    const dir = tmpdirFn();
+    let names: string[];
+    try {
+      names = await fsp.readdir(dir);
+    } catch {
+      return 0;
+    }
+    let removed = 0;
+    for (const name of names) {
+      const m = ZIP_RE.exec(name);
+      if (!m || compareVersion(m[1], currentVersion) > 0) continue;
+      try {
+        await fsp.rm(path.join(dir, name), { force: true });
+        removed++;
+      } catch (err) {
+        logDebug('prune: could not remove a downloaded update', { name, error: String(err) });
+      }
+    }
+    return removed;
+  }
+
+  return { checkForUpdate, downloadUpdate, pruneDownloads };
 }
 
 // ---------------------------------------------------------------------------

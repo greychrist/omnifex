@@ -1,12 +1,28 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, beforeAll, afterAll } from 'vitest';
 import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import type { ChildProcess } from 'node:child_process';
 import { createInstallerService, type InstallerDeps } from '../services/installer';
 
+// Every stage dir and helper script goes here, never the system temp dir:
+// they used to accumulate there (a helper script per executeInstall test, a
+// stage dir per successful stage) because nothing in a test ever runs the
+// helper that would clean them up.
+let testTmp: string;
+let systemTmpBefore: Set<string>;
+const ours = (names: string[]) => names.filter((n) => /^omnifex-(stage|installer)-/.test(n));
+beforeAll(async () => {
+  testTmp = await fs.mkdtemp(path.join(os.tmpdir(), 'gc-installer-tmp-'));
+  systemTmpBefore = new Set(ours(await fs.readdir(os.tmpdir())));
+});
+afterAll(async () => {
+  await fs.rm(testTmp, { recursive: true, force: true });
+});
+
 function makeDeps(overrides: Partial<InstallerDeps> = {}): InstallerDeps {
   return {
+    tmpdir: () => testTmp,
     sessionsService: {
       listInFlightTabIds: () => [],
       stopAll: () => {},
@@ -425,5 +441,31 @@ describe('InstallerService.executeInstall', () => {
 
     // Cleanup the script file we just created
     await fs.unlink(args[0]).catch(() => {});
+  });
+});
+
+describe('installer temp files', () => {
+  it('stages and writes its helper under its tmpdir', async () => {
+    const zipPath = path.join(testTmp, 'u.zip');
+    await fs.writeFile(zipPath, 'x');
+    const spawn = vi.fn().mockReturnValue({ unref: () => {} });
+    const installer = createInstallerService(makeDeps({
+      spawn,
+      extractZip: async (_zip, dest) => {
+        const appDir = path.join(dest, 'OmniFex.app', 'Contents', 'MacOS');
+        await fs.mkdir(appDir, { recursive: true });
+        await fs.writeFile(path.join(appDir, 'OmniFex'), 'binary');
+      },
+      readBundleVersion: async () => '0.4.0',
+    }));
+    const { stagedAppPath } = await installer.stage(zipPath, '0.4.0');
+    expect(stagedAppPath.startsWith(testTmp + path.sep)).toBe(true);
+    await installer.executeInstall(stagedAppPath, '/Applications/OmniFex.app');
+    expect((spawn.mock.calls[0][1] as string[])[0].startsWith(testTmp + path.sep)).toBe(true);
+  });
+
+  it('left nothing of its own in the system temp dir', async () => {
+    const after = ours(await fs.readdir(os.tmpdir())).filter((n) => !systemTmpBefore.has(n));
+    expect(after).toEqual([]);
   });
 });

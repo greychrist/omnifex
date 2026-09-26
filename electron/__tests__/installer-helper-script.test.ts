@@ -17,6 +17,28 @@ describe('buildHelperScript', () => {
     expect(script).toContain('open "$TARGET_APP"');
   });
 
+  // The stage dir is a mkdtemp folder that holds only the staged app; removing
+  // just the app left one empty omnifex-stage-* folder behind per install.
+  it('removes the whole stage dir once the new app is in place', () => {
+    const script = buildHelperScript({
+      parentPid: 1,
+      targetAppPath: '/Applications/OmniFex.app',
+      stagedAppPath: '/var/T/omnifex-stage-AbC123/OmniFex.app',
+    });
+    expect(script).toContain('rm -rf "/var/T/omnifex-stage-AbC123"');
+    expect(script.indexOf('open "$TARGET_APP"')).toBeLessThan(script.indexOf('rm -rf "/var/T/omnifex-stage-AbC123"'));
+  });
+
+  it('never removes a parent that is not an omnifex-stage dir', () => {
+    const script = buildHelperScript({
+      parentPid: 1,
+      targetAppPath: '/Applications/OmniFex.app',
+      stagedAppPath: '/tmp/OmniFex.app',
+    });
+    expect(script).not.toContain('rm -rf "/tmp"');
+    expect(script).toContain('rm -rf "$STAGED_APP"');
+  });
+
   it('refuses paths containing shell-unsafe characters (defensive)', () => {
     const bad = (targetAppPath: string, stagedAppPath = '/tmp/x') =>
       () => buildHelperScript({ parentPid: 1, targetAppPath, stagedAppPath });

@@ -77,6 +77,9 @@ export interface InstallerDeps {
   /** process.execPath of the running app. Injectable so tests can simulate
    *  packaged vs dev builds without monkey-patching. */
   execPath: string;
+  /** Where the stage dir and helper script go. Defaults to os.tmpdir();
+   *  tests pass their own so nothing is left in the system temp dir. */
+  tmpdir?: () => string;
   /** Injectable extractor — defaults to `ditto -xk <zip> <dir>`. */
   extractZip?: (zipPath: string, destDir: string) => Promise<void>;
   /** Injectable Info.plist version reader — defaults to plutil. */
@@ -117,6 +120,7 @@ export class WaitCancelled extends Error {
 
 export function createInstallerService(deps: InstallerDeps): InstallerService {
   let cancelToken: { cancelled: boolean } | null = null;
+  const tmpdir = deps.tmpdir ?? (() => os.tmpdir());
 
   const extractZip =
     deps.extractZip ??
@@ -176,7 +180,7 @@ export function createInstallerService(deps: InstallerDeps): InstallerService {
       throw new UpdateFileNotFound(zipPath);
     }
 
-    const destDir = await fs.mkdtemp(path.join(os.tmpdir(), 'omnifex-stage-'));
+    const destDir = await fs.mkdtemp(path.join(tmpdir(), 'omnifex-stage-'));
     try {
       await extractZip(zipPath, destDir);
     } catch (err) {
@@ -287,7 +291,7 @@ export function createInstallerService(deps: InstallerDeps): InstallerService {
     targetAppPath: string,
   ): Promise<void> {
     const helperPath = path.join(
-      os.tmpdir(),
+      tmpdir(),
       `omnifex-installer-${Date.now()}.sh`,
     );
     const script = buildHelperScript({
