@@ -27,6 +27,13 @@ import { RawJsonPopover, type RawPayload } from "@/components/StreamMessage/RawJ
  *   the `extras` slot using the matching `CardActionDivider` /
  *   `CardActionButton` primitives so every action reads as one family.
  */
+/**
+ * The placement a bar takes when its caller does not say. A host that seats
+ * the bar in a flex row of its own (the card header) provides `inline`; the
+ * caller that built the bar does not need to know where it will land.
+ */
+export const CardActionBarPlacementContext = React.createContext<"overlay" | "inline" | undefined>(undefined);
+
 interface CardActionBarProps {
   /** Underlying CLI message; used by `extractCopyText` when `text` is omitted. */
   message?: unknown;
@@ -54,8 +61,9 @@ export const CardActionBar: React.FC<CardActionBarProps> = ({
   rawPayload,
   extras,
   ariaLabel = "Message actions",
-  placement = "overlay",
+  placement: placementProp,
 }) => {
+  const placement = placementProp ?? React.useContext(CardActionBarPlacementContext) ?? "overlay";
   const [copied, setCopied] = useState(false);
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 

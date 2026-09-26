@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseCommandEnvelope } from '../commandEnvelope';
+import { localCommandOutput, parseCommandEnvelope } from '../commandEnvelope';
 
 describe('parseCommandEnvelope', () => {
   it('returns null for text with no command envelope', () => {
@@ -63,5 +63,21 @@ describe('parseCommandEnvelope', () => {
 
   it('requires a command-name — a stray message tag alone is not a command', () => {
     expect(parseCommandEnvelope('<command-message>orphan</command-message>')).toBeNull();
+  });
+});
+
+describe('localCommandOutput', () => {
+  it('unwraps the stdout tag, keeping the output byte for byte', () => {
+    expect(localCommandOutput('<local-command-stdout>Current session: 5%\n  a · b</local-command-stdout>'))
+      .toBe('Current session: 5%\n  a · b');
+  });
+
+  it('unwraps stderr too, after stdout', () => {
+    expect(localCommandOutput('<local-command-stdout>out</local-command-stdout><local-command-stderr>err</local-command-stderr>'))
+      .toBe('out\nerr');
+  });
+
+  it('returns untagged text as it is', () => {
+    expect(localCommandOutput('plain')).toBe('plain');
   });
 });

@@ -207,6 +207,9 @@ export function classifyStandaloneKind(
     if (subtype === 'user_prompt_submit') return 'system.userPromptSubmit';
     if (subtype === 'away_summary') return 'system.away_summary';
     if (subtype === 'feedback_draft_queued') return 'system.feedback_draft_queued';
+    // A local slash command's stdout (/usage, /cost, …), which CLI 2.1.283
+    // moved here from a user record (that older form is user.commandOutput).
+    if (subtype === 'local_command') return 'system.local_command';
     // Fallback: any other system subtype renders as the unknown gray inline strip.
     return 'system.unknown';
   }

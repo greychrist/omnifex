@@ -13,6 +13,7 @@ import { KindHeader } from "@/components/KindHeader";
 import type { JsonlNode } from "@/types/jsonl";
 import type { BorderStyle, IconName } from "@/lib/messageRenderingConfig";
 import { resolveKind } from "@/lib/messageRenderingConfig";
+import { CardActionBarPlacementContext } from "@/components/CardActionBar";
 
 interface MessageFrameCardProps {
   /** Drives icon, accent, and (via KindHeader) the configured header label.
@@ -50,10 +51,9 @@ interface MessageFrameCardProps {
    *  in the kind config (usually `solid`). Pass explicitly when the caller
    *  needs to diverge from config (e.g. `dashed` for the unknown fallback). */
   borderStyle?: BorderStyle;
-  /** Optional toolbar node rendered absolutely inside the card (top-right).
-   *  Use this to attach a `CardActionBar` to the card. The card applies
-   *  `group/card relative` so the bar can position itself with
-   *  `absolute top-1 right-1`. */
+  /** Optional toolbar node (a `CardActionBar`). Seated at the end of the
+   *  header row when the card has one, so it centres with the icon and label;
+   *  a card with no header gets it pinned to the top-right corner instead. */
   actionBar?: React.ReactNode;
 }
 
@@ -98,6 +98,7 @@ export const MessageFrameCard: React.FC<MessageFrameCardProps> = ({
     ? headerLabel
     : (configHeaderLabel ?? headerFallbackLabel);
   const hasHeaderLabel = resolvedHeaderLabel != null && resolvedHeaderLabel !== "";
+  const hasHeader = iconName !== "none" || hasHeaderLabel;
 
   const justify =
     alignment === "right"
@@ -121,17 +122,18 @@ export const MessageFrameCard: React.FC<MessageFrameCardProps> = ({
         className={cn("border relative group/card", width, className)}
         style={{ ...accentStyle, borderStyle: resolvedBorderStyle }}
       >
-        {actionBar}
+        {!hasHeader && actionBar}
         {/* CardHeader spans the full card width, containing (in order):
             the leading icon chip (if any), the KindHeader title (if any),
-            and — overlaid via the absolute `actionBar` above — any top-right
-            buttons. CardContent sits below with its own padding and a
-            pb-9 reserve for the absolute footer.
+            and the action bar pushed to the end of the row. CardContent sits
+            below with its own padding and a pb-9 reserve for the absolute
+            footer.
             Padding overrides keep the card compact (shadcn defaults of
             p-6 would balloon every chat row; py-1.5 keeps the header row
             tight). */}
-        {(iconName !== "none" || hasHeaderLabel) && (
+        {hasHeader && (
           <CardHeader
+            data-card-header
             className="px-4 py-1.5 flex flex-row items-center gap-3 space-y-0"
             style={accentStyle?.borderColor ? { borderBottomColor: accentStyle.borderColor as string } : undefined}
           >
@@ -152,6 +154,11 @@ export const MessageFrameCard: React.FC<MessageFrameCardProps> = ({
               fallbackLabel={headerFallbackLabel}
               showIcon={showHeaderIcon}
             />
+            {actionBar && (
+              <CardActionBarPlacementContext.Provider value="inline">
+                {actionBar}
+              </CardActionBarPlacementContext.Provider>
+            )}
           </CardHeader>
         )}
         <CardContent className="px-4 pt-3 pb-9 min-w-0 overflow-x-auto">

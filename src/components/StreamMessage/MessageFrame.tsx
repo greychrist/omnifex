@@ -54,19 +54,17 @@ export const MessageFrame: React.FC<MessageFrameProps> = ({ streamKind, children
     </details>
   ) : null;
 
-  // Cards get their bar from the caller (StreamMessage decides which ones
-  // deserve one). The low-weight variants had no way to offer either
-  // affordance at all — and they are the rows most often asked "what is
-  // actually in this record?", being where tool results and bookkeeping land.
-  // `message` is the only input needed: CardActionBar serializes `raw`
-  // lazily, on open.
+  // Every variant gets copy + view-raw unless the caller supplies its own bar.
+  // Cards used to rely on the caller alone, so any card path that forgot one
+  // (the system fallback, for instance) had neither button. `message` is the
+  // only input needed: CardActionBar serializes `raw` lazily, on open.
   const defaultBar = actionBar ?? (message ? <CardActionBar message={message} /> : undefined);
 
   let inner: React.ReactNode;
   if (kind.presentation === 'card') {
     inner = (
       <div data-frame-variant="card">
-        <MessageFrameCard kindId={streamKind} alignment={kind.alignment} actionBar={actionBar} message={message}>
+        <MessageFrameCard kindId={streamKind} alignment={kind.alignment} actionBar={defaultBar} message={message}>
           {children}
           {rawPayload}
         </MessageFrameCard>

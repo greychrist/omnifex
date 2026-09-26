@@ -59,6 +59,32 @@ describe('MessageFrame', () => {
       expect(labelsFor(container)).toEqual(['Copy content', 'View raw JSON']);
     });
 
+    // The card variant was the one left out: a caller that passed no bar got
+    // no buttons at all, which is how the system fallback card lost them.
+    it('gives the card variant a copy and a view button', async () => {
+      const { container, findByRole } = render(
+        <MessageRenderingProvider>
+          <MessageFrame streamKind="system.notification.info" message={node}>card body</MessageFrame>
+        </MessageRenderingProvider>
+      );
+      await findByRole('toolbar');
+      expect(container.querySelector('[data-frame-variant="card"]')).not.toBeNull();
+      expect(labelsFor(container)).toEqual(['Copy content', 'View raw JSON']);
+    });
+
+    // Pinned absolutely to the corner, the bar was taller than the header row
+    // and hung across its bottom border. Inside the row it centres with it.
+    it('seats the card bar inside the header row, not over the corner', async () => {
+      const { findByRole } = render(
+        <MessageRenderingProvider>
+          <MessageFrame streamKind="system.notification.info" message={node}>card body</MessageFrame>
+        </MessageRenderingProvider>
+      );
+      const bar = await findByRole('toolbar');
+      expect(bar.closest('[data-card-header]')).not.toBeNull();
+      expect(bar.className).not.toMatch(/\babsolute\b/);
+    });
+
     it('leaves a caller-supplied action bar alone', async () => {
       const { container, findByText } = render(
         <MessageRenderingProvider>

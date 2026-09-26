@@ -58,6 +58,21 @@ export const COMMAND_NAME_TAG = '<command-name>';
 export const LOCAL_COMMAND_STDOUT_TAG = '<local-command-stdout>';
 
 /**
+ * What a local command printed, without its `<local-command-stdout>` /
+ * `<local-command-stderr>` wrapping. Text with neither tag is returned as it
+ * is. CLI 2.1.283 moved this output onto a `system/local_command` record's
+ * `content`; older transcripts carry it in a user record.
+ */
+export function localCommandOutput(text: string): string {
+  const parts: string[] = [];
+  for (const tag of ['local-command-stdout', 'local-command-stderr']) {
+    const m = new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`).exec(text);
+    if (m) parts.push(m[1]);
+  }
+  return parts.length > 0 ? parts.join('\n') : text;
+}
+
+/**
  * True for either half of a local-command envelope.
  *
  * `content` is accepted in both shapes the CLI persists — a bare string and an

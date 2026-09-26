@@ -1,12 +1,10 @@
 import React from "react";
-import {
-  Terminal,
-  ChevronRight,
-} from "lucide-react";
 import { makeLinksClickable } from "@/lib/linkDetector";
 
 /**
- * Widget for user commands (e.g., model, clear)
+ * Body for a slash command you ran (e.g. /model, /clear). Bare on purpose: it
+ * renders inside a MessageFrame, which already draws the border, header and
+ * icon, and sizes like every other system card body (text-xs).
  */
 export const CommandWidget: React.FC<{
   commandName: string;
@@ -14,29 +12,24 @@ export const CommandWidget: React.FC<{
   commandArgs?: string;
 }> = ({ commandName, commandMessage, commandArgs }) => {
   return (
-    <div className="rounded-lg border bg-background/50 overflow-hidden">
-      <div className="px-4 py-2 border-b bg-muted/50 flex items-center gap-2">
-        <Terminal className="h-3.5 w-3.5 text-blue-500" />
-        <span className="text-xs font-mono text-blue-400">Command</span>
-      </div>
-      <div className="p-3 space-y-1">
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-muted-foreground">$</span>
-          <code className="text-sm font-mono text-foreground">{commandName}</code>
-          {commandArgs && (
-            <code className="text-sm font-mono text-muted-foreground">{commandArgs}</code>
-          )}
-        </div>
-        {commandMessage && commandMessage !== commandName && (
-          <div className="text-xs text-muted-foreground ml-4">{commandMessage}</div>
+    <div className="space-y-1">
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-muted-foreground">$</span>
+        <code className="text-xs font-mono text-foreground">{commandName}</code>
+        {commandArgs && (
+          <code className="text-xs font-mono text-muted-foreground">{commandArgs}</code>
         )}
       </div>
+      {commandMessage && commandMessage !== commandName && (
+        <div className="text-xs text-muted-foreground ml-4">{commandMessage}</div>
+      )}
     </div>
   );
 };
 
 /**
- * Widget for command output/stdout
+ * Body for a local command's stdout (/usage, /cost, …). Bare for the same
+ * reason as CommandWidget.
  */
 export const CommandOutputWidget: React.FC<{
   output: string;
@@ -91,16 +84,8 @@ export const CommandOutputWidget: React.FC<{
   /* eslint-enable no-control-regex */
 
   return (
-    <div className="rounded-lg border bg-background/50 overflow-hidden">
-      <div className="px-4 py-2 bg-muted/50 flex items-center gap-2">
-        <ChevronRight className="h-3 w-3 text-green-500" />
-        <span className="text-xs font-mono text-green-400">Output</span>
-      </div>
-      <div className="p-3">
-        <pre className="text-sm font-mono text-zinc-300 whitespace-pre-wrap">
-          {output ? parseAnsiToReact(output) : <span className="text-zinc-500 italic">No output</span>}
-        </pre>
-      </div>
-    </div>
+    <pre className="text-xs font-mono text-foreground whitespace-pre-wrap break-words">
+      {output ? parseAnsiToReact(output) : <span className="text-muted-foreground italic">No output</span>}
+    </pre>
   );
 };

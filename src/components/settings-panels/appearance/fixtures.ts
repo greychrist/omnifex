@@ -39,6 +39,7 @@ export const KIND_FIXTURES: Record<string, string> = {
   "system.thinking_tokens": "Thought ~800 tokens",
   "system.rate_limit": "5h · allowed · resets 4:00 PM",
   "system.feedback_draft_queued": "bug · Edit reported success on a no-op\nThe Edit tool returned success but the file was unchanged.",
+  "system.local_command": "Current session: 5% used · resets 6:20pm\nCurrent week (all models): 26% used · resets Sep 28 at 7pm",
   "system.unknown": "(unrecognized system subtype — raw payload shown above)",
   "permission.request": "Allow Bash to run: git diff HEAD~1 --stat?",
   "permission.askUserQuestion": "Should I proceed with the destructive rename, or create a copy first?",

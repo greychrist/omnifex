@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { detectSkillInjection } from "@/lib/skillDetection";
 import { classifyStandaloneKind, originInjectedKind } from "@/lib/messageKind";
-import { parseCommandEnvelope } from "@/lib/commandEnvelope";
+import { localCommandOutput, parseCommandEnvelope } from "@/lib/commandEnvelope";
 import { parseTaskNotification } from "@/lib/taskNotification";
 import { classifyBlockKind, isBlockHiddenInCompact, isSystemContextText, deriveSystemContextLabel } from "@/lib/blockKind";
 import { resolveKind } from "@/lib/messageRenderingConfig";
@@ -486,6 +486,18 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
               {sysRaw.title ? `${sysRaw.title}: ` : ''}
               {(sysRaw as unknown as { body?: string }).body ?? ''}
             </span>
+          </MessageFrame>
+        );
+      }
+
+      // A local slash command's output — its own kind, rendered with the same
+      // widget as the older user-record form (the `<local-command-stdout>`
+      // branch below).
+      if (message.subtype === 'local_command') {
+        const content = (sysRaw as unknown as { content?: unknown }).content;
+        return (
+          <MessageFrame streamKind="system.local_command" message={message}>
+            <CommandOutputWidget output={localCommandOutput(typeof content === 'string' ? content : '')} />
           </MessageFrame>
         );
       }

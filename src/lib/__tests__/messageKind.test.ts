@@ -29,7 +29,7 @@ const EMITTABLE_IDS = [
   "system.hook_started", "system.hook_response", "system.permission_denied",
   "system.userPromptSubmit", "system.api_error", "system.away_summary",
   "system.thinking_tokens", "system.rate_limit", "system.feedback_draft_queued",
-  "system.unknown",
+  "system.local_command", "system.unknown",
   // permission / summary / fallback
   "permission.request", "permission.askUserQuestion",
   "summary.compaction", "unknown",
@@ -307,6 +307,13 @@ describe('classifyStandaloneKind', () => {
     it('returns system.unknown for an unrecognized system subtype', () => {
       expect(classifyStandaloneKind(sys('compact_boundary'), [])).toBe('system.unknown');
       expect(classifyStandaloneKind(sys('whatever'), [])).toBe('system.unknown');
+    });
+
+    // CLI 2.1.283 writes a local slash command's stdout (/usage, /cost, …) as
+    // system/local_command instead of a user record. It gets its own kind so
+    // Appearance can style it apart from the older user-record form.
+    it('classifies system/local_command as its own kind', () => {
+      expect(classifyStandaloneKind(sys('local_command'), [])).toBe('system.local_command');
     });
 
     it('does not classify notification / known hook subtypes as unknown', () => {
