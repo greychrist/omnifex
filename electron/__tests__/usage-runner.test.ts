@@ -126,6 +126,25 @@ describe('usage-runner', () => {
     expect(cached?.ok).toBe(true);
   });
 
+  it('launches the TUI with no MCP servers — /usage reads local history, and starting them cost ~84 spawns a scrape', async () => {
+    // Every configured server (uvx / npx launchers by bare name) started and
+    // was killed again on each 5-minute refresh; each PATH miss is a process
+    // syspolicyd assesses. The /usage tables are "based on local sessions",
+    // so the output is the same without them (measured 2026-09-26).
+    const calls: { command: string; args: string[] }[] = [];
+    const scripted = makeScriptedSpawn(MAX_FULL_FIXTURE);
+    const runner = createUsageRunnerService({
+      accounts: makeFakeAccountsService(),
+      rateLimits: makeFakeRateLimits(),
+      spawnPty: (command, args, opts) => { calls.push({ command, args }); return scripted(command, args, opts); },
+      findClaudeBinary: () => '/fake/claude',
+      now: () => Date.UTC(2023, 10, 15, 10, 40, 0),
+      ...TUNING,
+    });
+    await runner.run('personal');
+    expect(calls).toEqual([{ command: '/fake/claude', args: ['--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}'] }]);
+  });
+
   it('stale (last-known) render: returns parsed data flagged stale, never records utilization', async () => {
     // Claude Code 2.1.208: a rate-limited /usage shows LAST-KNOWN bars with a
     // "Showing last-known usage as of <time> (rate limited — try again in a

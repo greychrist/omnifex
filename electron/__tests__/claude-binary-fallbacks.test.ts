@@ -17,6 +17,7 @@ describe('claude-binary findBestBinary fallback chain', () => {
   let tmpHome: string;
   let originalHome: string | undefined;
   let originalNvmBin: string | undefined;
+  let originalPath: string | undefined;
   let homedirSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
@@ -25,6 +26,9 @@ describe('claude-binary findBestBinary fallback chain', () => {
     originalNvmBin = process.env.NVM_BIN;
     process.env.HOME = tmpHome;
     delete process.env.NVM_BIN;
+    // `which` is an in-process PATH lookup now; an empty PATH is "not found".
+    originalPath = process.env.PATH;
+    process.env.PATH = path.join(tmpHome, 'empty-path');
     homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(tmpHome);
     execSyncMock.mockReset();
   });
@@ -34,6 +38,7 @@ describe('claude-binary findBestBinary fallback chain', () => {
     if (originalHome !== undefined) process.env.HOME = originalHome;
     else delete process.env.HOME;
     if (originalNvmBin !== undefined) process.env.NVM_BIN = originalNvmBin;
+    process.env.PATH = originalPath;
     fs.rmSync(tmpHome, { recursive: true, force: true });
   });
 
@@ -135,14 +140,9 @@ describe('claude-binary findBestBinary fallback chain', () => {
   it('tryWhich success path returns the discovered path with source "which"', () => {
     const homebrewBin = path.join(tmpHome, 'fake-bin', 'claude');
     fs.mkdirSync(path.dirname(homebrewBin), { recursive: true });
-    fs.writeFileSync(homebrewBin, '');
-
-    execSyncMock.mockImplementation((cmd: string) => {
-      if (cmd.includes('which claude') || cmd.includes('where claude')) {
-        return `${homebrewBin}\n`;
-      }
-      return '1.0';
-    });
+    fs.writeFileSync(homebrewBin, '', { mode: 0o755 });
+    process.env.PATH = path.dirname(homebrewBin);
+    execSyncMock.mockReturnValue('1.0');
 
     const db = createDatabase(':memory:');
     try {
@@ -150,23 +150,6 @@ describe('claude-binary findBestBinary fallback chain', () => {
       expect(service.findBestBinary()).toBe(homebrewBin);
       const installations = service.listInstallations();
       expect(installations.some((i) => i.source === 'which' && i.path === homebrewBin)).toBe(true);
-    } finally {
-      db.close();
-    }
-  });
-
-  it('tryWhich ignores result that does not exist on disk', () => {
-    execSyncMock.mockImplementation((cmd: string) => {
-      if (cmd.includes('which') || cmd.includes('where')) {
-        return '/totally/missing/claude\n';
-      }
-      throw new Error('nf');
-    });
-
-    const db = createDatabase(':memory:');
-    try {
-      const service = createClaudeBinaryService(db);
-      expect(service.findBestBinary()).not.toBe('/totally/missing/claude');
     } finally {
       db.close();
     }

@@ -11,6 +11,7 @@ import type { AccountsService } from './accounts';
 import { createProjectPinsService } from './project-pins';
 import { decodeProjectId, encodeProjectId, recoverProjectPath } from './project-paths';
 import { buildClaudeEnv } from './util/claude-env';
+import { findOnPath } from './util/path-lookup';
 
 /**
  * Thrown when an operation needs a Claude account for a project path but
@@ -386,6 +387,11 @@ function extractSessionMetadata(filePath: string): {
   }
 
   return { aiTitle, customTitle, firstTimestamp, lastTimestamp };
+}
+
+/** `claude` on PATH, what `which claude` answered — without the shell. */
+function claudeOnPath(): string | null {
+  return findOnPath(process.platform === 'win32' ? 'claude.exe' : 'claude', process.env.PATH);
 }
 
 const EXEC_OPTIONS = {
@@ -984,21 +990,7 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
   // -------------------------------------------------------------------------
 
   async function checkClaudeVersion(): Promise<ClaudeVersionStatus> {
-    // Try to locate the claude binary via `which`
-    let binaryPath: string | null = null;
-
-    try {
-      const cmd = process.platform === 'win32' ? 'where claude' : 'which claude';
-      const output = execSync(cmd, EXEC_OPTIONS);
-      if (typeof output === 'string') {
-        const trimmed = output.trim().split('\n')[0].trim();
-        if (trimmed && fs.existsSync(trimmed)) {
-          binaryPath = trimmed;
-        }
-      }
-    } catch {
-      // not found via which
-    }
+    const binaryPath = claudeOnPath();
 
     if (!binaryPath) {
       return { installed: false, version: null, path: null };
@@ -1149,16 +1141,8 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
   // -------------------------------------------------------------------------
 
   async function getCliUsage(configDir?: string): Promise<string> {
-    // Locate the binary the same way checkClaudeVersion does
-    let binary: string | null = null;
-    try {
-      const cmd = process.platform === 'win32' ? 'where claude' : 'which claude';
-      const out = execSync(cmd, EXEC_OPTIONS);
-      if (typeof out === 'string') {
-        const trimmed = out.trim().split('\n')[0].trim();
-        if (trimmed && fs.existsSync(trimmed)) binary = trimmed;
-      }
-    } catch { /* not found */ }
+    // Locate the binary the same way checkClaudeVersion does.
+    const binary = claudeOnPath();
     if (!binary) return 'Claude CLI not found';
 
     // Previously fell back to process.env's CLAUDE_CONFIG_DIR when configDir

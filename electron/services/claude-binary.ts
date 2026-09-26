@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { Database } from './database';
+import { findOnPath } from './util/path-lookup';
 
 // ---------------------------------------------------------------------------
 // Public interfaces
@@ -41,21 +42,9 @@ function getVersion(binaryPath: string): string | null {
   }
 }
 
-/** Attempt to locate `claude` via `which` (Unix) or `where` (Windows). */
+/** `claude` on PATH, found in-process rather than by shelling out to `which`. */
 function tryWhich(): string | null {
-  const cmd = process.platform === 'win32' ? 'where claude' : 'which claude';
-  try {
-    const output = execSync(cmd, EXEC_OPTIONS);
-    if (typeof output === 'string') {
-      const trimmed = output.trim().split('\n')[0].trim();
-      if (trimmed && fs.existsSync(trimmed)) {
-        return trimmed;
-      }
-    }
-  } catch {
-    // not found
-  }
-  return null;
+  return findOnPath(process.platform === 'win32' ? 'claude.exe' : 'claude', process.env.PATH);
 }
 
 /** Find claude binaries in NVM-managed node versions. */

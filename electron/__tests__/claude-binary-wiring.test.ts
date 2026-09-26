@@ -43,6 +43,14 @@ describe('claude binary wiring in the composition roots', () => {
       });
     }
 
+    // The /usage scraper used to carry its own `which claude` finder, so it
+    // ignored the Settings pick and shelled out on every 5-minute refresh.
+    it(`${root} hands findBestBinary to createUsageRunnerService`, () => {
+      expect(callText(src, 'createUsageRunnerService')).toMatch(
+        new RegExp(`findClaudeBinary:\\s*${FIND_BEST.source}`),
+      );
+    });
+
     // Positional, so the order is the contract: resolveClaudeBinary, then the
     // CLI-usage recorder (the spend no transcript records). Both roots must
     // pass the recorder — the parameter is optional, so a root that forgot it

@@ -1,6 +1,5 @@
 import type { AccountsService } from './accounts';
 import type { RateLimitsService } from './rate-limits';
-import { findClaudeBinary as defaultFindClaudeBinary } from './util/find-claude-binary';
 import { stripAnsi } from './usage-runner/ansi';
 import {
   parseUsageOutput,
@@ -40,7 +39,11 @@ export interface UsageRunnerDeps {
   accounts: AccountsService;
   rateLimits: RateLimitsService;
   spawnPty?: PtySpawner;
-  findClaudeBinary?: () => string | null;
+  /**
+   * `ClaudeBinaryService.findBestBinary()` in both roots, so the Settings pick
+   * wins. An account's own `cli_path` still overrides it.
+   */
+  findClaudeBinary: () => string | null;
   now?: () => number;
   logging?: LoggingService | null;
   /**
@@ -131,7 +134,7 @@ function validateResetEpoch(
 
 export function createUsageRunnerService(deps: UsageRunnerDeps): UsageRunnerService {
   const spawnPty = deps.spawnPty ?? defaultSpawnPty;
-  const findBinary = deps.findClaudeBinary ?? (() => defaultFindClaudeBinary());
+  const findBinary = deps.findClaudeBinary;
   const now = deps.now ?? Date.now;
   const settleQuietMs = deps.settleQuietMs ?? 750;
   const usageQuietMs = deps.usageQuietMs ?? 1500;
@@ -225,7 +228,13 @@ export function createUsageRunnerService(deps: UsageRunnerDeps): UsageRunnerServ
 
     let pty: FakePty;
     try {
-      pty = spawnPty(binary, [], {
+      // No MCP servers: the TUI would start every configured one (uvx / npx
+      // launchers, by bare name) only for this scrape to kill it seconds
+      // later — ~84 PATH-miss processes for syspolicyd every 5 minutes. The
+      // /usage tables, MCP included, come from local session history, so
+      // the render is the same without them. Only strict mode makes the
+      // empty set authoritative; --mcp-config alone merges.
+      pty = spawnPty(binary, ['--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}'], {
         cwd,
         env: buildClaudeEnv(configDir),
         cols: 200,

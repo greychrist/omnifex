@@ -414,6 +414,7 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
     accounts: accountsService,
     rateLimits: rateLimitsService,
     logging: loggingService,
+    findClaudeBinary: () => claudeBinaryService.findBestBinary(),
     userDataDir: config.userDataDir,
   });
 

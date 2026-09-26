@@ -624,6 +624,22 @@ describe('claude service', () => {
       const result = await service.checkClaudeVersion();
       expect(result.path === null || typeof result.path === 'string').toBe(true);
     });
+
+    it('finds claude on PATH and reads its version', async () => {
+      const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-claude-path-'));
+      const fake = path.join(bin, 'claude');
+      fs.writeFileSync(fake, '#!/bin/sh\necho "9.9.9 (Claude Code)"\n', { mode: 0o755 });
+      const realPath = process.env.PATH;
+      process.env.PATH = `${bin}${path.delimiter}/bin`;
+      try {
+        const result = await service.checkClaudeVersion();
+        expect(result).toMatchObject({ installed: true, path: fake });
+        expect(result.version).toContain('9.9.9');
+      } finally {
+        process.env.PATH = realPath;
+        fs.rmSync(bin, { recursive: true, force: true });
+      }
+    });
   });
 
   // -------------------------------------------------------------------------

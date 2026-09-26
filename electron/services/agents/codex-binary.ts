@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { Database } from '../database';
+import { findOnPath } from '../util/path-lookup';
 
 // ---------------------------------------------------------------------------
 // Public interfaces
@@ -40,20 +41,9 @@ function getVersion(binaryPath: string): string | null {
   }
 }
 
+/** `codex` on PATH, found in-process rather than by shelling out to `which`. */
 function tryWhich(): string | null {
-  const cmd = process.platform === 'win32' ? 'where codex' : 'which codex';
-  try {
-    const output = execSync(cmd, EXEC_OPTIONS);
-    if (typeof output === 'string') {
-      const trimmed = output.trim().split('\n')[0].trim();
-      if (trimmed && fs.existsSync(trimmed)) {
-        return trimmed;
-      }
-    }
-  } catch {
-    // not found
-  }
-  return null;
+  return findOnPath(process.platform === 'win32' ? 'codex.exe' : 'codex', process.env.PATH);
 }
 
 function findNvmInstallations(): string[] {
