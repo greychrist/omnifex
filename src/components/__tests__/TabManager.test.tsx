@@ -60,6 +60,7 @@ vi.mock('@/hooks', () => ({
 const density = vi.hoisted((): { current: 'expanded' | 'compact' } => ({
   current: 'expanded',
 }));
+const maxWidth = vi.hoisted((): { current: number | null } => ({ current: null }));
 vi.mock('@/contexts/MessageRenderingContext', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/contexts/MessageRenderingContext')>();
   const { createDefaultConfig } = await import('@/lib/messageRenderingConfig');
@@ -68,6 +69,7 @@ vi.mock('@/contexts/MessageRenderingContext', async (importOriginal) => {
     useMessageRenderingConfig: () => {
       const config = createDefaultConfig();
       config.tabs.density = density.current;
+      if (maxWidth.current !== null) config.tabs.maxWidth = maxWidth.current;
       return { config, setConfig: () => { /* noop */ }, loaded: true };
     },
   };
@@ -90,6 +92,7 @@ afterEach(() => {
   useTabStateMock.mockReset();
   useTabContextMock.mockReset();
   density.current = 'expanded';
+  maxWidth.current = null;
 });
 
 function makeTab(partial: Partial<Tab> & Pick<Tab, 'id' | 'type' | 'title'>): Tab {
@@ -584,5 +587,33 @@ describe('tab strip density', () => {
     expect(container.querySelector('[data-tab-id="a"]')?.getAttribute('title')).toBe(
       'Refactor the parser',
     );
+  });
+});
+
+describe('tab max width', () => {
+  const titleNode = (customTitle: string) =>
+    ({ kind: 'custom-title', raw: { type: 'custom-title', customTitle }, sessionId: 's' }) as unknown as JsonlNode;
+
+  afterEach(() => { useClaudeSessionStore.getState().__resetForTests(); });
+
+  // jsdom has no layout, so these pin the two decisions that produce the
+  // ellipsis: the tab is capped at the configured width, and both text lines
+  // truncate inside it rather than pushing the tab wider.
+  it('caps the tab at the configured max width', () => {
+    maxWidth.current = 300;
+    installState({ tabs: [makeTab({ id: 'a', type: 'chat', title: 'omnifex' })] });
+
+    const { container } = render(<TabManager />);
+    const tab = container.querySelector<HTMLElement>('[data-tab-id="a"]');
+    expect(tab?.style.maxWidth).toBe('300px');
+  });
+
+  it('truncates the project and session names instead of widening the tab', () => {
+    useClaudeSessionStore.getState().setMessages('a', [titleNode('Slash-commands symlink skill folders')]);
+    installState({ tabs: [makeTab({ id: 'a', type: 'chat', title: 'omnifex' })] });
+
+    render(<TabManager />);
+    expect(screen.getByTestId('tab-session-name').className).toContain('truncate');
+    expect(screen.getByTestId('tab-project-name').className).toContain('truncate');
   });
 });

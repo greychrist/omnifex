@@ -44,6 +44,7 @@ import { TabPersistenceService } from "@/services/tabPersistence";
 import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
 import { TabIndicatorsEditor } from "./TabIndicatorsEditor";
 import { TabDensityControl } from "./TabDensityControl";
+import { TabMaxWidthControl } from "./TabMaxWidthControl";
 import type { SettingsPanelProps } from "./types";
 import { fireAndLog, logAndForget } from "@/lib/fireAndLog";
 import {
@@ -807,6 +808,20 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
             <TabDensityControl
               density={config.tabs.density}
               onChange={(density) => { setConfig({ ...config, tabs: { ...config.tabs, density } }); }}
+            />
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div>
+              <Label>Max tab width</Label>
+              <p className="text-caption text-muted-foreground mt-1">
+                Tabs size to their names up to this width, then truncate with an
+                ellipsis.
+              </p>
+            </div>
+            <TabMaxWidthControl
+              maxWidth={config.tabs.maxWidth}
+              onChange={(maxWidth) => { setConfig({ ...config, tabs: { ...config.tabs, maxWidth } }); }}
             />
           </div>
 

@@ -8,6 +8,8 @@ import {
   DEFAULT_PALETTE,
   DEFAULT_TYPOGRAPHY,
   DEFAULT_TAB_INDICATORS,
+  DEFAULT_TAB_STRIP,
+  TAB_MAX_WIDTH_RANGE,
   DEFAULT_CATEGORIES,
   CATEGORIES,
   KIND_REGISTRY,
@@ -245,6 +247,22 @@ describe("mergeConfig", () => {
     expect(cfg.palette.blue.swatch).toBe("#1234ab");
     // other palette entries untouched
     expect(cfg.palette.primary.border).toBe("primary/20");
+  });
+
+  it("keeps a saved tab max width", () => {
+    const cfg = mergeConfig({ version: 5, tabs: { density: "compact", maxWidth: 300 } });
+    expect(cfg.tabs).toEqual({ density: "compact", maxWidth: 300 });
+  });
+
+  it("gives a config saved before tab max width existed the default", () => {
+    const cfg = mergeConfig({ version: 5, tabs: { density: "compact" } });
+    expect(cfg.tabs.maxWidth).toBe(DEFAULT_TAB_STRIP.maxWidth);
+  });
+
+  it("clamps an out-of-range tab max width and ignores a non-number", () => {
+    expect(mergeConfig({ version: 5, tabs: { maxWidth: 10 } }).tabs.maxWidth).toBe(TAB_MAX_WIDTH_RANGE.min);
+    expect(mergeConfig({ version: 5, tabs: { maxWidth: 9999 } }).tabs.maxWidth).toBe(TAB_MAX_WIDTH_RANGE.max);
+    expect(mergeConfig({ version: 5, tabs: { maxWidth: "wide" } }).tabs.maxWidth).toBe(DEFAULT_TAB_STRIP.maxWidth);
   });
 
   it("merges live-overlay hard-filter toggles", () => {

@@ -546,10 +546,19 @@ export type TabDensity = "expanded" | "compact";
 
 export interface TabStrip {
   density: TabDensity;
+  /**
+   * Widest a tab may grow, in CSS px. Tabs still size to content below it;
+   * past it the project and session names truncate to an ellipsis. Without a
+   * cap, a CLI-generated session title set the width of the whole tab.
+   */
+  maxWidth: number;
 }
+
+export const TAB_MAX_WIDTH_RANGE = { min: 160, max: 480, step: 10 } as const;
 
 export const DEFAULT_TAB_STRIP: TabStrip = {
   density: "expanded",
+  maxWidth: 250,
 };
 
 // ─── top-level config (v5) ──────────────────────────────────────────────────
@@ -757,6 +766,10 @@ function mergeShared(
         t.density === "compact" || t.density === "expanded"
           ? t.density
           : base.tabs.density,
+      maxWidth:
+        typeof t.maxWidth === "number" && Number.isFinite(t.maxWidth)
+          ? Math.min(TAB_MAX_WIDTH_RANGE.max, Math.max(TAB_MAX_WIDTH_RANGE.min, Math.round(t.maxWidth)))
+          : base.tabs.maxWidth,
     };
   }
 

@@ -252,16 +252,17 @@ const TabItem: React.FC<TabItemProps> = ({ tab, isActive, onClose, onClick, isDr
         // line for the session name; compact is a single row.
         "rounded-md px-[10px]",
         compact ? "h-[30px]" : "h-[38px]",
-        // Size to content (with a sensible floor) instead of capping width:
-        // the tab grows to fit the full project name. shrink-0 keeps the tab
-        // from being compressed when many are open — the strip is
-        // overflow-x-auto, so long names scroll rather than truncate.
+        // Size to content between a floor and the user's max width (inline
+        // style below); past the max, both names truncate. shrink-0 keeps the
+        // tab from being compressed when many are open — the strip is
+        // overflow-x-auto, so a crowded strip scrolls rather than squeezes.
         "min-w-[120px] w-max shrink-0",
         isActive
           ? "text-foreground bg-background shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_75%,transparent)]"
           : "text-muted-foreground hover:text-foreground hover:bg-white/5",
         isDragging && "shadow-md",
       )}
+      style={{ maxWidth: config.tabs.maxWidth }}
       title={sessionName ?? undefined}
       onMouseEnter={() => { setIsHovered(true); }}
       onMouseLeave={() => { setIsHovered(false); }}
@@ -286,16 +287,16 @@ const TabItem: React.FC<TabItemProps> = ({ tab, isActive, onClose, onClick, isDr
         )}
       </div>
 
-      {/* Project name over the session's own name. The project name is never
-          truncated (the tab sizes to content); the session name is, because a
-          CLI-generated title runs to a full sentence and would otherwise set
-          the width of the whole tab. The hover text carries the full one. */}
+      {/* Project name over the session's own name. Both truncate once the tab
+          reaches its max width — a CLI-generated title runs to a full sentence
+          and would otherwise set the width of the whole tab. The hover text
+          carries the full session name. */}
       <span className="flex-1 min-w-0 flex flex-col justify-center leading-tight">
-        <span className="whitespace-nowrap font-medium">{tab.title}</span>
+        <span data-testid="tab-project-name" className="truncate font-medium">{tab.title}</span>
         {!compact && sessionName && (
           <span
             data-testid="tab-session-name"
-            className="truncate max-w-[190px] text-[11px] font-normal text-muted-foreground"
+            className="truncate text-[11px] font-normal text-muted-foreground"
           >
             {sessionName}
           </span>
