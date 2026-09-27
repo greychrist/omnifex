@@ -5,6 +5,14 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.197] — 2026-09-27
+
+### Added
+- **Max tab width** in Settings › General, beside tab density. Tabs size to their names up to that width (250px by default, adjustable from 160 to 480) and past it the project and session names end in an ellipsis, so a long session title no longer stretches its tab across the strip.
+
+### Fixed
+- Skills installed as symlinks — a folder under your skills directory that links into a repo — are listed as User or Project skills again instead of being labelled Claude. Symlinked custom slash-command files are picked up too, and a broken link is skipped rather than failing the list.
+
 ## [0.4.196] — 2026-09-26
 
 ### Added
