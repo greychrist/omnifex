@@ -375,6 +375,45 @@ describe('slash commands service', () => {
       const all = service.list(projectPath);
       expect(all.find((c) => c.name === 'no-manifest')).toBeUndefined();
     });
+
+    it('follows a symlinked skill folder and skips a broken one', () => {
+      // Skills installed as symlinks (<configDir>/skills/mac-health → a repo)
+      // report isDirectory() === false on the Dirent; they must still be
+      // listed as user-scoped rather than falling through to the CLI's
+      // "default" bucket.
+      const target = path.join(tmpDir, 'elsewhere', 'mac-health');
+      fs.mkdirSync(target, { recursive: true });
+      fs.writeFileSync(
+        path.join(target, 'SKILL.md'),
+        '---\nname: mac-health\ndescription: Linked skill\n---\nBody\n',
+        'utf-8',
+      );
+      const skillsDir = path.join(configDir, 'skills');
+      fs.mkdirSync(skillsDir, { recursive: true });
+      fs.symlinkSync(target, path.join(skillsDir, 'mac-health'));
+      fs.symlinkSync(path.join(tmpDir, 'missing'), path.join(skillsDir, 'dangling'));
+
+      const all = service.list(undefined, configDir);
+      const skill = all.find((c) => c.name === 'mac-health');
+      expect(skill?.scope).toBe('user');
+      expect(skill?.full_command).toBe('/mac-health');
+      expect(all.find((c) => c.name === 'dangling')).toBeUndefined();
+    });
+  });
+
+  describe('symlinked commands', () => {
+    it('follows a symlinked command file and skips a broken one', () => {
+      const target = path.join(tmpDir, 'elsewhere', 'linked.md');
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.writeFileSync(target, '---\ndescription: Linked command\n---\nBody\n', 'utf-8');
+      const commandsDir = path.join(configDir, 'commands');
+      fs.symlinkSync(target, path.join(commandsDir, 'linked.md'));
+      fs.symlinkSync(path.join(tmpDir, 'missing.md'), path.join(commandsDir, 'dangling.md'));
+
+      const all = service.list(undefined, configDir);
+      expect(all.find((c) => c.name === 'linked')?.scope).toBe('user');
+      expect(all.find((c) => c.name === 'dangling')).toBeUndefined();
+    });
   });
 
   describe('multi-account isolation', () => {

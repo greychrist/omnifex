@@ -173,6 +173,23 @@ function commandFromFile(
   };
 }
 
+/**
+ * A `Dirent` reports what the entry itself is, so a symlink is neither a file
+ * nor a directory — and skills/commands installed as links into a repo
+ * (`<configDir>/skills/mac-health → ~/Repos/...`) were silently dropped.
+ * Follow the link; a broken one is skipped.
+ */
+function entryIs(dir: string, entry: fs.Dirent, kind: 'file' | 'directory'): boolean {
+  if (kind === 'file' ? entry.isFile() : entry.isDirectory()) return true;
+  if (!entry.isSymbolicLink()) return false;
+  try {
+    const stat = fs.statSync(path.join(dir, entry.name));
+    return kind === 'file' ? stat.isFile() : stat.isDirectory();
+  } catch {
+    return false;
+  }
+}
+
 function scanDirectory(
   dir: string,
   scope: string,
@@ -188,7 +205,7 @@ function scanDirectory(
   }
 
   for (const entry of entries) {
-    if (!entry.isFile() || !entry.name.endsWith('.md')) continue;
+    if (!entry.name.endsWith('.md') || !entryIs(dir, entry, 'file')) continue;
     const filePath = path.join(dir, entry.name);
     const cmd = commandFromFile(filePath, scope, namespace);
     if (cmd) {
@@ -225,7 +242,7 @@ function scanSkillsDirectory(
   }
 
   for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
+    if (!entryIs(dir, entry, 'directory')) continue;
     const manifestPath = path.join(dir, entry.name, 'SKILL.md');
     if (!fs.existsSync(manifestPath)) continue;
     // Reuse commandFromFile so frontmatter parsing stays in one place. The
