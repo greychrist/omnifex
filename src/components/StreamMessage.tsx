@@ -11,6 +11,7 @@ import {
 import { detectSkillInjection } from "@/lib/skillDetection";
 import { classifyStandaloneKind, originInjectedKind } from "@/lib/messageKind";
 import { localCommandOutput, parseCommandEnvelope } from "@/lib/commandEnvelope";
+import { queueWaitMs } from "@/lib/queueWait";
 import { parseTaskNotification } from "@/lib/taskNotification";
 import { classifyBlockKind, isBlockHiddenInCompact, isSystemContextText, deriveSystemContextLabel } from "@/lib/blockKind";
 import { resolveKind } from "@/lib/messageRenderingConfig";
@@ -271,6 +272,26 @@ function feedbackDraftBody(raw: SystemRaw): string {
   return preview ? `${head}\n${preview}` : head;
 }
 
+/**
+ * Body line for a `system:stop_hook_summary` card: each Stop hook by file name
+ * and duration, then any errors and whether one blocked the turn from ending.
+ * The record has no narrative field, so the generic branch would show nothing.
+ */
+function stopHookSummaryBody(raw: SystemRaw): string {
+  const hooks = (raw.hookInfos ?? [])
+    .map((h) => {
+      const name = (h.command ?? '').split('/').pop() || 'hook';
+      return typeof h.durationMs === 'number' ? `${name} · ${h.durationMs}ms` : name;
+    })
+    .join(', ');
+  const errors = raw.hookErrors?.length ?? 0;
+  return [
+    hooks,
+    errors > 0 && `${errors} ${errors === 1 ? 'error' : 'errors'}`,
+    raw.preventedContinuation && (raw.stopReason ? `blocked stop: ${raw.stopReason}` : 'blocked stop'),
+  ].filter(Boolean).join(' · ');
+}
+
 // ─── Completion band ────────────────────────────────────────────────────────
 
 const TERMINAL_STOP_REASONS = new Set([
@@ -444,8 +465,16 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
             return `Session titled "${message.raw.aiTitle}"`;
           case 'custom-title':
             return `Renamed to "${message.raw.customTitle}"`;
-          case 'queue-operation':
-            return `Background: ${message.raw.operation}`;
+          case 'queue-operation': {
+            const { operation, reason } = message.raw;
+            const wait = operation === 'dequeue' ? queueWaitMs(streamMessages, message) : null;
+            // Under a second is the CLI picking the input up at once; only a
+            // real wait behind a running turn is worth a number.
+            const detail = reason
+              ? reason.replace(/_/g, ' ').replace(/\bmid turn\b/, 'mid-turn')
+              : wait !== null && wait >= 1000 ? `waited ${formatDurationMs(wait)}` : null;
+            return `Input queue: ${operation}${detail ? ` · ${detail}` : ''}`;
+          }
           case 'file-history-snapshot':
             return message.raw.messageId
               ? `File snapshot (${message.raw.messageId})`
@@ -508,7 +537,8 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
       const subtype = String(message.subtype);
       // System variants don't share a common text field; pick whichever
       // narrative-style field the specific subtype carries. `content` holds the
-      // recap body for summary subtypes like away_summary / stop_hook_summary;
+      // recap body for summary subtypes like away_summary (stop_hook_summary
+      // has none — its body is synthesized from hookInfos);
       // `body` is the notification-style shape some CLI warnings use.
       // thinking_tokens carries no narrative field at all — it's a running
       // numeric estimate — so its body is synthesized from `estimated_tokens`.
@@ -527,6 +557,8 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
               : '')
           : subtype === 'feedback_draft_queued'
           ? feedbackDraftBody(sysRaw)
+          : subtype === 'stop_hook_summary'
+          ? stopHookSummaryBody(sysRaw)
           : (sysRaw as unknown as { message?: unknown }).message
             ?? (sysRaw as unknown as { content?: unknown }).content
             ?? (sysRaw as unknown as { body?: unknown }).body

@@ -86,10 +86,17 @@ export interface AttachmentRaw extends RawLineBase {
   cwd?: string;
 }
 
+/**
+ * The CLI's input queue — not background tasks. `enqueue` on arrival,
+ * `dequeue` when a turn starts on it, `remove` when it was folded into the
+ * running turn instead (see queueWait.ts).
+ */
 export interface QueueOpRaw extends RawLineBase {
   type: 'queue-operation';
   operation: string;
   content?: string;
+  /** On `remove`: why it left the queue, e.g. 'absorbed_mid_turn'. */
+  reason?: string;
 }
 
 export interface LastPromptRaw extends RawLineBase {
@@ -241,6 +248,12 @@ export interface SystemRaw extends RawLineBase {
   /** Present when subtype === 'background_tasks_changed' — the full set of
    *  background tasks running at that moment, not a delta. */
   tasks?: BackgroundTaskEntry[];
+  /** Present when subtype === 'stop_hook_summary' — one entry per Stop hook run. */
+  hookInfos?: { command?: string; durationMs?: number }[];
+  hookErrors?: unknown[];
+  /** True when a Stop hook blocked the turn from ending; `stopReason` says why. */
+  preventedContinuation?: boolean;
+  stopReason?: string;
   /** Present when subtype === 'feedback_draft_queued' — the on-disk draft's
    *  id, used by `/feedback` to discard or submit it. */
   draft_id?: string;

@@ -210,6 +210,8 @@ export function classifyStandaloneKind(
     // A local slash command's stdout (/usage, /cost, …), which CLI 2.1.283
     // moved here from a user record (that older form is user.commandOutput).
     if (subtype === 'local_command') return 'system.local_command';
+    // What the Stop hooks did when a turn ended.
+    if (subtype === 'stop_hook_summary') return 'system.stop_hook_summary';
     // Fallback: any other system subtype renders as the unknown gray inline strip.
     return 'system.unknown';
   }

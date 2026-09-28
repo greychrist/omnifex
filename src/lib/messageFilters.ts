@@ -136,7 +136,7 @@ export function filterDisplayableMessages(
     // Skip the `<task-notification>` carriers. These queue-operation /
     // attachment envelopes exist to deliver a backgrounded dispatch's
     // completion, which the SubagentBar renders as the row's closure — in
-    // the transcript they are a contentless "Background: enqueue" strip,
+    // the transcript they are a contentless "Input queue: enqueue" strip,
     // one per completion plus its `remove` twin. A queue-operation carrying
     // a real queued prompt is NOT this and stays visible.
     if (isTaskNotificationCarrier(rawShape)) {
