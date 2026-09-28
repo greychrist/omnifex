@@ -5,6 +5,19 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.199] — 2026-09-28
+
+### Added
+- The compact-mode "Hidden Events" bar can be restyled under Appearance → Message kinds → Hidden events: background, border, header text and detail text colours, each a hex with optional alpha.
+- Hidden-events text left unset turns light or dark automatically to stay readable on the background you pick, judged against the current theme for translucent colours.
+- An Expand all / Collapse all link above the Appearance message-kind tree.
+
+### Changed
+- The Appearance message-kind tree opens with every category collapsed.
+
+### Fixed
+- The copy button in a message card's header works on every card again. It silently did nothing on cards using the default action bar (system notices, rate-limit rows, attachments); records with no readable body now copy the same JSON the viewer shows.
+
 ## [0.4.198] — 2026-09-28
 
 ### Fixed
