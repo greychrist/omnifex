@@ -9,10 +9,24 @@ import type { MessageContentBlock } from "@/types/claudeStream";
  * (text / tool_use / tool_result). Handle both shapes here so every
  * caller using this helper gets a consistent value.
  *
- * Returns `''` when there's nothing to copy. Callers should treat empty
- * as a no-op rather than writing a blank clipboard.
+ * A transcript node (`{ kind, raw, … }`, what MessageFrame's default bar is
+ * handed) carries none of that at the top level — its body is the wire record
+ * under `raw`, and for user/assistant records under `raw.message`. It is read
+ * through that, after the top level has had its chance.
+ *
+ * Returns `''` when there's nothing to copy.
  */
 export function extractCopyText(msg: unknown): string {
+  if (!msg || typeof msg !== 'object') return '';
+  const direct = extractFromMessage(msg);
+  if (direct) return direct;
+  const raw = (msg as { raw?: unknown }).raw;
+  if (!raw || typeof raw !== 'object') return '';
+  const r = raw as { type?: unknown; message?: unknown };
+  return extractFromMessage(r.type === 'result' ? r : (r.message ?? r));
+}
+
+function extractFromMessage(msg: unknown): string {
   if (!msg || typeof msg !== 'object') return '';
   const m = msg as {
     type?: unknown;
@@ -28,6 +42,7 @@ export function extractCopyText(msg: unknown): string {
     return '';
   }
   const content = m.content;
+  if (typeof content === 'string') return content.trim();
   if (!Array.isArray(content)) return '';
   const parts: string[] = [];
   for (const c of content as MessageContentBlock[]) {

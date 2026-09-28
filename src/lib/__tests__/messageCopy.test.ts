@@ -34,4 +34,23 @@ describe('extractCopyText', () => {
     expect(copied).not.toContain('undefined');
     expect(copied).toContain('real');
   });
+
+  // MessageFrame's default bar hands over the transcript node itself, whose
+  // body lives under `raw` — never at the top level.
+  describe('transcript nodes', () => {
+    it('reads a user or assistant node through raw.message', () => {
+      const node = { kind: 'user', userKind: 'prompt', raw: { type: 'user', message: { role: 'user', content: 'plain prompt' } } };
+      expect(extractCopyText(node)).toBe('plain prompt');
+      const blocks = { kind: 'assistant', raw: { type: 'assistant', message: { content: [{ type: 'text', text: 'reply' }] } } };
+      expect(extractCopyText(blocks)).toBe('reply');
+    });
+
+    it('reads a result node through raw', () => {
+      expect(extractCopyText({ kind: 'result', raw: { type: 'result', result: 'all done' } })).toBe('all done');
+    });
+
+    it('is empty for a node with no readable body, like a rate-limit event', () => {
+      expect(extractCopyText({ kind: 'rate-limit', raw: { type: 'rate_limit_event', rate_limit_info: { status: 'allowed' } } })).toBe('');
+    });
+  });
 });

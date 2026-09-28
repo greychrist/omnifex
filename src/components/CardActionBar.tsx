@@ -73,9 +73,19 @@ export const CardActionBar: React.FC<CardActionBarProps> = ({
     };
   }, []);
 
+  // Serialized only when the panel opens — see RawJsonPopover. `raw` is the
+  // wire record; a message with none has nothing worth viewing.
+  const raw = (message as { raw?: unknown } | undefined)?.raw;
+  const payload: RawPayload | null =
+    rawPayload ?? (raw === undefined ? null : () => JSON.stringify(raw, null, 2));
+
   const handleCopy = (e: React.MouseEvent) => {
     e.stopPropagation();
-    const copyText = text ?? (message ? extractCopyText(message) : '');
+    // A record with no readable body (a rate-limit event, say) copies what the
+    // viewer shows, rather than the button silently doing nothing.
+    const copyText =
+      text ?? ((message ? extractCopyText(message) : '')
+        || (payload === null ? '' : typeof payload === 'function' ? payload() : payload));
     if (!copyText) return;
     logAndForget('card-action-bar:copy', navigator.clipboard.writeText(copyText));
     setCopied(true);
@@ -85,12 +95,6 @@ export const CardActionBar: React.FC<CardActionBarProps> = ({
       copyTimerRef.current = null;
     }, 2000);
   };
-
-  // Serialized only when the panel opens — see RawJsonPopover. `raw` is the
-  // wire record; a message with none has nothing worth viewing.
-  const raw = (message as { raw?: unknown } | undefined)?.raw;
-  const payload: RawPayload | null =
-    rawPayload ?? (raw === undefined ? null : () => JSON.stringify(raw, null, 2));
 
   return (
     <div

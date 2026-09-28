@@ -91,4 +91,21 @@ describe('CardActionBar', () => {
     expect(serialize).toHaveBeenCalled();
     expect(screen.getByTestId('raw-json-body').textContent).toBe('{"serialized":true}');
   });
+
+  // The default bar every MessageFrame draws is handed the transcript node,
+  // and the copy button used to find nothing in it and silently do nothing.
+  it('copies a transcript node\'s body', async () => {
+    const node = { kind: 'user', raw: { type: 'user', message: { content: 'the prompt' } } };
+    render(<CardActionBar message={node} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Copy content' }));
+    await waitFor(() => { expect(writeText).toHaveBeenCalledWith('the prompt'); });
+  });
+
+  it('copies the raw record when the node has no readable body', async () => {
+    const rec = { type: 'rate_limit_event', rate_limit_info: { status: 'allowed' } };
+    render(<CardActionBar message={{ kind: 'rate-limit', raw: rec }} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Copy content' }));
+    await waitFor(() => { expect(writeText).toHaveBeenCalledWith(JSON.stringify(rec, null, 2)); });
+    expect(screen.getByRole('button', { name: 'Copy content' }).getAttribute('title')).toBe('Copied!');
+  });
 });
