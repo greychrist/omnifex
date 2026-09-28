@@ -53,9 +53,16 @@ export function isPendingPromptPlaceholder(node: JsonlNode): boolean {
   return isPromptNode(node) && uuidOf(node) === null;
 }
 
-/** True for the CLI's persisted record of a user prompt. */
+/**
+ * True for the CLI's persisted record of something the user typed: a prompt,
+ * or a built-in slash command's echo, which classifies as 'local-command'
+ * because the model never answers it. Its stdout is 'local-command' too, but
+ * carries no `<command-name>`, so it never matches a placeholder's text.
+ */
 export function isCliPromptRecord(node: JsonlNode): boolean {
-  return isPromptNode(node) && uuidOf(node) !== null;
+  if (node.kind !== 'user') return false;
+  if (node.userKind !== 'prompt' && node.userKind !== 'local-command') return false;
+  return uuidOf(node) !== null;
 }
 
 /**

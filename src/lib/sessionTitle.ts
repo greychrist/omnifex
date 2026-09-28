@@ -14,6 +14,7 @@
 // session is called.
 
 import type { JsonlNode } from '@/types/jsonl';
+import { parseCommandEnvelope } from './commandEnvelope';
 
 export interface SessionTitleParts {
   /** The CLI's own generated title, from its `ai-title` records. */
@@ -63,7 +64,9 @@ export function firstPromptText(messages: readonly JsonlNode[]): string | null {
             .map((b) => b.text)
             .join('')
         : '';
-    const trimmed = text.trim();
+    // A skill command's echo is the CLI's envelope; suggest from what was typed.
+    const command = parseCommandEnvelope(text);
+    const trimmed = command ? [command.name, command.args].filter(Boolean).join(' ') : text.trim();
     if (trimmed) return trimmed;
   }
   return null;

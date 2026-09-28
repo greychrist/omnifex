@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { JsonlNode } from '@/types/jsonl';
+import { classifyJsonlLine } from '@/lib/jsonlClassifier';
 import {
   findPendingPromptMatch,
   isCliPromptRecord,
@@ -206,6 +207,35 @@ describe('findPendingPromptMatch', () => {
     it('does not treat a prompt merely starting with a slash-like word as a command', () => {
       const record = cliPrompt('<command-name>/commit</command-name>');
       expect(findPendingPromptMatch([placeholder('please /commit for me')], record)).toBe(-1);
+    });
+  });
+
+  // The cases above hand-build the incoming node as a 'prompt'. These run the
+  // real records through the classifier, which is what the JSONL tail does —
+  // hand-built nodes are how the two fixes drifted apart unnoticed.
+  describe('slash commands, as the classifier sees them', () => {
+    const classified = (content: string): JsonlNode =>
+      classifyJsonlLine({
+        type: 'user',
+        uuid: 'u-cmd',
+        sessionId: 's1',
+        timestamp: '2026-09-28T15:31:47.000Z',
+        message: { role: 'user', content },
+      })!;
+
+    it('reconciles a skill command echo', () => {
+      const record = classified('<command-message>timesheet-review</command-message>\n<command-name>/timesheet-review</command-name>');
+      expect(reconcilePendingPrompt([placeholder('/timesheet-review')], record)).toEqual([record]);
+    });
+
+    it('reconciles a built-in command echo', () => {
+      const record = classified('<command-name>/compact</command-name>\n<command-message>compact</command-message>\n<command-args></command-args>');
+      expect(reconcilePendingPrompt([placeholder('/compact')], record)).toEqual([record]);
+    });
+
+    it('never reconciles a built-in command\'s stdout', () => {
+      const record = classified('<local-command-stdout>Compacted </local-command-stdout>');
+      expect(reconcilePendingPrompt([placeholder('/compact')], record)).toBeNull();
     });
   });
 });

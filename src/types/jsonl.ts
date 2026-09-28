@@ -134,9 +134,10 @@ export type UserKind =
   /** The summary the CLI writes after /compact. A `user` record, but not a prompt. */
   | 'compact-summary'
   /**
-   * The echo of a typed slash command and the stdout it produced. Both persist
-   * as `user` records, but a local command runs on the client — the model never
-   * sees either one and will never reply to them.
+   * The echo of a typed built-in slash command and the stdout it produced.
+   * Both persist as `user` records, but a local command runs on the client —
+   * the model never sees either one and will never reply to them. A skill or
+   * custom command's echo is a 'prompt': the model answers it.
    */
   | 'local-command'
   /**

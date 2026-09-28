@@ -142,6 +142,52 @@ describe('classifyJsonlLine — local-command envelope', () => {
   });
 });
 
+// A skill or custom command is expanded into a prompt the model answers, so its
+// echo starts a turn exactly like typed text. Across 317 real command echoes
+// (2026-09-28) every one the CLI followed with a skill body was message-first,
+// and every built-in was name-first; newer CLIs also stamp `turnOrigin` on the
+// skill echoes and never on the built-ins.
+describe('classifyJsonlLine — skill and custom command echoes', () => {
+  const TS = '2026-09-28T15:31:47.000Z';
+
+  it('classifies a message-first command echo as prompt', () => {
+    const node = classifyJsonlLine({
+      type: 'user',
+      timestamp: TS,
+      message: {
+        role: 'user',
+        content: '<command-message>timesheet-review</command-message>\n<command-name>/timesheet-review</command-name>',
+      },
+    });
+    if (node?.kind !== 'user') throw new Error('expected a user node');
+    expect(node.userKind).toBe('prompt');
+  });
+
+  it('classifies a message-first echo in block-array content as prompt', () => {
+    const node = classifyJsonlLine({
+      type: 'user',
+      timestamp: TS,
+      message: {
+        role: 'user',
+        content: [{ type: 'text', text: '<command-message>work-on-ticket</command-message>\n<command-name>/work-on-ticket</command-name>\n<command-args>WIN-12</command-args>' }],
+      },
+    });
+    if (node?.kind !== 'user') throw new Error('expected a user node');
+    expect(node.userKind).toBe('prompt');
+  });
+
+  it('classifies a turnOrigin-stamped command echo as prompt whatever its tag order', () => {
+    const node = classifyJsonlLine({
+      type: 'user',
+      timestamp: TS,
+      turnOrigin: 'human',
+      message: { role: 'user', content: '<command-name>/pr-queue</command-name>\n<command-message>pr-queue</command-message>' },
+    });
+    if (node?.kind !== 'user') throw new Error('expected a user node');
+    expect(node.userKind).toBe('prompt');
+  });
+});
+
 describe('classifyJsonlLine — unknown fallback', () => {
   it('returns kind: unknown for an unrecognized top-level type', () => {
     const node = classifyJsonlLine({

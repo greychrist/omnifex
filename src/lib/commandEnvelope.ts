@@ -44,11 +44,14 @@ export function parseCommandEnvelope(text: string): CommandEnvelope | null {
 
 /**
  * The tags the CLI wraps around a *local* command's echo and its stdout. A
- * slash command runs on the client, so what lands in the transcript is a pair
- * of `user` records the model never sees and will never answer:
+ * built-in slash command runs on the client, so what lands in the transcript is
+ * a pair of `user` records the model never sees and will never answer:
  *
  *   <command-name>/compact</command-name>   (+ message / args)
  *   <local-command-stdout>Compacted </local-command-stdout>
+ *
+ * A skill or custom command's echo carries the same tag but is not local — see
+ * `isModelCommandEcho`.
  *
  * Exported so the classifier and the renderer share one definition of the
  * shape — messageKind needs the two tags apart (it renders them as different
@@ -73,24 +76,41 @@ export function localCommandOutput(text: string): string {
 }
 
 /**
- * True for either half of a local-command envelope.
- *
- * `content` is accepted in both shapes the CLI persists — a bare string and an
- * array of content blocks — because the same record reaches this code from the
- * live stream and from a re-read transcript, and only one of those normalizes.
+ * The text of a `user` record's content, in both shapes the CLI persists — a
+ * bare string and an array of content blocks — because the same record reaches
+ * this code from the live stream and from a re-read transcript, and only one of
+ * those normalizes. Null for any other shape.
  */
+function contentText(content: unknown): string | null {
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return null;
+  return content
+    .map((b) => (b && typeof b === 'object' && (b as { type?: string }).type === 'text'
+      ? String((b as { text?: unknown }).text ?? '')
+      : ''))
+    .join('');
+}
+
+/** True for either half of a local-command envelope. */
 export function isLocalCommandEnvelope(content: unknown): boolean {
-  let text: string;
-  if (typeof content === 'string') {
-    text = content;
-  } else if (Array.isArray(content)) {
-    text = content
-      .map((b) => (b && typeof b === 'object' && (b as { type?: string }).type === 'text'
-        ? String((b as { text?: unknown }).text ?? '')
-        : ''))
-      .join('');
-  } else {
-    return false;
-  }
+  const text = contentText(content);
+  if (text === null) return false;
   return text.includes(COMMAND_NAME_TAG) || text.includes(LOCAL_COMMAND_STDOUT_TAG);
+}
+
+/**
+ * True for the echo of a skill or custom command — a command the CLI expands
+ * into a prompt the model answers, so the echo starts a turn like typed text.
+ *
+ * The echo record alone has to tell us; the skill body that follows it is a
+ * separate record. Across 317 real echoes (2026-09-28) every skill/custom one
+ * was message-first and every built-in name-first, and newer CLIs stamp
+ * `turnOrigin` on the former only. Either signal counts, so the call survives
+ * one of them changing. If both ever vanish, skill echoes fall back to
+ * 'local-command': the turn loses its anchor, nothing gets stuck.
+ */
+export function isModelCommandEcho(content: unknown, turnOrigin: unknown): boolean {
+  const text = contentText(content);
+  if (text === null || !text.includes(COMMAND_NAME_TAG)) return false;
+  return text.trimStart().startsWith('<command-message>') || typeof turnOrigin === 'string';
 }

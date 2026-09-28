@@ -18,7 +18,7 @@ import type {
   ToolProgressRaw,
 } from '@/types/jsonl';
 import { anchorToolUseId } from './toolProgress';
-import { isLocalCommandEnvelope } from './commandEnvelope';
+import { isLocalCommandEnvelope, isModelCommandEcho } from './commandEnvelope';
 
 /**
  * Single source of truth for classifying a parsed JSONL line into the
@@ -206,10 +206,12 @@ function classifyUser(r: Record<string, unknown>, sessionId: string, receivedAt:
     userKind = 'meta-other';
   } else if (isInterruptNotice(content)) {
     userKind = 'interrupt';
-  } else if (isLocalCommandEnvelope(content)) {
-    // A slash command leaves two `user` records behind — the echo of what was
-    // typed and the command's stdout. Neither carries isMeta, so without this
-    // branch both classified as 'prompt': a question nothing would ever answer.
+  } else if (isLocalCommandEnvelope(content) && !isModelCommandEcho(content, r.turnOrigin)) {
+    // A built-in slash command leaves two `user` records behind — the echo of
+    // what was typed and the command's stdout. Neither carries isMeta, so
+    // without this branch both classified as 'prompt': a question nothing would
+    // ever answer. A skill or custom command's echo IS a prompt — the model
+    // answers the skill body it expands to — so it stays one.
     userKind = 'local-command';
   } else {
     userKind = 'prompt';

@@ -84,4 +84,13 @@ describe('firstPromptText', () => {
     expect(firstPromptText([toolResult, forwarded, user('the real one')])).toBe('the real one');
     expect(firstPromptText([])).toBeNull();
   });
+
+  // A skill command's echo is a prompt, but its text is the CLI's envelope —
+  // suggest a name from what was typed, not from the XML.
+  it('reads a command echo as the command that was typed', () => {
+    expect(firstPromptText([user('<command-message>timesheet-review</command-message>\n<command-name>/timesheet-review</command-name>')]))
+      .toBe('/timesheet-review');
+    expect(firstPromptText([user('<command-message>work-on-ticket</command-message>\n<command-name>/work-on-ticket</command-name>\n<command-args>WIN-12</command-args>')]))
+      .toBe('/work-on-ticket WIN-12');
+  });
 });
