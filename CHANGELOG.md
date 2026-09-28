@@ -5,6 +5,21 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.201] — 2026-09-28
+
+### Added
+- Permission-denied card for actions auto mode blocks without asking: **Approve & retry**, **Always allow…** (an editable rule saved to the project's `.claude/settings.local.json`, applied to the running session), and **Ask me instead of auto mode**. When the safety classifier is unavailable the card says so and offers a plain Retry. The card is rebuilt after a reload.
+- **Recap** button under the chat-format toggle, which runs the CLI's `/recap`.
+- Automatic recap: when a turn finishes and you haven't replied, `/recap` runs once after a delay (General → Chat; on by default, 5 minutes).
+- Sonnet 5.5 is labelled and colored as its own model in the Cost Report, and can be pinned in the model picker.
+
+### Changed
+- General settings are grouped into titled sections: Appearance, Tabs, Chat, Notifications, Context & cache, Claude Code.
+- Claude Code changelog review watermark advanced to 2.1.284.
+
+### Fixed
+- A permission request the CLI withdraws (for example on an interrupted turn) no longer leaves a stale card on screen, or hides later requests queued behind it. This applies on the desktop and over OmniFex Remote.
+
 ## [0.4.200] — 2026-09-28
 
 ### Added
