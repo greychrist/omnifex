@@ -5,6 +5,15 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.200] — 2026-09-28
+
+### Added
+- Stop-hook summaries render as their own "Stop hooks" card — each hook by file and duration, plus any error and whether one blocked the turn from ending — instead of the "System (other)" catch-all. Styleable under Appearance like any other kind.
+- An input-queue dequeue row says how long the input waited behind a running turn, when it waited a second or more; a removed input says why (absorbed mid-turn).
+
+### Changed
+- `queue-operation` rows read "Input queue: …" instead of "Background: …", and the Appearance kind is now "Input queue". They trace the CLI's input queue — prompts, task notifications, agent messages — not background tasks.
+
 ## [0.4.199] — 2026-09-28
 
 ### Added
