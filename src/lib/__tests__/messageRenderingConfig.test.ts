@@ -265,6 +265,20 @@ describe("mergeConfig", () => {
     expect(mergeConfig({ version: 5, tabs: { maxWidth: "wide" } }).tabs.maxWidth).toBe(DEFAULT_TAB_STRIP.maxWidth);
   });
 
+  it("defaults the hidden-events bar to the theme's own colours", () => {
+    expect(createDefaultConfig().hiddenEvents).toEqual({ background: null, border: null, headerText: null, detailText: null });
+  });
+
+  it("keeps saved hidden-events colours, alpha hex included", () => {
+    const cfg = mergeConfig({ version: 5, hiddenEvents: { background: "#1e293b", border: "#60a5fa80", headerText: "#fff", detailText: "#ffffffb3" } });
+    expect(cfg.hiddenEvents).toEqual({ background: "#1e293b", border: "#60a5fa80", headerText: "#fff", detailText: "#ffffffb3" });
+  });
+
+  it("drops a hidden-events colour that is not a hex, keeping the other", () => {
+    const cfg = mergeConfig({ version: 5, hiddenEvents: { background: "blue", border: "#60a5fa", headerText: 3 } });
+    expect(cfg.hiddenEvents).toEqual({ background: null, border: "#60a5fa", headerText: null, detailText: null });
+  });
+
   it("merges live-overlay hard-filter toggles", () => {
     const cfg = mergeConfig({ version: 5, hardFilters: { hidePartialStreaming: true } });
     expect(cfg.hardFilters.hidePartialStreaming).toBe(true);

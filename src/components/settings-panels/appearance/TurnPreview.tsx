@@ -2,6 +2,7 @@ import React from "react";
 import { Layers } from "lucide-react";
 import type { MessageRenderingConfig } from "@/lib/messageRenderingConfig";
 import { resolveKind } from "@/lib/messageRenderingConfig";
+import { currentThemeBackdrop, hiddenEventsColors, type HiddenEventsColors } from "@/lib/accentStyle";
 import { SamplePreview } from "./SamplePreview";
 import { FAKE_TURN_KIND_IDS, previewTextForKindId } from "./fixtures";
 import { cn } from "@/lib/utils";
@@ -71,21 +72,22 @@ export const TurnPreview: React.FC<TurnPreviewProps> = ({ config, mode }) => {
         if (item.kind === "single") {
           return <Sample key={`s-${i}`} config={config} id={item.ids[0]} />;
         }
-        return <CollapsedGroupMarker key={`g-${i}`} count={item.ids.length} />;
+        return <CollapsedGroupMarker key={`g-${i}`} count={item.ids.length} colors={hiddenEventsColors(config.hiddenEvents, currentThemeBackdrop())} />;
       })}
     </div>
   );
 };
 
-const CollapsedGroupMarker: React.FC<{ count: number }> = ({ count }) => (
+const CollapsedGroupMarker: React.FC<{ count: number; colors: HiddenEventsColors }> = ({ count, colors }) => (
   <div
     className={cn(
       "flex items-center gap-2 rounded-md border border-border/40 bg-muted/20 px-3 py-1.5",
       "text-xs text-muted-foreground",
     )}
+    style={{ ...colors.bar, ...(colors.detail && { color: colors.detail }) }}
   >
     <Layers className="h-3.5 w-3.5" />
-    <span className="font-medium text-foreground/80">
+    <span className="font-medium text-foreground/80" style={colors.header ? { color: colors.header } : undefined}>
       {count} Hidden {count === 1 ? "Event" : "Events"}:
     </span>
     <span className="truncate">collapsed in compact mode</span>

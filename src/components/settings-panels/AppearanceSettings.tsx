@@ -22,11 +22,13 @@ import {
   type PaletteEntry,
   type PaletteName,
   type Terminal,
+  type HiddenEventsStyle,
   type Typography,
 } from "@/lib/messageRenderingConfig";
 import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
 import { MessageKindTree, type TreeSelection } from "./appearance/MessageKindTree";
 import { KindEditor } from "./appearance/KindEditor";
+import { HiddenEventsEditor } from "./appearance/HiddenEventsEditor";
 import { SamplePreview } from "./appearance/SamplePreview";
 import { TurnPreview } from "./appearance/TurnPreview";
 import {
@@ -197,6 +199,13 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
   const setTypography = useCallback(
     (next: Typography) => {
       mutate((prev) => ({ ...prev, typography: next }));
+    },
+    [mutate],
+  );
+
+  const setHiddenEvents = useCallback(
+    (next: HiddenEventsStyle) => {
+      mutate((prev) => ({ ...prev, hiddenEvents: next }));
     },
     [mutate],
   );
@@ -458,6 +467,11 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
                 />
               </div>
 
+              {selected.type === "hiddenEvents" ? (
+                <div className="min-w-0">
+                  <HiddenEventsEditor value={config.hiddenEvents} onChange={setHiddenEvents} />
+                </div>
+              ) : (
               <div className="min-w-0 space-y-4">
                 <div>
                   <div className="flex items-center justify-between mb-2">
@@ -490,6 +504,7 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
                   onReset={editor.onReset}
                 />
               </div>
+              )}
             </div>
           </Card>
         </TabsContent>

@@ -1,5 +1,5 @@
 import React from "react";
-import { ChevronDown, ChevronRight, EyeOff, Lock } from "lucide-react";
+import { ChevronDown, ChevronRight, ChevronsUpDown, EyeOff, Lock } from "lucide-react";
 import { CATEGORIES, KIND_REGISTRY, resolveKind, isHexColor } from "@/lib/messageRenderingConfig";
 import type {
   Category,
@@ -18,7 +18,9 @@ import { cn } from "@/lib/utils";
 
 export type TreeSelection =
   | { type: "category"; id: Category }
-  | { type: "kind"; id: string };
+  | { type: "kind"; id: string }
+  /** The compact-mode expander — styled here, but not a message kind. */
+  | { type: "hiddenEvents" };
 
 interface MessageKindTreeProps {
   config: MessageRenderingConfig;
@@ -41,7 +43,9 @@ export const MessageKindTree: React.FC<MessageKindTreeProps> = ({
   selected,
   onSelect,
 }) => {
-  const [collapsed, setCollapsed] = React.useState<ReadonlySet<Category>>(new Set());
+  // Starts collapsed: 50-odd kinds open at once buried the three categories.
+  const [collapsed, setCollapsed] = React.useState<ReadonlySet<Category>>(() => new Set(CATEGORIES));
+  const anyOpen = collapsed.size < CATEGORIES.length;
   const toggle = (c: Category) => {
     setCollapsed((prev) => {
       const next = new Set(prev);
@@ -52,6 +56,15 @@ export const MessageKindTree: React.FC<MessageKindTreeProps> = ({
 
   return (
     <div className="text-sm space-y-1">
+      <div className="flex justify-end px-1">
+        <button
+          type="button"
+          onClick={() => { setCollapsed(anyOpen ? new Set(CATEGORIES) : new Set()); }}
+          className="text-[11px] text-muted-foreground hover:text-foreground underline underline-offset-2"
+        >
+          {anyOpen ? "Collapse all" : "Expand all"}
+        </button>
+      </div>
       {CATEGORIES.map((c) => {
         const catStyle = config.categories[c];
         const kinds = Object.values(KIND_REGISTRY)
@@ -116,6 +129,32 @@ export const MessageKindTree: React.FC<MessageKindTreeProps> = ({
           </div>
         );
       })}
+
+      {/* Not a kind: the bar compact mode folds hidden kinds into. */}
+      <div className="pt-1 mt-1 border-t border-border/40">
+        <div
+          className={cn(
+            "w-full flex items-center gap-2 px-1 py-1 rounded transition-colors",
+            selected.type === "hiddenEvents" ? "bg-primary/10 text-foreground" : "hover:bg-muted/40 text-foreground/90",
+          )}
+        >
+          <button
+            type="button"
+            onClick={() => { onSelect({ type: "hiddenEvents" }); }}
+            className="flex flex-1 min-w-0 items-center gap-2 text-left pl-[18px]"
+            title="The compact-mode bar that hidden messages fold into."
+          >
+            <span
+              className="shrink-0"
+              style={{ color: config.hiddenEvents.border ?? config.hiddenEvents.background ?? undefined }}
+              aria-hidden="true"
+            >
+              <ChevronsUpDown className="h-3.5 w-3.5" />
+            </span>
+            <span className="flex-1 truncate text-[12px] font-medium">Hidden events</span>
+          </button>
+        </div>
+      </div>
     </div>
   );
 };

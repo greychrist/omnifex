@@ -2,6 +2,7 @@ import type React from "react";
 import {
   isHexColor,
   resolveKind,
+  type HiddenEventsStyle,
   type MessageRenderingConfig,
   type PaletteEntry,
 } from "./messageRenderingConfig";
@@ -60,4 +61,88 @@ export function swatchFor(
   kindId: string,
 ): string | undefined {
   return accentFor(config, kindId)?.swatch;
+}
+
+/** Automatic text colours for the hidden-events bar — slate-50 and slate-900. */
+export const LIGHT_TEXT = "#f8fafc";
+export const DARK_TEXT = "#0f172a";
+
+export interface HiddenEventsColors {
+  bar: React.CSSProperties | undefined;
+  header: string | undefined;
+  detail: string | undefined;
+}
+
+/**
+ * Inline colours for the compact-mode hidden-events bar. Undefined means
+ * "leave the theme's class alone". Inline because the unlayered
+ * `* { border-color }` rule in styles.css outranks every Tailwind border-colour
+ * utility.
+ *
+ * Text left unset is automatic: once a background is set, whichever of
+ * LIGHT_TEXT / DARK_TEXT contrasts more with it, the detail dimmed to ~70% so
+ * the header still leads. The background is judged by what it composites to
+ * over `backdrop` (the theme's background) — a faint white over the dark
+ * theme is still dark, and must keep light text.
+ */
+export function hiddenEventsColors(
+  { background, border, headerText, detailText }: HiddenEventsStyle,
+  backdrop: string,
+): HiddenEventsColors {
+  const bar =
+    background === null && border === null
+      ? undefined
+      : {
+          ...(background !== null && { backgroundColor: background }),
+          ...(border !== null && { borderColor: border }),
+        };
+  const auto = background === null ? undefined : readableOn(composite(background, backdrop));
+  return {
+    bar,
+    header: headerText ?? auto,
+    detail: detailText ?? (auto && `${auto}b3`),
+  };
+}
+
+/**
+ * The theme's background as a hex, for compositing a translucent bar colour.
+ * Approximates `--color-background` per theme (oklch 0.18 gray / 0.98 light);
+ * precision only matters for translucent backgrounds near the midpoint, and
+ * the explicit text colours cover those.
+ */
+export function currentThemeBackdrop(): string {
+  const light =
+    typeof document !== "undefined" && document.documentElement.classList.contains("theme-light");
+  return light ? "#f7f9fb" : "#12171c";
+}
+
+type Rgb = [number, number, number];
+
+function parseHex(hex: string): { rgb: Rgb; alpha: number } {
+  const h = hex.slice(1);
+  const full = h.length === 3 ? h.split("").map((c) => c + c).join("") : h;
+  const n = (i: number) => parseInt(full.slice(i, i + 2), 16);
+  return { rgb: [n(0), n(2), n(4)], alpha: full.length === 8 ? n(6) / 255 : 1 };
+}
+
+function composite(fg: string, bg: string): Rgb {
+  const { rgb, alpha } = parseHex(fg);
+  const base = parseHex(bg).rgb;
+  return rgb.map((c, i) => c * alpha + base[i] * (1 - alpha)) as Rgb;
+}
+
+/** WCAG relative luminance. */
+function luminance([r, g, b]: Rgb): number {
+  const lin = (c: number) => {
+    const s = c / 255;
+    return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+}
+
+function readableOn(rgb: Rgb): string {
+  const l = luminance(rgb);
+  const vsLight = (luminance(parseHex(LIGHT_TEXT).rgb) + 0.05) / (l + 0.05);
+  const vsDark = (l + 0.05) / (luminance(parseHex(DARK_TEXT).rgb) + 0.05);
+  return vsLight >= vsDark ? LIGHT_TEXT : DARK_TEXT;
 }

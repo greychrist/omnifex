@@ -49,8 +49,13 @@ function clickRow(label: string) {
   fireEvent.click(btn);
 }
 
+// Categories start collapsed; the tree's own link opens them all.
+function expandAll() {
+  fireEvent.click(screen.getByRole('button', { name: 'Expand all' }));
+}
+
 describe('MessageKindTree — registry-driven', () => {
-  it('lists registry kinds under their category', () => {
+  function renderTree() {
     render(
       <MessageKindTree
         config={createDefaultConfig()}
@@ -58,10 +63,33 @@ describe('MessageKindTree — registry-driven', () => {
         onSelect={() => {}}
       />,
     );
+  }
+
+  it('starts with every category collapsed', () => {
+    renderTree();
+    expect(screen.queryByText("Permission request")).toBeNull();
+    expect(screen.queryByText("Execution complete")).toBeNull();
+  });
+
+  it('lists registry kinds under their category once expanded', () => {
+    renderTree();
+    expandAll();
     // system category kinds
     expect(screen.getByText("Permission request")).toBeInTheDocument();
     // agent category kind (still in the tree, just under a different category)
     expect(screen.getByText("Execution complete")).toBeInTheDocument();
+  });
+
+  it('offers Collapse all while any category is open, and Expand all once none is', () => {
+    renderTree();
+    expect(screen.queryByRole('button', { name: 'Collapse all' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Expand User' }));
+    expect(screen.queryByRole('button', { name: 'Expand all' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse all' }));
+    expect(screen.queryByText("Tool result")).toBeNull();
+    expect(screen.getByRole('button', { name: 'Expand all' })).toBeInTheDocument();
   });
 
   it('lists the three categories', () => {
@@ -86,6 +114,7 @@ describe('AppearanceSettings — category + kind tree', () => {
       expect(screen.getAllByText(label).length).toBeGreaterThan(0);
     }
     // Registry kinds render under their category
+    expandAll();
     expect(screen.getAllByText('Tool call').length).toBeGreaterThan(0);
   });
 
@@ -101,6 +130,7 @@ describe('AppearanceSettings — category + kind tree', () => {
     renderWithProvider();
     await screen.findAllByText('User');
     // "Execution complete" is a kind in the agent category.
+    expandAll();
     clickRow('Execution complete');
     expect(screen.getByRole('button', { name: /reset to default/i })).toBeInTheDocument();
   });
@@ -115,6 +145,7 @@ describe('AppearanceSettings — kind field editing', () => {
     saved.config = null;
 
     // Select "Tool call" in the tree.
+    expandAll();
     clickRow('Tool call');
 
     // The KindEditor for "Tool call" shows a "Hide in compact mode" switch.
@@ -210,9 +241,59 @@ describe('AppearanceSettings — presentation control', () => {
     renderWithProvider();
     await screen.findAllByText('User');
     // Select a kind that has no user patch — inherited fields show "inherited" hint.
+    expandAll();
     clickRow('Tool call');
     const editor = screen.getByTestId('kind-editor');
     // At least some fields show the inherit hint since no user patch is set.
     expect(within(editor).getAllByText(/inherited/i).length).toBeGreaterThan(0);
+  });
+});
+
+describe('AppearanceSettings — hidden events bar', () => {
+  it('lists the bar in the tree and persists its background and border separately', async () => {
+    renderWithProvider();
+    await screen.findAllByText('User');
+    saved.config = null;
+
+    clickRow('Hidden events');
+    const editor = screen.getByTestId('hidden-events-editor');
+
+    fireEvent.change(within(editor).getByLabelText('Background colour hex'), { target: { value: '#1e293b' } });
+    fireEvent.change(within(editor).getByLabelText('Border colour picker'), { target: { value: '#60a5fa' } });
+
+    await waitFor(() => {
+      const cfg = saved.config as { hiddenEvents?: unknown } | null;
+      expect(cfg?.hiddenEvents).toEqual({ background: '#1e293b', border: '#60a5fa', headerText: null, detailText: null });
+    });
+  });
+
+  it('puts a colour back to the theme default', async () => {
+    renderWithProvider();
+    await screen.findAllByText('User');
+    clickRow('Hidden events');
+    const editor = screen.getByTestId('hidden-events-editor');
+    fireEvent.change(within(editor).getByLabelText('Border colour picker'), { target: { value: '#60a5fa' } });
+    await waitFor(() => {
+      expect((saved.config as { hiddenEvents?: { border: unknown } } | null)?.hiddenEvents?.border).toBe('#60a5fa');
+    });
+
+    fireEvent.click(within(editor).getByRole('button', { name: /reset border colour/i }));
+    await waitFor(() => {
+      expect((saved.config as { hiddenEvents?: { border: unknown } }).hiddenEvents?.border).toBeNull();
+    });
+  });
+
+  it('persists header and detail text colours', async () => {
+    renderWithProvider();
+    await screen.findAllByText('User');
+    clickRow('Hidden events');
+    const editor = screen.getByTestId('hidden-events-editor');
+    fireEvent.change(within(editor).getByLabelText('Header text colour hex'), { target: { value: '#ffffff' } });
+    fireEvent.change(within(editor).getByLabelText('Detail text colour hex'), { target: { value: '#ffffffb3' } });
+    await waitFor(() => {
+      const h = (saved.config as { hiddenEvents?: { headerText: unknown; detailText: unknown } } | null)?.hiddenEvents;
+      expect(h?.headerText).toBe('#ffffff');
+      expect(h?.detailText).toBe('#ffffffb3');
+    });
   });
 });

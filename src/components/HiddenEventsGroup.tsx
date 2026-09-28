@@ -6,6 +6,8 @@ import { StreamMessage } from './StreamMessage';
 import { TranscriptRowBoundary } from '@/components/claude/TranscriptRowBoundary';
 import { summarizeHiddenEvents, countHiddenEvents } from '@/lib/hiddenEventsSummary';
 import { useScrollAnchor } from '@/lib/useScrollAnchor';
+import { currentThemeBackdrop, hiddenEventsColors } from '@/lib/accentStyle';
+import { useMessageRenderingConfig } from '@/contexts/MessageRenderingContext';
 import type { JsonlNode } from '@/types/jsonl';
 
 interface Props {
@@ -31,6 +33,9 @@ export const HiddenEventsGroup: React.FC<Props> = ({
   onResend,
 }) => {
   const [open, setOpen] = useState(false);
+  const { config } = useMessageRenderingConfig();
+  const colors = hiddenEventsColors(config.hiddenEvents, currentThemeBackdrop());
+  const barStyle = colors.bar;
   const { ref: triggerRef, runWith } = useScrollAnchor<HTMLButtonElement>();
   const count = countHiddenEvents(messages);
   const summary = summarizeHiddenEvents(messages);
@@ -45,18 +50,23 @@ export const HiddenEventsGroup: React.FC<Props> = ({
           'border border-border/40 bg-muted/20 px-3 py-1.5 text-left',
           'hover:bg-muted/40 transition-colors',
           'data-[state=open]:bg-primary/10 data-[state=open]:border-primary/40',
+          // A configured background is inline and outranks the hover/open
+          // fills above, so feedback comes from brightness instead.
+          barStyle?.backgroundColor && 'hover:brightness-125 data-[state=open]:brightness-125',
         )}
+        style={barStyle}
       >
         <span className="flex items-baseline gap-2 min-w-0 text-xs">
-          <span className="font-medium text-foreground/80 shrink-0">
+          <span className="font-medium text-foreground/80 shrink-0" style={colors.header ? { color: colors.header } : undefined}>
             {count} Hidden {count === 1 ? 'Event' : 'Events'}:
           </span>
-          <span className="text-muted-foreground truncate">
+          <span className="text-muted-foreground truncate" style={colors.detail ? { color: colors.detail } : undefined}>
             {summary || '…'}
           </span>
         </span>
         <ChevronsUpDown
           className="h-3.5 w-3.5 text-muted-foreground/70 shrink-0 transition-transform group-data-[state=open]:opacity-100"
+          style={colors.detail ? { color: colors.detail } : undefined}
           aria-hidden="true"
         />
       </CollapsibleTrigger>

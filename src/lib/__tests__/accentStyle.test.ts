@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { createDefaultConfig } from "../messageRenderingConfig";
-import { accentFor, accentStyleFor, swatchFor } from "../accentStyle";
+import { accentFor, accentStyleFor, DARK_TEXT, hiddenEventsColors, LIGHT_TEXT, swatchFor } from "../accentStyle";
 
 describe("accentStyle", () => {
   describe("accentFor", () => {
@@ -74,5 +74,45 @@ describe("accentStyle", () => {
       cfg.kinds["permission.request"] = { accentColor: "#123456" };
       expect(swatchFor(cfg, "permission.request")).toBe("#123456");
     });
+  });
+});
+
+describe("hiddenEventsColors", () => {
+  const DARK = "#12171c";
+  const LIGHT = "#f7f9fb";
+  const unset = { background: null, border: null, headerText: null, detailText: null };
+
+  it("sets nothing when nothing is configured, so the bar keeps its theme look", () => {
+    expect(hiddenEventsColors(unset, DARK)).toEqual({ bar: undefined, header: undefined, detail: undefined });
+  });
+
+  it("puts bar colours on the bar, only the ones configured", () => {
+    expect(hiddenEventsColors({ ...unset, border: "#60a5fa" }, DARK).bar).toEqual({ borderColor: "#60a5fa" });
+    expect(hiddenEventsColors({ ...unset, background: "#1e293b", border: "#60a5fa" }, DARK).bar)
+      .toEqual({ backgroundColor: "#1e293b", borderColor: "#60a5fa" });
+  });
+
+  it("picks dark text on a light background and light text on a dark one", () => {
+    expect(hiddenEventsColors({ ...unset, background: "#fde68a" }, DARK).header).toBe(DARK_TEXT);
+    expect(hiddenEventsColors({ ...unset, background: "#1e293b" }, LIGHT).header).toBe(LIGHT_TEXT);
+  });
+
+  // A translucent background is mostly the theme showing through: faint white
+  // over the dark theme is still dark, so the text must stay light.
+  it("judges a translucent background by what it composites to over the theme", () => {
+    expect(hiddenEventsColors({ ...unset, background: "#ffffff20" }, DARK).header).toBe(LIGHT_TEXT);
+    expect(hiddenEventsColors({ ...unset, background: "#00000020" }, LIGHT).header).toBe(DARK_TEXT);
+  });
+
+  it("dims the automatic detail text so the header still leads", () => {
+    expect(hiddenEventsColors({ ...unset, background: "#fde68a" }, DARK).detail).toBe(`${DARK_TEXT}b3`);
+  });
+
+  it("lets an explicit text colour win, each independently", () => {
+    const c = hiddenEventsColors({ ...unset, background: "#fde68a", headerText: "#ff0000" }, DARK);
+    expect(c.header).toBe("#ff0000");
+    expect(c.detail).toBe(`${DARK_TEXT}b3`);
+    expect(hiddenEventsColors({ ...unset, detailText: "#00ff00" }, DARK))
+      .toEqual({ bar: undefined, header: undefined, detail: "#00ff00" });
   });
 });

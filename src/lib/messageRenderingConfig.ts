@@ -561,6 +561,31 @@ export const DEFAULT_TAB_STRIP: TabStrip = {
   maxWidth: 250,
 };
 
+// ─── hidden events bar ──────────────────────────────────────────────────────
+//
+// The compact-mode "N Hidden Events" expander. It is not a message kind — it
+// wraps a run of them — so it has no KindStyle and no accent. It takes a
+// background and a border independently instead, because the one-colour
+// accent tints both at fixed low alphas and the bar blended in. Each is a hex
+// (alpha allowed) or null for the theme's own look — except the two text
+// colours, where null means "automatic": readable against the background.
+
+export interface HiddenEventsStyle {
+  background: string | null;
+  border: string | null;
+  /** "N Hidden Events:". */
+  headerText: string | null;
+  /** The summary after it, and the chevron. */
+  detailText: string | null;
+}
+
+export const DEFAULT_HIDDEN_EVENTS: HiddenEventsStyle = {
+  background: null,
+  border: null,
+  headerText: null,
+  detailText: null,
+};
+
 // ─── top-level config (v5) ──────────────────────────────────────────────────
 
 export interface MessageRenderingConfig {
@@ -574,6 +599,7 @@ export interface MessageRenderingConfig {
   typography: Typography;
   tabIndicators: TabIndicators;
   tabs: TabStrip;
+  hiddenEvents: HiddenEventsStyle;
   terminal: Terminal;
   debug: DebugOptions;
 }
@@ -589,6 +615,7 @@ export function createDefaultConfig(): MessageRenderingConfig {
     typography: structuredClone(DEFAULT_TYPOGRAPHY),
     tabIndicators: structuredClone(DEFAULT_TAB_INDICATORS),
     tabs: { ...DEFAULT_TAB_STRIP },
+    hiddenEvents: { ...DEFAULT_HIDDEN_EVENTS },
     terminal: { ...DEFAULT_TERMINAL },
     debug: { ...DEFAULT_DEBUG },
   };
@@ -701,7 +728,8 @@ export function mergeConfig(saved: unknown): MessageRenderingConfig {
 
 /**
  * Merge the shared (non-kind) config blocks — view mode, palette, hard
- * filters, typography, debug, terminal — from a saved record onto base.
+ * filters, typography, tabs, hidden-events bar, debug, terminal — from a
+ * saved record onto base.
  */
 function mergeShared(
   base: MessageRenderingConfig,
@@ -770,6 +798,17 @@ function mergeShared(
         typeof t.maxWidth === "number" && Number.isFinite(t.maxWidth)
           ? Math.min(TAB_MAX_WIDTH_RANGE.max, Math.max(TAB_MAX_WIDTH_RANGE.min, Math.round(t.maxWidth)))
           : base.tabs.maxWidth,
+    };
+  }
+
+  // Added after ship; the defaults-as-baseline merge covers older configs.
+  if (isRecord(saved.hiddenEvents)) {
+    const h = saved.hiddenEvents;
+    base.hiddenEvents = {
+      background: isHexColor(h.background) ? h.background : null,
+      border: isHexColor(h.border) ? h.border : null,
+      headerText: isHexColor(h.headerText) ? h.headerText : null,
+      detailText: isHexColor(h.detailText) ? h.detailText : null,
     };
   }
 
