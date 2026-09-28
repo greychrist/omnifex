@@ -28,6 +28,7 @@ import {
   DEFAULT_CLI_REVIEW_PROMPT,
 } from "@/lib/cliReviewPrompt";
 import { cn } from "@/lib/utils";
+import { AutoRecapSettings } from "./AutoRecapSettings";
 import { ClaudeVersionSelector } from "@/components/ClaudeVersionSelector";
 import { useTheme } from "@/hooks";
 import { useAppFont } from "@/contexts/AppFontContext";
@@ -62,6 +63,16 @@ import {
 // upstream, the second isn't in current Claude Code docs, and the third is
 // load-bearing-but-rarely-tuned (Claude defaults to 30 days). Anyone who
 // still wants to tune those can edit the per-account settings.json directly.
+
+/** One titled group in the General tab; related settings sit together. */
+function SettingsSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="space-y-4">
+      <h4 className="text-caption font-semibold uppercase tracking-wide text-muted-foreground">{title}</h4>
+      {children}
+    </section>
+  );
+}
 
 interface GeneralSettingsProps extends SettingsPanelProps {
   currentBinaryPath: string | null;
@@ -242,598 +253,608 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
       <div>
         <h3 className="text-heading-4 mb-4">General Settings</h3>
 
-        <div className="space-y-4">
-          {/* Theme Selector */}
-          <div className="flex items-center justify-between">
-            <div>
-              <Label>Theme</Label>
-              <p className="text-caption text-muted-foreground mt-1">
-                Choose your preferred color theme
-              </p>
-            </div>
-            <div className="flex items-center gap-1 p-1 bg-muted/30 rounded-lg">
-              <button
-                onClick={fireAndLog('general-settings:click', () => setTheme('gray'))}
-                className={cn(
-                  "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all",
-                  theme === 'gray'
-                    ? "bg-background shadow-sm"
-                    : "hover:bg-background/50"
-                )}
-              >
-                {theme === 'gray' && <Check className="h-3 w-3" />}
-                Gray
-              </button>
-              <button
-                onClick={fireAndLog('general-settings:click', () => setTheme('light'))}
-                className={cn(
-                  "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all",
-                  theme === 'light'
-                    ? "bg-background shadow-sm"
-                    : "hover:bg-background/50"
-                )}
-              >
-                {theme === 'light' && <Check className="h-3 w-3" />}
-                Light
-              </button>
-            </div>
-          </div>
-
-          {/* App font (sits right under Theme — same row layout: label
-              on left, control on right). Drives --font-sans globally
-              for the whole UI. Chat-surface fonts are configured in
-              the Chats tab's Typography card, separately from this. */}
-          <div className="flex items-center justify-between">
-            <div>
-              <Label>App font</Label>
-              <p className="text-caption text-muted-foreground mt-1">
-                Global UI typeface — sidebar, settings, dialogs, project list
-              </p>
-            </div>
-            <div className="w-48">
-              <Select
-                value={appFont}
-                onValueChange={fireAndLog('general-settings:value-change', (v) => setAppFont(v))}
-                disabled={appFontLoading}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {APP_FONT_CHOICES.map((t) => (
-                    <SelectItem key={t.id} value={t.id}>
-                      <span style={{ fontFamily: t.cssFamily }}>{t.label}</span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          {/* Claude Binary Path Selector */}
-          <div className="space-y-3">
-            <ClaudeVersionSelector
-              selectedPath={currentBinaryPath}
-              onSelect={onClaudeInstallationSelect}
-              simplified={true}
-            />
-            {binaryPathChanged && (
-              <p className="text-caption text-amber-600 dark:text-amber-400 flex items-center gap-1">
-                <AlertCircle className="h-3 w-3" />
-                Changes will be applied when you save settings.
-              </p>
-            )}
-          </div>
-
-          {/* Separator */}
-          <div className="border-t border-border pt-4 mt-6" />
-
-          {/* Tab Persistence Toggle */}
-          <div className="flex items-center justify-between">
-            <div className="space-y-1">
-              <Label htmlFor="tab-persistence">Remember Open Tabs</Label>
-              <p className="text-caption text-muted-foreground">
-                Restore your tabs when you restart the app
-              </p>
-            </div>
-            <Switch
-              id="tab-persistence"
-              checked={tabPersistenceEnabled}
-              onCheckedChange={(checked) => {
-                TabPersistenceService.setEnabled(checked);
-                setTabPersistenceEnabled(checked);
-                setToast({
-                  message: checked
-                    ? "Tab persistence enabled - your tabs will be restored on restart"
-                    : "Tab persistence disabled - tabs will not be saved",
-                  type: "success"
-                });
-              }}
-            />
-          </div>
-
-          {/* Startup Intro Toggle */}
-          <div className="flex items-center justify-between">
-            <div className="space-y-1">
-              <Label htmlFor="startup-intro">Show Welcome Intro on Startup</Label>
-              <p className="text-caption text-muted-foreground">
-                Display a brief welcome animation when the app launches
-              </p>
-            </div>
-            <Switch
-              id="startup-intro"
-              checked={startupIntroEnabled}
-              onCheckedChange={fireAndLog('general-settings:checked-change', async (checked) => {
-                setStartupIntroEnabled(checked);
-                try {
-                  await api.saveSetting('startup_intro_enabled', checked ? 'true' : 'false');
-                  setToast({
-                    message: checked
-                      ? 'Welcome intro enabled'
-                      : 'Welcome intro disabled',
-                    type: 'success'
-                  });
-                } catch {
-                  setToast({ message: 'Failed to update preference', type: 'error' });
-                }
-              })}
-            />
-          </div>
-
-          {/* Chat auto-scroll thresholds — how the transcript decides whether
-              to keep sticking to the bottom while messages stream. The chat
-              stops auto-scrolling once you scroll up past "stop" px, and
-              resumes once you scroll back within "resume" px of the bottom.
-              The gap between them is a dead zone that prevents flapping.
-              Persisted as `autoscroll_reengage_px` / `autoscroll_disengage_px`
-              and applied live to open chats (see AutoScrollContext). */}
-          <div className="border-t border-border pt-4 mt-2" />
-          <div className="space-y-3">
-            <div>
-              <Label>Chat auto-scroll</Label>
-              <p className="text-caption text-muted-foreground mt-1">
-                How far you can scroll up before the chat stops following new
-                messages. Larger “stop” = stickier (more aggressive). Defaults:
-                resume 200px, stop 400px.
-              </p>
-            </div>
-
-            <div className="flex items-center justify-between gap-3">
-              <Label htmlFor="autoscroll-disengage" className="text-body-small">
-                Stop following after scrolling up (px)
-              </Label>
-              <Input
-                id="autoscroll-disengage"
-                type="number"
-                min={0}
-                step={50}
-                className="w-32"
-                value={disengageDraft}
-                onChange={(e) => setDisengageDraft(e.target.value)}
-                onBlur={() =>
-                  commitAutoScroll({
-                    reengagePx: Number.parseInt(reengageDraft, 10) || 0,
-                    disengagePx: Number.parseInt(disengageDraft, 10) || 0,
-                  })
-                }
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") e.currentTarget.blur();
-                }}
-              />
-            </div>
-
-            <div className="flex items-center justify-between gap-3">
-              <Label htmlFor="autoscroll-reengage" className="text-body-small">
-                Resume following within (px) of bottom
-              </Label>
-              <Input
-                id="autoscroll-reengage"
-                type="number"
-                min={0}
-                step={50}
-                className="w-32"
-                value={reengageDraft}
-                onChange={(e) => setReengageDraft(e.target.value)}
-                onBlur={() =>
-                  commitAutoScroll({
-                    reengagePx: Number.parseInt(reengageDraft, 10) || 0,
-                    disengagePx: Number.parseInt(disengageDraft, 10) || 0,
-                  })
-                }
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") e.currentTarget.blur();
-                }}
-              />
-            </div>
-          </div>
-
-          {/* Notification Sounds — pick what plays when a task completes
-              (success) and when one fails (error). Choices persist as
-              `notification_sound_success` / `notification_sound_error` in
-              app_settings and take effect on the next notification without
-              a restart. Selecting "No sound" makes the OS notification
-              silent and skips afplay while the window is focused. */}
-          <div className="border-t border-border pt-4 mt-2" />
-          <div className="space-y-3">
-            <div>
-              <Label>Notification Sounds</Label>
-              <p className="text-caption text-muted-foreground mt-1">
-                Choose what plays when a task finishes. Changing a sound
-                previews it; the test button replays the current choice.
-              </p>
-            </div>
-
-            <div className="flex items-center justify-between gap-3">
-              <Label htmlFor="notif-sound-success" className="text-body-small">
-                Success sound
-              </Label>
-              <div className="flex items-center gap-2">
-                <div className="w-48">
-                  <Select
-                    value={successSound}
-                    onValueChange={fireAndLog(
-                      'general-settings:value-change',
-                      (v) => {
-                        const next = normalizeNotificationSoundId(v, DEFAULT_SUCCESS_SOUND);
-                        setSuccessSound(next);
-                        void saveSound('success', next);
-                      },
-                    )}
-                  >
-                    <SelectTrigger id="notif-sound-success">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {NOTIFICATION_SOUND_CHOICES.map((c) => (
-                        <SelectItem key={c.id} value={c.id}>
-                          {c.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={successSound === 'none'}
-                  onClick={fireAndLog('general-settings:click', () =>
-                    api.previewNotificationSound(successSound),
-                  )}
-                  title="Play test sound"
-                  aria-label="Play test success sound"
-                >
-                  <Volume2 className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between gap-3">
-              <Label htmlFor="notif-sound-error" className="text-body-small">
-                Error sound
-              </Label>
-              <div className="flex items-center gap-2">
-                <div className="w-48">
-                  <Select
-                    value={errorSound}
-                    onValueChange={fireAndLog(
-                      'general-settings:value-change',
-                      (v) => {
-                        const next = normalizeNotificationSoundId(v, DEFAULT_ERROR_SOUND);
-                        setErrorSound(next);
-                        void saveSound('error', next);
-                      },
-                    )}
-                  >
-                    <SelectTrigger id="notif-sound-error">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {NOTIFICATION_SOUND_CHOICES.map((c) => (
-                        <SelectItem key={c.id} value={c.id}>
-                          {c.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={errorSound === 'none'}
-                  onClick={fireAndLog('general-settings:click', () =>
-                    api.previewNotificationSound(errorSound),
-                  )}
-                  title="Play test sound"
-                  aria-label="Play test error sound"
-                >
-                  <Volume2 className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          </div>
-
-          {/* Session gauges — the context budget and the prompt-cache
-              countdown. Both persist in app_settings and apply live to open
-              sessions (see SessionGaugesContext). */}
-          <div className="border-t border-border pt-4 mt-2" />
-          <div className="space-y-3">
-            <div>
-              <Label>Context budget</Label>
-              <p className="text-caption text-muted-foreground mt-1">
-                Tints the session's context meter amber at 80% of your budget,
-                and raises a <code>/compact</code> prompt above the composer at
-                100%.
-              </p>
-            </div>
-
+        <div className="space-y-6">
+          <SettingsSection title="Appearance">
+            {/* Theme Selector */}
             <div className="flex items-center justify-between">
-              <Label htmlFor="context-pressure-enabled" className="text-body-small">
-                Warn when context fills up
-              </Label>
-              <Switch
-                id="context-pressure-enabled"
-                checked={contextPressure.enabled}
-                onCheckedChange={fireAndLog('general-settings:checked-change', (checked) => {
-                  void setContextPressure({ ...contextPressure, enabled: checked });
-                })}
-              />
+              <div>
+                <Label>Theme</Label>
+                <p className="text-caption text-muted-foreground mt-1">
+                  Choose your preferred color theme
+                </p>
+              </div>
+              <div className="flex items-center gap-1 p-1 bg-muted/30 rounded-lg">
+                <button
+                  onClick={fireAndLog('general-settings:click', () => setTheme('gray'))}
+                  className={cn(
+                    "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all",
+                    theme === 'gray'
+                      ? "bg-background shadow-sm"
+                      : "hover:bg-background/50"
+                  )}
+                >
+                  {theme === 'gray' && <Check className="h-3 w-3" />}
+                  Gray
+                </button>
+                <button
+                  onClick={fireAndLog('general-settings:click', () => setTheme('light'))}
+                  className={cn(
+                    "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all",
+                    theme === 'light'
+                      ? "bg-background shadow-sm"
+                      : "hover:bg-background/50"
+                  )}
+                >
+                  {theme === 'light' && <Check className="h-3 w-3" />}
+                  Light
+                </button>
+              </div>
             </div>
 
-            <div className="flex items-center justify-between gap-3">
-              <Label className="text-body-small">Budget measured in</Label>
+            {/* App font (sits right under Theme — same row layout: label
+                on left, control on right). Drives --font-sans globally
+                for the whole UI. Chat-surface fonts are configured in
+                the Chats tab's Typography card, separately from this. */}
+            <div className="flex items-center justify-between">
+              <div>
+                <Label>App font</Label>
+                <p className="text-caption text-muted-foreground mt-1">
+                  Global UI typeface — sidebar, settings, dialogs, project list
+                </p>
+              </div>
               <div className="w-48">
                 <Select
-                  value={contextPressure.mode}
-                  disabled={!contextPressure.enabled}
-                  onValueChange={fireAndLog('general-settings:value-change', (v) => {
-                    const mode = v === 'percent' ? 'percent' : 'tokens';
-                    // Swap in that mode's default rather than reinterpreting the
-                    // old number — 250000 percent, or 80 tokens, are nonsense.
-                    void setContextPressure({
-                      ...contextPressure,
-                      mode,
-                      value: defaultValueForMode(mode),
-                    });
-                  })}
+                  value={appFont}
+                  onValueChange={fireAndLog('general-settings:value-change', (v) => setAppFont(v))}
+                  disabled={appFontLoading}
                 >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="tokens">Absolute tokens</SelectItem>
-                    <SelectItem value="percent">Percent of window</SelectItem>
+                    {APP_FONT_CHOICES.map((t) => (
+                      <SelectItem key={t.id} value={t.id}>
+                        <span style={{ fontFamily: t.cssFamily }}>{t.label}</span>
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
             </div>
+          </SettingsSection>
 
-            <div className="flex items-center justify-between gap-3">
-              <Label htmlFor="context-pressure-value" className="text-body-small">
-                {contextPressure.mode === 'percent'
-                  ? 'Compact threshold (% of window)'
-                  : 'Compact threshold (tokens)'}
-              </Label>
-              <Input
-                id="context-pressure-value"
-                type="number"
-                min={contextPressure.mode === 'percent' ? 1 : 1000}
-                max={contextPressure.mode === 'percent' ? 100 : undefined}
-                step={contextPressure.mode === 'percent' ? 5 : 10_000}
-                className="w-32"
-                disabled={!contextPressure.enabled}
-                value={pressureDraft}
-                onChange={(e) => setPressureDraft(e.target.value)}
-                onBlur={commitPressureValue}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") e.currentTarget.blur();
+          <div className="border-t border-border" />
+          <SettingsSection title="Tabs">
+            {/* Tab Persistence Toggle */}
+            <div className="flex items-center justify-between">
+              <div className="space-y-1">
+                <Label htmlFor="tab-persistence">Remember Open Tabs</Label>
+                <p className="text-caption text-muted-foreground">
+                  Restore your tabs when you restart the app
+                </p>
+              </div>
+              <Switch
+                id="tab-persistence"
+                checked={tabPersistenceEnabled}
+                onCheckedChange={(checked) => {
+                  TabPersistenceService.setEnabled(checked);
+                  setTabPersistenceEnabled(checked);
+                  setToast({
+                    message: checked
+                      ? "Tab persistence enabled - your tabs will be restored on restart"
+                      : "Tab persistence disabled - tabs will not be saved",
+                    type: "success"
+                  });
                 }}
               />
             </div>
 
-            <p className="text-caption text-muted-foreground">
-              {pressureExplanation}
-            </p>
-
+            {/* Startup Intro Toggle */}
             <div className="flex items-center justify-between">
               <div className="space-y-1">
-                <Label htmlFor="context-jump-enabled">Track per-turn context growth</Label>
+                <Label htmlFor="startup-intro">Show Welcome Intro on Startup</Label>
                 <p className="text-caption text-muted-foreground">
-                  Logs what each turn added to context, in the transcript gutter
-                  and the session widget, and highlights any turn past the
-                  threshold below — usually a skill or file load. A turn-count
-                  habit can’t catch these; only a delta can.
+                  Display a brief welcome animation when the app launches
                 </p>
               </div>
               <Switch
-                id="context-jump-enabled"
-                checked={contextJump.enabled}
-                onCheckedChange={fireAndLog('general-settings:checked-change', (checked) => {
-                  void setContextJump({ ...contextJump, enabled: checked });
+                id="startup-intro"
+                checked={startupIntroEnabled}
+                onCheckedChange={fireAndLog('general-settings:checked-change', async (checked) => {
+                  setStartupIntroEnabled(checked);
+                  try {
+                    await api.saveSetting('startup_intro_enabled', checked ? 'true' : 'false');
+                    setToast({
+                      message: checked
+                        ? 'Welcome intro enabled'
+                        : 'Welcome intro disabled',
+                      type: 'success'
+                    });
+                  } catch {
+                    setToast({ message: 'Failed to update preference', type: 'error' });
+                  }
                 })}
               />
             </div>
 
-            <div className="flex items-center justify-between gap-3">
-              <Label htmlFor="context-jump-tokens" className="text-body-small">
-                Flag turns adding more than (tokens)
-              </Label>
-              <Input
-                id="context-jump-tokens"
-                type="number"
-                min={1000}
-                step={10_000}
-                className="w-32"
-                disabled={!contextJump.enabled}
-                value={jumpDraft}
-                onChange={(e) => setJumpDraft(e.target.value)}
-                onBlur={commitJumpTokens}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") e.currentTarget.blur();
-                }}
-              />
-            </div>
-
+            {/* Tab strip density — sits with the indicators below because both
+                shape the same strip. */}
             <div className="flex items-center justify-between">
-              <div className="space-y-1">
-                <Label htmlFor="cache-timer-enabled">Prompt cache countdown</Label>
-                <p className="text-caption text-muted-foreground">
-                  Shows how long the prompt cache has left under the context
-                  gauge, and flags the tab as it runs out. The cache TTL is read
-                  from what the CLI actually reported on the last turn.
-                </p>
-              </div>
-              <Switch
-                id="cache-timer-enabled"
-                checked={cacheTimerEnabled}
-                onCheckedChange={fireAndLog('general-settings:checked-change', (checked) => {
-                  void setCacheTimerEnabled(checked);
-                })}
-              />
-            </div>
-          </div>
-
-          {/* Restores the auto-update the terminal gets for free. The CLI's
-              self-updater is part of its interactive REPL, which OmniFex's
-              headless sessions never render, so without this nothing in the
-              app ever moves the binary. Off by default: it mutates a toolchain
-              OmniFex doesn't own. */}
-          <div className="border-t border-border pt-4 mt-2" />
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <Label htmlFor="cli-auto-update">Auto-update Claude Code on launch</Label>
-              <p className="text-caption text-muted-foreground mt-1">
-                Run <code>claude update</code> at startup when a newer release is
-                available. The CLI only self-updates when launched in a terminal,
-                so OmniFex-only use otherwise falls behind.
-              </p>
-            </div>
-            <Switch
-              id="cli-auto-update"
-              checked={cliAutoUpdate}
-              onCheckedChange={fireAndLog('general-settings:checked-change', (checked) => {
-                setCliAutoUpdate(checked);
-                void api.saveSetting(CLI_AUTO_UPDATE_SETTING_KEY, checked ? 'true' : 'false');
-              })}
-            />
-          </div>
-
-          {/* Where the Updates popover's "Claude Code is ahead of the …
-              changelog" warning launches its review session. Persisted as
-              `cli_review_repo_dir`; blank falls back to auto-detection. */}
-          <div className="border-t border-border pt-4 mt-2" />
-          <div className="space-y-3">
-            <div>
-              <Label htmlFor="cli-review-repo-dir">OmniFex checkout</Label>
-              <p className="text-caption text-muted-foreground mt-1">
-                Where to run the Claude Code changelog review when you click the
-                drift warning in the Updates popover. Leave blank to auto-detect.
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <Input
-                id="cli-review-repo-dir"
-                placeholder="Auto-detect"
-                value={cliReviewRepoDir}
-                onChange={(e) => { setCliReviewRepoDir(e.target.value); }}
-                onBlur={fireAndLog('general-settings:blur', () =>
-                  saveCliReviewRepoDir(cliReviewRepoDir.trim()),
-                )}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') e.currentTarget.blur();
-                }}
-              />
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={fireAndLog('general-settings:click', browseForCliReviewRepoDir)}
-              >
-                Browse…
-              </Button>
-            </div>
-          </div>
-
-          {/* The prompt that review session is started with. Shipped as a
-              constant so it works on a fresh clone; persisted override lives
-              in `cliReview.promptTemplate`. */}
-          <div className="space-y-3">
-            <div className="flex items-start justify-between gap-2">
               <div>
-                <Label htmlFor="cli-review-prompt">Changelog review prompt</Label>
+                <Label>Tab strip</Label>
                 <p className="text-caption text-muted-foreground mt-1">
-                  What that session is asked to do. <code>{'{reviewedVersion}'}</code> and{' '}
-                  <code>{'{installedVersion}'}</code> are filled in with the range that
-                  drifted. Leave blank to use the built-in prompt.
+                  Expanded puts the session name under the project name. Compact is
+                  a single line — the session name moves to the hover tooltip.
                 </p>
               </div>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="shrink-0"
-                onClick={fireAndLog('general-settings:click', () =>
-                  saveCliReviewPrompt(DEFAULT_CLI_REVIEW_PROMPT),
-                )}
-              >
-                <RotateCcw className="w-3.5 h-3.5 mr-1.5" />
-                Reset to default
-              </Button>
+              <TabDensityControl
+                density={config.tabs.density}
+                onChange={(density) => { setConfig({ ...config, tabs: { ...config.tabs, density } }); }}
+              />
             </div>
-            <textarea
-              id="cli-review-prompt"
-              value={cliReviewPrompt}
-              placeholder="Using the built-in prompt"
-              spellCheck={false}
-              rows={10}
-              onChange={(e) => { setCliReviewPrompt(e.target.value); }}
-              onBlur={fireAndLog('general-settings:blur', () =>
-                saveCliReviewPrompt(cliReviewPrompt),
+
+            <div className="flex items-center justify-between">
+              <div>
+                <Label>Max tab width</Label>
+                <p className="text-caption text-muted-foreground mt-1">
+                  Tabs size to their names up to this width, then truncate with an
+                  ellipsis.
+                </p>
+              </div>
+              <TabMaxWidthControl
+                maxWidth={config.tabs.maxWidth}
+                onChange={(maxWidth) => { setConfig({ ...config, tabs: { ...config.tabs, maxWidth } }); }}
+              />
+            </div>
+
+            {/* Tab status indicators — the per-tab glyphs in the tab strip. */}
+            <div className="space-y-3">
+              <TabIndicatorsEditor
+                indicators={config.tabIndicators}
+                palette={config.palette}
+                onChange={(next) => { setConfig({ ...config, tabIndicators: next }); }}
+              />
+            </div>
+          </SettingsSection>
+
+          <div className="border-t border-border" />
+          <SettingsSection title="Chat">
+            {/* Chat auto-scroll thresholds — how the transcript decides whether
+                to keep sticking to the bottom while messages stream. The chat
+                stops auto-scrolling once you scroll up past "stop" px, and
+                resumes once you scroll back within "resume" px of the bottom.
+                The gap between them is a dead zone that prevents flapping.
+                Persisted as `autoscroll_reengage_px` / `autoscroll_disengage_px`
+                and applied live to open chats (see AutoScrollContext). */}
+            <div className="space-y-3">
+              <div>
+                <Label>Chat auto-scroll</Label>
+                <p className="text-caption text-muted-foreground mt-1">
+                  How far you can scroll up before the chat stops following new
+                  messages. Larger “stop” = stickier (more aggressive). Defaults:
+                  resume 200px, stop 400px.
+                </p>
+              </div>
+
+              <div className="flex items-center justify-between gap-3">
+                <Label htmlFor="autoscroll-disengage" className="text-body-small">
+                  Stop following after scrolling up (px)
+                </Label>
+                <Input
+                  id="autoscroll-disengage"
+                  type="number"
+                  min={0}
+                  step={50}
+                  className="w-32"
+                  value={disengageDraft}
+                  onChange={(e) => setDisengageDraft(e.target.value)}
+                  onBlur={() =>
+                    commitAutoScroll({
+                      reengagePx: Number.parseInt(reengageDraft, 10) || 0,
+                      disengagePx: Number.parseInt(disengageDraft, 10) || 0,
+                    })
+                  }
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") e.currentTarget.blur();
+                  }}
+                />
+              </div>
+
+              <div className="flex items-center justify-between gap-3">
+                <Label htmlFor="autoscroll-reengage" className="text-body-small">
+                  Resume following within (px) of bottom
+                </Label>
+                <Input
+                  id="autoscroll-reengage"
+                  type="number"
+                  min={0}
+                  step={50}
+                  className="w-32"
+                  value={reengageDraft}
+                  onChange={(e) => setReengageDraft(e.target.value)}
+                  onBlur={() =>
+                    commitAutoScroll({
+                      reengagePx: Number.parseInt(reengageDraft, 10) || 0,
+                      disengagePx: Number.parseInt(disengageDraft, 10) || 0,
+                    })
+                  }
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") e.currentTarget.blur();
+                  }}
+                />
+              </div>
+            </div>
+
+            <AutoRecapSettings />
+          </SettingsSection>
+
+          <div className="border-t border-border" />
+          <SettingsSection title="Notifications">
+            {/* Notification Sounds — pick what plays when a task completes
+                (success) and when one fails (error). Choices persist as
+                `notification_sound_success` / `notification_sound_error` in
+                app_settings and take effect on the next notification without
+                a restart. Selecting "No sound" makes the OS notification
+                silent and skips afplay while the window is focused. */}
+            <div className="space-y-3">
+              <div>
+                <Label>Notification Sounds</Label>
+                <p className="text-caption text-muted-foreground mt-1">
+                  Choose what plays when a task finishes. Changing a sound
+                  previews it; the test button replays the current choice.
+                </p>
+              </div>
+
+              <div className="flex items-center justify-between gap-3">
+                <Label htmlFor="notif-sound-success" className="text-body-small">
+                  Success sound
+                </Label>
+                <div className="flex items-center gap-2">
+                  <div className="w-48">
+                    <Select
+                      value={successSound}
+                      onValueChange={fireAndLog(
+                        'general-settings:value-change',
+                        (v) => {
+                          const next = normalizeNotificationSoundId(v, DEFAULT_SUCCESS_SOUND);
+                          setSuccessSound(next);
+                          void saveSound('success', next);
+                        },
+                      )}
+                    >
+                      <SelectTrigger id="notif-sound-success">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {NOTIFICATION_SOUND_CHOICES.map((c) => (
+                          <SelectItem key={c.id} value={c.id}>
+                            {c.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={successSound === 'none'}
+                    onClick={fireAndLog('general-settings:click', () =>
+                      api.previewNotificationSound(successSound),
+                    )}
+                    title="Play test sound"
+                    aria-label="Play test success sound"
+                  >
+                    <Volume2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between gap-3">
+                <Label htmlFor="notif-sound-error" className="text-body-small">
+                  Error sound
+                </Label>
+                <div className="flex items-center gap-2">
+                  <div className="w-48">
+                    <Select
+                      value={errorSound}
+                      onValueChange={fireAndLog(
+                        'general-settings:value-change',
+                        (v) => {
+                          const next = normalizeNotificationSoundId(v, DEFAULT_ERROR_SOUND);
+                          setErrorSound(next);
+                          void saveSound('error', next);
+                        },
+                      )}
+                    >
+                      <SelectTrigger id="notif-sound-error">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {NOTIFICATION_SOUND_CHOICES.map((c) => (
+                          <SelectItem key={c.id} value={c.id}>
+                            {c.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={errorSound === 'none'}
+                    onClick={fireAndLog('general-settings:click', () =>
+                      api.previewNotificationSound(errorSound),
+                    )}
+                    title="Play test sound"
+                    aria-label="Play test error sound"
+                  >
+                    <Volume2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </SettingsSection>
+
+          <div className="border-t border-border" />
+          <SettingsSection title="Context & cache">
+            {/* Session gauges — the context budget and the prompt-cache
+                countdown. Both persist in app_settings and apply live to open
+                sessions (see SessionGaugesContext). */}
+            <div className="space-y-3">
+              <div>
+                <Label>Context budget</Label>
+                <p className="text-caption text-muted-foreground mt-1">
+                  Tints the session's context meter amber at 80% of your budget,
+                  and raises a <code>/compact</code> prompt above the composer at
+                  100%.
+                </p>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <Label htmlFor="context-pressure-enabled" className="text-body-small">
+                  Warn when context fills up
+                </Label>
+                <Switch
+                  id="context-pressure-enabled"
+                  checked={contextPressure.enabled}
+                  onCheckedChange={fireAndLog('general-settings:checked-change', (checked) => {
+                    void setContextPressure({ ...contextPressure, enabled: checked });
+                  })}
+                />
+              </div>
+
+              <div className="flex items-center justify-between gap-3">
+                <Label className="text-body-small">Budget measured in</Label>
+                <div className="w-48">
+                  <Select
+                    value={contextPressure.mode}
+                    disabled={!contextPressure.enabled}
+                    onValueChange={fireAndLog('general-settings:value-change', (v) => {
+                      const mode = v === 'percent' ? 'percent' : 'tokens';
+                      // Swap in that mode's default rather than reinterpreting the
+                      // old number — 250000 percent, or 80 tokens, are nonsense.
+                      void setContextPressure({
+                        ...contextPressure,
+                        mode,
+                        value: defaultValueForMode(mode),
+                      });
+                    })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="tokens">Absolute tokens</SelectItem>
+                      <SelectItem value="percent">Percent of window</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between gap-3">
+                <Label htmlFor="context-pressure-value" className="text-body-small">
+                  {contextPressure.mode === 'percent'
+                    ? 'Compact threshold (% of window)'
+                    : 'Compact threshold (tokens)'}
+                </Label>
+                <Input
+                  id="context-pressure-value"
+                  type="number"
+                  min={contextPressure.mode === 'percent' ? 1 : 1000}
+                  max={contextPressure.mode === 'percent' ? 100 : undefined}
+                  step={contextPressure.mode === 'percent' ? 5 : 10_000}
+                  className="w-32"
+                  disabled={!contextPressure.enabled}
+                  value={pressureDraft}
+                  onChange={(e) => setPressureDraft(e.target.value)}
+                  onBlur={commitPressureValue}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") e.currentTarget.blur();
+                  }}
+                />
+              </div>
+
+              <p className="text-caption text-muted-foreground">
+                {pressureExplanation}
+              </p>
+
+              <div className="flex items-center justify-between">
+                <div className="space-y-1">
+                  <Label htmlFor="context-jump-enabled">Track per-turn context growth</Label>
+                  <p className="text-caption text-muted-foreground">
+                    Logs what each turn added to context, in the transcript gutter
+                    and the session widget, and highlights any turn past the
+                    threshold below — usually a skill or file load. A turn-count
+                    habit can’t catch these; only a delta can.
+                  </p>
+                </div>
+                <Switch
+                  id="context-jump-enabled"
+                  checked={contextJump.enabled}
+                  onCheckedChange={fireAndLog('general-settings:checked-change', (checked) => {
+                    void setContextJump({ ...contextJump, enabled: checked });
+                  })}
+                />
+              </div>
+
+              <div className="flex items-center justify-between gap-3">
+                <Label htmlFor="context-jump-tokens" className="text-body-small">
+                  Flag turns adding more than (tokens)
+                </Label>
+                <Input
+                  id="context-jump-tokens"
+                  type="number"
+                  min={1000}
+                  step={10_000}
+                  className="w-32"
+                  disabled={!contextJump.enabled}
+                  value={jumpDraft}
+                  onChange={(e) => setJumpDraft(e.target.value)}
+                  onBlur={commitJumpTokens}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") e.currentTarget.blur();
+                  }}
+                />
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div className="space-y-1">
+                  <Label htmlFor="cache-timer-enabled">Prompt cache countdown</Label>
+                  <p className="text-caption text-muted-foreground">
+                    Shows how long the prompt cache has left under the context
+                    gauge, and flags the tab as it runs out. The cache TTL is read
+                    from what the CLI actually reported on the last turn.
+                  </p>
+                </div>
+                <Switch
+                  id="cache-timer-enabled"
+                  checked={cacheTimerEnabled}
+                  onCheckedChange={fireAndLog('general-settings:checked-change', (checked) => {
+                    void setCacheTimerEnabled(checked);
+                  })}
+                />
+              </div>
+            </div>
+          </SettingsSection>
+
+          <div className="border-t border-border" />
+          <SettingsSection title="Claude Code">
+            {/* Claude Binary Path Selector */}
+            <div className="space-y-3">
+              <ClaudeVersionSelector
+                selectedPath={currentBinaryPath}
+                onSelect={onClaudeInstallationSelect}
+                simplified={true}
+              />
+              {binaryPathChanged && (
+                <p className="text-caption text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                  <AlertCircle className="h-3 w-3" />
+                  Changes will be applied when you save settings.
+                </p>
               )}
-              className="w-full rounded-md border border-border bg-background p-2 font-mono text-xs outline-none focus:border-white/30"
-            />
-          </div>
-
-          {/* Tab strip density — sits with the indicators below because both
-              shape the same strip. */}
-          <div className="flex items-center justify-between border-t border-border/50 pt-4">
-            <div>
-              <Label>Tab strip</Label>
-              <p className="text-caption text-muted-foreground mt-1">
-                Expanded puts the session name under the project name. Compact is
-                a single line — the session name moves to the hover tooltip.
-              </p>
             </div>
-            <TabDensityControl
-              density={config.tabs.density}
-              onChange={(density) => { setConfig({ ...config, tabs: { ...config.tabs, density } }); }}
-            />
-          </div>
 
-          <div className="flex items-center justify-between">
-            <div>
-              <Label>Max tab width</Label>
-              <p className="text-caption text-muted-foreground mt-1">
-                Tabs size to their names up to this width, then truncate with an
-                ellipsis.
-              </p>
+            {/* Restores the auto-update the terminal gets for free. The CLI's
+                self-updater is part of its interactive REPL, which OmniFex's
+                headless sessions never render, so without this nothing in the
+                app ever moves the binary. Off by default: it mutates a toolchain
+                OmniFex doesn't own. */}
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <Label htmlFor="cli-auto-update">Auto-update Claude Code on launch</Label>
+                <p className="text-caption text-muted-foreground mt-1">
+                  Run <code>claude update</code> at startup when a newer release is
+                  available. The CLI only self-updates when launched in a terminal,
+                  so OmniFex-only use otherwise falls behind.
+                </p>
+              </div>
+              <Switch
+                id="cli-auto-update"
+                checked={cliAutoUpdate}
+                onCheckedChange={fireAndLog('general-settings:checked-change', (checked) => {
+                  setCliAutoUpdate(checked);
+                  void api.saveSetting(CLI_AUTO_UPDATE_SETTING_KEY, checked ? 'true' : 'false');
+                })}
+              />
             </div>
-            <TabMaxWidthControl
-              maxWidth={config.tabs.maxWidth}
-              onChange={(maxWidth) => { setConfig({ ...config, tabs: { ...config.tabs, maxWidth } }); }}
-            />
-          </div>
 
-          {/* Tab status indicators — the per-tab glyphs in the tab strip. */}
-          <div className="space-y-3 border-t border-border/50 pt-4">
-            <TabIndicatorsEditor
-              indicators={config.tabIndicators}
-              palette={config.palette}
-              onChange={(next) => { setConfig({ ...config, tabIndicators: next }); }}
-            />
-          </div>
+            {/* Where the Updates popover's "Claude Code is ahead of the …
+                changelog" warning launches its review session. Persisted as
+                `cli_review_repo_dir`; blank falls back to auto-detection. */}
+            <div className="space-y-3">
+              <div>
+                <Label htmlFor="cli-review-repo-dir">OmniFex checkout</Label>
+                <p className="text-caption text-muted-foreground mt-1">
+                  Where to run the Claude Code changelog review when you click the
+                  drift warning in the Updates popover. Leave blank to auto-detect.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Input
+                  id="cli-review-repo-dir"
+                  placeholder="Auto-detect"
+                  value={cliReviewRepoDir}
+                  onChange={(e) => { setCliReviewRepoDir(e.target.value); }}
+                  onBlur={fireAndLog('general-settings:blur', () =>
+                    saveCliReviewRepoDir(cliReviewRepoDir.trim()),
+                  )}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') e.currentTarget.blur();
+                  }}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={fireAndLog('general-settings:click', browseForCliReviewRepoDir)}
+                >
+                  Browse…
+                </Button>
+              </div>
+            </div>
 
+            {/* The prompt that review session is started with. Shipped as a
+                constant so it works on a fresh clone; persisted override lives
+                in `cliReview.promptTemplate`. */}
+            <div className="space-y-3">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <Label htmlFor="cli-review-prompt">Changelog review prompt</Label>
+                  <p className="text-caption text-muted-foreground mt-1">
+                    What that session is asked to do. <code>{'{reviewedVersion}'}</code> and{' '}
+                    <code>{'{installedVersion}'}</code> are filled in with the range that
+                    drifted. Leave blank to use the built-in prompt.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0"
+                  onClick={fireAndLog('general-settings:click', () =>
+                    saveCliReviewPrompt(DEFAULT_CLI_REVIEW_PROMPT),
+                  )}
+                >
+                  <RotateCcw className="w-3.5 h-3.5 mr-1.5" />
+                  Reset to default
+                </Button>
+              </div>
+              <textarea
+                id="cli-review-prompt"
+                value={cliReviewPrompt}
+                placeholder="Using the built-in prompt"
+                spellCheck={false}
+                rows={10}
+                onChange={(e) => { setCliReviewPrompt(e.target.value); }}
+                onBlur={fireAndLog('general-settings:blur', () =>
+                  saveCliReviewPrompt(cliReviewPrompt),
+                )}
+                className="w-full rounded-md border border-border bg-background p-2 font-mono text-xs outline-none focus:border-white/30"
+              />
+            </div>
+          </SettingsSection>
         </div>
       </div>
     </Card>

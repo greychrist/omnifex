@@ -81,3 +81,15 @@ export type PermissionSuggestion =
       directories: string[];
       destination: 'session' | 'projectSettings' | 'userSettings' | 'localSettings';
     };
+
+/**
+ * The pending card after main reports `permission_withdrawn` — the CLI took
+ * the request back (an interrupted turn). Only the card for that request
+ * closes; a different one on screen is a newer ask and stays.
+ */
+export function withoutWithdrawnPermission(
+  current: PermissionRequestPayload | null,
+  requestId: string,
+): PermissionRequestPayload | null {
+  return current?.requestId === requestId ? null : current;
+}

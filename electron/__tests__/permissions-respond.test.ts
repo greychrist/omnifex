@@ -19,6 +19,7 @@ import {
   respondPermission,
   permissionNotificationContent,
   createPermissionRequestHandler,
+  createPermissionCancelHandler,
 } from '../services/sessions/permissions';
 import type {
   SessionHandle,
@@ -599,3 +600,49 @@ describe('respondPermission — addressed by requestId', () => {
   });
 });
 
+
+// The CLI withdraws a request it sent (`control_cancel_request`) when the turn
+// is interrupted. Before this handler existed only elicitations listened, so a
+// withdrawn permission stayed at the head of the queue forever: a stale card,
+// and every later request queued behind it and was never shown.
+describe('createPermissionCancelHandler — CLI-withdrawn requests', () => {
+  const payload = (id: string) => ({ type: 'permission_request', request_id: id, tool_name: 'Bash', tool_input: { command: `echo ${id}` } });
+
+  it('removes the withdrawn head and shows the next queued request', () => {
+    const t = setup([
+      { requestId: 'a', payload: payload('a') },
+      { requestId: 'b', payload: payload('b') },
+    ]);
+    createPermissionCancelHandler(t.handle, 'tab1', t.sendToRenderer, t.hooks)('a');
+    expect(t.handle.permissionQueue.map((p) => p.requestId)).toEqual(['b']);
+    expect(t.sent).toContainEqual({ channel: 'agent-output:tab1', args: [payload('b')] });
+    expect(t.notifications).toHaveLength(1);
+    expect(t.responses).toEqual([]);
+  });
+
+  it('tells the renderer to drop the card when the queue empties', () => {
+    const t = setup([{ requestId: 'a', payload: payload('a') }]);
+    createPermissionCancelHandler(t.handle, 'tab1', t.sendToRenderer, t.hooks)('a');
+    expect(t.handle.permissionQueue).toEqual([]);
+    expect(t.sent).toEqual([
+      { channel: 'agent-output:tab1', args: [{ type: 'permission_withdrawn', request_id: 'a' }] },
+    ]);
+  });
+
+  it('removes a queued-behind request without touching the card on screen', () => {
+    const t = setup([
+      { requestId: 'a', payload: payload('a') },
+      { requestId: 'b', payload: payload('b') },
+    ]);
+    createPermissionCancelHandler(t.handle, 'tab1', t.sendToRenderer, t.hooks)('b');
+    expect(t.handle.permissionQueue.map((p) => p.requestId)).toEqual(['a']);
+    expect(t.sent).toEqual([]);
+  });
+
+  it('ignores ids it does not hold (an elicitation, or already answered)', () => {
+    const t = setup([{ requestId: 'a', payload: payload('a') }]);
+    createPermissionCancelHandler(t.handle, 'tab1', t.sendToRenderer, t.hooks)('zzz');
+    expect(t.handle.permissionQueue).toHaveLength(1);
+    expect(t.sent).toEqual([]);
+  });
+});

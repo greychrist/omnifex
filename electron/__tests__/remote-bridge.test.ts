@@ -209,6 +209,24 @@ describe('remote session bridge', () => {
     expect(bridge.pendingPermissions('s1')).toEqual(['req-2']);
   });
 
+  // The CLI withdrew a queued request (an interrupted turn). Main announces it
+  // on agent-output as `permission_withdrawn`; the bridge must stop counting
+  // it as pending and carry the withdrawal to the client, never as transcript.
+  it('forgets a withdrawn permission and forwards the withdrawal', () => {
+    openSession(log, 's1');
+    bridge.sendToRenderer('agent-output:s1', { type: 'permission_request', request_id: 'req-1', tool_name: 'Bash', tool_input: {} });
+    published.length = 0;
+    bridge.sendToRenderer('agent-output:s1', { type: 'permission_withdrawn', request_id: 'req-1' });
+    expect(bridge.pendingPermissions('s1')).toEqual([]);
+    expect(published).toHaveLength(1);
+    const p = published[0];
+    expect(p.type).toBe('event');
+    expect(p.type === 'event' && p.kind).toBe('permission-withdrawn');
+    expect(p.type === 'event' && p.channel).toBe('agent-output');
+    expect(p.type === 'event' && p.payload).toEqual({ type: 'permission_withdrawn', request_id: 'req-1' });
+    expect(ServerMessageSchema.safeParse(p).success).toBe(true);
+  });
+
   it('keeps raw output that the classifier rejects rather than dropping it', () => {
     openSession(log, 's1');
     // No `type` field: classifyJsonlLine returns null for this.

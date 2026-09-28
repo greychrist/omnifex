@@ -44,4 +44,5 @@ export function setTurn(
   if (handle.turn.status === status) return;
   handle.turn = status === 'running' ? { status, since: now() } : IDLE_TURN;
   sendToRenderer(`session-turn:${tabId}`, { ...handle.turn } satisfies TurnState);
+  handle.turnObserver?.(status);
 }

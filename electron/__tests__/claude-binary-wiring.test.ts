@@ -51,13 +51,14 @@ describe('claude binary wiring in the composition roots', () => {
       );
     });
 
-    // Positional, so the order is the contract: resolveClaudeBinary, then the
-    // CLI-usage recorder (the spend no transcript records). Both roots must
-    // pass the recorder — the parameter is optional, so a root that forgot it
-    // would compile and silently stop counting that spend.
-    it(`${root} hands findBestBinary, then the CLI-usage recorder, to createSessionsService last`, () => {
+    // Positional, so the order is the contract: resolveClaudeBinary, the
+    // CLI-usage recorder (the spend no transcript records), then the
+    // auto-recap policy. Both roots must pass each — the parameters are
+    // optional, so a root that forgot one would compile and silently stop
+    // counting that spend, or never recap an idle session.
+    it(`${root} hands findBestBinary, the CLI-usage recorder, then the auto-recap policy to createSessionsService last`, () => {
       expect(callText(src, 'createSessionsService')).toMatch(
-        new RegExp(`${FIND_BEST.source},\\s*(//[^\\n]*\\s*)*createCliProcessUsageStore\\(db\\)\\.record,?\\s*\\)$`),
+        new RegExp(`${FIND_BEST.source},\\s*(//[^\\n]*\\s*)*createCliProcessUsageStore\\(db\\)\\.record,\\s*\\(\\) => readAutoRecapPolicy\\(\\(key\\) => db\\.getSetting\\(key\\)\\),?\\s*\\)$`),
       );
     });
   }

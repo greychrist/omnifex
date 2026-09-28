@@ -34,7 +34,7 @@ There is no `idle` or `running` here. Those belong to `turn`. The connection bei
 
 | Transition | Where |
 | --- | --- |
-| `idle → running` | `sendMessage` / `sendStructuredMessage` — the moment the prompt is handed to the CLI, before the write, so a result row that races back cannot be missed (`lifecycle.ts`) |
+| `idle → running` | `sendMessage` / `sendStructuredMessage` — the moment the prompt is handed to the CLI, before the write, so a result row that races back cannot be missed (`lifecycle.ts`). Also the auto-recap: after a turn sits idle for the configured delay, main sends `/recap` itself (`auto-recap.ts`, observing `setTurn`), once per turn — the recap's own ending arms nothing |
 | `running → idle` | the CLI's `result` row (`runtime.ts`), or `sessionStatus` reaching `stopped` / `error` (`status.ts`), or `stop()` |
 
 Every transition is announced on `session-turn:<tabId>` with the full `TurnState`. `session_get_health` returns it too, so a reloaded renderer can seed itself.

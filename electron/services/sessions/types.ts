@@ -478,6 +478,8 @@ export interface SessionHandle {
   sessionStatus: SessionStatus;
   /** Turn axis. See docs/session-lifecycle.md. */
   turn: TurnState;
+  /** Told of every turn transition `setTurn` announces (the auto-recap timer). */
+  turnObserver?: (status: TurnState['status']) => void;
   permissionResolver: ((decision: PermissionDecision) => void) | null;
   /** Queue of permission requests waiting for user response */
   permissionQueue: PendingPermission[];

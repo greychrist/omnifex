@@ -30,7 +30,7 @@ spelled as `[*]`, `[?]` or `[[]`. An unescaped `[archive]` reads as a character
 class and matches nothing; an *unclosed* `[` used to make every file edit in
 the session fail with `Invalid regular expression` (CLI 2.1.260 contains the
 blast radius to the one bad rule). OmniFex escapes these when it builds a rule
-from a file path — see `electron/services/sessions/rule-paths.ts`.
+from a file path — see `src/lib/rulePaths.ts`.
 
 ## Bash
 
@@ -230,6 +230,31 @@ with no permission card and no rule to click — the permissions UI cannot
 display, explain or clear it, because there is no rule involved. If a session
 reports reads failing outside the project with no prompt, check this key in the
 account's `settings.json` by hand.
+
+## Denials that never ask: auto mode
+
+In `auto` mode the CLI's safety classifier judges each action **before** any
+host is consulted. A block never becomes a `can_use_tool`: the model gets an
+error tool_result (`Permission for this action was denied by the Claude Code
+auto mode classifier. Reason: [<category>]…`) and a stream-json host gets only
+a stream-only `system/permission_denied` (`decision_reason_type:
+'classifier'`, `decision_reason: '[<category>]'`, `tool_use_id`, `agent_id`
+for a subagent). When the classifier itself times out or errors it fails
+closed with `decision_reason: 'Classifier unavailable'` or `'Stage 2
+classifier error…'` — an outage, not a judgement. The CLI falls back to
+prompting only after 3 consecutive or 20 total denials.
+
+So "Claude couldn't do X and never asked" is not a dropped prompt: there was
+never one to show. `PermissionDeniedCard` (`src/lib/permissionDenial.ts`) turns
+the denial into actions — approve in chat and retry (the classifier reads
+consent from the conversation), save an allow rule to
+`.claude/settings.local.json`, or switch the session to `default` — and a plain
+Retry for an outage. The CLI never writes `permission_denied` to the JSONL, so
+after a reload the card is rebuilt from the tool_result text.
+
+Rules reach a running session two ways (probed 2.1.284): a settings file edited
+mid-session is re-read, and `apply_flag_settings {permissions}` applies at once
+but **replaces** the flag layer's lists — send the full set, never a delta.
 
 ## Asks that can't become rules
 

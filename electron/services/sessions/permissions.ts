@@ -1,9 +1,10 @@
 // Sessions module — permission handling
 // Extracted from electron/services/sessions.ts (pure refactor)
 
+import os from 'node:os';
 import path from 'node:path';
 import type { LoggingService } from '../logging';
-import { formatFilePathForRule } from './rule-paths';
+import { formatFilePathForRule } from '../../../src/lib/rulePaths';
 import { canonicalizeRule, type ParsedRule } from '../../../src/lib/permissionCardLogic';
 import type {
   SessionHandle,
@@ -271,7 +272,7 @@ export function augmentPermissionsWithSession(
  * Bash is the opposite case — the CLI does supply a rule there (plus
  * `addDirectories`), so `withDefaultRuleSuggestion` leaves its work alone.
  *
- * Pure function; `projectPath` decides the path form (see `rule-paths.ts`).
+ * Pure function; `projectPath` decides the path form (see `src/lib/rulePaths.ts`).
  */
 export function buildDefaultRule(
   toolName: string,
@@ -297,12 +298,12 @@ export function buildDefaultRule(
     // file: "allow" there means "you may write here", and a per-file rule made
     // the next file in the same folder ask again.
     if (opts.folder && path.isAbsolute(fp)) {
-      const dir = formatFilePathForRule(path.dirname(fp), projectPath);
+      const dir = formatFilePathForRule(path.dirname(fp), projectPath, os.homedir());
       return canonicalizeRule({ toolName, ruleContent: `${dir.replace(/\/+$/, '')}/**` });
     }
     return canonicalizeRule({
       toolName,
-      ruleContent: formatFilePathForRule(fp, projectPath),
+      ruleContent: formatFilePathForRule(fp, projectPath, os.homedir()),
     });
   }
   if (toolName === 'Glob' || toolName === 'Grep') {
@@ -752,38 +753,77 @@ export function respondPermission(
   // Show the next queued request, if any — but only when the one just
   // answered WAS the head. Answering a queued-behind request by id leaves the
   // head where it is, and the renderer is already showing it.
-  if (index === 0 && handle.permissionQueue.length > 0) {
-    const next = handle.permissionQueue[0];
-    const nextPayload = (next as any).payload;
-    sendToRenderer(`agent-output:${tabId}`, nextPayload);
-
-    // Notify the user about the next permission in the queue
-    const projectName = path.basename(handle.projectPath) || 'OmniFex';
-    const title = `OmniFex — ${projectName}`;
-    let body: string;
-    let subtitle: string;
-    if (nextPayload.kind === 'patch' || nextPayload.kind === 'exec') {
-      // Codex approval — use the engine-supplied summary directly.
-      body = typeof nextPayload.summary === 'string' && nextPayload.summary
-        ? truncate(nextPayload.summary)
-        : nextPayload.kind === 'patch' ? 'Apply patch' : 'Run command';
-      subtitle = 'Permission Request:';
-    } else {
-      ({ body, subtitle } = permissionNotificationContent(
-        nextPayload.tool_name,
-        nextPayload.tool_input,
-        { title: nextPayload.title, displayName: nextPayload.display_name },
-      ));
-    }
-    sendToRenderer('claude-notification', { tab_id: tabId, title, body, is_error: false });
-    try {
-      notificationHooks.showNotification?.(title, body, false, { tabId }, { subtitle });
-      notificationHooks.incrementUnread?.();
-    } catch (e) {
-      console.error('[sessions] permission notification hook failed:', e);
-    }
-  }
+  if (index === 0) showNextPermission(handle, tabId, sendToRenderer, notificationHooks);
   // Queue drained — conversationStatus is now derived by the renderer.
   return true;
 }
 
+/**
+ * Push the head of the queue to the renderer and notify about it — the step
+ * that follows the old head leaving, whether answered or withdrawn. An empty
+ * queue shows nothing.
+ */
+function showNextPermission(
+  handle: SessionHandle,
+  tabId: string,
+  sendToRenderer: SendToRenderer,
+  notificationHooks: NotificationHooks,
+): void {
+  if (handle.permissionQueue.length === 0) return;
+  const next = handle.permissionQueue[0];
+  const nextPayload = (next as any).payload;
+  sendToRenderer(`agent-output:${tabId}`, nextPayload);
+
+  // Notify the user about the next permission in the queue
+  const projectName = path.basename(handle.projectPath) || 'OmniFex';
+  const title = `OmniFex — ${projectName}`;
+  let body: string;
+  let subtitle: string;
+  if (nextPayload.kind === 'patch' || nextPayload.kind === 'exec') {
+    // Codex approval — use the engine-supplied summary directly.
+    body = typeof nextPayload.summary === 'string' && nextPayload.summary
+      ? truncate(nextPayload.summary)
+      : nextPayload.kind === 'patch' ? 'Apply patch' : 'Run command';
+    subtitle = 'Permission Request:';
+  } else {
+    ({ body, subtitle } = permissionNotificationContent(
+      nextPayload.tool_name,
+      nextPayload.tool_input,
+      { title: nextPayload.title, displayName: nextPayload.display_name },
+    ));
+  }
+  sendToRenderer('claude-notification', { tab_id: tabId, title, body, is_error: false });
+  try {
+    notificationHooks.showNotification?.(title, body, false, { tabId }, { subtitle });
+    notificationHooks.incrementUnread?.();
+  } catch (e) {
+    console.error('[sessions] permission notification hook failed:', e);
+  }
+}
+
+/**
+ * The CLI withdrawing a request it sent (`control_cancel_request`) — an
+ * interrupted turn aborts the pending `can_use_tool`. The entry leaves the
+ * queue unanswered. Withdrawing the head either shows the next request or,
+ * with nothing left, tells the renderer to drop the card: a stale head used to
+ * sit there forever, and every later request queued behind it unseen. Ids this
+ * queue never held (elicitations share the cancel channel) are ignored.
+ */
+export function createPermissionCancelHandler(
+  handle: SessionHandle,
+  tabId: string,
+  sendToRenderer: SendToRenderer,
+  notificationHooks: NotificationHooks,
+): (requestId: string) => void {
+  return (requestId) => {
+    const index = handle.permissionQueue.findIndex((p) => p.requestId === requestId);
+    if (index < 0) return;
+    handle.permissionQueue.splice(index, 1);
+    if (index !== 0) return;
+    if (handle.permissionQueue.length > 0) {
+      showNextPermission(handle, tabId, sendToRenderer, notificationHooks);
+    } else {
+      sendToRenderer(`agent-output:${tabId}`, { type: 'permission_withdrawn', request_id: requestId });
+    }
+  };
+}

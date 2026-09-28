@@ -192,6 +192,18 @@ describe('electronAPI shim', () => {
       await expect(api.invoke('session_respond_permission', { tabId: 'tab-A', behavior: 'deny' })).rejects.toThrow('[PERMISSION_NOT_PENDING]');
     });
 
+    it('drops a withdrawn permission: the card hears about it and it can no longer be answered', async () => {
+      const api = await started();
+      const out: unknown[] = [];
+      api.onEvent('agent-output:tab-A', (p) => out.push(p));
+      const cardPayload = { type: 'permission_request', request_id: 'req-9', tool_name: 'Bash', tool_input: { command: 'ls' }, permission_suggestions: [] };
+      f.push({ type: 'permission.request', sessionId: 'sid-1', seq: 3, permissionId: 'req-9', tool: 'Bash', input: { command: 'ls' }, payload: cardPayload });
+      const withdrawal = { type: 'permission_withdrawn', request_id: 'req-9' };
+      f.push({ type: 'event', sessionId: 'sid-1', seq: 4, kind: 'permission-withdrawn', channel: 'agent-output', payload: withdrawal });
+      expect(out).toEqual([cardPayload, withdrawal]);
+      await expect(api.invoke('session_respond_permission', { tabId: 'tab-A', behavior: 'deny' })).rejects.toThrow('[PERMISSION_NOT_PENDING]');
+    });
+
     it('routes a notification to the global channel with the renderer\'s tabId and raises a native notification', async () => {
       const api = await started();
       const seen: unknown[] = [];

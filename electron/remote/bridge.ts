@@ -64,6 +64,15 @@ function isPermissionPayload(payload: unknown): payload is Record<string, unknow
   );
 }
 
+/** Main's `permission_withdrawn`: the CLI took back a request it had sent. */
+function isWithdrawnPayload(payload: unknown): payload is { type: 'permission_withdrawn'; request_id: string } {
+  return (
+    typeof payload === 'object' &&
+    payload !== null &&
+    (payload as { type?: unknown }).type === 'permission_withdrawn'
+  );
+}
+
 export function createSessionBridge(deps: SessionBridgeDeps): SessionBridge {
   const states = new Map<string, SessionControlState>();
   const pending = new Map<string, string[]>();
@@ -134,6 +143,15 @@ export function createSessionBridge(deps: SessionBridgeDeps): SessionBridge {
     });
   }
 
+  // Not transcript: the client drops the card it was showing, and the id
+  // stops counting as pending for summaries and `permission.respond`.
+  function withdrawn(sessionId: string, channel: string, payload: { request_id: string }): void {
+    const list = pending.get(sessionId);
+    const i = list?.indexOf(String(payload.request_id)) ?? -1;
+    if (list && i >= 0) list.splice(i, 1);
+    emitEvent(sessionId, 'permission-withdrawn', channel, payload);
+  }
+
   const sendToRenderer: SendToRenderer = (channel, ...args) => {
     const payload = args[0];
     const { prefix, suffix } = splitChannel(channel);
@@ -158,6 +176,7 @@ export function createSessionBridge(deps: SessionBridgeDeps): SessionBridge {
     switch (prefix) {
       case 'agent-output':
         if (isPermissionPayload(payload)) permission(sessionId, payload);
+        else if (isWithdrawnPayload(payload)) withdrawn(sessionId, prefix, payload);
         else transcript(sessionId, prefix, payload, 'engine');
         return;
       case 'claude-output-extra':

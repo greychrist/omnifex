@@ -185,6 +185,8 @@ export const EventKindSchema = z.enum([
   'complete',
   /** An MCP server is asking the user a question (answered via rpc.invoke). */
   'elicitation',
+  /** The CLI took back a permission request it had sent; drop its card. */
+  'permission-withdrawn',
 ]);
 
 // ---------------------------------------------------------------------------

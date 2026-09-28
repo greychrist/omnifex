@@ -242,6 +242,10 @@ export function createElectronApiShim(opts: ShimOptions): ShimHandle {
           emitForSession(m.sessionId, prefix, raw);
         } else if (m.kind === 'complete') {
           emitForSession(m.sessionId, prefix);
+        } else if (m.kind === 'permission-withdrawn') {
+          const id = (m.payload as { request_id?: unknown } | null)?.request_id;
+          if (pendingPermission.get(m.sessionId) === id) pendingPermission.delete(m.sessionId);
+          emitForSession(m.sessionId, prefix, m.payload);
         } else if (m.kind === 'notification' && prefix === 'claude-notification') {
           const tabs = sessionToTabs.get(m.sessionId);
           const p = (m.payload ?? {}) as { title?: string; body?: string; is_error?: boolean };

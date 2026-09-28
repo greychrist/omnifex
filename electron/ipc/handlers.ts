@@ -698,10 +698,12 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
       });
 
       // Mirror the on-disk change into the live CLI session so the user
-      // doesn't get re-prompted for a rule they just allowed. The CLI
-      // loads settings files only at session start and never re-reads
-      // them, so this push is the only way to keep an active query in
-      // sync with rule edits made via the UI.
+      // doesn't get re-prompted for a rule they just allowed. CLI 2.1.284
+      // does re-read a settings file edited mid-session (probed 2026-09-28:
+      // a rule written to settings.local.json applied to the next call), but
+      // older builds loaded them only at start, and the push is cheap. It
+      // sends the full merged lists because apply_flag_settings REPLACES the
+      // flag layer's `permissions` rather than appending to it.
       if (tabId && configDir && sessions && permissionsIO) {
         try {
           const levels = permissionsIO.getPermissions(configDir, projectPath);

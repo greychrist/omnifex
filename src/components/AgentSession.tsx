@@ -22,6 +22,8 @@ import { useSessionGauges } from "@/contexts/SessionGaugesContext";
 import { useSessionSignals } from "@/hooks/useSessionSignals";
 import { POPOVER_EVENT_LIMIT } from "@/lib/signals/store";
 import { resolveContextLimit } from "@/lib/contextLimit";
+import { withoutWithdrawnPermission } from "@/lib/types/permissionRequest";
+import { SessionActionsProvider, type SessionActions } from "@/contexts/SessionActionsContext";
 import { selectContextTokens } from "@/lib/contextPressure";
 import { observeCacheTtlMs, lastAssistantAnchorMs, lastCacheTtlChange } from "@/lib/cacheExpiry";
 import { latestMcpServerErrors } from "@/lib/mcpServerErrors";
@@ -1315,6 +1317,14 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
         return;
       }
 
+      // permission_withdrawn — the CLI took back the request on screen (an
+      // interrupted turn). Synthetic like permission_request; never transcript.
+      if (raw && typeof raw === 'object' && (raw as any).type === 'permission_withdrawn') {
+        const requestId = String((raw as any).request_id ?? '');
+        setPendingPermission((current) => withoutWithdrawnPermission(current, requestId));
+        return;
+      }
+
       // stream_event — CLI iterator overlay channel (token partials).
       // Not in JSONL; route partials to the inflight coalescer for the
       // typewriter effect. Subagent partials and non-text deltas drop.
@@ -1717,6 +1727,12 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     void handleSendPrompt('/compact', selectedModel);
   }, [selectedModel, handleSendPrompt]);
 
+  // The composer's Recap button: the CLI's own /recap, through the same send
+  // path so it queues behind a running turn like anything typed.
+  const handleRecap = useCallback(() => {
+    void handleSendPrompt('/recap', selectedModel);
+  }, [selectedModel, handleSendPrompt]);
+
   // Stable resend callback. Without memoization, every render of this
   // component handed every `StreamMessage` a fresh `onResend` function ref,
   // which defeated `React.memo` and forced the inner `ReactMarkdown` →
@@ -1731,6 +1747,60 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     () => fireAndLog('claude-code-session:resend', handleResend),
     [handleResend],
   );
+
+  // Local state AND, if a session is running, the CLI via
+  // sessionSetPermissionMode(). Errors are swallowed so a bad mode doesn't
+  // revert the UI. Shared by the ControlBar dropdown and the denial card.
+  const changePermissionMode = useCallback((mode: string) => {
+    setPermissionMode(mode);
+    if (!persistentSessionRef.current) return;
+    const tid = tabIdRef.current;
+    api.sessionSetPermissionMode(tid, mode).then(() => {
+      // Live transcript marker. The CLI DOES persist a `permission-mode`
+      // JSONL line, but jsonl-tail only forwards closure-carriers
+      // (queue-operation/attachment) to the live stream — so the persisted
+      // line shows up only on resume, never live. This synthetic marker gives
+      // the immediate feedback; the persisted line covers scrollback after
+      // resume. They never coexist in one view, so no double.
+      appendMessage({
+        kind: 'control-change',
+        control: 'permission',
+        value: String(mode),
+        sessionId: tid,
+        receivedAt: new Date().toISOString(),
+      });
+    }).catch((err: unknown) => {
+      console.error('[sessions] sessionSetPermissionMode failed:', err);
+    });
+  }, [appendMessage]);
+
+  // What transcript cards may ask of this session (the permission-denied
+  // card today). Callbacks read refs so the value only changes with the
+  // fields a card displays — every StreamMessage is mounted at once, and a
+  // per-render value would re-render the ones that read it on every keystroke.
+  const [homeDir, setHomeDir] = useState('');
+  useEffect(() => {
+    api.getHomeDirectory().then(setHomeDir).catch(() => { /* rules fall back to //absolute paths */ });
+  }, []);
+  const sessionActionRefs = useRef({ handleResend, changePermissionMode, configDir: '' });
+  sessionActionRefs.current = {
+    handleResend,
+    changePermissionMode,
+    configDir: accountResolution?.account.config_dir ?? '',
+  };
+  const sessionActions = useMemo<SessionActions>(() => ({
+    projectPath,
+    homeDir,
+    permissionMode,
+    sendPrompt: (text) => { void sessionActionRefs.current.handleResend(text, undefined); },
+    addAllowRule: (rule) => api.sessionUpdatePermission(tabIdRef.current, projectPath, sessionActionRefs.current.configDir, {
+      action: 'add',
+      scope: 'local',
+      behavior: 'allow',
+      rule,
+    }),
+    setPermissionMode: (mode) => sessionActionRefs.current.changePermissionMode(mode),
+  }), [projectPath, homeDir, permissionMode]);
 
   // Launch prompt ("open a session AND do this"). Ref-captured rather than
   // listed as an auto-start dep: the effect below runs once per activation and
@@ -2140,24 +2210,26 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
       inspectorOpen={inspectorOpen}
     />
   ) : (
-    <ClaudeTranscript
-      messages={messages}
-      viewMode={viewMode}
-      accountType={accountResolution?.account.subscription_label}
-      onResend={onResendStable}
-      waitingForPermission={waitingForPermission}
-      outstandingWork={outstandingWork}
-      hasInflightAssistant={hasInflightAssistant}
-      currentActivity={currentActivity}
-      totalTokens={totalTokens}
-      contextLimit={contextLimit}
-      error={error}
-      tabId={tabIdRef.current}
-      messagesEndRef={messagesEndRef}
-      isNearBottomRef={isNearBottomRef}
-      onOpenInspector={openInspector}
-      inspectorOpen={inspectorOpen}
-    />
+    <SessionActionsProvider value={sessionActions}>
+      <ClaudeTranscript
+        messages={messages}
+        viewMode={viewMode}
+        accountType={accountResolution?.account.subscription_label}
+        onResend={onResendStable}
+        waitingForPermission={waitingForPermission}
+        outstandingWork={outstandingWork}
+        hasInflightAssistant={hasInflightAssistant}
+        currentActivity={currentActivity}
+        totalTokens={totalTokens}
+        contextLimit={contextLimit}
+        error={error}
+        tabId={tabIdRef.current}
+        messagesEndRef={messagesEndRef}
+        isNearBottomRef={isNearBottomRef}
+        onOpenInspector={openInspector}
+        inspectorOpen={inspectorOpen}
+      />
+    </SessionActionsProvider>
   );
 
 
@@ -2548,33 +2620,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
                   }
                 }}
                 permissionMode={permissionMode}
-                setPermissionMode={(mode) => {
-                  // Update local state AND, if a session is running, push the
-                  // change to the CLI via sessionSetPermissionMode(). Swallow
-                  // errors so a bad mode doesn't revert the UI.
-                  setPermissionMode(mode);
-                  if (persistentSessionRef.current) {
-                    const tid = tabIdRef.current;
-                    api.sessionSetPermissionMode(tid, mode).then(() => {
-                      // Live transcript marker. The CLI DOES persist a
-                      // `permission-mode` JSONL line, but jsonl-tail only forwards
-                      // closure-carriers (queue-operation/attachment) to the live
-                      // stream — so the persisted line shows up only on resume,
-                      // never live. This synthetic marker gives the immediate
-                      // feedback; the persisted line covers scrollback after
-                      // resume. They never coexist in one view, so no double.
-                      appendMessage({
-                        kind: 'control-change',
-                        control: 'permission',
-                        value: String(mode),
-                        sessionId: tid,
-                        receivedAt: new Date().toISOString(),
-                      });
-                    }).catch((err: unknown) => {
-                      console.error('[sessions] sessionSetPermissionMode failed:', err);
-                    });
-                  }
-                }}
+                setPermissionMode={changePermissionMode}
               />
             }
           />
@@ -2893,6 +2939,19 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
                       paid for it. */}
                   <HeaderLabel className="px-0.5">chat format</HeaderLabel>
                   <SessionViewToggle className="w-full" mode={viewMode} onChange={setViewMode} />
+                  {agent !== 'codex' && (
+                    <TooltipSimple content="Ask Claude where this session stands (/recap)" side="top">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full h-6 mt-1 text-xs"
+                        disabled={!projectPath}
+                        onClick={handleRecap}
+                      >
+                        Recap
+                      </Button>
+                    </TooltipSimple>
+                  )}
                 </div>
               }
               extraMenuItems={

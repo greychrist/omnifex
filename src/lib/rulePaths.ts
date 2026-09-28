@@ -1,5 +1,3 @@
-import os from 'node:os';
-
 /**
  * Spell a literal path so a gitignore-style glob matcher reads it as itself.
  *
@@ -53,7 +51,7 @@ function escapeGlobLiterals(p: string): string {
 export function formatFilePathForRule(
   filePath: string,
   projectPath: string,
-  homeDir: string = os.homedir(),
+  homeDir: string,
 ): string {
   if (filePath.startsWith('~/') || filePath === '~') return escapeGlobLiterals(filePath);
   if (!filePath.startsWith('/')) return escapeGlobLiterals(filePath); // already relative

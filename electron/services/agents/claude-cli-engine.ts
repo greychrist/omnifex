@@ -261,6 +261,7 @@ export function createClaudeCliEngine(
     // MCP server that stopped waiting. Bookkeeping, never transcript.
     if (p?.type === 'control_cancel_request') {
       const requestId = String(p.request_id ?? '');
+      pendingPermissionToolUseIds.delete(requestId);
       for (const cb of cancelCallbacks) {
         try {
           cb(requestId);

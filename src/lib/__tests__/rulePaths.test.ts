@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatFilePathForRule } from '../services/sessions/rule-paths';
+import { formatFilePathForRule } from '../rulePaths';
 
 const HOME = '/Users/alice';
 

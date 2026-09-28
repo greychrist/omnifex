@@ -145,3 +145,55 @@ describe('sessions — the turn axis', () => {
     expect(turnEvents()).toEqual([]);
   });
 });
+
+// Auto-recap rides the turn axis: the scheduler itself is tested in
+// sessions-auto-recap.test.ts; this pins the wiring — which transitions reach
+// it, and that the recap goes through the engine without counting as the
+// user's own prompt.
+describe('sessions — automatic recap', () => {
+  afterEach(() => { vi.useRealTimers(); });
+
+  function setupWithRecap(enabled = true) {
+    vi.useFakeTimers();
+    const prompts: string[] = [];
+    sendImpl.current = async (p: string) => { prompts.push(p); };
+    const sessions = createSessionsService(
+      () => {}, {}, null, null, null, null, null, null, null, null, null, null, null, null,
+      () => ({ enabled, delayMs: 5 * 60_000 }),
+    );
+    sessions.start({ tabId: 't1', projectPath, configDir: tmpConfig, model: 'opus', permissionMode: 'default' });
+    return { sessions, prompts };
+  }
+
+  it('sends /recap once a finished turn has sat unanswered for the delay', () => {
+    const { sessions, prompts } = setupWithRecap();
+    sessions.sendMessage('t1', 'do the thing');
+    emitResult();
+    vi.advanceTimersByTime(5 * 60_000);
+    expect(prompts).toEqual(['do the thing', '/recap']);
+    expect(sessions.getTurn('t1').status).toBe('running');
+    emitResult();
+    vi.advanceTimersByTime(60 * 60_000);
+    expect(prompts).toEqual(['do the thing', '/recap']);
+  });
+
+  it('does nothing when the user answers first, or the tab closes', () => {
+    const { sessions, prompts } = setupWithRecap();
+    sessions.sendMessage('t1', 'one');
+    emitResult();
+    vi.advanceTimersByTime(60_000);
+    sessions.sendMessage('t1', 'two');
+    emitResult();
+    sessions.stop('t1');
+    vi.advanceTimersByTime(60 * 60_000);
+    expect(prompts).toEqual(['one', 'two']);
+  });
+
+  it('stays off when the setting is off', () => {
+    const { sessions, prompts } = setupWithRecap(false);
+    sessions.sendMessage('t1', 'one');
+    emitResult();
+    vi.advanceTimersByTime(60 * 60_000);
+    expect(prompts).toEqual(['one']);
+  });
+});

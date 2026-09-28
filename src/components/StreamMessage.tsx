@@ -45,6 +45,8 @@ import { collectStructuredResults } from "@/lib/bashToolResult";
 import { AnsweredAskUserQuestionCard } from "@/components/AnsweredAskUserQuestionCard";
 import { CardActionBar, CardActionButton, CardActionDivider } from "@/components/CardActionBar";
 import { MessageFrame } from "@/components/StreamMessage/MessageFrame";
+import { PermissionDeniedCard } from "@/components/PermissionDeniedCard";
+import { describeDenial, denialFromToolResult, findToolUse, findToolUseInput, hasLiveDenial, toolResultText } from "@/lib/permissionDenial";
 import { CliInitBadge } from "@/components/StreamMessage/CliInitBadge";
 import { CliResultBadge } from "@/components/StreamMessage/CliResultBadge";
 import {
@@ -515,6 +517,29 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
               {sysRaw.title ? `${sysRaw.title}: ` : ''}
               {(sysRaw as unknown as { body?: string }).body ?? ''}
             </span>
+          </MessageFrame>
+        );
+      }
+
+      // A denial the CLI made without asking (auto mode's classifier, mostly).
+      // Stream-only: after a reload the tool_result branch below rebuilds it.
+      if (message.subtype === 'permission_denied') {
+        const r = sysRaw as unknown as {
+          tool_name?: string; tool_use_id?: string; agent_id?: string;
+          decision_reason_type?: string; decision_reason?: string; message?: string;
+        };
+        return (
+          <MessageFrame streamKind="system.permission_denied" message={message}>
+            <PermissionDeniedCard
+              toolName={r.tool_name ?? 'tool'}
+              input={(r.tool_use_id && findToolUseInput(streamMessages, r.tool_use_id)) || {}}
+              denial={describeDenial({
+                decisionReasonType: r.decision_reason_type,
+                decisionReason: r.decision_reason,
+                message: r.message,
+              })}
+              fromSubagent={!!r.agent_id}
+            />
           </MessageFrame>
         );
       }
@@ -1474,6 +1499,25 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
                           defaultExpanded={inExpandedGroup}
                         />
                       );
+                    }
+
+                    // An auto-mode denial read back from the tool_result — the
+                    // only trace after a reload. Live, the permission_denied
+                    // event already rendered the card, so this stays out.
+                    if (content.is_error && content.tool_use_id && !hasLiveDenial(streamMessages, content.tool_use_id)) {
+                      const denial = denialFromToolResult(toolResultText(content.content));
+                      if (denial) {
+                        const toolUse = findToolUse(streamMessages, content.tool_use_id);
+                        renderedSomething = true;
+                        return (
+                          <PermissionDeniedCard
+                            key={idx}
+                            toolName={toolUse?.name ?? 'tool'}
+                            input={toolUse?.input ?? {}}
+                            denial={denial}
+                          />
+                        );
+                      }
                     }
 
                     // Images a tool returned. The widget above renders the

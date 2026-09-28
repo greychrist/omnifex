@@ -138,6 +138,7 @@ import { listChangedFiles as listGitChangedFiles, readFileDiff as readGitFileDif
 import { createLimaService } from './services/lima';
 import { createCostHistoryService } from './services/cost/cost-history';
 import { createCliProcessUsageStore } from './services/cost/cli-process-usage';
+import { readAutoRecapPolicy } from './services/sessions/auto-recap';
 import { createSessionCostService } from './services/cost/session-cost';
 import { createModelPricingService } from './services/model-pricing';
 import { registerIpcHandlers } from './ipc/handlers';
@@ -980,6 +981,7 @@ app.whenReady().then(() => {
     // The CLI's own running token totals — the spend no transcript records
     // (side questions, title generation). Same recorder as the daemon's.
     createCliProcessUsageStore(db).record,
+    () => readAutoRecapPolicy((key) => db.getSetting(key)),
   );
   const claudeService = createClaudeService(db, accountsService);
   const usageService = createUsageService(accountsService, loggingService);

@@ -25,6 +25,7 @@ import type {
 } from './types';
 import {
   createPermissionRequestHandler,
+  createPermissionCancelHandler,
   respondPermission as respondPermissionImpl,
 } from './permissions';
 import { createQueryPassthroughs } from './queries';
@@ -46,6 +47,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { setStatus, setTurn } from './status';
 import { IDLE_TURN } from './types';
+import { createAutoRecap, type AutoRecapPolicy } from './auto-recap';
 
 
 /**
@@ -131,11 +133,30 @@ export function createSessionsService(
    * sweep prices what the transcript lacks. See sessions/cli-usage.ts.
    */
   cliUsageSink: CliUsageSink | null = null,
+  /**
+   * Optional auto-recap policy, read fresh at each turn end and again when the
+   * timer fires. main and the daemon both wire it to `readAutoRecapPolicy`
+   * over the settings table; unset, no recap is ever sent. See auto-recap.ts.
+   */
+  autoRecapPolicy: (() => AutoRecapPolicy) | null = null,
 ): SessionsService {
   const sessions = new Map<string, SessionHandle>();
   // Hoisted so both the public return and stop()'s plugin-cache eviction
   // share the same instance.
   const queryPassthroughs = createQueryPassthroughs(sessions, sendToRenderer, logging, cliUsageSink);
+  const autoRecap = autoRecapPolicy
+    ? createAutoRecap({
+        policy: autoRecapPolicy,
+        // `/recap` is a Claude CLI command; the turn and the queue are
+        // re-checked because the timer outlives the moment it was armed.
+        canSend: (tabId) => {
+          const h = sessions.get(tabId);
+          return !!h && h.agent === 'claude' && h.sessionStatus === 'started'
+            && h.turn.status === 'idle' && h.permissionQueue.length === 0;
+        },
+        send: (tabId) => deliverMessage(tabId, '/recap'),
+      })
+    : null;
 
   const runtimeDeps: RuntimeDeps = {
     sendToRenderer,
@@ -290,6 +311,7 @@ export function createSessionsService(
       sessionId,
       sessionStatus: 'started',
       turn: IDLE_TURN,
+      turnObserver: autoRecap ? (status) => autoRecap.onTurn(tabId, status) : undefined,
       permissionResolver: null,
       permissionQueue: [],
       elicitationQueue: [],
@@ -318,6 +340,7 @@ export function createSessionsService(
     const elicitations = createElicitationHandlers(handle, tabId, sendToRenderer, notificationHooks);
     engine.onElicitationRequest?.(elicitations.onRequest);
     engine.onControlCancel?.(elicitations.onCancel);
+    engine.onControlCancel?.(createPermissionCancelHandler(handle, tabId, sendToRenderer, notificationHooks));
     listenToMessages(tabId, handle, runtimeDeps).catch((err: unknown) => {
       console.error(`[sessions] Unhandled error in listenToMessages for tab ${tabId}:`, err);
     });
@@ -411,8 +434,16 @@ export function createSessionsService(
   }
 
   function sendMessage(tabId: string, prompt: string): void {
-    const handle = sessions.get(tabId);
+    const handle = deliverMessage(tabId, prompt);
     if (!handle) return;
+    autoRecap?.noteUserSend(tabId);
+    maybeAutoTitle(tabId, handle, prompt);
+  }
+
+  /** Hand a prompt to the CLI and open the turn — the user's, or the auto-recap's. */
+  function deliverMessage(tabId: string, prompt: string): SessionHandle | null {
+    const handle = sessions.get(tabId);
+    if (!handle) return null;
 
     ensureLiveEngine(tabId, handle);
 
@@ -424,7 +455,7 @@ export function createSessionsService(
       // The prompt never reached the CLI, so there is no turn to wait on.
       setTurn(handle, 'idle', tabId, sendToRenderer);
     });
-    maybeAutoTitle(tabId, handle, prompt);
+    return handle;
   }
 
   function sendStructuredMessage(
@@ -436,6 +467,7 @@ export function createSessionsService(
 
     ensureLiveEngine(tabId, handle);
 
+    autoRecap?.noteUserSend(tabId);
     setTurn(handle, 'running', tabId, sendToRenderer);
     void handle.engine.sendStructured(content).catch((err: unknown) => {
       console.error(`[sessions] engine.sendStructured failed for tab ${tabId}:`, err);
@@ -514,6 +546,7 @@ export function createSessionsService(
     // A stopped session is not working on anything. Announce before the
     // handle goes, so whoever mirrors the axis learns it.
     setTurn(handle, 'idle', tabId, sendToRenderer);
+    autoRecap?.forget(tabId);
     endSideChat(handle.sideChat, tabId, sendToRenderer);
     void handle.engine.close().catch(() => { /* ignore */ });
     sessions.delete(tabId);
