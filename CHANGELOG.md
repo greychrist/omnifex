@@ -5,6 +5,13 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.198] — 2026-09-28
+
+### Fixed
+- Slash commands no longer render twice in a live session — the typed prompt and the command card now collapse into the command card, for skill, custom and built-in commands alike.
+- Turns started by a skill or custom command are counted as turns again: turn duration, per-turn context deltas, thinking-token counts and "jump to my last prompt" no longer skip them or fold them into the previous turn.
+- A session opened with a slash command suggests its name from the command (`/timesheet-review`), not the CLI's raw envelope.
+
 ## [0.4.197] — 2026-09-27
 
 ### Added
