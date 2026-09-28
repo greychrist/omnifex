@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveRates, computeMessageCost, totalInputTokens } from '../pricing';
+import { resolveRates, resolvePricing, computeMessageCost, totalInputTokens } from '../pricing';
 
 const MTOK = 1_000_000;
 
@@ -156,6 +156,25 @@ describe('resolveRates — Fable 5.1', () => {
   it('matches the [1m] suffix and a dated id', () => {
     expect(perM(resolveRates('claude-fable-5-1[1m]').rates.cacheRead)).toBe(0.25);
     expect(perM(resolveRates('claude-fable-5-1-20260901').rates.cacheRead)).toBe(0.25);
+  });
+});
+
+describe('resolvePricing — Sonnet 5.5', () => {
+  // Sonnet 5.5 (2.1.284) launched at Sonnet 5's $2/$10 with $0.20 reads, so
+  // the `sonnet-5` substring prices it correctly — but also labelled it
+  // "Sonnet 5", folding both into one Cost Report series.
+  it('labels claude-sonnet-5-5 as Sonnet 5.5, in its own colour', () => {
+    const { row } = resolvePricing('claude-sonnet-5-5', '2026-09-28');
+    expect(row.label).toBe('Sonnet 5.5');
+    expect(row.colorSlot).not.toBe(resolvePricing('claude-sonnet-5', '2026-09-28').row.colorSlot);
+  });
+
+  it('prices it at $2/$10 with $0.20 cache reads', () => {
+    const { rates, estimated } = resolveRates('claude-sonnet-5-5[1m]');
+    expect(perM(rates.input)).toBe(2);
+    expect(perM(rates.output)).toBe(10);
+    expect(perM(rates.cacheRead)).toBeCloseTo(0.2, 9);
+    expect(estimated).toBe(false);
   });
 });
 

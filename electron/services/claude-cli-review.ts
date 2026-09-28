@@ -42,6 +42,93 @@ import { buildClaudeEnv } from './util/claude-env';
  *    the CLI answers with the error "Side question cancelled". Its own
  *    deadline is 600 s. Only the SDK's `askSideQuestion()` documents it.
  *
+ * Last review: 2.1.283 -> 2.1.284 on 2026-09-28. Findings:
+ *
+ *  Changelog coverage: one version in range, 2.1.284, and it has an entry
+ *  (~120 lines). Both endpoints are installed, so the wire claims below are a
+ *  real binary diff of 2.1.283 vs 2.1.284.
+ *
+ *  Finding 1 fixed in the pass (cosmetic: the price was already right).
+ *  Nothing else needs a change.
+ *
+ *  WIRE DIFF, reported both ways round:
+ *
+ *    - Merge-strategy map: 31 in each, set-identical. No new record type.
+ *    - `hook_event_name` literals: 33 in each, set-identical.
+ *    - `subtype:` literals: 136 in each, set-identical.
+ *    - SDK `this.request({subtype})`: 53 in each, set-identical;
+ *      `side_question` still present.
+ *    - `type:"control_*"`: same 4 envelopes.
+ *    - `origin:{kind}`: literal set and counts identical (`human` 8). New
+ *      additive key `origin.producer:"session-task"` on task-notification
+ *      prompts the session itself caused; `messageKind.ts` keys on `kind`
+ *      only, so it classifies as before.
+ *    - User-record keys: NEW `turnPosition: {promptIndex, turnIndex}`,
+ *      stamped beside `turnOrigin` (count 23 -> 27) and sanitized the same
+ *      way on resume. Request-fingerprint bookkeeping; nothing in OmniFex
+ *      reads it, and it changes no CLI behaviour a host must answer for.
+ *    - Bare `kind:"…"` literals 1093 -> 1562 (4 gone: `dashboard`,
+ *      `started`, `truncated`, `user`): a new internal event vocabulary
+ *      (`apply_*`, `upload_*`, `device_*`, `cloud_*`, `sync_*`) for
+ *      cloud/device sync. None reaches stdout or the JSONL map.
+ *    - `.describe()` strings: 1713 -> 1723. New: `feedback_mode` /
+ *      `bundle_path` for `submit_feedback` (we send none), an `@internal`
+ *      `producer:'session-task'`, SubagentHandback report fields, and
+ *      `ultracodeAvailable` / `ultracodeRequested` beside `ultracode` (whose
+ *      text drops "xhigh effort"). None is a host obligation; OmniFex offers
+ *      no Ultracode control, so "offer it only while available" is moot.
+ *    - New `"--…"` literals: `--cap-add`, `--dev-bind` (sandbox runtime
+ *      args), `--from-link`. None is a flag we should pass.
+ *    - `/usage` anchors: `Current session`, `Current week`, `Extra usage`,
+ *      `% of usage`, `Total cost`, `Usage:` count-identical. `Resets`
+ *      (132 -> 121) is `*ResetsAt` state-variable renaming in the usage-limit
+ *      wait rework, not the render; `MCP servers` 417 -> 425 is help text.
+ *      `usage-runner/parser.ts` is safe.
+ *
+ *  1. SONNET 5.5 WAS LABELLED "SONNET 5". FIXED IN THIS PASS (pricing.ts).
+ *
+ *     `claude-sonnet-5-5` (now the default Sonnet on the API) is $2/$10 with
+ *     $0.20 reads — Sonnet 5's exact rates — so the `sonnet-5` substring
+ *     priced it right, but also labelled it "Sonnet 5", merging both into
+ *     one Cost Report series. Added a display-only `sonnet-5-5` row, which
+ *     also makes it pinnable via `extraModelOptions`.
+ *
+ *  Checked and inert:
+ *
+ *   - Interactive terminal / VSCode sessions now start in auto mode when no
+ *     permission mode is configured. Probed 2.1.284 as a stream-json host
+ *     with an empty config dir, with and without `--permission-mode
+ *     default`: `system/init` reports `permissionMode:"default"` in both.
+ *     Same unauthenticated caveat as the 2.1.283 probe.
+ *   - "Yes, but ask again next time" on auto mode's outside-directory read
+ *     prompt: a TUI answer; no new permission-suggestion shape reaches the
+ *     permission-prompt-tool decider.
+ *   - Ultracode as its own toggle: we never set the `ultracode` key.
+ *   - Gateway spend limit in `/usage` ("$… / $… spent this month") and
+ *     status line `rate_limits.spend_limit.used_usd`: gateway-only, and the
+ *     parser ignores lines it has no anchor for; we read no status line.
+ *   - Damaged-stream / overload-after-thinking retries, second compaction on
+ *     a still-too-long prompt, malformed image `source` no longer crashing
+ *     SDK sessions, MCP tool calls waiting 10 s on resume, `/usage` backoff:
+ *     upstream fixes in our favour; turn still ends in a `result`.
+ *   - `{"decision":"block"}` from Elicitation hooks now honoured, hook
+ *     stderr logging: we write no Elicitation hooks.
+ *   - `/recap` declining relayed prompts: an SDK host still runs it.
+ *   - Non-interactive first turn waits 2 s for `--allowedTools` MCP servers:
+ *     we pass no `--allowedTools`.
+ *
+ * No OmniFex impact: gateway (warnings, Google OTLP auth, `private_key_jwt`,
+ * 431 headers, Desktop 1M), keybindings / vim / fullscreen / tab bars /
+ * `/model` picker count, `/rate-limit-options`, `/mcp reconnect all`,
+ * `claude mcp add` refusal, plugin configure / install / marketplace /
+ * managed pre-approval, Foundry host validation, Windows PATH, symlinked
+ * `.claude/rules` approval, Explore model inheritance, `/loop` updates,
+ * `/ultrareview` worktree upload, Linux sandbox, artifacts, Monitor rows,
+ * Workflow sandbox, startup schema, auto-memory markup neutralizing,
+ * `claude remote-control` trust, retry budget, Sonnet safeguard notice,
+ * Opus-pin safety switches, usage-limit wait UI, VSCode, cloud sessions,
+ * Claude Tag and Code Review.
+ *
  * Last review: 2.1.282 -> 2.1.283 on 2026-09-25. Findings:
  *
  *  Changelog coverage: one version in range, 2.1.283, and it has an entry
@@ -3281,7 +3368,7 @@ import { buildClaudeEnv } from './util/claude-env';
  * `~/.claude.json` fix (we read-modify-write that file, never replace it), and
  * the VSCode screen-reader work.
  */
-export const REVIEWED_CLI_VERSION = '2.1.283';
+export const REVIEWED_CLI_VERSION = '2.1.284';
 
 /**
  * app_settings key holding the user's explicit OmniFex-checkout override.

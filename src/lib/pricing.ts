@@ -198,6 +198,10 @@ export const SHIPPED_PRICING: ModelPricingInput[] = [
   // and the scheduled rise to $3/$15 was cancelled, so there is one period,
   // not two. A single generic entry priced Sonnet 5 at $3/$15 once and
   // overstated it by 1.5x.
+  // Sonnet 5.5 (2.1.284) launched at Sonnet 5's prices, so this row is
+  // display-only and prices through `sonnet-5`. Slot 5 is shared with Sonnet
+  // 4.6, which is unlikely to share a chart with it.
+  { pattern: 'sonnet-5-5', effectiveFrom: '2024-01-01', label: 'Sonnet 5.5', colorSlot: 5 },
   { pattern: 'sonnet-5', effectiveFrom: '2024-01-01', inputPerM: 2, outputPerM: 10, label: 'Sonnet 5', colorSlot: 3, contextWindow: 1_000_000 },
   { pattern: 'sonnet', effectiveFrom: '2024-01-01', inputPerM: 3, outputPerM: 15, contextWindow: 200_000 },
 ];
