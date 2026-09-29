@@ -190,23 +190,6 @@ export function createRateLimitsService(deps: RateLimitsDeps): RateLimitsService
     }
   }
 
-  function logDebug(message: string, metadata?: Record<string, unknown>): void {
-    if (!logging) return;
-    try {
-      logging.writeBatch([
-        {
-          timestamp: new Date().toISOString(),
-          level: 'debug',
-          source: 'rate-limits',
-          message,
-          metadata: metadata ? JSON.stringify(metadata) : undefined,
-        },
-      ]);
-    } catch {
-      // never let logging failures escape
-    }
-  }
-
   // -------------------------------------------------------------------------
   // Settings
   // -------------------------------------------------------------------------
@@ -466,15 +449,6 @@ export function createRateLimitsService(deps: RateLimitsDeps): RateLimitsService
     }
 
     const observedAt = now();
-
-    logDebug(`recordEvent`, {
-      accountName,
-      rateLimitType: info.rateLimitType,
-      status: info.status,
-      utilization: info.utilization ?? null,
-      resetsAt: info.resetsAt ?? null,
-      surpassedThreshold: info.surpassedThreshold ?? null,
-    });
 
     upsertSnapshot(accountName, info, info.rateLimitType, observedAt);
     checkThresholds(accountName, info, info.rateLimitType, observedAt);

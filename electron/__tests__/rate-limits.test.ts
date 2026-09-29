@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createDatabase, type Database } from '../services/database';
 import { createRateLimitsService, type RateLimitsService, type RateLimitInfo } from '../services/rate-limits';
 import type { AccountsService, Account } from '../services/accounts';
+import type { LoggingService } from '../services/logging';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -176,6 +177,41 @@ describe('rate-limits service', () => {
       expect(payload.snapshot.utilization).toBe(42);
       expect(payload.snapshot.resets_at).toBe(1_700_001_234);
       expect(payload.snapshot.observed_at).toBe(h.now());
+    });
+  });
+
+  describe('recordEvent — logging', () => {
+    function withLogSpy() {
+      const writes: { level: string; message: string }[] = [];
+      const db = createDatabase(':memory:');
+      const service = createRateLimitsService({
+        db,
+        accounts: makeAccountsService([makeAccount()]),
+        notifications: { show: () => {} },
+        sendToRenderer: () => {},
+        // Only writeBatch is exercised; the rest of LoggingService is unused here.
+        logging: { writeBatch: (entries: Parameters<LoggingService['writeBatch']>[0]) => { writes.push(...entries); } } as unknown as LoggingService,
+      });
+      return { db, service, writes };
+    }
+
+    // Every session reports rate-limit events constantly; a debug row per
+    // event buried the Log tab (645 rows in two weeks) and told us nothing
+    // the snapshot table doesn't already hold.
+    it('writes nothing to the app log for a normal event', () => {
+      const { db, service, writes } = withLogSpy();
+      service.recordEvent('/Users/test/.claude', fiveHourEvent({ utilization: 30 }));
+      expect(writes).toEqual([]);
+      db.close();
+    });
+
+    it('still warns about an event it has to drop', () => {
+      const { db, service, writes } = withLogSpy();
+      service.recordEvent('/Users/test/.nowhere', fiveHourEvent({ utilization: 30 }));
+      expect(writes).toEqual([
+        expect.objectContaining({ level: 'warn', message: 'rate-limits: ignoring event for unknown configDir' }),
+      ]);
+      db.close();
     });
   });
 
