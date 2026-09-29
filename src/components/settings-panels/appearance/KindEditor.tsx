@@ -1,6 +1,7 @@
 import React from "react";
 import { Lock, Undo2 } from "lucide-react";
 import type {
+  CollapseRule,
   KindStyle,
   Palette,
   Presentation,
@@ -55,6 +56,9 @@ interface KindEditorProps {
   onChange: (patch: Partial<KindStyle>) => void;
   /** Override mode only: clear a field back to its inherited category value. */
   onClearField?: (field: keyof KindStyle) => void;
+  /** Override mode only: the kind's registry collapse rule. The Repeats
+   *  control appears only when there is one. */
+  collapseRule?: CollapseRule;
   /** Category mode: reset the category to its factory default. Override mode:
    *  remove the override entirely. */
   onReset: () => void;
@@ -65,6 +69,11 @@ const VISIBILITY_OPTIONS: { value: Visibility; label: string; hint: string }[] =
   { value: "verbose", label: "Verbose only", hint: "Collapses into the nearest expander in compact mode." },
   { value: "never", label: "Never", hint: "Not shown in either mode." },
 ];
+
+const REPEATS_HINT: Record<CollapseRule["mode"], string> = {
+  latestInRun: "Keeps the last of each run — the one carrying the latest snapshot.",
+  onChange: "Keeps a row only when its value changes.",
+};
 
 const PRESENTATION_OPTIONS: { value: Presentation; label: string }[] = [
   { value: "card", label: "Card" },
@@ -142,6 +151,7 @@ export const KindEditor: React.FC<KindEditorProps> = ({
   typography,
   onChange,
   onClearField,
+  collapseRule,
   onReset,
 }) => {
   const isKind = mode === "kind";
@@ -227,6 +237,50 @@ export const KindEditor: React.FC<KindEditorProps> = ({
             : VISIBILITY_OPTIONS.find((o) => o.value === style.visibility)?.hint}
         </p>
       </div>
+
+      {/* 1b. Repeats — only kinds whose registry entry declares a rule */}
+      {isKind && collapseRule && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <Label>Repeats</Label>
+            <InheritHint
+              overridden={has("collapseRepeats")}
+              categoryLabel="default"
+              onClear={() => { clear("collapseRepeats"); }}
+            />
+          </div>
+          <div
+            role="radiogroup"
+            aria-label="Repeats"
+            className="inline-flex gap-0.5 rounded-md border border-input p-0.5"
+          >
+            {([
+              { value: true, label: "Collapse" },
+              { value: false, label: "Show all" },
+            ] as const).map((o) => {
+              const checked = (style.collapseRepeats ?? true) === o.value;
+              return (
+                <button
+                  key={o.label}
+                  type="button"
+                  role="radio"
+                  aria-checked={checked}
+                  onClick={() => { onChange({ collapseRepeats: o.value }); }}
+                  className={cn(
+                    "rounded px-2 py-1 text-xs transition-colors",
+                    checked ? "bg-primary/15 text-foreground" : "text-muted-foreground hover:bg-muted/40",
+                  )}
+                >
+                  {o.label}
+                </button>
+              );
+            })}
+          </div>
+          <p className="text-caption text-muted-foreground">
+            {(style.collapseRepeats ?? true) ? REPEATS_HINT[collapseRule.mode] : "Every repeat gets its own row."}
+          </p>
+        </div>
+      )}
 
       {/* 2. Presentation + Border dropdowns */}
       <div className="grid grid-cols-2 gap-3">

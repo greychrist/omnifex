@@ -41,6 +41,12 @@ export const KIND_FIXTURES: Record<string, string> = {
   "system.stop_hook_summary": "check-unfinished-todos.py · 37ms",
   "system.feedback_draft_queued": "bug · Edit reported success on a no-op\nThe Edit tool returned success but the file was unchanged.",
   "system.local_command": "Current session: 5% used · resets 6:20pm\nCurrent week (all models): 26% used · resets Sep 28 at 7pm",
+  "system.background_tasks_changed": "2 background tasks: Build release · Re-review diff",
+  "system.dev_intent": "ios_app",
+  "system.per_turn_effort_changed": "per_turn_effort_active: false",
+  "system.elicitation_complete": "github · sign-in complete",
+  "system.session_metadata": "artifacts: 1 published",
+  "system.session_title_changed": "Refactor auth",
   "system.unknown": "(unrecognized system subtype — raw payload shown above)",
   "permission.request": "Allow Bash to run: git diff HEAD~1 --stat?",
   "permission.askUserQuestion": "Should I proceed with the destructive rename, or create a copy first?",
@@ -75,7 +81,8 @@ export function previewTextForKindId(kindId: string): string {
 export const CATEGORY_FIXTURES: Record<string, string> = {
   user: "Can you refactor the auth middleware to use the new token format?",
   agent: "I'll update `auth.ts` to read the new token format and add a migration helper.",
-  system: "Session ready. Model: claude-opus-4-7. 14 tools (6 MCP).",
+  system: "503 Service Unavailable from api.anthropic.com — retrying.",
+  live: "Session ready. Model: claude-opus-4-7. 14 tools (6 MCP).",
 };
 
 export function previewTextForCategory(category: string): string {

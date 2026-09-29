@@ -30,6 +30,10 @@ const EMITTABLE_IDS = [
   "system.userPromptSubmit", "system.api_error", "system.away_summary",
   "system.thinking_tokens", "system.rate_limit", "system.feedback_draft_queued",
   "system.local_command", "system.stop_hook_summary", "system.unknown",
+  // stream-only CLI bookkeeping (default Never)
+  "system.background_tasks_changed", "system.dev_intent",
+  "system.per_turn_effort_changed", "system.elicitation_complete",
+  "system.session_metadata", "system.session_title_changed",
   // permission / summary / fallback
   "permission.request", "permission.askUserQuestion",
   "summary.compaction", "unknown",

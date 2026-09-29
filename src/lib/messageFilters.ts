@@ -36,52 +36,11 @@ function isHookLifecycleMarker(msg: JsonlNode): boolean {
  * - Subagent task lifecycle markers (task_started / task_progress /
  *   task_notification) — those are rendered in the SubagentBar.
  * - When `hardFilters.hideHookLifecycle` is on (default), CLI hook
- *   lifecycle events (hook_started / hook_response / user_prompt_submit).
+ *   lifecycle events (hook_started / hook_response / user_prompt_submit). *
+ * Not here: repeats of a kind (collapseRepeats.ts, a per-kind registry rule)
+ * and stream-only CLI bookkeeping, which is hidden by its kind's default
+ * Never visibility so it can be switched on from Appearance settings.
  */
-/**
- * Indices of the `system:thinking_tokens` pings worth rendering — the LAST one
- * of each burst.
- *
- * The CLI emits a ping every few hundred tokens of extended thinking, and
- * `estimated_tokens` is a running cumulative total for the burst, not a delta.
- * The final ping therefore already states the burst total and every earlier one
- * is a strictly-worse duplicate of it; unfiltered, one deep-thinking turn
- * stacks a dozen near-identical cards down the transcript.
- *
- * A burst ends at the first non-`system` node — the assistant text or tool use
- * the thinking produced, or the next user prompt. Intervening *system* nodes
- * (`status` phase pings especially) interleave with thinking and are themselves
- * filtered out, so they must not split one burst into two surviving rows.
- *
- * Collapsing rather than synthesising a summary node keeps `messages[]` a
- * faithful subset of what the CLI actually emitted, and lets
- * `deriveThinkingStatus` read the in-flight total straight off the tail of the
- * array instead of maintaining a parallel one.
- *
- * Live-only, and there is no resumed case to reconcile: `thinking_tokens` is
- * emitted on the stream-json output and never written to the session JSONL, so
- * a reopened session has no pings at all and this is a no-op over it. The
- * surviving `Thought ~N tokens` row is therefore lost on reload — that is the
- * CLI's retention, not ours to collapse away.
- */
-function lastThinkingTokensPerBurst(messages: JsonlNode[]): ReadonlySet<number> {
-  const keep = new Set<number>();
-  let pending: number | null = null;
-
-  for (let i = 0; i < messages.length; i++) {
-    const message = messages[i];
-    if (message.kind !== "system") {
-      if (pending !== null) keep.add(pending);
-      pending = null;
-      continue;
-    }
-    if (message.subtype === "thinking_tokens") pending = i;
-  }
-  if (pending !== null) keep.add(pending);
-
-  return keep;
-}
-
 export function filterDisplayableMessages(
   messages: JsonlNode[],
   hardFilters?: HardFilters,
@@ -89,7 +48,6 @@ export function filterDisplayableMessages(
   // Backward-compat: missing config means apply legacy defaults (everything on).
   // hideHookLifecycle replaces the old dropHookLifecycle key.
   const hideHookLifecycle = hardFilters?.hideHookLifecycle ?? true;
-  const keptThinkingTokens = lastThinkingTokensPerBurst(messages);
   const keptTitles = titleChangeIndices(messages);
 
   return messages.filter((message, index) => {
@@ -129,13 +87,6 @@ export function filterDisplayableMessages(
       return false;
     }
 
-    // Collapse each `system:thinking_tokens` burst to its final ping — see
-    // lastThinkingTokensPerBurst. The survivor carries the burst total; the
-    // live running count is the activity pill's job, not the transcript's.
-    if (message.kind === "system" && message.subtype === "thinking_tokens") {
-      return keptThinkingTokens.has(index);
-    }
-
     // Context attachments the ledger has no one-line summary for render
     // nothing (StreamMessage's attachment branch) — and an empty row still
     // takes its padding, which opened blank gaps down the transcript.
@@ -158,44 +109,6 @@ export function filterDisplayableMessages(
     // one per completion plus its `remove` twin. A queue-operation carrying
     // a real queued prompt is NOT this and stays visible.
     if (isTaskNotificationCarrier(rawShape)) {
-      return false;
-    }
-
-    // Always skip `system:background_tasks_changed` — a re-emitted snapshot
-    // of every background task currently running, fired on each change.
-    // It is the same information the SubagentBar already renders as rows,
-    // so in the transcript it is pure noise: a long agent run emits one per
-    // launch and one per completion, and before it was classified at all
-    // each landed as an "Unrecognized record: system" card.
-    if (message.kind === "system" && message.subtype === "background_tasks_changed") {
-      return false;
-    }
-
-    // Same treatment for `system:dev_intent` (CLI >= 2.1.266) — the CLI
-    // announcing to itself that it has inferred what the user is building.
-    // Pure bookkeeping; there is no user-facing statement to make.
-    if (message.kind === "system" && message.subtype === "dev_intent") {
-      return false;
-    }
-
-    // And for `system:per_turn_effort_changed` (CLI >= 2.1.281) — the CLI
-    // telling a host that effort changes stopped being cache-safe after the
-    // API refused per-turn effort. Plumbing, not a statement to the reader.
-    if (message.kind === "system" && message.subtype === "per_turn_effort_changed") {
-      return false;
-    }
-
-    // `system:elicitation_complete` — an MCP server confirming a URL-mode
-    // elicitation finished. The ElicitationDialog closed when the page was
-    // opened; the tool call's own result says what happened next.
-    if (message.kind === "system" && message.subtype === "elicitation_complete") {
-      return false;
-    }
-
-    // `system:session_metadata` (CLI >= 2.1.282) — the published-artifact
-    // list a cloud session's summary shows, re-sent to SDK hosts on every
-    // change. OmniFex keeps no such summary.
-    if (message.kind === "system" && message.subtype === "session_metadata") {
       return false;
     }
 

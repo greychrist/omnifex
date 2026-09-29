@@ -13,6 +13,7 @@ import { useFindInChat } from "@/hooks/useFindInChat";
 import { useRenderProfile } from "@/hooks/useRenderProfile";
 import { renderProfiler } from "@/lib/renderProfiler";
 import { buildCompactItems, withoutNeverShown } from "@/lib/compactGrouping";
+import { collapseRepeats } from "@/lib/collapseRepeats";
 import { filterDisplayableMessages } from "@/lib/messageFilters";
 import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
 import { useAutoScroll } from "@/contexts/AutoScrollContext";
@@ -163,10 +164,15 @@ function ClaudeTranscriptImpl({
     );
   };
 
-  // Filter out messages that shouldn't be displayed (honors the user's
-  // hard-filter toggles and the kinds set to "Never" in Appearance settings).
+  // Filter out messages that shouldn't be displayed (folds repeats per each
+  // kind's collapse rule, honors the user's hard-filter toggles and the kinds
+  // set to "Never" in Appearance settings). Repeats fold first, over the
+  // unfiltered list, so a hidden message still ends a run.
   const displayableMessages = useMemo(
-    () => withoutNeverShown(filterDisplayableMessages(messages, renderConfig.hardFilters), renderConfig),
+    () => withoutNeverShown(
+      filterDisplayableMessages(collapseRepeats(messages, renderConfig), renderConfig.hardFilters),
+      renderConfig,
+    ),
     [messages, renderConfig],
   );
   /**

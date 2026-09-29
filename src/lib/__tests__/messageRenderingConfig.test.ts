@@ -92,7 +92,7 @@ describe("createDefaultConfig", () => {
   it("is version 5 with categories and an empty kinds map", () => {
     const cfg = createDefaultConfig();
     expect(cfg.version).toBe(5);
-    expect(Object.keys(cfg.categories).sort()).toEqual(["agent", "system", "user"]);
+    expect(Object.keys(cfg.categories).sort()).toEqual(["agent", "live", "system", "user"]);
     expect(cfg.kinds).toEqual({});
   });
 
@@ -535,8 +535,8 @@ describe("parse/serialize round-trip", () => {
 // ─── catalog coverage — every registered kind resolves to a style ─────────────
 
 describe("kind registry", () => {
-  it("has exactly the three real categories", () => {
-    expect([...CATEGORIES]).toEqual(["user", "agent", "system"]);
+  it("has exactly the four real categories", () => {
+    expect([...CATEGORIES]).toEqual(["user", "agent", "system", "live"]);
   });
 
   it("registers every catalog kind under a real category", () => {
@@ -573,8 +573,8 @@ describe("kind registry", () => {
 // ─── category catalog ─────────────────────────────────────────────────────────
 
 describe("category catalog (v5)", () => {
-  it("defines exactly the three categories, each a complete style", () => {
-    expect([...CATEGORIES].sort()).toEqual(["agent", "system", "user"]);
+  it("defines exactly the four categories, each a complete style", () => {
+    expect([...CATEGORIES].sort()).toEqual(["agent", "live", "system", "user"]);
     for (const c of CATEGORIES) {
       const s = DEFAULT_CATEGORIES[c];
       expect(typeof s.presentation).toBe("string");
@@ -810,11 +810,11 @@ describe("bookkeeping kind registry entries", () => {
 // ─── synthetic control-change kinds ───────────────────────────────────────────
 
 describe("control-change kinds", () => {
-  it("registers control.effort and control.model under system, visible in compact", () => {
+  it("registers control.effort and control.model under live, visible in compact", () => {
     const cfg = createDefaultConfig();
     for (const id of ["control.effort", "control.model"]) {
       expect(KIND_REGISTRY[id], id).toBeDefined();
-      expect(categoryOf(id), id).toBe("system");
+      expect(categoryOf(id), id).toBe("live");
       expect(resolveKind(cfg, id).visibility, id).toBe("always");
     }
   });

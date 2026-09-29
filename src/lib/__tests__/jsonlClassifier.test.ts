@@ -741,6 +741,19 @@ describe('system:session_metadata (CLI >= 2.1.282)', () => {
   });
 });
 
+describe('system:session_title_changed (CLI >= 2.1.285)', () => {
+  it('classifies a live frame as a known system subtype, not unknown', () => {
+    const node = classifyJsonlLine({
+      type: 'system',
+      subtype: 'session_title_changed',
+      title: 'Fix login',
+      receivedAt: '2026-09-29T10:00:00Z',
+    } as Record<string, unknown>);
+    expect(node?.kind).toBe('system');
+    if (node?.kind === 'system') expect(node.subtype).toBe('session_title_changed');
+  });
+});
+
 describe('tool_progress', () => {
   const base = {
     type: 'tool_progress',

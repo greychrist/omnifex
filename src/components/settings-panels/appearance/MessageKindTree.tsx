@@ -11,7 +11,7 @@ import { IconRenderer } from "./iconMap";
 import { cn } from "@/lib/utils";
 
 /**
- * The settings tree is grouped by category. Each of the three categories is a
+ * The settings tree is grouped by category. Each of the four categories is a
  * selectable node (opens the category's style editor) that expands to show
  * the registry kinds belonging to that category, sorted alphabetically by label.
  * Selecting a kind row opens its kind editor.
@@ -44,7 +44,7 @@ export const MessageKindTree: React.FC<MessageKindTreeProps> = ({
   selected,
   onSelect,
 }) => {
-  // Starts collapsed: 50-odd kinds open at once buried the three categories.
+  // Starts collapsed: 50-odd kinds open at once buried the categories.
   const [collapsed, setCollapsed] = React.useState<ReadonlySet<Category>>(() => new Set(CATEGORIES));
   const anyOpen = collapsed.size < CATEGORIES.length;
   const toggle = (c: Category) => {

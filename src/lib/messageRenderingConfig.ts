@@ -206,7 +206,15 @@ export type BorderStyle = "solid" | "dashed";
 // resolveKind(config, id) merges all three and is the single source of
 // truth for every kind's effective style.
 
-export const CATEGORIES = ["user", "agent", "system"] as const;
+/**
+ * `live` holds the kinds a reload loses: records the CLI sends on stream-json
+ * stdout and never writes to the session file, plus OmniFex's own synthetic
+ * live-session markers. Which system subtypes those are is decided main-side
+ * by stream-forward's JSONL_CARRIED_SYSTEM_SUBTYPES, and liveOnlyKinds.test.ts
+ * pins this registry to it. Kind ids keep their `system.` prefix — the
+ * section moved, the ids did not, so saved per-kind overrides still apply.
+ */
+export const CATEGORIES = ["user", "agent", "system", "live"] as const;
 export type Category = (typeof CATEGORIES)[number];
 
 /**
@@ -231,7 +239,25 @@ export interface KindStyle {
   showRawPayload?: boolean;
   iconBordered?: boolean;
   iconBgOpacity?: number;
+  /** Apply the kind's registry `collapse` rule. Absent means on; only kinds
+   *  that declare a rule offer the choice. */
+  collapseRepeats?: boolean;
 }
+
+/**
+ * How repeats of a kind fold down to the rows worth drawing (see
+ * collapseRepeats.ts). Fixed per kind — which field a kind changes on is a
+ * fact about the CLI record, not a preference — while whether to apply it is
+ * the user's `collapseRepeats` choice.
+ *
+ *  - `latestInRun`: the record re-sends a whole snapshot; keep the last of
+ *    each run, a run ending at the first non-system message.
+ *  - `onChange`: the record re-sends one value unchanged; keep a row only
+ *    when `field` differs from the kind's previous row.
+ */
+export type CollapseRule =
+  | { mode: "latestInRun" }
+  | { mode: "onChange"; field: string };
 
 export interface CategoryStyle extends KindStyle {
   label: string;
@@ -245,6 +271,7 @@ export interface KindDef {
   description: string;
   /** Built-in chrome for this kind, layered over the category base. */
   default: Partial<KindStyle>;
+  collapse?: CollapseRule;
 }
 
 export const KIND_REGISTRY: Record<string, KindDef> = {
@@ -284,21 +311,32 @@ export const KIND_REGISTRY: Record<string, KindDef> = {
   // you are looking for when scanning a long session.
   "user.compactSummary": { id: "user.compactSummary", category: "user", label: "Compact summary", description: "The recap written when a session is compacted.", default: { presentation: "collapsible", headerLabel: "Compacted", icon: "Scissors", accentColor: "teal", alignment: "left", visibility: "always" } },
   // ── system ──
-  "system.notification.info": { id: "system.notification.info", category: "system", label: "Notification (info)", description: "Informational CLI notification.", default: { icon: "Bell", presentation: "card", visibility: "always" } },
-  "system.notification.warn": { id: "system.notification.warn", category: "system", label: "Notification (warn)", description: "Warning CLI notification.", default: { accentColor: "amber", icon: "Bell", presentation: "card", visibility: "always" } },
-  "system.notification.error": { id: "system.notification.error", category: "system", label: "Notification (error)", description: "Error CLI notification.", default: { accentColor: "red", icon: "Bell", presentation: "card", visibility: "always" } },
-  "system.notification.stop": { id: "system.notification.stop", category: "system", label: "Notification (stop)", description: "Stop CLI notification.", default: { accentColor: "red", icon: "Bell", presentation: "card", visibility: "always" } },
-  "system.hook_started": { id: "system.hook_started", category: "system", label: "Hook started", description: "A hook began running.", default: { icon: "Hook" } },
-  "system.hook_response": { id: "system.hook_response", category: "system", label: "Hook response", description: "A hook returned.", default: { icon: "Hook" } },
-  "system.permission_denied": { id: "system.permission_denied", category: "system", label: "Permission denied", description: "A tool permission was denied.", default: { accentColor: "red", icon: "ShieldX", presentation: "card", visibility: "always" } },
-  "system.userPromptSubmit": { id: "system.userPromptSubmit", category: "system", label: "Prompt submitted", description: "UserPromptSubmit lifecycle envelope.", default: { icon: "Send" } },
+  "system.notification.info": { id: "system.notification.info", category: "live", label: "Notification (info)", description: "Informational CLI notification.", default: { icon: "Bell", presentation: "card", visibility: "always" } },
+  "system.notification.warn": { id: "system.notification.warn", category: "live", label: "Notification (warn)", description: "Warning CLI notification.", default: { accentColor: "amber", icon: "Bell", presentation: "card", visibility: "always" } },
+  "system.notification.error": { id: "system.notification.error", category: "live", label: "Notification (error)", description: "Error CLI notification.", default: { accentColor: "red", icon: "Bell", presentation: "card", visibility: "always" } },
+  "system.notification.stop": { id: "system.notification.stop", category: "live", label: "Notification (stop)", description: "Stop CLI notification.", default: { accentColor: "red", icon: "Bell", presentation: "card", visibility: "always" } },
+  "system.hook_started": { id: "system.hook_started", category: "live", label: "Hook started", description: "A hook began running.", default: { icon: "Hook" } },
+  "system.hook_response": { id: "system.hook_response", category: "live", label: "Hook response", description: "A hook returned.", default: { icon: "Hook" } },
+  "system.permission_denied": { id: "system.permission_denied", category: "live", label: "Permission denied", description: "A tool permission was denied.", default: { accentColor: "red", icon: "ShieldX", presentation: "card", visibility: "always" } },
+  "system.userPromptSubmit": { id: "system.userPromptSubmit", category: "live", label: "Prompt submitted", description: "UserPromptSubmit lifecycle envelope.", default: { icon: "Send" } },
   "system.api_error": { id: "system.api_error", category: "system", label: "API error", description: "An API or tool error.", default: { accentColor: "red", icon: "AlertTriangle", presentation: "card", visibility: "always" } },
   "system.away_summary": { id: "system.away_summary", category: "system", label: "Away summary", description: "A recap of where the session stands — the CLI's own while you were away, or /recap's (the Recap button and auto-recap).", default: { presentation: "card", icon: "ClipboardList", accentColor: "info", visibility: "always" } },
-  "system.thinking_tokens": { id: "system.thinking_tokens", category: "system", label: "Thinking tokens", description: "Total size of each extended-thinking burst. The live running count is the session widget's activity pill, not this row.", default: { presentation: "side-line", icon: "Brain", accentColor: "muted", visibility: "verbose" } },
-  "system.rate_limit": { id: "system.rate_limit", category: "system", label: "Rate limit", description: "A rate_limit_event line reporting usage-window status (allowed/warning/rejected, reset time, overage).", default: { presentation: "side-line", icon: "Shield", accentColor: "muted", visibility: "verbose" } },
-  "system.feedback_draft_queued": { id: "system.feedback_draft_queued", category: "system", label: "Feedback draft", description: "The SendFeedback tool queued a local draft feedback report for you to review with /feedback.", default: { presentation: "card", icon: "Flag", accentColor: "yellow", visibility: "always" } },
+  "system.thinking_tokens": { id: "system.thinking_tokens", category: "live", label: "Thinking tokens", description: "Total size of each extended-thinking burst. The live running count is the session widget's activity pill, not this row.", default: { presentation: "side-line", icon: "Brain", accentColor: "muted", visibility: "verbose" }, collapse: { mode: "latestInRun" } },
+  "system.rate_limit": { id: "system.rate_limit", category: "live", label: "Rate limit", description: "A rate_limit_event line reporting usage-window status (allowed/warning/rejected, reset time, overage).", default: { presentation: "side-line", icon: "Shield", accentColor: "muted", visibility: "verbose" } },
+  "system.feedback_draft_queued": { id: "system.feedback_draft_queued", category: "live", label: "Feedback draft", description: "The SendFeedback tool queued a local draft feedback report for you to review with /feedback.", default: { presentation: "card", icon: "Flag", accentColor: "yellow", visibility: "always" } },
   "system.local_command": { id: "system.local_command", category: "system", label: "Local command output", description: "What a slash command that runs in the CLI printed — /usage, /cost, /context. Claude Code 2.1.283+ writes it as a system record; older transcripts use Command output.", default: { presentation: "card", icon: "Terminal", visibility: "always" } },
   "system.stop_hook_summary": { id: "system.stop_hook_summary", category: "system", label: "Stop hooks", description: "The Stop hooks that ran as a turn ended — each by file and duration, plus any error and whether one blocked the stop.", default: { presentation: "side-line", icon: "Hook", accentColor: "muted", visibility: "verbose" } },
+  // ── stream-only CLI bookkeeping ──
+  // Records the CLI sends a stream-json host for its own sake. Nothing to say
+  // in the transcript, so they default to Never — but as settings rather than
+  // hard-coded drops, so each can be switched on to see what the CLI sent.
+  // `showRawPayload` because none carries a narrative field.
+  "system.background_tasks_changed": { id: "system.background_tasks_changed", category: "live", label: "Background tasks", description: "Snapshot of every background task running, re-sent on each change. The SubagentBar shows the same set.", default: { presentation: "side-line", icon: "ListTree", accentColor: "muted", visibility: "never", showRawPayload: true }, collapse: { mode: "latestInRun" } },
+  "system.dev_intent": { id: "system.dev_intent", category: "live", label: "Dev intent", description: "The CLI's inference of what you are building (e.g. an iOS app), sent once per kind.", default: { presentation: "side-line", icon: "Lightbulb", accentColor: "muted", visibility: "never", showRawPayload: true } },
+  "system.per_turn_effort_changed": { id: "system.per_turn_effort_changed", category: "live", label: "Per-turn effort", description: "Per-turn effort stopped being cache-safe for this model, so an effort change now rewrites the cached prefix.", default: { presentation: "side-line", icon: "Settings", accentColor: "muted", visibility: "never", showRawPayload: true }, collapse: { mode: "onChange", field: "per_turn_effort_active" } },
+  "system.elicitation_complete": { id: "system.elicitation_complete", category: "live", label: "Elicitation complete", description: "An MCP server confirmed a URL-mode elicitation (usually a browser sign-in) finished.", default: { presentation: "side-line", icon: "Plug", accentColor: "muted", visibility: "never", showRawPayload: true } },
+  "system.session_metadata": { id: "system.session_metadata", category: "live", label: "Session metadata", description: "The session's published-artifact list, re-sent on each change.", default: { presentation: "side-line", icon: "Package", accentColor: "muted", visibility: "never", showRawPayload: true }, collapse: { mode: "latestInRun" } },
+  "system.session_title_changed": { id: "system.session_title_changed", category: "live", label: "Session name (live)", description: "The session's custom name, sent at startup when it has one and after each rename. The saved rename is Session renamed.", default: { presentation: "side-line", icon: "Tag", accentColor: "muted", visibility: "never", showRawPayload: true }, collapse: { mode: "onChange", field: "title" } },
   "system.unknown": { id: "system.unknown", category: "system", label: "System (other)", description: "Any unrecognized system subtype.", default: { icon: "Info" } },
   "permission.request": { id: "permission.request", category: "system", label: "Permission request", description: "Live tool-permission prompt.", default: { presentation: "card", icon: "ShieldQuestion", accentColor: "amber", visibility: "always" } },
   "permission.askUserQuestion": { id: "permission.askUserQuestion", category: "system", label: "Question (live)", description: "Live AskUserQuestion prompt.", default: { presentation: "card", icon: "MessageCircleQuestion", accentColor: "indigo", visibility: "always" } },
@@ -329,13 +367,13 @@ export const KIND_REGISTRY: Record<string, KindDef> = {
   // Unified family: same chrome (Settings icon, info accent); distinct ids so
   // each stays independently re-stylable. Visible in compact (deliberate user
   // actions worth seeing).
-  "control.effort": { id: "control.effort", category: "system", label: "Effort changed", description: "You changed the reasoning effort level.", default: { presentation: "side-line", icon: "Settings", accentColor: "info", visibility: "always" } },
-  "control.model": { id: "control.model", category: "system", label: "Model changed", description: "You changed the model.", default: { presentation: "side-line", icon: "Settings", accentColor: "info", visibility: "always" } },
+  "control.effort": { id: "control.effort", category: "live", label: "Effort changed", description: "You changed the reasoning effort level.", default: { presentation: "side-line", icon: "Settings", accentColor: "info", visibility: "always" } },
+  "control.model": { id: "control.model", category: "live", label: "Model changed", description: "You changed the model.", default: { presentation: "side-line", icon: "Settings", accentColor: "info", visibility: "always" } },
   // Live permission marker. The persisted `permission-mode` JSONL line (above)
   // covers resume; jsonl-tail never forwards it live, so this synthetic marker
   // gives immediate feedback. Keeps its own ShieldCheck/amber identity to match
   // the persisted permission-mode kind.
-  "control.permission": { id: "control.permission", category: "system", label: "Permission changed (live)", description: "You changed the permission mode.", default: { presentation: "side-line", icon: "ShieldCheck", accentColor: "amber", visibility: "always" } },
+  "control.permission": { id: "control.permission", category: "live", label: "Permission changed (live)", description: "You changed the permission mode.", default: { presentation: "side-line", icon: "ShieldCheck", accentColor: "amber", visibility: "always" } },
 };
 
 export function categoryOf(id: string): Category {
@@ -345,7 +383,10 @@ export function categoryOf(id: string): Category {
 export const DEFAULT_CATEGORIES: Record<Category, CategoryStyle> = {
   user:   { label: "User",   description: "Your prompts, commands, tool results, injected context.", presentation: "card", accentColor: "blue",    icon: "User", headerLabel: "You",    borderStyle: "solid", alignment: "right", visibility: "always" },
   agent:  { label: "Agent",  description: "Claude's text, thinking, tool calls, completions.",        presentation: "card", accentColor: "primary", icon: "Bot",  headerLabel: "Claude", borderStyle: "solid", alignment: "left",  visibility: "always" },
-  system: { label: "System", description: "Notifications, hooks, errors, lifecycle, prompts.",         presentation: "card", accentColor: "muted",   icon: "Info", headerLabel: null,     borderStyle: "solid", alignment: "left",  visibility: "verbose"  },
+  system: { label: "System", description: "Errors, lifecycle, prompts, session records.",              presentation: "card", accentColor: "muted",   icon: "Info", headerLabel: null,     borderStyle: "solid", alignment: "left",  visibility: "verbose"  },
+  // Dashed by default: the one visual cue that a row will not be there after
+  // a reload.
+  live:   { label: "Live-only", description: "Sent on the live stream and never saved — gone after a reload.", presentation: "card", accentColor: "muted", icon: "Zap", headerLabel: null, borderStyle: "dashed", alignment: "left", visibility: "verbose" },
 };
 
 // ─── style fields ────────────────────────────────────────────────────────────
@@ -355,7 +396,7 @@ export const DEFAULT_CATEGORIES: Record<Category, CategoryStyle> = {
 export const STYLE_FIELDS: (keyof KindStyle)[] = [
   "presentation", "accentColor", "icon", "headerLabel", "borderStyle", "alignment",
   "visibility", "compactBoundaryLocked", "widget", "showRawPayload",
-  "iconBordered", "iconBgOpacity",
+  "iconBordered", "iconBgOpacity", "collapseRepeats",
 ];
 
 /**
@@ -695,6 +736,7 @@ function validateStyleField(
     case "compactBoundaryLocked":
     case "showRawPayload":
     case "iconBordered":
+    case "collapseRepeats":
       return typeof v === "boolean" ? v : undefined;
     case "iconBgOpacity":
       return typeof v === "number" && Number.isFinite(v)

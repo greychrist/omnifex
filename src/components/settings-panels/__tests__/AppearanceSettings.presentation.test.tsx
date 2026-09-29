@@ -92,7 +92,7 @@ describe('MessageKindTree — registry-driven', () => {
     expect(screen.getByRole('button', { name: 'Expand all' })).toBeInTheDocument();
   });
 
-  it('lists the three categories', () => {
+  it('lists the four categories', () => {
     render(
       <MessageKindTree
         config={createDefaultConfig()}
@@ -103,6 +103,35 @@ describe('MessageKindTree — registry-driven', () => {
     expect(screen.getByText('User')).toBeInTheDocument();
     expect(screen.getByText('Agent')).toBeInTheDocument();
     expect(screen.getByText('System')).toBeInTheDocument();
+    expect(screen.getByText('Live-only')).toBeInTheDocument();
+  });
+});
+
+describe('Repeats control', () => {
+  it('offers Collapse / Show all on a kind with a collapse rule, and persists the choice', async () => {
+    renderWithProvider();
+    await screen.findAllByText('User');
+    saved.config = null;
+    expandAll();
+    clickRow('Thinking tokens');
+
+    const editor = screen.getByTestId('kind-editor');
+    const group = within(editor).getByRole('radiogroup', { name: 'Repeats' });
+    expect(within(group).getByRole('radio', { name: 'Collapse' })).toHaveAttribute('aria-checked', 'true');
+    fireEvent.click(within(group).getByRole('radio', { name: 'Show all' }));
+
+    await waitFor(() => expect(saved.config).not.toBeNull());
+    const cfg = saved.config as { kinds: Record<string, Record<string, unknown>> };
+    expect(cfg.kinds['system.thinking_tokens']).toEqual({ collapseRepeats: false });
+  });
+
+  it('is absent on a kind with nothing to collapse', async () => {
+    renderWithProvider();
+    await screen.findAllByText('User');
+    expandAll();
+    clickRow('Tool call');
+    const editor = screen.getByTestId('kind-editor');
+    expect(within(editor).queryByRole('radiogroup', { name: 'Repeats' })).toBeNull();
   });
 });
 

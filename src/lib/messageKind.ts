@@ -110,6 +110,15 @@ export function originInjectedKind(raw: unknown): string | null {
   return null;
 }
 
+const STREAM_BOOKKEEPING_SUBTYPES: ReadonlySet<string> = new Set([
+  'background_tasks_changed',
+  'dev_intent',
+  'per_turn_effort_changed',
+  'elicitation_complete',
+  'session_metadata',
+  'session_title_changed',
+]);
+
 export function classifyStandaloneKind(
   msg: JsonlNode,
   allMessages: JsonlNode[],
@@ -207,6 +216,10 @@ export function classifyStandaloneKind(
     if (subtype === 'user_prompt_submit') return 'system.userPromptSubmit';
     if (subtype === 'away_summary') return 'system.away_summary';
     if (subtype === 'feedback_draft_queued') return 'system.feedback_draft_queued';
+    // Stream-only CLI bookkeeping — each its own kind so it can be shown or
+    // hidden from Appearance settings (default Never) rather than dropped in
+    // code. The kind id is the subtype.
+    if (STREAM_BOOKKEEPING_SUBTYPES.has(subtype)) return `system.${subtype}`;
     // A local slash command's stdout (/usage, /cost, …), which CLI 2.1.283
     // moved here from a user record (that older form is user.commandOutput).
     // `/recap`'s is a recap, and shares the Away summary kind.

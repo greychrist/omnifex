@@ -18,6 +18,7 @@ import {
   type MessageRenderingConfig,
   type KindStyle,
   type CategoryStyle,
+  type CollapseRule,
   type Palette,
   type PaletteEntry,
   type PaletteName,
@@ -390,6 +391,7 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
         onReset: () => { resetCategory(c); },
         inheritedCategoryLabel: undefined as string | undefined,
         override: undefined as Partial<KindStyle> | undefined,
+        collapseRule: undefined as CollapseRule | undefined,
       };
     };
 
@@ -411,6 +413,7 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
         onReset: () => { resetKind(id); },
         inheritedCategoryLabel: config.categories[cat].label,
         override: config.kinds[id],
+        collapseRule: def?.collapse,
       };
     }
 
@@ -485,6 +488,7 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
                   typography={config.typography}
                   onChange={editor.onChange}
                   onClearField={editor.onClearField}
+                  collapseRule={editor.collapseRule}
                   onReset={editor.onReset}
                 />
               </div>

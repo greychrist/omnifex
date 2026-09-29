@@ -181,12 +181,12 @@ export type SystemSubtype =
   // Snapshot of the session's running background tasks, re-emitted whenever
   // that set changes (an agent is launched, a background shell finishes).
   // Bookkeeping, not narrative — the SubagentBar is where this belongs, so
-  // `filterDisplayableMessages` drops it from the transcript.
+  // its kind defaults to Never in Appearance settings.
   | 'background_tasks_changed'
   // The CLI's inference of what the user is building, emitted once per kind
   // when it first detects one (`kind: 'ios_app'` is the only one as of
   // 2.1.266). Bookkeeping the CLI keeps for itself — nothing to say in the
-  // transcript, so `filterDisplayableMessages` drops it. Classified rather
+  // transcript, so its kind defaults to Never. Classified rather
   // than left to the catch-all so it doesn't draw an "Unrecognized record"
   // card, which is exactly what `background_tasks_changed` used to do.
   | 'dev_intent'
@@ -195,18 +195,24 @@ export type SystemSubtype =
   // rewrites the cached prefix. Always `per_turn_effort_active: false`; a
   // change to true arrives only on `init`. Cache plumbing for a host that
   // warns before an effort change — nothing to say in the transcript, so
-  // `filterDisplayableMessages` drops it.
+  // its kind defaults to Never.
   | 'per_turn_effort_changed'
   // Stream-only: an MCP server confirmed a URL-mode elicitation (a browser
   // sign-in, typically) finished. The ElicitationDialog closed when the user
-  // opened the page, so there is nothing left to show — dropped by
-  // `filterDisplayableMessages`.
+  // opened the page, so there is nothing left to show — its kind defaults
+  // to Never.
   | 'elicitation_complete'
   // Stream-only (CLI >= 2.1.282): the external_metadata patch a cloud worker
   // sends, re-emitted for SDK hosts. Today it carries only the session's
   // published-artifact list (`metadata.artifacts`, null once empty). Nothing
-  // in OmniFex reads it — dropped by `filterDisplayableMessages`.
+  // in OmniFex reads it — its kind defaults to Never.
   | 'session_metadata'
+  // Stream-only (CLI >= 2.1.285): the session's custom name, sent at startup
+  // when it has one and after each rename (never for an AI-generated title).
+  // The CLI writes the same rename as a `custom-title` JSONL record, which is
+  // what the transcript's title row renders from — its kind defaults to
+  // Never as a duplicate.
+  | 'session_title_changed'
   // The SendFeedback tool wrote a local draft feedback report to
   // <CLAUDE_CONFIG_DIR>/feedback/drafts/. Display fields only — the body stays
   // on disk, and nothing is sent until the user approves it via `/feedback`.

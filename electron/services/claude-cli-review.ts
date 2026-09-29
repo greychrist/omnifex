@@ -42,6 +42,108 @@ import { buildClaudeEnv } from './util/claude-env';
  *    the CLI answers with the error "Side question cancelled". Its own
  *    deadline is 600 s. Only the SDK's `askSideQuestion()` documents it.
  *
+ * Last review: 2.1.284 -> 2.1.285 on 2026-09-29. Findings:
+ *
+ *  Changelog coverage: one version in range, 2.1.285, and it has an entry
+ *  (~150 lines). Both endpoints are installed, so the wire claims below are a
+ *  real binary diff of 2.1.284 vs 2.1.285.
+ *
+ *  Finding 1 fixed in the pass. Nothing else needs a change.
+ *
+ *  WIRE DIFF, reported both ways round:
+ *
+ *    - Merge-strategy map: set-identical. No new record type.
+ *    - `hook_event_name` literals: 33 in each, set-identical.
+ *    - `subtype:` literals: 136 -> 148, none removed. New: the stream-only
+ *      `session_title_changed` (finding 1), and eleven `ui_*` (`ui_toast`,
+ *      `ui_status`, `ui_invalidate`, `ui_log`, `ui_panes`, `ui_scroll`,
+ *      `ui_focus`, `ui_copy`, `ui_prompt_fill` / `_read` / `_suggest`) — a
+ *      plugin-drawn-UI host protocol. Every emitter and `sendUiHostRequest`
+ *      is gated on the function-hooks feature
+ *      (`CLAUDE_CODE_ENABLE_FUNCTION_HOOKS`, default off), so none reaches us.
+ *    - SDK `this.request({subtype})`: 53 in each, set-identical.
+ *    - `type:"control_*"`: same 4 envelopes.
+ *    - `origin:{kind}`: `human` 8 -> 9, `person` 2 -> 3, `plugin` 7 -> 9;
+ *      `bundle` / `folder` / `overlay` gone. The latter are plugin-source
+ *      kinds, not prompt origins; `messageKind.ts` reads `human` only.
+ *    - `turnOrigin` 27, `turnPosition` 21: count-identical.
+ *    - Bare `kind:"…"` 904 -> 823: git-plumbing vocabulary dropped (the
+ *      `/ultrareview` upload rewrite), same for ~20 `"--git-flag"` literals.
+ *      New CLI flags `--desktop`, `--values-stdin`; neither is one we pass.
+ *    - `.describe()` strings: 1884 -> 2120, almost all `@internal` plugin-UI
+ *      (panes, Button/Input/Select, composer fill). Others: turn-latency
+ *      metrics, a `decision_reason_code` closed set on `can_use_tool`,
+ *      `allowedProviders` refusal reason, sandbox fields "as enforced",
+ *      `alwaysLoad` exception. No host obligation for a stream-json host.
+ *    - `/usage` anchors: `Current session`, `Current week`, `Extra usage`,
+ *      `% of usage`, `Total cost`, `Resets` count-identical; `Usage:`
+ *      252 -> 253 and `MCP servers` 425 -> 439 are help text.
+ *      `usage-runner/parser.ts` is safe.
+ *
+ *  1. `system:session_title_changed` WOULD DRAW AN "UNRECOGNIZED RECORD"
+ *     CARD. FIXED IN THIS PASS.
+ *
+ *     `{type:"system", subtype:"session_title_changed", title, uuid,
+ *     session_id}` — ungated, print mode only. Sent at startup when the
+ *     session already has a custom name (every resume of a renamed session)
+ *     and after each rename, including our own `rename_session`; never for
+ *     an AI title. Stream-only, so `shouldForwardStreamMessage` forwards it
+ *     and `classifySystem` returned `unknown`. The `custom-title` JSONL
+ *     record already drives the title row, so it is classified
+ *     (jsonlClassifier.ts SYSTEM_SUBTYPES) and given its own kind,
+ *     `system.session_title_changed`, defaulting to Never.
+ *
+ *     Same pass, at Greg's request: the stream-only bookkeeping subtypes
+ *     stopped being hard-coded drops in messageFilters.ts. Each is now a
+ *     kind in a new Live-only section of Appearance settings (dashed by
+ *     default: gone after a reload), default Never, switchable on. Repeats
+ *     fold by a per-kind registry rule (collapseRepeats.ts: `latestInRun`
+ *     for snapshots such as thinking_tokens, `onChange` for single values
+ *     such as this title). A new stream-only subtype now needs a kind in
+ *     KIND_REGISTRY under `live`; liveOnlyKinds.test.ts pins the section
+ *     to JSONL_CARRIED_SYSTEM_SUBTYPES.
+ *
+ *  Checked and in our favour:
+ *
+ *   - `set_model` now also moves the output-token limit and auto-compact
+ *     window. We send it (sessions/queries.ts:92); a mid-session switch to
+ *     a 1M model used to keep the old window until restart.
+ *   - `--permission-prompt-tool`: a background subagent's permission
+ *     request now reaches the prompt tool instead of being auto-denied. The
+ *     engine routes every `can_use_tool` to the decider with no turn gating
+ *     (claude-cli-engine.ts:206), so these now surface as ordinary prompts —
+ *     possibly while the turn is idle. Expect more prompts, not breakage.
+ *   - Fork subagents keep plan / `dontAsk` mode; ExitPlanMode plan visible
+ *     to permission callbacks when written in the same response.
+ *   - `ping` stream_event every 30 s during non-streaming fallback: the
+ *     renderer consumes only `content_block_delta` text deltas
+ *     (AgentSession.tsx:1336); anything else drops.
+ *   - `-p` on third-party providers / telemetry off defaults to auto mode.
+ *     Probed 2.1.285 as a stream-json host, empty config dir, no
+ *     `--permission-mode`: init reports `permissionMode:"default"` with and
+ *     without `DISABLE_TELEMETRY=1`. Bedrock/Vertex not probed. We omit the
+ *     flag only when no mode is chosen (claude-cli-engine.ts:84).
+ *   - Background Bash stops after its timeout (default 30 min): arrives as
+ *     the existing task notification path.
+ *   - Compaction marker / loop-wakeup entries with malformed fields no
+ *     longer break resume; content-filter errors no longer retried.
+ *
+ * No OmniFex impact: `CLAUDE_CODE_DISABLE_WEB_FETCH`, `claude --desktop`,
+ * `claude plugin configure` / install `--config`, `allowedProviders`,
+ * non-streaming timeout retries, `CLAUDE_CODE_FORK_SUBAGENT`, SSH for
+ * plugins / worktrees / teleport, managed-settings read errors, cloud
+ * sessions, Remote Control, redacted URL passwords, MCP toggle in SDK,
+ * `claude mcp list/get/remove`, sandbox auto-allow, auto-mode subagent
+ * report turns, `/tasks` System tasks row, `/memory` auto-memory gating,
+ * Artifact tool, `/ultrareview`, `/autofix-pr`, `/schedule`, auth refresh
+ * lock, PowerShell, cancelled shell setup, vim, `&nbsp;`, fullscreen / ctrl+o,
+ * Bedrock / Vertex / Mantle, `/cost` fallback-model attribution, Workflow
+ * rejections, hook background processes, WebFetch rate-limit wording,
+ * `settings.local.json` trace2, `/claude-api`, device-target Edit,
+ * `claude agents` / `attach` / `logs`, `ANTHROPIC_BASE_URL` 1M window,
+ * `alwaysLoad` meta, reserved `widgets` MCP name, Windows env, Claude in
+ * Chrome, VSCode, Cloud sessions, Claude Tag and Code Review.
+ *
  * Last review: 2.1.283 -> 2.1.284 on 2026-09-28. Findings:
  *
  *  Changelog coverage: one version in range, 2.1.284, and it has an entry
@@ -3368,7 +3470,7 @@ import { buildClaudeEnv } from './util/claude-env';
  * `~/.claude.json` fix (we read-modify-write that file, never replace it), and
  * the VSCode screen-reader work.
  */
-export const REVIEWED_CLI_VERSION = '2.1.284';
+export const REVIEWED_CLI_VERSION = '2.1.285';
 
 /**
  * app_settings key holding the user's explicit OmniFex-checkout override.
