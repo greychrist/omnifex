@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { detectSkillInjection } from "@/lib/skillDetection";
 import { classifyStandaloneKind, originInjectedKind } from "@/lib/messageKind";
-import { commandEnvelopeKind, localCommandOutput, parseCommandEnvelope } from "@/lib/commandEnvelope";
+import { commandEnvelopeKind, isRecapCommandRecord, localCommandOutput, parseCommandEnvelope } from "@/lib/commandEnvelope";
 import { queueWaitMs } from "@/lib/queueWait";
 import { parseTaskNotification } from "@/lib/taskNotification";
 import { classifyBlockKind, isBlockHiddenInCompact, isBlockNeverShown, isSystemContextText, deriveSystemContextLabel } from "@/lib/blockKind";
@@ -549,9 +549,18 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
       // branch below).
       if (message.subtype === 'local_command') {
         const content = (sysRaw as unknown as { content?: unknown }).content;
+        const output = localCommandOutput(typeof content === 'string' ? content : '');
+        // `/recap` prints prose, not a table: drawn as an away summary.
+        if (isRecapCommandRecord(sysRaw)) {
+          return (
+            <MessageFrame streamKind="system.away_summary" message={message}>
+              <AwaySummaryText text={output.trim()} />
+            </MessageFrame>
+          );
+        }
         return (
           <MessageFrame streamKind="system.local_command" message={message}>
-            <CommandOutputWidget output={localCommandOutput(typeof content === 'string' ? content : '')} />
+            <CommandOutputWidget output={output} />
           </MessageFrame>
         );
       }
@@ -602,13 +611,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
           {/* eslint-disable-next-line @typescript-eslint/no-base-to-string -- caller controls input; falls back to JSON.stringify upstream. */}
           {text && (
             isAwaySummary ? (
-              // Same prose container as assistant/user text cards: the prose
-              // paragraph margins supply the vertical rhythm that makes card
-              // padding look identical, and the container tracks the chat
-              // Content typeface setting.
-              <div className="prose prose-sm dark:prose-invert max-w-none">
-                <p className="italic whitespace-pre-wrap break-words">{String(text)}</p>
-              </div>
+              <AwaySummaryText text={String(text)} />
             ) : (
               <span className="block text-xs font-mono whitespace-pre-wrap break-words">
                 {String(text)}
@@ -1832,5 +1835,17 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
     );
   }
 };
+
+/**
+ * A recap's body — the CLI's away summary or `/recap`'s output. Same prose
+ * container as assistant/user text cards: the prose paragraph margins supply
+ * the vertical rhythm that makes card padding look identical, and the
+ * container tracks the chat Content typeface setting.
+ */
+const AwaySummaryText: React.FC<{ text: string }> = ({ text }) => (
+  <div className="prose prose-sm dark:prose-invert max-w-none">
+    <p className="italic whitespace-pre-wrap break-words">{text}</p>
+  </div>
+);
 
 export const StreamMessage = React.memo(StreamMessageComponent);

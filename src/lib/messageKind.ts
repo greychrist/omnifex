@@ -24,7 +24,7 @@ import type { JsonlNode } from '@/types/jsonl';
 import { isSubagentPrompt } from './subagentDispatch';
 import { detectSkillInjection } from './skillDetection';
 import { isSystemContextText } from './blockKind';
-import { commandEnvelopeKind } from './commandEnvelope';
+import { commandEnvelopeKind, isRecapCommandRecord } from './commandEnvelope';
 
 /**
  * Renderable in the chat feed for the purpose of "is this message
@@ -209,7 +209,10 @@ export function classifyStandaloneKind(
     if (subtype === 'feedback_draft_queued') return 'system.feedback_draft_queued';
     // A local slash command's stdout (/usage, /cost, …), which CLI 2.1.283
     // moved here from a user record (that older form is user.commandOutput).
-    if (subtype === 'local_command') return 'system.local_command';
+    // `/recap`'s is a recap, and shares the Away summary kind.
+    if (subtype === 'local_command') {
+      return isRecapCommandRecord(msg.raw) ? 'system.away_summary' : 'system.local_command';
+    }
     // What the Stop hooks did when a turn ended.
     if (subtype === 'stop_hook_summary') return 'system.stop_hook_summary';
     // Fallback: any other system subtype renders as the unknown gray inline strip.

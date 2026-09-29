@@ -84,4 +84,31 @@ describe('StreamMessage slash-command envelope', () => {
     render(<StreamMessage message={node} streamMessages={[node]} tabId="tab-1" />);
     expect(document.body.textContent).toContain('Why does this show twice?');
   });
+
+  // /recap's output is prose: rendered like an away summary, not in the
+  // monospace block other command output uses.
+  it('renders /recap output as an away summary in prose', () => {
+    const recap = {
+      kind: 'system', subtype: 'local_command', sessionId: 'sess-1', receivedAt: '2026-09-29T00:31:37Z',
+      raw: { type: 'system', subtype: 'local_command', uuid: 'r-1',
+        content: '<local-command-stdout>We fixed several display problems.</local-command-stdout>',
+        commandRun: { command: 'recap', args: '' } },
+    } as unknown as JsonlNode;
+    render(<StreamMessage message={recap} streamMessages={[recap]} tabId="tab-1" />);
+    const text = screen.getByText('We fixed several display problems.');
+    expect(text.closest('pre')).toBeNull();
+    expect(text.closest('.prose')).not.toBeNull();
+    expect(document.body.textContent).not.toContain('<local-command-stdout>');
+  });
+
+  it('keeps other command output in the monospace block', () => {
+    const usage = {
+      kind: 'system', subtype: 'local_command', sessionId: 'sess-1', receivedAt: '2026-09-29T00:31:37Z',
+      raw: { type: 'system', subtype: 'local_command', uuid: 'u-2',
+        content: '<local-command-stdout>Session: 12%</local-command-stdout>',
+        commandRun: { command: 'usage', args: '' } },
+    } as unknown as JsonlNode;
+    render(<StreamMessage message={usage} streamMessages={[usage]} tabId="tab-1" />);
+    expect(screen.getByText(/Session: 12%/).closest('pre')).not.toBeNull();
+  });
 });

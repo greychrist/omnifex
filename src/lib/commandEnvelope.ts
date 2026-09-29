@@ -79,6 +79,17 @@ export function commandEnvelopeKind(text: string): 'echo' | 'output' | null {
 }
 
 /**
+ * True for a `system/local_command` record that `/recap` produced. Keyed on
+ * the structured `commandRun` the CLI stamps on the record, never on the text:
+ * the recap is prose, and is shown as an away summary rather than as command
+ * output.
+ */
+export function isRecapCommandRecord(raw: unknown): boolean {
+  const run = (raw as { commandRun?: { command?: unknown } } | null)?.commandRun;
+  return run?.command === 'recap';
+}
+
+/**
  * What a local command printed, without its `<local-command-stdout>` /
  * `<local-command-stderr>` wrapping. Text with neither tag is returned as it
  * is. CLI 2.1.283 moved this output onto a `system/local_command` record's

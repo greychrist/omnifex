@@ -316,6 +316,18 @@ describe('classifyStandaloneKind', () => {
       expect(classifyStandaloneKind(sys('local_command'), [])).toBe('system.local_command');
     });
 
+    // `/recap` lands as local_command too, but it is a recap: it shares the
+    // Away summary kind so both kinds of recap look and hide alike. Keyed on
+    // the record's structured `commandRun`, never on its text.
+    it('classifies a /recap local_command as an away summary', () => {
+      const recap = { kind: 'system', subtype: 'local_command', sessionId: '', receivedAt: '',
+        raw: { type: 'system', subtype: 'local_command', content: '<local-command-stdout>We fixed it.</local-command-stdout>', commandRun: { command: 'recap', args: '' } } } as unknown as JsonlNode;
+      const usage = { kind: 'system', subtype: 'local_command', sessionId: '', receivedAt: '',
+        raw: { type: 'system', subtype: 'local_command', content: '<local-command-stdout>recap</local-command-stdout>', commandRun: { command: 'usage', args: '' } } } as unknown as JsonlNode;
+      expect(classifyStandaloneKind(recap, [])).toBe('system.away_summary');
+      expect(classifyStandaloneKind(usage, [])).toBe('system.local_command');
+    });
+
     it('does not classify notification / known hook subtypes as unknown', () => {
       expect(classifyStandaloneKind(sys('hook_started'), [])).toBe('system.hook_started');
       expect(classifyStandaloneKind(sys('hook_response'), [])).toBe('system.hook_response');
