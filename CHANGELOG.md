@@ -5,6 +5,18 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.205] — 2026-09-29
+
+### Added
+- A **Live-only** section in Settings → Chats appearance for messages the CLI sends on the live stream but never saves, so they are gone after a reload: notifications, hook events, permission denials, thinking-token totals, rate-limit notices, and the model / effort / permission change markers. These rows draw with a dashed border by default.
+- CLI bookkeeping messages (background-task snapshots, dev intent, per-turn effort, elicitation complete, session metadata, live session name) are now kinds in the Live-only section, hidden by default. Switch any of them on to see what the CLI sent.
+- A **Repeats** choice (Collapse / Show all) on kinds that repeat themselves. Thinking tokens and snapshots keep the last of each run; the live session name and per-turn effort show only when their value changes.
+- A session whose sign-in has expired is flagged with a red shield on its account badge, and restarts on its own once the account is signed in again (unless a turn is running).
+
+### Fixed
+- Claude Code 2.1.285's new live session-name message no longer shows as an "Unrecognized record" card.
+- The verify script wrote each gate's log to the wrong path.
+
 ## [0.4.204] — 2026-09-29
 
 ### Changed

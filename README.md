@@ -46,7 +46,7 @@ The Brain is a per-account **memory vault** distilled from those transcripts.
 - Auto-discover existing accounts on your machine and scan for new ones.
 - Every session, agent, hook, MCP call, usage read, and CLAUDE.md edit runs under the resolved account's `CLAUDE_CONFIG_DIR`.
 - An account-resolution explainer shows exactly why a given project maps to a given account.
-- See who is signed in to an account, and sign it in or out, from its badge in the session header — the same `claude auth login` / `logout` you would run in a terminal, scoped to that account's config directory, with the login running in a terminal window inside the app.
+- See who is signed in to an account, and sign it in or out, from its badge in the session header — the same `claude auth login` / `logout` you would run in a terminal, scoped to that account's config directory, with the login running in a terminal window inside the app. A session whose sign-in expired shows a red shield on that badge and restarts on its own once the account is signed in again.
 
 ### Interactive sessions
 - A structured **rich chat** (streaming JSON) with tool-call widgets, backed by the real CLI.
@@ -123,7 +123,7 @@ The Brain is a per-account **memory vault** distilled from those transcripts.
 - A lightweight watcher refreshes the branch badge as your working tree changes — one reader per repository however many tabs are open on it, and none at all while the tab is off screen, the window hidden or closed, or the screen locked.
 
 ### Appearance & the rest
-- Deep theming: color palettes, typography, terminal fonts, per-message-kind icons and visibility (always, verbose only, or never shown), and the colours of compact mode's hidden-events bar (text stays readable on its own unless you set it), with JSON export/import.
+- Deep theming: color palettes, typography, terminal fonts, per-message-kind icons and visibility (always, verbose only, or never shown — with a Live-only group for events that are never saved with the session, and a choice to collapse or show their repeats), and the colours of compact mode's hidden-events bar (text stays readable on its own unless you set it), with JSON export/import.
 - **Lima VM viewer** — list and start/stop Lima VMs and their Docker containers.
 - HTTP/HTTPS **proxy** settings, OS **notifications** with sound preview, and an in-app **auto-updater** that pulls new builds from GitHub Releases.
 
