@@ -1,10 +1,11 @@
 import React from "react";
-import { ChevronDown, ChevronRight, ChevronsUpDown, EyeOff, Lock } from "lucide-react";
+import { Ban, ChevronDown, ChevronRight, ChevronsUpDown, EyeOff, Lock } from "lucide-react";
 import { CATEGORIES, KIND_REGISTRY, resolveKind, isHexColor } from "@/lib/messageRenderingConfig";
 import type {
   Category,
   IconName,
   MessageRenderingConfig,
+  Visibility,
 } from "@/lib/messageRenderingConfig";
 import { IconRenderer } from "./iconMap";
 import { cn } from "@/lib/utils";
@@ -117,7 +118,7 @@ export const MessageKindTree: React.FC<MessageKindTreeProps> = ({
                       label={def.label}
                       icon={style.icon}
                       swatch={kindSwatch}
-                      hiddenInCompact={style.hiddenInCompact}
+                      visibility={style.visibility}
                       compactBoundaryLocked={style.compactBoundaryLocked}
                       selected={kindSelected}
                       onSelect={() => { onSelect({ type: "kind", id: def.id }); }}
@@ -163,7 +164,7 @@ interface KindRowProps {
   label: string;
   icon: IconName;
   swatch: string;
-  hiddenInCompact: boolean;
+  visibility: Visibility;
   compactBoundaryLocked?: boolean;
   selected: boolean;
   onSelect: () => void;
@@ -173,7 +174,7 @@ const KindRow: React.FC<KindRowProps> = ({
   label,
   icon,
   swatch,
-  hiddenInCompact,
+  visibility,
   compactBoundaryLocked,
   selected,
   onSelect,
@@ -197,8 +198,11 @@ const KindRow: React.FC<KindRowProps> = ({
     {compactBoundaryLocked && (
       <Lock className="h-3 w-3 text-muted-foreground/60 flex-shrink-0" aria-label="Always visible — turn boundary" />
     )}
-    {hiddenInCompact && !compactBoundaryLocked && (
+    {visibility === "verbose" && !compactBoundaryLocked && (
       <EyeOff className="h-3 w-3 text-muted-foreground/60 flex-shrink-0" aria-label="Hidden in compact mode" />
+    )}
+    {visibility === "never" && !compactBoundaryLocked && (
+      <Ban className="h-3 w-3 text-muted-foreground/60 flex-shrink-0" aria-label="Never shown" />
     )}
   </div>
 );

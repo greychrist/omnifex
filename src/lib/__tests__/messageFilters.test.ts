@@ -569,3 +569,66 @@ describe('CLI sidechannel records', () => {
     expect(kept).toHaveLength(2);
   });
 });
+
+// The CLI re-appends `ai-title` after nearly every turn, title unchanged, and
+// keeps doing so after a rename — so the raw records repeat and alternate. A
+// title row is drawn only where the session's effective title (rename wins,
+// see pickSessionTitle) changes.
+describe('filterDisplayableMessages — session titles', () => {
+  const ai = (aiTitle: string): JsonlNode =>
+    ({ kind: 'ai-title', sessionId: 's', raw: { type: 'ai-title', aiTitle, sessionId: 's' } }) as unknown as JsonlNode;
+  const custom = (customTitle: string): JsonlNode =>
+    ({ kind: 'custom-title', sessionId: 's', raw: { type: 'custom-title', customTitle, sessionId: 's' } }) as unknown as JsonlNode;
+  const titles = (nodes: JsonlNode[]): string[] =>
+    filterDisplayableMessages(nodes).map((n) =>
+      n.kind === 'ai-title' ? `ai:${n.raw.aiTitle}` : n.kind === 'custom-title' ? `custom:${n.raw.customTitle}` : n.kind,
+    );
+
+  it('renders a repeated AI title once', () => {
+    expect(titles([ai('A'), ai('A'), ai('A'), ai('A'), ai('A')])).toEqual(['ai:A']);
+  });
+
+  it('renders each change of AI title once', () => {
+    expect(titles([ai('A'), ai('A'), ai('B'), ai('B')])).toEqual(['ai:A', 'ai:B']);
+  });
+
+  it('renders a return to an earlier title', () => {
+    expect(titles([ai('A'), ai('B'), ai('A')])).toEqual(['ai:A', 'ai:B', 'ai:A']);
+  });
+
+  it('lets a rename outrank the AI titles the CLI keeps appending after it', () => {
+    expect(titles([ai('A'), ai('A'), custom('X'), ai('A'), custom('X'), ai('A')])).toEqual(['ai:A', 'custom:X']);
+  });
+
+  it('leaves other rows in place around the titles', () => {
+    const prompt = userText('hi');
+    expect(filterDisplayableMessages([ai('A'), prompt, ai('A')])).toEqual([ai('A'), prompt]);
+  });
+
+  // Live entries arrive one at a time and the whole list is re-filtered each
+  // time; every intermediate result must agree with the final one.
+  it('gives entries arriving one by one the same result as a loaded transcript', () => {
+    const all = [ai('A'), ai('A'), custom('X'), ai('A'), ai('B'), custom('X'), custom('Y'), ai('B')];
+    const final = titles(all);
+    expect(final).toEqual(['ai:A', 'custom:X', 'custom:Y']);
+    for (let n = 1; n <= all.length; n++) {
+      const partial = titles(all.slice(0, n));
+      expect(final.slice(0, partial.length)).toEqual(partial);
+    }
+  });
+});
+
+// An attachment the ledger has no one-line summary for renders nothing — and
+// an empty row still takes the row's padding, which opened blank gaps in the
+// transcript (session 5220766b, both view modes).
+describe('filterDisplayableMessages — context attachments', () => {
+  const attachment = (attachment: Record<string, unknown>): JsonlNode =>
+    ({ kind: 'attachment', sessionId: 's', raw: { type: 'attachment', attachment } }) as unknown as JsonlNode;
+
+  it('drops attachments with nothing to show, keeps the ones with a summary', () => {
+    const environment = attachment({ type: 'environment' });
+    const date = attachment({ type: 'date' });
+    const instructions = attachment({ type: 'instructions', files: [{ path: 'CLAUDE.md' }] });
+    expect(filterDisplayableMessages([environment, instructions, date])).toEqual([instructions]);
+  });
+});

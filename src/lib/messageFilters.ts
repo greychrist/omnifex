@@ -5,6 +5,8 @@ import { detectSkillInjection } from "@/lib/skillDetection";
 import { toolResultHasImages } from "@/lib/toolResultImages";
 import type { HardFilters } from "@/lib/messageRenderingConfig";
 import { isCliSidechannelRecord } from "@/lib/cliSidechannelRecords";
+import { titleChangeIndices } from "@/lib/sessionTitle";
+import { summariseContextAttachment } from "@/lib/contextLedger";
 
 // CLI subtypes the renderer treats as hook-lifecycle noise. `hook_progress`
 // (mid-hook stdout/stderr) belongs in the set because it's plumbing —
@@ -88,6 +90,7 @@ export function filterDisplayableMessages(
   // hideHookLifecycle replaces the old dropHookLifecycle key.
   const hideHookLifecycle = hardFilters?.hideHookLifecycle ?? true;
   const keptThinkingTokens = lastThinkingTokensPerBurst(messages);
+  const keptTitles = titleChangeIndices(messages);
 
   return messages.filter((message, index) => {
     // Skill-injection user messages have isMeta:true in the persisted
@@ -131,6 +134,21 @@ export function filterDisplayableMessages(
     // live running count is the activity pill's job, not the transcript's.
     if (message.kind === "system" && message.subtype === "thinking_tokens") {
       return keptThinkingTokens.has(index);
+    }
+
+    // Context attachments the ledger has no one-line summary for render
+    // nothing (StreamMessage's attachment branch) — and an empty row still
+    // takes its padding, which opened blank gaps down the transcript.
+    if (message.kind === "attachment") {
+      const att = (message.raw as { attachment?: Record<string, unknown> }).attachment;
+      if (summariseContextAttachment(att) === null) return false;
+    }
+
+    // Session titles: one row per change of the effective title — see
+    // titleChangeIndices. Decided over the whole list on every pass, so a
+    // title streamed in live lands exactly where a reload would put it.
+    if (message.kind === "ai-title" || message.kind === "custom-title") {
+      return keptTitles.has(index);
     }
 
     // Skip the `<task-notification>` carriers. These queue-operation /

@@ -1,7 +1,7 @@
 import React from "react";
 import { Layers } from "lucide-react";
 import type { MessageRenderingConfig } from "@/lib/messageRenderingConfig";
-import { resolveKind } from "@/lib/messageRenderingConfig";
+import { isHiddenInCompact, isNeverShown, resolveKind } from "@/lib/messageRenderingConfig";
 import { currentThemeBackdrop, hiddenEventsColors, type HiddenEventsColors } from "@/lib/accentStyle";
 import { SamplePreview } from "./SamplePreview";
 import { FAKE_TURN_KIND_IDS, previewTextForKindId } from "./fixtures";
@@ -35,7 +35,7 @@ function groupTurn(
   };
   for (const id of kindIds) {
     const style = resolveKind(config, id);
-    if (style.hiddenInCompact && !style.compactBoundaryLocked) {
+    if (isHiddenInCompact(style)) {
       buffer.push(id);
     } else {
       flushGroup();
@@ -58,14 +58,14 @@ export const TurnPreview: React.FC<TurnPreviewProps> = ({ config, mode }) => {
   if (mode === "verbose") {
     return (
       <div className="space-y-2">
-        {FAKE_TURN_KIND_IDS.map((id, i) => (
+        {shownKindIds(config).map((id, i) => (
           <Sample key={`${id}-${i}`} config={config} id={id} />
         ))}
       </div>
     );
   }
 
-  const items = groupTurn(FAKE_TURN_KIND_IDS, config);
+  const items = groupTurn(shownKindIds(config), config);
   return (
     <div className="space-y-2">
       {items.map((item, i) => {
@@ -77,6 +77,11 @@ export const TurnPreview: React.FC<TurnPreviewProps> = ({ config, mode }) => {
     </div>
   );
 };
+
+/** The sample turn without the kinds set to "Never" — those are not drawn in either mode. */
+function shownKindIds(config: MessageRenderingConfig): string[] {
+  return FAKE_TURN_KIND_IDS.filter((id) => !isNeverShown(resolveKind(config, id)));
+}
 
 const CollapsedGroupMarker: React.FC<{ count: number; colors: HiddenEventsColors }> = ({ count, colors }) => (
   <div

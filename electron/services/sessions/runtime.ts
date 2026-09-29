@@ -175,6 +175,7 @@ export function listenToMessages(
   // finished and what it was called. Per-listener, so it dies with the
   // session; losing it costs at most one notification.
   const backgroundTasks = createBackgroundTaskTracker();
+  handle.openBackgroundTasks = () => backgroundTasks.openCount();
 
   const subscriptions = [
     engine.onMessage((agentMsg: AgentMessage) => {
@@ -244,6 +245,7 @@ export function listenToMessages(
           // >=2.1.232 that turn ends seconds after the launch ACK. Without
           // this the user's only notification arrives while the real work
           // is still running. Shells resolve to null and stay silent.
+          backgroundTasks.finished(event.taskId);
           const agent = backgroundTasks.resolveAgent(event.taskId);
           if (agent) {
             dispatchAgentNotification({
@@ -285,6 +287,8 @@ export function listenToMessages(
         });
         // The CLI's result row is the turn-closer while the process lives.
         setTurn(handle, 'idle', tabId, sendToRenderer);
+      } else {
+        handle.activityObserver?.();
       }
     }),
 

@@ -54,10 +54,22 @@ function getContent(m: JsonlNode): unknown[] | null {
   return Array.isArray(content) ? content : null;
 }
 
+/** Live overlays the transcript never draws a row for (see StreamMessage). */
+const ROWLESS_KINDS: ReadonlySet<string> = new Set(['stream-event', 'rate-limit', 'lifecycle']);
+
+/**
+ * A row with no content blocks to tally: system records, attachments and the
+ * bookkeeping kinds (last-prompt, queue-operation, …). Each draws one row when
+ * the group is expanded, so each is one event.
+ */
+function isBlocklessRow(m: JsonlNode): boolean {
+  return m.kind !== 'user' && m.kind !== 'assistant' && !ROWLESS_KINDS.has(m.kind);
+}
+
 function tally(messages: JsonlNode[]): Counts {
   const c = emptyCounts();
   for (const m of messages) {
-    if (m.kind === 'system') {
+    if (isBlocklessRow(m)) {
       c.systemEvents += 1;
       continue;
     }
@@ -127,13 +139,14 @@ export function summarizeHiddenEvents(messages: JsonlNode[]): string {
 
 /**
  * Count of "events" used in the expander label ("13 Hidden Events: …").
- * One event per renderable content block, plus one per system message.
- * Empty thinking and empty text do not count.
+ * One event per renderable content block, plus one per blockless row
+ * (system records, attachments, bookkeeping). Empty thinking and empty text
+ * do not count.
  */
 export function countHiddenEvents(messages: JsonlNode[]): number {
   let n = 0;
   for (const m of messages) {
-    if (m.kind === 'system') {
+    if (isBlocklessRow(m)) {
       n += 1;
       continue;
     }

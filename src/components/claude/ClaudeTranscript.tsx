@@ -12,7 +12,7 @@ import { FindBar } from "@/components/FindBar";
 import { useFindInChat } from "@/hooks/useFindInChat";
 import { useRenderProfile } from "@/hooks/useRenderProfile";
 import { renderProfiler } from "@/lib/renderProfiler";
-import { buildCompactItems } from "@/lib/compactGrouping";
+import { buildCompactItems, withoutNeverShown } from "@/lib/compactGrouping";
 import { filterDisplayableMessages } from "@/lib/messageFilters";
 import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
 import { useAutoScroll } from "@/contexts/AutoScrollContext";
@@ -163,10 +163,10 @@ function ClaudeTranscriptImpl({
   };
 
   // Filter out messages that shouldn't be displayed (honors the user's
-  // hard-filter toggles in Appearance settings).
+  // hard-filter toggles and the kinds set to "Never" in Appearance settings).
   const displayableMessages = useMemo(
-    () => filterDisplayableMessages(messages, renderConfig.hardFilters),
-    [messages, renderConfig.hardFilters],
+    () => withoutNeverShown(filterDisplayableMessages(messages, renderConfig.hardFilters), renderConfig),
+    [messages, renderConfig],
   );
   /**
    * The last row that will actually draw a rail — the tail of the transcript

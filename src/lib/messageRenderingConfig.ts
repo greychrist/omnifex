@@ -209,6 +209,13 @@ export type BorderStyle = "solid" | "dashed";
 export const CATEGORIES = ["user", "agent", "system"] as const;
 export type Category = (typeof CATEGORIES)[number];
 
+/**
+ * Where a kind is drawn: in both view modes, in verbose mode only (folded into
+ * an expander in compact mode), or nowhere. `compactBoundaryLocked` kinds
+ * ignore it — a turn boundary is always on screen.
+ */
+export type Visibility = "always" | "verbose" | "never";
+
 /** Styling fields shared by categories and kind registry entries. Identity
  *  fields (id/label/description) are NOT here. */
 export interface KindStyle {
@@ -218,7 +225,7 @@ export interface KindStyle {
   headerLabel: string | null;
   borderStyle: BorderStyle;
   alignment: Alignment;
-  hiddenInCompact: boolean;
+  visibility: Visibility;
   compactBoundaryLocked?: boolean;
   widget?: string;
   showRawPayload?: boolean;
@@ -244,22 +251,22 @@ export const KIND_REGISTRY: Record<string, KindDef> = {
   // ── agent ──
   "assistant.text": { id: "assistant.text", category: "agent", label: "Assistant text", description: "Claude's reply text.", default: {} },
   "assistant.text.endTurn": { id: "assistant.text.endTurn", category: "agent", label: "Execution complete", description: "Final assistant text that ended the turn.", default: { accentColor: "green", icon: "CheckCircle2", compactBoundaryLocked: true } },
-  "assistant.thinking": { id: "assistant.thinking", category: "agent", label: "Thinking", description: "Extended-thinking blocks.", default: { presentation: "collapsible", headerLabel: "Thinking", icon: "Brain", widget: "ThinkingWidget", hiddenInCompact: true } },
-  "assistant.tool-use": { id: "assistant.tool-use", category: "agent", label: "Tool call", description: "Claude invoking a tool.", default: { accentColor: "info", icon: "Terminal", headerLabel: null, hiddenInCompact: true } },
-  "assistant.askUserQuestion": { id: "assistant.askUserQuestion", category: "agent", label: "Question (answered)", description: "An answered AskUserQuestion card.", default: { presentation: "card", icon: "MessageCircleQuestion", accentColor: "indigo", hiddenInCompact: false } },
+  "assistant.thinking": { id: "assistant.thinking", category: "agent", label: "Thinking", description: "Extended-thinking blocks.", default: { presentation: "collapsible", headerLabel: "Thinking", icon: "Brain", widget: "ThinkingWidget", visibility: "verbose" } },
+  "assistant.tool-use": { id: "assistant.tool-use", category: "agent", label: "Tool call", description: "Claude invoking a tool.", default: { accentColor: "info", icon: "Terminal", headerLabel: null, visibility: "verbose" } },
+  "assistant.askUserQuestion": { id: "assistant.askUserQuestion", category: "agent", label: "Question (answered)", description: "An answered AskUserQuestion card.", default: { presentation: "card", icon: "MessageCircleQuestion", accentColor: "indigo", visibility: "always" } },
   // ── user ──
   "user.prompt": { id: "user.prompt", category: "user", label: "User prompt", description: "What you typed.", default: { compactBoundaryLocked: true } },
   "user.command": { id: "user.command", category: "user", label: "Slash command", description: "A `/command` you ran.", default: { presentation: "side-line", icon: "ChevronRight", alignment: "left" } },
-  "user.commandOutput": { id: "user.commandOutput", category: "user", label: "Command output", description: "Local stdout from a slash command.", default: { presentation: "side-line", alignment: "left", hiddenInCompact: true } },
+  "user.commandOutput": { id: "user.commandOutput", category: "user", label: "Command output", description: "Local stdout from a slash command.", default: { presentation: "side-line", alignment: "left", visibility: "verbose" } },
   "user.subagentPrompt": { id: "user.subagentPrompt", category: "user", label: "Subagent prompt", description: "A prompt generated for a subagent.", default: { icon: "Bot", accentColor: "amber", alignment: "left" } },
   "user.skillInjection": { id: "user.skillInjection", category: "user", label: "Skill injection", description: "Skill body injected into the conversation.", default: { presentation: "collapsible", icon: "Sparkles", accentColor: "purple", alignment: "left" } },
-  "user.systemContext": { id: "user.systemContext", category: "user", label: "System context", description: "Hook feedback, system-reminders, skill preambles.", default: { presentation: "collapsible", icon: "Sparkles", accentColor: "purple", showRawPayload: true, alignment: "left", hiddenInCompact: false } },
-  "user.taskNotification": { id: "user.taskNotification", category: "user", label: "Task notification", description: "A background task reporting in — not something you typed.", default: { presentation: "collapsible", headerLabel: "Task notification", icon: "Bell", accentColor: "cyan", alignment: "left", hiddenInCompact: true } },
-  "user.coordinatorMessage": { id: "user.coordinatorMessage", category: "user", label: "Coordinator message", description: "An orchestrator messaging a subagent mid-run.", default: { presentation: "collapsible", headerLabel: "Coordinator message", icon: "MessageSquare", accentColor: "amber", alignment: "left", hiddenInCompact: true } },
+  "user.systemContext": { id: "user.systemContext", category: "user", label: "System context", description: "Hook feedback, system-reminders, skill preambles.", default: { presentation: "collapsible", icon: "Sparkles", accentColor: "purple", showRawPayload: true, alignment: "left", visibility: "always" } },
+  "user.taskNotification": { id: "user.taskNotification", category: "user", label: "Task notification", description: "A background task reporting in — not something you typed.", default: { presentation: "collapsible", headerLabel: "Task notification", icon: "Bell", accentColor: "cyan", alignment: "left", visibility: "verbose" } },
+  "user.coordinatorMessage": { id: "user.coordinatorMessage", category: "user", label: "Coordinator message", description: "An orchestrator messaging a subagent mid-run.", default: { presentation: "collapsible", headerLabel: "Coordinator message", icon: "MessageSquare", accentColor: "amber", alignment: "left", visibility: "verbose" } },
   "user.sdkSystemBracket": { id: "user.sdkSystemBracket", category: "user", label: "System notice", description: "CLI bracket notices like [Request interrupted].", default: { presentation: "side-line", icon: "Info", alignment: "left" } },
-  "user.tool-result": { id: "user.tool-result", category: "user", label: "Tool result", description: "Output returned from a tool call.", default: { presentation: "side-line", headerLabel: null, alignment: "left", hiddenInCompact: true } },
+  "user.tool-result": { id: "user.tool-result", category: "user", label: "Tool result", description: "Output returned from a tool call.", default: { presentation: "side-line", headerLabel: null, alignment: "left", visibility: "verbose" } },
   // Its own row rather than folding into `user.tool-result`: that kind defaults
-  // to hiddenInCompact, which would bury every screenshot a tool returns. Split
+  // to verbose-only visibility, which would bury every screenshot a tool returns. Split
   // out so images can be styled and shown/hidden independently of ordinary tool
   // output. Visible in compact by default — a screenshot is usually the point
   // of the call, not plumbing.
@@ -267,7 +274,7 @@ export const KIND_REGISTRY: Record<string, KindDef> = {
   // no header and no footer chip, which is why these read as "not the same
   // component" next to every other message. A returned screenshot is content
   // worth framing, so it gets the standard card chrome and a title.
-  "user.tool-result.image": { id: "user.tool-result.image", category: "user", label: "Tool result image", description: "A screenshot or image returned by a tool.", default: { presentation: "card", headerLabel: "Image", alignment: "left", icon: "Image", accentColor: "indigo", hiddenInCompact: false } },
+  "user.tool-result.image": { id: "user.tool-result.image", category: "user", label: "Tool result image", description: "A screenshot or image returned by a tool.", default: { presentation: "card", headerLabel: "Image", alignment: "left", icon: "Image", accentColor: "indigo", visibility: "always" } },
   "user.image": { id: "user.image", category: "user", label: "Image", description: "A pasted or attached image.", default: { icon: "Image", alignment: "left" } },
   // The CLI writes the /compact summary as a `user` record, so without its own
   // kind it renders as something you typed — a wall of recap text wearing your
@@ -275,36 +282,36 @@ export const KIND_REGISTRY: Record<string, KindDef> = {
   // and is reference material, not conversation. Visible in compact view: it
   // marks where the earlier history stops existing, which is exactly the thing
   // you are looking for when scanning a long session.
-  "user.compactSummary": { id: "user.compactSummary", category: "user", label: "Compact summary", description: "The recap written when a session is compacted.", default: { presentation: "collapsible", headerLabel: "Compacted", icon: "Scissors", accentColor: "teal", alignment: "left", hiddenInCompact: false } },
+  "user.compactSummary": { id: "user.compactSummary", category: "user", label: "Compact summary", description: "The recap written when a session is compacted.", default: { presentation: "collapsible", headerLabel: "Compacted", icon: "Scissors", accentColor: "teal", alignment: "left", visibility: "always" } },
   // ── system ──
-  "system.notification.info": { id: "system.notification.info", category: "system", label: "Notification (info)", description: "Informational CLI notification.", default: { icon: "Bell", presentation: "card", hiddenInCompact: false } },
-  "system.notification.warn": { id: "system.notification.warn", category: "system", label: "Notification (warn)", description: "Warning CLI notification.", default: { accentColor: "amber", icon: "Bell", presentation: "card", hiddenInCompact: false } },
-  "system.notification.error": { id: "system.notification.error", category: "system", label: "Notification (error)", description: "Error CLI notification.", default: { accentColor: "red", icon: "Bell", presentation: "card", hiddenInCompact: false } },
-  "system.notification.stop": { id: "system.notification.stop", category: "system", label: "Notification (stop)", description: "Stop CLI notification.", default: { accentColor: "red", icon: "Bell", presentation: "card", hiddenInCompact: false } },
+  "system.notification.info": { id: "system.notification.info", category: "system", label: "Notification (info)", description: "Informational CLI notification.", default: { icon: "Bell", presentation: "card", visibility: "always" } },
+  "system.notification.warn": { id: "system.notification.warn", category: "system", label: "Notification (warn)", description: "Warning CLI notification.", default: { accentColor: "amber", icon: "Bell", presentation: "card", visibility: "always" } },
+  "system.notification.error": { id: "system.notification.error", category: "system", label: "Notification (error)", description: "Error CLI notification.", default: { accentColor: "red", icon: "Bell", presentation: "card", visibility: "always" } },
+  "system.notification.stop": { id: "system.notification.stop", category: "system", label: "Notification (stop)", description: "Stop CLI notification.", default: { accentColor: "red", icon: "Bell", presentation: "card", visibility: "always" } },
   "system.hook_started": { id: "system.hook_started", category: "system", label: "Hook started", description: "A hook began running.", default: { icon: "Hook" } },
   "system.hook_response": { id: "system.hook_response", category: "system", label: "Hook response", description: "A hook returned.", default: { icon: "Hook" } },
-  "system.permission_denied": { id: "system.permission_denied", category: "system", label: "Permission denied", description: "A tool permission was denied.", default: { accentColor: "red", icon: "ShieldX", presentation: "card", hiddenInCompact: false } },
+  "system.permission_denied": { id: "system.permission_denied", category: "system", label: "Permission denied", description: "A tool permission was denied.", default: { accentColor: "red", icon: "ShieldX", presentation: "card", visibility: "always" } },
   "system.userPromptSubmit": { id: "system.userPromptSubmit", category: "system", label: "Prompt submitted", description: "UserPromptSubmit lifecycle envelope.", default: { icon: "Send" } },
-  "system.api_error": { id: "system.api_error", category: "system", label: "API error", description: "An API or tool error.", default: { accentColor: "red", icon: "AlertTriangle", presentation: "card", hiddenInCompact: false } },
-  "system.away_summary": { id: "system.away_summary", category: "system", label: "Away summary", description: "Recap the CLI emits summarizing what happened while you were away.", default: { presentation: "card", icon: "ClipboardList", accentColor: "info", hiddenInCompact: false } },
-  "system.thinking_tokens": { id: "system.thinking_tokens", category: "system", label: "Thinking tokens", description: "Total size of each extended-thinking burst. The live running count is the session widget's activity pill, not this row.", default: { presentation: "side-line", icon: "Brain", accentColor: "muted", hiddenInCompact: true } },
-  "system.rate_limit": { id: "system.rate_limit", category: "system", label: "Rate limit", description: "A rate_limit_event line reporting usage-window status (allowed/warning/rejected, reset time, overage).", default: { presentation: "side-line", icon: "Shield", accentColor: "muted", hiddenInCompact: true } },
-  "system.feedback_draft_queued": { id: "system.feedback_draft_queued", category: "system", label: "Feedback draft", description: "The SendFeedback tool queued a local draft feedback report for you to review with /feedback.", default: { presentation: "card", icon: "Flag", accentColor: "yellow", hiddenInCompact: false } },
-  "system.local_command": { id: "system.local_command", category: "system", label: "Local command output", description: "What a slash command that runs in the CLI printed — /usage, /cost, /context. Claude Code 2.1.283+ writes it as a system record; older transcripts use Command output.", default: { presentation: "card", icon: "Terminal", hiddenInCompact: false } },
-  "system.stop_hook_summary": { id: "system.stop_hook_summary", category: "system", label: "Stop hooks", description: "The Stop hooks that ran as a turn ended — each by file and duration, plus any error and whether one blocked the stop.", default: { presentation: "side-line", icon: "Hook", accentColor: "muted", hiddenInCompact: true } },
+  "system.api_error": { id: "system.api_error", category: "system", label: "API error", description: "An API or tool error.", default: { accentColor: "red", icon: "AlertTriangle", presentation: "card", visibility: "always" } },
+  "system.away_summary": { id: "system.away_summary", category: "system", label: "Away summary", description: "Recap the CLI emits summarizing what happened while you were away.", default: { presentation: "card", icon: "ClipboardList", accentColor: "info", visibility: "always" } },
+  "system.thinking_tokens": { id: "system.thinking_tokens", category: "system", label: "Thinking tokens", description: "Total size of each extended-thinking burst. The live running count is the session widget's activity pill, not this row.", default: { presentation: "side-line", icon: "Brain", accentColor: "muted", visibility: "verbose" } },
+  "system.rate_limit": { id: "system.rate_limit", category: "system", label: "Rate limit", description: "A rate_limit_event line reporting usage-window status (allowed/warning/rejected, reset time, overage).", default: { presentation: "side-line", icon: "Shield", accentColor: "muted", visibility: "verbose" } },
+  "system.feedback_draft_queued": { id: "system.feedback_draft_queued", category: "system", label: "Feedback draft", description: "The SendFeedback tool queued a local draft feedback report for you to review with /feedback.", default: { presentation: "card", icon: "Flag", accentColor: "yellow", visibility: "always" } },
+  "system.local_command": { id: "system.local_command", category: "system", label: "Local command output", description: "What a slash command that runs in the CLI printed — /usage, /cost, /context. Claude Code 2.1.283+ writes it as a system record; older transcripts use Command output.", default: { presentation: "card", icon: "Terminal", visibility: "always" } },
+  "system.stop_hook_summary": { id: "system.stop_hook_summary", category: "system", label: "Stop hooks", description: "The Stop hooks that ran as a turn ended — each by file and duration, plus any error and whether one blocked the stop.", default: { presentation: "side-line", icon: "Hook", accentColor: "muted", visibility: "verbose" } },
   "system.unknown": { id: "system.unknown", category: "system", label: "System (other)", description: "Any unrecognized system subtype.", default: { icon: "Info" } },
-  "permission.request": { id: "permission.request", category: "system", label: "Permission request", description: "Live tool-permission prompt.", default: { presentation: "card", icon: "ShieldQuestion", accentColor: "amber", hiddenInCompact: false } },
-  "permission.askUserQuestion": { id: "permission.askUserQuestion", category: "system", label: "Question (live)", description: "Live AskUserQuestion prompt.", default: { presentation: "card", icon: "MessageCircleQuestion", accentColor: "indigo", hiddenInCompact: false } },
+  "permission.request": { id: "permission.request", category: "system", label: "Permission request", description: "Live tool-permission prompt.", default: { presentation: "card", icon: "ShieldQuestion", accentColor: "amber", visibility: "always" } },
+  "permission.askUserQuestion": { id: "permission.askUserQuestion", category: "system", label: "Question (live)", description: "Live AskUserQuestion prompt.", default: { presentation: "card", icon: "MessageCircleQuestion", accentColor: "indigo", visibility: "always" } },
   // ── summary / fallback (resolve to system) ──
-  "summary.compaction": { id: "summary.compaction", category: "system", label: "Conversation summary", description: "Compaction summary card.", default: { icon: "FileText", presentation: "card", widget: "SummaryWidget", hiddenInCompact: false, compactBoundaryLocked: true } },
-  "unknown": { id: "unknown", category: "system", label: "Unknown", description: "Unclassifiable message — shows raw payload.", default: { presentation: "side-line", icon: "HelpCircle", accentColor: "orange", borderStyle: "dashed", headerLabel: "Unknown", hiddenInCompact: false, compactBoundaryLocked: true, showRawPayload: true } },
+  "summary.compaction": { id: "summary.compaction", category: "system", label: "Conversation summary", description: "Compaction summary card.", default: { icon: "FileText", presentation: "card", widget: "SummaryWidget", visibility: "always", compactBoundaryLocked: true } },
+  "unknown": { id: "unknown", category: "system", label: "Unknown", description: "Unclassifiable message — shows raw payload.", default: { presentation: "side-line", icon: "HelpCircle", accentColor: "orange", borderStyle: "dashed", headerLabel: "Unknown", visibility: "always", compactBoundaryLocked: true, showRawPayload: true } },
   // ── bookkeeping (real JSONL lines, previously dropped by the renderer) ──
-  "permission-mode": { id: "permission-mode", category: "system", label: "Permission mode", description: "Permission level changed mid-session.", default: { presentation: "side-line", icon: "ShieldCheck", accentColor: "amber", hiddenInCompact: false } },
-  "last-prompt": { id: "last-prompt", category: "system", label: "Last-prompt bookmark", description: "Resume bookmark pointing at your most recent prompt.", default: { presentation: "side-line", icon: "Bookmark", accentColor: "muted", hiddenInCompact: true } },
-  "ai-title": { id: "ai-title", category: "system", label: "Session title", description: "Auto-generated session title.", default: { presentation: "side-line", icon: "Tag", accentColor: "muted", hiddenInCompact: true } },
-  "custom-title": { id: "custom-title", category: "system", label: "Session renamed", description: "Session renamed — by the pencil in the status bar, /rename, or claude.ai.", default: { presentation: "side-line", icon: "Tag", accentColor: "info", hiddenInCompact: true } },
-  "queue-operation": { id: "queue-operation", category: "system", label: "Input queue", description: "The CLI's input queue: a prompt, task notification or agent message arriving (enqueue), a turn starting on it (dequeue, with the wait when there was one), or it being folded into the running turn (remove).", default: { presentation: "side-line", icon: "ListOrdered", accentColor: "info", hiddenInCompact: true } },
-  "file-history-snapshot": { id: "file-history-snapshot", category: "system", label: "File snapshot", description: "CLI editor undo/redo snapshot.", default: { presentation: "side-line", icon: "Clock", accentColor: "muted", hiddenInCompact: true } },
+  "permission-mode": { id: "permission-mode", category: "system", label: "Permission mode", description: "Permission level changed mid-session.", default: { presentation: "side-line", icon: "ShieldCheck", accentColor: "amber", visibility: "always" } },
+  "last-prompt": { id: "last-prompt", category: "system", label: "Last-prompt bookmark", description: "Resume bookmark pointing at your most recent prompt.", default: { presentation: "side-line", icon: "Bookmark", accentColor: "muted", visibility: "verbose" } },
+  "ai-title": { id: "ai-title", category: "system", label: "Session title", description: "Auto-generated session title.", default: { presentation: "side-line", icon: "Tag", accentColor: "muted", visibility: "verbose" } },
+  "custom-title": { id: "custom-title", category: "system", label: "Session renamed", description: "Session renamed — by the pencil in the status bar, /rename, or claude.ai.", default: { presentation: "side-line", icon: "Tag", accentColor: "info", visibility: "verbose" } },
+  "queue-operation": { id: "queue-operation", category: "system", label: "Input queue", description: "The CLI's input queue: a prompt, task notification or agent message arriving (enqueue), a turn starting on it (dequeue, with the wait when there was one), or it being folded into the running turn (remove).", default: { presentation: "side-line", icon: "ListOrdered", accentColor: "info", visibility: "verbose" } },
+  "file-history-snapshot": { id: "file-history-snapshot", category: "system", label: "File snapshot", description: "CLI editor undo/redo snapshot.", default: { presentation: "side-line", icon: "Clock", accentColor: "muted", visibility: "verbose" } },
   // ── session context sources (attachment channel) ──
   // What the CLI reports loading into the session: instruction files, nested
   // memory, MCP servers, agents, skills, deferred tools. Each is one arrival
@@ -312,23 +319,23 @@ export const KIND_REGISTRY: Record<string, KindDef> = {
   // arrival's place in the feed and the panel is where content is reviewed.
   // Only the six in-scope sub-types get an id — the rest of the attachment
   // channel is per-turn bookkeeping and stays unrendered.
-  "attachment.instructions": { id: "attachment.instructions", category: "system", label: "Instructions loaded", description: "Instruction files (CLAUDE.md / AGENTS.md / MEMORY.md) the CLI loaded into this session.", default: { presentation: "side-line", icon: "FileText", accentColor: "amber", hiddenInCompact: false } },
-  "attachment.nested_memory": { id: "attachment.nested_memory", category: "system", label: "Nested memory", description: "A subdirectory CLAUDE.md picked up as Claude navigated the project.", default: { presentation: "side-line", icon: "FileText", accentColor: "amber", hiddenInCompact: true } },
-  "attachment.mcp_instructions_delta": { id: "attachment.mcp_instructions_delta", category: "system", label: "MCP servers changed", description: "MCP server instructions added to or removed from the session context.", default: { presentation: "side-line", icon: "Server", accentColor: "info", hiddenInCompact: true } },
-  "attachment.agent_listing_delta": { id: "attachment.agent_listing_delta", category: "system", label: "Agents changed", description: "Available subagent types added or removed.", default: { presentation: "side-line", icon: "Bot", accentColor: "info", hiddenInCompact: true } },
-  "attachment.deferred_tools_delta": { id: "attachment.deferred_tools_delta", category: "system", label: "Deferred tools changed", description: "Tool schemas deferred behind ToolSearch, added or removed.", default: { presentation: "side-line", icon: "Package", accentColor: "muted", hiddenInCompact: true } },
-  "attachment.skill_listing": { id: "attachment.skill_listing", category: "system", label: "Skills listing", description: "The set of skills offered to this session.", default: { presentation: "side-line", icon: "Sparkles", accentColor: "muted", hiddenInCompact: true } },
+  "attachment.instructions": { id: "attachment.instructions", category: "system", label: "Instructions loaded", description: "Instruction files (CLAUDE.md / AGENTS.md / MEMORY.md) the CLI loaded into this session.", default: { presentation: "side-line", icon: "FileText", accentColor: "amber", visibility: "always" } },
+  "attachment.nested_memory": { id: "attachment.nested_memory", category: "system", label: "Nested memory", description: "A subdirectory CLAUDE.md picked up as Claude navigated the project.", default: { presentation: "side-line", icon: "FileText", accentColor: "amber", visibility: "verbose" } },
+  "attachment.mcp_instructions_delta": { id: "attachment.mcp_instructions_delta", category: "system", label: "MCP servers changed", description: "MCP server instructions added to or removed from the session context.", default: { presentation: "side-line", icon: "Server", accentColor: "info", visibility: "verbose" } },
+  "attachment.agent_listing_delta": { id: "attachment.agent_listing_delta", category: "system", label: "Agents changed", description: "Available subagent types added or removed.", default: { presentation: "side-line", icon: "Bot", accentColor: "info", visibility: "verbose" } },
+  "attachment.deferred_tools_delta": { id: "attachment.deferred_tools_delta", category: "system", label: "Deferred tools changed", description: "Tool schemas deferred behind ToolSearch, added or removed.", default: { presentation: "side-line", icon: "Package", accentColor: "muted", visibility: "verbose" } },
+  "attachment.skill_listing": { id: "attachment.skill_listing", category: "system", label: "Skills listing", description: "The set of skills offered to this session.", default: { presentation: "side-line", icon: "Sparkles", accentColor: "muted", visibility: "verbose" } },
   // ── synthetic control-change markers (live-session only) ──
   // Unified family: same chrome (Settings icon, info accent); distinct ids so
   // each stays independently re-stylable. Visible in compact (deliberate user
   // actions worth seeing).
-  "control.effort": { id: "control.effort", category: "system", label: "Effort changed", description: "You changed the reasoning effort level.", default: { presentation: "side-line", icon: "Settings", accentColor: "info", hiddenInCompact: false } },
-  "control.model": { id: "control.model", category: "system", label: "Model changed", description: "You changed the model.", default: { presentation: "side-line", icon: "Settings", accentColor: "info", hiddenInCompact: false } },
+  "control.effort": { id: "control.effort", category: "system", label: "Effort changed", description: "You changed the reasoning effort level.", default: { presentation: "side-line", icon: "Settings", accentColor: "info", visibility: "always" } },
+  "control.model": { id: "control.model", category: "system", label: "Model changed", description: "You changed the model.", default: { presentation: "side-line", icon: "Settings", accentColor: "info", visibility: "always" } },
   // Live permission marker. The persisted `permission-mode` JSONL line (above)
   // covers resume; jsonl-tail never forwards it live, so this synthetic marker
   // gives immediate feedback. Keeps its own ShieldCheck/amber identity to match
   // the persisted permission-mode kind.
-  "control.permission": { id: "control.permission", category: "system", label: "Permission changed (live)", description: "You changed the permission mode.", default: { presentation: "side-line", icon: "ShieldCheck", accentColor: "amber", hiddenInCompact: false } },
+  "control.permission": { id: "control.permission", category: "system", label: "Permission changed (live)", description: "You changed the permission mode.", default: { presentation: "side-line", icon: "ShieldCheck", accentColor: "amber", visibility: "always" } },
 };
 
 export function categoryOf(id: string): Category {
@@ -336,9 +343,9 @@ export function categoryOf(id: string): Category {
 }
 
 export const DEFAULT_CATEGORIES: Record<Category, CategoryStyle> = {
-  user:   { label: "User",   description: "Your prompts, commands, tool results, injected context.", presentation: "card", accentColor: "blue",    icon: "User", headerLabel: "You",    borderStyle: "solid", alignment: "right", hiddenInCompact: false },
-  agent:  { label: "Agent",  description: "Claude's text, thinking, tool calls, completions.",        presentation: "card", accentColor: "primary", icon: "Bot",  headerLabel: "Claude", borderStyle: "solid", alignment: "left",  hiddenInCompact: false },
-  system: { label: "System", description: "Notifications, hooks, errors, lifecycle, prompts.",         presentation: "card", accentColor: "muted",   icon: "Info", headerLabel: null,     borderStyle: "solid", alignment: "left",  hiddenInCompact: true  },
+  user:   { label: "User",   description: "Your prompts, commands, tool results, injected context.", presentation: "card", accentColor: "blue",    icon: "User", headerLabel: "You",    borderStyle: "solid", alignment: "right", visibility: "always" },
+  agent:  { label: "Agent",  description: "Claude's text, thinking, tool calls, completions.",        presentation: "card", accentColor: "primary", icon: "Bot",  headerLabel: "Claude", borderStyle: "solid", alignment: "left",  visibility: "always" },
+  system: { label: "System", description: "Notifications, hooks, errors, lifecycle, prompts.",         presentation: "card", accentColor: "muted",   icon: "Info", headerLabel: null,     borderStyle: "solid", alignment: "left",  visibility: "verbose"  },
 };
 
 // ─── style fields ────────────────────────────────────────────────────────────
@@ -347,7 +354,7 @@ export const DEFAULT_CATEGORIES: Record<Category, CategoryStyle> = {
 // that drives a card's look. Identity fields (id/label/description) are excluded.
 export const STYLE_FIELDS: (keyof KindStyle)[] = [
   "presentation", "accentColor", "icon", "headerLabel", "borderStyle", "alignment",
-  "hiddenInCompact", "compactBoundaryLocked", "widget", "showRawPayload",
+  "visibility", "compactBoundaryLocked", "widget", "showRawPayload",
   "iconBordered", "iconBgOpacity",
 ];
 
@@ -361,6 +368,16 @@ export function resolveKind(config: MessageRenderingConfig, kindId: string): Kin
     ...KIND_REGISTRY[kindId]?.default,
     ...config.kinds[kindId],
   };
+}
+
+/** Folded out of sight in compact mode: verbose-only or never shown. */
+export function isHiddenInCompact(style: KindStyle): boolean {
+  return !style.compactBoundaryLocked && style.visibility !== "always";
+}
+
+/** Not drawn in either view mode. */
+export function isNeverShown(style: KindStyle): boolean {
+  return !style.compactBoundaryLocked && style.visibility === "never";
 }
 
 // ─── typography ─────────────────────────────────────────────────────────────
@@ -654,6 +671,10 @@ function validateStyleField(
   raw: Record<string, unknown>,
   palette: Palette,
 ): unknown {
+  // Saved before the three-way setting: `hiddenInCompact` was a boolean.
+  if (field === "visibility" && !("visibility" in raw) && typeof raw.hiddenInCompact === "boolean") {
+    return raw.hiddenInCompact ? "verbose" : "always";
+  }
   if (!(field in raw)) return undefined;
   const v = raw[field];
   switch (field) {
@@ -669,7 +690,8 @@ function validateStyleField(
       return v === "card" || v === "side-line" || v === "collapsible" ? v : undefined;
     case "borderStyle":
       return v === "solid" || v === "dashed" ? v : undefined;
-    case "hiddenInCompact":
+    case "visibility":
+      return v === "always" || v === "verbose" || v === "never" ? v : undefined;
     case "compactBoundaryLocked":
     case "showRawPayload":
     case "iconBordered":

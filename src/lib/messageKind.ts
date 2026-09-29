@@ -24,7 +24,7 @@ import type { JsonlNode } from '@/types/jsonl';
 import { isSubagentPrompt } from './subagentDispatch';
 import { detectSkillInjection } from './skillDetection';
 import { isSystemContextText } from './blockKind';
-import { COMMAND_NAME_TAG, LOCAL_COMMAND_STDOUT_TAG } from './commandEnvelope';
+import { commandEnvelopeKind } from './commandEnvelope';
 
 /**
  * Renderable in the chat feed for the purpose of "is this message
@@ -224,7 +224,7 @@ export function classifyStandaloneKind(
 
   // Bookkeeping JSONL kinds: the kind id equals the node kind. Returning it
   // here (rather than null) lets compact-grouping read each kind's registry
-  // `hiddenInCompact` flag instead of force-sweeping them into a hidden group.
+  // `visibility` instead of force-sweeping them into a hidden group.
   if (
     msg.kind === 'permission-mode' ||
     msg.kind === 'last-prompt' ||
@@ -272,11 +272,12 @@ export function classifyStandaloneKind(
         text += block.text;
       }
     }
-    // Same two tags the classifier keys 'local-command' off — imported rather
-    // than re-typed so a renderer that shows a command card can never disagree
-    // with a derivation that treats it as a prompt.
-    if (text.includes(COMMAND_NAME_TAG)) return 'user.command';
-    if (text.includes(LOCAL_COMMAND_STDOUT_TAG)) return 'user.commandOutput';
+    // Same test the classifier keys 'local-command' off, so a renderer that
+    // shows a command card can never disagree with a derivation that treats
+    // it as a prompt.
+    const envelope = commandEnvelopeKind(text);
+    if (envelope === 'echo') return 'user.command';
+    if (envelope === 'output') return 'user.commandOutput';
 
     // System-context user messages.
     if (content.length > 0) {

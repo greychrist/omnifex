@@ -6,6 +6,7 @@ import type {
   Presentation,
   BorderStyle,
   Typography,
+  Visibility,
 } from "@/lib/messageRenderingConfig";
 import { isHexColor } from "@/lib/messageRenderingConfig";
 import { Label } from "@/components/ui/label";
@@ -58,6 +59,12 @@ interface KindEditorProps {
    *  remove the override entirely. */
   onReset: () => void;
 }
+
+const VISIBILITY_OPTIONS: { value: Visibility; label: string; hint: string }[] = [
+  { value: "always", label: "Always", hint: "Shown in both compact and verbose mode." },
+  { value: "verbose", label: "Verbose only", hint: "Collapses into the nearest expander in compact mode." },
+  { value: "never", label: "Never", hint: "Not shown in either mode." },
+];
 
 const PRESENTATION_OPTIONS: { value: Presentation; label: string }[] = [
   { value: "card", label: "Card" },
@@ -172,33 +179,53 @@ export const KindEditor: React.FC<KindEditorProps> = ({
         )}
       </header>
 
-      {/* 1. Hide in compact mode */}
-      <div className="flex items-start justify-between gap-4">
-        <div className="space-y-0.5 flex-1">
+      {/* 1. Visibility */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-2">
           <Label className="flex items-center gap-1.5">
-            Hide in compact mode
+            Visibility
             {style.compactBoundaryLocked && (
               <Lock className="h-3 w-3 text-muted-foreground" />
             )}
           </Label>
-          <p className="text-caption text-muted-foreground">
-            {style.compactBoundaryLocked
-              ? "Always visible — turn boundary."
-              : "When hidden, collapses into the nearest expander in compact mode."}
-          </p>
           {isKind && (
             <InheritHint
-              overridden={has("hiddenInCompact")}
+              overridden={has("visibility")}
               categoryLabel={catLabel}
-              onClear={() => { clear("hiddenInCompact"); }}
+              onClear={() => { clear("visibility"); }}
             />
           )}
         </div>
-        <Switch
-          checked={style.hiddenInCompact}
-          disabled={style.compactBoundaryLocked}
-          onCheckedChange={(checked) => { onChange({ hiddenInCompact: checked }); }}
-        />
+        <div
+          role="radiogroup"
+          aria-label="Visibility"
+          className="inline-flex gap-0.5 rounded-md border border-input p-0.5"
+        >
+          {VISIBILITY_OPTIONS.map((o) => {
+            const checked = style.visibility === o.value;
+            return (
+              <button
+                key={o.value}
+                type="button"
+                role="radio"
+                aria-checked={checked}
+                disabled={style.compactBoundaryLocked}
+                onClick={() => { onChange({ visibility: o.value }); }}
+                className={cn(
+                  "rounded px-2 py-1 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+                  checked ? "bg-primary/15 text-foreground" : "text-muted-foreground hover:bg-muted/40",
+                )}
+              >
+                {o.label}
+              </button>
+            );
+          })}
+        </div>
+        <p className="text-caption text-muted-foreground">
+          {style.compactBoundaryLocked
+            ? "Always visible — turn boundary."
+            : VISIBILITY_OPTIONS.find((o) => o.value === style.visibility)?.hint}
+        </p>
       </div>
 
       {/* 2. Presentation + Border dropdowns */}

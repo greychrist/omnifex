@@ -189,6 +189,27 @@ describe('sessions — automatic recap', () => {
     expect(prompts).toEqual(['one', 'two']);
   });
 
+  function emitSystem(subtype: string, extra: Record<string, unknown>): void {
+    for (const cb of messageCbs) {
+      cb({ payload: { type: 'system', subtype, ...extra }, receivedAt: '2026-09-20T00:00:03.000Z' } as AgentMessage);
+    }
+  }
+
+  it('holds the recap while a background task runs, and counts down from its completion', () => {
+    const { sessions, prompts } = setupWithRecap();
+    sessions.sendMessage('t1', 'launch it');
+    emitSystem('task_started', { task_id: 'a1', task_type: 'local_agent', description: 'Review' });
+    emitResult();
+    vi.advanceTimersByTime(30 * 60_000);
+    expect(prompts).toEqual(['launch it']);
+    vi.advanceTimersByTime(60_000);
+    emitSystem('task_notification', { task_id: 'a1', status: 'completed', summary: 'done' });
+    vi.advanceTimersByTime(5 * 60_000 - 1);
+    expect(prompts).toEqual(['launch it']);
+    vi.advanceTimersByTime(1);
+    expect(prompts).toEqual(['launch it', '/recap']);
+  });
+
   it('stays off when the setting is off', () => {
     const { sessions, prompts } = setupWithRecap(false);
     sessions.sendMessage('t1', 'one');

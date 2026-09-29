@@ -70,4 +70,18 @@ describe('StreamMessage slash-command envelope', () => {
     expect(screen.getByText('--json')).toBeTruthy();
     expect(document.body.textContent).not.toContain('<command-args>');
   });
+
+  // Session 5220766b: a pasted JSONL line carrying <local-command-stdout> made
+  // the whole prompt render as that stdout alone.
+  it('renders a prompt that quotes a stdout envelope in full', () => {
+    const node = userNode('Look at this session.\n\n{"type":"system","content":"<local-command-stdout>You want every session</local-command-stdout>"}');
+    render(<StreamMessage message={node} streamMessages={[node]} tabId="tab-1" />);
+    expect(document.body.textContent).toContain('Look at this session.');
+  });
+
+  it('renders a prompt that quotes a command name as text, not a command widget', () => {
+    const node = userNode('Why does this show twice? <command-name>/recap</command-name>');
+    render(<StreamMessage message={node} streamMessages={[node]} tabId="tab-1" />);
+    expect(document.body.textContent).toContain('Why does this show twice?');
+  });
 });

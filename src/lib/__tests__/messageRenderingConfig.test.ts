@@ -14,6 +14,8 @@ import {
   CATEGORIES,
   KIND_REGISTRY,
   categoryOf,
+  isHiddenInCompact,
+  isNeverShown,
 } from "../messageRenderingConfig";
 
 // ─── config v5 ──────────────────────────────────────────────────────────────
@@ -582,13 +584,13 @@ describe("category catalog (v5)", () => {
     }
   });
 
-  it("system category defaults to hiddenInCompact: true", () => {
-    expect(DEFAULT_CATEGORIES.system.hiddenInCompact).toBe(true);
+  it("system category defaults to verbose-only visibility", () => {
+    expect(DEFAULT_CATEGORIES.system.visibility).toBe("verbose");
   });
 
-  it("user and agent categories default to hiddenInCompact: false", () => {
-    expect(DEFAULT_CATEGORIES.user.hiddenInCompact).toBe(false);
-    expect(DEFAULT_CATEGORIES.agent.hiddenInCompact).toBe(false);
+  it("user and agent categories default to always visible", () => {
+    expect(DEFAULT_CATEGORIES.user.visibility).toBe("always");
+    expect(DEFAULT_CATEGORIES.agent.visibility).toBe("always");
   });
 });
 
@@ -700,9 +702,34 @@ describe("validateStyleField (via kinds merge)", () => {
     expect(resolveKind(cfg, "user.prompt").headerLabel).toBe("Greg");
   });
 
-  it("accepts hiddenInCompact boolean", () => {
-    const cfg = mergeConfig({ version: 5, kinds: { "assistant.thinking": { hiddenInCompact: false } } });
-    expect(resolveKind(cfg, "assistant.thinking").hiddenInCompact).toBe(false);
+  it("accepts each visibility and rejects anything else", () => {
+    for (const v of ["always", "verbose", "never"]) {
+      const cfg = mergeConfig({ version: 5, kinds: { "assistant.thinking": { visibility: v } } });
+      expect(resolveKind(cfg, "assistant.thinking").visibility, v).toBe(v);
+    }
+    const junk = mergeConfig({ version: 5, kinds: { "assistant.thinking": { visibility: "sometimes" } } });
+    expect(junk.kinds["assistant.thinking"]).toBeUndefined();
+  });
+
+  // Saved configs from before the three-way setting carry the old boolean.
+  it("migrates a saved hiddenInCompact boolean to visibility, for kinds and categories", () => {
+    const cfg = mergeConfig({
+      version: 5,
+      categories: { system: { hiddenInCompact: false } },
+      kinds: {
+        "assistant.thinking": { hiddenInCompact: false },
+        "assistant.text": { hiddenInCompact: true },
+      },
+    });
+    expect(cfg.kinds["assistant.thinking"]).toEqual({ visibility: "always" });
+    expect(cfg.kinds["assistant.text"]).toEqual({ visibility: "verbose" });
+    expect(cfg.categories.system.visibility).toBe("always");
+    expect("hiddenInCompact" in cfg.categories.system).toBe(false);
+  });
+
+  it("prefers a saved visibility over a leftover hiddenInCompact", () => {
+    const cfg = mergeConfig({ version: 5, kinds: { "assistant.text": { visibility: "never", hiddenInCompact: false } } });
+    expect(cfg.kinds["assistant.text"]).toEqual({ visibility: "never" });
   });
 
   it("clamps iconBgOpacity to 0-100", () => {
@@ -773,9 +800,9 @@ describe("bookkeeping kind registry entries", () => {
 
   it("permission-mode is visible in compact; passive bookkeeping is hidden", () => {
     const cfg = createDefaultConfig();
-    expect(resolveKind(cfg, "permission-mode").hiddenInCompact).toBe(false);
+    expect(resolveKind(cfg, "permission-mode").visibility).toBe("always");
     for (const id of ["last-prompt", "ai-title", "queue-operation", "file-history-snapshot"]) {
-      expect(resolveKind(cfg, id).hiddenInCompact, id).toBe(true);
+      expect(resolveKind(cfg, id).visibility, id).toBe("verbose");
     }
   });
 });
@@ -788,7 +815,30 @@ describe("control-change kinds", () => {
     for (const id of ["control.effort", "control.model"]) {
       expect(KIND_REGISTRY[id], id).toBeDefined();
       expect(categoryOf(id), id).toBe("system");
-      expect(resolveKind(cfg, id).hiddenInCompact, id).toBe(false);
+      expect(resolveKind(cfg, id).visibility, id).toBe("always");
     }
+  });
+});
+
+describe("visibility predicates", () => {
+  const cfg = createDefaultConfig();
+  const style = (id: string, visibility: "always" | "verbose" | "never") =>
+    ({ ...resolveKind(cfg, id), visibility });
+
+  it("hides verbose-only and never kinds in compact mode", () => {
+    expect(isHiddenInCompact(style("assistant.text", "always"))).toBe(false);
+    expect(isHiddenInCompact(style("assistant.text", "verbose"))).toBe(true);
+    expect(isHiddenInCompact(style("assistant.text", "never"))).toBe(true);
+  });
+
+  it("drops only never kinds outright", () => {
+    expect(isNeverShown(style("assistant.text", "verbose"))).toBe(false);
+    expect(isNeverShown(style("assistant.text", "never"))).toBe(true);
+  });
+
+  // Turn boundaries stay on screen whatever the setting says.
+  it("never hides a boundary-locked kind", () => {
+    expect(isHiddenInCompact(style("user.prompt", "never"))).toBe(false);
+    expect(isNeverShown(style("user.prompt", "never"))).toBe(false);
   });
 });

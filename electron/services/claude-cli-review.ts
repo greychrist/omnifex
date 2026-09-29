@@ -3017,7 +3017,7 @@ import { buildClaudeEnv } from './util/claude-env';
  *
  *     Now: `feedback_draft_queued` in `SystemSubtype` + `SYSTEM_SUBTYPES`,
  *     mapped to `system.feedback_draft_queued`, registered as a yellow
- *     `Flag` card with `hiddenInCompact:false` (the whole `system` category
+ *     `Flag` card with `visibility:"always"` (the whole `system` category
  *     defaults to hidden in compact — away_summary and the notifications each
  *     opt out the same way). The wire carries no `content`/`body`/`message`
  *     field, so `feedbackDraftBody()` synthesizes `<draft_type> · <title>`

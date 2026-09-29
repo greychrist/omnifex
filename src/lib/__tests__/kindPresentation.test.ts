@@ -52,7 +52,7 @@ describe("kindPresentation", () => {
   // Regression guard. Tool-result images previously inherited
   // `user.tool-result`, whose `side-line` presentation renders no header and
   // no footer chip — so screenshots read as un-framed strays next to every
-  // other message, and its `hiddenInCompact: true` buried them in compact mode.
+  // other message, and its verbose-only visibility buried them in compact mode.
   describe("user.tool-result.image", () => {
     it("renders as a framed card, unlike plain tool results", () => {
       const cfg = createDefaultConfig();
@@ -73,7 +73,7 @@ describe("kindPresentation", () => {
     it("is visible in compact mode by default, unlike plain tool results", () => {
       const cfg = createDefaultConfig();
       // A returned screenshot is usually the point of the call, not plumbing.
-      expect(cfg.kinds["user.tool-result.image"]?.hiddenInCompact ?? false).toBe(false);
+      expect(resolveKind(cfg, "user.tool-result.image").visibility).toBe("always");
     });
 
     it("stays user-overridable like any other kind", () => {

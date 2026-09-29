@@ -156,3 +156,25 @@ describe('hidden-event counting — block missing its narrative field (CLI 2.1.2
     expect(countHiddenEvents([assistant([{ type: 'text' }, { type: 'text', text: 'real' }])])).toBe(1);
   });
 });
+
+// Attachments and bookkeeping records (last-prompt, queue-operation, …) each
+// draw a row when expanded. A group made of only those once counted zero, so
+// the expander rendered nothing and left a blank gap in compact mode.
+describe('hidden rows without content blocks', () => {
+  const attachment = (type: string): JsonlNode =>
+    ({ kind: 'attachment', sessionId: '', raw: { type: 'attachment', attachment: { type } } }) as unknown as JsonlNode;
+  const lastPrompt = (): JsonlNode =>
+    ({ kind: 'last-prompt', sessionId: '', raw: { type: 'last-prompt', lastPrompt: 'x' } }) as unknown as JsonlNode;
+  const overlay = (): JsonlNode =>
+    ({ kind: 'stream-event', sessionId: '', raw: {} }) as unknown as JsonlNode;
+
+  it('counts each as one system event', () => {
+    const msgs = [attachment('deferred_tools_delta'), lastPrompt()];
+    expect(countHiddenEvents(msgs)).toBe(2);
+    expect(summarizeHiddenEvents(msgs)).toBe('2 system events.');
+  });
+
+  it('does not count live overlays that never draw a row', () => {
+    expect(countHiddenEvents([overlay()])).toBe(0);
+  });
+});

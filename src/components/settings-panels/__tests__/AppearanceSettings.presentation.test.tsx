@@ -139,7 +139,7 @@ describe('AppearanceSettings — category + kind tree', () => {
 describe('AppearanceSettings — kind field editing', () => {
   it('persists the changed field into config.kinds[id], not inherited category values', async () => {
     // Selecting "Tool call" (assistant.tool-use) opens a kind editor.
-    // Toggling "Hide in compact mode" writes only that field into config.kinds[id].
+    // Choosing a visibility writes only that field into config.kinds[id].
     renderWithProvider();
     await screen.findAllByText('User');
     saved.config = null;
@@ -148,14 +148,11 @@ describe('AppearanceSettings — kind field editing', () => {
     expandAll();
     clickRow('Tool call');
 
-    // The KindEditor for "Tool call" shows a "Hide in compact mode" switch.
-    // assistant.tool-use registry default has hiddenInCompact: true.
+    // assistant.tool-use defaults to "Verbose only".
     const editor = screen.getByTestId('kind-editor');
-    const switches = within(editor).getAllByRole('switch');
-    // First switch is always "Hide in compact mode".
-    const hiddenSwitch = switches[0];
-    expect(hiddenSwitch).toHaveAttribute('aria-checked', 'true');
-    fireEvent.click(hiddenSwitch);
+    const group = within(editor).getByRole('radiogroup', { name: 'Visibility' });
+    expect(within(group).getByRole('radio', { name: 'Verbose only' })).toHaveAttribute('aria-checked', 'true');
+    fireEvent.click(within(group).getByRole('radio', { name: 'Never' }));
 
     // saveSetting is debounced (the global commit re-renders all chats + writes
     // to disk, so rapid edits coalesce) — wait for the commit to land.
@@ -167,9 +164,8 @@ describe('AppearanceSettings — kind field editing', () => {
     const patch = cfg.kinds['assistant.tool-use'];
     expect(patch).toBeDefined();
 
-    // hiddenInCompact was written.
-    expect(Object.prototype.hasOwnProperty.call(patch, 'hiddenInCompact')).toBe(true);
-    expect(patch.hiddenInCompact).toBe(false);
+    expect(patch.visibility).toBe('never');
+    expect(Object.prototype.hasOwnProperty.call(patch, 'hiddenInCompact')).toBe(false);
 
     // Fields not in the patch (inherited) must NOT have been written.
     expect(Object.prototype.hasOwnProperty.call(patch, 'alignment')).toBe(false);

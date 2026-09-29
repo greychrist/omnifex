@@ -40,4 +40,19 @@ describe('createBackgroundTaskTracker', () => {
     tracker.started({ kind: 'taskStarted', taskId: 'a53f', taskType: 'local_agent', description: '' });
     expect(tracker.resolveAgent('a53f')).toEqual({ description: 'Adversarial pre-push review' });
   });
+
+  // Open tasks of every kind — shells included — gate the auto-recap.
+  it('counts open tasks of every type until each finishes', () => {
+    const tracker = createBackgroundTaskTracker();
+    expect(tracker.openCount()).toBe(0);
+    tracker.started({ kind: 'taskStarted', taskId: 'a53f', taskType: 'local_agent', description: 'Review' });
+    tracker.started({ kind: 'taskStarted', taskId: 'bnnc', taskType: 'local_bash', description: 'Sleep' });
+    tracker.started({ kind: 'taskStarted', taskId: 'a53f', taskType: 'local_agent', description: '' });
+    expect(tracker.openCount()).toBe(2);
+    tracker.finished('bnnc');
+    tracker.finished('unknown');
+    expect(tracker.openCount()).toBe(1);
+    tracker.finished('a53f');
+    expect(tracker.openCount()).toBe(0);
+  });
 });

@@ -480,6 +480,10 @@ export interface SessionHandle {
   turn: TurnState;
   /** Told of every turn transition `setTurn` announces (the auto-recap timer). */
   turnObserver?: (status: TurnState['status']) => void;
+  /** Told of every CLI message (the auto-recap's quiet countdown). */
+  activityObserver?: () => void;
+  /** Background tasks started and not yet finished, set by the message listener. */
+  openBackgroundTasks?: () => number;
   permissionResolver: ((decision: PermissionDecision) => void) | null;
   /** Queue of permission requests waiting for user response */
   permissionQueue: PendingPermission[];

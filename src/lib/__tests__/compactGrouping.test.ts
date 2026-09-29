@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { JsonlNode } from '@/types/jsonl';
-import { buildCompactItems, isMessageFullyHidden, type CompactItem } from '../compactGrouping';
+import { buildCompactItems, isMessageFullyHidden, withoutNeverShown, type CompactItem } from '../compactGrouping';
 import {
   createDefaultConfig,
   resolveKind,
@@ -13,7 +13,7 @@ function styleForKind(cfg: MessageRenderingConfig, id: string) {
   return resolveKind(cfg, id);
 }
 function unhide(cfg: MessageRenderingConfig, id: string): void {
-  cfg.kinds[id] = { ...cfg.kinds[id], hiddenInCompact: false };
+  cfg.kinds[id] = { ...cfg.kinds[id], visibility: 'always' };
 }
 
 function userText(text: string): JsonlNode {
@@ -142,7 +142,7 @@ describe('isMessageFullyHidden', () => {
   });
 
   it('never hides a queued feedback draft in compact mode', () => {
-    // The system category defaults to hiddenInCompact:true. A feedback draft is
+    // The system category defaults to verbose-only. A feedback draft is
     // the only sign the CLI queued one — burying it in compact mode means the
     // user never learns it exists, since OmniFex has no /feedback surface.
     const cfg = createDefaultConfig();
@@ -159,7 +159,7 @@ describe('isMessageFullyHidden', () => {
 
   it('never hides an answered AskUserQuestion assistant message (tool.askUserQuestion.answered)', () => {
     // Regression: sentinel id head is "tool" → originOf returns "system" →
-    // system category has hiddenInCompact:true → card vanishes in compact mode.
+    // system category is verbose-only → card vanishes in compact mode.
     const cfg = createDefaultConfig();
     const { assistant, result } = answeredAskUserQuestionPair();
     const allMsgs = [assistant, result];
@@ -173,13 +173,12 @@ describe('isMessageFullyHidden', () => {
     expect(isMessageFullyHidden(result, allMsgs, cfg)).toBe(false);
   });
 
-  it('never hides compactBoundaryLocked kinds even if hiddenInCompact is forced true', () => {
-    // user.prompt is compactBoundaryLocked in the registry; forcing
-    // hiddenInCompact:true on a locked kind must still return visible=false
+  it('never hides compactBoundaryLocked kinds even if their visibility is forced off', () => {
+    // user.prompt is compactBoundaryLocked in the registry; forcing a hidden
+    // visibility on a locked kind must still return visible=false
     // (defense in depth — compactBoundaryLocked short-circuits the hidden check).
     const cfg = createDefaultConfig();
-    // Forced bypass attempt: set hiddenInCompact:true on user.prompt via config.kinds.
-    cfg.kinds['user.prompt'] = { ...cfg.kinds['user.prompt'], hiddenInCompact: true };
+    cfg.kinds['user.prompt'] = { ...cfg.kinds['user.prompt'], visibility: 'verbose' };
     const msg = userText('hi');
     expect(isMessageFullyHidden(msg, [msg], cfg)).toBe(false);
   });
@@ -368,7 +367,7 @@ describe('buildCompactItems', () => {
       kind: "assistant", sessionId: "", receivedAt: "",
       raw: { type: "assistant", message: { role: "assistant", content: [{ type: "tool_use", name: "Bash", id: "t1", input: {} }] } },
     } as never;
-    // assistant.tool-use default is hiddenInCompact:true and not boundary-locked
+    // assistant.tool-use defaults to verbose-only and is not boundary-locked
     const items = buildCompactItems([toolUse], cfg);
     expect(items[0].kind).toBe("group");
   });
@@ -440,5 +439,58 @@ describe('compact grouping — block missing its narrative field (CLI 2.1.234 cl
     const cfg = createDefaultConfig();
     const msgs = [assistantWithBlocks([{ type: 'text' }, { type: 'thinking' }])];
     expect(() => buildCompactItems(msgs, cfg)).not.toThrow();
+  });
+});
+
+// "Never" means never: not folded into a compact-mode expander, not drawn in
+// verbose mode. Applied to the displayable list before either view mode.
+describe('withoutNeverShown', () => {
+  function never(cfg: MessageRenderingConfig, id: string): void {
+    cfg.kinds[id] = { ...cfg.kinds[id], visibility: 'never' };
+  }
+  const localCommand = {
+    kind: 'system', subtype: 'local_command', sessionId: '', receivedAt: '',
+    raw: { type: 'system', subtype: 'local_command', content: '<local-command-stdout>hi</local-command-stdout>' },
+  } as unknown as JsonlNode;
+
+  it('keeps everything by default', () => {
+    const cfg = createDefaultConfig();
+    const msgs = [userText('hi'), toolUseMsg('Bash'), localCommand];
+    expect(withoutNeverShown(msgs, cfg)).toEqual(msgs);
+  });
+
+  it('drops a message whose whole kind is set to never', () => {
+    const cfg = createDefaultConfig();
+    never(cfg, 'system.local_command');
+    const prompt = userText('hi');
+    expect(withoutNeverShown([prompt, localCommand], cfg)).toEqual([prompt]);
+  });
+
+  it('drops a message only when every renderable block is never', () => {
+    const cfg = createDefaultConfig();
+    never(cfg, 'assistant.tool-use');
+    never(cfg, 'assistant.thinking');
+    const allNever = assistantWithBlocks([{ type: 'thinking', thinking: 'hmm' }, { type: 'tool_use', name: 'Bash', input: {} }], 'tool_use');
+    const mixed = assistantWithBlocks([{ type: 'text', text: 'here' }, { type: 'tool_use', name: 'Bash', input: {} }], 'tool_use');
+    expect(withoutNeverShown([allNever, mixed], cfg)).toEqual([mixed]);
+  });
+
+  it('keeps boundary-locked kinds and messages with nothing to classify', () => {
+    const cfg = createDefaultConfig();
+    never(cfg, 'user.prompt');
+    const prompt = userText('hi');
+    const empty = assistantWithBlocks([]);
+    expect(withoutNeverShown([prompt, empty], cfg)).toEqual([prompt, empty]);
+  });
+});
+
+// A hidden run with nothing countable in it would render an empty expander —
+// no row at all is the only honest output.
+describe('buildCompactItems — empty groups', () => {
+  it('drops a hidden run that has nothing to show', () => {
+    const cfg = createDefaultConfig();
+    const signatureOnly = assistantWithBlocks([{ type: 'thinking', thinking: '', signature: 'sig' }]);
+    const prompt = userText('hi');
+    expect(buildCompactItems([prompt, signatureOnly], cfg).map((i) => i.kind)).toEqual(['single']);
   });
 });

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { classifyBlockKind, isBlockHiddenInCompact, deriveSystemContextLabel, isSystemContextText } from '../blockKind';
+import { classifyBlockKind, isBlockHiddenInCompact, isBlockNeverShown, deriveSystemContextLabel, isSystemContextText } from '../blockKind';
 import { createDefaultConfig, resolveKind } from '../messageRenderingConfig';
 import { KNOWN_TOOL_NAMES } from '../types/toolInput';
 import type { JsonlNode } from '@/types/jsonl';
@@ -300,7 +300,7 @@ describe('isBlockHiddenInCompact', () => {
   it('respects user override that unhides assistant.thinking', () => {
     const config = createDefaultConfig();
     // v5 model: per-kind patches live in config.kinds[id].
-    config.kinds['assistant.thinking'] = { ...config.kinds['assistant.thinking'], hiddenInCompact: false };
+    config.kinds['assistant.thinking'] = { ...config.kinds['assistant.thinking'], visibility: 'always' };
     const parent = assistant([{ type: 'thinking', thinking: 'deep' }]);
     expect(isBlockHiddenInCompact(parent.raw.message.content[0], parent, config)).toBe(false);
   });
@@ -312,9 +312,28 @@ describe('isBlockHiddenInCompact', () => {
   });
 });
 
+describe('isBlockNeverShown', () => {
+  it('is false for verbose-only kinds, true once set to never', () => {
+    const config = createDefaultConfig();
+    const parent = assistant([{ type: 'thinking', thinking: 'deep' }]);
+    const block = parent.raw.message.content[0];
+    expect(isBlockNeverShown(block, parent, config)).toBe(false);
+    config.kinds['assistant.thinking'] = { visibility: 'never' };
+    expect(isBlockNeverShown(block, parent, config)).toBe(true);
+    // Never implies hidden in compact mode too.
+    expect(isBlockHiddenInCompact(block, parent, config)).toBe(true);
+  });
+
+  it('is false for unclassified blocks', () => {
+    const config = createDefaultConfig();
+    const parent = user([{ type: 'text', text: 'plain typed prompt' }]);
+    expect(isBlockNeverShown(parent.raw.message.content[0], parent, config)).toBe(false);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // lastCardIdx regression — mirrors the algorithm in StreamMessage.tsx so
-// we can verify that compact mode correctly skips hiddenInCompact blocks when
+// we can verify that compact mode correctly skips compact-hidden blocks when
 // selecting the toolbar anchor.
 // ---------------------------------------------------------------------------
 describe('lastCardIdx algorithm (compact toolbar anchor)', () => {
@@ -348,7 +367,7 @@ describe('lastCardIdx algorithm (compact toolbar anchor)', () => {
 
   it('[text, tool_use, tool_use] compact=true → lastCardIdx=0 (text block, not last tool_use)', () => {
     // This is the critical regression case from the bug report.
-    // Before the fix, lastCardIdx was 2 (last tool_use), which is hiddenInCompact.
+    // Before the fix, lastCardIdx was 2 (last tool_use), which is hidden in compact.
     // The toolbar would render inside HiddenBlocksExpander (collapsed) — invisible.
     // After the fix, lastCardIdx is 0 (the text block), which is always visible.
     const config = createDefaultConfig();
@@ -376,7 +395,7 @@ describe('lastCardIdx algorithm (compact toolbar anchor)', () => {
   });
 
   it('[tool_use, tool_use] compact=true, all blocks hidden → falls back to last block (index 1)', () => {
-    // When every visible block is hiddenInCompact the fallback is the last
+    // When every visible block is hidden in compact the fallback is the last
     // block (index length-1). This matches the "last block of any kind"
     // fallback in the implementation.
     const config = createDefaultConfig();

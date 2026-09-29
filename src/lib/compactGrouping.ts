@@ -1,9 +1,10 @@
 import type { JsonlNode } from '@/types/jsonl';
 import type { MessageContentBlock } from '@/types/claudeStream';
 import type { MessageRenderingConfig } from './messageRenderingConfig';
-import { resolveKind } from './messageRenderingConfig';
+import { isHiddenInCompact, isNeverShown, resolveKind, type KindStyle } from './messageRenderingConfig';
 import { classifyStandaloneKind } from './messageKind';
 import { classifyBlockKind } from './blockKind';
+import { countHiddenEvents } from './hiddenEventsSummary';
 
 /**
  * Resolve the whole-message kind ID for compact-grouping purposes.
@@ -67,31 +68,64 @@ function isRenderableBlock(b: MessageContentBlock | null | undefined): boolean {
 }
 
 /**
- * True iff every renderable thing in `msg` is marked hidden by `config`.
- * A message with no renderable content is considered "not hidden" so it
- * doesn't get swept into a group (the renderer will drop it on its own).
+ * True iff every renderable thing in `msg` is folded away in compact mode.
+ * A message with no renderable content counts as hidden, so it joins any
+ * neighbouring hidden run instead of injecting an empty card that fragments
+ * runs visually for no reason.
  */
 export function isMessageFullyHidden(
   msg: JsonlNode,
   allMessages: JsonlNode[],
   config: MessageRenderingConfig,
 ): boolean {
+  return everyRenderableKind(msg, allMessages, config, isHiddenInCompact) ?? true;
+}
+
+/**
+ * True iff every renderable thing in `msg` is set to never be shown. Unlike
+ * the compact rule, a message with nothing classifiable stays: dropping
+ * content is this predicate's whole effect, so it only acts on evidence.
+ */
+export function isMessageNeverShown(
+  msg: JsonlNode,
+  allMessages: JsonlNode[],
+  config: MessageRenderingConfig,
+): boolean {
+  return everyRenderableKind(msg, allMessages, config, isNeverShown) ?? false;
+}
+
+/**
+ * `messages` without the ones the user set to never be shown. Runs before
+ * either view mode, so a never-shown message is neither drawn in verbose mode
+ * nor folded into a compact-mode expander.
+ */
+export function withoutNeverShown(
+  messages: JsonlNode[],
+  config: MessageRenderingConfig,
+): JsonlNode[] {
+  const kept = messages.filter((m) => !isMessageNeverShown(m, messages, config));
+  return kept.length === messages.length ? messages : kept;
+}
+
+/**
+ * Whether `test` holds for the message's kind — or, for mixed-content
+ * messages, for every renderable block's kind. Null when the message has no
+ * renderable content, which each caller resolves its own way.
+ */
+function everyRenderableKind(
+  msg: JsonlNode,
+  allMessages: JsonlNode[],
+  config: MessageRenderingConfig,
+  test: (style: KindStyle) => boolean,
+): boolean | null {
   const wholeKind = resolveWholeMessageKind(msg, allMessages);
-  if (wholeKind) {
-    const k = resolveKind(config, wholeKind);
-    if (k.compactBoundaryLocked) return false;
-    return k.hiddenInCompact;
-  }
+  if (wholeKind) return test(resolveKind(config, wholeKind));
 
   // Boundary normalization (lib/normalizeMessage) wraps the CLI's persisted
   // bare-string user prompts into single-text-block arrays at ingress, so
   // every message reaches this point with array-shaped content.
-  // No content / empty content = nothing to render. Treat as hidden so the
-  // message joins any neighboring hidden run instead of breaking it.
-  // (Emitting it as a visible "single" would inject an empty card that
-  // fragments runs visually for no reason.)
   const content = (msg as unknown as { raw?: { message?: { content?: unknown } } }).raw?.message?.content;
-  if (!Array.isArray(content) || content.length === 0) return true;
+  if (!Array.isArray(content) || content.length === 0) return null;
 
   let renderable = 0;
   let hidden = 0;
@@ -105,15 +139,11 @@ export function isMessageFullyHidden(
       // visible) or genuinely something we have no toggle for.
       continue;
     }
-    const k = resolveKind(config, blockKind);
-    if (k.compactBoundaryLocked) continue;
-    if (k.hiddenInCompact) hidden += 1;
+    if (test(resolveKind(config, blockKind))) hidden += 1;
   }
 
-  // Same reasoning as the empty-content case: if there's no renderable
-  // content (e.g. signature-only thinking blocks), let it merge into a
-  // neighboring hidden run.
-  if (renderable === 0) return true;
+  // Nothing renderable (e.g. signature-only thinking blocks).
+  if (renderable === 0) return null;
 
   return hidden === renderable;
 }
@@ -140,5 +170,7 @@ export function buildCompactItems(
     }
   });
 
-  return items;
+  // A hidden run with nothing countable renders no expander; emitting it
+  // anyway left an empty, padded row — a blank gap — in the transcript.
+  return items.filter((item) => item.kind === 'single' || countHiddenEvents(item.messages) > 0);
 }

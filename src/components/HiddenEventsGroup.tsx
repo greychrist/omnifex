@@ -39,7 +39,6 @@ export const HiddenEventsGroup: React.FC<Props> = ({
   const { ref: triggerRef, runWith } = useScrollAnchor<HTMLButtonElement>();
   const count = countHiddenEvents(messages);
   const summary = summarizeHiddenEvents(messages);
-  if (count === 0) return null;
 
   return (
     <Collapsible open={open} onOpenChange={(next) => { runWith(() => { setOpen(next); }); }} className="py-1">

@@ -152,7 +152,8 @@ export function createSessionsService(
         canSend: (tabId) => {
           const h = sessions.get(tabId);
           return !!h && h.agent === 'claude' && h.sessionStatus === 'started'
-            && h.turn.status === 'idle' && h.permissionQueue.length === 0;
+            && h.turn.status === 'idle' && h.permissionQueue.length === 0
+            && (h.openBackgroundTasks?.() ?? 0) === 0;
         },
         send: (tabId) => deliverMessage(tabId, '/recap'),
       })
@@ -312,6 +313,7 @@ export function createSessionsService(
       sessionStatus: 'started',
       turn: IDLE_TURN,
       turnObserver: autoRecap ? (status) => autoRecap.onTurn(tabId, status) : undefined,
+      activityObserver: autoRecap ? () => autoRecap.onActivity(tabId) : undefined,
       permissionResolver: null,
       permissionQueue: [],
       elicitationQueue: [],

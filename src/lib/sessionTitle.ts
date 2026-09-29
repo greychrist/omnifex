@@ -45,6 +45,31 @@ export function deriveSessionTitle(messages: readonly JsonlNode[]): string | nul
 }
 
 /**
+ * Indices of the title records worth a transcript row: those where the
+ * effective title changes. The CLI re-appends an unchanged `ai-title` after
+ * nearly every turn, and keeps appending it after a rename, so the raw
+ * records repeat and alternate; only a change is news. The record kept is the
+ * one that caused the change, so its kind says what changed.
+ */
+export function titleChangeIndices(messages: readonly JsonlNode[]): ReadonlySet<number> {
+  const keep = new Set<number>();
+  let aiTitle: string | undefined;
+  let customTitle: string | undefined;
+  let shown: string | null = null;
+  messages.forEach((node, i) => {
+    if (node.kind === 'ai-title') aiTitle = node.raw.aiTitle;
+    else if (node.kind === 'custom-title') customTitle = node.raw.customTitle;
+    else return;
+    const effective = pickSessionTitle({ aiTitle, customTitle });
+    if (effective !== null && effective !== shown) {
+      keep.add(i);
+      shown = effective;
+    }
+  });
+  return keep;
+}
+
+/**
  * The text of the session's first real prompt — what a name should be
  * suggested from. Tool results and forwarded subagent prompts are not the
  * user asking anything; image blocks contribute nothing. Null when the

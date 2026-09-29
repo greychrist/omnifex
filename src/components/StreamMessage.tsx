@@ -10,10 +10,10 @@ import {
 } from "lucide-react";
 import { detectSkillInjection } from "@/lib/skillDetection";
 import { classifyStandaloneKind, originInjectedKind } from "@/lib/messageKind";
-import { localCommandOutput, parseCommandEnvelope } from "@/lib/commandEnvelope";
+import { commandEnvelopeKind, localCommandOutput, parseCommandEnvelope } from "@/lib/commandEnvelope";
 import { queueWaitMs } from "@/lib/queueWait";
 import { parseTaskNotification } from "@/lib/taskNotification";
-import { classifyBlockKind, isBlockHiddenInCompact, isSystemContextText, deriveSystemContextLabel } from "@/lib/blockKind";
+import { classifyBlockKind, isBlockHiddenInCompact, isBlockNeverShown, isSystemContextText, deriveSystemContextLabel } from "@/lib/blockKind";
 import { resolveKind } from "@/lib/messageRenderingConfig";
 import { summarizeHiddenEvents } from "@/lib/hiddenEventsSummary";
 import { HiddenBlocksExpander } from "@/components/HiddenBlocksExpander";
@@ -1007,11 +1007,12 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
       // Determine which blocks are visible. A block is "visible" if
       // renderBlockBody would return non-null. We need to know which blocks
       // produce output so we can find the last card-presentation block for
-      // toolbar attachment.
-      const visibleBlocks = blocks.filter((b) => {
+      // toolbar attachment. Kinds set to "Never" are not drawn in any mode.
+      const isShown = (b: MessageContentBlock): boolean => {
         if (b.type === 'thinking' && !(b.thinking ?? '').trim()) return false;
-        return true;
-      });
+        return !isBlockNeverShown(b, message, renderConfig);
+      };
+      const visibleBlocks = blocks.filter(isShown);
 
       if (visibleBlocks.length === 0) return null;
 
@@ -1072,7 +1073,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
         // Map blocks back through original index for stable keys
         let vIdx = 0;
         output = blocks.map((b, origIdx) => {
-          if (b.type === 'thinking' && !(b.thinking ?? '').trim()) return null;
+          if (!isShown(b)) return null;
           const node = renderWrappedBlock(b, vIdx, origIdx);
           if (node !== null) { renderedSomething = true; vIdx++; }
           return node;
@@ -1114,8 +1115,8 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
 
         for (let i = 0; i < blocks.length; i++) {
           const b = blocks[i];
-          // Skip empty blocks (they don't count as visible)
-          if (b.type === 'thinking' && !(b.thinking ?? '').trim()) continue;
+          // Skip empty and never-shown blocks (they don't count as visible)
+          if (!isShown(b)) continue;
 
           const hidden = isBlockHiddenInCompact(b, message, renderConfig);
           if (hidden) {
@@ -1285,11 +1286,13 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
 
       // Pick card style from the configurable palette. Every variant now has
       // a dedicated kind id so Appearance customizations apply uniformly.
-      const isCommand = !isToolResultOnly && !isSubagentPrompt && !skillInjection && !injectedKind
-        && contentStr.includes('<command-name>');
-      const isCommandOutput = !isToolResultOnly && !isSubagentPrompt && !skillInjection && !injectedKind
-        && !isCommand
-        && contentStr.includes('<local-command-stdout>');
+      // Anchored, not a substring match: a prompt that quotes the tags is
+      // still a prompt. See commandEnvelopeKind.
+      const envelope = !isToolResultOnly && !isSubagentPrompt && !skillInjection && !injectedKind
+        ? commandEnvelopeKind(contentStr)
+        : null;
+      const isCommand = envelope === 'echo';
+      const isCommandOutput = envelope === 'output';
       // A tool result carrying images gets its own kind so the user can style
       // it and control compact visibility separately from ordinary tool output
       // (which defaults to hidden, and would bury every screenshot). This frame
@@ -1377,7 +1380,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
                     // Tag order and the presence of <command-args> both vary
                     // by command kind, so the envelope is parsed tag by tag
                     // rather than with one ordered regex. See commandEnvelope.ts.
-                    const command = parseCommandEnvelope(text);
+                    const command = isCommand ? parseCommandEnvelope(text) : null;
                     if (command) {
                       return (
                         <CommandWidget
@@ -1389,7 +1392,9 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
                       );
                     }
 
-                    const stdoutMatch = /<local-command-stdout>([\s\S]*?)<\/local-command-stdout>/.exec(text);
+                    const stdoutMatch = isCommandOutput
+                      ? /<local-command-stdout>([\s\S]*?)<\/local-command-stdout>/.exec(text)
+                      : null;
                     if (stdoutMatch) {
                       const [, output] = stdoutMatch;
                       return <CommandOutputWidget key={idx} output={output} />;

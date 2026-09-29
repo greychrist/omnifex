@@ -53,12 +53,30 @@ export function parseCommandEnvelope(text: string): CommandEnvelope | null {
  * A skill or custom command's echo carries the same tag but is not local — see
  * `isModelCommandEcho`.
  *
- * Exported so the classifier and the renderer share one definition of the
- * shape — messageKind needs the two tags apart (it renders them as different
- * cards), the classifier only needs to know it is looking at either.
+ * The classifier and the renderer share one definition of the shape through
+ * `commandEnvelopeKind` — messageKind needs the two halves apart (it renders
+ * them as different cards), the classifier only needs to know it is either.
  */
 export const COMMAND_NAME_TAG = '<command-name>';
-export const LOCAL_COMMAND_STDOUT_TAG = '<local-command-stdout>';
+
+/**
+ * Which half of a local-command envelope `text` is, or null for prose.
+ *
+ * The CLI writes an envelope as the whole record, so its tags open the text:
+ * across 400 transcripts every real one began with `<command-name>`,
+ * `<command-message>` or `<local-command-stdout>`. A tag further in is a
+ * prompt quoting one — a pasted JSONL line, OmniFex's own summary and Brain
+ * prompts — and matching it anywhere once rendered such a prompt as nothing
+ * but the stdout it quoted.
+ */
+export function commandEnvelopeKind(text: string): 'echo' | 'output' | null {
+  const head = text.trimStart();
+  if (head.startsWith('<local-command-stdout>') || head.startsWith('<local-command-stderr>')) return 'output';
+  if ((head.startsWith(COMMAND_NAME_TAG) || head.startsWith('<command-message>')) && head.includes(COMMAND_NAME_TAG)) {
+    return 'echo';
+  }
+  return null;
+}
 
 /**
  * What a local command printed, without its `<local-command-stdout>` /
@@ -94,8 +112,7 @@ function contentText(content: unknown): string | null {
 /** True for either half of a local-command envelope. */
 export function isLocalCommandEnvelope(content: unknown): boolean {
   const text = contentText(content);
-  if (text === null) return false;
-  return text.includes(COMMAND_NAME_TAG) || text.includes(LOCAL_COMMAND_STDOUT_TAG);
+  return text !== null && commandEnvelopeKind(text) !== null;
 }
 
 /**
@@ -111,6 +128,6 @@ export function isLocalCommandEnvelope(content: unknown): boolean {
  */
 export function isModelCommandEcho(content: unknown, turnOrigin: unknown): boolean {
   const text = contentText(content);
-  if (text === null || !text.includes(COMMAND_NAME_TAG)) return false;
+  if (text === null || commandEnvelopeKind(text) !== 'echo') return false;
   return text.trimStart().startsWith('<command-message>') || typeof turnOrigin === 'string';
 }

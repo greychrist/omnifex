@@ -332,7 +332,7 @@ describe('classifyStandaloneKind', () => {
 
     it('classifies feedback_draft_queued as its own separately-stylable kind', () => {
       // The SendFeedback tool's draft-queued card. It must not fall through to
-      // system.unknown: the system category is hiddenInCompact by default, and
+      // system.unknown: the system category is verbose-only by default, and
       // a queued draft is user-facing news, not diagnostics.
       expect(classifyStandaloneKind(sys('feedback_draft_queued'), [])).toBe(
         'system.feedback_draft_queued',
@@ -504,6 +504,13 @@ describe('classifyStandaloneKind', () => {
     it('classifies a user message wrapped in <local-command-stdout>...</local-command-stdout> as user.commandOutput', () => {
       const out = userText('<local-command-stdout>some output</local-command-stdout>');
       expect(classifyStandaloneKind(out, [out])).toBe('user.commandOutput');
+    });
+
+    it('leaves a prompt that quotes command tags as a prompt', () => {
+      const quoted = userText('Look at this session.\n\n{"type":"system","content":"<local-command-stdout>You want every session</local-command-stdout>"}');
+      expect(classifyStandaloneKind(quoted, [quoted])).toBeNull();
+      const quotedCmd = userText('Why does this show twice? <command-name>/recap</command-name>');
+      expect(classifyStandaloneKind(quotedCmd, [quotedCmd])).toBeNull();
     });
 
     it('returns null for a plain user prompt that does not match any pattern', () => {

@@ -1,7 +1,7 @@
 import type { JsonlNode } from '@/types/jsonl';
 import type { MessageContentBlock } from '@/types/claudeStream';
 import type { MessageRenderingConfig } from './messageRenderingConfig';
-import { resolveKind } from './messageRenderingConfig';
+import { isHiddenInCompact, isNeverShown, resolveKind } from './messageRenderingConfig';
 import { toolResultHasImages } from './toolResultImages';
 
 /**
@@ -155,9 +155,8 @@ export function classifyBlockKind(
 }
 
 /**
- * True when the block's classified kind is marked `hiddenInCompact` in the
- * config (and the kind is not boundary-locked — defense in depth, since
- * mergeConfig already prevents that combination).
+ * True when the block's classified kind is folded away in compact mode —
+ * verbose-only or never shown, and not boundary-locked.
  */
 export function isBlockHiddenInCompact(
   block: MessageContentBlock | null | undefined,
@@ -165,8 +164,15 @@ export function isBlockHiddenInCompact(
   config: MessageRenderingConfig,
 ): boolean {
   const id = classifyBlockKind(block, parent);
-  if (!id) return false;
-  const kind = resolveKind(config, id);
-  if (kind.compactBoundaryLocked) return false;
-  return kind.hiddenInCompact;
+  return id !== null && isHiddenInCompact(resolveKind(config, id));
+}
+
+/** True when the block's classified kind is set to never be shown. */
+export function isBlockNeverShown(
+  block: MessageContentBlock | null | undefined,
+  parent: JsonlNode,
+  config: MessageRenderingConfig,
+): boolean {
+  const id = classifyBlockKind(block, parent);
+  return id !== null && isNeverShown(resolveKind(config, id));
 }

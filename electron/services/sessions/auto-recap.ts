@@ -11,6 +11,12 @@
 // prompt the user sends — even one that joins the recap's turn — makes the
 // next ending a real one again.
 //
+// The delay measures quiet, not time since the turn closed. The CLI closes a
+// turn seconds after launching a background agent, so the real work — and
+// its completion message — can land long after the `result`. Every message
+// while armed restarts the countdown, and the send is held while background
+// tasks are open (`canSend`); the task's own completion then restarts it.
+//
 // The timer lives here, in main, beside the turn axis it watches: it keeps
 // working with no window open and for every client of the daemon.
 
@@ -44,6 +50,8 @@ export interface AutoRecapDeps {
 
 export interface AutoRecap {
   onTurn(tabId: string, status: 'idle' | 'running'): void;
+  /** Anything the CLI said. Restarts an armed countdown. */
+  onActivity(tabId: string): void;
   /** A prompt the user sent, as opposed to the recap itself. */
   noteUserSend(tabId: string): void;
   forget(tabId: string): void;
@@ -51,6 +59,8 @@ export interface AutoRecap {
 
 export function createAutoRecap(deps: AutoRecapDeps): AutoRecap {
   const timers = new Map<string, ReturnType<typeof setTimeout>>();
+  /** Tabs whose last turn ended and has not had its recap yet. */
+  const armed = new Set<string>();
   /** Tabs whose current turn is a recap we sent. */
   const recapTurns = new Set<string>();
 
@@ -60,9 +70,26 @@ export function createAutoRecap(deps: AutoRecapDeps): AutoRecap {
     timers.delete(tabId);
   }
 
+  function countDown(tabId: string): void {
+    clear(tabId);
+    const policy = deps.policy();
+    if (!policy.enabled) {
+      armed.delete(tabId);
+      return;
+    }
+    timers.set(tabId, setTimeout(() => fire(tabId), policy.delayMs));
+  }
+
   function fire(tabId: string): void {
     timers.delete(tabId);
-    if (!deps.policy().enabled || !deps.canSend(tabId)) return;
+    if (!deps.policy().enabled) {
+      armed.delete(tabId);
+      return;
+    }
+    // Still armed: background work that blocks the send restarts the
+    // countdown when it reports in.
+    if (!deps.canSend(tabId)) return;
+    armed.delete(tabId);
     recapTurns.add(tabId);
     deps.send(tabId);
   }
@@ -70,17 +97,21 @@ export function createAutoRecap(deps: AutoRecapDeps): AutoRecap {
   return {
     onTurn(tabId, status) {
       clear(tabId);
+      armed.delete(tabId);
       if (status === 'running') return;
       if (recapTurns.delete(tabId)) return;
-      const policy = deps.policy();
-      if (!policy.enabled) return;
-      timers.set(tabId, setTimeout(() => fire(tabId), policy.delayMs));
+      armed.add(tabId);
+      countDown(tabId);
+    },
+    onActivity(tabId) {
+      if (armed.has(tabId)) countDown(tabId);
     },
     noteUserSend(tabId) {
       recapTurns.delete(tabId);
     },
     forget(tabId) {
       clear(tabId);
+      armed.delete(tabId);
       recapTurns.delete(tabId);
     },
   };

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { localCommandOutput, parseCommandEnvelope } from '../commandEnvelope';
+import { commandEnvelopeKind, isLocalCommandEnvelope, isModelCommandEcho, localCommandOutput, parseCommandEnvelope } from '../commandEnvelope';
 
 describe('parseCommandEnvelope', () => {
   it('returns null for text with no command envelope', () => {
@@ -79,5 +79,35 @@ describe('localCommandOutput', () => {
 
   it('returns untagged text as it is', () => {
     expect(localCommandOutput('plain')).toBe('plain');
+  });
+});
+
+// The CLI writes an envelope as the whole record, so the tags open the text.
+// A prompt that merely quotes them — a pasted JSONL line, OmniFex's own
+// summary prompts — is prose, and treating it as a command hid everything
+// but the quoted stdout (session 5220766b).
+describe('commandEnvelopeKind', () => {
+  it('recognises every shape the CLI persists', () => {
+    expect(commandEnvelopeKind('<command-name>/usage</command-name><command-args></command-args>')).toBe('echo');
+    expect(commandEnvelopeKind('<command-message>review</command-message>\n<command-name>/review</command-name>')).toBe('echo');
+    expect(commandEnvelopeKind('<local-command-stdout>Compacted </local-command-stdout>')).toBe('output');
+    expect(commandEnvelopeKind('<local-command-stderr>boom</local-command-stderr>')).toBe('output');
+    expect(commandEnvelopeKind('\n  <local-command-stdout>x</local-command-stdout>')).toBe('output');
+  });
+
+  it('treats text that only quotes the tags as prose', () => {
+    expect(commandEnvelopeKind('Look at this session.\n\n{"type":"system","content":"<local-command-stdout>You want every session</local-command-stdout>"}')).toBeNull();
+    expect(commandEnvelopeKind('Why does this show twice? <command-name>/recap</command-name>')).toBeNull();
+    expect(commandEnvelopeKind('just a prompt')).toBeNull();
+  });
+
+  it('needs a command name for an echo', () => {
+    expect(commandEnvelopeKind('<command-message>orphan</command-message>')).toBeNull();
+  });
+
+  it('drives the classifier helpers the same way', () => {
+    expect(isLocalCommandEnvelope('Look at this session.\n\n{"type":"system","content":"<local-command-stdout>You want every session</local-command-stdout>"}')).toBe(false);
+    expect(isLocalCommandEnvelope([{ type: 'text', text: 'Why does this show twice? <command-name>/recap</command-name>' }])).toBe(false);
+    expect(isModelCommandEcho('Why does this show twice? <command-name>/recap</command-name>', 'x')).toBe(false);
   });
 });

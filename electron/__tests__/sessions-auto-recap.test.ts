@@ -133,6 +133,52 @@ describe('createAutoRecap', () => {
     expect(sent).toEqual([]);
   });
 
+  // The countdown measures quiet, not time since the turn closed: anything
+  // the CLI says afterwards (a background agent reporting in, its wake-up
+  // turn) restarts it.
+  it('restarts the countdown on every message that arrives while idle', () => {
+    recap.onTurn('t1', 'idle');
+    vi.advanceTimersByTime(4 * MIN);
+    recap.onActivity('t1');
+    vi.advanceTimersByTime(4 * MIN);
+    expect(sent).toEqual([]);
+    vi.advanceTimersByTime(1 * MIN);
+    expect(sent).toEqual(['t1']);
+  });
+
+  it('ignores activity mid-turn and before any turn has ended', () => {
+    recap.onActivity('t1');
+    recap.onTurn('t1', 'running');
+    recap.onActivity('t1');
+    vi.advanceTimersByTime(60 * MIN);
+    expect(sent).toEqual([]);
+  });
+
+  it('does not re-arm from messages after the recap itself', () => {
+    recap.onTurn('t1', 'idle');
+    vi.advanceTimersByTime(5 * MIN);
+    recap.onTurn('t1', 'running');
+    recap.onTurn('t1', 'idle');
+    recap.onActivity('t1');
+    vi.advanceTimersByTime(60 * MIN);
+    expect(sent).toEqual(['t1']);
+  });
+
+  // Background work still running blocks the send, but the turn has not had
+  // its recap: the task's own completion message restarts the countdown.
+  it('waits out background work, then counts down from its last message', () => {
+    recap.onTurn('t1', 'idle');
+    canSend = false;
+    vi.advanceTimersByTime(5 * MIN);
+    expect(sent).toEqual([]);
+    canSend = true;
+    recap.onActivity('t1'); // task_notification
+    vi.advanceTimersByTime(5 * MIN - 1);
+    expect(sent).toEqual([]);
+    vi.advanceTimersByTime(1);
+    expect(sent).toEqual(['t1']);
+  });
+
   it('keeps tabs independent', () => {
     recap.onTurn('t1', 'idle');
     vi.advanceTimersByTime(3 * MIN);

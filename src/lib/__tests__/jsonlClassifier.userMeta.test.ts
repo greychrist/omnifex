@@ -104,6 +104,16 @@ describe('classifyJsonlLine — local-command envelope', () => {
     if (node?.kind === 'user') expect(node.userKind).toBe('local-command');
   });
 
+  it('classifies a prompt that quotes a stdout envelope as a prompt', () => {
+    const node = classifyJsonlLine({
+      type: 'user',
+      timestamp: TS,
+      message: { role: 'user', content: 'Look at this session.\n\n{"type":"system","content":"<local-command-stdout>You want every session</local-command-stdout>"}' },
+    });
+    expect(node?.kind).toBe('user');
+    if (node?.kind === 'user') expect(node.userKind).toBe('prompt');
+  });
+
   // The live stream hands the same record over as content blocks rather than
   // a bare string; one shape must not classify differently from the other.
   it('detects the envelope in block-array content too', () => {
