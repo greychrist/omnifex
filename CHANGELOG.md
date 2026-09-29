@@ -5,6 +5,18 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.204] — 2026-09-29
+
+### Changed
+- Settings save the same way on every tab: each change is saved as you make it (typed fields when you leave them), and a **Saved** / **Couldn't save** banner under the tab strip reports the real result. Routine "… updated" toasts are gone; toasts remain for one-off actions such as import and reset.
+- Proxy settings save as you change them, like every other setting. The Save button is gone.
+- Auto-recap now waits 10 minutes by default, up from 5. A delay you've already set is kept.
+- Rate-limit updates no longer write a debug entry to the app log for every event. They were the noisiest source in the Log tab; the data itself is unchanged in the rate-limit snapshots.
+
+### Fixed
+- Picking a Claude installation in Settings → General is saved. It used to wait for a Save button that only appeared on the Proxy tab.
+- A setting that fails to save now says so. Theme, font, tab strip, Chats appearance, context gauges, auto-scroll, Log switches, rate limits, and account and path-rule changes all used to drop a failed write silently, and several confirmed "updated" before the write had finished.
+
 ## [0.4.203] — 2026-09-29
 
 ### Changed
