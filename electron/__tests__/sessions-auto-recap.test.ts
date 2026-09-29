@@ -17,8 +17,8 @@ const MIN = 60_000;
 describe('readAutoRecapPolicy', () => {
   const read = (rows: Record<string, string>) => readAutoRecapPolicy((k) => rows[k] ?? null);
 
-  it('defaults to on, after 5 minutes', () => {
-    expect(read({})).toEqual({ enabled: true, delayMs: 5 * MIN });
+  it('defaults to on, after 10 minutes', () => {
+    expect(read({})).toEqual({ enabled: true, delayMs: 10 * MIN });
   });
 
   it('reads the stored switch and delay', () => {
@@ -26,9 +26,9 @@ describe('readAutoRecapPolicy', () => {
       .toEqual({ enabled: false, delayMs: 12 * MIN });
   });
 
-  it('falls back to 5 minutes for a delay that is not a positive number', () => {
-    expect(read({ [AUTO_RECAP_DELAY_KEY]: 'soon' }).delayMs).toBe(5 * MIN);
-    expect(read({ [AUTO_RECAP_DELAY_KEY]: '0' }).delayMs).toBe(5 * MIN);
+  it('falls back to 10 minutes for a delay that is not a positive number', () => {
+    expect(read({ [AUTO_RECAP_DELAY_KEY]: 'soon' }).delayMs).toBe(10 * MIN);
+    expect(read({ [AUTO_RECAP_DELAY_KEY]: '0' }).delayMs).toBe(10 * MIN);
   });
 });
 
@@ -70,7 +70,7 @@ describe('createAutoRecap', () => {
   });
 
   // Once per turn: the recap is itself a turn, and its ending must not arm
-  // another recap — or an idle tab would recap itself every five minutes.
+  // another recap — or an idle tab would recap itself every ten minutes.
   it('does not recap the recap', () => {
     recap.onTurn('t1', 'idle');
     vi.advanceTimersByTime(5 * MIN);

@@ -14,6 +14,7 @@ const { apiMock } = vi.hoisted(() => ({
 vi.mock('@/lib/api', () => ({ api: apiMock }));
 
 import { ModelPricingEditor } from '../ModelPricingEditor';
+import { SaveStatusProvider, SaveStatusBanner } from '../settings-panels/saveStatus';
 
 beforeEach(() => {
   apiMock.modelPricingList.mockResolvedValue([
@@ -52,5 +53,43 @@ describe('ModelPricingEditor context window', () => {
     fireEvent.click(screen.getByText('Save row'));
     await waitFor(() => expect(apiMock.modelPricingUpsert).toHaveBeenCalled());
     expect(apiMock.modelPricingUpsert.mock.calls[0][0]).toMatchObject({ pattern: 'opus-9', contextWindow: 1_000_000 });
+  });
+});
+
+describe('ModelPricingEditor save feedback', () => {
+  const renderWithIndicator = async () => {
+    render(
+      <SaveStatusProvider>
+        <SaveStatusBanner />
+        <ModelPricingEditor />
+      </SaveStatusProvider>,
+    );
+    await screen.findByText('opus-4-6');
+    fireEvent.change(screen.getByLabelText('Model pattern'), { target: { value: 'opus-9' } });
+  };
+
+  it('reports a saved row in the save indicator', async () => {
+    await renderWithIndicator();
+    fireEvent.click(screen.getByText('Save row'));
+    await waitFor(() => { expect(screen.getByRole('status').textContent).toMatch(/Saved/); });
+  });
+
+  it('reports a rejected row in the save indicator and keeps the draft', async () => {
+    apiMock.modelPricingUpsert.mockRejectedValue(new Error('effectiveFrom must be YYYY-MM-DD'));
+    await renderWithIndicator();
+    fireEvent.click(screen.getByText('Save row'));
+    await waitFor(() => {
+      expect(screen.getByRole('status').textContent).toMatch(/effectiveFrom must be YYYY-MM-DD/);
+    });
+    expect(screen.getByLabelText('Model pattern')).toHaveProperty('value', 'opus-9');
+  });
+
+  it('keeps a typing mistake inline and writes nothing', async () => {
+    await renderWithIndicator();
+    fireEvent.change(screen.getByLabelText('Context window'), { target: { value: 'lots' } });
+    fireEvent.click(screen.getByText('Save row'));
+    expect(await screen.findByText('Context window is not a number')).toBeTruthy();
+    expect(apiMock.modelPricingUpsert).not.toHaveBeenCalled();
+    expect(screen.getByRole('status').textContent).toBe('');
   });
 });

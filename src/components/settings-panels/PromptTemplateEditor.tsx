@@ -1,10 +1,10 @@
 import React from 'react';
 import { Button } from '@/components/ui/button';
-import { RotateCcw, Check, AlertCircle } from 'lucide-react';
+import { RotateCcw } from 'lucide-react';
 
 /**
- * The textarea + "Reset to default" + saved/error affordances shared by every
- * system-prompt panel. Purely presentational — state lives in
+ * The textarea + "Reset to default" shared by every system-prompt panel. Save
+ * outcomes show in the Settings save indicator, not here. Purely presentational — state lives in
  * `usePromptTemplate`, so a panel can wrap this in whatever switches and help
  * text it needs.
  */
@@ -15,8 +15,6 @@ export interface PromptTemplateEditorProps {
   onReset: () => void;
   /** True when the editor already holds the shipped default. */
   isDefault: boolean;
-  saved: boolean;
-  error: string | null;
   rows?: number;
   'aria-label'?: string;
 }
@@ -26,8 +24,6 @@ export const PromptTemplateEditor: React.FC<PromptTemplateEditorProps> = ({
   onChange,
   onReset,
   isDefault,
-  saved,
-  error,
   rows = 18,
   'aria-label': ariaLabel,
 }) => (
@@ -51,17 +47,6 @@ export const PromptTemplateEditor: React.FC<PromptTemplateEditorProps> = ({
       >
         <RotateCcw className="mr-2 h-3.5 w-3.5" /> Reset to default
       </Button>
-      {saved && (
-        <span className="inline-flex items-center text-[11px] text-emerald-400">
-          <Check className="mr-1 h-3 w-3" /> Saved
-        </span>
-      )}
-      {error && (
-        <span className="inline-flex items-center gap-1 text-[11px] text-red-400">
-          <AlertCircle className="h-3 w-3" />
-          {error}
-        </span>
-      )}
     </div>
   </>
 );

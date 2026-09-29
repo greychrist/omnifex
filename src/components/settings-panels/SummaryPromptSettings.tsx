@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
-import { AlertCircle } from 'lucide-react';
 import { fireAndLog } from "@/lib/fireAndLog";
 import {
   api,
@@ -11,6 +10,7 @@ import {
 } from '@/lib/api';
 import { usePromptTemplate } from './usePromptTemplate';
 import { PromptTemplateEditor } from './PromptTemplateEditor';
+import { useSaveStatus } from './saveStatus';
 
 /**
  * The default prompt the backend ships with. Mirrored here so the
@@ -55,13 +55,12 @@ Format your response EXACTLY:
  * `usePromptTemplate`, shared with the Compactions panel.
  */
 export const SummaryPromptSettings: React.FC = () => {
+  const { track } = useSaveStatus();
   const prompt = usePromptTemplate(PROMPT_TEMPLATE_SETTING_KEY, DEFAULT_SUMMARY_PROMPT);
 
   const [switchesLoading, setSwitchesLoading] = useState(true);
   const [enabled, setEnabled] = useState<boolean>(true);
-  const [enabledError, setEnabledError] = useState<string | null>(null);
   const [autoOnClose, setAutoOnClose] = useState<boolean>(true);
-  const [autoOnCloseError, setAutoOnCloseError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -87,27 +86,18 @@ export const SummaryPromptSettings: React.FC = () => {
     return () => { cancelled = true; };
   }, []);
 
+  // Optimistic: the switch flips at once and flips back if the write fails.
   const handleEnabledChange = async (next: boolean) => {
-    const previous = enabled;
     setEnabled(next);
-    setEnabledError(null);
-    try {
-      await api.saveSetting(ENABLED_SETTING_KEY, next ? 'true' : 'false');
-    } catch (err) {
-      setEnabled(previous);
-      setEnabledError(err instanceof Error ? err.message : 'Save failed.');
+    if (!(await track(api.saveSetting(ENABLED_SETTING_KEY, next ? 'true' : 'false')))) {
+      setEnabled(!next);
     }
   };
 
   const handleAutoOnCloseChange = async (next: boolean) => {
-    const previous = autoOnClose;
     setAutoOnClose(next);
-    setAutoOnCloseError(null);
-    try {
-      await api.saveSetting(AUTO_ON_CLOSE_SETTING_KEY, next ? 'true' : 'false');
-    } catch (err) {
-      setAutoOnClose(previous);
-      setAutoOnCloseError(err instanceof Error ? err.message : 'Save failed.');
+    if (!(await track(api.saveSetting(AUTO_ON_CLOSE_SETTING_KEY, next ? 'true' : 'false')))) {
+      setAutoOnClose(!next);
     }
   };
 
@@ -147,12 +137,6 @@ export const SummaryPromptSettings: React.FC = () => {
               Enable session summaries
             </label>
           </div>
-          {enabledError && (
-            <div className="flex items-start gap-2 text-xs text-red-400">
-              <AlertCircle className="h-3.5 w-3.5 mt-0.5 flex-none" />
-              <span>Couldn't save toggle: {enabledError}</span>
-            </div>
-          )}
 
           <div className={enabled ? '' : 'opacity-50 pointer-events-none'}>
             <PromptTemplateEditor
@@ -160,8 +144,6 @@ export const SummaryPromptSettings: React.FC = () => {
               onChange={prompt.edit}
               onReset={prompt.resetToDefault}
               isDefault={prompt.isDefault}
-              saved={prompt.saved}
-              error={prompt.error}
               aria-label="Session summary prompt"
             />
 
@@ -181,12 +163,6 @@ export const SummaryPromptSettings: React.FC = () => {
                 Generate summaries automatically when leaving a session
               </label>
             </div>
-            {autoOnCloseError && (
-              <div className="flex items-start gap-2 text-xs text-red-400 mt-1">
-                <AlertCircle className="h-3.5 w-3.5 mt-0.5 flex-none" />
-                <span>Couldn't save toggle: {autoOnCloseError}</span>
-              </div>
-            )}
           </div>
 
           <p className="text-[11px] text-muted-foreground">

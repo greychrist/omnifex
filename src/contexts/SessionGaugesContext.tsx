@@ -43,7 +43,8 @@ import {
  * and an extra level in the App tree.
  *
  * Same shape as AutoScrollContext: load once on mount, persist on change, and
- * apply live to open sessions without a restart.
+ * apply live to open sessions without a restart. Each setter applies its value
+ * at once and rejects if persisting it fails, so Settings can report it.
  */
 interface SessionGaugesContextType {
   contextPressure: ContextPressureSetting;
@@ -135,33 +136,25 @@ export const SessionGaugesProvider: React.FC<{ children: React.ReactNode }> = ({
       value: clampContextPressureValue(next.value, next.mode),
     };
     setContextPressureState(clamped);
-    try {
-      await Promise.all([
-        api.saveSetting(
-          CONTEXT_PRESSURE_ENABLED_SETTING_KEY,
-          clamped.enabled ? "true" : "false",
-        ),
-        api.saveSetting(CONTEXT_PRESSURE_MODE_SETTING_KEY, clamped.mode),
-        api.saveSetting(
-          CONTEXT_PRESSURE_VALUE_SETTING_KEY,
-          String(clamped.value),
-        ),
-      ]);
-    } catch (error) {
-      console.error("Failed to save context pressure setting:", error);
-    }
+    await Promise.all([
+      api.saveSetting(
+        CONTEXT_PRESSURE_ENABLED_SETTING_KEY,
+        clamped.enabled ? "true" : "false",
+      ),
+      api.saveSetting(CONTEXT_PRESSURE_MODE_SETTING_KEY, clamped.mode),
+      api.saveSetting(
+        CONTEXT_PRESSURE_VALUE_SETTING_KEY,
+        String(clamped.value),
+      ),
+    ]);
   }, []);
 
   const setCacheTimerEnabled = useCallback(async (next: boolean) => {
     setCacheTimerEnabledState(next);
-    try {
-      await api.saveSetting(
-        CACHE_TIMER_ENABLED_SETTING_KEY,
-        next ? "true" : "false",
-      );
-    } catch (error) {
-      console.error("Failed to save cache timer setting:", error);
-    }
+    await api.saveSetting(
+      CACHE_TIMER_ENABLED_SETTING_KEY,
+      next ? "true" : "false",
+    );
   }, []);
 
   const setContextJump = useCallback(async (next: ContextJumpSetting) => {
@@ -170,32 +163,24 @@ export const SessionGaugesProvider: React.FC<{ children: React.ReactNode }> = ({
       thresholdTokens: clampJumpTokens(next.thresholdTokens),
     };
     setContextJumpState(clamped);
-    try {
-      await Promise.all([
-        api.saveSetting(
-          CONTEXT_JUMP_ENABLED_SETTING_KEY,
-          clamped.enabled ? "true" : "false",
-        ),
-        api.saveSetting(
-          CONTEXT_JUMP_TOKENS_SETTING_KEY,
-          String(clamped.thresholdTokens),
-        ),
-      ]);
-    } catch (error) {
-      console.error("Failed to save context jump setting:", error);
-    }
+    await Promise.all([
+      api.saveSetting(
+        CONTEXT_JUMP_ENABLED_SETTING_KEY,
+        clamped.enabled ? "true" : "false",
+      ),
+      api.saveSetting(
+        CONTEXT_JUMP_TOKENS_SETTING_KEY,
+        String(clamped.thresholdTokens),
+      ),
+    ]);
   }, []);
 
   const setContextTimelineEnabled = useCallback(async (next: boolean) => {
     setContextTimelineEnabledState(next);
-    try {
-      await api.saveSetting(
-        CONTEXT_TIMELINE_ENABLED_SETTING_KEY,
-        next ? "true" : "false",
-      );
-    } catch (error) {
-      console.error("Failed to save context timeline setting:", error);
-    }
+    await api.saveSetting(
+      CONTEXT_TIMELINE_ENABLED_SETTING_KEY,
+      next ? "true" : "false",
+    );
   }, []);
 
   return (

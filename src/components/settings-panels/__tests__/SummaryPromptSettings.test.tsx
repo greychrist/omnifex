@@ -18,6 +18,7 @@ vi.mock('@/lib/api', async () => {
 
 import { api } from '@/lib/api';
 import { SummaryPromptSettings } from '../SummaryPromptSettings';
+import { SaveStatusProvider, SaveStatusBanner } from '../saveStatus';
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -33,10 +34,10 @@ afterEach(() => {
   cleanup();
 });
 
-// Helper: wait for the panel to finish loading (heading is rendered once
-// the initial getSetting Promise.all resolves and `loading` flips false).
+// The heading renders while settings are still loading; the editor only once
+// they have. Waiting on the heading raced the load under full-suite load.
 async function waitForLoaded() {
-  await screen.findByRole('heading', { name: 'Session Summaries' });
+  await screen.findByRole('textbox', { name: /session summary prompt/i });
 }
 
 describe('SummaryPromptSettings', () => {
@@ -200,5 +201,39 @@ describe('SummaryPromptSettings', () => {
       name: /enable session summaries/i,
     });
     expect(sw.getAttribute('aria-checked')).toBe('false');
+  });
+
+  describe('save failures', () => {
+    const renderWithIndicator = () =>
+      render(
+        <SaveStatusProvider>
+          <SaveStatusBanner />
+          <SummaryPromptSettings />
+        </SaveStatusProvider>,
+      );
+
+    it('rolls a toggle back and reports the failure in the save indicator', async () => {
+      renderWithIndicator();
+      await waitForLoaded();
+      vi.mocked(api.saveSetting).mockRejectedValue(new Error('database is locked'));
+      const toggle = screen.getByRole('switch', { name: /enable session summaries/i });
+      fireEvent.click(toggle);
+      await waitFor(() => {
+        expect(screen.getByRole('status').textContent).toMatch(/Couldn.t save: database is locked/);
+      });
+      expect(toggle.getAttribute('aria-checked')).toBe('true');
+    });
+
+    it('reports a failed prompt save in the save indicator', async () => {
+      renderWithIndicator();
+      await waitForLoaded();
+      vi.mocked(api.saveSetting).mockRejectedValue(new Error('database is locked'));
+      fireEvent.change(screen.getByRole('textbox', { name: /session summary prompt/i }), {
+        target: { value: 'NEW PROMPT' },
+      });
+      await waitFor(() => {
+        expect(screen.getByRole('status').textContent).toMatch(/database is locked/);
+      }, { timeout: 2000 });
+    });
   });
 });

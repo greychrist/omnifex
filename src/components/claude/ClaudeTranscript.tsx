@@ -23,6 +23,7 @@ import { ContextTimelineToggle } from "@/components/ContextTimelineToggle";
 import { nextNearBottom } from "@/lib/autoScrollThresholds";
 import { stepTarget, isStepStop, isMainPrompt, type StepDirection } from "@/lib/transcriptStepper";
 import { cn } from "@/lib/utils";
+import { logAndForget } from "@/lib/fireAndLog";
 import type { JsonlNode } from "@/types/jsonl";
 import type { ViewMode } from "@/components/SessionViewToggle";
 
@@ -377,7 +378,7 @@ function ClaudeTranscriptImpl({
     <div className="absolute left-1 bottom-6 z-10">
       <ContextTimelineToggle
         active={contextTimelineEnabled}
-        onToggle={() => void setContextTimelineEnabled(!contextTimelineEnabled)}
+        onToggle={() => { logAndForget('claude-transcript:context-timeline-toggle', setContextTimelineEnabled(!contextTimelineEnabled)); }}
       />
     </div>
     {/* Each stepper is a subject glyph plus a direction glyph, because six

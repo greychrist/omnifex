@@ -5,6 +5,7 @@ import { PRICING_FIELDS, type ModelPricingInput, type ModelPricingRow } from '@/
 import { CATEGORICAL_LIGHT } from '@/lib/costChartPalette';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { useSaveStatus } from '@/components/settings-panels/saveStatus';
 
 /**
  * Editor for the `model_pricing` table — the delta layer over the rates this
@@ -70,7 +71,7 @@ export function ModelPricingEditor() {
   const [shipped, setShipped] = useState<ModelPricingInput[]>([]);
   const [draft, setDraft] = useState<DraftRow>(EMPTY_DRAFT);
   const [error, setError] = useState<string | null>(null);
-  const [status, setStatus] = useState<string | null>(null);
+  const { track } = useSaveStatus();
   const [showShipped, setShowShipped] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -86,50 +87,42 @@ export function ModelPricingEditor() {
       .finally(() => setLoading(false));
   }, [reload]);
 
+  // Typing mistakes stay inline next to the button; the write itself reports
+  // through the Settings save indicator. A rejected row keeps its draft.
   const save = async () => {
     setError(null);
-    try {
-      const rates: Record<string, number> = {};
-      for (const { row: field } of PRICING_FIELDS) {
-        const n = toNumber(draft.rates[field]);
-        if (n === undefined) continue;
-        if (Number.isNaN(n)) throw new Error(`${field} is not a number`);
-        rates[field] = n;
-      }
-      const slot = toNumber(draft.colorSlot);
-      if (slot !== undefined && Number.isNaN(slot)) throw new Error('Colour is not a number');
-      const contextWindow = toNumber(draft.contextWindow);
-      if (contextWindow !== undefined && Number.isNaN(contextWindow)) {
-        throw new Error('Context window is not a number');
-      }
-
-      await api.modelPricingUpsert({
-        pattern: draft.pattern,
-        effectiveFrom: draft.effectiveFrom,
-        ...rates,
-        ...(draft.label.trim() ? { label: draft.label.trim() } : {}),
-        ...(slot !== undefined ? { colorSlot: slot } : {}),
-        ...(contextWindow !== undefined ? { contextWindow } : {}),
-      });
-      setDraft(EMPTY_DRAFT);
-      setStatus('Saved — applies to the next priced turn and the next cost rescan.');
-      setTimeout(() => setStatus(null), 4000);
-      await reload();
-    } catch (e) {
-      // The service rejects rather than coerces, and its message names the
-      // offending field. Surface it verbatim instead of a generic "invalid".
-      setError(e instanceof Error ? e.message : String(e));
+    const rates: Record<string, number> = {};
+    for (const { row: field } of PRICING_FIELDS) {
+      const n = toNumber(draft.rates[field]);
+      if (n === undefined) continue;
+      if (Number.isNaN(n)) { setError(`${field} is not a number`); return; }
+      rates[field] = n;
     }
+    const slot = toNumber(draft.colorSlot);
+    if (slot !== undefined && Number.isNaN(slot)) { setError('Colour is not a number'); return; }
+    const contextWindow = toNumber(draft.contextWindow);
+    if (contextWindow !== undefined && Number.isNaN(contextWindow)) {
+      setError('Context window is not a number');
+      return;
+    }
+
+    // The service rejects rather than coerces, and its message names the
+    // offending field, so the indicator shows it verbatim.
+    const saved = await track(api.modelPricingUpsert({
+      pattern: draft.pattern,
+      effectiveFrom: draft.effectiveFrom,
+      ...rates,
+      ...(draft.label.trim() ? { label: draft.label.trim() } : {}),
+      ...(slot !== undefined ? { colorSlot: slot } : {}),
+      ...(contextWindow !== undefined ? { contextWindow } : {}),
+    }));
+    if (!saved) return;
+    setDraft(EMPTY_DRAFT);
+    await reload();
   };
 
   const remove = async (id: number) => {
-    setError(null);
-    try {
-      await api.modelPricingDelete(id);
-      await reload();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    }
+    if (await track(api.modelPricingDelete(id))) await reload();
   };
 
   const shippedByPattern = useMemo(() => {
@@ -269,8 +262,13 @@ export function ModelPricingEditor() {
               <Button size="sm" onClick={() => void save()}>
                 <Plus className="mr-1 h-3.5 w-3.5" /> Save row
               </Button>
-              {status && <span className="text-xs text-green-400">{status}</span>}
-              {error && <span className="text-xs text-red-400">{error}</span>}
+              {error ? (
+                <span className="text-xs text-red-400">{error}</span>
+              ) : (
+                <span className="text-xs text-muted-foreground">
+                  Applies to the next priced turn and the next cost rescan.
+                </span>
+              )}
             </div>
           </div>
 

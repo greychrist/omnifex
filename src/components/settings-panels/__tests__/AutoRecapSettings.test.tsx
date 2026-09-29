@@ -11,6 +11,7 @@ vi.mock('@/lib/api', async () => ({
 
 import { api } from '@/lib/api';
 import { AutoRecapSettings } from '../AutoRecapSettings';
+import { SaveStatusProvider, SaveStatusBanner } from '../saveStatus';
 import { AUTO_RECAP_ENABLED_KEY, AUTO_RECAP_DELAY_KEY } from '@/lib/autoRecapSettings';
 
 beforeEach(() => {
@@ -21,11 +22,11 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('AutoRecapSettings', () => {
-  it('defaults to on, after 5 minutes', async () => {
+  it('defaults to on, after 10 minutes', async () => {
     render(<AutoRecapSettings />);
     const toggle = await screen.findByRole('switch', { name: /Recap idle sessions/ });
     expect(toggle.getAttribute('aria-checked')).toBe('true');
-    expect((screen.getByLabelText(/Minutes before the recap/) as HTMLInputElement).value).toBe('5');
+    expect((screen.getByLabelText(/Minutes before the recap/) as HTMLInputElement).value).toBe('10');
   });
 
   it('shows the stored values', async () => {
@@ -46,14 +47,28 @@ describe('AutoRecapSettings', () => {
   it('saves a new delay on blur, and refuses one that is not a positive number', async () => {
     render(<AutoRecapSettings />);
     const field = await screen.findByLabelText(/Minutes before the recap/) as HTMLInputElement;
-    fireEvent.change(field, { target: { value: '10' } });
+    fireEvent.change(field, { target: { value: '15' } });
     fireEvent.blur(field);
-    await waitFor(() => expect(api.saveSetting).toHaveBeenCalledWith(AUTO_RECAP_DELAY_KEY, '10'));
+    await waitFor(() => expect(api.saveSetting).toHaveBeenCalledWith(AUTO_RECAP_DELAY_KEY, '15'));
 
     vi.mocked(api.saveSetting).mockClear();
     fireEvent.change(field, { target: { value: '0' } });
     fireEvent.blur(field);
-    await waitFor(() => expect(field.value).toBe('10'));
+    await waitFor(() => expect(field.value).toBe('15'));
     expect(api.saveSetting).not.toHaveBeenCalled();
+  });
+
+  it('reports a failed save in the save indicator', async () => {
+    vi.mocked(api.saveSetting).mockRejectedValue(new Error('database is locked'));
+    render(
+      <SaveStatusProvider>
+        <SaveStatusBanner />
+        <AutoRecapSettings />
+      </SaveStatusProvider>,
+    );
+    fireEvent.click(await screen.findByRole('switch', { name: /Recap idle sessions/ }));
+    await waitFor(() => {
+      expect(screen.getByRole('status').textContent).toMatch(/Couldn.t save: database is locked/);
+    });
   });
 });

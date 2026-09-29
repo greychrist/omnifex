@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from "react";
 import {
-  AlertCircle,
   Check,
   RotateCcw,
   Volume2,
@@ -46,7 +45,7 @@ import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
 import { TabIndicatorsEditor } from "./TabIndicatorsEditor";
 import { TabDensityControl } from "./TabDensityControl";
 import { TabMaxWidthControl } from "./TabMaxWidthControl";
-import type { SettingsPanelProps } from "./types";
+import { useSaveStatus } from "./saveStatus";
 import { fireAndLog, logAndForget } from "@/lib/fireAndLog";
 import {
   NOTIFICATION_SOUND_CHOICES,
@@ -74,18 +73,9 @@ function SettingsSection({ title, children }: { title: string; children: React.R
   );
 }
 
-interface GeneralSettingsProps extends SettingsPanelProps {
-  currentBinaryPath: string | null;
-  binaryPathChanged: boolean;
-  onClaudeInstallationSelect: (installation: ClaudeInstallation) => void;
-}
-
-export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
-  setToast,
-  currentBinaryPath,
-  binaryPathChanged,
-  onClaudeInstallationSelect,
-}) => {
+/** Every control saves as it changes and reports through `track` (see saveStatus.tsx). */
+export const GeneralSettings: React.FC = () => {
+  const { track } = useSaveStatus();
   const { theme, setTheme } = useTheme();
   const { appFont, setAppFont, isLoading: appFontLoading } = useAppFont();
   const { config, setConfig } = useMessageRenderingConfig();
@@ -108,8 +98,8 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
   }, [disengagePx]);
 
   const commitAutoScroll = (next: { reengagePx: number; disengagePx: number }) => {
-    void setAutoScrollThresholds(next);
-    setToast({ message: "Auto-scroll thresholds updated", type: "success" });
+    if (next.reengagePx === reengagePx && next.disengagePx === disengagePx) return;
+    void track(setAutoScrollThresholds(next));
   };
   // Context-pressure budget + cache countdown. Same draft-string pattern as the
   // auto-scroll inputs above: typing stays smooth, the value commits on blur or
@@ -132,8 +122,8 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
     const next = Number.isFinite(parsed)
       ? parsed
       : defaultValueForMode(contextPressure.mode);
-    void setContextPressure({ ...contextPressure, value: next });
-    setToast({ message: "Compact threshold updated", type: "success" });
+    if (next === contextPressure.value) return;
+    void track(setContextPressure({ ...contextPressure, value: next }));
   };
 
   const [jumpDraft, setJumpDraft] = useState(String(contextJump.thresholdTokens));
@@ -143,11 +133,9 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
 
   const commitJumpTokens = () => {
     const parsed = Number.parseInt(jumpDraft, 10);
-    void setContextJump({
-      ...contextJump,
-      thresholdTokens: Number.isFinite(parsed) ? parsed : DEFAULT_CONTEXT_JUMP_TOKENS,
-    });
-    setToast({ message: "Jump threshold updated", type: "success" });
+    const thresholdTokens = Number.isFinite(parsed) ? parsed : DEFAULT_CONTEXT_JUMP_TOKENS;
+    if (thresholdTokens === contextJump.thresholdTokens) return;
+    void track(setContextJump({ ...contextJump, thresholdTokens }));
   };
 
   // Spell out what the setting resolves to on both window sizes, so the
@@ -172,6 +160,9 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
   // shipped default", which is the normal state.
   const [cliReviewPrompt, setCliReviewPrompt] = useState('');
 
+  // The Claude binary new sessions spawn. Saved as soon as one is picked.
+  const [currentBinaryPath, setCurrentBinaryPath] = useState<string | null>(null);
+
   const [tabPersistenceEnabled, setTabPersistenceEnabled] = useState(true);
   const [startupIntroEnabled, setStartupIntroEnabled] = useState(true);
   const [successSound, setSuccessSound] = useState<NotificationSoundId>(DEFAULT_SUCCESS_SOUND);
@@ -179,6 +170,9 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
 
   useEffect(() => {
     setTabPersistenceEnabled(TabPersistenceService.isEnabled());
+    logAndForget('general-settings:load-claude-binary-path', (async () => {
+      setCurrentBinaryPath(await api.getClaudeBinaryPath());
+    })());
     logAndForget('general-settings:iife', (async () => {
       const pref = await api.getSetting('startup_intro_enabled');
       setStartupIntroEnabled(pref === null ? true : pref === 'true');
@@ -186,38 +180,39 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
       setSuccessSound(normalizeNotificationSoundId(successRaw, DEFAULT_SUCCESS_SOUND));
       const errorRaw = await api.getSetting(NOTIFICATION_SOUND_SETTING_KEYS.error);
       setErrorSound(normalizeNotificationSoundId(errorRaw, DEFAULT_ERROR_SOUND));
-      setCliReviewRepoDir((await api.getSetting(CLI_REVIEW_REPO_DIR_SETTING_KEY)) ?? '');
+      savedCliReviewRepoDir.current = (await api.getSetting(CLI_REVIEW_REPO_DIR_SETTING_KEY)) ?? '';
+      setCliReviewRepoDir(savedCliReviewRepoDir.current);
       setCliAutoUpdate((await api.getSetting(CLI_AUTO_UPDATE_SETTING_KEY)) === 'true');
-      setCliReviewPrompt((await api.getSetting(CLI_REVIEW_PROMPT_SETTING_KEY)) ?? '');
+      savedCliReviewPrompt.current = (await api.getSetting(CLI_REVIEW_PROMPT_SETTING_KEY)) ?? '';
+      setCliReviewPrompt(savedCliReviewPrompt.current);
     })());
   }, []);
 
+  const selectClaudeInstallation = (installation: ClaudeInstallation) => {
+    if (installation.path === currentBinaryPath) return;
+    setCurrentBinaryPath(installation.path);
+    void track(api.setClaudeBinaryPath(installation.path));
+  };
+
+  // What was last loaded or saved for each typed field, so leaving one
+  // unchanged doesn't write it again.
+  const savedCliReviewRepoDir = React.useRef('');
+  const savedCliReviewPrompt = React.useRef('');
+
   const saveCliReviewRepoDir = async (next: string) => {
     setCliReviewRepoDir(next);
-    try {
-      await api.saveSetting(CLI_REVIEW_REPO_DIR_SETTING_KEY, next);
-      setToast({
-        message: next ? 'OmniFex checkout updated' : 'OmniFex checkout cleared — using auto-detection',
-        type: 'success',
-      });
-    } catch {
-      setToast({ message: 'Failed to save OmniFex checkout', type: 'error' });
-    }
+    if (next === savedCliReviewRepoDir.current) return;
+    savedCliReviewRepoDir.current = next;
+    await track(api.saveSetting(CLI_REVIEW_REPO_DIR_SETTING_KEY, next));
   };
 
   const saveCliReviewPrompt = async (next: string) => {
     // Blank is meaningful: it clears the override and restores the built-in.
     const value = next.trim() ? next : '';
     setCliReviewPrompt(value);
-    try {
-      await api.saveSetting(CLI_REVIEW_PROMPT_SETTING_KEY, value);
-      setToast({
-        message: value ? 'Review prompt updated' : 'Review prompt cleared — using the built-in',
-        type: 'success',
-      });
-    } catch {
-      setToast({ message: 'Failed to save review prompt', type: 'error' });
-    }
+    if (value === savedCliReviewPrompt.current) return;
+    savedCliReviewPrompt.current = value;
+    await track(api.saveSetting(CLI_REVIEW_PROMPT_SETTING_KEY, value));
   };
 
   const browseForCliReviewRepoDir = async () => {
@@ -233,18 +228,10 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
     next: NotificationSoundId,
   ) => {
     const key = NOTIFICATION_SOUND_SETTING_KEYS[kind];
-    try {
-      await api.saveSetting(key, next);
-      if (next !== 'none') {
-        // Fire-and-forget preview so the user hears the change immediately.
-        void api.previewNotificationSound(next);
-      }
-      setToast({
-        message: `${kind === 'success' ? 'Success' : 'Error'} sound updated`,
-        type: 'success',
-      });
-    } catch {
-      setToast({ message: 'Failed to save notification sound', type: 'error' });
+    const saved = await track(api.saveSetting(key, next));
+    if (saved && next !== 'none') {
+      // Fire-and-forget preview so the user hears the change immediately.
+      void api.previewNotificationSound(next);
     }
   };
 
@@ -265,7 +252,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
               </div>
               <div className="flex items-center gap-1 p-1 bg-muted/30 rounded-lg">
                 <button
-                  onClick={fireAndLog('general-settings:click', () => setTheme('gray'))}
+                  onClick={() => { void track(setTheme('gray')); }}
                   className={cn(
                     "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all",
                     theme === 'gray'
@@ -277,7 +264,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
                   Gray
                 </button>
                 <button
-                  onClick={fireAndLog('general-settings:click', () => setTheme('light'))}
+                  onClick={() => { void track(setTheme('light')); }}
                   className={cn(
                     "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all",
                     theme === 'light'
@@ -305,7 +292,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
               <div className="w-48">
                 <Select
                   value={appFont}
-                  onValueChange={fireAndLog('general-settings:value-change', (v) => setAppFont(v))}
+                  onValueChange={(v) => { void track(setAppFont(v)); }}
                   disabled={appFontLoading}
                 >
                   <SelectTrigger>
@@ -337,14 +324,8 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
                 id="tab-persistence"
                 checked={tabPersistenceEnabled}
                 onCheckedChange={(checked) => {
-                  TabPersistenceService.setEnabled(checked);
                   setTabPersistenceEnabled(checked);
-                  setToast({
-                    message: checked
-                      ? "Tab persistence enabled - your tabs will be restored on restart"
-                      : "Tab persistence disabled - tabs will not be saved",
-                    type: "success"
-                  });
+                  void track(() => { TabPersistenceService.setEnabled(checked); });
                 }}
               />
             </div>
@@ -360,20 +341,10 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
               <Switch
                 id="startup-intro"
                 checked={startupIntroEnabled}
-                onCheckedChange={fireAndLog('general-settings:checked-change', async (checked) => {
+                onCheckedChange={(checked) => {
                   setStartupIntroEnabled(checked);
-                  try {
-                    await api.saveSetting('startup_intro_enabled', checked ? 'true' : 'false');
-                    setToast({
-                      message: checked
-                        ? 'Welcome intro enabled'
-                        : 'Welcome intro disabled',
-                      type: 'success'
-                    });
-                  } catch {
-                    setToast({ message: 'Failed to update preference', type: 'error' });
-                  }
-                })}
+                  void track(api.saveSetting('startup_intro_enabled', checked ? 'true' : 'false'));
+                }}
               />
             </div>
 
@@ -389,7 +360,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
               </div>
               <TabDensityControl
                 density={config.tabs.density}
-                onChange={(density) => { setConfig({ ...config, tabs: { ...config.tabs, density } }); }}
+                onChange={(density) => { void track(setConfig({ ...config, tabs: { ...config.tabs, density } })); }}
               />
             </div>
 
@@ -403,7 +374,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
               </div>
               <TabMaxWidthControl
                 maxWidth={config.tabs.maxWidth}
-                onChange={(maxWidth) => { setConfig({ ...config, tabs: { ...config.tabs, maxWidth } }); }}
+                onChange={(maxWidth) => { void track(setConfig({ ...config, tabs: { ...config.tabs, maxWidth } })); }}
               />
             </div>
 
@@ -412,7 +383,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
               <TabIndicatorsEditor
                 indicators={config.tabIndicators}
                 palette={config.palette}
-                onChange={(next) => { setConfig({ ...config, tabIndicators: next }); }}
+                onChange={(next) => { void track(setConfig({ ...config, tabIndicators: next })); }}
               />
             </div>
           </SettingsSection>
@@ -620,7 +591,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
                   id="context-pressure-enabled"
                   checked={contextPressure.enabled}
                   onCheckedChange={fireAndLog('general-settings:checked-change', (checked) => {
-                    void setContextPressure({ ...contextPressure, enabled: checked });
+                    void track(setContextPressure({ ...contextPressure, enabled: checked }));
                   })}
                 />
               </div>
@@ -635,11 +606,11 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
                       const mode = v === 'percent' ? 'percent' : 'tokens';
                       // Swap in that mode's default rather than reinterpreting the
                       // old number — 250000 percent, or 80 tokens, are nonsense.
-                      void setContextPressure({
+                      void track(setContextPressure({
                         ...contextPressure,
                         mode,
                         value: defaultValueForMode(mode),
-                      });
+                      }));
                     })}
                   >
                     <SelectTrigger>
@@ -694,7 +665,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
                   id="context-jump-enabled"
                   checked={contextJump.enabled}
                   onCheckedChange={fireAndLog('general-settings:checked-change', (checked) => {
-                    void setContextJump({ ...contextJump, enabled: checked });
+                    void track(setContextJump({ ...contextJump, enabled: checked }));
                   })}
                 />
               </div>
@@ -732,7 +703,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
                   id="cache-timer-enabled"
                   checked={cacheTimerEnabled}
                   onCheckedChange={fireAndLog('general-settings:checked-change', (checked) => {
-                    void setCacheTimerEnabled(checked);
+                    void track(setCacheTimerEnabled(checked));
                   })}
                 />
               </div>
@@ -741,19 +712,13 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
 
           <div className="border-t border-border" />
           <SettingsSection title="Claude Code">
-            {/* Claude Binary Path Selector */}
+            {/* Claude binary new sessions spawn; saved as soon as one is picked. */}
             <div className="space-y-3">
               <ClaudeVersionSelector
                 selectedPath={currentBinaryPath}
-                onSelect={onClaudeInstallationSelect}
+                onSelect={selectClaudeInstallation}
                 simplified={true}
               />
-              {binaryPathChanged && (
-                <p className="text-caption text-amber-600 dark:text-amber-400 flex items-center gap-1">
-                  <AlertCircle className="h-3 w-3" />
-                  Changes will be applied when you save settings.
-                </p>
-              )}
             </div>
 
             {/* Restores the auto-update the terminal gets for free. The CLI's
@@ -775,7 +740,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
                 checked={cliAutoUpdate}
                 onCheckedChange={fireAndLog('general-settings:checked-change', (checked) => {
                   setCliAutoUpdate(checked);
-                  void api.saveSetting(CLI_AUTO_UPDATE_SETTING_KEY, checked ? 'true' : 'false');
+                  void track(api.saveSetting(CLI_AUTO_UPDATE_SETTING_KEY, checked ? 'true' : 'false'));
                 })}
               />
             </div>

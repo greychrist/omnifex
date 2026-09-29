@@ -41,6 +41,7 @@ import {
   type LogLevel,
 } from "@/lib/logSources";
 import { useTabContext } from "@/contexts/TabContext";
+import { useSaveStatus } from "@/components/settings-panels/saveStatus";
 import { sessionNameRegistry } from "@/services/sessionNameRegistry";
 
 const PAGE_SIZE = 50;
@@ -170,6 +171,7 @@ export const LogTab: React.FC = () => {
   // Log entries persist long after tabs close, so without the registry
   // closed-tab rows have no recoverable identity at all.
   const { tabs } = useTabContext();
+  const { track } = useSaveStatus();
   const tabIdentityMap = useMemo(() => {
     // Start with the persisted snapshot; live tab data overwrites it
     // below so an in-flight rename wins over a stale registry entry.
@@ -505,14 +507,10 @@ export const LogTab: React.FC = () => {
           <Switch
             id="verbose-claude-hooks"
             checked={verboseHooks}
-            onCheckedChange={fireAndLog('log-tab:checked-change', async (next) => {
+            onCheckedChange={(next) => {
               setVerboseHooks(next);
-              try {
-                await api.saveSetting('log_verbose_claude_hooks', next ? 'true' : 'false');
-              } catch (err) {
-                console.error('Failed to save log_verbose_claude_hooks:', err);
-              }
-            })}
+              void track(api.saveSetting('log_verbose_claude_hooks', next ? 'true' : 'false'));
+            }}
           />
           <Label htmlFor="verbose-claude-hooks" className="cursor-pointer">
             Claude hook events
@@ -522,14 +520,10 @@ export const LogTab: React.FC = () => {
           <Switch
             id="verbose-usage-runner"
             checked={verboseUsageRunner}
-            onCheckedChange={fireAndLog('log-tab:checked-change', async (next) => {
+            onCheckedChange={(next) => {
               setVerboseUsageRunner(next);
-              try {
-                await api.saveSetting('log_verbose_usage_runner', next ? 'true' : 'false');
-              } catch (err) {
-                console.error('Failed to save log_verbose_usage_runner:', err);
-              }
-            })}
+              void track(api.saveSetting('log_verbose_usage_runner', next ? 'true' : 'false'));
+            }}
           />
           <Label htmlFor="verbose-usage-runner" className="cursor-pointer">
             Usage runner
@@ -542,14 +536,10 @@ export const LogTab: React.FC = () => {
           <Switch
             id="toast-on-errors"
             checked={toastOnErrors}
-            onCheckedChange={fireAndLog('log-tab:checked-change', async (next) => {
+            onCheckedChange={(next) => {
               setToastOnErrors(next);
-              try {
-                await api.saveSetting('log_error_toast_enabled', next ? 'true' : 'false');
-              } catch (err) {
-                console.error('Failed to save log_error_toast_enabled:', err);
-              }
-            })}
+              void track(api.saveSetting('log_error_toast_enabled', next ? 'true' : 'false'));
+            }}
           />
           <Label htmlFor="toast-on-errors" className="cursor-pointer">
             Toast on errors

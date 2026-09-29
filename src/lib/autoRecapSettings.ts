@@ -5,7 +5,7 @@
  */
 export const AUTO_RECAP_ENABLED_KEY = 'sessions.autoRecap.enabled';
 export const AUTO_RECAP_DELAY_KEY = 'sessions.autoRecap.delayMinutes';
-export const DEFAULT_AUTO_RECAP_MINUTES = 5;
+export const DEFAULT_AUTO_RECAP_MINUTES = 10;
 
 /** On unless explicitly switched off. */
 export function autoRecapEnabled(stored: string | null): boolean {

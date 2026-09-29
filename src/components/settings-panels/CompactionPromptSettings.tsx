@@ -20,7 +20,7 @@ import { PromptTemplateEditor } from './PromptTemplateEditor';
  * the same thing, with the two able to disagree.
  */
 export const CompactionPromptSettings: React.FC = () => {
-  const { value, loading, saved, error, isDefault, edit, resetToDefault } =
+  const { value, loading, isDefault, edit, resetToDefault } =
     usePromptTemplate(POST_COMPACT_PROMPT_SETTING_KEY, DEFAULT_POST_COMPACT_PROMPT, {
       // An empty stored value is a deliberate "off" here, not "unset".
       treatEmptyAsDefault: false,
@@ -50,8 +50,6 @@ export const CompactionPromptSettings: React.FC = () => {
             onChange={edit}
             onReset={resetToDefault}
             isDefault={isDefault}
-            saved={saved}
-            error={error}
             aria-label="Post-compaction directive"
           />
 

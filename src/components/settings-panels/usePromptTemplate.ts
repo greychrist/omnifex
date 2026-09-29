@@ -1,21 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '@/lib/api';
 import { fireAndLog } from '@/lib/fireAndLog';
+import { useSaveStatus } from './saveStatus';
 
 /**
  * Load/edit/auto-save cycle for one prompt template stored in `app_settings`.
  *
  * Extracted from `SummaryPromptSettings` when the Compactions panel needed the
- * same behaviour: debounced auto-save with no Save button, a "Saved" flash, and
- * reset-to-default. Only the storage key, the default text, and what an empty
+ * same behaviour: debounced auto-save with no Save button, reported through the
+ * Settings save indicator, and reset-to-default. Only the storage key, the default text, and what an empty
  * stored value means differ between the two.
  */
 
 /** Debounce before the textarea contents are persisted. Tuned so short pauses
  *  while typing flush, and rapid edits coalesce into one save. */
 export const PROMPT_AUTOSAVE_DEBOUNCE_MS = 500;
-
-const SAVED_FLASH_MS = 1500;
 
 export interface UsePromptTemplateOptions {
   /**
@@ -33,8 +32,6 @@ export interface UsePromptTemplateOptions {
 export interface UsePromptTemplateResult {
   value: string;
   loading: boolean;
-  saved: boolean;
-  error: string | null;
   isDefault: boolean;
   /** Update the editor and schedule a debounced save. */
   edit: (next: string) => void;
@@ -49,13 +46,11 @@ export function usePromptTemplate(
 ): UsePromptTemplateResult {
   const [value, setValue] = useState('');
   const [loading, setLoading] = useState(true);
-  const [saved, setSaved] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { track } = useSaveStatus();
 
   // Refreshed on every keystroke so the save fires after the *last* edit
   // rather than the first.
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Last value successfully persisted, so the autosave can no-op when the
   // editor already shows what's on disk (initial mount, undo back to saved).
   const savedRef = useRef('');
@@ -84,7 +79,6 @@ export function usePromptTemplate(
     return () => {
       cancelled = true;
       if (saveTimer.current) clearTimeout(saveTimer.current);
-      if (flashTimer.current) clearTimeout(flashTimer.current);
     };
     // Storage key and default are module constants at every call site.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -96,16 +90,7 @@ export function usePromptTemplate(
       fireAndLog('prompt-template:autosave', async () => {
         saveTimer.current = null;
         if (next === savedRef.current) return;
-        setError(null);
-        try {
-          await api.saveSetting(settingKey, next);
-          savedRef.current = next;
-          setSaved(true);
-          if (flashTimer.current) clearTimeout(flashTimer.current);
-          flashTimer.current = setTimeout(() => { setSaved(false); }, SAVED_FLASH_MS);
-        } catch (err) {
-          setError(err instanceof Error ? err.message : 'Save failed.');
-        }
+        if (await track(api.saveSetting(settingKey, next))) savedRef.current = next;
       }),
       PROMPT_AUTOSAVE_DEBOUNCE_MS,
     );
@@ -113,7 +98,6 @@ export function usePromptTemplate(
 
   const edit = (next: string) => {
     setValue(next);
-    setError(null);
     scheduleAutosave(next);
   };
 
@@ -126,8 +110,6 @@ export function usePromptTemplate(
   return {
     value,
     loading,
-    saved,
-    error,
     isDefault: value === defaultPrompt,
     edit,
     resetToDefault,

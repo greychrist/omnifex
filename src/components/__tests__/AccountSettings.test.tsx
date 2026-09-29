@@ -80,6 +80,7 @@ afterEach(() => {
 });
 
 import { AccountSettings } from '../AccountSettings';
+import { SaveStatusProvider, SaveStatusBanner } from '../settings-panels/saveStatus';
 
 function makeAccount(overrides: Partial<Account> = {}): Account {
   return {
@@ -215,6 +216,47 @@ describe('AccountSettings', () => {
 
     await waitFor(() => {
       expect(apiMock.deleteAccount).toHaveBeenCalledWith(1);
+    });
+  });
+
+  describe('save feedback', () => {
+    const renderWithIndicator = () =>
+      render(
+        <SaveStatusProvider>
+          <SaveStatusBanner />
+          <AccountSettings />
+        </SaveStatusProvider>,
+      );
+
+    it('reports a saved account in the save indicator', async () => {
+      renderWithIndicator();
+      await screen.findByText('Personal');
+      fireEvent.click(screen.getByRole('button', { name: /add account/i }));
+      fireEvent.click(screen.getByRole('button', { name: /dialog save/i }));
+      await waitFor(() => { expect(screen.getByRole('status').textContent).toMatch(/Saved/); });
+      expect(screen.queryByRole('dialog')).toBeNull();
+    });
+
+    it('reports a failed account save and keeps the dialog open', async () => {
+      apiMock.createAccount.mockRejectedValue(new Error('config dir already in use'));
+      renderWithIndicator();
+      await screen.findByText('Personal');
+      fireEvent.click(screen.getByRole('button', { name: /add account/i }));
+      fireEvent.click(screen.getByRole('button', { name: /dialog save/i }));
+      await waitFor(() => {
+        expect(screen.getByRole('status').textContent).toMatch(/config dir already in use/);
+      });
+      expect(screen.getByRole('dialog')).toBeTruthy();
+    });
+
+    it('reports a failed delete', async () => {
+      apiMock.deleteAccount.mockRejectedValue(new Error('account has open sessions'));
+      renderWithIndicator();
+      await screen.findByText('Personal');
+      fireEvent.click(screen.getByRole('button', { name: /delete personal/i }));
+      await waitFor(() => {
+        expect(screen.getByRole('status').textContent).toMatch(/account has open sessions/);
+      });
     });
   });
 

@@ -1,9 +1,10 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { logAndForget } from "@/lib/fireAndLog";
 import { api } from '@/lib/api';
+import { useSaveStatus } from '@/components/settings-panels/saveStatus';
 
 export interface ProxySettings {
   http_proxy: string | null;
@@ -15,30 +16,35 @@ export interface ProxySettings {
 
 interface ProxySettingsProps {
   setToast: (toast: { message: string; type: 'success' | 'error' } | null) => void;
-  onChange?: (hasChanges: boolean, getSettings: () => ProxySettings, saveSettings: () => Promise<void>) => void;
 }
 
-export function ProxySettings({ setToast, onChange }: ProxySettingsProps) {
-  const [settings, setSettings] = useState<ProxySettings>({
-    http_proxy: null,
-    https_proxy: null,
-    no_proxy: null,
-    all_proxy: null,
-    enabled: false,
-  });
-  const [originalSettings, setOriginalSettings] = useState<ProxySettings>({
-    http_proxy: null,
-    https_proxy: null,
-    no_proxy: null,
-    all_proxy: null,
-    enabled: false,
-  });
+const EMPTY: ProxySettings = {
+  http_proxy: null,
+  https_proxy: null,
+  no_proxy: null,
+  all_proxy: null,
+  enabled: false,
+};
+
+const sameSettings = (a: ProxySettings, b: ProxySettings) =>
+  (Object.keys(EMPTY) as (keyof ProxySettings)[]).every((k) => a[k] === b[k]);
+
+/**
+ * Proxy settings save like every other setting: the switch at once, an
+ * address when its field is left (a half-typed URL is never applied).
+ * Outcomes go to the Settings save indicator.
+ */
+export function ProxySettings({ setToast }: ProxySettingsProps) {
+  const { track } = useSaveStatus();
+  const [settings, setSettings] = useState<ProxySettings>(EMPTY);
+  // What is on disk, so leaving a field unchanged doesn't save again.
+  const savedRef = useRef<ProxySettings>(EMPTY);
 
   const loadSettings = useCallback(async () => {
     try {
       const loadedSettings = await api.getProxySettings<ProxySettings>();
       setSettings(loadedSettings);
-      setOriginalSettings(loadedSettings);
+      savedRef.current = loadedSettings;
     } catch (error) {
       console.error('Failed to load proxy settings:', error);
       setToast({
@@ -52,35 +58,12 @@ export function ProxySettings({ setToast, onChange }: ProxySettingsProps) {
     logAndForget('proxy-settings:load-settings', loadSettings());
   }, [loadSettings]);
 
-  // Save settings function — closes over current `settings` so it gets
-  // recreated whenever they change. The parent gets a fresh reference
-  // through onChange below.
-  const saveSettings = useCallback(async () => {
-    try {
-      await api.saveProxySettings(settings);
-      setOriginalSettings(settings);
-      setToast({
-        message: 'Proxy settings saved and applied successfully.',
-        type: 'success',
-      });
-    } catch (error) {
-      console.error('Failed to save proxy settings:', error);
-      setToast({
-        message: 'Failed to save proxy settings',
-        type: 'error',
-      });
-      throw error; // Re-throw to let parent handle the error
-    }
-  }, [settings, setToast]);
-
-  // Notify parent component of changes
-  useEffect(() => {
-    if (onChange) {
-      const hasChanges = JSON.stringify(settings) !== JSON.stringify(originalSettings);
-      onChange(hasChanges, () => settings, saveSettings);
-    }
-  }, [settings, originalSettings, onChange, saveSettings]);
-
+  const save = (next: ProxySettings) => {
+    if (sameSettings(next, savedRef.current)) return;
+    void track(api.saveProxySettings(next)).then((ok) => {
+      if (ok) savedRef.current = next;
+    });
+  };
 
   const handleInputChange = (field: keyof ProxySettings, value: string) => {
     setSettings(prev => ({
@@ -109,7 +92,11 @@ export function ProxySettings({ setToast, onChange }: ProxySettingsProps) {
           <Switch
             id="proxy-enabled"
             checked={settings.enabled}
-            onCheckedChange={(checked) => { setSettings(prev => ({ ...prev, enabled: checked })); }}
+            onCheckedChange={(checked) => {
+              const next = { ...settings, enabled: checked };
+              setSettings(next);
+              save(next);
+            }}
           />
         </div>
 
@@ -121,6 +108,7 @@ export function ProxySettings({ setToast, onChange }: ProxySettingsProps) {
               placeholder="http://proxy.example.com:8080"
               value={settings.http_proxy || ''}
               onChange={(e) => { handleInputChange('http_proxy', e.target.value); }}
+              onBlur={() => { save(settings); }}
               disabled={!settings.enabled}
             />
           </div>
@@ -132,6 +120,7 @@ export function ProxySettings({ setToast, onChange }: ProxySettingsProps) {
               placeholder="http://proxy.example.com:8080"
               value={settings.https_proxy || ''}
               onChange={(e) => { handleInputChange('https_proxy', e.target.value); }}
+              onBlur={() => { save(settings); }}
               disabled={!settings.enabled}
             />
           </div>
@@ -143,6 +132,7 @@ export function ProxySettings({ setToast, onChange }: ProxySettingsProps) {
               placeholder="localhost,127.0.0.1,.example.com"
               value={settings.no_proxy || ''}
               onChange={(e) => { handleInputChange('no_proxy', e.target.value); }}
+              onBlur={() => { save(settings); }}
               disabled={!settings.enabled}
             />
             <p className="text-xs text-muted-foreground">
@@ -157,6 +147,7 @@ export function ProxySettings({ setToast, onChange }: ProxySettingsProps) {
               placeholder="socks5://proxy.example.com:1080"
               value={settings.all_proxy || ''}
               onChange={(e) => { handleInputChange('all_proxy', e.target.value); }}
+              onBlur={() => { save(settings); }}
               disabled={!settings.enabled}
             />
             <p className="text-xs text-muted-foreground">

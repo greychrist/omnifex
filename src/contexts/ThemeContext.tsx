@@ -65,14 +65,14 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     logAndForget('theme-context:load-theme', loadTheme());
   }, [applyTheme]);
 
+  // Rejects when the write fails (the theme still applies), so Settings can
+  // report it. `api.saveSetting` has already logged the error.
   const setTheme = useCallback(async (newTheme: ThemeMode) => {
     try {
       setIsLoading(true);
       setThemeState(newTheme);
       await applyTheme(newTheme);
       await api.saveSetting(THEME_STORAGE_KEY, newTheme);
-    } catch (error) {
-      console.error('Failed to save theme preference:', error);
     } finally {
       setIsLoading(false);
     }

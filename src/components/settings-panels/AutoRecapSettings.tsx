@@ -11,6 +11,7 @@ import {
   autoRecapEnabled,
   autoRecapMinutes,
 } from "@/lib/autoRecapSettings";
+import { useSaveStatus } from "./saveStatus";
 
 /**
  * Automatic `/recap` after a finished turn goes unanswered. Main owns the
@@ -18,6 +19,7 @@ import {
  * fresh each time, so a change applies to sessions already open.
  */
 export function AutoRecapSettings() {
+  const { track } = useSaveStatus();
   const [enabled, setEnabled] = useState(true);
   const [minutes, setMinutes] = useState(DEFAULT_AUTO_RECAP_MINUTES);
   const [draft, setDraft] = useState(String(DEFAULT_AUTO_RECAP_MINUTES));
@@ -44,7 +46,7 @@ export function AutoRecapSettings() {
     }
     if (next === minutes) return;
     setMinutes(next);
-    void api.saveSetting(AUTO_RECAP_DELAY_KEY, String(next));
+    void track(api.saveSetting(AUTO_RECAP_DELAY_KEY, String(next)));
   };
 
   return (
@@ -63,7 +65,7 @@ export function AutoRecapSettings() {
           checked={enabled}
           onCheckedChange={fireAndLog('auto-recap-settings:checked-change', (checked: boolean) => {
             setEnabled(checked);
-            void api.saveSetting(AUTO_RECAP_ENABLED_KEY, checked ? 'true' : 'false');
+            void track(api.saveSetting(AUTO_RECAP_ENABLED_KEY, checked ? 'true' : 'false'));
           })}
         />
       </div>

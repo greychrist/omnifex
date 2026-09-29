@@ -13,6 +13,7 @@ import { useAccountVerdict } from "@/hooks/useAccountVerdict";
 import { Trash2, Plus, Pencil, FolderOpen, ShieldCheck, ShieldAlert, ShieldQuestion } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { fireAndLog, logAndForget } from "@/lib/fireAndLog";
+import { useSaveStatus } from "@/components/settings-panels/saveStatus";
 import {
   AccountDialog,
   type AccountDialogSavePayload,
@@ -213,6 +214,7 @@ const AccountListRow: React.FC<{
 };
 
 export const AccountSettings: React.FC = () => {
+  const { track } = useSaveStatus();
   const { refresh: refreshAccountsContext } = useAccounts();
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [pathRules, setPathRules] = useState<PathRule[]>([]);
@@ -298,10 +300,11 @@ export const AccountSettings: React.FC = () => {
     setDialogAccount(undefined);
   };
 
+  // Account and rule writes report through the Settings save indicator.
+  // A failed save keeps the dialog / add-rule form open so nothing is lost.
   const handleDialogSave = async (payload: AccountDialogSavePayload) => {
-    try {
-      if (dialogMode === 'edit' && dialogAccount) {
-        await api.updateAccount(dialogAccount.id, {
+    const write = dialogMode === 'edit' && dialogAccount
+      ? api.updateAccount(dialogAccount.id, {
           name: payload.name,
           configDir: payload.configDir,
           subscriptionLabel: payload.subscriptionLabel,
@@ -310,9 +313,8 @@ export const AccountSettings: React.FC = () => {
           icon: payload.icon,
           sessionDefaults: payload.sessionDefaults ?? null,
           expectedEmail: payload.expectedEmail,
-        });
-      } else {
-        await api.createAccount({
+        })
+      : api.createAccount({
           name: payload.name,
           configDir: payload.configDir,
           engine: payload.engine,
@@ -323,43 +325,26 @@ export const AccountSettings: React.FC = () => {
           sessionDefaults: payload.sessionDefaults,
           expectedEmail: payload.expectedEmail,
         });
-      }
-      closeDialog();
-      await loadData();
-    } catch (error) {
-      console.error("Failed to save account:", error);
-    }
+    if (!(await track(write))) return;
+    closeDialog();
+    await loadData();
   };
 
   const handleDelete = async (id: number) => {
-    try {
-      await api.deleteAccount(id);
-      await loadData();
-    } catch (error) {
-      console.error("Failed to delete account:", error);
-    }
+    if (await track(api.deleteAccount(id))) await loadData();
   };
 
   const handleAddRule = async () => {
     if (!newRulePrefix.trim() || newRuleAccountId === null) return;
-    try {
-      await api.addPathRule(newRuleAccountId, newRulePrefix.trim());
-      setNewRulePrefix("");
-      setNewRuleAccountId(null);
-      setShowAddRule(false);
-      await loadData();
-    } catch (error) {
-      console.error("Failed to add path rule:", error);
-    }
+    if (!(await track(api.addPathRule(newRuleAccountId, newRulePrefix.trim())))) return;
+    setNewRulePrefix("");
+    setNewRuleAccountId(null);
+    setShowAddRule(false);
+    await loadData();
   };
 
   const handleRemoveRule = async (ruleId: number) => {
-    try {
-      await api.removePathRule(ruleId);
-      await loadData();
-    } catch (error) {
-      console.error("Failed to remove rule:", error);
-    }
+    if (await track(api.removePathRule(ruleId))) await loadData();
   };
 
   return (

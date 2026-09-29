@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { api, type RateLimitSettings } from '@/lib/api';
 import type { SettingsPanelProps } from './types';
+import { useSaveStatus } from './saveStatus';
 
 const DEFAULT_THRESHOLDS = '75, 90';
 
@@ -53,17 +54,11 @@ export const RateLimitsSettings: React.FC<SettingsPanelProps> = ({ setToast }) =
     };
   }, [setToast]);
 
+  const { track } = useSaveStatus();
   const persist = useCallback(
-    async (partial: Partial<RateLimitSettings>) => {
-      try {
-        const merged = await api.updateRateLimitSettings(partial);
-        setSettings(merged);
-      } catch (err) {
-        console.error('[settings] failed to save rate-limit settings:', err);
-        setToast({ message: 'Failed to save rate-limit settings', type: 'error' });
-      }
-    },
-    [setToast],
+    (partial: Partial<RateLimitSettings>) =>
+      track(api.updateRateLimitSettings(partial).then(setSettings)),
+    [track],
   );
 
   const handleFiveHourBlur = useCallback(() => {
@@ -74,8 +69,9 @@ export const RateLimitsSettings: React.FC<SettingsPanelProps> = ({ setToast }) =
     }
     setFiveHourError(null);
     setFiveHourText(thresholdsToText(parsed));
+    if (settings && thresholdsToText(parsed) === thresholdsToText(settings.five_hour_thresholds_pct)) return;
     void persist({ five_hour_thresholds_pct: parsed });
-  }, [fiveHourText, persist]);
+  }, [fiveHourText, persist, settings]);
 
   const handleSevenDayBlur = useCallback(() => {
     const parsed = parseThresholds(sevenDayText);
@@ -85,8 +81,9 @@ export const RateLimitsSettings: React.FC<SettingsPanelProps> = ({ setToast }) =
     }
     setSevenDayError(null);
     setSevenDayText(thresholdsToText(parsed));
+    if (settings && thresholdsToText(parsed) === thresholdsToText(settings.seven_day_thresholds_pct)) return;
     void persist({ seven_day_thresholds_pct: parsed });
-  }, [sevenDayText, persist]);
+  }, [sevenDayText, persist, settings]);
 
   if (!settings) {
     return (

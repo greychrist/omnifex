@@ -39,6 +39,7 @@ import { PaletteEditor } from "./appearance/PaletteEditor";
 import { TypographyEditor } from "./appearance/TypographyEditor";
 import { TerminalEditor } from "./appearance/TerminalEditor";
 import type { SettingsPanelProps } from "./types";
+import { useSaveStatus } from "./saveStatus";
 import { cn } from "@/lib/utils";
 import { fireAndLog } from "@/lib/fireAndLog";
 
@@ -75,6 +76,7 @@ const FilterRow: React.FC<FilterRowProps> = ({ label, description, checked, onCh
 
 export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast }) => {
   const { config: committedConfig, setConfig: commitConfig } = useMessageRenderingConfig();
+  const { track } = useSaveStatus();
 
   // Local working copy. The whole panel reads/edits `config` (bound to the
   // draft below) so previews update instantly; the global commit is debounced.
@@ -91,9 +93,10 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
   const pushToGlobal = useCallback(
     (next: MessageRenderingConfig) => {
       lastCommittedRef.current = next;
-      commitConfig(next); // re-renders chat consumers + persists
+      // Re-renders chat consumers and persists; the save indicator reports the write.
+      void track(commitConfig(next));
     },
-    [commitConfig],
+    [commitConfig, track],
   );
 
   const scheduleCommit = useCallback(() => {
@@ -154,7 +157,6 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
     catch { /* private mode / quota — non-fatal */ }
   }, [activeTab]);
   const importInputRef = useRef<HTMLInputElement>(null);
-  const saveToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Load user-default presence on mount so the "Reset to my default" button
   // only enables once the user has actually saved a personal default.
@@ -163,23 +165,6 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
       .getSetting(USER_DEFAULT_KEY)
       .then((raw) => { setHasUserDefault(!!raw); })
       .catch(() => { setHasUserDefault(false); });
-  }, []);
-
-  // Debounced "Saved" toast: every mutate resets the timer; 800ms of quiet
-  // flushes one toast. Prevents a flood during rapid color-picker or slider
-  // edits while still surfacing that autosave happened.
-  const scheduleSavedToast = useCallback(() => {
-    if (saveToastTimerRef.current) clearTimeout(saveToastTimerRef.current);
-    saveToastTimerRef.current = setTimeout(() => {
-      setToast({ message: "Appearance saved", type: "success" });
-      saveToastTimerRef.current = null;
-    }, 800);
-  }, [setToast]);
-
-  useEffect(() => {
-    return () => {
-      if (saveToastTimerRef.current) clearTimeout(saveToastTimerRef.current);
-    };
   }, []);
 
   // Keep the local preview toggle in sync when the persisted default mode changes.
@@ -191,9 +176,8 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
     (producer: (prev: MessageRenderingConfig) => MessageRenderingConfig) => {
       setDraft((prev) => producer(prev));
       scheduleCommit();
-      scheduleSavedToast();
     },
-    [scheduleCommit, scheduleSavedToast],
+    [scheduleCommit],
   );
 
   const setTypography = useCallback(

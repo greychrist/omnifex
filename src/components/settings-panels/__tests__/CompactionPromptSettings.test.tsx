@@ -31,8 +31,10 @@ afterEach(() => {
   cleanup();
 });
 
+// The heading renders while the template is still loading; the editor only
+// once it has. Waiting on the heading raced the load under full-suite load.
 async function waitForLoaded() {
-  await screen.findByRole('heading', { name: 'Compactions' });
+  await screen.findByRole('textbox');
 }
 
 function textarea(): HTMLTextAreaElement {

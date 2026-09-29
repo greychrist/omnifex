@@ -1,19 +1,13 @@
 import React, { useState, useEffect } from "react";
 import { AccountSettings } from "@/components/AccountSettings";
-import { motion, AnimatePresence } from "framer-motion";
-import { Save, AlertCircle } from "lucide-react";
-import { Spinner } from "@/components/ui/spinner";
-import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Card } from "@/components/ui/card";
 import { ModelPricingEditor } from "@/components/ModelPricingEditor";
-import { api, type ClaudeInstallation } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Toast, ToastContainer } from "@/components/ui/toast";
 import { StorageTab } from "./StorageTab";
 import { LogTab } from "./LogTab";
 import { SystemPromptSettings } from "./settings-panels/SystemPromptSettings";
-import { fireAndLog, logAndForget } from "@/lib/fireAndLog";
 import { clearInitialSettingsTab, readInitialSettingsTab } from '@/lib/settingsInitialTab';
 import {
   GeneralSettings,
@@ -22,6 +16,7 @@ import {
   RateLimitsSettings,
   type ToastState,
 } from "./settings-panels";
+import { SaveStatusProvider, SaveStatusBanner } from "./settings-panels/saveStatus";
 
 interface SettingsProps {
   /**
@@ -35,9 +30,12 @@ interface SettingsProps {
 }
 
 /**
- * Settings shell. Each tab owns its own persistence; the shell only
- * brokers toasts plus the Claude-binary-path / Proxy save that share
- * the top-of-page Save button.
+ * Settings shell. Each tab owns its own persistence and saves as it changes;
+ * the shell hosts the save indicator every tab reports to (see
+ * settings-panels/saveStatus.tsx) and brokers toasts for one-off actions.
+ * There is no Save button — the last one only rendered on the Proxy tab, so
+ * the Claude installation picker on General, which also waited for it, could
+ * not be saved from its own tab.
  *
  * History (May 2026):
  * - Permissions / Environment / Advanced / Hooks / Commands tabs were
@@ -50,11 +48,15 @@ interface SettingsProps {
  *   `getClaudeSettings`/`saveClaudeSettings` flow and the per-account
  *   picker that used to scope it.
  */
-export const Settings: React.FC<SettingsProps> = ({
+export const Settings: React.FC<SettingsProps> = (props) => (
+  <SaveStatusProvider>
+    <SettingsContent {...props} />
+  </SaveStatusProvider>
+);
+
+const SettingsContent: React.FC<SettingsProps> = ({
   className,
 }) => {
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   // sessionStorage handoff from App.tsx's "View in Log" action. The read is
   // PURE: it used to clear the key here too, which React StrictMode breaks by
   // design — it invokes initializers twice, so the first call consumed the seed
@@ -63,18 +65,7 @@ export const Settings: React.FC<SettingsProps> = ({
   // because `Settings` is lazily loaded and had not mounted when it fired.
   // Consuming the seed is now an effect, below.
   const [activeTab, setActiveTab] = useState<string>(readInitialSettingsTab);
-  const [currentBinaryPath, setCurrentBinaryPath] = useState<string | null>(null);
-  const [selectedInstallation, setSelectedInstallation] = useState<ClaudeInstallation | null>(null);
-  const [binaryPathChanged, setBinaryPathChanged] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
-
-  // Proxy state
-  const [proxySettingsChanged, setProxySettingsChanged] = useState(false);
-  const saveProxySettings = React.useRef<(() => Promise<void>) | null>(null);
-
-  useEffect(() => {
-    logAndForget('settings:load-claude-binary-path', loadClaudeBinaryPath());
-  }, []);
 
   // App.tsx dispatches `log:focus-error-view` when the user clicks the
   // "View in Log" action on an error toast. Switch the inner tab to the
@@ -94,85 +85,18 @@ export const Settings: React.FC<SettingsProps> = ({
   // of the Settings tab. Idempotent — StrictMode runs this twice.
   useEffect(() => { clearInitialSettingsTab(); }, []);
 
-  const loadClaudeBinaryPath = async () => {
-    try {
-      const path = await api.getClaudeBinaryPath();
-      setCurrentBinaryPath(path);
-    } catch (err) {
-      console.error("Failed to load Claude binary path:", err);
-    }
-  };
-
-  const saveSettings = async () => {
-    try {
-      setSaving(true);
-      setError(null);
-      setToast(null);
-
-      if (binaryPathChanged && selectedInstallation) {
-        await api.setClaudeBinaryPath(selectedInstallation.path);
-        setCurrentBinaryPath(selectedInstallation.path);
-        setBinaryPathChanged(false);
-      }
-
-      if (proxySettingsChanged && saveProxySettings.current) {
-        await saveProxySettings.current();
-        setProxySettingsChanged(false);
-      }
-
-      setToast({ message: "Settings saved successfully!", type: "success" });
-    } catch (err) {
-      console.error("Failed to save settings:", err);
-      setError("Failed to save settings.");
-      setToast({ message: "Failed to save settings", type: "error" });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  // Tabs whose data is actually written by the top-of-page Save button.
-  // Other tabs own their own save flow (or are read-only / live-updated)
-  // and the top button doesn't touch their state — showing it there is
-  // confusing and contributes to the "multiple save buttons on one
-  // screen" problem.
-  const TABS_USING_TOP_SAVE = new Set([
-    'proxy',
-  ]);
-  const showTopSave = TABS_USING_TOP_SAVE.has(activeTab);
-
-  const handleClaudeInstallationSelect = (installation: ClaudeInstallation) => {
-    setSelectedInstallation(installation);
-    setBinaryPathChanged(installation.path !== currentBinaryPath);
-  };
-
   return (
     <div className={cn("h-full overflow-y-auto", className)}>
       <div className="max-w-6xl mx-auto flex flex-col h-full">
-      {/* Error message */}
-      <AnimatePresence>
-        {error && (
-          <motion.div
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.15 }}
-            className="mx-4 mt-4 p-3 rounded-lg bg-destructive/10 border border-destructive/50 flex items-center gap-2 text-body-small text-destructive"
-          >
-            <AlertCircle className="h-4 w-4" />
-            {error}
-          </motion.div>
-        )}
-      </AnimatePresence>
-
       {/* Content */}
       <div className="flex-1 flex flex-col overflow-hidden p-6">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full flex flex-col flex-1 overflow-hidden">
-            {/* Tab strip + conditional Save button on the right.
+            {/* Tab strip, with the save banner hanging beneath it.
                 The "Settings" h1 + caption above this row was removed —
                 the Settings tab in the app chrome already labels the
                 page, and the tab strip below conveys what's available.
                 Reclaims ~100px of vertical space at the top. */}
-            <div className="flex items-center gap-3 mb-6 shrink-0">
+            <div className="relative flex items-center gap-3 mb-6 shrink-0">
               <TabsList className="flex flex-1 h-auto p-1">
                 <TabsTrigger value="general" className="flex-1 py-2 text-xs">General</TabsTrigger>
                 <TabsTrigger value="appearance" className="flex-1 py-2 text-xs">Chats</TabsTrigger>
@@ -183,31 +107,8 @@ export const Settings: React.FC<SettingsProps> = ({
                 <TabsTrigger value="rate_limits" className="flex-1 py-2 text-xs">Rate Limits</TabsTrigger>
                 <TabsTrigger value="log" className="flex-1 py-2 text-xs">Log</TabsTrigger>
               </TabsList>
-              {showTopSave && (
-                <motion.div
-                  whileTap={{ scale: 0.97 }}
-                  transition={{ duration: 0.15 }}
-                  className="shrink-0"
-                >
-                  <Button
-                    onClick={fireAndLog('settings:click', saveSettings)}
-                    disabled={saving}
-                    size="sm"
-                  >
-                    {saving ? (
-                      <>
-                        <Spinner className="mr-2" />
-                        Saving...
-                      </>
-                    ) : (
-                      <>
-                        <Save className="mr-2 h-4 w-4" />
-                        Save
-                      </>
-                    )}
-                  </Button>
-                </motion.div>
-              )}
+              {/* Floats centred just under the tab strip, over the panel. */}
+              <SaveStatusBanner className="absolute left-1/2 top-full mt-2 -translate-x-1/2" />
             </div>
 
             <div className={activeTab === "log" ? "flex-1 flex flex-col min-h-0 overflow-hidden" : "flex-1 overflow-y-auto"}>
@@ -226,12 +127,7 @@ export const Settings: React.FC<SettingsProps> = ({
 
             {/* General Settings */}
             <TabsContent value="general" className="space-y-6">
-              <GeneralSettings
-                setToast={setToast}
-                currentBinaryPath={currentBinaryPath}
-                binaryPathChanged={binaryPathChanged}
-                onClaudeInstallationSelect={handleClaudeInstallationSelect}
-              />
+              <GeneralSettings />
             </TabsContent>
 
             {/* System Prompts Tab — every prompt OmniFex composes and sends
@@ -249,13 +145,7 @@ export const Settings: React.FC<SettingsProps> = ({
 
             {/* Proxy Settings */}
             <TabsContent value="proxy">
-              <ProxySettingsPanel
-                setToast={setToast}
-                onProxyChange={(hasChanges: boolean, save: () => Promise<void>) => {
-                  setProxySettingsChanged(hasChanges);
-                  saveProxySettings.current = save;
-                }}
-              />
+              <ProxySettingsPanel setToast={setToast} />
             </TabsContent>
 
             {/* Rate Limits Settings */}
@@ -288,8 +178,6 @@ export const Settings: React.FC<SettingsProps> = ({
           />
         )}
       </ToastContainer>
-
-
     </div>
   );
 };

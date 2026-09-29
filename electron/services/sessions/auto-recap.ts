@@ -32,7 +32,7 @@ export interface AutoRecapPolicy {
   delayMs: number;
 }
 
-/** The stored settings, read fresh on each use. On by default, after 5 minutes. */
+/** The stored settings, read fresh on each use. On by default, after 10 minutes. */
 export function readAutoRecapPolicy(getSetting: (key: string) => string | null): AutoRecapPolicy {
   return {
     enabled: autoRecapEnabled(getSetting(AUTO_RECAP_ENABLED_KEY)),

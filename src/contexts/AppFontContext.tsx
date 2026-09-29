@@ -49,15 +49,13 @@ export const AppFontProvider: React.FC<{ children: React.ReactNode }> = ({ child
     };
   }, []);
 
+  // Rejects when the write fails (the font still applies), so Settings can
+  // report it.
   const setAppFont = useCallback(async (next: string) => {
     if (!isTypefaceId(next)) return;
-    try {
-      setAppFontState(next);
-      applyAppFont(next);
-      await api.saveSetting(APP_FONT_STORAGE_KEY, next);
-    } catch (error) {
-      console.error("Failed to save app font setting:", error);
-    }
+    setAppFontState(next);
+    applyAppFont(next);
+    await api.saveSetting(APP_FONT_STORAGE_KEY, next);
   }, []);
 
   return (

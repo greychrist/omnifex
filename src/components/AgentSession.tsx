@@ -2308,7 +2308,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
         // "Raise limit" writes the shared budget, so it applies to every
         // session. Snooze is the per-session escape hatch; these are
         // deliberately different verbs for deliberately different scopes.
-        void setContextPressure({ ...contextPressureSetting, mode: 'tokens', value: tokens });
+        logAndForget('claude-code-session:raise-context-budget', setContextPressure({ ...contextPressureSetting, mode: 'tokens', value: tokens }));
       },
       onRestartSession: () => { void handleRestartSession(); },
     },

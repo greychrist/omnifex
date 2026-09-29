@@ -160,7 +160,7 @@ describe('MessageCard — debug mode footer (kind label only)', () => {
     fakeConfig.debug.showCardKindLabel = true;
     const spy = vi.spyOn(mod, 'useMessageRenderingConfig').mockReturnValue({
       config: fakeConfig,
-      setConfig: () => {},
+      setConfig: async () => {},
       loaded: true,
     });
 

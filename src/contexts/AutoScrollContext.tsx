@@ -69,24 +69,22 @@ export const AutoScrollProvider: React.FC<{ children: React.ReactNode }> = ({
     };
   }, []);
 
+  // Rejects when a write fails (the thresholds still apply), so Settings can
+  // report it.
   const setThresholds = useCallback(async (next: AutoScrollThresholds) => {
     const clamped = clampThresholds(next);
     setReengagePx(clamped.reengagePx);
     setDisengagePx(clamped.disengagePx);
-    try {
-      await Promise.all([
-        api.saveSetting(
-          AUTOSCROLL_REENGAGE_SETTING_KEY,
-          String(clamped.reengagePx),
-        ),
-        api.saveSetting(
-          AUTOSCROLL_DISENGAGE_SETTING_KEY,
-          String(clamped.disengagePx),
-        ),
-      ]);
-    } catch (error) {
-      console.error("Failed to save auto-scroll thresholds:", error);
-    }
+    await Promise.all([
+      api.saveSetting(
+        AUTOSCROLL_REENGAGE_SETTING_KEY,
+        String(clamped.reengagePx),
+      ),
+      api.saveSetting(
+        AUTOSCROLL_DISENGAGE_SETTING_KEY,
+        String(clamped.disengagePx),
+      ),
+    ]);
   }, []);
 
   return (

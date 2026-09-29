@@ -13,7 +13,7 @@ import { logAndForget } from "@/lib/fireAndLog";
 
 interface MessageRenderingContextValue {
   config: MessageRenderingConfig;
-  setConfig: (next: MessageRenderingConfig, persist?: boolean) => void;
+  setConfig: (next: MessageRenderingConfig, persist?: boolean) => Promise<void>;
   loaded: boolean;
 }
 
@@ -85,12 +85,12 @@ export const MessageRenderingProvider: React.FC<{ children: React.ReactNode }> =
     document.documentElement.style.setProperty("--font-terminal", stack);
   }, [config.terminal.typeface]);
 
-  const setConfig = useCallback((next: MessageRenderingConfig, persist = true) => {
+  // Applies at once; the returned promise settles with the write, so the
+  // Settings screen can report whether it landed.
+  const setConfig = useCallback(async (next: MessageRenderingConfig, persist = true) => {
     setConfigState(next);
     if (persist) {
-      api.saveSetting(MESSAGE_RENDERING_CONFIG_KEY, serializeConfig(next)).catch(() => {
-        /* settings UI surfaces its own toast */
-      });
+      await api.saveSetting(MESSAGE_RENDERING_CONFIG_KEY, serializeConfig(next));
     }
   }, []);
 
@@ -117,7 +117,7 @@ export const MessageRenderingPreviewProvider: React.FC<{
   config: MessageRenderingConfig;
   children: React.ReactNode;
 }> = ({ config, children }) => (
-  <MessageRenderingContext.Provider value={{ config, setConfig: () => {}, loaded: true }}>
+  <MessageRenderingContext.Provider value={{ config, setConfig: async () => {}, loaded: true }}>
     {children}
   </MessageRenderingContext.Provider>
 );
@@ -129,7 +129,7 @@ export function useMessageRenderingConfig(): MessageRenderingContextValue {
     // (e.g. isolated tests). Returns defaults; updates are silently dropped.
     return {
       config: createDefaultConfig(),
-      setConfig: () => {},
+      setConfig: async () => {},
       loaded: true,
     };
   }
