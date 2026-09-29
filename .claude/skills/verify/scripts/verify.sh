@@ -12,7 +12,8 @@ ran_tests=0
 status=0
 
 gate() { # gate <name> <npm script>
-  local name=$1 script=$2 log="$LOGDIR/$name.log"
+  local name=$1 script=$2
+  local log="$LOGDIR/$name.log"  # separate line: one `local` expands $name before assigning it
   echo "== npm run $script"
   if npm run "$script" >"$log" 2>&1; then
     echo "PASS  npm run $script"
