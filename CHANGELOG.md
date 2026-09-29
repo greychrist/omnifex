@@ -5,6 +5,19 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.202] — 2026-09-29
+
+### Added
+- Per-message-kind visibility in Settings → Appearance: **Always**, **Verbose only** or **Never**. Never removes a kind from the transcript in both view modes. It replaces the "Hide in compact mode" switch; existing settings carry over.
+
+### Changed
+- Auto-recap now counts down from the session's last message rather than from the end of the turn, and waits while background agents or shell tasks are still running.
+- Session-title rows appear only when the session's effective title changes. The CLI's repeated, unchanged title records no longer stack up in the transcript.
+
+### Fixed
+- A prompt that quotes slash-command output (for example, a pasted transcript line containing `<local-command-stdout>`) no longer renders as command output showing only the quoted text.
+- Blank gaps between transcript rows: attachment and bookkeeping records now count in "Hidden Events" groups, and rows with nothing to show no longer take up space.
+
 ## [0.4.201] — 2026-09-28
 
 ### Added
