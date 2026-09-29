@@ -162,6 +162,12 @@ Both emit `session-account-mismatch:<tabId>` with `{ expected, detected, configD
 
 Spec: `docs/superpowers/specs/2026-07-27-account-email-verification-design.md`
 
+### A process that lost its sign-in
+
+Neither check sees this. A CLI whose OAuth refresh fails ("OAuth session expired and could not be refreshed") gives up for good: it never re-reads the Keychain, so every later request says "Not logged in", even after the account is signed in again. Meanwhile `.claude.json` and `auth status` still say signed in, so the account shows as verified.
+
+The only evidence is the session's own transcript. `sessionAuthFailure(messages)` in `src/lib/sessionDerivedState.ts` is shaped like `usageLimitWait`. It flags a main assistant marked `error: 'authentication_failed'`, or a failed local command whose stdout is the CLI's auth error: a failed `/recap` leaves only text. A later main assistant clears the flag. `result` and `init` do not decide anything: the CLI emits `init` before every prompt, not once per process. `useSessionAuthExpiry` discards any failure older than the moment this tab last saw its process start, because resumed history can still end on one. It also restarts the session when `announceAccountSignedIn` fires for its config dir (the account popover's sign-in), unless a turn is running. The badge shield and the popover take the failure from there.
+
 ## Where the canonical types live
 
 - `electron/services/sessions/types.ts` — `SessionStatus` enum, `TurnState`, the `SessionHandle` shape, and `AccountMismatch` (the `session-account-mismatch` payload). Mirrored as types in `src/lib/api.ts` for the renderer.

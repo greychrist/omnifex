@@ -59,6 +59,7 @@ import type { JsonlNode } from "@/types/jsonl";
 import { normalizeJsonlNode } from "@/lib/normalizeMessage";
 import { classifyJsonlLine } from '@/lib/jsonlClassifier';
 import { lastPermissionMode, lastAssistantModel, usageLimitWait } from '@/lib/sessionDerivedState';
+import { useSessionAuthExpiry } from '@/hooks/useSessionAuthExpiry';
 import { firstPromptText } from '@/lib/sessionTitle';
 import { CaughtUpPill } from "./RemoteConnectionBanner";
 import { useLayoutMode } from "@/hooks/useLayoutMode";
@@ -2163,6 +2164,15 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     }
   };
 
+  // A process that lost its sign-in never picks up a new one — see the hook.
+  const sessionAuthFailure = useSessionAuthExpiry({
+    messages,
+    sessionStatus,
+    turnRunning: isLoading,
+    configDir: accountResolution?.account.config_dir ?? null,
+    restart: handleRestartSession,
+  });
+
   const handleClear = async () => {
     if (!isSessionActive || isLoading || waitingForPermission) return;
     const tid = tabIdRef.current;
@@ -2441,8 +2451,9 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
                     : undefined
                 }
                 onRecheck={recheckIdentity}
+                sessionAuthFailure={sessionAuthFailure}
                 onRestart={
-                  sessionVerification?.needsRestart
+                  sessionVerification?.needsRestart || sessionAuthFailure
                     ? () => { void handleRestartSession(); }
                     : null
                 }

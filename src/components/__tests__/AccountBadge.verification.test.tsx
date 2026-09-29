@@ -80,3 +80,19 @@ describe('AccountBadge verification shield', () => {
     expect(screen.queryByRole('img')).toBeNull();
   });
 });
+
+// The running process's lost sign-in outranks the config dir's verdict: the
+// dir can read as verified while this session can no longer make a request.
+describe('AccountBadge — session sign-in expired', () => {
+  it('shows an alert shield even when the config dir is verified', () => {
+    render(<AccountBadge name="Work" agent="claude" verification="verified" sessionSignedOut />);
+    expect(screen.getByRole('img', { name: /session's sign-in expired/i })).toBeTruthy();
+    expect(screen.queryByRole('img', { name: /expected account/i })).toBeNull();
+  });
+
+  it('shows the alert for an account with no expected email', () => {
+    render(<AccountBadge name="Work" agent="claude" verification={null} sessionSignedOut />);
+    expect(screen.getByRole('img', { name: /session's sign-in expired/i })).toBeTruthy();
+    expect(screen.queryByTestId('brand-icon')).toBeNull();
+  });
+});

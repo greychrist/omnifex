@@ -32,7 +32,14 @@ vi.mock('@/components/ui/popover', () => ({
     </div>
   ),
 }));
-vi.mock('../AccountBadge', () => ({ AccountBadge: () => <span>badge</span> }));
+vi.mock('../AccountBadge', () => ({
+  AccountBadge: (props: { sessionSignedOut?: boolean }) => (
+    <span data-testid="account-badge" data-session-signed-out={String(!!props.sessionSignedOut)}>badge</span>
+  ),
+}));
+
+const { announceMock } = vi.hoisted(() => ({ announceMock: vi.fn() }));
+vi.mock('@/lib/accountSignIn', () => ({ announceAccountSignedIn: announceMock }));
 vi.mock('../claude-code-session/UsageDetailPopover', () => ({
   UsageDetailPopover: (props: { trigger: React.ReactNode }) => <div>{props.trigger}</div>,
 }));
@@ -79,6 +86,7 @@ function renderCard(overrides: Partial<React.ComponentProps<typeof AccountCard>>
 
 beforeEach(() => {
   lastModalProps = null;
+  announceMock.mockReset();
   apiMock.claudeLogout.mockReset();
   apiMock.claudeLogout.mockResolvedValue(undefined);
   platformMock.platform.isElectron = true;
@@ -170,5 +178,47 @@ describe('AccountCard — sign in / sign out', () => {
     renderCard();
     expect(screen.queryByRole('button', { name: /sign out/i })).toBeNull();
     expect(screen.queryByRole('button', { name: /re-authenticate/i })).toBeNull();
+  });
+});
+
+// The running CLI process lost its sign-in while the config dir's login still
+// reads as fine (session 845b2f3d). The popover must say so and lead with
+// Sign in, and a successful sign-in must reach every tab on the account.
+describe('AccountCard — session sign-in expired', () => {
+  const EXPIRED = {
+    at: '2026-09-29T19:43:40Z',
+    text: 'Failed to authenticate: OAuth session expired and could not be refreshed',
+  };
+
+  it('flags the badge', () => {
+    renderCard({ sessionAuthFailure: EXPIRED });
+    expect(screen.getByTestId('account-badge').dataset.sessionSignedOut).toBe('true');
+  });
+
+  it('leaves the badge alone when the session is signed in', () => {
+    renderCard();
+    expect(screen.getByTestId('account-badge').dataset.sessionSignedOut).toBe('false');
+  });
+
+  it('explains the expiry and offers Sign in, not Re-authenticate', () => {
+    renderCard({ sessionAuthFailure: EXPIRED, signedInEmail: 'me@work.com' });
+    expect(screen.getByText(/this session's sign-in expired/i)).toBeTruthy();
+    expect(screen.getByText(EXPIRED.text)).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^sign in$/i })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /re-authenticate/i })).toBeNull();
+  });
+
+  it('offers Restart session for an account with no expected email', () => {
+    const onRestart = vi.fn();
+    renderCard({ sessionAuthFailure: EXPIRED, verification: null, onRestart });
+    fireEvent.click(screen.getByRole('button', { name: /restart session/i }));
+    expect(onRestart).toHaveBeenCalledTimes(1);
+  });
+
+  it('announces the sign-in so every tab on the account can restart', () => {
+    renderCard({ sessionAuthFailure: EXPIRED });
+    fireEvent.click(screen.getByRole('button', { name: /^sign in$/i }));
+    lastModalProps!.onAuthenticated!();
+    expect(announceMock).toHaveBeenCalledWith(CONFIG_DIR);
   });
 });

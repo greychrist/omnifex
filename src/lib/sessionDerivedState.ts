@@ -186,3 +186,63 @@ export function usageLimitWait(messages: JsonlNode[]): number | null {
   }
   return null;
 }
+
+/** The failure `sessionAuthFailure` found: when it landed, and what it said. */
+export interface SessionAuthFailure {
+  at: string;
+  text: string;
+}
+
+// The CLI's own wording, from a failed local command's stdout. A failed
+// `/recap` leaves no structured marker, only this text — and auto-recap is
+// often the first thing an idle session runs after its login lapses.
+const AUTH_FAILURE_STDOUT = /\bNot logged in\b|\bFailed to authenticate\b|\bOAuth session expired\b/;
+
+function assistantText(raw: { message?: { content?: unknown } }): string {
+  const content = raw.message?.content;
+  if (!Array.isArray(content)) return '';
+  return content
+    .map((b: { type?: string; text?: string }) => (b?.type === 'text' ? b.text ?? '' : ''))
+    .join('')
+    .trim();
+}
+
+/**
+ * Has this session's CLI process lost its sign-in?
+ *
+ * A process whose OAuth refresh fails gives up for good — it never re-reads
+ * the Keychain, so signing in again does not reach it and only a restart
+ * does. The account's on-disk login can look perfectly healthy throughout
+ * (`oauthAccount` lingers in `.claude.json`), so the config-dir identity check
+ * cannot see this. The session's own transcript is the only evidence.
+ *
+ * Scans backward, like `usageLimitWait`:
+ * - a main assistant marked `error: 'authentication_failed'` → failed;
+ * - any other main assistant → the model has answered since → `null`;
+ * - a failed local command whose stdout is the CLI's auth error → failed;
+ * - everything else, including prompts, `result` and `init` (the CLI emits a
+ *   fresh init before every prompt, so it does not mark a new process), is
+ *   skipped.
+ *
+ * Returns when the failure landed. A resumed transcript still ends on it
+ * until the next reply, so the caller must discard a failure older than the
+ * process it is looking at — see `useSessionAuthExpiry`.
+ */
+export function sessionAuthFailure(messages: JsonlNode[]): SessionAuthFailure | null {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const n = messages[i];
+    if (n.kind === 'assistant') {
+      if (!isMainAssistant(n)) continue;
+      const raw = n.raw as { error?: unknown; message?: { content?: unknown } };
+      if (raw.error !== 'authentication_failed') return null;
+      return { at: n.receivedAt, text: assistantText(raw) };
+    }
+    if (n.kind === 'system' && n.subtype === 'local_command') {
+      const raw = n.raw as { content?: unknown; commandOutcome?: { kind?: unknown } };
+      if (raw.commandOutcome?.kind !== 'failed' || typeof raw.content !== 'string') continue;
+      const text = raw.content.replace(/<\/?local-command-std(?:out|err)>/g, '').trim();
+      if (AUTH_FAILURE_STDOUT.test(text)) return { at: n.receivedAt, text };
+    }
+  }
+  return null;
+}

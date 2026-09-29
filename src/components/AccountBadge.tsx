@@ -83,6 +83,12 @@ interface AccountBadgeProps {
    * would be a claim we haven't earned. Ignored by the `compact` variant.
    */
   verification?: IdentityStatus | null;
+  /**
+   * This session's CLI process has lost its sign-in. Outranks `verification`:
+   * the config dir can still read as verified while the running process —
+   * which never re-reads its credentials — can no longer make a request.
+   */
+  sessionSignedOut?: boolean;
   variant?: "full" | "compact";
   /**
    * Text size of the "full" badge. Defaults to `xs` (11px text + 14px icon)
@@ -113,6 +119,7 @@ export const AccountBadge: React.FC<AccountBadgeProps> = ({
   accountType: accountTypeProp,
   agent,
   verification,
+  sessionSignedOut = false,
   variant = "full",
   size = "xs",
   hideName = false,
@@ -147,7 +154,13 @@ export const AccountBadge: React.FC<AccountBadgeProps> = ({
   // Colors are hard-coded rather than themed: green/red must not be mixed
   // toward the account tint, or a red alert on an amber account stops reading
   // as an alert.
-  const shield = verification
+  const shield = sessionSignedOut
+    ? {
+        Icon: ShieldAlert,
+        className: "text-red-500",
+        label: "This session's sign-in expired — sign in again to continue",
+      }
+    : verification
     ? {
         verified: {
           Icon: ShieldCheck,

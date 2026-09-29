@@ -9,6 +9,7 @@ import {
   lastPermissionMode,
   lastAssistantModel,
   usageLimitWait,
+  sessionAuthFailure,
 } from '../sessionDerivedState';
 
 // Minimal helpers — these build JsonlNodes with the fields the derivation reads.
@@ -426,5 +427,133 @@ describe('usageLimitWait', () => {
       userPrompt('2026-08-18T14:00:00Z'),
     ];
     expect(usageLimitWait(msgs)).toBeNull();
+  });
+});
+
+// A CLI process whose OAuth refresh fails gives up for good: it never re-reads
+// the Keychain, so a later sign-in cannot reach it. The only evidence is in
+// its own transcript — the account's on-disk login looks fine throughout.
+// Shapes are copied from session 845b2f3d (CLI 2.1.284).
+function authFailedAssistant(timestamp: string, uuid: string, text: string): JsonlNode {
+  return {
+    kind: 'assistant',
+    sessionId: 's1',
+    receivedAt: timestamp,
+    raw: {
+      type: 'assistant',
+      uuid,
+      isSidechain: false,
+      error: 'authentication_failed',
+      isApiErrorMessage: true,
+      message: {
+        role: 'assistant',
+        model: '<synthetic>',
+        stop_reason: 'stop_sequence',
+        content: [{ type: 'text', text }],
+      },
+      timestamp,
+    } as never,
+  };
+}
+
+function localCommand(
+  timestamp: string,
+  uuid: string,
+  stdout: string,
+  outcome: 'failed' | 'succeeded',
+): JsonlNode {
+  return {
+    kind: 'system',
+    subtype: 'local_command',
+    sessionId: 's1',
+    receivedAt: timestamp,
+    raw: {
+      type: 'system',
+      subtype: 'local_command',
+      uuid,
+      content: `<local-command-stdout>${stdout}</local-command-stdout>`,
+      commandRun: { command: 'recap', args: '' },
+      commandOutcome: { kind: outcome },
+      timestamp,
+    } as never,
+  } as unknown as JsonlNode;
+}
+
+function cliInit(timestamp: string): JsonlNode {
+  return {
+    kind: 'cli-stream-init',
+    sessionId: 's1',
+    receivedAt: timestamp,
+    raw: { type: 'system', subtype: 'init', timestamp } as never,
+  } as unknown as JsonlNode;
+}
+
+describe('sessionAuthFailure', () => {
+  const EXPIRED = 'Failed to authenticate: OAuth session expired and could not be refreshed';
+
+  it('reports an assistant error marked authentication_failed', () => {
+    const msgs = [
+      userPrompt('2026-09-29T19:43:40Z'),
+      authFailedAssistant('2026-09-29T19:43:40.5Z', 'a1', EXPIRED),
+    ];
+    expect(sessionAuthFailure(msgs)).toEqual({ at: '2026-09-29T19:43:40.5Z', text: EXPIRED });
+  });
+
+  // The CLI closes the failed turn with a result that says is_error:false and
+  // opens every prompt with a fresh init — neither says anything about auth.
+  it('looks past the result and init that bracket the failure', () => {
+    const msgs = [
+      cliInit('2026-09-29T20:01:21Z'),
+      userPrompt('2026-09-29T20:01:21.1Z'),
+      authFailedAssistant('2026-09-29T20:01:21.4Z', 'a2', 'Not logged in · Please run /login'),
+      resultNode('2026-09-29T20:01:21.5Z'),
+    ];
+    expect(sessionAuthFailure(msgs)).toEqual({ at: '2026-09-29T20:01:21.4Z', text: 'Not logged in · Please run /login' });
+  });
+
+  // Auto-recap is often the first thing an idle session runs, and a failed
+  // local command leaves only its stdout — there is no structured marker.
+  it('reports a failed local command whose output is the expired-session error', () => {
+    const msgs = [localCommand('2026-09-29T19:58:40Z', 'c1', EXPIRED, 'failed')];
+    expect(sessionAuthFailure(msgs)).toEqual({ at: '2026-09-29T19:58:40Z', text: EXPIRED });
+  });
+
+  it('reports a failed local command whose output is the not-logged-in error', () => {
+    const msgs = [localCommand('2026-09-29T19:59:55Z', 'c2', 'Not logged in · Please run /login', 'failed')];
+    expect(sessionAuthFailure(msgs)).toEqual({ at: '2026-09-29T19:59:55Z', text: 'Not logged in · Please run /login' });
+  });
+
+  it('ignores a failed local command that failed for another reason', () => {
+    const msgs = [localCommand('2026-09-29T19:59:55Z', 'c3', 'No conversation to recap', 'failed')];
+    expect(sessionAuthFailure(msgs)).toBeNull();
+  });
+
+  it('keeps reporting the failure while a new prompt waits for its answer', () => {
+    const msgs = [
+      authFailedAssistant('2026-09-29T19:43:40Z', 'a1', EXPIRED),
+      userPrompt('2026-09-29T19:50:00Z'),
+    ];
+    expect(sessionAuthFailure(msgs)?.at).toBe('2026-09-29T19:43:40Z');
+  });
+
+  it('clears once the model answers again', () => {
+    const msgs = [
+      authFailedAssistant('2026-09-29T19:43:40Z', 'a1', EXPIRED),
+      userPrompt('2026-09-29T20:04:32Z'),
+      assistantWithStop('2026-09-29T20:04:52Z', 'end_turn'),
+    ];
+    expect(sessionAuthFailure(msgs)).toBeNull();
+  });
+
+  it('does not let a subagent reply clear the main session failure', () => {
+    const msgs = [
+      authFailedAssistant('2026-09-29T19:43:40Z', 'a1', EXPIRED),
+      assistantWithStop('2026-09-29T19:43:41Z', 'end_turn', { isSidechain: true }),
+    ];
+    expect(sessionAuthFailure(msgs)?.at).toBe('2026-09-29T19:43:40Z');
+  });
+
+  it('returns null for an empty transcript', () => {
+    expect(sessionAuthFailure([])).toBeNull();
   });
 });

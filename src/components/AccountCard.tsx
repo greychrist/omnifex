@@ -13,6 +13,8 @@ import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import { platform } from "@/lib/platform";
 import { ClaudeSignInModal } from "./ClaudeSignInModal";
+import { announceAccountSignedIn } from "@/lib/accountSignIn";
+import type { SessionAuthFailure } from "@/lib/sessionDerivedState";
 import { AccountBadge } from "./AccountBadge";
 import { useLayoutMode } from "@/hooks/useLayoutMode";
 import { HeaderLabel } from "./HeaderLabel";
@@ -47,7 +49,16 @@ interface AccountCardProps {
    * which only exists for accounts with an expected email.
    */
   signedInEmail?: string | null;
-  /** Supplied only when the running process actually holds wrong credentials. */
+  /**
+   * This session's CLI process has lost its sign-in (`sessionAuthFailure`).
+   * Independent of `signedInEmail`: the config dir's login can look fine while
+   * the running process, which never re-reads its credentials, cannot work.
+   */
+  sessionAuthFailure?: SessionAuthFailure | null;
+  /**
+   * Supplied only when a restart changes something: the running process holds
+   * the wrong credentials, or has lost its sign-in.
+   */
   onRestart?: (() => void) | null;
   restarting?: boolean;
   configDir: string;
@@ -76,6 +87,7 @@ export function AccountCard({
   agent,
   verification,
   signedInEmail,
+  sessionAuthFailure = null,
   onRecheck,
   onRestart,
   restarting = false,
@@ -193,11 +205,45 @@ export function AccountCard({
               className="rounded hover:opacity-80 transition-opacity focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               title="Click for account details"
             >
-              <AccountBadge name={accountName} agent={agent} verification={shieldStatus} hideName={narrow} />
+              <AccountBadge
+                name={accountName}
+                agent={agent}
+                verification={shieldStatus}
+                sessionSignedOut={sessionAuthFailure !== null}
+                hideName={narrow}
+              />
             </button>
           }
           content={
             <div className="flex flex-col gap-3 text-left">
+              {sessionAuthFailure && (
+                <div className="flex flex-col gap-1.5 rounded-md bg-red-500/10 px-2 py-1.5">
+                  <div className="text-[10px] uppercase tracking-wider text-red-500 flex items-center gap-1">
+                    <ShieldAlert className="w-3 h-3" />
+                    This session&apos;s sign-in expired
+                  </div>
+                  <div className="text-[11px] text-foreground/70 break-words">{sessionAuthFailure.text}</div>
+                  <div className="text-[11px] text-foreground/60">
+                    Sign in again and this session restarts on its own. A running
+                    CLI never picks up a new sign-in.
+                  </div>
+                  {onRestart && (
+                    <div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-6 px-2 text-[11px]"
+                        onClick={onRestart}
+                        disabled={restarting}
+                        title="Stop this session's CLI process and start a fresh one, resuming the conversation."
+                      >
+                        <RotateCw className={cn("w-3 h-3 mr-1", restarting && "animate-spin")} />
+                        {restarting ? "Restarting…" : "Restart session"}
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
               {/* Account identity. Lives in the popover rather than on the
                   shield itself: the badge is already a popover trigger, and a
                   button inside a button is invalid markup. */}
@@ -258,7 +304,7 @@ export function AccountCard({
                     {/* Absent unless the running process genuinely holds the
                         wrong credentials — a corrected expectation needs no
                         restart. */}
-                    {onRestart && (
+                    {onRestart && !sessionAuthFailure && (
                       <Button
                         variant="outline"
                         size="sm"
@@ -304,7 +350,7 @@ export function AccountCard({
                     title="Run `claude auth login` for this account's config directory."
                   >
                     <LogIn className="w-3 h-3 mr-1" />
-                    {signedInEmail === null ? "Sign in" : "Re-authenticate"}
+                    {signedInEmail === null || sessionAuthFailure ? "Sign in" : "Re-authenticate"}
                   </Button>
                   {signedInEmail !== null && (
                     <Button
@@ -399,7 +445,10 @@ export function AccountCard({
           onClose={() => { setSignInOpen(false); }}
           configDir={configDir}
           accountName={accountName}
-          onAuthenticated={() => { onRecheck?.(); }}
+          onAuthenticated={() => {
+            onRecheck?.();
+            announceAccountSignedIn(configDir);
+          }}
         />
       )}
       <UsageDetailPopover
