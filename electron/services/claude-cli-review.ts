@@ -42,6 +42,65 @@ import { buildClaudeEnv } from './util/claude-env';
  *    the CLI answers with the error "Side question cancelled". Its own
  *    deadline is 600 s. Only the SDK's `askSideQuestion()` documents it.
  *
+ * Last review: 2.1.285 -> 2.1.286 on 2026-09-30. Findings:
+ *
+ *  Changelog coverage: one version in range, 2.1.286, and it has an entry
+ *  (~95 lines). Both endpoints are installed, so the wire claims below are a
+ *  real binary diff of 2.1.285 vs 2.1.286.
+ *
+ *  Clean pass: nothing to change.
+ *
+ *  WIRE DIFF, reported both ways round:
+ *
+ *    - Merge-strategy map: set-identical (40 entries). No new record type.
+ *    - `hook_event_name` 33, `subtype:` 148, SDK `this.request({subtype})`
+ *      53, `type:"control_*"` 4, `origin:{kind}` 12: all set-identical.
+ *    - `turnOrigin` 27, `turnPosition` 21: count-identical.
+ *    - `.describe()` strings: 1937 -> 1941. Three `@internal` session-server
+ *      latency fields (`server_received_wall_ms` on user messages, echoed
+ *      as `user_message_server_received_wall_ms` on the result, plus a
+ *      prompt-size input-token sum) — written by claude.ai's session
+ *      server, not a host obligation; an MCP result `_meta` note (CLI
+ *      strips its own `com.anthropic/` keys); a marketplace-name rewording.
+ *    - `system:model_fallback`: same keys, same `trigger` enum. `content`
+ *      may now carry a suffix naming a 1M -> 200K context drop — prose we
+ *      already render verbatim. The "retry once on the previous model of
+ *      the same tier" refusal fix reuses the existing subtypes.
+ *    - `/usage` anchors: `Current session`, `Current week`, `Extra usage`,
+ *      `% of usage`, `Total cost`, `Resets` count-identical; `Usage:`
+ *      253 -> 256 and `MCP servers` 439 -> 448 are minifier renames and
+ *      help text. `usage-runner/parser.ts` is safe.
+ *
+ *  Checked and inert:
+ *
+ *   - `claude auth status` now reports `authMethod:"api_key"` for a Console
+ *     `/login managed key` (was `claude.ai`). account-identity.ts:130 passes
+ *     the string through; nothing in the renderer branches on it.
+ *   - "Improved commit guidance: a `verify` skill is run right before
+ *     committing". This repo has one, and `/commit` already runs
+ *     verify.sh as step 1 — a model committing outside `/commit` may now
+ *     run the gate itself. Behavioural, not wire.
+ *   - Checked and in our favour: `--resume` no longer drops turns after
+ *     parallel tool calls in a crashed session; tool/hook non-text results
+ *     no longer 400; macOS "Login expired" after `/login` elsewhere with a
+ *     leftover `~/.claude/.credentials.json`; subagent typed-message no
+ *     longer duplicated in its transcript; SDK MCP re-enable of an
+ *     already-connected server is cheaper; retries capped at 14 requests
+ *     per model call (existing `api_retry` path).
+ *
+ * No OmniFex impact: permission prompt "2 of 5", fullscreen list mouse /
+ * scrollbars / "↑ N more", gcp/awsAuthRefresh, cloud sessions, gateway spend
+ * meter, Remote Control, `/status` profile, secret/URL redaction, `/feedback`
+ * zip, MCP handshake / sign-in link, `/usage` MCP crediting, claude.ai
+ * plugins, subagent hand-back name, task tools in subagents, worktree
+ * CLAUDE.md reload, Workflow stall restart, `/compact`/`/clear`/`/rewind`
+ * in agent view, background job status, commit attribution reminder,
+ * ctrl+enter send-now, background-agent replies, WebFetch artifact reads,
+ * permission prompt styling, Ctrl+G, slash suggestion matching, output
+ * style / theme pickers, `/hooks` layout, gray prompt colour, `--bare`
+ * (we never pass it), npm plugin sources, `/exit` worktree removal,
+ * `claude-api` skill, `/ultrareview` link, Windows, VSCode, Claude Tag.
+ *
  * Last review: 2.1.284 -> 2.1.285 on 2026-09-29. Findings:
  *
  *  Changelog coverage: one version in range, 2.1.285, and it has an entry
@@ -3470,7 +3529,7 @@ import { buildClaudeEnv } from './util/claude-env';
  * `~/.claude.json` fix (we read-modify-write that file, never replace it), and
  * the VSCode screen-reader work.
  */
-export const REVIEWED_CLI_VERSION = '2.1.285';
+export const REVIEWED_CLI_VERSION = '2.1.286';
 
 /**
  * app_settings key holding the user's explicit OmniFex-checkout override.
