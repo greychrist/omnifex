@@ -2,6 +2,7 @@ import { useState, useRef } from "react";
 import { api, type Session } from "@/lib/api";
 import type { JsonlNode } from "@/types/jsonl";
 import { parseBtw } from "@/lib/sideChat";
+import { newQueuedPromptId } from "@/lib/sessionStreamEffects";
 
 export interface QueuedPromptItem {
   id: string;
@@ -109,7 +110,7 @@ export function useSendPrompt({
     // captured at render.
     if (turnRunningRef.current || sendingRef.current) {
       const newPrompt: QueuedPromptItem = {
-        id: `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
+        id: newQueuedPromptId(),
         prompt,
         model,
         ...(images && images.length > 0 ? { images } : {}),

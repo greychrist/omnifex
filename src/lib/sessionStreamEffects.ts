@@ -24,6 +24,7 @@ export interface StreamEffectApi {
 }
 
 export interface QueuedPrompt {
+  id: string;
   prompt: string;
   model: string;
   // Optional pasted images, forwarded to handleSendPrompt on drain so a
@@ -54,6 +55,10 @@ export interface StreamEffectDeps<Q extends QueuedPrompt = QueuedPrompt> {
    *  after forwarding the `result` row, and React has not flushed that
    *  mirror while these effects run synchronously. */
   turnRunningRef: { current: boolean };
+  /** Id of the queued prompt open for editing in the queue panel, if any.
+   *  When it is the head, the queue waits: sending it would send the text
+   *  the user is in the middle of replacing. */
+  editingPromptIdRef?: { current: string | null };
   handleSendPrompt: (prompt: string, model: string, images?: string[]) => void;
   /** Resolved directive text (user override or shipped default) — see
    *  `resolvePostCompactPrompt`. Resolved by the caller so this module stays
@@ -63,6 +68,40 @@ export interface StreamEffectDeps<Q extends QueuedPrompt = QueuedPrompt> {
    *  it sends on the same model as the work it is correcting. */
   currentModel: string;
   onError: (kind: StreamReducerEffect['kind'], err: unknown) => void;
+}
+
+/** Id for a queued prompt — the queue panel keys, edits and removes by it. */
+export function newQueuedPromptId(): string {
+  return `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+}
+
+/**
+ * Send the head of the queue if the session will take it. Called by the
+ * processQueuedPrompt effect and when the queue panel releases an edit — the
+ * turn may have ended mid-edit, and the drain it triggered was held.
+ */
+export function drainQueuedPrompt<Q extends QueuedPrompt>(
+  deps: Pick<
+    StreamEffectDeps<Q>,
+    'queuedPromptsRef' | 'setQueuedPrompts' | 'turnRunningRef' | 'editingPromptIdRef' | 'handleSendPrompt'
+  >,
+): void {
+  // Peek, then commit. The effect fires from more than one trigger (a
+  // `result` row and a compact_boundary), so it can land mid-turn.
+  // Dequeuing unconditionally and letting handleSendPrompt re-enqueue would
+  // move the head to the BACK of the queue, undoing the post-compact
+  // directive's deliberate front-of-queue placement.
+  if (deps.turnRunningRef.current) return;
+  const queue = deps.queuedPromptsRef.current;
+  if (queue.length === 0) return;
+  const [next, ...rest] = queue;
+  const editing = deps.editingPromptIdRef?.current;
+  if (editing != null && editing === next.id) return;
+  // Write the ref as well as state: a second trigger can arrive before
+  // React flushes, and it must not re-send the prompt just dequeued.
+  deps.queuedPromptsRef.current = rest;
+  deps.setQueuedPrompts(rest);
+  deps.handleSendPrompt(next.prompt, next.model, next.images);
 }
 
 export function runStreamEffect<Q extends QueuedPrompt = QueuedPrompt>(
@@ -120,22 +159,7 @@ export function runStreamEffect<Q extends QueuedPrompt = QueuedPrompt>(
       // The 100ms delay gives React a tick to flush the session's idle-turn
       // announcement (it follows the `result` row) before we decide whether
       // the session will accept input.
-      setTimeout(() => {
-        // Peek, then commit. This effect fires from more than one trigger (a
-        // `result` row and a compact_boundary), so it can land mid-turn.
-        // Dequeuing unconditionally and letting handleSendPrompt re-enqueue
-        // would move the head to the BACK of the queue, undoing the
-        // post-compact directive's deliberate front-of-queue placement.
-        if (deps.turnRunningRef.current) return;
-        const queue = deps.queuedPromptsRef.current;
-        if (queue.length === 0) return;
-        const [next, ...rest] = queue;
-        // Write the ref as well as state: a second trigger can arrive before
-        // React flushes, and it must not re-send the prompt just dequeued.
-        deps.queuedPromptsRef.current = rest;
-        deps.setQueuedPrompts(rest);
-        deps.handleSendPrompt(next.prompt, next.model, next.images);
-      }, 100);
+      setTimeout(() => { drainQueuedPrompt(deps); }, 100);
       return;
     }
 
@@ -151,7 +175,8 @@ export function runStreamEffect<Q extends QueuedPrompt = QueuedPrompt>(
       // Front of the queue, not the back: the directive repairs a lossy
       // summary, and anything the user queued before the compaction would
       // otherwise be answered from exactly the degraded context it repairs.
-      const next = [{ prompt, model: deps.currentModel } as Q, ...queue];
+      const directive = { id: newQueuedPromptId(), prompt, model: deps.currentModel } as Q;
+      const next = [directive, ...queue];
       // Write the ref as well as state — processQueuedPrompt reads the ref,
       // and a `result` can land before React has flushed the setState.
       deps.queuedPromptsRef.current = next;

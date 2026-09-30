@@ -1,9 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  ChevronDown,
-  ChevronUp,
-  X,
   Plug,
   Package,
   Shield,
@@ -42,7 +39,7 @@ import {
   type FloatingPromptInputRef,
   type EffortLevel,
 } from "./FloatingPromptInput";
-import { modelDisplayName, effectiveModels } from "@/lib/modelCatalog";
+import { modelPickerLabel, effectiveModels } from "@/lib/modelCatalog";
 import { sessionControlSummary } from "@/lib/sessionControlSummary";
 import { SessionControlPickers } from "@/components/SessionControlPickers";
 import { ErrorBoundary } from "./ErrorBoundary";
@@ -73,7 +70,8 @@ import {
   resolvePostCompactPrompt,
 } from '@/lib/postCompactPrompt';
 import type { ModelPricingInput } from '@/lib/pricing';
-import { runStreamEffect } from '@/lib/sessionStreamEffects';
+import { runStreamEffect, drainQueuedPrompt } from '@/lib/sessionStreamEffects';
+import { QueuedPromptsPanel } from '@/components/QueuedPromptsPanel';
 import { appendInflightDelta } from '@/lib/inflightCoalescer';
 import { maybeAutoGenerateSummaryOnLeave } from "@/lib/sessionSummaryGate";
 import { SessionViewToggle, type ViewMode } from "./SessionViewToggle";
@@ -699,7 +697,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   });
 
   // Add collapsed state for queued prompts
-  const [queuedPromptsCollapsed, setQueuedPromptsCollapsed] = useState(false);
 
   // Permission prompt state
   const {
@@ -722,6 +719,8 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   // ref avoids the stale-closure bug where drained prompts silently re-queue.
   // Written below, once useSessionLifecycle has produced `turn`.
   const turnRunningRef = useRef(false);
+  // The queued prompt open for editing — the drain holds while it is the head.
+  const editingPromptIdRef = useRef<string | null>(null);
   // Session lifecycle status comes from the useSessionLifecycle hook
   // (single source of truth), which subscribes to main-process
   // `session-status:<tabId>` events. We derive the legacy boolean flags
@@ -1447,6 +1446,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
             queuedPromptsRef: ctx.queuedPromptsRef as any,
             setQueuedPrompts: ctx.setQueuedPrompts as any,
             turnRunningRef,
+            editingPromptIdRef,
             handleSendPrompt: fireAndLog(
               'claude-code-session:send-prompt-effect',
               handleSendPromptForEffect ?? undefined,
@@ -2005,6 +2005,28 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   useEffect(() => {
     queuedPromptsRef.current = queuedPrompts;
   }, [queuedPrompts, queuedPromptsRef]);
+
+  // Write the ref as well as state: releasing the edit drains right after
+  // this, synchronously, and must send the new text, not the old.
+  const saveQueuedPromptEdit = (id: string, prompt: string) => {
+    const next = queuedPromptsRef.current.map(p => (p.id === id ? { ...p, prompt } : p));
+    queuedPromptsRef.current = next;
+    setQueuedPrompts(next);
+  };
+
+  // A turn that ended mid-edit skipped its drain (the head was held), so
+  // releasing the edit has to send it.
+  const handleQueuedPromptEditing = (id: string | null) => {
+    editingPromptIdRef.current = id;
+    if (id !== null) return;
+    drainQueuedPrompt({
+      queuedPromptsRef,
+      setQueuedPrompts,
+      turnRunningRef,
+      editingPromptIdRef,
+      handleSendPrompt: fireAndLog('claude-code-session:send-prompt-edited', handleSendPrompt),
+    });
+  };
 
   // Wave 2.3 — "cancel" is now a soft interrupt. The old behavior called
   // api.stopSession() which fully tore down the CLI session, killing the
@@ -2809,57 +2831,13 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
                 exit={{ opacity: 0, y: 20 }}
                 className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 w-full max-w-3xl px-4"
               >
-                <div className="bg-background/95 backdrop-blur-md border rounded-lg shadow-lg p-3 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div className="text-xs font-medium text-muted-foreground mb-1">
-                      Queued Prompts ({queuedPrompts.length})
-                    </div>
-                    <TooltipSimple content={queuedPromptsCollapsed ? "Expand queue" : "Collapse queue"} side="top">
-                      <motion.div
-                        whileTap={{ scale: 0.97 }}
-                        transition={{ duration: 0.15 }}
-                      >
-                        <Button variant="ghost" size="icon" onClick={() => { setQueuedPromptsCollapsed(prev => !prev); }}>
-                          {queuedPromptsCollapsed ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-                        </Button>
-                      </motion.div>
-                    </TooltipSimple>
-                  </div>
-                  {!queuedPromptsCollapsed && queuedPrompts.map((queuedPrompt, index) => (
-                    <motion.div
-                      key={queuedPrompt.id}
-                      initial={{ opacity: 0, y: 4 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -4 }}
-                      transition={{ duration: 0.15, delay: index * 0.02 }}
-                      className="flex items-start gap-2 bg-muted/50 rounded-md p-2"
-                    >
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="text-xs font-medium text-muted-foreground">#{index + 1}</span>
-                          <span className="text-xs px-1.5 py-0.5 bg-primary/10 text-primary rounded">
-                            {modelDisplayName(queuedPrompt.model, supportedModels)}
-                          </span>
-                        </div>
-                        <p className="text-sm line-clamp-2 break-words">{queuedPrompt.prompt}</p>
-                      </div>
-                      <motion.div
-                        whileTap={{ scale: 0.97 }}
-                        transition={{ duration: 0.15 }}
-                      >
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6 flex-shrink-0"
-                          title="Remove from queue"
-                          onClick={() => { setQueuedPrompts(prev => prev.filter(p => p.id !== queuedPrompt.id)); }}
-                        >
-                          <X className="h-3 w-3" />
-                        </Button>
-                      </motion.div>
-                    </motion.div>
-                  ))}
-                </div>
+                <QueuedPromptsPanel
+                  prompts={queuedPrompts}
+                  modelLabel={(model) => modelPickerLabel(model, supportedModels, accountDefaultModel, liveDefaultModel)}
+                  onRemove={(id) => { setQueuedPrompts(prev => prev.filter(p => p.id !== id)); }}
+                  onSave={saveQueuedPromptEdit}
+                  onEditingChange={handleQueuedPromptEditing}
+                />
               </motion.div>
             )}
           </AnimatePresence>

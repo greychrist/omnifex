@@ -5,7 +5,6 @@ import {
   toPickerModel,
   FALLBACK_MODELS,
   effectiveModels,
-  modelDisplayName,
   modelFamily,
   pickModelOption,
   resolveActualModelName,
@@ -19,6 +18,7 @@ import {
   splitLatestModels,
   ACCOUNT_DEFAULT_MARK,
   useModelCatalog,
+  modelPickerLabel,
 } from '../modelCatalog';
 import type { Model } from '@/components/ModelPicker';
 import type { SessionModelInfo } from '@/lib/api';
@@ -132,17 +132,6 @@ describe('effectiveModels', () => {
     expect(effectiveModels([])).toBe(FALLBACK_MODELS);
     expect(effectiveModels(undefined)).toBe(FALLBACK_MODELS);
     expect(effectiveModels(null)).toBe(FALLBACK_MODELS);
-  });
-});
-
-describe('modelDisplayName', () => {
-  it('prefers the raw catalog displayName', () => {
-    expect(modelDisplayName('haiku', RAW)).toBe('Haiku');
-  });
-
-  it('falls back to FALLBACK_MODELS, then the raw id', () => {
-    expect(modelDisplayName('sonnet')).toBe('Sonnet');
-    expect(modelDisplayName('mystery-model')).toBe('mystery-model');
   });
 });
 
@@ -633,5 +622,31 @@ describe('splitLatestModels', () => {
     const { latest, older } = splitLatestModels(FALLBACK_MODELS);
     expect(latest).toEqual(FALLBACK_MODELS);
     expect(older).toEqual([]);
+  });
+});
+
+describe('modelPickerLabel', () => {
+  // The queued-prompt badge used to show the CLI's raw
+  // "Default (recommended)" while the picker for the same id says "Opus *".
+  it('labels the default id with the model it runs, as the picker does', () => {
+    expect(modelPickerLabel('default', CATALOG, null)).toBe(`Opus 4.8 ${ACCOUNT_DEFAULT_MARK}`);
+  });
+
+  it('prefers the settings pin, then the live model, like the picker', () => {
+    expect(modelPickerLabel('default', CATALOG, 'sonnet')).toBe(`Sonnet 4.6 ${ACCOUNT_DEFAULT_MARK}`);
+    expect(modelPickerLabel('default', CATALOG, 'sonnet', 'haiku')).toBe(`Haiku 4.5 ${ACCOUNT_DEFAULT_MARK}`);
+  });
+
+  it('names an explicit model by its catalog name', () => {
+    expect(modelPickerLabel('sonnet', CATALOG, null)).toBe('Sonnet 4.6');
+  });
+
+  it('still names an explicit model whose row folded into the default entry', () => {
+    expect(modelPickerLabel('opus[1m]', CATALOG, null)).toBe('Opus 4.8');
+  });
+
+  it('falls back to FALLBACK_MODELS without a catalog, then to the raw id', () => {
+    expect(modelPickerLabel('sonnet', null, null)).toBe('Sonnet');
+    expect(modelPickerLabel('mystery-model', CATALOG, null)).toBe('mystery-model');
   });
 });

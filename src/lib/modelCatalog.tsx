@@ -401,11 +401,24 @@ export function resolveActualModelName(
   return prettyModelName(id);
 }
 
-/** Display name for a model id across raw catalog + fallback. */
-export function modelDisplayName(id: string, raw?: SessionModelInfo[] | null): string {
+/**
+ * The name the model picker shows for `id` — so a surface that labels a model
+ * outside the picker (the queued-prompt badge) says the same thing it does.
+ * `default` resolves through withAccountDefaultLabel ("Opus 5.5 *"), not the
+ * CLI's raw "Default (recommended)". A model whose own row was folded into the
+ * default entry keeps the name that row had.
+ */
+export function modelPickerLabel(
+  id: string,
+  raw: SessionModelInfo[] | null | undefined,
+  pinnedModel: string | null | undefined,
+  activeDefaultModel?: string | null,
+): string {
+  const models = effectiveModels(raw);
   return (
-    raw?.find((m) => m.value === id)?.displayName ??
-    FALLBACK_MODELS.find((m) => m.id === id)?.name ??
+    withAccountDefaultLabel(models, pinnedModel, raw, activeDefaultModel)
+      .find((m) => m.id === id)?.name ??
+    models.find((m) => m.id === id)?.name ??
     id
   );
 }

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   runStreamEffect,
+  drainQueuedPrompt,
   type StreamEffectDeps,
 } from '../sessionStreamEffects';
 import type { StreamReducerEffect } from '../sessionStreamReducer';
@@ -135,8 +136,8 @@ describe('runStreamEffect', () => {
     vi.useFakeTimers();
     const handleSendPrompt = vi.fn();
     const setQueuedPrompts = vi.fn();
-    const head = { prompt: 'hello', model: 'opus' };
-    const tail = { prompt: 'world', model: 'sonnet' };
+    const head = { id: 'q1', prompt: 'hello', model: 'opus' };
+    const tail = { id: 'q2', prompt: 'world', model: 'sonnet' };
     const deps = makeDeps({
       handleSendPrompt,
       setQueuedPrompts,
@@ -158,8 +159,8 @@ describe('runStreamEffect', () => {
     vi.useFakeTimers();
     const handleSendPrompt = vi.fn();
     const setQueuedPrompts = vi.fn();
-    const directive = { prompt: 'RE-READ', model: 'opus' };
-    const typed = { prompt: 'what next?', model: 'opus' };
+    const directive = { id: 'q3', prompt: 'RE-READ', model: 'opus' };
+    const typed = { id: 'q4', prompt: 'what next?', model: 'opus' };
     const queuedPromptsRef = { current: [directive, typed] };
     const deps = makeDeps({
       handleSendPrompt,
@@ -183,7 +184,7 @@ describe('runStreamEffect', () => {
     vi.useFakeTimers();
     const handleSendPrompt = vi.fn();
     const setQueuedPrompts = vi.fn();
-    const directive = { prompt: 'RE-READ', model: 'opus' };
+    const directive = { id: 'q5', prompt: 'RE-READ', model: 'opus' };
     const queuedPromptsRef = { current: [directive] };
     const deps = makeDeps({
       handleSendPrompt,
@@ -198,12 +199,66 @@ describe('runStreamEffect', () => {
     vi.useRealTimers();
   });
 
+  // A queued prompt open for editing must not go out as its old text. The
+  // whole queue waits behind it, so order is preserved.
+  it('processQueuedPrompt holds the queue while its head is being edited', () => {
+    vi.useFakeTimers();
+    const handleSendPrompt = vi.fn();
+    const head = { id: 'a', prompt: 'old text', model: 'opus' };
+    const tail = { id: 'b', prompt: 'later', model: 'opus' };
+    const queuedPromptsRef = { current: [head, tail] };
+    const deps = makeDeps({
+      handleSendPrompt,
+      queuedPromptsRef,
+      editingPromptIdRef: { current: 'a' },
+    });
+    runStreamEffect({ kind: 'processQueuedPrompt' }, deps);
+    vi.advanceTimersByTime(150);
+    expect(handleSendPrompt).not.toHaveBeenCalled();
+    expect(queuedPromptsRef.current).toEqual([head, tail]);
+    vi.useRealTimers();
+  });
+
+  it('processQueuedPrompt still sends the head while a later prompt is being edited', () => {
+    vi.useFakeTimers();
+    const handleSendPrompt = vi.fn();
+    const head = { id: 'a', prompt: 'first', model: 'opus' };
+    const tail = { id: 'b', prompt: 'later', model: 'opus' };
+    const deps = makeDeps({
+      handleSendPrompt,
+      queuedPromptsRef: { current: [head, tail] },
+      editingPromptIdRef: { current: 'b' },
+    });
+    runStreamEffect({ kind: 'processQueuedPrompt' }, deps);
+    vi.advanceTimersByTime(150);
+    expect(handleSendPrompt).toHaveBeenCalledWith('first', 'opus', undefined);
+    vi.useRealTimers();
+  });
+
+  // The turn can end while the user is editing; the drain it would have
+  // triggered was skipped, so finishing the edit has to send it.
+  it('drainQueuedPrompt sends the head once the session is idle and nothing is held', () => {
+    const handleSendPrompt = vi.fn();
+    const setQueuedPrompts = vi.fn();
+    const queuedPromptsRef = { current: [{ id: 'a', prompt: 'edited', model: 'opus' }] };
+    drainQueuedPrompt({
+      queuedPromptsRef,
+      setQueuedPrompts,
+      turnRunningRef: { current: false },
+      editingPromptIdRef: { current: null },
+      handleSendPrompt,
+    });
+    expect(handleSendPrompt).toHaveBeenCalledWith('edited', 'opus', undefined);
+    expect(queuedPromptsRef.current).toEqual([]);
+    expect(setQueuedPrompts).toHaveBeenCalledWith([]);
+  });
+
   it('processQueuedPrompt forwards images attached to the queued prompt', () => {
     vi.useFakeTimers();
     const handleSendPrompt = vi.fn();
     const setQueuedPrompts = vi.fn();
     const images = ['data:image/png;base64,AAAA'];
-    const head = { prompt: 'look at this', model: 'opus', images };
+    const head = { id: 'q6', prompt: 'look at this', model: 'opus', images };
     const deps = makeDeps({
       handleSendPrompt,
       setQueuedPrompts,
@@ -239,8 +294,17 @@ describe('runStreamEffect', () => {
       const deps = makeDeps({ setQueuedPrompts });
       runStreamEffect({ kind: 'queuePostCompactDirective' }, deps);
       expect(setQueuedPrompts).toHaveBeenCalledWith([
-        { prompt: 'RE-READ: your summary is lossy.', model: 'opus' },
+        expect.objectContaining({ prompt: 'RE-READ: your summary is lossy.', model: 'opus' }),
       ]);
+    });
+
+    // The queue panel keys, removes and edits items by id; an id-less
+    // directive could be none of those, and ✕ on it removed every id-less row.
+    it('gives the directive an id like any other queued prompt', () => {
+      const queuedPromptsRef = { current: [] as { id: string; prompt: string; model: string }[] };
+      runStreamEffect({ kind: 'queuePostCompactDirective' }, makeDeps({ queuedPromptsRef }));
+      expect(queuedPromptsRef.current[0].id).toEqual(expect.any(String));
+      expect(queuedPromptsRef.current[0].id).not.toBe('');
     });
 
     it('lands ahead of prompts the user queued before the compaction', () => {
@@ -248,29 +312,29 @@ describe('runStreamEffect', () => {
       // work runs against it. Appending would let the user's next prompt be
       // answered from exactly the degraded context this is meant to repair.
       const setQueuedPrompts = vi.fn();
-      const queuedPromptsRef = { current: [{ prompt: 'ship it', model: 'opus' }] };
+      const queuedPromptsRef = { current: [{ id: 'q7', prompt: 'ship it', model: 'opus' }] };
       const deps = makeDeps({ setQueuedPrompts, queuedPromptsRef });
       runStreamEffect({ kind: 'queuePostCompactDirective' }, deps);
       expect(setQueuedPrompts).toHaveBeenCalledWith([
-        { prompt: 'RE-READ: your summary is lossy.', model: 'opus' },
-        { prompt: 'ship it', model: 'opus' },
+        expect.objectContaining({ prompt: 'RE-READ: your summary is lossy.', model: 'opus' }),
+        { id: 'q7', prompt: 'ship it', model: 'opus' },
       ]);
     });
 
     it('keeps the ref in sync so a same-tick queue drain sees the directive', () => {
       // processQueuedPrompt reads queuedPromptsRef.current, not React state.
-      const queuedPromptsRef = { current: [] as { prompt: string; model: string }[] };
+      const queuedPromptsRef = { current: [] as { id: string; prompt: string; model: string }[] };
       const deps = makeDeps({ queuedPromptsRef });
       runStreamEffect({ kind: 'queuePostCompactDirective' }, deps);
       expect(queuedPromptsRef.current).toEqual([
-        { prompt: 'RE-READ: your summary is lossy.', model: 'opus' },
+        expect.objectContaining({ prompt: 'RE-READ: your summary is lossy.', model: 'opus' }),
       ]);
     });
 
     it('does not double-queue when a directive is already pending', () => {
       const setQueuedPrompts = vi.fn();
       const queuedPromptsRef = {
-        current: [{ prompt: 'RE-READ: your summary is lossy.', model: 'opus' }],
+        current: [{ id: 'q10', prompt: 'RE-READ: your summary is lossy.', model: 'opus' }],
       };
       const deps = makeDeps({ setQueuedPrompts, queuedPromptsRef });
       runStreamEffect({ kind: 'queuePostCompactDirective' }, deps);
