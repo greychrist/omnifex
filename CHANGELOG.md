@@ -5,6 +5,12 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.207] — 2026-09-30
+
+### Changed
+- Cost Report: the header now explains that sessions in auto permission mode read low against the billing console — the auto-mode permission classifier makes a Sonnet call per tool use (about 1¢ each) that the CLI records nowhere OmniFex can see.
+- Reviewed Claude Code 2.1.286 against OmniFex: no wire changes, no action needed. The "CLI ahead of review" badge clears for 2.1.286.
+
 ## [0.4.206] — 2026-09-30
 
 ### Added

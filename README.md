@@ -84,7 +84,7 @@ The Brain is a per-account **memory vault** distilled from those transcripts.
 
 - **Durable cost history** in local SQLite. Rows survive the CLI's own transcript pruning, so a session's cost is still there after the JSONL that produced it is gone.
 - **Backfill across every configured account**, including sessions run outside OmniFex entirely — monthly totals reconcile against what Anthropic's console reports rather than counting only what this app launched.
-- **Spend the transcript never shows.** Claude Code keeps some calls out of the session file — side questions, session-title generation. OmniFex reads Claude Code's own running token totals for each session, prices what no transcript accounts for, and counts it under that session.
+- **Spend the transcript never shows.** Claude Code keeps some calls out of the session file — side questions, session-title generation. OmniFex reads Claude Code's own running token totals for each session, prices what no transcript accounts for, and counts it under that session. The one call it cannot see is auto mode's permission classifier, which Claude Code records nowhere, so auto-mode sessions read a little low; the Costs view says so.
 - A dedicated **Costs view**: preset ranges (this month, last 30/90 days, all time), grouped by day, week, or month, drilling into per-session rows.
 - **Pricing overrides** for when published rates change or your account is priced differently. The same table records each model's context window.
 
