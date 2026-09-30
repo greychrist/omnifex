@@ -5,6 +5,15 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.206] — 2026-09-30
+
+### Added
+- Queued prompts can be edited in place: click a prompt's text to edit it; Enter or clicking away saves, Shift+Enter adds a newline, Escape discards. While the next prompt in line is being edited, the queue waits, and it sends as soon as the edit closes.
+
+### Fixed
+- The queued-prompt model badge now names the model the prompt will actually run on (e.g. "Opus 5.5 *"), matching the model picker, instead of the CLI's raw "Default (recommended)".
+- The prompt queued after `/compact` can now be edited or removed on its own; removing it used to clear other queued prompts too.
+
 ## [0.4.205] — 2026-09-29
 
 ### Added
