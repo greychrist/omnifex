@@ -416,6 +416,17 @@ export function CostReportView({ printMode, initialFilters, onSettled }: CostRep
             the billing source of truth; these figures are derived from local transcripts and will
             read low where usage happened elsewhere.
           </p>
+          {/* Reconciled against the Enterprise console for Sep 2026: the
+              whole Sonnet shortfall (~$50, ~8% of the month) was the auto-mode
+              classifier. The CLI writes those calls to neither the JSONL nor
+              the stream-json result's modelUsage, so there is nothing to
+              recover — only a rate-times-calls guess, which we don't make. */}
+          <p className="text-xs text-muted-foreground">
+            Sessions in auto permission mode also read low: auto mode&apos;s permission classifier
+            makes a Sonnet call for each tool use, and the CLI records that spend nowhere
+            OmniFex can see. Expect the console&apos;s Sonnet figure to run higher — about 1¢ per
+            auto-mode tool call.
+          </p>
         </header>
 
         {/* ── Filters ─────────────────────────────────────────────────── */}

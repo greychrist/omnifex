@@ -129,6 +129,15 @@ describe('CostReportView', () => {
     expect(screen.getAllByText('15%').length).toBeGreaterThan(0);
   });
 
+  it('warns that the auto-mode classifier is spend no transcript records', async () => {
+    // Reconciled against the Enterprise console, Sep 2026: ~$50 of Sonnet was
+    // the auto-mode classifier, absent from JSONL and from result.modelUsage.
+    render(<CostReportView />);
+    await waitFor(() => {
+      expect(screen.getByText(/auto mode's permission classifier/)).toBeTruthy();
+    });
+  });
+
   it('states the subagent efficiency finding with its multiple', async () => {
     render(<CostReportView />);
     await waitFor(() => { expect(screen.getByText(/per request against/)).toBeTruthy(); });
