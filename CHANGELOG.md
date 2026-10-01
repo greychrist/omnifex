@@ -5,6 +5,16 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.208] — 2026-10-01
+
+### Fixed
+- The Lima tab no longer floods syspolicyd: `limactl` was spawned by bare name every 5 seconds, and on macOS each PATH miss created a throwaway process that syspolicyd logged (~3.5M lines a day). Every child process OmniFex starts now runs by absolute path — user-installed tools via a shared resolver that picks up tools installed after launch, system tools (`afplay`, `ditto`, `launchctl`) spelled out in full.
+- Version probes and the login-shell PATH lookup no longer go through `/bin/sh`, one process fewer per call.
+
+### Changed
+- The Lima tab polls only while it is visible — the active tab, window not hidden, machine awake — and refreshes the moment it comes back. Containers refresh every 15 seconds instead of 5.
+- A lint rule now rejects bare command names, shell command strings and `shell: true` in the main and daemon processes.
+
 ## [0.4.207] — 2026-09-30
 
 ### Changed
