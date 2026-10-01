@@ -14,6 +14,7 @@
 
 import { spawn as ptySpawn, type IPty, type IDisposable } from 'node-pty';
 import { randomUUID } from 'node:crypto';
+import path from 'node:path';
 
 export interface OneShotTerminalSpawnOpts {
   binary: string;
@@ -71,6 +72,11 @@ export function createOneShotTerminalService(): OneShotTerminalService {
 
   return {
     spawn(opts: OneShotTerminalSpawnOpts): OneShotTerminalHandle {
+      // The binary arrives over IPC. Every caller resolves it first; a bare
+      // name would cost a throwaway process per PATH miss. See util/spawn.ts.
+      if (!path.isAbsolute(opts.binary)) {
+        throw new Error(`one-shot terminal: binary must be an absolute path, got ${JSON.stringify(opts.binary)}`);
+      }
       const handle = randomUUID();
       // node-pty wants a defined env; pass-through is fine but we drop
       // undefined values so the child doesn't see literal "undefined" strings.

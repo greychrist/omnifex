@@ -44,6 +44,14 @@ beforeEach(() => {
 });
 
 describe('createOneShotTerminalService', () => {
+  // The binary arrives over IPC. A bare name would make node-pty's helper walk
+  // PATH; every caller resolves an absolute path first, so insist on one.
+  it('spawn() refuses a binary that is not an absolute path, without spawning', () => {
+    const service = createOneShotTerminalService();
+    expect(() => service.spawn({ binary: 'codex', args: ['login'] })).toThrow(/absolute/);
+    expect(ptySpawn).not.toHaveBeenCalled();
+  });
+
   it('spawn() returns a unique handle and forwards binary/args/cwd/env/cols/rows to node-pty', () => {
     const pty = makeFakePty();
     vi.mocked(ptySpawn).mockReturnValue(pty as any);
@@ -72,7 +80,7 @@ describe('createOneShotTerminalService', () => {
     vi.mocked(ptySpawn).mockReturnValue(pty as any);
 
     const service = createOneShotTerminalService();
-    service.spawn({ binary: 'codex', args: [] });
+    service.spawn({ binary: '/usr/local/bin/codex', args: [] });
 
     const [, , opts] = vi.mocked(ptySpawn).mock.calls[0];
     expect(opts).toMatchObject({ cols: 80, rows: 24 });
@@ -81,8 +89,8 @@ describe('createOneShotTerminalService', () => {
   it('produces a different handle per spawn', () => {
     vi.mocked(ptySpawn).mockImplementation(() => makeFakePty() as any);
     const service = createOneShotTerminalService();
-    const a = service.spawn({ binary: 'codex', args: [] });
-    const b = service.spawn({ binary: 'codex', args: [] });
+    const a = service.spawn({ binary: '/usr/local/bin/codex', args: [] });
+    const b = service.spawn({ binary: '/usr/local/bin/codex', args: [] });
     expect(a.ptyHandle).not.toBe(b.ptyHandle);
   });
 
@@ -91,7 +99,7 @@ describe('createOneShotTerminalService', () => {
     vi.mocked(ptySpawn).mockReturnValue(pty as any);
 
     const service = createOneShotTerminalService();
-    const { ptyHandle } = service.spawn({ binary: 'codex', args: [] });
+    const { ptyHandle } = service.spawn({ binary: '/usr/local/bin/codex', args: [] });
     service.write(ptyHandle, 'hello');
     expect(pty.write).toHaveBeenCalledWith('hello');
   });
@@ -101,7 +109,7 @@ describe('createOneShotTerminalService', () => {
     vi.mocked(ptySpawn).mockReturnValue(pty as any);
 
     const service = createOneShotTerminalService();
-    const { ptyHandle } = service.spawn({ binary: 'codex', args: [] });
+    const { ptyHandle } = service.spawn({ binary: '/usr/local/bin/codex', args: [] });
     service.resize(ptyHandle, 120, 40);
     expect(pty.resize).toHaveBeenCalledWith(120, 40);
   });
@@ -111,7 +119,7 @@ describe('createOneShotTerminalService', () => {
     vi.mocked(ptySpawn).mockReturnValue(pty as any);
 
     const service = createOneShotTerminalService();
-    const { ptyHandle } = service.spawn({ binary: 'codex', args: [] });
+    const { ptyHandle } = service.spawn({ binary: '/usr/local/bin/codex', args: [] });
     service.kill(ptyHandle);
     expect(pty.kill).toHaveBeenCalledTimes(1);
 
@@ -137,7 +145,7 @@ describe('createOneShotTerminalService', () => {
     vi.mocked(ptySpawn).mockReturnValue(pty as any);
 
     const service = createOneShotTerminalService();
-    const { ptyHandle } = service.spawn({ binary: 'codex', args: [] });
+    const { ptyHandle } = service.spawn({ binary: '/usr/local/bin/codex', args: [] });
 
     const cb = vi.fn();
     const sub = service.onData(ptyHandle, cb);
@@ -159,7 +167,7 @@ describe('createOneShotTerminalService', () => {
     vi.mocked(ptySpawn).mockReturnValue(pty as any);
 
     const service = createOneShotTerminalService();
-    const { ptyHandle } = service.spawn({ binary: 'codex', args: [] });
+    const { ptyHandle } = service.spawn({ binary: '/usr/local/bin/codex', args: [] });
 
     const cb = vi.fn();
     service.onExit(ptyHandle, cb);
@@ -173,7 +181,7 @@ describe('createOneShotTerminalService', () => {
     vi.mocked(ptySpawn).mockReturnValue(pty as any);
 
     const service = createOneShotTerminalService();
-    const { ptyHandle } = service.spawn({ binary: 'codex', args: [] });
+    const { ptyHandle } = service.spawn({ binary: '/usr/local/bin/codex', args: [] });
     pty.__emitExit({ exitCode: 0 });
 
     service.write(ptyHandle, 'late');
@@ -190,8 +198,8 @@ describe('createOneShotTerminalService', () => {
       .mockReturnValueOnce(ptyB as any);
 
     const service = createOneShotTerminalService();
-    const a = service.spawn({ binary: 'codex', args: [] });
-    const b = service.spawn({ binary: 'codex', args: [] });
+    const a = service.spawn({ binary: '/usr/local/bin/codex', args: [] });
+    const b = service.spawn({ binary: '/usr/local/bin/codex', args: [] });
 
     const cbA = vi.fn();
     const cbB = vi.fn();

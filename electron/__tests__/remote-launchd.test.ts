@@ -58,10 +58,10 @@ describe('launchd plist', () => {
     expect(launchAgentPath(LAUNCH_AGENT_LABEL, '/Users/greg')).toBe('/Users/greg/Library/LaunchAgents/com.omnifex.server.plist');
     const cmds = launchctlCommands('/Users/greg/Library/LaunchAgents/com.omnifex.server.plist', 501);
     expect(cmds.install).toEqual([
-      ['launchctl', 'bootout', 'gui/501/com.omnifex.server'],
-      ['launchctl', 'bootstrap', 'gui/501', '/Users/greg/Library/LaunchAgents/com.omnifex.server.plist'],
+      ['/bin/launchctl', 'bootout', 'gui/501/com.omnifex.server'],
+      ['/bin/launchctl', 'bootstrap', 'gui/501', '/Users/greg/Library/LaunchAgents/com.omnifex.server.plist'],
     ]);
-    expect(cmds.uninstall).toEqual([['launchctl', 'bootout', 'gui/501/com.omnifex.server']]);
+    expect(cmds.uninstall).toEqual([['/bin/launchctl', 'bootout', 'gui/501/com.omnifex.server']]);
   });
 });
 

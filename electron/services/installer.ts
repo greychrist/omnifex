@@ -127,7 +127,7 @@ export function createInstallerService(deps: InstallerDeps): InstallerService {
     (async (zipPath, destDir) => {
       const { spawn } = await import('node:child_process');
       await new Promise<void>((resolve, reject) => {
-        const proc = spawn('ditto', ['-xk', zipPath, destDir], { stdio: 'ignore' });
+        const proc = spawn('/usr/bin/ditto', ['-xk', zipPath, destDir], { stdio: 'ignore' });
         proc.on('exit', (code) => {
           if (code === 0) resolve();
           else reject(new Error(`ditto exited ${code}`));

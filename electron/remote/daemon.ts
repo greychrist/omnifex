@@ -20,7 +20,7 @@
  * composition root out of a 1,900-line main.ts unattended was the wrong risk
  * to take; it is the first follow-up in the plan.
  */
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -153,7 +153,7 @@ export function fixPath(log: RemoteServerLogger): void {
   if (process.platform !== 'darwin' && process.platform !== 'linux') return;
   try {
     const shell = process.env.SHELL || '/bin/zsh';
-    const out = execSync(`${shell} -ilc 'echo "__PATH__=$PATH"'`, {
+    const out = execFileSync(shell, ['-ilc', 'echo "__PATH__=$PATH"'], {
       encoding: 'utf-8',
       timeout: 5000,
       stdio: ['pipe', 'pipe', 'pipe'],

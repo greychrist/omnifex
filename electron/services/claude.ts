@@ -2,7 +2,7 @@
 // CLAUDE.md files, hooks config, and version checking.
 // This is a Node.js/Electron port of the Rust commands/claude.rs.
 
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -997,7 +997,7 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
     }
 
     try {
-      const versionOutput = execSync(`"${binaryPath}" --version`, EXEC_OPTIONS);
+      const versionOutput = execFileSync(binaryPath, ['--version'], EXEC_OPTIONS);
       const version =
         typeof versionOutput === 'string' ? versionOutput.trim() : null;
       return { installed: true, version, path: binaryPath };
@@ -1158,8 +1158,9 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
     }
 
     try {
-      const output = execSync(
-        `"${binary}" -p "/usage" --output-format json`,
+      const output = execFileSync(
+        binary,
+        ['-p', '/usage', '--output-format', 'json'],
         { timeout: 15000, encoding: 'utf-8', env, stdio: ['pipe', 'pipe', 'pipe'] },
       );
       const parsed = JSON.parse(output.trim());

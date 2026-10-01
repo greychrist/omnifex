@@ -13,7 +13,7 @@ vi.mock('node:fs', async (importOriginal) => {
 });
 vi.mock('node:child_process', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:child_process')>();
-  return { ...actual, execSync: vi.fn() };
+  return { ...actual, execFileSync: vi.fn() };
 });
 
 const mockedCreate = vi.mocked(createClaudeCliEngine);

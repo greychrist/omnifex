@@ -1,4 +1,4 @@
-import { execFile, execSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { buildClaudeEnv } from './util/claude-env';
@@ -3620,16 +3620,16 @@ export interface ClaudeCliReviewService {
 /**
  * Default probe: run `--version` on an already-resolved binary path.
  *
- * Takes a path rather than the bare command name on purpose. `execSync` runs
- * through `/bin/sh -c`, which never expands interactive shell aliases, so a
- * user who has aliased `claude` away in their shell rc is unaffected either
- * way — but resolving through claude-binary.ts keeps this consistent with the
- * binary every other OmniFex code path actually spawns.
+ * Takes a path rather than the bare command name on purpose: a bare name costs
+ * one throwaway process per PATH miss (see util/spawn.ts), and resolving
+ * through claude-binary.ts keeps this consistent with the binary every other
+ * OmniFex code path actually spawns. No shell, so a path with spaces needs no
+ * quoting and a shell alias can never intercept it.
  */
 export function probeCliVersion(binaryPath: string | null): string | null {
   if (!binaryPath) return null;
   try {
-    const out = execSync(`"${binaryPath}" --version`, {
+    const out = execFileSync(binaryPath, ['--version'], {
       encoding: 'utf8',
       timeout: 5000,
       stdio: ['pipe', 'pipe', 'pipe'],

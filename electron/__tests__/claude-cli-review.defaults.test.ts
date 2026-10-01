@@ -2,7 +2,7 @@
  * The DEFAULT I/O adapters in claude-cli-review.
  *
  * `claude-cli-review.test.ts` drives the service with every probe injected, so
- * it never reaches the production `execSync` / `execFile` / `fetch` / `statSync`
+ * it never reaches the production `execFileSync` / `execFile` / `fetch` / `statSync`
  * implementations those deps default to. Those defaults are the half that
  * actually touches the machine — a broken one fails silently, because every
  * failure path here deliberately degrades to `null` rather than throwing.
@@ -16,11 +16,11 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 vi.mock('node:child_process', () => ({
-  execSync: vi.fn(),
+  execFileSync: vi.fn(),
   execFile: vi.fn(),
 }));
 
-import { execSync, execFile } from 'node:child_process';
+import { execFileSync, execFile } from 'node:child_process';
 import {
   probeCliVersion,
   execCliUpdate,
@@ -28,7 +28,7 @@ import {
   createClaudeCliReviewService,
 } from '../services/claude-cli-review';
 
-const execSyncMock = vi.mocked(execSync);
+const execFileSyncMock = vi.mocked(execFileSync);
 const execFileMock = vi.mocked(execFile);
 
 beforeEach(() => {
@@ -37,34 +37,35 @@ beforeEach(() => {
 
 describe('probeCliVersion', () => {
   it('returns the trimmed --version output', () => {
-    execSyncMock.mockReturnValue('2.1.266 (Claude Code)\n' as never);
+    execFileSyncMock.mockReturnValue('2.1.266 (Claude Code)\n' as never);
     expect(probeCliVersion('/bin/claude')).toBe('2.1.266 (Claude Code)');
   });
 
-  // Quoted because a version manager can put the binary under a path with
-  // spaces; unquoted, /bin/sh -c would split it into two arguments.
-  it('quotes the binary path and asks only for --version', () => {
-    execSyncMock.mockReturnValue('2.1.266' as never);
+  // No shell: a version manager can put the binary under a path with spaces,
+  // and the path goes to execFileSync whole rather than through /bin/sh -c.
+  it('runs the binary directly and asks only for --version', () => {
+    execFileSyncMock.mockReturnValue('2.1.266' as never);
     probeCliVersion('/Applications/My Tools/claude');
-    expect(execSyncMock.mock.calls[0][0]).toBe('"/Applications/My Tools/claude" --version');
+    expect(execFileSyncMock.mock.calls[0][0]).toBe('/Applications/My Tools/claude');
+    expect(execFileSyncMock.mock.calls[0][1]).toEqual(['--version']);
   });
 
   it('never spawns when the binary could not be located', () => {
     expect(probeCliVersion(null)).toBeNull();
-    expect(execSyncMock).not.toHaveBeenCalled();
+    expect(execFileSyncMock).not.toHaveBeenCalled();
   });
 
   // Whitespace-only output is indistinguishable from no answer, and an empty
   // string would parse to a null version anyway — collapse it at the source.
   it('reports null for empty output', () => {
-    execSyncMock.mockReturnValue('   \n' as never);
+    execFileSyncMock.mockReturnValue('   \n' as never);
     expect(probeCliVersion('/bin/claude')).toBeNull();
   });
 
   // A missing binary, a non-zero exit and the 5s timeout all arrive as a throw.
   // None of them may propagate: this feeds a status popover, not a session.
   it('swallows a throwing probe rather than failing the popover', () => {
-    execSyncMock.mockImplementation(() => {
+    execFileSyncMock.mockImplementation(() => {
       throw new Error('ETIMEDOUT');
     });
     expect(probeCliVersion('/bin/claude')).toBeNull();

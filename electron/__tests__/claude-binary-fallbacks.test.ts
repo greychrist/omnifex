@@ -2,16 +2,16 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { createDatabase } from '../services/database';
 import { createClaudeBinaryService } from '../services/claude-binary';
 
 vi.mock('node:child_process', async () => {
   const actual = await vi.importActual<typeof import('node:child_process')>('node:child_process');
-  return { ...actual, execSync: vi.fn() };
+  return { ...actual, execFileSync: vi.fn() };
 });
 
-const execSyncMock = execSync as unknown as ReturnType<typeof vi.fn>;
+const execFileSyncMock = execFileSync as unknown as ReturnType<typeof vi.fn>;
 
 describe('claude-binary findBestBinary fallback chain', () => {
   let tmpHome: string;
@@ -30,7 +30,7 @@ describe('claude-binary findBestBinary fallback chain', () => {
     originalPath = process.env.PATH;
     process.env.PATH = path.join(tmpHome, 'empty-path');
     homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(tmpHome);
-    execSyncMock.mockReset();
+    execFileSyncMock.mockReset();
   });
 
   afterEach(() => {
@@ -44,7 +44,8 @@ describe('claude-binary findBestBinary fallback chain', () => {
 
   it('falls back to NVM installation when which fails and custom is unset', () => {
     // tryWhich -> throws (simulates `which` not found)
-    execSyncMock.mockImplementation((cmd: string) => {
+    execFileSyncMock.mockImplementation((file: string, args: string[] = []) => {
+      const cmd = [file, ...args].join(' ');
       if (cmd.includes('which') || cmd.includes('where')) {
         throw new Error('not found');
       }
@@ -68,7 +69,8 @@ describe('claude-binary findBestBinary fallback chain', () => {
   });
 
   it('uses NVM_BIN env var to find binary directly', () => {
-    execSyncMock.mockImplementation((cmd: string) => {
+    execFileSyncMock.mockImplementation((file: string, args: string[] = []) => {
+      const cmd = [file, ...args].join(' ');
       if (cmd.includes('which') || cmd.includes('where')) throw new Error('nf');
       return '1.0';
     });
@@ -91,7 +93,8 @@ describe('claude-binary findBestBinary fallback chain', () => {
   });
 
   it('falls back to standard install path (~/.local/bin/claude)', () => {
-    execSyncMock.mockImplementation((cmd: string) => {
+    execFileSyncMock.mockImplementation((file: string, args: string[] = []) => {
+      const cmd = [file, ...args].join(' ');
       if (cmd.includes('which') || cmd.includes('where')) throw new Error('nf');
       return '1.0';
     });
@@ -117,7 +120,8 @@ describe('claude-binary findBestBinary fallback chain', () => {
   });
 
   it('discovers VS Code extension-bundled claude', () => {
-    execSyncMock.mockImplementation((cmd: string) => {
+    execFileSyncMock.mockImplementation((file: string, args: string[] = []) => {
+      const cmd = [file, ...args].join(' ');
       if (cmd.includes('which') || cmd.includes('where')) throw new Error('nf');
       return '1.0';
     });
@@ -142,7 +146,7 @@ describe('claude-binary findBestBinary fallback chain', () => {
     fs.mkdirSync(path.dirname(homebrewBin), { recursive: true });
     fs.writeFileSync(homebrewBin, '', { mode: 0o755 });
     process.env.PATH = path.dirname(homebrewBin);
-    execSyncMock.mockReturnValue('1.0');
+    execFileSyncMock.mockReturnValue('1.0');
 
     const db = createDatabase(':memory:');
     try {
@@ -160,7 +164,8 @@ describe('claude-binary findBestBinary fallback chain', () => {
     fs.mkdirSync(path.dirname(fakeBin), { recursive: true });
     fs.writeFileSync(fakeBin, '');
 
-    execSyncMock.mockImplementation((cmd: string) => {
+    execFileSyncMock.mockImplementation((file: string, args: string[] = []) => {
+      const cmd = [file, ...args].join(' ');
       if (cmd.includes('which') || cmd.includes('where')) throw new Error('nf');
       if (cmd.includes('--version')) return '0.42.0\n';
       return '';
@@ -182,7 +187,7 @@ describe('claude-binary findBestBinary fallback chain', () => {
     fs.mkdirSync(path.dirname(fakeBin), { recursive: true });
     fs.writeFileSync(fakeBin, '');
 
-    execSyncMock.mockImplementation(() => {
+    execFileSyncMock.mockImplementation(() => {
       throw new Error('nope');
     });
 

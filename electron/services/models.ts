@@ -13,7 +13,7 @@
 // in-session case.
 
 import os from 'node:os';
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { discoverClaudeBinary } from './claude-binary';
 import { createClaudeCliEngine } from './agents/claude-cli-engine';
@@ -86,7 +86,7 @@ export function createModelsService(db: Database, opts: ModelsServiceOptions = {
       return cachedVersion;
     }
     try {
-      const out = execSync(`"${binaryPath}" --version`, { encoding: 'utf8', timeout: 5000 });
+      const out = execFileSync(binaryPath, ['--version'], { encoding: 'utf8', timeout: 5000 });
       cachedVersion = out.trim() || null;
     } catch {
       cachedVersion = null;

@@ -5,8 +5,13 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { HeaderLabel } from './HeaderLabel';
 import { fireAndLog } from "@/lib/fireAndLog";
+import { useSurfaceVisible } from '@/hooks/useSurfaceVisible';
 
-const POLL_INTERVAL_MS = 5000;
+// Every poll is a `limactl` process in the daemon (`docker ps` is a `limactl
+// shell` round trip into the VM), so both stop whenever nobody can see the
+// tab, and containers — which change least — poll slowest.
+const VM_POLL_INTERVAL_MS = 5000;
+const CONTAINER_POLL_INTERVAL_MS = 15000;
 
 function formatBytes(bytes: number): string {
   if (!bytes || bytes <= 0) return '—';
@@ -58,7 +63,14 @@ const CARD_HEADER =
 const VALUE_PILL =
   'inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-mono font-medium text-foreground bg-background shadow-[0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_45%,transparent)]';
 
-export const LimaViewer: React.FC = () => {
+interface LimaViewerProps {
+  /** Whether this is the active tab. Polling runs only while it is, and only
+   *  while the window is visible and the machine awake. */
+  isActive: boolean;
+}
+
+export const LimaViewer: React.FC<LimaViewerProps> = ({ isActive }) => {
+  const visible = useSurfaceVisible(isActive);
   const [installed, setInstalled] = useState<boolean | null>(null);
   const [vms, setVms] = useState<LimaVm[]>([]);
   const [selectedVm, setSelectedVm] = useState<string | null>(null);
@@ -107,18 +119,19 @@ export const LimaViewer: React.FC = () => {
     }
   }, []);
 
-  // Initial load + poll
+  // Load + poll while visible; becoming visible again refreshes at once.
   useEffect(() => {
+    if (!visible) return;
     let cancelled = false;
     void loadVms();
     const id = setInterval(() => {
       if (!cancelled) void loadVms();
-    }, POLL_INTERVAL_MS);
+    }, VM_POLL_INTERVAL_MS);
     return () => {
       cancelled = true;
       clearInterval(id);
     };
-  }, [loadVms]);
+  }, [loadVms, visible]);
 
   // Containers: refresh whenever the selected VM changes or its status changes
   const selectedVmObj = vms.find((v) => v.name === selectedVm) ?? null;
@@ -128,12 +141,13 @@ export const LimaViewer: React.FC = () => {
       setContainers([]);
       return;
     }
+    if (!visible) return;
     void loadContainers(selectedVm, selectedVmStatus);
     const id = setInterval(() => {
       void loadContainers(selectedVm, selectedVmStatus);
-    }, POLL_INTERVAL_MS);
+    }, CONTAINER_POLL_INTERVAL_MS);
     return () => { clearInterval(id); };
-  }, [selectedVm, selectedVmStatus, loadContainers]);
+  }, [selectedVm, selectedVmStatus, loadContainers, visible]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -285,7 +299,7 @@ export const LimaViewer: React.FC = () => {
           ) : (
             <div className="p-2 space-y-1.5">
               {vms.map((vm) => {
-                const isActive = selectedVm === vm.name;
+                const isSelected = selectedVm === vm.name;
                 const action = pendingAction[vm.name];
                 const isRunning = vm.status === 'Running';
                 const isStopped = vm.status === 'Stopped';
@@ -296,12 +310,12 @@ export const LimaViewer: React.FC = () => {
                     : vm.status;
                 const showDot = !!action || vm.status.toLowerCase() === 'broken';
                 return (
-                  <div key={vm.name} className={cn(CARD_SHELL, isActive && 'ring-1 ring-accent')}>
+                  <div key={vm.name} className={cn(CARD_SHELL, isSelected && 'ring-1 ring-accent')}>
                     {/* Header strip — clickable to select. */}
                     <button
                       type="button"
                       onClick={() => { setSelectedVm(vm.name); }}
-                      className={cn(CARD_HEADER, 'hover:bg-accent/40', isActive && 'bg-accent/60')}
+                      className={cn(CARD_HEADER, 'hover:bg-accent/40', isSelected && 'bg-accent/60')}
                     >
                       <div className="flex items-center gap-2 min-w-0">
                         <span

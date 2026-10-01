@@ -13,7 +13,7 @@ vi.mock('node:fs', async (importOriginal) => {
 });
 vi.mock('node:child_process', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:child_process')>();
-  return { ...actual, execSync: vi.fn() };
+  return { ...actual, execFileSync: vi.fn() };
 });
 
 const mockedCreate = vi.mocked(createClaudeCliEngine);
@@ -335,22 +335,22 @@ describe('modelsService.getCatalog (SQLite-persisted)', () => {
   });
 
   it('default version probe runs `claude --version` once and caches it', async () => {
-    const { execSync } = await import('node:child_process');
-    vi.mocked(execSync).mockReset().mockReturnValue('2.1.170 (Claude Code)\n');
+    const { execFileSync } = await import('node:child_process');
+    vi.mocked(execFileSync).mockReset().mockReturnValue('2.1.170 (Claude Code)\n');
     // No cliVersionFn — real probe path. The binary is pinned so the only
-    // execSync is the version probe, not discovery's `which`.
+    // execFileSync is the version probe, not discovery's `which`.
     const service = createModelsService(db, { resolveClaudeBinary: () => '/usr/local/bin/claude' });
 
     service.upsertCatalog(CONFIG, SEEDED);
     service.upsertCatalog('/other/config', SEEDED);
 
     expect(catalogRow()!.cli_version).toBe('2.1.170 (Claude Code)');
-    expect(vi.mocked(execSync)).toHaveBeenCalledTimes(1); // cached after first probe
+    expect(vi.mocked(execFileSync)).toHaveBeenCalledTimes(1); // cached after first probe
   });
 
   it('failed version probe degrades to null: cached rows match any version', async () => {
-    const { execSync } = await import('node:child_process');
-    vi.mocked(execSync).mockReset().mockImplementation(() => { throw new Error('ENOENT'); });
+    const { execFileSync } = await import('node:child_process');
+    vi.mocked(execFileSync).mockReset().mockImplementation(() => { throw new Error('ENOENT'); });
 
     const seeder = createModelsService(db, { cliVersionFn: () => '1.0.0' });
     seeder.upsertCatalog(CONFIG, SEEDED);

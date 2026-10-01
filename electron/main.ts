@@ -1,7 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, protocol, Notification, shell, Menu, clipboard, powerMonitor } from 'electron';
 import type { MenuItemConstructorOptions } from 'electron';
 import { buildContextMenuTemplate } from './context-menu-template';
-import { execSync, spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -17,7 +17,7 @@ function fixPath(): void {
   if (process.platform !== 'darwin' && process.platform !== 'linux') return;
   try {
     const userShell = process.env.SHELL || '/bin/zsh';
-    const result = execSync(`${userShell} -ilc 'echo "__PATH__=$PATH"'`, {
+    const result = execFileSync(userShell, ['-ilc', 'echo "__PATH__=$PATH"'], {
       encoding: 'utf-8',
       timeout: 5000,
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -772,7 +772,7 @@ app.whenReady().then(() => {
     playSound: (soundPath) => {
       // eslint-disable-next-line @typescript-eslint/no-require-imports -- intentional lazy load; only needed when a notification actually plays a sound.
       const { execFile } = require('node:child_process') as typeof import('node:child_process');
-      execFile('afplay', [soundPath], (err: Error | null) => {
+      execFile('/usr/bin/afplay', [soundPath], (err: Error | null) => {
         if (err) console.error('[notification] afplay failed:', err.message);
       });
     },
@@ -1201,7 +1201,7 @@ app.whenReady().then(() => {
     play: (soundPath) => {
       // eslint-disable-next-line @typescript-eslint/no-require-imports -- intentional lazy load; only needed when the renderer requests a preview.
       const { execFile } = require('node:child_process') as typeof import('node:child_process');
-      execFile('afplay', [soundPath], (err: Error | null) => {
+      execFile('/usr/bin/afplay', [soundPath], (err: Error | null) => {
         if (err) console.error('[notification-preview] afplay failed:', err.message);
       });
     },

@@ -684,7 +684,7 @@ const TabPanelImpl: React.FC<TabPanelProps> = ({ tab, isActive }) => {
       case 'lima':
         return (
           <div className="h-full">
-            <LimaViewer />
+            <LimaViewer isActive={isActive} />
           </div>
         );
 

@@ -83,7 +83,7 @@ describe('daemon control (LaunchAgent installed)', () => {
   it('stop boots the job out so KeepAlive cannot resurrect the old build, and still signals the pid', async () => {
     const { control, run, kill } = make({ plist: true, pid: 777, alive: true });
     expect(await control.stop(CONFIG)).toBe(true);
-    expect(run).toHaveBeenCalledWith(['launchctl', 'bootout', 'gui/501/com.omnifex.server']);
+    expect(run).toHaveBeenCalledWith(['/bin/launchctl', 'bootout', 'gui/501/com.omnifex.server']);
     expect(kill).toHaveBeenCalledWith(777, 'SIGTERM');
   });
 
@@ -101,7 +101,7 @@ describe('daemon control (LaunchAgent installed)', () => {
     expect(plist).toContain(INVOCATION.script);
     expect(plist).toContain(INVOCATION.execPath);
     expect(plist).toContain('/opt/bin');
-    expect(run).toHaveBeenCalledWith(['launchctl', 'bootstrap', 'gui/501', plistPath]);
+    expect(run).toHaveBeenCalledWith(['/bin/launchctl', 'bootstrap', 'gui/501', plistPath]);
   });
 
   // The LaunchAgent is the INSTALLED app's: one label, one plist, pinned to

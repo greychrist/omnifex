@@ -1,4 +1,4 @@
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -35,7 +35,7 @@ const EXEC_OPTIONS = {
 /** Run `binary --version` and return trimmed output, or null on any failure. */
 function getVersion(binaryPath: string): string | null {
   try {
-    const output = execSync(`"${binaryPath}" --version`, EXEC_OPTIONS);
+    const output = execFileSync(binaryPath, ['--version'], EXEC_OPTIONS);
     return typeof output === 'string' ? output.trim() : null;
   } catch {
     return null;

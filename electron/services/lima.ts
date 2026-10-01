@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process';
+import { execFileOnPath } from './util/spawn';
 
 export interface LimaVm {
   name: string;
@@ -63,7 +63,9 @@ const DEFAULT_MAX_BUFFER = 16 * 1024 * 1024;
 
 function defaultExecLimactl(args: string[], opts: LimaExecOptions = {}): Promise<LimaExecResult> {
   return new Promise((resolve, reject) => {
-    execFile(
+    // Resolved, never bare: the Lima tab polls this every few seconds, and a
+    // bare name costs one throwaway process per PATH miss. See util/spawn.ts.
+    execFileOnPath(
       'limactl',
       args,
       { timeout: opts.timeoutMs ?? DEFAULT_TIMEOUT_MS, maxBuffer: DEFAULT_MAX_BUFFER, windowsHide: true },
@@ -71,7 +73,7 @@ function defaultExecLimactl(args: string[], opts: LimaExecOptions = {}): Promise
         if (err) {
           // ENOENT (limactl not on PATH) and timeouts bubble up so callers
           // can distinguish "not installed" from "ran but failed".
-          const errno = (err as NodeJS.ErrnoException).code;
+          const errno = err.code;
           if (errno === 'ENOENT' || errno === 'ETIMEDOUT') {
             // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- rejection reason is a structured non-Error object by API contract.
             reject(err);

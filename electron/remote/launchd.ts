@@ -123,11 +123,11 @@ export function launchctlCommands(plistPath: string, uid: number, label: string 
   return {
     /** Idempotent: unload whatever is there first, then load. */
     install: [
-      ['launchctl', 'bootout', `${domain}/${label}`],
-      ['launchctl', 'bootstrap', domain, plistPath],
+      ['/bin/launchctl', 'bootout', `${domain}/${label}`],
+      ['/bin/launchctl', 'bootstrap', domain, plistPath],
     ] as string[][],
-    uninstall: [['launchctl', 'bootout', `${domain}/${label}`]] as string[][],
+    uninstall: [['/bin/launchctl', 'bootout', `${domain}/${label}`]] as string[][],
     /** Restart in place (KeepAlive would also do it, after ThrottleInterval). */
-    restart: [['launchctl', 'kickstart', '-k', `${domain}/${label}`]] as string[][],
+    restart: [['/bin/launchctl', 'kickstart', '-k', `${domain}/${label}`]] as string[][],
   };
 }

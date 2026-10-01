@@ -30,6 +30,8 @@ import reactPlugin from 'eslint-plugin-react';
 import reactHooks from 'eslint-plugin-react-hooks';
 import globals from 'globals';
 
+import { noBareSpawn } from './eslint/no-bare-spawn.mjs';
+
 export default defineConfig(
   // Ignore patterns first — anything matched here skips ALL configs below.
   {
@@ -45,6 +47,8 @@ export default defineConfig(
       '**/*.js.map',
       // The eslint config itself doesn't need to lint itself.
       'eslint.config.mjs',
+      // Plain-JS rule fragments imported by this config; no tsconfig covers them.
+      'eslint/**',
       // Forge config + vite configs are mostly Node scripts; defer for
       // a future tightening pass once the renderer + electron passes
       // are stable.
@@ -225,6 +229,17 @@ export default defineConfig(
       // (react-hooks rule policy lives in the renderer-only block above
       // because plugin registration must share the block with rule overrides
       // in flat config.)
+    },
+  },
+
+  // Main + daemon processes: never spawn a bare command name. See
+  // eslint/no-bare-spawn.mjs and electron/services/util/spawn.ts. Tests are
+  // exempt — their spawns never run inside the app.
+  {
+    files: ['electron/**/*.ts'],
+    ignores: ['electron/**/__tests__/**'],
+    rules: {
+      'no-restricted-syntax': ['error', ...noBareSpawn],
     },
   },
 
