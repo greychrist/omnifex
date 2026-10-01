@@ -42,6 +42,87 @@ import { buildClaudeEnv } from './util/claude-env';
  *    the CLI answers with the error "Side question cancelled". Its own
  *    deadline is 600 s. Only the SDK's `askSideQuestion()` documents it.
  *
+ * Last review: 2.1.286 -> 2.1.287 on 2026-10-01. Findings:
+ *
+ *  Changelog coverage: one version in range, 2.1.287, and it has an entry
+ *  (~110 lines). Both endpoints are installed, so the wire claims below are a
+ *  real binary diff of 2.1.286 vs 2.1.287.
+ *
+ *  Nothing broken. One opportunity, taken (finding 1).
+ *
+ *  WIRE DIFF, reported both ways round:
+ *
+ *    - Merge-strategy map: set-identical (40 entries). No new record type.
+ *    - `hook_event_name` 33, `type:"control_*"` 4, `origin:{kind}` 12:
+ *      set-identical. `turnOrigin` 27, `turnPosition` 21: count-identical.
+ *    - `subtype:` 148 -> 149 and SDK `this.request({subtype})` 53 -> 54,
+ *      none removed: both are the new `get_task_output` (opportunity 1).
+ *    - `.describe()` strings: 1941 -> 1948. The `get_task_output` request /
+ *      payload fields (5); two `@internal` cloud-worker `stage_file` /
+ *      `turn_handoff` capability flags; a Directory-marketplace policy
+ *      sentinel; a device-hook wording change. No new field on `user` /
+ *      `assistant` input and no new host obligation.
+ *    - `/usage` anchors: `Current session`, `Current week`, `Extra usage`,
+ *      `% of usage`, `Total cost`, `Resets`, `MCP servers` count-identical;
+ *      `Usage:` 256 -> 259 is help text. `usage-runner/parser.ts` is safe.
+ *
+ *  1. OPPORTUNITY, TAKEN IN THIS PASS: `get_task_output {task_id}`.
+ *     Read-only, no model turn: `{output, total_bytes, truncated}`, the last
+ *     8 KiB of a background shell or Monitor task's output (the TUI's /tasks
+ *     tail), escape sequences included. Both kinds are `task_type:
+ *     "local_bash"`. Probed live on 2.1.287 (haiku, stream-json): the reply
+ *     matched the schema, an unknown id answered an error
+ *     ("no shell or Monitor task with that task_id"), and
+ *     `background_tasks_changed` emptied when the shell exited.
+ *     Now drives shell rows in the SubagentBar: membership from the
+ *     `background_tasks_changed` snapshot (src/lib/backgroundShells.ts),
+ *     output read by sessions/queries.ts getTaskOutput over
+ *     `session_get_task_output`, polled only while a row is open. Add it to
+ *     the undocumented-surface list above if the SDK ever drops it.
+ *
+ *  Checked and in our favour:
+ *
+ *   - `--include-partial-messages` could send a cut-short reply's
+ *     `message_stop` late or never. We pass the flag
+ *     (claude-cli-engine.ts:65) and the assistant resolver forwards the
+ *     buffered frame at `message_stop` (assistantMeta.ts:142), but also
+ *     flushes on the next `assistant` or on `result`, so we never stranded a
+ *     frame — only delayed it. Now it arrives on time.
+ *   - Tool heartbeats now reach SDK hosts while the model stream is stalled:
+ *     `tool_progress` is already classified (jsonlClassifier.ts:84).
+ *   - stream-json now streams the turns of a `context: fork` skill typed as
+ *     `/<skill>`, as it already did for the Skill tool's fork. Same frames
+ *     as the existing fork path; not probed live.
+ *   - `claude -p` / SDK no longer repeats a model fallback on every later
+ *     message after a mid-reply model switch (we send `set_model`).
+ *   - Folder CLAUDE.md no longer re-attached after resume / compaction.
+ *   - Revoked claude.ai login: `-p` error now starts "Failed to
+ *     authenticate" instead of a generic `API Error: 401`, which
+ *     AUTH_FAILURE_STDOUT (sessionDerivedState.ts:199) already matches — a
+ *     revoked token now reaches the sign-in / auto-restart path too.
+ *   - `priority:"now"` no longer cancels a running WebFetch / WebSearch:
+ *     we never send `priority`.
+ *   - "N hooks ran" no longer counts internal callbacks — TUI only.
+ *
+ * No OmniFex impact: Claude Mods, You-should-know plugin, agents-view `n:`
+ * filter / queued replies / prompt visibility / background reopen, OTel
+ * `prompt_text`, MCP URL elicitation + `bareElicitationCapability` (we write
+ * no such key), MCP `alwaysLoad:false` deferral, MCP protocol-change double
+ * call, headless MCP auth/retry, large MCP result handling, self-hosted `gh
+ * api`, remote fast mode, Remote Control, `asyncRewake` hooks, Bedrock /
+ * Vertex / Mantle / Foundry / gateway (incl. 1M default), Chrome picker,
+ * Fable `/model` saved id, Opus/Sonnet switch MCP announcements, dangerous
+ * `rm` safeguard, `/advisor`, Bash prompt wording, symlink shell writes,
+ * whole-tool Bash allow + credential files, fullscreen, screen reader mode,
+ * `CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS`, `/ultrareview`, `/feedback`,
+ * marketplace `--sparse` / errors / listings, cloud sessions, plugin reload,
+ * `/desktop`, SessionStart for synced plugins, repos added mid-session,
+ * remote image/file sends, `/config` / `/memory` arrows, `/skill` mid-
+ * message, prompt border contrast, held-message / MCP prompt dashes,
+ * permission prompt ordering, auto model switch keeps effort, paste on
+ * release, reduce motion, Windows, VSCode, Cloud sessions, Claude Tag, Code
+ * Review.
+ *
  * Last review: 2.1.285 -> 2.1.286 on 2026-09-30. Findings:
  *
  *  Changelog coverage: one version in range, 2.1.286, and it has an entry
@@ -3529,7 +3610,7 @@ import { buildClaudeEnv } from './util/claude-env';
  * `~/.claude.json` fix (we read-modify-write that file, never replace it), and
  * the VSCode screen-reader work.
  */
-export const REVIEWED_CLI_VERSION = '2.1.286';
+export const REVIEWED_CLI_VERSION = '2.1.287';
 
 /**
  * app_settings key holding the user's explicit OmniFex-checkout override.
