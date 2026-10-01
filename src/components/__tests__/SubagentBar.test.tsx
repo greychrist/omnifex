@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
-import { render, cleanup } from '@testing-library/react';
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { render, cleanup, screen, fireEvent, act } from '@testing-library/react';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { SubagentBar } from '@/components/SubagentBar';
 import type { Subagent } from '@/lib/subagentStreams';
+import type { BackgroundShell, TaskOutputTail } from '@/lib/backgroundShells';
 
 function makeSub(overrides: Partial<Subagent> & Pick<Subagent, 'toolUseId' | 'status'>): Subagent {
   return {
@@ -119,5 +120,104 @@ describe('SubagentBar row meta', () => {
     const text = container.textContent ?? '';
     expect(text).toContain('20 tools');
     expect(text).not.toContain('5 tools');
+  });
+});
+
+describe('SubagentBar background shells', () => {
+  beforeEach(() => {
+    window.localStorage.setItem('greychrist.subagentBar.collapsed', '0');
+    vi.useFakeTimers();
+  });
+  afterEach(() => { vi.useRealTimers(); });
+
+  const shell = (o: Partial<BackgroundShell> = {}): BackgroundShell => ({
+    taskId: 'b1', description: 'npm run dev', status: 'running', ...o,
+  });
+  const tail = (output: string): TaskOutputTail => ({ output, totalBytes: output.length, truncated: false });
+
+  async function flush() {
+    await act(async () => { await Promise.resolve(); });
+  }
+
+  it('renders when only shells exist, and counts them in the header', () => {
+    render(<SubagentBar subagents={[]} shells={[shell()]} readShellOutput={vi.fn()} />);
+    expect(screen.getByText('npm run dev')).toBeTruthy();
+    expect(screen.getByText('Background:')).toBeTruthy();
+    expect(screen.getByText('1 running')).toBeTruthy();
+  });
+
+  it('keeps the Subagents label when there are no shells', () => {
+    render(<SubagentBar subagents={[makeSub({ toolUseId: 'a', status: 'running' })]} />);
+    expect(screen.getByText('Subagents:')).toBeTruthy();
+  });
+
+  it('reads nothing until a row is opened', () => {
+    const read = vi.fn(async () => tail('x'));
+    render(<SubagentBar subagents={[]} shells={[shell()]} readShellOutput={read} />);
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  it('polls a running shell while open, as plain text, and stops when closed', async () => {
+    const read = vi.fn(async () => tail('\u001b[32mready\u001b[0m on :3000'));
+    render(<SubagentBar subagents={[]} shells={[shell()]} readShellOutput={read} />);
+    fireEvent.click(screen.getByText('npm run dev'));
+    await flush();
+    expect(read).toHaveBeenCalledWith('b1');
+    expect(screen.getByText('ready on :3000')).toBeTruthy();
+
+    await act(async () => { vi.advanceTimersByTime(2000); });
+    await flush();
+    expect(read).toHaveBeenCalledTimes(2);
+
+    fireEvent.click(screen.getByText('npm run dev'));
+    await act(async () => { vi.advanceTimersByTime(6000); });
+    expect(read).toHaveBeenCalledTimes(2);
+  });
+
+  it('reads an ended shell once and does not poll', async () => {
+    const read = vi.fn(async () => tail('exit 0'));
+    render(<SubagentBar subagents={[]} shells={[shell({ status: 'ended' })]} readShellOutput={read} />);
+    fireEvent.click(screen.getByText('npm run dev'));
+    await flush();
+    await act(async () => { vi.advanceTimersByTime(6000); });
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(screen.getByText('exit 0')).toBeTruthy();
+  });
+
+  it('says so when the CLI has no output to give', async () => {
+    const read = vi.fn(async () => null);
+    render(<SubagentBar subagents={[]} shells={[shell({ status: 'ended' })]} readShellOutput={read} />);
+    fireEvent.click(screen.getByText('npm run dev'));
+    await flush();
+    expect(screen.getByText(/Output not available/)).toBeTruthy();
+  });
+
+  it('keeps the last output when a later read comes back empty-handed', async () => {
+    const read = vi.fn()
+      .mockResolvedValueOnce(tail('step 1'))
+      .mockResolvedValue(null);
+    render(<SubagentBar subagents={[]} shells={[shell()]} readShellOutput={read} />);
+    fireEvent.click(screen.getByText('npm run dev'));
+    await flush();
+    await act(async () => { vi.advanceTimersByTime(2000); });
+    await flush();
+    expect(screen.getByText('step 1')).toBeTruthy();
+  });
+
+  it('notes a truncated tail', async () => {
+    const read = vi.fn(async () => ({ output: 'end', totalBytes: 20000, truncated: true }));
+    render(<SubagentBar subagents={[]} shells={[shell()]} readShellOutput={read} />);
+    fireEvent.click(screen.getByText('npm run dev'));
+    await flush();
+    expect(screen.getByText(/last 8 KiB/)).toBeTruthy();
+  });
+
+  it('dismisses an ended shell', () => {
+    const onDismissShell = vi.fn();
+    render(
+      <SubagentBar subagents={[]} shells={[shell({ status: 'ended' })]} readShellOutput={vi.fn()} onDismissShell={onDismissShell} />,
+    );
+    fireEvent.click(screen.getByLabelText('Dismiss'));
+    expect(onDismissShell).toHaveBeenCalledWith('b1');
   });
 });

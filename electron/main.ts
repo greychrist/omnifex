@@ -1370,6 +1370,7 @@ app.whenReady().then(() => {
         sessionsService.applyPermissions(sessionId, permissions as any),
       getAccountInfo: (sessionId: string) => sessionsService.getAccountInfo(sessionId),
       getContextUsage: (sessionId: string) => sessionsService.getContextUsage(sessionId),
+      getTaskOutput: (sessionId: string, taskId: string) => sessionsService.getTaskOutput(sessionId, taskId),
       getCliStatus: (sessionId: string) => sessionsService.getCliStatus(sessionId),
       listPermissionRules: (sessionId: string) => sessionsService.listPermissionRules(sessionId),
       getSupportedCommands: (sessionId: string) => sessionsService.getSupportedCommands(sessionId),

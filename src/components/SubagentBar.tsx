@@ -11,9 +11,11 @@ import {
   X,
   ListChecks,
   Loader2,
+  SquareTerminal,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Subagent } from '@/lib/subagentStreams';
+import { plainTaskOutput, type BackgroundShell, type TaskOutputTail } from '@/lib/backgroundShells';
 
 const COLLAPSE_STORAGE_KEY = 'greychrist.subagentBar.collapsed';
 
@@ -204,11 +206,138 @@ const SubagentRow: React.FC<SubagentRowProps> = ({ sub, onDismiss }) => {
   );
 };
 
+/** How often an open, running shell row re-reads its output. */
+const SHELL_POLL_MS = 2000;
+
+/**
+ * The open row's output tail. Reads only while the row is open: once on
+ * open, then every SHELL_POLL_MS while the shell runs. A read that comes back
+ * null (task evicted, session gone) keeps the last output rather than
+ * blanking it.
+ */
+function useShellOutput(
+  taskId: string,
+  running: boolean,
+  open: boolean,
+  read: (taskId: string) => Promise<TaskOutputTail | null>,
+): { tail: TaskOutputTail | null; loaded: boolean } {
+  const [tail, setTail] = useState<TaskOutputTail | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    const fetchOnce = () => {
+      read(taskId)
+        .then((next) => {
+          if (cancelled) return;
+          if (next) setTail(next);
+          setLoaded(true);
+        })
+        .catch(() => { if (!cancelled) setLoaded(true); });
+    };
+    fetchOnce();
+    const timer = running ? setInterval(fetchOnce, SHELL_POLL_MS) : null;
+    return () => {
+      cancelled = true;
+      if (timer) clearInterval(timer);
+    };
+  }, [taskId, running, open, read]);
+  return { tail, loaded };
+}
+
+interface ShellRowProps {
+  shell: BackgroundShell;
+  read: (taskId: string) => Promise<TaskOutputTail | null>;
+  onDismiss?: (taskId: string) => void;
+}
+
+const ShellRow: React.FC<ShellRowProps> = ({ shell, read, onDismiss }) => {
+  const [expanded, setExpanded] = useState(false);
+  const running = shell.status === 'running';
+  const { tail, loaded } = useShellOutput(shell.taskId, running, expanded, read);
+  const dismissable = onDismiss && !running;
+  const text = tail ? plainTaskOutput(tail.output) : '';
+
+  return (
+    <div
+      data-shell-row
+      className={cn('border-l-2 border-zinc-400/40 bg-zinc-400/10 transition-opacity', !running && 'opacity-60')}
+    >
+      <button
+        type="button"
+        onClick={() => { setExpanded((v) => !v); }}
+        className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left hover:bg-white/5"
+      >
+        <span className="flex items-center justify-center w-4 shrink-0">
+          {running ? (
+            <span className="inline-block h-2 w-2 rounded-full animate-pulse bg-zinc-400" />
+          ) : (
+            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
+          )}
+        </span>
+        <SquareTerminal className="h-3.5 w-3.5 shrink-0 text-zinc-400" />
+        <span className="font-mono font-medium shrink-0 text-zinc-400">Shell</span>
+        <span className="text-muted-foreground shrink-0">·</span>
+        <span className="truncate flex-1 text-foreground/90 font-mono">{shell.description}</span>
+        {expanded ? (
+          <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+        ) : (
+          <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+        )}
+        {dismissable && (
+          <span
+            role="button"
+            aria-label="Dismiss"
+            title="Dismiss"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDismiss(shell.taskId);
+            }}
+            className="ml-1 inline-flex h-4 w-4 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground hover:bg-white/10 shrink-0"
+          >
+            <X className="h-3 w-3" />
+          </span>
+        )}
+      </button>
+
+      {expanded && (
+        <div className="px-3 pb-2 pt-0.5 border-t border-white/5">
+          {!loaded ? (
+            <div className="text-[11px] text-muted-foreground italic py-1">Reading output…</div>
+          ) : !tail ? (
+            <div className="text-[11px] text-muted-foreground italic py-1">
+              Output not available — the CLI no longer holds this task.
+            </div>
+          ) : (
+            <>
+              {tail.truncated && (
+                <div className="text-[10px] text-muted-foreground py-0.5">Showing the last 8 KiB</div>
+              )}
+              {text ? (
+                <pre className="text-[11px] font-mono leading-snug whitespace-pre-wrap break-words text-foreground/80 max-h-64 overflow-y-auto">
+                  {text}
+                </pre>
+              ) : (
+                <div className="text-[11px] text-muted-foreground italic py-1">No output yet</div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
 interface SubagentBarProps {
   subagents: Subagent[];
   className?: string;
   onDismiss?: (toolUseId: string) => void;
   onDismissAllCompleted?: () => void;
+  /** Background shells and Monitors (`local_bash` tasks). */
+  shells?: BackgroundShell[];
+  /** Reads a shell's output tail; required for shell rows to render. */
+  readShellOutput?: (taskId: string) => Promise<TaskOutputTail | null>;
+  onDismissShell?: (taskId: string) => void;
 }
 
 export const SubagentBar: React.FC<SubagentBarProps> = ({
@@ -216,6 +345,9 @@ export const SubagentBar: React.FC<SubagentBarProps> = ({
   className,
   onDismiss,
   onDismissAllCompleted,
+  shells = [],
+  readShellOutput,
+  onDismissShell,
 }) => {
   const [collapsed, setCollapsed] = useState<boolean>(() => {
     if (typeof window === 'undefined') return true;
@@ -227,9 +359,12 @@ export const SubagentBar: React.FC<SubagentBarProps> = ({
     window.localStorage.setItem(COLLAPSE_STORAGE_KEY, collapsed ? '1' : '0');
   }, [collapsed]);
 
-  if (subagents.length === 0) return null;
-  const total = subagents.length;
-  const runningCount = subagents.filter((s) => s.status === 'running').length;
+  const shellRows = readShellOutput ? shells : [];
+  if (subagents.length === 0 && shellRows.length === 0) return null;
+  const total = subagents.length + shellRows.length;
+  const runningCount =
+    subagents.filter((s) => s.status === 'running').length +
+    shellRows.filter((s) => s.status === 'running').length;
   const doneCount = total - runningCount;
   const running = runningCount > 0;
   const expanded = !collapsed;
@@ -255,7 +390,7 @@ export const SubagentBar: React.FC<SubagentBarProps> = ({
             type="button"
             onClick={() => { setCollapsed((v) => !v); }}
             className="inline-flex items-center gap-1.5 text-muted-foreground hover:text-foreground"
-            title={expanded ? 'Collapse subagents' : 'Expand subagents'}
+            title={expanded ? 'Collapse background work' : 'Expand background work'}
           >
             <span
               className="inline-flex items-center justify-center h-6 w-6 rounded-md border border-border bg-background shrink-0"
@@ -268,7 +403,9 @@ export const SubagentBar: React.FC<SubagentBarProps> = ({
               )}
             </span>
             <Bot className="h-3.5 w-3.5 text-foreground" />
-            <span className="font-medium text-foreground">Subagents:</span>
+            <span className="font-medium text-foreground">
+              {shellRows.length > 0 ? 'Background:' : 'Subagents:'}
+            </span>
             <span className="text-foreground/90 tabular-nums">
               {doneCount}/{total} done
             </span>
@@ -303,6 +440,9 @@ export const SubagentBar: React.FC<SubagentBarProps> = ({
         <div className="overflow-y-auto bg-background/95" style={{ maxHeight: '50vh' }}>
           {subagents.map((sub) => (
             <SubagentRow key={sub.toolUseId} sub={sub} onDismiss={onDismiss} />
+          ))}
+          {readShellOutput && shellRows.map((shell) => (
+            <ShellRow key={shell.taskId} shell={shell} read={readShellOutput} onDismiss={onDismissShell} />
           ))}
         </div>
       )}

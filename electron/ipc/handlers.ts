@@ -102,6 +102,7 @@ export interface Services {
     listPermissionRules(sessionId: string): Promise<unknown>;
     getAccountInfo(sessionId: string): unknown;
     getContextUsage(sessionId: string): unknown;
+    getTaskOutput(sessionId: string, taskId: string): unknown;
     getCliStatus(sessionId: string): unknown;
     getSupportedCommands(sessionId: string): unknown;
     getSupportedModels(sessionId: string): unknown;
@@ -560,6 +561,7 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     session_set_effort: wrapWith((p: Record<string, unknown>) => sessions?.setEffort((p?.tabId ?? p?.session_id) as string, (p?.level ?? p?.effort) as any) ?? null),
     session_account_info: wrapWith((p: Record<string, unknown>) => sessions?.getAccountInfo((p?.tabId ?? p?.session_id) as string) ?? null),
     session_context_usage: wrapWith((p: Record<string, unknown>) => sessions?.getContextUsage((p?.tabId ?? p?.session_id) as string) ?? null),
+    session_get_task_output: wrapWith((p: Record<string, unknown>) => sessions?.getTaskOutput((p?.tabId ?? p?.session_id) as string, (p?.taskId ?? p?.task_id) as string) ?? null),
     session_cli_status: wrapWith((p: Record<string, unknown>) => sessions?.getCliStatus((p?.tabId ?? p?.session_id) as string) ?? null),
     session_supported_commands: wrapWith((p: Record<string, unknown>) => sessions?.getSupportedCommands((p?.tabId ?? p?.session_id) as string) ?? null),
     session_supported_models: wrapWith((p: Record<string, unknown>) => sessions?.getSupportedModels((p?.tabId ?? p?.session_id) as string) ?? null),

@@ -24,6 +24,7 @@ import { enrichPlugin, type EnrichedPlugin } from './plugins';
 import { endSideChat, type SideChatAsk } from './side-chat';
 import { refreshCliUsage, type CliUsageSink } from './cli-usage';
 import { EMPTY_SIDE_CHAT, type SideChat, type SideChatAskResult } from '../../../src/lib/sideChat';
+import type { TaskOutputTail } from '../../../src/lib/backgroundShells';
 import type { LoggingService } from '../logging';
 
 export function createQueryPassthroughs(
@@ -353,6 +354,35 @@ export function createQueryPassthroughs(
   }
 
   /**
+   * The tail of a background shell or Monitor task's output
+   * (`get_task_output`, CLI 2.1.287+): the last 8 KiB, the same tail the
+   * TUI's /tasks detail view reads. Read-only and no model turn, so the
+   * renderer polls it while a row is open. Null when the CLI refuses — an
+   * unknown or evicted task, or a CLI too old to know the subtype — which
+   * the row shows as "no output available", not as an error. Not logged:
+   * a poll every couple of seconds would flood app_logs.
+   */
+  async function getTaskOutput(tabId: string, taskId: string): Promise<TaskOutputTail | null> {
+    const handle = liveEngine(tabId);
+    if (!handle) return null;
+    try {
+      const res = await handle.engine.sendControlRequest<{
+        output?: unknown;
+        total_bytes?: unknown;
+        truncated?: unknown;
+      }>('get_task_output', { task_id: taskId });
+      if (typeof res?.output !== 'string') return null;
+      return {
+        output: res.output,
+        totalBytes: typeof res.total_bytes === 'number' ? res.total_bytes : null,
+        truncated: res.truncated === true,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * The CLI's `/status` screen, as the rows it would draw (`get_status`, CLI
    * 2.1.280+ — the request the VSCode extension's Status dialog uses). Chat
    * mode has no TUI to type `/status` into, so this is the only way to see it.
@@ -506,6 +536,7 @@ export function createQueryPassthroughs(
     listPermissionRules,
     getAccountInfo,
     getContextUsage,
+    getTaskOutput,
     getCliStatus,
     getSupportedCommands,
     getSupportedModels,

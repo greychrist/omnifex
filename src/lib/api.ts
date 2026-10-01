@@ -1,6 +1,7 @@
 import { apiCall } from './apiAdapter';
 import type { HooksConfiguration } from '@/types/hooks';
 import type { SideChat, SideChatAskResult } from '@/lib/sideChat';
+import type { TaskOutputTail } from '@/lib/backgroundShells';
 
 /** Drop `undefined` optional params before an object crosses the IPC
  *  boundary — the main process can't distinguish `undefined` from missing. */
@@ -1956,6 +1957,12 @@ export const api = {
   /** Get the current context-window usage for an active session. */
   async sessionContextUsage(tabId: string): Promise<SessionContextUsage | null> {
     return apiCall("session_context_usage", { tabId });
+  },
+
+  /** Tail of a background shell / Monitor task's output (CLI 2.1.287+); null
+   *  when the session is not live, the task is unknown, or the CLI is older. */
+  async sessionTaskOutput(tabId: string, taskId: string): Promise<TaskOutputTail | null> {
+    return apiCall("session_get_task_output", { tabId, taskId });
   },
 
   /** The CLI's `/status` rows for a live session (CLI 2.1.280+); null when

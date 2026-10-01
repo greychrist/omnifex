@@ -5,6 +5,7 @@ import type { LoggingService } from '../logging';
 import type { AgentElicitationRequest, AgentEngine, AgentKind, ElicitationAction, InitData } from '../agents/types';
 import type { SideChatStore } from './side-chat';
 import type { SideChat, SideChatAskResult } from '../../../src/lib/sideChat';
+import type { TaskOutputTail } from '../../../src/lib/backgroundShells';
 
 // ---------------------------------------------------------------------------
 // CLI payload shapes (defined locally)
@@ -365,6 +366,8 @@ export interface SessionsService {
   getAccountInfo(tabId: string): Promise<AccountInfo | null>;
   /** Get the current context-window usage breakdown. Null if the tab isn't running. */
   getContextUsage(tabId: string): Promise<CliControlGetContextUsageResponse | null>;
+  /** Tail of a background shell / Monitor task's output; null when unavailable. */
+  getTaskOutput(tabId: string, taskId: string): Promise<TaskOutputTail | null>;
   /** The CLI's `/status` rows for a live session; null when there is no live
    *  engine or the CLI predates `get_status`. */
   getCliStatus(tabId: string): Promise<CliStatusReport | null>;

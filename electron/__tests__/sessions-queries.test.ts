@@ -413,6 +413,42 @@ describe('getContextUsage', () => {
   });
 });
 
+describe('getTaskOutput', () => {
+  it('sends get_task_output and maps the reply to camelCase', async () => {
+    const { engine, calls } = createEngine({
+      control: () => ({ output: 'listening on :3000\n', total_bytes: 9000, truncated: true }),
+    });
+    const { q } = setup({ engine });
+    await expect(q.getTaskOutput('tab1', 'b1')).resolves.toEqual({
+      output: 'listening on :3000\n',
+      totalBytes: 9000,
+      truncated: true,
+    });
+    expect(calls).toEqual([{ subtype: 'get_task_output', payload: { task_id: 'b1' } }]);
+  });
+
+  it('returns null when the CLI refuses the task (ended and evicted, unknown id, older CLI)', async () => {
+    const { engine } = createEngine({
+      control: () => {
+        throw new Error('get_task_output: no shell or Monitor task with that task_id in this session');
+      },
+    });
+    const { q } = setup({ engine });
+    await expect(q.getTaskOutput('tab1', 'gone')).resolves.toBeNull();
+  });
+
+  it('returns null for a reply without string output', async () => {
+    const { engine } = createEngine({ control: () => ({ total_bytes: 3 }) });
+    const { q } = setup({ engine });
+    await expect(q.getTaskOutput('tab1', 'b1')).resolves.toBeNull();
+  });
+
+  it('returns null with no live engine', async () => {
+    const { q } = setup({ registered: false });
+    await expect(q.getTaskOutput('tab1', 'b1')).resolves.toBeNull();
+  });
+});
+
 describe('getCliStatus', () => {
   const REPORT = {
     sections: [

@@ -97,6 +97,7 @@ import { deriveSubagents, applySubagentMeta, createSubagentColorAllocator, notif
 import { getTaskList, summarizeTaskList } from "@/lib/taskList";
 import { deriveWaitingFor, type TabWaitingFor } from "@/lib/tabWaitingFor";
 import { SubagentBar } from "./SubagentBar";
+import { deriveBackgroundShells } from "@/lib/backgroundShells";
 import { TaskList } from "./claude/tools/TaskList";
 import { fireAndLog, logAndForget } from "@/lib/fireAndLog";
 import { decideResumeSeed } from "@/lib/resumeSeedDecision";
@@ -964,6 +965,20 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     () => summarizeTaskList(taskEntries).inProgress > 0,
     [taskEntries],
   );
+  // Background shells and Monitors share the subagent bar. Their output is
+  // read on demand (`get_task_output`) by the row itself, only while open.
+  const [dismissedShells, setDismissedShells] = useState<Set<string>>(new Set());
+  const shells = useMemo(() => {
+    const all = deriveBackgroundShells(messages);
+    return dismissedShells.size === 0 ? all : all.filter((sh) => !dismissedShells.has(sh.taskId));
+  }, [messages, dismissedShells]);
+  const dismissShell = useCallback((taskId: string) => {
+    setDismissedShells((prev) => new Set(prev).add(taskId));
+  }, []);
+  const readShellOutput = useCallback(
+    (taskId: string) => api.sessionTaskOutput(tabIdRef.current, taskId),
+    [],
+  );
   const dismissSubagent = useCallback((toolUseId: string) => {
     colorAllocatorRef.current.release(toolUseId);
     setDismissedSubagents((prev) => {
@@ -983,7 +998,14 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
       }
       return next;
     });
-  }, [subagents]);
+    setDismissedShells((prev) => {
+      const next = new Set(prev);
+      for (const sh of shells) {
+        if (sh.status !== 'running') next.add(sh.taskId);
+      }
+      return next;
+    });
+  }, [subagents, shells]);
 
   // Tab context for title / promptStatus mirror. The usePublishTabStatus
   // call lives further down — it depends on `isSessionActive` /
@@ -2909,6 +2931,9 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
               subagents={subagents}
               onDismiss={dismissSubagent}
               onDismissAllCompleted={dismissAllCompletedSubagents}
+              shells={shells}
+              readShellOutput={readShellOutput}
+              onDismissShell={dismissShell}
             />
             <FloatingPromptInput
               ref={floatingPromptRef}

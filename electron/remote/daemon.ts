@@ -674,6 +674,7 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
       applyPermissions: (id, permissions) => sessionsService.applyPermissions(id, permissions as any),
       getAccountInfo: (id) => sessionsService.getAccountInfo(id),
       getContextUsage: (id) => sessionsService.getContextUsage(id),
+      getTaskOutput: (id, taskId) => sessionsService.getTaskOutput(id, taskId),
       getCliStatus: (id) => sessionsService.getCliStatus(id),
       listPermissionRules: (id) => sessionsService.listPermissionRules(id),
       getSupportedCommands: (id) => sessionsService.getSupportedCommands(id),
