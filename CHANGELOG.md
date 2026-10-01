@@ -5,6 +5,14 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.209] — 2026-10-01
+
+### Added
+- Background shells and Monitors now appear in the subagent bar beside subagents, under a "Background:" header. Opening a row shows the tail of the command's output — read from Claude Code's `get_task_output` (CLI 2.1.287+), refreshed every 2 seconds while the command runs, as plain text with colour codes stripped. Nothing is read while a row is closed. Ended shells stay listed until cleared, like finished subagents.
+
+### Changed
+- Reviewed Claude Code 2.1.287 against OmniFex: no regressions.
+
 ## [0.4.208] — 2026-10-01
 
 ### Fixed
