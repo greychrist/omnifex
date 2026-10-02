@@ -5,6 +5,24 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.211] — 2026-10-02
+
+### Added
+- Status bar `account` readout, first in the bar: the account's colour, a shield, and its 5-hour / 7-day usage (or the session's cost). A `session` readout closes the bar with the session's state and context size. Each opens the same popover as its header card.
+- New session button in the session header, beside the back button.
+- "Restart in Bypass" in the permission picker. Claude Code refuses to switch into bypassPermissions mid-session unless the session was launched in it; the picker now says so and offers the restart.
+- The working-tree diff viewer's file list and old/new split are resizable.
+
+### Changed
+- Trial header layout: the account and session cards are hidden; the status bar sits in the header row beside the back button, with the branch on a second bar under it.
+- The prompt-cache countdown no longer reads "refreshing" for a whole turn. It re-anchors on every model call, so a permission prompt left waiting visibly runs the cache out.
+- Reviewed Claude Code 2.1.288 against OmniFex: no wire changes that reach OmniFex, no action needed. The "CLI ahead of review" badge clears for 2.1.288.
+
+### Fixed
+- A permission-mode switch Claude Code refuses now rolls back and shows an error, instead of the picker showing a mode the session is not in.
+- A queued prompt's echo no longer lands above the previous turn's final reply.
+- Settings no longer flashes "Saved" when opened.
+
 ## [0.4.210] — 2026-10-02
 
 ### Added
