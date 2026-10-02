@@ -70,7 +70,16 @@ interface UseSessionLifecycleArgs {
 interface UseSessionLifecycleReturn {
   unlistenRefs: React.MutableRefObject<(() => void)[]>;
   isMountedRef: React.MutableRefObject<boolean>;
-  startPersistentSession: (resumeId?: string) => Promise<void>;
+  /** `options.permissionMode` overrides the picker's mode for this launch —
+   *  "Restart in Bypass" starts before that state has re-rendered here. */
+  startPersistentSession: (resumeId?: string, options?: { permissionMode?: string }) => Promise<void>;
+  /**
+   * The `--permission-mode` the live session's CLI was spawned with, or null
+   * before one is known. Distinct from the mode it is in now: the CLI allows
+   * Bypass mid-session only when it was launched in Bypass. Set on start, and
+   * re-learned from `sessionGetHealth` on rebind.
+   */
+  launchPermissionMode: string | null;
   /**
    * Re-attach to an in-flight session in the main process (no CLI restart).
    * Returns true if a live session existed and was reclaimed, false otherwise.
@@ -130,6 +139,7 @@ export function useSessionLifecycle({
     () => hasPendingStart ? 'starting' : 'stopped',
   );
   const [turn, setTurn] = useState<TurnState>(IDLE_TURN);
+  const [launchPermissionMode, setLaunchPermissionMode] = useState<string | null>(null);
 
   // `conversationStatus` is now derived, not stored. The `conversationStatus`
   // field on `session-status:<tabId>` IPC events was removed from the IPC
@@ -280,6 +290,8 @@ export function useSessionLifecycle({
       // Re-seed claudeSessionId on rebind — the renderer just reloaded and
       // may have lost it. The main process still holds the pinned id.
       if (health.sessionId) onSessionInit(health.sessionId);
+      // Absent from a daemon older than the field: leave it unknown.
+      if (health.launchPermissionMode !== undefined) setLaunchPermissionMode(health.launchPermissionMode);
     }).catch((err: unknown) => {
       console.warn('[rebindPersistentSession] sessionGetHealth failed:', err);
     });
@@ -318,7 +330,7 @@ export function useSessionLifecycle({
     });
   }, [tabId]); // eslint-disable-line react-hooks/exhaustive-deps -- rebind is read through a ref; the rest are stable refs/setters
 
-  const startPersistentSession = async (resumeId?: string) => {
+  const startPersistentSession = async (resumeId?: string, options?: { permissionMode?: string }) => {
     if (persistentSessionRef.current) return; // Already running
     // Claim the slot synchronously — `api.startSession` awaits IPC and
     // account resolution, so a second concurrent call that hits the guard
@@ -340,7 +352,8 @@ export function useSessionLifecycle({
     attachStreamListeners();
 
     // Resolve account fresh at session start (the cached state may not be ready yet)
-    const mode = permissionMode;
+    const mode = options?.permissionMode ?? permissionMode;
+    setLaunchPermissionMode(mode);
     let configDir = accountResolution?.account.config_dir;
     if (!configDir && projectPath) {
       try {
@@ -474,6 +487,7 @@ export function useSessionLifecycle({
     rebindPersistentSession,
     sessionStatus,
     turn,
+    launchPermissionMode,
     conversationStatus: derivedConversationStatus,
     resetStatus,
   };

@@ -24,6 +24,68 @@ function getFallbackColor(name: string): string {
   return FALLBACK_COLORS[Math.abs(hash) % FALLBACK_COLORS.length];
 }
 
+/** The text colour alone from an uncoloured account's fallback cluster —
+ *  for a readout that wears the account's colour without its chip. */
+export function fallbackTextColor(name: string): string {
+  return getFallbackColor(name).split(" ").find((c) => c.startsWith("text-")) ?? "";
+}
+
+export interface AccountShield {
+  Icon: typeof ShieldCheck;
+  className: string;
+  label: string;
+}
+
+/**
+ * The identity shield, or null when there is nothing to attest.
+ *
+ * A lost session sign-in outranks the verdict: the config dir can still read
+ * as verified while the running process — which never re-reads its
+ * credentials — can no longer make a request.
+ *
+ * `unverified` and `null` deliberately give no shield: with no expected email
+ * configured there is nothing to attest, and a green shield there would be a
+ * claim we haven't earned. Colours are hard-coded rather than themed:
+ * green/red must not be mixed toward the account tint, or a red alert on an
+ * amber account stops reading as an alert.
+ */
+export function accountShield(
+  verification: IdentityStatus | null | undefined,
+  sessionSignedOut: boolean,
+): AccountShield | null {
+  if (sessionSignedOut) {
+    return {
+      Icon: ShieldAlert,
+      className: "text-red-500",
+      label: "This session's sign-in expired — sign in again to continue",
+    };
+  }
+  if (!verification) return null;
+  return {
+    verified: {
+      Icon: ShieldCheck,
+      className: "text-emerald-500",
+      label: "Signed in as the expected account",
+    },
+    mismatch: {
+      Icon: ShieldAlert,
+      className: "text-red-500",
+      label: "Signed in as a DIFFERENT account than expected",
+    },
+    "signed-out": {
+      Icon: ShieldAlert,
+      className: "text-red-500",
+      label: "This config directory is not signed in",
+    },
+    "unknown-account": {
+      Icon: ShieldQuestion,
+      className: "opacity-70",
+      label: "Couldn't verify — no account owns this config directory",
+    },
+    unverified: null,
+  }[verification];
+}
+
 /**
  * Theme-aware style cluster for the colored badge variants. The original
  * approach (hex + alpha against `transparent`) reads well over the dark
@@ -151,41 +213,7 @@ export const AccountBadge: React.FC<AccountBadgeProps> = ({
   // The trailing slot shows EITHER the engine brand mark or an identity
   // shield — the shield wins when there's a verdict to report, because "is
   // this the right account?" matters more at a glance than "which engine".
-  // Colors are hard-coded rather than themed: green/red must not be mixed
-  // toward the account tint, or a red alert on an amber account stops reading
-  // as an alert.
-  const shield = sessionSignedOut
-    ? {
-        Icon: ShieldAlert,
-        className: "text-red-500",
-        label: "This session's sign-in expired — sign in again to continue",
-      }
-    : verification
-    ? {
-        verified: {
-          Icon: ShieldCheck,
-          className: "text-emerald-500",
-          label: "Signed in as the expected account",
-        },
-        mismatch: {
-          Icon: ShieldAlert,
-          className: "text-red-500",
-          label: "Signed in as a DIFFERENT account than expected",
-        },
-        "signed-out": {
-          Icon: ShieldAlert,
-          className: "text-red-500",
-          label: "This config directory is not signed in",
-        },
-        "unknown-account": {
-          Icon: ShieldQuestion,
-          className: "opacity-70",
-          label: "Couldn't verify — no account owns this config directory",
-        },
-        // Nothing to attest; falls through to the brand mark below.
-        unverified: null,
-      }[verification]
-    : null;
+  const shield = accountShield(verification, sessionSignedOut);
 
   const trailingMark = shield ? (
     <shield.Icon

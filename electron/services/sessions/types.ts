@@ -311,6 +311,8 @@ export interface SessionsService {
     sessionId: string | null;
     sessionStatus: SessionStatus;
     turn: TurnState;
+    /** The `--permission-mode` the CLI was spawned with; null when not alive. */
+    launchPermissionMode: string | null;
   };
   /** The turn axis for a tab; idle for a tab the service does not know. */
   getTurn(tabId: string): TurnState;

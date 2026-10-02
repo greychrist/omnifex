@@ -2,8 +2,8 @@
 //
 // The control-protocol passthrough layer (sessions/queries.ts).
 //
-// Every method here swallows engine errors and reports null/[] so a CLI
-// hiccup can't crash the IPC layer. That is the right posture and also the
+// Every method here but setPermissionMode swallows engine errors and reports
+// null/[] so a CLI hiccup can't crash the IPC layer. That is the right posture and also the
 // reason this file went untested for so long: when it breaks, nothing says
 // so. The `logControl` rows in app_logs are the ONLY trace a mid-session
 // setting change left, which is exactly why the "silently no-op" bugs
@@ -39,12 +39,13 @@ function createEngine(opts: {
   return { engine, calls };
 }
 
-function handle(engine: AgentEngine): SessionHandle {
+function handle(engine: AgentEngine, launchMode = 'default'): SessionHandle {
   return {
     agent: 'claude',
     engine,
     initData: null,
-    permissionMode: 'default',
+    permissionMode: launchMode,
+    startParams: { projectPath: '/proj', configDir: '/cfg', permissionMode: launchMode },
     configDir: '/cfg',
     projectPath: '/proj',
     sideChat: createSideChatStore(),
@@ -67,10 +68,12 @@ function createLogging() {
 function setup(opts: {
   engine?: AgentEngine;
   registered?: boolean;
+  /** The `--permission-mode` the CLI was spawned with. */
+  launchMode?: string;
 } = {}) {
   const sessions = new Map<string, SessionHandle>();
   if (opts.registered !== false) {
-    sessions.set('tab1', handle(opts.engine ?? createEngine().engine));
+    sessions.set('tab1', handle(opts.engine ?? createEngine().engine, opts.launchMode));
   }
   const sent: { channel: string; args: unknown[] }[] = [];
   const sendToRenderer: SendToRenderer = (channel, ...args) => {
@@ -232,19 +235,52 @@ describe('setPermissionMode', () => {
     expect(sessions.get('tab1')!.permissionMode).toBe('acceptEdits');
   });
 
-  // The handle is updated BEFORE the request. A failed send must not roll it
-  // back: the restart path reads permissionMode, and reverting would restart
-  // the session under a mode the user had already left.
-  it('keeps the remembered mode even when the request fails', async () => {
+  // The decider reads the remembered mode on every permission request, so a
+  // mode the CLI refused must not stay remembered: OmniFex would auto-answer
+  // under a mode the CLI is not in. The restart path is unaffected — it
+  // relaunches from startParams, not from this field.
+  it('rolls the remembered mode back and rejects when the request fails', async () => {
     const { engine } = createEngine({
       control: () => {
         throw new Error('nope');
       },
     });
     const { q, sessions, meta } = setup({ engine });
-    await q.setPermissionMode('tab1', 'plan');
-    expect(sessions.get('tab1')!.permissionMode).toBe('plan');
+    await expect(q.setPermissionMode('tab1', 'plan')).rejects.toThrow('nope');
+    expect(sessions.get('tab1')!.permissionMode).toBe('default');
     expect(meta()).toMatchObject({ op: 'set_permission_mode', ok: false, error: 'nope' });
+  });
+
+  // The CLI only allows Bypass mid-session when it was spawned in Bypass
+  // (CLI 2.1.287: isBypassPermissionsModeAvailable = launch mode is bypass,
+  // or --allow-dangerously-skip-permissions, which OmniFex never passes).
+  // Refused here rather than sent, so the error names the way out.
+  it('refuses Bypass without asking the CLI when the session was not launched in it', async () => {
+    const { engine, calls } = createEngine();
+    const { q, sessions, meta } = setup({ engine, launchMode: 'acceptEdits' });
+    sessions.get('tab1')!.permissionMode = 'acceptEdits';
+    await expect(q.setPermissionMode('tab1', 'bypassPermissions')).rejects.toThrow(/restart/i);
+    expect(calls).toEqual([]);
+    expect(sessions.get('tab1')!.permissionMode).toBe('acceptEdits');
+    expect(meta()).toMatchObject({
+      op: 'set_permission_mode',
+      ok: false,
+      mode: 'bypassPermissions',
+      reason: 'bypass-not-launched',
+    });
+  });
+
+  // Launched in Bypass, it can leave and come back.
+  it('sends Bypass when the session was launched in it', async () => {
+    const { engine, calls } = createEngine();
+    const { q, sessions } = setup({ engine, launchMode: 'bypassPermissions' });
+    await q.setPermissionMode('tab1', 'default');
+    await q.setPermissionMode('tab1', 'bypassPermissions');
+    expect(calls.map((c) => c.payload)).toEqual([
+      { mode: 'default' },
+      { mode: 'bypassPermissions' },
+    ]);
+    expect(sessions.get('tab1')!.permissionMode).toBe('bypassPermissions');
   });
 });
 

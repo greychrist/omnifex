@@ -1,78 +1,28 @@
 import * as React from "react";
-import { ShieldCheck, ShieldAlert, ShieldQuestion, RefreshCw, RotateCw, LogIn, LogOut } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type {
-  AgentKind,
-  SessionAccountInfo,
-  RateLimitSnapshot,
-  IdentityStatus,
-} from "@/lib/api";
-import type { SessionVerification } from "@/lib/accountVerification";
+import type { RateLimitSnapshot, IdentityStatus } from "@/lib/api";
 import { Popover } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
-import { api } from "@/lib/api";
-import { platform } from "@/lib/platform";
-import { ClaudeSignInModal } from "./ClaudeSignInModal";
-import { announceAccountSignedIn } from "@/lib/accountSignIn";
-import type { SessionAuthFailure } from "@/lib/sessionDerivedState";
 import { AccountBadge } from "./AccountBadge";
+import { useAccountDetailsPopover, type AccountDetailsInputs } from "./AccountDetails";
 import { useLayoutMode } from "@/hooks/useLayoutMode";
 import { HeaderLabel } from "./HeaderLabel";
 import { RateLimitWidget } from "./claude-code-session/RateLimitWidget";
 import { CostWidget } from "./claude-code-session/CostWidget";
 import { UsageDetailPopover } from "./claude-code-session/UsageDetailPopover";
-import { useUsageAutoRefresh } from "@/hooks/useUsageAutoRefresh";
-import { useSessionCost } from "@/hooks/useSessionCost";
+import type { AccountUsage } from "@/hooks/useAccountUsage";
 
-interface AccountCardProps {
-  accountName: string;
+interface AccountCardProps extends AccountDetailsInputs {
   /** Whether usage on this account costs money (true for e.g. Enterprise/API,
    *  false for Max). Drives the usage widget: cost-based accounts show a dollar
    *  figure (they have no rate-limit windows); rate-limited accounts show the
    *  5h/7d utilization chart. */
   hasCost?: boolean;
-  /** Engine driving this session. When set, the account badge appends the
-   *  brand mark after the account type (e.g. "Personal : max [Claude]"). */
-  agent?: AgentKind | null;
-  /**
-   * Resolved account identity verification. Supplied by AgentSession rather
-   * than fetched here so the card and the header banner can never make
-   * contradictory claims about the same session.
-   */
-  verification?: SessionVerification | null;
-  /** Force a fresh identity check. */
-  onRecheck?: () => void;
-  /**
-   * Who is signed in to `configDir` right now, from its `.claude.json`.
-   * `undefined` = not known yet (or the read failed), `null` = nobody. Drives
-   * Sign in vs Re-authenticate / Sign out, independent of `verification`,
-   * which only exists for accounts with an expected email.
-   */
-  signedInEmail?: string | null;
-  /**
-   * This session's CLI process has lost its sign-in (`sessionAuthFailure`).
-   * Independent of `signedInEmail`: the config dir's login can look fine while
-   * the running process, which never re-reads its credentials, cannot work.
-   */
-  sessionAuthFailure?: SessionAuthFailure | null;
-  /**
-   * Supplied only when a restart changes something: the running process holds
-   * the wrong credentials, or has lost its sign-in.
-   */
-  onRestart?: (() => void) | null;
-  restarting?: boolean;
-  configDir: string;
-  matchType: string;
-  matchDetail: string;
-  sdkAccount?: SessionAccountInfo | null;
+  /** `/usage` and computed cost, owned by AgentSession — see useAccountUsage. */
+  usage: AccountUsage;
   fiveHourRateLimit?: RateLimitSnapshot | null;
   sevenDayRateLimit?: RateLimitSnapshot | null;
-  /** Drives the visibility-aware /usage auto-refresh inside the card. */
-  sessionStatus?: 'starting' | 'active' | 'ended';
-  /** Active Claude session id, used to drive the live computed-cost watcher. */
-  sessionId?: string | null;
-  /** Project path for the active session, used to drive the live computed-cost watcher. */
-  projectPath?: string;
   className?: string;
 }
 
@@ -82,65 +32,17 @@ interface AccountCardProps {
  * dragging the rest of the session header along.
  */
 export function AccountCard({
-  accountName,
   hasCost,
-  agent,
-  verification,
-  signedInEmail,
-  sessionAuthFailure = null,
-  onRecheck,
-  onRestart,
-  restarting = false,
-  configDir,
-  matchType,
-  matchDetail,
-  sdkAccount,
+  usage,
   fiveHourRateLimit,
   sevenDayRateLimit,
-  sessionStatus,
-  sessionId,
-  projectPath,
   className,
+  ...detailInputs
 }: AccountCardProps) {
+  const { accountName, agent, verification, sessionAuthFailure = null, onRecheck } = detailInputs;
   const { narrow } = useLayoutMode();
-  const [accountPopoverOpen, setAccountPopoverOpen] = React.useState(false);
+  const details = useAccountDetailsPopover(detailInputs);
   const [usagePopoverOpen, setUsagePopoverOpen] = React.useState(false);
-  const [signInOpen, setSignInOpen] = React.useState(false);
-  // Sign out is two clicks: it cuts off every session on this account, not
-  // just this one. The armed state resets whenever the popover closes.
-  const [signOutArmed, setSignOutArmed] = React.useState(false);
-  const [signingOut, setSigningOut] = React.useState(false);
-  const [authError, setAuthError] = React.useState<string | null>(null);
-
-  // Claude only — Codex signs in from Account Settings. And desktop only: the
-  // login runs in a pty on this machine, which the web client does not have.
-  const canManageAuth = platform.isElectron && agent !== "codex";
-
-  const handleAccountPopoverChange = React.useCallback((next: boolean) => {
-    setAccountPopoverOpen(next);
-    if (!next) {
-      setSignOutArmed(false);
-      setAuthError(null);
-    }
-  }, []);
-
-  const handleSignOut = React.useCallback(async () => {
-    if (!signOutArmed) {
-      setSignOutArmed(true);
-      return;
-    }
-    setSigningOut(true);
-    setAuthError(null);
-    try {
-      await api.claudeLogout(configDir);
-      setSignOutArmed(false);
-      onRecheck?.();
-    } catch (err) {
-      setAuthError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setSigningOut(false);
-    }
-  }, [signOutArmed, configDir, onRecheck]);
 
   const shieldStatus: IdentityStatus | null = verification?.status ?? null;
 
@@ -149,19 +51,8 @@ export function AccountCard({
   // Both variants still fetch /usage and open the same detail popover.
   const costBased = hasCost === true;
 
-  const {
-    data: usageData,
-    loading: usageLoading,
-    refresh: refreshUsage,
-  } = useUsageAutoRefresh(accountName, sessionStatus === 'active');
-
-  const computedCost = useSessionCost({
-    enabled: costBased,
-    configDir,
-    projectPath,
-    sessionId,
-    accountName,
-  });
+  const { data: usageData, loading: usageLoading, refresh: refreshUsage } = usage;
+  const computedCost = usage.sessionCost;
   const sessionCostUsd = computedCost?.totalUsd ?? null;
 
   // Also re-runs the identity check: the verdict is otherwise re-read only on
@@ -173,29 +64,13 @@ export function AccountCard({
     await refreshUsage();
   }, [onRecheck, refreshUsage, usageLoading]);
 
-  const sdkMismatch =
-    sdkAccount?.apiProvider !== undefined &&
-    sdkAccount.apiProvider !== 'firstParty';
-
-  // The backend emits 'override' | 'path_rule' | 'on_disk'; the renderer also
-  // synthesizes 'manual_override' when the user picks an account mid-session.
-  // The old fallback read "default", which both mislabelled a plain 'override'
-  // and named a concept that does not exist — there is no default account.
-  const matchLabel = matchType === "path_rule"
-    ? "path rule"
-    : matchType === "on_disk"
-    ? "existing sessions"
-    : matchType === "override" || matchType === "project_override" || matchType === "manual_override"
-    ? "project override"
-    : matchType;
-
   return (
     <div className={cn("flex items-start gap-3 rounded-md border-0 bg-background/40 px-2 py-1 shadow-[0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_30%,transparent),2px_2px_4px_rgb(0_0_0/0.08)]", className)}>
       <div className="flex flex-col items-start gap-0.5">
         <HeaderLabel>account</HeaderLabel>
         <Popover
-          open={accountPopoverOpen}
-          onOpenChange={handleAccountPopoverChange}
+          open={details.open}
+          onOpenChange={details.onOpenChange}
           align="start"
           side="bottom"
           className="w-96"
@@ -214,243 +89,10 @@ export function AccountCard({
               />
             </button>
           }
-          content={
-            <div className="flex flex-col gap-3 text-left">
-              {sessionAuthFailure && (
-                <div className="flex flex-col gap-1.5 rounded-md bg-red-500/10 px-2 py-1.5">
-                  <div className="text-[10px] uppercase tracking-wider text-red-500 flex items-center gap-1">
-                    <ShieldAlert className="w-3 h-3" />
-                    This session&apos;s sign-in expired
-                  </div>
-                  <div className="text-[11px] text-foreground/70 break-words">{sessionAuthFailure.text}</div>
-                  <div className="text-[11px] text-foreground/60">
-                    Sign in again and this session restarts on its own. A running
-                    CLI never picks up a new sign-in.
-                  </div>
-                  {onRestart && (
-                    <div>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-6 px-2 text-[11px]"
-                        onClick={onRestart}
-                        disabled={restarting}
-                        title="Stop this session's CLI process and start a fresh one, resuming the conversation."
-                      >
-                        <RotateCw className={cn("w-3 h-3 mr-1", restarting && "animate-spin")} />
-                        {restarting ? "Restarting…" : "Restart session"}
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              )}
-              {/* Account identity. Lives in the popover rather than on the
-                  shield itself: the badge is already a popover trigger, and a
-                  button inside a button is invalid markup. */}
-              {verification && (
-                <div className="flex flex-col gap-1.5">
-                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground flex items-center gap-1">
-                    {verification.status === "verified" && (
-                      <ShieldCheck className="w-3 h-3 text-emerald-500" />
-                    )}
-                    {(verification.status === "mismatch" ||
-                      verification.status === "signed-out") && (
-                      <ShieldAlert className="w-3 h-3 text-red-500" />
-                    )}
-                    {verification.status === "unknown-account" && (
-                      <ShieldQuestion className="w-3 h-3 opacity-70" />
-                    )}
-                    account identity
-                  </div>
-
-                  {verification.status === "unknown-account" ? (
-                    <div className="text-xs text-muted-foreground">
-                      Couldn&apos;t verify — no account owns this config directory.
-                    </div>
-                  ) : (
-                    <div className="flex flex-col gap-1 text-xs">
-                      <div className="flex justify-between gap-2">
-                        <span className="text-foreground/50">Expected</span>
-                        <span className="font-mono text-foreground/90 truncate">
-                          {verification.expected}
-                        </span>
-                      </div>
-                      <div className="flex justify-between gap-2">
-                        <span className="text-foreground/50">Detected</span>
-                        <span
-                          className={cn(
-                            "font-mono truncate",
-                            verification.status === "verified"
-                              ? "text-emerald-500"
-                              : "text-red-500",
-                          )}
-                        >
-                          {verification.detected ?? "not signed in"}
-                        </span>
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-6 px-2 text-[11px]"
-                      onClick={onRecheck}
-                    >
-                      <RefreshCw className="w-3 h-3 mr-1" />
-                      Re-check
-                    </Button>
-                    {/* Absent unless the running process genuinely holds the
-                        wrong credentials — a corrected expectation needs no
-                        restart. */}
-                    {onRestart && !sessionAuthFailure && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-6 px-2 text-[11px]"
-                        onClick={onRestart}
-                        disabled={restarting}
-                        title="Stop this session's CLI process and start a fresh one, resuming the conversation."
-                      >
-                        <RotateCw className={cn("w-3 h-3 mr-1", restarting && "animate-spin")} />
-                        {restarting ? "Restarting…" : "Restart session"}
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              )}
-              {/* Outside the identity block on purpose: an account with no
-                  expected email has no verification to show, and signing
-                  in or out does not depend on that check. */}
-              {canManageAuth && !verification && signedInEmail !== undefined && (
-                // The identity block above already shows Detected when there
-                // is a verification; this covers accounts with no expected email.
-                <div className="flex justify-between gap-2 text-xs">
-                  <span className="text-foreground/50">Signed in as</span>
-                  {signedInEmail === null ? (
-                    <span className="text-foreground/60">Not signed in</span>
-                  ) : (
-                    <span className="font-mono text-foreground/90 truncate">{signedInEmail}</span>
-                  )}
-                </div>
-              )}
-              {canManageAuth && (
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-6 px-2 text-[11px]"
-                    onClick={() => {
-                      // Close the popover first: the dialog would otherwise
-                      // count a click in it as outside the popover.
-                      handleAccountPopoverChange(false);
-                      setSignInOpen(true);
-                    }}
-                    title="Run `claude auth login` for this account's config directory."
-                  >
-                    <LogIn className="w-3 h-3 mr-1" />
-                    {signedInEmail === null || sessionAuthFailure ? "Sign in" : "Re-authenticate"}
-                  </Button>
-                  {signedInEmail !== null && (
-                    <Button
-                      variant={signOutArmed ? "destructive" : "outline"}
-                      size="sm"
-                      className="h-6 px-2 text-[11px]"
-                      onClick={() => void handleSignOut()}
-                      disabled={signingOut}
-                      title="Run `claude auth logout` for this account. Every session on this account loses its credentials."
-                    >
-                      <LogOut className="w-3 h-3 mr-1" />
-                      {signingOut ? "Signing out…" : signOutArmed ? "Confirm sign out" : "Sign out"}
-                    </Button>
-                  )}
-                </div>
-              )}
-              {authError && (
-                <div className="text-[11px] text-red-500 break-words">{authError}</div>
-              )}
-              {sdkAccount && (
-                <div>
-                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1 flex items-center gap-1">
-                    {sdkMismatch ? (
-                      <ShieldAlert className="w-3 h-3 text-yellow-400" />
-                    ) : (
-                      <ShieldCheck className="w-3 h-3 text-green-400" />
-                    )}
-                    CLI-reported account
-                  </div>
-                  <div className="flex flex-col gap-1 text-xs">
-                    {sdkAccount.email && (
-                      <div className="flex justify-between gap-2">
-                        <span className="text-foreground/50">Email</span>
-                        <span className="font-mono text-foreground/90 truncate">{sdkAccount.email}</span>
-                      </div>
-                    )}
-                    {sdkAccount.organization && (
-                      <div className="flex justify-between gap-2">
-                        <span className="text-foreground/50">Organization</span>
-                        <span className="font-mono text-foreground/90 truncate">{sdkAccount.organization}</span>
-                      </div>
-                    )}
-                    {sdkAccount.subscriptionType && (
-                      <div className="flex justify-between gap-2">
-                        <span className="text-foreground/50">Subscription</span>
-                        <span className="font-mono text-foreground/90 uppercase">{sdkAccount.subscriptionType}</span>
-                      </div>
-                    )}
-                    {sdkAccount.apiProvider && (
-                      <div className="flex justify-between gap-2">
-                        <span className="text-foreground/50">API provider</span>
-                        <span className={cn("font-mono", sdkMismatch ? "text-yellow-400" : "text-foreground/90")}>
-                          {sdkAccount.apiProvider}
-                        </span>
-                      </div>
-                    )}
-                    {sdkAccount.tokenSource && (
-                      <div className="flex justify-between gap-2">
-                        <span className="text-foreground/50">Token source</span>
-                        <span className="font-mono text-foreground/90">{sdkAccount.tokenSource}</span>
-                      </div>
-                    )}
-                    {sdkAccount.apiKeySource && (
-                      <div className="flex justify-between gap-2">
-                        <span className="text-foreground/50">API key source</span>
-                        <span className="font-mono text-foreground/90">{sdkAccount.apiKeySource}</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              <div>
-                <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">Config directory</div>
-                <div className="font-mono text-xs break-all text-foreground/90">{configDir}</div>
-              </div>
-
-              <div>
-                <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">Matched by</div>
-                <div className="text-xs text-foreground/90 flex flex-col gap-0.5">
-                  <span className="font-medium">{matchLabel}</span>
-                  <span className="text-foreground/60 font-mono break-all">{matchDetail}</span>
-                </div>
-              </div>
-            </div>
-          }
+          content={details.content}
         />
       </div>
-      {canManageAuth && (
-        <ClaudeSignInModal
-          open={signInOpen}
-          onClose={() => { setSignInOpen(false); }}
-          configDir={configDir}
-          accountName={accountName}
-          onAuthenticated={() => {
-            onRecheck?.();
-            announceAccountSignedIn(configDir);
-          }}
-        />
-      )}
+      {details.signInModal}
       <UsageDetailPopover
         open={usagePopoverOpen}
         onOpenChange={setUsagePopoverOpen}

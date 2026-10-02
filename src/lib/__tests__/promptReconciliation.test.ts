@@ -6,6 +6,7 @@ import {
   isCliPromptRecord,
   isPendingPromptPlaceholder,
   reconcilePendingPrompt,
+  appendCliRecord,
 } from '../promptReconciliation';
 
 /** The optimistic echo useSendPrompt appends on Enter: no uuid, no sessionId. */
@@ -275,5 +276,63 @@ describe('reconcilePendingPrompt', () => {
     expect(isPendingPromptPlaceholder(first[1])).toBe(true);
     const second = reconcilePendingPrompt(first, cliPrompt('again', 'u-2'))!;
     expect(second.every((m) => !isPendingPromptPlaceholder(m))).toBe(true);
+  });
+});
+
+describe('appendCliRecord — a queued prompt does not jump ahead of the answer before it', () => {
+  // The turn's final answer is written to the JSONL before the CLI emits
+  // `result` on stdout. `result` drains the queue at once, appending the next
+  // prompt's echo — but the answer's record only reaches the renderer on the
+  // tail's next poll, after the echo. Appended blindly it lands BELOW the
+  // prompt it preceded. Observed in session cc50c6f6 on 2026-10-02: answer
+  // written 19:25:48.199, queued prompt enqueued 19:25:48.477.
+  const at = (node: JsonlNode, receivedAt: string): JsonlNode =>
+    ({ ...node, receivedAt }) as JsonlNode;
+  const echo = at(placeholder('next question'), '2026-09-15T10:00:05.000Z');
+
+  it('puts a record written before the echo was sent above the echo', () => {
+    const answer = at(assistant('a-final'), '2026-09-15T10:00:04.800Z');
+    const next = appendCliRecord([assistant('a-1'), echo], answer);
+    expect(next.map((n) => n.kind)).toEqual(['assistant', 'assistant', 'user']);
+    expect(next[1]).toBe(answer);
+    expect(next[2]).toBe(echo);
+  });
+
+  it('appends a record written after the echo — the new turn — as normal', () => {
+    const reply = at(assistant('a-new'), '2026-09-15T10:00:06.000Z');
+    expect(appendCliRecord([echo], reply)).toEqual([echo, reply]);
+  });
+
+  it('appends normally when no prompt is waiting on its record', () => {
+    const answer = at(assistant('a-final'), '2026-09-15T10:00:04.800Z');
+    const prior = cliPrompt('earlier');
+    expect(appendCliRecord([prior], answer)).toEqual([prior, answer]);
+  });
+
+  // Only the CLI's persisted records are ordered by the file. A node without
+  // a uuid — a Codex event, a synthetic marker — has no file position to
+  // honour, and arrives in the order it happened.
+  it('leaves nodes without a uuid where they arrive', () => {
+    const marker = {
+      kind: 'control-change',
+      control: 'permission',
+      value: 'plan',
+      sessionId: 't',
+      receivedAt: '2026-09-15T10:00:04.000Z',
+    } as unknown as JsonlNode;
+    expect(appendCliRecord([echo], marker)).toEqual([echo, marker]);
+  });
+
+  it('keeps file order among several hoisted records', () => {
+    const a = at(assistant('a-x'), '2026-09-15T10:00:04.100Z');
+    const b = at(toolResult(), '2026-09-15T10:00:04.200Z');
+    const once = appendCliRecord([echo], a);
+    expect(appendCliRecord(once, b)).toEqual([a, b, echo]);
+  });
+
+  it('does not mutate its input', () => {
+    const input = [echo];
+    appendCliRecord(input, at(assistant('a-final'), '2026-09-15T10:00:04.800Z'));
+    expect(input).toEqual([echo]);
   });
 });

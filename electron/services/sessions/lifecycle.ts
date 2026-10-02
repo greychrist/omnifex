@@ -656,16 +656,20 @@ export function createSessionsService(
     sessionId: string | null;
     sessionStatus: SessionStatus;
     turn: TurnState;
+    launchPermissionMode: string | null;
   } {
     const handle = sessions.get(tabId);
     if (!handle) {
-      return { alive: false, sessionId: null, sessionStatus: 'stopped', turn: IDLE_TURN };
+      return { alive: false, sessionId: null, sessionStatus: 'stopped', turn: IDLE_TURN, launchPermissionMode: null };
     }
     return {
       alive: true,
       sessionId: handle.sessionId,
       sessionStatus: handle.sessionStatus,
       turn: { ...handle.turn },
+      // Decides whether Bypass is reachable mid-session (queries.ts), so a
+      // renderer that reloaded and did not start this session can still tell.
+      launchPermissionMode: handle.startParams.permissionMode ?? null,
     };
   }
 

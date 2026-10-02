@@ -324,10 +324,18 @@ export function PermissionPickerDropdown({
   normalizedMode,
   onPermissionModeChange,
   onOpenChange,
+  onRestartInBypass,
 }: {
   normalizedMode: string;
   onPermissionModeChange?: (mode: string) => void;
   onOpenChange: (open: boolean) => void;
+  /**
+   * Set when the live session was NOT launched in Bypass. The CLI refuses a
+   * mid-session switch to Bypass then (it is only available to a process
+   * spawned in it), so the row explains that and offers a restart instead of
+   * a pick that could only fail.
+   */
+  onRestartInBypass?: () => void;
 }) {
   return (
     <div className="w-[300px] p-1">
@@ -336,6 +344,37 @@ export function PermissionPickerDropdown({
       </div>
       {PERMISSION_MODES.map((mode) => {
         const isActive = mode.id === normalizedMode;
+        if (mode.id === "bypassPermissions" && onRestartInBypass) {
+          return (
+            <div
+              key={mode.id}
+              aria-disabled="true"
+              className="w-full flex items-start gap-3 p-3 rounded-md text-left"
+            >
+              <span className={cn("mt-0.5 opacity-50", mode.color)}>
+                {mode.icon}
+              </span>
+              <div className="flex-1 space-y-1">
+                <div className={cn("font-medium text-sm opacity-50", mode.color)}>
+                  {mode.name}
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  Only available in a session started in Bypass.
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onRestartInBypass();
+                    onOpenChange(false);
+                  }}
+                  className="mt-1 rounded-sm border border-border/60 px-2 py-0.5 text-xs text-foreground hover:bg-accent transition-colors"
+                >
+                  Restart in Bypass
+                </button>
+              </div>
+            </div>
+          );
+        }
         return (
           <button
             key={mode.id}

@@ -718,6 +718,10 @@ export const GeneralSettings: React.FC = () => {
                 selectedPath={currentBinaryPath}
                 onSelect={selectClaudeInstallation}
                 simplified={true}
+                // Saved on pick, so nothing may be picked for the user: an
+                // automatic pick showed "Saved" on opening Settings, and could
+                // overwrite the saved path when it loaded after the list.
+                autoSelect={false}
               />
             </div>
 

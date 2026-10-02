@@ -87,6 +87,15 @@ describe('sessions — the turn axis', () => {
     expect(sessions.getHealth('t1')).toMatchObject({ alive: true, turn });
   });
 
+  // The renderer needs this to know whether Bypass is reachable mid-session,
+  // including after a reload, when it did not start the session itself.
+  it('reports the permission mode the CLI was launched with', () => {
+    const { sessions } = setup();
+    sessions.start({ tabId: 't1', projectPath, configDir: tmpConfig, model: 'opus', permissionMode: 'bypassPermissions' });
+    expect(sessions.getHealth('t1')).toMatchObject({ launchPermissionMode: 'bypassPermissions' });
+    expect(sessions.getHealth('nope')).toMatchObject({ alive: false, launchPermissionMode: null });
+  });
+
   it('closes on the CLI result row — the only turn-closer while the process lives', () => {
     const { sessions, turnEvents } = setup();
     sessions.start({ tabId: 't1', projectPath, configDir: tmpConfig, model: 'opus', permissionMode: 'default' });

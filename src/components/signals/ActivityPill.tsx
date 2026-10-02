@@ -23,8 +23,8 @@ function resetLabel(resetsAtSeconds: number, nowMs: number): string {
 /**
  * The usage-limit notice, as a pill beside the session-status one.
  *
- * This used to carry `active` and `thinking` too. Those became glyphs in
- * SessionStatusBar: each is a METRIC (how long, how many tokens) and reads
+ * This used to carry `active` and `thinking` too. Those became glyphs, now in
+ * the chat status bar: each is a METRIC (how long, how many tokens) and reads
  * better as an icon with a number than as a word. A usage limit is not a
  * metric — it is the session blocked on something outside it, with a countdown
  * to when that ends — and shrinking it to an icon would have made the one
@@ -45,8 +45,8 @@ export function ActivityPill({ signal, className }: ActivityPillProps) {
   const nowMs = useSecondTick(status === 'usage-limit');
 
   // Everything else the session can be doing is either legible from the status
-  // pill above and the composer's own state, or is a glyph in
-  // SessionStatusBar. A pill repeating either would be noise.
+  // pill above and the composer's own state, or is a glyph in the chat
+  // status bar. A pill repeating either would be noise.
   if (status !== 'usage-limit') return null;
 
   const label =

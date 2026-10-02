@@ -65,7 +65,7 @@ function BackgroundReadout({
           aria-label={`${noun} ${live ? 'running' : 'done'}`}
           title={live ? `${running} of ${total} ${noun} running` : `${total} ${noun} finished`}
           className={cn(
-            'inline-flex items-center gap-1 rounded hover:bg-muted/60',
+            'flex items-center gap-1 rounded hover:bg-muted/60',
             colour,
             live && 'animate-pulse',
           )}
@@ -119,7 +119,7 @@ export function AgentsStatusItem({
     <BackgroundReadout
       noun="agents"
       icon={<Bot className="h-3.5 w-3.5" />}
-      colour="text-amber-400"
+      colour="text-sky-400"
       running={subagents.filter((s) => s.status === 'running').length}
       total={subagents.length}
       onClearDone={onDismissAllCompleted}
@@ -146,7 +146,7 @@ export function ShellsStatusItem({
     <BackgroundReadout
       noun="shells"
       icon={<SquareTerminal className="h-3.5 w-3.5" />}
-      colour="text-sky-400"
+      colour="text-amber-400"
       running={shells.filter((s) => s.status === 'running').length}
       total={shells.length}
       onClearDone={onDismissAllEnded}

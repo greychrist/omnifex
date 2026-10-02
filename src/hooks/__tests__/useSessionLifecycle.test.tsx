@@ -510,6 +510,44 @@ describe('useSessionLifecycle — the turn axis is the session\'s, mirrored', ()
   });
 });
 
+describe('useSessionLifecycle — launch permission mode', () => {
+  // The CLI allows Bypass mid-session only if it was spawned in Bypass, so
+  // the mode a session was LAUNCHED with is a fact of its own, distinct from
+  // the mode it is in now.
+  it('remembers the mode the session was started with', async () => {
+    (api.startSession as any).mockResolvedValueOnce(undefined);
+    const { result } = renderHook(harness());
+    expect(result.current.lifecycle.launchPermissionMode).toBeNull();
+    await act(async () => { await result.current.lifecycle.startPersistentSession(); });
+    expect(result.current.lifecycle.launchPermissionMode).toBe('default');
+  });
+
+  // "Restart in Bypass" needs the new process spawned in Bypass even though
+  // the picker's state has not re-rendered into this closure yet.
+  it('starts under an overriding mode when given one', async () => {
+    (api.startSession as any).mockResolvedValueOnce(undefined);
+    const { result } = renderHook(harness());
+    await act(async () => {
+      await result.current.lifecycle.startPersistentSession('uuid-1', { permissionMode: 'bypassPermissions' });
+    });
+    expect((api.startSession as any).mock.calls[0][3]).toBe('bypassPermissions');
+    expect(result.current.lifecycle.launchPermissionMode).toBe('bypassPermissions');
+  });
+
+  // After a reload the renderer did not start the session; main knows.
+  it('learns the launch mode from sessionGetHealth on rebind', async () => {
+    (api.sessionRebind as any).mockResolvedValueOnce(true);
+    (api.sessionGetHealth as any).mockResolvedValueOnce({
+      alive: true, sessionId: 'uuid-warm', sessionStatus: 'started',
+      turn: { status: 'idle', since: null }, launchPermissionMode: 'bypassPermissions',
+    });
+    const { result } = renderHook(harness());
+    await act(async () => { await result.current.lifecycle.rebindPersistentSession(); });
+    await act(async () => { await Promise.resolve(); });
+    expect(result.current.lifecycle.launchPermissionMode).toBe('bypassPermissions');
+  });
+});
+
 describe('useSessionLifecycle — sessionStatus + conversationStatus', () => {
   it('defaults to sessionStatus=stopped, conversationStatus=null before any activity', () => {
     const { result } = renderHook(harness());

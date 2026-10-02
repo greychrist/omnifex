@@ -101,6 +101,20 @@ describe('claudeSessionStore', () => {
     });
   });
 
+  // A turn's last record can reach the tail after the queued prompt it
+  // preceded was already echoed. See appendCliRecord.
+  it('appendCliRecord puts a record written before a pending echo above it', () => {
+    const echo = { ...userMsg(), receivedAt: '2026-10-02T19:25:48.480Z' } as JsonlNode;
+    const answer = {
+      kind: 'assistant', sessionId: 'sess-1', receivedAt: '2026-10-02T19:25:48.199Z',
+      raw: { type: 'assistant', uuid: 'a-final', message: { role: 'assistant', content: [] } },
+    } as unknown as JsonlNode;
+    const store = useClaudeSessionStore.getState();
+    store.appendMessage(TAB, echo);
+    store.appendCliRecord(TAB, answer);
+    expect(store.selectTab(TAB).messages).toEqual([answer, echo]);
+  });
+
   it('insertMessageBeforeFirstUser splices in before the first user message', () => {
     const init = initMsg();
     const a = assistantMsg('hello');

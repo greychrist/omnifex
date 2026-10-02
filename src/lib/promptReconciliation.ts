@@ -145,3 +145,37 @@ export function reconcilePendingPrompt(
   next[idx] = incoming;
   return next;
 }
+
+function timeOf(node: JsonlNode): number {
+  const at = (node as { receivedAt?: unknown }).receivedAt;
+  return typeof at === 'string' ? Date.parse(at) : NaN;
+}
+
+/**
+ * `messages` with `incoming` added in file order relative to any echo still
+ * waiting on its record. Never mutates the input.
+ *
+ * A turn's final answer is written to the JSONL before the CLI emits `result`
+ * on stdout, and `result` drains the prompt queue at once — so the next
+ * prompt's echo is appended before the answer's record has come through the
+ * tail's poll. Appended blindly, the answer then renders BELOW the prompt it
+ * preceded. A persisted record written before an echo was stamped belongs
+ * above it; the echo is stamped when the prompt is sent, not when it was
+ * typed, so an answer the prompt waited on is always the earlier of the two.
+ *
+ * Only persisted records (those with a uuid) are moved: they have a place in
+ * the file to honour. Codex events and synthetic markers do not, and arrive
+ * in the order they happened.
+ */
+export function appendCliRecord(messages: JsonlNode[], incoming: JsonlNode): JsonlNode[] {
+  const writtenAt = timeOf(incoming);
+  if (uuidOf(incoming) !== null && !Number.isNaN(writtenAt)) {
+    const idx = messages.findIndex(
+      (m) => isPendingPromptPlaceholder(m) && timeOf(m) > writtenAt,
+    );
+    if (idx !== -1) {
+      return [...messages.slice(0, idx), incoming, ...messages.slice(idx)];
+    }
+  }
+  return [...messages, incoming];
+}

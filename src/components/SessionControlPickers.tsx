@@ -64,7 +64,7 @@ function StatusBarPicker({
             title={title}
             onClick={() => { setOpen(!open); }}
             className={cn(
-              'inline-flex items-center gap-1 rounded-sm px-0.5 -mx-0.5 cursor-pointer',
+              'flex items-center gap-1 rounded-sm px-0.5 -mx-0.5 cursor-pointer',
               'hover:bg-foreground/10 transition-colors',
               open && 'bg-foreground/10',
               tone,
@@ -96,6 +96,9 @@ export interface SessionControlPickersProps {
   /** Concrete model id the live session actually runs — labels the
    *  account-default row. See SessionDefaultsRow. */
   activeDefaultModel?: string | null;
+  /** Set when the live session was not launched in Bypass, which the CLI
+   *  then refuses mid-session: the menu offers this restart instead. */
+  onRestartInBypass?: () => void;
 }
 
 /** A plain option list for the engines without a stylised catalog (Codex). */
@@ -148,6 +151,7 @@ export function SessionControlPickers({
   setPermissionMode,
   configDir,
   activeDefaultModel,
+  onRestartInBypass,
 }: SessionControlPickersProps): React.JSX.Element {
   const { models, raw } = useModelCatalog(engine === 'claude' ? configDir : undefined, activeDefaultModel);
 
@@ -218,6 +222,7 @@ export function SessionControlPickers({
             normalizedMode={normalizedMode}
             onPermissionModeChange={setPermissionMode}
             onOpenChange={(next) => { if (!next) close(); }}
+            onRestartInBypass={onRestartInBypass}
           />
         )}
       />

@@ -4,7 +4,8 @@
 // engine's stream-json control protocol (sendControlRequest) or its cached
 // init data (getInitData). Unknown tabs are no-ops. Engine errors
 // are swallowed and reported as null/[] so a CLI hiccup doesn't crash the
-// IPC layer.
+// IPC layer — except setPermissionMode, which rejects: a refused mode is
+// rolled back, and the picker has to hear about it to roll back too.
 
 import type {
   SessionHandle,
@@ -263,14 +264,28 @@ export function createQueryPassthroughs(
       logControl('set_permission_mode', tabId, { ok: false, reason: 'no-live-engine', mode });
       return;
     }
+    // The CLI allows Bypass mid-session only when it was spawned in Bypass
+    // (CLI 2.1.287: `isBypassPermissionsModeAvailable` is the launch mode
+    // being bypass, or --allow-dangerously-skip-permissions, which OmniFex
+    // never passes). Refused here so the error says how to get there.
+    if (mode === 'bypassPermissions' && handle.startParams.permissionMode !== 'bypassPermissions') {
+      logControl('set_permission_mode', tabId, { ok: false, reason: 'bypass-not-launched', mode });
+      throw new Error('Bypass is only available in a session started in Bypass. Restart the session in Bypass to use it.');
+    }
+    // Set before the request so a permission prompt racing it is decided
+    // under the new mode; rolled back if the CLI refuses, because the decider
+    // reads this field and must not auto-answer under a mode the CLI is not in.
+    const previous = handle.permissionMode;
     handle.permissionMode = mode;
     try {
       const res = await handle.engine.sendControlRequest('set_permission_mode', { mode });
       logControl('set_permission_mode', tabId, { ok: true, mode, response: res ?? null });
     } catch (err) {
+      handle.permissionMode = previous;
       const msg = err instanceof Error ? err.message : String(err);
       console.error(`[sessions] setPermissionMode failed for tab ${tabId}:`, err);
       logControl('set_permission_mode', tabId, { ok: false, mode, error: msg });
+      throw err instanceof Error ? err : new Error(msg);
     }
   }
 

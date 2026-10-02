@@ -42,6 +42,8 @@ import {
 import { modelPickerLabel, effectiveModels } from "@/lib/modelCatalog";
 import { sessionControlSummary } from "@/lib/sessionControlSummary";
 import { SessionControlPickers } from "@/components/SessionControlPickers";
+import { PERMISSION_MODES } from "@/components/ControlBar";
+import { changeSessionPermissionMode } from "@/lib/sessionPermissionModeChange";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { SlashCommandsManager } from "./SlashCommandsManager";
 import { SessionMCPStatus } from "./SessionMCPStatus";
@@ -79,6 +81,9 @@ import { SessionViewToggle, type ViewMode } from "./SessionViewToggle";
 import { HeaderLabel } from "./HeaderLabel";
 import { AccountCard } from "./AccountCard";
 import { SessionCard } from "./SessionCard";
+import { SessionStatusItem } from "@/components/SessionStatusItem";
+import { AccountStatusItem } from "@/components/AccountStatusItem";
+import { useAccountUsage } from "@/hooks/useAccountUsage";
 import { ChatStatusBar } from "./ChatStatusBar";
 import { SessionHeaderResizeHandle } from "./SessionHeaderResizeHandle";
 import { SessionSidePanels, type SessionSidePanelKey } from "./SessionSidePanels";
@@ -1536,7 +1541,10 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
           store.appendOrReconcilePrompt(sessionTabId, nodeToAppend);
           return;
         }
-        ctx.appendMessage(nodeToAppend);
+        // Not a bare append: the turn's last record can come through the
+        // tail after the queued prompt it preceded was already echoed, and
+        // must land above that echo. See appendCliRecord.
+        store.appendCliRecord(sessionTabId, nodeToAppend);
       }
     } catch (err) {
       // Write directly to app_logs (not via console.error → LogService).
@@ -1579,6 +1587,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     turn,
     conversationStatus,
     resetStatus,
+    launchPermissionMode,
   } = useSessionLifecycle({
     tabId: tabIdRef.current,
     projectPath,
@@ -1786,29 +1795,23 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     [handleResend],
   );
 
-  // Local state AND, if a session is running, the CLI via
-  // sessionSetPermissionMode(). Errors are swallowed so a bad mode doesn't
-  // revert the UI. Shared by the ControlBar dropdown and the denial card.
+  // Shared by the status-bar picker and the denial card. A refused switch
+  // rolls the picker back and says so — see sessionPermissionModeChange.ts.
+  const permissionModeRef = useRef(permissionMode);
+  permissionModeRef.current = permissionMode;
   const changePermissionMode = useCallback((mode: string) => {
-    setPermissionMode(mode);
-    if (!persistentSessionRef.current) return;
-    const tid = tabIdRef.current;
-    api.sessionSetPermissionMode(tid, mode).then(() => {
-      // Live transcript marker. The CLI DOES persist a `permission-mode`
-      // JSONL line, but jsonl-tail only forwards closure-carriers
-      // (queue-operation/attachment) to the live stream — so the persisted
-      // line shows up only on resume, never live. This synthetic marker gives
-      // the immediate feedback; the persisted line covers scrollback after
-      // resume. They never coexist in one view, so no double.
-      appendMessage({
-        kind: 'control-change',
-        control: 'permission',
-        value: String(mode),
-        sessionId: tid,
-        receivedAt: new Date().toISOString(),
-      });
-    }).catch((err: unknown) => {
-      console.error('[sessions] sessionSetPermissionMode failed:', err);
+    void changeSessionPermissionMode(mode, {
+      tabId: tabIdRef.current,
+      hasLiveSession: !!persistentSessionRef.current,
+      previous: permissionModeRef.current,
+      api,
+      setPermissionMode,
+      appendMessage,
+      onError: (err) => {
+        console.error('[sessions] sessionSetPermissionMode failed:', err);
+        const name = PERMISSION_MODES.find((m) => m.id === mode)?.name ?? mode;
+        setError(`Couldn't switch permissions to ${name}: ${err instanceof Error ? err.message : String(err)}`);
+      },
     });
   }, [appendMessage]);
 
@@ -2198,7 +2201,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
    * the running process holds credentials for the wrong account, so it must be
    * torn down and respawned — a re-login can't reach an existing process.
    */
-  const handleRestartSession = async () => {
+  const handleRestartSession = async (options?: { permissionMode?: string }) => {
     const tid = tabIdRef.current;
     setRestartingSession(true);
     try {
@@ -2214,7 +2217,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
       setAccountMismatch(null);
       setSdkAccountInfo(null);
 
-      await startPersistentSession(claudeSessionId ?? undefined);
+      await startPersistentSession(claudeSessionId ?? undefined, options);
     } catch (err) {
       console.error('restart: startPersistentSession failed:', err);
       setError('Failed to restart session: ' + (err instanceof Error ? err.message : String(err)));
@@ -2407,6 +2410,29 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
           ? 'starting'
           : 'ended';
 
+  // The config dir's current login — what Sign in / Sign out act on — not the
+  // session's own reported identity.
+  const accountSignedInEmail =
+    identityLoaded && !identityError && identityVerdict &&
+    identityVerdict.status !== "unknown-account"
+      ? identityVerdict.detected
+      : undefined;
+  const accountOnRestart =
+    sessionVerification?.needsRestart || sessionAuthFailure
+      ? () => { void handleRestartSession(); }
+      : null;
+
+  // Once per session view, for both the account widget and the `account`
+  // readout — see useAccountUsage for why it cannot be one each.
+  const accountUsage = useAccountUsage({
+    accountName: accountResolution?.account.name ?? null,
+    hasCost: accountResolution?.account.has_cost === true,
+    sessionActive: displayStatus === 'active',
+    configDir: accountResolution?.account.config_dir,
+    projectPath,
+    sessionId: claudeSessionId,
+  });
+
   // Proactively pull the live context window once a session is active but we
   // don't have it yet. Resuming a session loads history statically and never
   // fetches usage — the stream-driven refresh only fires on init/result/
@@ -2501,28 +2527,15 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
                 matchType={accountResolution.match_type}
                 matchDetail={accountResolution.match_detail}
                 verification={sessionVerification}
-                signedInEmail={
-                  // The config dir's current login — what Sign in / Sign out act
-                  // on — not the session's own reported identity.
-                  identityLoaded && !identityError && identityVerdict &&
-                  identityVerdict.status !== "unknown-account"
-                    ? identityVerdict.detected
-                    : undefined
-                }
+                signedInEmail={accountSignedInEmail}
                 onRecheck={recheckIdentity}
                 sessionAuthFailure={sessionAuthFailure}
-                onRestart={
-                  sessionVerification?.needsRestart || sessionAuthFailure
-                    ? () => { void handleRestartSession(); }
-                    : null
-                }
+                onRestart={accountOnRestart}
                 restarting={restartingSession}
                 sdkAccount={sdkAccountInfo}
+                usage={accountUsage}
                 fiveHourRateLimit={rateLimitSnapshots.five_hour ?? null}
                 sevenDayRateLimit={rateLimitSnapshots.seven_day ?? null}
-                sessionStatus={displayStatus}
-                sessionId={claudeSessionId}
-                projectPath={projectPath}
               />
               </div>
             )}
@@ -2607,7 +2620,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
               totalTokens={totalTokens}
               contextLimit={contextLimit}
               contextUsage={contextUsage}
-              activeSubagents={activeSubagentCount}
               sessionStatus={displayStatus}
               onReconnect={() => void handleReconnect()}
               onClear={() => {
@@ -2646,6 +2658,49 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
             onRename={handleRenameSession}
             onSuggest={handleSuggestTitle}
             background={backgroundWork}
+            // Shown beside the account widget for now, so the two can be
+            // compared before one of them goes. Same inputs as the widget.
+            account={
+              accountResolution ? (
+                <AccountStatusItem
+                  accountName={accountResolution.account.name}
+                  hasCost={accountResolution.account.has_cost}
+                  agent={agent}
+                  configDir={accountResolution.account.config_dir}
+                  matchType={accountResolution.match_type}
+                  matchDetail={accountResolution.match_detail}
+                  verification={sessionVerification}
+                  signedInEmail={accountSignedInEmail}
+                  onRecheck={recheckIdentity}
+                  sessionAuthFailure={sessionAuthFailure}
+                  onRestart={accountOnRestart}
+                  restarting={restartingSession}
+                  sdkAccount={sdkAccountInfo}
+                  usage={accountUsage}
+                  fiveHourRateLimit={rateLimitSnapshots.five_hour ?? null}
+                  sevenDayRateLimit={rateLimitSnapshots.seven_day ?? null}
+                />
+              ) : undefined
+            }
+            // Shown beside the session widget for now, so the two can be
+            // compared before one of them goes. Same inputs as the widget.
+            session={
+              <SessionStatusItem
+                totalTokens={totalTokens}
+                contextLimit={contextLimit}
+                contextUsage={contextUsage}
+                contextLevelSignal={contextLevel}
+                sessionStatus={displayStatus}
+                promptStatus={promptStatus}
+                waitingFor={tabWaitingFor}
+                sessionId={claudeSessionId}
+                pendingAction={sessionAction}
+                recentEvents={sessionEvents}
+                onSignalsRead={() => { signals.markRead('session'); }}
+                onCompact={fireAndLog('claude-code-session:compact', handleCompact)}
+                compactDisabled={isLoading || !isSessionActive}
+              />
+            }
             controls={
               <SessionControlPickers
                 engine={agent}
@@ -2692,6 +2747,17 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
                 }}
                 permissionMode={permissionMode}
                 setPermissionMode={changePermissionMode}
+                // The CLI makes Bypass reachable mid-session only for a process
+                // spawned in it. A live session that was not gets a restart,
+                // resuming the conversation, rather than a pick that would fail.
+                onRestartInBypass={
+                  agent === 'claude' && isSessionActive && launchPermissionMode !== 'bypassPermissions'
+                    ? () => {
+                        setPermissionMode('bypassPermissions');
+                        void handleRestartSession({ permissionMode: 'bypassPermissions' });
+                      }
+                    : undefined
+                }
               />
             }
           />

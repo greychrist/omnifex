@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, afterEach, vi } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { render, cleanup, screen, fireEvent, within } from '@testing-library/react';
 
 // Prism highlighting is irrelevant to alignment, numbering and gap behaviour,
@@ -185,6 +185,64 @@ describe('SplitDiffView', () => {
       const table = container.querySelector('[role="table"]');
       expect(table?.getAttribute('data-virtualized')).toBe('false');
       expect(screen.getAllByRole('row')).toHaveLength(4);
+    });
+  });
+
+  describe('resizing the two sides', () => {
+    const KEY = 'omnifex.gitDiff.splitRatio';
+    // 1104px wide: two 52px gutters leave exactly 1000px of code, so a
+    // pointer at x = 52 + 1000·f puts the divider at fraction f.
+    beforeEach(() => {
+      localStorage.clear();
+      vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(
+        { left: 0, top: 0, right: 1104, bottom: 600, width: 1104, height: 600 } as DOMRect,
+      );
+    });
+    afterEach(() => { vi.restoreAllMocks(); });
+
+    const ratio = (): string =>
+      screen.getByTestId('split-diff').style.getPropertyValue('--diff-left');
+    const divider = (): HTMLElement =>
+      screen.getByRole('separator', { name: /resize the old and new sides/i });
+    const drag = (to: number): void => {
+      fireEvent.mouseDown(divider(), { clientX: 552 });
+      fireEvent.mouseMove(window, { clientX: to });
+      fireEvent.mouseUp(window);
+    };
+
+    it('splits evenly by default', () => {
+      render(<SplitDiffView file={SIMPLE} language="ts" />);
+      expect(ratio()).toBe('0.5');
+    });
+
+    it('moves the divider to where it is dragged', () => {
+      render(<SplitDiffView file={SIMPLE} language="ts" />);
+      drag(352);
+      expect(ratio()).toBe('0.3');
+    });
+
+    it('never collapses a side completely', () => {
+      render(<SplitDiffView file={SIMPLE} language="ts" />);
+      drag(0);
+      expect(Number(ratio())).toBeGreaterThan(0);
+      drag(5000);
+      expect(Number(ratio())).toBeLessThan(1);
+    });
+
+    it('resets to an even split on double-click', () => {
+      render(<SplitDiffView file={SIMPLE} language="ts" />);
+      drag(352);
+      fireEvent.doubleClick(divider());
+      expect(ratio()).toBe('0.5');
+    });
+
+    it('remembers the split for the next file', () => {
+      const first = render(<SplitDiffView file={SIMPLE} language="ts" />);
+      drag(752);
+      first.unmount();
+      render(<SplitDiffView file={SIMPLE} language="ts" />);
+      expect(ratio()).toBe('0.7');
+      expect(localStorage.getItem(KEY)).toBe('0.7');
     });
   });
 });

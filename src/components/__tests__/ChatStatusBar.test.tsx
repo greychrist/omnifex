@@ -316,6 +316,42 @@ describe('ChatStatusBar — session controls', () => {
   });
 });
 
+describe('ChatStatusBar — session readout', () => {
+  // Last, after every other readout — the cache countdown included.
+  it('seats the session readout at the end of the bar', () => {
+    render(
+      <ChatStatusBar
+        {...base}
+        controls={<span data-testid="controls" />}
+        activitySignal={signal({ status: 'idle', lastTurnMs: 3_000 })}
+        cacheAnchorMs={Date.now()}
+        cacheTtlMs={3_600_000}
+        session={<span data-testid="session-readout" />}
+      />,
+    );
+    const pairs = Array.from(screen.getByTestId('chat-status-items').children);
+    expect(pairs[0].contains(screen.getByTestId('controls'))).toBe(true);
+    expect(pairs[pairs.length - 1].contains(screen.getByTestId('session-readout'))).toBe(true);
+    expect(pairs.length).toBeGreaterThan(3);
+  });
+});
+
+describe('ChatStatusBar — account readout', () => {
+  // First: whose session this is, then what it is set to, then what it is doing.
+  it('seats the account readout ahead of the controls', () => {
+    render(
+      <ChatStatusBar
+        {...base}
+        account={<span data-testid="account-readout" />}
+        controls={<span data-testid="controls" />}
+      />,
+    );
+    const pairs = Array.from(screen.getByTestId('chat-status-items').children);
+    expect(pairs[0].contains(screen.getByTestId('account-readout'))).toBe(true);
+    expect(pairs[1].contains(screen.getByTestId('controls'))).toBe(true);
+  });
+});
+
 describe('ChatStatusBar — session name', () => {
   const named = { ...base, title: 'Rate-limit spike', canRename: true, onRename: async () => true };
 

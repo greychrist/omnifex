@@ -238,4 +238,46 @@ describe('GitDiffOverlay', () => {
       );
     });
   });
+
+  describe('resizing the file list', () => {
+    beforeEach(() => {
+      localStorage.clear();
+      vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(
+        { left: 0, top: 0, right: 1400, bottom: 800, width: 1400, height: 800 } as DOMRect,
+      );
+    });
+    afterEach(() => { vi.restoreAllMocks(); });
+
+    const pane = (): HTMLElement => screen.getByTestId('diff-file-pane');
+    const drag = (from: number, to: number): void => {
+      fireEvent.mouseDown(
+        screen.getByRole('separator', { name: /resize the file list/i }),
+        { clientX: from },
+      );
+      fireEvent.mouseMove(window, { clientX: to });
+      fireEvent.mouseUp(window);
+    };
+
+    it('starts at the default width', async () => {
+      renderOverlay();
+      await waitFor(() => { expect(listGitChangedFiles).toHaveBeenCalled(); });
+      expect(pane().style.width).toBe('280px');
+    });
+
+    it('widens when its edge is dragged', async () => {
+      renderOverlay();
+      await waitFor(() => { expect(listGitChangedFiles).toHaveBeenCalled(); });
+      drag(280, 460);
+      expect(pane().style.width).toBe('460px');
+    });
+
+    it('keeps the width the next time the viewer opens', async () => {
+      const first = renderOverlay();
+      await waitFor(() => { expect(listGitChangedFiles).toHaveBeenCalled(); });
+      drag(280, 400);
+      first.unmount();
+      renderOverlay();
+      expect(pane().style.width).toBe('400px');
+    });
+  });
 });

@@ -49,6 +49,16 @@ function formatResetTail(resetsAt: number | null, nowMs: number): string {
   return `${days}d ${hrs}h`;
 }
 
+/** The percentage's colour by severity; a rejected window is red whatever it reads. */
+export function rateLimitPctColor(pct: number | null, rejected: boolean): string {
+  if (rejected) return 'text-red-500';
+  if (pct == null) return 'text-foreground';
+  if (pct >= 90) return 'text-red-400';
+  if (pct >= 75) return 'text-orange-400';
+  if (pct >= 50) return 'text-yellow-400';
+  return 'text-foreground';
+}
+
 /**
  * Compact pill that mirrors the SessionHeader context widget's visual
  * language (icon, value, gradient mini-bar, percentage). Renders the
@@ -102,18 +112,7 @@ export function RateLimitWidget({
   const tail = formatResetTail(snapshot.resets_at, now);
 
   // Color the percentage label by severity. Bar is always the gradient.
-  const pctTextColor =
-    isRejected
-      ? 'text-red-500'
-      : pct == null
-        ? 'text-foreground'
-        : pct >= 90
-          ? 'text-red-400'
-          : pct >= 75
-            ? 'text-orange-400'
-            : pct >= 50
-              ? 'text-yellow-400'
-              : 'text-foreground';
+  const pctTextColor = rateLimitPctColor(pct, isRejected);
 
   const tooltip = [
     accountName ? `${accountName} · ${label}` : label,

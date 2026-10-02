@@ -10,7 +10,7 @@ import {
   type ToolProgressMap,
   type ToolProgressNode,
 } from '@/lib/toolProgress';
-import { reconcilePendingPrompt } from '@/lib/promptReconciliation';
+import { appendCliRecord, reconcilePendingPrompt } from '@/lib/promptReconciliation';
 import { deriveSessionTitle } from '@/lib/sessionTitle';
 import type {
   SessionAccountInfo,
@@ -83,6 +83,11 @@ interface ClaudeSessionStoreState {
    *  a read-then-write so the match and the write cannot straddle another
    *  append. See src/lib/promptReconciliation.ts. */
   appendOrReconcilePrompt(tabId: string, msg: JsonlNode): void;
+  /** Append a node from the session's message stream, placing a persisted
+   *  record above any prompt echo sent after it was written — the turn's last
+   *  record can arrive after the queued prompt it preceded. See
+   *  `appendCliRecord` in src/lib/promptReconciliation.ts. */
+  appendCliRecord(tabId: string, msg: JsonlNode): void;
   /** Splice a system:init message in before the first user message,
    *  fall back to push when there is no user yet. */
   insertMessageBeforeFirstUser(tabId: string, msg: JsonlNode): void;
@@ -185,8 +190,19 @@ export const useClaudeSessionStore = create<ClaudeSessionStoreState>()(
             ...state.tabs,
             [tabId]: {
               ...slice,
-              messages: reconciled ?? [...slice.messages, msg],
+              messages: reconciled ?? appendCliRecord(slice.messages, msg),
             },
+          },
+        };
+      }); },
+
+    appendCliRecord: (tabId, msg) =>
+      { set((state) => {
+        const slice = ensureTab(state.tabs, tabId);
+        return {
+          tabs: {
+            ...state.tabs,
+            [tabId]: { ...slice, messages: appendCliRecord(slice.messages, msg) },
           },
         };
       }); },

@@ -1,8 +1,9 @@
-import React, { useMemo, useRef } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { UnfoldVertical } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { SplitHandle } from "@/components/ui/SplitHandle";
 import { useTheme } from "@/hooks";
 import { getClaudeSyntaxTheme } from "@/lib/claudeSyntaxTheme";
 import { toSplitRows, type SplitCell, type SplitRow } from "@/lib/splitDiff";
@@ -28,6 +29,41 @@ const VIRTUALIZE_ABOVE = 200;
 
 /** Starting row-height estimate, refined per row by `measureElement`. */
 const ESTIMATED_ROW_HEIGHT = 20;
+
+/** Width of one line-number gutter (`NumberCell`'s `w-[52px]`). Two sit outside the split. */
+const GUTTER_PX = 52;
+
+/**
+ * The old side's share of the code width. A fraction rather than pixels, so
+ * the split survives the file list being resized and the window changing.
+ */
+const RATIO_STORAGE_KEY = "omnifex.gitDiff.splitRatio";
+const DEFAULT_RATIO = 0.5;
+/** Neither side may be dragged shut — a vanished side has no handle left to grab. */
+const MIN_RATIO = 0.15;
+const MAX_RATIO = 0.85;
+
+function clampRatio(n: number): number {
+  return Math.min(MAX_RATIO, Math.max(MIN_RATIO, Math.round(n * 1000) / 1000));
+}
+
+function readRatio(): number {
+  try {
+    const raw = window.localStorage.getItem(RATIO_STORAGE_KEY);
+    const n = raw === null ? NaN : Number(raw);
+    return Number.isFinite(n) ? clampRatio(n) : DEFAULT_RATIO;
+  } catch {
+    return DEFAULT_RATIO;
+  }
+}
+
+/**
+ * Each side's flex-grow reads `--diff-left` off the view's root, so a drag
+ * re-styles every row through one custom property instead of a new prop per
+ * row. Constant objects: the rows never see a changed style reference.
+ */
+const LEFT_SIDE_STYLE: React.CSSProperties = { flex: "var(--diff-left) 1 0%" };
+const RIGHT_SIDE_STYLE: React.CSSProperties = { flex: "calc(1 - var(--diff-left)) 1 0%" };
 
 export interface SplitDiffViewProps {
   file: DiffFile;
@@ -151,11 +187,11 @@ const RowRenderer: React.FC<RowRendererProps> = ({
   return (
     <div role="row" className="flex items-stretch font-mono text-[11px] leading-[1.55]">
       <NumberCell cell={row.left} />
-      <div className="w-1/2 min-w-0 border-r">
+      <div className="min-w-0" style={LEFT_SIDE_STYLE}>
         <CodeCell cell={row.left} language={language} syntaxTheme={syntaxTheme} />
       </div>
       <NumberCell cell={row.right} />
-      <div className="w-1/2 min-w-0">
+      <div className="min-w-0" style={RIGHT_SIDE_STYLE}>
         <CodeCell cell={row.right} language={language} syntaxTheme={syntaxTheme} />
       </div>
     </div>
@@ -172,6 +208,50 @@ export const SplitDiffView: React.FC<SplitDiffViewProps> = ({
   const { theme } = useTheme();
   const syntaxTheme = getClaudeSyntaxTheme(theme);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  const [ratio, setRatio] = useState(readRatio);
+  /** The live ratio, so the mouse-up persists the last move, not the first render's. */
+  const ratioRef = useRef(ratio);
+
+  // Window-level listeners, as in `useSplitWidth`: the handle is a few pixels
+  // wide and the cursor outruns it mid-drag.
+  const startResize = useCallback((e: React.MouseEvent): void => {
+    e.preventDefault();
+    const el = scrollRef.current;
+    if (!el) return;
+    const prevCursor = document.body.style.cursor;
+    const prevSelect = document.body.style.userSelect;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+
+    const onMove = (ev: MouseEvent): void => {
+      const rect = el.getBoundingClientRect();
+      const codeWidth = rect.width - 2 * GUTTER_PX;
+      if (codeWidth <= 0) return;
+      const next = clampRatio((ev.clientX - rect.left - GUTTER_PX) / codeWidth);
+      ratioRef.current = next;
+      setRatio(next);
+    };
+    const onUp = (): void => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      document.body.style.cursor = prevCursor;
+      document.body.style.userSelect = prevSelect;
+      try {
+        window.localStorage.setItem(RATIO_STORAGE_KEY, String(ratioRef.current));
+      } catch {
+        // Quota. The split reverts on reload, which is not worth an error.
+      }
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, []);
+
+  const resetRatio = useCallback((): void => {
+    ratioRef.current = DEFAULT_RATIO;
+    setRatio(DEFAULT_RATIO);
+    try { window.localStorage.removeItem(RATIO_STORAGE_KEY); } catch { /* ignore */ }
+  }, []);
 
   const rows = useMemo(() => toSplitRows(file), [file]);
   const shouldVirtualize = rows.length > VIRTUALIZE_ABOVE;
@@ -214,34 +294,52 @@ export const SplitDiffView: React.FC<SplitDiffViewProps> = ({
 
   return (
     <div
-      ref={scrollRef}
-      role="table"
-      data-virtualized={shouldVirtualize}
-      data-total-rows={rows.length}
-      className={cn("h-full overflow-auto", className)}
+      data-testid="split-diff"
+      className={cn("relative h-full", className)}
+      style={{ "--diff-left": ratio } as React.CSSProperties}
     >
-      {shouldVirtualize ? (
-        <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
-          {virtualizer.getVirtualItems().map((item) => (
-            <div
-              key={item.key}
-              data-index={item.index}
-              ref={virtualizer.measureElement}
-              style={{
-                position: "absolute",
-                top: 0,
-                left: 0,
-                width: "100%",
-                transform: `translateY(${item.start}px)`,
-              }}
-            >
-              {renderRow(rows[item.index], item.key)}
-            </div>
-          ))}
-        </div>
-      ) : (
-        rows.map((row, i) => renderRow(row, i))
-      )}
+      <div
+        ref={scrollRef}
+        role="table"
+        data-virtualized={shouldVirtualize}
+        data-total-rows={rows.length}
+        className="h-full overflow-auto"
+      >
+        {shouldVirtualize ? (
+          <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
+            {virtualizer.getVirtualItems().map((item) => (
+              <div
+                key={item.key}
+                data-index={item.index}
+                ref={virtualizer.measureElement}
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  width: "100%",
+                  transform: `translateY(${item.start}px)`,
+                }}
+              >
+                {renderRow(rows[item.index], item.key)}
+              </div>
+            ))}
+          </div>
+        ) : (
+          rows.map((row, i) => renderRow(row, i))
+        )}
+      </div>
+      {/* Overlays the rows rather than living in them: one handle for the
+          whole view, and it stays put while the rows scroll beneath it. */}
+      <div
+        className="absolute inset-y-0 z-10 flex"
+        style={{ left: `calc(${GUTTER_PX}px + var(--diff-left) * (100% - ${2 * GUTTER_PX}px))` }}
+      >
+        <SplitHandle
+          label="Resize the old and new sides"
+          onMouseDown={startResize}
+          onDoubleClick={resetRatio}
+        />
+      </div>
     </div>
   );
 };

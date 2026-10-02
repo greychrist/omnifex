@@ -333,6 +333,12 @@ export interface ChatStatusBarProps {
    *  that open pickers — `SessionControlPickers`. Seated before the state
    *  readouts: what you can change, then what is happening. */
   controls?: React.ReactNode;
+  /** The account readout — `AccountStatusItem`. Seated first: whose session
+   *  this is, then what it is set to, then what it is doing. */
+  account?: React.ReactNode;
+  /** The session readout — `SessionStatusItem`. Seated last, after every
+   *  other readout. */
+  session?: React.ReactNode;
   /** Subagents and background shells, shown as the `agents` and `shells`
    *  readouts. Each readout is omitted while its list is empty. */
   background?: BackgroundWork;
@@ -369,6 +375,8 @@ export function ChatStatusBar({
   cacheTtlMs,
   cacheBusy,
   controls,
+  account,
+  session,
   background,
   className,
 }: ChatStatusBarProps): React.JSX.Element {
@@ -399,6 +407,10 @@ export function ChatStatusBar({
   // screen. Every readout is conditional, so hard-coding separators into the
   // markup puts a stray hairline at either end of a half-empty bar.
   const items: React.JSX.Element[] = [];
+
+  if (account) {
+    items.push(<React.Fragment key="account">{account}</React.Fragment>);
+  }
 
   if (controls) {
     items.push(<React.Fragment key="controls">{controls}</React.Fragment>);
@@ -488,6 +500,10 @@ export function ChatStatusBar({
         className="px-0"
       />,
     );
+  }
+
+  if (session) {
+    items.push(<React.Fragment key="session">{session}</React.Fragment>);
   }
 
   return (

@@ -39,6 +39,14 @@ interface ClaudeVersionSelectorProps {
    * Simplified mode for cleaner UI
    */
   simplified?: boolean;
+  /**
+   * With no `selectedPath`, pick the first (best) installation and report it
+   * through `onSelect`. On by default: the first-run dialog needs a choice to
+   * save. Settings turns it off — it saves on every `onSelect`, so an
+   * automatic pick was a write the user never made, and with nothing saved
+   * the app already uses the best installation it finds.
+   */
+  autoSelect?: boolean;
 }
 
 /**
@@ -59,6 +67,7 @@ export const ClaudeVersionSelector: React.FC<ClaudeVersionSelectorProps> = ({
   onSave,
   isSaving = false,
   simplified = false,
+  autoSelect = true,
 }) => {
   const [installations, setInstallations] = useState<ClaudeInstallation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -70,9 +79,11 @@ export const ClaudeVersionSelector: React.FC<ClaudeVersionSelectorProps> = ({
   // selectedPath changes are handled by the sync effect below).
   const selectedPathRef = useRef(selectedPath);
   const onSelectRef = useRef(onSelect);
+  const autoSelectRef = useRef(autoSelect);
   useEffect(() => {
     selectedPathRef.current = selectedPath;
     onSelectRef.current = onSelect;
+    autoSelectRef.current = autoSelect;
   });
 
   const loadInstallations = useCallback(async () => {
@@ -88,7 +99,7 @@ export const ClaudeVersionSelector: React.FC<ClaudeVersionSelectorProps> = ({
         if (found) {
           setSelectedInstallation(found);
         }
-      } else if (foundInstallations.length > 0) {
+      } else if (autoSelectRef.current && foundInstallations.length > 0) {
         // Auto-select the first (best) installation
         setSelectedInstallation(foundInstallations[0]);
         onSelectRef.current(foundInstallations[0]);
@@ -221,7 +232,7 @@ export const ClaudeVersionSelector: React.FC<ClaudeVersionSelectorProps> = ({
         
         <Select value={selectedInstallation?.path || ""} onValueChange={handleInstallationChange}>
           <SelectTrigger id="claude-installation" className="w-full">
-            <SelectValue placeholder="Choose Claude installation">
+            <SelectValue placeholder={autoSelect ? "Choose Claude installation" : "Automatic — the best installation found"}>
               {selectedInstallation && (
                 <div className="flex items-center gap-2">
                   <Terminal className="h-3.5 w-3.5 text-muted-foreground" />

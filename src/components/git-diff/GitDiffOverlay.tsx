@@ -4,6 +4,8 @@ import { cn } from "@/lib/utils";
 import { api, type GitChangedFile } from "@/lib/api";
 import { parseUnifiedDiff, type DiffFile } from "@/lib/unifiedDiff";
 import { languageForPath } from "@/lib/diffLanguage";
+import { useSplitWidth } from "@/hooks/useSplitWidth";
+import { SplitHandle } from "@/components/ui/SplitHandle";
 import { DiffFileTree } from "./DiffFileTree";
 import { SplitDiffView } from "./SplitDiffView";
 
@@ -57,6 +59,17 @@ export const GitDiffOverlay: React.FC<GitDiffOverlayProps> = ({
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [patch, setPatch] = useState<Load<string>>({ state: "loading" });
   const [contextIndex, setContextIndex] = useState(0);
+
+  // Paths in a deep tree are wider than any fixed sidebar, and the diff wants
+  // every pixel it can get on a narrow window — so the user picks.
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const treeSplit = useSplitWidth({
+    storageKey: "omnifex.gitDiff.treeWidth",
+    defaultWidth: 280,
+    min: 180,
+    minRight: 480,
+    containerRef: bodyRef,
+  });
 
   // Escape closes. Captured on window so it works regardless of what inside
   // the overlay holds focus.
@@ -158,8 +171,12 @@ export const GitDiffOverlay: React.FC<GitDiffOverlayProps> = ({
         </button>
       </div>
 
-      <div className="flex min-h-0 flex-1">
-        <div className="w-[280px] flex-none border-r">
+      <div ref={bodyRef} className="flex min-h-0 flex-1">
+        <div
+          data-testid="diff-file-pane"
+          className="flex-none"
+          style={{ width: treeSplit.width }}
+        >
           {files.state === "error" ? (
             <p className="px-3 py-3 text-[12px] text-red-400">
               Could not read the working tree: {files.message}
@@ -172,6 +189,12 @@ export const GitDiffOverlay: React.FC<GitDiffOverlayProps> = ({
             />
           )}
         </div>
+
+        <SplitHandle
+          label="Resize the file list"
+          onMouseDown={treeSplit.startResize}
+          onDoubleClick={treeSplit.reset}
+        />
 
         <div className="flex min-w-0 flex-1 flex-col">
           {selectedPath && (

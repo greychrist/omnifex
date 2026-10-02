@@ -290,9 +290,10 @@ OmniFex's decider (`electron/services/sessions/permissions.ts`) therefore:
 
 - auto-allows a file edit in `acceptEdits` only when the CLI did not escalate
   it (`isEscalatedEdit`). An unescalated edit is one the CLI would have
-  accepted had it known the mode, so the dropdown still works if
-  `set_permission_mode` never landed. The escalated ones used to be approved
-  silently, which overrode the CLI's own ask.
+  accepted had it known the mode. (A *refused* `set_permission_mode` no
+  longer leaves the mode set — see "Safety checks in `bypassPermissions`".)
+  The escalated ones used to be approved silently, which overrode the CLI's
+  own ask.
 - offers the containing folder, `Edit(<dir>/**)`, as the default rule for a
   `workingDir` ask, so a grant covers the next file in that folder too.
 - offers a folder grant (`directory_grant`) instead of a rule for a symlink
@@ -310,12 +311,25 @@ against CLI 2.1.281:
 | `rm -rf "$PWD"` | **no** — the CLI runs it | — |
 | Write into `.git/` or `.claude/` | **no** — the CLI writes it | — |
 
-The decider's bypass auto-allow exists for the dropdown: switching to Bypass
-mid-session works only because the decider honours it, since the CLI refuses
-a `set_permission_mode` to bypass it was not launched with. It used to allow
-the `safetyCheck` asks too, answering "yes" in the human's place to the one
-question the CLI insists on asking. It now lets every `safetyCheck` reach the
-card (`isSafetyCheck`). `dontAsk` still denies them without prompting.
+Bypass is reachable mid-session only in a session **launched** in Bypass. The
+CLI refuses `set_permission_mode` to bypass otherwise (2.1.287:
+`bypass_not_launched`; availability is "launch mode was bypass" or
+`--allow-dangerously-skip-permissions`, which OmniFex does not pass). So
+`sessions/queries.ts` refuses that switch itself, without sending it, and the
+status-bar picker shows Bypass as unavailable with a **Restart in Bypass**
+action that resumes the conversation in a process spawned in Bypass. A
+session launched in Bypass can leave it and come back.
+
+Any refused switch is rolled back on both sides: main restores
+`handle.permissionMode` (the field the decider reads) and the picker restores
+its selection and shows the error. Before this, the decider kept the refused
+mode and auto-allowed under a Bypass the CLI was not in, while the picker
+reported Bypass as applied.
+
+The decider's bypass auto-allow used to allow the `safetyCheck` asks too,
+answering "yes" in the human's place to the one question the CLI insists on
+asking. It now lets every `safetyCheck` reach the card (`isSafetyCheck`).
+`dontAsk` still denies them without prompting.
 
 The `$PWD` row is the CLI's gap, not ours: nothing reaches the decider, so
 there is nothing for OmniFex to stop.

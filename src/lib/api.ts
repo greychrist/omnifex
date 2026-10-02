@@ -1835,12 +1835,16 @@ export const api = {
     sessionId: string | null;
     sessionStatus: SessionStatus;
     turn: TurnState;
+    /** The mode the CLI was spawned with — decides whether Bypass is
+     *  reachable mid-session. Absent from a daemon older than this field. */
+    launchPermissionMode?: string | null;
   }> {
     return apiCall("session_get_health", { tabId }) as Promise<{
       alive: boolean;
       sessionId: string | null;
       sessionStatus: SessionStatus;
       turn: TurnState;
+      launchPermissionMode?: string | null;
     }>;
   },
 

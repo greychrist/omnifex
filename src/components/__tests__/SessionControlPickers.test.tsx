@@ -139,3 +139,58 @@ describe('SessionControlPickers — status-bar readouts that open pickers', () =
     expect(within(item('perms')).getByRole('button', { name: /perms.*accept edits/i })).toBeTruthy();
   });
 });
+
+describe('SessionControlPickers — Bypass on a session not launched in it', () => {
+  // The CLI refuses a mid-session switch to Bypass unless it was spawned in
+  // Bypass. Picking it would only produce an error, so the row says why and
+  // offers the one route that works: restarting the session in Bypass.
+  const openPerms = () => { fireEvent.click(within(item('perms')).getByRole('button')); };
+
+  it('does not switch to Bypass, and says why', () => {
+    const onRestartInBypass = vi.fn();
+    const { setPermissionMode } = setup({ onRestartInBypass });
+    openPerms();
+    fireEvent.click(screen.getByText('Bypass'));
+    expect(setPermissionMode).not.toHaveBeenCalled();
+    expect(screen.getByText(/started in bypass/i)).toBeTruthy();
+  });
+
+  it('restarts the session in Bypass from the menu', () => {
+    const onRestartInBypass = vi.fn();
+    setup({ onRestartInBypass });
+    openPerms();
+    fireEvent.click(screen.getByRole('button', { name: /restart in bypass/i }));
+    expect(onRestartInBypass).toHaveBeenCalledOnce();
+  });
+
+  it('still switches to the other modes', () => {
+    const { setPermissionMode } = setup({ onRestartInBypass: vi.fn() });
+    openPerms();
+    fireEvent.click(screen.getByText('Plan'));
+    expect(setPermissionMode).toHaveBeenCalledWith('plan');
+  });
+
+  it('offers Bypass normally when the session can reach it', () => {
+    const { setPermissionMode } = setup();
+    openPerms();
+    expect(screen.queryByRole('button', { name: /restart in bypass/i })).toBeNull();
+    fireEvent.click(screen.getByText('Bypass'));
+    expect(setPermissionMode).toHaveBeenCalledWith('bypassPermissions');
+  });
+});
+
+describe('SessionControlPickers — vertical centring', () => {
+  // A popover readout's button must be block-level (`flex`), not `inline-flex`:
+  // inside the Popover's block trigger wrapper an inline box opens a line box
+  // sized by the inherited line-height, whose descender space sits under the
+  // button and lifts it ~1px above the bar's plain readouts. jsdom has no
+  // layout, so the display type is what can be pinned.
+  it('makes each picker button block-level so it centres with the plain readouts', () => {
+    setup();
+    for (const id of ['model', 'perms']) {
+      const cls = within(item(id)).getByRole('button').className;
+      expect(cls).toMatch(/(^|\s)flex(\s|$)/);
+      expect(cls).not.toMatch(/\binline-flex\b/);
+    }
+  });
+});

@@ -24,8 +24,12 @@ vi.mock('@/lib/api', async (importOriginal) => {
 // The real selector lists installations over IPC; the test only needs its
 // `onSelect` contract.
 vi.mock('@/components/ClaudeVersionSelector', () => ({
-  ClaudeVersionSelector: ({ onSelect }: { onSelect: (i: { path: string }) => void }) => (
-    <button type="button" onClick={() => onSelect({ path: '/opt/homebrew/bin/claude' })}>
+  ClaudeVersionSelector: ({ onSelect, autoSelect }: { onSelect: (i: { path: string }) => void; autoSelect?: boolean }) => (
+    <button
+      type="button"
+      data-auto-select={String(autoSelect ?? true)}
+      onClick={() => onSelect({ path: '/opt/homebrew/bin/claude' })}
+    >
       pick installation
     </button>
   ),
@@ -73,6 +77,14 @@ async function renderGeneral() {
 const status = () => screen.getByRole('status');
 
 describe('GeneralSettings saving', () => {
+  // Every pick saves, so the selector must not pick on its own: that showed
+  // "Saved" the moment Settings opened. See ClaudeVersionSelector.test.tsx.
+  it('does not let the installation selector pick on the user\'s behalf', async () => {
+    await renderGeneral();
+    expect(screen.getByText('pick installation').getAttribute('data-auto-select')).toBe('false');
+    expect(api.setClaudeBinaryPath).not.toHaveBeenCalled();
+  });
+
   it('saves a picked Claude installation at once', async () => {
     await renderGeneral();
     fireEvent.click(screen.getByText('pick installation'));

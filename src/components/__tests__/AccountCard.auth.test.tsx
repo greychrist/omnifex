@@ -11,10 +11,6 @@ const { apiMock, platformMock } = vi.hoisted(() => ({
 
 vi.mock('@/lib/api', () => ({ api: apiMock }));
 vi.mock('@/lib/platform', () => platformMock);
-vi.mock('@/hooks/useUsageAutoRefresh', () => ({
-  useUsageAutoRefresh: () => ({ data: null, loading: false, refresh: vi.fn() }),
-}));
-vi.mock('@/hooks/useSessionCost', () => ({ useSessionCost: () => null }));
 vi.mock('@/hooks/useLayoutMode', () => ({ useLayoutMode: () => ({ narrow: false }) }));
 
 // The real Popover portals and animates; a controlled passthrough is enough
@@ -77,6 +73,7 @@ function renderCard(overrides: Partial<React.ComponentProps<typeof AccountCard>>
       configDir={CONFIG_DIR}
       matchType="path_rule"
       matchDetail="~/Repos/work"
+      usage={{ data: null, loading: false, refresh: vi.fn(async () => {}), sessionCost: null }}
       {...overrides}
     />,
   );
