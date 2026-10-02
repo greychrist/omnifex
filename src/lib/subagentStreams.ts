@@ -3,7 +3,7 @@
  *
  * Thin facade over `subagentEvents.ts`. Translation, reduction, and the
  * inferred-closure post-pass live there; this file is the renderer-facing
- * shape (`Subagent` rendered by SubagentBar, `clearCompleted` for the
+ * shape (`Subagent` rendered by BackgroundWorkRows, `clearCompleted` for the
  * "Clear done" button, `hasRunningSubagent` for callers that want to know
  * if any row is still in flight) plus the `colorIndexFor` palette hash.
  */

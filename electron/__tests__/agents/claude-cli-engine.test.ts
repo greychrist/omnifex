@@ -74,7 +74,7 @@ describe('ClaudeCliEngine', () => {
 
   it('enables --forward-subagent-text so subagent narration reaches the stream', async () => {
     // CLI ≥2.1.211: forwards subagent text/thinking as assistant envelopes
-    // tagged with parent_tool_use_id. SubagentBar rows render them live.
+    // tagged with parent_tool_use_id. subagent rows render them live.
     const fake = makeFakeChild();
     mockedSpawn.mockReturnValue(fake as never);
     const engine = createClaudeCliEngine({ tabId: 't', claudeBinaryPath: '/bin/claude' });

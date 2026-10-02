@@ -522,7 +522,7 @@ describe('forwarded subagent messages (--forward-subagent-text)', () => {
     // usage blocks. Persisted parent transcripts never contain these lines,
     // so pricing them live would make the live session cost disagree with
     // the same session's cost on reload. Subagent totals surface via the
-    // SubagentBar meta instead.
+    // subagent row meta instead.
     const node = assistantUsageNode({
       id: 'msg_sub_1',
       model: 'claude-haiku-4-5-20251001',
@@ -531,7 +531,7 @@ describe('forwarded subagent messages (--forward-subagent-text)', () => {
     ((node as unknown as { raw: Record<string, unknown> }).raw).parent_tool_use_id = 'toolu_parent_1';
     const r = reduceSessionStreamMessage(node, { ...baseCtx, seenCostKeys: new Set<string>() });
     expect(r.costDelta).toBe(0);
-    // The node itself still lands in messages[] — SubagentBar derivation
+    // The node itself still lands in messages[] — subagent derivation
     // reads forwarded text from there.
     expect(r.append).toBe('append');
   });

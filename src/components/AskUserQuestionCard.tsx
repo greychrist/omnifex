@@ -225,7 +225,7 @@ export function AskUserQuestionCard({ request, onSubmit, onCancel }: AskUserQues
               "focus:outline-none focus-visible:ring-1 focus-visible:ring-ring",
             )}
           >
-            {/* Match TaskList / SubagentBar's chevron convention: expanded
+            {/* Match TaskList / subagent rows' chevron convention: expanded
                 shows ChevronDown ("click to collapse downward"), collapsed
                 shows ChevronUp ("click to expand upward"). The prior shape
                 pointed the opposite way and was visually inconsistent with

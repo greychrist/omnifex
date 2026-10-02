@@ -34,7 +34,7 @@ function isHookLifecycleMarker(msg: JsonlNode): boolean {
  * - User messages that only contain tool results already rendered by
  *   tool-specific widgets (e.g. Bash, Edit, Read, Grep, etc.)
  * - Subagent task lifecycle markers (task_started / task_progress /
- *   task_notification) — those are rendered in the SubagentBar.
+ *   task_notification) — those are rendered in the agents readout.
  * - When `hardFilters.hideHookLifecycle` is on (default), CLI hook
  *   lifecycle events (hook_started / hook_response / user_prompt_submit). *
  * Not here: repeats of a kind (collapseRepeats.ts, a per-kind registry rule)
@@ -69,7 +69,7 @@ export function filterDisplayableMessages(
       return false;
     }
 
-    // Skip subagent lifecycle markers — shown in SubagentBar instead
+    // Skip subagent lifecycle markers — shown in the agents readout instead
     if (isTaskLifecycleMarker(rawShape)) {
       return false;
     }
@@ -104,7 +104,7 @@ export function filterDisplayableMessages(
 
     // Skip the `<task-notification>` carriers. These queue-operation /
     // attachment envelopes exist to deliver a backgrounded dispatch's
-    // completion, which the SubagentBar renders as the row's closure — in
+    // completion, which the subagent row renders as the row's closure — in
     // the transcript they are a contentless "Input queue: enqueue" strip,
     // one per completion plus its `remove` twin. A queue-operation carrying
     // a real queued prompt is NOT this and stays visible.
@@ -123,7 +123,7 @@ export function filterDisplayableMessages(
     }
 
     // Skip live-forwarded subagent assistant text (--forward-subagent-text):
-    // it belongs to the SubagentBar row keyed by parent_tool_use_id, not the
+    // it belongs to the subagent row keyed by parent_tool_use_id, not the
     // main transcript. A bare non-null check is safe for assistants — no
     // persisted main-chain assistant line carries a non-null value (subagent
     // transcripts live in separate agent-*.jsonl files).

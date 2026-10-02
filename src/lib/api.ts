@@ -793,7 +793,7 @@ export interface SessionPluginInfo {
 /**
  * Per-subagent metadata read from disk: the model the subagent ran on plus
  * authoritative end-of-run totals from the parent Task's `toolUseResult`.
- * Surfaced in the SubagentBar; keyed by the Task `tool_use_id`.
+ * Surfaced in the subagent rows; keyed by the Task `tool_use_id`.
  */
 export interface SubagentMetaEntry {
   agentId?: string;
@@ -2012,7 +2012,7 @@ export const api = {
   /**
    * Per-subagent metadata (model + authoritative end-of-run totals) read
    * from the on-disk session JSONL and per-subagent transcripts. Keyed by
-   * the dispatching Task's `tool_use_id` — the same key SubagentBar rows use.
+   * the dispatching Task's `tool_use_id` — the same key subagent rows use.
    * Works for both live and replayed sessions since it reads from disk.
    */
   async getSubagentMeta(

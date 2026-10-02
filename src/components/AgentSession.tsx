@@ -96,8 +96,8 @@ import type { BranchColor } from '@/lib/api';
 import { deriveSubagents, applySubagentMeta, createSubagentColorAllocator, notificationStatsByToolUse, countActiveSubagents, type SubagentMetaInput } from '@/lib/subagentStreams';
 import { getTaskList, summarizeTaskList } from "@/lib/taskList";
 import { deriveWaitingFor, type TabWaitingFor } from "@/lib/tabWaitingFor";
-import { SubagentBar } from "./SubagentBar";
 import { deriveBackgroundShells } from "@/lib/backgroundShells";
+import type { BackgroundWork } from "./BackgroundWorkItems";
 import { TaskList } from "./claude/tools/TaskList";
 import { fireAndLog, logAndForget } from "@/lib/fireAndLog";
 import { decideResumeSeed } from "@/lib/resumeSeedDecision";
@@ -944,8 +944,8 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   // a live turn whenever the subagent-tracking pipeline missed a closure
   // carrier. Decoupled now — the bubble follows the session's turn and
   // `tasksInFlight` (see `outstandingWork`, below the lifecycle hook). The
-  // SubagentBar's per-row spinner remains the scoped indicator that a
-  // particular dispatch is in flight. See design spec
+  // The status bar's `agents` readout and its rows remain the scoped
+  // indicator that a particular dispatch is in flight. See design spec
   // docs/superpowers/specs/2026-05-11-subagent-tracking-refactor-design.md.
   // True when the streaming bubble is currently rendered. Used to
   // suppress the typing-dots spinner so the spinner and bubble
@@ -965,8 +965,9 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     () => summarizeTaskList(taskEntries).inProgress > 0,
     [taskEntries],
   );
-  // Background shells and Monitors share the subagent bar. Their output is
-  // read on demand (`get_task_output`) by the row itself, only while open.
+  // Background shells and Monitors: the status bar's `shells` readout. Their
+  // output is read on demand (`get_task_output`) by the row itself, only
+  // while open.
   const [dismissedShells, setDismissedShells] = useState<Set<string>>(new Set());
   const shells = useMemo(() => {
     const all = deriveBackgroundShells(messages);
@@ -998,6 +999,8 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
       }
       return next;
     });
+  }, [subagents]);
+  const dismissAllEndedShells = useCallback(() => {
     setDismissedShells((prev) => {
       const next = new Set(prev);
       for (const sh of shells) {
@@ -1005,7 +1008,19 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
       }
       return next;
     });
-  }, [subagents, shells]);
+  }, [shells]);
+  // The status bar's `agents` and `shells` readouts. Memoised so a
+  // transcript tick that changes neither list does not hand the bar a new
+  // object.
+  const backgroundWork = useMemo<BackgroundWork>(() => ({
+    subagents,
+    onDismissSubagent: dismissSubagent,
+    onDismissAllCompletedSubagents: dismissAllCompletedSubagents,
+    shells,
+    readShellOutput,
+    onDismissShell: dismissShell,
+    onDismissAllEndedShells: dismissAllEndedShells,
+  }), [subagents, dismissSubagent, dismissAllCompletedSubagents, shells, readShellOutput, dismissShell, dismissAllEndedShells]);
 
   // Tab context for title / promptStatus mirror. The usePublishTabStatus
   // call lives further down — it depends on `isSessionActive` /
@@ -1485,7 +1500,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
         const store = useClaudeSessionStore.getState();
         // Forwarded subagent assistants (--forward-subagent-text, tagged with
         // parent_tool_use_id) must not clear the PARENT's streaming bubble —
-        // they belong to the SubagentBar row, not the main chain.
+        // they belong to the subagent row, not the main chain.
         if (
           reduced.append === 'append' &&
           message.kind === 'assistant' &&
@@ -2630,6 +2645,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
             canRename={isSessionActive}
             onRename={handleRenameSession}
             onSuggest={handleSuggestTitle}
+            background={backgroundWork}
             controls={
               <SessionControlPickers
                 engine={agent}
@@ -2922,19 +2938,11 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
               messages={messages}
               isLive={isSessionActive || isSessionStarting}
             />
-            {/* Directly above the subagents bar, and matching its row height so
-                the two read as one group. Renders nothing — not an empty box —
-                when the queue is empty. The usage-limit wait that used to have
+            {/* Directly above the composer, matching the TaskList header's row
+                height so the two read as one group. Renders nothing — not an
+                empty box — when the queue is empty. The usage-limit wait that used to have
                 its own banner here is now the activity pill's `limit · 2h`. */}
             <AttentionSlot queue={signals.queue} onDismiss={signals.dismiss} />
-            <SubagentBar
-              subagents={subagents}
-              onDismiss={dismissSubagent}
-              onDismissAllCompleted={dismissAllCompletedSubagents}
-              shells={shells}
-              readShellOutput={readShellOutput}
-              onDismissShell={dismissShell}
-            />
             <FloatingPromptInput
               ref={floatingPromptRef}
               onSend={fireAndLog('claude-code-session:send', handleSendPrompt)}

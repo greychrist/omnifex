@@ -294,7 +294,7 @@ function computeCost(node: JsonlNode, ctx: StreamReducerContext): number {
   // Live-forwarded subagent assistants (--forward-subagent-text) carry their
   // own usage, but persisted parent transcripts never contain these lines —
   // pricing them would make live cost disagree with the same session's cost
-  // on reload. Subagent totals surface via SubagentBar meta instead.
+  // on reload. Subagent totals surface via subagent row meta instead.
   const parentToolUseId = (node.raw as { parent_tool_use_id?: unknown }).parent_tool_use_id;
   if (typeof parentToolUseId === 'string' && parentToolUseId.length > 0) return 0;
   const raw = node.raw as {

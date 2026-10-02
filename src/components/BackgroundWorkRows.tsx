@@ -1,23 +1,24 @@
+/**
+ * The rows behind the status bar's `agents` and `shells` readouts
+ * (`BackgroundWorkItems.tsx`): one per subagent, one per background shell or
+ * Monitor. Each row expands in place — a subagent to its progress log, a
+ * shell to the tail of its output.
+ */
 import React, { useEffect, useState } from 'react';
 import {
   ChevronDown,
   ChevronRight,
-  ChevronUp,
   Bot,
   CheckCircle2,
   CircleDashed,
   AlertCircle,
   Ghost,
   X,
-  ListChecks,
-  Loader2,
   SquareTerminal,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Subagent } from '@/lib/subagentStreams';
 import { plainTaskOutput, type BackgroundShell, type TaskOutputTail } from '@/lib/backgroundShells';
-
-const COLLAPSE_STORAGE_KEY = 'greychrist.subagentBar.collapsed';
 
 // 16-slot palette — one distinct hue per slot so concurrent subagents never
 // share a colour until all 16 are live simultaneously (extremely rare).
@@ -66,7 +67,7 @@ interface SubagentRowProps {
   onDismiss?: (toolUseId: string) => void;
 }
 
-const SubagentRow: React.FC<SubagentRowProps> = ({ sub, onDismiss }) => {
+export const SubagentRow: React.FC<SubagentRowProps> = ({ sub, onDismiss }) => {
   const [expanded, setExpanded] = useState(false);
   const color = PALETTE[sub.colorIndex % PALETTE.length];
   const latest = sub.latest;
@@ -124,6 +125,16 @@ const SubagentRow: React.FC<SubagentRowProps> = ({ sub, onDismiss }) => {
   // the indent is what distinguishes it from a sibling.
   const nested = !!sub.parentToolUseId;
 
+  // Foreground or background, as the dispatch, the CLI's launch ACK or a
+  // later `is_backgrounded` patch last set it. Nested rows are synthesised
+  // from the sidecar and carry no flag — no tag beats a guessed one.
+  const mode =
+    sub.isBackground === true
+      ? { label: 'bg', title: 'Background — the session carries on while it runs' }
+      : sub.isBackground === false
+        ? { label: 'fg', title: 'Foreground — the turn waits for it' }
+        : null;
+
   return (
     <div
       data-subagent-row
@@ -144,6 +155,14 @@ const SubagentRow: React.FC<SubagentRowProps> = ({ sub, onDismiss }) => {
         <span className="flex items-center justify-center w-4 shrink-0">{statusIcon}</span>
         <Bot className={cn('h-3.5 w-3.5 shrink-0', color.text)} />
         <span className={cn('font-mono font-medium shrink-0', color.text)}>{agentLabel}</span>
+        {mode && (
+          <span
+            title={mode.title}
+            className="shrink-0 rounded px-1 font-mono text-[10px] leading-4 text-muted-foreground bg-white/5"
+          >
+            {mode.label}
+          </span>
+        )}
         <span className="text-muted-foreground shrink-0">·</span>
         <span className="truncate flex-1 text-foreground/90">{headline}</span>
         {metaBits && (
@@ -251,7 +270,7 @@ interface ShellRowProps {
   onDismiss?: (taskId: string) => void;
 }
 
-const ShellRow: React.FC<ShellRowProps> = ({ shell, read, onDismiss }) => {
+export const ShellRow: React.FC<ShellRowProps> = ({ shell, read, onDismiss }) => {
   const [expanded, setExpanded] = useState(false);
   const running = shell.status === 'running';
   const { tail, loaded } = useShellOutput(shell.taskId, running, expanded, read);
@@ -322,128 +341,6 @@ const ShellRow: React.FC<ShellRowProps> = ({ shell, read, onDismiss }) => {
               )}
             </>
           )}
-        </div>
-      )}
-    </div>
-  );
-};
-
-interface SubagentBarProps {
-  subagents: Subagent[];
-  className?: string;
-  onDismiss?: (toolUseId: string) => void;
-  onDismissAllCompleted?: () => void;
-  /** Background shells and Monitors (`local_bash` tasks). */
-  shells?: BackgroundShell[];
-  /** Reads a shell's output tail; required for shell rows to render. */
-  readShellOutput?: (taskId: string) => Promise<TaskOutputTail | null>;
-  onDismissShell?: (taskId: string) => void;
-}
-
-export const SubagentBar: React.FC<SubagentBarProps> = ({
-  subagents,
-  className,
-  onDismiss,
-  onDismissAllCompleted,
-  shells = [],
-  readShellOutput,
-  onDismissShell,
-}) => {
-  const [collapsed, setCollapsed] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return true;
-    // Collapsed by default; only expand if the user has explicitly stored '0'.
-    return window.localStorage.getItem(COLLAPSE_STORAGE_KEY) !== '0';
-  });
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    window.localStorage.setItem(COLLAPSE_STORAGE_KEY, collapsed ? '1' : '0');
-  }, [collapsed]);
-
-  const shellRows = readShellOutput ? shells : [];
-  if (subagents.length === 0 && shellRows.length === 0) return null;
-  const total = subagents.length + shellRows.length;
-  const runningCount =
-    subagents.filter((s) => s.status === 'running').length +
-    shellRows.filter((s) => s.status === 'running').length;
-  const doneCount = total - runningCount;
-  const running = runningCount > 0;
-  const expanded = !collapsed;
-
-  // Header status icon: green ListChecks at rest. While running, the
-  // "N running" pill already carries the spinner, so the standalone icon
-  // is omitted to avoid a duplicate spinner beside it.
-
-  return (
-    <div className={cn('shrink-0 flex flex-col', className)}>
-      {/* Header — laid out identically to the TaskList header so the two
-          bars feel like the same thing in different domains. */}
-      <div className="relative shrink-0 border-t border-border/40">
-        <div
-          aria-hidden="true"
-          className={cn(
-            'absolute inset-0 bg-sky-400/15',
-            running && 'animate-pulse',
-          )}
-        />
-        <div className="relative flex items-center gap-2 px-3 py-1 text-[11px]">
-          <button
-            type="button"
-            onClick={() => { setCollapsed((v) => !v); }}
-            className="inline-flex items-center gap-1.5 text-muted-foreground hover:text-foreground"
-            title={expanded ? 'Collapse background work' : 'Expand background work'}
-          >
-            <span
-              className="inline-flex items-center justify-center h-6 w-6 rounded-md border border-border bg-background shrink-0"
-              aria-hidden
-            >
-              {expanded ? (
-                <ChevronDown className="h-3.5 w-3.5" />
-              ) : (
-                <ChevronUp className="h-3.5 w-3.5" />
-              )}
-            </span>
-            <Bot className="h-3.5 w-3.5 text-foreground" />
-            <span className="font-medium text-foreground">
-              {shellRows.length > 0 ? 'Background:' : 'Subagents:'}
-            </span>
-            <span className="text-foreground/90 tabular-nums">
-              {doneCount}/{total} done
-            </span>
-            {runningCount > 0 && (
-              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full border border-sky-400/40 bg-sky-400/10 text-sky-400 tabular-nums">
-                <Loader2 className="h-3 w-3 animate-spin" />
-                {runningCount} running
-              </span>
-            )}
-            {!running && <ListChecks className="h-3.5 w-3.5 text-emerald-400" />}
-          </button>
-          {onDismissAllCompleted && (
-            <button
-              type="button"
-              onClick={onDismissAllCompleted}
-              disabled={doneCount === 0}
-              className={cn(
-                'ml-auto inline-flex items-center px-1.5 py-0.5 rounded border border-border/60 bg-background',
-                'text-muted-foreground hover:text-foreground hover:bg-accent transition-colors',
-                'disabled:opacity-30 disabled:hover:bg-background disabled:cursor-not-allowed',
-              )}
-              title={doneCount > 0 ? `Clear ${doneCount} done` : 'No completed subagents'}
-            >
-              Clear done{doneCount > 0 ? ` (${doneCount})` : ''}
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Scrollable list — capped at half the viewport */}
-      {expanded && (
-        <div className="overflow-y-auto bg-background/95" style={{ maxHeight: '50vh' }}>
-          {subagents.map((sub) => (
-            <SubagentRow key={sub.toolUseId} sub={sub} onDismiss={onDismiss} />
-          ))}
-          {readShellOutput && shellRows.map((shell) => (
-            <ShellRow key={shell.taskId} shell={shell} read={readShellOutput} onDismiss={onDismissShell} />
-          ))}
         </div>
       )}
     </div>

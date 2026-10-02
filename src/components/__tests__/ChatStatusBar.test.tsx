@@ -1,8 +1,11 @@
 // @vitest-environment jsdom
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { render, cleanup, screen, fireEvent, waitFor } from '@testing-library/react';
 import { ChatStatusBar, LinkGlyph } from '@/components/ChatStatusBar';
+import type { BackgroundWork } from '@/components/BackgroundWorkItems';
 import type { SessionSignal } from '@/lib/signals/types';
+import type { Subagent } from '@/lib/subagentStreams';
+import type { BackgroundShell } from '@/lib/backgroundShells';
 
 const signal = (meta: Record<string, unknown>): SessionSignal =>
   ({ meta } as unknown as SessionSignal);
@@ -222,6 +225,61 @@ describe('ChatStatusBar', () => {
       />,
     );
     expect(screen.getByText(/cache .* left \(5m\)/)).toBeTruthy();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Background work: subagents and background shells, one readout each
+// ---------------------------------------------------------------------------
+
+describe('ChatStatusBar — background work', () => {
+  const sub = (o: Partial<Subagent> & Pick<Subagent, 'toolUseId' | 'status'>): Subagent => ({
+    agentType: 'Explore', description: 'Working', colorIndex: 0, events: [], latest: null, ...o,
+  });
+  const shell = (o: Partial<BackgroundShell> = {}): BackgroundShell => ({
+    taskId: 'b1', description: 'npm run dev', status: 'running', ...o,
+  });
+  const work = (o: Partial<BackgroundWork> = {}): BackgroundWork => ({
+    subagents: [], shells: [], readShellOutput: vi.fn(), ...o,
+  });
+
+  it('shows an agents readout and a shells readout, each only when it has rows', () => {
+    const { unmount } = render(
+      <ChatStatusBar {...base} background={work({ subagents: [sub({ toolUseId: 'a', status: 'running' })] })} />,
+    );
+    expect(screen.getByLabelText('agents running')).toBeTruthy();
+    expect(screen.queryByLabelText(/^shells/)).toBeNull();
+    unmount();
+
+    render(<ChatStatusBar {...base} background={work({ shells: [shell()] })} />);
+    expect(screen.getByLabelText('shells running')).toBeTruthy();
+    expect(screen.queryByLabelText(/^agents/)).toBeNull();
+  });
+
+  // An empty list renders nothing, so it must not leave a divider either.
+  it('adds no divider for an empty list', () => {
+    render(<ChatStatusBar {...base} background={work()} />);
+    expect(screen.queryAllByTestId('status-divider')).toHaveLength(0);
+  });
+
+  it('sits after turn and thinking, and before the cache countdown', () => {
+    render(
+      <ChatStatusBar
+        {...base}
+        link={{ connection: null, delivering: false }}
+        activitySignal={signal({ status: 'idle', lastTurnMs: 3_000, turnThinkingTokens: 800 })}
+        cacheAnchorMs={Date.now() - 60_000}
+        cacheTtlMs={5 * 60_000}
+        background={work({
+          subagents: [sub({ toolUseId: 'a', status: 'running' })],
+          shells: [shell()],
+        })}
+      />,
+    );
+    const text = screen.getByTestId('chat-status-items').textContent ?? '';
+    const order = ['turn', 'thought', 'agents', 'shells', 'cache'].map((w) => text.indexOf(w));
+    expect(order.every((i) => i >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
   });
 });
 

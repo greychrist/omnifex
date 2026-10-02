@@ -5,7 +5,7 @@
  * variant per visually meaningful category, no synthesis. Overlay variants
  * come from the CLI stream in CLI mode and never touch the renderer's
  * messages[] — they drive separate UI surfaces (partials buffer,
- * rate-limit service, SubagentBar / hook progress / status badges).
+ * rate-limit service, subagent rows / hook progress / status badges).
  *
  * Inventory drawn from 126 real session JSONL files. See the design spec
  * for the per-kind line counts.
@@ -180,7 +180,7 @@ export type SystemSubtype =
   | 'error_during_execution'
   // Snapshot of the session's running background tasks, re-emitted whenever
   // that set changes (an agent is launched, a background shell finishes).
-  // Bookkeeping, not narrative — the SubagentBar is where this belongs, so
+  // Bookkeeping, not narrative — the agents readout is where this belongs, so
   // its kind defaults to Never in Appearance settings.
   | 'background_tasks_changed'
   // The CLI's inference of what the user is building, emitted once per kind

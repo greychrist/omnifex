@@ -117,12 +117,12 @@ export interface SubagentState {
   error?: string;
   /** For a task a subagent owns rather than the session: the tool_use id of
    *  the agent that started it. Drives the indented rendering in
-   *  SubagentBar, matching the nested rows applySubagentMeta synthesises. */
+   *  BackgroundWorkRows, matching the nested rows applySubagentMeta synthesises. */
   parentToolUseId?: string;
   /** Inverse: which closure carrier actually finalised this row. `null` for
    *  the inferred branch (`ClosedByParentResult`) and for rows still in
    *  `running`. Useful for tests and for tooltips on the inferred-icon
-   *  variant in `SubagentBar`. */
+   *  variant in `BackgroundWorkRows`. */
   closureSource?: 'tool_result' | 'task_notification' | 'task_notification_xml' | 'task_updated' | 'parent_result';
   /** `task_started.ambient` — a watcher or housekeeping task, not work the
    *  user is waiting on. Excluded from `countActiveSubagents`, but still a
@@ -314,7 +314,7 @@ export function isTaskLifecycleMarker(m: unknown): m is TaskLifecycleMessage {
 // ---------------------------------------------------------------------------
 
 /** Cap forwarded narration entries so a subagent's multi-page final report
- *  doesn't bloat the per-row event log the expanded SubagentBar renders. */
+ *  doesn't bloat the per-row event log the expanded subagent row renders. */
 const FORWARDED_TEXT_MAX_LENGTH = 500;
 
 /**

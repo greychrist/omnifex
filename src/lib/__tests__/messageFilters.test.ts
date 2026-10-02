@@ -116,7 +116,7 @@ describe('filterDisplayableMessages', () => {
         raw: { type: 'queue-operation', operation, ...(content === undefined ? {} : { content }) },
       }) as unknown as JsonlNode;
 
-    it('drops the enqueue carrier — its XML is consumed by the SubagentBar', () => {
+    it('drops the enqueue carrier — its XML is consumed by the agents readout', () => {
       expect(filterDisplayableMessages([queueOp('enqueue', XML)])).toHaveLength(0);
     });
 
@@ -261,7 +261,7 @@ describe('forwarded subagent assistant text (--forward-subagent-text)', () => {
     }) as unknown as JsonlNode;
 
   it('hides forwarded subagent assistant messages from the transcript', () => {
-    // Their content belongs to the SubagentBar row, not the main transcript —
+    // Their content belongs to the subagent row, not the main transcript —
     // interleaving subagent narration with the parent conversation is noise.
     const msgs = [parentTaskDispatch(), forwardedAssistant(), mainAssistant()];
     const out = filterDisplayableMessages(msgs);

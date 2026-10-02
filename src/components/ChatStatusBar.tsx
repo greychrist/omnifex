@@ -6,6 +6,7 @@ import { formatToolElapsed } from '@/components/claude/tools/ToolProgressChip';
 import { CacheTimerRow } from '@/components/CacheTimerRow';
 import { InlineDivider } from '@/components/ui/inline-divider';
 import { Popover } from '@/components/ui/popover';
+import { AgentsStatusItem, ShellsStatusItem, type BackgroundWork } from '@/components/BackgroundWorkItems';
 import type { SessionActivity } from '@/lib/signals/emitters';
 import type { SessionSignal } from '@/lib/signals/types';
 
@@ -332,6 +333,9 @@ export interface ChatStatusBarProps {
    *  that open pickers — `SessionControlPickers`. Seated before the state
    *  readouts: what you can change, then what is happening. */
   controls?: React.ReactNode;
+  /** Subagents and background shells, shown as the `agents` and `shells`
+   *  readouts. Each readout is omitted while its list is empty. */
+  background?: BackgroundWork;
   className?: string;
 }
 
@@ -349,6 +353,10 @@ export interface ChatStatusBarProps {
  * Both readouts hold the PREVIOUS round's value while idle. That is the
  * point: how long the turn took, and how much it thought, are most worth
  * reading in the moment just after the turn that produced them ends.
+ *
+ * The `agents` and `shells` readouts follow the same rule: finished rows stay
+ * counted until dismissed. They replaced the strip that sat under the
+ * transcript; see `BackgroundWorkItems.tsx`.
  */
 export function ChatStatusBar({
   link,
@@ -361,6 +369,7 @@ export function ChatStatusBar({
   cacheTtlMs,
   cacheBusy,
   controls,
+  background,
   className,
 }: ChatStatusBarProps): React.JSX.Element {
   const meta = activitySignal?.meta as ActivityMeta | undefined;
@@ -443,6 +452,31 @@ export function ChatStatusBar({
     );
   }
 
+  // Each readout only when its list has rows: an empty one renders nothing,
+  // and would otherwise leave a divider with nothing after it.
+  if (background && background.subagents.length > 0) {
+    items.push(
+      <AgentsStatusItem
+        key="agents"
+        subagents={background.subagents}
+        onDismiss={background.onDismissSubagent}
+        onDismissAllCompleted={background.onDismissAllCompletedSubagents}
+      />,
+    );
+  }
+
+  if (background && background.shells.length > 0) {
+    items.push(
+      <ShellsStatusItem
+        key="shells"
+        shells={background.shells}
+        readShellOutput={background.readShellOutput}
+        onDismiss={background.onDismissShell}
+        onDismissAllEnded={background.onDismissAllEndedShells}
+      />,
+    );
+  }
+
   if (showCache) {
     // Already labelled by its own copy ("cache 3m left (1h)").
     items.push(
@@ -490,7 +524,8 @@ export function ChatStatusBar({
           // Tailwind border-color utility, so a real border cannot carry this
           // colour — it would come back at full `--color-border` strength.
           // Wraps rather than compressing: three pickers, the daemon glyph,
-          // the turn clock, the thinking burst and the cache countdown do not
+          // the turn clock, the thinking burst, the agents and shells counts
+          // and the cache countdown do not
           // fit beside a name in a narrow window, and the readouts have no
           // spare width to surrender — each is already a label and a value.
           // The row gap is half the column gap so a wrapped line reads as a

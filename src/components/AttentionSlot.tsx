@@ -61,7 +61,7 @@ export function AttentionSlot({ queue, onDismiss, className }: AttentionSlotProp
       role="status"
       aria-live="polite"
       className={cn(
-        // py-1 matches SubagentBar's collapsed row so the two read as one
+        // py-1 matches the TaskList header above it so the two read as one
         // group rather than as two bars of different weights.
         'shrink-0 flex items-center gap-2 px-3 py-1 text-[11px]',
         critical

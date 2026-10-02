@@ -592,7 +592,7 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
               />
               <FilterRow
                 label="Hide subagent lifecycle"
-                description="task_started / task_progress / task_updated — drives SubagentBar."
+                description="task_started / task_progress / task_updated — drives the agents readout."
                 checked={hardFiltersChecked.hideSubagentLifecycle}
                 onChange={(v) => { setHardFilter("hideSubagentLifecycle", v); }}
               />

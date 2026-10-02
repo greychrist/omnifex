@@ -137,8 +137,7 @@ export function SessionCard({
   const { narrow } = useLayoutMode();
   const [contextPopoverOpen, setContextPopoverOpen] = React.useState(false);
 
-  // Collapsed by default, sticky once opened — the same contract (and the same
-  // shape) as SubagentBar's COLLAPSE_STORAGE_KEY.
+  // Collapsed by default, sticky once opened.
   const [detailsOpen, setDetailsOpen] = React.useState<boolean>(
     () => typeof window !== "undefined" && window.localStorage.getItem(DETAILS_STORAGE_KEY) === "1",
   );

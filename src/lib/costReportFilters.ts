@@ -82,10 +82,9 @@ export function fmtRatio(ratio: number): string {
 // ── Persistence ────────────────────────────────────────────────────────────
 //
 // localStorage rather than `app_settings`, matching how the rest of the
-// renderer stores view state (LogTab column widths, SubagentBar collapse,
-// AgentSession header height). It also reads synchronously, so the page opens
-// already filtered instead of flashing the defaults while an async setting
-// loads.
+// renderer stores view state (LogTab column widths, AgentSession header
+// height). It also reads synchronously, so the page opens already filtered
+// instead of flashing the defaults while an async setting loads.
 
 const STORAGE_KEY = 'omnifex.costReport.filters';
 

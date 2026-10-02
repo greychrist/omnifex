@@ -331,7 +331,7 @@ export const KIND_REGISTRY: Record<string, KindDef> = {
   // in the transcript, so they default to Never — but as settings rather than
   // hard-coded drops, so each can be switched on to see what the CLI sent.
   // `showRawPayload` because none carries a narrative field.
-  "system.background_tasks_changed": { id: "system.background_tasks_changed", category: "live", label: "Background tasks", description: "Snapshot of every background task running, re-sent on each change. The SubagentBar shows the same set.", default: { presentation: "side-line", icon: "ListTree", accentColor: "muted", visibility: "never", showRawPayload: true }, collapse: { mode: "latestInRun" } },
+  "system.background_tasks_changed": { id: "system.background_tasks_changed", category: "live", label: "Background tasks", description: "Snapshot of every background task running, re-sent on each change. The status bar's agents and shells readouts show the same set.", default: { presentation: "side-line", icon: "ListTree", accentColor: "muted", visibility: "never", showRawPayload: true }, collapse: { mode: "latestInRun" } },
   "system.dev_intent": { id: "system.dev_intent", category: "live", label: "Dev intent", description: "The CLI's inference of what you are building (e.g. an iOS app), sent once per kind.", default: { presentation: "side-line", icon: "Lightbulb", accentColor: "muted", visibility: "never", showRawPayload: true } },
   "system.per_turn_effort_changed": { id: "system.per_turn_effort_changed", category: "live", label: "Per-turn effort", description: "Per-turn effort stopped being cache-safe for this model, so an effort change now rewrites the cached prefix.", default: { presentation: "side-line", icon: "Settings", accentColor: "muted", visibility: "never", showRawPayload: true }, collapse: { mode: "onChange", field: "per_turn_effort_active" } },
   "system.elicitation_complete": { id: "system.elicitation_complete", category: "live", label: "Elicitation complete", description: "An MCP server confirmed a URL-mode elicitation (usually a browser sign-in) finished.", default: { presentation: "side-line", icon: "Plug", accentColor: "muted", visibility: "never", showRawPayload: true } },
@@ -526,7 +526,7 @@ export const DEFAULT_TAB_INDICATORS: TabIndicators = {
 export interface HardFilters {
   // Live overlay filters — apply to CLI overlay channels (Chat mode only)
   hidePartialStreaming: boolean;     // stream_event (typewriter effect)
-  hideSubagentLifecycle: boolean;    // task_started/updated/progress (SubagentBar)
+  hideSubagentLifecycle: boolean;    // task_started/updated/progress (agents readout)
   hideHookLifecycle: boolean;        // hook_started/progress/response
   hideRateLimitNotices: boolean;     // rate_limit_event
 }

@@ -76,8 +76,7 @@ const PopoverNestingContext = React.createContext<PopoverNesting | null>(null);
  * Content is rendered via `createPortal` into `document.body` so it escapes
  * the trigger's stacking context. Without the portal, a parent with
  * `position: relative` + `z-40` (e.g. the session header) caps the popover
- * at z-40 globally, letting later z-50 siblings (e.g. SubagentBar's
- * expanded rows) paint on top of it. Positioning is done with
+ * at z-40 globally, letting later z-50 siblings paint on top of it. Positioning is done with
  * `position: fixed` against the trigger's `getBoundingClientRect()` so the
  * popover stays anchored on scroll/resize.
  *

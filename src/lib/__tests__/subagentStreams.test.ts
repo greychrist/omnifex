@@ -291,7 +291,7 @@ describe('applySubagentMeta', () => {
 // A nested subagent's dispatching tool_use is issued inside its PARENT's
 // transcript, so deriveSubagents (which reads the main stream) never produces
 // a row for it. The sidecars are the only record, and without this the whole
-// branch is silently missing from the SubagentBar.
+// branch is silently missing from the agents readout.
 describe('applySubagentMeta — nested subagents', () => {
   const CHILD_ID = 'toolu_CHILD';
   const parentOnly = () =>
@@ -317,7 +317,7 @@ describe('applySubagentMeta — nested subagents', () => {
   });
 
   it('links the nested row to its parent ROW, not just the parent agentId', () => {
-    // SubagentBar rows are keyed by toolUseId, so the agentId from the
+    // subagent rows are keyed by toolUseId, so the agentId from the
     // sidecar has to be resolved through the meta map to be useful.
     const merged = applySubagentMeta(parentOnly(), nestedMeta());
     const child = merged.find((s) => s.toolUseId === CHILD_ID);
@@ -994,7 +994,7 @@ describe('XML task-notification (queue-operation / attachment)', () => {
     expect(subs).toHaveLength(1);
     expect(subs[0].status).toBe('completed');
     expect(subs[0].summary).toBe('verify gate completed (exit 0)');
-    // The summary should become the latest progress event so SubagentBar
+    // The summary should become the latest progress event so the subagent row
     // replaces "Waiting for first progress event…" with the summary line.
     expect(subs[0].events).toHaveLength(1);
     expect(subs[0].latest?.description).toBe('verify gate completed (exit 0)');
@@ -1006,7 +1006,7 @@ describe('XML task-notification (queue-operation / attachment)', () => {
     // stats: the `toolUseResult` totals `readSubagentMeta` reads are absent
     // from the async-launch ACK, and no structured task_notification is
     // written to the JSONL at all. Dropping it blanks the numbers on every
-    // SubagentBar row.
+    // subagent row.
     const withUsage = [
       '<task-notification>',
       `<task-id>bgtask1</task-id>`,
@@ -1486,7 +1486,7 @@ describe('forwarded subagent text (--forward-subagent-text)', () => {
     const owned = subs.find((s) => s.toolUseId === TOOL_USE_ID_2);
     expect(owned?.parentToolUseId).toBe(TOOL_USE_ID);
     // Nested rows share the owner's colour — the indent is what tells them
-    // apart from a sibling (see SubagentBar).
+    // apart from a sibling (see BackgroundWorkRows).
     expect(owned?.colorIndex).toBe(owner?.colorIndex);
     // ...and render directly beneath their owner.
     expect(subs[0].toolUseId).toBe(TOOL_USE_ID);

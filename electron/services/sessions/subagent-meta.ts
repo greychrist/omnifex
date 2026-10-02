@@ -1,6 +1,6 @@
 // Sessions module — subagent metadata reader.
 //
-// The SubagentBar in the renderer is built from the parent session's
+// The subagent rows in the renderer is built from the parent session's
 // message stream (task_started / task_progress / task_notification +
 // tool_result). That stream does NOT carry two things the user wants to
 // see per subagent:
@@ -19,7 +19,7 @@
 // session JSONL for `toolUseResult.agentId` lines (giving the
 // tool_use_id → {agentId, stats} mapping), then reads each referenced
 // subagent file for the model, and returns a map keyed by `tool_use_id`
-// (the key the SubagentBar rows are already keyed by).
+// (the key the subagent rows are already keyed by).
 
 import path from 'node:path';
 import fs from 'node:fs';
@@ -168,7 +168,7 @@ function readSidecars(deps: SubagentMetaFs, subagentsDir: string): SubagentSidec
       spawnDepth?: unknown;
     };
     // Without a toolUseId there is no key to file the entry under — the
-    // SubagentBar rows are keyed by the dispatching Task's tool_use id.
+    // subagent rows are keyed by the dispatching Task's tool_use id.
     if (typeof o.toolUseId !== 'string' || o.toolUseId.length === 0) continue;
     out.push({
       agentId: match[1],

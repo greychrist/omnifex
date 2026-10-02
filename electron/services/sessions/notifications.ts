@@ -67,7 +67,7 @@ function formatDuration(ms: number | null): string {
  * work is still running.
  *
  * The summary is deliberately not in the body — an agent's final report can
- * be pages long, and the row in the SubagentBar already carries it.
+ * be pages long, and its subagent row already carries it.
  */
 export function dispatchAgentNotification(args: DispatchAgentArgs): void {
   const { tabId, projectPath, description, event, sendToRenderer, notificationHooks } = args;

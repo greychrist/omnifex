@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { render, cleanup, screen, fireEvent, act } from '@testing-library/react';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { SubagentBar } from '@/components/SubagentBar';
+import { SubagentRow, ShellRow } from '@/components/BackgroundWorkRows';
 import type { Subagent } from '@/lib/subagentStreams';
 import type { BackgroundShell, TaskOutputTail } from '@/lib/backgroundShells';
 
@@ -18,49 +18,20 @@ function makeSub(overrides: Partial<Subagent> & Pick<Subagent, 'toolUseId' | 'st
 
 afterEach(() => { cleanup(); });
 
-describe('SubagentBar header spinner', () => {
-  beforeEach(() => {
-    // Keep the bar collapsed so only header chrome renders.
-    window.localStorage.setItem('greychrist.subagentBar.collapsed', '1');
-  });
-
-  it('renders exactly one spinner while a subagent is running', () => {
-    const subs: Subagent[] = [
-      makeSub({ toolUseId: 'a', status: 'running' }),
-      makeSub({ toolUseId: 'b', status: 'completed' }),
-    ];
-    const { container } = render(<SubagentBar subagents={subs} />);
-    // The "N running" pill carries the only spinner; no redundant
-    // standalone status spinner beside it.
-    const spinners = container.querySelectorAll('.animate-spin');
-    expect(spinners.length).toBe(1);
-  });
-
-  it('renders no spinner when nothing is running', () => {
-    const subs: Subagent[] = [makeSub({ toolUseId: 'b', status: 'completed' })];
-    const { container } = render(<SubagentBar subagents={subs} />);
-    expect(container.querySelectorAll('.animate-spin').length).toBe(0);
-  });
-});
-
-describe('SubagentBar row meta', () => {
-  beforeEach(() => {
-    // Expand so the per-subagent rows (and their meta) render.
-    window.localStorage.setItem('greychrist.subagentBar.collapsed', '0');
-  });
-
+describe('SubagentRow meta', () => {
   it('shows a short model label and authoritative stats in the row meta', () => {
-    const subs: Subagent[] = [
-      makeSub({
-        toolUseId: 'a',
-        status: 'completed',
-        model: 'claude-haiku-4-5-20251001',
-        finalTotalTokens: 71591,
-        finalDurationMs: 53161,
-        finalToolUseCount: 20,
-      }),
-    ];
-    const { container } = render(<SubagentBar subagents={subs} />);
+    const { container } = render(
+      <SubagentRow
+        sub={makeSub({
+          toolUseId: 'a',
+          status: 'completed',
+          model: 'claude-haiku-4-5-20251001',
+          finalTotalTokens: 71591,
+          finalDurationMs: 53161,
+          finalToolUseCount: 20,
+        })}
+      />,
+    );
     const text = container.textContent ?? '';
     expect(text).toContain('haiku-4-5'); // 'claude-' prefix + date suffix stripped
     expect(text).toContain('20 tools');
@@ -71,34 +42,28 @@ describe('SubagentBar row meta', () => {
   it('shows the subagent\'s own effort in the row meta', () => {
     // A subagent dispatched with `effort: high` under a `medium` session is
     // exactly the case the meta row exists to disambiguate.
-    const subs: Subagent[] = [
-      makeSub({ toolUseId: 'a', status: 'completed', model: 'claude-opus-4-8', effort: 'high' }),
-    ];
-    const { container } = render(<SubagentBar subagents={subs} />);
+    const { container } = render(
+      <SubagentRow sub={makeSub({ toolUseId: 'a', status: 'completed', model: 'claude-opus-4-8', effort: 'high' })} />,
+    );
     expect(container.textContent ?? '').toContain('high effort');
   });
 
   it('omits the effort bit entirely when the subagent reports none', () => {
     // Most runs use the session default and carry no effort — a bare
     // separator or an empty slot would be noise.
-    const subs: Subagent[] = [
-      makeSub({ toolUseId: 'a', status: 'completed', model: 'claude-opus-4-8' }),
-    ];
-    const { container } = render(<SubagentBar subagents={subs} />);
+    const { container } = render(
+      <SubagentRow sub={makeSub({ toolUseId: 'a', status: 'completed', model: 'claude-opus-4-8' })} />,
+    );
     expect(container.textContent ?? '').not.toContain('effort');
   });
 
   it('indents a nested subagent under its parent', () => {
-    const subs: Subagent[] = [
-      makeSub({ toolUseId: 'a', status: 'completed', description: 'Parent work' }),
-      makeSub({
-        toolUseId: 'b',
-        status: 'completed',
-        parentToolUseId: 'a',
-        description: 'Parent work',
-      }),
-    ];
-    const { container } = render(<SubagentBar subagents={subs} />);
+    const { container } = render(
+      <>
+        <SubagentRow sub={makeSub({ toolUseId: 'a', status: 'completed' })} />
+        <SubagentRow sub={makeSub({ toolUseId: 'b', status: 'completed', parentToolUseId: 'a' })} />
+      </>,
+    );
     const rows = container.querySelectorAll('[data-subagent-row]');
     expect(rows).toHaveLength(2);
     expect(rows[0].getAttribute('data-nested')).toBeNull();
@@ -106,28 +71,48 @@ describe('SubagentBar row meta', () => {
   });
 
   it('prefers authoritative final stats over the live latest entry', () => {
-    const subs: Subagent[] = [
-      makeSub({
-        toolUseId: 'a',
-        status: 'completed',
-        latest: { description: 'mid', totalTokens: 1000, toolUses: 5, durationMs: 2000 },
-        finalTotalTokens: 71591,
-        finalToolUseCount: 20,
-        finalDurationMs: 53161,
-      }),
-    ];
-    const { container } = render(<SubagentBar subagents={subs} />);
+    const { container } = render(
+      <SubagentRow
+        sub={makeSub({
+          toolUseId: 'a',
+          status: 'completed',
+          latest: { description: 'mid', totalTokens: 1000, toolUses: 5, durationMs: 2000 },
+          finalTotalTokens: 71591,
+          finalToolUseCount: 20,
+          finalDurationMs: 53161,
+        })}
+      />,
+    );
     const text = container.textContent ?? '';
     expect(text).toContain('20 tools');
     expect(text).not.toContain('5 tools');
   });
 });
 
-describe('SubagentBar background shells', () => {
-  beforeEach(() => {
-    window.localStorage.setItem('greychrist.subagentBar.collapsed', '0');
-    vi.useFakeTimers();
+describe('SubagentRow foreground / background', () => {
+  it('tags a foreground agent fg', () => {
+    render(<SubagentRow sub={makeSub({ toolUseId: 'a', status: 'running', isBackground: false })} />);
+    expect(screen.getByText('fg')).toBeTruthy();
+    expect(screen.queryByText('bg')).toBeNull();
   });
+
+  it('tags a background agent bg', () => {
+    render(<SubagentRow sub={makeSub({ toolUseId: 'a', status: 'running', isBackground: true })} />);
+    expect(screen.getByText('bg')).toBeTruthy();
+    expect(screen.queryByText('fg')).toBeNull();
+  });
+
+  // Nested rows are synthesised from the sidecar and carry no flag. Saying
+  // nothing is honest; defaulting to fg would be a guess.
+  it('shows no tag when the mode is unknown', () => {
+    render(<SubagentRow sub={makeSub({ toolUseId: 'a', status: 'running', parentToolUseId: 'p' })} />);
+    expect(screen.queryByText('fg')).toBeNull();
+    expect(screen.queryByText('bg')).toBeNull();
+  });
+});
+
+describe('ShellRow', () => {
+  beforeEach(() => { vi.useFakeTimers(); });
   afterEach(() => { vi.useRealTimers(); });
 
   const shell = (o: Partial<BackgroundShell> = {}): BackgroundShell => ({
@@ -139,27 +124,15 @@ describe('SubagentBar background shells', () => {
     await act(async () => { await Promise.resolve(); });
   }
 
-  it('renders when only shells exist, and counts them in the header', () => {
-    render(<SubagentBar subagents={[]} shells={[shell()]} readShellOutput={vi.fn()} />);
-    expect(screen.getByText('npm run dev')).toBeTruthy();
-    expect(screen.getByText('Background:')).toBeTruthy();
-    expect(screen.getByText('1 running')).toBeTruthy();
-  });
-
-  it('keeps the Subagents label when there are no shells', () => {
-    render(<SubagentBar subagents={[makeSub({ toolUseId: 'a', status: 'running' })]} />);
-    expect(screen.getByText('Subagents:')).toBeTruthy();
-  });
-
-  it('reads nothing until a row is opened', () => {
+  it('reads nothing until the row is opened', () => {
     const read = vi.fn(async () => tail('x'));
-    render(<SubagentBar subagents={[]} shells={[shell()]} readShellOutput={read} />);
+    render(<ShellRow shell={shell()} read={read} />);
     expect(read).not.toHaveBeenCalled();
   });
 
   it('polls a running shell while open, as plain text, and stops when closed', async () => {
     const read = vi.fn(async () => tail('\u001b[32mready\u001b[0m on :3000'));
-    render(<SubagentBar subagents={[]} shells={[shell()]} readShellOutput={read} />);
+    render(<ShellRow shell={shell()} read={read} />);
     fireEvent.click(screen.getByText('npm run dev'));
     await flush();
     expect(read).toHaveBeenCalledWith('b1');
@@ -176,7 +149,7 @@ describe('SubagentBar background shells', () => {
 
   it('reads an ended shell once and does not poll', async () => {
     const read = vi.fn(async () => tail('exit 0'));
-    render(<SubagentBar subagents={[]} shells={[shell({ status: 'ended' })]} readShellOutput={read} />);
+    render(<ShellRow shell={shell({ status: 'ended' })} read={read} />);
     fireEvent.click(screen.getByText('npm run dev'));
     await flush();
     await act(async () => { vi.advanceTimersByTime(6000); });
@@ -186,7 +159,7 @@ describe('SubagentBar background shells', () => {
 
   it('says so when the CLI has no output to give', async () => {
     const read = vi.fn(async () => null);
-    render(<SubagentBar subagents={[]} shells={[shell({ status: 'ended' })]} readShellOutput={read} />);
+    render(<ShellRow shell={shell({ status: 'ended' })} read={read} />);
     fireEvent.click(screen.getByText('npm run dev'));
     await flush();
     expect(screen.getByText(/Output not available/)).toBeTruthy();
@@ -196,7 +169,7 @@ describe('SubagentBar background shells', () => {
     const read = vi.fn()
       .mockResolvedValueOnce(tail('step 1'))
       .mockResolvedValue(null);
-    render(<SubagentBar subagents={[]} shells={[shell()]} readShellOutput={read} />);
+    render(<ShellRow shell={shell()} read={read} />);
     fireEvent.click(screen.getByText('npm run dev'));
     await flush();
     await act(async () => { vi.advanceTimersByTime(2000); });
@@ -206,18 +179,16 @@ describe('SubagentBar background shells', () => {
 
   it('notes a truncated tail', async () => {
     const read = vi.fn(async () => ({ output: 'end', totalBytes: 20000, truncated: true }));
-    render(<SubagentBar subagents={[]} shells={[shell()]} readShellOutput={read} />);
+    render(<ShellRow shell={shell()} read={read} />);
     fireEvent.click(screen.getByText('npm run dev'));
     await flush();
     expect(screen.getByText(/last 8 KiB/)).toBeTruthy();
   });
 
   it('dismisses an ended shell', () => {
-    const onDismissShell = vi.fn();
-    render(
-      <SubagentBar subagents={[]} shells={[shell({ status: 'ended' })]} readShellOutput={vi.fn()} onDismissShell={onDismissShell} />,
-    );
+    const onDismiss = vi.fn();
+    render(<ShellRow shell={shell({ status: 'ended' })} read={vi.fn()} onDismiss={onDismiss} />);
     fireEvent.click(screen.getByLabelText('Dismiss'));
-    expect(onDismissShell).toHaveBeenCalledWith('b1');
+    expect(onDismiss).toHaveBeenCalledWith('b1');
   });
 });

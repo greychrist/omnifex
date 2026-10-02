@@ -100,8 +100,7 @@ describe("Popover portal rendering", () => {
   // The popover renders into a portal at document.body so it escapes the
   // trigger's stacking context. Without the portal, a parent with
   // `position: relative` + `z-40` (e.g. the session header) caps the popover
-  // at z-40 globally, letting later z-50 siblings (e.g. SubagentBar's
-  // expanded rows) paint on top of it.
+  // at z-40 globally, letting later z-50 siblings paint on top of it.
   it("renders open content as a child of document.body, not the trigger's parent", () => {
     render(
       <div data-testid="trigger-wrapper" style={{ position: "relative", zIndex: 1 }}>
