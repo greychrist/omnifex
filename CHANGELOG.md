@@ -5,6 +5,15 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.210] — 2026-10-02
+
+### Added
+- Status bar `agents` and `shells` readouts. Each pulses while anything of its kind is running and opens a popover listing the rows, with its own "Clear done". Agent rows are tagged `fg` or `bg` to show whether the turn is waiting on them.
+- Copy button on every fenced code block in the transcript — plain and language-tagged fences, not just markdown ones. Copies the block exactly as written.
+
+### Removed
+- The subagent strip under the transcript. Its rows now live behind the status bar readouts.
+
 ## [0.4.209] — 2026-10-01
 
 ### Added
