@@ -1,5 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
-import { Copy, Check } from "lucide-react";
+import React, { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
@@ -7,7 +6,7 @@ import { useTheme } from "@/hooks";
 import { getClaudeSyntaxTheme } from "@/lib/claudeSyntaxTheme";
 import { buildMarkdownComponents } from "@/lib/markdownComponents";
 import { cn } from "@/lib/utils";
-import { fireAndLog } from "@/lib/fireAndLog";
+import { CopyButton } from "@/components/ui/copy-button";
 
 type View = "rendered" | "source";
 
@@ -30,31 +29,9 @@ interface MarkdownBlockProps {
  */
 export const MarkdownBlock: React.FC<MarkdownBlockProps> = ({ source }) => {
   const [view, setView] = useState<View>("rendered");
-  const [copied, setCopied] = useState(false);
-  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { theme } = useTheme();
   const syntaxTheme = getClaudeSyntaxTheme(theme);
   const mdComponents = buildMarkdownComponents(syntaxTheme);
-
-  useEffect(() => {
-    return () => {
-      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
-    };
-  }, []);
-
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(source);
-      setCopied(true);
-      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
-      copyTimerRef.current = setTimeout(() => {
-        setCopied(false);
-        copyTimerRef.current = null;
-      }, 1200);
-    } catch (err) {
-      console.error("MarkdownBlock copy failed:", err);
-    }
-  };
 
   const pillBase =
     "text-[10px] px-2 py-0.5 font-medium transition-colors";
@@ -86,19 +63,7 @@ export const MarkdownBlock: React.FC<MarkdownBlockProps> = ({ source }) => {
             Source
           </button>
         </div>
-        <button
-          type="button"
-          onClick={fireAndLog('markdown-block:click', handleCopy)}
-          aria-label="Copy source"
-          className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
-          title={copied ? "Copied!" : "Copy source"}
-        >
-          {copied ? (
-            <Check className="h-3.5 w-3.5 text-emerald-500" />
-          ) : (
-            <Copy className="h-3.5 w-3.5" />
-          )}
-        </button>
+        <CopyButton getText={() => source} label="Copy source" />
       </div>
 
       <div className="rounded-md border border-border/50 bg-card overflow-hidden">

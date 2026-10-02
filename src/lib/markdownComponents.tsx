@@ -1,12 +1,42 @@
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import { useRef } from "react";
 import type * as React from "react";
 import type { CSSProperties } from "react";
 import type { Components, ExtraProps } from "react-markdown";
 import type { ComponentProps } from "react";
 import { MarkdownBlock } from "@/components/MarkdownBlock";
+import { CopyButton } from "@/components/ui/copy-button";
 
 type SyntaxTheme = Record<string, CSSProperties>;
 type CodeComponentProps = ComponentProps<"code"> & ExtraProps;
+
+// Pinned over the code card's top-right corner rather than given a header
+// row, so a fence is no taller with it than without. The solid backing is
+// what keeps a long first line from showing through the icon.
+const FENCE_COPY_CLASS = "absolute top-1 right-1 bg-card/90";
+
+/**
+ * An untagged fence: prose's own <pre> card, plus a copy button. The text is
+ * read off the rendered <pre> at click time — the children are React nodes,
+ * and what is on screen is exactly what was inside the fence.
+ *
+ * The wrapper has no padding or border, so the <pre>'s prose margins collapse
+ * through it and the wrapper's top edge IS the card's top edge — which is
+ * where the absolutely positioned button lands.
+ */
+function UntaggedFence(props: ComponentProps<"pre">): React.JSX.Element {
+  const preRef = useRef<HTMLPreElement>(null);
+  return (
+    <div className="relative">
+      <pre ref={preRef} {...props} />
+      <CopyButton
+        label="Copy code"
+        getText={() => preRef.current?.textContent?.replace(/\n$/, "") ?? ""}
+        className={FENCE_COPY_CLASS}
+      />
+    </div>
+  );
+}
 
 /**
  * Returns the `components` map for `react-markdown`'s ReactMarkdown component.
@@ -16,6 +46,10 @@ type CodeComponentProps = ComponentProps<"code"> & ExtraProps;
  * - Any other `language-*`              → Prism <SyntaxHighlighter>
  * - No language class                   → plain <code> (covers inline code
  *                                          and fenced-but-untagged blocks)
+ *
+ * Every fenced block gets a copy button: untagged ones on the <pre> (see
+ * `UntaggedFence`), tagged ones on their card, markdown ones in
+ * MarkdownBlock's own toolbar. Inline code never reaches either path.
  *
  * `react-markdown` v9 removed the `inline` prop on the `code` component;
  * dispatch is by className alone, since v9 never assigns a `language-*`
@@ -60,7 +94,7 @@ export function buildMarkdownComponents(
       if (isTagged) {
         return <>{children}</>;
       }
-      return <pre {...props}>{children}</pre>;
+      return <UntaggedFence {...props}>{children}</UntaggedFence>;
     },
     code({ node: _node, className, children, ...props }: CodeComponentProps) {
       const match = /language-(\w+)/.exec(className || "");
@@ -90,7 +124,7 @@ export function buildMarkdownComponents(
         // from `.prose pre`) is overridden via inline customStyle, which
         // always beats external CSS — so the wrapper's chrome stays the
         // only visible card.
-        <div className="rounded-md border border-border/50 bg-card overflow-hidden my-3">
+        <div className="relative rounded-md border border-border/50 bg-card overflow-hidden my-3">
           <SyntaxHighlighter
             style={syntaxTheme}
             language={lang}
@@ -106,6 +140,7 @@ export function buildMarkdownComponents(
           >
             {src}
           </SyntaxHighlighter>
+          <CopyButton label="Copy code" getText={() => src} className={FENCE_COPY_CLASS} />
         </div>
       ) : (
         <code className={className} {...props}>

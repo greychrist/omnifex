@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, cleanup } from "@testing-library/react";
+import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
+import { render, cleanup, screen, fireEvent, waitFor } from "@testing-library/react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -154,5 +154,51 @@ describe("buildMarkdownComponents", () => {
     expect(codeEl).toBeTruthy();
     expect(container.querySelector("pre")).toBeNull();
     expect(container.textContent).toContain("plain text");
+  });
+});
+
+describe("buildMarkdownComponents — copy buttons", () => {
+  let writeText: ReturnType<typeof vi.fn>;
+  beforeEach(() => {
+    writeText = vi.fn(async () => {});
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    });
+  });
+
+  const renderMd = (md: string) =>
+    render(<ReactMarkdown components={buildMarkdownComponents({})}>{md}</ReactMarkdown>);
+
+  // The case that prompted this: a prompt handed over in a bare fence, with
+  // shell syntax that must survive the copy byte-for-byte.
+  it("copies an untagged fence exactly as written", async () => {
+    const body = 'echo $((i*100/40)) "%%"\n  indented line';
+    renderMd("```\n" + body + "\n```\n");
+    fireEvent.click(screen.getByLabelText("Copy code"));
+    await waitFor(() => { expect(writeText).toHaveBeenCalledWith(body); });
+  });
+
+  it("copies a tagged fence's source, not its highlighted markup", async () => {
+    const body = "const x = 1;\nconst y = 2;";
+    renderMd("```typescript\n" + body + "\n```\n");
+    fireEvent.click(screen.getByLabelText("Copy code"));
+    await waitFor(() => { expect(writeText).toHaveBeenCalledWith(body); });
+  });
+
+  it("says it copied", async () => {
+    renderMd("```\nhello\n```\n");
+    fireEvent.click(screen.getByLabelText("Copy code"));
+    await waitFor(() => { expect(screen.getByTitle("Copied!")).toBeTruthy(); });
+  });
+
+  it("gives each fence its own button", () => {
+    renderMd("```\none\n```\n\n```bash\ntwo\n```\n");
+    expect(screen.getAllByLabelText("Copy code")).toHaveLength(2);
+  });
+
+  it("puts no button on inline code", () => {
+    renderMd("Run `npm test` first.");
+    expect(screen.queryByLabelText("Copy code")).toBeNull();
   });
 });
