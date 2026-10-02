@@ -42,6 +42,83 @@ import { buildClaudeEnv } from './util/claude-env';
  *    the CLI answers with the error "Side question cancelled". Its own
  *    deadline is 600 s. Only the SDK's `askSideQuestion()` documents it.
  *
+ * Last review: 2.1.287 -> 2.1.288 on 2026-10-02. Findings:
+ *
+ *  Changelog coverage: one version in range, 2.1.288, and it has an entry
+ *  (~90 lines). Both endpoints are installed, so the wire claims below are a
+ *  real binary diff of 2.1.287 vs 2.1.288.
+ *
+ *  Clean pass: nothing to change.
+ *
+ *  WIRE DIFF, reported both ways round:
+ *
+ *    - Merge-strategy map: set-identical (40 entries). No new record type.
+ *    - `hook_event_name` 33, SDK `this.request({subtype})` 54,
+ *      `type:"control_*"` 4, `origin:{kind}` 12: all set-identical.
+ *      `turnOrigin` 18 -> 19 and `turnPosition` 12: minifier noise
+ *      (renamed identifiers); the `turnOrigin` sanitizer set is unchanged.
+ *    - `subtype:` 149 -> 150, none removed: `system/instruction_size_warning
+ *      {total_chars, total_limit_chars, file_count, largest_chars?}`. Never
+ *      reaches us: built only when non-interactive AND entrypoint is
+ *      `claude-desktop` / `claude-desktop-3p` (the `Dar` set) AND not
+ *      CLAUDECODE, behind a feature flag, and never written to the
+ *      transcript. We set no CLAUDE_CODE_ENTRYPOINT. Left out of
+ *      jsonlClassifier.ts SYSTEM_SUBTYPES on purpose.
+ *    - `type:` literals 978 -> 981: `instruction_size_warning` above, plus
+ *      `addition` / `removal` from a bundled SDK tool-list helper — not wire.
+ *    - `.describe()` strings: 1948 -> 1954. The size-warning fields (5);
+ *      a new optional `tag` on `system/informational` ("opaque feature tag
+ *      ... hosts ignore values they do not know") — we classify
+ *      `informational` already (jsonlClassifier.ts:263) and read no `tag`;
+ *      an LSP `requestTimeout` field; three `@internal` mod/ui-handle
+ *      rewordings; one `@internal` `stage_file` flag removed. No new field
+ *      on `user` / `assistant` input and no new host obligation.
+ *    - `/usage` anchors: all count-identical except `MCP servers` 448 -> 449
+ *      (help text). `usage-runner/parser.ts` is safe.
+ *
+ *  Checked and inert for us:
+ *
+ *   - "Background command time limit now applies only in unattended
+ *     sessions": the predicate is `XW()` — non-interactive and entrypoint
+ *     not desktop / local-agent / vscode. A stream-json OmniFex session is
+ *     non-interactive with no entrypoint, so background Bash still stops at
+ *     its `timeout` (default 30 min, max 2 h) exactly as on 2.1.287. Not an
+ *     opportunity: the only exemption is spoofing a Desktop entrypoint,
+ *     which also opts into Desktop-only behaviour (the size warning above).
+ *   - Mid-response API timeouts: non-interactive sessions now continue from
+ *     the partial reply. No new subtype; not probed live.
+ *   - Resume fixes (last response unsaved, transcript cut short mid-load,
+ *     thinking dropped for <= 2.1.286 conversations, compaction-restored
+ *     files dropped): all in our favour, we `--resume` constantly.
+ *   - Headless SIGTERM ignored with SIGCONT: in our favour on close.
+ *   - Cross-session message "delivered" notice: no new frame.
+ *   - Auto mode: denials no longer cite a Bash rule for non-Bash tools;
+ *     classifier overflow now compacts (existing `compact_boundary` path).
+ *   - `claude project purge` -> `claude purge`: we invoke neither.
+ *   - `idle_prompt` hook fix, InstructionsLoaded `agent_id` / effort,
+ *     PreToolUse / PermissionRequest now block on match failure: we
+ *     install none of these hooks.
+ *
+ * No OmniFex impact: mods (`$.ui.selection`, button/pane fixes), cloud `gh
+ * api`, Ctrl+C draft recovery, MCP OAuth re-scope + URL prompt "I'm done",
+ * `/code-review --max-findings`, agents-view Ctrl+F / Alt+arrows / `n:`,
+ * screen reader mode, "Prompt is too long" zero-usage fix, structured
+ * outputs on gateways (`CLAUDE_CODE_DISABLE_STRUCTURED_OUTPUTS`), Bedrock /
+ * Mantle / Vertex auth and classifier fixes, cloud / Cowork sessions,
+ * plugin LSP placeholders + `requestTimeout`, plugin `tool.call` in
+ * worktrees, `git-subdir` / HTTPS fallback / marketplace errors, plugin
+ * reload ending bg sessions, sandbox heredocs, `BASHPID` check, dangerous
+ * `rm` in `bash -c`, OTel `blocked_on_user` / `tool_decision`, retry
+ * watchdog, `/login` save failures + `--bare`, agent teams plugin agents,
+ * MCP 16 MB double call, Desktop `memory` MCP, Chrome screenshots, Artifact
+ * design systems, Windows keyboard, `Agent(...)` tools stall, Claude 3
+ * PDFs, npm auto-updater stub, Remote Control cleanup + credential renewal,
+ * path-scoped rules on Write/Edit, LSP 60 s timeout, first-request 1.5 s
+ * wait, `/autocompact` per model, Sonnet-5.5 classifier pin, "You should
+ * know" wording, `/usage-credits`, Bash prompt reasons, fullscreen,
+ * `/theme`, `/permissions`, VSCode, Cloud sessions, Claude Tag, `claude
+ * plugin test`.
+ *
  * Last review: 2.1.286 -> 2.1.287 on 2026-10-01. Findings:
  *
  *  Changelog coverage: one version in range, 2.1.287, and it has an entry
@@ -3610,7 +3687,7 @@ import { buildClaudeEnv } from './util/claude-env';
  * `~/.claude.json` fix (we read-modify-write that file, never replace it), and
  * the VSCode screen-reader work.
  */
-export const REVIEWED_CLI_VERSION = '2.1.287';
+export const REVIEWED_CLI_VERSION = '2.1.288';
 
 /**
  * app_settings key holding the user's explicit OmniFex-checkout override.
