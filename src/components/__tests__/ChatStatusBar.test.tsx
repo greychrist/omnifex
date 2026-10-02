@@ -14,7 +14,6 @@ const base = {
   link: { connection: 'connected' as const, delivering: true },
   cacheAnchorMs: null,
   cacheTtlMs: null,
-  cacheBusy: false,
 };
 
 afterEach(() => { cleanup(); });
@@ -221,7 +220,6 @@ describe('ChatStatusBar', () => {
         {...base}
         cacheAnchorMs={Date.now() - 60_000}
         cacheTtlMs={5 * 60_000}
-        cacheBusy={false}
       />,
     );
     expect(screen.getByText(/cache .* left \(5m\)/)).toBeTruthy();

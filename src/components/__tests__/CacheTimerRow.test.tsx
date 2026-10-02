@@ -17,12 +17,11 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-const renderRow = (over: { ttlMs?: number | null; anchorMs?: number | null; busy?: boolean } = {}) =>
+const renderRow = (over: { ttlMs?: number | null; anchorMs?: number | null } = {}) =>
   render(
     <CacheTimerRow
       anchorMs={over.anchorMs === undefined ? ANCHOR : over.anchorMs}
       ttlMs={over.ttlMs === undefined ? CACHE_TTL_5M_MS : over.ttlMs}
-      busy={over.busy ?? false}
     />,
   );
 
@@ -93,15 +92,18 @@ describe('CacheTimerRow', () => {
     clearSpy.mockRestore();
   });
 
-  // During a long turn the anchor is still the PREVIOUS assistant message, so a
-  // 5m cache would read "expired" while a fresh write is actually in flight.
-  it('shows a neutral refreshing state while a turn is in flight', () => {
-    renderRow({ busy: true });
-    advance(400_000);
-    const row = screen.getByText(/cache/);
-    expect(row.textContent).toContain('refreshing');
-    expect(row.textContent).not.toContain('expired');
-    expect(row.className).not.toContain('red');
+  // No "refreshing" state: the cache is written by each model call, not by the
+  // turn, so mid-turn the countdown runs from the newest assistant message —
+  // and visibly runs out while the turn waits on a permission prompt.
+  it('restarts the countdown when a new assistant message moves the anchor', () => {
+    const { rerender } = renderRow();
+    advance(300_000);
+    expect(screen.getByText(/cache/).textContent).toContain('expired');
+
+    rerender(<CacheTimerRow anchorMs={Date.now()} ttlMs={CACHE_TTL_5M_MS} />);
+    expect(screen.getByText(/cache/).textContent).toContain('5:00');
+    advance(61_000);
+    expect(screen.getByText(/cache/).textContent).toContain('3:59');
   });
 
   // The TTL is visible in the row itself, not just the tooltip, so a 1h → 5m

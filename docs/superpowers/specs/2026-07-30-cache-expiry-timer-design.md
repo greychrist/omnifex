@@ -143,16 +143,16 @@ A new row directly beneath the context-gauge button, inside the existing
 | `warn` | `cache 48s left` | `text-amber-500` |
 | `critical` | `cache 24s left` | `text-red-500` |
 | `expired` | `cache expired` | `text-muted-foreground` |
-| turn in flight | `cache refreshing…` | `text-muted-foreground` |
 
 Tooltip carries the detail: *"1h prompt cache, last written 18m ago, expires
 14:32."*
 
-**The in-flight case is not cosmetic.** During a long turn the anchor is still
-the *previous* assistant message, so a 5m cache would read "expired" while a
-fresh write is actually in progress. Whenever a turn is in flight the row shows
-a neutral `cache refreshing…` and the tab signal clears. The countdown is only
-meaningful between turns.
+**No in-flight state (changed 2026-10-02).** This originally showed a neutral
+`cache refreshing…` for the whole turn. But the cache is written by each model
+call, not by the turn, and each call lands an assistant message that moves the
+anchor. Between calls — a long tool run, a permission prompt left waiting —
+nothing refreshes it, and "refreshing" hid a 5m cache genuinely expiring under
+an unanswered prompt. The countdown now runs during turns too.
 
 At `expired` the row goes neutral and stops rather than staying red: the cost is
 already sunk, so a red alert would be nagging about the past.
@@ -202,7 +202,6 @@ TDD, in this order:
    - formatter: `m:ss` below ten minutes, `Nm` above
 2. `src/components/__tests__/SessionCard.cacheTimer.test.tsx`
    - fresh / warn / critical / expired rendering under `vi.useFakeTimers()`
-   - `cache refreshing…` while a turn is in flight
    - renders nothing when disabled or when no TTL has been observed
 3. `src/components/__tests__/TabManager.cacheGlyph.test.tsx`
    - glyph appears at `warn`, renders red at `critical`, clears at `expired`

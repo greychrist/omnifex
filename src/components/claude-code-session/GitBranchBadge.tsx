@@ -21,6 +21,9 @@ export interface GitBranchBadgeProps {
   /** Open the working-tree diff viewer. Omitted where there is nowhere to
    *  open it — the branch-colour preview in settings, for instance. */
   onViewChanges?: () => void;
+  /** `bar` sets the chip in a status bar: the bar's 10px type, and
+   *  block-level so it centres with the bar's readouts. */
+  size?: 'header' | 'bar';
 }
 
 // WCAG relative luminance — used only to detect TRUE near-black picks where
@@ -50,7 +53,12 @@ export const GitBranchBadge: React.FC<GitBranchBadgeProps> = ({
   path,
   error,
   onViewChanges,
+  size = 'header',
 }) => {
+  const textSize = size === 'bar' ? 'text-[10px]' : 'text-[11px]';
+  // An inline-flex trigger inside the Popover's block wrapper opens a line
+  // box and sits ~1px high among a bar's readouts.
+  const display = size === 'bar' ? 'flex' : 'inline-flex';
   const [open, setOpen] = React.useState(false);
 
   const titleParts = [`Git branch: ${name}`];
@@ -94,7 +102,8 @@ export const GitBranchBadge: React.FC<GitBranchBadgeProps> = ({
     return (
       <span
         className={cn(
-          'inline-flex items-center gap-1 px-2 py-0.5 rounded border text-[11px] font-mono font-medium',
+          'inline-flex items-center gap-1 px-2 py-0.5 rounded border font-mono font-medium',
+          textSize,
           isTrunk && 'bg-black text-white border-black',
         )}
         style={inlineStyle}
@@ -116,7 +125,9 @@ export const GitBranchBadge: React.FC<GitBranchBadgeProps> = ({
         <button
           type="button"
           className={cn(
-            'inline-flex items-center gap-1 px-2 py-0.5 rounded border text-[11px] font-mono font-medium cursor-pointer',
+            display,
+            'items-center gap-1 px-2 py-0.5 rounded border font-mono font-medium cursor-pointer',
+            textSize,
             'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
             isTrunk && 'bg-black text-white border-black',
           )}

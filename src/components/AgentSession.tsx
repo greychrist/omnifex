@@ -83,6 +83,8 @@ import { AccountCard } from "./AccountCard";
 import { SessionCard } from "./SessionCard";
 import { SessionStatusItem } from "@/components/SessionStatusItem";
 import { AccountStatusItem } from "@/components/AccountStatusItem";
+import { NewSessionButton } from "@/components/NewSessionButton";
+import { BranchStatusBar } from "@/components/claude-code-session/BranchStatusBar";
 import { useAccountUsage } from "@/hooks/useAccountUsage";
 import { ChatStatusBar } from "./ChatStatusBar";
 import { SessionHeaderResizeHandle } from "./SessionHeaderResizeHandle";
@@ -135,6 +137,10 @@ const pickGerund = (): string => GERUNDS[Math.floor(Math.random() * GERUNDS.leng
 // (driven by the back button + the worktree column's default 5.25rem cap).
 // Once the user drags the bottom edge, the inner worktree list flexes to fill
 // the available vertical space instead of clamping to 3-and-a-peek.
+// Trial: the account and session widgets hidden, to judge the status-bar
+// readouts on their own. Flip back to true to restore them.
+const SHOW_HEADER_WIDGETS = false;
+
 const HEADER_HEIGHT_KEY = 'omnifex.session-header-height';
 const MIN_HEADER_HEIGHT = 60;
 const MAX_HEADER_HEIGHT = 600;
@@ -482,11 +488,16 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   // Measured live — the badge wraps on long branch names, so a constant
   // floor would under- or over-shoot.
   const branchColRef = useRef<HTMLDivElement>(null);
+  // The back column too, which holds the New session button in the trial
+  // layout.
+  const backColRef = useRef<HTMLDivElement>(null);
   const [headerMinHeight, setHeaderMinHeight] = useState(MIN_HEADER_HEIGHT);
   const hasBranchCard = !!sessionGit?.project?.branch;
   useEffect(() => {
-    const el = branchColRef.current;
-    if (!el) {
+    const els = [branchColRef.current, backColRef.current].filter(
+      (el): el is HTMLDivElement => el !== null,
+    );
+    if (els.length === 0) {
       setHeaderMinHeight(MIN_HEADER_HEIGHT);
       return;
     }
@@ -494,13 +505,13 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
       setHeaderMinHeight(
         Math.max(
           MIN_HEADER_HEIGHT,
-          Math.ceil(el.getBoundingClientRect().height) + HEADER_VERTICAL_CHROME,
+          ...els.map((el) => Math.ceil(el.getBoundingClientRect().height) + HEADER_VERTICAL_CHROME),
         ),
       );
     };
     update();
     const observer = new ResizeObserver(update);
-    observer.observe(el);
+    for (const el of els) observer.observe(el);
     return () => { observer.disconnect(); };
   }, [hasBranchCard]);
   const handleHeaderResizeStart = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
@@ -2467,6 +2478,198 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
         : messages.length === 0
           ? 'Nothing to clear'
           : undefined;
+  const confirmAndClear = (): void => {
+    if (window.confirm('Clear the conversation and start a fresh session? This wipes all messages in this tab and cannot be undone.')) {
+      void handleClear();
+    }
+  };
+
+  // The chat status bar, below the header row or — while the header widgets
+  // are hidden — inside it, beside the back button and over the branch.
+  const renderStatusBar = (inHeaderRow: boolean): React.JSX.Element => (
+    <ChatStatusBar
+      className={inHeaderRow ? "p-0 bg-transparent" : undefined}
+      link={daemonLink}
+      activitySignal={sessionActivity}
+      cacheAnchorMs={cacheAnchorMs}
+      cacheTtlMs={cacheTtlMs}
+      title={sessionTitle}
+      // A rename rides the CLI's control channel, which only a live
+      // session has — see queries.ts liveEngine().
+      canRename={isSessionActive}
+      onRename={handleRenameSession}
+      onSuggest={handleSuggestTitle}
+      background={backgroundWork}
+      // Shown beside the account widget for now, so the two can be
+      // compared before one of them goes. Same inputs as the widget.
+      account={
+        accountResolution ? (
+          <AccountStatusItem
+            accountName={accountResolution.account.name}
+            hasCost={accountResolution.account.has_cost}
+            agent={agent}
+            configDir={accountResolution.account.config_dir}
+            matchType={accountResolution.match_type}
+            matchDetail={accountResolution.match_detail}
+            verification={sessionVerification}
+            signedInEmail={accountSignedInEmail}
+            onRecheck={recheckIdentity}
+            sessionAuthFailure={sessionAuthFailure}
+            onRestart={accountOnRestart}
+            restarting={restartingSession}
+            sdkAccount={sdkAccountInfo}
+            usage={accountUsage}
+            fiveHourRateLimit={rateLimitSnapshots.five_hour ?? null}
+            sevenDayRateLimit={rateLimitSnapshots.seven_day ?? null}
+          />
+        ) : undefined
+      }
+      // Shown beside the session widget for now, so the two can be
+      // compared before one of them goes. Same inputs as the widget.
+      session={
+        <SessionStatusItem
+          totalTokens={totalTokens}
+          contextLimit={contextLimit}
+          contextUsage={contextUsage}
+          contextLevelSignal={contextLevel}
+          sessionStatus={displayStatus}
+          promptStatus={promptStatus}
+          waitingFor={tabWaitingFor}
+          sessionId={claudeSessionId}
+          pendingAction={sessionAction}
+          recentEvents={sessionEvents}
+          onSignalsRead={() => { signals.markRead('session'); }}
+          onCompact={fireAndLog('claude-code-session:compact', handleCompact)}
+          compactDisabled={isLoading || !isSessionActive}
+        />
+      }
+      controls={
+        <SessionControlPickers
+          engine={agent}
+          configDir={accountResolution?.account.config_dir}
+          activeDefaultModel={liveDefaultModel}
+          model={selectedModel}
+          setModel={(newModel) => {
+            // Updates selectedModel AND, if a session is running, pushes
+            // the switch to the CLI immediately via sessionSetModel(),
+            // then refreshes context usage so the header summary's live
+            // model signal tracks the switch (see sessionModelChange.ts).
+            void changeSessionModel(newModel, {
+              tabId: tabIdRef.current,
+              hasLiveSession: !!persistentSessionRef.current,
+              api,
+              setSelectedModel,
+              setContextUsage,
+              appendMessage,
+              onError: (err) => {
+                console.error('[sessions] sessionSetModel failed:', err);
+              },
+            });
+          }}
+          effort={effort}
+          setEffort={(level) => {
+            setEffort(level as EffortLevel);
+            if (persistentSessionRef.current) {
+              const tid = tabIdRef.current;
+              api.sessionSetEffort(tid, level as EffortLevel).then(() => {
+                // Drop a live transcript marker so the change is visible in
+                // scrollback. Effort never reaches the JSONL, so this is the
+                // only record — live-session only (not persisted).
+                appendMessage({
+                  kind: 'control-change',
+                  control: 'effort',
+                  value: String(level),
+                  sessionId: tid,
+                  receivedAt: new Date().toISOString(),
+                });
+              }).catch((err: unknown) => {
+                console.error('[sessions] sessionSetEffort failed:', err);
+              });
+            }
+          }}
+          permissionMode={permissionMode}
+          setPermissionMode={changePermissionMode}
+          // The CLI makes Bypass reachable mid-session only for a process
+          // spawned in it. A live session that was not gets a restart,
+          // resuming the conversation, rather than a pick that would fail.
+          onRestartInBypass={
+            agent === 'claude' && isSessionActive && launchPermissionMode !== 'bypassPermissions'
+              ? () => {
+                  setPermissionMode('bypassPermissions');
+                  void handleRestartSession({ permissionMode: 'bypassPermissions' });
+                }
+              : undefined
+          }
+        />
+      }
+    />
+  );
+
+  const branchBlock = gitStatus?.branch ? (
+    <div
+      className={cn(
+        "flex items-start gap-3 rounded-md border-0 bg-background/40 px-2 py-1 shadow-[0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_30%,transparent),2px_2px_4px_rgb(0_0_0/0.08)]",
+        headerHeight != null && "self-stretch min-h-0",
+      )}
+    >
+      <div ref={branchColRef} className="flex flex-col items-start gap-0.5">
+        <HeaderLabel>branch</HeaderLabel>
+        <GitBranchBadge
+          name={gitStatus.branch}
+          changed={gitStatus.changed}
+          untracked={gitStatus.untracked}
+          color={branchColorResolution.colors[gitStatus.branch] ?? null}
+          isTrunk={branchColorResolution.trunkBlack.has(gitStatus.branch)}
+          path={projectPath}
+          error={gitStatus.error}
+          onViewChanges={() => { setShowDiffOverlay(true); }}
+        />
+      </div>
+      {worktreeList.length > 0 && (
+        <div
+          className={cn(
+            "flex flex-col items-start gap-0.5",
+            headerHeight != null && "self-stretch min-h-0",
+          )}
+        >
+          <HeaderLabel>worktrees ({worktreeList.length})</HeaderLabel>
+          <div
+            className={cn(
+              "flex flex-col items-start gap-1 overflow-y-auto pr-1 scrollbar-thin",
+              headerHeight != null ? "flex-1 min-h-0" : "max-h-[5.25rem]",
+            )}
+          >
+            {worktreeList.map((wt) => {
+              const branchName = wt.branch ?? '(detached)';
+              return (
+                <div key={wt.path} title={wt.path}>
+                  <GitBranchBadge
+                    name={branchName}
+                    changed={wt.changed}
+                    untracked={wt.untracked}
+                    color={branchColorResolution.colors[branchName] ?? null}
+                    isTrunk={branchColorResolution.trunkBlack.has(branchName)}
+                    path={wt.path}
+                    error={wt.error}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+      {gitWatchId && (
+        <div className="flex flex-col items-start gap-0.5">
+          <HeaderLabel>&nbsp;</HeaderLabel>
+          <GitWatchStatusIcon
+            errors={gitWatchErrors}
+            onReconnect={() => api.reconnectSessionGitWatch(gitWatchId)}
+            snapshotKey={sessionGit}
+          />
+        </div>
+      )}
+    </div>
+  ) : null;
 
   return (
     <TooltipProvider>
@@ -2501,23 +2704,34 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
             className="relative flex items-start gap-2 px-4 py-1.5"
             style={headerHeight != null ? { height: Math.max(headerHeight, headerMinHeight) } : undefined}
           >
-            <TooltipSimple content="Back to Project page" side="bottom">
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={handleBackToProject}
-                className="h-12 w-12 p-0 rounded-sm border-0 shadow-[0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_30%,transparent),2px_2px_4px_rgb(0_0_0/0.08)]"
-                aria-label="Back to Project page"
-              >
-                <ArrowLeft className="h-6 w-6" />
-              </Button>
-            </TooltipSimple>
+            <div ref={backColRef} className="flex gap-1">
+              <TooltipSimple content="Back to Project page" side="bottom">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleBackToProject}
+                  // Bar-sized beside New session in the trial layout; the
+                  // full 48px square beside the widgets.
+                  className={cn(SHOW_HEADER_WIDGETS ? "h-12 w-12" : "h-7 w-7", "p-0 rounded-sm border-0 shadow-[0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_30%,transparent),2px_2px_4px_rgb(0_0_0/0.08)]")}
+                  aria-label="Back to Project page"
+                >
+                  <ArrowLeft className={SHOW_HEADER_WIDGETS ? "h-6 w-6" : "h-4 w-4"} />
+                </Button>
+              </TooltipSimple>
+              {!SHOW_HEADER_WIDGETS && (
+                <NewSessionButton
+                  onClick={confirmAndClear}
+                  disabled={clearButtonDisabled}
+                  reason={clearButtonReason}
+                />
+              )}
+            </div>
             <span aria-hidden="true" className="self-stretch w-px bg-foreground/30 shrink-0 mx-1" />
             {/* The agent (Claude / Codex) is now rendered inside the
                 AccountBadge as the trailing brand mark. Standalone
                 AgentBadge removed; access to the account picker moves
                 to the AccountCard's existing details popover (future work). */}
-            {accountResolution && (
+            {SHOW_HEADER_WIDGETS && accountResolution && (
               <div className="relative flex">
               <AccountCard
                 accountName={accountResolution.account.name}
@@ -2539,73 +2753,39 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
               />
               </div>
             )}
-            {gitStatus?.branch && (
-              <div
-                className={cn(
-                  "flex items-start gap-3 rounded-md border-0 bg-background/40 px-2 py-1 shadow-[0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_30%,transparent),2px_2px_4px_rgb(0_0_0/0.08)]",
-                  headerHeight != null && "self-stretch min-h-0",
-                )}
-              >
-                <div ref={branchColRef} className="flex flex-col items-start gap-0.5">
-                  <HeaderLabel>branch</HeaderLabel>
-                  <GitBranchBadge
-                    name={gitStatus.branch}
-                    changed={gitStatus.changed}
-                    untracked={gitStatus.untracked}
-                    color={branchColorResolution.colors[gitStatus.branch] ?? null}
-                    isTrunk={branchColorResolution.trunkBlack.has(gitStatus.branch)}
-                    path={projectPath}
-                    error={gitStatus.error}
-                    onViewChanges={() => { setShowDiffOverlay(true); }}
+            {SHOW_HEADER_WIDGETS ? branchBlock : (
+              // Top-aligned: the bar is the row's first line, the branch under it.
+              // Measured as a whole for the header's minimum height: both bars.
+              <div ref={branchColRef} className="flex min-w-0 flex-1 flex-col items-start gap-1.5">
+                <div className="w-full">{renderStatusBar(true)}</div>
+                {gitStatus?.branch && (
+                  <BranchStatusBar
+                    branch={{
+                      name: gitStatus.branch,
+                      changed: gitStatus.changed,
+                      untracked: gitStatus.untracked,
+                      path: projectPath,
+                      error: gitStatus.error,
+                      onViewChanges: () => { setShowDiffOverlay(true); },
+                    }}
+                    worktrees={worktreeList}
+                    colorFor={(name) => ({
+                      color: branchColorResolution.colors[name] ?? null,
+                      isTrunk: branchColorResolution.trunkBlack.has(name),
+                    })}
+                    watch={gitWatchId ? (
+                      <GitWatchStatusIcon
+                        errors={gitWatchErrors}
+                        onReconnect={() => api.reconnectSessionGitWatch(gitWatchId)}
+                        snapshotKey={sessionGit}
+                      />
+                    ) : undefined}
                   />
-                </div>
-                {worktreeList.length > 0 && (
-                  <div
-                    className={cn(
-                      "flex flex-col items-start gap-0.5",
-                      headerHeight != null && "self-stretch min-h-0",
-                    )}
-                  >
-                    <HeaderLabel>worktrees ({worktreeList.length})</HeaderLabel>
-                    <div
-                      className={cn(
-                        "flex flex-col items-start gap-1 overflow-y-auto pr-1 scrollbar-thin",
-                        headerHeight != null ? "flex-1 min-h-0" : "max-h-[5.25rem]",
-                      )}
-                    >
-                      {worktreeList.map((wt) => {
-                        const branchName = wt.branch ?? '(detached)';
-                        return (
-                          <div key={wt.path} title={wt.path}>
-                            <GitBranchBadge
-                              name={branchName}
-                              changed={wt.changed}
-                              untracked={wt.untracked}
-                              color={branchColorResolution.colors[branchName] ?? null}
-                              isTrunk={branchColorResolution.trunkBlack.has(branchName)}
-                              path={wt.path}
-                              error={wt.error}
-                            />
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-                {gitWatchId && (
-                  <div className="flex flex-col items-start gap-0.5">
-                    <HeaderLabel>&nbsp;</HeaderLabel>
-                    <GitWatchStatusIcon
-                      errors={gitWatchErrors}
-                      onReconnect={() => api.reconnectSessionGitWatch(gitWatchId)}
-                      snapshotKey={sessionGit}
-                    />
-                  </div>
                 )}
               </div>
             )}
             {/* mode and output-style controls have moved to the chat bar (see FloatingPromptInput below). */}
-            <SessionCard
+            {SHOW_HEADER_WIDGETS && <SessionCard
               className="ml-auto min-w-0"
               activitySignal={sessionActivity}
               contextLevelSignal={contextLevel}
@@ -2622,11 +2802,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
               contextUsage={contextUsage}
               sessionStatus={displayStatus}
               onReconnect={() => void handleReconnect()}
-              onClear={() => {
-                if (window.confirm('Clear the conversation and start a fresh session? This wipes all messages in this tab and cannot be undone.')) {
-                  void handleClear();
-                }
-              }}
+              onClear={confirmAndClear}
               clearDisabled={clearButtonDisabled}
               clearReason={clearButtonReason}
               sessionId={claudeSessionId}
@@ -2643,124 +2819,9 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
                     })
                   : undefined
               }
-            />
+            />}
           </div>
-          <ChatStatusBar
-            link={daemonLink}
-            activitySignal={sessionActivity}
-            cacheAnchorMs={cacheAnchorMs}
-            cacheTtlMs={cacheTtlMs}
-            cacheBusy={isLoading}
-            title={sessionTitle}
-            // A rename rides the CLI's control channel, which only a live
-            // session has — see queries.ts liveEngine().
-            canRename={isSessionActive}
-            onRename={handleRenameSession}
-            onSuggest={handleSuggestTitle}
-            background={backgroundWork}
-            // Shown beside the account widget for now, so the two can be
-            // compared before one of them goes. Same inputs as the widget.
-            account={
-              accountResolution ? (
-                <AccountStatusItem
-                  accountName={accountResolution.account.name}
-                  hasCost={accountResolution.account.has_cost}
-                  agent={agent}
-                  configDir={accountResolution.account.config_dir}
-                  matchType={accountResolution.match_type}
-                  matchDetail={accountResolution.match_detail}
-                  verification={sessionVerification}
-                  signedInEmail={accountSignedInEmail}
-                  onRecheck={recheckIdentity}
-                  sessionAuthFailure={sessionAuthFailure}
-                  onRestart={accountOnRestart}
-                  restarting={restartingSession}
-                  sdkAccount={sdkAccountInfo}
-                  usage={accountUsage}
-                  fiveHourRateLimit={rateLimitSnapshots.five_hour ?? null}
-                  sevenDayRateLimit={rateLimitSnapshots.seven_day ?? null}
-                />
-              ) : undefined
-            }
-            // Shown beside the session widget for now, so the two can be
-            // compared before one of them goes. Same inputs as the widget.
-            session={
-              <SessionStatusItem
-                totalTokens={totalTokens}
-                contextLimit={contextLimit}
-                contextUsage={contextUsage}
-                contextLevelSignal={contextLevel}
-                sessionStatus={displayStatus}
-                promptStatus={promptStatus}
-                waitingFor={tabWaitingFor}
-                sessionId={claudeSessionId}
-                pendingAction={sessionAction}
-                recentEvents={sessionEvents}
-                onSignalsRead={() => { signals.markRead('session'); }}
-                onCompact={fireAndLog('claude-code-session:compact', handleCompact)}
-                compactDisabled={isLoading || !isSessionActive}
-              />
-            }
-            controls={
-              <SessionControlPickers
-                engine={agent}
-                configDir={accountResolution?.account.config_dir}
-                activeDefaultModel={liveDefaultModel}
-                model={selectedModel}
-                setModel={(newModel) => {
-                  // Updates selectedModel AND, if a session is running, pushes
-                  // the switch to the CLI immediately via sessionSetModel(),
-                  // then refreshes context usage so the header summary's live
-                  // model signal tracks the switch (see sessionModelChange.ts).
-                  void changeSessionModel(newModel, {
-                    tabId: tabIdRef.current,
-                    hasLiveSession: !!persistentSessionRef.current,
-                    api,
-                    setSelectedModel,
-                    setContextUsage,
-                    appendMessage,
-                    onError: (err) => {
-                      console.error('[sessions] sessionSetModel failed:', err);
-                    },
-                  });
-                }}
-                effort={effort}
-                setEffort={(level) => {
-                  setEffort(level as EffortLevel);
-                  if (persistentSessionRef.current) {
-                    const tid = tabIdRef.current;
-                    api.sessionSetEffort(tid, level as EffortLevel).then(() => {
-                      // Drop a live transcript marker so the change is visible in
-                      // scrollback. Effort never reaches the JSONL, so this is the
-                      // only record — live-session only (not persisted).
-                      appendMessage({
-                        kind: 'control-change',
-                        control: 'effort',
-                        value: String(level),
-                        sessionId: tid,
-                        receivedAt: new Date().toISOString(),
-                      });
-                    }).catch((err: unknown) => {
-                      console.error('[sessions] sessionSetEffort failed:', err);
-                    });
-                  }
-                }}
-                permissionMode={permissionMode}
-                setPermissionMode={changePermissionMode}
-                // The CLI makes Bypass reachable mid-session only for a process
-                // spawned in it. A live session that was not gets a restart,
-                // resuming the conversation, rather than a pick that would fail.
-                onRestartInBypass={
-                  agent === 'claude' && isSessionActive && launchPermissionMode !== 'bypassPermissions'
-                    ? () => {
-                        setPermissionMode('bypassPermissions');
-                        void handleRestartSession({ permissionMode: 'bypassPermissions' });
-                      }
-                    : undefined
-                }
-              />
-            }
-          />
+          {SHOW_HEADER_WIDGETS && renderStatusBar(false)}
           <SessionHeaderResizeHandle
             resizing={headerResizing}
             canReset={headerHeight != null}

@@ -8,12 +8,10 @@ import {
 } from "@/lib/cacheExpiry";
 
 export interface CacheTimerRowProps {
-  /** Last assistant turn's timestamp — when the TTL last restarted. */
+  /** Newest assistant message's timestamp — when the TTL last restarted. */
   anchorMs: number | null;
   /** TTL the CLI actually used, observed from usage.cache_creation. */
   ttlMs: number | null;
-  /** True while a main turn is in flight. */
-  busy: boolean;
   className?: string;
 }
 
@@ -30,7 +28,6 @@ export interface CacheTimerRowProps {
 export const CacheTimerRow: React.FC<CacheTimerRowProps> = ({
   anchorMs,
   ttlMs,
-  busy,
   className,
 }) => {
   const [nowMs, setNowMs] = React.useState(() => Date.now());
@@ -39,18 +36,23 @@ export const CacheTimerRow: React.FC<CacheTimerRowProps> = ({
   const expired = tracking && nowMs - anchorMs >= ttlMs;
 
   React.useEffect(() => {
-    // Nothing to count: no observation yet, already expired, or the countdown
-    // is meaningless because a turn is refreshing the cache right now.
-    if (!tracking || expired || busy) return;
+    // Nothing to count: no observation yet, or already expired.
+    //
+    // It runs during a turn too. The cache is written by each model call, not
+    // by the turn, and every call lands an assistant message that moves the
+    // anchor — so between calls (a long tool run, a permission prompt left
+    // waiting) the cache really is counting down, and can really expire. A
+    // "refreshing" state used to cover the whole turn and hid exactly that.
+    if (!tracking || expired) return;
     const id = setInterval(() => { setNowMs(Date.now()); }, 1000);
     return () => { clearInterval(id); };
-  }, [tracking, expired, busy]);
+  }, [tracking, expired]);
 
   // Re-sync the clock when a new turn moves the anchor, so the row doesn't wait
   // up to a second to show the refreshed countdown.
   React.useEffect(() => {
     setNowMs(Date.now());
-  }, [anchorMs, ttlMs, busy]);
+  }, [anchorMs, ttlMs]);
 
   if (anchorMs === null || ttlMs === null) return null;
 
@@ -61,10 +63,7 @@ export const CacheTimerRow: React.FC<CacheTimerRowProps> = ({
 
   let text: string;
   let tone: string;
-  if (busy) {
-    text = `cache refreshing… (${ttlLabel})`;
-    tone = 'text-muted-foreground';
-  } else if (level === 'expired') {
+  if (level === 'expired') {
     text = `cache expired (${ttlLabel})`;
     tone = 'text-muted-foreground';
   } else {
@@ -79,11 +78,9 @@ export const CacheTimerRow: React.FC<CacheTimerRowProps> = ({
           : 'text-muted-foreground';
   }
 
-  const title = busy
-    ? `${ttlLabel} prompt cache — a turn is in flight, so the cache is being rewritten now.`
-    : level === 'expired'
-      ? `${ttlLabel} prompt cache expired. The next turn pays a full re-read.`
-      : `${ttlLabel} prompt cache, last written ${writtenAgo} ago. ${formatRemaining(remainingMs)} left.`;
+  const title = level === 'expired'
+    ? `${ttlLabel} prompt cache expired. The next turn pays a full re-read.`
+    : `${ttlLabel} prompt cache, last written ${writtenAgo} ago. ${formatRemaining(remainingMs)} left.`;
 
   return (
     <span

@@ -48,3 +48,20 @@ describe('GitBranchBadge — view changes', () => {
     expect(screen.queryByRole('button', { name: /view changes/i })).toBeNull();
   });
 });
+
+describe('GitBranchBadge — bar size', () => {
+  // On a status bar the badge keeps its chip, at the bar's 10px type.
+  it('takes the status bar\'s text size, keeping its chip', () => {
+    render(<GitBranchBadge {...base} size="bar" />);
+    const chip = screen.getByRole('button', { name: /main/i });
+    expect(chip.className).toContain('text-[10px]');
+    expect(chip.className).not.toContain('text-[11px]');
+    expect(chip.className).toContain('rounded');
+    expect(chip.className).toContain('border');
+  });
+
+  it('keeps the header size by default', () => {
+    render(<GitBranchBadge {...base} />);
+    expect(screen.getByRole('button', { name: /main/i }).className).toContain('text-[11px]');
+  });
+});

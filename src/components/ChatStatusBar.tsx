@@ -323,12 +323,10 @@ export interface ChatStatusBarProps {
   onSuggest?: () => Promise<string | null>;
   /** The `session.activity` state signal, or undefined before one exists. */
   activitySignal?: SessionSignal;
-  /** Last assistant turn's timestamp — when the cache TTL last restarted. */
+  /** Newest assistant message's timestamp — when the cache TTL last restarted. */
   cacheAnchorMs: number | null;
   /** TTL the CLI actually used, observed from usage.cache_creation. */
   cacheTtlMs: number | null;
-  /** True while a main turn is in flight. */
-  cacheBusy: boolean;
   /** The session's live controls (model / effort / permissions) as readouts
    *  that open pickers — `SessionControlPickers`. Seated before the state
    *  readouts: what you can change, then what is happening. */
@@ -344,6 +342,14 @@ export interface ChatStatusBarProps {
   background?: BackgroundWork;
   className?: string;
 }
+
+/** The bar's surface and type, shared with any bar set beside it
+ *  (`BranchStatusBar`) so the two read as one family. */
+export const STATUS_BAR_SURFACE = cn(
+  'flex flex-wrap items-center gap-x-2 gap-y-1 px-3 py-1 rounded-md border-0 bg-background/60',
+  'shadow-[0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_30%,transparent)]',
+  'text-[10px] font-mono tabular-nums',
+);
 
 /**
  * The strip above the transcript: the facts you want visible while reading,
@@ -373,7 +379,6 @@ export function ChatStatusBar({
   activitySignal,
   cacheAnchorMs,
   cacheTtlMs,
-  cacheBusy,
   controls,
   account,
   session,
@@ -496,7 +501,6 @@ export function ChatStatusBar({
         key="cache"
         anchorMs={cacheAnchorMs}
         ttlMs={cacheTtlMs}
-        busy={cacheBusy}
         className="px-0"
       />,
     );
@@ -546,9 +550,7 @@ export function ChatStatusBar({
           // spare width to surrender — each is already a label and a value.
           // The row gap is half the column gap so a wrapped line reads as a
           // continuation of the same bar, not as a second bar under it.
-          'flex flex-wrap items-center gap-x-2 gap-y-1 px-3 py-1 rounded-md border-0 bg-background/60',
-          'shadow-[0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_30%,transparent)]',
-          'text-[10px] font-mono tabular-nums',
+          STATUS_BAR_SURFACE,
         )}
       >
         <SessionTitle
