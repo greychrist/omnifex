@@ -79,6 +79,16 @@ describe('SessionStatusItem', () => {
       expect(screen.getByTestId('session-item-context').className).toContain(cls);
     });
 
+    // A coloured reading pulses, like the thinking readout, so it is noticed.
+    it.each([
+      ['none', false],
+      ['warn', true],
+      ['critical', true],
+    ] as const)('pulses the context at the %s level: %s', (l, pulses) => {
+      render(<SessionStatusItem {...base} contextLevelSignal={level(l)} />);
+      expect(screen.getByTestId('session-item-context').classList.contains('animate-pulse')).toBe(pulses);
+    });
+
     it('says ready, as coloured text rather than a badge', () => {
       render(<SessionStatusItem {...base} />);
       const s = screen.getByTestId('session-item-status');
@@ -133,3 +143,22 @@ describe('SessionStatusItem', () => {
     });
   });
 });
+
+// The Session context panel holds the lists; the popover says how much is
+// loaded and opens it.
+describe('loadout summary row', () => {
+  it('says what is loaded and opens the Session context panel', () => {
+    const onOpenLoadout = vi.fn();
+    render(<SessionStatusItem {...base} loadout={{ mods: 1, plugins: 14, mcp: 2 }} onOpenLoadout={onOpenLoadout} />);
+    fireEvent.click(trigger());
+    fireEvent.click(screen.getByRole('button', { name: '1 mod · 14 plugins · 2 MCP servers' }));
+    expect(onOpenLoadout).toHaveBeenCalledTimes(1);
+  });
+
+  it('is absent when nothing is known yet', () => {
+    render(<SessionStatusItem {...base} loadout={{ mods: null, plugins: null, mcp: null }} onOpenLoadout={vi.fn()} />);
+    fireEvent.click(trigger());
+    expect(screen.queryByTestId('loadout-summary')).toBeNull();
+  });
+});
+

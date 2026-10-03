@@ -73,6 +73,7 @@ describe('enrichPlugin', () => {
       description: 'A demo plugin',
       author: 'Acme',
       authorEmail: 'hi@acme.dev',
+      mod: null,
     });
   });
 
@@ -106,7 +107,34 @@ describe('enrichPlugin', () => {
       description: undefined,
       author: undefined,
       authorEmail: undefined,
+      mod: null,
     });
+  });
+
+  // A mod is a plugin whose hooks.json names a hooks module. Inspection
+  // (what it can do) is async and added by the caller; enrichment only
+  // records that it is one.
+  it('marks a plugin whose hooks.json names modules as a mod', () => {
+    const pluginPath = '/home/me/.claude/plugins/m';
+    const fakeFs = {
+      [path.join(pluginPath, 'hooks', 'hooks.json')]: JSON.stringify({ modules: ['./register.ts'] }),
+    };
+    const result = enrichPlugin({ name: 'm', path: pluginPath }, { configDir, readFile: readFile(fakeFs) });
+    expect(result.mod).toEqual({ modules: ['./register.ts'], inspection: null });
+  });
+
+  // Built-ins arrive as `path: "builtin"` (verified on CLI 2.1.288 init).
+  // There is no directory to read, and the CLI does not say which of them
+  // hold mod code, so neither is guessed.
+  it('scopes a built-in plugin without reading a manifest', () => {
+    const reads: string[] = [];
+    const result = enrichPlugin(
+      { name: 'cc-plugin-agents-md', path: 'builtin', source: 'cc-plugin-agents-md@builtin' },
+      { configDir, readFile: (p) => { reads.push(p); throw new Error('ENOENT'); } },
+    );
+    expect(result.scope).toBe('builtin');
+    expect(result.mod).toBeNull();
+    expect(reads).toEqual([]);
   });
 
   it('tolerates invalid JSON without throwing', () => {

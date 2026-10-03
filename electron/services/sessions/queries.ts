@@ -22,6 +22,7 @@ import type {
   SendToRenderer,
 } from './types';
 import { enrichPlugin, type EnrichedPlugin } from './plugins';
+import type { ModInspector } from './mods';
 import { endSideChat, type SideChatAsk } from './side-chat';
 import { refreshCliUsage, type CliUsageSink } from './cli-usage';
 import { EMPTY_SIDE_CHAT, type SideChat, type SideChatAskResult } from '../../../src/lib/sideChat';
@@ -33,6 +34,7 @@ export function createQueryPassthroughs(
   sendToRenderer: SendToRenderer | null = null,
   logging: LoggingService | null = null,
   cliUsageSink: CliUsageSink | null = null,
+  inspectMod: ModInspector | null = null,
 ) {
   // Persist a control-protocol diagnostic to app_logs. console.error alone
   // never reaches the DB, which is why mid-session setting changes that
@@ -501,13 +503,28 @@ export function createQueryPassthroughs(
     return [];
   }
 
-  // reload_plugins is side-effectful so cache per-tab and only refresh
-  // when the caller explicitly asks. Cache is keyed by tabId; lifecycle
-  // calls evictPluginCache(tabId) on session stop so entries don't
+  // reload_plugins is side-effectful — it re-runs every mod's session.start —
+  // so it is sent only when the caller asks for a refresh. Otherwise the list
+  // comes from the latest system:init, which carries it, and falls back to a
+  // reload only before the first init has arrived. Cache is keyed by tabId;
+  // lifecycle calls evictPluginCache(tabId) on session stop so entries don't
   // accumulate forever.
   const pluginCache = new Map<string, EnrichedPlugin[]>();
   function evictPluginCache(tabId: string): void {
     pluginCache.delete(tabId);
+  }
+
+  async function enrichAll(handle: SessionHandle, raw: unknown[]): Promise<EnrichedPlugin[]> {
+    const enriched = raw.map((p: unknown) =>
+      enrichPlugin(p as Parameters<typeof enrichPlugin>[0], {
+        configDir: handle.configDir,
+        projectPath: handle.projectPath,
+      }),
+    );
+    if (!inspectMod) return enriched;
+    return Promise.all(enriched.map(async (p) => (
+      p.mod ? { ...p, mod: { ...p.mod, inspection: await inspectMod(p.path, handle.configDir) } } : p
+    )));
   }
 
   async function getPlugins(tabId: string, force = false): Promise<EnrichedPlugin[]> {
@@ -516,6 +533,12 @@ export function createQueryPassthroughs(
     if (!force) {
       const cached = pluginCache.get(tabId);
       if (cached) return cached;
+      const fromInit = handle.engine.getInitData()?.plugins;
+      if (Array.isArray(fromInit)) {
+        const enriched = await enrichAll(handle, fromInit);
+        pluginCache.set(tabId, enriched);
+        return enriched;
+      }
     }
     try {
       const result = await Promise.race([
@@ -523,12 +546,7 @@ export function createQueryPassthroughs(
         new Promise<null>((resolve) => setTimeout(() => resolve(null), 3000)),
       ]);
       if (!result) return pluginCache.get(tabId) ?? [];
-      const enriched = (result.plugins ?? []).map((p: unknown) =>
-        enrichPlugin(p as Parameters<typeof enrichPlugin>[0], {
-          configDir: handle.configDir,
-          projectPath: handle.projectPath,
-        }),
-      );
+      const enriched = await enrichAll(handle, result.plugins ?? []);
       pluginCache.set(tabId, enriched);
       return enriched;
     } catch (err) {

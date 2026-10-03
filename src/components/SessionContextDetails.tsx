@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Copy, Check, ChevronRight } from "lucide-react";
+import { Copy, Check, ChevronRight, Layers } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { SessionContextUsage } from "@/lib/api";
 import { fireAndLog } from "@/lib/fireAndLog";
@@ -7,6 +7,7 @@ import { SignalActionCard } from "./signals/SignalActionCard";
 import { SignalEventLog } from "./signals/SignalEventLog";
 import { formatTokens, type ContextPressureLevel } from "@/lib/contextPressure";
 import type { SessionSignal } from "@/lib/signals/types";
+import { loadoutSummary, type LoadoutCounts } from "@/lib/sessionLoadout";
 
 /**
  * The session's context reading and the popover that explains it.
@@ -171,6 +172,10 @@ export interface SessionContextDetailsProps {
   onCompact?: () => void;
   /** True while a turn is in flight; the button renders inert, not absent. */
   compactDisabled?: boolean;
+  /** What is loaded into the session. The lists live in the Session context
+   *  panel; the popover gives the counts and a way there. */
+  loadout?: LoadoutCounts | null;
+  onOpenLoadout?: () => void;
 }
 
 /** The popover body. Each trigger owns its own open state. */
@@ -181,7 +186,10 @@ export function SessionContextDetails({
   recentEvents = [],
   onCompact,
   compactDisabled = false,
+  loadout = null,
+  onOpenLoadout,
 }: SessionContextDetailsProps): React.JSX.Element {
+  const loadoutText = loadout ? loadoutSummary(loadout) : null;
   // Collapsed by default, sticky once opened — and shared by both triggers,
   // since it is one preference about one popover.
   const [detailsOpen, setDetailsOpen] = React.useState<boolean>(
@@ -245,6 +253,19 @@ export function SessionContextDetails({
           )}
         >
           Compact now
+        </button>
+      )}
+
+      {loadoutText && onOpenLoadout && (
+        <button
+          type="button"
+          data-testid="loadout-summary"
+          onClick={onOpenLoadout}
+          title="Open Session context"
+          className="flex items-center gap-1.5 self-start text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <Layers className="h-3 w-3 shrink-0" aria-hidden />
+          <span>{loadoutText}</span>
         </button>
       )}
 

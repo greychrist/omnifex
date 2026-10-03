@@ -8,7 +8,7 @@ import { Popover } from "@/components/ui/popover";
 import { ICON_MAP } from "./IconPicker";
 import { accountShield, buildThemedColors, fallbackTextColor } from "./AccountBadge";
 import { useAccountDetailsPopover, type AccountDetailsInputs } from "./AccountDetails";
-import { rateLimitPctColor } from "./claude-code-session/RateLimitWidget";
+import { rateLimitPctAlert, rateLimitPctColor } from "./claude-code-session/RateLimitWidget";
 import { formatCost } from "./claude-code-session/CostWidget";
 import { UsageDetailPopover } from "./claude-code-session/UsageDetailPopover";
 import type { AccountUsage } from "@/hooks/useAccountUsage";
@@ -133,7 +133,10 @@ function WindowPct({
   return (
     <span className="flex items-center gap-1">
       <Icon className={cn("h-3 w-3", rejected && "text-red-400")} />
-      <span data-testid={testId} className={rateLimitPctColor(pct, rejected)}>
+      <span
+        data-testid={testId}
+        className={cn(rateLimitPctColor(pct, rejected), rateLimitPctAlert(pct, rejected) && "animate-pulse")}
+      >
         {pct == null ? "—" : `${pct.toFixed(0)}%`}
       </span>
     </span>

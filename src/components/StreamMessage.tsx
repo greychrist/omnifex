@@ -275,6 +275,17 @@ function feedbackDraftBody(raw: SystemRaw): string {
 }
 
 /**
+ * Body line for a mod's `system:ui_log` / `system:ui_toast`: the plugin's name
+ * and its text, the way the REPL shows them under the plugin's name. `text`
+ * is plain text by contract ("draw it as a text node, never as markup").
+ */
+function modLineBody(raw: SystemRaw): string {
+  const { plugin, text } = raw as unknown as { plugin?: unknown; text?: unknown };
+  const body = typeof text === 'string' ? text : '';
+  return typeof plugin === 'string' && plugin ? `${plugin} · ${body}` : body;
+}
+
+/**
  * Body line for a `system:stop_hook_summary` card: each Stop hook by file name
  * and duration, then any errors and whether one blocked the turn from ending.
  * The record has no narrative field, so the generic branch would show nothing.
@@ -593,6 +604,8 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
           ? feedbackDraftBody(sysRaw)
           : subtype === 'stop_hook_summary'
           ? stopHookSummaryBody(sysRaw)
+          : subtype === 'ui_log' || subtype === 'ui_toast'
+          ? modLineBody(sysRaw)
           : (sysRaw as unknown as { message?: unknown }).message
             ?? (sysRaw as unknown as { content?: unknown }).content
             ?? (sysRaw as unknown as { body?: unknown }).body

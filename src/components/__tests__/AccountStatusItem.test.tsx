@@ -192,6 +192,24 @@ describe('AccountStatusItem', () => {
       expect(screen.getByTestId('account-item-usage').className).toContain(cls);
     });
 
+    // Pulses whenever it is coloured — yellow, orange or red — like the
+    // thinking readout; only the window that is coloured.
+    it.each([
+      [30, false],
+      [60, true],
+      [80, true],
+      [95, true],
+    ] as const)('pulses %s%%: %s', (pct, pulses) => {
+      render(<AccountStatusItem {...base} fiveHourRateLimit={fiveHour(pct)} sevenDayRateLimit={sevenDay(10)} />);
+      expect(screen.getByTestId('account-item-usage').classList.contains('animate-pulse')).toBe(pulses);
+      expect(screen.getByTestId('account-item-usage-week').classList.contains('animate-pulse')).toBe(false);
+    });
+
+    it('pulses a rejected window', () => {
+      render(<AccountStatusItem {...base} fiveHourRateLimit={fiveHour(20, 'rejected')} />);
+      expect(screen.getByTestId('account-item-usage').classList.contains('animate-pulse')).toBe(true);
+    });
+
     it('shows a dash before the first rate-limit snapshot', () => {
       render(<AccountStatusItem {...base} fiveHourRateLimit={null} />);
       expect(screen.getByTestId('account-item-usage').textContent).toBe('—');

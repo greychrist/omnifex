@@ -2,14 +2,13 @@ import * as React from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { ResizableSidePanel } from '@/components/ResizableSidePanel';
 
-export type SessionSidePanelKey = 'inspector' | 'mcp' | 'plugins' | 'permissions' | 'context';
+export type SessionSidePanelKey = 'inspector' | 'permissions' | 'context';
 
 const PANELS: Record<SessionSidePanelKey, { title: string; storageKey: string }> = {
   inspector: { title: 'Session inspector', storageKey: 'omnifex.sessionInspector.panelWidth' },
-  mcp: { title: 'MCP Servers', storageKey: 'omnifex.mcp.panelWidth' },
-  plugins: { title: 'Plugins', storageKey: 'omnifex.plugins.panelWidth' },
   permissions: { title: 'Permissions', storageKey: 'omnifex.permissions.panelWidth' },
-  // The context panel was the first overlay; keep the width users saved.
+  // The context panel was the first overlay; keep the width users saved. It
+  // also holds what were the MCP and Plugins panels (SessionContextPanel).
   context: { title: 'Session context', storageKey: 'omnifex.contextLedger.panelWidth' },
 };
 
@@ -27,7 +26,8 @@ export interface SessionSidePanelsProps {
  * Mount this inside the messages area. The panel then overlays the transcript
  * and stops where the transcript stops, so the subagent bar and the composer
  * stay visible beneath it — the way the context panel already worked. The
- * MCP, Plugins, Permissions and Inspector panels used to be absolute within
+ * Permissions and Inspector panels (and the MCP and Plugins panels, now
+ * sections of Session context) used to be absolute within
  * the whole chat body AND pushed the transcript and composer left by their
  * width (`sm:mr-96`), which reflowed every message on every open.
  *

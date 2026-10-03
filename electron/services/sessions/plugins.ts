@@ -4,6 +4,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { readModModules, type ModInspection } from './mods';
 
 export interface PluginBase {
   name: string;
@@ -11,7 +12,18 @@ export interface PluginBase {
   source?: string;
 }
 
-export type PluginScope = 'user' | 'project' | 'local' | 'unknown';
+export type PluginScope = 'user' | 'project' | 'local' | 'builtin' | 'unknown';
+
+/** The CLI's `path` for a plugin built into Claude Code (2.1.288 init). */
+export const BUILTIN_PLUGIN_PATH = 'builtin';
+
+export interface PluginMod {
+  /** The hooks modules hooks.json names. */
+  modules: string[];
+  /** What `claude plugin validate` says it does; null until inspected, or
+   *  when validate could not read it. */
+  inspection: ModInspection | null;
+}
 
 export interface EnrichedPlugin extends PluginBase {
   scope: PluginScope;
@@ -19,6 +31,8 @@ export interface EnrichedPlugin extends PluginBase {
   description?: string;
   author?: string;
   authorEmail?: string;
+  /** Non-null when the plugin holds mod code. */
+  mod: PluginMod | null;
 }
 
 interface PluginManifest {
@@ -46,6 +60,7 @@ export function inferScope(
   options: { configDir?: string; projectPath?: string } = {},
 ): PluginScope {
   const { configDir, projectPath } = options;
+  if (pluginPath === BUILTIN_PLUGIN_PATH) return 'builtin';
   if (projectPath && isInside(pluginPath, path.join(projectPath, '.claude', 'plugins'))) {
     return 'local';
   }
@@ -119,7 +134,9 @@ export function enrichPlugin(
     readFile?: (p: string) => string;
   } = {},
 ): EnrichedPlugin {
-  const manifest = readPluginManifest(plugin.path, options.readFile);
+  const builtin = plugin.path === BUILTIN_PLUGIN_PATH;
+  const manifest = builtin ? null : readPluginManifest(plugin.path, options.readFile);
+  const modules = builtin ? null : readModModules(plugin.path, options.readFile);
   const author = typeof manifest?.author === 'string'
     ? { name: manifest.author }
     : manifest?.author ?? {};
@@ -137,5 +154,6 @@ export function enrichPlugin(
     description: sanitizeManifestText(manifest?.description),
     author: sanitizeManifestText(author.name),
     authorEmail: sanitizeManifestText(author.email),
+    mod: modules ? { modules, inspection: null } : null,
   };
 }

@@ -59,6 +59,12 @@ export function rateLimitPctColor(pct: number | null, rejected: boolean): string
   return 'text-foreground';
 }
 
+/** True when the percentage is coloured (yellow and up, or rejected) — the
+ *  status bar pulses it then, as it does the thinking readout. */
+export function rateLimitPctAlert(pct: number | null, rejected: boolean): boolean {
+  return rateLimitPctColor(pct, rejected) !== 'text-foreground';
+}
+
 /**
  * Compact pill that mirrors the SessionHeader context widget's visual
  * language (icon, value, gradient mini-bar, percentage). Renders the

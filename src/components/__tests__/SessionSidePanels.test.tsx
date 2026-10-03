@@ -8,8 +8,6 @@ afterEach(() => { cleanup(); localStorage.clear(); });
 
 const content: Record<SessionSidePanelKey, React.ReactNode> = {
   inspector: <div data-testid="body-inspector" />,
-  mcp: <div data-testid="body-mcp" />,
-  plugins: <div data-testid="body-plugins" />,
   permissions: <div data-testid="body-permissions" />,
   context: <div data-testid="body-context" />,
 };
@@ -22,8 +20,6 @@ describe('SessionSidePanels', () => {
 
   it.each<[SessionSidePanelKey, string]>([
     ['inspector', 'Session inspector'],
-    ['mcp', 'MCP Servers'],
-    ['plugins', 'Plugins'],
     ['permissions', 'Permissions'],
     ['context', 'Session context'],
   ])('hosts %s as ONE overlay side panel titled "%s"', (key, title) => {
@@ -41,8 +37,8 @@ describe('SessionSidePanels', () => {
 
   it('closes through the host header', () => {
     const onClose = vi.fn();
-    render(<SessionSidePanels open="mcp" onClose={onClose} content={content} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Close MCP Servers' }));
+    render(<SessionSidePanels open="context" onClose={onClose} content={content} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Close Session context' }));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
@@ -57,7 +53,12 @@ describe('SessionSidePanels', () => {
       keys.add(stored);
       cleanup();
     }
-    expect(keys.size).toBe(5);
+    expect(keys.size).toBe(3);
+  });
+
+  // MCP servers and plugins are sections of Session context now, not panels.
+  it('has no MCP or Plugins panel of its own', () => {
+    expect(Object.keys(content).sort()).toEqual(['context', 'inspector', 'permissions']);
   });
 
   it('keeps the context panel width users already saved', () => {

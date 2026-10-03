@@ -39,6 +39,14 @@ const SUBTYPES = [
   'elicitation_complete',
   'session_metadata',
   'session_title_changed',
+  'ui_log',
+  'ui_toast',
+  'ui_invalidate',
+  'ui_focus',
+  'ui_panes',
+  'ui_scroll',
+  'ui_status',
+  'commands_changed',
   'away_summary',
   'local_command',
   'stop_hook_summary',
@@ -52,6 +60,14 @@ const BOOKKEEPING = [
   'elicitation_complete',
   'session_metadata',
   'session_title_changed',
+  // Mod plumbing from a headless session (CLI >= 2.1.287). ui_status is read
+  // by the Session context panel's Mods section instead.
+  'ui_invalidate',
+  'ui_focus',
+  'ui_panes',
+  'ui_scroll',
+  'ui_status',
+  'commands_changed',
 ];
 
 describe('Live-only section', () => {

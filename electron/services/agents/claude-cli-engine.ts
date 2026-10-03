@@ -282,12 +282,14 @@ export function createClaudeCliEngine(
         commands?: unknown[];
         models?: unknown[];
         agents?: unknown[];
+        plugins?: unknown[];
       };
       initData = {
         account: init.account,
         commands: init.commands,
         models: init.models,
         agents: init.agents,
+        plugins: init.plugins,
       };
     }
     // --include-partial-messages defers the assistant's resolved stop_reason

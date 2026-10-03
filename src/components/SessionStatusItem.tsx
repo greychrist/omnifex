@@ -1,4 +1,5 @@
 import * as React from "react";
+import { cn } from "@/lib/utils";
 import { Atom } from "lucide-react";
 import { Popover } from "@/components/ui/popover";
 import type { TabWaitingFor } from "@/lib/tabWaitingFor";
@@ -116,7 +117,12 @@ export function SessionStatusItem({
           className="flex items-center gap-1 rounded hover:bg-muted/60"
         >
           {label}
-          <span data-testid="session-item-context" className={METER_TEXT[reading.level]}>
+          <span
+            data-testid="session-item-context"
+            // Pulses when coloured, like the thinking readout, so a filling
+            // window is noticed without opening anything.
+            className={cn(METER_TEXT[reading.level], reading.level !== "none" && "animate-pulse")}
+          >
             {formatContextTokens(reading.tokens)} ({reading.pct.toFixed(0)}%)
           </span>
         </button>

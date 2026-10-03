@@ -60,7 +60,15 @@ export interface ContextLedger {
    *  ~2026-09-08). The UI must say so rather than render an empty list — an
    *  empty list reads as "nothing influenced this session", which is false. */
   tracked: boolean;
+  /** When the conversation began — the first prompt or reply — or null
+   *  before it has. The CLI reports what it loads as the first prompt starts,
+   *  so an untracked ledger with no start is "not started yet", and only one
+   *  that started before tracking existed "predates" it. */
+  startedAt: string | null;
 }
+
+/** When the CLI began emitting the records this ledger folds. */
+export const CONTEXT_TRACKING_SINCE = '2026-09-08';
 
 /** Attachment sub-types this ledger folds. Everything else on the attachment
  *  channel is per-turn bookkeeping — `total_tokens_reminder` alone accounts
@@ -100,6 +108,7 @@ function scopeOf(v: unknown): ContextScope | undefined {
 export function foldContextLedger(records: readonly JsonlNode[]): ContextLedger {
   const entries: LedgerEntry[] = [];
   let tracked = false;
+  let startedAt: string | null = null;
 
   // Index of the currently-live entry per identity, so a `removed` can reach
   // back and close the arrival it belongs to. A re-add clears the slot and
@@ -141,6 +150,9 @@ export function foldContextLedger(records: readonly JsonlNode[]): ContextLedger 
   };
 
   for (const rec of records) {
+    if (startedAt === null && (rec.kind === 'user' || rec.kind === 'assistant')) {
+      startedAt = rec.receivedAt;
+    }
     if (rec.kind !== 'attachment') continue;
     const att = (rec as { raw?: { attachment?: Record<string, unknown> } }).raw?.attachment;
     const subtype = str(att?.type);
@@ -223,7 +235,7 @@ export function foldContextLedger(records: readonly JsonlNode[]): ContextLedger 
     }
   }
 
-  return { entries, liveCount: liveIdx.size, tracked };
+  return { entries, liveCount: liveIdx.size, tracked, startedAt };
 }
 
 /**

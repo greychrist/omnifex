@@ -21,10 +21,11 @@ const entry = (e: Partial<LedgerEntry> & Pick<LedgerEntry, 'kind' | 'label'>): L
   ...e,
 });
 
-const ledger = (entries: LedgerEntry[], tracked = true): ContextLedger => ({
+const ledger = (entries: LedgerEntry[], tracked = true, startedAt: string | null = '2026-08-01T10:00:00.000Z'): ContextLedger => ({
   entries,
   liveCount: entries.filter(e => e.live).length,
   tracked,
+  startedAt,
 });
 
 describe('ContextLedgerPanel', () => {
@@ -34,6 +35,20 @@ describe('ContextLedgerPanel', () => {
     it('says the session predates tracking rather than showing an empty list', () => {
       render(<ContextLedgerPanel ledger={ledger([], false)} />);
       expect(screen.getByText(/predates/i)).toBeTruthy();
+    });
+
+    // Before the first prompt the CLI has loaded nothing yet, so there is
+    // nothing to report — that is not the same as an old session.
+    it('says nothing is loaded yet before the first prompt, not that the session predates tracking', () => {
+      render(<ContextLedgerPanel ledger={ledger([], false, null)} />);
+      expect(screen.queryByText(/predates/i)).toBeNull();
+      expect(screen.getByText(/first prompt/i)).toBeTruthy();
+    });
+
+    it('does not blame the date for a session started after tracking began', () => {
+      render(<ContextLedgerPanel ledger={ledger([], false, '2026-10-03T10:00:00.000Z')} />);
+      expect(screen.queryByText(/predates/i)).toBeNull();
+      expect(screen.getByText(/no context record/i)).toBeTruthy();
     });
 
     it('does not claim zero sources', () => {

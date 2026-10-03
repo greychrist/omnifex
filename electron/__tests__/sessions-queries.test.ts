@@ -13,6 +13,9 @@
 // invisible at runtime: which control_request went out with which payload,
 // and what got written to the log when one didn't.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { createQueryPassthroughs } from '../services/sessions/queries';
 import type { AgentEngine } from '../services/agents/types';
 import type { SessionHandle, SendToRenderer } from '../services/sessions/types';
@@ -70,6 +73,7 @@ function setup(opts: {
   registered?: boolean;
   /** The `--permission-mode` the CLI was spawned with. */
   launchMode?: string;
+  inspectMod?: import('../services/sessions/mods').ModInspector;
 } = {}) {
   const sessions = new Map<string, SessionHandle>();
   if (opts.registered !== false) {
@@ -80,7 +84,7 @@ function setup(opts: {
     sent.push({ channel, args });
   };
   const { logging, rows, meta } = createLogging();
-  const q = createQueryPassthroughs(sessions, sendToRenderer, logging);
+  const q = createQueryPassthroughs(sessions, sendToRenderer, logging, null, opts.inspectMod ?? null);
   return { q, sessions, sent, rows, meta };
 }
 
@@ -646,6 +650,42 @@ describe('getPlugins', () => {
   it('returns empty for a tab with no live engine', async () => {
     const { q } = setup({ registered: false });
     await expect(q.getPlugins('tab1')).resolves.toEqual([]);
+  });
+
+  // reload_plugins re-runs every mod's session.start, so merely looking at
+  // the list must not send it. system:init already carries the list.
+  it('lists from the system:init payload without sending reload_plugins', async () => {
+    const { engine, calls } = createEngine({ initData: { plugins: [{ name: 'superpowers', path: '/p/superpowers' }] } });
+    const { q } = setup({ engine });
+    const list = await q.getPlugins('tab1');
+    expect(calls).toHaveLength(0);
+    expect(list.map((p) => p.name)).toEqual(['superpowers']);
+  });
+
+  it('still reloads when forced, init payload or not', async () => {
+    const { engine, calls } = createEngine({ initData: { plugins: [] }, control: () => plugins });
+    const { q } = setup({ engine });
+    await q.getPlugins('tab1', true);
+    expect(calls.map((c) => c.subtype)).toEqual(['reload_plugins']);
+  });
+
+  it('attaches what the inspector reads to mods, and only to mods', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'omnifex-mod-'));
+    const modPath = path.join(dir, 'm');
+    fs.mkdirSync(path.join(modPath, 'hooks'), { recursive: true });
+    fs.writeFileSync(path.join(modPath, 'hooks', 'hooks.json'), JSON.stringify({ modules: ['./r.js'] }));
+    const inspection = { hooks: ['tool.call'], calls: [], capabilities: ['tool-calls' as const] };
+    const inspectMod = vi.fn(async () => inspection);
+    const { engine } = createEngine({
+      initData: { plugins: [{ name: 'm', path: modPath }, { name: 'plain', path: path.join(dir, 'plain') }] },
+    });
+    const { q } = setup({ engine, inspectMod });
+    const list = await q.getPlugins('tab1');
+    expect(list.find((p) => p.name === 'm')?.mod).toEqual({ modules: ['./r.js'], inspection });
+    expect(list.find((p) => p.name === 'plain')?.mod).toBeNull();
+    expect(inspectMod).toHaveBeenCalledTimes(1);
+    expect(inspectMod).toHaveBeenCalledWith(modPath, '/cfg');
+    fs.rmSync(dir, { recursive: true, force: true });
   });
 });
 

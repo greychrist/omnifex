@@ -1,4 +1,5 @@
 import { apiCall } from './apiAdapter';
+import type { ModInspection } from "./mods";
 import type { HooksConfiguration } from '@/types/hooks';
 import type { SideChat, SideChatAskResult } from '@/lib/sideChat';
 import type { TaskOutputTail } from '@/lib/backgroundShells';
@@ -783,11 +784,15 @@ export interface SessionPluginInfo {
   name: string;
   path: string;
   source?: string;
-  scope: 'user' | 'project' | 'local' | 'unknown';
+  /** `builtin`: shipped inside Claude Code (`path: "builtin"`). */
+  scope: 'user' | 'project' | 'local' | 'builtin' | 'unknown';
   version?: string;
   description?: string;
   author?: string;
   authorEmail?: string;
+  /** Non-null when the plugin holds mod code (hooks.json `modules`).
+   *  `inspection` is null when `claude plugin validate` could not read it. */
+  mod: { modules: string[]; inspection: ModInspection | null } | null;
 }
 
 /**

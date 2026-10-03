@@ -1,8 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Plug,
-  Package,
   Shield,
   ArrowLeft,
   Layers,
@@ -47,7 +45,7 @@ import { changeSessionPermissionMode } from "@/lib/sessionPermissionModeChange";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { SlashCommandsManager } from "./SlashCommandsManager";
 import { SessionMCPStatus } from "./SessionMCPStatus";
-import { SessionPluginStatus } from "./SessionPluginStatus";
+import { SessionContextPanel } from "./SessionContextPanel";
 import { PermissionCard } from "./PermissionCard";
 import { AskUserQuestionCard } from "./AskUserQuestionCard";
 import { ElicitationDialog, type ElicitationRequest } from "./ElicitationDialog";
@@ -94,6 +92,8 @@ import { useSideChat } from "@/hooks/useSideChat";
 import { useGitWatchVisibility } from "@/hooks/useGitWatchVisibility";
 import { GitDiffOverlay } from '@/components/git-diff/GitDiffOverlay';
 import { ContextLedgerPanel } from "./ContextLedgerPanel";
+import { useSessionPlugins } from "@/hooks/useSessionPlugins";
+import { latestInitMcpCount, modStatusLines, splitPlugins } from "@/lib/sessionLoadout";
 import { foldContextLedger } from "@/lib/contextLedger";
 import { useDaemonLink } from "@/hooks/useDaemonLink";
 import { GitBranchBadge } from "./claude-code-session/GitBranchBadge";
@@ -1204,6 +1204,21 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   // session in the app", and a fold over every message is exactly that shape
   // — it runs once per new record, not once per row.
   const contextLedger = useMemo(() => foldContextLedger(messages), [messages]);
+  // What is loaded into the session, for the Session context panel and the
+  // context popover's summary row. Same fold-once-per-record shape as above.
+  const initMcpCount = useMemo(() => latestInitMcpCount(messages), [messages]);
+  const modStatus = useMemo(() => modStatusLines(messages), [messages]);
+  const contextPanelOpen = sidePanel === 'context';
+  const sessionPlugins = useSessionPlugins(
+    tabId || 'default',
+    `${initMcpCount !== null}:${contextPanelOpen}`,
+    initMcpCount !== null || contextPanelOpen,
+  );
+  const loadout = useMemo(() => {
+    const split = sessionPlugins.plugins ? splitPlugins(sessionPlugins.plugins) : null;
+    return { mods: split?.mods.length ?? null, plugins: split?.plugins.length ?? null, mcp: initMcpCount };
+  }, [sessionPlugins.plugins, initMcpCount]);
+  const openContextPanel = useCallback(() => { setSidePanel('context'); }, []);
 
   // Epoch-seconds reset time when the CLI has parked this turn on a claude.ai
   // usage limit (Claude Code 2.1.234's autoContinueAtUsageLimit), else null.
@@ -2541,6 +2556,8 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
           onSignalsRead={() => { signals.markRead('session'); }}
           onCompact={fireAndLog('claude-code-session:compact', handleCompact)}
           compactDisabled={isLoading || !isSessionActive}
+          loadout={loadout}
+          onOpenLoadout={openContextPanel}
         />
       }
       controls={
@@ -2922,25 +2939,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
                   }}
                 />
               ),
-              mcp: (
-                <div className="h-full overflow-y-auto">
-                  <SessionMCPStatus tabId={tabIdRef.current} />
-                  {/* What the badge on the Plug button was counting. Without
-                      it the panel the badge points at never mentions the
-                      events, so the number had no explanation anywhere. */}
-                  <div className="p-4 border-t border-border">
-                    <div className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">
-                      Recent events
-                    </div>
-                    <SignalEventLog events={mcpEvents} />
-                  </div>
-                </div>
-              ),
-              plugins: (
-                <div className="h-full overflow-y-auto">
-                  <SessionPluginStatus tabId={tabIdRef.current} />
-                </div>
-              ),
               permissions: (
                 <div className="h-full overflow-y-auto">
                   <SessionPermissionsEditor
@@ -2950,7 +2948,29 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
                   />
                 </div>
               ),
-              context: <ContextLedgerPanel ledger={contextLedger} />,
+              context: (
+                <SessionContextPanel
+                  plugins={sessionPlugins.plugins}
+                  onRefreshPlugins={sessionPlugins.refresh}
+                  modStatus={modStatus}
+                  mcpCount={initMcpCount}
+                  mcp={
+                    <>
+                      <SessionMCPStatus tabId={tabIdRef.current} />
+                      {/* What the badge on the Session context button
+                          counts. Without it the badge's number would have
+                          no explanation anywhere. */}
+                      <div className="px-4 pb-4">
+                        <div className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+                          Recent events
+                        </div>
+                        <SignalEventLog events={mcpEvents} />
+                      </div>
+                    </>
+                  }
+                  instructions={<ContextLedgerPanel ledger={contextLedger} />}
+                />
+              ),
             }}
           />
           {/* The diff viewer covers the transcript rather than sharing it with
@@ -3126,47 +3146,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
                       </motion.div>
                     </TooltipSimple>
                   )}
-                  <TooltipSimple content="MCP Servers" side="top">
-                    {/* `relative` hosts the unread badge. Servers the CLI
-                        skipped over a bad config are the only emitter on this
-                        anchor today; they used to get a banner of their own. */}
-                    <motion.div
-                      className="relative"
-                      whileTap={{ scale: 0.97 }}
-                      transition={{ duration: 0.15 }}
-                    >
-                      <SignalBadge count={mcpUnread} label="MCP" />
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => { if (sidePanel !== 'mcp') signals.markRead('mcp'); toggleSidePanel('mcp'); }}
-                        className={cn(
-                          "h-8 w-8 text-muted-foreground hover:text-foreground shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_30%,transparent)]",
-                          sidePanel === 'mcp' ? "bg-accent" : "bg-background",
-                        )}
-                      >
-                        <Plug className={cn("h-3.5 w-3.5", sidePanel === 'mcp' && "text-primary")} />
-                      </Button>
-                    </motion.div>
-                  </TooltipSimple>
-                  <TooltipSimple content="Plugins" side="top">
-                    <motion.div
-                      whileTap={{ scale: 0.97 }}
-                      transition={{ duration: 0.15 }}
-                    >
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => { toggleSidePanel('plugins'); }}
-                        className={cn(
-                          "h-8 w-8 text-muted-foreground hover:text-foreground shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_30%,transparent)]",
-                          sidePanel === 'plugins' ? "bg-accent" : "bg-background",
-                        )}
-                      >
-                        <Package className={cn("h-3.5 w-3.5", sidePanel === 'plugins' && "text-primary")} />
-                      </Button>
-                    </motion.div>
-                  </TooltipSimple>
                   <TooltipSimple content="Permissions" side="top">
                     <motion.div
                       whileTap={{ scale: 0.97 }}
@@ -3203,15 +3182,20 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
                       </Button>
                     </motion.div>
                   </TooltipSimple>
-                  <TooltipSimple content="Session context" side="top">
+                  <TooltipSimple content="Session context — mods, plugins, MCP servers, instructions" side="top">
+                    {/* `relative` hosts the unread badge. MCP servers the CLI
+                        skipped over a bad config are the only emitter on this
+                        anchor today; the panel's MCP section lists them. */}
                     <motion.div
+                      className="relative"
                       whileTap={{ scale: 0.97 }}
                       transition={{ duration: 0.15 }}
                     >
+                      <SignalBadge count={mcpUnread} label="MCP" />
                       <Button
                         variant="ghost"
                         size="icon"
-                        onClick={() => { toggleSidePanel('context'); }}
+                        onClick={() => { if (sidePanel !== 'context') signals.markRead('mcp'); toggleSidePanel('context'); }}
                         className={cn(
                           "h-8 w-8 text-muted-foreground hover:text-foreground shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_30%,transparent)]",
                           sidePanel === 'context' ? "bg-accent" : "bg-background",

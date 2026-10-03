@@ -1,24 +1,27 @@
-import React, { useState, useEffect, useCallback } from "react";
-import { Package, RefreshCw, ChevronDown, ChevronUp } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import React, { useState } from "react";
+import { Package, ChevronDown, ChevronUp } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { Spinner } from "@/components/ui/spinner";
-import { api, type SessionPluginInfo } from "@/lib/api";
+import type { SessionPluginInfo } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import { logAndForget } from "@/lib/fireAndLog";
 
+/**
+ * The Plugins section of the Session context panel: the session's plugins,
+ * grouped by where they were installed. Presentational — the panel owns the
+ * list (useSessionPlugins), because the Mods section reads the same one.
+ */
 interface SessionPluginStatusProps {
-  tabId: string;
+  plugins: SessionPluginInfo[];
 }
 
 const SCOPE_LABEL: Record<SessionPluginInfo["scope"], string> = {
   user: "User",
   project: "Project",
   local: "Local",
+  builtin: "Built in",
   unknown: "Other",
 };
 
-const SCOPE_ORDER: SessionPluginInfo["scope"][] = ["user", "project", "local", "unknown"];
+const SCOPE_ORDER: SessionPluginInfo["scope"][] = ["user", "project", "local", "builtin", "unknown"];
 
 function groupByScope(plugins: SessionPluginInfo[]): [SessionPluginInfo["scope"], SessionPluginInfo[]][] {
   const buckets = new Map<SessionPluginInfo["scope"], SessionPluginInfo[]>();
@@ -33,25 +36,8 @@ function groupByScope(plugins: SessionPluginInfo[]): [SessionPluginInfo["scope"]
     .map((k) => [k, buckets.get(k)!.slice().sort((a, b) => a.name.localeCompare(b.name))]);
 }
 
-export const SessionPluginStatus: React.FC<SessionPluginStatusProps> = ({ tabId }) => {
-  const [plugins, setPlugins] = useState<SessionPluginInfo[]>([]);
-  const [loading, setLoading] = useState(true);
+export const SessionPluginStatus: React.FC<SessionPluginStatusProps> = ({ plugins }) => {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-
-  const load = useCallback(async (force = false) => {
-    try {
-      const result = await api.sessionPlugins(tabId, force);
-      setPlugins(result ?? []);
-    } catch (err) {
-      console.error("[SessionPluginStatus] Failed to load plugins:", err);
-    } finally {
-      setLoading(false);
-    }
-  }, [tabId]);
-
-  useEffect(() => {
-    logAndForget('session-plugin-status:load', load(false));
-  }, [load]);
 
   const toggle = (key: string) => {
     setExpanded((prev) => {
@@ -62,44 +48,14 @@ export const SessionPluginStatus: React.FC<SessionPluginStatusProps> = ({ tabId 
     });
   };
 
-  const handleRefresh = () => {
-    setLoading(true);
-    logAndForget('session-plugin-status:load', load(true));
-  };
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center p-8">
-        <Spinner className="size-6 text-muted-foreground" />
-      </div>
-    );
-  }
-
   if (plugins.length === 0) {
-    return (
-      <div className="p-6 text-center text-muted-foreground text-sm">
-        <p>No plugins loaded in this session.</p>
-        <Button variant="ghost" size="sm" onClick={handleRefresh} className="mt-2">
-          <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
-          Reload
-        </Button>
-      </div>
-    );
+    return <p className="px-1 text-xs text-muted-foreground">No plugins loaded in this session.</p>;
   }
 
   const groups = groupByScope(plugins);
 
   return (
-    <div className="p-4 space-y-4">
-      <div className="flex items-center justify-between">
-        <span className="text-xs text-muted-foreground">
-          {plugins.length} plugin{plugins.length !== 1 ? "s" : ""}
-        </span>
-        <Button variant="ghost" size="sm" onClick={handleRefresh} className="h-7 px-2">
-          <RefreshCw className="h-3 w-3" />
-        </Button>
-      </div>
-
+    <div className="space-y-4">
       {groups.map(([scopeKey, scopePlugins]) => (
         <div key={scopeKey} className="space-y-2">
           <div className="flex items-center gap-2">
@@ -160,7 +116,7 @@ export const SessionPluginStatus: React.FC<SessionPluginStatusProps> = ({ tabId 
                       />
                     )}
                     {plugin.source && <DetailRow label="Marketplace" value={plugin.source} />}
-                    <DetailRow label="Path" value={plugin.path} mono />
+                    {plugin.scope !== "builtin" && <DetailRow label="Path" value={plugin.path} mono />}
                     {plugin.description && (
                       <DetailRow label="Description" value={plugin.description} />
                     )}
@@ -175,7 +131,7 @@ export const SessionPluginStatus: React.FC<SessionPluginStatusProps> = ({ tabId 
   );
 };
 
-const DetailRow: React.FC<{ label: string; value: string; mono?: boolean }> = ({ label, value, mono }) => (
+export const DetailRow: React.FC<{ label: string; value: string; mono?: boolean }> = ({ label, value, mono }) => (
   <div className="text-xs flex gap-2">
     <span className="text-muted-foreground shrink-0">{label}:</span>
     <span className={cn("min-w-0 break-all", mono && "font-mono")}>{value}</span>

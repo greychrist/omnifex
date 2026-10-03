@@ -29,6 +29,7 @@ import {
   respondPermission as respondPermissionImpl,
 } from './permissions';
 import { createQueryPassthroughs } from './queries';
+import { createModInspector, createValidateRunner } from './mods';
 import { createSideChatStore, endSideChat } from './side-chat';
 import { beginCliProcess, type CliUsageSink } from './cli-usage';
 import { createElicitationHandlers, respondToElicitation } from './elicitations';
@@ -143,7 +144,13 @@ export function createSessionsService(
   const sessions = new Map<string, SessionHandle>();
   // Hoisted so both the public return and stop()'s plugin-cache eviction
   // share the same instance.
-  const queryPassthroughs = createQueryPassthroughs(sessions, sendToRenderer, logging, cliUsageSink);
+  const queryPassthroughs = createQueryPassthroughs(
+    sessions,
+    sendToRenderer,
+    logging,
+    cliUsageSink,
+    createModInspector({ run: createValidateRunner(() => (resolveClaudeBinary ?? findSystemClaudeBinary)()) }),
+  );
   const autoRecap = autoRecapPolicy
     ? createAutoRecap({
         policy: autoRecapPolicy,

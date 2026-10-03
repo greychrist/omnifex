@@ -102,6 +102,10 @@ export interface InitData {
   commands?: unknown[];
   models?: unknown[];
   agents?: unknown[];
+  /** system:init's `plugins` — `{name, path, source, version?}`, built-ins
+   *  with `path: "builtin"`. Read by sessions/queries.ts getPlugins so the
+   *  list can be shown without a side-effectful reload_plugins. */
+  plugins?: unknown[];
 }
 
 /** Per-call knobs for `sendControlRequest`. */

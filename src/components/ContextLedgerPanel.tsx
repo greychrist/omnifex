@@ -8,7 +8,7 @@ import { useTheme } from '@/hooks';
 import { getClaudeSyntaxTheme } from '@/lib/claudeSyntaxTheme';
 import { buildMarkdownComponents } from '@/lib/markdownComponents';
 import { cn } from '@/lib/utils';
-import type { ContextEntryKind, ContextLedger, LedgerEntry } from '@/lib/contextLedger';
+import { CONTEXT_TRACKING_SINCE, type ContextEntryKind, type ContextLedger, type LedgerEntry } from '@/lib/contextLedger';
 
 /**
  * "What shaped this session, and when did it arrive?" — with the same list
@@ -219,11 +219,15 @@ export function ContextLedgerPanel({
   if (!ledger.tracked) {
     return (
       <div className={cn('h-full p-3 text-[11px] text-muted-foreground', className)}>
-        <p className="font-medium text-foreground">No context record</p>
+        <p className="font-medium text-foreground">
+          {ledger.startedAt === null ? 'Nothing loaded yet' : 'No context record'}
+        </p>
         <p className="mt-1 leading-relaxed">
-          This session predates instruction tracking — the CLI began reporting
-          what it loads in early September 2026. Nothing is missing from the
-          session itself; there is simply no record to show.
+          {ledger.startedAt === null
+            ? 'Claude Code reports the instruction files, memory, MCP servers and skills it loads when the first prompt starts.'
+            : ledger.startedAt < CONTEXT_TRACKING_SINCE
+              ? 'This session predates instruction tracking — the CLI began reporting what it loads in early September 2026. Nothing is missing from the session itself; there is simply no record to show.'
+              : 'Claude Code has not reported anything it loaded for this session.'}
         </p>
       </div>
     );

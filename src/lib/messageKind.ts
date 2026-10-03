@@ -117,7 +117,16 @@ const STREAM_BOOKKEEPING_SUBTYPES: ReadonlySet<string> = new Set([
   'elicitation_complete',
   'session_metadata',
   'session_title_changed',
+  'ui_status',
+  'ui_invalidate',
+  'ui_focus',
+  'ui_panes',
+  'ui_scroll',
+  'commands_changed',
 ]);
+
+/** A mod's $.ui.log / $.ui.toast, pushed to a headless host. Shown. */
+const MOD_LINE_SUBTYPES: ReadonlySet<string> = new Set(['ui_log', 'ui_toast']);
 
 export function classifyStandaloneKind(
   msg: JsonlNode,
@@ -220,6 +229,7 @@ export function classifyStandaloneKind(
     // hidden from Appearance settings (default Never) rather than dropped in
     // code. The kind id is the subtype.
     if (STREAM_BOOKKEEPING_SUBTYPES.has(subtype)) return `system.${subtype}`;
+    if (MOD_LINE_SUBTYPES.has(subtype)) return `system.${subtype}`;
     // A local slash command's stdout (/usage, /cost, …), which CLI 2.1.283
     // moved here from a user record (that older form is user.commandOutput).
     // `/recap`'s is a recap, and shares the Away summary kind.

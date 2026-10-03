@@ -31,6 +31,18 @@ describe('foldContextLedger', () => {
       expect(ledger.entries).toEqual([]);
     });
 
+    // The panel needs to tell "not started" from "predates tracking": both
+    // have no in-scope records.
+    it('records when the conversation began, from its first prompt or reply', () => {
+      const user = { kind: 'user', raw: {}, sessionId: 's1', receivedAt: T2, userKind: 'prompt' } as unknown as JsonlNode;
+      const ledger = foldContextLedger([att('total_tokens_reminder', {}, T1), user]);
+      expect(ledger.startedAt).toBe(T2);
+    });
+
+    it('has no start before the first prompt', () => {
+      expect(foldContextLedger([]).startedAt).toBeNull();
+    });
+
     it('is true once any in-scope record arrives', () => {
       const ledger = foldContextLedger([
         att('instructions', { files: [{ path: '/p/CLAUDE.md', type: 'Project', content: '# hi' }] }, T1),

@@ -823,3 +823,20 @@ describe('tool_progress', () => {
     expect(classifyJsonlLine(noTime)?.kind).toBe('tool-progress');
   });
 });
+
+// Frames a mod produces in a headless session (CLI >= 2.1.287), observed on
+// stdout with a --plugin-dir mod loaded on 2.1.288. Unclassified, each one
+// drew an orange "Unrecognized record" card — a redrawing mod sends
+// ui_invalidate on every change.
+describe('mod frames from a headless session', () => {
+  it.each([
+    'ui_log', 'ui_toast', 'ui_status', 'ui_invalidate', 'ui_focus', 'ui_panes', 'ui_scroll', 'commands_changed',
+  ])('classifies system:%s as a known system subtype', (subtype) => {
+    const node = classifyJsonlLine({
+      type: 'system',
+      subtype,
+      receivedAt: '2026-10-03T10:00:00Z',
+    } as Record<string, unknown>);
+    expect(node?.kind).toBe('system');
+  });
+});

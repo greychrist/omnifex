@@ -213,6 +213,24 @@ export type SystemSubtype =
   // what the transcript's title row renders from — its kind defaults to
   // Never as a duplicate.
   | 'session_title_changed'
+  // Stream-only (CLI >= 2.1.287): what a mod's $.ui.log / $.ui.toast would
+  // have drawn in the REPL, pushed to a headless host instead —
+  // `{plugin, text}`. The mod speaking to the user, so these render.
+  | 'ui_log'
+  | 'ui_toast'
+  // Stream-only (CLI >= 2.1.287): a mod's pinned status line,
+  // `{plugin, text|null}`, each replacing that plugin's last. Shown in the
+  // Session context panel's Mods section, not the transcript.
+  | 'ui_status'
+  // Stream-only (CLI >= 2.1.287): mod drawing plumbing for a surface that
+  // renders mod UI, which OmniFex is not — and `commands_changed`, the
+  // full slash-command list after a mid-session change. Kinds default to
+  // Never.
+  | 'ui_invalidate'
+  | 'ui_focus'
+  | 'ui_panes'
+  | 'ui_scroll'
+  | 'commands_changed'
   // The SendFeedback tool wrote a local draft feedback report to
   // <CLAUDE_CONFIG_DIR>/feedback/drafts/. Display fields only — the body stays
   // on disk, and nothing is sent until the user approves it via `/feedback`.
