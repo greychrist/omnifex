@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import path from 'node:path';
-import { enrichPlugin, inferScope } from '../services/sessions/plugins';
+import { enrichPlugin, inferScope, readInstalledPlugins, scopeFromInstallRecord } from '../services/sessions/plugins';
 
 const MANIFEST = JSON.stringify({
   name: 'demo',
@@ -231,5 +231,57 @@ describe('enrichPlugin sanitizes manifest text', () => {
     expect(result.description).toBe('Café tooling — ships 🚀 fast');
     expect(result.author).toBe('Ünicode Ltd');
     expect(result.version).toBe('1.2.3-beta.1');
+  });
+});
+
+// The CLI records each install's scope in <config>/plugins/installed_plugins.json.
+// Guessing from the folder put a plugin read in place from a folder
+// marketplace (~/.claude-personal/mods/post-compact) under "Other", though
+// the CLI had it installed for the whole account.
+describe('scope from the install record', () => {
+  const configDir = '/home/me/.claude';
+  const projectPath = '/repo';
+  const record = (plugins: Record<string, unknown[]>) =>
+    readInstalledPlugins(configDir, readFile({
+      [path.join(configDir, 'plugins', 'installed_plugins.json')]: JSON.stringify({ version: 2, plugins }),
+    }));
+
+  it('takes the scope the CLI recorded over the folder guess', () => {
+    const installed = record({ 'post-compact@personal-mods': [{ scope: 'user' }] });
+    const result = enrichPlugin(
+      { name: 'post-compact', path: '/home/me/mods/post-compact', source: 'post-compact@personal-mods' },
+      { configDir, projectPath, installed, readFile: readFile({}) },
+    );
+    expect(result.scope).toBe('user');
+  });
+
+  it("prefers an install for this session's project over the user-wide one", () => {
+    const installed = record({
+      'frontend-design@official': [{ scope: 'user' }, { scope: 'project', projectPath: '/repo' }],
+    });
+    expect(scopeFromInstallRecord(installed, 'frontend-design@official', projectPath)).toBe('project');
+    expect(scopeFromInstallRecord(installed, 'frontend-design@official', '/other')).toBe('user');
+  });
+
+  it('falls back to the folder guess for a plugin the record does not list', () => {
+    const installed = record({});
+    const result = enrichPlugin(
+      { name: 'demo', path: '/home/me/.claude/plugins/demo', source: 'demo@x' },
+      { configDir, installed, readFile: readFile({}) },
+    );
+    expect(result.scope).toBe('user');
+    expect(scopeFromInstallRecord(installed, 'demo@x', projectPath)).toBeNull();
+  });
+
+  it('reads a missing or unreadable record as empty, never as a failure', () => {
+    expect(readInstalledPlugins(configDir, readFile({})).size).toBe(0);
+    expect(readInstalledPlugins(configDir, readFile({
+      [path.join(configDir, 'plugins', 'installed_plugins.json')]: '{not json',
+    })).size).toBe(0);
+  });
+
+  it('ignores a scope it does not know rather than inventing one', () => {
+    const installed = record({ 'x@m': [{ scope: 'managed' }] });
+    expect(scopeFromInstallRecord(installed, 'x@m', projectPath)).toBeNull();
   });
 });

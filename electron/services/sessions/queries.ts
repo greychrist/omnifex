@@ -21,7 +21,7 @@ import type {
   McpServerStatus,
   SendToRenderer,
 } from './types';
-import { enrichPlugin, type EnrichedPlugin } from './plugins';
+import { enrichPlugin, readInstalledPlugins, type EnrichedPlugin } from './plugins';
 import type { ModInspector } from './mods';
 import { endSideChat, type SideChatAsk } from './side-chat';
 import { refreshCliUsage, type CliUsageSink } from './cli-usage';
@@ -515,10 +515,12 @@ export function createQueryPassthroughs(
   }
 
   async function enrichAll(handle: SessionHandle, raw: unknown[]): Promise<EnrichedPlugin[]> {
+    const installed = handle.configDir ? readInstalledPlugins(handle.configDir) : undefined;
     const enriched = raw.map((p: unknown) =>
       enrichPlugin(p as Parameters<typeof enrichPlugin>[0], {
         configDir: handle.configDir,
         projectPath: handle.projectPath,
+        installed,
       }),
     );
     if (!inspectMod) return enriched;

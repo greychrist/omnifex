@@ -1,5 +1,5 @@
-// Plugin enrichment — read .claude-plugin/plugin.json manifests and infer
-// scope from path, so the renderer can show richer info than what the CLI's
+// Plugin enrichment — read .claude-plugin/plugin.json manifests and each
+// plugin's scope, so the renderer can show richer info than what the CLI's
 // reloadPlugins response carries.
 
 import fs from 'node:fs';
@@ -73,6 +73,64 @@ export function inferScope(
   return 'unknown';
 }
 
+/** One install of a plugin, as the CLI records it. */
+interface InstallRecordEntry {
+  scope?: string;
+  projectPath?: string;
+}
+
+/** `name@marketplace` → every scope that id is installed under. */
+export type InstalledPlugins = Map<string, InstallRecordEntry[]>;
+
+/**
+ * The CLI's own record of what is installed where:
+ * `<config>/plugins/installed_plugins.json`, `{ version: 2, plugins: { id: [entry] } }`.
+ * A missing or unreadable file is an empty record — the folder guess still
+ * answers — never an error that would empty the plugin list.
+ */
+export function readInstalledPlugins(
+  configDir: string,
+  readFile: (p: string) => string = (p) => fs.readFileSync(p, 'utf-8'),
+): InstalledPlugins {
+  try {
+    const raw = JSON.parse(readFile(path.join(configDir, 'plugins', 'installed_plugins.json'))) as {
+      plugins?: Record<string, unknown>;
+    };
+    const out: InstalledPlugins = new Map();
+    for (const [id, entries] of Object.entries(raw.plugins ?? {})) {
+      if (Array.isArray(entries)) out.set(id, entries as InstallRecordEntry[]);
+    }
+    return out;
+  } catch {
+    return new Map();
+  }
+}
+
+/**
+ * The scope the CLI recorded for `id`, as this session sees it. One plugin
+ * can be installed user-wide and for particular projects at once; an install
+ * for this session's project is the more specific answer, so it wins. Null
+ * when the record does not list the id, or lists only a scope OmniFex has no
+ * group for — the caller then falls back to the folder guess.
+ */
+export function scopeFromInstallRecord(
+  installed: InstalledPlugins,
+  id: string,
+  projectPath?: string,
+): PluginScope | null {
+  const entries = installed.get(id);
+  if (!entries) return null;
+  if (projectPath) {
+    const here = path.resolve(projectPath);
+    const forProject = entries.find((e) =>
+      (e.scope === 'project' || e.scope === 'local')
+      && typeof e.projectPath === 'string'
+      && path.resolve(e.projectPath) === here);
+    if (forProject) return forProject.scope as PluginScope;
+  }
+  return entries.some((e) => e.scope === 'user') ? 'user' : null;
+}
+
 function isInside(child: string, parent: string): boolean {
   const rel = path.relative(parent, child);
   return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
@@ -131,6 +189,8 @@ export function enrichPlugin(
   options: {
     configDir?: string;
     projectPath?: string;
+    /** The CLI's install record, read once per list by the caller. */
+    installed?: InstalledPlugins;
     readFile?: (p: string) => string;
   } = {},
 ): EnrichedPlugin {
@@ -149,7 +209,11 @@ export function enrichPlugin(
     ...plugin,
     name: sanitizeManifestText(plugin.name) ?? UNPRINTABLE_NAME,
     source: sanitizeManifestText(plugin.source),
-    scope: inferScope(plugin.path, options),
+    // The CLI's record first; the folder guess covers what it does not list
+    // (built-ins, --plugin-dir folders, a missing record).
+    scope: (!builtin && plugin.source && options.installed
+      ? scopeFromInstallRecord(options.installed, plugin.source, options.projectPath)
+      : null) ?? inferScope(plugin.path, options),
     version: sanitizeManifestText(manifest?.version),
     description: sanitizeManifestText(manifest?.description),
     author: sanitizeManifestText(author.name),
