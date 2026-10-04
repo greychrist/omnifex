@@ -18,6 +18,8 @@ export interface SessionSidePanelsProps {
   open: SessionSidePanelKey | null;
   onClose: () => void;
   content: Record<SessionSidePanelKey, React.ReactNode>;
+  /** Header controls per panel, beside its close button. */
+  actions?: Partial<Record<SessionSidePanelKey, React.ReactNode>>;
 }
 
 /**
@@ -34,7 +36,7 @@ export interface SessionSidePanelsProps {
  * Only the open panel's body is mounted; the others are plain elements the
  * caller built and nothing renders them.
  */
-export function SessionSidePanels({ open, onClose, content }: SessionSidePanelsProps): React.JSX.Element {
+export function SessionSidePanels({ open, onClose, content, actions }: SessionSidePanelsProps): React.JSX.Element {
   return (
     <AnimatePresence>
       {open && (
@@ -42,6 +44,7 @@ export function SessionSidePanels({ open, onClose, content }: SessionSidePanelsP
           key={open}
           storageKey={PANELS[open].storageKey}
           title={PANELS[open].title}
+          actions={actions?.[open]}
           onClose={onClose}
         >
           {content[open]}

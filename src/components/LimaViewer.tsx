@@ -4,6 +4,7 @@ import { api, type LimaVm, type LimaDockerContainer } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { HeaderLabel } from './HeaderLabel';
+import { SURFACE_BODY_BG, SURFACE_HEADER, SURFACE_RING } from '@/lib/surfaceStyles';
 import { fireAndLog } from "@/lib/fireAndLog";
 import { useSurfaceVisible } from '@/hooks/useSurfaceVisible';
 
@@ -52,11 +53,9 @@ function containerPillPalette(state: string, pending: 'starting' | 'stopping' | 
 // Shared shell: the two-zone card from TabStatusCard (TabStatusPopover.tsx).
 // Used by both VM rows and container tiles so a single style change
 // propagates to both lists.
-const CARD_SHELL =
-  'rounded-md border-0 overflow-hidden bg-[color-mix(in_oklch,var(--color-background)_40%,var(--color-muted))] shadow-[0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_45%,transparent),2px_2px_4px_rgb(0_0_0/0.08)]';
+const CARD_SHELL = cn('rounded-md border-0 overflow-hidden', SURFACE_BODY_BG, SURFACE_RING);
 
-const CARD_HEADER =
-  'w-full flex items-center justify-between gap-3 px-3 py-2 bg-muted shadow-[inset_0_-1px_0_0_color-mix(in_oklch,var(--color-muted-foreground)_45%,transparent)] transition-colors text-left';
+const CARD_HEADER = cn('w-full flex items-center justify-between gap-3 px-3 py-2 transition-colors text-left', SURFACE_HEADER);
 
 // Mono value pill — bg-background + 1px inset border. Mirrors the
 // "Context Size" / branch pill treatment in TabStatusCard.

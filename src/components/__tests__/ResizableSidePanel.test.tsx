@@ -44,6 +44,25 @@ describe('ResizableSidePanel', () => {
       expect(panel().className).toMatch(/\bright-0\b/);
     });
 
+    // A panel-wide action (Session context's Refresh) belongs beside the
+    // close button, not inside whichever section happens to own it.
+    it('renders header actions before the close button', () => {
+      setup({ onClose: vi.fn(), actions: <button type="button">Refresh</button> });
+      const buttons = screen.getAllByRole('button');
+      const refresh = buttons.findIndex(b => b.textContent === 'Refresh');
+      const close = buttons.findIndex(b => /close/i.test(b.getAttribute('aria-label') ?? ''));
+      expect(refresh).toBeGreaterThanOrEqual(0);
+      expect(refresh).toBeLessThan(close);
+    });
+
+    // The Lima page's two-zone look: a muted title band over a tinted body.
+    it('sets its title band apart from its body', () => {
+      setup();
+      const header = screen.getByRole('heading', { name: 'Test panel' }).parentElement;
+      expect(header?.className).toMatch(/\bbg-muted\b/);
+      expect(panel().className).toContain('color-mix');
+    });
+
     it('closes when the close button is pressed', () => {
       const onClose = vi.fn();
       setup({ onClose });

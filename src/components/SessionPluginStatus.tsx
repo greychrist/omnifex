@@ -1,8 +1,8 @@
 import React, { useState } from "react";
-import { Package, ChevronDown, ChevronUp } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import type { SessionPluginInfo } from "@/lib/api";
-import { cn } from "@/lib/utils";
+import {
+  DetailBlock, DetailRow, EmptyLine, GroupHeader, RowTag, StatusDot, rowClass, scopeIcon, useCollapsedGroups,
+} from "@/components/sessionContext/rows";
 
 /**
  * The Plugins section of the Session context panel: the session's plugins,
@@ -13,7 +13,7 @@ interface SessionPluginStatusProps {
   plugins: SessionPluginInfo[];
 }
 
-const SCOPE_LABEL: Record<SessionPluginInfo["scope"], string> = {
+export const SCOPE_LABEL: Record<SessionPluginInfo["scope"], string> = {
   user: "User",
   project: "Project",
   local: "Local",
@@ -23,7 +23,7 @@ const SCOPE_LABEL: Record<SessionPluginInfo["scope"], string> = {
 
 const SCOPE_ORDER: SessionPluginInfo["scope"][] = ["user", "project", "local", "builtin", "unknown"];
 
-function groupByScope(plugins: SessionPluginInfo[]): [SessionPluginInfo["scope"], SessionPluginInfo[]][] {
+export function groupByScope(plugins: SessionPluginInfo[]): [SessionPluginInfo["scope"], SessionPluginInfo[]][] {
   const buckets = new Map<SessionPluginInfo["scope"], SessionPluginInfo[]>();
   for (const p of plugins) {
     const list = buckets.get(p.scope) ?? [];
@@ -36,104 +36,85 @@ function groupByScope(plugins: SessionPluginInfo[]): [SessionPluginInfo["scope"]
     .map((k) => [k, buckets.get(k)!.slice().sort((a, b) => a.name.localeCompare(b.name))]);
 }
 
-export const SessionPluginStatus: React.FC<SessionPluginStatusProps> = ({ plugins }) => {
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+/**
+ * The marketplace a plugin came from. The CLI reports `source` as the full
+ * `name@marketplace` id, so a tag showing it repeats the name beside itself.
+ * Built-ins report `@builtin`, which their group heading already says.
+ */
+export function marketplaceOf(plugin: SessionPluginInfo): string | null {
+  if (!plugin.source || plugin.scope === "builtin") return null;
+  const at = plugin.source.lastIndexOf("@");
+  return at === -1 ? plugin.source : plugin.source.slice(at + 1) || null;
+}
 
-  const toggle = (key: string) => {
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  };
+export const SessionPluginStatus: React.FC<SessionPluginStatusProps> = ({ plugins }) => {
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [collapsed, toggleGroup] = useCollapsedGroups();
 
   if (plugins.length === 0) {
-    return <p className="px-1 text-xs text-muted-foreground">No plugins loaded in this session.</p>;
+    return <EmptyLine>No plugins loaded in this session.</EmptyLine>;
   }
 
-  const groups = groupByScope(plugins);
-
   return (
-    <div className="space-y-4">
-      {groups.map(([scopeKey, scopePlugins]) => (
-        <div key={scopeKey} className="space-y-2">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              {SCOPE_LABEL[scopeKey]}
-            </span>
-            <span className="text-xs text-muted-foreground">({scopePlugins.length})</span>
+    <div className="p-2">
+      {groupByScope(plugins).map(([scopeKey, scopePlugins]) => {
+        const open = !collapsed.has(scopeKey);
+        return (
+          <div key={scopeKey} className="mb-1">
+            <GroupHeader
+              label={SCOPE_LABEL[scopeKey]}
+              icon={scopeIcon(scopeKey)}
+              count={scopePlugins.length}
+              open={open}
+              onToggle={() => { toggleGroup(scopeKey); }}
+            />
+            {open && (
+              <ul className="mt-0.5">
+                {scopePlugins.map((plugin) => {
+                  const key = `${plugin.scope}:${plugin.name}:${plugin.path}`;
+                  const isOpen = expanded === key;
+                  const marketplace = marketplaceOf(plugin);
+                  return (
+                    <li key={key} className="flex flex-col">
+                      <button
+                        type="button"
+                        aria-expanded={isOpen}
+                        title={plugin.description}
+                        onClick={() => { setExpanded(isOpen ? null : key); }}
+                        className={rowClass(true)}
+                      >
+                        <StatusDot className="bg-emerald-400" label="loaded" />
+                        {/* The name keeps its width; the tag gives way first. */}
+                        <span className="max-w-[70%] shrink-0 truncate">{plugin.name}</span>
+                        {marketplace && <RowTag>{marketplace}</RowTag>}
+                        {plugin.version && (
+                          <span className="ml-auto flex-none font-mono text-[10px] text-muted-foreground/70">
+                            v{plugin.version}
+                          </span>
+                        )}
+                      </button>
+                      {isOpen && (
+                        <DetailBlock>
+                          {plugin.description && <p className="text-muted-foreground">{plugin.description}</p>}
+                          {plugin.version && <DetailRow label="Version" value={plugin.version} mono />}
+                          {plugin.author && (
+                            <DetailRow
+                              label="Author"
+                              value={plugin.authorEmail ? `${plugin.author} <${plugin.authorEmail}>` : plugin.author}
+                            />
+                          )}
+                          {marketplace && <DetailRow label="Marketplace" value={marketplace} />}
+                          {plugin.scope !== "builtin" && <DetailRow label="Path" value={plugin.path} mono />}
+                        </DetailBlock>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
           </div>
-
-          {scopePlugins.map((plugin) => {
-            const key = `${plugin.scope}:${plugin.name}:${plugin.path}`;
-            const isExpanded = expanded.has(key);
-
-            return (
-              <div key={key} className="rounded-lg border border-border bg-card">
-                <button
-                  onClick={() => { toggle(key); }}
-                  className="w-full flex items-center gap-3 p-3 text-left hover:bg-muted/50 transition-colors rounded-lg"
-                >
-                  <Package className="h-4 w-4 shrink-0 text-muted-foreground" />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-sm font-medium truncate">{plugin.name}</span>
-                      {plugin.version && (
-                        <span className="text-xs font-mono text-muted-foreground">
-                          v{plugin.version}
-                        </span>
-                      )}
-                      {plugin.source && (
-                        <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-                          {plugin.source}
-                        </Badge>
-                      )}
-                    </div>
-                    {plugin.description && (
-                      <span className="text-xs text-muted-foreground line-clamp-1">
-                        {plugin.description}
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    {isExpanded ? (
-                      <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" />
-                    ) : (
-                      <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-                    )}
-                  </div>
-                </button>
-
-                {isExpanded && (
-                  <div className="px-3 pb-3 space-y-1 border-t border-border pt-2">
-                    <DetailRow label="Scope" value={SCOPE_LABEL[plugin.scope]} />
-                    {plugin.version && <DetailRow label="Version" value={plugin.version} mono />}
-                    {plugin.author && (
-                      <DetailRow
-                        label="Author"
-                        value={plugin.authorEmail ? `${plugin.author} <${plugin.authorEmail}>` : plugin.author}
-                      />
-                    )}
-                    {plugin.source && <DetailRow label="Marketplace" value={plugin.source} />}
-                    {plugin.scope !== "builtin" && <DetailRow label="Path" value={plugin.path} mono />}
-                    {plugin.description && (
-                      <DetailRow label="Description" value={plugin.description} />
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 };
-
-export const DetailRow: React.FC<{ label: string; value: string; mono?: boolean }> = ({ label, value, mono }) => (
-  <div className="text-xs flex gap-2">
-    <span className="text-muted-foreground shrink-0">{label}:</span>
-    <span className={cn("min-w-0 break-all", mono && "font-mono")}>{value}</span>
-  </div>
-);

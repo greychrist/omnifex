@@ -84,13 +84,14 @@ describe('ContextLedgerPanel', () => {
       expect(screen.getByTestId('entry-mcp-server:here').getAttribute('data-live')).toBe('true');
     });
 
-    it('summarises how many are live out of the total', () => {
+    // The Instructions section heading carries the count, as every other
+    // section's does; a second count line inside threw the layout off.
+    it('does not repeat the count the section heading shows', () => {
       render(<ContextLedgerPanel ledger={ledger([
         entry({ kind: 'mcp-server', label: 'a', live: true }),
         entry({ kind: 'mcp-server', label: 'b', live: false }),
       ])} />);
-      expect(screen.getByText(/1 live/)).toBeTruthy();
-      expect(screen.getByText(/of 2/)).toBeTruthy();
+      expect(screen.queryByText(/live/)).toBeNull();
     });
   });
 

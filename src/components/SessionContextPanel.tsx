@@ -1,11 +1,15 @@
 import * as React from "react";
-import { ChevronRight, RefreshCw, Puzzle } from "lucide-react";
+import { ChevronsUpDown, RefreshCw } from "lucide-react";
 import type { SessionPluginInfo } from "@/lib/api";
 import { MOD_CAPABILITY_LABEL } from "@/lib/mods";
 import { splitPlugins } from "@/lib/sessionLoadout";
-import { SessionPluginStatus, DetailRow } from "@/components/SessionPluginStatus";
+import { SessionPluginStatus, SCOPE_LABEL, groupByScope, marketplaceOf } from "@/components/SessionPluginStatus";
+import {
+  CONTENT_INDENT, DetailBlock, DetailRow, EmptyLine, GroupHeader, StatusDot, rowClass, scopeIcon, useCollapsedGroups,
+} from "@/components/sessionContext/rows";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
+import { SURFACE_HEADER } from "@/lib/surfaceStyles";
 
 /**
  * "What is shaping this session?" — one side panel, four sections: the mods
@@ -41,20 +45,22 @@ function readOpen(): Record<SectionKey, boolean> {
 export interface SessionContextPanelProps {
   /** Null while the list is being fetched. */
   plugins: SessionPluginInfo[] | null;
-  onRefreshPlugins: () => void;
   /** Each mod's pinned `$.ui.status` line, by plugin name. */
   modStatus: Record<string, string>;
+  /** Null while unknown, which leaves the heading without a count. */
   mcpCount: number | null;
   mcp: React.ReactNode;
+  /** Entries in the context ledger; null when the session has no record. */
+  instructionsCount: number | null;
   instructions: React.ReactNode;
 }
 
 export function SessionContextPanel({
   plugins,
-  onRefreshPlugins,
   modStatus,
   mcpCount,
   mcp,
+  instructionsCount,
   instructions,
 }: SessionContextPanelProps): React.JSX.Element {
   const [open, setOpen] = React.useState(readOpen);
@@ -74,34 +80,17 @@ export function SessionContextPanel({
   );
 
   return (
-    <div className="h-full overflow-y-auto divide-y divide-border">
+    <div className="h-full overflow-y-auto">
       <Section id="mods" title="Mods" count={split?.mods.length ?? null} open={open.mods} onToggle={toggle}>
         {split ? <ModList mods={split.mods} status={modStatus} /> : loading}
       </Section>
-      <Section
-        id="plugins"
-        title="Plugins"
-        count={split?.plugins.length ?? null}
-        open={open.plugins}
-        onToggle={toggle}
-        action={
-          <button
-            type="button"
-            onClick={onRefreshPlugins}
-            aria-label="Reload plugins"
-            title="Reload plugins. Re-runs each mod's session start."
-            className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted/60"
-          >
-            <RefreshCw className="h-3 w-3" />
-          </button>
-        }
-      >
+      <Section id="plugins" title="Plugins" count={split?.plugins.length ?? null} open={open.plugins} onToggle={toggle}>
         {split ? <SessionPluginStatus plugins={split.plugins} /> : loading}
       </Section>
-      <Section id="mcp" title="MCP servers" count={mcpCount} open={open.mcp} onToggle={toggle} flush>
+      <Section id="mcp" title="MCP servers" count={mcpCount} open={open.mcp} onToggle={toggle}>
         {mcp}
       </Section>
-      <Section id="instructions" title="Instructions" count={null} open={open.instructions} onToggle={toggle} flush>
+      <Section id="instructions" title="Instructions" count={instructionsCount} open={open.instructions} onToggle={toggle}>
         {instructions}
       </Section>
     </div>
@@ -114,8 +103,6 @@ function Section({
   count,
   open,
   onToggle,
-  action,
-  flush = false,
   children,
 }: {
   id: SectionKey;
@@ -123,87 +110,139 @@ function Section({
   count: number | null;
   open: boolean;
   onToggle: (key: SectionKey) => void;
-  action?: React.ReactNode;
-  /** The body brings its own padding (the MCP and ledger panels do). */
-  flush?: boolean;
+  /** Brings its own padding: every body is a row list in the rows.tsx grammar. */
   children: React.ReactNode;
 }): React.JSX.Element {
   const headerId = `session-context-${id}`;
   return (
     <section role="region" aria-labelledby={headerId}>
-      <div className="flex items-center gap-2 px-4 py-2">
-        <button
-          type="button"
-          id={headerId}
-          onClick={() => { onToggle(id); }}
-          aria-expanded={open}
-          className="flex flex-1 items-center gap-1.5 text-[11px] uppercase tracking-wide text-muted-foreground hover:text-foreground transition-colors"
-        >
-          <ChevronRight className={cn("h-3 w-3 transition-transform", open && "rotate-90")} />
-          <span>{title}</span>
-          {count !== null && <span className="font-mono normal-case text-foreground/60">{count}</span>}
-        </button>
-        {action}
-      </div>
-      {open && <div className={flush ? undefined : "px-4 pb-4"}>{children}</div>}
+      {/* A header band (the Lima card header), ending in the chat cards'
+          up/down expander — so it cannot be mistaken for the chevron-led
+          scope groups inside it. */}
+      <button
+        type="button"
+        id={headerId}
+        onClick={() => { onToggle(id); }}
+        aria-expanded={open}
+        className={cn(
+          "flex w-full items-center gap-2 px-3.5 py-2 text-[11px] font-semibold uppercase tracking-wide text-foreground/85 transition-colors hover:text-foreground",
+          SURFACE_HEADER,
+        )}
+      >
+        <span>{title}</span>
+        {count !== null && (
+          <span className="font-mono text-[10px] font-normal tabular-nums text-muted-foreground">({count})</span>
+        )}
+        <ChevronsUpDown aria-hidden="true" className="ml-auto h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
+      </button>
+      {open && <div className="pb-1">{children}</div>}
     </section>
+  );
+}
+
+/**
+ * The panel header's one control: reload plugins (which re-runs each mod's
+ * session start) and ask the MCP servers again. It used to be two buttons,
+ * one inside Plugins and one inside MCP servers, each visible only with its
+ * section open.
+ */
+export function SessionContextRefreshButton({
+  onRefresh,
+  busy,
+}: {
+  onRefresh: () => void;
+  busy: boolean;
+}): React.JSX.Element {
+  return (
+    <button
+      type="button"
+      onClick={busy ? undefined : onRefresh}
+      aria-busy={busy}
+      aria-label="Refresh session context"
+      title="Reload plugins and MCP servers. Re-runs each mod's session start."
+      className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-background/60 hover:text-foreground"
+    >
+      <RefreshCw className={cn("h-3.5 w-3.5", busy && "animate-spin")} />
+    </button>
   );
 }
 
 function ModList({ mods, status }: { mods: SessionPluginInfo[]; status: Record<string, string> }): React.JSX.Element {
   const [expanded, setExpanded] = React.useState<string | null>(null);
+  const [collapsed, toggleGroup] = useCollapsedGroups();
   if (mods.length === 0) {
-    return <p className="px-1 text-xs text-muted-foreground">No mods loaded in this session.</p>;
+    return <EmptyLine>No mods loaded in this session.</EmptyLine>;
   }
   return (
-    <div className="space-y-2">
-      {mods.map((m) => {
-        const inspection = m.mod?.inspection ?? null;
-        const isOpen = expanded === m.path;
-        const line = status[m.name];
+    <div className="p-2">
+      {groupByScope(mods).map(([scopeKey, scopeMods]) => {
+        const groupOpen = !collapsed.has(scopeKey);
         return (
-          <div key={m.path} className="rounded-lg border border-border bg-card">
-            <button
-              type="button"
-              onClick={() => { setExpanded(isOpen ? null : m.path); }}
-              aria-expanded={isOpen}
-              className="w-full flex items-start gap-3 p-3 text-left hover:bg-muted/50 transition-colors rounded-lg"
-            >
-              <Puzzle className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" />
-              <div className="flex-1 min-w-0 space-y-1.5">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-sm font-medium truncate">{m.name}</span>
-                  {m.version && <span className="text-xs font-mono text-muted-foreground">v{m.version}</span>}
-                </div>
-                {inspection ? (
-                  inspection.capabilities.length > 0 && (
-                    <div className="flex flex-wrap gap-1">
-                      {inspection.capabilities.map((c) => (
-                        <span
-                          key={c}
-                          className={cn(
-                            "rounded-sm px-1.5 py-0.5 text-[10px]",
-                            c === "tool-calls" ? "bg-amber-500/15 text-amber-300" : "bg-foreground/5 text-foreground/70",
-                          )}
-                        >
-                          {MOD_CAPABILITY_LABEL[c]}
-                        </span>
-                      ))}
-                    </div>
-                  )
-                ) : (
-                  <span className="block text-xs text-muted-foreground italic">Could not read what this mod does.</span>
-                )}
-                {line && <span className="block text-xs font-mono text-foreground/80 break-words">{line}</span>}
-              </div>
-            </button>
-            {isOpen && (
-              <div className="px-3 pb-3 space-y-1 border-t border-border pt-2">
-                {inspection && <CodeList label="Hooks" items={inspection.hooks} />}
-                {inspection && <CodeList label="Calls" items={inspection.calls} />}
-                {m.source && <DetailRow label="Marketplace" value={m.source} />}
-                <DetailRow label="Path" value={m.path} mono />
-              </div>
+          <div key={scopeKey} className="mb-1">
+            <GroupHeader
+              label={SCOPE_LABEL[scopeKey]}
+              icon={scopeIcon(scopeKey)}
+              count={scopeMods.length}
+              open={groupOpen}
+              onToggle={() => { toggleGroup(scopeKey); }}
+            />
+            {groupOpen && (
+              <ul className="mt-0.5">
+                {scopeMods.map((m) => {
+                  const inspection = m.mod?.inspection ?? null;
+                  const isOpen = expanded === m.path;
+                  const line = status[m.name];
+                  return (
+                    <li key={m.path} className="flex flex-col">
+                      <button
+                        type="button"
+                        onClick={() => { setExpanded(isOpen ? null : m.path); }}
+                        aria-expanded={isOpen}
+                        className={rowClass(true)}
+                      >
+                        <StatusDot className="bg-emerald-400" label="loaded" />
+                        <span className="truncate">{m.name}</span>
+                        {m.version && (
+                          <span className="ml-auto flex-none font-mono text-[10px] text-muted-foreground/70">v{m.version}</span>
+                        )}
+                      </button>
+                      {/* What the mod can do stays visible with the row shut:
+                          a mod that approves tool calls is the reason this
+                          section exists. */}
+                      <div className={cn("mb-1 mr-1.5 space-y-1 pl-3", CONTENT_INDENT)}>
+                        {inspection ? (
+                          inspection.capabilities.length > 0 && (
+                            <div className="flex flex-wrap gap-1">
+                              {inspection.capabilities.map((c) => (
+                                <span
+                                  key={c}
+                                  className={cn(
+                                    "rounded-sm px-1.5 py-0.5 text-[10px]",
+                                    c === "tool-calls" ? "bg-amber-500/15 text-amber-300" : "bg-foreground/5 text-foreground/70",
+                                  )}
+                                >
+                                  {MOD_CAPABILITY_LABEL[c]}
+                                </span>
+                              ))}
+                            </div>
+                          )
+                        ) : (
+                          <span className="block text-[10px] italic text-muted-foreground">Could not read what this mod does.</span>
+                        )}
+                        {line && <span className="block break-words font-mono text-[10px] text-foreground/80">{line}</span>}
+                      </div>
+                      {isOpen && (
+                        <DetailBlock>
+                          {inspection && <CodeList label="Hooks" items={inspection.hooks} />}
+                          {inspection && <CodeList label="Calls" items={inspection.calls} />}
+                          {marketplaceOf(m) && <DetailRow label="Marketplace" value={marketplaceOf(m) as string} />}
+                          <DetailRow label="Path" value={m.path} mono />
+                        </DetailBlock>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
             )}
           </div>
         );
@@ -215,7 +254,7 @@ function ModList({ mods, status }: { mods: SessionPluginInfo[]; status: Record<s
 function CodeList({ label, items }: { label: string; items: string[] }): React.JSX.Element | null {
   if (items.length === 0) return null;
   return (
-    <div className="text-xs">
+    <div>
       <span className="text-muted-foreground">{label}:</span>
       <ul className="mt-0.5 ml-3 space-y-0.5">
         {items.map((item) => (

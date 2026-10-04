@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { SURFACE_BODY_BG, SURFACE_HEADER } from '@/lib/surfaceStyles';
 
 /**
  * A right-hand panel that overlays its container and can be dragged wider.
@@ -49,6 +50,8 @@ export interface ResizableSidePanelProps {
    *  key would make two panels resize each other. */
   storageKey: string;
   title: string;
+  /** Panel-wide controls, drawn in the header just before the close button. */
+  actions?: React.ReactNode;
   onClose?: () => void;
   defaultWidth?: number;
   children: React.ReactNode;
@@ -58,6 +61,7 @@ export interface ResizableSidePanelProps {
 export function ResizableSidePanel({
   storageKey,
   title,
+  actions,
   onClose,
   defaultWidth = FALLBACK_WIDTH,
   children,
@@ -116,12 +120,15 @@ export function ResizableSidePanel({
       style={{ width: `${width}px` }}
       className={cn(
         'absolute inset-y-0 right-0 z-20 flex max-w-full flex-col',
-        'border-l bg-background shadow-xl',
+        // The Lima page's two zones: a muted title band over a tinted body.
+        'border-l shadow-xl',
+        SURFACE_BODY_BG,
         className,
       )}
     >
-      <div className="flex flex-none items-center justify-between border-b p-3">
-        <h3 className="text-sm font-semibold">{title}</h3>
+      <div className={cn('flex flex-none items-center gap-1 px-3 py-2.5', SURFACE_HEADER)}>
+        <h3 className="flex-1 text-sm font-semibold">{title}</h3>
+        {actions}
         {onClose ? (
           <Button
             variant="ghost"

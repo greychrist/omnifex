@@ -45,7 +45,7 @@ import { changeSessionPermissionMode } from "@/lib/sessionPermissionModeChange";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { SlashCommandsManager } from "./SlashCommandsManager";
 import { SessionMCPStatus } from "./SessionMCPStatus";
-import { SessionContextPanel } from "./SessionContextPanel";
+import { SessionContextPanel, SessionContextRefreshButton } from "./SessionContextPanel";
 import { PermissionCard } from "./PermissionCard";
 import { AskUserQuestionCard } from "./AskUserQuestionCard";
 import { ElicitationDialog, type ElicitationRequest } from "./ElicitationDialog";
@@ -94,6 +94,7 @@ import { useGitWatchVisibility } from "@/hooks/useGitWatchVisibility";
 import { GitDiffOverlay } from '@/components/git-diff/GitDiffOverlay';
 import { ContextLedgerPanel } from "./ContextLedgerPanel";
 import { useSessionPlugins } from "@/hooks/useSessionPlugins";
+import { useSessionMcpStatus } from "@/hooks/useSessionMcpStatus";
 import { latestInitMcpCount, modStatusLines, splitPlugins } from "@/lib/sessionLoadout";
 import { foldContextLedger } from "@/lib/contextLedger";
 import { useDaemonLink } from "@/hooks/useDaemonLink";
@@ -1224,6 +1225,13 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     return { mods: split?.mods.length ?? null, plugins: split?.plugins.length ?? null, mcp: initMcpCount };
   }, [sessionPlugins.plugins, initMcpCount]);
   const openContextPanel = useCallback(() => { setSidePanel('context'); }, []);
+  // The Session context header's Refresh: reload plugins (re-running each
+  // mod's session start) and ask the MCP servers again.
+  const sessionMcp = useSessionMcpStatus(tabIdRef.current, contextPanelOpen);
+  const refreshSessionContext = useCallback(() => {
+    sessionPlugins.refresh();
+    sessionMcp.refresh();
+  }, [sessionPlugins.refresh, sessionMcp.refresh]);
 
   // Epoch-seconds reset time when the CLI has parked this turn on a claude.ai
   // usage limit (Claude Code 2.1.234's autoContinueAtUsageLimit), else null.
@@ -2919,6 +2927,14 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
           <SessionSidePanels
             open={sidePanel}
             onClose={() => { setSidePanel(null); }}
+            actions={{
+              context: (
+                <SessionContextRefreshButton
+                  busy={sessionPlugins.plugins === null || sessionMcp.servers === null}
+                  onRefresh={refreshSessionContext}
+                />
+              ),
+            }}
             content={{
               inspector: (
                 <SessionInspectorPanel
@@ -2956,23 +2972,24 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
               context: (
                 <SessionContextPanel
                   plugins={sessionPlugins.plugins}
-                  onRefreshPlugins={sessionPlugins.refresh}
                   modStatus={modStatus}
-                  mcpCount={initMcpCount}
+                  // The live answer once there is one; init's count until then.
+                  mcpCount={sessionMcp.servers?.length ?? initMcpCount}
                   mcp={
                     <>
-                      <SessionMCPStatus tabId={tabIdRef.current} />
+                      <SessionMCPStatus servers={sessionMcp.servers} />
                       {/* What the badge on the Session context button
                           counts. Without it the badge's number would have
                           no explanation anywhere. */}
-                      <div className="px-4 pb-4">
-                        <div className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+                      <div className="px-2 pb-2">
+                        <div className="px-1.5 py-1 text-[10px] uppercase tracking-wide text-muted-foreground">
                           Recent events
                         </div>
                         <SignalEventLog events={mcpEvents} />
                       </div>
                     </>
                   }
+                  instructionsCount={contextLedger.tracked ? contextLedger.entries.length : null}
                   instructions={<ContextLedgerPanel ledger={contextLedger} />}
                 />
               ),

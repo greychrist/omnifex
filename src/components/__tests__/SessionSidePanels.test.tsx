@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { render, cleanup, screen, fireEvent } from '@testing-library/react';
+import { render, cleanup, screen, fireEvent, within } from '@testing-library/react';
 import { SessionSidePanels, type SessionSidePanelKey } from '@/components/SessionSidePanels';
 import { SessionInspectorPanel } from '@/components/SessionInspectorPanel';
 
@@ -40,6 +40,18 @@ describe('SessionSidePanels', () => {
     render(<SessionSidePanels open="context" onClose={onClose} content={content} />);
     fireEvent.click(screen.getByRole('button', { name: 'Close Session context' }));
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows a panel's header actions only on that panel", () => {
+    const actions = { context: <button type="button">Refresh context</button> };
+    const { rerender } = render(
+      <SessionSidePanels open="context" onClose={vi.fn()} content={content} actions={actions} />,
+    );
+    expect(screen.getByRole('button', { name: 'Refresh context' })).toBeTruthy();
+    rerender(<SessionSidePanels open="permissions" onClose={vi.fn()} content={content} actions={actions} />);
+    // The context panel may still be sliding out; look inside the new one.
+    const permissions = screen.getByRole('heading', { name: 'Permissions' }).closest('[data-testid="resizable-side-panel"]') as HTMLElement;
+    expect(within(permissions).queryByRole('button', { name: 'Refresh context' })).toBeNull();
   });
 
   it('remembers a width per panel, not one width for all of them', () => {

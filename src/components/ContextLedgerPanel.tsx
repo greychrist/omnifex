@@ -2,12 +2,13 @@ import * as React from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
-  FileText, FolderTree, Server, Bot, Sparkles, Wrench, ChevronRight,
+  FileText, FolderTree, Server, Bot, Sparkles, Wrench,
 } from 'lucide-react';
 import { useTheme } from '@/hooks';
 import { getClaudeSyntaxTheme } from '@/lib/claudeSyntaxTheme';
 import { buildMarkdownComponents } from '@/lib/markdownComponents';
 import { cn } from '@/lib/utils';
+import { CONTENT_INDENT, GroupHeader, ROW_INDENT } from '@/components/sessionContext/rows';
 import { CONTEXT_TRACKING_SINCE, type ContextEntryKind, type ContextLedger, type LedgerEntry } from '@/lib/contextLedger';
 
 /**
@@ -58,22 +59,6 @@ function timeOf(iso: string): string {
     ? ''
     : d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
 }
-
-/**
- * Left inset for a row, so its label lines up with its group heading's label
- * instead of sitting outboard of the heading's own chevron.
- *
- * Derived from the heading row rather than picked: 6px padding + 12px chevron
- * + 6px gap + 12px icon + 6px gap = 42px to the heading label. A row reaches
- * its label through 6px dot + 6px gap, so it needs 30px of padding to land in
- * the same column. Change the heading's icon or gap and this follows.
- *
- * Applied as padding on the row, not margin on the list, so the hover
- * highlight still spans the panel's full width.
- */
-const ROW_INDENT = 'pl-[30px]';
-/** The same column, for the expanded content block beneath a row. */
-const CONTENT_INDENT = 'ml-[30px]';
 
 const PILL_BASE = 'text-[10px] px-2 py-0.5 font-medium transition-colors';
 const PILL_ACTIVE = 'bg-foreground/10 text-foreground';
@@ -244,37 +229,24 @@ export function ContextLedgerPanel({
       data-testid="context-ledger-panel"
       className={cn('flex h-full flex-col gap-1 p-2', className)}
     >
-      <div className="flex items-baseline justify-between px-1.5 pb-1">
-        <span className="text-[11px] font-medium">Session context</span>
-        <span className="text-[10px] text-muted-foreground">
-          <span>{ledger.liveCount} live</span>
-          <span> of {ledger.entries.length}</span>
-        </span>
-      </div>
-
       {/* Fills the remaining height rather than a fixed max, so a resize
           actually lengthens the list instead of the empty space under it. */}
       <div data-testid="context-ledger-scroll" className="min-h-0 flex-1 overflow-y-auto">
         {GROUPS.map(g => {
           const items = byKind.get(g.kind);
           if (!items || items.length === 0) return null;
-          const Icon = g.icon;
           const open = openGroups[g.kind] ?? g.openByDefault;
 
           return (
             <div key={g.kind} className="mb-1">
-              <button
-                type="button"
-                data-testid={`group-${g.kind}`}
-                aria-expanded={open}
-                onClick={() => setOpenGroups(s => ({ ...s, [g.kind]: !open }))}
-                className="flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-[10px] uppercase tracking-wide text-muted-foreground hover:bg-muted/60"
-              >
-                <ChevronRight className={cn('h-3 w-3 transition-transform', open && 'rotate-90')} />
-                <Icon className="h-3 w-3" />
-                <span>{g.label}</span>
-                <span className="ml-auto tabular-nums">{items.length}</span>
-              </button>
+              <GroupHeader
+                testId={`group-${g.kind}`}
+                label={g.label}
+                icon={g.icon}
+                count={items.length}
+                open={open}
+                onToggle={() => setOpenGroups(s => ({ ...s, [g.kind]: !open }))}
+              />
 
               {open ? (
                 <ul className="mt-0.5">
