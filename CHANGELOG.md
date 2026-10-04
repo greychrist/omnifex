@@ -5,6 +5,11 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.218] — 2026-10-04
+
+### Fixed
+- The question card's collapse button is reachable again. Its copy/view buttons sat on top of it, so a question couldn't be collapsed to read the turn behind it; they now sit in the header just before the collapse button.
+
 ## [0.4.217] — 2026-10-04
 
 ### Added
