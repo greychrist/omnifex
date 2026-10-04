@@ -285,6 +285,8 @@ export interface SystemRaw extends RawLineBase {
   draft_type?: string;
   /** First ~200 chars of the sanitized draft body; the rest stays on disk. */
   details_preview?: string;
+  /** Present when subtype === 'compact_boundary' (camelCase on disk, 2.1.289). */
+  compactMetadata?: { trigger?: string; preTokens?: number; postTokens?: number; durationMs?: number };
 }
 
 /**

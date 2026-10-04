@@ -21,6 +21,7 @@ import { SubagentReturnedMarker } from "@/components/SubagentReturnedMarker";
 import { isSubagentDispatch } from "@/lib/subagentDispatch";
 import { extractResendPayload } from "@/lib/extractResendPayload";
 import { formatDurationMs } from "@/lib/duration";
+import { formatTokens } from "@/lib/contextPressure";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
@@ -31,7 +32,7 @@ import remarkGfm from "remark-gfm";
 import { getClaudeSyntaxTheme } from "@/lib/claudeSyntaxTheme";
 import { buildMarkdownComponents } from "@/lib/markdownComponents";
 import { useTheme } from "@/hooks";
-import type { JsonlNode, SystemRaw } from "@/types/jsonl";
+import type { CliResultRaw, JsonlNode, SystemRaw } from "@/types/jsonl";
 import type { MessageContentBlock } from "@/types/claudeStream";
 import {
   asToolInput,
@@ -47,8 +48,6 @@ import { CardActionBar, CardActionButton, CardActionDivider } from "@/components
 import { MessageFrame } from "@/components/StreamMessage/MessageFrame";
 import { PermissionDeniedCard } from "@/components/PermissionDeniedCard";
 import { describeDenial, denialFromToolResult, findToolUse, findToolUseInput, hasLiveDenial, toolResultText } from "@/lib/permissionDenial";
-import { CliInitBadge } from "@/components/StreamMessage/CliInitBadge";
-import { CliResultBadge } from "@/components/StreamMessage/CliResultBadge";
 import {
   TodoReadWidget,
   LSWidget,
@@ -283,6 +282,30 @@ function modLineBody(raw: SystemRaw): string {
   const { plugin, text } = raw as unknown as { plugin?: unknown; text?: unknown };
   const body = typeof text === 'string' ? text : '';
   return typeof plugin === 'string' && plugin ? `${plugin} · ${body}` : body;
+}
+
+/**
+ * Body line for a `system:compact_boundary` marker: the CLI's own line, then
+ * the trigger, the token drop and the time, from whichever metadata is there.
+ */
+function compactBoundaryBody(raw: SystemRaw): string {
+  const meta = raw.compactMetadata ?? {};
+  const parts = [raw.content || 'Conversation compacted'];
+  if (meta.trigger) parts.push(meta.trigger);
+  if (typeof meta.preTokens === 'number' && typeof meta.postTokens === 'number') {
+    parts.push(`${formatTokens(meta.preTokens)} → ${formatTokens(meta.postTokens)} tokens`);
+  }
+  if (typeof meta.durationMs === 'number') parts.push(formatDurationMs(meta.durationMs));
+  return parts.join(' · ');
+}
+
+/** Body line for the stream's turn-end envelope: outcome, duration, model calls. */
+function cliResultBody(raw: CliResultRaw): string {
+  const parts: string[] = [];
+  if (raw.subtype) parts.push(raw.subtype);
+  if (typeof raw.duration_ms === 'number') parts.push(formatDurationMs(raw.duration_ms));
+  if (typeof raw.num_turns === 'number') parts.push(`${raw.num_turns} turn${raw.num_turns === 1 ? '' : 's'}`);
+  return parts.join(' · ');
 }
 
 /**
@@ -604,6 +627,8 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
           ? feedbackDraftBody(sysRaw)
           : subtype === 'stop_hook_summary'
           ? stopHookSummaryBody(sysRaw)
+          : subtype === 'compact_boundary'
+          ? compactBoundaryBody(sysRaw)
           : subtype === 'ui_log' || subtype === 'ui_toast'
           ? modLineBody(sysRaw)
           : (sysRaw as unknown as { message?: unknown }).message
@@ -670,12 +695,15 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
       );
     }
 
-    if (message.kind === 'cli-stream-init') {
-      return <CliInitBadge node={message} />;
-    }
-
-    if (message.kind === 'cli-stream-result') {
-      return <CliResultBadge node={message} />;
+    if (message.kind === 'cli-stream-init' || message.kind === 'cli-stream-result') {
+      const text = message.kind === 'cli-stream-init'
+        ? [message.raw.model, message.raw.cwd].filter(Boolean).join(' · ')
+        : cliResultBody(message.raw);
+      return (
+        <MessageFrame streamKind={message.kind === 'cli-stream-init' ? 'system.init' : 'system.result'} message={message}>
+          <span className="text-xs font-mono">{text}</span>
+        </MessageFrame>
+      );
     }
 
     if (message.kind === 'unknown') {

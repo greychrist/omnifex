@@ -310,14 +310,14 @@ describe('system away_summary recap rendering', () => {
   it('other system subtypes keep the mono styling and inline subtype label', () => {
     const node = {
       kind: 'system',
-      subtype: 'compact_boundary',
+      subtype: 'turn_duration',
       sessionId: 'sess-1',
       receivedAt: '2026-05-27T10:00:00Z',
-      raw: { type: 'system', subtype: 'compact_boundary', message: 'boundary hit' },
+      raw: { type: 'system', subtype: 'turn_duration', message: 'boundary hit' },
     } as unknown as JsonlNode;
     render(<StreamMessage tabId="tab-test" message={node} streamMessages={[node]} />);
 
-    expect(screen.getByText('system.compact_boundary')).toBeTruthy();
+    expect(screen.getByText('system.turn_duration')).toBeTruthy();
     expect(screen.getByText('boundary hit').className).toContain('font-mono');
   });
 

@@ -58,6 +58,9 @@ export const KIND_FIXTURES: Record<string, string> = {
   "system.unknown": "(unrecognized system subtype — raw payload shown above)",
   "permission.request": "Allow Bash to run: git diff HEAD~1 --stat?",
   "permission.askUserQuestion": "Should I proceed with the destructive rename, or create a copy first?",
+  "system.compact_boundary": "Conversation compacted · manual · 465k → 11k tokens · 58.08s",
+  "system.init": "claude-opus-5-5 · /Users/greg/Repos/omnifex",
+  "system.result": "success · 58.10s · 3 turns",
   "summary.compaction": "Earlier the user asked to refactor auth; the agent edited middleware.ts and added tests.",
   "unknown": "(unrecognized message type — raw payload shown above)",
 

@@ -30,6 +30,7 @@ const EMITTABLE_IDS = [
   "system.userPromptSubmit", "system.api_error", "system.away_summary",
   "system.thinking_tokens", "system.rate_limit", "system.feedback_draft_queued",
   "system.local_command", "system.stop_hook_summary", "system.unknown",
+  "system.compact_boundary", "system.result", "system.init",
   // stream-only CLI bookkeeping (default Never)
   "system.background_tasks_changed", "system.dev_intent",
   "system.per_turn_effort_changed", "system.elicitation_complete",
@@ -313,7 +314,6 @@ describe('classifyStandaloneKind', () => {
       ({ kind: 'system', subtype, sessionId: '', receivedAt: '', raw: { type: 'system', subtype } }) as unknown as JsonlNode;
 
     it('returns system.unknown for an unrecognized system subtype', () => {
-      expect(classifyStandaloneKind(sys('compact_boundary'), [])).toBe('system.unknown');
       expect(classifyStandaloneKind(sys('whatever'), [])).toBe('system.unknown');
     });
 
@@ -344,6 +344,19 @@ describe('classifyStandaloneKind', () => {
 
     it('classifies stop_hook_summary as its own kind, not the unknown catch-all', () => {
       expect(classifyStandaloneKind(sys('stop_hook_summary'), [])).toBe('system.stop_hook_summary');
+    });
+
+    it('classifies compact_boundary as its own kind, not the unknown catch-all', () => {
+      expect(classifyStandaloneKind(sys('compact_boundary'), [])).toBe('system.compact_boundary');
+    });
+
+    it('gives the stream init and result envelopes registry kinds', () => {
+      // Without one they returned null: hidden in compact view, and in
+      // verbose a hard-coded badge no Appearance setting could reach.
+      const init = { kind: 'cli-stream-init', raw: { type: 'system', subtype: 'init' }, sessionId: 's', receivedAt: '' } as JsonlNode;
+      const result = { kind: 'cli-stream-result', raw: { type: 'result', subtype: 'success' }, sessionId: 's', receivedAt: '' } as JsonlNode;
+      expect(classifyStandaloneKind(init, [])).toBe('system.init');
+      expect(classifyStandaloneKind(result, [])).toBe('system.result');
     });
 
     it('classifies away_summary as its own separately-stylable kind', () => {

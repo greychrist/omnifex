@@ -238,6 +238,8 @@ export function classifyStandaloneKind(
     }
     // What the Stop hooks did when a turn ended.
     if (subtype === 'stop_hook_summary') return 'system.stop_hook_summary';
+    // Where a compaction cut the conversation.
+    if (subtype === 'compact_boundary') return 'system.compact_boundary';
     // Fallback: any other system subtype renders as the unknown gray inline strip.
     return 'system.unknown';
   }
@@ -247,6 +249,11 @@ export function classifyStandaloneKind(
   if (msg.kind === 'rate-limit-event') {
     return 'system.rate_limit';
   }
+
+  // The stream's session-start and turn-end envelopes. Without a kind they
+  // were invisible to Appearance settings and drew a hard-coded badge.
+  if (msg.kind === 'cli-stream-init') return 'system.init';
+  if (msg.kind === 'cli-stream-result') return 'system.result';
 
   // Bookkeeping JSONL kinds: the kind id equals the node kind. Returning it
   // here (rather than null) lets compact-grouping read each kind's registry
