@@ -1,6 +1,6 @@
 ---
 name: omnifex-release
-description: Use when Greg asks to cut, ship, build or release a new OmniFex version ("release", "ship it", "cut v0.4.x", "increment the release number", "build it", "commit and push and release"). Outstanding work is committed and pushed automatically as part of the run. Append `local` to build + verify without publishing.
+description: Use when Greg asks to cut, ship, build or release a new OmniFex version ("release", "ship it", "cut v0.4.x", "increment the release number", "build it", "commit and push and release"). Outstanding work is committed and pushed automatically as part of the run, and a feature branch is merged into main first. Append `local` to build + verify without publishing.
 argument-hint: "[version] [local]"
 allowed-tools: Bash(bash ${CLAUDE_SKILL_DIR}/scripts/*)
 ---
@@ -23,12 +23,16 @@ verification and uploads nothing.
 Act on it before anything else:
 
 - Any `STATUS:` line → stop and tell Greg which one. Do not start the build.
-- `uncommitted > 0` → stage everything, commit with a conventional-commit
-  message inferred from the diff, no approval step. Stop instead if the diff
-  contains secrets (`.env`, tokens, keys).
-- `unpushed > 0` → `git push origin main`.
-- Both zero → say so in one line. No empty commit.
-- Branch not `main` → stop and ask; `--latest` ships whatever it points at.
+- `uncommitted > 0` → stage everything, commit on the current branch with a
+  conventional-commit message inferred from the diff, no approval step. Stop
+  instead if the diff contains secrets (`.env`, tokens, keys).
+- Branch not `main` (preflight prints a `merge:` line) → after that commit,
+  merge it into main: `git checkout main && git merge --ff-only <branch>`; if
+  that refuses, `git merge --no-edit <branch>`. A conflict → `git merge
+  --abort` and stop. Once merged, `git branch -d <branch>`. Everything below
+  runs on main — `--latest` ships whatever main points at.
+- `unpushed > 0`, or anything just merged → `git push origin main`.
+- Nothing uncommitted, unpushed or to merge → say so in one line. No empty commit.
 - Version: `$ARGUMENTS` if given, else `next patch`. If preflight says the tag
   exists, use the next free patch and say why.
 

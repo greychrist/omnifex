@@ -26,7 +26,12 @@ dirty=$(git status --porcelain | wc -l | tr -d ' ')
 unpushed=$(git rev-list --count origin/main..HEAD 2>/dev/null || echo '?')
 echo "uncommitted:     $dirty file(s)"
 echo "unpushed:        $unpushed commit(s) ahead of origin/main"
-[ "$branch" = "main" ] || echo "STATUS: branch is '$branch', not main — stop and ask"
+if [ "$branch" != "main" ]; then
+  # Not a stop: the runbook commits here, then merges into main before building.
+  echo "merge:           '$branch' → main before the build"
+  behind=$(git rev-list --count main..origin/main 2>/dev/null || echo '?')
+  [ "$behind" = "0" ] || echo "STATUS: local main is $behind commit(s) behind origin/main — pull main before merging"
+fi
 
 if git show-ref -q --tags "v$next" || git ls-remote --tags origin "refs/tags/v$next" 2>/dev/null | grep -q .; then
   echo "STATUS: tag v$next already exists — pick the next number and tell Greg"
