@@ -76,9 +76,9 @@ The Brain is a per-account **memory vault** distilled from those transcripts.
 ### Context tracking & compaction
 
 - **Live context gauge** per tab, measured against the session's *real* window: the size the running CLI reports. Before that figure arrives, as on a resumed session, it uses the window recorded for each model (taken from Claude Code's own model list and editable in Settings › Pricing) rather than guessing from the model name.
-- **Context-pressure banner** with a budget you set: either a percentage of the window or an absolute token count. It escalates in two steps — amber at 80% of your budget, red at 100% — and applies live, so you can retune it mid-session.
+- **Context-pressure banner** with a budget you set: either a percentage of the window or an absolute token count. It escalates in two steps — amber at 80% of your budget, red at 100% — and applies live, so you can retune it mid-session. The status bar's context size, and its 5-hour and weekly usage, pulse once they turn red.
 - **Context timeline rail** (opt-in) plots context size per message down the transcript, answering the question the live gauges can't: *which message made this session expensive?*
-- **Post-compaction directive.** Compaction replaces earlier turns with a summary, and a model working from that summary will still answer confidently about exact line numbers and literal output — reconstructing specifics from the gist, which reads exactly like a memory. OmniFex sends a short directive on the near side of every compaction boundary telling the model its context just went lossy and to re-read before quoting. It fires on auto-compaction and a hand-typed `/compact`, not just OmniFex's own banner, and the text is editable in settings.
+- **Post-compaction directive.** Compaction replaces earlier turns with a summary, and a model working from that summary will still answer confidently about exact line numbers and literal output — reconstructing specifics from the gist, which reads exactly like a memory. OmniFex sends a short directive on the near side of every compaction boundary telling the model its context just went lossy and to re-read before quoting. It fires on auto-compaction and a hand-typed `/compact`, not just OmniFex's own banner. The text is editable in settings, and a switch there turns it off without losing your edits.
 
 ### Cost tracking
 

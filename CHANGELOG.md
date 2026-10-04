@@ -5,6 +5,23 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.212] — 2026-10-04
+
+### Added
+- Session context panel: one side panel with Mods, Plugins, MCP servers and Instructions sections, replacing the separate MCP, Plugins and Session context panels. Sections start collapsed and remember what you open. The MCP unread badge now sits on the Session context button.
+- Mods (Claude Code 2.1.287+ plugins that run code inside the CLI) are listed first, each tagged with what it can do — approves or blocks tool calls, rewrites prompts, sends prompts, runs processes, network access, calls models, writes files — read from Claude Code's own `plugin validate`, plus the mod's current status line. Built-in plugins are grouped on their own.
+- The context popover sums up what is loaded (`1 mod · 14 plugins · 2 MCP servers`) and opens the panel.
+- A switch in Settings › System Prompts › Compactions turns the post-compaction prompt off without losing your edits.
+
+### Changed
+- The plugin list is read from the session's start-up record instead of asking Claude Code to reload plugins, which re-ran every mod's start-up code just to show the list. Reload happens only from the panel's refresh button.
+- The status bar's context size and 5-hour / weekly usage pulse when they turn red.
+
+### Fixed
+- Lines a mod writes or flashes up now appear in the transcript under the mod's name, and the rest of a mod's traffic is hidden by default, instead of drawing orange "Unrecognized record" cards.
+- The Instructions section no longer claims a session "predates instruction tracking" before its first prompt.
+- Clearing the post-compaction prompt never turned it off — a blank box sent the shipped default. The new switch is how it is turned off.
+
 ## [0.4.211] — 2026-10-02
 
 ### Added
