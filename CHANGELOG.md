@@ -5,6 +5,23 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.215] — 2026-10-04
+
+### Added
+- Session context panel: a Refresh button in the panel header, beside the close button, that reloads plugins (re-running each mod's session start) and re-queries MCP servers.
+
+### Changed
+- Session context panel: Mods, Plugins and MCP servers use the same compact layout as Instructions — scope groups with counts, rows led by a status dot, and details that open inline.
+- Session context panel: section headings are header bands ending in the same up/down expander as collapsible chat cards, so they no longer look like the groups inside them. Every heading shows its count, in brackets.
+- Side panels take the Lima page's two-tone look: a muted title band over a tinted body.
+- Plugin rows tag only the marketplace a plugin came from, and built-in plugins carry no tag.
+
+### Fixed
+- The MCP servers heading showed no count for a session opened from its transcript; it now counts the servers the CLI reports live.
+
+### Removed
+- The separate Refresh buttons inside the Plugins and MCP servers sections, and the duplicate "Session context" line inside Instructions.
+
 ## [0.4.214] — 2026-10-04
 
 ### Added
