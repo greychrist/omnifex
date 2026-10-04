@@ -5,6 +5,15 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.214] — 2026-10-04
+
+### Added
+
+- Mermaid diagrams in the transcript. A ```` ```mermaid ```` block in a reply is drawn as a diagram, with a Diagram/Source toggle and an action bar to download SVG or PNG, copy the image, copy the source, or expand it.
+- Full-window diagram viewer: pan, zoom (wheel, pinch, buttons), fit and 100%, and click a box in a flowchart to highlight its connections.
+- Exports are always drawn in the light theme on white, so they drop into documents cleanly whatever the app theme.
+- Sessions are told that OmniFex draws Mermaid, so Claude reaches for a diagram when a process or system is easier to show than describe. Resumed sessions pick this up after their next compaction.
+
 ## [0.4.213] — 2026-10-04
 
 ### Changed
