@@ -66,8 +66,9 @@ import { forwardedParentToolUseId } from '@/lib/subagentDispatch';
 import { reduceSessionStreamMessage } from '@/lib/sessionStreamReducer';
 import { isCliPromptRecord } from '@/lib/promptReconciliation';
 import {
+  POST_COMPACT_ENABLED_SETTING_KEY,
   POST_COMPACT_PROMPT_SETTING_KEY,
-  resolvePostCompactPrompt,
+  resolvePostCompactDirective,
 } from '@/lib/postCompactPrompt';
 import type { ModelPricingInput } from '@/lib/pricing';
 import { runStreamEffect, drainQueuedPrompt } from '@/lib/sessionStreamEffects';
@@ -811,16 +812,20 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   // can see without taking them as deps (it must not re-subscribe when the
   // model picker changes). Seeded with the shipped default so a compaction
   // that lands before the setting resolves still gets the directive.
-  const postCompactPromptRef = useRef<string>(resolvePostCompactPrompt(null));
+  const postCompactPromptRef = useRef<string>(resolvePostCompactDirective(null, null));
   const selectedModelRef = useRef<string>(selectedModel);
   useEffect(() => { selectedModelRef.current = selectedModel; }, [selectedModel]);
   useEffect(() => {
     let cancelled = false;
     // A failed read must not disable the directive — the shipped default is
-    // complete on its own, so fall through to the seed.
-    api.getSetting(POST_COMPACT_PROMPT_SETTING_KEY)
-      .then((stored) => {
-        if (!cancelled) postCompactPromptRef.current = resolvePostCompactPrompt(stored);
+    // complete on its own, so fall through to the seed. Switched off, the ref
+    // holds '' and queuePostCompactDirective sends nothing.
+    Promise.all([
+      api.getSetting(POST_COMPACT_ENABLED_SETTING_KEY),
+      api.getSetting(POST_COMPACT_PROMPT_SETTING_KEY),
+    ])
+      .then(([enabled, stored]) => {
+        if (!cancelled) postCompactPromptRef.current = resolvePostCompactDirective(enabled, stored);
       })
       .catch(() => {});
     return () => { cancelled = true; };

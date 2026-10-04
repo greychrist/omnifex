@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
   DEFAULT_POST_COMPACT_PROMPT,
+  POST_COMPACT_ENABLED_SETTING_KEY,
   POST_COMPACT_PROMPT_SETTING_KEY,
+  resolvePostCompactDirective,
   resolvePostCompactPrompt,
 } from '../postCompactPrompt';
 
@@ -32,5 +34,26 @@ describe('resolvePostCompactPrompt', () => {
     // feature is a wasted turn.
     expect(DEFAULT_POST_COMPACT_PROMPT.toLowerCase()).toContain('summary');
     expect(DEFAULT_POST_COMPACT_PROMPT.toLowerCase()).toContain('re-read');
+  });
+});
+
+// The switch is the one way to turn the directive off, and keeps the edited
+// text for when it is turned back on.
+describe('resolvePostCompactDirective', () => {
+  it('is on by default, with the shipped prompt', () => {
+    expect(resolvePostCompactDirective(null, null)).toBe(DEFAULT_POST_COMPACT_PROMPT);
+  });
+
+  it('sends the stored override when on', () => {
+    expect(resolvePostCompactDirective('true', 'mine')).toBe('mine');
+  });
+
+  it('sends nothing when switched off, whatever the template holds', () => {
+    expect(resolvePostCompactDirective('false', 'mine')).toBe('');
+    expect(resolvePostCompactDirective('false', null)).toBe('');
+  });
+
+  it('pins the enable key', () => {
+    expect(POST_COMPACT_ENABLED_SETTING_KEY).toBe('postCompact.enabled');
   });
 });

@@ -8,26 +8,13 @@ import { useSaveStatus } from './saveStatus';
  *
  * Extracted from `SummaryPromptSettings` when the Compactions panel needed the
  * same behaviour: debounced auto-save with no Save button, reported through the
- * Settings save indicator, and reset-to-default. Only the storage key, the default text, and what an empty
- * stored value means differ between the two.
+ * Settings save indicator, and reset-to-default. Only the storage key and the
+ * default text differ between the two.
  */
 
 /** Debounce before the textarea contents are persisted. Tuned so short pauses
  *  while typing flush, and rapid edits coalesce into one save. */
 export const PROMPT_AUTOSAVE_DEBOUNCE_MS = 500;
-
-export interface UsePromptTemplateOptions {
-  /**
-   * What a stored empty string means.
-   *
-   * `true` (session summaries): empty is indistinguishable from unset, so the
-   * default is shown. `false` (compactions): empty is a deliberate "off" —
-   * `queuePostCompactDirective` skips an empty prompt — so it must render as
-   * empty, or reopening Settings would look like the directive turned itself
-   * back on.
-   */
-  treatEmptyAsDefault?: boolean;
-}
 
 export interface UsePromptTemplateResult {
   value: string;
@@ -42,7 +29,6 @@ export interface UsePromptTemplateResult {
 export function usePromptTemplate(
   settingKey: string,
   defaultPrompt: string,
-  { treatEmptyAsDefault = true }: UsePromptTemplateOptions = {},
 ): UsePromptTemplateResult {
   const [value, setValue] = useState('');
   const [loading, setLoading] = useState(true);
@@ -61,9 +47,8 @@ export function usePromptTemplate(
       .getSetting(settingKey)
       .then((stored) => {
         if (cancelled) return;
-        const useStored =
-          stored !== null && (treatEmptyAsDefault ? stored.length > 0 : true);
-        const initial = useStored ? stored : defaultPrompt;
+        // An empty stored value is indistinguishable from unset.
+        const initial = stored ? stored : defaultPrompt;
         setValue(initial);
         savedRef.current = initial;
       })

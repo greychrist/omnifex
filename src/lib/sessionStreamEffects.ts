@@ -165,8 +165,7 @@ export function runStreamEffect<Q extends QueuedPrompt = QueuedPrompt>(
 
     case 'queuePostCompactDirective': {
       const prompt = deps.postCompactPrompt.trim();
-      // A blanked override means the user turned the directive off. Honour
-      // that rather than sending an empty turn.
+      // '' means the user switched the directive off (postCompact.enabled).
       if (!prompt) return;
       const queue = deps.queuedPromptsRef.current;
       // Two boundaries before the queue drains would otherwise stack two

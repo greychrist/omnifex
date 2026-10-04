@@ -1,11 +1,16 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Spinner } from '@/components/ui/spinner';
+import { Switch } from '@/components/ui/switch';
+import { api } from '@/lib/api';
+import { fireAndLog } from '@/lib/fireAndLog';
 import {
   DEFAULT_POST_COMPACT_PROMPT,
+  POST_COMPACT_ENABLED_SETTING_KEY,
   POST_COMPACT_PROMPT_SETTING_KEY,
 } from '@/lib/postCompactPrompt';
 import { usePromptTemplate } from './usePromptTemplate';
 import { PromptTemplateEditor } from './PromptTemplateEditor';
+import { useSaveStatus } from './saveStatus';
 
 /**
  * Settings → System Prompts → Compactions.
@@ -15,16 +20,34 @@ import { PromptTemplateEditor } from './PromptTemplateEditor';
  * now a lossy summary. See `src/lib/postCompactPrompt.ts` for why it exists and
  * `queuePostCompactDirective` in `sessionStreamEffects.ts` for when it fires.
  *
- * No enable switch, unlike the summaries panel: the queueing effect already
- * treats an empty template as "off", so a switch would be a second way to say
- * the same thing, with the two able to disagree.
+ * An enable switch, like the summaries panel, is the one way to turn it off
+ * (`postCompact.enabled`), and it leaves the edited text in place for when it
+ * is turned back on. It replaced "clear the box to turn it off", which never
+ * worked: a blank template resolves to the shipped default.
  */
 export const CompactionPromptSettings: React.FC = () => {
+  const { track } = useSaveStatus();
   const { value, loading, isDefault, edit, resetToDefault } =
-    usePromptTemplate(POST_COMPACT_PROMPT_SETTING_KEY, DEFAULT_POST_COMPACT_PROMPT, {
-      // An empty stored value is a deliberate "off" here, not "unset".
-      treatEmptyAsDefault: false,
-    });
+    usePromptTemplate(POST_COMPACT_PROMPT_SETTING_KEY, DEFAULT_POST_COMPACT_PROMPT);
+
+  const [enabledLoading, setEnabledLoading] = useState(true);
+  const [enabled, setEnabled] = useState(true);
+  useEffect(() => {
+    let cancelled = false;
+    api.getSetting(POST_COMPACT_ENABLED_SETTING_KEY)
+      .then((stored) => { if (!cancelled) setEnabled(stored !== 'false'); })
+      .catch(() => { if (!cancelled) setEnabled(true); })
+      .finally(() => { if (!cancelled) setEnabledLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
+
+  // Optimistic: flips at once, flips back if the write fails.
+  const handleEnabledChange = async (next: boolean) => {
+    setEnabled(next);
+    if (!(await track(api.saveSetting(POST_COMPACT_ENABLED_SETTING_KEY, next ? 'true' : 'false')))) {
+      setEnabled(!next);
+    }
+  };
 
   return (
     <div className="space-y-4 max-w-3xl">
@@ -39,24 +62,38 @@ export const CompactionPromptSettings: React.FC = () => {
         </p>
       </div>
 
-      {loading ? (
+      {loading || enabledLoading ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Spinner /> Loading…
         </div>
       ) : (
         <>
-          <PromptTemplateEditor
-            value={value}
-            onChange={edit}
-            onReset={resetToDefault}
-            isDefault={isDefault}
-            aria-label="Post-compaction directive"
-          />
+          <div className="flex items-center gap-3">
+            <Switch
+              id="post-compact-enabled"
+              checked={enabled}
+              onCheckedChange={fireAndLog('compaction-prompt-settings:checked-change', handleEnabledChange)}
+              aria-label="Send a prompt after compaction"
+            />
+            <label htmlFor="post-compact-enabled" className="text-sm cursor-pointer">
+              Send a prompt after compaction
+            </label>
+          </div>
+
+          <div className={enabled ? '' : 'opacity-50 pointer-events-none'}>
+            <PromptTemplateEditor
+              value={value}
+              onChange={edit}
+              onReset={resetToDefault}
+              isDefault={isDefault}
+              aria-label="Post-compaction directive"
+            />
+          </div>
 
           <p className="text-[11px] text-muted-foreground">
             Nothing is appended to this template — it is sent exactly as written,
-            with no session details interpolated. <strong>Clear the box to turn
-            the directive off</strong> and send nothing after a compaction.
+            with no session details interpolated. Turn the switch off to send
+            nothing after a compaction; your edits are kept.
           </p>
 
           <p className="text-[11px] text-muted-foreground">

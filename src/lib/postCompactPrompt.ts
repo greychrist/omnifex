@@ -25,6 +25,10 @@
 /** app_settings key holding the user's edited directive, if any. */
 export const POST_COMPACT_PROMPT_SETTING_KEY = 'postCompact.promptTemplate';
 
+/** app_settings key for the on/off switch. `'false'` is off; anything else,
+ *  including no row, is on. */
+export const POST_COMPACT_ENABLED_SETTING_KEY = 'postCompact.enabled';
+
 /**
  * Deliberately short. This costs a real turn every time it fires, and a long
  * preamble buys nothing over the one instruction that matters.
@@ -47,4 +51,16 @@ export function resolvePostCompactPrompt(
   template: string | null | undefined,
 ): string {
   return template && template.trim() ? template : DEFAULT_POST_COMPACT_PROMPT;
+}
+
+/**
+ * What to send after a compaction: the resolved prompt, or `''` when the user
+ * switched the directive off. The switch is the only way to turn it off, so
+ * an edited prompt survives being turned off and on again.
+ */
+export function resolvePostCompactDirective(
+  enabled: string | null | undefined,
+  template: string | null | undefined,
+): string {
+  return enabled === 'false' ? '' : resolvePostCompactPrompt(template);
 }

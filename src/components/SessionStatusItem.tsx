@@ -119,9 +119,9 @@ export function SessionStatusItem({
           {label}
           <span
             data-testid="session-item-context"
-            // Pulses when coloured, like the thinking readout, so a filling
-            // window is noticed without opening anything.
-            className={cn(METER_TEXT[reading.level], reading.level !== "none" && "animate-pulse")}
+            // Pulses when red, like the thinking readout, so a window at its
+            // compaction boundary is noticed without opening anything.
+            className={cn(METER_TEXT[reading.level], reading.level === "critical" && "animate-pulse")}
           >
             {formatContextTokens(reading.tokens)} ({reading.pct.toFixed(0)}%)
           </span>

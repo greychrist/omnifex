@@ -192,12 +192,12 @@ describe('AccountStatusItem', () => {
       expect(screen.getByTestId('account-item-usage').className).toContain(cls);
     });
 
-    // Pulses whenever it is coloured — yellow, orange or red — like the
-    // thinking readout; only the window that is coloured.
+    // Pulses only when red, like the thinking readout; only that window.
+    // Yellow starts at 50%, so pulsing there would run all week.
     it.each([
       [30, false],
-      [60, true],
-      [80, true],
+      [60, false],
+      [80, false],
       [95, true],
     ] as const)('pulses %s%%: %s', (pct, pulses) => {
       render(<AccountStatusItem {...base} fiveHourRateLimit={fiveHour(pct)} sevenDayRateLimit={sevenDay(10)} />);

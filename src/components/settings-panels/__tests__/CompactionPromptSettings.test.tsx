@@ -2,8 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
 
-// The panel only reads/writes one app_settings key, unlike the summary panel
-// next door which juggles three.
+// The panel reads/writes two app_settings keys: the template and the switch.
 vi.mock('@/lib/api', async () => {
   return {
     api: {
@@ -16,6 +15,7 @@ vi.mock('@/lib/api', async () => {
 import { api } from '@/lib/api';
 import {
   DEFAULT_POST_COMPACT_PROMPT,
+  POST_COMPACT_ENABLED_SETTING_KEY,
   POST_COMPACT_PROMPT_SETTING_KEY,
 } from '@/lib/postCompactPrompt';
 import { CompactionPromptSettings } from '../CompactionPromptSettings';
@@ -63,7 +63,7 @@ describe('CompactionPromptSettings', () => {
   });
 
   it('loads a stored override instead of the default', async () => {
-    vi.mocked(api.getSetting).mockImplementation(async () => 'my directive');
+    vi.mocked(api.getSetting).mockImplementation(async (key: string) => (key === POST_COMPACT_PROMPT_SETTING_KEY ? 'my directive' : null));
     render(<CompactionPromptSettings />);
     await waitForLoaded();
     expect(textarea().value).toBe('my directive');
@@ -116,7 +116,7 @@ describe('CompactionPromptSettings', () => {
 
   it('Reset to default restores the shipped directive and saves it', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    vi.mocked(api.getSetting).mockImplementation(async () => 'custom');
+    vi.mocked(api.getSetting).mockImplementation(async (key: string) => (key === POST_COMPACT_PROMPT_SETTING_KEY ? 'custom' : null));
     render(<CompactionPromptSettings />);
     await waitForLoaded();
 
@@ -139,30 +139,46 @@ describe('CompactionPromptSettings', () => {
     expect((reset as HTMLButtonElement).disabled).toBe(true);
   });
 
-  // Blanking the box is the documented way to turn the directive off —
-  // `queuePostCompactDirective` skips an empty prompt rather than sending an
-  // empty turn. The panel must therefore persist an empty string rather than
-  // treating it as "nothing changed".
-  it('persists an empty template, which is how the directive is turned off', async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    vi.mocked(api.getSetting).mockImplementation(async () => 'something');
+  // The switch turns the directive off and keeps the edited text, which the
+  // old "clear the box" did not — and clearing never worked anyway: a blank
+  // template resolved to the shipped default.
+  const toggle = () => screen.getByRole('switch', { name: /send a prompt after compaction/i });
+
+  it('is on when nothing is stored', async () => {
     render(<CompactionPromptSettings />);
     await waitForLoaded();
-
-    fireEvent.change(textarea(), { target: { value: '' } });
-    await vi.advanceTimersByTimeAsync(600);
-
-    await waitFor(() => {
-      expect(vi.mocked(api.saveSetting)).toHaveBeenCalledWith(
-        POST_COMPACT_PROMPT_SETTING_KEY,
-        '',
-      );
-    });
+    expect(toggle().getAttribute('aria-checked')).toBe('true');
   });
 
-  it('tells the user that clearing the box disables the directive', async () => {
+  it('reads a stored off', async () => {
+    vi.mocked(api.getSetting).mockImplementation(async (key: string) => (key === POST_COMPACT_ENABLED_SETTING_KEY ? 'false' : null));
     render(<CompactionPromptSettings />);
     await waitForLoaded();
-    expect(document.body.textContent).toMatch(/clear/i);
+    expect(toggle().getAttribute('aria-checked')).toBe('false');
+  });
+
+  it('saves the switch when flipped, leaving the template alone', async () => {
+    render(<CompactionPromptSettings />);
+    await waitForLoaded();
+    fireEvent.click(toggle());
+    await waitFor(() => {
+      expect(vi.mocked(api.saveSetting)).toHaveBeenCalledWith(POST_COMPACT_ENABLED_SETTING_KEY, 'false');
+    });
+    expect(vi.mocked(api.saveSetting)).not.toHaveBeenCalledWith(POST_COMPACT_PROMPT_SETTING_KEY, expect.anything());
+    expect(textarea().value).toBe(DEFAULT_POST_COMPACT_PROMPT);
+  });
+
+  it('flips back if the save fails', async () => {
+    vi.mocked(api.saveSetting).mockRejectedValue(new Error('x'));
+    render(<CompactionPromptSettings />);
+    await waitForLoaded();
+    fireEvent.click(toggle());
+    await waitFor(() => { expect(toggle().getAttribute('aria-checked')).toBe('true'); });
+  });
+
+  it('no longer tells the user to clear the box', async () => {
+    render(<CompactionPromptSettings />);
+    await waitForLoaded();
+    expect(document.body.textContent).not.toMatch(/clear the box/i);
   });
 });

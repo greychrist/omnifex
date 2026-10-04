@@ -79,10 +79,11 @@ describe('SessionStatusItem', () => {
       expect(screen.getByTestId('session-item-context').className).toContain(cls);
     });
 
-    // A coloured reading pulses, like the thinking readout, so it is noticed.
+    // A red reading pulses, like the thinking readout, so it is noticed.
+    // Amber does not: it is a heads-up, and a pulse there would be constant.
     it.each([
       ['none', false],
-      ['warn', true],
+      ['warn', false],
       ['critical', true],
     ] as const)('pulses the context at the %s level: %s', (l, pulses) => {
       render(<SessionStatusItem {...base} contextLevelSignal={level(l)} />);
