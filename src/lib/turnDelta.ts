@@ -114,6 +114,8 @@ export interface TurnDeltaEntry extends TurnDelta {
   at: number;
   /** A `/compact` landed inside this turn, so the delta is a reset. */
   compacted: boolean;
+  /** The prompt's transcript uuid, when it has one — what a jump scrolls to. */
+  promptUuid: string | null;
 }
 
 /**
@@ -148,6 +150,7 @@ export function turnDeltaSeries(messages: JsonlNode[]): TurnDeltaEntry[] {
       anchorId: promptAnchorId(anchors[n].node, anchorIdx),
       at: readingTime(messages[next.index]),
       compacted: hasCompactBoundaryBetween(messages, base.index, next.index),
+      promptUuid: (anchors[n].node.raw as { uuid?: string }).uuid ?? null,
     });
   }
 

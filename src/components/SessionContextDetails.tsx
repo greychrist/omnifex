@@ -17,8 +17,58 @@ import { loadoutSummary, type LoadoutCounts } from "@/lib/sessionLoadout";
  * into disagreeing about how full the window is.
  */
 
-/** Legacy `greychrist.` prefix, like every other localStorage key here. */
-const DETAILS_STORAGE_KEY = "greychrist.sessionCard.detailsOpen";
+/**
+ * Legacy `greychrist.` prefix, like every other localStorage key here.
+ *
+ * `detailsExpanded` replaced `detailsOpen` when Details became open by
+ * default: the old key was written on every mount, so it held "0" for anyone
+ * who had ever opened the popover, and reading it would have kept the old
+ * default for exactly the people who already use it.
+ */
+const DETAILS_STORAGE_KEY = "greychrist.sessionCard.detailsExpanded";
+const EVENTS_STORAGE_KEY = "greychrist.sessionCard.eventsExpanded";
+
+/**
+ * A disclosure's open state, sticky across popovers and both triggers. Only a
+ * click writes it — never mounting — so an untouched one keeps its default.
+ */
+function useStickyDisclosure(key: string, defaultOpen: boolean): [boolean, () => void] {
+  const [open, setOpen] = React.useState<boolean>(() => {
+    if (typeof window === "undefined") return defaultOpen;
+    const stored = window.localStorage.getItem(key);
+    return stored === null ? defaultOpen : stored === "1";
+  });
+  const toggle = React.useCallback(() => {
+    setOpen((prev) => {
+      const next = !prev;
+      if (typeof window !== "undefined") window.localStorage.setItem(key, next ? "1" : "0");
+      return next;
+    });
+  }, [key]);
+  return [open, toggle];
+}
+
+function DisclosureToggle({
+  label,
+  open,
+  onToggle,
+}: {
+  label: string;
+  open: boolean;
+  onToggle: () => void;
+}): React.JSX.Element {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={open}
+      className="flex w-full items-center gap-1 text-[10px] uppercase tracking-wide text-muted-foreground hover:text-foreground transition-colors"
+    >
+      <ChevronRight className={cn("h-3 w-3 transition-transform", open && "rotate-90")} />
+      {label}
+    </button>
+  );
+}
 
 /**
  * Colour by proximity to the compaction boundary.
@@ -176,6 +226,8 @@ export interface SessionContextDetailsProps {
    *  panel; the popover gives the counts and a way there. */
   loadout?: LoadoutCounts | null;
   onOpenLoadout?: () => void;
+  /** Scroll the transcript to a message. Makes events that have one clickable. */
+  onJumpToMessage?: (messageUuid: string) => void;
 }
 
 /** The popover body. Each trigger owns its own open state. */
@@ -188,17 +240,12 @@ export function SessionContextDetails({
   compactDisabled = false,
   loadout = null,
   onOpenLoadout,
+  onJumpToMessage,
 }: SessionContextDetailsProps): React.JSX.Element {
   const loadoutText = loadout ? loadoutSummary(loadout) : null;
-  // Collapsed by default, sticky once opened — and shared by both triggers,
-  // since it is one preference about one popover.
-  const [detailsOpen, setDetailsOpen] = React.useState<boolean>(
-    () => typeof window !== "undefined" && window.localStorage.getItem(DETAILS_STORAGE_KEY) === "1",
-  );
-  React.useEffect(() => {
-    if (typeof window === "undefined") return;
-    window.localStorage.setItem(DETAILS_STORAGE_KEY, detailsOpen ? "1" : "0");
-  }, [detailsOpen]);
+  // Shared by both triggers, since each is one preference about one popover.
+  const [detailsOpen, toggleDetails] = useStickyDisclosure(DETAILS_STORAGE_KEY, true);
+  const [eventsOpen, toggleEvents] = useStickyDisclosure(EVENTS_STORAGE_KEY, false);
 
   const [sessionIdCopied, setSessionIdCopied] = React.useState(false);
   const handleCopySessionId = React.useCallback(async () => {
@@ -269,20 +316,9 @@ export function SessionContextDetails({
         </button>
       )}
 
-      {/* Collapsed by default, and sticky once opened. The
-          breakdown is the tallest thing in the popover and answers a
-          question asked occasionally ("what is eating the window?"),
-          while everything around it is read every time. */}
+      {/* Open by default, and sticky once toggled. */}
       <div className="pt-2 mt-1 border-t border-border/50" data-testid="details-disclosure">
-        <button
-          type="button"
-          onClick={() => { setDetailsOpen((v) => !v); }}
-          aria-expanded={detailsOpen}
-          className="flex w-full items-center gap-1 text-[10px] uppercase tracking-wide text-muted-foreground hover:text-foreground transition-colors"
-        >
-          <ChevronRight className={cn("h-3 w-3 transition-transform", detailsOpen && "rotate-90")} />
-          Details
-        </button>
+        <DisclosureToggle label="Details" open={detailsOpen} onToggle={toggleDetails} />
         {detailsOpen && (
           <div className="mt-2 flex flex-col gap-2">
         {r.fromCli && r.hasBreakdown ? (
@@ -341,19 +377,13 @@ export function SessionContextDetails({
         )}
       </div>
 
-      {/* The badge on the trigger counts these, so the list has to
-          be reachable without hunting. It used to sit ABOVE the
-          category breakdown for that reason — underneath a full
-          bands-plus-table block it fell off the bottom of a w-96
-          popover, and the number cleared without its meaning ever
-          being on screen. The breakdown now collapses by default,
-          which solves that more directly and frees this to sit in
-          reading order. */}
+      {/* Collapsed by default, and sticky once toggled. A context event
+          jumps the transcript to the prompt that caused it. */}
       <div className="pt-2 mt-1 border-t border-border/50" data-testid="recent-events">
-        <div className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">
-          Recent events
-        </div>
-        <SignalEventLog events={recentEvents} />
+        <DisclosureToggle label="Recent events" open={eventsOpen} onToggle={toggleEvents} />
+        {eventsOpen && (
+          <SignalEventLog className="mt-1" events={recentEvents} onSelect={onJumpToMessage} />
+        )}
       </div>
 
 

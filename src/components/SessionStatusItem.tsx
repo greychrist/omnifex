@@ -127,7 +127,18 @@ export function SessionStatusItem({
           </span>
         </button>
       }
-      content={<SessionContextDetails reading={reading} {...details} />}
+      content={
+        <SessionContextDetails
+          reading={reading}
+          {...details}
+          // Close first: the popover sits over the transcript it is scrolling.
+          onJumpToMessage={details.onJumpToMessage && ((uuid) => {
+            setOpen(false);
+            onSignalsRead?.();
+            details.onJumpToMessage?.(uuid);
+          })}
+        />
+      }
     />
   );
 }

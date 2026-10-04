@@ -22,7 +22,7 @@ import { buildContextTimeline } from "@/lib/contextTimeline";
 import { ContextTimelineTick } from "@/components/ContextTimelineTick";
 import { ContextTimelineToggle } from "@/components/ContextTimelineToggle";
 import { nextNearBottom } from "@/lib/autoScrollThresholds";
-import { stepTarget, isStepStop, isMainPrompt, type StepDirection } from "@/lib/transcriptStepper";
+import { stepTarget, isStepStop, isMainPrompt, STEP_MARGIN_PX, type StepDirection } from "@/lib/transcriptStepper";
 import { cn } from "@/lib/utils";
 import { logAndForget } from "@/lib/fireAndLog";
 import type { JsonlNode } from "@/types/jsonl";
@@ -83,7 +83,25 @@ export interface ClaudeTranscriptProps extends InspectorGutterButtonProps {
    * the view re-engages stickiness even if the user had scrolled up.
    */
   isNearBottomRef: React.MutableRefObject<boolean>;
+  /**
+   * Scroll to the row holding this message uuid. `nonce` makes a second jump
+   * to the same message a new request rather than an unchanged prop.
+   */
+  jumpTo?: { uuid: string; nonce: number } | null;
 }
+
+/** How long a jumped-to row stays highlighted. */
+const JUMP_HIGHLIGHT_MS = 1600;
+
+/** The transcript uuid of a row's message, which a jump looks rows up by. */
+function messageUuidOf(message: JsonlNode): string | undefined {
+  const uuid = (message as { raw?: { uuid?: unknown } }).raw?.uuid;
+  return typeof uuid === "string" ? uuid : undefined;
+}
+
+/** Row wrapper styling: the ring a jump lights up and then lets fade. */
+const ROW_CLASS =
+  "rounded-md transition-shadow duration-500 data-[jump-target]:ring-2 data-[jump-target]:ring-primary/60";
 
 /**
  * Claude transcript — the body of the chat. Renders all messages, the
@@ -111,6 +129,7 @@ function ClaudeTranscriptImpl({
   isNearBottomRef,
   onOpenInspector,
   inspectorOpen,
+  jumpTo = null,
 }: ClaudeTranscriptProps): React.ReactElement {
   useRenderProfile('ClaudeTranscript');
   const { config: renderConfig } = useMessageRenderingConfig();
@@ -339,6 +358,29 @@ function ClaudeTranscriptImpl({
     [rowOffsets, scrollToPosition],
   );
 
+  // A jump from outside (the session popover's Recent events). The highlight
+  // is a DOM attribute rather than state: setting state here would re-render
+  // every row of an unvirtualised transcript to light up one of them.
+  const jumpUuid = jumpTo?.uuid;
+  const jumpNonce = jumpTo?.nonce;
+  useEffect(() => {
+    if (!jumpUuid) return;
+    const scrollEl = parentRef.current;
+    const contentEl = contentRef.current;
+    const row = contentEl?.querySelector<HTMLElement>(`[data-message-uuid="${CSS.escape(jumpUuid)}"]`);
+    if (!scrollEl || !row) return;
+    // Stop following the tail, or the next stream tick snaps back down.
+    isNearBottomRef.current = false;
+    const top = row.getBoundingClientRect().top - scrollEl.getBoundingClientRect().top + scrollEl.scrollTop;
+    scrollToPosition(Math.max(0, top - STEP_MARGIN_PX));
+    row.setAttribute("data-jump-target", "");
+    const timer = window.setTimeout(() => { row.removeAttribute("data-jump-target"); }, JUMP_HIGHLIGHT_MS);
+    return () => {
+      window.clearTimeout(timer);
+      row.removeAttribute("data-jump-target");
+    };
+  }, [jumpUuid, jumpNonce, isNearBottomRef, scrollToPosition]);
+
   const stepPrev = useCallback(() => { step('prev', '[data-transcript-step]'); }, [step]);
   const stepNext = useCallback(() => { step('next', '[data-transcript-step]'); }, [step]);
   const promptPrev = useCallback(() => { step('prev', '[data-transcript-prompt]'); }, [step]);
@@ -504,6 +546,8 @@ function ClaudeTranscriptImpl({
             ? displayableMessages.map((message, idx) => (
                 <div
                   key={idx}
+                  className={ROW_CLASS}
+                  data-message-uuid={messageUuidOf(message)}
                   data-transcript-step={isStepStop(message) ? "" : undefined}
                   data-transcript-prompt={isMainPrompt(message) ? "" : undefined}
                 >
@@ -527,6 +571,8 @@ function ClaudeTranscriptImpl({
                   item.kind === 'single' ? (
                     <div
                       key={item.key}
+                      className={ROW_CLASS}
+                      data-message-uuid={messageUuidOf(item.message)}
                       data-transcript-step={isStepStop(item.message) ? "" : undefined}
                       data-transcript-prompt={isMainPrompt(item.message) ? "" : undefined}
                     >

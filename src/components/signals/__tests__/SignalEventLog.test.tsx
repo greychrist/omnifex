@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { SignalEventLog } from '../SignalEventLog';
 import type { SessionSignal } from '@/lib/signals/types';
 
@@ -18,6 +18,8 @@ function event(i: number): SessionSignal {
     meta: { delta: 1000 * i, before: 1000 * i, after: 1000 * (i + 1) },
   } as SessionSignal;
 }
+
+afterEach(() => { cleanup(); });
 
 describe('SignalEventLog', () => {
   it('says so when there is nothing to show', () => {
@@ -52,5 +54,22 @@ describe('SignalEventLog', () => {
     const cls = container.querySelector('ul')!.className;
     expect(cls).toMatch(/mt-4/);
     expect(cls).toMatch(/overflow-y-auto/);
+  });
+
+  it('makes an event with a transcript message a button that jumps to it', () => {
+    const onSelect = vi.fn();
+    render(<SignalEventLog events={[{ ...event(1), messageUuid: 'p-1' }]} onSelect={onSelect} />);
+    fireEvent.click(screen.getByRole('button', { name: /jump to/i }));
+    expect(onSelect).toHaveBeenCalledWith('p-1');
+  });
+
+  it('leaves an event with no transcript message as plain text', () => {
+    render(<SignalEventLog events={[event(1)]} onSelect={vi.fn()} />);
+    expect(screen.queryByRole('button')).toBeNull();
+  });
+
+  it('draws no buttons when nothing handles a jump', () => {
+    render(<SignalEventLog events={[{ ...event(1), messageUuid: 'p-1' }]} />);
+    expect(screen.queryByRole('button')).toBeNull();
   });
 });

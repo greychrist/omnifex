@@ -161,5 +161,29 @@ describe('loadout summary row', () => {
     fireEvent.click(trigger());
     expect(screen.queryByTestId('loadout-summary')).toBeNull();
   });
-});
 
+  describe('jumping from an event', () => {
+    afterEach(() => { window.localStorage.removeItem('greychrist.sessionCard.eventsExpanded'); });
+
+    const jumpEvent: SessionSignal = {
+      id: 'context.delta:p1', tabId: 't', kind: 'event', anchor: 'session', priority: 'normal',
+      key: 'context.delta', title: '+80k of context', at: 0, messageUuid: 'p1',
+      meta: { delta: 80_000, before: 100_000, after: 180_000 },
+    };
+
+    // The popover covers the transcript it is about to scroll.
+    it('closes the popover, marks events read, and hands over the message', () => {
+      const onJump = vi.fn();
+      const onRead = vi.fn();
+      window.localStorage.setItem('greychrist.sessionCard.eventsExpanded', '1');
+      render(
+        <SessionStatusItem {...base} recentEvents={[jumpEvent]} onJumpToMessage={onJump} onSignalsRead={onRead} />,
+      );
+      fireEvent.click(trigger());
+      fireEvent.click(screen.getByRole('button', { name: /jump to/i }));
+      expect(onJump).toHaveBeenCalledWith('p1');
+      expect(onRead).toHaveBeenCalledTimes(1);
+      expect(screen.queryByRole('button', { name: /jump to/i })).toBeNull();
+    });
+  });
+});

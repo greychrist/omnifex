@@ -144,6 +144,11 @@ describe('deriveSessionSignals — context delta events', () => {
     expect(deltas[0].meta).toMatchObject({ before: 100_000, after: 180_000, delta: 80_000 });
   });
 
+  it('points each event at the prompt that caused it, so the log can jump there', () => {
+    const signals = deriveSessionSignals(input({ messages }));
+    expect(byKey(signals, 'context.delta').map((d) => d.messageUuid)).toEqual(['p1', 'p2']);
+  });
+
   it('flags a delta over the threshold so the row can be coloured', () => {
     const signals = deriveSessionSignals(input({ messages }));
     const deltas = byKey(signals, 'context.delta');

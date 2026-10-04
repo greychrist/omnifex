@@ -164,15 +164,17 @@ describe('SessionCard — compact button', () => {
 });
 
 describe('SessionCard — category breakdown', () => {
-  // The breakdown lives behind a collapsed `Details` disclosure, so every test
-  // in here opens it first. Its default state is asserted separately, in
-  // "SessionCard — context popover layout".
+  // The breakdown lives behind the `Details` disclosure, which starts open.
+  // Its default state is asserted separately, in "SessionCard — context
+  // popover layout".
   const openBreakdown = () => {
     openPopover();
-    fireEvent.click(screen.getByRole('button', { name: /details/i }));
   };
 
-  afterEach(() => { window.localStorage.removeItem('greychrist.sessionCard.detailsOpen'); });
+  afterEach(() => {
+    window.localStorage.removeItem('greychrist.sessionCard.detailsExpanded');
+    window.localStorage.removeItem('greychrist.sessionCard.eventsExpanded');
+  });
 
   it('draws the breakdown as a bar, not a pie', () => {
     render(<SessionCard totalTokens={120_000} contextLimit={200_000} contextUsage={WITH_CATEGORIES} />);
@@ -233,29 +235,12 @@ describe('SessionCard — unread session events', () => {
     );
 
     fireEvent.click(screen.getByText('12.0k'));
+    fireEvent.click(screen.getByRole('button', { name: /recent events/i }));
     expect(readCalls).toBe(0);
     expect(screen.getByText('CONTEXT-JUMP-ROW')).toBeTruthy();
 
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(readCalls).toBe(1);
-  });
-
-  it('keeps the event list reachable without opening anything', () => {
-    // The list must be on screen the moment the popover is. It used to be ordered
-    // ABOVE the category breakdown to guarantee that; the breakdown now
-    // collapses by default, which achieves the same thing, so the list sits in
-    // reading order and the bands are behind a disclosure.
-    render(
-      <SessionCard
-        totalTokens={120_000}
-        contextLimit={200_000} contextUsage={WITH_CATEGORIES}
-        recentEvents={EVENTS}
-      />,
-    );
-    fireEvent.click(screen.getByText('120.0k'));
-
-    expect(screen.getByText('Recent events')).toBeTruthy();
-    expect(document.querySelector('[data-context-band]')).toBeNull();
   });
 
   // The unread count used to ride on the token meter as a small number. It
@@ -272,7 +257,8 @@ describe('SessionCard — unread session events', () => {
   });
 });
 
-const DETAILS_KEY = 'greychrist.sessionCard.detailsOpen';
+const DETAILS_KEY = 'greychrist.sessionCard.detailsExpanded';
+const EVENTS_KEY = 'greychrist.sessionCard.eventsExpanded';
 
 const CATEGORY_USAGE: SessionContextUsage = {
   totalTokens: 50_104,
@@ -304,36 +290,49 @@ function openCategoryPopover() {
 }
 
 describe('SessionCard — context popover layout', () => {
-  afterEach(() => { window.localStorage.removeItem(DETAILS_KEY); });
-
-  it('collapses the category breakdown by default', () => {
+  afterEach(() => {
     window.localStorage.removeItem(DETAILS_KEY);
-    renderWithCategories();
-    openCategoryPopover();
-    expect(screen.queryByText('Messages')).toBeNull();
-    expect(screen.getByRole('button', { name: /details/i })).toBeTruthy();
+    window.localStorage.removeItem(EVENTS_KEY);
   });
 
-  it('reveals the breakdown when Details is opened', () => {
+  it('shows the category breakdown by default', () => {
     renderWithCategories();
     openCategoryPopover();
-    fireEvent.click(screen.getByRole('button', { name: /details/i }));
     expect(screen.getByText('Messages')).toBeTruthy();
     expect(screen.getByText('Memory files')).toBeTruthy();
   });
 
-  it('remembers that Details was opened', () => {
+  it('hides the breakdown when Details is closed, and remembers it', () => {
     renderWithCategories();
     openCategoryPopover();
     fireEvent.click(screen.getByRole('button', { name: /details/i }));
-    expect(window.localStorage.getItem(DETAILS_KEY)).toBe('1');
+    expect(screen.queryByText('Messages')).toBeNull();
+    expect(window.localStorage.getItem(DETAILS_KEY)).toBe('0');
   });
 
-  it('starts expanded when the stored preference says so', () => {
-    window.localStorage.setItem(DETAILS_KEY, '1');
+  it('starts collapsed when the stored preference says so', () => {
+    window.localStorage.setItem(DETAILS_KEY, '0');
     renderWithCategories();
     openCategoryPopover();
-    expect(screen.getByText('Messages')).toBeTruthy();
+    expect(screen.queryByText('Messages')).toBeNull();
+  });
+
+  it('collapses Recent events by default, and remembers opening it', () => {
+    renderWithCategories();
+    openCategoryPopover();
+    const toggle = screen.getByRole('button', { name: /recent events/i });
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByText('Nothing to report yet.')).toBeNull();
+    fireEvent.click(toggle);
+    expect(screen.getByText('Nothing to report yet.')).toBeTruthy();
+    expect(window.localStorage.getItem(EVENTS_KEY)).toBe('1');
+  });
+
+  it('does not write a preference just by opening the popover', () => {
+    renderWithCategories();
+    openCategoryPopover();
+    expect(window.localStorage.getItem(DETAILS_KEY)).toBeNull();
+    expect(window.localStorage.getItem(EVENTS_KEY)).toBeNull();
   });
 
   it('orders the popover: Details, Recent events, session id', () => {

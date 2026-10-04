@@ -5,6 +5,8 @@ import type { SessionSignal } from '@/lib/signals/types';
 export interface SignalEventLogProps {
   events: SessionSignal[];
   className?: string;
+  /** Jump to an event's transcript message. Omit and no row is clickable. */
+  onSelect?: (messageUuid: string) => void;
 }
 
 const timeOf = (at: number) =>
@@ -19,7 +21,7 @@ const timeOf = (at: number) =>
  * popover is already the "tell me more" surface — hiding it behind a second
  * interaction would make it unreachable by keyboard.
  */
-export function SignalEventLog({ events, className }: SignalEventLogProps) {
+export function SignalEventLog({ events, className, onSelect }: SignalEventLogProps) {
   if (events.length === 0) {
     return (
       <div className={cn('text-xs text-muted-foreground italic', className)}>
@@ -46,15 +48,16 @@ export function SignalEventLog({ events, className }: SignalEventLogProps) {
           | { delta?: number; before?: number; after?: number; compacted?: boolean; isJump?: boolean }
           | undefined;
         const hasDelta = typeof meta?.delta === 'number';
-
-        return (
-          <li
-            key={event.id}
-            className={cn(
-              'flex items-baseline gap-2 rounded-sm px-1 py-0.5 text-[11px] font-mono tabular-nums',
-              !event.read && 'bg-primary/5',
-            )}
-          >
+        // Only events that came from a transcript message can jump; a cache
+        // TTL change or a skipped MCP server has nowhere to go.
+        const target = onSelect && event.messageUuid ? event.messageUuid : null;
+        const rowClass = cn(
+          'flex w-full items-baseline gap-2 rounded-sm px-1 py-0.5 text-left text-[11px] font-mono tabular-nums',
+          !event.read && 'bg-primary/5',
+          target && 'cursor-pointer hover:bg-muted/60',
+        );
+        const cells = (
+          <>
             <span
               className={cn(
                 'w-16 shrink-0 text-right',
@@ -79,6 +82,24 @@ export function SignalEventLog({ events, className }: SignalEventLogProps) {
             </span>
 
             <span className="shrink-0 text-muted-foreground/60">{timeOf(event.at)}</span>
+          </>
+        );
+
+        return (
+          <li key={event.id}>
+            {target ? (
+              <button
+                type="button"
+                aria-label={`Jump to ${event.title}`}
+                title="Show in the chat"
+                onClick={() => { onSelect?.(target); }}
+                className={rowClass}
+              >
+                {cells}
+              </button>
+            ) : (
+              <div className={rowClass}>{cells}</div>
+            )}
           </li>
         );
       })}

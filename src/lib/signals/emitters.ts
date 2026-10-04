@@ -179,6 +179,7 @@ function contextDeltaEvents(input: SignalInput): SessionSignal[] {
         : `${entry.deltaTokens >= 0 ? '+' : '−'}${magnitude} of context`,
       detail: `${formatTokens(entry.prevTotal)} → ${formatTokens(entry.newTotal)}`,
       at: entry.at,
+      ...(entry.promptUuid ? { messageUuid: entry.promptUuid } : {}),
       meta: {
         before: entry.prevTotal,
         after: entry.newTotal,

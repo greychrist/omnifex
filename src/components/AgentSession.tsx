@@ -1225,6 +1225,12 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     return { mods: split?.mods.length ?? null, plugins: split?.plugins.length ?? null, mcp: initMcpCount };
   }, [sessionPlugins.plugins, initMcpCount]);
   const openContextPanel = useCallback(() => { setSidePanel('context'); }, []);
+  // Recent events → the prompt that caused them. The nonce lets a second click
+  // on the same row scroll again after you have scrolled away.
+  const [transcriptJump, setTranscriptJump] = useState<{ uuid: string; nonce: number } | null>(null);
+  const jumpToMessage = useCallback((uuid: string) => {
+    setTranscriptJump((prev) => ({ uuid, nonce: (prev?.nonce ?? 0) + 1 }));
+  }, []);
   // The Session context header's Refresh: reload plugins (re-running each
   // mod's session start) and ask the MCP servers again.
   const sessionMcp = useSessionMcpStatus(tabIdRef.current, contextPanelOpen);
@@ -2339,6 +2345,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
         isNearBottomRef={isNearBottomRef}
         onOpenInspector={openInspector}
         inspectorOpen={inspectorOpen}
+        jumpTo={transcriptJump}
       />
     </SessionActionsProvider>
   );
@@ -2571,6 +2578,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
           compactDisabled={isLoading || !isSessionActive}
           loadout={loadout}
           onOpenLoadout={openContextPanel}
+          onJumpToMessage={jumpToMessage}
         />
       }
       controls={

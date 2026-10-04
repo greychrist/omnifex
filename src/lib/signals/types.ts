@@ -71,6 +71,8 @@ export interface SessionSignal {
   read?: boolean;
   /** `action` kind only. */
   actions?: SignalAction[];
+  /** Events only: the transcript message this came from, so the log can jump there. */
+  messageUuid?: string;
   meta?: Record<string, unknown>;
 }
 

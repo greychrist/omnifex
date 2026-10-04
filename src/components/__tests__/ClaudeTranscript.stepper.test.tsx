@@ -35,12 +35,12 @@ import { TooltipProvider } from '@/components/ui/tooltip-modern';
 
 afterEach(() => { cleanup(); });
 
-const prompt = (): JsonlNode => ({
+const prompt = (uuid?: string): JsonlNode => ({
   kind: 'user',
   userKind: 'prompt',
   sessionId: 's',
   receivedAt: '2026-07-30T00:00:00.000Z',
-  raw: { type: 'user', message: { role: 'user', content: [{ type: 'text', text: 'go' }] } } as never,
+  raw: { type: 'user', uuid, message: { role: 'user', content: [{ type: 'text', text: 'go' }] } } as never,
 });
 
 const compactSummary = (): JsonlNode => ({
@@ -62,8 +62,11 @@ const assistant = (): JsonlNode => ({
   raw: { type: 'assistant', message: { role: 'assistant', content: [] } } as never,
 });
 
-function renderTranscript(messages: JsonlNode[]) {
-  return render(
+function transcriptElement(
+  messages: JsonlNode[],
+  extra: Partial<React.ComponentProps<typeof ClaudeTranscript>> = {},
+) {
+  return (
     <TooltipProvider>
       <ClaudeTranscript
         messages={messages}
@@ -80,9 +83,14 @@ function renderTranscript(messages: JsonlNode[]) {
         tabId="tab-1"
         messagesEndRef={React.createRef<HTMLDivElement>()}
         isNearBottomRef={{ current: true }}
+        {...extra}
       />
-    </TooltipProvider>,
+    </TooltipProvider>
   );
+}
+
+function renderTranscript(messages: JsonlNode[]) {
+  return render(transcriptElement(messages));
 }
 
 /**
@@ -258,5 +266,40 @@ describe('stepper button icons', () => {
     const { getByLabelText } = renderTranscript([prompt(), assistant()]);
     expect(iconNames(getByLabelText('Scroll to top') as HTMLElement)).toHaveLength(1);
     expect(iconNames(getByLabelText('Scroll to bottom') as HTMLElement)).toHaveLength(1);
+  });
+});
+
+describe('ClaudeTranscript — jumping to a message', () => {
+  const transcript = () => [prompt('p1'), assistant(), prompt('p2'), assistant()];
+
+  it('scrolls to the row holding the requested message', () => {
+    const { container, rerender } = render(transcriptElement(transcript()));
+    const { scrollTo } = fakeLayout(container, [0, 500, 900, 1400]);
+    rerender(transcriptElement(transcript(), { jumpTo: { uuid: 'p2', nonce: 1 } }));
+    expect(scrollTo).toHaveBeenCalledWith({ top: 900 - STEP_MARGIN_PX, behavior: 'smooth' });
+  });
+
+  it('flags the target row so it can be highlighted', () => {
+    const { container, rerender } = render(transcriptElement(transcript()));
+    fakeLayout(container, [0, 500, 900, 1400]);
+    rerender(transcriptElement(transcript(), { jumpTo: { uuid: 'p2', nonce: 1 } }));
+    const row = container.querySelector('[data-message-uuid="p2"]');
+    expect(row).toHaveAttribute('data-jump-target');
+  });
+
+  // Otherwise the next stream tick's auto-scroll yanks the view back down.
+  it('stops following the tail', () => {
+    const isNearBottomRef = { current: true };
+    const { container, rerender } = render(transcriptElement(transcript(), { isNearBottomRef }));
+    fakeLayout(container, [0, 500, 900, 1400]);
+    rerender(transcriptElement(transcript(), { isNearBottomRef, jumpTo: { uuid: 'p1', nonce: 1 } }));
+    expect(isNearBottomRef.current).toBe(false);
+  });
+
+  it('does nothing when the message is not in the transcript', () => {
+    const { container, rerender } = render(transcriptElement(transcript()));
+    const { scrollTo } = fakeLayout(container, [0, 500, 900, 1400]);
+    rerender(transcriptElement(transcript(), { jumpTo: { uuid: 'gone', nonce: 1 } }));
+    expect(scrollTo).not.toHaveBeenCalled();
   });
 });
