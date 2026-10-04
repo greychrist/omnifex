@@ -5,6 +5,15 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.213] — 2026-10-04
+
+### Changed
+- Hidden Events groups are now a single card: the "N Hidden Events" bar is its header and the expanded events sit inside its body, inset on both sides, instead of hanging off a white side rail. A configured background colours the header; a configured border outlines the whole card.
+- Collapsible cards (Context and similar) now match it: the up/down chevron sits at the right edge of the header, with the copy/view buttons just before it.
+
+### Fixed
+- The copy/view buttons on collapsible cards sat low and covered the expand chevron; they are now centred in the header, and clicking them no longer expands the card.
+
 ## [0.4.212] — 2026-10-04
 
 ### Added
