@@ -42,6 +42,65 @@ import { buildClaudeEnv } from './util/claude-env';
  *    the CLI answers with the error "Side question cancelled". Its own
  *    deadline is 600 s. Only the SDK's `askSideQuestion()` documents it.
  *
+ * Last review: 2.1.288 -> 2.1.289 on 2026-10-03. Findings:
+ *
+ *  Changelog coverage: one version in range, 2.1.289, and it has an entry
+ *  (~27 lines, almost all mods / plugins / permission-rule fixes). Both
+ *  endpoints are installed, so the wire claims below are a real binary diff
+ *  of 2.1.288 vs 2.1.289.
+ *
+ *  Clean pass: nothing to change.
+ *
+ *  WIRE DIFF, reported both ways round:
+ *
+ *    - Merge-strategy map: set-identical (40 entries). No new record type.
+ *    - `hook_event_name` 33, SDK `this.request({subtype})` 54,
+ *      `type:"control_*"` 4, `origin:{kind}` 9: all set-identical.
+ *      `turnOrigin` 21: minifier noise (renamed identifiers); the sanitizer
+ *      set is unchanged.
+ *    - `subtype:` 150 -> 151, none removed: `ui_read_selection {surface,
+ *      client_id}`, the engine asking a remote client for `$.ui.selection`.
+ *      Sent only to a client whose `ui_attach` listed it under `answers`;
+ *      OmniFex sends no `ui_attach`, so it never reaches us and a mod's
+ *      `$.ui.selection` reads nothing in our sessions, as before.
+ *    - `type:` literals 981 both ways: `+ui_read_selection`, `-teammate` —
+ *      the latter an internal agent-list mapper reshaped for the new
+ *      `$.agent.list()` idle/waiting states, not wire.
+ *    - `.describe()` strings: 1954 -> 1959, all `@internal` mod/ui: the
+ *      `ui_read_selection` reply (3), new `ui_client_fault` phase /
+ *      reached fields (host -> engine, we send none), and `ui_log` /
+ *      `ui_toast` / `ui_status` text now "up to 10000 characters and then an
+ *      ellipsis" instead of a 4096 cap. We render those lines as plain text
+ *      with no length assumption. No new field on `user` / `assistant`
+ *      input and no new host obligation.
+ *    - `/usage` anchors: `Current session` 3, `Current week` 5, `Rate
+ *      limit` 14, `resets` 113 count-identical; `MCP servers` 255 -> 254
+ *      (help text). `usage-runner/parser.ts` is safe.
+ *
+ *  Checked and inert for us:
+ *
+ *   - "Installed mods not loading in the first session after an upgrade":
+ *     in our favour — the Session context panel's Mods section
+ *     (sessionLoadout.ts) would have shown nothing on that first session.
+ *   - Permission-rule fixes (Bash deny/ask behind an env-var prefix or bare
+ *     assignment under sandbox auto-allow; `Read` deny via IDE symlink;
+ *     nested compound-command rule vs a managed mod's approval): CLI-side
+ *     enforcement only; no rule syntax moved, docs/permission-syntax.md
+ *     stays accurate.
+ *   - `agent.spawn` for teammates, one agent id across plugin hook events,
+ *     `$.agent.list()` idle/waiting: mod API, no stream-json frame.
+ *
+ * No OmniFex impact: terminal freeze on `<script>` / `${` code blocks,
+ * VSCode `auth status` revert, plugin code-pane layout, local-folder
+ * marketplace staleness + symlinked `--plugin-dir` hot reload, Background
+ * tasks dialog rows, plugin-pane links, Box border styles, supervised /
+ * background sessions ending on async handler throws, zero-height regions,
+ * `ui.render` row throws, tab/escape/C1 overdraw, right-aligned pane
+ * content, `Client` faults (`ui.fault`), band step-aside, failed-component
+ * reasons, `plugin validate` fixes (marketplace manifest, Anthropic
+ * marketplace, `--json`), managed MCP sign-in tool descriptions, artifact
+ * page freezes.
+ *
  * Last review: 2.1.287 -> 2.1.288 on 2026-10-02. Findings:
  *
  *  Changelog coverage: one version in range, 2.1.288, and it has an entry
@@ -3687,7 +3746,7 @@ import { buildClaudeEnv } from './util/claude-env';
  * `~/.claude.json` fix (we read-modify-write that file, never replace it), and
  * the VSCode screen-reader work.
  */
-export const REVIEWED_CLI_VERSION = '2.1.288';
+export const REVIEWED_CLI_VERSION = '2.1.289';
 
 /**
  * app_settings key holding the user's explicit OmniFex-checkout override.
