@@ -5,6 +5,16 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.217] — 2026-10-04
+
+### Added
+- Session popover: clicking a context event in Recent events (a "+Nk of context" or "Compacted" row) scrolls the chat to the prompt that caused it and briefly highlights it.
+
+### Changed
+- Session popover: Recent events is a collapsible section like Details. Details now starts open and Recent events starts closed; each remembers what you last chose.
+- A compaction shows as its own line — what triggered it, how far context shrank and how long it took — instead of a generic "system" card.
+- A turn's result and a session's start render as regular transcript lines with their own Appearance settings (Turn result, Session start), in place of the raw `cli-stream-result` / `cli-stream-init` badges.
+
 ## [0.4.216] — 2026-10-04
 
 ### Fixed
