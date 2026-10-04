@@ -5,6 +5,11 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.216] — 2026-10-04
+
+### Fixed
+- Session context panel: plugins and mods are grouped by the scope Claude Code recorded when they were installed, instead of a guess from their folder. A plugin installed from a local folder marketplace no longer lists under "Other", and a plugin installed for this project as well as user-wide shows as Project.
+
 ## [0.4.215] — 2026-10-04
 
 ### Added
