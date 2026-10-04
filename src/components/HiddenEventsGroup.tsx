@@ -35,25 +35,35 @@ export const HiddenEventsGroup: React.FC<Props> = ({
   const [open, setOpen] = useState(false);
   const { config } = useMessageRenderingConfig();
   const colors = hiddenEventsColors(config.hiddenEvents, currentThemeBackdrop());
-  const barStyle = colors.bar;
+  // The bar is the card's header: the background fills the header, the
+  // border outlines the whole card. Inline, because the unlayered
+  // `* { border-color }` in styles.css beats every border-color utility.
+  const background = colors.bar?.backgroundColor;
+  const borderColor = colors.bar?.borderColor;
   const { ref: triggerRef, runWith } = useScrollAnchor<HTMLButtonElement>();
   const count = countHiddenEvents(messages);
   const summary = summarizeHiddenEvents(messages);
 
   return (
-    <Collapsible open={open} onOpenChange={(next) => { runWith(() => { setOpen(next); }); }} className="py-1">
+    <Collapsible
+      open={open}
+      onOpenChange={(next) => { runWith(() => { setOpen(next); }); }}
+      data-hidden-events-card=""
+      className="my-1 overflow-hidden rounded-md border"
+      style={borderColor ? { borderColor } : undefined}
+    >
       <CollapsibleTrigger
         ref={triggerRef}
         className={cn(
-          'group flex w-full items-center justify-between gap-3 rounded-md',
-          'border border-border/40 bg-muted/20 px-3 py-1.5 text-left',
+          'group flex w-full items-center justify-between gap-3',
+          'bg-muted/20 px-3 py-1.5 text-left',
           'hover:bg-muted/40 transition-colors',
-          'data-[state=open]:bg-primary/10 data-[state=open]:border-primary/40',
+          'data-[state=open]:bg-primary/10',
           // A configured background is inline and outranks the hover/open
           // fills above, so feedback comes from brightness instead.
-          barStyle?.backgroundColor && 'hover:brightness-125 data-[state=open]:brightness-125',
+          background && 'hover:brightness-125 data-[state=open]:brightness-125',
         )}
-        style={barStyle}
+        style={background ? { backgroundColor: background } : undefined}
       >
         <span className="flex items-baseline gap-2 min-w-0 text-xs">
           <span className="font-medium text-foreground/80 shrink-0" style={colors.header ? { color: colors.header } : undefined}>
@@ -70,8 +80,9 @@ export const HiddenEventsGroup: React.FC<Props> = ({
         />
       </CollapsibleTrigger>
       <CollapsibleContent
-        className="mt-2 ml-1 pl-4 border-l-2 space-y-4"
-        style={{ borderLeftColor: 'color-mix(in oklab, var(--color-foreground) 65%, transparent)' }}
+        data-hidden-events-body=""
+        className="border-t bg-black/10 py-3 pl-6 pr-3 space-y-4"
+        style={borderColor ? { borderTopColor: borderColor } : undefined}
       >
         {messages.map((message, idx) => (
           <TranscriptRowBoundary key={idx}>

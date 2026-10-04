@@ -1,11 +1,11 @@
 import React, { useState } from "react";
-import { ChevronRight, Info } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { ChevronsUpDown, Info } from "lucide-react";
 import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
 import { accentStyleFor, swatchFor } from "@/lib/accentStyle";
 import { iconNameFor } from "@/lib/kindPresentation";
 import { resolveKind } from "@/lib/messageRenderingConfig";
 import { IconRenderer } from "@/components/settings-panels/appearance/iconMap";
+import { CardActionBarPlacementContext } from "@/components/CardActionBar";
 
 interface MessageFrameCollapsibleProps {
   /** Drives icon, accent, and the configured header label. Must match an
@@ -14,9 +14,12 @@ interface MessageFrameCollapsibleProps {
   /** Overrides the kind's configured `headerLabel`. Used for content-derived
    *  titles (e.g. "Skill: Brainstorming Ideas Into Designs"). */
   headerLabel?: string | null;
-  /** Toolbar node rendered absolutely top-right (e.g. a `CardActionBar`
-   *  copy button). The container is `group/card relative` so the bar can
-   *  position itself the same way it does inside `MessageFrameCard`. */
+  /** Toolbar node (e.g. a `CardActionBar`) seated at the end of the header
+   *  row, beside the toggle rather than inside it, so its buttons do not
+   *  expand the card. Inline, as in `MessageFrameCard`'s header, so the row's
+   *  flex centring places it — an overlay pinned top-right sat low in a
+   *  one-line header and covered the chevron. The up/down chevron closes the
+   *  row, where the hidden-events card puts its own. */
   actionBar?: React.ReactNode;
   /** Body — revealed only when expanded. Caller owns its styling (e.g. a
    *  monospace `<pre>` for system-context). */
@@ -38,6 +41,7 @@ export const MessageFrameCollapsible: React.FC<MessageFrameCollapsibleProps> = (
   children,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
+  const toggle = () => { setIsExpanded((v) => !v); };
   const { config } = useMessageRenderingConfig();
 
   const style = accentStyleFor(config, kindId);
@@ -47,14 +51,14 @@ export const MessageFrameCollapsible: React.FC<MessageFrameCollapsibleProps> = (
   const label = headerLabel ?? resolveKind(config, kindId).headerLabel ?? "Context";
 
   return (
-    <div className="relative group/card rounded-lg border overflow-hidden" style={style}>
-      {actionBar}
-      <button
-        type="button"
-        onClick={() => { setIsExpanded((v) => !v); }}
-        className="w-full px-4 py-2 flex items-center justify-between transition-colors"
-      >
-        <div className="flex items-center gap-2">
+    <div className="group/card rounded-lg border overflow-hidden" style={style}>
+      <div className="flex items-center gap-2 pr-3">
+        <button
+          type="button"
+          onClick={toggle}
+          aria-expanded={isExpanded}
+          className="min-w-0 flex-1 px-4 py-2 flex items-center gap-2 text-left"
+        >
           <div style={swatchStyle}>
             {iconName && iconName !== "none" ? (
               <IconRenderer name={iconName} className="h-4 w-4" />
@@ -65,12 +69,25 @@ export const MessageFrameCollapsible: React.FC<MessageFrameCollapsibleProps> = (
           <span className="text-xs font-medium" style={swatchStyle}>
             {label}
           </span>
-        </div>
-        <ChevronRight
-          className={cn("h-3 w-3 transition-transform", isExpanded && "rotate-90")}
-          style={swatchStyle}
-        />
-      </button>
+        </button>
+        {actionBar && (
+          <CardActionBarPlacementContext.Provider value="inline">
+            {actionBar}
+          </CardActionBarPlacementContext.Provider>
+        )}
+        {/* A second hit target for the same toggle, out of the tab order:
+            the label button above is the accessible one. */}
+        <button
+          type="button"
+          onClick={toggle}
+          tabIndex={-1}
+          aria-hidden="true"
+          data-collapsible-chevron=""
+          className="shrink-0 py-2 text-muted-foreground/70"
+        >
+          <ChevronsUpDown className="h-3.5 w-3.5" style={swatchStyle} />
+        </button>
+      </div>
 
       {isExpanded && (
         <div className="px-4 pb-3 pt-1 border-t" style={style}>
