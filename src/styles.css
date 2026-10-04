@@ -1194,3 +1194,23 @@ html.omnifex-web {
   padding-top: env(safe-area-inset-top, 0px);
 }
 
+
+/* ─── Mermaid diagrams (MermaidBlock / DiagramOverlay) ─────────────────────
+   Click-to-highlight in the full-window viewer: svgGraph.applyHighlight sets
+   `data-highlighting` on the <svg> and `.diagram-hl` on the lit node, edges,
+   labels and neighbours; everything else dims. */
+.omnifex-diagram-interactive g.node {
+  cursor: pointer;
+}
+.omnifex-diagram svg g.node,
+.omnifex-diagram svg path[data-edge="true"],
+.omnifex-diagram svg .edgeLabel,
+.omnifex-diagram svg .cluster {
+  transition: opacity 150ms ease;
+}
+.omnifex-diagram svg[data-highlighting] g.node:not(.diagram-hl),
+.omnifex-diagram svg[data-highlighting] path[data-edge="true"]:not(.diagram-hl),
+.omnifex-diagram svg[data-highlighting] .edgeLabel:not(.diagram-hl),
+.omnifex-diagram svg[data-highlighting] .cluster {
+  opacity: 0.18;
+}

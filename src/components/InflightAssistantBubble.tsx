@@ -38,7 +38,7 @@ export const InflightAssistantBubble: React.FC<{ tabId: string }> = ({ tabId }) 
   );
   const { theme } = useTheme();
   const syntaxTheme = useMemo(() => getClaudeSyntaxTheme(theme), [theme]);
-  const mdComponents = useMemo(() => buildMarkdownComponents(syntaxTheme), [syntaxTheme]);
+  const mdComponents = useMemo(() => buildMarkdownComponents(syntaxTheme, { streaming: true }), [syntaxTheme]);
 
   if (!inflight?.text) return null;
 

@@ -10,11 +10,43 @@ vi.mock("@/hooks", () => ({
   useTheme: () => ({ theme: "gray", setTheme: () => {}, isLoading: false }),
 }));
 
+// Stand-in for the mermaid block: records what it was handed.
+vi.mock("@/components/diagram/MermaidBlock", () => ({
+  MermaidBlock: ({ source, streaming }: { source: string; streaming?: boolean }) => (
+    <div data-testid="mermaid-block" data-streaming={String(Boolean(streaming))}>{source}</div>
+  ),
+}));
+
 import { buildMarkdownComponents } from "../markdownComponents";
 
 afterEach(() => { cleanup(); });
 
 describe("buildMarkdownComponents", () => {
+  it("dispatches language-mermaid to MermaidBlock", () => {
+    const Code = buildMarkdownComponents({}).code;
+    render(<Code className="language-mermaid">{"flowchart LR\n A-->B\n"}</Code>);
+    const block = screen.getByTestId("mermaid-block");
+    expect(block.textContent).toBe("flowchart LR\n A-->B");
+    expect(block.getAttribute("data-streaming")).toBe("false");
+  });
+
+  it("tells MermaidBlock the reply is still streaming", () => {
+    const Code = buildMarkdownComponents({}, { streaming: true }).code;
+    render(<Code className="language-mermaid">{"flowchart LR"}</Code>);
+    expect(screen.getByTestId("mermaid-block").getAttribute("data-streaming")).toBe("true");
+  });
+
+  it("strips the prose <pre> around a mermaid fence", () => {
+    const components = buildMarkdownComponents({});
+    const { container } = render(
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+        {"```mermaid\nflowchart LR\n```"}
+      </ReactMarkdown>,
+    );
+    expect(container.querySelector("pre")).toBeNull();
+    expect(screen.getByTestId("mermaid-block")).toBeTruthy();
+  });
+
   it("dispatches language-markdown to MarkdownBlock", () => {
     const components = buildMarkdownComponents({});
     const Code = components.code;

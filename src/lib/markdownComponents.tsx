@@ -5,6 +5,7 @@ import type { CSSProperties } from "react";
 import type { Components, ExtraProps } from "react-markdown";
 import type { ComponentProps } from "react";
 import { MarkdownBlock } from "@/components/MarkdownBlock";
+import { MermaidBlock } from "@/components/diagram/MermaidBlock";
 import { CopyButton } from "@/components/ui/copy-button";
 
 type SyntaxTheme = Record<string, CSSProperties>;
@@ -43,6 +44,7 @@ function UntaggedFence(props: ComponentProps<"pre">): React.JSX.Element {
  *
  * Dispatch (driven entirely by the fenced-block language class):
  * - `language-markdown` / `language-md` → <MarkdownBlock> (Rendered/Source tabs)
+ * - `language-mermaid`                  → <MermaidBlock> (drawn diagram)
  * - Any other `language-*`              → Prism <SyntaxHighlighter>
  * - No language class                   → plain <code> (covers inline code
  *                                          and fenced-but-untagged blocks)
@@ -62,6 +64,9 @@ function UntaggedFence(props: ComponentProps<"pre">): React.JSX.Element {
  *   `getClaudeSyntaxTheme(theme)`. Passed through to SyntaxHighlighter for
  *   non-markdown fenced blocks. MarkdownBlock fetches its own theme via
  *   `useTheme()` so this argument is unused for the markdown branch.
+ * @param options.streaming — the message is still arriving (the in-flight
+ *   bubble). Mermaid fences then show their source: a half-streamed diagram
+ *   does not parse and would flash an error on every chunk.
  *
  * The return type intersects `Components` with `{ code: ... }` so callers
  * (and tests) can destructure `code` as a non-optional component without
@@ -70,6 +75,7 @@ function UntaggedFence(props: ComponentProps<"pre">): React.JSX.Element {
  */
 export function buildMarkdownComponents(
   syntaxTheme: SyntaxTheme,
+  options: { streaming?: boolean } = {},
 ): Components & { code: (props: CodeComponentProps) => React.JSX.Element } {
   return {
     // Conditional <pre> passthrough.
@@ -77,7 +83,7 @@ export function buildMarkdownComponents(
     // react-markdown wraps every fenced code block in <pre><code>…</code></pre>,
     // and Tailwind Typography styles <pre> as a dark, padded, rounded card.
     // For *tagged* fences (`language-*`), our `code` override returns a
-    // <MarkdownBlock> or Prism <SyntaxHighlighter> — both supply their own
+    // <MarkdownBlock>, <MermaidBlock> or Prism <SyntaxHighlighter> — each supplies its own
     // chrome, so the prose <pre> on top produces a visible card-in-card.
     // We strip the wrapper for those.
     //
@@ -104,6 +110,10 @@ export function buildMarkdownComponents(
 
       if (lang === "markdown" || lang === "md") {
         return <MarkdownBlock source={src} />;
+      }
+
+      if (lang === "mermaid") {
+        return <MermaidBlock source={src} streaming={options.streaming} />;
       }
 
       return lang ? (

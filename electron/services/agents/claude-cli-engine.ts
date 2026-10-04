@@ -40,6 +40,22 @@ const CLI_ARGV_PERMISSION_MODES = new Set([
 ]);
 
 /**
+ * Appended to the CLI's system prompt so the model knows the one rendering
+ * capability it cannot discover from the CLI: OmniFex draws ```mermaid fences
+ * (MermaidBlock) with pan/zoom, download and copy. Kept to what is true of
+ * the renderer — no style rules, which belong in the user's CLAUDE.md.
+ *
+ * The CLI records the system prompt on a conversation's first request and
+ * replays it on resume (`--system-prompt-snapshot`, default on), so sessions
+ * that predate this text pick it up only after their next compaction.
+ */
+export const OMNIFEX_SYSTEM_PROMPT_APPENDIX =
+  'You are running inside OmniFex, a desktop client for Claude Code. ' +
+  'OmniFex renders ```mermaid fenced code blocks as diagrams the user can expand full screen, ' +
+  'pan, zoom, and export as SVG or PNG. When a process, flow, architecture, state machine or ' +
+  'data model is easier to understand as a picture, illustrate it with a ```mermaid block.';
+
+/**
  * Build the argv for `claude` in stream-json headless mode. Per the docs at
  * https://code.claude.com/docs/en/cli-reference:
  *
@@ -56,6 +72,7 @@ const CLI_ARGV_PERMISSION_MODES = new Set([
  *    instead of trying to draw a TTY dialog
  *  - `--setting-sources=user,project,local` loads CLAUDE.md, project
  *    settings, and skills (otherwise the CLI runs in isolated mode)
+ *  - `--append-system-prompt` adds OMNIFEX_SYSTEM_PROMPT_APPENDIX
  */
 function buildArgs(p: AgentStartParams): string[] {
   const args: string[] = [
@@ -70,6 +87,7 @@ function buildArgs(p: AgentStartParams): string[] {
     '--forward-subagent-text',
     '--permission-prompt-tool', 'stdio',
     '--setting-sources', 'user,project,local',
+    '--append-system-prompt', OMNIFEX_SYSTEM_PROMPT_APPENDIX,
   ];
   if (p.resume) {
     args.push('--resume', p.sessionId);

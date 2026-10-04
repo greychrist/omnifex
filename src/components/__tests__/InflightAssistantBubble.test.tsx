@@ -26,6 +26,11 @@ vi.mock('react-markdown', () => ({
   },
 }));
 
+vi.mock('@/components/diagram/MermaidBlock', () => ({
+  MermaidBlock: ({ streaming }: { streaming?: boolean }) =>
+    React.createElement('div', { 'data-testid': 'mermaid', 'data-streaming': String(Boolean(streaming)) }),
+}));
+
 import { InflightAssistantBubble } from '../InflightAssistantBubble';
 import { useClaudeSessionStore } from '@/stores/claudeSessionStore';
 
@@ -47,6 +52,16 @@ afterEach(() => {
 });
 
 describe('InflightAssistantBubble', () => {
+  it('hands mermaid fences the streaming flag, so a half-written diagram is not drawn', () => {
+    setInflight('t1', 'x');
+    render(<InflightAssistantBubble tabId="t1" />);
+    const components = markdownProps[0].components as {
+      code: (p: { className: string; children: string }) => React.ReactElement;
+    };
+    const { getByTestId } = render(components.code({ className: 'language-mermaid', children: 'flowchart LR' }));
+    expect(getByTestId('mermaid').getAttribute('data-streaming')).toBe('true');
+  });
+
   it('renders nothing while the in-flight slot is empty', () => {
     const { container } = render(<InflightAssistantBubble tabId="t1" />);
     expect(container.innerHTML).toBe('');

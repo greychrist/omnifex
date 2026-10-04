@@ -85,6 +85,19 @@ describe('ClaudeCliEngine', () => {
     expect(args).toContain('--forward-subagent-text');
   });
 
+  it('tells the model that mermaid fences are drawn', async () => {
+    const fake = makeFakeChild();
+    mockedSpawn.mockReturnValue(fake as never);
+    const engine = createClaudeCliEngine({ tabId: 't', claudeBinaryPath: '/bin/claude' });
+
+    await engine.start(baseParams);
+
+    const args = mockedSpawn.mock.calls[0][1];
+    const i = args.indexOf('--append-system-prompt');
+    expect(i).toBeGreaterThan(-1);
+    expect(args[i + 1]).toMatch(/```mermaid/);
+  });
+
   it('passes --model for a concrete model id', async () => {
     const fake = makeFakeChild();
     mockedSpawn.mockReturnValue(fake as never);
