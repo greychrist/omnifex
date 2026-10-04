@@ -35,6 +35,25 @@ function makeRequest(
 }
 
 describe("AskUserQuestionCard", () => {
+  // The copy/view bar used to be pinned absolutely to the card's top-right
+  // corner — exactly where the collapse chevron sits — so the chevron was
+  // covered and the card could not be collapsed to read the turn behind it.
+  it("seats the copy/view bar in the header, beside the collapse button, not over it", () => {
+    render(<AskUserQuestionCard request={makeRequest()} onSubmit={vi.fn()} onCancel={vi.fn()} />);
+    const collapse = screen.getByRole("button", { name: "Collapse question" });
+    const bar = screen.getByRole("toolbar");
+    expect(bar.className).not.toMatch(/\babsolute\b/);
+    expect(bar.parentElement).toBe(collapse.parentElement);
+    expect(bar.compareDocumentPosition(collapse) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("collapses the questions from the header button", () => {
+    render(<AskUserQuestionCard request={makeRequest()} onSubmit={vi.fn()} onCancel={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Collapse question" }));
+    expect(screen.queryByText("Pick a color")).toBeNull();
+    expect(screen.getByRole("button", { name: "Expand question" })).toBeTruthy();
+  });
+
   it("renders inline (no Radix Dialog portal/role)", () => {
     // The card used to wrap itself in a Dialog so it overlaid the chat,
     // which hid the surrounding context — especially painful when several

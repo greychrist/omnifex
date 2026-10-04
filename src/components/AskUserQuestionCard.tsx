@@ -213,6 +213,9 @@ export function AskUserQuestionCard({ request, onSubmit, onCancel }: AskUserQues
                 : `Answer all ${questions.length} questions, then submit.`}
             </div>
           </div>
+          {/* Inline, not the default top-right overlay: pinned there it sat
+              on top of the collapse button and hid it. */}
+          <CardActionBar text={requestJson} rawPayload={requestJson} placement="inline" />
           <button
             type="button"
             onClick={() => { setCollapsed((c) => !c); }}
@@ -390,7 +393,6 @@ export function AskUserQuestionCard({ request, onSubmit, onCancel }: AskUserQues
         </>
         )}
       </div>
-      <CardActionBar text={requestJson} rawPayload={requestJson} />
       <CardFooter kindId="permission.askUserQuestion" />
     </div>
   );
