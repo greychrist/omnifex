@@ -32,12 +32,14 @@ export const POST_COMPACT_ENABLED_SETTING_KEY = 'postCompact.enabled';
 /**
  * Deliberately short. This costs a real turn every time it fires, and a long
  * preamble buys nothing over the one instruction that matters.
+ *
+ * It used to end "If you were mid-task, say in one line what you were doing …
+ * then carry on", and ask the model to quote what it re-read. Over 52
+ * compactions the re-reads proved rare, but as its own turn "carry on" set off
+ * work nobody had asked for, and the quoting padded replies. Both went; the
+ * last line keeps re-reading to what the next answer actually needs.
  */
-export const DEFAULT_POST_COMPACT_PROMPT = `The conversation above was just compacted: what you have of the earlier turns is now a lossy summary, not the original text.
-
-Before you state anything specific that came from before the compaction — a file path, a line number, a command's output, a test result, an error string, a config value — re-read the source and quote it. Do not reconstruct it from the summary, and do not reformat captured output into a shape it did not have.
-
-If you were mid-task, say in one line what you were doing and what you have verified since re-reading, then carry on.`;
+export const DEFAULT_POST_COMPACT_PROMPT = `The conversation above was just compacted; earlier turns are now a lossy summary. Before relying on a specific detail from before the compaction — a path, line number, command output, test result, error text, config value — re-read just that source rather than trusting the summary. Don't re-read anything you aren't about to use.`;
 
 /**
  * Fill in the user's override, falling back to the shipped default when they

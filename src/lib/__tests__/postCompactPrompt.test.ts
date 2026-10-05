@@ -35,6 +35,16 @@ describe('resolvePostCompactPrompt', () => {
     expect(DEFAULT_POST_COMPACT_PROMPT.toLowerCase()).toContain('summary');
     expect(DEFAULT_POST_COMPACT_PROMPT.toLowerCase()).toContain('re-read');
   });
+
+  // Measured over 52 compactions (2026-10-04): sent as its own turn, "then
+  // carry on" set off unprompted work (129 and 97 Bash calls in two cases),
+  // and "quote it" padded replies. Re-reads were rare and stay scoped.
+  it('default neither resumes work on its own nor forces quoting', () => {
+    const text = DEFAULT_POST_COMPACT_PROMPT.toLowerCase();
+    expect(text).not.toContain('carry on');
+    expect(text).not.toContain('quote');
+    expect(text).toContain("don't re-read anything you aren't about to use");
+  });
 });
 
 // The switch is the one way to turn the directive off, and keeps the edited
