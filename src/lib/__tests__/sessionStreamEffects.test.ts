@@ -253,6 +253,21 @@ describe('runStreamEffect', () => {
     expect(setQueuedPrompts).toHaveBeenCalledWith([]);
   });
 
+  // Stop holds the queue instead of discarding it: the user decides what
+  // goes next, so the next idle turn must not send it on its own.
+  it('processQueuedPrompt sends nothing while the queue is held after a Stop', () => {
+    vi.useFakeTimers();
+    const handleSendPrompt = vi.fn();
+    const head = { id: 'a', prompt: 'queued before stop', model: 'opus' };
+    const queuedPromptsRef = { current: [head] };
+    const deps = makeDeps({ handleSendPrompt, queuedPromptsRef, queueHeldRef: { current: true } });
+    runStreamEffect({ kind: 'processQueuedPrompt' }, deps);
+    vi.advanceTimersByTime(150);
+    expect(handleSendPrompt).not.toHaveBeenCalled();
+    expect(queuedPromptsRef.current).toEqual([head]);
+    vi.useRealTimers();
+  });
+
   it('processQueuedPrompt forwards images attached to the queued prompt', () => {
     vi.useFakeTimers();
     const handleSendPrompt = vi.fn();

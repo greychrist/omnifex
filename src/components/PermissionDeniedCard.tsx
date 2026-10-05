@@ -41,8 +41,12 @@ export function PermissionDeniedCard({ toolName, input, denial, fromSubagent }: 
       ? 'Auto mode blocked this'
       : 'Permission denied';
 
+  // Disabled only while the turn it fed is still going: once the session is
+  // idle again (finished, or Stopped) the user may approve again.
+  const busy = sent && !!actions?.turnRunning;
+
   const send = (text: string) => {
-    if (!actions || sent) return;
+    if (!actions || busy) return;
     setSent(true);
     actions.sendPrompt(text);
   };
@@ -95,15 +99,15 @@ export function PermissionDeniedCard({ toolName, input, denial, fromSubagent }: 
       {actions && (
         <div className="flex flex-wrap items-center gap-2 pl-6">
           {unavailable ? (
-            <Button size="sm" variant="outline" disabled={sent} onClick={() => send(retryPrompt(denial.kind, toolName, input))}>
+            <Button size="sm" variant="outline" disabled={busy} onClick={() => send(retryPrompt(denial.kind, toolName, input))}>
               Retry
             </Button>
           ) : (
             <>
-              <Button size="sm" disabled={sent} onClick={() => send(retryPrompt(denial.kind, toolName, input))}>
+              <Button size="sm" disabled={busy} onClick={() => send(retryPrompt(denial.kind, toolName, input))}>
                 Approve &amp; retry
               </Button>
-              <Button size="sm" variant="outline" disabled={sent || editingRule} onClick={openRuleEditor}>
+              <Button size="sm" variant="outline" disabled={busy || editingRule} onClick={openRuleEditor}>
                 Always allow…
               </Button>
               {actions.permissionMode === 'auto' && (

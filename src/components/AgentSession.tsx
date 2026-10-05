@@ -113,7 +113,7 @@ import { decideResumeSeed } from "@/lib/resumeSeedDecision";
 import { decideAutoStart, decideRebindTarget, shouldShowNewSessionPanel } from "@/lib/sessionAutoStart";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useSessionLifecycle } from "@/hooks/useSessionLifecycle";
-import { useSendPrompt } from "@/hooks/useSendPrompt";
+import { useSendPrompt, type SendPromptOptions } from "@/hooks/useSendPrompt";
 import { usePublishTabStatus } from "@/hooks/usePublishTabStatus";
 import { useRenderProfile } from "@/hooks/useRenderProfile";
 import { useTabContext } from "@/contexts/TabContext";
@@ -740,6 +740,15 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   const turnRunningRef = useRef(false);
   // The queued prompt open for editing — the drain holds while it is the head.
   const editingPromptIdRef = useRef<string | null>(null);
+  // Set by Stop: the queue survives the interrupt but nothing drains until
+  // the user resumes it or sends one prompt now. State drives the panel; the
+  // ref is what the drain reads, for the same stale-closure reason as above.
+  const [queueHeld, setQueueHeldState] = useState(false);
+  const queueHeldRef = useRef(false);
+  const setQueueHeld = useCallback((held: boolean) => {
+    queueHeldRef.current = held;
+    setQueueHeldState(held);
+  }, []);
   // Session lifecycle status comes from the useSessionLifecycle hook
   // (single source of truth), which subscribes to main-process
   // `session-status:<tabId>` events. We derive the legacy boolean flags
@@ -1534,6 +1543,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
             setQueuedPrompts: ctx.setQueuedPrompts as any,
             turnRunningRef,
             editingPromptIdRef,
+            queueHeldRef,
             handleSendPrompt: fireAndLog(
               'claude-code-session:send-prompt-effect',
               handleSendPromptForEffect ?? undefined,
@@ -1806,9 +1816,9 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   // the view to follow their new activity rather than leave them stranded.
   const handleSendPrompt = useCallback(
     // eslint-disable-next-line react-hooks/preserve-manual-memoization -- preserved as-is.
-    (prompt: string, model: string, images?: string[]) => {
+    (prompt: string, model: string, images?: string[], opts?: SendPromptOptions) => {
       isNearBottomRef.current = true;
-      return sendPromptRaw(prompt, model, images);
+      return sendPromptRaw(prompt, model, images, opts);
     },
     [sendPromptRaw],
   );
@@ -1868,9 +1878,10 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   useEffect(() => {
     api.getHomeDirectory().then(setHomeDir).catch(() => { /* rules fall back to //absolute paths */ });
   }, []);
-  const sessionActionRefs = useRef({ handleResend, changePermissionMode, configDir: '' });
+  const sessionActionRefs = useRef({ handleSendPrompt, selectedModel, changePermissionMode, configDir: '' });
   sessionActionRefs.current = {
-    handleResend,
+    handleSendPrompt,
+    selectedModel,
     changePermissionMode,
     configDir: accountResolution?.account.config_dir ?? '',
   };
@@ -1878,7 +1889,17 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     projectPath,
     homeDir,
     permissionMode,
-    sendPrompt: (text) => { void sessionActionRefs.current.handleResend(text, undefined); },
+    turnRunning: isLoading,
+    sendPrompt: (text) => {
+      const { handleSendPrompt: send, selectedModel: model } = sessionActionRefs.current;
+      // Already waiting in a queue held by Stop: clicking again means "now".
+      if (queueHeldRef.current && !turnRunningRef.current) {
+        const rest = queuedPromptsRef.current.filter(p => p.prompt !== text);
+        queuedPromptsRef.current = rest;
+        setQueuedPrompts(rest);
+      }
+      void send(text, model, undefined, { front: true });
+    },
     addAllowRule: (rule) => api.sessionUpdatePermission(tabIdRef.current, projectPath, sessionActionRefs.current.configDir, {
       action: 'add',
       scope: 'local',
@@ -1886,7 +1907,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
       rule,
     }),
     setPermissionMode: (mode) => sessionActionRefs.current.changePermissionMode(mode),
-  }), [projectPath, homeDir, permissionMode]);
+  }), [projectPath, homeDir, permissionMode, isLoading]);
 
   // Launch prompt ("open a session AND do this"). Ref-captured rather than
   // listed as an auto-start dep: the effect below runs once per activation and
@@ -2109,9 +2130,37 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
       setQueuedPrompts,
       turnRunningRef,
       editingPromptIdRef,
+      queueHeldRef,
       handleSendPrompt: fireAndLog('claude-code-session:send-prompt-edited', handleSendPrompt),
     });
   };
+
+  const resumeQueue = () => {
+    setQueueHeld(false);
+    drainQueuedPrompt({
+      queuedPromptsRef,
+      setQueuedPrompts,
+      turnRunningRef,
+      editingPromptIdRef,
+      queueHeldRef,
+      handleSendPrompt: fireAndLog('claude-code-session:send-prompt-resumed', handleSendPrompt),
+    });
+  };
+
+  // Out of a held queue, ahead of the rest, which stays held.
+  const sendQueuedPromptNow = (id: string) => {
+    const item = queuedPromptsRef.current.find(p => p.id === id);
+    if (!item || turnRunningRef.current) return;
+    const rest = queuedPromptsRef.current.filter(p => p.id !== id);
+    queuedPromptsRef.current = rest;
+    setQueuedPrompts(rest);
+    void fireAndLog('claude-code-session:send-prompt-now', handleSendPrompt)(item.prompt, item.model, item.images);
+  };
+
+  // An emptied queue has nothing left to hold.
+  useEffect(() => {
+    if (queuedPrompts.length === 0 && queueHeldRef.current) setQueueHeld(false);
+  }, [queuedPrompts, setQueueHeld]);
 
   // Wave 2.3 — "cancel" is now a soft interrupt. The old behavior called
   // api.stopSession() which fully tore down the CLI session, killing the
@@ -2137,7 +2186,8 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
       // persistentSessionRef. The CLI emits a result row for the interrupted
       // turn, and the session closes its turn on it.
       setError(null);
-      setQueuedPrompts([]);
+      // Held, not discarded: what the user queued is still theirs to send.
+      if (queuedPromptsRef.current.length > 0) setQueueHeld(true);
 
       const interruptMessage: JsonlNode = {
         kind: 'system',
@@ -2172,7 +2222,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
       persistentSessionRef.current = false;
       resetStatus({ sessionStatus: 'stopped', conversationStatus: null });
       setError(null);
-      setQueuedPrompts([]);
+      if (queuedPromptsRef.current.length > 0) setQueueHeld(true);
 
       const errorMessage: JsonlNode = {
         kind: 'system',
@@ -2299,6 +2349,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     resetStatus({ sessionStatus: 'stopped', conversationStatus: null });
     setError(null);
     setQueuedPrompts([]);
+    setQueueHeld(false);
 
     // Conversation state
     setMessages([]);
@@ -3052,6 +3103,9 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
                   onRemove={(id) => { setQueuedPrompts(prev => prev.filter(p => p.id !== id)); }}
                   onSave={saveQueuedPromptEdit}
                   onEditingChange={handleQueuedPromptEditing}
+                  held={queueHeld && !isLoading}
+                  onResume={resumeQueue}
+                  onSendNow={sendQueuedPromptNow}
                 />
               </motion.div>
             )}

@@ -70,6 +70,17 @@ describe('useSendPrompt', () => {
     expect(result.current.hook.queuedPrompts[0].images).toEqual(['data:image/png;base64,AAAA']);
   });
 
+  it('queues a front-of-queue prompt ahead of prompts already waiting', async () => {
+    const { result } = renderHook(makeHarness(true));
+    await act(async () => {
+      await result.current.hook.handleSendPrompt('typed earlier', 'opus');
+    });
+    await act(async () => {
+      await result.current.hook.handleSendPrompt('approve the blocked call', 'opus', undefined, { front: true });
+    });
+    expect(result.current.hook.queuedPrompts.map((p) => p.prompt)).toEqual(['approve the blocked call', 'typed earlier']);
+  });
+
   it('reads turnRunningRef.current at call-time, not from a captured render', async () => {
     // Reproduces the stale-closure bug: the queue drain path holds onto
     // handleSendPrompt across renders and invokes it later. With a ref-based

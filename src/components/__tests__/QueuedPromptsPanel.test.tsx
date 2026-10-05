@@ -114,4 +114,26 @@ describe('QueuedPromptsPanel', () => {
     fireEvent.click(screen.getAllByTitle('Remove from queue')[1]);
     expect(props.onRemove).toHaveBeenCalledWith('b');
   });
+  describe('held after Stop', () => {
+    it('says the queue is held and offers Resume', () => {
+      const onResume = vi.fn();
+      renderPanel({ held: true, onResume, onSendNow: vi.fn() });
+      expect(screen.getByText(/held/i)).toBeTruthy();
+      fireEvent.click(screen.getByRole('button', { name: /Resume/ }));
+      expect(onResume).toHaveBeenCalled();
+    });
+
+    it('sends one prompt now', () => {
+      const onSendNow = vi.fn();
+      renderPanel({ held: true, onResume: vi.fn(), onSendNow });
+      fireEvent.click(screen.getAllByRole('button', { name: /Send now/ })[1]);
+      expect(onSendNow).toHaveBeenCalledWith('b');
+    });
+
+    it('offers neither while the queue is draining normally', () => {
+      renderPanel({ held: false, onResume: vi.fn(), onSendNow: vi.fn() });
+      expect(screen.queryByRole('button', { name: /Resume/ })).toBeNull();
+      expect(screen.queryByRole('button', { name: /Send now/ })).toBeNull();
+    });
+  });
 });

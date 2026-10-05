@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { ChevronDown, ChevronUp, X } from "lucide-react";
+import { ChevronDown, ChevronUp, Play, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { TooltipSimple } from "@/components/ui/tooltip-modern";
@@ -15,6 +15,12 @@ interface QueuedPromptsPanelProps {
   /** The prompt open for editing, or null. The session holds the queue while
    *  that prompt is at its head, and drains it when this goes back to null. */
   onEditingChange: (id: string | null) => void;
+  /** A Stop held the queue: nothing drains until the user picks. */
+  held?: boolean;
+  /** Release the hold; the queue drains as usual from its head. */
+  onResume?: () => void;
+  /** Send this one prompt now, leaving the rest held. */
+  onSendNow?: (id: string) => void;
 }
 
 /**
@@ -28,6 +34,9 @@ export function QueuedPromptsPanel({
   onRemove,
   onSave,
   onEditingChange,
+  held = false,
+  onResume,
+  onSendNow,
 }: QueuedPromptsPanelProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -70,7 +79,13 @@ export function QueuedPromptsPanel({
       <div className="flex items-center justify-between">
         <div className="text-xs font-medium text-muted-foreground mb-1">
           Queued Prompts ({prompts.length})
+          {held && <span> · held after Stop</span>}
         </div>
+        {held && onResume && (
+          <Button variant="outline" size="sm" className="ml-auto mr-1 h-6 px-2 text-xs" onClick={onResume}>
+            Resume queue
+          </Button>
+        )}
         <TooltipSimple content={collapsed ? "Expand queue" : "Collapse queue"} side="top">
           <motion.div
             whileTap={{ scale: 0.97 }}
@@ -128,6 +143,18 @@ export function QueuedPromptsPanel({
               </p>
             )}
           </div>
+          {held && onSendNow && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 flex-shrink-0"
+              title="Send now"
+              aria-label="Send now"
+              onClick={() => { onSendNow(queuedPrompt.id); }}
+            >
+              <Play className="h-3 w-3" />
+            </Button>
+          )}
           <motion.div
             whileTap={{ scale: 0.97 }}
             transition={{ duration: 0.15 }}

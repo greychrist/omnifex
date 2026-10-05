@@ -59,6 +59,10 @@ export interface StreamEffectDeps<Q extends QueuedPrompt = QueuedPrompt> {
    *  When it is the head, the queue waits: sending it would send the text
    *  the user is in the middle of replacing. */
   editingPromptIdRef?: { current: string | null };
+  /** True after a Stop: the queue survives the interrupt but waits for the
+   *  user (Resume, or Send now on one prompt) instead of draining on the next
+   *  idle turn. */
+  queueHeldRef?: { current: boolean };
   handleSendPrompt: (prompt: string, model: string, images?: string[]) => void;
   /** Resolved directive text (user override or shipped default) — see
    *  `resolvePostCompactPrompt`. Resolved by the caller so this module stays
@@ -83,7 +87,7 @@ export function newQueuedPromptId(): string {
 export function drainQueuedPrompt<Q extends QueuedPrompt>(
   deps: Pick<
     StreamEffectDeps<Q>,
-    'queuedPromptsRef' | 'setQueuedPrompts' | 'turnRunningRef' | 'editingPromptIdRef' | 'handleSendPrompt'
+    'queuedPromptsRef' | 'setQueuedPrompts' | 'turnRunningRef' | 'editingPromptIdRef' | 'queueHeldRef' | 'handleSendPrompt'
   >,
 ): void {
   // Peek, then commit. The effect fires from more than one trigger (a
@@ -91,7 +95,7 @@ export function drainQueuedPrompt<Q extends QueuedPrompt>(
   // Dequeuing unconditionally and letting handleSendPrompt re-enqueue would
   // move the head to the BACK of the queue, undoing the post-compact
   // directive's deliberate front-of-queue placement.
-  if (deps.turnRunningRef.current) return;
+  if (deps.turnRunningRef.current || deps.queueHeldRef?.current) return;
   const queue = deps.queuedPromptsRef.current;
   if (queue.length === 0) return;
   const [next, ...rest] = queue;

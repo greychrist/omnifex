@@ -9,6 +9,7 @@ function actions(over: Partial<SessionActions> = {}): SessionActions {
     projectPath: '/Users/greg/Repos/omnifex',
     homeDir: '/Users/greg',
     permissionMode: 'auto',
+    turnRunning: false,
     sendPrompt: vi.fn(),
     addAllowRule: vi.fn(async () => {}),
     setPermissionMode: vi.fn(),
@@ -39,12 +40,33 @@ describe('PermissionDeniedCard', () => {
     expect(screen.getByText('`git add -A`', { exact: false })).toBeTruthy();
   });
 
-  it('Approve & retry sends the consent prompt, once', () => {
-    const a = actions();
+  it('Approve & retry sends the consent prompt, once per turn', () => {
+    const a = actions({ turnRunning: true });
     renderCard(a);
     fireEvent.click(screen.getByRole('button', { name: /Approve & retry/ }));
     expect(a.sendPrompt).toHaveBeenCalledWith('I approve this action — go ahead and retry it: `git add -A`');
     expect((screen.getByRole('button', { name: /Approve & retry/ }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  // A Stop ends the turn the retry was waiting on; the card must not stay
+  // dead, or the only way to re-approve is typing consent by hand.
+  it('re-enables Approve & retry once the session stops working', () => {
+    const a = actions({ turnRunning: true });
+    const { rerender } = renderCard(a);
+    fireEvent.click(screen.getByRole('button', { name: /Approve & retry/ }));
+    rerender(
+      <SessionActionsProvider value={{ ...a, turnRunning: false }}>
+        <PermissionDeniedCard
+          toolName="Bash"
+          input={{ command: 'git add -A' }}
+          denial={{ kind: 'classifier-block', category: 'Modify Shared Resources' }}
+        />
+      </SessionActionsProvider>,
+    );
+    const button = screen.getByRole('button', { name: /Approve & retry/ }) as HTMLButtonElement;
+    expect(button.disabled).toBe(false);
+    fireEvent.click(button);
+    expect(a.sendPrompt).toHaveBeenCalledTimes(2);
   });
 
   it('Always allow saves the edited rule, then retries', async () => {

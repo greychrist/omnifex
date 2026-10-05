@@ -11,7 +11,13 @@ export interface SessionActions {
   projectPath: string;
   homeDir: string;
   permissionMode: string;
-  /** Send a prompt exactly as if the user had typed it. */
+  /** The session's turn is running (the daemon's `turn` axis). */
+  turnRunning: boolean;
+  /**
+   * Send a prompt as if the user had typed it, except that if it has to
+   * queue it goes to the head, and if it is already sitting in a held queue
+   * it is taken out and sent now.
+   */
   sendPrompt(text: string): void;
   /**
    * Add an allow rule to the project's `.claude/settings.local.json`. The CLI

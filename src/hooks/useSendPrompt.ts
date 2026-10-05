@@ -11,6 +11,13 @@ export interface QueuedPromptItem {
   images?: string[];
 }
 
+export interface SendPromptOptions {
+  /** If the prompt has to queue, put it at the head: it answers something
+   *  that already happened (a denial card's retry), so it goes before
+   *  whatever the user typed after. */
+  front?: boolean;
+}
+
 interface UseSendPromptArgs {
   projectPath: string;
   tabId: string;
@@ -50,7 +57,7 @@ interface UseSendPromptArgs {
 }
 
 interface UseSendPromptReturn {
-  handleSendPrompt: (prompt: string, model: string, images?: string[]) => Promise<void>;
+  handleSendPrompt: (prompt: string, model: string, images?: string[], opts?: SendPromptOptions) => Promise<void>;
   queuedPrompts: QueuedPromptItem[];
   setQueuedPrompts: React.Dispatch<React.SetStateAction<QueuedPromptItem[]>>;
   queuedPromptsRef: React.MutableRefObject<QueuedPromptItem[]>;
@@ -88,6 +95,7 @@ export function useSendPrompt({
     prompt: string,
     model: string,
     images?: string[],
+    opts?: SendPromptOptions,
   ) => {
     if (!projectPath) {
       setError("Please select a project directory first");
@@ -115,7 +123,7 @@ export function useSendPrompt({
         model,
         ...(images && images.length > 0 ? { images } : {}),
       };
-      setQueuedPrompts((prev) => [...prev, newPrompt]);
+      setQueuedPrompts((prev) => (opts?.front ? [newPrompt, ...prev] : [...prev, newPrompt]));
       return;
     }
 
