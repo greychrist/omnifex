@@ -60,7 +60,29 @@ const SCOPE_FILTERS: { value: ScopeFilter; label: string }[] = [
   { value: "default", label: "Claude" },
 ];
 
-const DESCRIPTION_PREVIEW_LENGTH = 60;
+// Default order on every tab: what the user wrote before what ships with
+// Claude Code, OmniFex's own last. Also the Type column's sort order.
+const SCOPE_RANK: Record<string, number> = { project: 0, user: 1, default: 2, omnifex: 3 };
+const scopeRank = (scope: string) => SCOPE_RANK[scope] ?? 4;
+
+type SortKey = "name" | "scope" | "description";
+type SortState = { key: SortKey; dir: "asc" | "desc" } | null;
+
+const SORT_COLUMNS: { key: SortKey; label: string; className: string }[] = [
+  { key: "name", label: "Command", className: "w-44" },
+  { key: "scope", label: "Type", className: "w-20" },
+  { key: "description", label: "Description", className: "" },
+];
+
+const compareBy = (key: SortKey, a: SlashCommand, b: SlashCommand): number => {
+  if (key === "scope") return scopeRank(a.scope) - scopeRank(b.scope);
+  if (key === "description") {
+    // No description sorts last either way round it is read.
+    if (!a.description !== !b.description) return a.description ? -1 : 1;
+    return (a.description ?? "").localeCompare(b.description ?? "");
+  }
+  return a.name.localeCompare(b.name);
+};
 
 const toSlashCommands = (sdkCommands: import("@/lib/api").SessionSlashCommand[]): SlashCommand[] =>
   sdkCommands.map(cmd => ({
@@ -139,6 +161,15 @@ export const SlashCommandPicker: React.FC<SlashCommandPickerProps> = ({
   const [searchQuery, setSearchQuery] = useState(initialQuery);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [scopeFilter, setScopeFilter] = useState<ScopeFilter>(SCOPE_FILTERS[0].value);
+  // Null is the default order. A header click sorts ascending, a second
+  // descending, a third goes back to the default.
+  const [sort, setSort] = useState<SortState>(null);
+  const cycleSort = (key: SortKey) => {
+    setSort(prev => {
+      if (prev?.key !== key) return { key, dir: "asc" };
+      return prev.dir === "asc" ? { key, dir: "desc" } : null;
+    });
+  };
 
   const commandListRef = useRef<HTMLDivElement>(null);
   // Set once a selection or close has fired. AnimatePresence (in the parent)
@@ -236,11 +267,22 @@ export const SlashCommandPicker: React.FC<SlashCommandPickerProps> = ({
     });
 
     filtered.sort((a, b) => {
+      if (sort) {
+        const byColumn = compareBy(sort.key, a, b);
+        const tie = byColumn === 0 ? a.name.localeCompare(b.name) : byColumn;
+        return sort.dir === "asc" ? tie : -tie;
+      }
+      // Default: an exact name match first (it is what Enter should pick),
+      // then scope, then prefix matches, then name.
       if (query) {
         const aExact = a.name.toLowerCase() === query;
         const bExact = b.name.toLowerCase() === query;
         if (aExact && !bExact) return -1;
         if (!aExact && bExact) return 1;
+      }
+      const byScope = scopeRank(a.scope) - scopeRank(b.scope);
+      if (byScope !== 0) return byScope;
+      if (query) {
         const aStarts = a.name.toLowerCase().startsWith(query);
         const bStarts = b.name.toLowerCase().startsWith(query);
         if (aStarts && !bStarts) return -1;
@@ -250,7 +292,7 @@ export const SlashCommandPicker: React.FC<SlashCommandPickerProps> = ({
     });
 
     return filtered;
-  }, [searchQuery, commands, scopeFilter]);
+  }, [searchQuery, commands, scopeFilter, sort]);
 
   // Reset selection when list changes
   useEffect(() => {
@@ -313,11 +355,6 @@ export const SlashCommandPicker: React.FC<SlashCommandPickerProps> = ({
   useEffect(() => {
     setSearchQuery(initialQuery);
   }, [initialQuery]);
-
-  const truncateDescription = (desc: string) => {
-    if (desc.length <= DESCRIPTION_PREVIEW_LENGTH) return desc;
-    return desc.slice(0, DESCRIPTION_PREVIEW_LENGTH).trimEnd() + "...";
-  };
 
   return (
     <motion.div
@@ -400,9 +437,28 @@ export const SlashCommandPicker: React.FC<SlashCommandPickerProps> = ({
           <table className="w-full text-sm">
             <thead className="bg-muted sticky top-0 text-xs text-muted-foreground z-10">
               <tr>
-                <th className="text-left px-3 py-1.5 font-medium w-44">Command</th>
-                <th className="text-left px-3 py-1.5 font-medium w-20">Type</th>
-                <th className="text-left px-3 py-1.5 font-medium">Description</th>
+                {SORT_COLUMNS.map(col => {
+                  const dir = sort?.key === col.key ? sort.dir : null;
+                  return (
+                    <th
+                      key={col.key}
+                      className={cn("text-left px-3 py-1.5 font-medium", col.className)}
+                      aria-sort={dir === "asc" ? "ascending" : dir === "desc" ? "descending" : "none"}
+                    >
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-1 hover:text-foreground"
+                        // Keep focus in the composer, so typing keeps filtering.
+                        onMouseDown={(e) => { e.preventDefault(); }}
+                        onClick={() => { cycleSort(col.key); }}
+                      >
+                        {col.label}
+                        {dir === "asc" && <ChevronUp className="h-3 w-3" />}
+                        {dir === "desc" && <ChevronDown className="h-3 w-3" />}
+                      </button>
+                    </th>
+                  );
+                })}
                 <th className="w-10" />
               </tr>
             </thead>
@@ -434,9 +490,7 @@ export const SlashCommandPicker: React.FC<SlashCommandPickerProps> = ({
                         </span>
                       </td>
                       <td className="px-3 py-1.5 text-xs text-muted-foreground truncate max-w-0">
-                        {command.description
-                          ? truncateDescription(command.description)
-                          : "\u2014"}
+                        {command.description || "\u2014"}
                       </td>
                       <td className="px-1 py-1.5 text-center">
                         {command.description && (

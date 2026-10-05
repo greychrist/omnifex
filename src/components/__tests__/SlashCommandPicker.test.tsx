@@ -235,3 +235,56 @@ describe('SlashCommandPicker filter tabs', () => {
     expect(rowTwo.className).toMatch(/bg-accent/);
   });
 });
+
+const allRows = () =>
+  Array.from(document.querySelectorAll('tbody tr[data-index] td:first-child')).map(td => td.textContent);
+// OmniFex's own commands (/status with a session) are left out of the
+// column-sort expectations; their default place is asserted on its own.
+const commandOrder = () => allRows().filter(name => name !== '/status');
+
+describe('SlashCommandPicker ordering and sorting', () => {
+  const projZ = makeCmd({ id: 'pz', name: 'zeta', full_command: '/zeta', scope: 'project', description: 'b' });
+  const userA = makeCmd({ id: 'ua', name: 'alpha', full_command: '/alpha', scope: 'user', description: 'c' });
+
+  beforeEach(() => {
+    slashCommandsListMock.mockResolvedValue([userA, projZ]);
+    sessionSupportedCommandsMock.mockResolvedValue([{ name: 'aaa', description: 'a' }]);
+  });
+
+  it('lists Project, then User, then Claude by default, names alphabetical within each', async () => {
+    renderPicker();
+    await waitFor(() => { notNull(screen.queryByText('/zeta')); });
+    expect(allRows()).toEqual(['/zeta', '/alpha', '/aaa', '/status']);
+  });
+
+  it('keeps that scope order while filtering', async () => {
+    renderPicker({ initialQuery: 'a' } as never);
+    await waitFor(() => { notNull(screen.queryByText('/zeta')); });
+    expect(commandOrder()).toEqual(['/zeta', '/alpha', '/aaa']);
+  });
+
+  it('sorts by a column ascending, then descending, then back to the default', async () => {
+    renderPicker();
+    await waitFor(() => { notNull(screen.queryByText('/zeta')); });
+    const header = screen.getByRole('button', { name: /^Command/ });
+    fireEvent.click(header);
+    expect(commandOrder()).toEqual(['/aaa', '/alpha', '/zeta']);
+    fireEvent.click(header);
+    expect(commandOrder()).toEqual(['/zeta', '/alpha', '/aaa']);
+    fireEvent.click(screen.getByRole('button', { name: /^Description/ }));
+    expect(commandOrder()).toEqual(['/aaa', '/zeta', '/alpha']);
+    fireEvent.click(screen.getByRole('button', { name: /^Type/ }));
+    fireEvent.click(screen.getByRole('button', { name: /^Type/ }));
+    expect(commandOrder()).toEqual(['/aaa', '/alpha', '/zeta']);
+    fireEvent.click(screen.getByRole('button', { name: /^Type/ }));
+    expect(commandOrder()).toEqual(['/zeta', '/alpha', '/aaa']);
+  });
+
+  it('shows the whole description and lets the column width truncate it', async () => {
+    const long = 'x'.repeat(200);
+    slashCommandsListMock.mockResolvedValue([makeCmd({ id: 'l', name: 'long', full_command: '/long', description: long })]);
+    renderPicker();
+    await waitFor(() => { notNull(screen.queryByText('/long')); });
+    expect(screen.getByText(long)).toBeTruthy();
+  });
+});
