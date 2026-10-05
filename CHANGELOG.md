@@ -5,6 +5,16 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.219] — 2026-10-05
+
+### Changed
+- Stop no longer discards queued prompts. The queue is held instead: nothing sends until you pick **Resume queue** or **Send now** on a single prompt.
+- The post-compaction directive is shorter: it asks the model to re-read only the sources it is about to rely on, and no longer tells it to carry on with work or quote what it re-read.
+
+### Fixed
+- The permission-denied card's **Approve & retry** stayed disabled forever after one click. It is now disabled only while the turn it started is running.
+- A retry from the denial card queued behind prompts typed after it; it now goes to the head of the queue.
+
 ## [0.4.218] — 2026-10-04
 
 ### Fixed
