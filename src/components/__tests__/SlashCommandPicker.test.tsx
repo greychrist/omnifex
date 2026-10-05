@@ -104,6 +104,9 @@ const renderPicker = (props: Partial<typeof baseProps> & { configDir?: string } 
 const getFilterButton = (label: string) =>
   screen.getByRole('button', { name: label });
 
+const tabLabels = () =>
+  Array.from(getFilterButton('All').parentElement!.querySelectorAll('button')).map(b => b.textContent);
+
 const notNull = (v: unknown) => { expect(v).not.toBeNull(); };
 const isNull = (v: unknown) => { expect(v).toBeNull(); };
 
@@ -115,12 +118,10 @@ describe('SlashCommandPicker filter tabs', () => {
     notNull(screen.queryByRole('button', { name: 'Claude' }));
   });
 
-  it('renders tabs in order All · Project · User · Claude', async () => {
+  it('renders a tab per type present, in order All · Project · User · OmniFex · Claude', async () => {
     renderPicker();
-    await waitFor(() => { expect(slashCommandsListMock).toHaveBeenCalled(); });
-    const tabBar = getFilterButton('Project').parentElement!;
-    const labels = Array.from(tabBar.querySelectorAll('button')).map(b => b.textContent);
-    expect(labels).toEqual(['All', 'Project', 'User', 'Claude']);
+    await waitFor(() => { isNull(screen.queryByText(/Loading commands/)); });
+    expect(tabLabels()).toEqual(['All', 'Project', 'User', 'OmniFex', 'Claude']);
   });
 
   it('selects the All tab on open', async () => {
@@ -195,11 +196,8 @@ describe('SlashCommandPicker filter tabs', () => {
   it('ArrowRight from the last tab (Claude) wraps back to All', async () => {
     renderPicker();
     await waitFor(() => { isNull(screen.queryByText(/Loading commands/)); });
-    // All → Project → User → Claude → All
-    fireEvent.keyDown(window, { key: 'ArrowRight' });
-    fireEvent.keyDown(window, { key: 'ArrowRight' });
-    fireEvent.keyDown(window, { key: 'ArrowRight' });
-    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    // All → Project → User → OmniFex → Claude → All
+    for (let i = 0; i < 5; i++) fireEvent.keyDown(window, { key: 'ArrowRight' });
     notNull(screen.queryByText('/projonly'));
     notNull(screen.queryByText('/useronly'));
     notNull(screen.queryByText('/help'));
@@ -251,10 +249,10 @@ describe('SlashCommandPicker ordering and sorting', () => {
     sessionSupportedCommandsMock.mockResolvedValue([{ name: 'aaa', description: 'a' }]);
   });
 
-  it('lists Project, then User, then Claude by default, names alphabetical within each', async () => {
+  it('lists Project, then User, then OmniFex, then Claude by default, names alphabetical within each', async () => {
     renderPicker();
     await waitFor(() => { notNull(screen.queryByText('/zeta')); });
-    expect(allRows()).toEqual(['/zeta', '/alpha', '/aaa', '/status']);
+    expect(allRows()).toEqual(['/zeta', '/alpha', '/status', '/aaa']);
   });
 
   it('keeps that scope order while filtering', async () => {
@@ -286,5 +284,50 @@ describe('SlashCommandPicker ordering and sorting', () => {
     renderPicker();
     await waitFor(() => { notNull(screen.queryByText('/long')); });
     expect(screen.getByText(long)).toBeTruthy();
+  });
+});
+
+describe('SlashCommandPicker command types', () => {
+  beforeEach(() => {
+    sessionSupportedCommandsMock.mockResolvedValue([
+      { name: 'compact', description: 'built-in' },
+      { name: 'superpowers:brainstorming', description: 'from a plugin' },
+      { name: 'mcp__github__list_prs', description: 'an MCP prompt' },
+    ]);
+  });
+
+  it('splits plugin commands and MCP prompts out of Claude, each with a tab and badge', async () => {
+    renderPicker();
+    await waitFor(() => { notNull(screen.queryByText('/compact')); });
+    expect(tabLabels()).toEqual(['All', 'Project', 'User', 'Plugin', 'MCP', 'OmniFex', 'Claude']);
+    const badge = (cmd: string) => screen.getByText(cmd).closest('tr')!.querySelectorAll('td')[1].textContent;
+    expect(badge('/superpowers:brainstorming')).toBe('plugin');
+    expect(badge('/mcp__github__list_prs')).toBe('mcp');
+    expect(badge('/compact')).toBe('claude');
+    expect(badge('/status')).toBe('omnifex');
+  });
+
+  it('Plugin tab shows only plugin commands', async () => {
+    renderPicker();
+    await waitFor(() => { notNull(screen.queryByText('/compact')); });
+    fireEvent.click(getFilterButton('Plugin'));
+    notNull(screen.queryByText('/superpowers:brainstorming'));
+    isNull(screen.queryByText('/compact'));
+    isNull(screen.queryByText('/mcp__github__list_prs'));
+  });
+
+  it('orders All as Project, User, Plugin, MCP, OmniFex, Claude', async () => {
+    renderPicker();
+    await waitFor(() => { notNull(screen.queryByText('/compact')); });
+    expect(allRows()).toEqual([
+      '/projonly', '/useronly', '/superpowers:brainstorming', '/mcp__github__list_prs', '/status', '/compact',
+    ]);
+  });
+
+  it('leaves out tabs for types with no commands', async () => {
+    sessionSupportedCommandsMock.mockResolvedValue([{ name: 'compact', description: 'built-in' }]);
+    renderPicker({ tabId: undefined } as never);
+    await waitFor(() => { isNull(screen.queryByText(/Loading commands/)); });
+    expect(tabLabels()).toEqual(['All', 'Project', 'User']);
   });
 });

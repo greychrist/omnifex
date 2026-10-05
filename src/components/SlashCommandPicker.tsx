@@ -36,6 +36,8 @@ const SCOPE_LABEL: Record<string, string> = {
   default: "claude",
   project: "project",
   user: "user",
+  plugin: "plugin",
+  mcp: "mcp",
   // OmniFex's own commands. Badged distinctly so it is visible that they are
   // not something the CLI knows about and not a file in a config dir.
   omnifex: "omnifex",
@@ -45,25 +47,43 @@ const SCOPE_COLOR: Record<string, string> = {
   default: "bg-emerald-500/15 text-emerald-400",
   project: "bg-blue-500/15 text-blue-400",
   user: "bg-violet-500/15 text-violet-400",
+  plugin: "bg-cyan-500/15 text-cyan-400",
+  mcp: "bg-rose-500/15 text-rose-400",
   omnifex: "bg-amber-500/15 text-amber-400",
 };
 
-type ScopeFilter = "project" | "user" | "default" | "all";
+type ScopeFilter = "all" | "project" | "user" | "plugin" | "mcp" | "omnifex" | "default";
 
 // Order matters: tab order is also the left/right-arrow cycle order, and the
 // first entry is the initial selection on open. "All" leads so the picker
-// opens showing every scope by default.
+// opens showing every scope by default. A type with no commands gets no tab.
 const SCOPE_FILTERS: { value: ScopeFilter; label: string }[] = [
   { value: "all", label: "All" },
   { value: "project", label: "Project" },
   { value: "user", label: "User" },
+  { value: "plugin", label: "Plugin" },
+  { value: "mcp", label: "MCP" },
+  { value: "omnifex", label: "OmniFex" },
   { value: "default", label: "Claude" },
 ];
 
-// Default order on every tab: what the user wrote before what ships with
-// Claude Code, OmniFex's own last. Also the Type column's sort order.
-const SCOPE_RANK: Record<string, number> = { project: 0, user: 1, default: 2, omnifex: 3 };
-const scopeRank = (scope: string) => SCOPE_RANK[scope] ?? 4;
+/**
+ * Where a command the CLI reported comes from, read off its name. The CLI
+ * namespaces plugin commands and skills `plugin:name`, and names MCP prompts
+ * `mcp__server__prompt`; everything else it reports is its own built-in.
+ */
+const cliCommandScope = (name: string): string => {
+  if (name.startsWith("mcp__")) return "mcp";
+  if (name.includes(":")) return "plugin";
+  return "default";
+};
+
+// Default order on every tab, and the Type column's sort order: what the
+// user wrote or installed before what ships with Claude Code — the tab order.
+const SCOPE_RANK: Record<string, number> = Object.fromEntries(
+  SCOPE_FILTERS.filter(f => f.value !== "all").map((f, i) => [f.value, i]),
+);
+const scopeRank = (scope: string) => SCOPE_RANK[scope] ?? SCOPE_FILTERS.length;
 
 type SortKey = "name" | "scope" | "description";
 type SortState = { key: SortKey; dir: "asc" | "desc" } | null;
@@ -86,11 +106,11 @@ const compareBy = (key: SortKey, a: SlashCommand, b: SlashCommand): number => {
 
 const toSlashCommands = (sdkCommands: import("@/lib/api").SessionSlashCommand[]): SlashCommand[] =>
   sdkCommands.map(cmd => ({
-    id: `default::${cmd.name}`,
+    id: `${cliCommandScope(cmd.name)}::${cmd.name}`,
     name: cmd.name,
     full_command: `/${cmd.name}`,
     namespace: '',
-    scope: 'default' as const,
+    scope: cliCommandScope(cmd.name),
     content: '',
     description: cmd.description || '',
     allowed_tools: [] as string[],
@@ -247,6 +267,13 @@ export const SlashCommandPicker: React.FC<SlashCommandPickerProps> = ({
     logAndForget('slash-command-picker:load-commands', loadCommands());
   }, [loadCommands]);
 
+  const visibleFilters = useMemo(() => {
+    const present = new Set(commands.map(c => c.scope));
+    return SCOPE_FILTERS.filter(f => f.value === "all" || present.has(f.value));
+  }, [commands]);
+  const visibleFiltersRef = useRef(visibleFilters);
+  visibleFiltersRef.current = visibleFilters;
+
   // Filter + sort
   const filteredCommands = useMemo(() => {
     if (!commands.length) return [];
@@ -329,11 +356,12 @@ export const SlashCommandPicker: React.FC<SlashCommandPickerProps> = ({
           e.preventDefault();
           const delta = e.key === 'ArrowRight' ? 1 : -1;
           setScopeFilter(prev => {
-            const idx = SCOPE_FILTERS.findIndex(f => f.value === prev);
-            const len = SCOPE_FILTERS.length;
+            const filters = visibleFiltersRef.current;
+            const idx = filters.findIndex(f => f.value === prev);
+            const len = filters.length;
             // Wrap on both ends so the cycle is continuous.
             const next = (idx + delta + len) % len;
-            return SCOPE_FILTERS[next].value;
+            return filters[next].value;
           });
           break;
         }
@@ -386,7 +414,7 @@ export const SlashCommandPicker: React.FC<SlashCommandPickerProps> = ({
               </span>
             )}
             <div className="flex items-center gap-1 ml-2">
-              {SCOPE_FILTERS.map(f => (
+              {visibleFilters.map(f => (
                 <button
                   key={f.value}
                   type="button"
@@ -478,7 +506,7 @@ export const SlashCommandPicker: React.FC<SlashCommandPickerProps> = ({
                       onMouseEnter={() => { setSelectedIndex(index); }}
                       onClick={() => { onSelect(command); }}
                     >
-                      <td className="px-3 py-1.5 font-mono text-primary whitespace-nowrap">
+                      <td className="px-3 py-1.5 font-mono text-xs text-primary whitespace-nowrap">
                         {command.full_command}
                       </td>
                       <td className="px-3 py-1.5">
