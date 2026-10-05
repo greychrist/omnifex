@@ -5,6 +5,15 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.220] — 2026-10-05
+
+### Added
+- Slash-command picker columns (Command, Type, Description) sort on a header click: ascending, descending, then back to the default order.
+
+### Changed
+- The slash-command picker lists Project, then User, then Claude commands (OmniFex's own last), on every tab and while filtering. An exact name match still comes first.
+- Descriptions in the slash-command picker use the column's full width instead of being cut at 60 characters.
+
 ## [0.4.219] — 2026-10-05
 
 ### Changed
