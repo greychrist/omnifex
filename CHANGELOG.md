@@ -5,6 +5,15 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.221] — 2026-10-05
+
+### Added
+- Slash-command picker: **Plugin**, **MCP** and **OmniFex** command types, each with its own tab and badge. Plugin commands and skills (`plugin:name`) and MCP prompts (`mcp__server__prompt`) no longer fall under Claude, which now holds only Claude Code's built-ins.
+
+### Changed
+- Slash-command picker tabs appear only for types that have commands, and the default order follows the tabs: Project, User, Plugin, MCP, OmniFex, Claude.
+- Command names in the slash-command picker use a smaller font, matching the descriptions.
+
 ## [0.4.220] — 2026-10-05
 
 ### Added
