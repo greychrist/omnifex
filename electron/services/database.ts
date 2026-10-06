@@ -1193,6 +1193,12 @@ const migrations: Migration[] = [
       + 'autoscroll_disengage_px). The chat now follows on one distance, '
       + 'autoscroll_follow_px; nothing reads the old pair.',
     up: (db) => {
+      // Guarded like v26: an image old enough to predate the table has
+      // nothing to delete.
+      const hasTable = db
+        .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'app_settings'")
+        .get();
+      if (!hasTable) return;
       db.prepare(
         "DELETE FROM app_settings WHERE key IN ('autoscroll_reengage_px', 'autoscroll_disengage_px')",
       ).run();
