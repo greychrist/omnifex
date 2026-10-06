@@ -194,3 +194,23 @@ describe('SessionControlPickers — vertical centring', () => {
     }
   });
 });
+
+describe('SessionControlPickers — automatic permission check in flight', () => {
+  it('swaps the perms value for `checking`, pulsing, while a call waits on its check', () => {
+    setup({ checkingPermissions: 1 });
+    expect(within(item('perms')).getByText('checking')).toBeTruthy();
+    expect(within(item('perms')).queryByText('Accept Edits')).toBeNull();
+    expect(item('perms').querySelector('button')?.className).toContain('animate-pulse');
+  });
+
+  it('counts parallel calls', () => {
+    setup({ checkingPermissions: 3 });
+    expect(within(item('perms')).getByText('checking 3')).toBeTruthy();
+  });
+
+  it('reads the mode again once nothing is checking', () => {
+    setup({ checkingPermissions: 0 });
+    expect(within(item('perms')).getByText('Accept Edits')).toBeTruthy();
+    expect(item('perms').querySelector('button')?.className).not.toContain('animate-pulse');
+  });
+});

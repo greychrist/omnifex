@@ -231,6 +231,10 @@ export type SystemSubtype =
   | 'ui_panes'
   | 'ui_scroll'
   | 'commands_changed'
+  // Stream-only (CLI >= 2.1.292): a tool call whose automatic permission
+  // check (auto mode's classifier) has waited ~4 s says `checking`, then
+  // `done` when the wait ends. `{tool_use_id, agent_id?, status}`. Never.
+  | 'permission_check_status'
   // The SendFeedback tool wrote a local draft feedback report to
   // <CLAUDE_CONFIG_DIR>/feedback/drafts/. Display fields only — the body stays
   // on disk, and nothing is sent until the user approves it via `/feedback`.

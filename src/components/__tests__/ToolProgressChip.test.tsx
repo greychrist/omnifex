@@ -121,3 +121,16 @@ describe('ToolProgressChip', () => {
     expect(screen.getByTitle(/Retrying in 500ms/)).toBeTruthy();
   });
 });
+
+describe('ToolProgressChip — automatic permission check', () => {
+  it('says the call is waiting on its permission check, pulsing, before any progress beat', () => {
+    render(<ToolProgressChip entry={null} done={false} checkingPermission />);
+    const chip = screen.getByText('checking permission');
+    expect(chip.closest('.animate-pulse')).toBeTruthy();
+  });
+
+  it('drops the notice once the result has landed', () => {
+    const { container } = render(<ToolProgressChip entry={null} done={true} checkingPermission />);
+    expect(container.innerHTML).toBe('');
+  });
+});

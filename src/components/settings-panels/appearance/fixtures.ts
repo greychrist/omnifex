@@ -54,6 +54,7 @@ export const KIND_FIXTURES: Record<string, string> = {
   "system.ui_panes": "1 pane open: blast-radius",
   "system.ui_scroll": "token-weather · row 12",
   "system.commands_changed": "42 commands",
+  "system.permission_check_status": "Bash · checking",
   "system.ui_log": "replay-theater · 3 edits recorded",
   "system.ui_toast": "blast-radius · Held rm -rf build/",
   "system.unknown": "(unrecognized system subtype — raw payload shown above)",

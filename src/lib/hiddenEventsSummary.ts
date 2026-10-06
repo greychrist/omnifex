@@ -66,13 +66,33 @@ function isBlocklessRow(m: JsonlNode): boolean {
   return m.kind !== 'user' && m.kind !== 'assistant' && !ROWLESS_KINDS.has(m.kind);
 }
 
+/**
+ * `thinking` counts bursts, not visible blocks. A redacted burst leaves only
+ * its `thinking_tokens` ping and a signature-only block, so counting text
+ * said "thought once" for a group that thought four times. A burst is a run
+ * of pings up to the next non-`system` node — the boundary
+ * `lastTurnThinkingTokens` and `lastThinkingTokensPerBurst` use — and the
+ * visible block that closes a pinged burst is that burst, not another one.
+ * Visible blocks with no ping before them (a reloaded transcript: pings are
+ * stream-only) still count one each.
+ */
 function tally(messages: JsonlNode[]): Counts {
   const c = emptyCounts();
+  let inPingBurst = false;
   for (const m of messages) {
+    if (m.kind === 'system' && m.subtype === 'thinking_tokens') {
+      if (!inPingBurst) c.thinking += 1;
+      inPingBurst = true;
+    }
     if (isBlocklessRow(m)) {
       c.systemEvents += 1;
+      if (m.kind !== 'system') inPingBurst = false;
       continue;
     }
+    // This node ends any open burst; its first visible thinking block, if
+    // any, is that burst's own text.
+    let closesPingBurst = inPingBurst;
+    inPingBurst = false;
     const content = getContent(m);
     if (!Array.isArray(content)) continue;
     for (const b of content as MessageContentBlock[]) {
@@ -82,7 +102,9 @@ function tally(messages: JsonlNode[]): Counts {
       } else if (b.type === 'tool_result') {
         c.toolResult += 1;
       } else if (b.type === 'thinking') {
-        if ((b.thinking ?? '').trim().length > 0) c.thinking += 1;
+        if ((b.thinking ?? '').trim().length === 0) continue;
+        if (closesPingBurst) closesPingBurst = false;
+        else c.thinking += 1;
       } else if (b.type === 'text') {
         if ((b.text ?? '').trim().length > 0) c.text += 1;
       }

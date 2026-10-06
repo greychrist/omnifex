@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Timer, RotateCw } from 'lucide-react';
+import { Timer, RotateCw, ShieldCheck } from 'lucide-react';
 import { useSecondTick } from '@/hooks/useSecondTick';
 import { useClaudeSessionStore } from '@/stores/claudeSessionStore';
 import type { ToolProgressEntry } from '@/lib/toolProgress';
@@ -25,6 +25,9 @@ export interface ToolProgressChipProps {
    * paint, so the prune is hygiene rather than correctness.
    */
   done: boolean;
+  /** The call is waiting on its automatic permission check (CLI 2.1.292
+   *  `permission_check_status`). Shown before any progress beat exists. */
+  checkingPermission?: boolean;
 }
 
 /**
@@ -41,23 +44,34 @@ export interface ToolProgressChipProps {
  * subscribes to the shared one-second clock only while it is actually showing
  * something: an idle transcript runs no timer.
  */
-export const ToolProgressChip: React.FC<ToolProgressChipProps> = ({ entry, done }) => {
+export const ToolProgressChip: React.FC<ToolProgressChipProps> = ({ entry, done, checkingPermission = false }) => {
   const live = !!entry && !done;
   const nowMs = useSecondTick(live);
-  if (!entry || done) return null;
+  if (done || (!entry && !checkingPermission)) return null;
 
-  const seconds = entry.elapsedSeconds + Math.max(0, (nowMs - entry.arrivedAtMs) / 1000);
-  const retry = entry.retry;
+  const seconds = entry ? entry.elapsedSeconds + Math.max(0, (nowMs - entry.arrivedAtMs) / 1000) : 0;
+  const retry = entry?.retry ?? null;
 
   return (
     <span className="ml-6 inline-flex items-center gap-2 text-[10px] font-mono tabular-nums">
-      <span
-        className="inline-flex items-center gap-1 text-muted-foreground"
-        title="Still running — the CLI reports progress every 30s"
-      >
-        <Timer className="h-3 w-3" />
-        {formatToolElapsed(seconds)}
-      </span>
+      {checkingPermission && (
+        <span
+          className="inline-flex items-center gap-1 text-amber-500 animate-pulse"
+          title="Waiting on the automatic permission check (auto mode's classifier)"
+        >
+          <ShieldCheck className="h-3 w-3" />
+          checking permission
+        </span>
+      )}
+      {entry && (
+        <span
+          className="inline-flex items-center gap-1 text-muted-foreground"
+          title="Still running — the CLI reports progress every 30s"
+        >
+          <Timer className="h-3 w-3" />
+          {formatToolElapsed(seconds)}
+        </span>
+      )}
       {retry && (
         <span
           className="inline-flex items-center gap-1 text-amber-500"
@@ -97,5 +111,8 @@ export const ConnectedToolProgressChip: React.FC<{
   const entry = useClaudeSessionStore((s) =>
     toolUseId ? (s.tabs[tabId]?.toolProgress.get(toolUseId) ?? null) : null,
   );
-  return <ToolProgressChip entry={entry} done={done} />;
+  const checkingPermission = useClaudeSessionStore((s) =>
+    toolUseId ? (s.tabs[tabId]?.permissionChecks.has(toolUseId) ?? false) : false,
+  );
+  return <ToolProgressChip entry={entry} done={done} checkingPermission={checkingPermission} />;
 };

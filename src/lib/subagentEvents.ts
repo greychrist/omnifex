@@ -131,6 +131,9 @@ export interface SubagentState {
    *  user is waiting on. Excluded from `countActiveSubagents`, but still a
    *  row in the bar: the flag hides it from the COUNT, not from the list. */
   ambient?: boolean;
+  /** The model the subagent is running on, from its live-forwarded frames.
+   *  The disk meta's model, once read, takes precedence. */
+  model?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -196,12 +199,19 @@ export type SubagentEvent =
     }
   | { kind: 'ClosedByParentResult'; toolUseId: string }
   | {
-      // Live-forwarded subagent narration (--forward-subagent-text).
-      // Text of the subagent's latest assistant message (thinking fallback),
-      // shown as the row's progress line between task_progress ticks.
-      kind: 'ForwardedText';
+      // A live-forwarded subagent frame (--forward-subagent-text). `text` is
+      // its narration (thinking fallback), shown as the row's progress line
+      // between task_progress ticks; empty when the frame had none.
+      kind: 'Forwarded';
       toolUseId: string;
       text: string;
+      /** `agent_id` (CLI >= 2.1.292): the subagent's `task_id`, unchanged
+       *  across a SendMessage resume. Places a frame whose
+       *  `parent_tool_use_id` names no row. */
+      agentId?: string;
+      /** `message.model` — the only live source of a running subagent's
+       *  model; the disk meta has it only once the run is read back. */
+      model?: string;
     };
 
 // ---------------------------------------------------------------------------
@@ -326,7 +336,20 @@ const FORWARDED_TEXT_MAX_LENGTH = 500;
  * (early in a turn only thinking has streamed). Empty string when the
  * message carries neither (e.g. a tool_use-only frame).
  */
-function forwardedNarration(raw: Record<string, unknown>): string {
+/** `agent_id` on a forwarded frame (CLI >= 2.1.292), or undefined. */
+export function forwardedAgentId(raw: Record<string, unknown>): string | undefined {
+  const id = raw.agent_id;
+  return typeof id === 'string' && id.length > 0 ? id : undefined;
+}
+
+/** The model a forwarded frame ran on. `<synthetic>` marks a CLI-made
+ *  message (an API error), not a model. */
+export function forwardedModel(raw: Record<string, unknown>): string | undefined {
+  const model = (raw as { message?: { model?: unknown } }).message?.model;
+  return typeof model === 'string' && model.length > 0 && model !== '<synthetic>' ? model : undefined;
+}
+
+export function forwardedNarration(raw: Record<string, unknown>): string {
   const content = (raw as { message?: { content?: unknown } }).message?.content;
   if (!Array.isArray(content)) return '';
   let text = '';
@@ -519,7 +542,17 @@ export function messagesToEvents(messages: JsonlNode[]): SubagentEvent[] {
       const parentId = (raw as { parent_tool_use_id?: unknown }).parent_tool_use_id;
       if (typeof parentId === 'string' && parentId.length > 0) {
         const text = forwardedNarration(raw);
-        if (text) events.push({ kind: 'ForwardedText', toolUseId: parentId, text });
+        const agentId = forwardedAgentId(raw);
+        const model = forwardedModel(raw);
+        if (text || model) {
+          events.push({
+            kind: 'Forwarded',
+            toolUseId: parentId,
+            text,
+            ...(agentId ? { agentId } : {}),
+            ...(model ? { model } : {}),
+          });
+        }
         continue;
       }
     }
@@ -783,13 +816,21 @@ export function applyEvents(events: SubagentEvent[]): Map<string, SubagentState>
         if (ev.taskId && !s.taskId) s.taskId = ev.taskId;
         break;
       }
-      case 'ForwardedText': {
+      case 'Forwarded': {
         // Narration only ever attaches to an already-dispatched row —
         // byId.get, not ensureState, so an orphan parent id (nested
-        // subagent, replay edge) can't create a phantom row.
-        const s = byId.get(ev.toolUseId);
+        // subagent, replay edge) can't create a phantom row. `agent_id` is
+        // the fallback: a resumed agent's frames name the SendMessage, not
+        // the dispatch, but keep the task_id the row already holds.
+        let s = byId.get(ev.toolUseId);
+        if (!s && ev.agentId) {
+          for (const candidate of byId.values()) {
+            if (candidate.taskId === ev.agentId) { s = candidate; break; }
+          }
+        }
         if (!s) break;
-        if (isTerminal(s.status)) break;
+        if (ev.model) s.model = ev.model;
+        if (isTerminal(s.status) || !ev.text) break;
         // Carry the numeric tally forward from the previous entry so the
         // row's meta bits (tokens/tools/elapsed) don't blank out between
         // task_progress ticks.

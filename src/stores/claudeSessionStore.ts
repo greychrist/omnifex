@@ -10,6 +10,12 @@ import {
   type ToolProgressMap,
   type ToolProgressNode,
 } from '@/lib/toolProgress';
+import {
+  EMPTY_PERMISSION_CHECKS,
+  reducePermissionCheck,
+  type PermissionCheckFrame,
+  type PermissionChecks,
+} from '@/lib/permissionChecks';
 import { appendCliRecord, reconcilePendingPrompt } from '@/lib/promptReconciliation';
 import { deriveSessionTitle } from '@/lib/sessionTitle';
 import type {
@@ -48,6 +54,9 @@ export interface TabSessionState {
    *  transcript reloaded from disk must not show what a live one showed.
    *  `resetTab` clears it, so clear/restart needs no separate handling. */
   toolProgress: ToolProgressMap;
+  /** Live-only: tool calls waiting on their automatic permission check (see
+   *  src/lib/permissionChecks.ts). Cleared at turn end and by `resetTab`. */
+  permissionChecks: PermissionChecks;
 }
 
 export const EMPTY_TAB_SESSION: TabSessionState = {
@@ -59,6 +68,7 @@ export const EMPTY_TAB_SESSION: TabSessionState = {
   supportedModels: [],
   inflightAssistant: null,
   toolProgress: EMPTY_TOOL_PROGRESS,
+  permissionChecks: EMPTY_PERMISSION_CHECKS,
 };
 
 type MessagesUpdater =
@@ -103,6 +113,11 @@ interface ClaudeSessionStoreState {
   applyToolProgress(tabId: string, node: ToolProgressNode): void;
   /** Drop progress for tools no longer of interest (empty set at turn end). */
   pruneToolProgressFor(tabId: string, keepIds: Set<string>): void;
+  /** Fold one live `permission_check_status` frame into the tab's set. */
+  applyPermissionCheck(tabId: string, frame: PermissionCheckFrame): void;
+  /** Nothing is checking once a turn has ended — `done` may never come for
+   *  a call the turn was interrupted under. */
+  clearPermissionChecks(tabId: string): void;
 
   /** Test-only — wipes the whole store. */
   __resetForTests(): void;
@@ -239,6 +254,21 @@ export const useClaudeSessionStore = create<ClaudeSessionStoreState>()(
         const toolProgress = pruneToolProgress(slice.toolProgress, keepIds);
         if (toolProgress === slice.toolProgress) return state;
         return { tabs: { ...state.tabs, [tabId]: { ...slice, toolProgress } } };
+      }); },
+
+    applyPermissionCheck: (tabId, frame) =>
+      { set((state) => {
+        const slice = ensureTab(state.tabs, tabId);
+        const permissionChecks = reducePermissionCheck(slice.permissionChecks, frame);
+        if (permissionChecks === slice.permissionChecks) return state;
+        return { tabs: { ...state.tabs, [tabId]: { ...slice, permissionChecks } } };
+      }); },
+
+    clearPermissionChecks: (tabId) =>
+      { set((state) => {
+        const slice = state.tabs[tabId];
+        if (!slice || slice.permissionChecks.size === 0) return state;
+        return { tabs: { ...state.tabs, [tabId]: { ...slice, permissionChecks: EMPTY_PERMISSION_CHECKS } } };
       }); },
 
     resetTab: (tabId) =>

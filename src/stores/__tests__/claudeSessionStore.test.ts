@@ -197,3 +197,25 @@ describe('claudeSessionStore', () => {
     expect(EMPTY_TAB_SESSION.inflightAssistant).toBeNull();
   });
 });
+
+describe('claudeSessionStore — permission checks', () => {
+  it('starts every tab with no calls checking', () => {
+    expect(EMPTY_TAB_SESSION.permissionChecks.size).toBe(0);
+  });
+
+  it('applyPermissionCheck folds checking/done into the tab, per tab', () => {
+    const s = useClaudeSessionStore.getState();
+    s.applyPermissionCheck(TAB, { toolUseId: 'a', status: 'checking' });
+    expect([...s.selectTab(TAB).permissionChecks]).toEqual(['a']);
+    expect(s.selectTab('tab-2').permissionChecks.size).toBe(0);
+    s.applyPermissionCheck(TAB, { toolUseId: 'a', status: 'done' });
+    expect(s.selectTab(TAB).permissionChecks.size).toBe(0);
+  });
+
+  it('clearPermissionChecks empties the tab — a finished turn is checking nothing', () => {
+    const s = useClaudeSessionStore.getState();
+    s.applyPermissionCheck(TAB, { toolUseId: 'a', status: 'checking' });
+    s.clearPermissionChecks(TAB);
+    expect(s.selectTab(TAB).permissionChecks.size).toBe(0);
+  });
+});

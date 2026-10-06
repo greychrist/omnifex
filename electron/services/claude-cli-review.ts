@@ -42,6 +42,69 @@ import { buildClaudeEnv } from './util/claude-env';
  *    the CLI answers with the error "Side question cancelled". Its own
  *    deadline is 600 s. Only the SDK's `askSideQuestion()` documents it.
  *
+ * Last review: 2.1.291 -> 2.1.292 on 2026-10-06. Findings:
+ *
+ *  Changelog coverage: one version in range, 2.1.292, and it has an entry
+ *  (~100 lines, mostly mods, cloud sessions, sandbox/permission fixes).
+ *  Both endpoints are installed, so the wire claims below are a real binary
+ *  diff of 2.1.291 vs 2.1.292.
+ *
+ *  WIRE DIFF (unique literals): merge-strategy map 40 -> 40, set-identical.
+ *  `hook_event_name` 33, SDK `this.request({subtype})` 54,
+ *  `type:"control_*"` 4, `origin:{kind}` 9 — all set-identical. `subtype:`
+ *  153 -> 154: `permission_check_status` (below). `type:` 987 -> 993:
+ *  `permission_check_status`, `withheld_memory` (below), and `available`,
+ *  `cloud`, `evaluated`, `non_user_message` — internal values, not records.
+ *  `.describe()` 1670 -> 1707, mostly `@internal` Composer /
+ *  `prompt.autocomplete` plumbing for mod surfaces. `/usage` anchors:
+ *  `resets` 115 -> 117 and `MCP servers` 256 -> 258 are minifier noise
+ *  (diffed contexts differ only in identifiers); the rest count-identical.
+ *
+ *  Fixed in this pass:
+ *
+ *   - NEW stream-only `system/permission_check_status`
+ *     `{tool_use_id, agent_id?, status:'checking'|'done'}`: a tool call
+ *     whose automatic permission check (auto mode's classifier) has waited
+ *     ~4 s announces `checking`, then `done`. Ungated — emitted from the
+ *     canUseTool path in every host. Unclassified it hit `system.unknown`,
+ *     two "System (other)" strips per slow classifier call. Now a Live-only
+ *     bookkeeping kind defaulting to Never (messageKind.ts,
+ *     jsonlClassifier.ts, types/jsonl.ts, messageRenderingConfig.ts).
+ *     Also surfaced live (src/lib/permissionChecks.ts): a pulsing
+ *     "checking permission" on the tool row's ToolProgressChip, and the
+ *     status bar's `perms` readout reading `checking` while any call waits.
+ *
+ *  Checked and inert:
+ *
+ *   - `withheld_memory` attachment ("added a transcript line when a nested
+ *     instruction file isn't loaded"): returns [] when non-interactive, so
+ *     OmniFex-driven sessions never get it; a TUI-started transcript that
+ *     carries it falls to the attachment category default like every other
+ *     unregistered attachment subtype.
+ *   - Stdio MCP now negotiates protocol 2026-07-28 via a `server/discover`
+ *     probe. brain-mcp.ts (MCP SDK 1.32.1, latest 2025-11-25) answers it
+ *     with an immediate -32601 Method not found (probed), so it takes the
+ *     legacy path at once — not the "ignores the check" slow-connect case.
+ *   - NEW `agent_id` on forwarded subagent user/assistant frames ("the
+ *     `task_id` of its task events, unchanged when the subagent is
+ *     resumed"); 2.1.291 emitted none. Taken (subagentEvents.ts,
+ *     subagentStreams.ts): a frame whose parent_tool_use_id names no row
+ *     falls back to the row with that taskId, so a resumed agent's narration
+ *     lands; running rows take their model from the frame's
+ *     `message.model` (no effort on the wire — still disk-only); nested
+ *     rows get live model + narration via `forwardedByAgentId`, joined on
+ *     the sidecar's agentId.
+ *   - Agent tool `effort` parameter: additive tool input; the widget shows
+ *     inputs it knows and ignores the rest.
+ *
+ * No OmniFex impact: plugin install --marketplace, 529 retry env var, mod
+ * hook additions/fixes (prompt.autocomplete, $.model.complete caching,
+ * agent.spawn), sandbox/UNC/8.3/PDF-link security fixes, plan mode restore
+ * on picker / `/resume` (we pass --resume <id>), `-p` waiting on background
+ * commands (our one-shots run none), scheduled task / `/loop` fixes, TUI
+ * input/vim/fullscreen fixes, Grep/Glob/Read error fixes, cloud sessions,
+ * Remote Control, Claude Tag, Code Review.
+ *
  * Last review: 2.1.290 -> 2.1.291 on 2026-10-06. Findings:
  *
  *  Changelog coverage: one version in range, 2.1.291, and it has an entry
@@ -3859,7 +3922,7 @@ import { buildClaudeEnv } from './util/claude-env';
  * `~/.claude.json` fix (we read-modify-write that file, never replace it), and
  * the VSCode screen-reader work.
  */
-export const REVIEWED_CLI_VERSION = '2.1.291';
+export const REVIEWED_CLI_VERSION = '2.1.292';
 
 /**
  * app_settings key holding the user's explicit OmniFex-checkout override.

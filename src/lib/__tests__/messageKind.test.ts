@@ -37,6 +37,7 @@ const EMITTABLE_IDS = [
   "system.session_metadata", "system.session_title_changed",
   "system.ui_invalidate", "system.ui_focus", "system.ui_panes",
   "system.ui_scroll", "system.ui_status", "system.commands_changed",
+  "system.permission_check_status",
   // mod lines from a headless session (shown)
   "system.ui_log", "system.ui_toast",
   // permission / summary / fallback

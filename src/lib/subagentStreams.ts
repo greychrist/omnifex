@@ -16,6 +16,9 @@ import {
   isTaskLifecycleMarker as _isTaskLifecycleMarker,
   isTaskNotificationCarrier as _isTaskNotificationCarrier,
   messagesToEvents,
+  forwardedAgentId,
+  forwardedModel,
+  forwardedNarration,
   type SubagentProgressEntry,
   type SubagentState,
   type SubagentStatus,
@@ -56,8 +59,8 @@ export interface Subagent {
    *  the user is waiting on. Hidden from `countActiveSubagents`, not from the
    *  bar. */
   ambient?: boolean;
-  /** The model the subagent ran on. Merged in from disk via
-   *  `applySubagentMeta` — never present in the live message stream. */
+  /** The model the subagent ran on. Live from its forwarded frames while it
+   *  runs; the disk meta merged in via `applySubagentMeta` wins once read. */
   model?: string;
   /** The subagent's OWN reasoning effort, which can differ from the
    *  session's when the dispatch set `effort:`. Same provenance as `model`.
@@ -137,6 +140,39 @@ export function notificationStatsByToolUse(
   return out;
 }
 
+/** What a subagent's live-forwarded frames last said: its model and its
+ *  newest narration. */
+export interface ForwardedLive {
+  model?: string;
+  text?: string;
+}
+
+/**
+ * Index live-forwarded frames by `agent_id` (CLI >= 2.1.292).
+ *
+ * A nested subagent's row is synthesised from sidecars in
+ * `applySubagentMeta`, after the reducer has run, so its frames — which name a
+ * dispatch the main stream never saw — have nowhere to land in the reducer.
+ * The sidecar carries the same agentId, and this reunites the two.
+ */
+export function forwardedByAgentId(messages: JsonlNode[]): Record<string, ForwardedLive> {
+  const out: Record<string, ForwardedLive> = {};
+  for (const m of messages) {
+    if (m.kind !== 'assistant') continue;
+    const raw = (m as unknown as { raw?: Record<string, unknown> }).raw ?? {};
+    const agentId = forwardedAgentId(raw);
+    if (!agentId) continue;
+    const prev = out[agentId] ?? {};
+    const model = forwardedModel(raw) ?? prev.model;
+    const text = forwardedNarration(raw) || prev.text;
+    out[agentId] = {
+      ...(model ? { model } : {}),
+      ...(text ? { text } : {}),
+    };
+  }
+  return out;
+}
+
 /**
  * Merge disk-sourced metadata onto derived subagent rows by `toolUseId`.
  * Pure — returns a new array and never mutates the input. Rows without a
@@ -147,6 +183,7 @@ export function applySubagentMeta(
   subs: Subagent[],
   meta: Record<string, SubagentMetaInput>,
   notifications: Record<string, NotificationStats> = {},
+  live: Record<string, ForwardedLive> = {},
 ): Subagent[] {
   const merged = subs.map((sub) => {
     const m = meta[sub.toolUseId];
@@ -184,6 +221,8 @@ export function applySubagentMeta(
     // The child's own task-notification, if the main stream carried one. It
     // is the only source of a nested agent's status and run stats.
     const notif = notifications[toolUseId];
+    // What its forwarded frames said, keyed by the sidecar's agentId.
+    const liveFrames = m.agentId ? live[m.agentId] : undefined;
     const description = m.description ?? parent.description;
     const latest: SubagentProgressEntry | null = notif
       ? {
@@ -192,7 +231,9 @@ export function applySubagentMeta(
           toolUses: notif.toolUses,
           durationMs: notif.durationMs,
         }
-      : null;
+      : liveFrames?.text
+        ? { description: liveFrames.text }
+        : null;
     nested.push({
       parent,
       row: {
@@ -214,7 +255,7 @@ export function applySubagentMeta(
         latest,
         events: latest ? [latest] : [],
         colorIndex: parent.colorIndex,
-        model: m.model,
+        model: m.model ?? liveFrames?.model,
         effort: m.effort,
       },
     });
@@ -361,6 +402,7 @@ export function deriveSubagents(
     parentToolUseId: s.parentToolUseId,
     closureSource: s.closureSource,
     ambient: s.ambient,
+    model: s.model,
   });
 
   // Owners first, so a nested row can read its owner's colour — and so a

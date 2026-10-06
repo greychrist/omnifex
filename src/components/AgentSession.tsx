@@ -55,6 +55,7 @@ import { TooltipProvider, TooltipSimple } from "@/components/ui/tooltip-modern";
 import type { JsonlNode } from "@/types/jsonl";
 import { normalizeJsonlNode } from "@/lib/normalizeMessage";
 import { classifyJsonlLine } from '@/lib/jsonlClassifier';
+import { permissionCheckFrame } from '@/lib/permissionChecks';
 import { lastPermissionMode, lastAssistantModel, usageLimitWait } from '@/lib/sessionDerivedState';
 import { useSessionAuthExpiry } from '@/hooks/useSessionAuthExpiry';
 import { useRemoteResync } from "@/hooks/useRemoteResync";
@@ -103,7 +104,7 @@ import { GitBranchBadge } from "./claude-code-session/GitBranchBadge";
 import { GitWatchStatusIcon } from "./claude-code-session/GitWatchStatusIcon";
 import { resolveBranchColors } from '@/lib/branchColors';
 import type { BranchColor } from '@/lib/api';
-import { deriveSubagents, applySubagentMeta, createSubagentColorAllocator, notificationStatsByToolUse, countActiveSubagents, type SubagentMetaInput } from '@/lib/subagentStreams';
+import { deriveSubagents, applySubagentMeta, createSubagentColorAllocator, notificationStatsByToolUse, forwardedByAgentId, countActiveSubagents, type SubagentMetaInput } from '@/lib/subagentStreams';
 import { getTaskList, summarizeTaskList } from "@/lib/taskList";
 import { deriveWaitingFor, type TabWaitingFor } from "@/lib/tabWaitingFor";
 import { deriveBackgroundShells } from "@/lib/backgroundShells";
@@ -928,9 +929,9 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
       : all.filter((s) => !dismissedSubagents.has(s.toolUseId));
   }, [messages, dismissedSubagents]);
   // Per-subagent model + authoritative totals, fetched from disk. The live
-  // stream never carries the model (it lives in the subagent's separate
-  // transcript) and only carries running totals, so we enrich completed rows
-  // by reading the on-disk JSONL via the main process. Keyed by tool_use_id.
+  // stream gives a running row its model only through forwarded frames, and
+  // only running totals, so we enrich completed rows by reading the on-disk
+  // JSONL via the main process. Keyed by tool_use_id.
   const [subagentMeta, setSubagentMeta] = useState<Record<string, SubagentMetaInput>>({});
   const subagentMetaRef = useRef(subagentMeta);
   subagentMetaRef.current = subagentMeta;
@@ -939,9 +940,12 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   // transcript), so it is indexed here and reunited with the synthesised row
   // during the meta merge.
   const notificationStats = useMemo(() => notificationStatsByToolUse(messages), [messages]);
+  // Same for a nested subagent's live frames: keyed by agent_id, which its
+  // sidecar also carries (CLI >= 2.1.292).
+  const forwardedLive = useMemo(() => forwardedByAgentId(messages), [messages]);
   const subagents = useMemo(
-    () => applySubagentMeta(baseSubagents, subagentMeta, notificationStats),
-    [baseSubagents, subagentMeta, notificationStats],
+    () => applySubagentMeta(baseSubagents, subagentMeta, notificationStats, forwardedLive),
+    [baseSubagents, subagentMeta, notificationStats, forwardedLive],
   );
   // Stable signature of completed rows — drives the meta fetch without
   // depending on `subagentMeta` itself (which the fetch sets), so resolving
@@ -984,6 +988,11 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   // don't co-exist on screen.
   const hasInflightAssistant = useClaudeSessionStore(
     (s) => s.tabs[tabIdRef.current]?.inflightAssistant != null,
+  );
+  // Tool calls waiting on their automatic permission check — the perms
+  // readout pulses `checking` while any are.
+  const checkingPermissions = useClaudeSessionStore(
+    (s) => s.tabs[tabIdRef.current]?.permissionChecks.size ?? 0,
   );
   // Raw task list entries — null (no task-list tool used yet) normalised to [].
   // Defined here so tasksInFlight can derive from it without a second getTaskList call.
@@ -1470,6 +1479,12 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
         return;
       }
       if (node.kind === 'stream-event' || node.kind === 'rate-limit' || node.kind === 'lifecycle') return;
+      // Live-only: drives the tool row's chip and the perms readout. The node
+      // still flows on into messages[] as its own (default Never) kind.
+      const permissionCheck = permissionCheckFrame(node);
+      if (permissionCheck) {
+        useClaudeSessionStore.getState().applyPermissionCheck(sessionTabId, permissionCheck);
+      }
       const normalizedNode = normalizeJsonlNode(node);
 
       const ctx = streamCtxRef.current;
@@ -1749,6 +1764,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     setLastTurnMs(Date.now() - startedAt);
     // A finished turn has no running tools, so nothing is worth keeping.
     useClaudeSessionStore.getState().pruneToolProgressFor(tabIdRef.current, new Set());
+    useClaudeSessionStore.getState().clearPermissionChecks(tabIdRef.current);
   }, [turnStartedAt]);
   const isConversationInFlight =
     conversationStatus !== null && conversationStatus !== 'idle';
@@ -2708,6 +2724,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
                 }
               : undefined
           }
+          checkingPermissions={checkingPermissions}
         />
       }
     />

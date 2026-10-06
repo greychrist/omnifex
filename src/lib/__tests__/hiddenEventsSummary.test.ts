@@ -178,3 +178,49 @@ describe('hidden rows without content blocks', () => {
     expect(countHiddenEvents([overlay()])).toBe(0);
   });
 });
+
+// A burst whose thinking is redacted leaves only its `thinking_tokens` ping
+// and a signature-only block, so counting visible blocks said "thought once"
+// for a group that thought four times.
+describe('summarizeHiddenEvents — thinking bursts', () => {
+  const ping = (n: number) => system('thinking_tokens', { estimated_tokens: n });
+  const bash = () => assistant([{ type: 'tool_use', name: 'Bash', input: { command: 'ls' } }]);
+  const redacted = () => assistant([{ type: 'thinking', thinking: '', signature: 'x' }]);
+
+  it('counts each burst, including ones with no visible thinking', () => {
+    const msgs = [
+      bash(),
+      ping(213),
+      assistant([{ type: 'thinking', thinking: 'visible ponder' }]),
+      bash(),
+      system('informational'),
+      ping(193),
+      redacted(),
+      bash(),
+      ping(493),
+      redacted(),
+      bash(),
+      ping(750),
+    ];
+    expect(summarizeHiddenEvents(msgs)).toMatch(/thought 4 times/);
+  });
+
+  it('counts a burst once, not once per ping', () => {
+    const msgs = [ping(100), system('status'), ping(400), ping(900), bash()];
+    expect(summarizeHiddenEvents(msgs)).toMatch(/thought once/);
+  });
+
+  it('counts a visible block that follows its own ping as the same burst', () => {
+    const msgs = [ping(300), assistant([{ type: 'thinking', thinking: 'ponder' }]), bash()];
+    expect(summarizeHiddenEvents(msgs)).toMatch(/thought once/);
+  });
+
+  it('still counts visible thinking with no ping at all (a reloaded transcript)', () => {
+    const msgs = [
+      assistant([{ type: 'thinking', thinking: 'one' }]),
+      bash(),
+      assistant([{ type: 'thinking', thinking: 'two' }]),
+    ];
+    expect(summarizeHiddenEvents(msgs)).toMatch(/thought 2 times/);
+  });
+});

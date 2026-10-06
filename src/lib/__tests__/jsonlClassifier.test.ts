@@ -828,6 +828,20 @@ describe('tool_progress', () => {
 // stdout with a --plugin-dir mod loaded on 2.1.288. Unclassified, each one
 // drew an orange "Unrecognized record" card — a redrawing mod sends
 // ui_invalidate on every change.
+// CLI 2.1.292: a tool call whose automatic permission check (auto mode's
+// classifier) has run ~4 s announces `checking`, then `done`. Stream-only,
+// ungated — unclassified, every slow classifier call drew two cards.
+it('classifies system:permission_check_status as a known system subtype', () => {
+  const node = classifyJsonlLine({
+    type: 'system',
+    subtype: 'permission_check_status',
+    tool_use_id: 'toolu_1',
+    status: 'checking',
+    receivedAt: '2026-10-06T10:00:00Z',
+  } as Record<string, unknown>);
+  expect(node?.kind).toBe('system');
+});
+
 describe('mod frames from a headless session', () => {
   it.each([
     'ui_log', 'ui_toast', 'ui_status', 'ui_invalidate', 'ui_focus', 'ui_panes', 'ui_scroll', 'commands_changed',

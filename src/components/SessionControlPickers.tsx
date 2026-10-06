@@ -99,6 +99,9 @@ export interface SessionControlPickersProps {
   /** Set when the live session was not launched in Bypass, which the CLI
    *  then refuses mid-session: the menu offers this restart instead. */
   onRestartInBypass?: () => void;
+  /** Tool calls waiting on their automatic permission check. While any are,
+   *  the perms readout says `checking` and pulses instead of naming the mode. */
+  checkingPermissions?: number;
 }
 
 /** A plain option list for the engines without a stylised catalog (Codex). */
@@ -152,6 +155,7 @@ export function SessionControlPickers({
   configDir,
   activeDefaultModel,
   onRestartInBypass,
+  checkingPermissions = 0,
 }: SessionControlPickersProps): React.JSX.Element {
   const { models, raw } = useModelCatalog(engine === 'claude' ? configDir : undefined, activeDefaultModel);
 
@@ -181,6 +185,10 @@ export function SessionControlPickers({
   const effortName = effortData?.name ?? effort;
   const normalizedMode = normalizePermissionMode(permissionMode);
   const modeData = PERMISSION_MODES.find((m) => m.id === normalizedMode) ?? PERMISSION_MODES[0];
+  const checking = checkingPermissions > 0;
+  const permsValue = checking
+    ? (checkingPermissions > 1 ? `checking ${checkingPermissions}` : 'checking')
+    : modeData.name;
 
   return (
     <>
@@ -214,9 +222,11 @@ export function SessionControlPickers({
         // what PermissionCard wears for a permission request.
         icon={<ShieldCheck className="h-3.5 w-3.5" />}
         label="perms"
-        value={modeData.name}
-        tone={modeData.color}
-        title={`Permissions: ${modeData.name}`}
+        value={permsValue}
+        tone={cn(modeData.color, checking && 'animate-pulse')}
+        title={checking
+          ? `Permissions: ${modeData.name} · waiting on the automatic permission check`
+          : `Permissions: ${modeData.name}`}
         content={(close) => (
           <PermissionPickerDropdown
             normalizedMode={normalizedMode}

@@ -47,6 +47,7 @@ const SUBTYPES = [
   'ui_scroll',
   'ui_status',
   'commands_changed',
+  'permission_check_status',
   'away_summary',
   'local_command',
   'stop_hook_summary',
@@ -68,6 +69,8 @@ const BOOKKEEPING = [
   'ui_scroll',
   'ui_status',
   'commands_changed',
+  // CLI 2.1.292: a slow automatic permission check, `checking` then `done`.
+  'permission_check_status',
 ];
 
 describe('Live-only section', () => {

@@ -123,6 +123,7 @@ const STREAM_BOOKKEEPING_SUBTYPES: ReadonlySet<string> = new Set([
   'ui_panes',
   'ui_scroll',
   'commands_changed',
+  'permission_check_status',
 ]);
 
 /** A mod's $.ui.log / $.ui.toast, pushed to a headless host. Shown. */

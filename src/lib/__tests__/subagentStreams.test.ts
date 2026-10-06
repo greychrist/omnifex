@@ -13,6 +13,7 @@ import {
   createSubagentColorAllocator,
   notificationStatsByToolUse,
   countActiveSubagents,
+  forwardedByAgentId,
 } from '../subagentStreams';
 
 const TOOL_USE_ID = 'toolu_TEST_1';
@@ -1736,5 +1737,99 @@ describe('countActiveSubagents', () => {
       taskNotification(TOOL_USE_ID, 'completed'),
     ]);
     expect(countActiveSubagents(subs)).toBe(0);
+  });
+});
+
+// CLI 2.1.292 stamps every forwarded subagent frame with `agent_id` — the
+// `task_id` of its task events, unchanged across a SendMessage resume.
+describe('forwarded frames carry agent_id (CLI >= 2.1.292)', () => {
+  function frame(
+    parentToolUseId: string,
+    agentId: string | undefined,
+    text: string,
+    model = 'claude-opus-5-5',
+  ): JsonlNode {
+    return {
+      kind: 'assistant', sessionId: '', receivedAt: '',
+      raw: {
+        type: 'assistant',
+        parent_tool_use_id: parentToolUseId,
+        ...(agentId !== undefined ? { agent_id: agentId } : {}),
+        message: { role: 'assistant', model, content: [{ type: 'text', text }] },
+      },
+    } as unknown as JsonlNode;
+  }
+
+  it('shows the model a running subagent is on, before any disk meta exists', () => {
+    const subs = deriveSubagents([
+      agentToolUse(TOOL_USE_ID),
+      taskStarted(TOOL_USE_ID, 'a1'),
+      frame(TOOL_USE_ID, 'a1', 'Reading.'),
+    ]);
+    expect(subs[0].status).toBe('running');
+    expect(subs[0].model).toBe('claude-opus-5-5');
+  });
+
+  it('takes no model from a synthetic frame', () => {
+    const subs = deriveSubagents([
+      agentToolUse(TOOL_USE_ID),
+      frame(TOOL_USE_ID, 'a1', 'API error', '<synthetic>'),
+    ]);
+    expect(subs[0].model).toBeUndefined();
+  });
+
+  it('lets the disk meta model win once it arrives', () => {
+    const subs = applySubagentMeta(
+      deriveSubagents([agentToolUse(TOOL_USE_ID), frame(TOOL_USE_ID, 'a1', 'x')]),
+      { [TOOL_USE_ID]: { model: 'claude-sonnet-5-5' } },
+    );
+    expect(subs[0].model).toBe('claude-sonnet-5-5');
+  });
+
+  it('routes narration by agent_id when parent_tool_use_id names no row', () => {
+    const subs = deriveSubagents([
+      agentToolUse(TOOL_USE_ID),
+      taskStarted(TOOL_USE_ID, 'a1'),
+      frame('toolu_SENDMESSAGE', 'a1', 'Picking up where I left off.'),
+    ]);
+    expect(subs).toHaveLength(1);
+    expect(subs[0].latest?.description).toBe('Picking up where I left off.');
+  });
+
+  it('still drops a frame neither id can place', () => {
+    const subs = deriveSubagents([
+      agentToolUse(TOOL_USE_ID),
+      taskStarted(TOOL_USE_ID, 'a1'),
+      frame('toolu_elsewhere', 'a9', 'orphan'),
+    ]);
+    expect(subs[0].latest?.description).not.toBe('orphan');
+  });
+
+  describe('forwardedByAgentId', () => {
+    it('indexes the newest model and narration per agent', () => {
+      const idx = forwardedByAgentId([
+        frame('toolu_N', 'a2', 'first', 'claude-haiku-4-5-20251001'),
+        frame('toolu_N', 'a2', 'second', 'claude-haiku-4-5-20251001'),
+        frame('toolu_X', undefined, 'no agent id'),
+      ]);
+      expect(idx).toEqual({ a2: { model: 'claude-haiku-4-5-20251001', text: 'second' } });
+    });
+  });
+
+  it('gives a nested row its live model and narration', () => {
+    const base = deriveSubagents([agentToolUse(TOOL_USE_ID), taskStarted(TOOL_USE_ID, 'a1')]);
+    const live = forwardedByAgentId([frame('toolu_NESTED', 'a2', 'Grepping.', 'claude-haiku-4-5-20251001')]);
+    const subs = applySubagentMeta(
+      base,
+      {
+        [TOOL_USE_ID]: { agentId: 'a1' },
+        toolu_NESTED: { agentId: 'a2', parentAgentId: 'a1', description: 'child' },
+      },
+      {},
+      live,
+    );
+    const nested = subs.find((s) => s.toolUseId === 'toolu_NESTED');
+    expect(nested?.model).toBe('claude-haiku-4-5-20251001');
+    expect(nested?.latest?.description).toBe('Grepping.');
   });
 });

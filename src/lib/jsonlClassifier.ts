@@ -284,6 +284,7 @@ const SYSTEM_SUBTYPES: ReadonlySet<SystemSubtype> = new Set<SystemSubtype>([
   'ui_panes',
   'ui_scroll',
   'commands_changed',
+  'permission_check_status',
 ]);
 
 function classifyLastPrompt(r: Record<string, unknown>, sessionId: string): JsonlNode | null {
