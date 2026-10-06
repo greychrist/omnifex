@@ -5,6 +5,11 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.225] — 2026-10-06
+
+### Changed
+- Lima viewer: Docker container tiles are far more compact — start/stop sit in the tile header, image/status/ports are tight labelled rows instead of boxed pills, and wide windows show three columns, so a VM with a dozen containers fits without scrolling. Image and container names wrap instead of truncating.
+
 ## [0.4.224] — 2026-10-06
 
 ### Added
