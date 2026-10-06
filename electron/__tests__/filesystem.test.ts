@@ -177,3 +177,47 @@ describe('createFilesystemService — searchFiles', () => {
     expect(results.length).toBe(200);
   });
 });
+
+// createDirectory backs the Projects page's New Project button: the renderer
+// shows a native save dialog (parent folder + name) and this makes the folder.
+// It must never adopt an existing folder — that is what Open Project is for —
+// and never conjure missing parents from a typo'd path.
+describe('createFilesystemService — createDirectory', () => {
+  let tmp: string;
+
+  beforeEach(() => {
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'omnifex-fs-mkdir-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it('creates the folder and returns its path', async () => {
+    const target = path.join(tmp, 'my-project');
+    const svc = createFilesystemService();
+    await expect(svc.createDirectory(target)).resolves.toBe(target);
+    expect(fs.statSync(target).isDirectory()).toBe(true);
+  });
+
+  it('rejects a path that already exists, leaving it untouched', async () => {
+    const target = path.join(tmp, 'existing');
+    fs.mkdirSync(target);
+    fs.writeFileSync(path.join(target, 'keep.txt'), 'x');
+    const svc = createFilesystemService();
+    await expect(svc.createDirectory(target)).rejects.toThrow(/already exists/);
+    expect(fs.readFileSync(path.join(target, 'keep.txt'), 'utf8')).toBe('x');
+  });
+
+  it('does not create missing parent folders', async () => {
+    const target = path.join(tmp, 'missing-parent', 'child');
+    const svc = createFilesystemService();
+    await expect(svc.createDirectory(target)).rejects.toThrow();
+    expect(fs.existsSync(path.join(tmp, 'missing-parent'))).toBe(false);
+  });
+
+  it('rejects a relative path', async () => {
+    const svc = createFilesystemService();
+    await expect(svc.createDirectory('relative/dir')).rejects.toThrow(/absolute/);
+  });
+});

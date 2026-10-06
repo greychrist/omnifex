@@ -420,6 +420,43 @@ describe('ProjectList — click semantics', () => {
   });
 });
 
+describe('ProjectList — header actions', () => {
+  const one = (): Project[] => [makeProject({ id: 'a', path: '/repos/alpha' })];
+
+  it('fires onNewProject when New Project is clicked', () => {
+    const onNewProject = vi.fn();
+    const onOpenProject = vi.fn();
+    render(
+      <ProjectList
+        projects={one()}
+        onProjectClick={() => {}}
+        onOpenProject={onOpenProject}
+        onNewProject={onNewProject}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /New Project/ }));
+    expect(onNewProject).toHaveBeenCalledTimes(1);
+    expect(onOpenProject).not.toHaveBeenCalled();
+  });
+
+  it('puts New Project immediately to the left of Open Project', () => {
+    render(
+      <ProjectList projects={one()} onProjectClick={() => {}} onNewProject={() => {}} />,
+    );
+    const newBtn = screen.getByRole('button', { name: /New Project/ });
+    const openBtn = screen.getByRole('button', { name: /Open Project/ });
+    expect(
+      newBtn.compareDocumentPosition(openBtn) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it('hides New Project when no onNewProject prop is provided', () => {
+    render(<ProjectList projects={one()} onProjectClick={() => {}} />);
+    expect(screen.queryByRole('button', { name: /New Project/ })).toBeNull();
+    expect(screen.getByRole('button', { name: /Open Project/ })).toBeTruthy();
+  });
+});
+
 describe('ProjectList — name column layout', () => {
   const one = (): Project[] => [
     makeProject({ id: 'a', path: '/Users/greg/Repos/personal/alpha', sessions: ['s1'] }),

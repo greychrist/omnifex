@@ -115,7 +115,6 @@ interface TabContextType {
   setActiveTab: (id: string) => void;
   reorderTabs: (startIndex: number, endIndex: number) => void;
   getTabById: (id: string) => Tab | undefined;
-  closeAllTabs: () => void;
   getTabsByType: (type: 'chat') => Tab[];
 }
 
@@ -197,17 +196,7 @@ export const TabProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         // If account check fails, fall back to projects
       }
 
-      const defaultTab: Tab = {
-        id: generateTabId(),
-        type: defaultType,
-        title: defaultTitle,
-        agent: 'claude',
-        status: 'idle',
-        hasUnsavedChanges: false,
-        order: 0,
-        createdAt: new Date(),
-        updatedAt: new Date()
-      };
+      const defaultTab = makeDefaultTab(defaultType, defaultTitle);
       setTabs([defaultTab]);
       setActiveTabId(defaultTab.id);
     }
@@ -282,6 +271,18 @@ export const TabProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return `tab-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
   };
 
+  const makeDefaultTab = (type: Tab['type'], title: string): Tab => ({
+    id: generateTabId(),
+    type,
+    title,
+    agent: 'claude',
+    status: 'idle',
+    hasUnsavedChanges: false,
+    order: 0,
+    createdAt: new Date(),
+    updatedAt: new Date()
+  });
+
   const addTab = useCallback((tabData: Omit<Tab, 'id' | 'order' | 'createdAt' | 'updatedAt'>): string => {
     if (tabs.length >= MAX_TABS) {
       throw new Error(`Maximum number of tabs (${MAX_TABS}) reached`);
@@ -305,23 +306,27 @@ export const TabProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [tabs.length]);
 
   const removeTab = useCallback((id: string) => {
+    // There is no empty state: closing the last tab lands on Projects, the
+    // same page a cold start with no saved tabs opens. Built outside the
+    // updater so a StrictMode double-invoke reuses one id rather than minting
+    // a second that the active id would then disagree with.
+    const replacementTab = makeDefaultTab('projects', 'Projects');
     setTabs(prevTabs => {
       const removedTab = prevTabs.find(tab => tab.id === id);
       const filteredTabs = prevTabs.filter(tab => tab.id !== id);
 
       // Reorder remaining tabs
-      const reorderedTabs = filteredTabs.map((tab, index) => ({
-        ...tab,
-        order: index
-      }));
+      const reorderedTabs = filteredTabs.length > 0
+        ? filteredTabs.map((tab, index) => ({ ...tab, order: index }))
+        : [replacementTab];
 
       // Update active tab if necessary
-      if (activeTabId === id && reorderedTabs.length > 0) {
+      if (filteredTabs.length === 0) {
+        setActiveTabId(replacementTab.id);
+      } else if (activeTabId === id) {
         const removedTabIndex = prevTabs.findIndex(tab => tab.id === id);
         const newActiveIndex = Math.min(removedTabIndex, reorderedTabs.length - 1);
         setActiveTabId(reorderedTabs[newActiveIndex].id);
-      } else if (reorderedTabs.length === 0) {
-        setActiveTabId(null);
       }
 
       // Tab close is the only path that should tear down a main-process CLI
@@ -426,12 +431,6 @@ export const TabProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return tabsRef.current.find(tab => tab.id === id);
   }, []);
 
-  const closeAllTabs = useCallback(() => {
-    setTabs([]);
-    setActiveTabId(null);
-    TabPersistenceService.clearTabs();
-  }, []);
-
   const getTabsByType = useCallback((type: 'chat'): Tab[] => {
     return tabsRef.current.filter(tab => tab.type === type);
   }, []);
@@ -449,9 +448,8 @@ export const TabProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setActiveTab,
     reorderTabs,
     getTabById,
-    closeAllTabs,
     getTabsByType
-  }), [tabs, activeTabId, addTab, removeTab, updateTab, setActiveTab, reorderTabs, getTabById, closeAllTabs, getTabsByType]);
+  }), [tabs, activeTabId, addTab, removeTab, updateTab, setActiveTab, reorderTabs, getTabById, getTabsByType]);
 
   return (
     <TabContext.Provider value={value}>

@@ -262,6 +262,7 @@ export interface Services {
   filesystem?: {
     listDirectoryContents(directoryPath: string): Promise<unknown[]>;
     searchFiles(basePath: string, query: string): Promise<unknown[]>;
+    createDirectory(directoryPath: string): Promise<string>;
   };
   notificationSounds?: {
     preview(id: string): { played: boolean; path: string | null };
@@ -1069,6 +1070,13 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
       const query = (p?.query as string) ?? '';
       if (!basePath) throw new Error('basePath is required');
       return filesystem?.searchFiles(basePath, query) ?? [];
+    }),
+    // New Project: makes the folder the renderer's save dialog named.
+    create_directory: wrapWith((p: Record<string, unknown>) => {
+      const directoryPath = (p?.directoryPath ?? p?.directory_path) as string;
+      if (!directoryPath) throw new Error('directoryPath is required');
+      if (!filesystem) throw new Error('filesystem service unavailable');
+      return filesystem.createDirectory(directoryPath);
     }),
     fs_exists: wrapWith((p: Record<string, unknown>) => {
       const filePath = (p?.path ?? p?.filePath ?? p?.file_path) as string;

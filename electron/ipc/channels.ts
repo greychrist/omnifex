@@ -252,9 +252,10 @@ export const INVOKE_CHANNELS: readonly string[] = [
   'lima_start_container',
   'lima_stop_container',
 
-  // Filesystem (FilePicker @-mention browser)
+  // Filesystem (FilePicker @-mention browser, New Project)
   'list_directory_contents',
   'search_files',
+  'create_directory',
   'fs_exists',
 
   // Proxy

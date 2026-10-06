@@ -190,6 +190,12 @@ describe('api — channel + params mapping (table-driven)', () => {
       params: { basePath: '/x', query: 'q' },
     },
     {
+      label: 'createDirectory',
+      call: () => api.createDirectory('/x/new'),
+      channel: 'create_directory',
+      params: { directoryPath: '/x/new' },
+    },
+    {
       label: 'getUsageByDateRange',
       call: () => api.getUsageByDateRange('2026-01-01', '2026-02-01'),
       channel: 'get_usage_by_date_range',
