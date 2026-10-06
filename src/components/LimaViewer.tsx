@@ -423,7 +423,7 @@ export const LimaViewer: React.FC<LimaViewerProps> = ({ isActive }) => {
                   No containers running in this VM.
                 </div>
               ) : (
-                <ul className="grid grid-cols-1 lg:grid-cols-2 gap-3 p-4">
+                <ul className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-2 p-3">
                   {containers.map((c) => {
                     const cAction = pendingContainerAction[c.id];
                     const cState = c.state.toLowerCase();
@@ -436,13 +436,13 @@ export const LimaViewer: React.FC<LimaViewerProps> = ({ isActive }) => {
                         : c.state;
                     const cShowDot = !!cAction || cState === 'restarting' || cState === 'paused';
                     return (
-                      <li key={c.id} className={cn(CARD_SHELL, 'flex flex-col')}>
-                        {/* Header strip — non-interactive (no drill-in target). */}
-                        <div className={CARD_HEADER}>
+                      <li key={c.id} className={CARD_SHELL}>
+                        {/* One header row: state pill, name, start/stop. */}
+                        <header className={cn(CARD_HEADER, 'py-1.5')}>
                           <div className="flex items-center gap-2 min-w-0">
                             <span
                               className={cn(
-                                'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide',
+                                'shrink-0 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide',
                                 containerPillPalette(c.state, cAction),
                               )}
                             >
@@ -451,60 +451,49 @@ export const LimaViewer: React.FC<LimaViewerProps> = ({ isActive }) => {
                               )}
                               {cPillLabel}
                             </span>
-                            <span className="truncate text-sm font-medium font-mono" title={c.name}>
+                            <span className="break-all text-xs font-medium font-mono">
                               {c.name}
                             </span>
                           </div>
-                        </div>
-
-                        {/* Body — metadata + action bar pinned to the bottom. */}
-                        <div className="px-3 pb-2.5 pt-2 text-xs flex-1 flex flex-col">
-                          <div className="grid grid-cols-[5rem_1fr] gap-x-3 gap-y-1.5 mb-2">
-                            <HeaderLabel className="self-center">Image</HeaderLabel>
-                            <span className={cn(VALUE_PILL, 'truncate min-w-0')} title={c.image}>
-                              <span className="truncate">{c.image}</span>
-                            </span>
-                            <HeaderLabel className="self-center">Status</HeaderLabel>
-                            <span className={cn(VALUE_PILL, 'truncate min-w-0')} title={c.status}>
-                              <span className="truncate">{c.status || '—'}</span>
-                            </span>
-                            <HeaderLabel className="self-center">Ports</HeaderLabel>
-                            <span className={cn(VALUE_PILL, 'break-all min-w-0')} title={c.ports}>
-                              <span className="break-all">{c.ports || '—'}</span>
-                            </span>
+                          <div className="shrink-0 inline-flex items-center rounded border border-border bg-background overflow-hidden">
+                            {cAction ? (
+                              <span className="h-6 w-12 inline-flex items-center justify-center text-muted-foreground">
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                              </span>
+                            ) : (
+                              <>
+                                <button
+                                  type="button"
+                                  disabled={!cIsStopped}
+                                  onClick={() => void handleStartContainer(selectedVmObj.name, c.id)}
+                                  className="h-6 w-6 inline-flex items-center justify-center text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed"
+                                  title={cIsStopped ? `Start ${c.name}` : `Already ${c.state}`}
+                                >
+                                  <Play className="h-3 w-3" />
+                                </button>
+                                <span className="h-4 w-px bg-border" aria-hidden />
+                                <button
+                                  type="button"
+                                  disabled={!cIsRunning}
+                                  onClick={() => void handleStopContainer(selectedVmObj.name, c.id)}
+                                  className="h-6 w-6 inline-flex items-center justify-center text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed"
+                                  title={cIsRunning ? `Stop ${c.name}` : `Already ${c.state}`}
+                                >
+                                  <Square className="h-3 w-3" />
+                                </button>
+                              </>
+                            )}
                           </div>
+                        </header>
 
-                          <div className="mt-auto pt-1">
-                            <div className="inline-flex items-center rounded border border-border bg-background overflow-hidden">
-                              {cAction ? (
-                                <span className="h-7 w-14 inline-flex items-center justify-center text-muted-foreground">
-                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                </span>
-                              ) : (
-                                <>
-                                  <button
-                                    type="button"
-                                    disabled={!cIsStopped}
-                                    onClick={() => void handleStartContainer(selectedVmObj.name, c.id)}
-                                    className="h-7 w-7 inline-flex items-center justify-center text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed"
-                                    title={cIsStopped ? `Start ${c.name}` : `Already ${c.state}`}
-                                  >
-                                    <Play className="h-3.5 w-3.5" />
-                                  </button>
-                                  <span className="h-5 w-px bg-border" aria-hidden />
-                                  <button
-                                    type="button"
-                                    disabled={!cIsRunning}
-                                    onClick={() => void handleStopContainer(selectedVmObj.name, c.id)}
-                                    className="h-7 w-7 inline-flex items-center justify-center text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed"
-                                    title={cIsRunning ? `Stop ${c.name}` : `Already ${c.state}`}
-                                  >
-                                    <Square className="h-3.5 w-3.5" />
-                                  </button>
-                                </>
-                              )}
-                            </div>
-                          </div>
+                        {/* Body — compact labelled rows, no pills. */}
+                        <div className="px-3 py-1.5 grid grid-cols-[3rem_1fr] gap-x-2 gap-y-0.5 items-baseline text-[11px]">
+                          <HeaderLabel>Image</HeaderLabel>
+                          <span className="font-mono break-all min-w-0">{c.image}</span>
+                          <HeaderLabel>Status</HeaderLabel>
+                          <span className="font-mono truncate min-w-0" title={c.status}>{c.status || '—'}</span>
+                          <HeaderLabel>Ports</HeaderLabel>
+                          <span className="font-mono break-all min-w-0" title={c.ports}>{c.ports || '—'}</span>
                         </div>
                       </li>
                     );
