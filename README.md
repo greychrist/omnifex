@@ -125,7 +125,7 @@ The Brain is a per-account **memory vault** distilled from those transcripts.
 - A lightweight watcher refreshes the branch badge as your working tree changes — one reader per repository however many tabs are open on it, and none at all while the tab is off screen, the window hidden or closed, or the screen locked.
 
 ### Appearance & the rest
-- Deep theming: color palettes, typography, terminal fonts, per-message-kind icons and visibility (always, verbose only, or never shown — with a Live-only group for events that are never saved with the session, and a choice to collapse or show their repeats), and the colours of compact mode's hidden-events bar (text stays readable on its own unless you set it), with JSON export/import.
+- Deep theming: color palettes, typography, terminal fonts, per-message-kind icons, alignment and visibility (always, verbose only, or never shown — with a Live-only group for events that are never saved with the session, and a choice to collapse or show their repeats), a style of its own for the reply while it is still streaming in, and the colours of compact mode's hidden-events bar (text stays readable on its own unless you set it), with JSON export/import.
 - **Lima VM viewer** — list and start/stop Lima VMs and their Docker containers.
 - HTTP/HTTPS **proxy** settings, OS **notifications** with sound preview, and an in-app **auto-updater** that pulls new builds from GitHub Releases.
 

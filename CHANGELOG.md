@@ -5,6 +5,26 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.224] — 2026-10-06
+
+### Added
+
+- **Live reply** message type: Claude's reply while it is still streaming in gets its own card — dashed and amber by default, titled "Live reply" — and can be restyled in Settings → Appearance like any other message.
+- **Narrow centered** card alignment, indenting a card equally from both sides.
+
+### Changed
+
+- The OmniFex daemon keeps session events in memory only. A reconnect it cannot catch up, or one across a daemon restart, reloads the transcript from Claude Code's own session file instead. `~/.omnifex/sessions/` now holds only each session's small `.meta.json`, rather than an event log that grew without limit.
+- Session status and turn changes are recorded in the app log, for diagnosing a stuck session.
+
+### Fixed
+
+- A session that had entered a worktree no longer restarts as a blank conversation after the app or daemon restarts. OmniFex now finds the transcript Claude Code moved into the worktree's project folder and resumes it.
+
+### Removed
+
+- The unused `history.get` remote protocol method.
+
 ## [0.4.223] — 2026-10-06
 
 ### Added
