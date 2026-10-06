@@ -1,9 +1,10 @@
 #!/bin/bash
 # Gather everything OmniFex knows about one session, from disk, read-only.
 #   bash session-trace.sh <session-uuid-or-prefix>
-# Sources: ~/.omnifex{,-dev}/sessions/<id>.meta.json + .events.jsonl (daemon),
-# <configDir>/projects/<project>/<id>.jsonl (the CLI transcript), app_logs in
-# greychrist.db, and /healthz on the daemon ports.
+# Sources: ~/.omnifex{,-dev}/sessions/<id>.meta.json (daemon), the daemon's
+# session-state trail in app_logs, <configDir>/projects/<project>/<id>.jsonl
+# (the CLI transcript), and /healthz on the daemon ports. The daemon keeps
+# events in memory only; app_logs is its one durable record of state changes.
 set -uo pipefail
 Q=${1:-}
 [ -n "$Q" ] || { echo "usage: session-trace.sh <session-uuid-or-prefix>" >&2; exit 2; }
@@ -24,31 +25,6 @@ m=json.load(open(sys.argv[1]))
 for k in ('projectPath','configDir','agent','createdAt','updatedAt'): print(f"  {k}: {m.get(k)}")
 o=m.get('options',{}); print(f"  options: model={o.get('model')} permissionMode={o.get('permissionMode')} effort={o.get('effort')} resume={o.get('resume', o.get('resumeSessionId'))}")
 PY
-  ev="${meta%.meta.json}.events.jsonl"
-  if [ -f "$ev" ]; then
-    python3 - "$ev" <<'PY'
-import json,sys,os,datetime
-p=sys.argv[1]; n=0; states=[]; last=None; kinds={}
-with open(p) as f:
-    for line in f:
-        n+=1
-        try: r=json.loads(line)
-        except Exception: continue
-        t=r.get('type')
-        if t=='session.state': states.append(r)
-        elif t=='event':
-            k=r.get('kind'); kinds[k]=kinds.get(k,0)+1
-            pl=r.get('payload') or {}; raw=pl.get('raw') or {}
-            if isinstance(raw,dict) and raw.get('type') in ('result','system','user','assistant'): last=raw.get('type')+('/'+raw.get('subtype','') if raw.get('subtype') else '')
-mt=datetime.datetime.fromtimestamp(os.path.getmtime(p)).isoformat(timespec='seconds')
-print(f"  events.jsonl: {n} records, {os.path.getsize(p)//1024} KB, last write {mt}")
-print(f"  event kinds: {kinds}")
-print(f"  last CLI record seen through daemon: {last}")
-print("  last session.state records:")
-for s in states[-4:]:
-    print(f"    seq={s.get('seq')} sessionStatus={s.get('sessionStatus')} turn={s.get('turn')}")
-PY
-  fi
 done
 
 for t in $transcripts; do
@@ -84,8 +60,10 @@ PY
 done
 
 if [ -f "$DB" ] && command -v sqlite3 >/dev/null; then
-  section "app_logs mentioning $Q (last 10)"
-  sqlite3 -separator ' | ' "$DB" "select substr(timestamp,1,19), level, source, substr(message,1,140) from app_logs where message like '%$Q%' or metadata like '%$Q%' order by id desc limit 10"
+  section "daemon session.state trail (last 8, newest first)"
+  sqlite3 -separator ' | ' "$DB" "select substr(timestamp,1,19), message from app_logs where category='session-state' and message like 'session $Q%' order by id desc limit 8"
+  section "other app_logs mentioning $Q (last 10)"
+  sqlite3 -separator ' | ' "$DB" "select substr(timestamp,1,19), level, source, substr(message,1,140) from app_logs where (message like '%$Q%' or metadata like '%$Q%') and coalesce(category,'') <> 'session-state' order by id desc limit 10"
   section "app_logs error/warn, last 10 overall"
   sqlite3 -separator ' | ' "$DB" "select substr(timestamp,1,19), level, source, substr(message,1,140) from app_logs where level in ('error','warn') order by id desc limit 10"
 fi

@@ -79,8 +79,13 @@ app on the iPad. Start from `docs/remote-access.md` and
   headless process with LaunchServices as a launching Foreground app and the Dock
   bounces forever. A symlink does not work either — the kernel resolves it.
 - **State** — `~/.omnifex/` (`server.json`, `server.pid`, `projects.json`,
-  `sessions/<id>.events.jsonl` + `.meta.json`). The SQLite DB stays in userData
-  and is shared with the app.
+  `sessions/<id>.meta.json`). The SQLite DB stays in userData and is shared
+  with the app. Session events are memory-only (a 5,000-event ring per
+  session); a reconnect the ring cannot serve, or one across a daemon restart
+  (`welcome.bootId` changed), gets `resync` and the tab reloads from the CLI's
+  JSONL. The CLI's transcript is the history — never add an events file back.
+  State transitions go to `app_logs` (`category='session-state'`) for
+  `session-trace`.
 - **Protocol** — `src/protocol/` (types), `electron/remote/server.ts` (transport),
   `electron/remote/handlers.ts` (methods). The protocol's `sessionId` IS the
   sessions service's `tabId`; that equivalence is the whole trick.

@@ -18,7 +18,7 @@ A prefix of the UUID is enough. It reads, in order:
 | Source | What it tells you |
 |---|---|
 | `~/.omnifex{,-dev}/sessions/<id>.meta.json` | project, config dir (= account), model, permission mode, resume |
-| `<id>.events.jsonl` `session.state` rows | the daemon's own `sessionStatus` + `turn` — the authoritative in-flight state |
+| `app_logs` rows with `category='session-state'` | the daemon's own `sessionStatus` + `turn` transitions — the authoritative in-flight state (events themselves are memory-only) |
 | `<configDir>/projects/<project>/<id>.jsonl` | what the CLI wrote: last records, `stop_reason`, open `tool_use` without a result |
 | `app_logs` in `greychrist.db` | main/daemon errors around the session (there is no log file) |
 | `/healthz` on 47700 (installed) / 47701 (dev) | whether a daemon is even up |

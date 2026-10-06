@@ -39,7 +39,7 @@ import {
   restartQuery,
   type RuntimeDeps,
 } from './runtime';
-import { hasTranscript } from '../project-paths';
+import { hasTranscript } from '../../session-jsonl-path';
 import { shouldAutoTitle, autoTitleDescription } from './auto-title';
 import { createClaudeCliEngine } from '../agents/claude-cli-engine';
 import { createCodexCliEngine } from '../agents/codex-cli-engine';

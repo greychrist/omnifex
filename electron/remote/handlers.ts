@@ -250,7 +250,12 @@ export function createRemoteHandlers(deps: RemoteHandlerDeps): RemoteHandlers {
       // Omitted fromSeq means "live from here"; a number means "everything
       // after it", which for a cold client is 0.
       if (p.fromSeq === undefined) return { fromSeq: lastSeq, lastSeq };
-      for (const push of deps.log.replay(p.sessionId, p.fromSeq)) ctx.send(push);
+      const pushes = deps.log.replay(p.sessionId, p.fromSeq);
+      // The ring no longer reaches back that far, or the seq predates a
+      // daemon restart. Live from here; the client reloads the transcript
+      // from the CLI's JSONL.
+      if (pushes === null) return { fromSeq: lastSeq, lastSeq, resync: true };
+      for (const push of pushes) ctx.send(push);
       return { fromSeq: p.fromSeq, lastSeq };
     },
 
@@ -302,12 +307,6 @@ export function createRemoteHandlers(deps: RemoteHandlerDeps): RemoteHandlers {
         throw protocolError('PERMISSION_NOT_PENDING', `permission ${p.permissionId} is not pending on ${p.sessionId}`);
       }
       deps.bridge.permissionAnswered(p.sessionId, p.permissionId);
-    },
-
-    // ----------------------------------------------------------------- history
-    'history.get': (p) => {
-      requireMeta(p.sessionId);
-      return deps.log.history(p.sessionId, { beforeSeq: p.beforeSeq, limit: p.limit });
     },
 
     // --------------------------------------------------------------------- rpc

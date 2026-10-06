@@ -24,8 +24,8 @@ import { dispatchAgentNotification, dispatchResultNotification } from './notific
 import { createBackgroundTaskTracker } from './background-tasks';
 import { createJsonlTail, isClosureCarrier, type JsonlTailHandle } from './jsonl-tail';
 import { shouldForwardStreamMessage } from './stream-forward';
-import { encodeProjectId, hasTranscript } from '../project-paths';
-import { findSessionJsonlInAccount } from '../../session-jsonl-path';
+import { encodeProjectId } from '../project-paths';
+import { findSessionJsonlInAccount, hasTranscript } from '../../session-jsonl-path';
 import { setStatus, setTurn } from './status';
 import { endSideChat } from './side-chat';
 import { beginCliProcess, recordResultUsage, type CliUsageSink } from './cli-usage';

@@ -31,7 +31,7 @@ export type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'rec
 export interface ProtocolRequestMap {
   'hello': {
     params: { clientId: string; clientKind: 'electron' | 'web'; protocolVersion: number };
-    result: { protocolVersion: number; daemonVersion: string; capabilities?: Record<string, unknown> };
+    result: { protocolVersion: number; daemonVersion: string; bootId?: string; capabilities?: Record<string, unknown> };
   };
   'project.list': { params: Record<string, never>; result: Project[] };
   'project.add': { params: { path: string; title?: string }; result: Project };
@@ -44,7 +44,11 @@ export interface ProtocolRequestMap {
   'session.resume': { params: { sessionId: string }; result: SessionSummary };
   'session.kill': { params: { sessionId: string }; result: void };
   /** Result reports where replay began, so a client can tell a gap from a no-op. */
-  'session.subscribe': { params: { sessionId: string; fromSeq?: number }; result: { fromSeq: number; lastSeq: number } };
+  'session.subscribe': {
+    params: { sessionId: string; fromSeq?: number };
+    /** `resync`: the ring could not reach back to `fromSeq`; reload the transcript from disk. */
+    result: { fromSeq: number; lastSeq: number; resync?: boolean };
+  };
   'session.unsubscribe': { params: { sessionId: string }; result: void };
   'turn.send': {
     params: {
@@ -64,15 +68,6 @@ export interface ProtocolRequestMap {
       remember?: Array<Record<string, unknown>>;
     };
     result: void;
-  };
-  /**
-   * Pages BACKWARDS from `beforeSeq` — the transcript is read from the bottom.
-   * Reaches past the ring buffer into the persisted history on disk, which is
-   * what makes the buffer a replay window rather than the archive.
-   */
-  'history.get': {
-    params: { sessionId: string; beforeSeq?: number; limit: number };
-    result: { events: SessionScopedPush[]; hasMore: boolean };
   };
   'rpc.invoke': { params: { channel: string; params?: Record<string, unknown> }; result: unknown };
 }
@@ -97,6 +92,8 @@ export interface ProtocolClient {
 
   /** Resolves once `hello` has been answered with `welcome`. */
   connect(): Promise<ProtocolRequestMap['hello']['result']>;
+  /** The last `welcome` this connection received, or null before the first. */
+  readonly welcome?: ProtocolRequestMap['hello']['result'] | null;
   disconnect(): void;
 
   request<M extends ClientMethod>(method: M, params: ParamsOf<M>): Promise<ResultOf<M>>;

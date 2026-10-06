@@ -154,7 +154,7 @@ describe('remote session bridge', () => {
 
     const replayed = log.replay('s1', 0);
     expect(replayed).toHaveLength(1);
-    expect((replayed[0] as { payload: { kind: string } }).payload.kind).toBe('tool-progress');
+    expect((replayed?.[0] as { payload: { kind: string } }).payload.kind).toBe('tool-progress');
   });
 
   it('carries the renderer\'s permission-card payload whole and lifts the addressable fields', () => {
@@ -261,6 +261,27 @@ describe('remote session bridge', () => {
     expect(bridge.state('s1')).toMatchObject({ turn: { status: 'running' } });
     bridge.sendToRenderer('session-turn:s1', { status: 'idle', since: null });
     expect(bridge.state('s1')).toMatchObject({ turn: { status: 'idle', since: null } });
+  });
+
+  it('reports every state it publishes, so the daemon can keep a durable trail', () => {
+    // Events are memory-only; this is what session-trace reads afterwards.
+    const reported: SessionScopedPush[] = [];
+    const traced = createSessionBridge({
+      log,
+      classify: classifyJsonlLine,
+      publish: () => {},
+      broadcast: () => {},
+      onState: (push) => { reported.push(push); },
+    });
+    openSession(log, 's1');
+    traced.sendToRenderer('session-status:s1', { sessionStatus: 'started' });
+    traced.sendToRenderer('session-turn:s1', { status: 'running', since: '2026-09-20T00:00:00.000Z' });
+    traced.sendToRenderer('agent-output:s1', { type: 'assistant', message: { role: 'assistant', content: [] } });
+
+    expect(reported.map((p) => p.type === 'session.state' && [p.sessionStatus, p.turn.status, p.seq])).toEqual([
+      ['started', 'idle', 1],
+      ['started', 'running', 2],
+    ]);
   });
 
   it('stamps every event with the legacy channel prefix it came from', () => {

@@ -199,11 +199,10 @@ describe('remote handlers', () => {
     expect(h.summary('sid-1')).toMatchObject({ sessionStatus: 'stopped' });
   });
 
-  it('resumes a persisted session by respawning with the same id and options, continuing the seq', async () => {
+  it('resumes a persisted session by respawning with the same id and options, the seq starting over', async () => {
     const project = await addProject();
     await h['session.create']({ projectId: project.projectId, options: { model: 'claude-opus-5', permissionMode: 'acceptEdits' } }, fakeCtx().ctx);
     h['session.kill']({ sessionId: 'sid-1' }, fakeCtx().ctx);
-    const seqBefore = log.lastSeq('sid-1');
 
     // A fresh handler set over the same state dir is what a daemon restart is.
     const log2 = createSessionLog({ root: join(root, 'sessions') });
@@ -216,7 +215,8 @@ describe('remote handlers', () => {
     const summary = await h2['session.resume']({ sessionId: 'sid-1' }, fakeCtx().ctx);
     expect(fake2.calls.start[0]).toMatchObject({ tabId: 'sid-1', resumeSessionId: 'sid-1', model: 'claude-opus-5', permissionMode: 'acceptEdits', configDir: '/cfg/personal' });
     expect(summary.sessionStatus).toBe('started');
-    expect(published2[0].seq).toBe(seqBefore + 1);
+    // Events are not persisted: a client holding an older seq gets `resync`.
+    expect(published2[0].seq).toBe(1);
   });
 
   it('resume on a live session re-attaches without respawning', async () => {
@@ -288,12 +288,18 @@ describe('remote handlers', () => {
     expect(mine.map((s) => s.sessionId)).toEqual(['sid-2']);
   });
 
-  it('pages history through the log', async () => {
+  it('subscribe answers resync instead of replaying a seq the log no longer has', async () => {
+    // A seq from before a daemon restart: the ring starts over, so nothing it
+    // holds is "after" that seq. The client reloads from the CLI's JSONL.
     const project = await addProject();
     await h['session.create']({ projectId: project.projectId }, fakeCtx().ctx);
-    const page = await h['history.get']({ sessionId: 'sid-1', limit: 1 }, fakeCtx().ctx);
-    expect(page.events.map((e) => e.seq)).toEqual([2]);
-    expect(page.hasMore).toBe(true);
+    const { ctx, sent, subs } = fakeCtx();
+
+    const res = h['session.subscribe']({ sessionId: 'sid-1', fromSeq: 999 }, ctx);
+    expect(res).toEqual({ fromSeq: 2, lastSeq: 2, resync: true });
+    expect(sent).toEqual([]);
+    // Still subscribed: live pushes flow from here on.
+    expect([...subs]).toEqual(['sid-1']);
   });
 
   describe('rpc.invoke', () => {

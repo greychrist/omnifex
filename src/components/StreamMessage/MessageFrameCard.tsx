@@ -11,7 +11,7 @@ import {
 import { IconRenderer } from "@/components/settings-panels/appearance/iconMap";
 import { KindHeader } from "@/components/KindHeader";
 import type { JsonlNode } from "@/types/jsonl";
-import type { BorderStyle, IconName } from "@/lib/messageRenderingConfig";
+import type { Alignment, BorderStyle, IconName } from "@/lib/messageRenderingConfig";
 import { resolveKind } from "@/lib/messageRenderingConfig";
 import { CardActionBarPlacementContext } from "@/components/CardActionBar";
 
@@ -40,8 +40,9 @@ interface MessageFrameCardProps {
   /** When true, render the inline icon next to the header label. */
   showHeaderIcon?: boolean;
   /** Card alignment: "left" (assistant/system), "right" (user prompts),
-   *  or "full" (system-wide). Defaults to "left". */
-  alignment?: "left" | "right" | "full";
+   *  "full" (system-wide), or "narrow-center" (indented equally from both
+   *  sides). Defaults to "left". */
+  alignment?: Alignment;
   /** Width as a tailwind fragment (e.g. "max-w-[95%]"). Defaults to a
    *  comfortable left-aligned bubble width. */
   widthClassName?: string;
@@ -103,7 +104,7 @@ export const MessageFrameCard: React.FC<MessageFrameCardProps> = ({
   const justify =
     alignment === "right"
       ? "justify-end"
-      : alignment === "full"
+      : alignment === "full" || alignment === "narrow-center"
         ? "justify-center"
         : "justify-start";
 
@@ -111,9 +112,10 @@ export const MessageFrameCard: React.FC<MessageFrameCardProps> = ({
   // cards — they just hug the right edge via `justify-end`. (A prior shrink-to-
   // fit `w-fit` made short prompts uncomfortably narrow; matching the standard
   // card width restores a sensible minimum.) Full spans the whole surface.
+  // Narrow centered is an equal indent from both edges: 10% each side.
   const width =
     widthClassName ?? (
-      alignment === "full" ? "w-full" : "w-[95%]"
+      alignment === "full" ? "w-full" : alignment === "narrow-center" ? "w-[80%]" : "w-[95%]"
     );
 
   return (

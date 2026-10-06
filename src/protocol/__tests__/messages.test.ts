@@ -36,7 +36,6 @@ const CLIENT_SAMPLES: ClientMessage[] = [
     permissionId: 'perm-1',
     decision: 'allow',
   },
-  { type: 'history.get', requestId: 'r14', sessionId: 's1', limit: 100 },
   { type: 'rpc.invoke', requestId: 'r15', channel: 'list_accounts' },
 ];
 

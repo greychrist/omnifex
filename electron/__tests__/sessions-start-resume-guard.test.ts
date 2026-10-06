@@ -124,6 +124,37 @@ describe('start() with resumeSessionId — resume vs fresh transcript', () => {
     expect(startSpy.mock.calls[0]?.[0]).toMatchObject({ resume: true, sessionId: realId });
   });
 
+  it('resumes a transcript the CLI moved into a worktree project directory', () => {
+    // EnterWorktree moves <id>.jsonl into the worktree's projects/ dir. The
+    // CLI's `--resume <id>` finds it there from the original cwd and keeps
+    // appending to it (verified against 2.1.290). Checking only the project's
+    // own directory sent `--session-id` instead: a blank conversation under
+    // the same id, the whole history orphaned in the worktree directory.
+    const sessions = createSessionsService(vi.fn());
+    const movedId = '7277e428-749a-4af5-bc73-18e7d2b2b15f';
+    const dir = path.join(
+      tmpConfig,
+      'projects',
+      encodeProjectId(`${projectPath}/.claude/worktrees/PI-620`),
+    );
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, `${movedId}.jsonl`),
+      '{"type":"user","message":{"role":"user","content":"hi"}}\n',
+    );
+
+    sessions.start({
+      tabId: 'tab-moved',
+      projectPath,
+      configDir: tmpConfig,
+      model: '',
+      permissionMode: '',
+      resumeSessionId: movedId,
+    });
+
+    expect(startSpy.mock.calls[0]?.[0]).toMatchObject({ resume: true, sessionId: movedId });
+  });
+
   it('cold start without a resume id still does not resume', () => {
     const sessions = createSessionsService(vi.fn());
 

@@ -11,6 +11,7 @@
  * There is no authentication. The bind address is the boundary — see
  * `config.ts` for why it is never `0.0.0.0` by default.
  */
+import { randomUUID } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { createReadStream, existsSync, statSync } from 'node:fs';
 import { extname, join, normalize, resolve, sep } from 'node:path';
@@ -108,6 +109,9 @@ interface Connection extends ClientContext {
 export function createRemoteServer(deps: RemoteServerDeps): RemoteServer {
   const log = deps.log ?? NOOP_LOG;
   const heartbeatMs = deps.heartbeatMs ?? 30_000;
+  // One per daemon run: seqs restart with the process, and this is how a
+  // client tells that happened.
+  const bootId = randomUUID();
 
   let handlers: ProtocolHandlers | null = null;
   const connections = new Set<Connection>();
@@ -193,6 +197,7 @@ export function createRemoteServer(deps: RemoteServerDeps): RemoteServer {
       const welcome = {
         protocolVersion: PROTOCOL_VERSION,
         daemonVersion: deps.daemonVersion,
+        bootId,
         capabilities: deps.capabilities ?? {},
       };
       send(conn, { type: 'welcome', ...welcome });

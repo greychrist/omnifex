@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useClaudeSessionStore } from '@/stores/claudeSessionStore';
-import { Card, CardContent } from '@/components/ui/card';
+import { MessageFrame } from '@/components/StreamMessage/MessageFrame';
 import { useTheme } from '@/hooks';
 import { getClaudeSyntaxTheme } from '@/lib/claudeSyntaxTheme';
 import { buildMarkdownComponents } from '@/lib/markdownComponents';
@@ -31,6 +31,12 @@ const REMARK_PLUGINS = [remarkGfm];
  * as ReactMarkdown. The bubble appears when streaming starts, grows
  * as deltas land, and disappears when the canonical message takes
  * its place. Honest representation of what's happening.
+ *
+ * It is a regular message of kind `assistant.text.live` ("Live reply", a
+ * dashed amber card by default), rendered through MessageFrame so every
+ * Appearance setting applies — presentation, alignment, colour, header. The text may or may not become the
+ * turn's final answer — that is only known once the finished message lands
+ * — so it looks provisional rather than borrowing a finished message's card.
  */
 export const InflightAssistantBubble: React.FC<{ tabId: string }> = ({ tabId }) => {
   const inflight = useClaudeSessionStore(
@@ -43,12 +49,14 @@ export const InflightAssistantBubble: React.FC<{ tabId: string }> = ({ tabId }) 
   if (!inflight?.text) return null;
 
   return (
-    <Card className="group/card relative my-1 border-border/40">
-      <CardContent className="prose prose-sm dark:prose-invert max-w-none py-2 px-3">
-        <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={mdComponents}>
-          {inflight.text}
-        </ReactMarkdown>
-      </CardContent>
-    </Card>
+    <div className="my-1">
+      <MessageFrame streamKind="assistant.text.live">
+        <div className="prose prose-sm dark:prose-invert max-w-none">
+          <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={mdComponents}>
+            {inflight.text}
+          </ReactMarkdown>
+        </div>
+      </MessageFrame>
+    </div>
   );
 };

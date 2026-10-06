@@ -369,6 +369,7 @@ export const KindEditor: React.FC<KindEditorProps> = ({
             <SelectItem value="left">Left</SelectItem>
             <SelectItem value="right">Right</SelectItem>
             <SelectItem value="full">Full width</SelectItem>
+            <SelectItem value="narrow-center">Narrow centered</SelectItem>
           </SelectContent>
         </Select>
       </div>

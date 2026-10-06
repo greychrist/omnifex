@@ -3,7 +3,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import '@testing-library/jest-dom/vitest';
 import { render, cleanup, fireEvent } from '@testing-library/react';
 import { MessageFrame } from '@/components/StreamMessage/MessageFrame';
-import { MessageRenderingProvider } from '@/contexts/MessageRenderingContext';
+import { MessageRenderingProvider, MessageRenderingPreviewProvider } from '@/contexts/MessageRenderingContext';
 import { createDefaultConfig, serializeConfig } from '@/lib/messageRenderingConfig';
 
 // Mock api — MessageRenderingProvider calls getSetting on mount. We return a
@@ -107,6 +107,20 @@ describe('MessageFrame', () => {
     // Wait for the provider's async config load to settle
     await findByText('hi');
     expect(container.querySelector('[data-frame-variant="card"]')).not.toBeNull();
+  });
+
+  it('narrow-centered cards are indented equally from both sides', () => {
+    const config = createDefaultConfig();
+    config.kinds = { 'user.prompt': { alignment: 'narrow-center' } };
+    const { container } = render(
+      <MessageRenderingPreviewProvider config={config}>
+        <MessageFrame streamKind="user.prompt">narrow-probe</MessageFrame>
+      </MessageRenderingPreviewProvider>
+    );
+    const row = container.querySelector('[data-frame-variant="card"] > div') as HTMLElement;
+    expect(row.className).toContain('justify-center');
+    const card = row.firstElementChild as HTMLElement;
+    expect(card.className).toContain('w-[80%]');
   });
 
   it('gives right-aligned cards the same width as other cards (no shrink-to-fit)', async () => {

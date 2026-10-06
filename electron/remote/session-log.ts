@@ -7,35 +7,21 @@
  * replay restores a status change and a still-open permission prompt, not
  * just the transcript rows between them.
  *
- * Two tiers:
- *  - a ring buffer (default 5,000) for the common reconnect — the iPad was
- *    backgrounded for a minute and needs the tail;
- *  - an append-only JSONL file per session under `~/.omnifex/sessions/` for
- *    anything older, for `history.get`, and for surviving a daemon restart.
+ * The events live in a ring buffer (default 5,000) and nowhere else. It
+ * serves the common reconnect — the iPad was backgrounded for a minute and
+ * needs the tail. Anything the ring cannot answer (a reconnect that fell
+ * further behind, a seq from before a daemon restart) is a gap, and a gap is
+ * answered by the client reloading the transcript from the CLI's own JSONL,
+ * which is what it does on every page load anyway.
  *
- * Why not the CLI's own transcript under `<configDir>/projects/`? It has no
- * seq, it lacks everything the daemon synthesises (status transitions,
- * permission prompts, stderr), and its shapes differ from the stream-json the
- * renderer was built against (`isMeta` vs `isSynthetic`, top-level `effort`).
- * The daemon's log is the replay source; the CLI's file stays the CLI's.
- *
- * All I/O is synchronous. Appends are one small line each, and the caller is
- * the session bridge on the engine's message path, where an `await` would
- * reorder pushes against each other.
+ * Events used to be appended to `<id>.events.jsonl` as well. Nothing read
+ * that file except a replay past the ring and `history.get`, which no client
+ * called; it grew to 1.1GB in its first 26 days, 62% of it streaming text
+ * deltas the finished message supersedes. The CLI's transcript is the
+ * history. Only `<id>.meta.json` is persisted: what a resume needs to
+ * respawn the session.
  */
-import {
-  appendFileSync,
-  closeSync,
-  existsSync,
-  mkdirSync,
-  openSync,
-  readdirSync,
-  readFileSync,
-  readSync,
-  rmSync,
-  statSync,
-  writeFileSync,
-} from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import type { SessionScopedPush, SessionScopedPushType } from '../../src/protocol';
@@ -68,30 +54,29 @@ export interface UnsequencedPush {
   [key: string]: unknown;
 }
 
-export interface HistoryPage {
-  events: SessionScopedPush[];
-  hasMore: boolean;
-}
-
 export interface SessionLog {
   /**
    * Bring a session into memory. With full meta this is a create; with only
-   * `{ sessionId }` it loads what is on disk (a resume after restart) and
-   * throws if nothing is there. Idempotent for an already-open session.
+   * `{ sessionId }` it loads the meta on disk (a resume after restart) and
+   * throws if there is none. Idempotent for an already-open session. The
+   * sequence starts at 1 on every daemon run.
    */
   open(meta: SessionMeta | { sessionId: string }): SessionMeta;
-  /** Stamp `seq`, keep in the ring, append to disk. Throws if not open. */
+  /** Stamp `seq` and keep it in the ring. Throws if not open. */
   append(push: UnsequencedPush): SessionScopedPush;
   lastSeq(sessionId: string): number;
-  /** Every push with `seq > fromSeq`, oldest first. */
-  replay(sessionId: string, fromSeq: number): SessionScopedPush[];
-  /** Newest-first paging for a transcript read from the bottom; returned oldest-first. */
-  history(sessionId: string, opts: { beforeSeq?: number; limit: number }): HistoryPage;
+  /**
+   * Every push with `seq > fromSeq`, oldest first — or null when the ring
+   * cannot answer: `fromSeq` is older than the oldest push it still holds, or
+   * newer than the last one (a seq from before a daemon restart). Null means
+   * the client must reload the transcript from the CLI's JSONL.
+   */
+  replay(sessionId: string, fromSeq: number): SessionScopedPush[] | null;
   meta(sessionId: string): SessionMeta | null;
   updateMeta(sessionId: string, patch: Partial<Omit<SessionMeta, 'sessionId'>>): SessionMeta;
   /** Every session with a meta file on disk, open or not. */
   list(): SessionMeta[];
-  /** Delete the session's files and forget it. */
+  /** Delete the session's meta and forget it. */
   remove(sessionId: string): void;
   isOpen(sessionId: string): boolean;
 }
@@ -108,7 +93,6 @@ export function createSessionLog(opts: { root: string; ringSize?: number }): Ses
   const ringSize = Math.max(1, opts.ringSize ?? DEFAULT_RING_SIZE);
   const open = new Map<string, OpenSession>();
 
-  const eventsPath = (id: string) => join(opts.root, `${id}.events.jsonl`);
   const metaPath = (id: string) => join(opts.root, `${id}.meta.json`);
 
   function readMeta(id: string): SessionMeta | null {
@@ -122,108 +106,6 @@ export function createSessionLog(opts: { root: string; ringSize?: number }): Ses
   function writeMeta(meta: SessionMeta): void {
     mkdirSync(opts.root, { recursive: true });
     writeFileSync(metaPath(meta.sessionId), `${JSON.stringify(meta, null, 2)}\n`, 'utf8');
-  }
-
-  /**
-   * Whole-file read. A session's log is a few MB at the very most, and this
-   * runs only for a replay that outran the ring or for a history page — never
-   * on the hot append path.
-   */
-  function readAll(id: string): SessionScopedPush[] {
-    let text: string;
-    try {
-      text = readFileSync(eventsPath(id), 'utf8');
-    } catch {
-      return [];
-    }
-    const out: SessionScopedPush[] = [];
-    for (const line of text.split('\n')) {
-      if (!line) continue;
-      try {
-        out.push(JSON.parse(line) as SessionScopedPush);
-      } catch {
-        // A torn write (daemon killed mid-append) costs one line, not the
-        // session. Skip it; seq continuity is re-derived from what parses.
-      }
-    }
-    return out;
-  }
-
-  /**
-   * How much of the tail to read looking for the last record. Comfortably
-   * larger than any ordinary push; a record bigger than this makes the
-   * search widen rather than fail.
-   */
-  const TAIL_BYTES = 64 * 1024;
-
-  /** The last parseable `seq` in `text`, or null if there is none. */
-  function lastSeqIn(text: string): number | null {
-    const lines = text.split('\n');
-    for (let i = lines.length - 1; i >= 0; i -= 1) {
-      const line = lines[i];
-      if (!line) continue;
-      try {
-        const rec = JSON.parse(line) as { seq?: unknown };
-        if (typeof rec.seq === 'number') return rec.seq;
-      } catch {
-        // A torn trailing write costs this line, not the answer — keep
-        // walking backwards, exactly as readAll skips unparseable lines.
-      }
-    }
-    return null;
-  }
-
-  /**
-   * The last seq on disk, read from the tail rather than the whole file.
-   *
-   * This used to be `readAll(id).at(-1)?.seq` — a full read plus a
-   * JSON.parse per line, for a single number off the end. That is fine for
-   * the replay and history paths readAll was written for, and ruinous here:
-   * `lastSeq` is called by `summaryOf` for EVERY known session, `summaries()`
-   * calls that, and `/healthz` calls `summaries()` on every request. One
-   * health probe therefore read and parsed every byte of every session log.
-   *
-   * With a 200MB spool and a once-per-second poll (which is what the
-   * installer's idle gate does) the daemon's single thread could not retire
-   * a tick's work within a tick, fell permanently behind, and stopped
-   * answering HTTP at all — including the very health probe the gate was
-   * waiting on.
-   */
-  function lastSeqFromDisk(id: string): number {
-    const path = eventsPath(id);
-    let size: number;
-    let fd: number;
-    try {
-      size = statSync(path).size;
-      if (size === 0) return 0;
-      fd = openSync(path, 'r');
-    } catch {
-      return 0;
-    }
-    try {
-      for (let window = TAIL_BYTES; ; window *= 8) {
-        const start = Math.max(0, size - window);
-        const length = size - start;
-        const buf = Buffer.allocUnsafe(length);
-        readSync(fd, buf, 0, length, start);
-        let text = buf.toString('utf8');
-        if (start > 0) {
-          // Reading from an arbitrary offset lands mid-line (and possibly
-          // mid-codepoint). Drop through the first newline; whatever was
-          // mangled goes with it.
-          const nl = text.indexOf('\n');
-          text = nl === -1 ? '' : text.slice(nl + 1);
-        }
-        const seq = lastSeqIn(text);
-        if (seq !== null) return seq;
-        // Nothing parseable in the window. Either every record in it was
-        // torn, or one record is bigger than the window — widen and retry
-        // until the whole file has been considered.
-        if (start === 0) return 0;
-      }
-    } finally {
-      closeSync(fd);
-    }
   }
 
   function require(id: string): OpenSession {
@@ -247,11 +129,7 @@ export function createSessionLog(opts: { root: string; ringSize?: number }): Ses
         meta = fromDisk;
       }
 
-      // Seq continues from whatever survived on disk, so a resumed client's
-      // `fromSeq` still means what it meant before the restart.
-      const persisted = readAll(meta.sessionId);
-      const seq = persisted.length ? persisted[persisted.length - 1].seq : 0;
-      open.set(meta.sessionId, { meta, seq, ring: persisted.slice(-ringSize) });
+      open.set(meta.sessionId, { meta, seq: 0, ring: [] });
       return meta;
     },
 
@@ -261,31 +139,21 @@ export function createSessionLog(opts: { root: string; ringSize?: number }): Ses
       const stamped = { ...push, seq: s.seq } as SessionScopedPush;
       s.ring.push(stamped);
       if (s.ring.length > ringSize) s.ring.splice(0, s.ring.length - ringSize);
-      mkdirSync(opts.root, { recursive: true });
-      appendFileSync(eventsPath(push.sessionId), `${JSON.stringify(stamped)}\n`, 'utf8');
       return stamped;
     },
 
     lastSeq(id) {
-      return open.get(id)?.seq ?? lastSeqFromDisk(id);
+      return open.get(id)?.seq ?? 0;
     },
 
     replay(id, fromSeq) {
       const s = open.get(id);
+      const seq = s?.seq ?? 0;
+      if (fromSeq > seq) return null;
       const ring = s?.ring ?? [];
-      const oldestInRing = ring[0]?.seq ?? Number.POSITIVE_INFINITY;
-      // The ring is authoritative when it reaches back far enough; otherwise
-      // the file has everything the ring evicted.
-      const source = fromSeq + 1 >= oldestInRing ? ring : readAll(id);
-      return source.filter((p) => p.seq > fromSeq);
-    },
-
-    history(id, { beforeSeq, limit }) {
-      const all = readAll(id);
-      const upper = beforeSeq ?? Number.POSITIVE_INFINITY;
-      const older = all.filter((p) => p.seq < upper);
-      const events = older.slice(Math.max(0, older.length - limit));
-      return { events, hasMore: older.length > events.length };
+      const oldestInRing = ring[0]?.seq ?? seq + 1;
+      if (fromSeq + 1 < oldestInRing) return null;
+      return ring.filter((p) => p.seq > fromSeq);
     },
 
     meta(id) {
@@ -320,7 +188,6 @@ export function createSessionLog(opts: { root: string; ringSize?: number }): Ses
 
     remove(id) {
       open.delete(id);
-      rmSync(eventsPath(id), { force: true });
       rmSync(metaPath(id), { force: true });
     },
 

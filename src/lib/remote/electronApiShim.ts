@@ -127,6 +127,8 @@ export function createElectronApiShim(opts: ShimOptions): ShimHandle {
   const tabToSession = new Map<string, string>();
   const sessionToTabs = new Map<string, Set<string>>();
   const lastSeq = new Map<string, number>();
+  /** The daemon run those seqs belong to. */
+  let bootId: string | undefined = client.welcome?.bootId;
   const pendingPermission = new Map<string, string>();
   const lastState = new Map<string, { sessionStatus?: string; turn?: { status: string; since: string | null } }>();
   /**
@@ -331,6 +333,14 @@ export function createElectronApiShim(opts: ShimOptions): ShimHandle {
   if (client.state === 'connected') void resubscribeAll();
 
   async function resubscribeAll(): Promise<void> {
+    // A different daemon run: seqs restart with the process and events are
+    // never persisted, so every seq held here names some other event now.
+    // Forget them all; each session below subscribes live and reloads.
+    const nowBootId = client.welcome?.bootId;
+    const restarted = bootId !== undefined && nowBootId !== undefined && nowBootId !== bootId;
+    if (nowBootId !== undefined) bootId = nowBootId;
+    if (restarted) lastSeq.clear();
+
     // Nothing mapped: no subscriptions to restore, and the reconcile below is
     // about sessions this client already holds, so it has nothing to say
     // either. Bail before spending a round trip on every launch.
@@ -347,7 +357,13 @@ export function createElectronApiShim(opts: ShimOptions): ShimHandle {
       try {
         const r = await client.request('session.subscribe', from === undefined ? { sessionId } : { sessionId, fromSeq: from });
         markSubscribed(sessionId, true);
-        if (from === undefined) lastSeq.set(sessionId, r.lastSeq);
+        if (from === undefined || r.resync) lastSeq.set(sessionId, r.lastSeq);
+        if (restarted || r.resync) {
+          // What this client missed is gone from the daemon. The transcript
+          // is on disk in the CLI's JSONL; the tab reloads it from there.
+          emitForSession(sessionId, 'remote-resync', { sessionId });
+          continue;
+        }
         const caughtUp = from === undefined ? 0 : Math.max(0, r.lastSeq - from);
         for (const tab of sessionToTabs.get(sessionId) ?? []) emit(`remote-caught-up:${tab}`, { events: caughtUp });
       } catch (err) {

@@ -194,7 +194,7 @@ export type IconName = (typeof ALLOWED_ICONS)[number];
 
 // ─── message kinds ──────────────────────────────────────────────────────────
 
-export type Alignment = "left" | "right" | "full";
+export type Alignment = "left" | "right" | "full" | "narrow-center";
 export type Presentation = "card" | "side-line" | "collapsible";
 export type BorderStyle = "solid" | "dashed";
 
@@ -278,6 +278,7 @@ export const KIND_REGISTRY: Record<string, KindDef> = {
   // ── agent ──
   "assistant.text": { id: "assistant.text", category: "agent", label: "Assistant text", description: "Claude's reply text.", default: {} },
   "assistant.text.endTurn": { id: "assistant.text.endTurn", category: "agent", label: "Execution complete", description: "Final assistant text that ended the turn.", default: { accentColor: "green", icon: "CheckCircle2", compactBoundaryLocked: true } },
+  "assistant.text.live": { id: "assistant.text.live", category: "agent", label: "Live reply", description: "Claude's reply while it is still arriving, a few words at a time. Replaced by the finished message — which may or may not be the one that ends the turn.", default: { headerLabel: "Live reply", accentColor: "amber", borderStyle: "dashed" } },
   "assistant.thinking": { id: "assistant.thinking", category: "agent", label: "Thinking", description: "Extended-thinking blocks.", default: { presentation: "collapsible", headerLabel: "Thinking", icon: "Brain", widget: "ThinkingWidget", visibility: "verbose" } },
   "assistant.tool-use": { id: "assistant.tool-use", category: "agent", label: "Tool call", description: "Claude invoking a tool.", default: { accentColor: "info", icon: "Terminal", headerLabel: null, visibility: "verbose" } },
   "assistant.askUserQuestion": { id: "assistant.askUserQuestion", category: "agent", label: "Question (answered)", description: "An answered AskUserQuestion card.", default: { presentation: "card", icon: "MessageCircleQuestion", accentColor: "indigo", visibility: "always" } },
@@ -737,7 +738,7 @@ function validateStyleField(
     case "accentColor":
       return typeof v === "string" && (v in palette || isHexColor(v)) ? v : undefined;
     case "alignment":
-      return v === "left" || v === "right" || v === "full" ? v : undefined;
+      return v === "left" || v === "right" || v === "full" || v === "narrow-center" ? v : undefined;
     case "presentation":
       return v === "card" || v === "side-line" || v === "collapsible" ? v : undefined;
     case "borderStyle":

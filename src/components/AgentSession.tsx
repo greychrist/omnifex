@@ -57,6 +57,7 @@ import { normalizeJsonlNode } from "@/lib/normalizeMessage";
 import { classifyJsonlLine } from '@/lib/jsonlClassifier';
 import { lastPermissionMode, lastAssistantModel, usageLimitWait } from '@/lib/sessionDerivedState';
 import { useSessionAuthExpiry } from '@/hooks/useSessionAuthExpiry';
+import { useRemoteResync } from "@/hooks/useRemoteResync";
 import { firstPromptText } from '@/lib/sessionTitle';
 import { CaughtUpPill } from "./RemoteConnectionBanner";
 import { useLayoutMode } from "@/hooks/useLayoutMode";
@@ -1274,21 +1275,26 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   // The transcript is being read off disk — a fetch, not a turn. Drives the
   // empty-transcript placeholder only.
   const [historyLoading, setHistoryLoading] = useState(false);
-  const loadSessionHistory = useCallback(async () => {
-    if (!session) return;
+  // `target` defaults to the session prop. A remote resync passes the live
+  // session instead: a tab started fresh has no prop, only claudeSessionId.
+  const loadSessionHistory = useCallback(async (
+    target?: { id: string; project_id: string; project_path: string },
+  ) => {
+    const source = target ?? session;
+    if (!source) return;
 
     try {
       setHistoryLoading(true);
       setError(null);
 
-      const history = await api.loadSessionHistory(session.id, session.project_id, session.project_path);
+      const history = await api.loadSessionHistory(source.id, source.project_id, source.project_path);
 
       // Save session data for restoration
       if (history && history.length > 0) {
         SessionPersistenceService.saveSession(
-          session.id,
-          session.project_id,
-          session.project_path,
+          source.id,
+          source.project_id,
+          source.project_path,
           history.length
         );
       }
@@ -1365,6 +1371,19 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
       logAndForget('claude-code-session:load-session-history', loadSessionHistory());
     }
   }, [session, loadSessionHistory, claudeSessionId]);
+
+  // The daemon could not replay what this tab missed (it keeps events in
+  // memory only). Reload the transcript from the CLI's JSONL, as a page load
+  // would. See useRemoteResync.
+  useRemoteResync(sessionTabId, () => {
+    const id = claudeSessionId ?? session?.id;
+    if (!id || !projectPath) return;
+    logAndForget('claude-code-session:remote-resync', loadSessionHistory({
+      id,
+      project_id: projectPath.replace(/[^a-zA-Z0-9]/g, '-'),
+      project_path: projectPath,
+    }));
+  });
 
   /** One warning per tab for the stale-listener drop below, not one per event. */
   const loggedUnmountedDropRef = useRef(false);

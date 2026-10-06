@@ -57,6 +57,33 @@ export function findSessionJsonlInAccount(
   return null;
 }
 
+/**
+ * Has the CLI written a transcript for this session id yet?
+ *
+ * Two separate paths spawn the CLI against an existing session id — cold
+ * start with `resumeSessionId` (reconnect / restart) and `restartQuery` after
+ * a stream death. Both must answer the same question first, because
+ * `--resume` against an id with no JSONL makes the CLI print "No conversation
+ * found with session ID …" and exit. Passing `--session-id` instead keeps the
+ * id and starts a fresh transcript.
+ *
+ * Account-wide, not just the project's own directory: after `EnterWorktree`
+ * the transcript lives in the worktree's project directory, and the CLI's
+ * `--resume <id>` finds it there from the original cwd and keeps appending to
+ * it. Answering "no" sent `--session-id` — a blank conversation under the
+ * same id, the history orphaned in the worktree directory.
+ *
+ * One function, so a third resume path cannot quietly forget the check —
+ * that is exactly how the second one shipped.
+ */
+export function hasTranscript(
+  configDir: string,
+  projectPath: string,
+  sessionId: string,
+): boolean {
+  return findSessionJsonlInAccount(configDir, sessionId, projectPath) !== null;
+}
+
 export function createSessionJsonlPathResolver(
   deps: SessionJsonlPathDeps,
 ): SessionJsonlPathResolver {

@@ -80,7 +80,6 @@ const handlers = (overrides: Partial<ProtocolHandlers> = {}): ProtocolHandlers =
   'turn.send': () => undefined,
   'turn.interrupt': () => undefined,
   'permission.respond': () => undefined,
-  'history.get': () => ({ events: [], hasMore: false }),
   'rpc.invoke': (p) => ({ echoed: p.channel }),
   ...overrides,
 });
@@ -128,6 +127,23 @@ describe('remote server', () => {
     expect(c.frames.map((f) => f.type)).toEqual(['welcome', 'response']);
     expect(server.clients.map((x) => x.clientKind)).toEqual(['electron']);
     c.close();
+  });
+
+  it('names its boot in welcome, the same for every client of this run', async () => {
+    // A client compares it with the one it last saw: a different bootId
+    // means the daemon restarted and every seq it holds is meaningless.
+    const a = new TestClient(url);
+    const b = new TestClient(url);
+    await a.open();
+    await b.open();
+    const ra = (await a.hello('electron')) as { result: { bootId?: unknown } };
+    const rb = (await b.hello('web')) as { result: { bootId?: unknown } };
+    expect(typeof ra.result.bootId).toBe('string');
+    expect((ra.result.bootId as string).length).toBeGreaterThan(0);
+    expect(rb.result.bootId).toBe(ra.result.bootId);
+    expect(a.frames.find((f) => f.type === 'welcome')).toMatchObject({ bootId: ra.result.bootId });
+    a.close();
+    b.close();
   });
 
   it('refuses a protocol version it does not speak and closes', async () => {

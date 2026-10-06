@@ -14,8 +14,9 @@ function fakeClient() {
   const pushListeners = new Set<(m: ServerMessage) => void>();
   const stateListeners = new Set<(s: ConnectionState) => void>();
   const responders: Record<string, (params: any) => unknown> = {};
-  const client: ProtocolClient = {
+  const client: ProtocolClient & { welcome: { protocolVersion: number; daemonVersion: string; bootId?: string } | null } = {
     state: 'connected',
+    welcome: { protocolVersion: 1, daemonVersion: 't', bootId: 'boot-1' },
     connect: async () => ({ protocolVersion: 1, daemonVersion: 't' }),
     disconnect: () => {},
     request: (async (method: string, params: unknown) => {
@@ -33,6 +34,7 @@ function fakeClient() {
     responders,
     push: (m: ServerMessage) => { for (const l of pushListeners) l(m); },
     setState: (s: ConnectionState) => { for (const l of stateListeners) l(s); },
+    setBootId: (bootId: string) => { client.welcome = { protocolVersion: 1, daemonVersion: 't', bootId }; },
   };
 }
 
@@ -609,6 +611,63 @@ describe('electronAPI shim', () => {
       expect(f.requests[0]).toEqual({ method: 'session.subscribe', params: { sessionId: 'sid-1', fromSeq: 7 } });
       expect(caught).toEqual([{ events: 5 }]);
       expect(conn).toEqual([{ state: 'connected' }, { state: 'reconnecting' }, { state: 'connected' }]);
+    });
+  });
+
+  describe('resync: the daemon cannot replay what this client missed', () => {
+    const tick = async () => {
+      await new Promise((r) => setTimeout(r, 0));
+      await new Promise((r) => setTimeout(r, 0));
+    };
+
+    it('asks the tab to reload its transcript when subscribe answers resync', async () => {
+      const api = shim();
+      const resync: unknown[] = [];
+      api.onEvent('remote-resync:tab-A', (p) => resync.push(p));
+      await api.invoke('session_start', { tabId: 'tab-A', projectPath: '/p', model: 'default', permissionMode: 'default' });
+      f.push({ type: 'event', sessionId: 'sid-1', seq: 7, kind: 'transcript', channel: 'agent-output', payload: { raw: {} } });
+      f.responders['session.list'] = () => [summary('sid-1', { lastSeq: 9000 })];
+      f.responders['session.subscribe'] = () => ({ fromSeq: 9000, lastSeq: 9000, resync: true });
+
+      f.setState('reconnecting');
+      f.setState('connected');
+      await tick();
+
+      expect(resync).toEqual([{ sessionId: 'sid-1' }]);
+    });
+
+    it('drops every seq and reloads when the daemon restarted under it', async () => {
+      // A seq from the previous daemon run names a different event in this
+      // one; replaying "after 7" from a fresh ring would be silently wrong.
+      const api = shim();
+      const resync: unknown[] = [];
+      api.onEvent('remote-resync:tab-A', (p) => resync.push(p));
+      await api.invoke('session_start', { tabId: 'tab-A', projectPath: '/p', model: 'default', permissionMode: 'default' });
+      f.push({ type: 'event', sessionId: 'sid-1', seq: 7, kind: 'transcript', channel: 'agent-output', payload: { raw: {} } });
+      f.responders['session.list'] = () => [summary('sid-1', { lastSeq: 3 })];
+      f.requests.length = 0;
+
+      f.setState('reconnecting');
+      f.setBootId('boot-2');
+      f.setState('connected');
+      await tick();
+
+      expect(f.requests[0]).toEqual({ method: 'session.subscribe', params: { sessionId: 'sid-1' } });
+      expect(resync).toEqual([{ sessionId: 'sid-1' }]);
+    });
+
+    it('does not resync on a reconnect to the same daemon run', async () => {
+      const api = shim();
+      const resync: unknown[] = [];
+      api.onEvent('remote-resync:tab-A', (p) => resync.push(p));
+      await api.invoke('session_start', { tabId: 'tab-A', projectPath: '/p', model: 'default', permissionMode: 'default' });
+      f.responders['session.list'] = () => [summary('sid-1')];
+
+      f.setState('reconnecting');
+      f.setState('connected');
+      await tick();
+
+      expect(resync).toEqual([]);
     });
   });
 

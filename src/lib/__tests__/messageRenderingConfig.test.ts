@@ -34,6 +34,13 @@ describe("config v5", () => {
     expect(back.kinds["user.prompt"]).toEqual({ accentColor: "teal" });
   });
 
+  it("keeps a narrow-centered alignment through save and load", () => {
+    const cfg = createDefaultConfig();
+    cfg.kinds["assistant.text.live"] = { alignment: "narrow-center" };
+    const back = parseConfig(serializeConfig(cfg));
+    expect(back.kinds["assistant.text.live"]).toEqual({ alignment: "narrow-center" });
+  });
+
   it("resets to defaults when the saved version is not 5", () => {
     const merged = mergeConfig({ version: 4, overrides: [{ id: "x", category: "system", match: [], style: {} }] });
     expect(merged.version).toBe(5);

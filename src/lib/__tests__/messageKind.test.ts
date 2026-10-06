@@ -47,6 +47,8 @@ const EMITTABLE_IDS = [
   "queue-operation", "file-history-snapshot",
   // synthetic control-change markers (effort/model/permission)
   "control.effort", "control.model", "control.permission",
+  // the streaming reply card (InflightAssistantBubble), not a classified node
+  "assistant.text.live",
   // session context sources (attachment channel)
   "attachment.instructions", "attachment.nested_memory",
   "attachment.mcp_instructions_delta", "attachment.agent_listing_delta",

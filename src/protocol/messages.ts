@@ -223,7 +223,9 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
   /**
    * `fromSeq` is the last seq the client already has. The daemon replays
    * everything after it from the ring buffer, then live-tails. Omitted means
-   * "live only" — a fresh view that intends to page history separately.
+   * "live only" — a fresh view that loads its history from the CLI's JSONL.
+   * When the ring cannot answer, the result carries `resync: true` and the
+   * client reloads that history instead.
    */
   z.looseObject({
     ...req,
@@ -260,14 +262,6 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
     remember: z.array(PermissionUpdateSchema).optional(),
   }),
 
-  z.looseObject({
-    ...req,
-    type: z.literal('history.get'),
-    sessionId: z.string(),
-    beforeSeq: z.number().int().positive().optional(),
-    limit: z.number().int().positive(),
-  }),
-
   /**
    * The escape hatch for the ~165 IPC channels that are not session workflow
    * (Brain, cost, usage, accounts, MCP and hooks editors, storage browser,
@@ -294,7 +288,6 @@ export const CLIENT_METHODS = [
   'turn.send',
   'turn.interrupt',
   'permission.respond',
-  'history.get',
   'rpc.invoke',
 ] as const;
 export type ClientMethod = (typeof CLIENT_METHODS)[number];
@@ -328,6 +321,12 @@ export const ServerPushSchema = z.discriminatedUnion('type', [
     type: z.literal('welcome'),
     protocolVersion: z.number().int(),
     daemonVersion: z.string(),
+    /**
+     * Names this daemon run. Seqs are per run (events are never persisted), so
+     * a client that sees a different bootId than last time drops every seq it
+     * holds and reloads its transcripts.
+     */
+    bootId: z.string().optional(),
     capabilities: z.looseObject({}).optional(),
   }),
 

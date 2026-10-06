@@ -20,6 +20,7 @@ export const KIND_FIXTURES: Record<string, string> = {
 
   // ── agent ──
   "assistant.text": "I'll update `auth.ts` to read the new token format and add a migration helper. Starting with the tests now.",
+  "assistant.text.live": "I've traced the resume path, and the check only looks in the project's own",
   "assistant.text.endTurn": "Done — auth middleware now reads the new token format and tests pass.",
   "assistant.thinking": "Let me think about backwards compatibility before touching the auth flow. Existing sessions must not break.",
   "assistant.tool-use": "Edit · src/auth/middleware.ts",
