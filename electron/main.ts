@@ -78,6 +78,7 @@ import {
   probeCliVersion,
   CLI_REVIEW_REPO_DIR_SETTING_KEY,
   CLI_AUTO_UPDATE_SETTING_KEY,
+  CLI_CHECKED_VERSION_SETTING_KEY,
 } from './services/claude-cli-review';
 import { createSessionsService } from './services/sessions';
 import { createNotificationsService } from './services/notifications';
@@ -724,6 +725,7 @@ app.whenReady().then(() => {
       probeCliVersion(claudeBinaryService.findBestBinary()),
     latestVersionFn: fetchLatestCliVersion,
     repoDirOverrideFn: () => db.getSetting(CLI_REVIEW_REPO_DIR_SETTING_KEY),
+    checkedVersionFn: () => db.getSetting(CLI_CHECKED_VERSION_SETTING_KEY),
     repoCandidatesFn: async () => [
       ...(app.isPackaged ? [] : [process.cwd()]),
       ...(await claudeService.listProjects()).map((p) => p.path),

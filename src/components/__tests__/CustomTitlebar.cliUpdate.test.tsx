@@ -78,6 +78,7 @@ const updateButton = () =>
 const status = (over: Partial<CliReviewStatus> = {}): CliReviewStatus => ({
   installed_version: '2.1.252',
   reviewed_version: '2.1.252',
+  checked_version: '2.1.252',
   unreviewed: false,
   latest_version: '2.1.257',
   upgrade_available: true,

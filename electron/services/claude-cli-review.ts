@@ -42,6 +42,119 @@ import { buildClaudeEnv } from './util/claude-env';
  *    the CLI answers with the error "Side question cancelled". Its own
  *    deadline is 600 s. Only the SDK's `askSideQuestion()` documents it.
  *
+ * Last review: 2.1.290 -> 2.1.291 on 2026-10-06. Findings:
+ *
+ *  Changelog coverage: one version in range, 2.1.291, and it has an entry
+ *  (two regression fixes). Both endpoints are installed, so the wire claims
+ *  below are a real binary diff of 2.1.290 vs 2.1.291.
+ *
+ *  Clean pass: nothing to change.
+ *
+ *  WIRE DIFF: set-identical everywhere (unique literals). Merge-strategy map
+ *  40, `hook_event_name` 33, SDK `this.request({subtype})` 54,
+ *  `type:"control_*"` 4, `subtype:` 153, `type:` 987, `origin:{kind}` 12,
+ *  `.describe()` 1968. `/usage` anchors count-identical (`Current session`
+ *  3, `Current week` 9, `Rate limit` 20, `resets` 484, `MCP servers` 449).
+ *
+ *  Checked and in our favour:
+ *
+ *   - "Regression in 2.1.288 where the last messages of a session could be
+ *     lost when quitting": OmniFex ends every session by SIGTERM
+ *     (claude-cli-engine.ts close()), so sessions closed on 2.1.288-2.1.290
+ *     may have lost their tail from the JSONL a resume reads. Nothing to
+ *     change on our side. Possibly also behind the 2.1.289 finding that a
+ *     mod's last `$.session.append` never reached disk even at process exit
+ *     — worth re-probing before trusting that note.
+ *
+ * No OmniFex impact: 2.1.290 cloud sessions dropping permission-prompt
+ * answers (cloud only; our decider runs over local stdio).
+ *
+ * Last review: 2.1.289 -> 2.1.290 on 2026-10-05. Findings:
+ *
+ *  Changelog coverage: one version in range, 2.1.290, and it has an entry
+ *  (~190 lines, mostly mods, agents view, gateway, permission fixes). Both
+ *  endpoints are installed, so the wire claims below are a real binary diff
+ *  of 2.1.289 vs 2.1.290. Counts are unique literals, not occurrences.
+ *
+ *  Clean pass: nothing to change. One opportunity noted (proactivity).
+ *
+ *  WIRE DIFF, reported both ways round:
+ *
+ *    - Merge-strategy map: set-identical (40 entries). No new record type.
+ *    - `hook_event_name` 33, SDK `this.request({subtype})` 54,
+ *      `type:"control_*"` 4, `origin:{kind}` 12: all set-identical.
+ *    - `subtype:` 151 -> 153, none removed:
+ *       - `system/file_attachments_missing {message_uuid, sent_count,
+ *         missing[{file_uuid, reason}]}` — answers an inbound user message's
+ *         `file_attachments` (the remote bridge). writeUserMessage sends
+ *         none, so it never reaches us; if it did it would fall to
+ *         `system.unknown` (messageKind.ts), not crash.
+ *       - `set_proactivity_level {level: ask|default|proactive,
+ *         offer_bypass?}` control request, handled in stdio print mode;
+ *         reply `{level, permissionMode}`. Gated: errors "levels are not
+ *         enabled" unless the host sends `proactivity: true` on
+ *         `initialize`; there is also a `--proactivity` flag. Not in the SDK
+ *         client's request list, no changelog entry — pre-release. A
+ *         capability we lack, not a break. Not the documented Proactive
+ *         output style: that one leaves the permission mode alone, while
+ *         this level answers with one. Nothing public on 2026-10-05;
+ *         decision: wait for a changelog entry before building on it.
+ *    - `type:` literals 981 -> 987, none removed: the two above, plus
+ *      attachment types `proactivity` (level/tools/status:withdrawn) and
+ *      `session_cron_carry` (scheduled tasks carried across compaction —
+ *      the "/loop survives compaction" entry). Both land as `attachment`
+ *      records; classifyAttachment accepts any, and StreamMessage.tsx's
+ *      summariseContextAttachment returns null for unknown types, so no
+ *      card. `elapsed_time_reminder` is a feature-gate name; and
+ *      `rate_limit_error` an API error-type check, not wire.
+ *    - `.describe()` strings: 1959 -> 1968, one removed (`@internal`
+ *      `ui_prompt_read`). Added: file_attachments_missing fields (4); an
+ *      `@internal` interrupt-reply status (`stopped|idle|spared`), present
+ *      only when the request carried `for_user_message_uuids` — we send
+ *      none; an `@internal` refused-response msg id on the synthetic re-ask
+ *      after a refusal; WebFetch `offset`; a browser-reason field; a new
+ *      settings key turning off idle compaction; `disableClaudeAiConnectors`
+ *      reworded. No new field on `user` / `assistant` input, no new host
+ *      obligation.
+ *    - `/usage` anchors: `Current session` 3, `Current week` 9, `resets`,
+ *      `MCP servers` 449 stable. `Rate limit` gains `Rate limit exceeded`, a
+ *      synthetic 429 message — parser.ts does not anchor on it.
+ *    - `plugin validate --json` (run live, post-compact mod, both
+ *      versions): manifest gains `gatingHooks: []`, and contents notes gain
+ *      `<file> gating hook with|without .catch: <hook>`. mods.ts
+ *      parseValidateReport matches `\s(hooks|calls): ` — singular "hook"
+ *      never matches, so hooks/calls parse unchanged.
+ *
+ *  Checked and inert for us:
+ *
+ *   - `--include-partial-messages` reply staying open after a cut stream:
+ *     already flushed on `result` (assistantMeta.ts), as recorded in an
+ *     earlier review. Now also on time.
+ *   - Teammate `agent_id` in Agent results now the agent id
+ *     (`teammate_id` holds `name@team`): we read `agent_id` only for
+ *     truthiness on `permission_denied` (StreamMessage.tsx PermissionDeniedCard).
+ *   - Auto-mode denial rule suggestions, Bash read-only narrowing (`rg`,
+ *     `git grep`, zsh vars, `pyright`, `ps`), Read-deny on pasted images /
+ *     symlinked CLAUDE.md, rules after a PreToolUse rewrite, `declare`
+ *     prefixes: CLI-side enforcement; no rule syntax moved,
+ *     docs/permission-syntax.md stays accurate.
+ *   - Mod API (`turn.step` serverToolUses, `tool.check` agentId / ceiling,
+ *     long text clipped): no stream-json frame we consume beyond ui_* lines
+ *     rendered as plain text.
+ *   - `CLAUDE_CODE_DISABLE_ATTACHMENTS` / `DISABLE_NONESSENTIAL_TRAFFIC`:
+ *     we set neither.
+ *
+ * No OmniFex impact: agents view / `claude attach|logs|respawn` / daemon log,
+ * Claude apps gateway, managed-settings warnings, beta-header proxy fix,
+ * image-heavy sessions, content-filter retry, resumed subagent thinking,
+ * deep-nesting crash, `/rewind`, scheduled-task resume fixes, `--json-schema`
+ * exit code, plan-mode classifier, xn-- URL rules, org MCP relisting,
+ * `/ultrareview` upload fixes, cloud / Cowork / Remote Control / Claude Tag /
+ * Code Review / VSCode entries, WebSearch refill budget, `/code-review`
+ * medium findings, sandbox fixes, skills dual-name listing, plan restore on
+ * terminal resume, sleep/wake stalls, symlink TOCTOU read fixes, `/login`
+ * keychain, Chrome changes, paste fixes, `/artifacts`.
+ *
  * Last review: 2.1.288 -> 2.1.289 on 2026-10-03. Findings:
  *
  *  Changelog coverage: one version in range, 2.1.289, and it has an entry
@@ -3746,7 +3859,7 @@ import { buildClaudeEnv } from './util/claude-env';
  * `~/.claude.json` fix (we read-modify-write that file, never replace it), and
  * the VSCode screen-reader work.
  */
-export const REVIEWED_CLI_VERSION = '2.1.289';
+export const REVIEWED_CLI_VERSION = '2.1.291';
 
 /**
  * app_settings key holding the user's explicit OmniFex-checkout override.
@@ -3764,12 +3877,31 @@ export const CLI_REVIEW_REPO_DIR_SETTING_KEY = 'cli_review_repo_dir';
  */
 export const CLI_AUTO_UPDATE_SETTING_KEY = 'claude_cli_auto_update_on_launch';
 
+/**
+ * app_settings key for the newest CLI release the user has marked as checked.
+ *
+ * Lets a changelog review clear the drift badge without cutting a release:
+ * `REVIEWED_CLI_VERSION` only moves when a build ships, so on its own it kept
+ * the badge lit for every review that changed nothing. Never seeded — an
+ * absent row reads as the built-in watermark, so a fresh install starts where
+ * it was compiled rather than at "never checked". Mirrored as
+ * `CLI_CHECKED_VERSION_SETTING_KEY` in `src/lib/api.ts`.
+ */
+export const CLI_CHECKED_VERSION_SETTING_KEY = 'claude_cli_checked_version';
+
 export interface CliReviewStatus {
   /** Parsed version of the installed binary, or null if not found/probed. */
   installed_version: string | null;
   /** The watermark this build was reviewed against. */
   reviewed_version: string;
-  /** True when the installed CLI is strictly newer than the watermark. */
+  /**
+   * Newest release marked as checked: the stored
+   * `CLI_CHECKED_VERSION_SETTING_KEY`, floored at `reviewed_version`. Ahead of
+   * `reviewed_version` means a release was read but no build has shipped
+   * against it — kept separate so that fact stays visible.
+   */
+  checked_version: string;
+  /** True when the installed CLI is strictly newer than `checked_version`. */
   unreviewed: boolean;
   /**
    * Newest release published to npm, or null when the registry couldn't be
@@ -4014,6 +4146,12 @@ export interface ClaudeCliReviewDeps {
   /** Overridable for tests. See `isOmnifexRepo`. */
   isOmnifexRepoFn?: (dir: string) => boolean;
   /**
+   * The stored `CLI_CHECKED_VERSION_SETTING_KEY`, or null when unset. Read
+   * per call, like the installed version, so marking a release checked takes
+   * effect on the next status check.
+   */
+  checkedVersionFn?: () => string | null;
+  /**
    * Claude-engine accounts to run `claude update` under, in run order. The
    * engine filter belongs at the wiring site: Codex accounts have no `claude`
    * toolchain, and this module has no opinion about engines.
@@ -4099,8 +4237,23 @@ export function createClaudeCliReviewService(
     }
   }
 
+  /** The stored mark, floored at the built-in watermark. A stale row (one a
+   *  later release has overtaken), garbage, or a failed read all fall back. */
+  function resolveChecked(): string {
+    let stored: string | null = null;
+    try {
+      stored = parseCliVersion(deps.checkedVersionFn?.() ?? null);
+    } catch {
+      stored = null;
+    }
+    return stored && compareCliVersions(stored, REVIEWED_CLI_VERSION) > 0
+      ? stored
+      : REVIEWED_CLI_VERSION;
+  }
+
   async function getStatus(): Promise<CliReviewStatus> {
     const installed = probeInstalled();
+    const checked = resolveChecked();
 
     // Network, so it fails soft and independently: a dead registry must not
     // take out the watermark signal, which needs no network at all.
@@ -4114,6 +4267,7 @@ export function createClaudeCliReviewService(
     return {
       installed_version: installed,
       reviewed_version: REVIEWED_CLI_VERSION,
+      checked_version: checked,
       latest_version: latest,
       // Strictly-newer, same as `unreviewed` and for the same reason: a native
       // installer channel can briefly lead npm, and prompting the user to
@@ -4122,7 +4276,7 @@ export function createClaudeCliReviewService(
         installed !== null && latest !== null && compareCliVersions(latest, installed) > 0,
       // Strictly-newer only. A user running an OLDER CLI has no unreviewed
       // changelog to show them, and an unknown version must never nag.
-      unreviewed: installed !== null && compareCliVersions(installed, REVIEWED_CLI_VERSION) > 0,
+      unreviewed: installed !== null && compareCliVersions(installed, checked) > 0,
       repo_dir: await resolveRepoDir(),
     };
   }

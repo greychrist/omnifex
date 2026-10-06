@@ -121,6 +121,69 @@ describe('createClaudeCliReviewService', () => {
   });
 });
 
+/**
+ * Marking a CLI release as checked without shipping a build. The built-in
+ * watermark (`reviewed_version`) is what this build's code was reviewed
+ * against; `checked_version` is the newest release the user has marked read,
+ * stored in app_settings and floored at the built-in value.
+ */
+describe('createClaudeCliReviewService — checked_version', () => {
+  const svc = (installed: string, stored: string | null) =>
+    createClaudeCliReviewService({
+      cliVersionFn: () => `${installed} (Claude Code)`,
+      checkedVersionFn: () => stored,
+    });
+
+  it('falls back to the built-in watermark when nothing is stored', async () => {
+    // A fresh install starts where it was compiled, not at "never checked".
+    const status = await svc('99.0.0', null).getStatus();
+    expect(status.checked_version).toBe(REVIEWED_CLI_VERSION);
+    expect(status.reviewed_version).toBe(REVIEWED_CLI_VERSION);
+    expect(status.unreviewed).toBe(true);
+  });
+
+  it('falls back when no lookup is wired at all', async () => {
+    const status = await createClaudeCliReviewService({
+      cliVersionFn: () => '99.0.0',
+    }).getStatus();
+    expect(status.checked_version).toBe(REVIEWED_CLI_VERSION);
+  });
+
+  it('clears the drift flag once the installed release is marked checked', async () => {
+    const status = await svc('99.0.0', '99.0.0').getStatus();
+    expect(status.checked_version).toBe('99.0.0');
+    expect(status.unreviewed).toBe(false);
+    // The build's own watermark is untouched: nothing shipped against 99.0.0.
+    expect(status.reviewed_version).toBe(REVIEWED_CLI_VERSION);
+  });
+
+  it('flags again when a newer release than the checked one is installed', async () => {
+    const status = await svc('99.0.1', '99.0.0').getStatus();
+    expect(status.unreviewed).toBe(true);
+  });
+
+  it('never lets a stale stored value drop below the built-in watermark', async () => {
+    // A release that bumped the constant past what was marked must win.
+    const status = await svc(REVIEWED_CLI_VERSION, '1.0.0').getStatus();
+    expect(status.checked_version).toBe(REVIEWED_CLI_VERSION);
+    expect(status.unreviewed).toBe(false);
+  });
+
+  it('ignores an unparseable stored value', async () => {
+    const status = await svc('99.0.0', 'garbage').getStatus();
+    expect(status.checked_version).toBe(REVIEWED_CLI_VERSION);
+    expect(status.unreviewed).toBe(true);
+  });
+
+  it('survives a lookup that throws', async () => {
+    const status = await createClaudeCliReviewService({
+      cliVersionFn: () => '99.0.0',
+      checkedVersionFn: () => { throw new Error('db closed'); },
+    }).getStatus();
+    expect(status.checked_version).toBe(REVIEWED_CLI_VERSION);
+  });
+});
+
 describe('isOmnifexRepo', () => {
   it('recognises this checkout by its package.json name', () => {
     // Identity, not a hardcoded path — this is what lets the packaged app

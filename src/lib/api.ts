@@ -396,7 +396,12 @@ export interface CliReviewStatus {
   installed_version: string | null;
   /** The release whose changelog this build was reviewed against. */
   reviewed_version: string;
-  /** True when the installed CLI is strictly newer than `reviewed_version`. */
+  /**
+   * Newest release marked as checked (app_settings, floored at
+   * `reviewed_version`). Ahead of it means read but not yet shipped in a build.
+   */
+  checked_version: string;
+  /** True when the installed CLI is strictly newer than `checked_version`. */
   unreviewed: boolean;
   /** Newest release on npm, or null when the registry was unreachable. */
   latest_version: string | null;
@@ -440,6 +445,11 @@ export const CLI_AUTO_UPDATE_SETTING_KEY = 'claude_cli_auto_update_on_launch';
  *  Mirrors `CLI_REVIEW_REPO_DIR_SETTING_KEY` in
  *  `electron/services/claude-cli-review.ts`. */
 export const CLI_REVIEW_REPO_DIR_SETTING_KEY = 'cli_review_repo_dir';
+
+/** app_settings key for the newest CLI release marked as checked. Mirrors
+ *  `CLI_CHECKED_VERSION_SETTING_KEY` in
+ *  `electron/services/claude-cli-review.ts`. */
+export const CLI_CHECKED_VERSION_SETTING_KEY = 'claude_cli_checked_version';
 
 /**
  * Represents the Claude Code version status

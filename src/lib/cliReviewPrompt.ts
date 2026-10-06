@@ -32,9 +32,10 @@ Review every Claude Code release **after \`{reviewedVersion}\` up to and
 including \`{installedVersion}\`** against this codebase, and report what OmniFex
 needs to do about it.
 
-\`{reviewedVersion}\` is \`REVIEWED_CLI_VERSION\` in
-\`electron/services/claude-cli-review.ts\`; \`{installedVersion}\` is the CLI the
-user is actually running.
+\`{reviewedVersion}\` is the last release marked as checked — normally
+\`REVIEWED_CLI_VERSION\` in \`electron/services/claude-cli-review.ts\`, unless a
+later one was marked in the app without a build; \`{installedVersion}\` is the
+CLI the user is actually running.
 
 ## Why this exists
 
@@ -128,10 +129,14 @@ left — treat it as a real audit, not a formality.
    above the existing ones recording what you found — including the entries
    that turned out to be inert, so the next reviewer does not re-derive them.
 
-   This does not need its own go-ahead. An unbumped watermark means the next
-   review re-runs this same range, and the drift badge stops meaning anything.
-   Do it even when the answer is "nothing to change" — a clean pass is a
-   result, and recording it is the point.
+   This does not need its own go-ahead. The source watermark is what the next
+   *build* was reviewed against; it reaches the app only with a release. Do it
+   even when the answer is "nothing to change" — a clean pass is a result, and
+   recording it is the point.
+
+   The bump does not clear the drift badge — the user does, with "Mark
+   \`{installedVersion}\` as checked" in the Updates popover, once they have
+   read your report. End by telling them that.
 
    What is forbidden is bumping it *without* doing the work. The comment block
    is the evidence that the work happened; a bump with nothing to say is the

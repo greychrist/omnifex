@@ -38,6 +38,7 @@ import {
   fetchLatestCliVersion,
   probeCliVersion,
   CLI_REVIEW_REPO_DIR_SETTING_KEY,
+  CLI_CHECKED_VERSION_SETTING_KEY,
 } from '../services/claude-cli-review';
 import { createSessionsService } from '../services/sessions';
 import { createClaudeService } from '../services/claude';
@@ -391,6 +392,7 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
     cliVersionFn: () => probeCliVersion(claudeBinaryService.findBestBinary()),
     latestVersionFn: fetchLatestCliVersion,
     repoDirOverrideFn: () => db.getSetting(CLI_REVIEW_REPO_DIR_SETTING_KEY),
+    checkedVersionFn: () => db.getSetting(CLI_CHECKED_VERSION_SETTING_KEY),
     repoCandidatesFn: async () => (await claudeService.listProjects()).map((p) => p.path),
     claudeAccountsFn: () =>
       accountsService.listAccounts().filter((a) => a.engine === 'claude').map((a) => ({ name: a.name, configDir: a.config_dir })),

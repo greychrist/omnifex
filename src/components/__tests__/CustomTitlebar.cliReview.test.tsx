@@ -31,13 +31,16 @@ vi.mock('@/components/TabStatusPopover', () => ({
 }));
 
 const getClaudeCliReviewStatus = vi.fn<() => Promise<CliReviewStatus | null>>();
+const saveSetting = vi.fn<(key: string, value: string) => Promise<void>>();
 const checkForUpdate = vi.fn<() => Promise<unknown>>();
 
 vi.mock('@/lib/api', () => ({
+  CLI_CHECKED_VERSION_SETTING_KEY: 'claude_cli_checked_version',
   api: {
     getAppVersion: () => Promise.resolve('0.4.109'),
     checkForUpdate: () => checkForUpdate(),
     getClaudeCliReviewStatus: () => getClaudeCliReviewStatus(),
+    saveSetting: (key: string, value: string) => saveSetting(key, value),
     onSessionInFlightCount: () => () => {},
     onUpdateProgress: () => () => {},
     onInstallStatus: () => () => {},
@@ -53,6 +56,8 @@ import { CustomTitlebar } from '@/components/CustomTitlebar';
 beforeEach(() => {
   vi.useFakeTimers({ shouldAdvanceTime: true });
   getClaudeCliReviewStatus.mockReset();
+  saveSetting.mockReset();
+  saveSetting.mockResolvedValue(undefined);
   checkForUpdate.mockReset();
   checkForUpdate.mockResolvedValue(null);
 });
@@ -94,6 +99,7 @@ describe('CustomTitlebar — Claude Code changelog watermark', () => {
     getClaudeCliReviewStatus.mockResolvedValue({
       installed_version: '2.1.230',
       reviewed_version: '2.1.222',
+      checked_version: '2.1.222',
       unreviewed: true,
       latest_version: null,
       upgrade_available: false,
@@ -112,6 +118,7 @@ describe('CustomTitlebar — Claude Code changelog watermark', () => {
     getClaudeCliReviewStatus.mockResolvedValue({
       installed_version: '2.1.222',
       reviewed_version: '2.1.222',
+      checked_version: '2.1.222',
       unreviewed: false,
       latest_version: null,
       upgrade_available: false,
@@ -130,6 +137,7 @@ describe('CustomTitlebar — Claude Code changelog watermark', () => {
     getClaudeCliReviewStatus.mockResolvedValue({
       installed_version: null,
       reviewed_version: '2.1.222',
+      checked_version: '2.1.222',
       unreviewed: false,
       latest_version: null,
       upgrade_available: false,
@@ -152,6 +160,7 @@ describe('CustomTitlebar — Claude Code changelog watermark', () => {
     getClaudeCliReviewStatus.mockResolvedValue({
       installed_version: '2.1.241',
       reviewed_version: '2.1.241',
+      checked_version: '2.1.241',
       unreviewed: false,
       latest_version: '2.1.246',
       upgrade_available: true,
@@ -167,6 +176,7 @@ describe('CustomTitlebar — Claude Code changelog watermark', () => {
     getClaudeCliReviewStatus.mockResolvedValue({
       installed_version: '2.1.246',
       reviewed_version: '2.1.241',
+      checked_version: '2.1.241',
       unreviewed: true,
       latest_version: '2.1.246',
       upgrade_available: false,
@@ -184,6 +194,7 @@ describe('CustomTitlebar — Claude Code changelog watermark', () => {
     getClaudeCliReviewStatus.mockResolvedValue({
       installed_version: '2.1.241',
       reviewed_version: '2.1.241',
+      checked_version: '2.1.241',
       unreviewed: false,
       latest_version: null,
       upgrade_available: false,
@@ -208,6 +219,7 @@ describe('CustomTitlebar — Claude Code changelog watermark', () => {
     getClaudeCliReviewStatus.mockResolvedValue({
       installed_version: '2.1.241',
       reviewed_version: '2.1.241',
+      checked_version: '2.1.241',
       unreviewed: false,
       latest_version: '2.1.246',
       upgrade_available: true,
@@ -237,6 +249,7 @@ describe('CustomTitlebar — launching the changelog review', () => {
   const drifted = (repo_dir: string | null): CliReviewStatus => ({
     installed_version: '2.1.224',
     reviewed_version: '2.1.222',
+    checked_version: '2.1.222',
     unreviewed: true,
     latest_version: null,
     upgrade_available: false,
@@ -287,6 +300,7 @@ describe('CustomTitlebar — launching the changelog review', () => {
     getClaudeCliReviewStatus.mockResolvedValue({
       installed_version: '2.1.222',
       reviewed_version: '2.1.222',
+      checked_version: '2.1.222',
       unreviewed: false,
       latest_version: null,
       upgrade_available: false,
@@ -313,6 +327,7 @@ describe('CustomTitlebar — Updates disclosure', () => {
   const clean: CliReviewStatus = {
     installed_version: '2.1.246',
     reviewed_version: '2.1.246',
+    checked_version: '2.1.246',
     unreviewed: false,
     latest_version: '2.1.246',
     upgrade_available: false,
@@ -422,7 +437,7 @@ describe('CustomTitlebar — Updates disclosure', () => {
     // Each signal alone is enough; the dot is undifferentiated on purpose and
     // the popover rows are what say which one fired.
     getClaudeCliReviewStatus.mockResolvedValue({
-      ...clean, unreviewed: true, reviewed_version: '2.1.241',
+      ...clean, unreviewed: true, reviewed_version: '2.1.241', checked_version: '2.1.241',
     });
     await renderSettled();
     await waitFor(() => { expect(dot()).not.toBeNull(); });
@@ -441,5 +456,108 @@ describe('CustomTitlebar — Updates disclosure', () => {
 
     await waitFor(() => { expect(seen('Claude Code')).toBeGreaterThan(0); });
     expect(dot()).toBeNull();
+  });
+});
+
+/**
+ * Marking a release checked without cutting a build. `reviewed_version` is
+ * the watermark compiled into this build; `checked_version` is the newest
+ * release the user has marked read (app_settings, floored at the built-in
+ * value). The popover keeps the gap between them visible.
+ */
+describe('CustomTitlebar — marking a CLI release as checked', () => {
+  const drifted: CliReviewStatus = {
+    installed_version: '2.1.290',
+    reviewed_version: '2.1.289',
+    checked_version: '2.1.289',
+    unreviewed: true,
+    latest_version: null,
+    upgrade_available: false,
+    repo_dir: '/repos/omnifex',
+  };
+  const markButton = () =>
+    document.querySelector<HTMLButtonElement>('[data-cli-review-mark]');
+  const pendingRelease = () =>
+    document.querySelector('[data-cli-review-pending-release]');
+
+  it('offers to mark the installed release checked while it is drifted', async () => {
+    getClaudeCliReviewStatus.mockResolvedValue(drifted);
+    await renderSettled();
+
+    await waitFor(() => { expect(markButton()).not.toBeNull(); });
+    expect(markButton()!.textContent).toMatch(/Mark 2\.1\.290 as checked/);
+  });
+
+  it('stores the installed version and re-reads the status', async () => {
+    getClaudeCliReviewStatus.mockResolvedValue(drifted);
+    await renderSettled();
+    await waitFor(() => { expect(markButton()).not.toBeNull(); });
+
+    getClaudeCliReviewStatus.mockResolvedValue({
+      ...drifted, checked_version: '2.1.290', unreviewed: false,
+    });
+    const before = getClaudeCliReviewStatus.mock.calls.length;
+    fireEvent.click(markButton()!);
+
+    await waitFor(() => {
+      expect(saveSetting).toHaveBeenCalledWith('claude_cli_checked_version', '2.1.290');
+    });
+    await waitFor(() => {
+      expect(getClaudeCliReviewStatus.mock.calls.length).toBeGreaterThan(before);
+    });
+    await waitFor(() => { expect(dot()).toBeNull(); });
+    expect(markButton()).toBeNull();
+  });
+
+  it('offers nothing to mark when the CLI has not drifted', async () => {
+    getClaudeCliReviewStatus.mockResolvedValue({
+      ...drifted, installed_version: '2.1.289', unreviewed: false,
+    });
+    await renderSettled();
+    await waitFor(() => { expect(seen('2.1.289')).toBeGreaterThan(0); });
+    expect(markButton()).toBeNull();
+  });
+
+  it('says when a checked release has not shipped in a build yet', async () => {
+    getClaudeCliReviewStatus.mockResolvedValue({
+      ...drifted, checked_version: '2.1.290', unreviewed: false,
+    });
+    await renderSettled();
+
+    await waitFor(() => { expect(pendingRelease()).not.toBeNull(); });
+    expect(pendingRelease()!.textContent).toMatch(/2\.1\.290 checked/);
+    expect(pendingRelease()!.textContent).toMatch(/this build.*2\.1\.289/);
+    expect(dot()).toBeNull();
+  });
+
+  it('says nothing extra when the build carries the checked release', async () => {
+    getClaudeCliReviewStatus.mockResolvedValue({
+      ...drifted, installed_version: '2.1.289', unreviewed: false,
+    });
+    await renderSettled();
+    await waitFor(() => { expect(seen('2.1.289')).toBeGreaterThan(0); });
+    expect(pendingRelease()).toBeNull();
+  });
+
+  it('starts the next review from the checked release, not the built-in one', async () => {
+    // Otherwise marking 2.1.290 checked would re-review it on 2.1.291.
+    const onCliReviewClick = vi.fn();
+    getClaudeCliReviewStatus.mockResolvedValue({
+      ...drifted, installed_version: '2.1.291', checked_version: '2.1.290',
+    });
+    render(<CustomTitlebar onCliReviewClick={onCliReviewClick} />);
+    await vi.advanceTimersByTimeAsync(1000);
+    openUpdates();
+    await vi.advanceTimersByTimeAsync(1000);
+
+    const launch = () => document.querySelector<HTMLButtonElement>('[data-cli-review-launch]');
+    await waitFor(() => { expect(launch()).not.toBeNull(); });
+    expect(seen(/ahead of the 2\.1\.290 changelog/)).toBeGreaterThan(0);
+    fireEvent.click(launch()!);
+    expect(onCliReviewClick).toHaveBeenCalledWith({
+      repoDir: '/repos/omnifex',
+      reviewedVersion: '2.1.290',
+      installedVersion: '2.1.291',
+    });
   });
 });

@@ -6,7 +6,7 @@ import {
   TooltipSimple,
 } from '@/components/ui/tooltip-modern';
 import { Popover } from '@/components/ui/popover';
-import { api, type CliReviewStatus } from '@/lib/api';
+import { api, CLI_CHECKED_VERSION_SETTING_KEY, type CliReviewStatus } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { TITLEBAR_LABEL } from '@/lib/titlebar';
 import OmniFexIcon from '../../icons/icon.png';
@@ -129,6 +129,14 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
   const checkCliReview = useCallback(async () => {
     setCliReview(await api.getClaudeCliReviewStatus());
   }, []);
+
+  // Marks the installed release as read without cutting a build. The built-in
+  // watermark only moves with a release; this setting is what lets a review
+  // that changed nothing clear the dot. Main floors it at the built-in value.
+  const markCliReleaseChecked = useCallback(async (version: string) => {
+    await api.saveSetting(CLI_CHECKED_VERSION_SETTING_KEY, version);
+    await checkCliReview();
+  }, [checkCliReview]);
 
   // --- Forced CLI update ---
   // The CLI's self-updater is a component of its Ink REPL, so it only ever
@@ -727,7 +735,7 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
                     <>
                       <AlertCircle size={13} className="mt-px shrink-0" />
                       <span className="text-left">
-                        Claude Code is ahead of the {cliReview.reviewed_version} changelog
+                        Claude Code is ahead of the {cliReview.checked_version} changelog
                         OmniFex was last checked against — there may be new CLI behaviour
                         to support.
                         {canLaunch ? (
@@ -750,7 +758,7 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
                       onClick={() => {
                         onCliReviewClick({
                           repoDir,
-                          reviewedVersion: cliReview.reviewed_version,
+                          reviewedVersion: cliReview.checked_version,
                           installedVersion,
                         });
                       }}
@@ -762,6 +770,37 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
                     <div className={className}>{body}</div>
                   );
                 })()}
+                {/* Separate from the launch button above, which can't nest
+                    another button. The user's word that the review is read. */}
+                {cliReview?.unreviewed && cliReview.installed_version && (() => {
+                  const version = cliReview.installed_version;
+                  return (
+                    <button
+                      type="button"
+                      data-cli-review-mark
+                      onClick={() => { void markCliReleaseChecked(version); }}
+                      className={cn(
+                        'flex w-full items-center justify-center rounded-md px-2 py-1.5',
+                        'text-[12px] font-medium transition-colors app-no-drag',
+                        'bg-accent/60 hover:bg-accent',
+                      )}
+                    >
+                      Mark {version} as checked
+                    </button>
+                  );
+                })()}
+                {/* Checked but not shipped: no build carries a review of this
+                    release yet. `checked_version` is floored at
+                    `reviewed_version`, so inequality means "ahead". */}
+                {cliReview && !cliReview.unreviewed
+                  && cliReview.checked_version !== cliReview.reviewed_version && (
+                  <div
+                    data-cli-review-pending-release
+                    className="rounded-md bg-muted/60 px-2 py-1.5 text-[12px] text-muted-foreground"
+                  >
+                    {`${cliReview.checked_version} checked · this build was checked against ${cliReview.reviewed_version}`}
+                  </div>
+                )}
               </div>
               {/* Checking is an explicit act inside the panel, not a side
                   effect of opening it. The rows above refresh underneath this
