@@ -5,6 +5,15 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.222] — 2026-10-06
+
+### Changed
+- Chat auto-scroll now uses a single setting, "Follow new messages within (px) of bottom" (default 200px), replacing the separate stop/resume distances. The old settings are removed from the database.
+
+### Fixed
+- A session whose transcript the CLI moves mid-session (when Claude enters a worktree with `EnterWorktree`) no longer goes blind: the chat keeps receiving messages, final answers keep their styling, prompts stay in order, and tool calls after the move appear.
+- The subagent bar and the session cost meter also follow a moved transcript; the cost no longer drops to $0 after the move.
+
 ## [0.4.221] — 2026-10-05
 
 ### Added

@@ -1,7 +1,7 @@
 {
   "name": "omnifex",
   "private": true,
-  "version": "0.4.221",
+  "version": "0.4.222",
   "productName": "OmniFex",
   "license": "AGPL-3.0",
   "main": ".vite/build/main.js",
