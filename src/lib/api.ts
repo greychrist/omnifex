@@ -2265,6 +2265,14 @@ export const api = {
   },
 
   /**
+   * Creates one new folder (no missing parents; fails if it already exists).
+   * Backs the Projects page's New Project button.
+   */
+  async createDirectory(directoryPath: string): Promise<string> {
+    return apiCall("create_directory", { directoryPath });
+  },
+
+  /**
    * Gets overall usage statistics
    * @returns Promise resolving to usage statistics
    */

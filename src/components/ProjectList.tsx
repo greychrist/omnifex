@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { FolderOpen, ArrowUp, ArrowDown, ArrowUpDown, Zap, List, Pin, Settings } from "lucide-react";
+import { FolderOpen, Plus, ArrowUp, ArrowDown, ArrowUpDown, Zap, List, Pin, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { TooltipProvider, TooltipSimple } from "@/components/ui/tooltip-modern";
@@ -48,6 +48,12 @@ interface ProjectListProps {
    * Callback when open project is clicked
    */
   onOpenProject?: () => void | Promise<void>;
+  /**
+   * Optional callback fired by the New Project button, which sits left of
+   * Open Project and creates a new folder for the project. Omitted → the
+   * button is hidden.
+   */
+  onNewProject?: () => void | Promise<void>;
   /**
    * Optional callback fired by the Quick Launch icon. Starts a brand-new
    * session for the project immediately, bypassing the sessions page. The
@@ -126,6 +132,7 @@ export const ProjectList: React.FC<ProjectListProps> = ({
   projects,
   onProjectClick,
   onOpenProject,
+  onNewProject,
   onQuickLaunch,
   onTogglePin,
   onOpenSettings,
@@ -217,19 +224,37 @@ export const ProjectList: React.FC<ProjectListProps> = ({
                 Select a project to start working with Claude Code
               </p>
             </div>
-            <motion.div
-              whileTap={{ scale: 0.97 }}
-              transition={{ duration: 0.15 }}
-            >
-              <Button
-                onClick={fireAndLog('project-list:click', onOpenProject)}
-                size="default"
-                className="flex items-center gap-2"
+            <div className="flex items-center gap-2">
+              {onNewProject && (
+                <motion.div
+                  whileTap={{ scale: 0.97 }}
+                  transition={{ duration: 0.15 }}
+                >
+                  <Button
+                    onClick={fireAndLog('project-list:new-project', onNewProject)}
+                    variant="outline"
+                    size="default"
+                    className="flex items-center gap-2"
+                  >
+                    <Plus className="h-4 w-4" />
+                    New Project
+                  </Button>
+                </motion.div>
+              )}
+              <motion.div
+                whileTap={{ scale: 0.97 }}
+                transition={{ duration: 0.15 }}
               >
-                <FolderOpen className="h-4 w-4" />
-                Open Project
-              </Button>
-            </motion.div>
+                <Button
+                  onClick={fireAndLog('project-list:click', onOpenProject)}
+                  size="default"
+                  className="flex items-center gap-2"
+                >
+                  <FolderOpen className="h-4 w-4" />
+                  Open Project
+                </Button>
+              </motion.div>
+            </div>
           </div>
         </div>
 

@@ -180,14 +180,25 @@ describe('TabContext — addTab / removeTab', () => {
     expect(result.current.tabs.map((t) => t.order)).toEqual([0, 1, 2]);
   });
 
-  it('removeTab clears active when removing the last tab', async () => {
+  it('removeTab on the last tab replaces it with a fresh, active Projects tab', async () => {
+    // There is no empty state: closing the last tab lands on the Projects
+    // page, the same place a cold start with no saved tabs does.
     const { result } = renderHook(() => useTabContext(), { wrapper });
     await waitFor(() => { expect(result.current.tabs.length).toBe(1); });
-    const onlyId = result.current.tabs[0].id;
+    let chatId = '';
+    act(() => {
+      chatId = result.current.addTab({ type: 'chat', title: 'C', agent: 'claude', status: 'idle', hasUnsavedChanges: false });
+    });
+    act(() => { result.current.removeTab(result.current.tabs[0].id); });
+    act(() => { result.current.removeTab(chatId); });
 
-    act(() => { result.current.removeTab(onlyId); });
-    expect(result.current.tabs.length).toBe(0);
-    expect(result.current.activeTabId).toBeNull();
+    expect(result.current.tabs).toHaveLength(1);
+    const [replacement] = result.current.tabs;
+    expect(replacement.type).toBe('projects');
+    expect(replacement.title).toBe('Projects');
+    expect(replacement.id).not.toBe(chatId);
+    expect(replacement.order).toBe(0);
+    expect(result.current.activeTabId).toBe(replacement.id);
   });
 
   it('removeTab on a chat tab fires api.stopSession so the main-process CLI handle is torn down', async () => {
@@ -407,14 +418,6 @@ describe('TabContext — lookups', () => {
       result.current.addTab({ type: 'chat', title: 'B', agent: 'claude', status: 'idle', hasUnsavedChanges: false });
     });
     expect(result.current.getTabsByType('chat')).toHaveLength(2);
-  });
-
-  it('closeAllTabs empties the list and clears persistence', async () => {
-    const { result } = renderHook(() => useTabContext(), { wrapper });
-    await waitFor(() => { expect(result.current.tabs.length).toBe(1); });
-    act(() => { result.current.closeAllTabs(); });
-    expect(result.current.tabs).toEqual([]);
-    expect(result.current.activeTabId).toBeNull();
   });
 });
 

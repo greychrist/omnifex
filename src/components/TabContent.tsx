@@ -3,7 +3,7 @@ import { useRenderProfile } from '@/hooks/useRenderProfile';
 import { motion } from 'framer-motion';
 import { useTabState } from '@/hooks/useTabState';
 import { Tab } from '@/contexts/TabContext';
-import { Plus, ArrowLeft } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 import { Spinner } from '@/components/ui/spinner';
 import { api, type AgentKind, type Project, type ResolvePair, type Session } from '@/lib/api';
 import { ProjectList } from '@/components/ProjectList';
@@ -21,6 +21,7 @@ import { CodexSignInModal } from '@/components/codex/CodexSignInModal';
 import { useCodexAuthStatus } from '@/hooks/useCodexAuthStatus';
 import { fireAndLog, logAndForget } from "@/lib/fireAndLog";
 import { slotToResolution, type FormAccountResolution } from "@/lib/accountResolution";
+import { promptForNewProjectFolder } from "@/lib/newProject";
 
 // Lazy load heavy components
 const AgentSession = lazy(() => import('@/components/AgentSession').then(m => ({ default: m.AgentSession })));
@@ -221,6 +222,23 @@ const TabPanelImpl: React.FC<TabPanelProps> = ({ tab, isActive }) => {
     }
   };
 
+  // Shared tail of Open Project and New Project: route the folder to an
+  // account (or ask), register it, and land on its sessions page.
+  const openProjectFolder = async (selected: string) => {
+    // Check if any engine can be resolved for this path. An all-null pair
+    // means no override / path rule routes here — prompt the user to pick.
+    const pair = await api.resolveAccountForProject(selected);
+    if (pair.claude === null && pair.codex === null) {
+      // No matching rule — prompt user to pick account
+      setPendingProjectPath(selected);
+      setShowAccountPicker(true);
+      return;
+    }
+    const project = await api.createProject(selected);
+    await loadProjects();
+    await handleProjectClick(project);
+  };
+
   const handleOpenProject = async () => {
     try {
       const paths = await window.electronAPI.showOpenDialog({
@@ -232,22 +250,29 @@ const TabPanelImpl: React.FC<TabPanelProps> = ({ tab, isActive }) => {
       const selected = paths?.[0] ?? null;
 
       if (selected) {
-        // Check if any engine can be resolved for this path. An all-null pair
-        // means no override / path rule routes here — prompt the user to pick.
-        const pair = await api.resolveAccountForProject(selected);
-        if (pair.claude === null && pair.codex === null) {
-          // No matching rule — prompt user to pick account
-          setPendingProjectPath(selected);
-          setShowAccountPicker(true);
-          return;
-        }
-        const project = await api.createProject(selected);
-        await loadProjects();
-        await handleProjectClick(project);
+        await openProjectFolder(selected);
       }
     } catch (err) {
       console.error('Failed to open folder picker:', err);
       setError('Failed to open folder picker');
+    }
+  };
+
+  const handleNewProject = async () => {
+    try {
+      setError(null);
+      const created = await promptForNewProjectFolder({
+        showSaveDialog: (options) => window.electronAPI.showSaveDialog(options),
+        getHomeDirectory: () => api.getHomeDirectory(),
+        createDirectory: (directoryPath) => api.createDirectory(directoryPath),
+      });
+      if (created) {
+        await openProjectFolder(created);
+      }
+    } catch (err) {
+      console.error('Failed to create new project:', err);
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(`Failed to create project: ${msg}`);
     }
   };
   
@@ -562,6 +587,7 @@ const TabPanelImpl: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                       projects={projects}
                       onProjectClick={fireAndLog('tab-content:project-click', handleProjectClick)}
                       onOpenProject={handleOpenProject}
+                      onNewProject={handleNewProject}
                       onQuickLaunch={fireAndLog('tab-content:project-quick-launch', handleQuickLaunch)}
                       onTogglePin={handleTogglePin}
                       onOpenSettings={fireAndLog('tab-content:project-settings', setSettingsProject)}
@@ -771,7 +797,7 @@ const TabPanel = React.memo(TabPanelImpl);
 
 export const TabContent: React.FC = () => {
   useRenderProfile('TabContent');
-  const { tabs, activeTabId, createChatTab, createProjectsTab, findTabBySessionId, closeTab, updateTab } = useTabState();
+  const { tabs, activeTabId, createChatTab, findTabBySessionId, closeTab, updateTab } = useTabState();
   
   // Listen for events to open sessions in tabs
   useEffect(() => {
@@ -941,22 +967,6 @@ export const TabContent: React.FC = () => {
           isActive={tab.id === activeTabId}
         />
       ))}
-      
-      {tabs.length === 0 && (
-        <div className="flex items-center justify-center h-full text-muted-foreground">
-          <div className="text-center">
-            <p className="text-lg mb-2">No projects open</p>
-            <p className="text-sm mb-4">Click to start a new project</p>
-            <Button
-              onClick={() => createProjectsTab()}
-              size="default"
-            >
-              <Plus className="w-4 h-4 mr-2" />
-              New Project
-            </Button>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

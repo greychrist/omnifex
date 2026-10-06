@@ -1,7 +1,8 @@
 /**
- * Filesystem service — powers the FilePicker's `@`-mention navigation.
+ * Filesystem service — powers the FilePicker's `@`-mention navigation and
+ * the Projects page's New Project folder creation.
  *
- * Two operations, both pure I/O with no account / config coupling:
+ * Pure I/O with no account / config coupling:
  *
  *   - `listDirectoryContents(path)` returns one level of entries, sorted
  *     directories first then files (alpha within each group), with
@@ -11,8 +12,11 @@
  *     directories are skipped so we don't descend into `.git/` or
  *     `node_modules`-adjacent hidden trees. Results are capped so deep
  *     monorepos can't produce runaway responses.
+ *   - `createDirectory(path)` makes one new folder. It refuses a path that
+ *     already exists (adopting an existing folder is Open Project's job) and
+ *     does not create missing parents, so a mistyped path fails loudly.
  *
- * Both functions throw a regular `Error` on malformed input — the IPC
+ * All three throw a regular `Error` on malformed input — the IPC
  * wrap-and-repackage layer in `electron/ipc/handlers.ts` will surface
  * `error.message` to the renderer.
  */
@@ -31,6 +35,7 @@ export interface FileEntry {
 export interface FilesystemService {
   listDirectoryContents(directoryPath: string): Promise<FileEntry[]>;
   searchFiles(basePath: string, query: string): Promise<FileEntry[]>;
+  createDirectory(directoryPath: string): Promise<string>;
 }
 
 export interface FilesystemServiceOptions {
@@ -149,5 +154,20 @@ export function createFilesystemService(
     return results;
   };
 
-  return { listDirectoryContents, searchFiles };
+  const createDirectory = async (directoryPath: string): Promise<string> => {
+    if (!path.isAbsolute(directoryPath)) {
+      throw new Error(`Path must be absolute: ${directoryPath}`);
+    }
+    try {
+      await fsPromises.mkdir(directoryPath);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'EEXIST') {
+        throw new Error(`${directoryPath} already exists. Use Open Project to add an existing folder.`);
+      }
+      throw err;
+    }
+    return directoryPath;
+  };
+
+  return { listDirectoryContents, searchFiles, createDirectory };
 }
