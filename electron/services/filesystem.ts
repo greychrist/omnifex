@@ -12,9 +12,11 @@
  *     directories are skipped so we don't descend into `.git/` or
  *     `node_modules`-adjacent hidden trees. Results are capped so deep
  *     monorepos can't produce runaway responses.
- *   - `createDirectory(path)` makes one new folder. It refuses a path that
- *     already exists (adopting an existing folder is Open Project's job) and
- *     does not create missing parents, so a mistyped path fails loudly.
+ *   - `createDirectory(path)` makes one new folder. An existing folder is
+ *     returned as-is — the save dialog behind New Project offers "Replace?"
+ *     for one, and a retry after a cancelled account picker names the folder
+ *     the first try made; both mean "open it". An existing file is refused,
+ *     and missing parents are never created, so a mistyped path fails loudly.
  *
  * All three throw a regular `Error` on malformed input — the IPC
  * wrap-and-repackage layer in `electron/ipc/handlers.ts` will surface
@@ -161,10 +163,11 @@ export function createFilesystemService(
     try {
       await fsPromises.mkdir(directoryPath);
     } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === 'EEXIST') {
-        throw new Error(`${directoryPath} already exists. Use Open Project to add an existing folder.`);
+      if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
+      const existing = await fsPromises.stat(directoryPath);
+      if (!existing.isDirectory()) {
+        throw new Error(`${directoryPath} exists and is not a folder.`);
       }
-      throw err;
     }
     return directoryPath;
   };

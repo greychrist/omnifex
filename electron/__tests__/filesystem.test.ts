@@ -180,8 +180,10 @@ describe('createFilesystemService — searchFiles', () => {
 
 // createDirectory backs the Projects page's New Project button: the renderer
 // shows a native save dialog (parent folder + name) and this makes the folder.
-// It must never adopt an existing folder — that is what Open Project is for —
-// and never conjure missing parents from a typo'd path.
+// An existing FOLDER is returned as-is: the save dialog offers "Replace?" for
+// one, and a retry after a cancelled account picker names the folder the first
+// attempt already made — both mean "open that folder", never "wipe it". It
+// never conjures missing parents from a typo'd path.
 describe('createFilesystemService — createDirectory', () => {
   let tmp: string;
 
@@ -200,13 +202,21 @@ describe('createFilesystemService — createDirectory', () => {
     expect(fs.statSync(target).isDirectory()).toBe(true);
   });
 
-  it('rejects a path that already exists, leaving it untouched', async () => {
+  it('returns an existing folder as-is, leaving its contents untouched', async () => {
     const target = path.join(tmp, 'existing');
     fs.mkdirSync(target);
     fs.writeFileSync(path.join(target, 'keep.txt'), 'x');
     const svc = createFilesystemService();
-    await expect(svc.createDirectory(target)).rejects.toThrow(/already exists/);
+    await expect(svc.createDirectory(target)).resolves.toBe(target);
     expect(fs.readFileSync(path.join(target, 'keep.txt'), 'utf8')).toBe('x');
+  });
+
+  it('rejects a path that exists as a file', async () => {
+    const target = path.join(tmp, 'a-file');
+    fs.writeFileSync(target, 'x');
+    const svc = createFilesystemService();
+    await expect(svc.createDirectory(target)).rejects.toThrow(/not a folder/);
+    expect(fs.readFileSync(target, 'utf8')).toBe('x');
   });
 
   it('does not create missing parent folders', async () => {

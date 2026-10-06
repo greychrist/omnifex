@@ -22,6 +22,7 @@ import { useCodexAuthStatus } from '@/hooks/useCodexAuthStatus';
 import { fireAndLog, logAndForget } from "@/lib/fireAndLog";
 import { slotToResolution, type FormAccountResolution } from "@/lib/accountResolution";
 import { promptForNewProjectFolder } from "@/lib/newProject";
+import { platform } from "@/lib/platform";
 
 // Lazy load heavy components
 const AgentSession = lazy(() => import('@/components/AgentSession').then(m => ({ default: m.AgentSession })));
@@ -587,7 +588,9 @@ const TabPanelImpl: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                       projects={projects}
                       onProjectClick={fireAndLog('tab-content:project-click', handleProjectClick)}
                       onOpenProject={handleOpenProject}
-                      onNewProject={handleNewProject}
+                      // The save dialog is native-only; on the web client the
+                      // button could only fail, so it is not offered there.
+                      onNewProject={platform.isElectron ? handleNewProject : undefined}
                       onQuickLaunch={fireAndLog('tab-content:project-quick-launch', handleQuickLaunch)}
                       onTogglePin={handleTogglePin}
                       onOpenSettings={fireAndLog('tab-content:project-settings', setSettingsProject)}

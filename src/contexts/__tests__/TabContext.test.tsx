@@ -201,6 +201,17 @@ describe('TabContext — addTab / removeTab', () => {
     expect(result.current.activeTabId).toBe(replacement.id);
   });
 
+  it('removeTab on a lone Projects tab is a no-op, so the page does not remount', async () => {
+    const { result } = renderHook(() => useTabContext(), { wrapper });
+    await waitFor(() => { expect(result.current.tabs.length).toBe(1); });
+    const before = result.current.tabs[0];
+    expect(before.type).toBe('projects');
+    act(() => { result.current.removeTab(before.id); });
+    expect(result.current.tabs).toHaveLength(1);
+    expect(result.current.tabs[0].id).toBe(before.id);
+    expect(result.current.activeTabId).toBe(before.id);
+  });
+
   it('removeTab on a chat tab fires api.stopSession so the main-process CLI handle is torn down', async () => {
     const { result } = renderHook(() => useTabContext(), { wrapper });
     await waitFor(() => { expect(result.current.tabs.length).toBe(1); });

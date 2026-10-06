@@ -34,9 +34,9 @@ describe('promptForNewProjectFolder', () => {
     expect(d.createDirectory).not.toHaveBeenCalled();
   });
 
-  it('propagates a createDirectory failure (e.g. the folder already exists)', async () => {
+  it('propagates a createDirectory failure (e.g. the path is a file)', async () => {
     const d = deps('/Users/me/existing');
-    d.createDirectory.mockRejectedValueOnce(new Error('already exists'));
-    await expect(promptForNewProjectFolder(d)).rejects.toThrow(/already exists/);
+    d.createDirectory.mockRejectedValueOnce(new Error('exists and is not a folder'));
+    await expect(promptForNewProjectFolder(d)).rejects.toThrow(/not a folder/);
   });
 });

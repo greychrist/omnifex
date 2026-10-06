@@ -314,6 +314,9 @@ export const TabProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setTabs(prevTabs => {
       const removedTab = prevTabs.find(tab => tab.id === id);
       const filteredTabs = prevTabs.filter(tab => tab.id !== id);
+      // Closing a lone Projects tab would only swap it for another one,
+      // remounting the page and resetting its search, sort and scroll.
+      if (filteredTabs.length === 0 && removedTab?.type === 'projects') return prevTabs;
 
       // Reorder remaining tabs
       const reorderedTabs = filteredTabs.length > 0
