@@ -5,6 +5,28 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.226] — 2026-10-06
+
+### Added
+
+- **New Project** on the Projects page: pick a parent folder and a name in a native save dialog, and OmniFex creates the folder and opens it through the usual account flow. Desktop app only.
+- A tool call waiting on auto mode's permission check shows a pulsing "checking permission" chip on its row, and the status bar's `perms` readout reads `checking` until it clears (Claude Code 2.1.292).
+- Running subagents show the model they are on, before they finish.
+- The agents popover leads each subagent with its purpose; live activity and stats sit on a second line, and expanding a row shows the dispatch prompt.
+
+### Changed
+
+- Closing the last tab lands on a fresh Projects tab instead of an empty "No projects open" screen.
+- Reviewed against Claude Code 2.1.292.
+
+### Fixed
+
+- The live session cost readout froze at its first value (often $0.00) in remote mode.
+- The hidden-events header undercounted thinking: bursts with no visible thinking text were missed, so four bursts read "thought once".
+- Claude Code 2.1.292's permission-check status messages no longer show up as "System (other)" lines in the transcript.
+- Narration from a resumed or nested subagent now reaches its own row in the agents list instead of being dropped.
+- Patched dependency security alerts, including the MCP SDK, proxy-addr, source-map-js, js-yaml, qs, undici and others.
+
 ## [0.4.225] — 2026-10-06
 
 ### Changed
