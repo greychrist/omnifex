@@ -1,87 +1,47 @@
 import { describe, it, expect } from "vitest";
 import {
-  DEFAULT_AUTOSCROLL_REENGAGE_PX,
-  parseThresholdPx,
-  clampThresholds,
-  nextNearBottom,
-} from "../autoScrollThresholds";
+  DEFAULT_AUTOSCROLL_FOLLOW_PX,
+  parseFollowPx,
+  isFollowing,
+} from "../autoScrollFollow";
 
-describe("parseThresholdPx", () => {
+describe("parseFollowPx", () => {
   it("returns the parsed integer for a valid stored string", () => {
-    expect(parseThresholdPx("250", DEFAULT_AUTOSCROLL_REENGAGE_PX)).toBe(250);
+    expect(parseFollowPx("250")).toBe(250);
   });
 
-  it("falls back when the value is null", () => {
-    expect(parseThresholdPx(null, 400)).toBe(400);
+  it("falls back to the default when nothing is stored", () => {
+    expect(parseFollowPx(null)).toBe(DEFAULT_AUTOSCROLL_FOLLOW_PX);
   });
 
   it("falls back when the value is not a number", () => {
-    expect(parseThresholdPx("abc", 800)).toBe(800);
+    expect(parseFollowPx("abc")).toBe(DEFAULT_AUTOSCROLL_FOLLOW_PX);
   });
 
   it("falls back when the value is negative", () => {
-    expect(parseThresholdPx("-50", 400)).toBe(400);
+    expect(parseFollowPx("-50")).toBe(DEFAULT_AUTOSCROLL_FOLLOW_PX);
   });
 
   it("floors fractional strings", () => {
-    expect(parseThresholdPx("250.9", 400)).toBe(250);
+    expect(parseFollowPx("250.9")).toBe(250);
   });
 });
 
-describe("clampThresholds", () => {
-  it("keeps a valid pair unchanged", () => {
-    expect(clampThresholds({ reengagePx: 400, disengagePx: 800 })).toEqual({
-      reengagePx: 400,
-      disengagePx: 800,
-    });
+describe("isFollowing", () => {
+  it("follows within the distance", () => {
+    expect(isFollowing(100, 200)).toBe(true);
   });
 
-  it("raises disengage to at least reengage so the hysteresis gap never inverts", () => {
-    expect(clampThresholds({ reengagePx: 600, disengagePx: 300 })).toEqual({
-      reengagePx: 600,
-      disengagePx: 600,
-    });
+  it("follows at exactly the distance", () => {
+    expect(isFollowing(200, 200)).toBe(true);
   });
 
-  it("clamps negatives to zero", () => {
-    expect(clampThresholds({ reengagePx: -10, disengagePx: -5 })).toEqual({
-      reengagePx: 0,
-      disengagePx: 0,
-    });
+  it("stops beyond the distance", () => {
+    expect(isFollowing(201, 200)).toBe(false);
   });
 
-  it("floors fractional inputs", () => {
-    expect(clampThresholds({ reengagePx: 400.7, disengagePx: 800.2 })).toEqual({
-      reengagePx: 400,
-      disengagePx: 800,
-    });
-  });
-});
-
-describe("nextNearBottom", () => {
-  const t = { reengagePx: 400, disengagePx: 800 };
-
-  it("re-engages when within the re-engage distance", () => {
-    expect(nextNearBottom(100, false, t)).toBe(true);
-  });
-
-  it("disengages when beyond the disengage distance", () => {
-    expect(nextNearBottom(900, true, t)).toBe(false);
-  });
-
-  it("holds the current state inside the dead zone (was engaged)", () => {
-    expect(nextNearBottom(600, true, t)).toBe(true);
-  });
-
-  it("holds the current state inside the dead zone (was disengaged)", () => {
-    expect(nextNearBottom(600, false, t)).toBe(false);
-  });
-
-  it("treats the re-engage boundary as not-yet re-engaged (strict <)", () => {
-    expect(nextNearBottom(400, false, t)).toBe(false);
-  });
-
-  it("treats the disengage boundary as not-yet disengaged (strict >)", () => {
-    expect(nextNearBottom(800, true, t)).toBe(true);
+  it("follows only at the very bottom when the distance is 0", () => {
+    expect(isFollowing(0, 0)).toBe(true);
+    expect(isFollowing(1, 0)).toBe(false);
   });
 });

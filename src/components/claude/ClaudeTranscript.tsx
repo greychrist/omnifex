@@ -21,7 +21,7 @@ import { useSessionGauges } from "@/contexts/SessionGaugesContext";
 import { buildContextTimeline } from "@/lib/contextTimeline";
 import { ContextTimelineTick } from "@/components/ContextTimelineTick";
 import { ContextTimelineToggle } from "@/components/ContextTimelineToggle";
-import { nextNearBottom } from "@/lib/autoScrollThresholds";
+import { isFollowing } from "@/lib/autoScrollFollow";
 import { stepTarget, isStepStop, isMainPrompt, STEP_MARGIN_PX, type StepDirection } from "@/lib/transcriptStepper";
 import { cn } from "@/lib/utils";
 import { logAndForget } from "@/lib/fireAndLog";
@@ -133,7 +133,7 @@ function ClaudeTranscriptImpl({
 }: ClaudeTranscriptProps): React.ReactElement {
   useRenderProfile('ClaudeTranscript');
   const { config: renderConfig } = useMessageRenderingConfig();
-  const { reengagePx, disengagePx } = useAutoScroll();
+  const { followPx } = useAutoScroll();
   const { contextTimelineEnabled, setContextTimelineEnabled, contextJump, contextPressure } =
     useSessionGauges();
 
@@ -395,18 +395,10 @@ function ClaudeTranscriptImpl({
     const el = parentRef.current;
     if (!el) return;
     const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    // Two-threshold hysteresis to prevent false "user scrolled up" detection.
-    // Wider-than-you'd-expect thresholds so content-height jitter (code blocks
-    // finishing layout, images loading) doesn't disengage stickiness, and the
-    // user has real room to scroll back without the view yanking to the bottom.
-    // The re-engage / disengage distances are user-tunable in
-    // Settings → General (see AutoScrollContext / autoScrollThresholds).
-    isNearBottomRef.current = nextNearBottom(
-      distanceFromBottom,
-      isNearBottomRef.current,
-      { reengagePx, disengagePx },
-    );
-  }, [isNearBottomRef, reengagePx, disengagePx]);
+    // The distance is user-tunable in Settings → General (see
+    // AutoScrollContext / autoScrollFollow).
+    isNearBottomRef.current = isFollowing(distanceFromBottom, followPx);
+  }, [isNearBottomRef, followPx]);
 
   return (
     <div className="flex-1 min-h-0 px-10 py-2 bg-muted/30 relative">

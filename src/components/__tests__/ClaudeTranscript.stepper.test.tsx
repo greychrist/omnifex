@@ -13,7 +13,7 @@ vi.mock('@/contexts/MessageRenderingContext', () => ({
   useMessageRenderingConfig: () => ({ config: { hardFilters: {} } }),
 }));
 vi.mock('@/contexts/AutoScrollContext', () => ({
-  useAutoScroll: () => ({ reengagePx: 100, disengagePx: 200 }),
+  useAutoScroll: () => ({ followPx: 200 }),
 }));
 vi.mock('@/contexts/SessionGaugesContext', () => ({
   useSessionGauges: () => ({

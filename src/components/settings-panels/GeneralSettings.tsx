@@ -79,30 +79,22 @@ export const GeneralSettings: React.FC = () => {
   const { theme, setTheme } = useTheme();
   const { appFont, setAppFont, isLoading: appFontLoading } = useAppFont();
   const { config, setConfig } = useMessageRenderingConfig();
-  const {
-    reengagePx,
-    disengagePx,
-    setThresholds: setAutoScrollThresholds,
-  } = useAutoScroll();
-  // Local draft strings so typing stays smooth; committed to the context
+  const { followPx, setFollowPx } = useAutoScroll();
+  // Local draft string so typing stays smooth; committed to the context
   // (which persists + clamps) on blur or Enter. Re-seeded whenever the
-  // context values change (e.g. after the clamp adjusts disengage up).
-  const [reengageDraft, setReengageDraft] = useState(String(reengagePx));
-  const [disengageDraft, setDisengageDraft] = useState(String(disengagePx));
+  // context value changes (e.g. after the clamp lifts a negative to 0).
+  const [followDraft, setFollowDraft] = useState(String(followPx));
 
   useEffect(() => {
-    setReengageDraft(String(reengagePx));
-  }, [reengagePx]);
-  useEffect(() => {
-    setDisengageDraft(String(disengagePx));
-  }, [disengagePx]);
+    setFollowDraft(String(followPx));
+  }, [followPx]);
 
-  const commitAutoScroll = (next: { reengagePx: number; disengagePx: number }) => {
-    if (next.reengagePx === reengagePx && next.disengagePx === disengagePx) return;
-    void track(setAutoScrollThresholds(next));
+  const commitFollowPx = (next: number) => {
+    if (next === followPx) return;
+    void track(setFollowPx(next));
   };
   // Context-pressure budget + cache countdown. Same draft-string pattern as the
-  // auto-scroll inputs above: typing stays smooth, the value commits on blur or
+  // auto-scroll input above: typing stays smooth, the value commits on blur or
   // Enter (where the context clamps and persists it).
   const {
     contextPressure,
@@ -390,65 +382,33 @@ export const GeneralSettings: React.FC = () => {
 
           <div className="border-t border-border" />
           <SettingsSection title="Chat">
-            {/* Chat auto-scroll thresholds — how the transcript decides whether
-                to keep sticking to the bottom while messages stream. The chat
-                stops auto-scrolling once you scroll up past "stop" px, and
-                resumes once you scroll back within "resume" px of the bottom.
-                The gap between them is a dead zone that prevents flapping.
-                Persisted as `autoscroll_reengage_px` / `autoscroll_disengage_px`
-                and applied live to open chats (see AutoScrollContext). */}
+            {/* Chat auto-scroll — how close to the bottom the view must be for
+                the transcript to keep following new messages. Persisted as
+                `autoscroll_follow_px` and applied live to open chats (see
+                AutoScrollContext / autoScrollFollow). */}
             <div className="space-y-3">
               <div>
                 <Label>Chat auto-scroll</Label>
                 <p className="text-caption text-muted-foreground mt-1">
-                  How far you can scroll up before the chat stops following new
-                  messages. Larger “stop” = stickier (more aggressive). Defaults:
-                  resume 200px, stop 400px.
+                  The chat follows new messages while you are within this
+                  distance of the bottom. Scroll further up and it stops; scroll
+                  back within it and it resumes. Default: 200px.
                 </p>
               </div>
 
               <div className="flex items-center justify-between gap-3">
-                <Label htmlFor="autoscroll-disengage" className="text-body-small">
-                  Stop following after scrolling up (px)
+                <Label htmlFor="autoscroll-follow" className="text-body-small">
+                  Follow new messages within (px) of bottom
                 </Label>
                 <Input
-                  id="autoscroll-disengage"
+                  id="autoscroll-follow"
                   type="number"
                   min={0}
                   step={50}
                   className="w-32"
-                  value={disengageDraft}
-                  onChange={(e) => setDisengageDraft(e.target.value)}
-                  onBlur={() =>
-                    commitAutoScroll({
-                      reengagePx: Number.parseInt(reengageDraft, 10) || 0,
-                      disengagePx: Number.parseInt(disengageDraft, 10) || 0,
-                    })
-                  }
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") e.currentTarget.blur();
-                  }}
-                />
-              </div>
-
-              <div className="flex items-center justify-between gap-3">
-                <Label htmlFor="autoscroll-reengage" className="text-body-small">
-                  Resume following within (px) of bottom
-                </Label>
-                <Input
-                  id="autoscroll-reengage"
-                  type="number"
-                  min={0}
-                  step={50}
-                  className="w-32"
-                  value={reengageDraft}
-                  onChange={(e) => setReengageDraft(e.target.value)}
-                  onBlur={() =>
-                    commitAutoScroll({
-                      reengagePx: Number.parseInt(reengageDraft, 10) || 0,
-                      disengagePx: Number.parseInt(disengageDraft, 10) || 0,
-                    })
-                  }
+                  value={followDraft}
+                  onChange={(e) => setFollowDraft(e.target.value)}
+                  onBlur={() => commitFollowPx(Number.parseInt(followDraft, 10) || 0)}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") e.currentTarget.blur();
                   }}

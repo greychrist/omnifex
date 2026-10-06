@@ -1186,6 +1186,18 @@ const migrations: Migration[] = [
       db.exec(CLI_PROCESS_USAGE_DDL);
     },
   },
+  {
+    version: 29,
+    description:
+      'Delete the two-threshold auto-scroll settings (autoscroll_reengage_px, '
+      + 'autoscroll_disengage_px). The chat now follows on one distance, '
+      + 'autoscroll_follow_px; nothing reads the old pair.',
+    up: (db) => {
+      db.prepare(
+        "DELETE FROM app_settings WHERE key IN ('autoscroll_reengage_px', 'autoscroll_disengage_px')",
+      ).run();
+    },
+  },
 ];
 
 /**

@@ -8,7 +8,7 @@
  * budget: amber at 80% of it, red at 100% of it.
  *
  * Persisted in `app_settings` and applied live via ContextPressureContext, the
- * same shape as `autoScrollThresholds.ts` / `AutoScrollContext`.
+ * same shape as `autoScrollFollow.ts` / `AutoScrollContext`.
  *
  * See docs/superpowers/specs/2026-07-30-context-pressure-banner-design.md
  */

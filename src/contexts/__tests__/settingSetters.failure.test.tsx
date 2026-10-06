@@ -58,9 +58,9 @@ describe('context setters report a failed save', () => {
     await expect(get().setAppFont('geist')).rejects.toBe(failure);
   });
 
-  it('setThresholds', async () => {
+  it('setFollowPx', async () => {
     const get = await mount(AutoScrollProvider, useAutoScroll);
-    await expect(get().setThresholds({ reengagePx: 40, disengagePx: 200 })).rejects.toBe(failure);
+    await expect(get().setFollowPx(300)).rejects.toBe(failure);
   });
 
   it('the session-gauge setters', async () => {

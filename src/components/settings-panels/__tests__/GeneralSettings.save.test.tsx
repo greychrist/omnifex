@@ -121,7 +121,7 @@ describe('GeneralSettings saving', () => {
 
   it('does not save a typed field that was left unchanged', async () => {
     await renderGeneral();
-    const field = screen.getByLabelText(/Stop following after scrolling up/);
+    const field = screen.getByLabelText(/Follow new messages within/);
     fireEvent.focus(field);
     fireEvent.blur(field);
     await new Promise((r) => setTimeout(r, 0));
@@ -131,10 +131,10 @@ describe('GeneralSettings saving', () => {
 
   it('saves a changed typed field on blur', async () => {
     await renderGeneral();
-    const field = screen.getByLabelText(/Stop following after scrolling up/);
+    const field = screen.getByLabelText(/Follow new messages within/);
     fireEvent.change(field, { target: { value: '600' } });
     fireEvent.blur(field);
-    await waitFor(() => { expect(api.saveSetting).toHaveBeenCalledWith('autoscroll_disengage_px', '600'); });
+    await waitFor(() => { expect(api.saveSetting).toHaveBeenCalledWith('autoscroll_follow_px', '600'); });
     await waitFor(() => { expect(status().textContent).toMatch(/Saved/); });
   });
 });

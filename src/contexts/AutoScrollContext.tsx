@@ -8,18 +8,17 @@ import React, {
 import { api } from "@/lib/api";
 import { logAndForget } from "@/lib/fireAndLog";
 import {
-  AUTOSCROLL_REENGAGE_SETTING_KEY,
-  AUTOSCROLL_DISENGAGE_SETTING_KEY,
-  DEFAULT_AUTOSCROLL_REENGAGE_PX,
-  DEFAULT_AUTOSCROLL_DISENGAGE_PX,
-  clampThresholds,
-  parseThresholdPx,
-  type AutoScrollThresholds,
-} from "@/lib/autoScrollThresholds";
+  AUTOSCROLL_FOLLOW_SETTING_KEY,
+  DEFAULT_AUTOSCROLL_FOLLOW_PX,
+  clampFollowPx,
+  parseFollowPx,
+} from "@/lib/autoScrollFollow";
 
-interface AutoScrollContextType extends AutoScrollThresholds {
-  /** Persist a new pair (clamped) and apply it live to all transcripts. */
-  setThresholds: (next: AutoScrollThresholds) => Promise<void>;
+interface AutoScrollContextType {
+  /** Distance from the bottom (px) within which the chat follows new messages. */
+  followPx: number;
+  /** Persist a new distance (clamped) and apply it live to all transcripts. */
+  setFollowPx: (next: number) => Promise<void>;
   isLoading: boolean;
 }
 
@@ -30,35 +29,18 @@ const AutoScrollContext = createContext<AutoScrollContextType | undefined>(
 export const AutoScrollProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
-  const [reengagePx, setReengagePx] = useState(DEFAULT_AUTOSCROLL_REENGAGE_PX);
-  const [disengagePx, setDisengagePx] = useState(
-    DEFAULT_AUTOSCROLL_DISENGAGE_PX,
-  );
+  const [followPx, setFollowPxState] = useState(DEFAULT_AUTOSCROLL_FOLLOW_PX);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
       try {
-        const [reengageRaw, disengageRaw] = await Promise.all([
-          api.getSetting(AUTOSCROLL_REENGAGE_SETTING_KEY),
-          api.getSetting(AUTOSCROLL_DISENGAGE_SETTING_KEY),
-        ]);
+        const raw = await api.getSetting(AUTOSCROLL_FOLLOW_SETTING_KEY);
         if (cancelled) return;
-        const next = clampThresholds({
-          reengagePx: parseThresholdPx(
-            reengageRaw,
-            DEFAULT_AUTOSCROLL_REENGAGE_PX,
-          ),
-          disengagePx: parseThresholdPx(
-            disengageRaw,
-            DEFAULT_AUTOSCROLL_DISENGAGE_PX,
-          ),
-        });
-        setReengagePx(next.reengagePx);
-        setDisengagePx(next.disengagePx);
+        setFollowPxState(parseFollowPx(raw));
       } catch (error) {
-        console.error("Failed to load auto-scroll thresholds:", error);
+        console.error("Failed to load auto-scroll distance:", error);
       } finally {
         if (!cancelled) setIsLoading(false);
       }
@@ -69,28 +51,16 @@ export const AutoScrollProvider: React.FC<{ children: React.ReactNode }> = ({
     };
   }, []);
 
-  // Rejects when a write fails (the thresholds still apply), so Settings can
-  // report it.
-  const setThresholds = useCallback(async (next: AutoScrollThresholds) => {
-    const clamped = clampThresholds(next);
-    setReengagePx(clamped.reengagePx);
-    setDisengagePx(clamped.disengagePx);
-    await Promise.all([
-      api.saveSetting(
-        AUTOSCROLL_REENGAGE_SETTING_KEY,
-        String(clamped.reengagePx),
-      ),
-      api.saveSetting(
-        AUTOSCROLL_DISENGAGE_SETTING_KEY,
-        String(clamped.disengagePx),
-      ),
-    ]);
+  // Rejects when the write fails (the distance still applies), so Settings
+  // can report it.
+  const setFollowPx = useCallback(async (next: number) => {
+    const clamped = clampFollowPx(next);
+    setFollowPxState(clamped);
+    await api.saveSetting(AUTOSCROLL_FOLLOW_SETTING_KEY, String(clamped));
   }, []);
 
   return (
-    <AutoScrollContext.Provider
-      value={{ reengagePx, disengagePx, setThresholds, isLoading }}
-    >
+    <AutoScrollContext.Provider value={{ followPx, setFollowPx, isLoading }}>
       {children}
     </AutoScrollContext.Provider>
   );
