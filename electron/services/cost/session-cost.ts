@@ -65,8 +65,10 @@ export function createSessionCostService(deps: SessionCostDeps): SessionCostServ
   const resolvedDirs = new Map<string, string>();
 
   function resolveProjectDir(args: SessionCostArgs): string {
+    // Re-checked every call: EnterWorktree moves a live session's transcript
+    // into the worktree's directory, leaving the cached one empty.
     const cached = resolvedDirs.get(args.sessionId);
-    if (cached) return cached;
+    if (cached && stat(path.join(cached, `${args.sessionId}.jsonl`))) return cached;
 
     const projectsDir = path.join(args.configDir, 'projects');
     const primaryDir = path.join(projectsDir, encodeProjectId(args.projectPath));

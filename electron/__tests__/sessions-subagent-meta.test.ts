@@ -365,3 +365,39 @@ describe('readSubagentMeta — per-subagent effort', () => {
     expect(meta.toolu_1.effort).toBeUndefined();
   });
 });
+
+// EnterWorktree moves the session's transcript and its subagents/ folder into
+// the worktree's project directory; the session's projectPath stays the repo.
+describe('readSubagentMeta after the CLI moves the session into a worktree', () => {
+  it('reads the moved transcript and subagents folder', () => {
+    const movedDir = path.join(CONFIG_DIR, 'projects', '-Users-me-proj--claude-worktrees-PI-1');
+    const movedSubagents = path.join(movedDir, SESSION_ID, 'subagents');
+    const files = {
+      [path.join(movedDir, `${SESSION_ID}.jsonl`)]: toolResultLine('toolu_1', {
+        agentId: 'aaa111',
+        agentType: 'Explore',
+        status: 'completed',
+        totalTokens: 10,
+        totalDurationMs: 5,
+        totalToolUseCount: 1,
+      }),
+      [path.join(movedSubagents, 'agent-aaa111.jsonl')]: sidechainAssistant('aaa111', 'claude-haiku-4-5'),
+      [path.join(movedSubagents, 'agent-aaa111.meta.json')]: sidecar({ agentType: 'Explore', toolUseId: 'toolu_1' }),
+    };
+    const fsWithDirs: SubagentMetaFs = {
+      ...fsFromMap(files),
+      listFiles: (dir: string) =>
+        [...new Set(Object.keys(files)
+          .filter((p) => p.startsWith(dir + path.sep))
+          .map((p) => p.slice(dir.length + 1).split(path.sep)[0]))],
+    };
+
+    const meta = readSubagentMeta(
+      { configDir: CONFIG_DIR, projectPath: PROJECT_PATH, sessionId: SESSION_ID },
+      fsWithDirs,
+    );
+
+    expect(meta.toolu_1?.agentId).toBe('aaa111');
+    expect(meta.toolu_1?.model).toBe('claude-haiku-4-5');
+  });
+});

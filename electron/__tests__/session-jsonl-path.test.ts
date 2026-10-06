@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createSessionJsonlPathResolver } from '../session-jsonl-path';
+import { createSessionJsonlPathResolver, findSessionJsonlInAccount } from '../session-jsonl-path';
 import { encodeProjectId } from '../services/project-paths';
 
 /**
@@ -127,5 +127,34 @@ describe('session jsonl path', () => {
   it('returns null rather than inventing an account', () => {
     const find = resolver([], undefined);
     expect(find(UUID, '/repo/unowned', null)).toBeNull();
+  });
+
+  /**
+   * The live tail's lookup after the CLI relocates a transcript into a
+   * worktree's project directory. One account only: the CLI never moves a
+   * transcript across config dirs, and the tail must not pick up another
+   * account's file.
+   */
+  describe('findSessionJsonlInAccount', () => {
+    it('finds a transcript the CLI moved into a worktree project directory', () => {
+      const work = join(root, 'work');
+      const moved = writeTranscript('work', encodeProjectId('/repo/app/.claude/worktrees/PI-1'));
+
+      expect(findSessionJsonlInAccount(work, UUID, '/repo/app')).toBe(moved);
+    });
+
+    it('prefers the encoded project directory', () => {
+      const work = join(root, 'work');
+      const home = writeTranscript('work', encodeProjectId('/repo/app'));
+      writeTranscript('work', 'zzz-other');
+
+      expect(findSessionJsonlInAccount(work, UUID, '/repo/app')).toBe(home);
+    });
+
+    it('never looks in another account', () => {
+      writeTranscript('personal', encodeProjectId('/repo/app'));
+
+      expect(findSessionJsonlInAccount(join(root, 'work'), UUID, '/repo/app')).toBeNull();
+    });
   });
 });

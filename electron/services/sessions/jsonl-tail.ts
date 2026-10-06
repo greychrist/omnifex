@@ -43,6 +43,14 @@ export interface CreateJsonlTailArgs {
    *   for a live session (see runtime.ts ensureJsonlTail).
    */
   filter?: 'closure-carriers' | 'all';
+  /**
+   * Finds the file again once it is no longer at `jsonlPath`, or null. The
+   * CLI moves a live session's transcript when the session enters a worktree
+   * (`EnterWorktree`): same file, new project directory, records appended.
+   * Without this the tail polled the old path forever and the transcript
+   * went blind mid-session.
+   */
+  locate?: () => string | null;
 }
 
 export interface JsonlTailHandle {
@@ -89,7 +97,8 @@ export function isClosureCarrier(parsed: unknown): boolean {
 }
 
 export function createJsonlTail(args: CreateJsonlTailArgs): JsonlTailHandle {
-  const { jsonlPath, onMessage, onError, filter = 'closure-carriers' } = args;
+  const { onMessage, onError, filter = 'closure-carriers', locate } = args;
+  let jsonlPath = args.jsonlPath;
   let offset = 0;
   // Raw bytes after the last newline. Kept as a Buffer (not a string) so a
   // multibyte UTF-8 codepoint straddling a read boundary survives intact —
@@ -110,12 +119,31 @@ export function createJsonlTail(args: CreateJsonlTailArgs): JsonlTailHandle {
 
   const shouldForward = filter === 'all' ? () => true : isClosureCarrier;
 
+  /** Point at the file's new path, if it moved. True when it did. */
+  const followMove = (): boolean => {
+    let moved: string | null = null;
+    try {
+      moved = locate?.() ?? null;
+    } catch (err) {
+      safeFire(err);
+    }
+    if (!moved || moved === jsonlPath || !fs.existsSync(moved)) return false;
+    jsonlPath = moved;
+    return true;
+  };
+
   const drain = (): void => {
     if (stopped) return;
     let stat: fs.Stats;
     try {
       stat = fs.statSync(jsonlPath);
     } catch (err) {
+      // Moved: a rename keeps every byte already read, so the offset and any
+      // partial line carry over to the new path.
+      if (followMove()) {
+        drain();
+        return;
+      }
       // File disappeared (rotation) — reset and wait for it to reappear.
       offset = 0;
       pendingTail = Buffer.alloc(0);
@@ -238,8 +266,8 @@ export function createJsonlTail(args: CreateJsonlTailArgs): JsonlTailHandle {
     }, ENOENT_POLL_MS);
   };
 
-  // Kick things off.
-  if (fs.existsSync(jsonlPath)) {
+  // Kick things off. A session resumed after a move starts at the new path.
+  if (fs.existsSync(jsonlPath) || followMove()) {
     startWatching(true);
   } else {
     startWaitingForFile();

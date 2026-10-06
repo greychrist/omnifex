@@ -25,6 +25,7 @@ import { createBackgroundTaskTracker } from './background-tasks';
 import { createJsonlTail, isClosureCarrier, type JsonlTailHandle } from './jsonl-tail';
 import { shouldForwardStreamMessage } from './stream-forward';
 import { encodeProjectId, hasTranscript } from '../project-paths';
+import { findSessionJsonlInAccount } from '../../session-jsonl-path';
 import { setStatus, setTurn } from './status';
 import { endSideChat } from './side-chat';
 import { beginCliProcess, recordResultUsage, type CliUsageSink } from './cli-usage';
@@ -87,14 +88,15 @@ function ensureJsonlTail(
   state: JsonlTailState,
   sendToRenderer: SendToRenderer,
 ): void {
-  if (state.tail || !handle.sessionId) return;
+  const sessionId = handle.sessionId;
+  if (state.tail || !sessionId) return;
   if (process.env.OMNIFEX_DISABLE_JSONL_TAIL === '1') return;
   const projectId = encodeProjectId(handle.projectPath);
   const jsonlPath = path.join(
     handle.configDir,
     'projects',
     projectId,
-    `${handle.sessionId}.jsonl`,
+    `${sessionId}.jsonl`,
   );
   state.tail = createJsonlTail({
     jsonlPath,
@@ -105,6 +107,9 @@ function ensureJsonlTail(
     // broke the moment the CLI emitted two skill companions instead of one.
     // Reading the file instead means the fields are simply present.
     filter: 'all',
+    // EnterWorktree moves the transcript into the worktree's project
+    // directory mid-session; the session's projectPath never changes.
+    locate: () => findSessionJsonlInAccount(handle.configDir, sessionId, handle.projectPath),
     onMessage: (msg) => {
       // Closure carriers stay on their own channel so that subscription
       // keeps its narrow contract; everything else joins the normal

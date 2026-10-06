@@ -306,4 +306,49 @@ describe('createJsonlTail', () => {
     await wait(400);
     expect(received).toHaveLength(0);
   });
+
+  // The CLI moves a live session's transcript when it enters a worktree
+  // (EnterWorktree): projects/<repo>/<id>.jsonl becomes
+  // projects/<repo>--claude-worktrees-<name>/<id>.jsonl, the same file with
+  // records appended. Session 7277e428 went blind at exactly that rename.
+  describe('when the CLI moves the file', () => {
+    let movedPath: string;
+
+    beforeEach(() => {
+      fs.mkdirSync(path.join(tmpDir, 'moved'));
+      movedPath = path.join(tmpDir, 'moved', 'session.jsonl');
+    });
+
+    function startLocating(): void {
+      tail = createJsonlTail({
+        jsonlPath,
+        filter: 'all',
+        onMessage: (m) => received.push(m),
+        locate: () => (fs.existsSync(movedPath) ? movedPath : null),
+      });
+    }
+
+    it('follows the file to its new path and forwards only what is new', async () => {
+      fs.writeFileSync(jsonlPath, JSON.stringify({ n: 1 }) + '\n');
+      startLocating();
+      fs.appendFileSync(jsonlPath, JSON.stringify({ n: 2 }) + '\n');
+      await waitUntil(() => received.length >= 1);
+
+      fs.renameSync(jsonlPath, movedPath);
+      fs.appendFileSync(movedPath, JSON.stringify({ n: 3 }) + '\n');
+      await waitUntil(() => received.length >= 2);
+
+      expect(received).toEqual([{ n: 2 }, { n: 3 }]);
+    });
+
+    it('starts at the moved file when it has already moved before the tail starts', async () => {
+      fs.writeFileSync(movedPath, JSON.stringify({ n: 1 }) + '\n');
+      startLocating();
+      await wait();
+      fs.appendFileSync(movedPath, JSON.stringify({ n: 2 }) + '\n');
+      await waitUntil(() => received.length >= 1);
+
+      expect(received).toEqual([{ n: 2 }]);
+    });
+  });
 });

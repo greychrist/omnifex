@@ -333,5 +333,33 @@ describe('session-cost watcher', () => {
       expect(emitted).toHaveLength(1);
       expect(projectsDirScans).toBe(1); // still cached, no rescan on the poll tick
     });
+
+    // EnterWorktree moves a live session's transcript from the primary dir to
+    // the worktree's. The cached dir then names a file that no longer exists.
+    it('follows a transcript the CLI moves into the worktree dir mid-session', () => {
+      vi.useFakeTimers();
+      const world = makeWorld(assistantLine('r1', 1000));
+      world.dirs[PROJECTS_DIR] = [
+        { name: '-Users-me-proj', isDirectory: true },
+        { name: ALT_DIR_NAME, isDirectory: true },
+      ];
+      const emitted: Array<{ channel: string; payload: unknown }> = [];
+      const svc = createSessionCostService({
+        sendToRenderer: (channel, payload) => emitted.push({ channel, payload }),
+        costHistory: null,
+        getOverrides: () => undefined,
+        fs: world.fakeFs,
+        stat: world.stat,
+        pollMs: 1000,
+      });
+      svc.watch(args);
+
+      world.files[ALT_SESSION_FILE] = world.files[SESSION_FILE] + '\n' + assistantLine('r2', 2000);
+      delete world.files[SESSION_FILE];
+      vi.advanceTimersByTime(1100);
+
+      const last = emitted.at(-1)?.payload as { totalUsd: number } | undefined;
+      expect(last?.totalUsd).toBeCloseTo(3000 * (25 / 1_000_000), 10);
+    });
   });
 });

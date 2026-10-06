@@ -183,6 +183,26 @@ function readSidecars(deps: SubagentMetaFs, subagentsDir: string): SubagentSidec
 }
 
 /**
+ * The session's project directory and transcript. The encoded project
+ * directory first, then any other in the account: EnterWorktree moves the
+ * transcript and its subagents/ folder into the worktree's directory while
+ * the session's projectPath stays the repo.
+ */
+function findSession(
+  args: ReadSubagentMetaArgs,
+  deps: SubagentMetaFs,
+): { projectDir: string; sessionContents: string } | null {
+  const projectsDir = path.join(args.configDir, 'projects');
+  const primary = encodeProjectId(args.projectPath);
+  for (const name of [primary, ...deps.listFiles(projectsDir).filter((n) => n !== primary)]) {
+    const projectDir = path.join(projectsDir, name);
+    const sessionContents = deps.readFile(path.join(projectDir, `${args.sessionId}.jsonl`));
+    if (sessionContents !== null) return { projectDir, sessionContents };
+  }
+  return null;
+}
+
+/**
  * Build a `tool_use_id → SubagentMeta` map for one session by reading the
  * on-disk JSONL (main session file + per-subagent transcripts + sidecars).
  *
@@ -195,13 +215,9 @@ export function readSubagentMeta(
   args: ReadSubagentMetaArgs,
   deps: SubagentMetaFs = nodeFs,
 ): Record<string, SubagentMeta> {
-  const projectDir = path.join(
-    args.configDir,
-    'projects',
-    encodeProjectId(args.projectPath),
-  );
-  const sessionContents = deps.readFile(path.join(projectDir, `${args.sessionId}.jsonl`));
-  if (sessionContents === null) return {};
+  const found = findSession(args, deps);
+  if (!found) return {};
+  const { projectDir, sessionContents } = found;
 
   const subagentsDir = path.join(projectDir, args.sessionId, 'subagents');
   const out: Record<string, SubagentMeta> = {};
