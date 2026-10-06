@@ -175,7 +175,11 @@ export function createSessionBridge(deps: SessionBridgeDeps): SessionBridge {
       return;
     }
 
-    if (suffix === null || !deps.log.isOpen(suffix)) {
+    // `session-cost:<id>` names the CLI session UUID, not a tab, and the hook
+    // that reads it listens on exactly that name. The daemon keys sessions by
+    // the same UUID, so the open-session test below would otherwise pass and
+    // the client would re-emit it under a renderer tab id nobody listens on.
+    if (prefix === 'session-cost' || suffix === null || !deps.log.isOpen(suffix)) {
       deps.broadcast({ type: 'channel', channel, payload });
       return;
     }

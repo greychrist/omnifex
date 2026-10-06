@@ -258,12 +258,12 @@ export function createElectronApiShim(opts: ShimOptions): ShimHandle {
         } else {
           // `notification` is two things on the wire: the OS-notification
           // channel above, and the bridge's catch-all for any tab-scoped
-          // channel it has no case for (`session-cost` today —
-          // electron/remote/bridge.ts). Routing the catch-all by kind rang
-          // the notification sound on every cost tick, with an empty body
-          // and no banner when the window was focused, and starved
-          // `useSessionCost` of the updates it was actually carrying.
-          // Branch on the channel, which every push carries.
+          // channel it has no case for (electron/remote/bridge.ts).
+          // Routing the catch-all by kind once rang the notification sound
+          // on every cost tick, with an empty body and no banner when the
+          // window was focused. Branch on the channel, which every push
+          // carries. (`session-cost` itself no longer rides here: it is
+          // keyed by CLI session, not tab, so the bridge broadcasts it.)
           emitForSession(m.sessionId, prefix, m.payload);
         }
         return;

@@ -294,6 +294,20 @@ describe('remote session bridge', () => {
     ]);
   });
 
+  // `session-cost:<id>` is keyed by the CLI session UUID, not a tab. The
+  // daemon names resumed and new sessions by that same UUID, so treating the
+  // suffix as a tab re-emitted it client-side as `session-cost:<rendererTab>`
+  // — a channel useSessionCost never listens on — and the readout froze at
+  // its first snapshot ($0.00 for a fresh session).
+  it('broadcasts session-cost under its own name even when the id is an open session', () => {
+    openSession(log, 'de6b9aa2');
+    bridge.sendToRenderer('session-cost:de6b9aa2', { totalUsd: 1.78, estimated: false });
+    expect(published).toEqual([]);
+    expect(broadcast).toEqual([
+      { type: 'channel', channel: 'session-cost:de6b9aa2', payload: { totalUsd: 1.78, estimated: false } },
+    ]);
+  });
+
   it('forwards session-side-chat:<id> snapshots as a session event', () => {
     openSession(log, 's1');
     bridge.sendToRenderer('session-side-chat:s1', { exchanges: [] });
