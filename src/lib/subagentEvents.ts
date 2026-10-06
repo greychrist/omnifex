@@ -101,6 +101,9 @@ export interface SubagentState {
   taskId?: string;
   agentType?: string;
   description: string;
+  /** The Agent dispatch's `prompt` — the brief the parent wrote for it.
+   *  Absent for background shells, forked skills and nested rows. */
+  prompt?: string;
   status: SubagentStatus;
   startedAt?: string;
   endedAt?: string;
@@ -135,7 +138,7 @@ export interface SubagentState {
 // ---------------------------------------------------------------------------
 
 export type SubagentEvent =
-  | { kind: 'Dispatched'; toolUseId: string; messageIdx: number; description: string; agentType?: string; isBackground: boolean }
+  | { kind: 'Dispatched'; toolUseId: string; messageIdx: number; description: string; agentType?: string; isBackground: boolean; prompt?: string }
   | {
       kind: 'Started';
       toolUseId: string;
@@ -558,6 +561,7 @@ export function messagesToEvents(messages: JsonlNode[]): SubagentEvent[] {
                 ? input.subagent_type
                 : undefined,
             isBackground: isBackgroundDispatch,
+            prompt: isAgentTool && typeof input.prompt === 'string' ? input.prompt : undefined,
           });
         }
         continue;
@@ -752,6 +756,7 @@ export function applyEvents(events: SubagentEvent[]): Map<string, SubagentState>
         if (ev.description && !s.description) s.description = ev.description;
         if (ev.agentType && !s.agentType) s.agentType = ev.agentType;
         if (ev.isBackground && s.isBackground === undefined) s.isBackground = true;
+        if (ev.prompt && !s.prompt) s.prompt = ev.prompt;
         break;
       }
       case 'Started': {

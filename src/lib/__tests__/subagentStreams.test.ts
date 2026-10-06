@@ -159,6 +159,23 @@ function toolResult(
   } as unknown as JsonlNode;
 }
 
+describe('deriveSubagents — dispatch brief', () => {
+  it('carries the Agent dispatch prompt as the row\'s brief', () => {
+    const [sub] = deriveSubagents([agentToolUse(TOOL_USE_ID)]);
+    expect(sub.prompt).toBe('go');
+  });
+
+  it('keeps the dispatch description as the purpose while progress moves on', () => {
+    const [sub] = deriveSubagents([
+      agentToolUse(TOOL_USE_ID, 'Map the repo'),
+      taskStarted(TOOL_USE_ID, 'task_1', 'Map the repo'),
+      taskProgress(TOOL_USE_ID, 'cd /tmp && ls'),
+    ]);
+    expect(sub.description).toBe('Map the repo');
+    expect(sub.latest?.description).toBe('cd /tmp && ls');
+  });
+});
+
 describe('isTaskLifecycleMarker', () => {
   it('matches task_started/progress/notification', () => {
     expect(isTaskLifecycleMarker({ type: 'system', subtype: 'task_started' })).toBe(true);

@@ -29,6 +29,8 @@ export interface Subagent {
   taskId?: string;
   agentType?: string;
   description: string;
+  /** The Agent dispatch's brief. See SubagentState.prompt. */
+  prompt?: string;
   status: SubagentStatus;
   startedAt?: string;
   endedAt?: string;
@@ -346,6 +348,7 @@ export function deriveSubagents(
     taskId: s.taskId,
     agentType: s.agentType,
     description: s.description,
+    prompt: s.prompt,
     status: s.status,
     startedAt: s.startedAt,
     endedAt: s.endedAt,

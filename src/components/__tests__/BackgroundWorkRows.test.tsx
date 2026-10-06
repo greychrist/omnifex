@@ -89,6 +89,82 @@ describe('SubagentRow meta', () => {
   });
 });
 
+describe('SubagentRow purpose and brief', () => {
+  it('heads the row with the dispatch purpose, not the latest progress line', () => {
+    const { container } = render(
+      <SubagentRow
+        sub={makeSub({
+          toolUseId: 'a',
+          status: 'running',
+          description: 'Map the repo',
+          latest: { description: 'cd /tmp && ls' },
+          events: [{ description: 'cd /tmp && ls' }],
+        })}
+      />,
+    );
+    expect(container.querySelector('[data-subagent-purpose]')?.textContent).toBe('Map the repo');
+    expect(container.querySelector('[data-subagent-activity]')?.textContent).toBe('cd /tmp && ls');
+  });
+
+  it('keeps the purpose on its own line, apart from the meta', () => {
+    // The meta used to share the purpose's line and, being shrink-0,
+    // squeezed it to zero width on long rows.
+    const { container } = render(
+      <SubagentRow
+        sub={makeSub({ toolUseId: 'a', status: 'running', description: 'Map the repo', model: 'claude-sonnet-5-5' })}
+      />,
+    );
+    const purpose = container.querySelector('[data-subagent-purpose]');
+    const meta = container.querySelector('[data-subagent-meta]');
+    expect(meta?.textContent).toContain('sonnet-5-5');
+    expect(purpose?.parentElement).not.toBe(meta?.parentElement);
+  });
+
+  it('falls back to the latest progress line when the dispatch named no purpose', () => {
+    const { container } = render(
+      <SubagentRow
+        sub={makeSub({ toolUseId: 'a', status: 'running', description: '', latest: { description: 'Reading files' } })}
+      />,
+    );
+    expect(container.querySelector('[data-subagent-purpose]')?.textContent).toBe('Reading files');
+    // Saying it twice adds nothing.
+    expect(container.querySelector('[data-subagent-activity]')).toBeNull();
+  });
+
+  it('wraps a long purpose instead of truncating it', () => {
+    const { container } = render(
+      <SubagentRow sub={makeSub({ toolUseId: 'a', status: 'running', description: 'Survey every service under electron/services and count exports' })} />,
+    );
+    const purpose = container.querySelector('[data-subagent-purpose]')!;
+    expect(purpose.className).not.toContain('truncate');
+    expect(purpose.className).toContain('break-words');
+  });
+
+  it('draws a divider under each row', () => {
+    const { container } = render(<SubagentRow sub={makeSub({ toolUseId: 'a', status: 'running' })} />);
+    const row = container.querySelector('[data-subagent-row]')!;
+    expect(row.className).toContain('border-b');
+    // A bare colour utility loses to the unlayered `* { border-color }` rule
+    // in styles.css; only the important arbitrary property reaches the screen.
+    expect(row.className).toContain('[border-bottom-color:');
+  });
+
+  it('shows the dispatch brief when expanded', () => {
+    const { container } = render(
+      <SubagentRow sub={makeSub({ toolUseId: 'a', status: 'running', prompt: 'Find every caller of resolve()' })} />,
+    );
+    expect(container.querySelector('[data-subagent-prompt]')).toBeNull();
+    fireEvent.click(container.querySelector('button')!);
+    expect(container.querySelector('[data-subagent-prompt]')?.textContent).toContain('Find every caller of resolve()');
+  });
+
+  it('shows no brief block for a row without a prompt', () => {
+    const { container } = render(<SubagentRow sub={makeSub({ toolUseId: 'a', status: 'running' })} />);
+    fireEvent.click(container.querySelector('button')!);
+    expect(container.querySelector('[data-subagent-prompt]')).toBeNull();
+  });
+});
+
 describe('SubagentRow foreground / background', () => {
   it('tags a foreground agent fg', () => {
     render(<SubagentRow sub={makeSub({ toolUseId: 'a', status: 'running', isBackground: false })} />);

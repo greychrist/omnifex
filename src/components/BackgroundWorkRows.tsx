@@ -117,7 +117,12 @@ export const SubagentRow: React.FC<SubagentRowProps> = ({ sub, onDismiss }) => {
   const elapsed = formatElapsed(durationMs);
   const metaBits = [model, effort, tools, tokens, elapsed].filter(Boolean).join(' · ');
 
-  const headline = latest?.description || sub.description || 'Working…';
+  // The purpose is what the parent said the agent is for; it holds still.
+  // The latest progress line is what it is doing right now, and gets its own
+  // line — it used to be the headline, which replaced the purpose with
+  // whatever shell command the agent happened to be running.
+  const purpose = sub.description || latest?.description || 'Working…';
+  const activity = latest?.description && latest.description !== purpose ? latest.description : '';
   const agentLabel = sub.agentType ?? 'Agent';
 
   // A nested subagent (dispatched by another subagent, not by the main
@@ -141,6 +146,10 @@ export const SubagentRow: React.FC<SubagentRowProps> = ({ sub, onDismiss }) => {
       data-nested={nested ? 'true' : undefined}
       className={cn(
         'border-l-2 transition-opacity',
+        // Row divider. The colour has to be an important arbitrary property:
+        // styles.css's unlayered `* { border-color }` beats every plain
+        // Tailwind border-colour utility.
+        'border-b last:border-b-0 [border-bottom-color:color-mix(in_oklch,var(--color-muted-foreground)_30%,transparent)]!',
         color.border,
         color.bg,
         dim && 'opacity-60',
@@ -150,47 +159,63 @@ export const SubagentRow: React.FC<SubagentRowProps> = ({ sub, onDismiss }) => {
       <button
         type="button"
         onClick={() => { setExpanded((v) => !v); }}
-        className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left hover:bg-white/5"
+        className="w-full px-3 py-1.5 text-xs text-left hover:bg-white/5"
       >
-        <span className="flex items-center justify-center w-4 shrink-0">{statusIcon}</span>
-        <Bot className={cn('h-3.5 w-3.5 shrink-0', color.text)} />
-        <span className={cn('font-mono font-medium shrink-0', color.text)}>{agentLabel}</span>
-        {mode && (
-          <span
-            title={mode.title}
-            className="shrink-0 rounded px-1 font-mono text-[10px] leading-4 text-muted-foreground bg-white/5"
-          >
-            {mode.label}
-          </span>
-        )}
-        <span className="text-muted-foreground shrink-0">·</span>
-        <span className="truncate flex-1 text-foreground/90">{headline}</span>
-        {metaBits && (
-          <span className="text-muted-foreground shrink-0 tabular-nums">{metaBits}</span>
-        )}
-        {expanded ? (
-          <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-        ) : (
-          <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-        )}
-        {dismissable && (
-          <span
-            role="button"
-            aria-label="Dismiss"
-            title="Dismiss"
-            onClick={(e) => {
-              e.stopPropagation();
-              onDismiss(sub.toolUseId);
-            }}
-            className="ml-1 inline-flex h-4 w-4 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground hover:bg-white/10 shrink-0"
-          >
-            <X className="h-3 w-3" />
+        {/* Top-aligned so a purpose that wraps keeps the icons on its first line. */}
+        <span className="flex items-start gap-2">
+          <span className="flex items-center justify-center w-4 h-4 shrink-0">{statusIcon}</span>
+          <Bot className={cn('h-3.5 w-3.5 mt-px shrink-0', color.text)} />
+          <span className={cn('font-mono font-medium shrink-0', color.text)}>{agentLabel}</span>
+          {mode && (
+            <span
+              title={mode.title}
+              className="shrink-0 rounded px-1 font-mono text-[10px] leading-4 text-muted-foreground bg-white/5"
+            >
+              {mode.label}
+            </span>
+          )}
+          <span className="text-muted-foreground shrink-0">·</span>
+          <span data-subagent-purpose className="flex-1 min-w-0 break-words text-foreground/90">{purpose}</span>
+          {expanded ? (
+            <ChevronDown className="h-3.5 w-3.5 mt-px text-muted-foreground shrink-0" />
+          ) : (
+            <ChevronRight className="h-3.5 w-3.5 mt-px text-muted-foreground shrink-0" />
+          )}
+          {dismissable && (
+            <span
+              role="button"
+              aria-label="Dismiss"
+              title="Dismiss"
+              onClick={(e) => {
+                e.stopPropagation();
+                onDismiss(sub.toolUseId);
+              }}
+              className="ml-1 inline-flex h-4 w-4 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground hover:bg-white/10 shrink-0"
+            >
+              <X className="h-3 w-3" />
+            </span>
+          )}
+        </span>
+        {(activity || metaBits) && (
+          <span className="flex items-center gap-2 pl-6 pt-0.5 text-[11px] text-muted-foreground">
+            <span data-subagent-activity={activity ? '' : undefined} className="truncate flex-1 min-w-0 font-mono">
+              {activity}
+            </span>
+            {metaBits && <span data-subagent-meta className="shrink-0 tabular-nums">{metaBits}</span>}
           </span>
         )}
       </button>
 
       {expanded && (
         <div className="px-3 pb-2 pt-0.5 border-t border-white/5 space-y-0.5">
+          {sub.prompt && (
+            <pre
+              data-subagent-prompt
+              className="mb-1 max-h-48 overflow-y-auto rounded bg-black/20 px-2 py-1 text-[11px] font-sans leading-snug whitespace-pre-wrap break-words text-foreground/80"
+            >
+              {sub.prompt}
+            </pre>
+          )}
           {sub.events.length === 0 && (
             <div className="text-[11px] text-muted-foreground italic py-1">
               {sub.status === 'completed_inferred'
