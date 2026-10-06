@@ -5,6 +5,18 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.223] — 2026-10-06
+
+### Added
+
+- Updates popover: "Mark <version> as checked" clears the Claude Code drift dot once you have read a changelog review, without needing a new OmniFex build. With nothing marked, the version this build was reviewed against applies.
+- Updates popover shows when a checked Claude Code release has not yet shipped in a build ("2.1.291 checked · this build was checked against 2.1.289").
+
+### Changed
+
+- The changelog review now starts from the last release marked as checked, so a marked release is never reviewed twice.
+- Reviewed Claude Code 2.1.290 and 2.1.291 against OmniFex: no changes needed.
+
 ## [0.4.222] — 2026-10-06
 
 ### Changed
