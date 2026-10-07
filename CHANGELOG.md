@@ -5,6 +5,17 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.227] — 2026-10-07
+
+### Added
+
+- **View changes for worktrees.** Each worktree badge's popover — in the branch status bar and the header widgets — now has a View changes button that opens the diff viewer on that worktree, labelled with its branch. Previously only the session's own checkout could be opened, so untracked or edited files in a worktree were counted but unviewable.
+- **Projects skeleton on first load.** A new Projects tab shows a skeleton until the project list first arrives, instead of flashing the "No recent projects" card and swapping it for the table a moment later.
+
+### Fixed
+
+- **Diff viewer file colours match the branch widget.** The file tree had the two colours swapped (modified amber, untracked green). Changed files are now green with the pencil-file icon and untracked files amber with the plus-file icon, from one shared style used by the branch widget, the tab status popover and the diff tree. Added, deleted and renamed files keep distinct icons in the changed colour.
+
 ## [0.4.226] — 2026-10-06
 
 ### Added
