@@ -58,6 +58,14 @@ const renderOverlay = (props: Partial<React.ComponentProps<typeof GitDiffOverlay
 
 describe('GitDiffOverlay', () => {
   describe('loading the file list', () => {
+    it('names the worktree it is showing, when given one', async () => {
+      renderOverlay({ projectPath: '/wt', label: 'feat/a' });
+      expect(screen.getByText('feat/a')).toBeTruthy();
+      await waitFor(() => {
+        expect(listGitChangedFiles).toHaveBeenCalledWith('/wt');
+      });
+    });
+
     it('reads the changed files for the project', async () => {
       renderOverlay();
       await waitFor(() => {

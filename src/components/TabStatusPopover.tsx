@@ -1,9 +1,10 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Atom, GitBranch, FilePen, FilePlus, Activity, Bot, ListChecks, Database, Copy, Check, Unplug } from 'lucide-react';
+import { Atom, GitBranch, Activity, Bot, ListChecks, Database, Copy, Check, Unplug } from 'lucide-react';
 import { api, type TabStatusSummary } from '@/lib/api';
 import { useTabContext } from '@/contexts/TabContext';
 import { cn } from '@/lib/utils';
+import { GIT_CHANGED_STYLE, GIT_UNTRACKED_STYLE } from '@/lib/gitStatusStyle';
 import { TITLEBAR_LABEL } from '@/lib/titlebar';
 import { TooltipSimple } from '@/components/ui/tooltip-modern';
 import { resolveBranchColors } from '@/lib/branchColors';
@@ -169,14 +170,14 @@ const TabStatusCard: React.FC<TabStatusCardProps> = ({ summary, branchColor, bra
                 <span aria-hidden className="h-3 w-px bg-current opacity-40 mx-0.5" />
               )}
               {summary.filesChanged > 0 && (
-                <span className="inline-flex items-center gap-0.5 text-emerald-400">
-                  <FilePen className="w-3 h-3" />
+                <span className={cn("inline-flex items-center gap-0.5", GIT_CHANGED_STYLE.className)}>
+                  <GIT_CHANGED_STYLE.Icon className="w-3 h-3" />
                   {summary.filesChanged}
                 </span>
               )}
               {summary.filesUntracked > 0 && (
-                <span className="inline-flex items-center gap-0.5 text-amber-300">
-                  <FilePlus className="w-3 h-3" />
+                <span className={cn("inline-flex items-center gap-0.5", GIT_UNTRACKED_STYLE.className)}>
+                  <GIT_UNTRACKED_STYLE.Icon className="w-3 h-3" />
                   {summary.filesUntracked}
                 </span>
               )}

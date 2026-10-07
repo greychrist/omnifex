@@ -2,7 +2,8 @@ import React, { useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, Folder, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { buildPathTree, filterPaths, type TreeNode } from "@/lib/pathTree";
-import type { GitChangedFile, GitChangedFileStatus } from "@/lib/api";
+import type { GitChangedFile } from "@/lib/api";
+import { GIT_FILE_STATUS_STYLE } from "@/lib/gitStatusStyle";
 
 /**
  * Left-hand navigator for the diff overlay: the changed files as a foldable
@@ -23,14 +24,6 @@ export interface DiffFileTreeProps {
   onSelect: (path: string) => void;
   className?: string;
 }
-
-const STATUS_GLYPH: Record<GitChangedFileStatus, { char: string; className: string }> = {
-  modified: { char: "±", className: "text-amber-400" },
-  added: { char: "+", className: "text-emerald-400" },
-  untracked: { char: "+", className: "text-emerald-400" },
-  deleted: { char: "−", className: "text-red-400" },
-  renamed: { char: "→", className: "text-sky-400" },
-};
 
 function statusLabel(file: GitChangedFile): string {
   const staged = file.staged ? ", staged" : "";
@@ -85,7 +78,7 @@ const Row: React.FC<RowProps> = ({ node, depth, selectedPath, onSelect, collapse
   }
 
   const selected = selectedPath === node.path;
-  const glyph = STATUS_GLYPH[node.entry.status];
+  const { Icon, className: statusClass } = GIT_FILE_STATUS_STYLE[node.entry.status];
 
   return (
     <div
@@ -103,9 +96,9 @@ const Row: React.FC<RowProps> = ({ node, depth, selectedPath, onSelect, collapse
       <span
         aria-label={statusLabel(node.entry)}
         title={statusLabel(node.entry)}
-        className={cn("flex-none font-mono text-[12px] leading-none", glyph.className)}
+        className={cn("flex-none leading-none", statusClass)}
       >
-        {glyph.char}
+        <Icon className="h-3 w-3" />
       </span>
       <span className="truncate text-[12px]">{node.name}</span>
       {node.entry.staged && (

@@ -340,7 +340,9 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   // Pre-fetched built-in slash commands from the CLI, loaded alongside models
   // during session init so the picker has them immediately.
   const [supportedCommands, setSupportedCommands] = useState<import('@/lib/api').SessionSlashCommand[]>([]);
-  const [showDiffOverlay, setShowDiffOverlay] = useState(false);
+  // Which checkout the diff viewer shows: the session's own, or a sibling
+  // worktree picked from its badge. Null when closed.
+  const [diffTarget, setDiffTarget] = useState<{ path: string; label?: string } | null>(null);
 
   const [showSlashCommandsSettings, setShowSlashCommandsSettings] = useState(false);
   const [accountResolution, setAccountResolution] = useState<{
@@ -686,14 +688,18 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   // `gitStatus` keeps the existing renderer ergonomics for the project badge;
   // `worktreeList` mirrors the snapshot's `worktrees[]` for the list below.
   const gitStatus = sessionGit?.project ?? null;
-  // The diff overlay is pull-only; this is how it learns the tree moved. The
-  // watcher's counts are the cheapest honest signal that something changed on
-  // disk, so a bump here re-reads the file list without the overlay polling.
-  const gitRefreshToken = (gitStatus?.changed ?? 0) * 1000 + (gitStatus?.untracked ?? 0);
   // Wrap in useMemo so the `?? []` fallback doesn't create a new array
   // identity on each render — that ripples into the gitWatchErrors useMemo
   // below and triggers unnecessary recompute on every parent re-render.
   const worktreeList = useMemo(() => sessionGit?.worktrees ?? [], [sessionGit?.worktrees]);
+  // The diff overlay is pull-only; this is how it learns the tree moved. The
+  // watcher's counts are the cheapest honest signal that something changed on
+  // disk, so a bump here re-reads the file list without the overlay polling.
+  // Counted from whichever checkout the overlay is showing.
+  const diffReading = (diffTarget?.label !== undefined
+    ? worktreeList.find((wt) => wt.path === diffTarget.path)
+    : null) ?? gitStatus;
+  const gitRefreshToken = (diffReading?.changed ?? 0) * 1000 + (diffReading?.untracked ?? 0);
   // Aggregate per-path errors for the single header status icon. The icon is
   // green when this list is empty and red when any path is errored; the
   // tooltip lists the offending labels so the user can see *which* row is
@@ -2747,7 +2753,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
           isTrunk={branchColorResolution.trunkBlack.has(gitStatus.branch)}
           path={projectPath}
           error={gitStatus.error}
-          onViewChanges={() => { setShowDiffOverlay(true); }}
+          onViewChanges={() => { if (projectPath) setDiffTarget({ path: projectPath }); }}
         />
       </div>
       {worktreeList.length > 0 && (
@@ -2776,6 +2782,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
                     isTrunk={branchColorResolution.trunkBlack.has(branchName)}
                     path={wt.path}
                     error={wt.error}
+                    onViewChanges={() => { setDiffTarget({ path: wt.path, label: branchName }); }}
                   />
                 </div>
               );
@@ -2891,9 +2898,13 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
                       untracked: gitStatus.untracked,
                       path: projectPath,
                       error: gitStatus.error,
-                      onViewChanges: () => { setShowDiffOverlay(true); },
+                      onViewChanges: () => { setDiffTarget({ path: projectPath }); },
                     }}
                     worktrees={worktreeList}
+                    onViewWorktreeChanges={(path) => {
+                      const wt = worktreeList.find((w) => w.path === path);
+                      setDiffTarget({ path, label: wt?.branch ?? '(detached)' });
+                    }}
                     colorFor={(name) => ({
                       color: branchColorResolution.colors[name] ?? null,
                       isTrunk: branchColorResolution.trunkBlack.has(name),
@@ -3094,11 +3105,13 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
               a side panel: a split before/after pane plus a file tree has no
               useful reading width at 384px. The header and composer stay
               visible, so the session is still reachable behind it. */}
-          {showDiffOverlay && projectPath && (
+          {diffTarget && (
             <GitDiffOverlay
-              projectPath={projectPath}
+              key={diffTarget.path}
+              projectPath={diffTarget.path}
+              label={diffTarget.label}
               refreshToken={gitRefreshToken}
-              onClose={() => { setShowDiffOverlay(false); }}
+              onClose={() => { setDiffTarget(null); }}
             />
           )}
           {/* The Session Inspector toggle used to float here at
@@ -3292,13 +3305,13 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
                       <Button
                         variant="ghost"
                         size="icon"
-                        onClick={() => { setShowDiffOverlay(!showDiffOverlay); }}
+                        onClick={() => { setDiffTarget(diffTarget || !projectPath ? null : { path: projectPath }); }}
                         className={cn(
                           "h-8 w-8 text-muted-foreground hover:text-foreground shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_30%,transparent)]",
-                          showDiffOverlay ? "bg-accent" : "bg-background",
+                          diffTarget ? "bg-accent" : "bg-background",
                         )}
                       >
-                        <GitCompare className={cn("h-3.5 w-3.5", showDiffOverlay && "text-primary")} />
+                        <GitCompare className={cn("h-3.5 w-3.5", diffTarget && "text-primary")} />
                       </Button>
                     </motion.div>
                   </TooltipSimple>

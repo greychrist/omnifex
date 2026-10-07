@@ -1,6 +1,7 @@
 import * as React from 'react';
-import { GitBranch, FilePen, FilePlus, Folder, GitCompare } from 'lucide-react';
+import { GitBranch, Folder, GitCompare } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { GIT_CHANGED_STYLE, GIT_UNTRACKED_STYLE } from '@/lib/gitStatusStyle';
 import { Popover } from '@/components/ui/popover';
 
 export interface GitBranchBadgeProps {
@@ -82,14 +83,14 @@ export const GitBranchBadge: React.FC<GitBranchBadgeProps> = ({
         <span aria-hidden className="h-3 w-px bg-current opacity-40 mx-0.5" />
       )}
       {changed > 0 && (
-        <span className="inline-flex items-center gap-0.5 text-emerald-400">
-          <FilePen className="w-3 h-3" />
+        <span className={cn("inline-flex items-center gap-0.5", GIT_CHANGED_STYLE.className)}>
+          <GIT_CHANGED_STYLE.Icon className="w-3 h-3" />
           {changed}
         </span>
       )}
       {untracked > 0 && (
-        <span className="inline-flex items-center gap-0.5 text-amber-300">
-          <FilePlus className="w-3 h-3" />
+        <span className={cn("inline-flex items-center gap-0.5", GIT_UNTRACKED_STYLE.className)}>
+          <GIT_UNTRACKED_STYLE.Icon className="w-3 h-3" />
           {untracked}
         </span>
       )}
@@ -174,14 +175,14 @@ export const GitBranchBadge: React.FC<GitBranchBadgeProps> = ({
             ) : (
               <div className="flex flex-col gap-0.5 text-xs">
                 {changed > 0 && (
-                  <div className="flex items-center gap-1.5 text-emerald-400">
-                    <FilePen className="w-3 h-3" />
+                  <div className={cn("flex items-center gap-1.5", GIT_CHANGED_STYLE.className)}>
+                    <GIT_CHANGED_STYLE.Icon className="w-3 h-3" />
                     <span>{changed} changed</span>
                   </div>
                 )}
                 {untracked > 0 && (
-                  <div className="flex items-center gap-1.5 text-amber-300">
-                    <FilePlus className="w-3 h-3" />
+                  <div className={cn("flex items-center gap-1.5", GIT_UNTRACKED_STYLE.className)}>
+                    <GIT_UNTRACKED_STYLE.Icon className="w-3 h-3" />
                     <span>{untracked} untracked</span>
                   </div>
                 )}

@@ -76,7 +76,7 @@ interface ProjectListProps {
    */
   onOpenSettings?: (project: Project) => void | Promise<void>;
   /**
-   * Whether the list is currently loading
+   * Whether the first load is still in flight — shows a skeleton instead of the empty state
    */
   loading?: boolean;
   /**
@@ -136,6 +136,7 @@ export const ProjectList: React.FC<ProjectListProps> = ({
   onQuickLaunch,
   onTogglePin,
   onOpenSettings,
+  loading = false,
   className,
 }) => {
   const [sortKey, setSortKey] = useState<SortKey>('lastActivity');
@@ -261,7 +262,24 @@ export const ProjectList: React.FC<ProjectListProps> = ({
         {/* Content */}
         <div className="flex-1 min-h-0 px-6 pb-6 flex flex-col">
           {/* Recent projects section */}
-          {projects.length > 0 ? (
+          {loading && projects.length === 0 ? (
+            // First load: "no projects" is not known yet, so the empty card
+            // would be a lie that the table replaces a moment later.
+            <Card className="p-6 flex-1 min-h-0 flex flex-col" data-testid="project-list-skeleton" aria-busy="true">
+              <div className="h-6 w-48 mb-4 rounded bg-muted animate-pulse" />
+              <div className="flex flex-col gap-3">
+                {Array.from({ length: 6 }, (_, i) => (
+                  <div key={i} className="flex items-center gap-3">
+                    <div className="h-4 w-6 rounded bg-muted animate-pulse" />
+                    <div className="h-4 w-16 rounded bg-muted animate-pulse" />
+                    <div className="h-8 flex-1 rounded bg-muted animate-pulse" />
+                    <div className="h-4 w-20 rounded bg-muted animate-pulse" />
+                    <div className="h-4 w-24 rounded bg-muted animate-pulse" />
+                  </div>
+                ))}
+              </div>
+            </Card>
+          ) : projects.length > 0 ? (
             <Card className="p-6 flex-1 min-h-0 flex flex-col">
               <div className="flex items-center justify-between mb-4 gap-3 shrink-0">
                 <h2 className="text-heading-4">

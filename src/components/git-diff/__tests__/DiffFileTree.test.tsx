@@ -4,6 +4,7 @@ import { render, cleanup, screen, fireEvent, within } from '@testing-library/rea
 
 import { DiffFileTree } from '@/components/git-diff/DiffFileTree';
 import type { GitChangedFile } from '@/lib/api';
+import { GIT_CHANGED_STYLE, GIT_UNTRACKED_STYLE } from '@/lib/gitStatusStyle';
 
 afterEach(() => { cleanup(); });
 
@@ -21,6 +22,27 @@ function renderTree(files: GitChangedFile[], selected: string | null = null) {
 }
 
 describe('DiffFileTree', () => {
+  // The branch widget counts files as "changed" or "untracked"; the tree must
+  // wear the same colour for the same bucket, or the two read as opposites.
+  describe('status glyphs match the branch widget', () => {
+    it('colours an untracked file like the widget\'s untracked count', () => {
+      renderTree([f('new.txt', { status: 'untracked' })]);
+      const glyph = screen.getByLabelText('untracked');
+      expect(glyph.className).toContain(GIT_UNTRACKED_STYLE.className);
+      expect(glyph.querySelector('svg')).toBeTruthy();
+    });
+
+    it.each(['modified', 'added', 'deleted', 'renamed'] as const)(
+      'colours a %s file like the widget\'s changed count',
+      (status) => {
+        renderTree([f('x.ts', { status })]);
+        const glyph = screen.getByLabelText(status);
+        expect(glyph.className).toContain(GIT_CHANGED_STYLE.className);
+        expect(glyph.querySelector('svg')).toBeTruthy();
+      },
+    );
+  });
+
   describe('rendering', () => {
     it('shows a root-level file by name', () => {
       renderTree([f('README.md')]);

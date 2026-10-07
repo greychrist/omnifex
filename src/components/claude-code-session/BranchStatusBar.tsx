@@ -32,6 +32,8 @@ export interface BranchStatusBarProps {
   branch: BranchState;
   worktrees: Worktree[];
   colorFor: (branch: string) => { color: string | null; isTrunk: boolean };
+  /** Open the diff viewer on a worktree, by its path. */
+  onViewWorktreeChanges?: (path: string) => void;
   /** The git-watch glyph, when this session has a watch. */
   watch?: React.ReactNode;
   className?: string;
@@ -41,7 +43,7 @@ const LABEL = 'opacity-70 text-muted-foreground';
 const ROW = 'flex flex-wrap items-center gap-1';
 
 export const BranchStatusBar = React.forwardRef<HTMLDivElement, BranchStatusBarProps>(
-  function BranchStatusBar({ branch, worktrees, colorFor, watch, className }, ref) {
+  function BranchStatusBar({ branch, worktrees, colorFor, onViewWorktreeChanges, watch, className }, ref) {
     const items: React.JSX.Element[] = [
       <span key="branch" className={ROW}>
         <span className={LABEL}>branch</span>
@@ -74,6 +76,7 @@ export const BranchStatusBar = React.forwardRef<HTMLDivElement, BranchStatusBarP
                   {...colorFor(name)}
                   path={wt.path}
                   error={wt.error}
+                  onViewChanges={onViewWorktreeChanges && (() => { onViewWorktreeChanges(wt.path); })}
                 />
               </span>
             );

@@ -34,6 +34,8 @@ const PARSE_LINE_BUDGET = 60_000;
 
 export interface GitDiffOverlayProps {
   projectPath: string;
+  /** Which worktree this is, when it is not the session's own checkout. */
+  label?: string;
   onClose: () => void;
   /** Bump to re-read the file list. */
   refreshToken?: number;
@@ -51,6 +53,7 @@ function errorMessage(err: unknown): string {
 
 export const GitDiffOverlay: React.FC<GitDiffOverlayProps> = ({
   projectPath,
+  label,
   onClose,
   refreshToken = 0,
   className,
@@ -156,6 +159,11 @@ export const GitDiffOverlay: React.FC<GitDiffOverlayProps> = ({
       <div className="flex flex-none items-center gap-2 border-b px-3 py-2">
         <GitCompare className="h-4 w-4 flex-none text-muted-foreground" />
         <span className="text-[13px] font-medium">Working tree changes</span>
+        {label && (
+          <span className="font-mono text-[11px] text-foreground/80" title={projectPath}>
+            {label}
+          </span>
+        )}
         {files.state === "ready" && (
           <span className="text-[11px] text-muted-foreground">
             {fileList.length} {fileList.length === 1 ? "file" : "files"}

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach } from 'vitest';
-import { render, cleanup, screen } from '@testing-library/react';
+import { render, cleanup, screen, fireEvent } from '@testing-library/react';
+import { vi } from 'vitest';
 import { BranchStatusBar } from '@/components/claude-code-session/BranchStatusBar';
 
 afterEach(() => { cleanup(); });
@@ -58,5 +59,20 @@ describe('BranchStatusBar', () => {
     );
     expect(screen.getByTestId('watch')).toBeTruthy();
     expect(screen.getAllByTestId('status-divider')).toHaveLength(1);
+  });
+
+  it('offers View changes on a worktree badge, for that worktree\'s path', () => {
+    const onViewWorktreeChanges = vi.fn();
+    render(
+      <BranchStatusBar
+        branch={branch}
+        worktrees={worktrees}
+        colorFor={colorFor}
+        onViewWorktreeChanges={onViewWorktreeChanges}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /\(detached\)/i }));
+    fireEvent.click(screen.getByRole('button', { name: /view changes/i }));
+    expect(onViewWorktreeChanges).toHaveBeenCalledWith('/repo-b');
   });
 });

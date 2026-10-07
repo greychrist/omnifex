@@ -593,3 +593,32 @@ describe('ProjectList — pinned/unpinned boundary', () => {
     expect(container.querySelector('[data-pin-boundary="true"]')).toBeNull();
   });
 });
+
+// A new Projects tab mounts before `listProjects` answers. Until it does,
+// "no projects" is unknown, not true — the empty card used to fade in and be
+// swapped for the table a moment later.
+describe('ProjectList — first load', () => {
+  it('shows a skeleton, not the empty state, while loading', () => {
+    render(<ProjectList projects={[]} onProjectClick={() => {}} loading />);
+    expect(screen.getByTestId('project-list-skeleton')).toBeTruthy();
+    expect(screen.queryByText('No recent projects')).toBeNull();
+  });
+
+  it('shows the empty state once loaded with nothing', () => {
+    render(<ProjectList projects={[]} onProjectClick={() => {}} loading={false} />);
+    expect(screen.getByText('No recent projects')).toBeTruthy();
+    expect(screen.queryByTestId('project-list-skeleton')).toBeNull();
+  });
+
+  it('keeps showing projects it already has during a refetch', () => {
+    const { container } = render(
+      <ProjectList
+        projects={[makeProject({ id: 'a', path: '/repos/alpha' })]}
+        onProjectClick={() => {}}
+        loading
+      />,
+    );
+    expect(rowNames(container)).toEqual(['alpha']);
+    expect(screen.queryByTestId('project-list-skeleton')).toBeNull();
+  });
+});

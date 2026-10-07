@@ -47,6 +47,9 @@ const TabPanelImpl: React.FC<TabPanelProps> = ({ tab, isActive }) => {
   useRenderProfile('TabPanel');
   const { updateTab } = useTabState();
   const [projects, setProjects] = React.useState<Project[]>([]);
+  // Until the first `listProjects` answers, an empty list means "unknown",
+  // not "none" — the list shows a skeleton rather than its empty state.
+  const [projectsLoaded, setProjectsLoaded] = React.useState(false);
   const [selectedProject, setSelectedProject] = React.useState<Project | null>(null);
   // Project whose settings (CLAUDE.md, hooks) are open. Kept separate from
   // `selectedProject` so opening settings doesn't also drill into sessions —
@@ -128,6 +131,7 @@ const TabPanelImpl: React.FC<TabPanelProps> = ({ tab, isActive }) => {
       setError("Failed to load projects. Please ensure ~/.claude directory exists.");
     } finally {
       setLoading(false);
+      setProjectsLoaded(true);
     }
   };
   
@@ -594,7 +598,7 @@ const TabPanelImpl: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                       onQuickLaunch={fireAndLog('tab-content:project-quick-launch', handleQuickLaunch)}
                       onTogglePin={handleTogglePin}
                       onOpenSettings={fireAndLog('tab-content:project-settings', setSettingsProject)}
-                      loading={loading}
+                      loading={!projectsLoaded}
                     />
                   </div>
                 </div>
