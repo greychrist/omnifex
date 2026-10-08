@@ -5,6 +5,23 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.229] — 2026-10-08
+
+### Added
+- Appearance › Message kinds › **All cards**: settings that apply to every card — default view mode, card border opacity (default 20%) and corner radius (default 12px) — with a live preview card.
+- Hidden events: border opacity and corner radius sliders.
+- A `Hook progress` message kind, so a hook's mid-run output is no longer an unrecognised row.
+
+### Changed
+- Card borders are subtler by default (20% of the accent colour, was ~33%).
+- The kind editor is laid out as compact label-and-control rows with one inherit/revert marker per row, roughly halving its height.
+- The expanded Hidden Events card body sits just above the chat background instead of a shade darker.
+- Hook rows are hidden by default through their message kinds; switch them on from Message kinds.
+
+### Removed
+- The Global tab (its settings moved to All cards) and the Palette tab — every colour is now a hex value; saved palette names convert on load with the same colour.
+- The live-overlay "Hide …" filters (three did nothing, the fourth duplicated the hook kinds) and the "Show message kind label" option, which did nothing — the kind label always shows.
+
 ## [0.4.228] — 2026-10-08
 
 ### Added
