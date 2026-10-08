@@ -3,7 +3,7 @@ import React from 'react';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, act } from '@testing-library/react';
 import { Folder, List, MessageSquare, DollarSign } from 'lucide-react';
-import { getTabIcon, TabManager } from '../TabManager';
+import { getTabIcon, TabManager, TAB_REVEAL_MARGIN_PX } from '../TabManager';
 import type { Tab } from '@/contexts/TabContext';
 import type { JsonlNode } from '@/types/jsonl';
 import { useClaudeSessionStore } from '@/stores/claudeSessionStore';
@@ -408,6 +408,82 @@ describe('TabManager — interactions', () => {
     expect(newBtn).not.toBeNull();
     fireEvent.click(newBtn!);
     expect(createProjectsTab).not.toHaveBeenCalled();
+  });
+});
+
+// A crowded strip scrolls, and the tab at either edge is usually half-cut by
+// the scroll container. Activating one must bring it fully into view — with
+// room for the edge fade, which would otherwise sit on top of it.
+describe('TabManager — revealing a clipped tab', () => {
+  const rect = (left: number, right: number) =>
+    ({ left, right, width: right - left, top: 0, bottom: 30, height: 30, x: left, y: 0, toJSON: () => ({}) }) as DOMRect;
+
+  function layout(container: HTMLElement, tabRects: Record<string, [number, number]>) {
+    const strip = container.querySelector<HTMLElement>('[data-testid="tab-strip-scroll"]')!;
+    strip.getBoundingClientRect = () => rect(0, 500);
+    strip.scrollLeft = 100;
+    const scrollTo = vi.fn();
+    strip.scrollTo = scrollTo;
+    for (const [id, [l, r]] of Object.entries(tabRects)) {
+      container.querySelector<HTMLElement>(`[data-tab-id="${id}"]`)!.getBoundingClientRect = () => rect(l, r);
+    }
+    return scrollTo;
+  }
+
+  const tabs = [
+    makeTab({ id: 'a', type: 'chat', title: 'A' }),
+    makeTab({ id: 'b', type: 'chat', title: 'B' }),
+    makeTab({ id: 'c', type: 'chat', title: 'C' }),
+  ];
+
+  it('scrolls right far enough to show a tab cut off on the right', () => {
+    installState({ tabs, activeTabId: 'b' });
+    const { container } = render(<TabManager />);
+    const scrollTo = layout(container, { c: [450, 600] });
+    fireEvent.click(screen.getByText('C'));
+    expect(scrollTo).toHaveBeenCalledWith({ left: 100 + 100 + TAB_REVEAL_MARGIN_PX, behavior: 'smooth' });
+  });
+
+  it('scrolls left far enough to show a tab cut off on the left', () => {
+    installState({ tabs, activeTabId: 'b' });
+    const { container } = render(<TabManager />);
+    const scrollTo = layout(container, { a: [-50, 100] });
+    fireEvent.click(screen.getByText('A'));
+    expect(scrollTo).toHaveBeenCalledWith({ left: 100 - 50 - TAB_REVEAL_MARGIN_PX, behavior: 'smooth' });
+  });
+
+  it('reveals the already-active tab when it is clicked while clipped', () => {
+    installState({ tabs, activeTabId: 'c' });
+    const { container } = render(<TabManager />);
+    const scrollTo = layout(container, { c: [450, 600] });
+    fireEvent.click(screen.getByText('C'));
+    expect(scrollTo).toHaveBeenCalled();
+  });
+
+  it('reveals a tab activated from outside the strip (shortcut, new tab)', () => {
+    installState({ tabs, activeTabId: 'a' });
+    const { container, rerender } = render(<TabManager />);
+    const scrollTo = layout(container, { c: [450, 600] });
+    installState({ tabs, activeTabId: 'c' });
+    rerender(<TabManager />);
+    expect(scrollTo).toHaveBeenCalledWith({ left: 100 + 100 + TAB_REVEAL_MARGIN_PX, behavior: 'smooth' });
+  });
+
+  it('leaves the strip alone when the tab is already comfortably visible', () => {
+    installState({ tabs, activeTabId: 'a' });
+    const { container } = render(<TabManager />);
+    const scrollTo = layout(container, { b: [200, 300] });
+    fireEvent.click(screen.getByText('B'));
+    expect(scrollTo).not.toHaveBeenCalled();
+  });
+
+  it('keeps the + button outside the scrolling strip so it is never scrolled away', () => {
+    installState({ tabs });
+    const { container } = render(<TabManager />);
+    const strip = container.querySelector('[data-testid="tab-strip-scroll"]')!;
+    const newBtn = container.querySelector('button[title^="New project"]')!;
+    expect(newBtn).not.toBeNull();
+    expect(strip.contains(newBtn)).toBe(false);
   });
 });
 

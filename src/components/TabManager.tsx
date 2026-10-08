@@ -237,6 +237,7 @@ const TabItem: React.FC<TabItemProps> = ({ tab, isActive, onClose, onClick, isDr
     <Reorder.Item
       value={tab}
       id={tab.id}
+      data-tab-id={tab.id}
       dragListener={true}
       // Don't transition `transform` here — framer-motion already animates
       // it during the drag. A CSS `transition-all` would fight that and
@@ -350,6 +351,13 @@ const TabItem: React.FC<TabItemProps> = ({ tab, isActive, onClose, onClick, isDr
 interface TabManagerProps {
   className?: string;
 }
+
+/**
+ * Room left between a revealed tab and the strip's edge. Matches the `w-8`
+ * edge fades: scrolled flush, the tab would sit under the gradient and still
+ * read as cut off.
+ */
+export const TAB_REVEAL_MARGIN_PX = 32;
 
 export const TabManager: React.FC<TabManagerProps> = ({ className }) => {
   useRenderProfile('TabManager');
@@ -539,7 +547,36 @@ export const TabManager: React.FC<TabManagerProps> = ({ className }) => {
   const handleSwitchToTab = (id: string) => {
     renderProfiler.profile('tab-switch');
     switchToTab(id);
+    // Clicking the already-active tab changes no state, so the effect below
+    // would not fire — reveal here too. Both compute an absolute target, so
+    // the effect re-running mid-scroll lands on the same spot.
+    revealTab(id);
   };
+
+  // Scroll the strip just far enough to show the whole tab plus margin. A
+  // clipped tab at either edge is the usual click target in a crowded strip.
+  const revealTab = (id: string) => {
+    const container = scrollContainerRef.current;
+    const el = Array.from(container?.querySelectorAll<HTMLElement>('[data-tab-id]') ?? [])
+      .find((node) => node.dataset.tabId === id);
+    if (!container || !el) return;
+    const strip = container.getBoundingClientRect();
+    const tab = el.getBoundingClientRect();
+    let delta = 0;
+    if (tab.left < strip.left + TAB_REVEAL_MARGIN_PX) {
+      delta = tab.left - strip.left - TAB_REVEAL_MARGIN_PX;
+    } else if (tab.right > strip.right - TAB_REVEAL_MARGIN_PX) {
+      delta = tab.right - strip.right + TAB_REVEAL_MARGIN_PX;
+    }
+    const left = Math.max(0, container.scrollLeft + delta);
+    if (left === container.scrollLeft) return;
+    container.scrollTo({ left, behavior: 'smooth' });
+  };
+
+  // Keyboard shortcuts, `switch-to-tab` events and new tabs all land here.
+  useEffect(() => {
+    if (activeTabId) revealTab(activeTabId);
+  }, [activeTabId]);
 
   const scrollTabs = (direction: 'left' | 'right') => {
     const container = scrollContainerRef.current;
@@ -558,11 +595,6 @@ export const TabManager: React.FC<TabManagerProps> = ({ className }) => {
 
   return (
     <div className={cn("flex items-stretch bg-muted/40 relative border-b border-border/50", className)}>
-      {/* Left fade gradient */}
-      {showLeftScroll && (
-        <div className="absolute left-0 top-0 bottom-0 w-8 bg-gradient-to-r from-muted/40 to-transparent pointer-events-none z-10" />
-      )}
-      
       {/* Left scroll button */}
       <AnimatePresence>
         {showLeftScroll && (
@@ -585,78 +617,66 @@ export const TabManager: React.FC<TabManagerProps> = ({ className }) => {
         )}
       </AnimatePresence>
 
-      {/* Tabs container */}
-      <div
-        ref={scrollContainerRef}
-        className="flex-1 flex overflow-x-auto scrollbar-hide"
-        style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
-      >
-        {/* No fixed height here: the tabs set it. This row was pinned at `h-9`
-            (36px) from when a tab was a single 26px line, so the two-line 38px
-            tab overflowed it by a pixel top and bottom and the scroll
-            container clipped the result. Padding instead, so the strip grows
-            with whatever the tab is. */}
-        <div className="flex items-center gap-1 px-2 py-1">
-          {/* The dragged tab used to blank for a frame on each crossing. It
-              was not framer-motion and not StrictMode — both were blamed and
-              both were wrong. `onReorder` fires per crossing, and nothing in
-              the panel tree below was memoised, so every crossing re-rendered
-              every open session's full unvirtualised transcript (measured:
-              ~1400 rows, ~110ms) between the drag frames. StrictMode's
-              double-invoke made it obvious in dev, which is why it looked
-              dev-only; it was always there, just cheaper to miss.
-              Fixed by memoising TabPanel and ClaudeTranscript. If it ever
-              returns, measure with `__omnifexProfile.on()` before theorising —
-              see src/lib/renderProfiler.ts. */}
-          <Reorder.Group
-            axis="x"
-            values={tabs}
-            onReorder={handleReorder}
-            className="flex items-center gap-1"
-            // The parent .flex-1 div is `overflow-x-auto`, so let framer-motion
-            // do scroll-aware layout math when the dragged tab nears the edge.
-            // Setting `layoutScroll={false}` was making drop targets
-            // mis-compute and contributed to the jumpy reorder.
-            layoutScroll
-          >
-            {tabs.map((tab) => (
-              <TabItem
-                key={tab.id}
-                tab={tab}
-                isActive={tab.id === activeTabId}
-                onClose={fireAndLog('tab-manager:close', handleCloseTab)}
-                onClick={handleSwitchToTab}
-                isDragging={draggedTabId === tab.id}
-                setDraggedTabId={setDraggedTabId}
-              />
-            ))}
-          </Reorder.Group>
-          
-          {/* New tab button - positioned right after tabs */}
-          <motion.button
-            onClick={handleNewTab}
-            disabled={!canAddTab()}
-            whileTap={canAddTab() ? { scale: 0.97 } : {}}
-            transition={{ duration: 0.15 }}
-            className={cn(
-              "px-2 rounded-md flex items-center justify-center flex-shrink-0",
-              "bg-background/50 backdrop-blur-sm h-[38px]",
-              "shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_75%,transparent)]",
-              canAddTab()
-                ? "hover:bg-muted/60 text-muted-foreground hover:text-foreground"
-                : "opacity-50 cursor-not-allowed text-muted-foreground"
-            )}
-            title={canAddTab() ? "New project (Ctrl+T)" : "Maximum tabs reached"}
-          >
-            <Plus className="w-4 h-4" />
-          </motion.button>
+      {/* Tabs container. Shrinks to its tabs rather than filling the row, so
+          the + button outside it sits right after the last tab until the
+          strip overflows, then stays pinned at its end instead of scrolling
+          away. The fades are anchored to this wrapper, not the whole bar. */}
+      <div className="relative flex min-w-0">
+        {showLeftScroll && (
+          <div className="absolute left-0 top-0 bottom-0 w-8 bg-gradient-to-r from-muted/40 to-transparent pointer-events-none z-10" />
+        )}
+        {showRightScroll && (
+          <div className="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-muted/40 to-transparent pointer-events-none z-10" />
+        )}
+        <div
+          ref={scrollContainerRef}
+          data-testid="tab-strip-scroll"
+          className="flex min-w-0 overflow-x-auto scrollbar-hide"
+          style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+        >
+          {/* No fixed height here: the tabs set it. This row was pinned at `h-9`
+              (36px) from when a tab was a single 26px line, so the two-line 38px
+              tab overflowed it by a pixel top and bottom and the scroll
+              container clipped the result. Padding instead, so the strip grows
+              with whatever the tab is. */}
+          <div className="flex items-center gap-1 pl-2 pr-1 py-1">
+            {/* The dragged tab used to blank for a frame on each crossing. It
+                was not framer-motion and not StrictMode — both were blamed and
+                both were wrong. `onReorder` fires per crossing, and nothing in
+                the panel tree below was memoised, so every crossing re-rendered
+                every open session's full unvirtualised transcript (measured:
+                ~1400 rows, ~110ms) between the drag frames. StrictMode's
+                double-invoke made it obvious in dev, which is why it looked
+                dev-only; it was always there, just cheaper to miss.
+                Fixed by memoising TabPanel and ClaudeTranscript. If it ever
+                returns, measure with `__omnifexProfile.on()` before theorising —
+                see src/lib/renderProfiler.ts. */}
+            <Reorder.Group
+              axis="x"
+              values={tabs}
+              onReorder={handleReorder}
+              className="flex items-center gap-1"
+              // The scroll container is `overflow-x-auto`, so let framer-motion
+              // do scroll-aware layout math when the dragged tab nears the edge.
+              // Setting `layoutScroll={false}` was making drop targets
+              // mis-compute and contributed to the jumpy reorder.
+              layoutScroll
+            >
+              {tabs.map((tab) => (
+                <TabItem
+                  key={tab.id}
+                  tab={tab}
+                  isActive={tab.id === activeTabId}
+                  onClose={fireAndLog('tab-manager:close', handleCloseTab)}
+                  onClick={handleSwitchToTab}
+                  isDragging={draggedTabId === tab.id}
+                  setDraggedTabId={setDraggedTabId}
+                />
+              ))}
+            </Reorder.Group>
+          </div>
         </div>
       </div>
-
-      {/* Right fade gradient */}
-      {showRightScroll && (
-        <div className="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-muted/40 to-transparent pointer-events-none z-10" />
-      )}
 
       {/* Right scroll button */}
       <AnimatePresence>
@@ -679,6 +699,27 @@ export const TabManager: React.FC<TabManagerProps> = ({ className }) => {
           </motion.button>
         )}
       </AnimatePresence>
+
+      <div className="flex items-center py-1 pr-2">
+        {/* New tab button — outside the scroll container, so always reachable. */}
+        <motion.button
+          onClick={handleNewTab}
+          disabled={!canAddTab()}
+          whileTap={canAddTab() ? { scale: 0.97 } : {}}
+          transition={{ duration: 0.15 }}
+          className={cn(
+            "px-2 rounded-md flex items-center justify-center flex-shrink-0",
+            "bg-background/50 backdrop-blur-sm h-[38px]",
+            "shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_75%,transparent)]",
+            canAddTab()
+              ? "hover:bg-muted/60 text-muted-foreground hover:text-foreground"
+              : "opacity-50 cursor-not-allowed text-muted-foreground"
+          )}
+          title={canAddTab() ? "New project (Ctrl+T)" : "Maximum tabs reached"}
+        >
+          <Plus className="w-4 h-4" />
+        </motion.button>
+      </div>
 
       {/* Closing a tab stops its CLI session, and the turn in flight does not
           survive it. Only shown for tabs with live work — see
