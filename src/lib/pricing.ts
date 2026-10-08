@@ -189,6 +189,14 @@ export const SHIPPED_PRICING: ModelPricingInput[] = [
   // through to 15/75, inflating its cost 3x.
   { pattern: 'opus', effectiveFrom: '2024-01-01', inputPerM: 15, outputPerM: 75, contextWindow: 200_000 },
 
+  // Haiku 5.5 (2.1.293, CLI cost table `haiku_55`): standard cache
+  // multipliers, native 1M window. Without this row it fell to the legacy
+  // `haiku` catch-all at 2.5x its price. Known gap: prompts over 100K input
+  // tokens bill at $0.50/$2.50 upstream (`long_prompt`), and the table has no
+  // per-request tier, so those turns are understated. Slot 2 is shared with
+  // Fable 5, superseded by 5.1; Haiku 4.5's yellow would collide, since
+  // a month that crosses the alias switch charts both.
+  { pattern: 'haiku-5-5', effectiveFrom: '2024-01-01', inputPerM: 0.1, outputPerM: 0.5, label: 'Haiku 5.5', colorSlot: 2, contextWindow: 1_000_000 },
   { pattern: 'haiku-4-5', effectiveFrom: '2024-01-01', inputPerM: 1, outputPerM: 5, label: 'Haiku 4.5', colorSlot: 4 },
   { pattern: 'haiku', effectiveFrom: '2024-01-01', inputPerM: 0.25, outputPerM: 1.25, contextWindow: 200_000 },
 

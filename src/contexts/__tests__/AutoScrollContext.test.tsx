@@ -30,7 +30,7 @@ describe("AutoScrollProvider", () => {
     vi.clearAllMocks();
   });
 
-  it("defaults to 200 when nothing is stored", async () => {
+  it("defaults to 300 when nothing is stored", async () => {
     (api.getSetting as ReturnType<typeof vi.fn>).mockResolvedValue(null);
     let latest: Ctx | undefined;
     render(
@@ -39,7 +39,7 @@ describe("AutoScrollProvider", () => {
       </AutoScrollProvider>,
     );
     await waitFor(() => expect(latest?.isLoading).toBe(false));
-    expect(latest?.followPx).toBe(200);
+    expect(latest?.followPx).toBe(300);
   });
 
   it("loads the stored value", async () => {

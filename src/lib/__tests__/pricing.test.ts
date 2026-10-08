@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveRates, resolvePricing, computeMessageCost, totalInputTokens } from '../pricing';
+import { resolveRates, resolvePricing, computeMessageCost, totalInputTokens, resolveContextWindow } from '../pricing';
 
 const MTOK = 1_000_000;
 
@@ -175,6 +175,31 @@ describe('resolvePricing — Sonnet 5.5', () => {
     expect(perM(rates.output)).toBe(10);
     expect(perM(rates.cacheRead)).toBeCloseTo(0.2, 9);
     expect(estimated).toBe(false);
+  });
+});
+
+describe('resolveRates — Haiku 5.5', () => {
+  // Haiku 5.5 (2.1.293, CLI cost table `haiku_55`) is $0.10/$0.50 with the
+  // standard cache multipliers and a native 1M window. Without its own row
+  // `claude-haiku-5-5` falls to the legacy `haiku` catch-all: $0.25/$1.25
+  // (2.5x over) and a 200k window.
+  it('prices claude-haiku-5-5 at $0.10/$0.50, not as legacy Haiku', () => {
+    const { rates, estimated } = resolveRates('claude-haiku-5-5');
+    expect(perM(rates.input)).toBeCloseTo(0.1, 9);
+    expect(perM(rates.output)).toBeCloseTo(0.5, 9);
+    // Sub-cent rates: perM() rounds to cents, so compare raw.
+    expect(rates.cacheRead * 1_000_000).toBeCloseTo(0.01, 9);
+    expect(rates.cacheWrite5m * 1_000_000).toBeCloseTo(0.125, 9);
+    expect(perM(rates.cacheWrite1h)).toBeCloseTo(0.2, 9);
+    expect(estimated).toBe(false);
+  });
+
+  it('labels it Haiku 5.5 in its own colour with a 1M window', () => {
+    const { row } = resolvePricing('claude-haiku-5-5', '2026-10-07');
+    expect(row.label).toBe('Haiku 5.5');
+    expect(row.colorSlot).not.toBe(resolvePricing('claude-haiku-4-5', '2026-10-07').row.colorSlot);
+    expect(resolveContextWindow('claude-haiku-5-5')).toBe(1_000_000);
+    expect(resolveContextWindow('claude-haiku-4-5')).toBe(200_000);
   });
 });
 

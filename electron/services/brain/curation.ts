@@ -54,8 +54,12 @@ export class CurationParseError extends Error {
  *
  * Two tasks with different volume and different stakes get two constants. The
  * next reason to change one will not apply to the other.
+ *
+ * A family alias, like `EXTRACTION_MODEL`: it tracks the newest Opus (5.5 was
+ * already cheaper than the `claude-opus-5` this used to name), and the model
+ * that billed is recorded from the CLI's reply.
  */
-export const CURATION_MODEL = 'claude-opus-5';
+export const CURATION_MODEL = 'opus';
 
 /**
  * What the model is shown. `entries` and `decisions` are exactly what the fold

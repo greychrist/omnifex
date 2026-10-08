@@ -366,6 +366,46 @@ describe('brain: indexing cost', () => {
     expect(stats.spentUsd).toBeCloseTo(0.25, 6);
   });
 
+  // The extractor asks for the `sonnet` alias. The ledger records the model
+  // that actually billed, so a row stays attributable after the alias moves.
+  it('records the model that ran in the spend ledger, not the alias asked for', async () => {
+    const brain = createBrainService(db, {
+      execGit: stubExec, accounts: accountsStub,
+      sources: [costSource('sess-m')],
+      extractor: () => Promise.resolve({
+        entities: [],
+        run: {
+          costUsd: 0.1, inputTokens: 1, outputTokens: 1,
+          cacheReadTokens: 0, cacheCreationTokens: 0, model: 'claude-sonnet-5-5',
+        },
+      }),
+    });
+    brain.setVaultPath(1, join(dir, 'vault'));
+    await brain.indexSource(1, 'sess-m');
+
+    const row = db.raw.prepare('SELECT model FROM brain_spend').get() as { model: string };
+    expect(row.model).toBe('claude-sonnet-5-5');
+  });
+
+  it('records the alias when the CLI reported no model', async () => {
+    const brain = createBrainService(db, {
+      execGit: stubExec, accounts: accountsStub,
+      sources: [costSource('sess-n')],
+      extractor: () => Promise.resolve({
+        entities: [],
+        run: {
+          costUsd: 0.1, inputTokens: 1, outputTokens: 1,
+          cacheReadTokens: 0, cacheCreationTokens: 0, model: null,
+        },
+      }),
+    });
+    brain.setVaultPath(1, join(dir, 'vault'));
+    await brain.indexSource(1, 'sess-n');
+
+    const row = db.raw.prepare('SELECT model FROM brain_spend').get() as { model: string };
+    expect(row.model).toBe('sonnet');
+  });
+
   it('never reports another account spend as this one', async () => {
     db.raw.prepare('INSERT INTO accounts (id, name, config_dir) VALUES (?, ?, ?)')
       .run(2, 'Work', '/cfg/work');

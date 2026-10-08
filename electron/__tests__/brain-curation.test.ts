@@ -13,6 +13,7 @@ function reply(text: string): CliRunResult {
     cacheReadTokens: null,
     cacheCreationTokens: null,
     durationMs: null,
+    model: null,
   };
 }
 
@@ -139,8 +140,9 @@ describe('createCurator', () => {
     expect(out.run).toMatchObject({ costUsd: 0.4, inputTokens: 40 });
   });
 
-  it('is pinned to Opus, not to the extraction model', () => {
-    expect(CURATION_MODEL).toBe('claude-opus-5');
+  it('is pinned to the Opus family, not to the extraction model', () => {
+    // An alias, so curation tracks the newest Opus rather than one version.
+    expect(CURATION_MODEL).toBe('opus');
   });
 
   it('retries exactly once on an unusable reply', async () => {

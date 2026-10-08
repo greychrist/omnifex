@@ -120,6 +120,12 @@ export interface CliRunResult {
   cacheReadTokens: number | null;
   cacheCreationTokens: number | null;
   durationMs: number | null;
+  /**
+   * The model that ran, from the envelope's `modelUsage` — the key that took
+   * the most money when the CLI used a helper model too. Callers may pass an
+   * alias (`sonnet`); this is what it resolved to. Null when not reported.
+   */
+  model: string | null;
 }
 
 /** Subset of the CLI runner surface we depend on — exposed for testing. */
@@ -145,6 +151,22 @@ interface CliResultEnvelope {
     cache_read_input_tokens?: unknown;
     cache_creation_input_tokens?: unknown;
   };
+  modelUsage?: unknown;
+}
+
+/** The `modelUsage` key with the largest `costUSD`, or null. */
+function billedModel(modelUsage: unknown): string | null {
+  if (!modelUsage || typeof modelUsage !== 'object') return null;
+  let best: string | null = null;
+  let bestCost = -1;
+  for (const [model, v] of Object.entries(modelUsage as Record<string, { costUSD?: unknown }>)) {
+    const cost = num(v?.costUSD) ?? 0;
+    if (cost > bestCost) {
+      best = model;
+      bestCost = cost;
+    }
+  }
+  return best;
 }
 
 /** A finite number, or null. Guards against a string or a missing field. */
@@ -212,6 +234,7 @@ export async function runCliOnce(p: RunPromptParams): Promise<CliRunResult> {
           cacheReadTokens: num(parsed?.usage?.cache_read_input_tokens),
           cacheCreationTokens: num(parsed?.usage?.cache_creation_input_tokens),
           durationMs: num(parsed?.duration_ms),
+          model: billedModel(parsed?.modelUsage),
         });
       } catch (e) {
         reject(

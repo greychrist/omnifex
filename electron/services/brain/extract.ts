@@ -130,8 +130,16 @@ export function parseExtraction(raw: string): Extraction {
 }
 
 /**
- * Pinned, not configurable: letting extraction inherit an account's session
- * default would quietly bill Opus for a high-volume background task.
+ * Pinned to a family, not configurable: letting extraction inherit an
+ * account's session default would quietly bill Opus for a high-volume
+ * background task.
+ *
+ * The family alias, not a version id, so extraction moves to each new Sonnet
+ * the day the CLI ships it (the summaries' per-account picker already worked
+ * this way). What actually billed is read back from the CLI's `modelUsage`
+ * and recorded in `brain_spend`. The trade: a new Sonnet that writes worse
+ * notes arrives unannounced — the Haiku finding below is the kind of
+ * regression to look for.
  *
  * Spec §8 pins Haiku. This is Sonnet instead, and the reason is measured
  * rather than assumed. The first live extraction at Haiku (session 27b32dad,
@@ -145,7 +153,7 @@ export function parseExtraction(raw: string): Extraction {
  * Opus was considered and rejected on volume: backfill is ~142 sessions, and
  * one extraction already costs ~2.5 minutes of wall-clock at a smaller model.
  */
-export const EXTRACTION_MODEL = 'claude-sonnet-5';
+export const EXTRACTION_MODEL = 'sonnet';
 
 export interface ExtractorDeps {
   /**
@@ -193,6 +201,7 @@ export function runCostOf(r: CliRunResult): RunCost {
     outputTokens: r.outputTokens,
     cacheReadTokens: r.cacheReadTokens,
     cacheCreationTokens: r.cacheCreationTokens,
+    model: r.model,
   };
 }
 

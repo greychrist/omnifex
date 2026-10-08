@@ -42,6 +42,67 @@ import { buildClaudeEnv } from './util/claude-env';
  *    the CLI answers with the error "Side question cancelled". Its own
  *    deadline is 600 s. Only the SDK's `askSideQuestion()` documents it.
  *
+ * Last review: 2.1.292 -> 2.1.293 on 2026-10-07. Findings:
+ *
+ *  Changelog coverage: one version in range, 2.1.293, and it has an entry
+ *  (~60 lines: Haiku 5.5, mods, `←` backgrounding, Claude Tag). Both
+ *  endpoints installed, so the wire claims are a real binary diff.
+ *
+ *  WIRE DIFF (unique literals): merge-strategy map 40 -> 40, `subtype:`
+ *  154, `hook_event_name` 33, `type:"control_*"` 4, SDK
+ *  `this.request({subtype})` 54, `type:` 993, `origin:{kind}` 12 — all
+ *  set-identical. Keys on `user`/`assistant` literals 18, set-identical;
+ *  `turnOrigin` sanitizer sets unchanged. `.describe()` 1641 -> 1640: new
+ *  `@internal` `canContinueAgent` (optional boolean on the Agent tool's
+ *  result — false when the caller holds no messaging tool), and the Agent
+ *  `name` / Artifact `project_write` descriptions moved out of static
+ *  literals. `/usage` anchors count-identical except `resets` 117 -> 116
+ *  and `MCP servers` 258 -> 268: diffed contexts are identifier noise plus
+ *  a managed-settings "Allowed plugin MCP servers" label, not the table.
+ *
+ *  Fixed in this pass:
+ *
+ *   - Haiku 5.5 (`claude-haiku-5-5`, CLI cost table `haiku_55`: $0.10/
+ *     $0.50, 0.1x/1.25x/2x cache, native 1M). Now the default Haiku, so
+ *     the `haiku` alias resolves to it. Unrowed it fell to the legacy
+ *     `haiku` catch-all at $0.25/$1.25 (2.5x over) and a 200k window. New
+ *     SHIPPED_PRICING row in src/lib/pricing.ts. No 5.5 traffic in
+ *     session_cost_daily yet, so nothing to re-price.
+ *     Known gap left open: `long_prompt` — prompts over 100K input tokens
+ *     bill at $0.50/$2.50 (cache 5x too). Rows have no per-request tier,
+ *     so such turns are understated 5x. Live today: an account whose
+ *     `summaryModel` is the `haiku` alias (Work) now summarises on 5.5.
+ *     Measured 2026-10-07 over every Haiku 4.5 request on disk: 21 of
+ *     2,437 (0.9%) crossed 100K, max 118K, all summaries or Explore
+ *     subagents. Too rare to build per-request tiers for; re-measure if
+ *     Haiku starts doing long-context work.
+ *
+ *  Checked and inert:
+ *
+ *   - Model catalog / effort levels for Haiku 5.5 (`effort`, `xhigh`,
+ *     `max`, adaptive thinking, default effort medium): reach the pickers
+ *     through the CLI's `initialize` catalog (electron/services/models.ts),
+ *     nothing hard-coded.
+ *   - `agentType` on the `subagentStatusLine` payload: OmniFex sets no
+ *     subagent status line.
+ *   - `isDeferred` on `$.tool.register`, mod `classic.*` hook restart fix,
+ *     `claude plugin test` `mock.session`: mod authoring surface.
+ *   - `SendMessage` no longer advertised when a host/rule/`--tools` drops
+ *     it; `canContinueAgent` is the wire side of that. Optional field,
+ *     we read nothing from it.
+ *   - Compaction no longer re-doing finished work: model-side.
+ *   - `←` backgrounding, `/tui`, `/model` effort wrap, vim, paste and
+ *     keybinding fixes: TUI-only; no TUI in OmniFex.
+ *   - Path-scoped rules / nested CLAUDE.md now load on `cat`/`head`/`sed -n`
+ *     via Bash: CLI-side; OmniFex renders the resulting attachments as
+ *     before (record map unchanged).
+ *   - Auto-mode denial wording reverted (2.1.281 change): we anchor on no
+ *     denial prose.
+ *   - Remote Control, `claude daemon`/`logs`/`purge`, `/ultrareview`,
+ *     Claude in Chrome, HTTP MCP leak, skill sync interval, agent/MCP
+ *     sort order, OTEL, self-hosted runner, Claude Tag, Code Review:
+ *     no OmniFex surface.
+ *
  * Last review: 2.1.291 -> 2.1.292 on 2026-10-06. Findings:
  *
  *  Changelog coverage: one version in range, 2.1.292, and it has an entry
@@ -3922,7 +3983,7 @@ import { buildClaudeEnv } from './util/claude-env';
  * `~/.claude.json` fix (we read-modify-write that file, never replace it), and
  * the VSCode screen-reader work.
  */
-export const REVIEWED_CLI_VERSION = '2.1.292';
+export const REVIEWED_CLI_VERSION = '2.1.293';
 
 /**
  * app_settings key holding the user's explicit OmniFex-checkout override.

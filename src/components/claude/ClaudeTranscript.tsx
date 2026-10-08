@@ -21,7 +21,7 @@ import { useSessionGauges } from "@/contexts/SessionGaugesContext";
 import { buildContextTimeline } from "@/lib/contextTimeline";
 import { ContextTimelineTick } from "@/components/ContextTimelineTick";
 import { ContextTimelineToggle } from "@/components/ContextTimelineToggle";
-import { isFollowing } from "@/lib/autoScrollFollow";
+import { nextFollowing, USER_SCROLL_INTENT_MS } from "@/lib/autoScrollFollow";
 import { stepTarget, isStepStop, isMainPrompt, STEP_MARGIN_PX, type StepDirection } from "@/lib/transcriptStepper";
 import { cn } from "@/lib/utils";
 import { logAndForget } from "@/lib/fireAndLog";
@@ -391,17 +391,64 @@ function ClaudeTranscriptImpl({
     [displayableMessages],
   );
 
+  // The follow marker: a pale dot `followPx` above the end of the content.
+  // Following is `distanceFromBottom <= followPx`, so the dot is on screen
+  // exactly when the transcript should be following. Its `data-following`
+  // is written here, imperatively, because the decision lives in a ref and a
+  // re-render per scroll event would cost every mounted tab.
+  const followMarkerRef = useRef<HTMLDivElement>(null);
+
+  // When the user last touched the transcript, and whether a pointer is held
+  // (a scrollbar drag is one pointerdown and then however long the drag
+  // takes). Only a scroll near one of these may stop following — see
+  // autoScrollFollow. Bound on the wrapper, so the find bar and the gutter's
+  // step buttons count too; the prompt box sits outside it and does not.
+  const lastUserInputAtRef = useRef(Number.NEGATIVE_INFINITY);
+  const pointerHeldRef = useRef(false);
+  const markUserInput = useCallback(() => {
+    lastUserInputAtRef.current = performance.now();
+  }, []);
+  const handlePointerDown = useCallback(() => {
+    markUserInput();
+    pointerHeldRef.current = true;
+    const release = () => {
+      pointerHeldRef.current = false;
+      markUserInput();
+      window.removeEventListener('pointerup', release);
+      window.removeEventListener('pointercancel', release);
+    };
+    window.addEventListener('pointerup', release);
+    window.addEventListener('pointercancel', release);
+  }, [markUserInput]);
+
   const handleScroll = useCallback(() => {
     const el = parentRef.current;
     if (!el) return;
     const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
     // The distance is user-tunable in Settings → General (see
     // AutoScrollContext / autoScrollFollow).
-    isNearBottomRef.current = isFollowing(distanceFromBottom, followPx);
+    isNearBottomRef.current = nextFollowing({
+      following: isNearBottomRef.current,
+      distanceFromBottom,
+      followPx,
+      userScrolling:
+        pointerHeldRef.current ||
+        performance.now() - lastUserInputAtRef.current <= USER_SCROLL_INTENT_MS,
+    });
+    if (followMarkerRef.current) {
+      followMarkerRef.current.dataset.following = String(isNearBottomRef.current);
+    }
   }, [isNearBottomRef, followPx]);
 
   return (
-    <div className="flex-1 min-h-0 px-10 py-2 bg-muted/30 relative">
+    <div
+      className="flex-1 min-h-0 px-10 py-2 bg-muted/30 relative"
+      onWheel={markUserInput}
+      onTouchStart={markUserInput}
+      onTouchMove={markUserInput}
+      onKeyDown={markUserInput}
+      onPointerDown={handlePointerDown}
+    >
     {findOpen && (
       <FindBar
         query={findQuery}
@@ -528,7 +575,7 @@ function ClaudeTranscriptImpl({
           row instead, so the rail can run through it unbroken. */}
       <div
         ref={contentRef}
-        className={cn("w-full px-4 pt-8 pb-4", !timeline && "space-y-4")}
+        className={cn("relative w-full px-4 pt-8 pb-4", !timeline && "space-y-4")}
       >
           {/* data-transcript-step / -prompt are the anchors the prev/next and
               last-prompt buttons measure. Marked on the row wrapper rather
@@ -658,6 +705,19 @@ function ClaudeTranscriptImpl({
           )}
 
           <div ref={messagesEndRef} />
+
+          {/* Last child, so it never shifts the row indexes anything counts.
+              Centred on the threshold line; hollow once following is off. */}
+          <div
+            ref={followMarkerRef}
+            aria-hidden="true"
+            data-autoscroll-marker
+            data-following="true"
+            className="pointer-events-none absolute right-0.5 h-1.5 w-1.5 translate-y-1/2 rounded-full text-muted-foreground/40 bg-current data-[following=false]:bg-transparent"
+            // Outline via currentColor: styles.css overrides every
+            // border-colour utility and strips the ring classes.
+            style={{ bottom: followPx, boxShadow: 'inset 0 0 0 1px currentColor' }}
+          />
       </div>
     </div>
     </div>

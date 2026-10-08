@@ -392,7 +392,7 @@ export const GeneralSettings: React.FC = () => {
                 <p className="text-caption text-muted-foreground mt-1">
                   The chat follows new messages while you are within this
                   distance of the bottom. Scroll further up and it stops; scroll
-                  back within it and it resumes. Default: 200px.
+                  back within it and it resumes. Default: 300px.
                 </p>
               </div>
 

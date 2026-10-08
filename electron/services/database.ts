@@ -124,38 +124,6 @@ const BRAIN_TABLES_DDL = `
  * money spent is history. Deleting an account must not silently shrink a month
  * that has already been reported.
  */
-/**
- * When the extraction pin moved from Haiku to Sonnet — commit 0ea3eff,
- * 2026-08-12 12:39:33 -0400, expressed here as UTC.
- *
- * `brain_sources` never recorded which model priced an item, which is why v20
- * originally backfilled the literal 'unknown'. But it does record *when* each
- * item was indexed, and the pin changed exactly once at a known instant, so the
- * model is recoverable from the timestamp rather than unknowable. Reading it
- * back is evidence; stamping today's pin on a historical row would not be.
- */
-export const EXTRACTION_PIN_CUTOVER = '2026-08-12T16:39:33Z';
-export const PRE_CUTOVER_EXTRACTION_MODEL = 'claude-haiku-4-5';
-export const POST_CUTOVER_EXTRACTION_MODEL = 'claude-sonnet-5';
-
-/**
- * SQL that attributes a model to a historical row from the instant it was
- * indexed. Shared by v20's backfill and v21's repair so the two cannot drift
- * into disagreeing about the same row.
- *
- * `CURRENT_TIMESTAMP` is `YYYY-MM-DD HH:MM:SS` while every recorded instant is
- * ISO with a `T`. Normalising the separator keeps the comparison lexicographic
- * for a row whose own timestamp is missing.
- */
-function attributedModelSql(instant: string): string {
-  return `CASE
-            WHEN replace(COALESCE(${instant}, CURRENT_TIMESTAMP), ' ', 'T')
-                 < '${EXTRACTION_PIN_CUTOVER}'
-              THEN '${PRE_CUTOVER_EXTRACTION_MODEL}'
-            ELSE '${POST_CUTOVER_EXTRACTION_MODEL}'
-          END`;
-}
-
 const BRAIN_SPEND_DDL = `
   CREATE TABLE IF NOT EXISTS brain_spend (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -167,9 +135,8 @@ const BRAIN_SPEND_DDL = `
     source_id TEXT,
     item_key TEXT NOT NULL,
     -- Never blank and never 'unknown'. A ledger row that cannot say what it
-    -- paid for cannot be priced or audited, and the shipped v20 backfill wrote
-    -- exactly that for every pre-ledger item. Enforced in the schema so no
-    -- future writer or backfill can reintroduce one.
+    -- paid for cannot be priced or audited. Enforced in the schema so no
+    -- writer can introduce one.
     model TEXT NOT NULL CHECK (model <> '' AND model <> 'unknown'),
     -- Local date, YYYY-MM-DD, stored rather than derived. Every consumer groups
     -- by month in the user's own timezone, and deriving that from a UTC instant
@@ -740,128 +707,6 @@ const migrations: Migration[] = [
     },
   },
   {
-    version: 20,
-    description:
-      'Add brain_spend, an append-only ledger of what Brain indexing and '
-      + 'curation actually cost. brain_sources.cost_usd is a per-item snapshot '
-      + 'that re-indexing overwrites, so it cannot answer "what did the Brain '
-      + 'spend last month" — and since the extraction runner sweeps the '
-      + 'throwaway CLI transcript, nothing else on the machine can either, '
-      + 'which left every monthly cost report understated. DDL is shared with '
-      + 'initSchema via BRAIN_SPEND_DDL so the two cannot drift. Backfills the '
-      + 'ledger from the per-item snapshots, because stats.spentUsd moves onto '
-      + 'this table in the same change and an existing vault would otherwise '
-      + 'report a lifetime spend of zero.',
-    up: (db) => {
-      db.exec(BRAIN_SPEND_DDL);
-
-      // The backfill reads two tables this migration does not own. Neither is
-      // guaranteed: migrations run against databases of unknown vintage, and
-      // `brain_sources`'s own FK to `accounts` is resolved at DML time rather
-      // than at DDL time, so v18 can leave a brain_sources behind on a database
-      // that has no accounts table at all. Nothing to read is not an error —
-      // there is no spend history to carry across.
-      const present = new Set(
-        (
-          db
-            .prepare("SELECT name FROM sqlite_master WHERE type='table'")
-            .all() as { name: string }[]
-        ).map((r) => r.name),
-      );
-      if (!present.has('brain_sources') || !present.has('accounts')) return;
-
-      // One row per priced item. `cost_usd IS NOT NULL` is the filter that
-      // keeps translated sources — auto-memory, which never reaches a model —
-      // from being credited with a payment they never made.
-      //
-      // `model` is read back from last_indexed_at rather than stamped with
-      // today's pin: brain_sources never recorded one, but the extraction pin
-      // changed from Haiku to Sonnet at exactly one known instant, so the
-      // timestamp identifies it. Stamping the current value would be a
-      // fabricated attribution in a table people price from; leaving it
-      // unattributed (as this migration originally shipped) leaves a row that
-      // cannot be audited, which v21 had to come back and repair.
-      //
-      // date comes from last_indexed_at, not from now: collapsing history into
-      // the upgrade date would move months of spend into whichever month the
-      // user happened to update in. substr() over the ISO string is the local
-      // date only for UTC, but these are historical rows whose exact day is
-      // already approximate, and the alternative is a timezone conversion in
-      // SQL.
-      db.exec(`
-        INSERT INTO brain_spend
-          (account_id, account_name, kind, source_id, item_key, model, date, spent_at,
-           input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, cost_usd)
-        SELECT
-          s.account_id,
-          COALESCE(a.name, 'account ' || s.account_id),
-          'index',
-          s.source_id,
-          s.item_key,
-          ${attributedModelSql('s.last_indexed_at')},
-          substr(COALESCE(s.last_indexed_at, CURRENT_TIMESTAMP), 1, 10),
-          COALESCE(s.last_indexed_at, CURRENT_TIMESTAMP),
-          s.input_tokens, s.output_tokens, s.cache_read_tokens, s.cache_creation_tokens,
-          s.cost_usd
-        FROM brain_sources s
-        LEFT JOIN accounts a ON a.id = s.account_id
-        WHERE s.cost_usd IS NOT NULL
-      `);
-    },
-  },
-  {
-    version: 21,
-    description:
-      'Attribute a model to every spend row, and make an unattributed one '
-      + 'impossible. The shipped v20 backfill wrote the literal \'unknown\' for '
-      + 'every pre-ledger item, which on a real install was the large majority '
-      + 'of the table and left the headline "what has the Brain cost me" '
-      + 'unable to break down by model — the one breakdown that matters, since '
-      + 'curation is pinned to Opus and costs an order of magnitude more per '
-      + 'run. Those rows are recoverable: the extraction pin changed exactly '
-      + 'once, at a known instant, and every row carries spent_at. Rewrites '
-      + 'them from their own timestamps and rebuilds the table with a CHECK so '
-      + 'no future writer or backfill can reintroduce the gap. Rows that '
-      + 'already name a model — curation, and anything indexed after v20 — are '
-      + 'left untouched, because overwriting a correct attribution with an '
-      + 'inferred one is the same fabrication in the other direction.',
-    up: (db) => {
-      // SQLite cannot add a CHECK in place, so the table is rebuilt. Indexes
-      // follow a renamed table, so they are dropped first — otherwise
-      // BRAIN_SPEND_DDL's CREATE INDEX IF NOT EXISTS finds the names still
-      // taken, skips silently, and the new table is left unindexed while the
-      // old indexes disappear with the table they rode away on.
-      db.exec(`
-        DROP INDEX IF EXISTS idx_brain_spend_date;
-        DROP INDEX IF EXISTS idx_brain_spend_account_date;
-        ALTER TABLE brain_spend RENAME TO brain_spend_old;
-      `);
-
-      db.exec(BRAIN_SPEND_DDL);
-
-      // id is carried across explicitly. It is the ledger's append order, and
-      // the backfilled block is deliberately not in spent_at order — those rows
-      // arrived in brain_sources rowid order — so regenerating ids would
-      // reshuffle history.
-      db.exec(`
-        INSERT INTO brain_spend
-          (id, account_id, account_name, kind, source_id, item_key, model, date, spent_at,
-           input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, cost_usd)
-        SELECT
-          id, account_id, account_name, kind, source_id, item_key,
-          CASE
-            WHEN model IN ('', 'unknown') THEN ${attributedModelSql('spent_at')}
-            ELSE model
-          END,
-          date, spent_at,
-          input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, cost_usd
-        FROM brain_spend_old;
-
-        DROP TABLE brain_spend_old;
-      `);
-    },
-  },
-  {
     version: 22,
     description:
       'Split main-loop and subagent spend into separate session_cost_daily '
@@ -884,7 +729,7 @@ const migrations: Migration[] = [
     up: (db) => {
       // Migration 16 creates this table with CREATE TABLE IF NOT EXISTS, so it
       // is not guaranteed present when the runner is pointed at a partial
-      // image (the v20/v21 migration tests do exactly that). Mirror 16's
+      // image (the migration tests do exactly that). Mirror 16's
       // tolerance rather than assuming: create the new shape outright when
       // there is nothing to migrate from.
       const exists = db
@@ -894,8 +739,7 @@ const migrations: Migration[] = [
       // Indexes follow a renamed table, so they are dropped first — otherwise
       // the CREATE INDEX IF NOT EXISTS below finds the names still taken,
       // skips silently, and the new table is left unindexed while the old
-      // indexes ride away with the table they were attached to. Same trap as
-      // migration 21.
+      // indexes ride away with the table they were attached to.
       if (exists) {
         db.exec(`
           DROP INDEX IF EXISTS idx_session_cost_daily_date;
@@ -972,8 +816,8 @@ const migrations: Migration[] = [
     up: (db) => {
       // Migration 16 creates this table with CREATE TABLE IF NOT EXISTS, so it
       // is not guaranteed present when the runner is pointed at a partial
-      // image. Migration 22 learned this by breaking the v20/v21 tests; do not
-      // relearn it.
+      // image. Migration 22 learned this by breaking the migration tests; do
+      // not relearn it.
       const exists = db
         .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='session_cost_daily'")
         .get() !== undefined;
@@ -1073,7 +917,7 @@ const migrations: Migration[] = [
     up: (db) => {
       db.exec(MODEL_PRICING_DDL);
 
-      // Migrations run against images of unknown vintage, and the v20/v21/v24
+      // Migrations run against images of unknown vintage, and the v24
       // tests point the runner at partial ones that have no app_settings at
       // all. Migration 22 left a comment saying not to relearn this; consider
       // it relearned. There is nothing to import from a database that has
@@ -1453,7 +1297,8 @@ function initSchema(db: BetterSqlite3.Database): void {
   // Canonical post-migration shape for brain_sources/brain_queue — see
   // BRAIN_TABLES_DDL. Keeps fresh installs from needing migration v18 at all.
   db.exec(BRAIN_TABLES_DDL);
-  // Likewise for the spend ledger and migration v20.
+  // The spend ledger exists only here; its migrations (v20, v21) were
+  // removed 2026-10-08 once every install had run them.
   db.exec(BRAIN_SPEND_DDL);
   db.exec(CLI_PROCESS_USAGE_DDL);
 }

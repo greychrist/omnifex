@@ -783,10 +783,13 @@ export function createBrainService(
     kind: SpendKind,
     sourceId: string | null,
     itemKey: string,
-    model: string,
+    requestedModel: string,
     run: RunCost | undefined,
   ): void {
     if (!run) return;
+    // What billed, not the alias asked for: `sonnet` names a different model
+    // after every release, and the ledger has to stay attributable.
+    const model = run.model ?? requestedModel;
     try {
       const at = new Date();
       spendStore.record({

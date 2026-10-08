@@ -29,6 +29,7 @@ function reply(text: string, cost: Partial<CliRunResult> = {}): CliRunResult {
     cacheReadTokens: null,
     cacheCreationTokens: null,
     durationMs: null,
+    model: null,
     ...cost,
   };
 }
@@ -470,7 +471,34 @@ describe('runCliOnce (default RunPromptFn)', () => {
       cacheReadTokens: 0,
       cacheCreationTokens: 9374,
       durationMs: 4589,
+      model: null,
     });
+  });
+
+  // Internal callers pass a family alias (`sonnet`, `opus`) so they track the
+  // newest model. The alias is what was ASKED for; the envelope's
+  // `modelUsage` names what actually ran and billed. Several keys appear when
+  // the CLI used a helper model, so the one that took the money wins.
+  it('names the model that ran, from the envelope modelUsage', async () => {
+    const fake = makeFakeChild();
+    mockedSpawn.mockReturnValue(fake as never);
+
+    const pending = runCliOnce({
+      claudeBinary: '/bin/claude', prompt: 'p', model: 'sonnet', configDir: '/cfg', cwd: '/tmp/scratch',
+    });
+    fake.stdout.push(JSON.stringify({
+      result: 'ok',
+      total_cost_usd: 0.03,
+      modelUsage: {
+        'claude-haiku-5-5': { inputTokens: 5, outputTokens: 2, costUSD: 0.0001 },
+        'claude-sonnet-5-5': { inputTokens: 900, outputTokens: 300, costUSD: 0.0299 },
+      },
+    }));
+    fake.stdout.push(null);
+    await flush();
+    fake.emit('exit', 0, null);
+
+    expect((await pending).model).toBe('claude-sonnet-5-5');
   });
 
   it('reports an absent figure as unknown, never as free', async () => {

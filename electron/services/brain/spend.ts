@@ -52,6 +52,7 @@ export function addRunCosts(
     outputTokens: sum(a.outputTokens, b.outputTokens),
     cacheReadTokens: sum(a.cacheReadTokens, b.cacheReadTokens),
     cacheCreationTokens: sum(a.cacheCreationTokens, b.cacheCreationTokens),
+    model: b.model ?? a.model ?? null,
   };
 }
 

@@ -4,7 +4,9 @@ import {
   parseExtraction,
   buildExtractionPrompt,
   ExtractionParseError,
+  runCostOf,
 } from '../services/brain/extract';
+import { addRunCosts } from '../services/brain/spend';
 import type { DistilledItem } from '../services/brain/sources/types';
 import type { CliRunResult } from '../services/sessions/summary-query';
 
@@ -24,6 +26,7 @@ function reply(text: string, cost: Partial<CliRunResult> = {}): CliRunResult {
     cacheReadTokens: null,
     cacheCreationTokens: null,
     durationMs: null,
+    model: null,
     ...cost,
   };
 }
@@ -154,8 +157,21 @@ const ITEM: DistilledItem = {
   },
 };
 
+describe('run cost model', () => {
+  it('carries the model that ran from the CLI result', () => {
+    expect(runCostOf(reply('x', { model: 'claude-sonnet-5-5' })).model).toBe('claude-sonnet-5-5');
+  });
+
+  it('keeps a known model when a retry reports none', () => {
+    const a = runCostOf(reply('x', { model: 'claude-sonnet-5-5', costUsd: 0.1 }));
+    const b = runCostOf(reply('y', { model: null, costUsd: 0.2 }));
+    expect(addRunCosts(a, b)?.model).toBe('claude-sonnet-5-5');
+    expect(addRunCosts(b, a)?.model).toBe('claude-sonnet-5-5');
+  });
+});
+
 describe('createExtractor', () => {
-  it('calls the CLI once with the pinned model and the owning config dir', async () => {
+  it('calls the CLI once with the Sonnet alias and the owning config dir', async () => {
     const calls: { model: string; configDir: string; prompt: string }[] = [];
     const extract = createExtractor({
       runQuery: async (opts) => {
@@ -167,7 +183,8 @@ describe('createExtractor', () => {
     await extract(ITEM, '/Users/dev/.claude-work');
 
     expect(calls).toHaveLength(1);
-    expect(calls[0].model).toBe('claude-sonnet-5');
+    // The family alias, not a version: extraction tracks the newest Sonnet.
+    expect(calls[0].model).toBe('sonnet');
     // The OWNING account's dir. Indexing a work transcript through the
     // personal account would push work content through the wrong
     // subscription (spec §8).

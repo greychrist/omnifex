@@ -171,7 +171,7 @@ describe('migration 22 rebuild', () => {
   /** Build a v21-era database on disk, then let createDatabase migrate it.
    *  SQLite cannot widen a primary key in place, so migration 22 rebuilds the
    *  table — and a rebuild is the migration shape most likely to lose rows or
-   *  silently drop indexes (see migration 21's note on renamed tables). */
+   *  silently drop indexes (see migration 22's note on renamed tables). */
   let dir: string;
   let file: string;
   beforeEach(() => {

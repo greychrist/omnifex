@@ -38,6 +38,8 @@ export interface RunCost {
   outputTokens: number | null;
   cacheReadTokens: number | null;
   cacheCreationTokens: number | null;
+  /** The model that billed (CliRunResult.model). Absent or null: unreported. */
+  model?: string | null;
 }
 
 export interface RecordOptions {

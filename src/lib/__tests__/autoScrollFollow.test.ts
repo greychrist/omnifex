@@ -3,6 +3,7 @@ import {
   DEFAULT_AUTOSCROLL_FOLLOW_PX,
   parseFollowPx,
   isFollowing,
+  nextFollowing,
 } from "../autoScrollFollow";
 
 describe("parseFollowPx", () => {
@@ -12,6 +13,10 @@ describe("parseFollowPx", () => {
 
   it("falls back to the default when nothing is stored", () => {
     expect(parseFollowPx(null)).toBe(DEFAULT_AUTOSCROLL_FOLLOW_PX);
+  });
+
+  it("defaults to 300px", () => {
+    expect(DEFAULT_AUTOSCROLL_FOLLOW_PX).toBe(300);
   });
 
   it("falls back when the value is not a number", () => {
@@ -43,5 +48,29 @@ describe("isFollowing", () => {
   it("follows only at the very bottom when the distance is 0", () => {
     expect(isFollowing(0, 0)).toBe(true);
     expect(isFollowing(1, 0)).toBe(false);
+  });
+});
+
+/**
+ * Only the user can turn following off. A scroll event the user did not cause
+ * — layout settling, the live bubble swapping for the final message, our own
+ * scroll-to-bottom measured a frame late — must never leave the tail.
+ */
+describe("nextFollowing", () => {
+  it("follows whenever the view is within followPx, whoever scrolled", () => {
+    expect(nextFollowing({ following: false, distanceFromBottom: 100, followPx: 300, userScrolling: false })).toBe(true);
+    expect(nextFollowing({ following: false, distanceFromBottom: 300, followPx: 300, userScrolling: true })).toBe(true);
+  });
+
+  it("stops following when the user scrolls past followPx", () => {
+    expect(nextFollowing({ following: true, distanceFromBottom: 301, followPx: 300, userScrolling: true })).toBe(false);
+  });
+
+  it("keeps following when content, not the user, moved the view away", () => {
+    expect(nextFollowing({ following: true, distanceFromBottom: 900, followPx: 300, userScrolling: false })).toBe(true);
+  });
+
+  it("stays off when already off and still outside followPx", () => {
+    expect(nextFollowing({ following: false, distanceFromBottom: 900, followPx: 300, userScrolling: false })).toBe(false);
   });
 });
