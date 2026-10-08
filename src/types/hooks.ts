@@ -6,7 +6,20 @@ export interface HookCommand {
   type: 'command';
   command: string;
   timeout?: number; // Optional timeout in seconds (default: 60)
+  /** What a failed hook (couldn't start, timed out, exit code other than
+   *  0/2, invalid JSON) does. `'continue'` (the CLI default) lets the action
+   *  through; `'block'` treats it as exit 2. Added in CLI 2.1.295. */
+  onFailure?: 'continue' | 'block';
 }
+
+/** Events where the CLI ignores `onFailure` and never blocks on a failed
+ *  hook (2.1.295's `Stop,SubagentStop,TaskCompleted,TeammateIdle` set). */
+export const ON_FAILURE_IGNORED_EVENTS: ReadonlySet<string> = new Set([
+  'Stop',
+  'SubagentStop',
+  'TaskCompleted',
+  'TeammateIdle',
+]);
 
 export interface HookMatcher {
   matcher?: string; // Pattern to match tool names (regex supported)

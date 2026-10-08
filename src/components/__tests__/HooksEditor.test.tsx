@@ -183,3 +183,60 @@ describe('HooksEditor — event coverage', () => {
     });
   });
 });
+
+describe('HooksEditor — onFailure (CLI 2.1.295)', () => {
+  const addSessionStartCommand = async () => {
+    fireEvent.click(await screen.findByTestId('select-item-SessionStart'));
+    fireEvent.click(screen.getByRole('button', { name: /add hook/i }));
+    fireEvent.click(screen.getByRole('button', { name: /add command/i }));
+    fireEvent.change(screen.getByPlaceholderText('Enter shell command...'), {
+      target: { value: 'echo started' },
+    });
+  };
+
+  it('writes onFailure:"block" when the switch is on', async () => {
+    renderEditor();
+    await addSessionStartCommand();
+    fireEvent.click(screen.getByRole('switch', { name: /block on failure/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
+
+    await waitFor(() => { expect(lastSaved).not.toBeNull(); });
+    expect(lastSaved).toEqual({
+      SessionStart: [
+        { matcher: '', hooks: [{ type: 'command', command: 'echo started', onFailure: 'block' }] },
+      ],
+    });
+  });
+
+  it('omits the key when switched back off — "continue" is the CLI default', async () => {
+    renderEditor();
+    await addSessionStartCommand();
+    // Re-query between clicks: the framer-motion mock remounts the subtree
+    // on every render, so a held element is detached after the first one.
+    const toggle = () => screen.getByRole('switch', { name: /block on failure/i });
+    fireEvent.click(toggle());
+    expect(toggle()).toHaveAttribute('aria-checked', 'true');
+    fireEvent.click(toggle());
+    fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
+
+    await waitFor(() => { expect(lastSaved).not.toBeNull(); });
+    expect(lastSaved!.SessionStart![0].hooks[0]).not.toHaveProperty('onFailure');
+  });
+
+  it('shows a hand-written onFailure:"block" as on', async () => {
+    getHooksConfig.mockResolvedValue({
+      PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'guard.sh', onFailure: 'block' }] }],
+    });
+    renderEditor();
+    await screen.findByDisplayValue('guard.sh');
+    expect(screen.getByRole('switch', { name: /block on failure/i })).toHaveAttribute('aria-checked', 'true');
+  });
+
+  it('offers no switch on Stop, where the CLI ignores onFailure', async () => {
+    getHooksConfig.mockResolvedValue(REAL_CONFIG);
+    renderEditor();
+    fireEvent.click(await screen.findByTestId('select-item-Stop'));
+    await screen.findByDisplayValue('/Users/me/.claude/hooks/check-unfinished-todos.py');
+    expect(screen.queryByRole('switch', { name: /block on failure/i })).toBeNull();
+  });
+});

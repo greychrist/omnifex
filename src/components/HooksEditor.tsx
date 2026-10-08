@@ -35,6 +35,7 @@ import { Label } from '@/components/ui/label';
 import { Card } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
 import {
   Select,
   SelectContent,
@@ -67,6 +68,7 @@ import {
   HookTemplate,
   HOOK_EVENT_INFO,
   HOOK_TEMPLATES,
+  ON_FAILURE_IGNORED_EVENTS,
   eventSupportsMatcher,
   groupedHookEvents,
 } from '@/types/hooks';
@@ -113,6 +115,17 @@ function toEditable(config: HooksConfiguration): EditableHooks {
     }));
   }
   return out;
+}
+
+/** Apply a field update; an `undefined` value removes the key, so clearing
+ *  timeout or onFailure writes nothing rather than an explicit undefined. */
+function withUpdates(
+  cmd: EditableHookCommand,
+  updates: Partial<EditableHookCommand>,
+): EditableHookCommand {
+  const next: Record<string, unknown> = { ...cmd, ...updates };
+  for (const [k, v] of Object.entries(updates)) if (v === undefined) delete next[k];
+  return next as unknown as EditableHookCommand;
 }
 
 /** Strip render ids back out. Events with no entries are omitted entirely so
@@ -258,7 +271,7 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
     updateEntries(event, (prev) =>
       prev.map((m) =>
         m.id === matcherId
-          ? { ...m, hooks: m.hooks.map((c) => (c.id === commandId ? { ...c, ...updates } : c)) }
+          ? { ...m, hooks: m.hooks.map((c) => (c.id === commandId ? withUpdates(c, updates) : c)) }
           : m,
       ),
     );
@@ -425,6 +438,23 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
                               />
                               <span className="text-sm text-muted-foreground">seconds</span>
                             </div>
+
+                            {!ON_FAILURE_IGNORED_EVENTS.has(event) && (
+                              <label
+                                className="flex items-center gap-2 text-sm text-muted-foreground"
+                                title="If this hook can't start, times out, or exits with a code other than 0 or 2, block the action instead of letting it through."
+                              >
+                                <Switch
+                                  aria-label="Block on failure"
+                                  checked={hook.onFailure === 'block'}
+                                  onCheckedChange={(on) => { updateCommand(event, matcher.id, hook.id, {
+                                    onFailure: on ? 'block' : undefined
+                                  }); }}
+                                  disabled={readOnly}
+                                />
+                                Block on failure
+                              </label>
+                            )}
 
                             {!readOnly && (
                               <Button

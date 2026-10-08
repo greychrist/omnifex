@@ -42,6 +42,74 @@ import { buildClaudeEnv } from './util/claude-env';
  *    the CLI answers with the error "Side question cancelled". Its own
  *    deadline is 600 s. Only the SDK's `askSideQuestion()` documents it.
  *
+ * Last review: 2.1.294 -> 2.1.295 on 2026-10-08. Findings:
+ *
+ *  Changelog coverage: one version in range, 2.1.295, ~140 entries. Both
+ *  endpoints installed, so the wire claims are a real binary diff.
+ *
+ *  WIRE DIFF (unique literals): merge-strategy map 40 -> 40 (4 tagged
+ *  `transcript`), `subtype:` 154, `hook_event_name` 33, `type:"control_*"`
+ *  4, SDK `this.request({subtype})` 54, `origin:{kind}` 12, `ui_*` 84 —
+ *  all set-identical. `type:` 993 -> 994: `type:"resource"`, an MCP
+ *  content block the CLI's own MCP server (`claude mcp serve`) emits for
+ *  document tool results — not a JSONL record. `.describe()` 1887 -> 1888:
+ *  WebSearch result `snippet` ("PostToolUse hooks get it; tool_use_result
+ *  does not") — WebSearchWidget.tsx reads the tool_result text, never
+ *  `toolUseResult`, so inert. `turnOrigin`: one new reader (finds the last
+ *  `machine`-origin user record when deciding whether a background turn
+ *  is unfinished); sanitizer set unchanged, no new value. `/usage`
+ *  anchors: `resets` 116 -> 117, `MCP servers` 268 -> 265 — occurrence
+ *  drift in unrelated strings, literal set unchanged.
+ *
+ *  Taken in this pass: `onFailure: "continue"|"block"` on command/HTTP
+ *  hooks. HooksEditor.tsx now has a "Block on failure" switch (writes
+ *  `'block'`, omits the key when off — `'continue'` is the default), hidden
+ *  on the events the CLI ignores it for (ON_FAILURE_IGNORED_EVENTS in
+ *  types/hooks.ts, the binary's Stop/SubagentStop/TaskCompleted/
+ *  TeammateIdle set). The CLI also ignores it on async hooks; the editor
+ *  does not model `async`, so it does not hide the switch there.
+ *
+ *  Checked and inert:
+ *
+ *   - Headless `rate_limit_event` warnings now say whether extra usage is
+ *     on: the overage fields were already typed in jsonl.ts:374; no new
+ *     record shape.
+ *   - Mod hot-reload enable question re-asked up to 3x when an SDK host
+ *     closes it unanswered: CLI-side; it reaches us as an elicitation
+ *     (sessions/elicitations.ts), unchanged.
+ *   - `prompt.submit`-rewritten prompts no longer saved as typed to the
+ *     transcript's queued-prompt records: `queue-operation` stays
+ *     deny-listed in stream-forward.ts; content only.
+ *   - `claude -p` text-output / stderr waiting line, OSC 7501, `/copy`,
+ *     vim, paste cursor, tab stops, terminal freezes, link rendering: TUI
+ *     or text mode; OmniFex runs stream-json.
+ *   - `[1m]` beta refusal resend, gateway `models`/`upstream_ttfb_ms`/
+ *     `request-id`/Bedrock CountTokens, Haiku background requests: server
+ *     or gateway side.
+ *   - Remote MCP reconnect backoff, pagination-cursor loop, `.bin` file
+ *     types, `ws` 16 MiB cap, 16,384-char tool-search descriptions,
+ *     MCP protocol 2026-07-28: CLI-internal MCP client.
+ *   - `/model` Max-effort "saved as default" wording, `/fast` +
+ *     `/output-style` asking `config.set`: TUI slash commands; OmniFex
+ *     sets these via control requests.
+ *   - Desktop/SDK sessions refusing auto mode after `disableAutoMode`
+ *     removed: CLI fix; our mode-rollback path (Bypass launch gate) is
+ *     unaffected.
+ *   - Permission prompt naming MCP tools readably in Remote Control /
+ *     desktop: their UI, not the `can_use_tool` payload.
+ *   - Async SessionStart context re-added on resume, CLAUDE_ENV_FILE after
+ *     `/resume`, multi-line async hook JSON: CLI hook runner fixes.
+ *   - Mods: `$.ui.notify`, Button children, guard `.catch` bypass, nested
+ *     tool input truncation, hot-reload races, `plugin test` / `validate`
+ *     advice: mod runtime; no new `ui_*` frame literals.
+ *   - Plugin/marketplace CLI warnings and refusals, Windows drive-letter
+ *     casing, Chrome `host:80`, Bash for-loop glob permission checks,
+ *     Grep `-l/-c/-r`, Read empty `pages`, Bash `command_description`,
+ *     subagent skill preload cap (32), Workflow/SendMessage/TaskStop/loop
+ *     fixes, `claude agents` service, FORCE_COLOR, VSCode, cloud sessions,
+ *     self-hosted runner, Claude Tag, Code Review, Artifact: no OmniFex
+ *     surface.
+ *
  * Last review: 2.1.293 -> 2.1.294 on 2026-10-08. Findings:
  *
  *  Changelog coverage: one version in range, 2.1.294, two entries, both
@@ -4007,7 +4075,7 @@ import { buildClaudeEnv } from './util/claude-env';
  * `~/.claude.json` fix (we read-modify-write that file, never replace it), and
  * the VSCode screen-reader work.
  */
-export const REVIEWED_CLI_VERSION = '2.1.294';
+export const REVIEWED_CLI_VERSION = '2.1.295';
 
 /**
  * app_settings key holding the user's explicit OmniFex-checkout override.
