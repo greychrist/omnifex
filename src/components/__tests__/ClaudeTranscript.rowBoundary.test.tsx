@@ -13,7 +13,7 @@ import { render, screen, cleanup } from '@testing-library/react';
 import type { JsonlNode } from '@/types/jsonl';
 
 vi.mock('@/contexts/MessageRenderingContext', () => ({
-  useMessageRenderingConfig: () => ({ config: { hardFilters: {} } }),
+  useMessageRenderingConfig: () => ({ config: {} }),
 }));
 vi.mock('@/contexts/AutoScrollContext', () => ({
   useAutoScroll: () => ({ followPx: 200 }),

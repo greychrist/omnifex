@@ -10,7 +10,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { accentStyleFor, swatchFor } from "@/lib/accentStyle";
+import { accentStyleFor, cardRadiusStyle, swatchFor } from "@/lib/accentStyle";
 import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
 import {
   DEFAULT_SCOPE,
@@ -120,7 +120,7 @@ export function PermissionCard({ request, onAllow, onDeny }: PermissionCardProps
   // through a link, so a rule here would ask again every time.
   const grantsFolders = !suppressAlwaysAllowRule && !!directoryGrant && directoryGrant.length > 0;
   const { config } = useMessageRenderingConfig();
-  const accentStyle = accentStyleFor(config, "permission.request");
+  const accentStyle = { ...accentStyleFor(config, "permission.request"), ...cardRadiusStyle(config) };
   const accentSwatch = swatchFor(config, "permission.request");
 
   const initialRule = useMemo(
@@ -377,7 +377,7 @@ function CodexPermissionCard({
   onDeny,
 }: PermissionCardProps): JSX.Element {
   const { config } = useMessageRenderingConfig();
-  const accentStyle = accentStyleFor(config, "permission.request");
+  const accentStyle = { ...accentStyleFor(config, "permission.request"), ...cardRadiusStyle(config) };
   const accentSwatch = swatchFor(config, "permission.request");
 
   const isPatch = request.kind === 'patch';

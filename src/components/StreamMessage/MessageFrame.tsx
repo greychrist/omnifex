@@ -95,6 +95,7 @@ export const MessageFrame: React.FC<MessageFrameProps> = ({ streamKind, children
           iconName={kind.icon}
           accentColor={kind.accentColor}
           borderStyle={kind.borderStyle}
+          borderOpacity={config.cardBorderOpacity}
           iconBordered={iconBordered}
           iconBgOpacity={iconBgOpacity}
           actionBar={actionBar ?? (message ? <CardActionBar message={message} placement="inline" /> : undefined)}

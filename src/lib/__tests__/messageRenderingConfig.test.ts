@@ -5,7 +5,6 @@ import {
   parseConfig,
   serializeConfig,
   resolveKind,
-  DEFAULT_PALETTE,
   DEFAULT_TYPOGRAPHY,
   DEFAULT_TAB_INDICATORS,
   DEFAULT_TAB_STRIP,
@@ -29,9 +28,9 @@ describe("config v5", () => {
 
   it("round-trips a v5 config with user kind patches", () => {
     const cfg = createDefaultConfig();
-    cfg.kinds["user.prompt"] = { accentColor: "teal" };
+    cfg.kinds["user.prompt"] = { accentColor: "#14b8a6" };
     const back = parseConfig(serializeConfig(cfg));
-    expect(back.kinds["user.prompt"]).toEqual({ accentColor: "teal" });
+    expect(back.kinds["user.prompt"]).toEqual({ accentColor: "#14b8a6" });
   });
 
   it("keeps a narrow-centered alignment through save and load", () => {
@@ -48,8 +47,8 @@ describe("config v5", () => {
   });
 
   it("drops junk fields in a saved kinds patch", () => {
-    const merged = mergeConfig({ version: 5, kinds: { "user.prompt": { accentColor: "teal", icon: "NotARealIcon", bogus: 1 } } });
-    expect(merged.kinds["user.prompt"]).toEqual({ accentColor: "teal" });
+    const merged = mergeConfig({ version: 5, kinds: { "user.prompt": { accentColor: "#14b8a6", icon: "NotARealIcon", bogus: 1 } } });
+    expect(merged.kinds["user.prompt"]).toEqual({ accentColor: "#14b8a6" });
   });
 });
 
@@ -59,16 +58,16 @@ describe("resolveKind (three-layer merge)", () => {
   it("layers category -> registry default -> user patch", () => {
     const cfg = createDefaultConfig();
     expect(resolveKind(cfg, "assistant.text").icon).toBe("Bot"); // agent category icon (no registry override)
-    expect(resolveKind(cfg, "permission.request").accentColor).toBe("amber"); // registry default
+    expect(resolveKind(cfg, "permission.request").accentColor).toBe("#f59e0b"); // registry default
     expect(resolveKind(cfg, "permission.request").icon).toBe("ShieldQuestion");
-    cfg.kinds["permission.request"] = { accentColor: "teal" }; // user patch wins
-    expect(resolveKind(cfg, "permission.request").accentColor).toBe("teal");
+    cfg.kinds["permission.request"] = { accentColor: "#14b8a6" }; // user patch wins
+    expect(resolveKind(cfg, "permission.request").accentColor).toBe("#14b8a6");
     expect(resolveKind(cfg, "permission.request").icon).toBe("ShieldQuestion"); // unpatched field falls through
   });
 
   it("an unregistered id resolves to the system category base", () => {
     const cfg = createDefaultConfig();
-    expect(resolveKind(cfg, "future.kind").accentColor).toBe("muted");
+    expect(resolveKind(cfg, "future.kind").accentColor).toBe("#4b5563");
   });
 
   it("returns the category default for the kind's category", () => {
@@ -81,14 +80,14 @@ describe("resolveKind (three-layer merge)", () => {
 
   it("registry default overrides category base, user patch wins over both", () => {
     const cfg = createDefaultConfig();
-    // assistant.text.endTurn has registry default: green/CheckCircle2
+    // assistant.text.endTurn has registry default: green (#22c55e)/CheckCircle2
     const s = resolveKind(cfg, "assistant.text.endTurn");
-    expect(s.accentColor).toBe("green");    // registry default
+    expect(s.accentColor).toBe("#22c55e");  // registry default
     expect(s.icon).toBe("CheckCircle2");    // registry default
     expect(s.headerLabel).toBe("Claude");   // inherited from agent category
     // now add a user patch
-    cfg.kinds["assistant.text.endTurn"] = { accentColor: "pink" };
-    expect(resolveKind(cfg, "assistant.text.endTurn").accentColor).toBe("pink"); // user wins
+    cfg.kinds["assistant.text.endTurn"] = { accentColor: "#ec4899" };
+    expect(resolveKind(cfg, "assistant.text.endTurn").accentColor).toBe("#ec4899"); // user wins
     expect(resolveKind(cfg, "assistant.text.endTurn").icon).toBe("CheckCircle2"); // unpatched still from registry
   });
 });
@@ -182,10 +181,11 @@ describe("mergeConfig", () => {
         "user.prompt": { headerLabel: "Me", accentColor: "amber" },
       },
     });
-    expect(cfg.kinds["user.prompt"]).toEqual({ headerLabel: "Me", accentColor: "amber" });
+    // A saved palette name is migrated to its hex on load.
+    expect(cfg.kinds["user.prompt"]).toEqual({ headerLabel: "Me", accentColor: "#f59e0b" });
     const s = resolveKind(cfg, "user.prompt");
     expect(s.headerLabel).toBe("Me");
-    expect(s.accentColor).toBe("amber");
+    expect(s.accentColor).toBe("#f59e0b");
     // untouched fields keep defaults
     expect(s.icon).toBe("User");
     expect(s.alignment).toBe("right");
@@ -200,13 +200,13 @@ describe("mergeConfig", () => {
     expect(resolveKind(cfg, "user.prompt").icon).toBe("User");
   });
 
-  it("rejects accentColor strings that are neither palette names nor hex", () => {
+  it("rejects accentColor strings that are neither legacy palette names nor hex", () => {
     const cfg = mergeConfig({
       version: 5,
       kinds: { "user.prompt": { accentColor: "neon" } },
     });
     expect(cfg.kinds["user.prompt"]).toBeUndefined();
-    expect(resolveKind(cfg, "user.prompt").accentColor).toBe("blue");
+    expect(resolveKind(cfg, "user.prompt").accentColor).toBe("#60a5fa");
   });
 
   it("accepts hex accentColor strings (picker-driven configs)", () => {
@@ -245,17 +245,51 @@ describe("mergeConfig", () => {
     expect(resolveKind(cfg, "user.prompt").borderStyle).toBe("solid");
   });
 
-  it("merges palette entries by name", () => {
+  // The palette is retired: every colour is a hex. Saved configs (and exported
+  // files) still name palette colours, so they are converted on load — through
+  // the saved palette's own swatch when it had one, so a retinted name keeps
+  // the colour the user saw.
+  it("migrates saved palette names to hex, through the saved palette's swatch", () => {
     const cfg = mergeConfig({
       version: 5,
-      palette: {
-        blue: { border: "blue-500/50", bg: "blue-500/10", swatch: "#1234ab" },
-      },
+      palette: { blue: { border: "x", bg: null, swatch: "#1234ab" } },
+      categories: { user: { accentColor: "blue" }, agent: { accentColor: "primary" } },
+      kinds: { "system.api_error": { accentColor: "green" } },
+      tabIndicators: { error: { icon: "AlertCircle", color: "red" }, question: { icon: "MessageCircleQuestion", color: "#5862f9" } },
     });
-    expect(cfg.palette.blue.border).toBe("blue-500/50");
-    expect(cfg.palette.blue.swatch).toBe("#1234ab");
-    // other palette entries untouched
-    expect(cfg.palette.primary.border).toBe("primary/20");
+    expect(cfg.categories.user.accentColor).toBe("#1234ab");
+    expect(cfg.categories.agent.accentColor).toBe("#8b8b8b");
+    expect(cfg.kinds["system.api_error"]).toEqual({ accentColor: "#22c55e" });
+    expect(cfg.tabIndicators.error.color).toBe("#ef4444");
+    expect(cfg.tabIndicators.question.color).toBe("#5862f9");
+    expect("palette" in cfg).toBe(false);
+  });
+
+  it("ships every default colour as a hex, never a palette name", () => {
+    const hex = /^#[0-9a-f]{6}$/i;
+    for (const c of CATEGORIES) expect(DEFAULT_CATEGORIES[c].accentColor).toMatch(hex);
+    for (const def of Object.values(KIND_REGISTRY)) {
+      if (def.default.accentColor !== undefined) expect(def.default.accentColor).toMatch(hex);
+    }
+    for (const key of ["error", "permission", "question", "complete", "cacheExpiring"] as const) {
+      expect(DEFAULT_TAB_INDICATORS[key].color).toMatch(hex);
+    }
+  });
+
+  it("defaults card corner radius to 12px (the theme's rounded-lg) and clamps to 0-24", () => {
+    expect(createDefaultConfig().cardBorderRadius).toBe(12);
+    expect(mergeConfig({ version: 5, cardBorderRadius: 6 }).cardBorderRadius).toBe(6);
+    expect(mergeConfig({ version: 5, cardBorderRadius: 99 }).cardBorderRadius).toBe(24);
+    expect(mergeConfig({ version: 5, cardBorderRadius: -1 }).cardBorderRadius).toBe(0);
+    expect(mergeConfig({ version: 5, cardBorderRadius: "round" }).cardBorderRadius).toBe(12);
+  });
+
+  it("defaults card border opacity to 20% and clamps a saved value to 0-100", () => {
+    expect(createDefaultConfig().cardBorderOpacity).toBe(20);
+    expect(mergeConfig({ version: 5, cardBorderOpacity: 35 }).cardBorderOpacity).toBe(35);
+    expect(mergeConfig({ version: 5, cardBorderOpacity: 140 }).cardBorderOpacity).toBe(100);
+    expect(mergeConfig({ version: 5, cardBorderOpacity: -3 }).cardBorderOpacity).toBe(0);
+    expect(mergeConfig({ version: 5, cardBorderOpacity: "loud" }).cardBorderOpacity).toBe(20);
   });
 
   it("keeps a saved tab max width", () => {
@@ -275,36 +309,48 @@ describe("mergeConfig", () => {
   });
 
   it("defaults the hidden-events bar to the theme's own colours", () => {
-    expect(createDefaultConfig().hiddenEvents).toEqual({ background: null, border: null, headerText: null, detailText: null });
+    expect(createDefaultConfig().hiddenEvents).toEqual({ background: null, border: null, headerText: null, detailText: null, borderOpacity: 100, borderRadius: 8 });
   });
 
   it("keeps saved hidden-events colours, alpha hex included", () => {
     const cfg = mergeConfig({ version: 5, hiddenEvents: { background: "#1e293b", border: "#60a5fa80", headerText: "#fff", detailText: "#ffffffb3" } });
-    expect(cfg.hiddenEvents).toEqual({ background: "#1e293b", border: "#60a5fa80", headerText: "#fff", detailText: "#ffffffb3" });
+    expect(cfg.hiddenEvents).toEqual({ background: "#1e293b", border: "#60a5fa80", headerText: "#fff", detailText: "#ffffffb3", borderOpacity: 100, borderRadius: 8 });
   });
 
   it("drops a hidden-events colour that is not a hex, keeping the other", () => {
     const cfg = mergeConfig({ version: 5, hiddenEvents: { background: "blue", border: "#60a5fa", headerText: 3 } });
-    expect(cfg.hiddenEvents).toEqual({ background: null, border: "#60a5fa", headerText: null, detailText: null });
+    expect(cfg.hiddenEvents).toEqual({ background: null, border: "#60a5fa", headerText: null, detailText: null, borderOpacity: 100, borderRadius: 8 });
   });
 
-  it("merges live-overlay hard-filter toggles", () => {
-    const cfg = mergeConfig({ version: 5, hardFilters: { hidePartialStreaming: true } });
-    expect(cfg.hardFilters.hidePartialStreaming).toBe(true);
-    // Other fields keep their defaults
-    expect(cfg.hardFilters.hideSubagentLifecycle).toBe(false);
-    expect(cfg.hardFilters.hideHookLifecycle).toBe(false);
-    expect(cfg.hardFilters.hideRateLimitNotices).toBe(false);
+  it("keeps a saved hidden-events corner radius, clamped to 0-24, defaulting to 8px", () => {
+    expect(mergeConfig({ version: 5, hiddenEvents: { borderRadius: 3 } }).hiddenEvents.borderRadius).toBe(3);
+    expect(mergeConfig({ version: 5, hiddenEvents: { borderRadius: 50 } }).hiddenEvents.borderRadius).toBe(24);
+    expect(mergeConfig({ version: 5, hiddenEvents: {} }).hiddenEvents.borderRadius).toBe(8);
   });
 
-  it("exposes the new palette entries (brown/chocolate/tan/black)", () => {
-    expect(DEFAULT_PALETTE.brown).toBeDefined();
-    expect(DEFAULT_PALETTE.chocolate).toBeDefined();
-    expect(DEFAULT_PALETTE.tan).toBeDefined();
-    expect(DEFAULT_PALETTE.black).toBeDefined();
+  it("keeps a saved hidden-events border opacity, clamped to 0-100", () => {
+    expect(mergeConfig({ version: 5, hiddenEvents: { borderOpacity: 45 } }).hiddenEvents.borderOpacity).toBe(45);
+    expect(mergeConfig({ version: 5, hiddenEvents: { borderOpacity: 300 } }).hiddenEvents.borderOpacity).toBe(100);
+    expect(mergeConfig({ version: 5, hiddenEvents: { borderOpacity: "x" } }).hiddenEvents.borderOpacity).toBe(100);
+  });
+
+  // The four live-overlay toggles were retired: three were read by nothing and
+  // the fourth duplicated the hook kinds' own visibility on Message Kinds.
+  it("hides hook rows by default through their kinds", () => {
     const cfg = createDefaultConfig();
-    expect(cfg.palette.brown.swatch).toBe("#92400e");
-    expect(cfg.palette.black.swatch).toBe("#171717");
+    for (const id of ["system.hook_started", "system.hook_progress", "system.hook_response"]) {
+      expect(resolveKind(cfg, id).visibility).toBe("never");
+    }
+  });
+
+  it("drops a saved debug block — the kind label always shows", () => {
+    const cfg = mergeConfig({ version: 5, debug: { showCardKindLabel: true } });
+    expect("debug" in cfg).toBe(false);
+  });
+
+  it("drops a saved hardFilters block", () => {
+    const cfg = mergeConfig({ version: 5, hardFilters: { hidePartialStreaming: true } });
+    expect("hardFilters" in cfg).toBe(false);
   });
 
   it("merges typography overrides safely", () => {
@@ -781,14 +827,14 @@ describe("resolveKind — classifier output coverage", () => {
     const cfg = createDefaultConfig();
     expect(resolveKind(cfg, "permission.request").icon).toBe("ShieldQuestion");
     expect(resolveKind(cfg, "permission.askUserQuestion").icon).toBe("MessageCircleQuestion");
-    expect(resolveKind(cfg, "permission.request").accentColor).toBe("amber");
-    expect(resolveKind(cfg, "permission.askUserQuestion").accentColor).toBe("indigo");
+    expect(resolveKind(cfg, "permission.request").accentColor).toBe("#f59e0b");
+    expect(resolveKind(cfg, "permission.askUserQuestion").accentColor).toBe("#6366f1");
   });
 
   it("future/unknown kind ids fall back to system category base", () => {
     const cfg = createDefaultConfig();
     const s = resolveKind(cfg, "totally.new.kind.in.future.version");
-    expect(s.accentColor).toBe("muted");
+    expect(s.accentColor).toBe("#4b5563");
     expect(s.alignment).toBe("left");
   });
 });

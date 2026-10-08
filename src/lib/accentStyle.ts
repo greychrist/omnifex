@@ -4,63 +4,52 @@ import {
   resolveKind,
   type HiddenEventsStyle,
   type MessageRenderingConfig,
-  type PaletteEntry,
 } from "./messageRenderingConfig";
 
-// Build an inline style that overrides Tailwind border/bg classes for a card.
-// Alpha suffixes: 55 (~33%) for the border, 14 (~8%) for the background. Chosen
-// to roughly match the original `border-X/30 bg-X/5` look.
-export function accentStyleFromEntry(entry: PaletteEntry): React.CSSProperties {
-  return {
-    borderColor: `${entry.swatch}55`,
-    backgroundColor: entry.bg === null ? undefined : `${entry.swatch}14`,
-  };
-}
-
 /**
- * Resolve the accent for a kind to a `PaletteEntry`-shaped record so the
- * downstream helpers (`accentStyleFor`, `swatchFor`) don't care whether
- * the value came from the named palette or a free-form hex from the
- * per-kind colour picker.
- *
- * `kind.accentColor` is `string` (loosened from `PaletteName` when the
- * picker landed). Two recognised forms:
- *   - Palette name (legacy / shared retinting) — looked up in
- *     `config.palette`.
- *   - Hex colour (`#rgb` / `#rrggbb` / `#rrggbbaa`) — synthesised into
- *     a PaletteEntry-like shape with the hex as the swatch and the
- *     border/bg alpha suffixes computed by `accentStyleFromEntry`.
- *
- * Anything else returns null and the caller renders without accent
- * styling.
- *
- * Uses `resolveKind` which cascades: category base → registry default →
- * user kind patch. The result is the fully-resolved per-kind accent.
+ * Hex alpha suffix for an opacity in percent — what every accent-derived
+ * border (card outline, header divider, icon chip, side line) appends to its
+ * swatch. Driven by Appearance › Global › Card border opacity.
  */
-export function accentFor(
-  config: MessageRenderingConfig,
-  kindId: string,
-): PaletteEntry | null {
-  const ac = resolveKind(config, kindId).accentColor;
-  if (isHexColor(ac)) {
-    return { border: "", bg: "auto", swatch: ac };
-  }
-  return config.palette[ac as keyof typeof config.palette] ?? null;
+export function borderAlphaHex(opacityPct: number): string {
+  const clamped = Math.max(0, Math.min(100, opacityPct));
+  return Math.round((clamped / 100) * 255).toString(16).padStart(2, "0");
 }
 
-export function accentStyleFor(
-  config: MessageRenderingConfig,
-  kindId: string,
-): React.CSSProperties | undefined {
-  const entry = accentFor(config, kindId);
-  return entry ? accentStyleFromEntry(entry) : undefined;
-}
-
+/** The kind's accent as a hex, or undefined when it is not one. */
 export function swatchFor(
   config: MessageRenderingConfig,
   kindId: string,
 ): string | undefined {
-  return accentFor(config, kindId)?.swatch;
+  const ac = resolveKind(config, kindId).accentColor;
+  return isHexColor(ac) ? ac : undefined;
+}
+
+/**
+ * Inline border and background for a card, overriding Tailwind classes (the
+ * unlayered `* { border-color }` rule in styles.css outranks every
+ * border-colour utility). The border takes the configured opacity; the
+ * background is a fixed ~8% (`14`) tint.
+ */
+export function accentStyleFor(
+  config: MessageRenderingConfig,
+  kindId: string,
+): React.CSSProperties | undefined {
+  const swatch = swatchFor(config, kindId);
+  if (!swatch) return undefined;
+  return {
+    borderColor: `${swatch}${borderAlphaHex(config.cardBorderOpacity)}`,
+    backgroundColor: `${swatch}14`,
+  };
+}
+
+/**
+ * Corner radius for a card-shaped frame (card, collapsible, permission and
+ * question cards) — All cards › Corner radius. Inline, over the `rounded-lg`
+ * class the shells keep as a fallback.
+ */
+export function cardRadiusStyle(config: MessageRenderingConfig): React.CSSProperties {
+  return { borderRadius: `${String(config.cardBorderRadius)}px` };
 }
 
 /** Automatic text colours for the hidden-events bar — slate-50 and slate-900. */
@@ -86,15 +75,16 @@ export interface HiddenEventsColors {
  * theme is still dark, and must keep light text.
  */
 export function hiddenEventsColors(
-  { background, border, headerText, detailText }: HiddenEventsStyle,
+  { background, border, headerText, detailText, borderOpacity }: HiddenEventsStyle,
   backdrop: string,
 ): HiddenEventsColors {
+  const borderColor = hiddenEventsBorder(border, borderOpacity);
   const bar =
-    background === null && border === null
+    background === null && borderColor === undefined
       ? undefined
       : {
           ...(background !== null && { backgroundColor: background }),
-          ...(border !== null && { borderColor: border }),
+          ...(borderColor !== undefined && { borderColor }),
         };
   const auto = background === null ? undefined : readableOn(composite(background, backdrop));
   return {
@@ -102,6 +92,24 @@ export function hiddenEventsColors(
     header: headerText ?? auto,
     detail: detailText ?? (auto && `${auto}b3`),
   };
+}
+
+/**
+ * The card border at its opacity. A configured colour keeps its hue and has its
+ * own alpha (if any) scaled; with none configured the theme's border colour is
+ * faded instead. Undefined — leave the theme's class alone — at 100% with no
+ * colour.
+ */
+function hiddenEventsBorder(border: string | null, opacityPct: number): string | undefined {
+  if (border === null) {
+    return opacityPct >= 100
+      ? undefined
+      : `color-mix(in oklch, var(--color-border) ${String(opacityPct)}%, transparent)`;
+  }
+  if (opacityPct >= 100) return border;
+  const { rgb, alpha } = parseHex(border);
+  const hex = rgb.map((c) => c.toString(16).padStart(2, "0")).join("");
+  return `#${hex}${borderAlphaHex(alpha * opacityPct)}`;
 }
 
 /**

@@ -143,21 +143,15 @@ describe('MessageCard — footer (timestamp + copy)', () => {
   });
 });
 
-describe('MessageCard — debug mode footer (kind label only)', () => {
-  // The default config has debug.showCardKindLabel = false. The footer's
-  // kind-label branch only renders when that flag is true — to exercise
-  // it we need a config provider that flips it on. Easiest path: wrap a
-  // local Provider stub around the card.
+describe('MessageCard — kind label footer', () => {
   const FlipDebugProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     return <>{children}</>;
   };
 
   it('renders the kindId broken on dots, and no longer carries the payload viewer', async () => {
-    // Override the hook directly to flip debug.showCardKindLabel.
     const mod = await import('@/contexts/MessageRenderingContext');
     const { createDefaultConfig } = await import('@/lib/messageRenderingConfig');
     const fakeConfig = createDefaultConfig();
-    fakeConfig.debug.showCardKindLabel = true;
     const spy = vi.spyOn(mod, 'useMessageRenderingConfig').mockReturnValue({
       config: fakeConfig,
       setConfig: async () => {},

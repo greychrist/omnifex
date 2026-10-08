@@ -8,7 +8,7 @@ import type { JsonlNode } from '@/types/jsonl';
 // The transcript's contexts read app_settings over IPC and the message bodies
 // are irrelevant here — this file is about the auto-scroll follow marker.
 vi.mock('@/contexts/MessageRenderingContext', () => ({
-  useMessageRenderingConfig: () => ({ config: { hardFilters: {} } }),
+  useMessageRenderingConfig: () => ({ config: {} }),
 }));
 vi.mock('@/contexts/AutoScrollContext', () => ({
   useAutoScroll: () => ({ followPx: 240 }),

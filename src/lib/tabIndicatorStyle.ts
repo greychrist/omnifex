@@ -1,5 +1,5 @@
-import type { Palette, TabIndicatorSize } from "./messageRenderingConfig";
-import { isHexColor, DEFAULT_PALETTE } from "./messageRenderingConfig";
+import type { TabIndicatorSize } from "./messageRenderingConfig";
+import { isHexColor } from "./messageRenderingConfig";
 
 /** Shared glyph size → pixel edge. Matches the literal Tailwind classes in
  *  TAB_INDICATOR_SIZE_CLASS (dynamic `w-[${n}px]` strings can't be JIT'd). */
@@ -17,11 +17,9 @@ export const TAB_INDICATOR_SIZE_CLASS: Record<TabIndicatorSize, string> = {
 };
 
 /**
- * Resolve a tab-indicator color (a palette name OR a hex string, same form as
- * a kind's accentColor) to a concrete CSS color, against the user's possibly
- * retinted palette. Falls back to the neutral `muted` swatch for unknown names.
+ * A tab-indicator colour as CSS. Colours are hex — the config converts a saved
+ * palette name on load — so anything else falls back to neutral grey.
  */
-export function resolveIndicatorColor(color: string, palette: Palette): string {
-  if (isHexColor(color)) return color;
-  return palette[color as keyof Palette]?.swatch ?? DEFAULT_PALETTE.muted.swatch;
+export function resolveIndicatorColor(color: string): string {
+  return isHexColor(color) ? color : "#4b5563";
 }

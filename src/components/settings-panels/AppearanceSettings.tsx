@@ -3,8 +3,6 @@ import { Download, RotateCcw, Upload, Save, RefreshCw } from "lucide-react";
 import { api } from "@/lib/api";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   createDefaultConfig,
@@ -19,9 +17,6 @@ import {
   type KindStyle,
   type CategoryStyle,
   type CollapseRule,
-  type Palette,
-  type PaletteEntry,
-  type PaletteName,
   type Terminal,
   type HiddenEventsStyle,
   type Typography,
@@ -30,13 +25,14 @@ import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
 import { MessageKindTree, type TreeSelection } from "./appearance/MessageKindTree";
 import { KindEditor } from "./appearance/KindEditor";
 import { HiddenEventsEditor } from "./appearance/HiddenEventsEditor";
+import { AllCardsEditor } from "./appearance/AllCardsEditor";
 import { SamplePreview } from "./appearance/SamplePreview";
 import { TurnPreview } from "./appearance/TurnPreview";
 import {
+  ALL_CARDS_PREVIEW_TEXT,
   previewTextForCategory,
   previewTextForKindId,
 } from "./appearance/fixtures";
-import { PaletteEditor } from "./appearance/PaletteEditor";
 import { TypographyEditor } from "./appearance/TypographyEditor";
 import { TerminalEditor } from "./appearance/TerminalEditor";
 import type { SettingsPanelProps } from "./types";
@@ -58,22 +54,8 @@ type AppearanceSettingsProps = Pick<SettingsPanelProps, "setToast">;
 
 const FIRST_SELECTION: TreeSelection = { type: "category", id: "user" };
 
-interface FilterRowProps {
-  label: string;
-  description: string;
-  checked: boolean;
-  onChange: (value: boolean) => void;
-}
-
-const FilterRow: React.FC<FilterRowProps> = ({ label, description, checked, onChange }) => (
-  <div className="flex items-start justify-between gap-4">
-    <div className="space-y-0.5 flex-1">
-      <Label>{label}</Label>
-      <p className="text-caption text-muted-foreground">{description}</p>
-    </div>
-    <Switch checked={checked} onCheckedChange={onChange} />
-  </div>
-);
+/** The tabs that exist, so a remembered one that no longer does is ignored. */
+const APPEARANCE_TABS: readonly string[] = ["kinds", "turns", "typography", "terminal"];
 
 export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast }) => {
   const { config: committedConfig, setConfig: commitConfig } = useMessageRenderingConfig();
@@ -150,7 +132,9 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
   // restart so cold-launches always land on the most common surface first.
   const [activeTab, setActiveTab] = useState<string>(() => {
     try {
-      return sessionStorage.getItem('omnifex:appearance-tab') ?? 'kinds';
+      const saved = sessionStorage.getItem('omnifex:appearance-tab');
+      // A tab that no longer exists (Global, Palette) falls back to kinds.
+      return saved && APPEARANCE_TABS.includes(saved) ? saved : 'kinds';
     } catch { return 'kinds'; }
   });
   useEffect(() => {
@@ -292,15 +276,16 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
     [mutate, setToast],
   );
 
-  const updatePalette = useCallback(
-    (name: PaletteName, patch: Partial<PaletteEntry>) => {
-      mutate((prev) => {
-        const nextPalette: Palette = {
-          ...prev.palette,
-          [name]: { ...prev.palette[name], ...patch },
-        };
-        return { ...prev, palette: nextPalette };
-      });
+  const setCardBorderOpacity = useCallback(
+    (pct: number) => {
+      mutate((prev) => ({ ...prev, cardBorderOpacity: pct }));
+    },
+    [mutate],
+  );
+
+  const setCardBorderRadius = useCallback(
+    (px: number) => {
+      mutate((prev) => ({ ...prev, cardBorderRadius: px }));
     },
     [mutate],
   );
@@ -348,29 +333,21 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
     [replaceConfig, setToast],
   );
 
-  const hardFiltersChecked = useMemo(
-    () => ({
-      hidePartialStreaming: config.hardFilters.hidePartialStreaming,
-      hideSubagentLifecycle: config.hardFilters.hideSubagentLifecycle,
-      hideHookLifecycle: config.hardFilters.hideHookLifecycle,
-      hideRateLimitNotices: config.hardFilters.hideRateLimitNotices,
-    }),
-    [config.hardFilters],
+  // Live preview of a card; updates as you edit.
+  const sample = (style: KindStyle, kindId: string, text: string) => (
+    <div
+      role="region"
+      aria-label="Sample"
+      className="rounded-md border border-border bg-background p-3"
+    >
+      <SamplePreview style={style} kindId={kindId} text={text} />
+    </div>
   );
 
-  const setHardFilter = (key: keyof typeof hardFiltersChecked, value: boolean) => {
-    mutate((prev) => ({
-      ...prev,
-      hardFilters: { ...prev.hardFilters, [key]: value },
-    }));
-  };
-
-  const setDebugOption = (key: "showCardKindLabel", value: boolean) => {
-    mutate((prev) => ({
-      ...prev,
-      debug: { ...prev.debug, [key]: value },
-    }));
-  };
+  const allCardsSampleStyle = useMemo(
+    (): KindStyle => ({ ...config.categories.user, headerLabel: "All cards" }),
+    [config.categories.user],
+  );
 
   // Resolve the current selection into the editor + preview inputs.
   // A category carries a full style; a kind carries a resolved style
@@ -428,8 +405,6 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
           <TabsTrigger value="turns">Turn preview</TabsTrigger>
           <TabsTrigger value="typography">Typography</TabsTrigger>
           <TabsTrigger value="terminal">Terminal</TabsTrigger>
-          <TabsTrigger value="global">Global</TabsTrigger>
-          <TabsTrigger value="palette">Palette</TabsTrigger>
         </TabsList>
 
         <TabsContent value="kinds" className="mt-4">
@@ -454,27 +429,27 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
                 />
               </div>
 
-              {selected.type === "hiddenEvents" ? (
+              {selected.type === "allCards" ? (
+                <div className="min-w-0 space-y-3">
+                  {/* A generic card — the User category's look under its own
+                      title — so the all-card settings show their effect. */}
+                  {sample(allCardsSampleStyle, "user", ALL_CARDS_PREVIEW_TEXT)}
+                  <AllCardsEditor
+                    defaultViewMode={config.defaultViewMode}
+                    cardBorderOpacity={config.cardBorderOpacity}
+                    cardBorderRadius={config.cardBorderRadius}
+                    onDefaultViewMode={setDefaultViewMode}
+                    onCardBorderOpacity={setCardBorderOpacity}
+                    onCardBorderRadius={setCardBorderRadius}
+                  />
+                </div>
+              ) : selected.type === "hiddenEvents" ? (
                 <div className="min-w-0">
                   <HiddenEventsEditor value={config.hiddenEvents} onChange={setHiddenEvents} />
                 </div>
               ) : (
-              <div className="min-w-0 space-y-4">
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <Label>Sample</Label>
-                    <span className="text-caption text-muted-foreground">
-                      Live preview — reflects your edits immediately.
-                    </span>
-                  </div>
-                  <div className="rounded-md border border-border bg-background p-4">
-                    <SamplePreview
-                      style={editor.style}
-                      kindId={editor.kindId}
-                      text={editor.previewText}
-                    />
-                  </div>
-                </div>
+              <div className="min-w-0 space-y-3">
+                {sample(editor.style, editor.kindId, editor.previewText)}
 
                 <KindEditor
                   mode={editor.mode}
@@ -484,7 +459,6 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
                   style={editor.style}
                   override={editor.override}
                   inheritedCategoryLabel={editor.inheritedCategoryLabel}
-                  palette={config.palette}
                   typography={config.typography}
                   onChange={editor.onChange}
                   onClearField={editor.onClearField}
@@ -540,99 +514,6 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
           </Card>
         </TabsContent>
 
-        <TabsContent value="global" className="mt-4">
-          <Card className="p-6 space-y-6">
-            <div>
-              <h3 className="text-heading-4">Global</h3>
-              <p className="text-caption text-muted-foreground mt-1">
-                Defaults and hard filters that apply to every session.
-              </p>
-            </div>
-
-            {/* Default view mode */}
-            <div className="flex items-center justify-between">
-              <div>
-                <Label>Default view mode</Label>
-                <p className="text-caption text-muted-foreground mt-1">
-                  Initial view when a session opens.
-                </p>
-              </div>
-              <div className="flex items-center gap-1 p-1 bg-muted/30 rounded-lg">
-                {(["verbose", "compact"] as const).map((m) => (
-                  <button
-                    key={m}
-                    type="button"
-                    onClick={() => { setDefaultViewMode(m); }}
-                    className={cn(
-                      "px-3 py-1.5 text-xs font-medium rounded-md transition-all capitalize",
-                      config.defaultViewMode === m
-                        ? "bg-background shadow-sm"
-                        : "hover:bg-background/50",
-                    )}
-                  >
-                    {m}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Live-stream overlay filters */}
-            <div className="space-y-3 pt-4 border-t border-border">
-              <div>
-                <Label>Live overlay filters <span className="text-muted-foreground text-xs">(Chat mode only)</span></Label>
-                <p className="text-caption text-muted-foreground mt-1">
-                  Apply to live-only event streams from the Claude CLI. No effect in Terminal mode.
-                </p>
-              </div>
-              <FilterRow
-                label="Hide partial token streaming"
-                description="stream_event — typewriter effect during assistant responses."
-                checked={hardFiltersChecked.hidePartialStreaming}
-                onChange={(v) => { setHardFilter("hidePartialStreaming", v); }}
-              />
-              <FilterRow
-                label="Hide subagent lifecycle"
-                description="task_started / task_progress / task_updated — drives the agents readout."
-                checked={hardFiltersChecked.hideSubagentLifecycle}
-                onChange={(v) => { setHardFilter("hideSubagentLifecycle", v); }}
-              />
-              <FilterRow
-                label="Hide hook lifecycle"
-                description="hook_started / hook_progress / hook_response — drives hook progress UI."
-                checked={hardFiltersChecked.hideHookLifecycle}
-                onChange={(v) => { setHardFilter("hideHookLifecycle", v); }}
-              />
-              <FilterRow
-                label="Hide rate-limit notices"
-                description="rate_limit_event — drives budget telemetry."
-                checked={hardFiltersChecked.hideRateLimitNotices}
-                onChange={(v) => { setHardFilter("hideRateLimitNotices", v); }}
-              />
-            </div>
-
-            {/* Debug */}
-            <div className="space-y-3 pt-4 border-t border-border">
-              <div>
-                <Label>Debug</Label>
-                <p className="text-caption text-muted-foreground mt-1">
-                  Diagnostic overlays for troubleshooting message rendering.
-                </p>
-              </div>
-              <FilterRow
-                label="Show message kind label on cards"
-                description="Render the raw message type (e.g. result · success, assistant) on the bottom-left of each card. Useful when a card looks mis-classified."
-                checked={config.debug.showCardKindLabel}
-                onChange={(v) => { setDebugOption("showCardKindLabel", v); }}
-              />
-            </div>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="palette" className="mt-4">
-          <Card className="p-6">
-            <PaletteEditor palette={config.palette} onChange={updatePalette} />
-          </Card>
-        </TabsContent>
       </Tabs>
 
       {/* Actions live below the tabs so import / export / save-default /

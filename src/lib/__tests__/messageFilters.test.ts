@@ -56,42 +56,15 @@ describe('filterDisplayableMessages', () => {
     expect(out).toHaveLength(1);
   });
 
-  describe('hook lifecycle filtering', () => {
-    // The CLI's `system+hook_*` family is plumbing noise — `hook_started`,
-    // `hook_response`, and `hook_progress` (mid-hook stdout/stderr) all
-    // describe internal hook execution and should never appear in the
-    // chat timeline by default. The set guarding `dropHookLifecycle`
-    // historically only listed `hook_started` and `hook_response`,
-    // letting `hook_progress` leak in as `system.unknown` gray strips.
+  describe('hook lifecycle rows', () => {
+    // Hook rows are plumbing noise, but hiding them is their kinds' job
+    // (system.hook_* default to Never on Message Kinds), not a hard filter —
+    // the "Hide hook lifecycle" toggle that duplicated it was retired.
     const sysHook = (subtype: string): JsonlNode =>
       ({ kind: 'system', subtype, sessionId: '', receivedAt: '', raw: { type: 'system', subtype } }) as unknown as JsonlNode;
 
-    it('drops hook_started when dropHookLifecycle is on (default)', () => {
-      const out = filterDisplayableMessages([sysHook('hook_started')]);
-      expect(out).toHaveLength(0);
-    });
-
-    it('drops hook_response when dropHookLifecycle is on (default)', () => {
-      const out = filterDisplayableMessages([sysHook('hook_response')]);
-      expect(out).toHaveLength(0);
-    });
-
-    it('drops hook_progress when dropHookLifecycle is on (default)', () => {
-      // Regression: hook_progress was missing from HOOK_LIFECYCLE_SUBTYPES
-      // and leaked into messages[] as system.unknown noise — exactly the
-      // same plumbing-noise category as hook_started / hook_response.
-      const out = filterDisplayableMessages([sysHook('hook_progress')]);
-      expect(out).toHaveLength(0);
-    });
-
-    it('keeps hook_progress when hideHookLifecycle is explicitly off', () => {
-      const out = filterDisplayableMessages([sysHook('hook_progress')], {
-        hidePartialStreaming: false,
-        hideSubagentLifecycle: false,
-        hideHookLifecycle: false,
-        hideRateLimitNotices: false,
-      });
-      expect(out).toHaveLength(1);
+    it.each(['hook_started', 'hook_progress', 'hook_response'])('passes %s through to its kind', (subtype) => {
+      expect(filterDisplayableMessages([sysHook(subtype)])).toHaveLength(1);
     });
   });
 

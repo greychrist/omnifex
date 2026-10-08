@@ -21,7 +21,7 @@ const hidden = [
 ] as unknown as JsonlNode[];
 
 function renderBar(patch: Partial<HiddenEventsStyle>) {
-  const hiddenEvents = { background: null, border: null, headerText: null, detailText: null, ...patch };
+  const hiddenEvents = { background: null, border: null, headerText: null, detailText: null, borderOpacity: 100, borderRadius: 8, ...patch };
   const config = createDefaultConfig();
   config.hiddenEvents = hiddenEvents;
   render(
@@ -49,6 +49,25 @@ describe('HiddenEventsGroup — card', () => {
     expect(body).not.toBeNull();
     expect(body!.className).not.toMatch(/border-l/);
     expect(body!.style.borderLeftColor).toBe('');
+  });
+
+  // A black tint made the body a shade DARKER than the chat behind it, so an
+  // open card read as a hole in the transcript. A faint foreground tint lifts
+  // it just above the background on dark themes (and shades it on light
+  // ones), staying below the row cards inside.
+  it('lifts the body slightly above the chat background', () => {
+    const bar = renderBar({});
+    fireEvent.click(bar);
+    const body = screen.getByTestId('hidden-row').closest<HTMLElement>('[data-hidden-events-body]')!;
+    expect(body.className).toMatch(/\bbg-foreground\/\[0\.03\]/);
+    expect(body.className).not.toMatch(/\bbg-black\//);
+  });
+});
+
+describe('HiddenEventsGroup — corner radius', () => {
+  it('rounds the card to the configured radius', () => {
+    const bar = renderBar({ borderRadius: 3 });
+    expect(cardOf(bar)!.style.borderRadius).toBe('3px');
   });
 });
 

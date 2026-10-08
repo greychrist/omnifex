@@ -26,7 +26,7 @@ const EMITTABLE_IDS = [
   // system
   "system.notification.info", "system.notification.warn",
   "system.notification.error", "system.notification.stop",
-  "system.hook_started", "system.hook_response", "system.permission_denied",
+  "system.hook_started", "system.hook_response", "system.hook_progress", "system.permission_denied",
   "system.userPromptSubmit", "system.api_error", "system.away_summary",
   "system.thinking_tokens", "system.rate_limit", "system.feedback_draft_queued",
   "system.local_command", "system.stop_hook_summary", "system.unknown",
@@ -342,6 +342,7 @@ describe('classifyStandaloneKind', () => {
     it('does not classify notification / known hook subtypes as unknown', () => {
       expect(classifyStandaloneKind(sys('hook_started'), [])).toBe('system.hook_started');
       expect(classifyStandaloneKind(sys('hook_response'), [])).toBe('system.hook_response');
+      expect(classifyStandaloneKind(sys('hook_progress'), [])).toBe('system.hook_progress');
       expect(classifyStandaloneKind(sys('user_prompt_submit'), [])).toBe('system.userPromptSubmit');
     });
 

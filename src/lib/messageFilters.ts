@@ -3,28 +3,9 @@ import { isTaskLifecycleMarker, isTaskNotificationCarrier } from "@/lib/subagent
 import { forwardedParentToolUseId, isSubagentPrompt } from "@/lib/subagentDispatch";
 import { detectSkillInjection } from "@/lib/skillDetection";
 import { toolResultHasImages } from "@/lib/toolResultImages";
-import type { HardFilters } from "@/lib/messageRenderingConfig";
 import { isCliSidechannelRecord } from "@/lib/cliSidechannelRecords";
 import { titleChangeIndices } from "@/lib/sessionTitle";
 import { summariseContextAttachment } from "@/lib/contextLedger";
-
-// CLI subtypes the renderer treats as hook-lifecycle noise. `hook_progress`
-// (mid-hook stdout/stderr) belongs in the set because it's plumbing —
-// without it the message leaked into messages[] as system.unknown gray
-// strips. `user_prompt_submit` is a hook *event* name (not a CLI
-// message subtype) but historical sessions stamped it as a subtype,
-// so it stays in the set for backward compatibility.
-const HOOK_LIFECYCLE_SUBTYPES: ReadonlySet<string> = new Set([
-  "hook_started",
-  "hook_progress",
-  "hook_response",
-  "user_prompt_submit",
-]);
-
-function isHookLifecycleMarker(msg: JsonlNode): boolean {
-  if (msg.kind !== "system") return false;
-  return HOOK_LIFECYCLE_SUBTYPES.has(msg.subtype);
-}
 
 /**
  * Filters out messages that shouldn't be displayed in the session UI.
@@ -35,19 +16,12 @@ function isHookLifecycleMarker(msg: JsonlNode): boolean {
  *   tool-specific widgets (e.g. Bash, Edit, Read, Grep, etc.)
  * - Subagent task lifecycle markers (task_started / task_progress /
  *   task_notification) — those are rendered in the agents readout.
- * - When `hardFilters.hideHookLifecycle` is on (default), CLI hook
- *   lifecycle events (hook_started / hook_response / user_prompt_submit). *
- * Not here: repeats of a kind (collapseRepeats.ts, a per-kind registry rule)
+ * Not here: hook rows (their kinds default to Never), repeats of a kind
+ * (collapseRepeats.ts, a per-kind registry rule)
  * and stream-only CLI bookkeeping, which is hidden by its kind's default
  * Never visibility so it can be switched on from Appearance settings.
  */
-export function filterDisplayableMessages(
-  messages: JsonlNode[],
-  hardFilters?: HardFilters,
-): JsonlNode[] {
-  // Backward-compat: missing config means apply legacy defaults (everything on).
-  // hideHookLifecycle replaces the old dropHookLifecycle key.
-  const hideHookLifecycle = hardFilters?.hideHookLifecycle ?? true;
+export function filterDisplayableMessages(messages: JsonlNode[]): JsonlNode[] {
   const keptTitles = titleChangeIndices(messages);
 
   return messages.filter((message, index) => {
@@ -71,11 +45,6 @@ export function filterDisplayableMessages(
 
     // Skip subagent lifecycle markers — shown in the agents readout instead
     if (isTaskLifecycleMarker(rawShape)) {
-      return false;
-    }
-
-    // Skip CLI hook lifecycle events when the user has the filter on.
-    if (hideHookLifecycle && isHookLifecycleMarker(message)) {
       return false;
     }
 

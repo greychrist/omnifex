@@ -192,7 +192,7 @@ describe("typographyClasses (icon helpers)", () => {
       cfg.typography.icon.bgOpacity = 50;
       const style = iconWrapperStyle(cfg, "#abcdef");
       expect(style?.color).toBe("#abcdef");
-      expect(style?.borderColor).toBe("#abcdef55");
+      expect(style?.borderColor).toBe("#abcdef33");
       expect(style?.backgroundColor).toBe(
         "color-mix(in oklch, var(--color-background) 50%, transparent)",
       );

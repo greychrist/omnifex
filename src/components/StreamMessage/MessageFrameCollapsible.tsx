@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { ChevronsUpDown, Info } from "lucide-react";
 import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
-import { accentStyleFor, swatchFor } from "@/lib/accentStyle";
+import { accentStyleFor, cardRadiusStyle, swatchFor } from "@/lib/accentStyle";
 import { iconNameFor } from "@/lib/kindPresentation";
 import { resolveKind } from "@/lib/messageRenderingConfig";
 import { IconRenderer } from "@/components/settings-panels/appearance/iconMap";
@@ -51,7 +51,7 @@ export const MessageFrameCollapsible: React.FC<MessageFrameCollapsibleProps> = (
   const label = headerLabel ?? resolveKind(config, kindId).headerLabel ?? "Context";
 
   return (
-    <div className="group/card rounded-lg border overflow-hidden" style={style}>
+    <div className="group/card rounded-lg border overflow-hidden" style={{ ...style, ...cardRadiusStyle(config) }}>
       <div className="flex items-center gap-2 pr-3">
         <button
           type="button"

@@ -225,4 +225,36 @@ describe('MessageFrame', () => {
     await findByText('???');
     expect(container.querySelector('[data-frame-variant="card"]')).not.toBeNull();
   });
+
+  // All cards › Corner radius: one setting for every card-shaped frame.
+  // Side-line rows are not cards and keep their own corners.
+  describe('corner radius', () => {
+    const node = {
+      kind: 'system',
+      raw: { type: 'system', subtype: 'notification', body: 'b' },
+    } as unknown as import('@/types/jsonl').JsonlNode;
+    const cfg = () => { const c = createDefaultConfig(); c.cardBorderRadius = 4; return c; };
+
+    it('rounds a card to the configured radius', async () => {
+      const { container, findByRole } = render(
+        <MessageRenderingPreviewProvider config={cfg()}>
+          <MessageFrame streamKind="system.notification.info" message={node}>card body</MessageFrame>
+        </MessageRenderingPreviewProvider>
+      );
+      await findByRole('toolbar');
+      const card = container.querySelector<HTMLElement>('[data-frame-variant="card"] .group\\/card')!;
+      expect(card.style.borderRadius).toBe('4px');
+    });
+
+    it('rounds a collapsible to the configured radius', async () => {
+      const { container, findByRole } = render(
+        <MessageRenderingPreviewProvider config={cfg()}>
+          <MessageFrame streamKind="user.systemContext" message={node}>collapsed body</MessageFrame>
+        </MessageRenderingPreviewProvider>
+      );
+      await findByRole('toolbar');
+      const card = container.querySelector<HTMLElement>('[data-frame-variant="collapsible"] .group\\/card')!;
+      expect(card.style.borderRadius).toBe('4px');
+    });
+  });
 });

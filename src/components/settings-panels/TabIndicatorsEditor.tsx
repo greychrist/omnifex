@@ -13,7 +13,6 @@ import type {
   TabIndicatorKey,
   TabIndicatorSize,
   TabIndicatorStyle,
-  Palette,
 } from "@/lib/messageRenderingConfig";
 import { resolveIndicatorColor } from "@/lib/tabIndicatorStyle";
 import { IconPicker } from "@/components/settings-panels/appearance/IconPicker";
@@ -22,7 +21,6 @@ import { cn } from "@/lib/utils";
 
 interface TabIndicatorsEditorProps {
   indicators: TabIndicators;
-  palette: Palette;
   onChange: (next: TabIndicators) => void;
 }
 
@@ -43,14 +41,12 @@ const SIZES: { value: TabIndicatorSize; label: string }[] = [
 ];
 
 /** Native colour input (writes hex), mirroring the kind editor's accent-colour
- *  control. Defaults stay as theme-aware palette names until the user changes
- *  one, at which point it becomes an explicit hex. */
+ *  control. */
 const ColorControl: React.FC<{
   value: string;
-  palette: Palette;
   onChange: (color: string) => void;
-}> = ({ value, palette, onChange }) => {
-  const hex = resolveIndicatorColor(value, palette);
+}> = ({ value, onChange }) => {
+  const hex = resolveIndicatorColor(value);
   return (
     <input
       type="color"
@@ -69,7 +65,6 @@ const ColorControl: React.FC<{
  */
 export const TabIndicatorsEditor: React.FC<TabIndicatorsEditorProps> = ({
   indicators,
-  palette,
   onChange,
 }) => {
   const setState = (key: TabIndicatorKey, patch: Partial<TabIndicatorStyle>) => {
@@ -94,7 +89,6 @@ export const TabIndicatorsEditor: React.FC<TabIndicatorsEditorProps> = ({
                 <TabStatusGlyph
                   style={indicators[key]}
                   indicators={indicators}
-                  palette={palette}
                   ariaLabel={`${label} preview`}
                 />
               </span>
@@ -108,7 +102,6 @@ export const TabIndicatorsEditor: React.FC<TabIndicatorsEditorProps> = ({
             </div>
             <ColorControl
               value={indicators[key].color}
-              palette={palette}
               onChange={(color) => { setState(key, { color }); }}
             />
           </div>

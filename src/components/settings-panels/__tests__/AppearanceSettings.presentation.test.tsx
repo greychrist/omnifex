@@ -203,6 +203,38 @@ describe('AppearanceSettings — kind field editing', () => {
   });
 });
 
+// The editor is laid out as label | control rows, one concern per row, so the
+// whole kind fits without scrolling. Each row carries one inherit hint.
+describe('AppearanceSettings — compact kind editor rows', () => {
+  it('puts presentation, border and alignment in one Layout row', async () => {
+    renderWithProvider();
+    await screen.findAllByText('User');
+    expandAll();
+    clickRow('Tool call');
+    const editor = screen.getByTestId('kind-editor');
+    const row = within(editor).getByRole('group', { name: 'Layout' });
+    const names = within(row).getAllByRole('combobox').map((c) => c.getAttribute('aria-label'));
+    expect(names).toEqual(['Presentation', 'Border', 'Alignment']);
+  });
+
+  it('reverts a row to inherited with its one hint', async () => {
+    renderWithProvider();
+    await screen.findAllByText('User');
+    expandAll();
+    clickRow('Tool call');
+    const editor = screen.getByTestId('kind-editor');
+    fireEvent.click(within(editor).getByRole('radio', { name: 'Never' }));
+    const row = within(editor).getByRole('group', { name: 'Visibility' });
+    fireEvent.click(within(row).getByRole('button', { name: /revert/i }));
+    await waitFor(() => {
+      const cfg = saved.config as { kinds: Record<string, Record<string, unknown>> } | null;
+      expect(cfg).not.toBeNull();
+      expect(cfg!.kinds['assistant.tool-use']?.visibility).toBeUndefined();
+    });
+    expect(within(row).getByText(/inherited/i)).toBeInTheDocument();
+  });
+});
+
 describe('AppearanceSettings — edits are debounced before the global commit', () => {
   it('coalesces a rapid burst of color edits into a single persisted commit', async () => {
     const { api } = await import('@/lib/api');
@@ -288,7 +320,47 @@ describe('AppearanceSettings — hidden events bar', () => {
 
     await waitFor(() => {
       const cfg = saved.config as { hiddenEvents?: unknown } | null;
-      expect(cfg?.hiddenEvents).toEqual({ background: '#1e293b', border: '#60a5fa', headerText: null, detailText: null });
+      expect(cfg?.hiddenEvents).toEqual({ background: '#1e293b', border: '#60a5fa', headerText: null, detailText: null, borderOpacity: 100, borderRadius: 8 });
+    });
+  });
+
+  // Same order as All cards: border opacity, then corner radius.
+  it('lists border opacity before corner radius, like All cards', async () => {
+    renderWithProvider();
+    await screen.findAllByText('User');
+    clickRow('Hidden events');
+    const editor = screen.getByTestId('hidden-events-editor');
+    const sliders = within(editor).getAllByRole('slider').map((el) => el.id);
+    expect(sliders).toEqual(['hidden-events-border-opacity', 'hidden-events-border-radius']);
+  });
+
+  it('persists a corner radius from its slider', async () => {
+    renderWithProvider();
+    await screen.findAllByText('User');
+    saved.config = null;
+    clickRow('Hidden events');
+    const editor = screen.getByTestId('hidden-events-editor');
+    const slider = within(editor).getByLabelText<HTMLInputElement>('Corner radius');
+    expect(slider.value).toBe('8');
+    fireEvent.change(slider, { target: { value: '2' } });
+    await waitFor(() => {
+      const cfg = saved.config as { hiddenEvents?: { borderRadius?: number } } | null;
+      expect(cfg?.hiddenEvents?.borderRadius).toBe(2);
+    });
+  });
+
+  it('persists a border opacity from its slider', async () => {
+    renderWithProvider();
+    await screen.findAllByText('User');
+    saved.config = null;
+    clickRow('Hidden events');
+    const editor = screen.getByTestId('hidden-events-editor');
+    const slider = within(editor).getByLabelText<HTMLInputElement>('Border opacity');
+    expect(slider.value).toBe('100');
+    fireEvent.change(slider, { target: { value: '40' } });
+    await waitFor(() => {
+      const cfg = saved.config as { hiddenEvents?: { borderOpacity?: number } } | null;
+      expect(cfg?.hiddenEvents?.borderOpacity).toBe(40);
     });
   });
 

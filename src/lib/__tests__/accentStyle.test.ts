@@ -1,40 +1,27 @@
 import { describe, it, expect } from "vitest";
 import { createDefaultConfig } from "../messageRenderingConfig";
-import { accentFor, accentStyleFor, DARK_TEXT, hiddenEventsColors, LIGHT_TEXT, swatchFor } from "../accentStyle";
+import { accentStyleFor, borderAlphaHex, DARK_TEXT, hiddenEventsColors, LIGHT_TEXT, swatchFor } from "../accentStyle";
 
 describe("accentStyle", () => {
-  describe("accentFor", () => {
-    it("resolves a palette name through config.palette", () => {
+  describe("swatchFor", () => {
+    it("resolves a kind's hex accent through the cascade", () => {
       const cfg = createDefaultConfig();
-      // user.prompt resolves to accentColor: 'blue', palette.blue.swatch = #60a5fa
-      const entry = accentFor(cfg, "user.prompt");
-      expect(entry?.swatch).toBe("#60a5fa");
-    });
-
-    it("synthesises an entry from a hex accentColor (picker-driven)", () => {
-      const cfg = createDefaultConfig();
-      // The helper reads the resolved kind's accent — in production that's the
-      // cascaded style injected as the category base, so set the category here.
-      cfg.categories.user.accentColor = "#a855f7";
-      const entry = accentFor(cfg, "user.prompt");
-      expect(entry?.swatch).toBe("#a855f7");
-      // Synthesised hex entries always opt into the bg tint (bg ≠ null).
-      expect(entry?.bg).not.toBeNull();
+      expect(swatchFor(cfg, "user.prompt")).toBe("#60a5fa"); // user category default
     });
 
     it("resolves accent for a kind via category when it has no override", () => {
       const cfg = createDefaultConfig();
-      // attachment.todo_reminder has no override -> attachment category (muted)
       expect(swatchFor(cfg, "attachment.todo_reminder"))
         .toBe(swatchFor(cfg, "attachment.diagnostics"));
     });
 
-    it("returns null when accentColor isn't a known palette name or hex", () => {
+    it("returns undefined when the accent is not a hex", () => {
       const cfg = createDefaultConfig();
-      // mergeConfig would have stripped this; we set it directly to
+      // mergeConfig would have converted or stripped this; set directly to
       // verify the helper's tolerance.
       cfg.categories.user.accentColor = "neon";
-      expect(accentFor(cfg, "user.prompt")).toBeNull();
+      expect(swatchFor(cfg, "user.prompt")).toBeUndefined();
+      expect(accentStyleFor(cfg, "user.prompt")).toBeUndefined();
     });
   });
 
@@ -43,23 +30,28 @@ describe("accentStyle", () => {
       const cfg = createDefaultConfig();
       cfg.categories.user.accentColor = "#a855f7";
       const style = accentStyleFor(cfg, "user.prompt");
-      // 33% border alpha (`55`) and 8% bg alpha (`14`) — matches the
-      // legacy `border-X/30 bg-X/5` look.
-      expect(style?.borderColor).toBe("#a855f755");
+      // 20% border alpha (`33`, the default cardBorderOpacity) and 8% bg
+      // alpha (`14`).
+      expect(style?.borderColor).toBe("#a855f733");
       expect(style?.backgroundColor).toBe("#a855f714");
     });
   });
 
-  describe("swatchFor", () => {
-    it("returns the same hex passed in via accentColor", () => {
+  describe("border opacity", () => {
+    it("follows the card border opacity setting", () => {
       const cfg = createDefaultConfig();
-      cfg.categories.user.accentColor = "#123456";
-      expect(swatchFor(cfg, "user.prompt")).toBe("#123456");
+      cfg.categories.user.accentColor = "#a855f7";
+      cfg.cardBorderOpacity = 35; // 0.35 * 255 = 89 = 0x59
+      expect(accentStyleFor(cfg, "user.prompt")?.borderColor).toBe("#a855f759");
+      cfg.cardBorderOpacity = 0;
+      expect(accentStyleFor(cfg, "user.prompt")?.borderColor).toBe("#a855f700");
+      cfg.cardBorderOpacity = 100;
+      expect(accentStyleFor(cfg, "user.prompt")?.borderColor).toBe("#a855f7ff");
     });
 
-    it("returns the palette swatch for a palette-name accentColor", () => {
-      const cfg = createDefaultConfig();
-      expect(swatchFor(cfg, "user.prompt")).toBe("#60a5fa");
+    it("converts percent to a two-digit hex alpha", () => {
+      expect(borderAlphaHex(20)).toBe("33");
+      expect(borderAlphaHex(5)).toBe("0d");
     });
   });
 
@@ -67,7 +59,7 @@ describe("accentStyle", () => {
     it("applies the registry default accent for a live card kind", () => {
       const cfg = createDefaultConfig();
       expect(swatchFor(cfg, "permission.request")).toBe("#f59e0b"); // amber registry default
-      expect(accentStyleFor(cfg, "permission.request")?.borderColor).toBe("#f59e0b55");
+      expect(accentStyleFor(cfg, "permission.request")?.borderColor).toBe("#f59e0b33");
     });
     it("honors a user kind patch over the registry default", () => {
       const cfg = createDefaultConfig();
@@ -80,7 +72,7 @@ describe("accentStyle", () => {
 describe("hiddenEventsColors", () => {
   const DARK = "#12171c";
   const LIGHT = "#f7f9fb";
-  const unset = { background: null, border: null, headerText: null, detailText: null };
+  const unset = { background: null, border: null, headerText: null, detailText: null, borderOpacity: 100, borderRadius: 8 };
 
   it("sets nothing when nothing is configured, so the bar keeps its theme look", () => {
     expect(hiddenEventsColors(unset, DARK)).toEqual({ bar: undefined, header: undefined, detail: undefined });
@@ -90,6 +82,23 @@ describe("hiddenEventsColors", () => {
     expect(hiddenEventsColors({ ...unset, border: "#60a5fa" }, DARK).bar).toEqual({ borderColor: "#60a5fa" });
     expect(hiddenEventsColors({ ...unset, background: "#1e293b", border: "#60a5fa" }, DARK).bar)
       .toEqual({ backgroundColor: "#1e293b", borderColor: "#60a5fa" });
+  });
+
+  // Border opacity scales the border colour's own alpha; on the theme's border
+  // (no colour set) it fades the theme colour instead. 100% changes nothing.
+  it("applies border opacity to a configured border, multiplying any alpha it carries", () => {
+    expect(hiddenEventsColors({ ...unset, border: "#3f6578", borderOpacity: 50 }, DARK).bar)
+      .toEqual({ borderColor: "#3f657880" });
+    // #60a5fa80 is 50% already; at 50% opacity it lands on 25% (0x40).
+    expect(hiddenEventsColors({ ...unset, border: "#60a5fa80", borderOpacity: 50 }, DARK).bar)
+      .toEqual({ borderColor: "#60a5fa40" });
+    expect(hiddenEventsColors({ ...unset, border: "#abc", borderOpacity: 20 }, DARK).bar)
+      .toEqual({ borderColor: "#aabbcc33" });
+  });
+
+  it("fades the theme border when no border colour is set", () => {
+    expect(hiddenEventsColors({ ...unset, borderOpacity: 40 }, DARK).bar)
+      .toEqual({ borderColor: "color-mix(in oklch, var(--color-border) 40%, transparent)" });
   });
 
   it("picks dark text on a light background and light text on a dark one", () => {

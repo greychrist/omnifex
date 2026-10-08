@@ -1,12 +1,15 @@
 import * as React from 'react';
 import { IconRenderer } from '@/components/settings-panels/appearance/iconMap';
-import { DEFAULT_PALETTE, isHexColor } from '@/lib/messageRenderingConfig';
+import { isHexColor } from '@/lib/messageRenderingConfig';
 import type { IconName, BorderStyle } from '@/lib/messageRenderingConfig';
+import { borderAlphaHex } from '@/lib/accentStyle';
 
 export interface MessageFrameSideLineProps {
   iconName: IconName;
   accentColor: string;
   borderStyle: BorderStyle;
+  /** Outline opacity in percent — the config's `cardBorderOpacity`. */
+  borderOpacity: number;
   /** When true, the inline icon renders inside an accent-tinted chip
    *  (border + background fill) instead of as a bare glyph. Mirrors the
    *  card icon's `iconBordered` knob. Defaults to false. */
@@ -21,16 +24,9 @@ export interface MessageFrameSideLineProps {
   children: React.ReactNode;
 }
 
-/**
- * Resolve an accent color (palette name or hex) to a CSS hex swatch.
- * Mirrors the same two-form resolution used by `accentFor` in accentStyle.ts,
- * but operates on a raw `accentColor` string instead of a kindId + config.
- */
-function resolveAccentSwatch(accentColor: string): string {
-  if (isHexColor(accentColor)) return accentColor;
-  const entry = DEFAULT_PALETTE[accentColor as keyof typeof DEFAULT_PALETTE];
-  return entry?.swatch ?? '#6b7280';
-}
+/** Neutral grey for an accent that is not a hex (the config converts or
+ *  drops anything else on load, so this is only reached by hand-built data). */
+const FALLBACK_SWATCH = '#6b7280';
 
 /**
  * Side-line presentation variant — a 2px left accent bar with an inline icon
@@ -41,12 +37,14 @@ export const MessageFrameSideLine: React.FC<MessageFrameSideLineProps> = ({
   iconName,
   accentColor,
   borderStyle,
+  borderOpacity,
   iconBordered = false,
   iconBgOpacity = 100,
   actionBar,
   children,
 }) => {
-  const swatch = resolveAccentSwatch(accentColor);
+  const swatch = isHexColor(accentColor) ? accentColor : FALLBACK_SWATCH;
+  const borderColor = `${swatch}${borderAlphaHex(borderOpacity)}`;
 
   const icon = <IconRenderer name={iconName} className="h-3.5 w-3.5" />;
   const op = Math.max(0, Math.min(100, iconBgOpacity));
@@ -55,7 +53,7 @@ export const MessageFrameSideLine: React.FC<MessageFrameSideLineProps> = ({
       className="flex items-center justify-center shrink-0 border rounded p-0.5"
       style={{
         color: swatch,
-        borderColor: `${swatch}55`,
+        borderColor,
         backgroundColor: `color-mix(in oklch, var(--color-background) ${op}%, transparent)`,
       }}
     >
@@ -68,7 +66,7 @@ export const MessageFrameSideLine: React.FC<MessageFrameSideLineProps> = ({
   return (
     <div
       className="flex items-center gap-2 py-1 px-2 rounded-md border"
-      style={{ borderColor: `${swatch}55`, borderStyle, backgroundColor: `${swatch}33` }}
+      style={{ borderColor, borderStyle, backgroundColor: `${swatch}33` }}
     >
       <div
         data-testid="side-line-bar"

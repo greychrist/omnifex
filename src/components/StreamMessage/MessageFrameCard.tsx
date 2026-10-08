@@ -2,7 +2,7 @@ import React from "react";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
-import { accentStyleFor, swatchFor } from "@/lib/accentStyle";
+import { accentStyleFor, cardRadiusStyle, swatchFor } from "@/lib/accentStyle";
 import { iconNameFor } from "@/lib/kindPresentation";
 import {
   iconWrapperClassName,
@@ -122,7 +122,7 @@ export const MessageFrameCard: React.FC<MessageFrameCardProps> = ({
     <div className={cn("flex", justify)}>
       <Card
         className={cn("border relative group/card", width, className)}
-        style={{ ...accentStyle, borderStyle: resolvedBorderStyle }}
+        style={{ ...accentStyle, ...cardRadiusStyle(config), borderStyle: resolvedBorderStyle }}
       >
         {!hasHeader && actionBar}
         {/* CardHeader spans the full card width, containing (in order):

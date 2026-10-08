@@ -1,25 +1,16 @@
 import { describe, it, expect } from "vitest";
 import { resolveIndicatorColor, TAB_INDICATOR_PX } from "../tabIndicatorStyle";
-import { DEFAULT_PALETTE } from "../messageRenderingConfig";
 
+// Indicator colours are hex since the palette was retired; a saved palette
+// name is converted on config load, so the resolver only guards junk.
 describe("resolveIndicatorColor", () => {
   it("passes hex colors through unchanged", () => {
-    expect(resolveIndicatorColor("#ff0000", DEFAULT_PALETTE)).toBe("#ff0000");
+    expect(resolveIndicatorColor("#ff0000")).toBe("#ff0000");
   });
 
-  it("resolves a palette name to its swatch", () => {
-    expect(resolveIndicatorColor("green", DEFAULT_PALETTE)).toBe(
-      DEFAULT_PALETTE.green.swatch,
-    );
-    expect(resolveIndicatorColor("yellow", DEFAULT_PALETTE)).toBe(
-      DEFAULT_PALETTE.yellow.swatch,
-    );
-  });
-
-  it("falls back to the muted swatch for an unknown name", () => {
-    expect(resolveIndicatorColor("not-a-color", DEFAULT_PALETTE)).toBe(
-      DEFAULT_PALETTE.muted.swatch,
-    );
+  it("falls back to neutral grey for anything that is not a hex", () => {
+    expect(resolveIndicatorColor("green")).toBe("#4b5563");
+    expect(resolveIndicatorColor("not-a-color")).toBe("#4b5563");
   });
 });
 

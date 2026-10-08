@@ -6,9 +6,9 @@
  * bypassed.
  *
  * Phase B2 guard:
- *  - Test 1 (render): PermissionCard outer border is amber (#f59e0b55), not gray.
+ *  - Test 1 (render): PermissionCard outer border is amber (#f59e0b33), not gray.
  *  - Test 2 (unit): accentStyleFor resolves permission.askUserQuestion to
- *    indigo (#6366f155), confirming AskUserQuestionCard's new import path works.
+ *    indigo (#6366f133), confirming AskUserQuestionCard's new import path works.
  */
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, cleanup } from "@testing-library/react";
@@ -42,7 +42,7 @@ function makeClaudeRequest(): PermissionRequestPayload {
 }
 
 describe("Live card accent regression — B2", () => {
-  it("PermissionCard outer card paints the amber accent (#f59e0b55), not category-muted gray", () => {
+  it("PermissionCard outer card paints the amber accent (#f59e0b33), not category-muted gray", () => {
     const cfg = createDefaultConfig();
     const request = makeClaudeRequest();
 
@@ -62,7 +62,7 @@ describe("Live card accent regression — B2", () => {
     const card = container.querySelector("div[style]") as HTMLElement | null;
     expect(card).not.toBeNull();
 
-    // permission.request → amber palette → swatch #f59e0b → border #f59e0b55.
+    // permission.request → amber palette → swatch #f59e0b → border #f59e0b33.
     // jsdom normalizes #rrggbbaa hex to rgba(). We assert using the rounded
     // RGB channels that uniquely identify amber (#f59e0b = rgb 245,158,11).
     // The muted/category-gray swatch (#4b5563 = rgb 75,85,99) would produce
@@ -78,15 +78,15 @@ describe("Live card accent regression — B2", () => {
     expect(b).toBe(11);
   });
 
-  it("accentStyleFor resolves permission.askUserQuestion to the indigo swatch (#6366f155)", () => {
+  it("accentStyleFor resolves permission.askUserQuestion to the indigo swatch (#6366f133)", () => {
     const cfg = createDefaultConfig();
     const style = accentStyleFor(cfg, "permission.askUserQuestion");
 
-    // indigo palette entry: swatch = #6366f1 → border alpha = 55 → #6366f155
+    // indigo palette entry: swatch = #6366f1 → border alpha = 55 → #6366f133
     // This is a pure function test — the returned CSSProperties object has
     // the raw hex string as produced by accentStyleFromEntry, before any
     // browser/jsdom color normalization.
     expect(style).toBeDefined();
-    expect(style!.borderColor).toBe("#6366f155");
+    expect(style!.borderColor).toBe("#6366f133");
   });
 });

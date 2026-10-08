@@ -10,7 +10,7 @@ import { STEP_MARGIN_PX } from '@/lib/transcriptStepper';
 // bodies are irrelevant here — this file is about which rows become
 // navigation anchors, so everything below the row wrapper is stubbed out.
 vi.mock('@/contexts/MessageRenderingContext', () => ({
-  useMessageRenderingConfig: () => ({ config: { hardFilters: {} } }),
+  useMessageRenderingConfig: () => ({ config: {} }),
 }));
 vi.mock('@/contexts/AutoScrollContext', () => ({
   useAutoScroll: () => ({ followPx: 200 }),

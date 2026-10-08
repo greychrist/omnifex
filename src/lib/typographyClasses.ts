@@ -7,6 +7,7 @@ import type {
 } from "./messageRenderingConfig";
 import { resolveTypeface } from "./typefaceCatalog";
 import { resolveKind } from "./messageRenderingConfig";
+import { borderAlphaHex } from "./accentStyle";
 
 const SIZE_CLASS: Record<FontSize, string> = {
   // text-xxs is a custom utility (see styles.css); the rest are Tailwind's.
@@ -134,7 +135,7 @@ export function iconWrapperClassName(config: MessageRenderingConfig, kindId?: st
  * Inline style for the chip wrapper. Returns:
  *  - `color` from the swatch (for the icon itself, since IconRenderer
  *    inherits via currentColor)
- *  - `borderColor` from the swatch + 33% alpha (matches card accent)
+ *  - `borderColor` from the swatch at the card border opacity (matches card accent)
  *  - `backgroundColor` from `--background` mixed with transparent at the
  *    user's `bgOpacity` setting, so the chip punches through the card's
  *    tinted accent at the chosen opacity
@@ -151,7 +152,7 @@ export function iconWrapperStyle(
   const style: React.CSSProperties = {};
   if (swatch) style.color = swatch;
   if (bordered) {
-    if (swatch) style.borderColor = `${swatch}55`;
+    if (swatch) style.borderColor = `${swatch}${borderAlphaHex(config.cardBorderOpacity)}`;
     const op = Math.max(0, Math.min(100, resolveIconBgOpacity(config, kindId)));
     style.backgroundColor = `color-mix(in oklch, var(--color-background) ${op}%, transparent)`;
   }

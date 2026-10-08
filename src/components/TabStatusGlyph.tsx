@@ -1,5 +1,5 @@
 import React from "react";
-import type { TabIndicators, TabIndicatorStyle, Palette } from "@/lib/messageRenderingConfig";
+import type { TabIndicators, TabIndicatorStyle } from "@/lib/messageRenderingConfig";
 import { resolveIndicatorColor, TAB_INDICATOR_SIZE_CLASS } from "@/lib/tabIndicatorStyle";
 import { IconRenderer } from "@/components/settings-panels/appearance/iconMap";
 
@@ -15,7 +15,6 @@ import { IconRenderer } from "@/components/settings-panels/appearance/iconMap";
 export const TabStatusGlyph: React.FC<{
   style: TabIndicatorStyle;
   indicators: TabIndicators;
-  palette: Palette;
   ariaLabel: string;
   /**
    * Opt out of the pulse. Flashing is right for "I need you now" and wrong for
@@ -25,10 +24,8 @@ export const TabStatusGlyph: React.FC<{
   /** Override the configured color — used to redden the cache glyph at its
    *  critical step without a second configurable entry. */
   colorOverride?: string;
-}> = ({ style, indicators, palette, ariaLabel, pulse = true, colorOverride }) => {
-  const color = colorOverride
-    ? resolveIndicatorColor(colorOverride, palette)
-    : resolveIndicatorColor(style.color, palette);
+}> = ({ style, indicators, ariaLabel, pulse = true, colorOverride }) => {
+  const color = resolveIndicatorColor(colorOverride ?? style.color);
   const glyph = (
     <IconRenderer name={style.icon} className={TAB_INDICATOR_SIZE_CLASS[indicators.size]} />
   );

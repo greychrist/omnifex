@@ -221,6 +221,7 @@ export function classifyStandaloneKind(
     }
     if (subtype === 'hook_started') return 'system.hook_started';
     if (subtype === 'hook_response') return 'system.hook_response';
+    if (subtype === 'hook_progress') return 'system.hook_progress';
     if (subtype === 'permission_denied') return 'system.permission_denied';
     if (subtype === 'thinking_tokens') return 'system.thinking_tokens';
     if (subtype === 'user_prompt_submit') return 'system.userPromptSubmit';

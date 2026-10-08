@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Send, MessageCircleQuestion, ChevronUp, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { accentStyleFor, swatchFor } from "@/lib/accentStyle";
+import { accentStyleFor, cardRadiusStyle, swatchFor } from "@/lib/accentStyle";
 import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
 import { CardFooter } from "@/components/StreamMessage/MessageFrameCard";
 import { CardActionBar } from "@/components/CardActionBar";
@@ -79,7 +79,7 @@ export function AskUserQuestionCard({ request, onSubmit, onCancel }: AskUserQues
   // swatchFor directly. Those helpers cascade through resolveKind (category
   // base → registry default → user patch), so the per-kind accent (indigo)
   // applies automatically — no special helper or effConfig needed.
-  const accentStyle = accentStyleFor(config, 'permission.askUserQuestion');
+  const accentStyle = { ...accentStyleFor(config, 'permission.askUserQuestion'), ...cardRadiusStyle(config) };
   const accentSwatch = swatchFor(config, 'permission.askUserQuestion');
 
   const questions = useMemo(() => parseQuestions(request.toolInput), [request.toolInput]);

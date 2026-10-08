@@ -50,7 +50,7 @@ export const HiddenEventsGroup: React.FC<Props> = ({
       onOpenChange={(next) => { runWith(() => { setOpen(next); }); }}
       data-hidden-events-card=""
       className="my-1 overflow-hidden rounded-md border"
-      style={borderColor ? { borderColor } : undefined}
+      style={{ ...(borderColor && { borderColor }), borderRadius: `${String(config.hiddenEvents.borderRadius)}px` }}
     >
       <CollapsibleTrigger
         ref={triggerRef}
@@ -81,7 +81,7 @@ export const HiddenEventsGroup: React.FC<Props> = ({
       </CollapsibleTrigger>
       <CollapsibleContent
         data-hidden-events-body=""
-        className="border-t bg-black/10 py-3 pl-6 pr-3 space-y-4"
+        className="border-t bg-foreground/[0.03] py-3 pl-6 pr-3 space-y-4"
         style={borderColor ? { borderTopColor: borderColor } : undefined}
       >
         {messages.map((message, idx) => (

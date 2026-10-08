@@ -374,7 +374,6 @@ export const GeneralSettings: React.FC = () => {
             <div className="space-y-3">
               <TabIndicatorsEditor
                 indicators={config.tabIndicators}
-                palette={config.palette}
                 onChange={(next) => { void track(setConfig({ ...config, tabIndicators: next })); }}
               />
             </div>

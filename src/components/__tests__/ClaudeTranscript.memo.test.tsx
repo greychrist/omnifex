@@ -15,7 +15,7 @@ import type { JsonlNode } from '@/types/jsonl';
 import { renderProfiler } from '@/lib/renderProfiler';
 
 vi.mock('@/contexts/MessageRenderingContext', () => ({
-  useMessageRenderingConfig: () => ({ config: { hardFilters: {} } }),
+  useMessageRenderingConfig: () => ({ config: {} }),
 }));
 vi.mock('@/contexts/AutoScrollContext', () => ({
   useAutoScroll: () => ({ followPx: 200 }),

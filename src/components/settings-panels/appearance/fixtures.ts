@@ -33,6 +33,7 @@ export const KIND_FIXTURES: Record<string, string> = {
   "system.notification.stop": "Stopped by user request.",
   "system.hook_started": "Hook: PreToolUse · Bash",
   "system.hook_response": "Hook response: approved (0 ms)",
+  "system.hook_progress": "Hook progress: running lint…",
   "system.permission_denied": "Permission denied: Bash · rm -rf /tmp/scratch",
   "system.userPromptSubmit": "UserPromptSubmit · 1 message",
   "system.api_error": "503 Service Unavailable from api.anthropic.com — retrying.",
@@ -97,6 +98,9 @@ export const CATEGORY_FIXTURES: Record<string, string> = {
   system: "503 Service Unavailable from api.anthropic.com — retrying.",
   live: "Session ready. Model: claude-opus-4-7. 14 tools (6 MCP).",
 };
+
+/** Body of the All cards preview — a generic card, styled like User. */
+export const ALL_CARDS_PREVIEW_TEXT = "Every card follows these settings, whatever its kind.";
 
 export function previewTextForCategory(category: string): string {
   return CATEGORY_FIXTURES[category] ?? "(no preview available)";

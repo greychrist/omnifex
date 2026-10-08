@@ -9,8 +9,9 @@ describe('MessageFrameSideLine', () => {
     const { container } = render(
       <MessageFrameSideLine
         iconName="HelpCircle"
-        accentColor="orange"
+        accentColor="#f97316"
         borderStyle="dashed"
+        borderOpacity={20}
       >
         Unknown payload received
       </MessageFrameSideLine>
@@ -24,11 +25,22 @@ describe('MessageFrameSideLine', () => {
 
   it('renders solid border by default', () => {
     const { container } = render(
-      <MessageFrameSideLine iconName="Info" accentColor="muted" borderStyle="solid">
+      <MessageFrameSideLine iconName="Info" accentColor="#4b5563" borderStyle="solid" borderOpacity={20}>
         text
       </MessageFrameSideLine>
     );
     const bar = container.querySelector('[data-testid="side-line-bar"]');
     expect(bar?.getAttribute('style')).toMatch(/solid/);
+  });
+
+  it('draws its outline at the card border opacity', () => {
+    const { container } = render(
+      <MessageFrameSideLine iconName="Info" accentColor="#4b5563" borderStyle="solid" borderOpacity={35}>
+        text
+      </MessageFrameSideLine>
+    );
+    const row = container.firstElementChild as HTMLElement;
+    // #4b5563 at 35% (0x59) — jsdom normalises the 8-digit hex to rgba.
+    expect(row.style.borderColor).toBe('rgba(75, 85, 99, 0.35)');
   });
 });

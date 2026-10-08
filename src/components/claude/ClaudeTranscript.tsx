@@ -189,7 +189,7 @@ function ClaudeTranscriptImpl({
   // unfiltered list, so a hidden message still ends a run.
   const displayableMessages = useMemo(
     () => withoutNeverShown(
-      filterDisplayableMessages(collapseRepeats(messages, renderConfig), renderConfig.hardFilters),
+      filterDisplayableMessages(collapseRepeats(messages, renderConfig)),
       renderConfig,
     ),
     [messages, renderConfig],

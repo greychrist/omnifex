@@ -201,26 +201,24 @@ const TabItem: React.FC<TabItemProps> = ({ tab, isActive, onClose, onClick, isDr
 
   const getStatusIcon = () => {
     const ind = config.tabIndicators;
-    const palette = config.palette;
     switch (indicator?.kind) {
       case 'error':
-        return <TabStatusGlyph style={ind.error} indicators={ind} palette={palette} ariaLabel="Error" />;
+        return <TabStatusGlyph style={ind.error} indicators={ind} ariaLabel="Error" />;
       case 'permission':
-        return <TabStatusGlyph style={ind.permission} indicators={ind} palette={palette} ariaLabel="Permission request" />;
+        return <TabStatusGlyph style={ind.permission} indicators={ind} ariaLabel="Permission request" />;
       case 'question':
-        return <TabStatusGlyph style={ind.question} indicators={ind} palette={palette} ariaLabel="Question waiting" />;
+        return <TabStatusGlyph style={ind.question} indicators={ind} ariaLabel="Question waiting" />;
       case 'spinner':
         return <Spinner className="size-3.5" />;
       case 'agents':
         return <AgentCountGlyph count={indicator.count} />;
       case 'complete':
-        return <TabStatusGlyph style={ind.complete} indicators={ind} palette={palette} ariaLabel="Completed" />;
+        return <TabStatusGlyph style={ind.complete} indicators={ind} ariaLabel="Completed" />;
       case 'cacheExpiring':
         return (
           <TabStatusGlyph
             style={ind.cacheExpiring}
             indicators={ind}
-            palette={palette}
             ariaLabel={indicator.critical ? "Prompt cache about to expire" : "Prompt cache expiring soon"}
             // A slow countdown must not strobe for minutes.
             pulse={false}

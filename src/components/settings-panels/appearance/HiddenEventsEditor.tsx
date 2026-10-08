@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { ChevronsUpDown, Undo2 } from "lucide-react";
-import { isHexColor, type HiddenEventsStyle } from "@/lib/messageRenderingConfig";
+import { CARD_BORDER_RADIUS_MAX, isHexColor, type HiddenEventsStyle } from "@/lib/messageRenderingConfig";
 import { currentThemeBackdrop, hiddenEventsColors } from "@/lib/accentStyle";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -36,7 +36,7 @@ export const HiddenEventsEditor: React.FC<HiddenEventsEditorProps> = ({ value, o
               "flex w-full items-center justify-between gap-3 rounded-md",
               "border border-border/40 bg-muted/20 px-3 py-1.5",
             )}
-            style={preview.bar}
+            style={{ ...preview.bar, borderRadius: `${String(value.borderRadius)}px` }}
           >
             <span className="flex items-baseline gap-2 min-w-0 text-xs">
               <span className="font-medium text-foreground/80 shrink-0" style={preview.header ? { color: preview.header } : undefined}>
@@ -82,6 +82,40 @@ export const HiddenEventsEditor: React.FC<HiddenEventsEditorProps> = ({ value, o
       <p className="text-caption text-muted-foreground">
         Automatic text turns light or dark to stay readable on the background you pick.
       </p>
+
+      <div className="flex items-center gap-2">
+        <Label htmlFor="hidden-events-border-opacity" className="shrink-0 w-28">Border opacity</Label>
+        <input
+          id="hidden-events-border-opacity"
+          type="range"
+          min={0}
+          max={100}
+          step={5}
+          value={value.borderOpacity}
+          onChange={(e) => { onChange({ ...value, borderOpacity: parseInt(e.target.value, 10) }); }}
+          className="flex-1 cursor-pointer accent-foreground"
+        />
+        <span className="font-mono text-caption text-muted-foreground w-9 text-right">
+          {value.borderOpacity}%
+        </span>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <Label htmlFor="hidden-events-border-radius" className="shrink-0 w-28">Corner radius</Label>
+        <input
+          id="hidden-events-border-radius"
+          type="range"
+          min={0}
+          max={CARD_BORDER_RADIUS_MAX}
+          step={1}
+          value={value.borderRadius}
+          onChange={(e) => { onChange({ ...value, borderRadius: parseInt(e.target.value, 10) }); }}
+          className="flex-1 cursor-pointer accent-foreground"
+        />
+        <span className="font-mono text-caption text-muted-foreground w-9 text-right">
+          {value.borderRadius}px
+        </span>
+      </div>
     </div>
   );
 };

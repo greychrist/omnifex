@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import { TabIndicatorsEditor } from "../TabIndicatorsEditor";
-import { DEFAULT_TAB_INDICATORS, DEFAULT_PALETTE } from "@/lib/messageRenderingConfig";
+import { DEFAULT_TAB_INDICATORS } from "@/lib/messageRenderingConfig";
 
 afterEach(() => { cleanup(); });
 
@@ -12,7 +12,6 @@ function renderEditor(overrides = {}) {
   render(
     <TabIndicatorsEditor
       indicators={indicators}
-      palette={DEFAULT_PALETTE}
       onChange={onChange}
     />,
   );
