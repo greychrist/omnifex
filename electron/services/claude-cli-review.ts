@@ -42,6 +42,30 @@ import { buildClaudeEnv } from './util/claude-env';
  *    the CLI answers with the error "Side question cancelled". Its own
  *    deadline is 600 s. Only the SDK's `askSideQuestion()` documents it.
  *
+ * Last review: 2.1.293 -> 2.1.294 on 2026-10-08. Findings:
+ *
+ *  Changelog coverage: one version in range, 2.1.294, two entries, both
+ *  about `prompt`/`agent` hooks. Both endpoints installed, so the wire
+ *  claims are a real binary diff.
+ *
+ *  WIRE DIFF (unique literals): merge-strategy map 40 -> 40 (4 tagged
+ *  `transcript`), `subtype:` 154, `hook_event_name` 33, `type:"control_*"`
+ *  4, SDK `this.request({subtype})` 54, `type:` 993, `origin:{kind}` 12,
+ *  `.describe()` strings — all set-identical. `turnOrigin` contexts differ
+ *  only in minified identifiers; sanitizer sets unchanged. `/usage` anchors
+ *  (`resets`, `MCP servers`, `Current session`/`week`, `Extra usage`,
+ *  `% used`, `Total cost`) count-identical. Hook-judge prompt literals:
+ *  identifier renames only, so the fix lives in code/server-side prompts.
+ *
+ *  Fixed in this pass: nothing — nothing to fix.
+ *
+ *  Checked and inert:
+ *
+ *   - `prompt`/`agent` hooks written as instructions now block what they
+ *     should; Stop/SubagentStop `prompt` hooks judged less eagerly: CLI-side
+ *     evaluation. HooksEditor.tsx only authors `type:'command'` hooks, and
+ *     the hook payloads / event names are unchanged.
+ *
  * Last review: 2.1.292 -> 2.1.293 on 2026-10-07. Findings:
  *
  *  Changelog coverage: one version in range, 2.1.293, and it has an entry
@@ -3983,7 +4007,7 @@ import { buildClaudeEnv } from './util/claude-env';
  * `~/.claude.json` fix (we read-modify-write that file, never replace it), and
  * the VSCode screen-reader work.
  */
-export const REVIEWED_CLI_VERSION = '2.1.293';
+export const REVIEWED_CLI_VERSION = '2.1.294';
 
 /**
  * app_settings key holding the user's explicit OmniFex-checkout override.
