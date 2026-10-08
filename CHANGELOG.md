@@ -5,6 +5,16 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.230] — 2026-10-08
+
+### Changed
+- Clicking a tab that is cut off at either edge of a crowded tab strip now scrolls it fully into view, as does switching to it by shortcut or opening a new tab.
+- The new-tab (+) button sits outside the scrolling tab strip, so it stays reachable however many tabs are open.
+- Reviewed Claude Code 2.1.294 against OmniFex: no wire changes, nothing to adapt.
+
+### Fixed
+- README appearance line updated for hex accents, card border and corner settings, and the retired palette.
+
 ## [0.4.229] — 2026-10-08
 
 ### Added
