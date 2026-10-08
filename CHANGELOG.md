@@ -5,6 +5,21 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.231] — 2026-10-08
+
+### Added
+- Agent rows in the `agents` popover show live run stats for each subagent: context fill, context tokens, cost and a time that ticks every second, read from the agent's own transcript. A thin bar under each row sweeps while it runs and turns green when it finishes, red if it failed.
+- The `agents` readout reads `done/total` while agents run, and the popover header totals the cost of the agents shown.
+- Hooks editor: a "Block on failure" switch on command hooks, so a hook that can't start, times out or errors blocks the action instead of letting it through. Hidden on events where Claude Code ignores it.
+
+### Changed
+- Live session cost is now computed for every account, not only cost-based ones, so subscription accounts get per-agent figures too (shown as `≈$`, the API-rate equivalent). The account widget still shows a dollar figure only for cost-based accounts.
+- What an agent is doing right now moved from the collapsed row into its expanded log.
+- Reviewed Claude Code 2.1.295 against OmniFex.
+
+### Fixed
+- Cancelling an update while it waits for sessions to finish returned a red "Retry" button that did nothing. It now goes back to "Install Update", and Retry after a genuinely failed install retries from the already-downloaded file instead of trying to download it again.
+
 ## [0.4.230] — 2026-10-08
 
 ### Changed
