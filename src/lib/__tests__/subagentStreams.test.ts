@@ -280,6 +280,20 @@ describe('applySubagentMeta', () => {
     expect(merged[0].agentType).toBe('Explore');
   });
 
+  // The row's taskId is how the agents popover finds the agent's transcript
+  // cost. A foreground row reloaded from disk never saw task_started.
+  it('fills a missing taskId from the meta agentId', () => {
+    const subs = deriveSubagents([agentToolUse(TOOL_USE_ID), taskNotification(TOOL_USE_ID)]);
+    const merged = applySubagentMeta([{ ...subs[0], taskId: undefined }], { [TOOL_USE_ID]: { agentId: 'a42' } });
+    expect(merged[0].taskId).toBe('a42');
+  });
+
+  it('keeps a taskId the stream already set', () => {
+    const subs = deriveSubagents([agentToolUse(TOOL_USE_ID), taskNotification(TOOL_USE_ID)]);
+    const merged = applySubagentMeta([{ ...subs[0], taskId: 'live' }], { [TOOL_USE_ID]: { agentId: 'a42' } });
+    expect(merged[0].taskId).toBe('live');
+  });
+
   it('leaves rows without a meta entry unchanged', () => {
     const subs = deriveSubagents([agentToolUse(TOOL_USE_ID), taskNotification(TOOL_USE_ID)]);
     const merged = applySubagentMeta(subs, {});

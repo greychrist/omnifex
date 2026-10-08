@@ -476,6 +476,7 @@ export function ChatStatusBar({
       <AgentsStatusItem
         key="agents"
         subagents={background.subagents}
+        costs={background.subagentCost}
         onDismiss={background.onDismissSubagent}
         onDismissAllCompleted={background.onDismissAllCompletedSubagents}
       />,

@@ -35,7 +35,8 @@ describe('AgentsStatusItem', () => {
     );
     const item = screen.getByLabelText('agents running');
     expect(item.textContent).toContain('agents');
-    expect(item.textContent).toContain('2 running');
+    // Finished out of dispatched — the progress, not just a running count.
+    expect(item.textContent).toContain('1/3');
     expect(item.className).toContain('animate-pulse');
   });
 
@@ -68,6 +69,21 @@ describe('AgentsStatusItem', () => {
     expect(screen.queryByText('Map the repo')).toBeNull();
     fireEvent.click(screen.getByLabelText('agents running'));
     expect(screen.getByText('Map the repo')).toBeTruthy();
+  });
+
+  it('totals the cost of the agents shown in the popover header', () => {
+    const cost = (usd: number) => ({ usd, estimated: false, contextTokens: 1, model: 'claude-opus-5-5' });
+    render(
+      <AgentsStatusItem
+        subagents={[
+          makeSub({ toolUseId: 'a', taskId: 'a1', status: 'completed' }),
+          makeSub({ toolUseId: 'b', taskId: 'a2', status: 'running' }),
+        ]}
+        costs={{ a1: cost(0.1), a2: cost(0.15) }}
+      />,
+    );
+    fireEvent.click(screen.getByLabelText('agents running'));
+    expect(screen.getByText('1/2 done · ≈$0.25')).toBeTruthy();
   });
 
   it('clears the finished agents from the popover', () => {

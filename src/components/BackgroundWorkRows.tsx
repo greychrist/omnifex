@@ -17,7 +17,11 @@ import {
   SquareTerminal,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import type { SubagentCost } from '@/lib/api';
 import type { Subagent } from '@/lib/subagentStreams';
+import { subagentRunStats } from '@/lib/subagentRunStats';
+import { useSecondTick } from '@/hooks/useSecondTick';
+import { formatCost } from '@/components/claude-code-session/CostWidget';
 import { plainTaskOutput, type BackgroundShell, type TaskOutputTail } from '@/lib/backgroundShells';
 
 // 16-slot palette — one distinct hue per slot so concurrent subagents never
@@ -62,12 +66,17 @@ function formatModel(model?: string): string {
   return model.replace(/^claude-/, '').replace(/-\d{8}$/, '');
 }
 
+const kTokens = (n: number): string => `${Math.round(n / 1000)}k`;
+
 interface SubagentRowProps {
   sub: Subagent;
   onDismiss?: (toolUseId: string) => void;
+  /** Per-agent cost and context from the session cost watcher, keyed by
+   *  agent id. Absent until its first snapshot. */
+  costs?: Record<string, SubagentCost> | null;
 }
 
-export const SubagentRow: React.FC<SubagentRowProps> = ({ sub, onDismiss }) => {
+export const SubagentRow: React.FC<SubagentRowProps> = ({ sub, onDismiss, costs }) => {
   const [expanded, setExpanded] = useState(false);
   const color = PALETTE[sub.colorIndex % PALETTE.length];
   const latest = sub.latest;
@@ -101,28 +110,44 @@ export const SubagentRow: React.FC<SubagentRowProps> = ({ sub, onDismiss }) => {
       <span className={cn('inline-block h-2 w-2 rounded-full animate-pulse', color.dot)} />
     );
 
+  // Ticks only while this agent runs; a finished row holds still.
+  const nowMs = useSecondTick(sub.status === 'running');
+  const stats = subagentRunStats(sub, costs, nowMs);
+
   // Prefer the authoritative end-of-run totals (merged from disk via
   // applySubagentMeta) over the live `latest.*` running tally, which can lag
   // the final numbers.
   const tokenCount = sub.finalTotalTokens ?? latest?.totalTokens;
   const toolCount = sub.finalToolUseCount ?? latest?.toolUses;
-  const durationMs = sub.finalDurationMs ?? latest?.durationMs;
   const model = formatModel(sub.model);
   // Only rendered when the subagent reports its own effort — most runs
   // inherit the session default and carry none, and a placeholder there
   // would be noise on every row.
   const effort = sub.effort ? `${sub.effort} effort` : '';
-  const tokens = tokenCount ? `${Math.round(tokenCount / 1000)}k tok` : '';
+  // The CLI's token tally only when the transcript gave us no context figure.
+  const tokens = stats.contextTokens === undefined && tokenCount ? `${kTokens(tokenCount)} tok` : '';
   const tools = toolCount ? `${toolCount} tools` : '';
-  const elapsed = formatElapsed(durationMs);
-  const metaBits = [model, effort, tools, tokens, elapsed].filter(Boolean).join(' · ');
+  const metaBits = [model, effort, tools, tokens].filter(Boolean).join(' · ');
+  // Context, cost and time, read off the agent's own transcript. Cost is
+  // `≈`: on a subscription account it is what the tokens would cost at API
+  // rates, and it lags the final totals by up to a poll.
+  const statBits = [
+    stats.contextTokens !== undefined
+      ? `${stats.contextPct !== undefined ? `ctx ${stats.contextPct}% · ` : ''}${kTokens(stats.contextTokens)}`
+      : '',
+    stats.usd !== undefined ? `≈${formatCost(stats.usd)}` : '',
+    formatElapsed(stats.elapsedMs),
+  ].filter(Boolean);
+
+  const barState =
+    sub.status === 'completed' ? 'done'
+      : sub.status === 'completed_inferred' ? 'inferred'
+        : sub.status;
 
   // The purpose is what the parent said the agent is for; it holds still.
-  // The latest progress line is what it is doing right now, and gets its own
-  // line — it used to be the headline, which replaced the purpose with
-  // whatever shell command the agent happened to be running.
+  // What it is doing right now is in the expanded log, not under it: that
+  // line carries the run stats.
   const purpose = sub.description || latest?.description || 'Working…';
-  const activity = latest?.description && latest.description !== purpose ? latest.description : '';
   const agentLabel = sub.agentType ?? 'Agent';
 
   // A nested subagent (dispatched by another subagent, not by the main
@@ -196,14 +221,35 @@ export const SubagentRow: React.FC<SubagentRowProps> = ({ sub, onDismiss }) => {
             </span>
           )}
         </span>
-        {(activity || metaBits) && (
+        {(metaBits || statBits.length > 0) && (
           <span className="flex items-center gap-2 pl-6 pt-0.5 text-[11px] text-muted-foreground">
-            <span data-subagent-activity={activity ? '' : undefined} className="truncate flex-1 min-w-0 font-mono">
-              {activity}
-            </span>
-            {metaBits && <span data-subagent-meta className="shrink-0 tabular-nums">{metaBits}</span>}
+            <span data-subagent-meta className="truncate flex-1 min-w-0">{metaBits}</span>
+            {statBits.length > 0 && (
+              <span data-subagent-stats className="shrink-0 flex gap-2 tabular-nums">
+                {statBits.map((bit) => <span key={bit}>{bit}</span>)}
+              </span>
+            )}
           </span>
         )}
+        {/* The run's state, not how far along it is — nothing reports that
+            without the model's cooperation. It used to fill to context %,
+            which on a 1M-window model sat at 2–3% for the whole run. */}
+        <span
+          data-subagent-bar
+          data-state={barState}
+          className="mt-1 ml-6 block h-0.5 rounded-full bg-white/10 overflow-hidden"
+        >
+          <span
+            className={cn(
+              'block h-full rounded-full',
+              barState === 'running' ? cn('brain-indeterminate-bar w-1/3', color.dot) : 'w-full',
+              barState === 'done' && 'bg-emerald-400',
+              barState === 'inferred' && cn(color.dot, 'opacity-60'),
+              barState === 'failed' && 'bg-destructive',
+              barState === 'abandoned' && 'bg-muted-foreground/40',
+            )}
+          />
+        </span>
       </button>
 
       {expanded && (

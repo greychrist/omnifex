@@ -558,6 +558,17 @@ export interface SessionCostSnapshot {
   subagentUsd: number;
   byModel: Array<{ model: string; usd: number; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number }>;
   tokens: { input: number; output: number; cacheRead: number; cacheWrite: number };
+  /** `subagentUsd` per agent, keyed by agent id (`agent-<id>.jsonl`). */
+  bySubagent: Record<string, SubagentCost>;
+}
+
+/** Mirrors the backend `SubagentCost` in session-cost-core.ts. */
+export interface SubagentCost {
+  usd: number;
+  estimated: boolean;
+  /** The latest request's full prompt plus output — what the context holds now. */
+  contextTokens: number;
+  model: string;
 }
 
 /** One aggregated period row from the durable cost-history table. Mirrors

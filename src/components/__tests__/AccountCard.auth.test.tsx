@@ -73,7 +73,7 @@ function renderCard(overrides: Partial<React.ComponentProps<typeof AccountCard>>
       configDir={CONFIG_DIR}
       matchType="path_rule"
       matchDetail="~/Repos/work"
-      usage={{ data: null, loading: false, refresh: vi.fn(async () => {}), sessionCost: null }}
+      usage={{ data: null, loading: false, refresh: vi.fn(async () => {}), sessionCost: null, subagentCost: null }}
       {...overrides}
     />,
   );

@@ -27,6 +27,26 @@ export interface SessionCostSnapshot {
     cacheWriteTokens: number;
   }>;
   tokens: { input: number; output: number; cacheRead: number; cacheWrite: number };
+  /** `subagentUsd` split per agent, keyed by the agent id in its transcript's
+   *  name (`agent-<id>.jsonl`). Feeds the per-row stats in the `agents`
+   *  popover. */
+  bySubagent: Record<string, SubagentCost>;
+}
+
+export interface SubagentCost {
+  usd: number;
+  estimated: boolean;
+  /** The latest request's input + cache read + cache write + output: what
+   *  the agent's context holds now. Not a sum over requests. */
+  contextTokens: number;
+  /** The latest request's model, for the context window. */
+  model: string;
+}
+
+/** One subagent transcript and the agent id its file name carries. */
+export interface SubagentFile {
+  agentId: string;
+  content: string;
 }
 
 export interface SessionCostDailyRow {
@@ -65,7 +85,7 @@ export interface SessionCostDailyRow {
 
 export interface ComputeSessionCostArgs {
   sessionContent: string;
-  subagentContents: string[];
+  subagentFiles: readonly SubagentFile[];
   sessionId: string;
   accountName: string;
   configDir: string;
@@ -84,11 +104,13 @@ export function computeSessionCost(args: ComputeSessionCostArgs): {
     subagentUsd: 0,
     byModel: [],
     tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    bySubagent: {},
   };
   const byModel = new Map<string, SessionCostSnapshot['byModel'][number]>();
   const daily = new Map<string, SessionCostDailyRow>();
 
-  const ingest = (rows: ExtractedUsageRow[], isSubagent: boolean): void => {
+  const ingest = (rows: ExtractedUsageRow[], agent: SubagentCost | null): void => {
+    const isSubagent = agent !== null;
     for (const row of rows) {
       // Price at the row's own UTC day so an effective-dated rate change does
       // not re-price history on the next backfill sweep. Rows with no
@@ -112,7 +134,14 @@ export function computeSessionCost(args: ComputeSessionCostArgs): {
       snapshot.breakdown.outputUsd += cost.outputUsd;
       snapshot.breakdown.cacheReadUsd += cost.cacheReadUsd;
       snapshot.breakdown.cacheWriteUsd += cost.cacheWriteUsd;
-      if (isSubagent) snapshot.subagentUsd += cost.usd;
+      if (agent) {
+        snapshot.subagentUsd += cost.usd;
+        agent.usd += cost.usd;
+        agent.estimated = agent.estimated || cost.estimated;
+        // Rows are chronological, so the last one standing is the latest.
+        agent.contextTokens = input + cacheRead + t5m + t1h + output;
+        agent.model = row.model;
+      }
       snapshot.tokens.input += input;
       snapshot.tokens.output += output;
       snapshot.tokens.cacheRead += cacheRead;
@@ -175,9 +204,10 @@ export function computeSessionCost(args: ComputeSessionCostArgs): {
     }
   };
 
-  ingest(extractDedupedUsage(args.sessionContent), false);
-  for (const content of args.subagentContents) {
-    ingest(extractDedupedUsage(content), true);
+  ingest(extractDedupedUsage(args.sessionContent), null);
+  for (const file of args.subagentFiles) {
+    const agent = (snapshot.bySubagent[file.agentId] ??= { usd: 0, estimated: false, contextTokens: 0, model: 'unknown' });
+    ingest(extractDedupedUsage(file.content), agent);
   }
 
   snapshot.byModel = [...byModel.values()].sort((a, b) => b.usd - a.usd);

@@ -35,9 +35,15 @@ describe('useAccountUsage', () => {
     expect(result.current.refresh).toBe(refresh);
   });
 
-  it('watches cost only for a cost-based account', () => {
-    renderHook(() => useAccountUsage({ ...args, hasCost: false }));
-    expect(sessionCost).toHaveBeenCalledWith(expect.objectContaining({ enabled: false }));
+  // The watcher also feeds the per-agent stats in the `agents` popover, which
+  // every account shows. Only the account widget's dollar figure is gated.
+  it('watches cost for every account, but reports it only for a cost-based one', () => {
+    const snap = { totalUsd: 1.5, bySubagent: { a1: { usd: 0.2 } } };
+    sessionCost.mockReturnValue(snap);
+    const { result } = renderHook(() => useAccountUsage({ ...args, hasCost: false }));
+    expect(sessionCost).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 's1' }));
+    expect(result.current.sessionCost).toBeNull();
+    expect(result.current.subagentCost).toBe(snap.bySubagent);
   });
 
   it('returns the computed cost of a cost-based account', () => {
@@ -45,7 +51,7 @@ describe('useAccountUsage', () => {
     sessionCost.mockReturnValue(snap);
     const { result } = renderHook(() => useAccountUsage(args));
     expect(sessionCost).toHaveBeenCalledWith({
-      enabled: true, configDir: '/c', projectPath: '/p', sessionId: 's1', accountName: 'Work',
+      configDir: '/c', projectPath: '/p', sessionId: 's1', accountName: 'Work',
     });
     expect(result.current.sessionCost).toBe(snap);
   });

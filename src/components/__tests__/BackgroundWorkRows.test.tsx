@@ -89,8 +89,80 @@ describe('SubagentRow meta', () => {
   });
 });
 
+describe('SubagentRow run stats', () => {
+  const T0 = Date.parse('2026-10-08T12:00:00.000Z');
+  const costs = { a1: { usd: 0.05, estimated: false, contextTokens: 40_000, model: 'claude-opus-5-5' } };
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('shows context, tokens and cost from the agent\'s transcript', () => {
+    const { container } = render(
+      <SubagentRow sub={makeSub({ toolUseId: 'a', taskId: 'a1', status: 'completed', finalDurationMs: 26_000 })} costs={costs} />,
+    );
+    const stats = container.querySelector('[data-subagent-stats]')?.textContent ?? '';
+    expect(stats).toContain('ctx 4%');
+    expect(stats).toContain('40k');
+    expect(stats).toContain('≈$0.05');
+    expect(stats).toContain('26s');
+  });
+
+  // The bar shows the run's state, not context: on a 1M-window model a busy
+  // agent's context is 2–3%, so a context bar sat empty all run.
+  it('sweeps the bar while the agent runs', () => {
+    const { container } = render(
+      <SubagentRow sub={makeSub({ toolUseId: 'a', taskId: 'a1', status: 'running' })} costs={costs} />,
+    );
+    const bar = container.querySelector<HTMLElement>('[data-subagent-bar]');
+    expect(bar?.getAttribute('data-state')).toBe('running');
+    expect(bar?.firstElementChild?.className).toContain('brain-indeterminate-bar');
+  });
+
+  it('fills the bar green once the agent is done', () => {
+    const { container } = render(
+      <SubagentRow sub={makeSub({ toolUseId: 'a', taskId: 'a1', status: 'completed' })} costs={costs} />,
+    );
+    const bar = container.querySelector<HTMLElement>('[data-subagent-bar]');
+    expect(bar?.getAttribute('data-state')).toBe('done');
+    expect(bar?.firstElementChild?.className).toContain('bg-emerald-400');
+    expect(bar?.firstElementChild?.className).not.toContain('brain-indeterminate-bar');
+  });
+
+  it('fills the bar red when the agent failed', () => {
+    const { container } = render(
+      <SubagentRow sub={makeSub({ toolUseId: 'a', status: 'failed' })} />,
+    );
+    const bar = container.querySelector<HTMLElement>('[data-subagent-bar]');
+    expect(bar?.getAttribute('data-state')).toBe('failed');
+    expect(bar?.firstElementChild?.className).toContain('bg-destructive');
+  });
+
+  it('ticks a running agent\'s time every second', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(T0 + 25_000);
+    const { container } = render(
+      <SubagentRow
+        sub={makeSub({ toolUseId: 'a', taskId: 'a1', status: 'running', startedAt: new Date(T0).toISOString() })}
+        costs={costs}
+      />,
+    );
+    expect(container.querySelector('[data-subagent-stats]')?.textContent).toContain('25s');
+    act(() => { vi.advanceTimersByTime(1000); });
+    expect(container.querySelector('[data-subagent-stats]')?.textContent).toContain('26s');
+  });
+
+  it('shows time only for a task with no transcript', () => {
+    const { container } = render(
+      <SubagentRow sub={makeSub({ toolUseId: 'a', taskId: 'bm3eixa8c', status: 'completed', finalDurationMs: 9_000 })} costs={costs} />,
+    );
+    const stats = container.querySelector('[data-subagent-stats]')?.textContent ?? '';
+    expect(stats).toContain('9s');
+    expect(stats).not.toContain('$');
+  });
+});
+
 describe('SubagentRow purpose and brief', () => {
-  it('heads the row with the dispatch purpose, not the latest progress line', () => {
+  // The collapsed row's second line carries run stats now; what the agent is
+  // doing lives in the expanded log, which already showed it in full.
+  it('heads the row with the dispatch purpose and keeps the progress line for the expanded log', () => {
     const { container } = render(
       <SubagentRow
         sub={makeSub({
@@ -103,7 +175,9 @@ describe('SubagentRow purpose and brief', () => {
       />,
     );
     expect(container.querySelector('[data-subagent-purpose]')?.textContent).toBe('Map the repo');
-    expect(container.querySelector('[data-subagent-activity]')?.textContent).toBe('cd /tmp && ls');
+    expect(container.textContent).not.toContain('cd /tmp && ls');
+    fireEvent.click(screen.getByText('Map the repo'));
+    expect(container.textContent).toContain('cd /tmp && ls');
   });
 
   it('keeps the purpose on its own line, apart from the meta', () => {
@@ -127,8 +201,6 @@ describe('SubagentRow purpose and brief', () => {
       />,
     );
     expect(container.querySelector('[data-subagent-purpose]')?.textContent).toBe('Reading files');
-    // Saying it twice adds nothing.
-    expect(container.querySelector('[data-subagent-activity]')).toBeNull();
   });
 
   it('wraps a long purpose instead of truncating it', () => {

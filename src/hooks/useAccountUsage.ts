@@ -1,4 +1,4 @@
-import type { SessionCostSnapshot, UsageRunResult } from '@/lib/api';
+import type { SessionCostSnapshot, SubagentCost, UsageRunResult } from '@/lib/api';
 import { useUsageAutoRefresh } from '@/hooks/useUsageAutoRefresh';
 import { useSessionCost } from '@/hooks/useSessionCost';
 
@@ -10,6 +10,10 @@ export interface AccountUsage {
   refresh: () => Promise<void>;
   /** Computed cost of this session; null unless the account is cost-based. */
   sessionCost: SessionCostSnapshot | null;
+  /** Per-agent cost and context for the `agents` popover, on every account —
+   *  notional API-rate cost on a subscription one. Null until the first
+   *  snapshot. */
+  subagentCost: Record<string, SubagentCost> | null;
 }
 
 /**
@@ -29,14 +33,20 @@ export function useAccountUsage(args: {
   sessionId?: string | null;
 }): AccountUsage {
   const { data, loading, refresh } = useUsageAutoRefresh(args.accountName, args.sessionActive);
-  // Cost-based accounts (Enterprise/API) are billed per token and expose no
-  // rate-limit windows, so only they get a dollar figure.
-  const sessionCost = useSessionCost({
-    enabled: args.hasCost,
+  // Watched on every account: the per-agent stats need it. Only cost-based
+  // accounts (Enterprise/API), billed per token with no rate-limit windows,
+  // get the session's dollar figure in the account widget.
+  const snapshot = useSessionCost({
     configDir: args.configDir,
     projectPath: args.projectPath,
     sessionId: args.sessionId,
     accountName: args.accountName ?? undefined,
   });
-  return { data, loading, refresh, sessionCost };
+  return {
+    data,
+    loading,
+    refresh,
+    sessionCost: args.hasCost ? snapshot : null,
+    subagentCost: snapshot?.bySubagent ?? null,
+  };
 }

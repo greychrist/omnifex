@@ -12,7 +12,7 @@ import path from 'node:path';
 import type { Database } from '../database';
 import { createModelPricingService } from '../model-pricing';
 import type { ModelPricingInput } from '../../../src/lib/pricing';
-import { computeSessionCost, type SessionCostDailyRow } from './session-cost-core';
+import { computeSessionCost, type SessionCostDailyRow, type SubagentFile } from './session-cost-core';
 import { extractDedupedUsage } from './usage-extract';
 import { createCliProcessUsageStore, type CliProcessUsage } from './cli-process-usage';
 import { computeUnloggedRows, UNLOGGED_SESSION_PREFIX } from './unlogged-spend';
@@ -94,6 +94,20 @@ export function collectSubagentFiles(fsDeps: CostFs, subagentsDir: string): stri
   };
   walk(subagentsDir, 0);
   return found.sort();
+}
+
+/**
+ * Every subagent transcript under `subagentsDir` with the agent id its file
+ * name carries (`agent-<id>.jsonl`). Unreadable files are skipped.
+ */
+export function readSubagentFiles(fsDeps: CostFs, subagentsDir: string): SubagentFile[] {
+  const files: SubagentFile[] = [];
+  for (const full of collectSubagentFiles(fsDeps, subagentsDir)) {
+    const content = fsDeps.readFile(full);
+    if (content === null) continue;
+    files.push({ agentId: path.basename(full).slice('agent-'.length, -'.jsonl'.length), content });
+  }
+  return files;
 }
 
 /**
@@ -644,13 +658,11 @@ export function createCostHistoryService(db: Database, fsDeps: CostFs = nodeCost
 
           const sessionContent = fsDeps.readFile(mainPath);
           if (sessionContent === null) continue;
-          const subagentContents = collectSubagentFiles(fsDeps, subagentsDir)
-            .map((p) => fsDeps.readFile(p))
-            .filter((c): c is string => c !== null);
+          const subagentFiles = readSubagentFiles(fsDeps, subagentsDir);
           const projectPath = recoverProjectPath(sessionContent, projectEntry.name);
           const { dailyRows } = computeSessionCost({
             sessionContent,
-            subagentContents,
+            subagentFiles,
             sessionId,
             accountName: account.name,
             configDir: account.config_dir,
@@ -665,7 +677,7 @@ export function createCostHistoryService(db: Database, fsDeps: CostFs = nodeCost
               configDir: account.config_dir,
               projectPath,
               processes,
-              transcript: [sessionContent, ...subagentContents].flatMap((c) => extractDedupedUsage(c)),
+              transcript: [sessionContent, ...subagentFiles.map((f) => f.content)].flatMap((c) => extractDedupedUsage(c)),
               overrides,
             });
             for (const skip of skipped) {
@@ -732,7 +744,7 @@ export function createCostHistoryService(db: Database, fsDeps: CostFs = nodeCost
 
             const { dailyRows } = computeSessionCost({
               sessionContent,
-              subagentContents: [],
+              subagentFiles: [],
               sessionId,
               accountName: accountEntry.name,
               configDir: '',

@@ -16,6 +16,7 @@ import { computeSessionCost, type SessionCostSnapshot } from './session-cost-cor
 import {
   collectSubagentFiles,
   nodeCostFs,
+  readSubagentFiles,
   type CostFs,
   type CostHistoryService,
 } from './cost-history';
@@ -117,12 +118,9 @@ export function createSessionCostService(deps: SessionCostDeps): SessionCostServ
   function compute(args: SessionCostArgs): SessionCostSnapshot {
     const { sessionFile, subagentsDir } = paths(args);
     const sessionContent = fsDeps.readFile(sessionFile) ?? '';
-    const subagentContents = collectSubagentFiles(fsDeps, subagentsDir)
-      .map((p) => fsDeps.readFile(p))
-      .filter((c): c is string => c !== null);
     const { snapshot, dailyRows } = computeSessionCost({
       sessionContent,
-      subagentContents,
+      subagentFiles: readSubagentFiles(fsDeps, subagentsDir),
       sessionId: args.sessionId,
       accountName: args.accountName,
       configDir: args.configDir,

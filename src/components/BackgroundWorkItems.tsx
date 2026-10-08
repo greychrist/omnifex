@@ -15,11 +15,16 @@ import { cn } from '@/lib/utils';
 import { Popover } from '@/components/ui/popover';
 import { SubagentRow, ShellRow } from '@/components/BackgroundWorkRows';
 import type { Subagent } from '@/lib/subagentStreams';
+import type { SubagentCost } from '@/lib/api';
+import { subagentTotals } from '@/lib/subagentRunStats';
+import { formatCost } from '@/components/claude-code-session/CostWidget';
 import type { BackgroundShell, TaskOutputTail } from '@/lib/backgroundShells';
 
 /** Everything the status bar needs to draw both readouts. */
 export interface BackgroundWork {
   subagents: Subagent[];
+  /** Per-agent cost and context, keyed by agent id. */
+  subagentCost?: Record<string, SubagentCost> | null;
   onDismissSubagent?: (toolUseId: string) => void;
   onDismissAllCompletedSubagents?: () => void;
   /** Background shells and Monitors (`local_bash` tasks). */
@@ -36,6 +41,10 @@ interface ReadoutProps {
   running: number;
   total: number;
   onClearDone?: () => void;
+  /** Read `done/total` while running rather than `N running`. */
+  showProgress?: boolean;
+  /** Appended to the header's `done/total done`, e.g. a cost total. */
+  headerExtra?: string;
   children: React.ReactNode;
 }
 
@@ -50,6 +59,8 @@ function BackgroundReadout({
   running,
   total,
   onClearDone,
+  showProgress = false,
+  headerExtra,
   children,
 }: ReadoutProps): React.JSX.Element {
   const live = running > 0;
@@ -72,7 +83,7 @@ function BackgroundReadout({
         >
           {icon}
           <span className="opacity-70">{noun}</span>
-          <span>{live ? `${running} running` : `${done} done`}</span>
+          <span>{live ? (showProgress ? `${done}/${total}` : `${running} running`) : `${done} done`}</span>
         </button>
       }
       content={
@@ -80,7 +91,7 @@ function BackgroundReadout({
           <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border/60 text-[11px]">
             <span className="font-medium text-foreground capitalize">{noun}</span>
             <span className="text-muted-foreground tabular-nums">
-              {done}/{total} done
+              {`${done}/${total} done${headerExtra ? ` · ${headerExtra}` : ''}`}
             </span>
             {onClearDone && (
               <button
@@ -108,13 +119,16 @@ function BackgroundReadout({
 
 export function AgentsStatusItem({
   subagents,
+  costs,
   onDismiss,
   onDismissAllCompleted,
 }: {
   subagents: Subagent[];
+  costs?: Record<string, SubagentCost> | null;
   onDismiss?: (toolUseId: string) => void;
   onDismissAllCompleted?: () => void;
 }): React.JSX.Element {
+  const totals = subagentTotals(subagents, costs);
   return (
     <BackgroundReadout
       noun="agents"
@@ -123,9 +137,11 @@ export function AgentsStatusItem({
       running={subagents.filter((s) => s.status === 'running').length}
       total={subagents.length}
       onClearDone={onDismissAllCompleted}
+      showProgress
+      headerExtra={totals.usd !== undefined ? `≈${formatCost(totals.usd)}` : undefined}
     >
       {subagents.map((sub) => (
-        <SubagentRow key={sub.toolUseId} sub={sub} onDismiss={onDismiss} />
+        <SubagentRow key={sub.toolUseId} sub={sub} onDismiss={onDismiss} costs={costs} />
       ))}
     </BackgroundReadout>
   );

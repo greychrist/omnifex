@@ -99,7 +99,7 @@ describe('session_cost_daily component + subagent columns', () => {
   it('counts requests per row', () => {
     const { dailyRows } = computeSessionCost({
       sessionContent: [line('m1', { output: 10 }), line('m2', { output: 20 }), line('m3', { output: 30 })].join('\n'),
-      subagentContents: [[line('s1', { output: 1 }), line('s2', { output: 2 })].join('\n')],
+      subagentFiles: [{ agentId: 'a1', content: [line('s1', { output: 1 }), line('s2', { output: 2 })].join('\n') }],
       sessionId: 'sessA', accountName: 'Work', configDir: CFG, projectPath: '/Users/me/proj',
     });
     const main = dailyRows.find((r) => r.is_subagent === 0)!;
@@ -111,7 +111,7 @@ describe('session_cost_daily component + subagent columns', () => {
   it('persists the component split, and the parts sum to cost_usd', () => {
     const { dailyRows, snapshot } = computeSessionCost({
       sessionContent: line('m1', { input: 5_000, output: 20_000, cacheRead: 900_000, cw5m: 30_000, cw1h: 10_000 }),
-      subagentContents: [],
+      subagentFiles: [],
       sessionId: 'sessA', accountName: 'Work', configDir: CFG, projectPath: '/Users/me/proj',
     });
     const r = dailyRows[0];

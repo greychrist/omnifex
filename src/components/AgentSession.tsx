@@ -2571,6 +2571,14 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     sessionId: claudeSessionId,
   });
 
+  // The agents readout's per-row cost and context. Joined here rather than in
+  // `backgroundWork`, which is built before the cost watcher's hook runs.
+  const subagentCost = accountUsage.subagentCost;
+  const backgroundWithCost = useMemo<BackgroundWork>(
+    () => ({ ...backgroundWork, subagentCost }),
+    [backgroundWork, subagentCost],
+  );
+
   // Proactively pull the live context window once a session is active but we
   // don't have it yet. Resuming a session loads history statically and never
   // fetches usage — the stream-driven refresh only fires on init/result/
@@ -2626,7 +2634,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
       canRename={isSessionActive}
       onRename={handleRenameSession}
       onSuggest={handleSuggestTitle}
-      background={backgroundWork}
+      background={backgroundWithCost}
       // Shown beside the account widget for now, so the two can be
       // compared before one of them goes. Same inputs as the widget.
       account={

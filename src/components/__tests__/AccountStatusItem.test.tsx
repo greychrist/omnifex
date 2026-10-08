@@ -63,9 +63,10 @@ const cost = (totalUsd: number): SessionCostSnapshot => ({
   subagentUsd: 0,
   byModel: [],
   tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+  bySubagent: {},
 });
 
-const usage = { data: null, loading: false, refresh: vi.fn(async () => {}), sessionCost: null };
+const usage = { data: null, loading: false, refresh: vi.fn(async () => {}), sessionCost: null, subagentCost: null };
 
 const base = {
   accountName: 'Personal',

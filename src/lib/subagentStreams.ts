@@ -191,6 +191,10 @@ export function applySubagentMeta(
     return {
       ...sub,
       agentType: sub.agentType ?? m.agentType,
+      // For an Agent task the task id IS the agent id, and it is what joins
+      // the row to its transcript's cost (subagentRunStats). A foreground row
+      // reloaded from disk never saw task_started, so only the meta has it.
+      taskId: sub.taskId ?? m.agentId,
       model: m.model ?? sub.model,
       effort: m.effort ?? sub.effort,
       finalTotalTokens: m.totalTokens ?? sub.finalTotalTokens,
@@ -238,6 +242,7 @@ export function applySubagentMeta(
       parent,
       row: {
         toolUseId,
+        taskId: m.agentId,
         parentToolUseId: parent.toolUseId,
         agentType: m.agentType,
         // The child's own label when the sidecar carries one; the parent's
