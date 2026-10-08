@@ -5,6 +5,23 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.228] — 2026-10-08
+
+### Added
+- Chat: a pale marker dot on the transcript's right edge shows where auto-scroll's follow threshold sits — on screen means following; it turns hollow once you have scrolled away.
+- Pricing for Claude Haiku 5.5 ($0.10/$0.50 per MTok, 1M context), the new default Haiku. It was previously priced through the legacy Haiku row at 2.5x.
+
+### Changed
+- Brain indexing and curation now run on the `sonnet` and `opus` aliases, so they move to each new model as the CLI ships it; the spend ledger records the model that actually billed.
+- Chat auto-scroll follow distance now defaults to 300px (was 200px).
+- Claude Code changelog reviewed through 2.1.293.
+
+### Fixed
+- Chat auto-scroll could stop following mid-turn when a tall message or a batch of tool cards landed right after an automatic scroll. Only your own scrolling (wheel, trackpad, touch, keys, scrollbar, navigation buttons) can now turn following off.
+
+### Removed
+- The one-time Brain spend backfill migrations (v20/v21), which every install has already run.
+
 ## [0.4.227] — 2026-10-07
 
 ### Added
