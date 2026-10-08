@@ -9,6 +9,8 @@ import {
   brainSpawnArgs,
   buildBrainServerConfig,
   createBrainMcpRegistration,
+  findInstalledApp,
+  persistentServerEnv,
   writeBrainSpawnConfig,
 } from '../services/brain/mcp-registration';
 
@@ -201,6 +203,69 @@ describe('brain MCP registration', () => {
       mkdirSync(b, { recursive: true });
       registration(tmp).register(a, '/vaults/personal');
       expect(() => readFileSync(join(b, '.claude.json'), 'utf8')).toThrow();
+    });
+  });
+});
+
+/**
+ * The persistent registration outlives the process that wrote it: every
+ * Claude session started anywhere spawns whatever it names. Naming a dev
+ * checkout kept that checkout's better_sqlite3.node loaded in every session,
+ * and `npm test`'s pretest rebuild then overwrote it in place under them —
+ * which macOS answers with SIGKILL (Code Signature Invalid). So it always
+ * names an installed app, never a checkout.
+ */
+describe('persistent registration targets the installed app', () => {
+  const CHECKOUT = {
+    execPath: '/Users/me/Repos/omnifex/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron',
+    serverScript: '/Users/me/Repos/omnifex/.vite/build/brain-mcp.js',
+    userDataDir: '/ud',
+  };
+  const INSTALLED = { execPath: EXEC, serverScript: SCRIPT };
+
+  it('keeps a packaged app as it is', () => {
+    const packaged = { ...INSTALLED, userDataDir: '/ud' };
+    expect(persistentServerEnv(packaged, () => null)).toEqual(packaged);
+  });
+
+  it('swaps a checkout for the installed app', () => {
+    expect(persistentServerEnv(CHECKOUT, () => INSTALLED)).toEqual({ ...INSTALLED, userDataDir: '/ud' });
+  });
+
+  it('refuses a checkout when no app is installed', () => {
+    expect(persistentServerEnv(CHECKOUT, () => null)).toBeNull();
+  });
+
+  it('finds the app by its real files, not by paths inside the asar', () => {
+    const app = '/Applications/OmniFex.app';
+    const present = new Set([`${app}/Contents/MacOS/omnifex`, `${app}/Contents/Resources/app.asar`]);
+    expect(findInstalledApp(app, (p) => present.has(p))).toEqual(INSTALLED);
+    expect(findInstalledApp(app, () => false)).toBeNull();
+  });
+
+  describe('createBrainMcpRegistration from a dev build', () => {
+    let tmp: string;
+    beforeEach(() => { tmp = mkdtempSync(join(tmpdir(), 'brain-reg-dev-')); });
+    afterEach(() => { rmSync(tmp, { recursive: true, force: true }); });
+
+    it('writes the installed app into .claude.json, never the checkout', () => {
+      const configDir = join(tmp, 'cfg');
+      createBrainMcpRegistration(createMCPService(), { ...CHECKOUT, userDataDir: tmp }, () => INSTALLED)
+        .register(configDir, '/vaults/personal');
+
+      const raw = readFileSync(join(configDir, '.claude.json'), 'utf8');
+      const entry = (JSON.parse(raw) as { mcpServers: Record<string, { command: string; args: string[] }> })
+        .mcpServers[BRAIN_MCP_SERVER_NAME];
+      expect(entry.command).toBe(EXEC);
+      expect(entry.args).toEqual([SCRIPT]);
+      expect(raw).not.toContain('/Repos/');
+    });
+
+    it('refuses to register when there is no installed app to name', () => {
+      const configDir = join(tmp, 'cfg');
+      const reg = createBrainMcpRegistration(createMCPService(), { ...CHECKOUT, userDataDir: tmp }, () => null);
+      expect(() => { reg.register(configDir, '/vaults/personal'); }).toThrow(/installed/i);
+      expect(reg.isRegistered(configDir)).toBe(false);
     });
   });
 });

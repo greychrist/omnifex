@@ -11,8 +11,8 @@
  *    it too. This is the only path that leaves residue, which is why it is
  *    off by default and removable from the same toggle.
  */
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join, sep } from 'node:path';
 import type { MCPServerConfig, MCPService } from '../mcp';
 
 export const BRAIN_MCP_SERVER_NAME = 'omnifex-brain';
@@ -40,6 +40,51 @@ export interface BrainMcpEnvironment {
   serverScript: string;
   /** `app.getPath('userData')`. */
   userDataDir: string;
+}
+
+/** Where the installed OmniFex keeps the two files the server needs. */
+export const INSTALLED_APP_PATH = '/Applications/OmniFex.app';
+
+export type InstalledApp = Pick<BrainMcpEnvironment, 'execPath' | 'serverScript'>;
+
+/**
+ * The installed app's executable and `brain-mcp.js`, or null when it is not
+ * there. Existence is checked on the executable and the `app.asar` archive —
+ * real files — because a path INSIDE the asar only resolves for a process
+ * with Electron's asar support, which plain node does not have. Electron run
+ * as node does, which is how the CLI spawns it.
+ */
+export function findInstalledApp(
+  appPath: string = INSTALLED_APP_PATH,
+  exists: (path: string) => boolean = existsSync,
+): InstalledApp | null {
+  const execPath = join(appPath, 'Contents', 'MacOS', 'omnifex');
+  const asar = join(appPath, 'Contents', 'Resources', 'app.asar');
+  if (!exists(execPath) || !exists(asar)) return null;
+  return { execPath, serverScript: join(asar, '.vite', 'build', 'brain-mcp.js') };
+}
+
+/**
+ * What the PERSISTENT registration may name.
+ *
+ * `<configDir>/.claude.json` outlives the process that wrote it, and every
+ * Claude session started anywhere spawns whatever it names. A dev build used
+ * to name its checkout there, so every session kept the checkout's
+ * `better_sqlite3.node` loaded — and `npm test`'s pretest rebuild overwrote
+ * that file in place underneath them, which macOS answers with SIGKILL (Code
+ * Signature Invalid): ~4 crash reports a day, and a Brain server killed
+ * mid-session. A packaged app (its script inside an `app.asar`) is named as
+ * it is; anything else is swapped for the installed app, or refused (null)
+ * when there is none. The spawn-time config is not affected: it is rewritten
+ * per session by the instance that launches it.
+ */
+export function persistentServerEnv(
+  env: BrainMcpEnvironment,
+  findInstalled: () => InstalledApp | null = findInstalledApp,
+): BrainMcpEnvironment | null {
+  if (env.serverScript.includes(`${sep}app.asar${sep}`)) return env;
+  const installed = findInstalled();
+  return installed ? { ...env, ...installed } : null;
 }
 
 export function buildBrainServerConfig(
@@ -116,6 +161,7 @@ function readSettings(path: string): Settings {
 export function createBrainMcpRegistration(
   mcp: MCPService,
   env: BrainMcpEnvironment,
+  findInstalled: () => InstalledApp | null = findInstalledApp,
 ): BrainMcpRegistration {
   /**
    * Add or remove ONLY the Brain's own rules. The user's list is read,
@@ -147,10 +193,17 @@ export function createBrainMcpRegistration(
     },
 
     register(configDir, vaultRoot) {
+      const target = persistentServerEnv(env, findInstalled);
+      if (!target) {
+        throw new Error(
+          `OmniFex is not installed at ${INSTALLED_APP_PATH}; a development build will not `
+          + 'register its own checkout, because every Claude session would then load it.',
+        );
+      }
       mcp.add({
         name: BRAIN_MCP_SERVER_NAME,
         configDir,
-        ...buildBrainServerConfig(vaultRoot, env),
+        ...buildBrainServerConfig(vaultRoot, target),
       });
       setAllowRules(configDir, true);
     },

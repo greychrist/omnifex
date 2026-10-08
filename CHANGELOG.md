@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Claude Code changelog reviewed through 2.1.293.
 
 ### Fixed
+- The Brain's MCP server registration in a Claude config now always names the installed app, never a development checkout. A dev build used to write its checkout there, so every Claude session kept the checkout's SQLite module loaded and `npm test` overwrote it underneath them: macOS killed processes for an invalid code signature (crash reports several times a day) and the pretest step fell back to a slow source build. The test scripts now also delete the module before rebuilding it.
 - Chat auto-scroll could stop following mid-turn when a tall message or a batch of tool cards landed right after an automatic scroll. Only your own scrolling (wheel, trackpad, touch, keys, scrollbar, navigation buttons) can now turn following off.
 
 ### Removed
