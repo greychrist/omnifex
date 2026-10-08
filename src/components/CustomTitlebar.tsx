@@ -40,6 +40,12 @@ interface CustomTitlebarProps {
 }
 
 
+/** Main rethrows the installer's `WaitCancelled` through IPC as a plain Error,
+ *  so the name only survives inside the message. */
+function isWaitCancelled(err: unknown): boolean {
+  return String((err as { message?: unknown } | null)?.message ?? err).includes('WaitCancelled');
+}
+
 export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
   onSettingsClick,
   onLimaClick,
@@ -68,7 +74,12 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
     | { status: 'ready'; filePath: string; version: string }
     | { status: 'waiting'; version: string; filePath: string; activeSessions: number }
     | { status: 'installing'; version: string }
-    | { status: 'error'; downloadUrl: string; assetName: string; releaseUrl: string; version: string };
+    // `failed` says what Retry repeats. A failed install has a finished
+    // download on disk, so it retries the install from that file; it used to
+    // carry the file path as `downloadUrl` and "re-download" it, which failed
+    // straight back into this state.
+    | { status: 'error'; failed: 'download'; downloadUrl: string; assetName: string; releaseUrl: string; version: string }
+    | { status: 'error'; failed: 'install'; filePath: string; version: string };
   const [updateState, setUpdateState] = useState<UpdateState>({ status: 'idle' });
   // Live count of sessions whose turn is in flight. Drives the upgrade
   // button's "active sessions" warning state — when an update is available
@@ -278,13 +289,7 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
   // ever sees one button press. `force` is wired to the live in-flight session
   // count so clicking the button while sessions are mid-turn calls stopAll()
   // on the main side and then installs.
-  const runInstall = async (
-    filePath: string,
-    version: string,
-    downloadUrl: string,
-    assetName: string,
-    releaseUrl: string,
-  ): Promise<void> => {
+  const runInstall = async (filePath: string, version: string): Promise<void> => {
     const force = activeSessions > 0;
      
     console.log(`[updater] runInstall force=${String(force)} activeSessions=${activeSessions}`);
@@ -295,7 +300,12 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
     } catch (err: any) {
        
       console.log(`[updater] installUpdate failed message=${String((err?.message ?? err) as unknown)}`);
-      setUpdateState({ status: 'error', downloadUrl, assetName, releaseUrl, version });
+      // Cancel rejects the pending install too — main's wait loop throws
+      // WaitCancelled on its next poll, after handleCancelInstall has already
+      // put the button back to 'ready'. That is the user's choice, not a
+      // failure, and must not overwrite 'ready' with an error.
+      if (isWaitCancelled(err)) return;
+      setUpdateState({ status: 'error', failed: 'install', filePath, version });
     }
   };
 
@@ -311,7 +321,7 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
       } catch (e: any) {
 
         console.log(`[updater] download failed message=${String((e?.message ?? e) as unknown)}`);
-        setUpdateState({ status: 'error', downloadUrl, assetName, releaseUrl, version });
+        setUpdateState({ status: 'error', failed: 'download', downloadUrl, assetName, releaseUrl, version });
         return;
       }
       // Stop at 'ready' — the user must click the "Install Update" button to
@@ -321,7 +331,13 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
       setUpdateState({ status: 'ready', filePath, version });
     } else if (updateState.status === 'ready') {
       const { filePath, version } = updateState;
-      await runInstall(filePath, version, filePath, '', '');
+      await runInstall(filePath, version);
+    } else if (updateState.status === 'error' && updateState.failed === 'install') {
+      // Back through 'ready' so the install-status events can move the button
+      // into 'waiting' / 'installing' — they ignore an 'error' state.
+      const { filePath, version } = updateState;
+      setUpdateState({ status: 'ready', filePath, version });
+      await runInstall(filePath, version);
     } else if (updateState.status === 'error') {
       // Retry: re-download. Install requires a second click on the resulting
       // "Install Update" button, same as the happy-path 'available' branch.
@@ -331,7 +347,7 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
       try {
         filePath = await api.downloadUpdate(downloadUrl, assetName);
       } catch {
-        setUpdateState({ status: 'error', downloadUrl, assetName, releaseUrl, version });
+        setUpdateState({ status: 'error', failed: 'download', downloadUrl, assetName, releaseUrl, version });
         return;
       }
       setUpdateState({ status: 'ready', filePath, version });
@@ -345,14 +361,9 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
     const { filePath, version } = updateState;
     try {
       await api.installUpdate(filePath, version, { force: true });
-    } catch {
-      setUpdateState({
-        status: 'error',
-        downloadUrl: filePath,
-        assetName: '',
-        releaseUrl: '',
-        version,
-      });
+    } catch (err: unknown) {
+      if (isWaitCancelled(err)) return;
+      setUpdateState({ status: 'error', failed: 'install', filePath, version });
     }
   };
 
@@ -423,6 +434,7 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
                 updateState.status === 'ready' ? `Install v${updateState.version}` :
                 updateState.status === 'waiting' ? `Waiting for ${updateState.activeSessions} active session(s)` :
                 updateState.status === 'installing' ? `Installing v${updateState.version}…` :
+                updateState.failed === 'install' ? `Retry installing v${updateState.version}` :
                 'Retry download'
               }
               side="bottom"
