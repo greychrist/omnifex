@@ -477,6 +477,8 @@ export interface SessionHandle {
     configDir: string;
     model?: string;
     permissionMode?: string;
+    /** `--plugin-dir`s the session spawned with, kept for the restart. */
+    pluginDirs?: string[];
   };
   sessionId: string | null;
   /** Connection axis. See docs/session-lifecycle.md. */

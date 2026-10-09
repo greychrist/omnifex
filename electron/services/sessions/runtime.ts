@@ -390,6 +390,7 @@ export function restartQuery(
     configDir: handle.startParams.configDir,
     model: handle.startParams.model,
     permissionMode: handle.startParams.permissionMode,
+    pluginDirs: handle.startParams.pluginDirs,
     sessionId: handle.sessionId,
     resume,
   }).then(() => {
