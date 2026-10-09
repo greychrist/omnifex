@@ -5,6 +5,20 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.233] — 2026-10-09
+
+### Fixed
+- OmniFex's own Claude runs (session summaries, Brain indexing and curation) no longer pile up as a bogus `omnifex-summary-scratch` project. Their cleanup had silently missed since June because macOS's temp folder is a symlink, leaving thousands of transcripts in each account. Opening that project showed "No Claude account is configured".
+- Spend from those runs is now attributed in the Cost Report as OmniFex/Session summarization, OmniFex/Brain index and OmniFex/Brain curation, instead of a raw `/private/var/folders/…` path.
+- Brain spend for Aug 13–26 was counted twice; the duplicate rows are removed.
+- Sonnet 5.5 cache reads are priced at $0.10/M from 2026-10-09, matching CLI 2.1.296.
+
+### Changed
+- Internal transcripts are never kept. Each is priced into the cost history and deleted as the run finishes; an hourly sweep does the same for any left behind, including the existing backlog on first launch.
+
+### Removed
+- The internal-transcript archive and its "OmniFex's own transcripts" panel in Brain settings. Only the spend record is kept now.
+
 ## [0.4.232] — 2026-10-09
 
 ### Added

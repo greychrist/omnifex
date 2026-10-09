@@ -222,7 +222,7 @@ omnifex/
 - Remote access is opt-out, not opt-in: the daemon listens on your Tailscale address when one is up and on loopback otherwise, never on `0.0.0.0` unless you write that into `~/.omnifex/server.json` yourself. It has no login — reaching the address *is* the authentication — so the tailnet is the boundary. Set `remote.enabled=false` (or `OMNIFEX_REMOTE=0`) to keep everything in-process. The channels a remote client may reach are allow-listed server-side; dialogs, the updater, terminals and raw SQL are refused there regardless of what the client asks for.
 - OmniFex talks to model providers only through the CLI binaries you install and authenticate; it sends nothing to Anthropic or OpenAI itself.
 - Per-session permission gating for tool use, mirroring Claude Code's native permission model.
-- Brain vaults are plain files on your disk, one per account, and never leave it. Distilling a session is a call to the CLI under that account's own credentials; the transcripts those calls produce are archived and priced like any other session rather than discarded, and the vault a session can reach is fixed by the process it was launched with.
+- Brain vaults are plain files on your disk, one per account, and never leave it. Distilling a session is a call to the CLI under that account's own credentials; what each call costs is recorded in the Cost Report and its transcript then deleted, so OmniFex's own runs never accumulate on disk or show up as a project, and the vault a session can reach is fixed by the process it was launched with.
 
 ## License
 
