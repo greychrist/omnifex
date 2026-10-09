@@ -21,9 +21,11 @@ const DESCRIPTION =
   'Call it once you know the steps (done: 0), then after each step. ' +
   '`total` is your best estimate of the steps the whole task needs; revise it if the plan changes.'
 
+// Conditional: agent.spawn carries no tool list, and an agent whose
+// definition names its tools is not given this one.
 const SUBAGENT_HINT =
-  `\n\nReport your progress with the ${TOOL} tool: call it with done: 0 and your ` +
-  'estimated total once you know the steps, then after each step with a short note.'
+  `\n\nIf you have the ${TOOL} tool, report your progress with it: call it with done: 0 ` +
+  'and your estimated total once you know the steps, then after each step with a short note.'
 
 const MAIN_HINT =
   `# Progress\nWhen a request needs three or more distinct steps, report progress with the ${TOOL} ` +

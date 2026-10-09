@@ -38,6 +38,18 @@ test('every subagent is told to report progress', async ($, on) => {
   expect(seen).toContain(TOOL)
 })
 
+// agent.spawn carries no tool list, and an agent whose definition names its
+// tools does not get this one — so the hint must not order a call it can't make.
+test('the subagent hint is conditional on having the tool', async ($, on) => {
+  let seen = ''
+  on('agent.spawn', (_$, e) => {
+    seen = e.prompt
+    return { model: 'test', agentId: 'a1' }
+  })
+  await $.agent.spawn({ prompt: 'Review the diff.' })
+  expect(seen).toMatch(/If you have the mcp__omnifex__progress tool/)
+})
+
 test('the main session is told when to report progress', async ($, on) => {
   on('prompt.compose', () => ({ sections: [{ id: 'intro', text: 'You are Claude.', scope: 'shared' }] }))
   const { sections } = await $.prompt.compose({ model: 'm', promptModel: 'm', surfaces: [], outputStyle: null, traits: [], tools: [TOOL] } as any)
