@@ -28,6 +28,7 @@ import {
 } from "@/lib/cliReviewPrompt";
 import { cn } from "@/lib/utils";
 import { AutoRecapSettings } from "./AutoRecapSettings";
+import { ProgressModSettings } from "./ProgressModSettings";
 import { ClaudeVersionSelector } from "@/components/ClaudeVersionSelector";
 import { useTheme } from "@/hooks";
 import { useAppFont } from "@/contexts/AppFontContext";
@@ -416,6 +417,7 @@ export const GeneralSettings: React.FC = () => {
             </div>
 
             <AutoRecapSettings />
+            <ProgressModSettings />
           </SettingsSection>
 
           <div className="border-t border-border" />
