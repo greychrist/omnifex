@@ -144,6 +144,13 @@ export const SubagentRow: React.FC<SubagentRowProps> = ({ sub, onDismiss, costs 
       : sub.status === 'completed_inferred' ? 'inferred'
         : sub.status;
 
+  // How far through its work the agent says it is — only while it runs. Once
+  // it ends, the state (done, failed) is the truer answer than its last guess.
+  const step = barState === 'running' ? sub.stepProgress : undefined;
+  const stepLabel = step
+    ? `${step.done}/${step.total}${step.note ? ` · ${step.note}` : ''}`
+    : null;
+
   // The purpose is what the parent said the agent is for; it holds still.
   // What it is doing right now is in the expanded log, not under it: that
   // line carries the run stats.
@@ -231,18 +238,27 @@ export const SubagentRow: React.FC<SubagentRowProps> = ({ sub, onDismiss, costs 
             )}
           </span>
         )}
-        {/* The run's state, not how far along it is — nothing reports that
-            without the model's cooperation. It used to fill to context %,
-            which on a 1M-window model sat at 2–3% for the whole run. */}
+        {stepLabel && (
+          <span data-subagent-step className="block pl-6 pt-0.5 text-[11px] text-foreground/80 truncate tabular-nums">
+            {stepLabel}
+          </span>
+        )}
+        {/* How far along the agent says it is, when it reports its steps
+            through the bundled mod's progress tool; otherwise the run's state.
+            It used to fill to context %, which on a 1M-window model sat at
+            2–3% for the whole run. */}
         <span
           data-subagent-bar
           data-state={barState}
+          data-progress={step ? `${step.done}/${step.total}` : undefined}
           className="mt-1 ml-6 block h-0.5 rounded-full bg-white/10 overflow-hidden"
         >
           <span
+            style={step ? { width: `${Math.round((step.done / step.total) * 100)}%` } : undefined}
             className={cn(
               'block h-full rounded-full',
-              barState === 'running' ? cn('brain-indeterminate-bar w-1/3', color.dot) : 'w-full',
+              step ? cn('transition-[width] duration-500', color.dot)
+                : barState === 'running' ? cn('brain-indeterminate-bar w-1/3', color.dot) : 'w-full',
               barState === 'done' && 'bg-emerald-400',
               barState === 'inferred' && cn(color.dot, 'opacity-60'),
               barState === 'failed' && 'bg-destructive',

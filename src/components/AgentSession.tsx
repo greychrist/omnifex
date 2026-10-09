@@ -105,6 +105,7 @@ import { GitWatchStatusIcon } from "./claude-code-session/GitWatchStatusIcon";
 import { resolveBranchColors } from '@/lib/branchColors';
 import type { BranchColor } from '@/lib/api';
 import { deriveSubagents, applySubagentMeta, createSubagentColorAllocator, notificationStatsByToolUse, forwardedByAgentId, countActiveSubagents, type SubagentMetaInput } from '@/lib/subagentStreams';
+import { latestSubagentProgress, withStepProgress } from '@/lib/stepProgress';
 import { getTaskList, summarizeTaskList } from "@/lib/taskList";
 import { deriveWaitingFor, type TabWaitingFor } from "@/lib/tabWaitingFor";
 import { deriveBackgroundShells } from "@/lib/backgroundShells";
@@ -949,9 +950,16 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   // Same for a nested subagent's live frames: keyed by agent_id, which its
   // sidecar also carries (CLI >= 2.1.292).
   const forwardedLive = useMemo(() => forwardedByAgentId(messages), [messages]);
+  // Each agent's own progress reports (the bundled mod's progress tool), from
+  // the same forwarded frames. Applied after the meta merge so nested rows,
+  // which only exist from then on, get theirs by agent id.
+  const stepProgressIndex = useMemo(() => latestSubagentProgress(messages), [messages]);
   const subagents = useMemo(
-    () => applySubagentMeta(baseSubagents, subagentMeta, notificationStats, forwardedLive),
-    [baseSubagents, subagentMeta, notificationStats, forwardedLive],
+    () => withStepProgress(
+      applySubagentMeta(baseSubagents, subagentMeta, notificationStats, forwardedLive),
+      stepProgressIndex,
+    ),
+    [baseSubagents, subagentMeta, notificationStats, forwardedLive, stepProgressIndex],
   );
   // Stable signature of completed rows — drives the meta fetch without
   // depending on `subagentMeta` itself (which the fetch sets), so resolving

@@ -126,6 +126,45 @@ describe('SubagentRow run stats', () => {
     expect(bar?.firstElementChild?.className).not.toContain('brain-indeterminate-bar');
   });
 
+  // An agent that reports its steps (the bundled mod's progress tool) gets a
+  // determinate bar and a step line; one that does not keeps the sweep.
+  it('fills the bar to the agent\'s reported progress, with the step and note', () => {
+    const { container } = render(
+      <SubagentRow
+        sub={makeSub({ toolUseId: 'a', status: 'running', stepProgress: { done: 2, total: 5, note: 'Read session-cost.ts' } })}
+      />,
+    );
+    const bar = container.querySelector<HTMLElement>('[data-subagent-bar]');
+    expect(bar?.getAttribute('data-state')).toBe('running');
+    expect(bar?.getAttribute('data-progress')).toBe('2/5');
+    const fill = bar?.firstElementChild as HTMLElement;
+    expect(fill.style.width).toBe('40%');
+    expect(fill.className).not.toContain('brain-indeterminate-bar');
+    expect(container.querySelector('[data-subagent-step]')?.textContent).toBe('2/5 · Read session-cost.ts');
+  });
+
+  it('shows the step without a note when the agent gave none', () => {
+    const { container } = render(
+      <SubagentRow sub={makeSub({ toolUseId: 'a', status: 'running', stepProgress: { done: 0, total: 3 } })} />,
+    );
+    expect(container.querySelector('[data-subagent-step]')?.textContent).toBe('0/3');
+  });
+
+  it('a finished agent\'s bar is full green whatever it last reported', () => {
+    const { container } = render(
+      <SubagentRow sub={makeSub({ toolUseId: 'a', status: 'completed', stepProgress: { done: 3, total: 5 } })} />,
+    );
+    const fill = container.querySelector<HTMLElement>('[data-subagent-bar]')?.firstElementChild as HTMLElement;
+    expect(fill.className).toContain('bg-emerald-400');
+    expect(fill.style.width).toBe('');
+    expect(container.querySelector('[data-subagent-step]')).toBeNull();
+  });
+
+  it('shows no step line for an agent that never reported', () => {
+    const { container } = render(<SubagentRow sub={makeSub({ toolUseId: 'a', status: 'running' })} />);
+    expect(container.querySelector('[data-subagent-step]')).toBeNull();
+  });
+
   it('fills the bar red when the agent failed', () => {
     const { container } = render(
       <SubagentRow sub={makeSub({ toolUseId: 'a', status: 'failed' })} />,
