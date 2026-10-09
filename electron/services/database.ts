@@ -220,7 +220,7 @@ const MODEL_PRICING_DDL = `
   );
 `;
 
-const migrations: Migration[] = [
+export const migrations: Migration[] = [
   {
     version: 1,
     description: 'Add color column to accounts',
@@ -1046,6 +1046,25 @@ const migrations: Migration[] = [
       db.prepare(
         "DELETE FROM app_settings WHERE key IN ('autoscroll_reengage_px', 'autoscroll_disengage_px')",
       ).run();
+    },
+  },
+  {
+    version: 30,
+    description:
+      'Undo v24\'s ledger backfill. v24 assumed the Brain\'s scratch '
+      + 'transcripts had been deleted and replaced their cost rows with '
+      + 'brain-spend-* rows from the ledger. They had not been: the runner '
+      + 'cleaned up the unresolved /var tmpdir path while the CLI wrote under '
+      + '/private/var, so every transcript survived and the cost watcher '
+      + 'priced it again — Aug 13-26 counted each Brain run twice. The '
+      + 'transcript rows are the finer record (per model, per component), so '
+      + 'the ledger rows go.',
+    up: (db) => {
+      const hasTable = db
+        .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'session_cost_daily'")
+        .get();
+      if (!hasTable) return;
+      db.prepare("DELETE FROM session_cost_daily WHERE session_id LIKE 'brain-spend-%'").run();
     },
   },
 ];

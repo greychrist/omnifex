@@ -78,6 +78,20 @@ describe('claude service', () => {
       expect(found).toBeDefined();
     });
 
+    // OmniFex's own `claude -p` runs (summaries, Brain) land in a projects dir
+    // named after the scratch cwd. It is not a user project: it has no
+    // account binding, so opening it threw NO_ACCOUNT_FOR_PROJECT.
+    it('does not list the summary scratch dir as a project', async () => {
+      const configDir = path.join(tmpDir, '.claude-scratch');
+      const scratchId = '-private-var-folders-06-x-T-omnifex-summary-scratch';
+      fs.mkdirSync(path.join(configDir, 'projects', scratchId), { recursive: true });
+      fs.writeFileSync(path.join(configDir, 'projects', scratchId, 'u.jsonl'), '{}\n');
+      accounts.createAccount({ name: 'Scratch', configDir });
+
+      const projects = await service.listProjects();
+      expect(projects.find((p) => p.id === scratchId)).toBeUndefined();
+    });
+
     it('does not report new activity when a session file is only touched', async () => {
       // "Last activity" means "when Claude last worked here", not "when this
       // inode was last written". The CLI touches a session file on reopen and

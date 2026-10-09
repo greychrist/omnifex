@@ -209,7 +209,12 @@ export const SHIPPED_PRICING: ModelPricingInput[] = [
   // Sonnet 5.5 (2.1.284) launched at Sonnet 5's prices, so this row is
   // display-only and prices through `sonnet-5`. Slot 5 is shared with Sonnet
   // 4.6, which is unlikely to share a chart with it.
+  // CLI 2.1.296 moved it to `tier_2_10_cache_read_0_10`: reads at $0.10
+  // (0.05x input), writes unchanged. Applied from the review date, not
+  // retroactively — the dated row restates label and slot because only one
+  // row per pattern is in force.
   { pattern: 'sonnet-5-5', effectiveFrom: '2024-01-01', label: 'Sonnet 5.5', colorSlot: 5 },
+  { pattern: 'sonnet-5-5', effectiveFrom: '2026-10-09', cacheReadPerM: 0.1, label: 'Sonnet 5.5', colorSlot: 5 },
   { pattern: 'sonnet-5', effectiveFrom: '2024-01-01', inputPerM: 2, outputPerM: 10, label: 'Sonnet 5', colorSlot: 3, contextWindow: 1_000_000 },
   { pattern: 'sonnet', effectiveFrom: '2024-01-01', inputPerM: 3, outputPerM: 15, contextWindow: 200_000 },
 ];

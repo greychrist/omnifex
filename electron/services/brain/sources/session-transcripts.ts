@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import type { AccountsService } from '../../accounts';
-import { isSummaryScratchProject } from '../../sessions/summary-query';
+import { isSummaryScratchProject } from '../../sessions/internal-spend';
 import { recoverProjectPath } from '../../project-paths';
 import { distillTranscript } from '../distill';
 import { pathsOf, type AdmitVerdict, type BrainSource, type DistilledItem, type SourceItem } from './types';

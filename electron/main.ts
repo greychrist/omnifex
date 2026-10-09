@@ -119,11 +119,6 @@ import {
   ENABLED_SETTING_KEY,
 } from './services/sessions-summary';
 import { createSummaryQueryRunner } from './services/sessions/summary-query';
-import {
-  internalArchiveRoot,
-  internalArchiveStats,
-  clearInternalArchive,
-} from './services/sessions/internal-archive';
 import { readSubagentMeta } from './services/sessions/subagent-meta';
 import { toElicitationAction } from './services/sessions/elicitations';
 import { createPermissionsIOService } from './services/permissions-io';
@@ -628,14 +623,12 @@ app.whenReady().then(() => {
 
   // Built once: it resolves the claude binary and pins a scratch cwd, and both
   // the Brain's extractor and session summarization run through it.
-  // One runner for every internal CLI call. It owns the archive root, so
-  // every kind of internal spend lands somewhere retained and attributable
-  // rather than being swept — see
-  // docs/superpowers/specs/2026-08-26-internal-session-archive-design.md.
-  const internalArchive = internalArchiveRoot(app.getPath('userData'));
-  const costBackfillOpts = { archiveRoot: internalArchive };
+  // One runner for every internal CLI call. Each call's spend is recorded in
+  // the cost table and its transcript deleted — see
+  // electron/services/sessions/internal-spend.ts.
+  const costHistoryService = createCostHistoryService(db);
   const summaryQueryRunner = createSummaryQueryRunner({
-    archiveRoot: internalArchive,
+    recordSpend: costHistoryService.recordInternal,
     resolveClaudeBinary: () => claudeBinaryService.findBestBinary(),
     // Ownership from the config dir the run was launched with, never
     // resolve(): the same rule the Brain applies to its own sources.
@@ -995,7 +988,6 @@ app.whenReady().then(() => {
   );
   const claudeService = createClaudeService(db, accountsService);
   const usageService = createUsageService(accountsService, loggingService);
-  const costHistoryService = createCostHistoryService(db);
   const modelPricingService = createModelPricingService(db);
   const sessionCostService = _sessionCostService = createSessionCostService({
     sendToRenderer,
@@ -1015,8 +1007,6 @@ app.whenReady().then(() => {
     db,
     listAccounts: () => accountsService.listAccounts(),
     costHistory: costHistoryService,
-    costBackfillOpts,
-    internalArchive,
     brain: () => brainRef,
     summary: () => sessionsSummaryServiceRef,
     activeSessionIds: () => sessionsService.listActiveSessionIds(),
@@ -1411,18 +1401,7 @@ app.whenReady().then(() => {
       subagentSplit: (f: Record<string, unknown>) => costHistoryService.subagentSplit(f as never),
       unpriced: (f: Record<string, unknown>) => costHistoryService.unpriced(f as never),
       facets: (f: Record<string, unknown>) => costHistoryService.facets(f as never),
-      rescan: () => costHistoryService.backfill(accountsService.listAccounts(), costBackfillOpts),
-    },
-    // OmniFex's own transcripts: what the archive holds, and how to empty it.
-    internalArchive: {
-      stats: () => internalArchiveStats(internalArchive),
-      // Clearing removes transcripts, never cost rows -- the spend they
-      // already accounted for stays in the report. Same property that makes
-      // retention pruning safe.
-      clear: () => {
-        clearInternalArchive(internalArchive);
-        return internalArchiveStats(internalArchive);
-      },
+      rescan: () => costHistoryService.backfill(accountsService.listAccounts()),
     },
     // Usage adapter
     usage: {

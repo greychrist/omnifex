@@ -67,11 +67,6 @@ import {
   ENABLED_SETTING_KEY,
 } from '../services/sessions-summary';
 import { createSummaryQueryRunner } from '../services/sessions/summary-query';
-import {
-  internalArchiveRoot,
-  internalArchiveStats,
-  clearInternalArchive,
-} from '../services/sessions/internal-archive';
 import { readSubagentMeta } from '../services/sessions/subagent-meta';
 import { toElicitationAction } from '../services/sessions/elicitations';
 import { createPermissionsIOService } from '../services/permissions-io';
@@ -360,10 +355,9 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
         .filter((v) => v.root !== ''),
   });
 
-  const internalArchive = internalArchiveRoot(config.userDataDir);
-  const costBackfillOpts = { archiveRoot: internalArchive };
+  const costHistoryService = createCostHistoryService(db);
   const summaryQueryRunner = createSummaryQueryRunner({
-    archiveRoot: internalArchive,
+    recordSpend: costHistoryService.recordInternal,
     resolveClaudeBinary: () => claudeBinaryService.findBestBinary(),
     resolveAccountName: (configDir) => accountsService.getAccountByConfigDir(configDir)?.name ?? null,
   });
@@ -513,7 +507,6 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
 
   const claudeService = createClaudeService(db, accountsService);
   const usageService = createUsageService(accountsService, loggingService);
-  const costHistoryService = createCostHistoryService(db);
   const modelPricingService = createModelPricingService(db);
   const sessionCostService = createSessionCostService({
     sendToRenderer,
@@ -574,8 +567,6 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
     db,
     listAccounts: () => accountsService.listAccounts(),
     costHistory: costHistoryService,
-    costBackfillOpts,
-    internalArchive,
     brain: () => brainRef,
     summary: () => sessionsSummaryServiceRef,
     activeSessionIds: () => sessionsService.listActiveSessionIds(),
@@ -725,14 +716,7 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
       subagentSplit: (f) => costHistoryService.subagentSplit(f as never),
       unpriced: (f) => costHistoryService.unpriced(f as never),
       facets: (f) => costHistoryService.facets(f as never),
-      rescan: () => costHistoryService.backfill(accountsService.listAccounts(), costBackfillOpts),
-    },
-    internalArchive: {
-      stats: () => internalArchiveStats(internalArchive),
-      clear: () => {
-        clearInternalArchive(internalArchive);
-        return internalArchiveStats(internalArchive);
-      },
+      rescan: () => costHistoryService.backfill(accountsService.listAccounts()),
     },
     usage: {
       getStats: () => usageService.getUsageStats(),

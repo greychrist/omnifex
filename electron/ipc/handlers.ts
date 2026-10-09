@@ -134,10 +134,6 @@ export interface Services {
     exportPdf(params: { filters: unknown; savePath: string }): Promise<{ path: string }>;
     reportReady(webContentsId: number, metrics: unknown): void;
   };
-  internalArchive?: {
-    stats(): unknown;
-    clear(): unknown;
-  };
   /** User-editable model pricing — the delta layer over the shipped rates.
    *  See `services/model-pricing.ts` for why it is a delta and not a seed. */
   modelPricing?: {
@@ -416,7 +412,7 @@ function costFilters(p: Record<string, unknown> | undefined): Record<string, unk
  * renderer gets a defined (but empty) response rather than a blocked channel.
  */
 export function getHandlerMap(services: Services = {}): Record<string, HandlerFn> {
-  const { brain, brainMcp, accounts, claude, sessions, cost, costReportPdf, internalArchive, modelPricing, usage, rateLimits, usageRunner, claudeBinary, mcp, slashCommands, sessionsSummary, logging, database, proxy, permissionsIO, models, commands, gitWatcher, branchColors, gitBranches, gitDiff, lima, filesystem, notificationSounds, oneShotTerminal, codexAuth, claudeAuth, codexSessionWalker, accountIdentity, allowRawSql } = services;
+  const { brain, brainMcp, accounts, claude, sessions, cost, costReportPdf, modelPricing, usage, rateLimits, usageRunner, claudeBinary, mcp, slashCommands, sessionsSummary, logging, database, proxy, permissionsIO, models, commands, gitWatcher, branchColors, gitBranches, gitDiff, lima, filesystem, notificationSounds, oneShotTerminal, codexAuth, claudeAuth, codexSessionWalker, accountIdentity, allowRawSql } = services;
 
   // Positive account-ownership guard for config-editing channels. A non-empty
   // configDir supplied by the renderer must belong to a known account, so a
@@ -598,8 +594,6 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     }) ?? []),
     session_cost_sessions: wrapWith((p: Record<string, unknown>) => cost?.sessions(costFilters(p)) ?? []),
     session_cost_rescan: wrapWith(() => cost?.rescan() ?? null),
-    internal_archive_stats: wrapWith(() => internalArchive?.stats() ?? null),
-    internal_archive_clear: wrapWith(() => internalArchive?.clear() ?? null),
 
     // Cost Report page queries. All share costFilters(), so a filter added to
     // the filter bar reaches every panel at once rather than needing eleven

@@ -1,6 +1,6 @@
 # Retaining OmniFex's own model usage
 
-**Status:** implemented (2026-08-26)
+**Status:** superseded (2026-10-09) — never took effect, and removed. The runner cleaned up the unresolved `/var` tmpdir path while the CLI wrote under `/private/var`, so no transcript ever reached the archive. Internal transcripts are now priced and deleted as each call returns; see `electron/services/sessions/internal-spend.ts`.
 **Date:** 2026-08-26
 **Supersedes:** the sweep behaviour documented in `electron/services/sessions/summary-query.ts`
 **Related:** `2026-08-26-cost-report-page-design.md`, `2026-08-11-brain-memory-vault-design.md`

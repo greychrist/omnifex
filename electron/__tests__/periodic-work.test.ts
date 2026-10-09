@@ -8,10 +8,10 @@ const HOUR = 60 * 60 * 1000;
 const acct = (id: number) => ({ id, name: `acct-${id}`, config_dir: `/cfg/${id}` });
 const FIVE_MIN = 5 * 60 * 1000;
 
-vi.mock('../services/sessions/internal-archive', () => ({
-  pruneInternalArchive: vi.fn(),
+vi.mock('../services/sessions/internal-spend', () => ({
+  settleStrandedScratch: vi.fn(() => ({ settled: 0, failed: 0 })),
 }));
-import { pruneInternalArchive } from '../services/sessions/internal-archive';
+import { settleStrandedScratch } from '../services/sessions/internal-spend';
 
 const { sweepTick, sweepDeps } = vi.hoisted(() => ({
   sweepTick: vi.fn(async () => 0),
@@ -26,7 +26,6 @@ function harness(over: Partial<PeriodicWorkDeps> = {}) {
     'brain.autoIndex': 'true',
     'brain.curate': 'true',
     'brain.sweepHours': '24',
-    'internal.archive.retentionDays': '90',
     'sessionsSummary.enabled': 'true',
     'sessionsSummary.autoOnClose': 'true',
   };
@@ -42,9 +41,7 @@ function harness(over: Partial<PeriodicWorkDeps> = {}) {
       reclaimFreePages: vi.fn(),
     },
     listAccounts: vi.fn(() => [acct(1), acct(2)]),
-    costHistory: { backfill: vi.fn(() => ({ sessionsScanned: 3 })) },
-    costBackfillOpts: { archiveRoot: '/archive' },
-    internalArchive: '/archive',
+    costHistory: { backfill: vi.fn(() => ({ sessionsScanned: 3 })), recordInternal: vi.fn() },
     brain: () => brain,
     summary: () => ({ generateSummary: vi.fn(async () => ({ status: 'generated' })) }),
     activeSessionIds: () => ['live-1'],
@@ -57,26 +54,45 @@ function harness(over: Partial<PeriodicWorkDeps> = {}) {
 describe('startPeriodicWork', () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    vi.mocked(pruneInternalArchive).mockClear();
+    vi.mocked(settleStrandedScratch).mockClear();
     sweepTick.mockClear();
     sweepDeps.length = 0;
   });
   afterEach(() => { vi.useRealTimers(); });
 
-  it('backfills cost history 30s after start, then hourly, pruning the archive after each sweep', async () => {
+  it('backfills cost history 30s after start, then hourly', async () => {
     const { deps } = harness();
     const stop = startPeriodicWork(deps);
 
     await vi.advanceTimersByTimeAsync(30_000);
-    expect(deps.costHistory.backfill).toHaveBeenCalledWith([acct(1), acct(2)], { archiveRoot: '/archive' });
-    // The startup pass prices only; pruning belongs to the hourly sweep.
-    expect(pruneInternalArchive).not.toHaveBeenCalled();
+    expect(deps.costHistory.backfill).toHaveBeenCalledWith([acct(1), acct(2)]);
 
     await vi.advanceTimersByTimeAsync(HOUR);
     expect(deps.costHistory.backfill).toHaveBeenCalledTimes(2);
-    // Prune AFTER pricing, never before — an unpriced transcript deleted for
-    // being old takes its spend with it.
-    expect(pruneInternalArchive).toHaveBeenCalledWith('/archive', 90, expect.any(String));
+    stop();
+  });
+
+  // Strays the runner did not settle are priced into the cost table and
+  // deleted on the same schedule as the cost sweep.
+  it('settles stranded internal transcripts at startup and hourly, recording through the cost table', async () => {
+    const { deps } = harness();
+    const stop = startPeriodicWork(deps);
+
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(settleStrandedScratch).toHaveBeenCalledWith({
+      accounts: [acct(1), acct(2)], record: deps.costHistory.recordInternal, nowMs: expect.any(Number),
+    });
+    await vi.advanceTimersByTimeAsync(HOUR);
+    expect(settleStrandedScratch).toHaveBeenCalledTimes(2);
+    stop();
+  });
+
+  it('still prices user sessions when settling throws', async () => {
+    const { deps } = harness();
+    vi.mocked(settleStrandedScratch).mockImplementationOnce(() => { throw new Error('EACCES'); });
+    const stop = startPeriodicWork(deps);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(deps.costHistory.backfill).toHaveBeenCalledTimes(1);
     stop();
   });
 
@@ -168,7 +184,7 @@ describe('startPeriodicWork', () => {
     expect(deps.costHistory.backfill).not.toHaveBeenCalled();
     expect(deps.db.reclaimFreePages).not.toHaveBeenCalled();
     expect(brain.drainQueue).not.toHaveBeenCalled();
-    expect(pruneInternalArchive).not.toHaveBeenCalled();
+    expect(settleStrandedScratch).not.toHaveBeenCalled();
     stop();
   });
 

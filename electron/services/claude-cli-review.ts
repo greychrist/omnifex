@@ -42,6 +42,62 @@ import { buildClaudeEnv } from './util/claude-env';
  *    the CLI answers with the error "Side question cancelled". Its own
  *    deadline is 600 s. Only the SDK's `askSideQuestion()` documents it.
  *
+ * Last review: 2.1.295 -> 2.1.296 on 2026-10-09. Findings:
+ *
+ *  Changelog coverage: one version in range, 2.1.296, ~85 entries. Both
+ *  endpoints installed, so the wire claims are a real binary diff.
+ *
+ *  WIRE DIFF (unique literals): merge-strategy map 40 -> 40 (4 tagged
+ *  `transcript`), `subtype:` 154, `hook_event_name` 33, `type:"control_*"`
+ *  4, SDK `this.request({subtype})` 54, `origin:{kind}` 12, `"ui_*"` 29 —
+ *  all set-identical. `type:` +9, none a record: `hooks-left-out-by-name`
+ *  / `hooks-module-left-out-by-name` (/plugin diagnostics), the rest
+ *  parser-AST node kinds (`boundary`, `repeat`, `token`, ...). `.describe()`
+ *  +5/-1: initialize response `claude_code_version` (the running CLI's
+ *  version; we still read `--version`, fine for the badge); diff
+ *  `perFileStats[].status` / `previousPath` / `newPath` (we send no diff
+ *  request); Read `allow_large`; agent `autoCompactWindow`; worker
+ *  `still_here`; `decision_reason_code` reworded, value set unchanged.
+ *  `/usage` anchors: `resets` 498 -> 489, `MCP servers` 459 -> 462 —
+ *  occurrence drift; `Current session`/`week`, `Extra usage`, `% used`,
+ *  `Total cost` count-identical.
+ *
+ *  Fixed in this pass: Sonnet 5.5 cache reads. The model
+ *  catalog moved `claude-sonnet-5-5` from `tier_2_10` to a new
+ *  `tier_2_10_cache_read_0_10` ($0.10/M reads; writes still 2.5 / 4;
+ *  Sonnet 5 stays on `tier_2_10` at $0.20). src/lib/pricing.ts's
+ *  `sonnet-5-5` row is display-only and prices through `sonnet-5`, so reads
+ *  cost 0.1 x $2 = $0.20/M — 2x. On 2026-10-09 that was ~$4.39 (Work) and
+ *  ~$0.23 (Personal) overstated in session_cost_daily. Fix: a second
+ *  `sonnet-5-5` row dated 2026-10-09 with `cacheReadPerM: 0.1` (RATE_GROUPS
+ *  keeps input/output from `sonnet-5`). Not retroactive, by choice — days
+ *  before keep $0.20. The initialize response's new `claude_code_version`
+ *  was considered for the drift badge and declined: the badge wants the
+ *  binary the next session will run, which `--version` already reports.
+ *
+ *  Checked and inert:
+ *
+ *   - Esc / interrupt during `UserPromptSubmit` or a mod's `prompt.submit`
+ *     ending headless sessions: a CLI fix in our favour; nothing to change.
+ *   - Plugin `$` methods now run in the calling agent's cwd: our bundled
+ *     mod's progress tool does not read cwd.
+ *   - Auto-mode "Not run" row: TUI render of the existing
+ *     `automode-unavailable` classification; no new wire value.
+ *   - MCP instructions limit 2,048 -> 4,096: Brain instructions are held to
+ *     MAX_INSTRUCTIONS_CHARS = 1600 by budget, not by the CLI limit.
+ *   - `autoCompactWindow` frontmatter, `CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL`,
+ *     `CLAUDE_CODE_OVERLOADED_RETRY_MAX_DELAY_MS`: OmniFex has no agent
+ *     editor and sets none of these env vars.
+ *   - Managed-settings hook fixes, headless `.mcp.json` disabled-server and
+ *     late-plugin SessionStart fixes, resumed-subagent rejection text,
+ *     `CLAUDE_CODE_RESUME_INTERRUPTED_TURN`, transcript-GC U+2028, Edit
+ *     non-UTF-8 refusal, Bash `BASH_ARGV0`: CLI-internal.
+ *   - `←` backgrounding, fullscreen links, ctrl+o caching, VTE escape,
+ *     `/diff` toasts, `/code-review` output, gateway/teleport/self-hosted
+ *     runner/cloud/Claude Tag/Code Review/VSCode/Windows entries, plugin
+ *     `constructor` names, `$.http.fetch` HEAD, `$.agent.register`
+ *     refusal, dataviz skill: no OmniFex surface.
+ *
  * Last review: 2.1.294 -> 2.1.295 on 2026-10-08. Findings:
  *
  *  Changelog coverage: one version in range, 2.1.295, ~140 entries. Both
@@ -4075,7 +4131,7 @@ import { buildClaudeEnv } from './util/claude-env';
  * `~/.claude.json` fix (we read-modify-write that file, never replace it), and
  * the VSCode screen-reader work.
  */
-export const REVIEWED_CLI_VERSION = '2.1.295';
+export const REVIEWED_CLI_VERSION = '2.1.296';
 
 /**
  * app_settings key holding the user's explicit OmniFex-checkout override.

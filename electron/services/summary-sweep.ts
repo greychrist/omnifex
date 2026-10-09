@@ -22,7 +22,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { readSidecar, sidecarPathFor } from './sessions-summary';
-import { isSummaryScratchProject } from './sessions/summary-query';
+import { isSummaryScratchProject } from './sessions/internal-spend';
 
 const MINUTE = 60_000;
 const DAY = 24 * 60 * MINUTE;

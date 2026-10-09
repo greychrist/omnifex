@@ -169,8 +169,8 @@ describe('resolvePricing — Sonnet 5.5', () => {
     expect(row.colorSlot).not.toBe(resolvePricing('claude-sonnet-5', '2026-09-28').row.colorSlot);
   });
 
-  it('prices it at $2/$10 with $0.20 cache reads', () => {
-    const { rates, estimated } = resolveRates('claude-sonnet-5-5[1m]');
+  it('prices it at $2/$10 with $0.20 cache reads until 2.1.296 halved them', () => {
+    const { rates, estimated } = resolveRates('claude-sonnet-5-5[1m]', undefined, { date: '2026-10-08' });
     expect(perM(rates.input)).toBe(2);
     expect(perM(rates.output)).toBe(10);
     expect(perM(rates.cacheRead)).toBeCloseTo(0.2, 9);
@@ -200,6 +200,27 @@ describe('resolveRates — Haiku 5.5', () => {
     expect(row.colorSlot).not.toBe(resolvePricing('claude-haiku-4-5', '2026-10-07').row.colorSlot);
     expect(resolveContextWindow('claude-haiku-5-5')).toBe(1_000_000);
     expect(resolveContextWindow('claude-haiku-4-5')).toBe(200_000);
+  });
+});
+
+describe('resolveRates — Sonnet 5.5 cache reads', () => {
+  // CLI 2.1.296 moved Sonnet 5.5 to `tier_2_10_cache_read_0_10`: reads at
+  // $0.10/MTok (0.05x input) instead of $0.20. Applied from 2026-10-09, not
+  // retroactively; Sonnet 5 keeps the 0.1x formula.
+  it('prices reads at $0.10 from 2026-10-09 with input/output still $2/$10', () => {
+    const { rates, estimated } = resolveRates('claude-sonnet-5-5', undefined, { date: '2026-10-09' });
+    expect(perM(rates.input)).toBe(2);
+    expect(perM(rates.output)).toBe(10);
+    expect(perM(rates.cacheRead)).toBeCloseTo(0.1, 9);
+    expect(perM(rates.cacheWrite5m)).toBe(2.5);
+    expect(perM(rates.cacheWrite1h)).toBe(4);
+    expect(estimated).toBe(false);
+  });
+
+  it('keeps its label on both sides of the change and leaves Sonnet 5 alone', () => {
+    expect(resolvePricing('claude-sonnet-5-5', '2026-10-08').row.label).toBe('Sonnet 5.5');
+    expect(resolvePricing('claude-sonnet-5-5', '2026-10-09').row.label).toBe('Sonnet 5.5');
+    expect(perM(resolveRates('claude-sonnet-5', undefined, { date: '2026-10-09' }).rates.cacheRead)).toBeCloseTo(0.2, 9);
   });
 });
 

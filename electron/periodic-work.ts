@@ -1,6 +1,7 @@
 /**
  * The background work that has to happen whether or not anyone is looking:
- * cost-history backfill, internal-archive pruning, SQLite free-page reclaim,
+ * settling stranded internal transcripts, cost-history backfill, SQLite
+ * free-page reclaim,
  * the Brain's discovery sweep + queue drain, and the catch-up sweep for
  * session summaries the close path never delivered.
  *
@@ -32,7 +33,7 @@ import {
   MIN_SWEEP_HOURS,
   readNumericSetting,
 } from './services/brain/queue';
-import { pruneInternalArchive } from './services/sessions/internal-archive';
+import { settleStrandedScratch } from './services/sessions/internal-spend';
 import { AUTO_ON_CLOSE_SETTING_KEY, ENABLED_SETTING_KEY } from './services/sessions-summary';
 import { createSummarySweep, type SummarySweepDeps } from './services/summary-sweep';
 import type { AccountLike as CostAccountLike, CostHistoryService } from './services/cost/cost-history';
@@ -61,10 +62,7 @@ export interface PeriodicWorkDeps {
     reclaimFreePages(): void;
   };
   listAccounts(): PeriodicAccount[];
-  costHistory: Pick<CostHistoryService, 'backfill'>;
-  costBackfillOpts: { archiveRoot: string };
-  /** Root of `<userData>/internal-sessions`, the pruner's target. */
-  internalArchive: string;
+  costHistory: Pick<CostHistoryService, 'backfill' | 'recordInternal'>;
   /**
    * Read per use, not captured: both roots assign their `brainRef` after the
    * service graph is built, and the daemon can be running before it resolves.
@@ -87,10 +85,29 @@ export interface PeriodicWorkDeps {
 
 /** Arms the timers. Returns the disposer that clears all of them. */
 export function startPeriodicWork(deps: PeriodicWorkDeps): () => void {
-  const { db, listAccounts, costHistory, costBackfillOpts, internalArchive, brain, log } = deps;
+  const { db, listAccounts, costHistory, brain, log } = deps;
   const owned = (): boolean => deps.enabled?.() ?? true;
 
   const timers: (NodeJS.Timeout | number)[] = [];
+
+  // Transcripts of OmniFex's own runs that the runner did not settle: priced
+  // under their activity's label, then deleted. Its own try, so a failure here
+  // never costs the pricing pass that follows.
+  const settleScratch = (): void => {
+    try {
+      const r = settleStrandedScratch({
+        accounts: listAccounts(),
+        record: costHistory.recordInternal,
+        nowMs: Date.now(),
+      });
+      if (r.settled) log.info('settled stranded internal transcripts', { settled: r.settled });
+      // Left on disk to retry. Repeated, this means pricing is broken and
+      // transcripts are accumulating again.
+      if (r.failed) log.warn('internal transcripts left unpriced', { failed: r.failed });
+    } catch (err) {
+      log.warn('internal transcript settle failed', { error: String(err) });
+    }
+  };
 
   // Backfill from surviving transcripts shortly after startup, then sweep
   // hourly to catch sessions run outside OmniFex (terminal claude-work).
@@ -98,7 +115,8 @@ export function startPeriodicWork(deps: PeriodicWorkDeps): () => void {
     setTimeout(() => {
       if (!owned()) return;
       try {
-        const r = costHistory.backfill(listAccounts(), costBackfillOpts);
+        settleScratch();
+        const r = costHistory.backfill(listAccounts());
         log.info('cost-history startup backfill', { sessionsScanned: r.sessionsScanned });
       } catch (err) {
         log.warn('cost-history startup backfill failed', { error: String(err) });
@@ -110,15 +128,8 @@ export function startPeriodicWork(deps: PeriodicWorkDeps): () => void {
     setInterval(() => {
       if (!owned()) return;
       try {
-        costHistory.backfill(listAccounts(), costBackfillOpts);
-        // Prune AFTER the sweep, never before: a transcript that has not been
-        // priced yet must not be deleted for being old. Cost rows survive the
-        // prune either way, but pruning first would drop the spend entirely.
-        pruneInternalArchive(
-          internalArchive,
-          Number(db.getSetting('internal.archive.retentionDays') ?? 90),
-          new Date().toISOString().slice(0, 10),
-        );
+        settleScratch();
+        costHistory.backfill(listAccounts());
       } catch (err) {
         log.warn('cost-history sweep failed', { error: String(err) });
       }

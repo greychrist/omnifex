@@ -53,8 +53,8 @@ export interface SessionCostDailyRow {
   session_id: string;
   /**
    * Which OmniFex-internal activity paid for this row, or absent for a real
-   * user session. Set from the archive path the transcript was found under —
-   * ownership by location, never inferred.
+   * user session. Set by `recordInternal` from the kind the run was launched
+   * as, never inferred from the transcript by the cost sweep.
    */
   internal_kind?: string | null;
   date: string;

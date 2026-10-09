@@ -12,6 +12,7 @@ import { createProjectPinsService } from './project-pins';
 import { decodeProjectId, encodeProjectId, recoverProjectPath } from './project-paths';
 import { buildClaudeEnv } from './util/claude-env';
 import { findOnPath } from './util/path-lookup';
+import { isSummaryScratchProject } from './sessions/internal-spend';
 
 /**
  * Thrown when an operation needs a Claude account for a project path but
@@ -531,6 +532,9 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
       for (const entry of entries) {
         if (!entry.isDirectory()) continue;
         const projectId = entry.name;
+        // OmniFex's own one-shot runs, not a user project — and one with no
+        // account binding, so listing it only offered a row that failed to open.
+        if (isSummaryScratchProject(projectId)) continue;
         if (seenIds.has(projectId)) continue;
         seenIds.add(projectId);
 

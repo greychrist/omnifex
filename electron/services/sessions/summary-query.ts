@@ -7,10 +7,11 @@ import { findSystemClaudeBinary } from './binary';
 import { buildClaudeEnv } from '../util/claude-env';
 import { encodeProjectId } from '../project-paths';
 import {
-  archiveDirFor,
-  archiveTranscripts,
+  SCRATCH_DIR_NAME,
+  settleTranscripts,
   type InternalKind,
-} from './internal-archive';
+  type RecordInternalSpend,
+} from './internal-spend';
 
 // ---------------------------------------------------------------------------
 // One-shot summary runner — `claude -p <prompt> --output-format json`
@@ -29,8 +30,10 @@ import {
 //       `<os.tmpdir()>/omnifex-summary-scratch`. The encoded form is the
 //       same on every call, so we don't accumulate one
 //       `<configDir>/projects/-var-folders-...-omnifex-summary-XXXXX/`
-//       folder per call. After each call we wipe the contents of the
-//       encoded projects dir.
+//       folder per call. After each call the JSONL's spend is recorded
+//       and the JSONL deleted, then the encoded projects dir (named after
+//       the cwd's realpath, as the CLI names it) is removed. See
+//       internal-spend.ts.
 //     - `--permission-mode bypassPermissions` skips approval prompts —
 //       summarization runs as a one-shot, no human in the loop.
 //     - `--disallowed-tools '*'` blocks every tool — the summary prompt
@@ -39,38 +42,16 @@ import {
 //       servers at all. A call that may use no tools has no use for their
 //       schemas either, and loading them cost seconds and tokens per call.
 //
-//   Concurrency note: if two summary calls overlap, they share the same
-//   projects dir. The cleanup `rm -rf` of one call may unlink the other's
-//   in-flight JSONL — that's benign on POSIX (the subprocess's open fd
-//   survives the unlink and the file finalises as unlinked when the
-//   subprocess exits). Summary transcripts are throwaway, so losing one
-//   to a race has no observable effect.
+//   Concurrency note: if two calls overlap they share the projects dir,
+//   so one call's settle may price and delete the other's transcript. That
+//   is harmless: pricing is by session id, so the spend is recorded once
+//   whichever call gets there, and the CLI's open fd survives the unlink.
 // ---------------------------------------------------------------------------
 
 /**
- * Exported because the Brain's session source has to EXCLUDE these. The CLI
- * encodes this scratch cwd into a real `projects/<encoded>/` directory, so
- * OmniFex's own summary runs are indistinguishable from user sessions by shape
- * alone — only by name. Two independent spellings of that name would
- * eventually diverge and quietly start indexing them.
- */
-export const SCRATCH_DIR_NAME = 'omnifex-summary-scratch';
-
-/**
- * A `projects/<encoded>/` directory that is really this scratch cwd. The CLI's
- * encoding replaces every non-alphanumeric character with `-`, so the name
- * survives as a substring — anything stricter would have to reconstruct the
- * per-machine tmpdir. Shared by every walker that must not treat OmniFex's own
- * summary runs as user sessions (the Brain, the summary sweep).
- */
-export function isSummaryScratchProject(projectDirName: string): boolean {
-  return projectDirName.includes(SCRATCH_DIR_NAME);
-}
-
-/**
- * Account segment used when `resolveAccountName` comes back empty. Visible on
- * purpose: an unattributed transcript is a problem to notice, and keeping it
- * beats deleting it.
+ * Account name recorded when `resolveAccountName` comes back empty. Visible on
+ * purpose: unattributed spend is a problem to notice, and recording it beats
+ * dropping it.
  */
 export const UNRESOLVED_ACCOUNT = '_unresolved';
 
@@ -258,19 +239,17 @@ export interface SummaryQueryDeps {
   /** Defaults to `os.tmpdir()`. Injected in tests. */
   tmpRoot?: string;
   /**
-   * `internalArchiveRoot(app.getPath('userData'))`. REQUIRED — there is no
-   * default, because a default would let a caller silently fall back to
-   * discarding transcripts, which is the exact bug this replaces.
+   * `costHistory.recordInternal`. REQUIRED — there is no default, because a
+   * default would let a caller delete transcripts without recording what
+   * they cost.
    */
-  archiveRoot: string;
+  recordSpend: RecordInternalSpend;
   /**
    * Account that owns `configDir`. Ownership comes from the config dir the
    * run was launched with, never from `resolve()` — the same rule the Brain
    * uses for its sources.
    */
   resolveAccountName: (configDir: string) => string | null;
-  /** Injected in tests so the date partition is deterministic. */
-  now?: () => Date;
   /**
    * Resolve the Claude Code binary. main and the daemon wire this to
    * `ClaudeBinaryService.findBestBinary()` so the binary picked in Settings
@@ -286,7 +265,7 @@ export function createSummaryQueryRunner(
   const runPrompt: RunPromptFn = deps.runPrompt ?? runCliOnce;
   const tmpRoot = deps.tmpRoot ?? os.tmpdir();
   const resolveClaudeBinary = deps.resolveClaudeBinary ?? findSystemClaudeBinary;
-  const { archiveRoot, resolveAccountName } = deps;
+  const { recordSpend, resolveAccountName } = deps;
   const scratchCwd = path.join(tmpRoot, SCRATCH_DIR_NAME);
 
   return async function runSummaryQuery(opts: SummaryQueryOptions): Promise<CliRunResult> {
@@ -302,10 +281,15 @@ export function createSummaryQueryRunner(
     // encoded projects path stays stable and we don't accumulate one
     // throwaway folder per summary in the user's session list.
     await fsPromises.mkdir(scratchCwd, { recursive: true });
+    // The CLI names its projects dir after the REALPATH of its cwd. macOS's
+    // os.tmpdir() is /var/folders/..., a symlink to /private/var/folders/...;
+    // encoding the unresolved path pointed the cleanup below at a
+    // directory that never existed, so from June to October every transcript
+    // stayed in the real projects dir and surfaced as a project.
     const projectsDir = path.join(
       opts.configDir,
       'projects',
-      encodeProjectId(scratchCwd),
+      encodeProjectId(await fsPromises.realpath(scratchCwd)),
     );
 
     try {
@@ -317,33 +301,22 @@ export function createSummaryQueryRunner(
         cwd: scratchCwd,
       });
     } finally {
-      // Move the JSONL the CLI wrote into the archive, then clear what is
-      // left behind. This used to be an unconditional `rm -rf`, which raced
-      // the cost watcher and destroyed the only local record that a paid call
-      // happened — see the spec for the reconciliation that cost us.
-      //
-      // Best-effort as a whole: the directory may not exist if the CLI failed
-      // before writing, and a cleanup error must never mask the real outcome
-      // of the call. The scratch cwd itself is still left alone; reusing it
-      // across calls is the whole point of pinning it.
+      // Record what the call cost, then delete the transcript — it is never
+      // kept. A cleanup failure must never mask the real outcome of the call,
+      // and a transcript whose spend could not be recorded is left for the
+      // hourly sweep (settleStrandedScratch) rather than deleted. The scratch
+      // cwd itself stays; reusing it across calls is the whole point.
       try {
-        const accountName = resolveAccountName(opts.configDir) ?? UNRESOLVED_ACCOUNT;
-        const destDir = archiveDirFor(
-          archiveRoot,
-          accountName,
-          opts.kind,
-          (deps.now?.() ?? new Date()).toISOString().slice(0, 10),
-        );
-        await archiveTranscripts({ fs: fsPromises, projectsDir, destDir });
+        settleTranscripts({
+          projectsDir,
+          kind: opts.kind,
+          accountName: resolveAccountName(opts.configDir) ?? UNRESOLVED_ACCOUNT,
+          configDir: opts.configDir,
+          record: recordSpend,
+        });
       } catch {
-        // Archiving failed. The transcript stays where the CLI wrote it
-        // rather than being deleted, so nothing is lost; the next run's
-        // sweep will find it.
+        // See above.
       }
-      // Only removes what is still there — anything archived is already gone.
-      await fsPromises
-        .rm(projectsDir, { recursive: true, force: true })
-        .catch(() => {});
     }
   };
 }

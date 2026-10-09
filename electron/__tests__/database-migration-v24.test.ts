@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { createDatabase, runMigrations, type Database } from '../services/database';
+import { createDatabase, migrations, runMigrations, type Database } from '../services/database';
 
 /**
  * v24 repairs the history the sweep left behind.
@@ -51,7 +51,9 @@ describe('historical internal spend reconciliation (v24)', () => {
     // The `=` form silently stopped testing anything the moment a later
     // migration was added.
     db.raw.prepare('DELETE FROM schema_version WHERE version >= 24').run();
-    runMigrations(db.raw);
+    // Stops at 29: v30 deletes the ledger rows v24 inserts, because the
+    // transcripts v24 believed lost had survived and been priced again.
+    runMigrations(db.raw, { migrationsOverride: migrations.filter((m) => m.version <= 29) });
   }
 
   it('removes the racy scratch-derived rows', () => {
