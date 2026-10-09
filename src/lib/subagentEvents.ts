@@ -524,6 +524,9 @@ export function messagesToEvents(messages: JsonlNode[]): SubagentEvent[] {
   // renderer BEFORE the forwarded frame naming its owner. Verified on a
   // recorded 2.1.235 stream — harvesting inline nested nothing.
   const subagentOwnedToolUses = collectSubagentOwnedToolUses(messages);
+  // Tool_use ids of shells subagents ran in the foreground: their task events
+  // are dropped here, notification included (see task_started below).
+  const subagentStepShells = new Set<string>();
   // Which `Skill` tool_uses forked. Also a pre-pass: the kickoff prompt that
   // proves the fork arrives AFTER the tool_use block that dispatched it.
   const forkedSkillDispatches = collectForkedSkillDispatches(messages);
@@ -663,8 +666,18 @@ export function messagesToEvents(messages: JsonlNode[]): SubagentEvent[] {
       // share the optional `tool_use_id` field. Skip if absent.
       const id = tlm.tool_use_id;
       if (!id) continue;
+      if (subagentStepShells.has(id)) continue;
       if (tlm.subtype === 'task_started') {
         const ownedBySubagent = (tlm as { owned_by_subagent?: unknown }).owned_by_subagent === true;
+        // A shell a subagent ran in the foreground is one of its steps, not an
+        // agent: the CLI announces it only as it finishes (started and done
+        // ~20 ms apart), and its work is already in the owner's task_progress
+        // log. A backgrounded one is a live process and keeps its row.
+        const t = tlm as { task_type?: unknown; is_backgrounded?: unknown };
+        if (ownedBySubagent && t.task_type === 'local_bash' && t.is_backgrounded === false) {
+          subagentStepShells.add(id);
+          continue;
+        }
         events.push({
           kind: 'Started',
           toolUseId: id,

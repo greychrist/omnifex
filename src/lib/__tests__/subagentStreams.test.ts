@@ -1502,6 +1502,31 @@ describe('forwarded subagent text (--forward-subagent-text)', () => {
     } as unknown as JsonlNode;
   }
 
+  // CLI 2.1.295 announces every Bash a subagent runs in the FOREGROUND as a
+  // task too — task_started and task_notification 20 ms apart, as the command
+  // finishes. Those are the agent's own steps, not agents: each drew a nested
+  // "Agent" row that appeared already done, and inflated "7/8 done" for a
+  // session that ran two agents. The steps stay in the owner's expanded log
+  // (its task_progress entries).
+  it('draws no row for a shell a subagent ran in the foreground', () => {
+    const fgShell = (id: string, taskId: string, description: string): JsonlNode[] => [
+      { kind: 'unknown', sessionId: '', receivedAt: '', raw: {
+        type: 'system', subtype: 'task_started', task_id: taskId, owned_by_subagent: true,
+        tool_use_id: id, description, is_backgrounded: false, task_type: 'local_bash',
+      } } as unknown as JsonlNode,
+      { kind: 'unknown', sessionId: '', receivedAt: '', raw: {
+        type: 'system', subtype: 'task_notification', task_id: taskId, tool_use_id: id,
+        status: 'completed', output_file: '', summary: description,
+      } } as unknown as JsonlNode,
+    ];
+    const subs = deriveSubagents([
+      agentToolUse(TOOL_USE_ID, 'Subagent progress bar demo', 'general-purpose', false),
+      forwardedAssistantToolUse(TOOL_USE_ID, TOOL_USE_ID_2, 'Count lines'),
+      ...fgShell(TOOL_USE_ID_2, 'b2018tjei', 'Count lines'),
+    ]);
+    expect(subs.map((s) => s.toolUseId)).toEqual([TOOL_USE_ID]);
+  });
+
   it('nests a subagent-owned background task under the agent that started it', () => {
     // Verified against a live 2.1.235 stream: an agent that backgrounds its
     // own shell produced a second TOP-LEVEL row in the parent session's bar,
