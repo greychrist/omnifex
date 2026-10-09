@@ -269,6 +269,50 @@ describe('SubagentRow purpose and brief', () => {
     expect(container.querySelector('[data-subagent-prompt]')?.textContent).toContain('Find every caller of resolve()');
   });
 
+  // The narrow/touch layout forces every <pre> to one unwrapped line
+  // (styles.css, unlayered), which clipped the brief mid-sentence.
+  it('wraps the brief rather than setting it as preformatted text', () => {
+    const { container } = render(<SubagentRow sub={makeSub({ toolUseId: 'a', status: 'running', prompt: 'A long brief.' })} />);
+    fireEvent.click(container.querySelector('button')!);
+    const brief = container.querySelector('[data-subagent-prompt]');
+    expect(brief?.tagName).not.toBe('PRE');
+    expect(brief?.className).toContain('whitespace-pre-wrap');
+  });
+
+  // A finished row with no log is a reloaded one: the log is built from live
+  // events, which are not saved. "Waiting for first progress event…" said
+  // something false about an agent that had already finished.
+  it('says why a finished agent has no log', () => {
+    const { container } = render(<SubagentRow sub={makeSub({ toolUseId: 'a', status: 'completed', prompt: 'p' })} />);
+    fireEvent.click(container.querySelector('button')!);
+    expect(container.textContent).not.toContain('Waiting for first progress event');
+    expect(container.textContent).toContain('step log is kept only while the app is open');
+  });
+
+  // Each progress report is a tool call, so the CLI logs it like any step —
+  // as the agent's own description, repeated. The report itself says more.
+  it('shows each progress report in the log as the step the agent reported', () => {
+    const { container } = render(
+      <SubagentRow
+        sub={makeSub({
+          toolUseId: 'a', status: 'running',
+          events: [
+            { description: 'Demo', lastToolName: 'mcp__omnifex__progress' },
+            { description: 'Running List omnifex-mod', lastToolName: 'Bash' },
+            { description: 'Demo', lastToolName: 'mcp__omnifex__progress' },
+          ],
+          stepHistory: [{ done: 0, total: 5 }, { done: 1, total: 5, note: 'Listed omnifex-mod' }],
+        })}
+      />,
+    );
+    fireEvent.click(container.querySelector('button')!);
+    const lines = [...container.querySelectorAll('[data-subagent-log-entry]')].map((el) => el.textContent ?? '');
+    expect(lines[0]).toContain('0/5');
+    expect(lines[1]).toContain('Running List omnifex-mod');
+    expect(lines[2]).toContain('1/5 · Listed omnifex-mod');
+    expect(lines.join('\n')).not.toContain('Demo');
+  });
+
   it('shows no brief block for a row without a prompt', () => {
     const { container } = render(<SubagentRow sub={makeSub({ toolUseId: 'a', status: 'running' })} />);
     fireEvent.click(container.querySelector('button')!);
@@ -310,6 +354,24 @@ describe('ShellRow', () => {
   async function flush() {
     await act(async () => { await Promise.resolve(); });
   }
+  const openShell = () => document.querySelector('[data-shell-row] > button') as HTMLElement;
+
+  // The row is a one-line brief; the open row says it in full, wrapped.
+  it('shows the full description and the output, wrapped, when opened', async () => {
+    const long = 'Replay the dev daemon\'s event ring for the session and print every transcript event with its seq';
+    const read = vi.fn(async () => tail('[exited with code 144]'));
+    const { container } = render(<ShellRow shell={shell({ status: 'ended', description: long })} read={read} />);
+    fireEvent.click(openShell());
+    await flush();
+    const full = container.querySelector('[data-shell-description]');
+    expect(full?.textContent).toBe(long);
+    const out = container.querySelector('[data-shell-output]');
+    expect(out?.textContent).toBe('[exited with code 144]');
+    // Not a <pre>: the narrow/touch layout forces every <pre> to one
+    // unwrapped line (styles.css), which clipped this text.
+    expect(out?.tagName).not.toBe('PRE');
+    expect(out?.className).toContain('whitespace-pre-wrap');
+  });
 
   it('reads nothing until the row is opened', () => {
     const read = vi.fn(async () => tail('x'));
@@ -320,7 +382,7 @@ describe('ShellRow', () => {
   it('polls a running shell while open, as plain text, and stops when closed', async () => {
     const read = vi.fn(async () => tail('\u001b[32mready\u001b[0m on :3000'));
     render(<ShellRow shell={shell()} read={read} />);
-    fireEvent.click(screen.getByText('npm run dev'));
+    fireEvent.click(openShell());
     await flush();
     expect(read).toHaveBeenCalledWith('b1');
     expect(screen.getByText('ready on :3000')).toBeTruthy();
@@ -329,7 +391,7 @@ describe('ShellRow', () => {
     await flush();
     expect(read).toHaveBeenCalledTimes(2);
 
-    fireEvent.click(screen.getByText('npm run dev'));
+    fireEvent.click(openShell());
     await act(async () => { vi.advanceTimersByTime(6000); });
     expect(read).toHaveBeenCalledTimes(2);
   });
@@ -337,7 +399,7 @@ describe('ShellRow', () => {
   it('reads an ended shell once and does not poll', async () => {
     const read = vi.fn(async () => tail('exit 0'));
     render(<ShellRow shell={shell({ status: 'ended' })} read={read} />);
-    fireEvent.click(screen.getByText('npm run dev'));
+    fireEvent.click(openShell());
     await flush();
     await act(async () => { vi.advanceTimersByTime(6000); });
     expect(read).toHaveBeenCalledTimes(1);
@@ -347,7 +409,7 @@ describe('ShellRow', () => {
   it('says so when the CLI has no output to give', async () => {
     const read = vi.fn(async () => null);
     render(<ShellRow shell={shell({ status: 'ended' })} read={read} />);
-    fireEvent.click(screen.getByText('npm run dev'));
+    fireEvent.click(openShell());
     await flush();
     expect(screen.getByText(/Output not available/)).toBeTruthy();
   });
@@ -357,7 +419,7 @@ describe('ShellRow', () => {
       .mockResolvedValueOnce(tail('step 1'))
       .mockResolvedValue(null);
     render(<ShellRow shell={shell()} read={read} />);
-    fireEvent.click(screen.getByText('npm run dev'));
+    fireEvent.click(openShell());
     await flush();
     await act(async () => { vi.advanceTimersByTime(2000); });
     await flush();
@@ -367,7 +429,7 @@ describe('ShellRow', () => {
   it('notes a truncated tail', async () => {
     const read = vi.fn(async () => ({ output: 'end', totalBytes: 20000, truncated: true }));
     render(<ShellRow shell={shell()} read={read} />);
-    fireEvent.click(screen.getByText('npm run dev'));
+    fireEvent.click(openShell());
     await flush();
     expect(screen.getByText(/last 8 KiB/)).toBeTruthy();
   });

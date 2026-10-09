@@ -81,6 +81,8 @@ export interface Subagent {
   finalToolUseCount?: number;
   /** The agent's own latest progress report (bundled mod's `progress` tool). */
   stepProgress?: StepProgress;
+  /** Every report it made, in order — the steps its expanded log names. */
+  stepHistory?: StepProgress[];
 }
 
 /**

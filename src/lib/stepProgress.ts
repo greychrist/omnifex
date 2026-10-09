@@ -25,8 +25,12 @@ export interface StepProgress {
 }
 
 export interface SubagentProgressIndex {
+  /** Each agent's latest report: its bar. */
   byToolUseId: Record<string, StepProgress>;
   byAgentId: Record<string, StepProgress>;
+  /** Every report, in order: the steps its expanded log names. */
+  historyByToolUseId: Record<string, StepProgress[]>;
+  historyByAgentId: Record<string, StepProgress[]>;
 }
 
 /**
@@ -62,10 +66,11 @@ function progressCalls(m: JsonlNode): StepProgress[] {
   return out;
 }
 
-/** Each subagent's latest report, last call wins. */
+/** Each subagent's reports: the latest for its bar, all of them for its log. */
 export function latestSubagentProgress(messages: JsonlNode[]): SubagentProgressIndex {
-  const byToolUseId: Record<string, StepProgress> = {};
-  const byAgentId: Record<string, StepProgress> = {};
+  const index: SubagentProgressIndex = {
+    byToolUseId: {}, byAgentId: {}, historyByToolUseId: {}, historyByAgentId: {},
+  };
   for (const m of messages) {
     if (m.kind !== 'assistant') continue;
     const raw = m.raw as unknown as Record<string, unknown>;
@@ -73,12 +78,16 @@ export function latestSubagentProgress(messages: JsonlNode[]): SubagentProgressI
     if (!parent) continue;
     const calls = progressCalls(m);
     if (calls.length === 0) continue;
-    const last = calls[calls.length - 1]!;
-    byToolUseId[parent] = last;
     const agentId = forwardedAgentId(raw);
-    if (agentId) byAgentId[agentId] = last;
+    for (const call of calls) {
+      (index.historyByToolUseId[parent] ??= []).push(call);
+      if (agentId) (index.historyByAgentId[agentId] ??= []).push(call);
+    }
+    const last = calls[calls.length - 1]!;
+    index.byToolUseId[parent] = last;
+    if (agentId) index.byAgentId[agentId] = last;
   }
-  return { byToolUseId, byAgentId };
+  return index;
 }
 
 /** The main session's latest report in the current turn: after the last real prompt. */
@@ -105,10 +114,12 @@ export function latestMainProgress(messages: JsonlNode[]): StepProgress | null {
 export function withStepProgress(subs: Subagent[], index: SubagentProgressIndex): Subagent[] {
   let changed = false;
   const out = subs.map((s) => {
-    const p = index.byToolUseId[s.toolUseId] ?? (s.taskId ? index.byAgentId[s.taskId] : undefined);
+    const byAgent = !index.byToolUseId[s.toolUseId] && s.taskId;
+    const p = byAgent ? index.byAgentId[s.taskId!] : index.byToolUseId[s.toolUseId];
     if (!p) return s;
     changed = true;
-    return { ...s, stepProgress: p };
+    const history = byAgent ? index.historyByAgentId[s.taskId!] : index.historyByToolUseId[s.toolUseId];
+    return { ...s, stepProgress: p, stepHistory: history ?? [p] };
   });
   return changed ? out : subs;
 }

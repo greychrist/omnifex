@@ -66,12 +66,22 @@ describe('latestSubagentProgress', () => {
     expect(p.byAgentId).toEqual({ agA: { done: 4, total: 6, note: 'Read y' } });
   });
 
+  it('keeps every report per agent, in order, for its log', () => {
+    const p = latestSubagentProgress([
+      progressCall({ done: 0, total: 6 }, { parent: 'toolu_A', agentId: 'agA' }),
+      progressCall({ done: 1, total: 0 }, { parent: 'toolu_A', agentId: 'agA' }),
+      progressCall({ done: 4, total: 6, note: 'Read y' }, { parent: 'toolu_A', agentId: 'agA' }),
+    ]);
+    expect(p.historyByToolUseId.toolu_A).toEqual([{ done: 0, total: 6 }, { done: 4, total: 6, note: 'Read y' }]);
+    expect(p.historyByAgentId.agA).toHaveLength(2);
+  });
+
   it('ignores the main session and malformed calls', () => {
     const p = latestSubagentProgress([
       progressCall({ done: 1, total: 2 }),
       progressCall({ done: 1, total: 0 }, { parent: 'toolu_A' }),
     ]);
-    expect(p).toEqual({ byToolUseId: {}, byAgentId: {} });
+    expect(p).toEqual({ byToolUseId: {}, byAgentId: {}, historyByToolUseId: {}, historyByAgentId: {} });
   });
 });
 
@@ -98,14 +108,19 @@ describe('withStepProgress', () => {
   it('sets each row\'s progress by its dispatch, falling back to its agent id', () => {
     const [a, nested] = withStepProgress(
       [row('toolu_A'), row('toolu_nested', { taskId: 'agN' })],
-      { byToolUseId: { toolu_A: { done: 1, total: 2 } }, byAgentId: { agN: { done: 3, total: 4 } } },
+      {
+        byToolUseId: { toolu_A: { done: 1, total: 2 } }, byAgentId: { agN: { done: 3, total: 4 } },
+        historyByToolUseId: { toolu_A: [{ done: 1, total: 2 }] }, historyByAgentId: { agN: [{ done: 3, total: 4 }] },
+      },
     );
     expect(a.stepProgress).toEqual({ done: 1, total: 2 });
+    expect(a.stepHistory).toEqual([{ done: 1, total: 2 }]);
     expect(nested.stepProgress).toEqual({ done: 3, total: 4 });
+    expect(nested.stepHistory).toEqual([{ done: 3, total: 4 }]);
   });
 
   it('returns the same rows when nothing reported, so memoised children do not re-render', () => {
     const rows = [row('toolu_A')];
-    expect(withStepProgress(rows, { byToolUseId: {}, byAgentId: {} })).toBe(rows);
+    expect(withStepProgress(rows, { byToolUseId: {}, byAgentId: {}, historyByToolUseId: {}, historyByAgentId: {} })).toBe(rows);
   });
 });

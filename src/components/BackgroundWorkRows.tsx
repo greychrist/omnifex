@@ -4,6 +4,7 @@
  * Monitor. Each row expands in place — a subagent to its progress log, a
  * shell to the tail of its output.
  */
+import { PROGRESS_TOOL } from '@/lib/stepProgress';
 import React, { useEffect, useState } from 'react';
 import {
   ChevronDown,
@@ -271,35 +272,53 @@ export const SubagentRow: React.FC<SubagentRowProps> = ({ sub, onDismiss, costs 
       {expanded && (
         <div className="px-3 pb-2 pt-0.5 border-t border-white/5 space-y-0.5">
           {sub.prompt && (
-            <pre
+            // A <div>, not a <pre>: the narrow/touch layout forces every
+            // <pre> to one unwrapped line (styles.css), which clipped the brief.
+            <div
               data-subagent-prompt
               className="mb-1 max-h-48 overflow-y-auto rounded bg-black/20 px-2 py-1 text-[11px] font-sans leading-snug whitespace-pre-wrap break-words text-foreground/80"
             >
               {sub.prompt}
-            </pre>
+            </div>
           )}
           {sub.events.length === 0 && (
             <div className="text-[11px] text-muted-foreground italic py-1">
-              {sub.status === 'completed_inferred'
-                ? 'Completed (no progress reported)'
-                : 'Waiting for first progress event…'}
+              {sub.status === 'running'
+                ? 'Waiting for first progress event…'
+                : sub.status === 'completed_inferred'
+                  ? 'Completed (no progress reported)'
+                  // A finished row with no log was reloaded: the log is built
+                  // from live events, and those are not saved.
+                  : 'No steps to show — the step log is kept only while the app is open.'}
             </div>
           )}
-          {sub.events.map((ev, i) => {
-            const bits = [
-              ev.lastToolName,
-              ev.toolUses ? `${ev.toolUses} tools` : '',
-              ev.totalTokens ? `${Math.round(ev.totalTokens / 1000)}k tok` : '',
-              formatElapsed(ev.durationMs),
-            ].filter(Boolean).join(' · ');
-            return (
-              <div key={i} className="flex items-start gap-2 text-[11px] font-mono leading-snug">
-                <span className={cn('mt-[5px] h-1 w-1 rounded-full shrink-0', color.dot)} />
-                <span className="flex-1 text-foreground/80 break-words">{ev.description || '…'}</span>
-                {bits && <span className="text-muted-foreground shrink-0 tabular-nums">{bits}</span>}
-              </div>
-            );
-          })}
+          {(() => {
+            // Each progress report is itself a tool call, which the CLI logs as
+            // the agent's description repeated. Show the report instead: the
+            // k-th progress-tool entry is the k-th report.
+            let report = 0;
+            return sub.events.map((ev, i) => {
+              const step = ev.lastToolName === PROGRESS_TOOL ? sub.stepHistory?.[report++] : undefined;
+              const description = step
+                ? `${step.done}/${step.total}${step.note ? ` · ${step.note}` : ''}`
+                : ev.description || '…';
+              const bits = [
+                step ? '' : ev.lastToolName,
+                ev.toolUses ? `${ev.toolUses} tools` : '',
+                ev.totalTokens ? `${Math.round(ev.totalTokens / 1000)}k tok` : '',
+                formatElapsed(ev.durationMs),
+              ].filter(Boolean).join(' · ');
+              return (
+                <div key={i} data-subagent-log-entry className="flex items-start gap-2 text-[11px] font-mono leading-snug">
+                  <span className={cn('mt-[5px] h-1 w-1 rounded-full shrink-0', color.dot)} />
+                  <span className={cn('flex-1 min-w-0 break-words', step ? 'text-foreground' : 'text-foreground/80')}>
+                    {description}
+                  </span>
+                  {bits && <span className="text-muted-foreground shrink-0 tabular-nums">{bits}</span>}
+                </div>
+              );
+            });
+          })()}
           {sub.status === 'completed' && sub.summary && (
             <div className="flex items-start gap-2 text-[11px] pt-1">
               <CheckCircle2 className="h-3 w-3 mt-0.5 shrink-0 text-emerald-400" />
@@ -407,7 +426,10 @@ export const ShellRow: React.FC<ShellRowProps> = ({ shell, read, onDismiss }) =>
       </button>
 
       {expanded && (
-        <div className="px-3 pb-2 pt-0.5 border-t border-white/5">
+        <div className="px-3 pb-2 pt-1 border-t border-white/5 space-y-1">
+          <div data-shell-description className="text-[11px] font-mono leading-snug whitespace-pre-wrap break-words text-foreground/90">
+            {shell.description}
+          </div>
           {!loaded ? (
             <div className="text-[11px] text-muted-foreground italic py-1">Reading output…</div>
           ) : !tail ? (
@@ -420,9 +442,14 @@ export const ShellRow: React.FC<ShellRowProps> = ({ shell, read, onDismiss }) =>
                 <div className="text-[10px] text-muted-foreground py-0.5">Showing the last 8 KiB</div>
               )}
               {text ? (
-                <pre className="text-[11px] font-mono leading-snug whitespace-pre-wrap break-words text-foreground/80 max-h-64 overflow-y-auto">
+                // A <div>, not a <pre>: the narrow/touch layout forces every
+                // <pre> to one unwrapped line (styles.css), clipping the output.
+                <div
+                  data-shell-output
+                  className="rounded bg-black/20 px-2 py-1 text-[11px] font-mono leading-snug whitespace-pre-wrap break-words text-foreground/80 max-h-64 overflow-y-auto"
+                >
                   {text}
-                </pre>
+                </div>
               ) : (
                 <div className="text-[11px] text-muted-foreground italic py-1">No output yet</div>
               )}
