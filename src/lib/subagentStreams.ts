@@ -9,6 +9,7 @@
  */
 
 import type { JsonlNode } from '@/types/jsonl';
+import type { StepProgress } from './stepProgress';
 import {
   applyEvents,
   dispatchIndicesFromEvents,
@@ -78,6 +79,8 @@ export interface Subagent {
   finalTotalTokens?: number;
   finalDurationMs?: number;
   finalToolUseCount?: number;
+  /** The agent's own latest progress report (bundled mod's `progress` tool). */
+  stepProgress?: StepProgress;
 }
 
 /**
