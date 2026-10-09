@@ -69,6 +69,10 @@ const config: ForgeConfig = {
       // app.asar (Contents/Resources/dist-web) so the daemon can read it with
       // plain fs under ELECTRON_RUN_AS_NODE. Built by `prepackage`/`premake`.
       './dist-web',
+      // The bundled Claude Code mod (agent step progress). Real files beside
+      // app.asar: the CLI is a separate binary and cannot read into an asar.
+      // Sessions load an installed copy, never this one (bundled-mod.ts).
+      './omnifex-mod',
       // Also placed at Contents/Resources/ top-level so macOS NSSound
       // soundNamed: can resolve it for native Notification sound playback.
       './assets/greychrist_success.aiff',

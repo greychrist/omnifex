@@ -140,6 +140,7 @@ import { createLimaService } from './services/lima';
 import { createCostHistoryService } from './services/cost/cost-history';
 import { createCliProcessUsageStore } from './services/cost/cli-process-usage';
 import { readAutoRecapPolicy } from './services/sessions/auto-recap';
+import { createBundledModPluginDirs } from './services/bundled-mod';
 import { createSessionCostService } from './services/cost/session-cost';
 import { createModelPricingService } from './services/model-pricing';
 import { registerIpcHandlers } from './ipc/handlers';
@@ -984,6 +985,13 @@ app.whenReady().then(() => {
     // (side questions, title generation). Same recorder as the daemon's.
     createCliProcessUsageStore(db).record,
     () => readAutoRecapPolicy((key) => db.getSetting(key)),
+    // The bundled mod (agent step progress), installed under this instance's
+    // state dir. Same closure as the daemon's.
+    createBundledModPluginDirs({
+      getSetting: (key) => db.getSetting(key),
+      bundleDir: __dirname,
+      stateDir: serverConfig().stateDir,
+    }),
   );
   const claudeService = createClaudeService(db, accountsService);
   const usageService = createUsageService(accountsService, loggingService);

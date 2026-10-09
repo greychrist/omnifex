@@ -83,6 +83,7 @@ import { createLimaService } from '../services/lima';
 import { createCostHistoryService } from '../services/cost/cost-history';
 import { createCliProcessUsageStore } from '../services/cost/cli-process-usage';
 import { readAutoRecapPolicy } from '../services/sessions/auto-recap';
+import { createBundledModPluginDirs } from '../services/bundled-mod';
 import { createSessionCostService } from '../services/cost/session-cost';
 import { createModelPricingService } from '../services/model-pricing';
 import { createBrainService, type BrainService } from '../services/brain/registry';
@@ -500,6 +501,13 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
     // (side questions, title generation). Same recorder as main's.
     createCliProcessUsageStore(db).record,
     () => readAutoRecapPolicy((key) => db.getSetting(key)),
+    // The bundled mod (agent step progress), installed under this instance's
+    // state dir. Same closure as main's.
+    createBundledModPluginDirs({
+      getSetting: (key) => db.getSetting(key),
+      bundleDir: __dirname,
+      stateDir: config.stateDir,
+    }),
   );
   sessionsRef = sessionsService;
 
