@@ -76,3 +76,7 @@ session_json/
 
 # Playwright MCP artifacts (browser snapshots/screenshots from verification runs)
 .playwright-mcp/
+
+# The CLI writes types and a tsconfig into any mod dir it loads
+omnifex-mod/.claude-plugin/types/
+omnifex-mod/tsconfig.json
