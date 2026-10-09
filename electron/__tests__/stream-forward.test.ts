@@ -60,6 +60,26 @@ describe('shouldForwardStreamMessage', () => {
   });
 
   describe('forwards what only the stream carries', () => {
+    // --forward-subagent-text frames are `assistant` envelopes tagged with the
+    // dispatching tool_use's id. The CLI writes them to the agent's own
+    // agent-<id>.jsonl, never to the session JSONL the tail reads, so the
+    // stream is their only route. Dropping them lost step progress and the
+    // edge that files a subagent's own shells under it (2026-10-09).
+    it('forwards subagent assistant frames, which no session JSONL carries', () => {
+      expect(shouldForwardStreamMessage({
+        type: 'assistant', parent_tool_use_id: 'toolu_A',
+        message: { content: [{ type: 'tool_use', name: 'mcp__omnifex__progress', input: {} }] },
+      })).toBe(true);
+    });
+
+    it('still drops a main-session assistant, whose JSONL copy the tail delivers', () => {
+      expect(shouldForwardStreamMessage({ type: 'assistant', parent_tool_use_id: null, message: { content: [] } })).toBe(false);
+    });
+
+    it('still drops forwarded user frames — nothing reads them, and a subagent tool_result would render as an orphan', () => {
+      expect(shouldForwardStreamMessage({ type: 'user', parent_tool_use_id: 'toolu_A', message: { content: [] } })).toBe(false);
+    });
+
     it('forwards partial token deltas', () => {
       expect(
         shouldForwardStreamMessage({ type: 'stream_event', event: { type: 'message_delta' } }),

@@ -83,9 +83,19 @@ export const JSONL_CARRIED_SYSTEM_SUBTYPES: ReadonlySet<string> = new Set([
  */
 export function shouldForwardStreamMessage(raw: unknown): boolean {
   if (!raw || typeof raw !== 'object') return true;
-  const m = raw as { type?: unknown; subtype?: unknown };
+  const m = raw as { type?: unknown; subtype?: unknown; parent_tool_use_id?: unknown };
 
   if (typeof m.type !== 'string') return true;
+
+  // A subagent's own assistant frame (--forward-subagent-text): the CLI writes
+  // it to that agent's agent-<id>.jsonl, never to the session JSONL the tail
+  // reads, so the stream is its only route. The renderer keeps it out of the
+  // transcript (messageFilters) and reads it for the agent's row: its step
+  // progress, and which shells it owns. Forwarded `user` frames stay dropped;
+  // nothing reads them.
+  if (m.type === 'assistant' && typeof m.parent_tool_use_id === 'string' && m.parent_tool_use_id.length > 0) {
+    return true;
+  }
 
   if (m.type === 'system') {
     if (typeof m.subtype !== 'string') return true;
