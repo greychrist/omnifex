@@ -14,6 +14,7 @@ export { WriteWidget } from "./WriteWidget";
 export { GrepWidget } from "./GrepWidget";
 export { EditWidget, EditResultWidget } from "./EditWidget";
 export { MCPWidget } from "./MCPWidget";
+export { ProgressWidget } from "./ProgressWidget";
 export { CommandWidget, CommandOutputWidget } from "./CommandWidget";
 export { TaskNotificationWidget } from "./TaskNotificationWidget";
 export { SummaryWidget } from "./SummaryWidget";

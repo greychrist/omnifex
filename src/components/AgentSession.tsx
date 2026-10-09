@@ -105,7 +105,7 @@ import { GitWatchStatusIcon } from "./claude-code-session/GitWatchStatusIcon";
 import { resolveBranchColors } from '@/lib/branchColors';
 import type { BranchColor } from '@/lib/api';
 import { deriveSubagents, applySubagentMeta, createSubagentColorAllocator, notificationStatsByToolUse, forwardedByAgentId, countActiveSubagents, type SubagentMetaInput } from '@/lib/subagentStreams';
-import { latestSubagentProgress, withStepProgress } from '@/lib/stepProgress';
+import { latestMainProgress, latestSubagentProgress, withStepProgress } from '@/lib/stepProgress';
 import { getTaskList, summarizeTaskList } from "@/lib/taskList";
 import { deriveWaitingFor, type TabWaitingFor } from "@/lib/tabWaitingFor";
 import { deriveBackgroundShells } from "@/lib/backgroundShells";
@@ -954,6 +954,8 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   // the same forwarded frames. Applied after the meta merge so nested rows,
   // which only exist from then on, get theirs by agent id.
   const stepProgressIndex = useMemo(() => latestSubagentProgress(messages), [messages]);
+  // The main session's own report for the current turn, for the turn readout.
+  const mainProgress = useMemo(() => latestMainProgress(messages), [messages]);
   const subagents = useMemo(
     () => withStepProgress(
       applySubagentMeta(baseSubagents, subagentMeta, notificationStats, forwardedLive),
@@ -2643,6 +2645,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
       onRename={handleRenameSession}
       onSuggest={handleSuggestTitle}
       background={backgroundWithCost}
+      mainProgress={mainProgress}
       // Shown beside the account widget for now, so the two can be
       // compared before one of them goes. Same inputs as the widget.
       account={

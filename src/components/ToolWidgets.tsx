@@ -19,6 +19,7 @@ export {
   EditWidget,
   EditResultWidget,
   MCPWidget,
+  ProgressWidget,
   CommandWidget,
   TaskNotificationWidget,
   CommandOutputWidget,

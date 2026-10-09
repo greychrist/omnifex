@@ -134,6 +134,32 @@ describe('ChatStatusBar', () => {
     expect(screen.queryByText('900 tokens')).toBeNull();
   });
 
+  // The main session's own report (the bundled mod's progress tool), beside
+  // the clock of the turn it belongs to.
+  it('shows the turn\'s reported progress while it runs, with the note on hover', () => {
+    const { container } = render(
+      <ChatStatusBar
+        {...base}
+        activitySignal={signal({ status: 'active', turnStartedAt: Date.now() })}
+        mainProgress={{ done: 2, total: 5, note: 'Wrote the parser' }}
+      />,
+    );
+    const p = container.querySelector<HTMLElement>('[data-turn-progress]');
+    expect(p?.textContent).toBe('2/5');
+    expect(p?.getAttribute('title')).toBe('Step 2 of 5 — Wrote the parser');
+  });
+
+  it('drops the progress once the turn ends', () => {
+    const { container } = render(
+      <ChatStatusBar
+        {...base}
+        activitySignal={signal({ status: 'idle', turnStartedAt: null, lastTurnMs: 3_000 })}
+        mainProgress={{ done: 5, total: 5 }}
+      />,
+    );
+    expect(container.querySelector('[data-turn-progress]')).toBeNull();
+  });
+
   it('omits the thinking glyph for a turn that never thought', () => {
     render(
       <ChatStatusBar {...base} activitySignal={signal({ status: 'active', turnStartedAt: Date.now() })} />,

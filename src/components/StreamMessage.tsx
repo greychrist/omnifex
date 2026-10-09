@@ -47,6 +47,7 @@ import { AnsweredAskUserQuestionCard } from "@/components/AnsweredAskUserQuestio
 import { CardActionBar, CardActionButton, CardActionDivider } from "@/components/CardActionBar";
 import { MessageFrame } from "@/components/StreamMessage/MessageFrame";
 import { PermissionDeniedCard } from "@/components/PermissionDeniedCard";
+import { PROGRESS_TOOL, parseProgressInput } from "@/lib/stepProgress";
 import { describeDenial, denialFromToolResult, findToolUse, findToolUseInput, hasLiveDenial, toolResultText } from "@/lib/permissionDenial";
 import {
   TodoReadWidget,
@@ -60,6 +61,7 @@ import {
   EditWidget,
   EditResultWidget,
   MCPWidget,
+  ProgressWidget,
   CommandWidget,
   TaskNotificationWidget,
   CommandOutputWidget,
@@ -911,6 +913,12 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
               Array.isArray(multiEditInput.edits)
             ) {
               return <MultiEditWidget {...multiEditInput} result={toolResult} />;
+            }
+
+            // The bundled mod's progress tool: one line, not an MCP card.
+            if (toolName === PROGRESS_TOOL) {
+              const progress = parseProgressInput(rawInput);
+              if (progress) return <ProgressWidget progress={progress} />;
             }
 
             // MCP tools (anything starting with `mcp__`).

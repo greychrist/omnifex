@@ -1,4 +1,5 @@
 import * as React from 'react';
+import type { StepProgress } from '@/lib/stepProgress';
 import { Clock, Brain, Wifi, WifiLow, WifiOff, Pencil, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useSecondTick } from '@/hooks/useSecondTick';
@@ -340,6 +341,9 @@ export interface ChatStatusBarProps {
   /** Subagents and background shells, shown as the `agents` and `shells`
    *  readouts. Each readout is omitted while its list is empty. */
   background?: BackgroundWork;
+  /** The main session's latest step report this turn (the bundled mod's
+   *  progress tool), shown beside the turn clock while the turn runs. */
+  mainProgress?: StepProgress | null;
   className?: string;
 }
 
@@ -383,6 +387,7 @@ export function ChatStatusBar({
   account,
   session,
   background,
+  mainProgress = null,
   className,
 }: ChatStatusBarProps): React.JSX.Element {
   const meta = activitySignal?.meta as ActivityMeta | undefined;
@@ -441,6 +446,15 @@ export function ChatStatusBar({
         <Clock className="h-3.5 w-3.5" />
         <span className="opacity-70">turn</span>
         <span>{formatToolElapsed(elapsedMs / 1000)}</span>
+        {running && mainProgress && <span className="opacity-70">·</span>}
+        {running && mainProgress && (
+          <span
+            data-turn-progress
+            title={`Step ${mainProgress.done} of ${mainProgress.total}${mainProgress.note ? ` — ${mainProgress.note}` : ''}`}
+          >
+            {mainProgress.done}/{mainProgress.total}
+          </span>
+        )}
       </span>,
     );
   }
