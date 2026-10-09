@@ -5,10 +5,20 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.4.232] — 2026-10-09
 
 ### Added
 - Agent step progress. OmniFex now loads a small bundled Claude Code mod into every session that gives Claude and its agents a progress tool. An agent that reports its steps gets a bar that fills step by step, with a line like `4/6 · Read session-cost.ts`; one that doesn't keeps the sweeping bar. The main session's own report shows beside the turn clock (`turn 1m 12s · 2/5`) and as a one-line "Progress 2/5" entry in the transcript. Switch it off in Settings → General → Agent step progress.
+- An agent's expanded log names each step it reported (`2/5 · Ran the tests`) instead of repeating the progress tool's name.
+
+### Changed
+- Expanded agent and shell rows show everything, wrapped: an agent's full brief, and a shell's full description above its output. The collapsed row stays a one-line summary.
+- A finished agent with no step log says so ("kept only while the app is open") instead of "Waiting for first progress event…".
+
+### Fixed
+- Agent rows appeared only once the agent had finished, already full. A subagent's live messages were being dropped on their way to the window; they reach it again, so rows appear at launch and fill as the agent works.
+- Shell commands a subagent ran in the foreground showed up as extra agent rows. They are steps of that agent, and no longer get a row of their own.
+- Long text in expanded agent and shell rows was cut off at the edge in narrow windows and on touch devices.
 
 ## [0.4.231] — 2026-10-08
 
