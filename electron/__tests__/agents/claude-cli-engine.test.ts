@@ -161,6 +161,30 @@ describe('ClaudeCliEngine', () => {
     });
   });
 
+  // OmniFex's bundled mod (omnifex-mod/) rides in on --plugin-dir; the
+  // sessions layer decides which dirs, the engine only spells them.
+  describe('plugin dirs', () => {
+    async function argsWith(pluginDirs?: string[]) {
+      const fake = makeFakeChild();
+      mockedSpawn.mockReturnValue(fake as never);
+      const engine = createClaudeCliEngine({ tabId: 't', claudeBinaryPath: '/bin/claude' });
+      await engine.start({ ...baseParams, pluginDirs });
+      return mockedSpawn.mock.calls[0]![1] as string[];
+    }
+
+    it('passes one --plugin-dir per directory, in order', async () => {
+      const args = await argsWith(['/mods/a', '/mods/b']);
+      const pairs = args.flatMap((a, i) => (a === '--plugin-dir' ? [args[i + 1]] : []));
+      expect(pairs).toEqual(['/mods/a', '/mods/b']);
+    });
+
+    it('passes none when there are no dirs', async () => {
+      expect(await argsWith(undefined)).not.toContain('--plugin-dir');
+      mockedSpawn.mockClear();
+      expect(await argsWith([])).not.toContain('--plugin-dir');
+    });
+  });
+
   it('uses --resume (not --session-id) on a warm restart', async () => {
     const fake = makeFakeChild();
     mockedSpawn.mockReturnValue(fake as never);

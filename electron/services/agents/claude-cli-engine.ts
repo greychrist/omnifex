@@ -73,6 +73,8 @@ export const OMNIFEX_SYSTEM_PROMPT_APPENDIX =
  *  - `--setting-sources=user,project,local` loads CLAUDE.md, project
  *    settings, and skills (otherwise the CLI runs in isolated mode)
  *  - `--append-system-prompt` adds OMNIFEX_SYSTEM_PROMPT_APPENDIX
+ *  - `--plugin-dir` (one per entry) loads OmniFex's bundled mod for this
+ *    process only, with no install into the user's Claude config
  */
 function buildArgs(p: AgentStartParams): string[] {
   const args: string[] = [
@@ -112,6 +114,9 @@ function buildArgs(p: AgentStartParams): string[] {
   }
   if (p.allowedTools && p.allowedTools.length > 0) {
     args.push('--allowed-tools', p.allowedTools.join(','));
+  }
+  for (const dir of p.pluginDirs ?? []) {
+    args.push('--plugin-dir', dir);
   }
   return args;
 }

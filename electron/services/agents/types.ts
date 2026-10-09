@@ -31,6 +31,9 @@ export interface AgentStartParams {
   allowedTools?: string[];
   /** Reasoning effort chosen before the session started. */
   effort?: string;
+  /** Plugin directories loaded for this process only (`--plugin-dir`), such
+   *  as OmniFex's bundled mod. See electron/services/bundled-mod.ts. */
+  pluginDirs?: string[];
   /** Engine-specific extras. Claude reads its own keys; others ignore. */
   claude?: Record<string, unknown>;
   /** Engine-specific extras. Codex reads its own keys; others ignore. */
