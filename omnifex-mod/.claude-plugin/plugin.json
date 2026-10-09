@@ -1,0 +1,6 @@
+{
+  "name": "omnifex",
+  "version": "1.0.0",
+  "description": "OmniFex's bundled mod: gives the main session and every subagent a progress tool, so OmniFex can draw real step progress for each agent.",
+  "author": { "name": "GreyChrist" }
+}

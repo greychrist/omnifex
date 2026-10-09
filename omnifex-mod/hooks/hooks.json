@@ -1,0 +1,4 @@
+{
+  "description": "OmniFex progress reporting",
+  "modules": ["./register.ts"]
+}
