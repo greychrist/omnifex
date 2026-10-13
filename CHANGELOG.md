@@ -5,6 +5,14 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.234] — 2026-10-13
+
+### Fixed
+- Long sessions no longer freeze the window. A new record in any tab used to redraw every message in it and re-parse its markdown, which on a ~4,600-record transcript blocked the UI for over a second per record (5.6s at worst), even when that tab was in the background. A record now redraws only its own message, plus the tool call whose result it carries.
+
+### Removed
+- An unused transcript list component.
+
 ## [0.4.233] — 2026-10-09
 
 ### Fixed
