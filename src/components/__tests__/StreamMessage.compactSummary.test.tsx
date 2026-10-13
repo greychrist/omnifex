@@ -45,6 +45,7 @@ vi.mock('@/components/CardActionBar', () => ({
 import { StreamMessage } from '../StreamMessage';
 import { classifyJsonlLine } from '@/lib/jsonlClassifier';
 import type { JsonlNode } from '@/types/jsonl';
+import { lookupsFor } from './rowLookupsFor';
 
 afterEach(() => {
   cleanup();
@@ -69,7 +70,7 @@ const kindOf = (container: HTMLElement) =>
 describe('compact summaries get their own card kind', () => {
   it('renders the persisted shape as user.compactSummary, not user.prompt', () => {
     const n = node({ isCompactSummary: true, isVisibleInTranscriptOnly: true });
-    const { container } = render(<StreamMessage tabId="tab-test" message={n} streamMessages={[n]} />);
+    const { container } = render(<StreamMessage tabId="tab-test" message={n} lookups={lookupsFor(n, [n])} />);
     expect(kindOf(container)).toBe('user.compactSummary');
   });
 
@@ -78,19 +79,19 @@ describe('compact summaries get their own card kind', () => {
   // isCompactSummary rather than the old isReplay:false proxy.
   it('renders a directed summarize, which omits isVisibleInTranscriptOnly', () => {
     const n = node({ isCompactSummary: true });
-    const { container } = render(<StreamMessage tabId="tab-test" message={n} streamMessages={[n]} />);
+    const { container } = render(<StreamMessage tabId="tab-test" message={n} lookups={lookupsFor(n, [n])} />);
     expect(kindOf(container)).toBe('user.compactSummary');
   });
 
   it('does not render a bare isReplay:false row as a compact summary', () => {
     const n = node({ isReplay: false, isSynthetic: true });
-    const { container } = render(<StreamMessage tabId="tab-test" message={n} streamMessages={[n]} />);
+    const { container } = render(<StreamMessage tabId="tab-test" message={n} lookups={lookupsFor(n, [n])} />);
     expect(kindOf(container)).not.toBe('user.compactSummary');
   });
 
   it('leaves an ordinary prompt on user.prompt', () => {
     const n = node({});
-    const { container } = render(<StreamMessage tabId="tab-test" message={n} streamMessages={[n]} />);
+    const { container } = render(<StreamMessage tabId="tab-test" message={n} lookups={lookupsFor(n, [n])} />);
     expect(kindOf(container)).toBe('user.prompt');
   });
 
@@ -108,13 +109,13 @@ describe('compact summaries get their own card kind', () => {
         content: [{ type: 'text', text: `${RECAP}\n<system-reminder>noted</system-reminder>` }],
       },
     }) as JsonlNode;
-    const { container } = render(<StreamMessage tabId="tab-test" message={n} streamMessages={[n]} />);
+    const { container } = render(<StreamMessage tabId="tab-test" message={n} lookups={lookupsFor(n, [n])} />);
     expect(kindOf(container)).toBe('user.compactSummary');
   });
 
   it('still renders the recap body', () => {
     const n = node({ isCompactSummary: true });
-    render(<StreamMessage tabId="tab-test" message={n} streamMessages={[n]} />);
+    render(<StreamMessage tabId="tab-test" message={n} lookups={lookupsFor(n, [n])} />);
     expect(screen.getByText(/covers the earlier conversation/)).toBeTruthy();
   });
 });

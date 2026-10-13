@@ -44,6 +44,7 @@ vi.mock('@/components/CardActionBar', () => ({
 import { StreamMessage } from '../StreamMessage';
 import { classifyJsonlLine } from '@/lib/jsonlClassifier';
 import type { JsonlNode } from '@/types/jsonl';
+import { lookupsFor } from './rowLookupsFor';
 
 afterEach(() => {
   cleanup();
@@ -74,13 +75,13 @@ const kindOf = (container: HTMLElement) =>
 describe('queued feedback drafts render as their own card', () => {
   it('resolves to system.feedback_draft_queued, not the unknown catch-all', () => {
     const { container } = render(
-      <StreamMessage tabId="tab-test" message={draftNode()} streamMessages={[]} />,
+      <StreamMessage tabId="tab-test" message={draftNode()} lookups={lookupsFor(draftNode(), [])} />,
     );
     expect(kindOf(container)).toBe('system.feedback_draft_queued');
   });
 
   it('shows the draft title and the details preview', () => {
-    render(<StreamMessage tabId="tab-test" message={draftNode()} streamMessages={[]} />);
+    render(<StreamMessage tabId="tab-test" message={draftNode()} lookups={lookupsFor(draftNode(), [])} />);
     expect(screen.getByText(new RegExp(TITLE))).toBeTruthy();
     expect(screen.getByText(new RegExp(PREVIEW))).toBeTruthy();
   });
@@ -89,7 +90,7 @@ describe('queued feedback drafts render as their own card', () => {
     render(
       <StreamMessage tabId="tab-test"
         message={draftNode({ draft_type: 'missing_capability' })}
-        streamMessages={[]}
+        lookups={lookupsFor(draftNode({ draft_type: 'missing_capability' }), [])}
       />,
     );
     expect(screen.getByText(/missing_capability/)).toBeTruthy();
@@ -99,7 +100,7 @@ describe('queued feedback drafts render as their own card', () => {
     const { container } = render(
       <StreamMessage tabId="tab-test"
         message={draftNode({ details_preview: undefined })}
-        streamMessages={[]}
+        lookups={lookupsFor(draftNode({ details_preview: undefined }), [])}
       />,
     );
     expect(kindOf(container)).toBe('system.feedback_draft_queued');

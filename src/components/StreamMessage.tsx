@@ -8,10 +8,8 @@ import {
   Download,
   RotateCcw,
 } from "lucide-react";
-import { detectSkillInjection } from "@/lib/skillDetection";
-import { classifyStandaloneKind, originInjectedKind } from "@/lib/messageKind";
+import { originInjectedKind } from "@/lib/messageKind";
 import { commandEnvelopeKind, isRecapCommandRecord, localCommandOutput, parseCommandEnvelope } from "@/lib/commandEnvelope";
-import { queueWaitMs } from "@/lib/queueWait";
 import { parseTaskNotification } from "@/lib/taskNotification";
 import { classifyBlockKind, isBlockHiddenInCompact, isBlockNeverShown, isSystemContextText, deriveSystemContextLabel } from "@/lib/blockKind";
 import { resolveKind } from "@/lib/messageRenderingConfig";
@@ -32,6 +30,7 @@ import remarkGfm from "remark-gfm";
 import { getClaudeSyntaxTheme } from "@/lib/claudeSyntaxTheme";
 import { buildMarkdownComponents } from "@/lib/markdownComponents";
 import { useTheme } from "@/hooks";
+import { useRenderProfile } from "@/hooks/useRenderProfile";
 import type { CliResultRaw, JsonlNode, SystemRaw } from "@/types/jsonl";
 import type { MessageContentBlock } from "@/types/claudeStream";
 import {
@@ -42,13 +41,13 @@ import {
   warnUnhandledKnownTool,
 } from "@/lib/types/toolInput";
 import { extractToolResultImages, toolResultHasImages } from "@/lib/toolResultImages";
-import { collectStructuredResults } from "@/lib/bashToolResult";
 import { AnsweredAskUserQuestionCard } from "@/components/AnsweredAskUserQuestionCard";
 import { CardActionBar, CardActionButton, CardActionDivider } from "@/components/CardActionBar";
 import { MessageFrame } from "@/components/StreamMessage/MessageFrame";
 import { PermissionDeniedCard } from "@/components/PermissionDeniedCard";
 import { PROGRESS_TOOL, parseProgressInput } from "@/lib/stepProgress";
-import { describeDenial, denialFromToolResult, findToolUse, findToolUseInput, hasLiveDenial, toolResultText } from "@/lib/permissionDenial";
+import { describeDenial, denialFromToolResult, toolResultText } from "@/lib/permissionDenial";
+import type { RowLookups } from "@/lib/rowLookups";
 import {
   TodoReadWidget,
   LSWidget,
@@ -75,7 +74,6 @@ import {
   WebSearchWidget,
   WebFetchWidget
 } from "./ToolWidgets";
-import { turnDuration } from "@/lib/sessionDerivedState";
 import { isCompactSummaryRecord } from "@/lib/jsonlClassifier";
 import { computeMessageCost, totalInputTokens, type UsageTokens } from "@/lib/pricing";
 
@@ -342,19 +340,16 @@ const TERMINAL_STOP_REASONS = new Set([
 
 function AssistantCompletionBand({
   node,
-  allMessages,
-  index,
+  duration,
   accountType,
 }: {
   node: Extract<JsonlNode, { kind: 'assistant' }>;
-  allMessages: JsonlNode[];
-  index: number;
+  duration: number | null;
   accountType?: string;
 }) {
   const stopReason = (node.raw as { message?: { stop_reason?: string | null } }).message?.stop_reason;
   if (!stopReason || !TERMINAL_STOP_REASONS.has(stopReason)) return null;
 
-  const duration = turnDuration(allMessages, index);
   const raw = node.raw as { message?: { model?: string; usage?: UsageTokens } };
   const usage: UsageTokens = raw.message?.usage ?? {};
   // Total input, not `usage.input_tokens` — see `totalInputTokens`. The bare
@@ -391,7 +386,10 @@ function AssistantCompletionBand({
 
 interface StreamMessageProps {
   message: JsonlNode;
-  streamMessages: JsonlNode[];
+  /** What this row needs from the rest of the transcript — see `rowLookups`.
+   *  Deliberately NOT the message array: a new array on every record defeated
+   *  this component's memo on every row of the tab. */
+  lookups: RowLookups;
   /** Owning tab. Only used to let a tool row read that tab's live
    *  `tool_progress` slice — see ConnectedToolProgressChip for why the
    *  subscription is down there and not a map threaded through here. */
@@ -415,7 +413,8 @@ interface StreamMessageProps {
 /**
  * Component to render a single Claude Code stream message
  */
-const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamMessages, tabId, accountType, inExpandedGroup, compact, onResend }) => {
+const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, lookups, tabId, accountType, inExpandedGroup, compact, onResend }) => {
+  useRenderProfile('StreamMessage');
   // Get current theme. Memoize the derived theme + components map so
   // ReactMarkdown sees stable prop references across renders — without
   // this, every render rebuilds the Prism-highlighted code DOM and the
@@ -427,37 +426,9 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
   // Per-kind accent colors, live-reload from Appearance settings
   const { config: renderConfig } = useMessageRenderingConfig();
 
-  // Extract all tool results from stream messages, keyed by tool_use_id.
-  // Computed during render (useMemo) rather than in an effect+setState: the
-  // old effect forced a second render of every mounted message on every stream
-  // tick, and left a one-frame window where results were missing on first
-  // paint. useMemo recomputes only when the streamMessages identity changes —
-  // same trigger, half the renders, no flash.
-  const toolResults = useMemo(() => {
-    const results = new Map<string, MessageContentBlock>();
-    streamMessages.forEach(node => {
-      if (node.kind !== 'user') return;
-      const w = node.raw;
-      if (w.message && w.message.content && Array.isArray(w.message.content)) {
-        (w.message.content as MessageContentBlock[]).forEach((content) => {
-          if (content.type === "tool_result" && content.tool_use_id) {
-            results.set(content.tool_use_id, content);
-          }
-        });
-      }
-    });
-    return results;
-  }, [streamMessages]);
-
-  // The STRUCTURED half of each tool result, which lives on the envelope
-  // rather than inside the content block — `tool_use_result` in the live
-  // stream, `toolUseResult` on disk. Carries what the model is not shown:
-  // `gitOperation` and `bashEditDiff`. Same [streamMessages] trigger as the
-  // map above, for the same reason.
-  const structuredResults = useMemo(
-    () => collectStructuredResults(streamMessages as unknown as { kind: string; raw: unknown }[]),
-    [streamMessages],
-  );
+  // Results of this row's tool calls. The structured half (`gitOperation`,
+  // `bashEditDiff`) lives on the result's envelope, not in its content block.
+  const { toolResults, structuredResults } = lookups;
 
   // Helper to get tool result for a specific tool call ID
   const getToolResult = (toolId: string | undefined): MessageContentBlock | null => {
@@ -505,7 +476,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
             return `Renamed to "${message.raw.customTitle}"`;
           case 'queue-operation': {
             const { operation, reason } = message.raw;
-            const wait = operation === 'dequeue' ? queueWaitMs(streamMessages, message) : null;
+            const wait = operation === 'dequeue' ? lookups.queueWaitMs : null;
             // Under a second is the CLI picking the input up at once; only a
             // real wait behind a running turn is worth a number.
             const detail = reason
@@ -546,7 +517,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
 
       // CLI notification — route through MessageFrame.
       if (message.subtype === "notification") {
-        const streamKind = classifyStandaloneKind(message, streamMessages) ?? "system.notification";
+        const streamKind = lookups.standaloneKind ?? "system.notification";
         return (
           <MessageFrame streamKind={streamKind} message={message}>
             <span className="text-xs font-mono">
@@ -568,7 +539,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
           <MessageFrame streamKind="system.permission_denied" message={message}>
             <PermissionDeniedCard
               toolName={r.tool_name ?? 'tool'}
-              input={(r.tool_use_id && findToolUseInput(streamMessages, r.tool_use_id)) || {}}
+              input={(r.tool_use_id && lookups.toolUses.get(r.tool_use_id)?.input) || {}}
               denial={describeDenial({
                 decisionReasonType: r.decision_reason_type,
                 decisionReason: r.decision_reason,
@@ -638,7 +609,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
             ?? (sysRaw as unknown as { body?: unknown }).body
             ?? sysRaw.title
             ?? '';
-      const streamKind = classifyStandaloneKind(message, streamMessages) ?? "system.informational";
+      const streamKind = lookups.standaloneKind ?? "system.informational";
       // away_summary is a user-facing recap, not diagnostics: prose body
       // (regular font, italic) with no inline subtype label — the card's
       // configured header + footer chip already identify the kind.
@@ -684,7 +655,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
         if (info.overageStatus === 'rejected') segments.push('overage rejected');
       }
       const text = segments.join(' · ');
-      const streamKind = classifyStandaloneKind(message, streamMessages) ?? 'system.rate_limit';
+      const streamKind = lookups.standaloneKind ?? 'system.rate_limit';
       return (
         <MessageFrame streamKind={streamKind} message={message}>
           <span className="text-xs font-mono opacity-70">system.rate_limit</span>
@@ -716,7 +687,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
       if (
         unknownRaw.isMeta &&
         unknownRaw.type !== 'summary' &&
-        !detectSkillInjection(message, streamMessages)
+        !lookups.skillInjection
       ) {
         return null;
       }
@@ -748,7 +719,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
     // rendering below (renderToolWidget still has its own AskUserQuestion
     // branch for that path).
     if (message.kind === 'assistant' || message.kind === 'user') {
-      const upstandingKind = classifyStandaloneKind(message, streamMessages);
+      const upstandingKind = lookups.standaloneKind;
       if (upstandingKind === "tool.askUserQuestion.answered.result") {
         // The data is folded into the assistant-side answered card a few
         // rows up; rendering this user message as its own bubble would be
@@ -769,32 +740,11 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
             && (b as { name?: string }).name!.toLowerCase() === "askuserquestion",
         );
         if (tu) {
-          // Look up the matching tool_result directly from `streamMessages`.
-          // (`toolResults` is now a synchronous useMemo so a cache lookup would
-          // also work; this direct scan is kept as the explicit, self-contained
-          // path for this branch.) Classification already guarantees the result
-          // is in streamMessages by the time we reach here.
-          const tuId = tu.id;
-          let resultContent: string | undefined;
-          if (tuId) {
-            outer: for (const node of streamMessages) {
-              if (node.kind !== 'user') continue;
-              const blocks = node.raw.message?.content;
-              if (!Array.isArray(blocks)) continue;
-              for (const b of blocks) {
-                const block = b as { type?: string; tool_use_id?: string; content?: unknown };
-                if (block?.type === "tool_result" && block.tool_use_id === tuId) {
-                  resultContent =
-                    typeof block.content === "string"
-                      ? block.content
-                      : block.content != null
-                        ? JSON.stringify(block.content)
-                        : undefined;
-                  break outer;
-                }
-              }
-            }
-          }
+          // Classification already guarantees the result has landed.
+          const resultBlock = tu.id ? toolResults.get(tu.id) : undefined;
+          const answer = resultBlock?.type === "tool_result" ? resultBlock.content : undefined;
+          const resultContent =
+            typeof answer === "string" ? answer : answer != null ? JSON.stringify(answer) : undefined;
           // Card wraps itself in MessageCard, so we return it directly.
           // `message` is passed through so MessageCard's footer can show
           // the receivedAt timestamp and the debug raw-JSON copy button
@@ -813,12 +763,6 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
     // Assistant message — no outer wrapper. Each content block gets its own
     // MessageFrame so the block's kind controls its own chrome.
     if (message.kind === "assistant" && message.raw.message) {
-      // Find our index in streamMessages for the completion band.
-      const assistantIndex = (() => {
-        const idx = streamMessages.indexOf(message);
-        if (idx !== -1) return idx;
-        return streamMessages.findIndex((m) => m === message);
-      })();
       const msg = message.raw.message;
 
       // NOTE: the assistant's text is rendered as-is. We do NOT suppress it
@@ -1205,8 +1149,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
           {usageNode}
           <AssistantCompletionBand
             node={message}
-            allMessages={streamMessages}
-            index={assistantIndex}
+            duration={lookups.turnDurationMs}
             accountType={accountType}
           />
         </>
@@ -1221,7 +1164,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
       // we want to render. messageFilters has the same exemption upstream;
       // mirror it here so the renderer is correct on its own (defense-in-
       // depth in case filtering is bypassed).
-      if (userRaw.isMeta && !detectSkillInjection(message, streamMessages)) {
+      if (userRaw.isMeta && !lookups.skillInjection) {
         return null;
       }
 
@@ -1331,7 +1274,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
       const injectedKind = !isToolResultOnly ? originInjectedKind(userRaw) : null;
 
       const skillInjection = !isToolResultOnly && !isSubagentPrompt && !injectedKind
-        ? detectSkillInjection(message, streamMessages)
+        ? lookups.skillInjection
         : null;
 
       let renderedSomething = false;
@@ -1515,29 +1458,13 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
                     let hasCorrespondingWidget = false;
                     let isTaskReturn = false;
                     let taskDescription: string | undefined;
-                    if (content.tool_use_id && streamMessages) {
-                      for (let i = streamMessages.length - 1; i >= 0; i--) {
-                        const prevNode = streamMessages[i];
-                        if (prevNode.kind !== 'assistant') continue;
-                        const prevContent = prevNode.raw.message?.content;
-                        if (!Array.isArray(prevContent)) continue;
-                        // Narrow each block via shape so BetaToolUseBlock's
-                        // `name` / `input` are reachable without `as any`.
-                        const toolUse = (prevContent as unknown[]).find(
-                          (c): c is { type: 'tool_use'; id?: string; name: string; input?: unknown } =>
-                            (c as { type?: string }).type === 'tool_use' &&
-                            (c as { id?: string }).id === content.tool_use_id,
-                        );
-                        if (toolUse) {
-                          const toolNameLower = toolUse.name?.toLowerCase() ?? '';
-                          if (isSubagentDispatch(toolUse.name)) {
-                            isTaskReturn = true;
-                            taskDescription = (toolUse.input as { description?: string } | undefined)?.description;
-                          } else if (TOOLS_WITH_WIDGETS_LOWER.has(toolNameLower) || toolUse.name?.startsWith('mcp__')) {
-                            hasCorrespondingWidget = true;
-                          }
-                          break;
-                        }
+                    const resultCall = content.tool_use_id ? lookups.toolUses.get(content.tool_use_id) : undefined;
+                    if (resultCall) {
+                      if (isSubagentDispatch(resultCall.name)) {
+                        isTaskReturn = true;
+                        taskDescription = toolInputString(resultCall.input.description) ?? undefined;
+                      } else if (TOOLS_WITH_WIDGETS_LOWER.has(resultCall.name.toLowerCase()) || resultCall.name.startsWith('mcp__')) {
+                        hasCorrespondingWidget = true;
                       }
                     }
 
@@ -1561,10 +1488,10 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
                     // An auto-mode denial read back from the tool_result — the
                     // only trace after a reload. Live, the permission_denied
                     // event already rendered the card, so this stays out.
-                    if (content.is_error && content.tool_use_id && !hasLiveDenial(streamMessages, content.tool_use_id)) {
+                    if (content.is_error && content.tool_use_id && !lookups.liveDenials.has(content.tool_use_id)) {
                       const denial = denialFromToolResult(toolResultText(content.content));
                       if (denial) {
-                        const toolUse = findToolUse(streamMessages, content.tool_use_id);
+                        const toolUse = lookups.toolUses.get(content.tool_use_id);
                         renderedSomething = true;
                         return (
                           <PermissionDeniedCard
@@ -1717,28 +1644,8 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
                     const isLSResult = (() => {
                       if (!content.tool_use_id || typeof contentText !== 'string') return false;
                       
-                      // Check if this result came from an LS tool by looking for the tool call
-                      let isFromLSTool = false;
-                      
-                      // Search in previous assistant messages for the matching tool_use
-                      if (streamMessages) {
-                        for (let i = streamMessages.length - 1; i >= 0; i--) {
-                          const prevNode = streamMessages[i];
-                          if (prevNode.kind !== 'assistant') continue;
-                          const prevContent = prevNode.raw.message?.content;
-                          if (!Array.isArray(prevContent)) continue;
-                          const toolUse = (prevContent as MessageContentBlock[]).find((c) =>
-                            c.type === 'tool_use' &&
-                            c.id === content.tool_use_id &&
-                            c.name.toLowerCase() === 'ls'
-                          );
-                          if (toolUse) {
-                            isFromLSTool = true;
-                            break;
-                          }
-                        }
-                      }
-                      
+                      const isFromLSTool = resultCall?.name.toLowerCase() === 'ls';
+
                       // Only proceed if this is from an LS tool
                       if (!isFromLSTool) return false;
                       
@@ -1765,30 +1672,10 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
                       /^\s*\d+→/.test(contentText);
                     
                     if (isReadResult) {
-                      // Try to find the corresponding Read tool call to get the file path
-                      let filePath: string | undefined;
-                      
-                      // Search in previous assistant messages for the matching tool_use
-                      if (streamMessages) {
-                        for (let i = streamMessages.length - 1; i >= 0; i--) {
-                          const prevNode = streamMessages[i];
-                          if (prevNode.kind !== 'assistant') continue;
-                          const prevContent = prevNode.raw.message?.content;
-                          if (!Array.isArray(prevContent)) continue;
-                          const toolUse = (prevContent as unknown[]).find(
-                            (c): c is { type: 'tool_use'; id?: string; name?: string; input?: unknown } =>
-                              (c as { type?: string }).type === 'tool_use' &&
-                              (c as { id?: string }).id === content.tool_use_id &&
-                              (c as { name?: string }).name?.toLowerCase() === 'read',
-                          );
-                          const fp = (toolUse?.input as { file_path?: string } | undefined)?.file_path;
-                          if (fp) {
-                            filePath = fp;
-                            break;
-                          }
-                        }
-                      }
-                      
+                      const filePath = resultCall?.name.toLowerCase() === 'read'
+                        ? toolInputString(resultCall.input.file_path) ?? undefined
+                        : undefined;
+
                       renderedSomething = true;
                       return (
                         <div key={idx} className="space-y-2">

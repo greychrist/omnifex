@@ -44,6 +44,7 @@ vi.mock('@/components/CardActionBar', () => ({
 import { StreamMessage } from '../StreamMessage';
 import { classifyJsonlLine } from '@/lib/jsonlClassifier';
 import type { JsonlNode } from '@/types/jsonl';
+import { lookupsFor } from './rowLookupsFor';
 
 afterEach(() => {
   cleanup();
@@ -74,27 +75,25 @@ const kindOf = (container: HTMLElement) =>
 
 describe('stop hook summaries render as their own card', () => {
   it('resolves to system.stop_hook_summary, not the unknown catch-all', () => {
-    const { container } = render(<StreamMessage tabId="t" message={summaryNode()} streamMessages={[]} />);
+    const node = summaryNode();
+    const { container } = render(<StreamMessage tabId="t" message={node} lookups={lookupsFor(node, [])} />);
     expect(kindOf(container)).toBe('system.stop_hook_summary');
   });
 
   it('names each hook by its file and says how long it took', () => {
-    render(<StreamMessage tabId="t" message={summaryNode()} streamMessages={[]} />);
+    const node = summaryNode();
+    render(<StreamMessage tabId="t" message={node} lookups={lookupsFor(node, [])} />);
     expect(screen.getByText('check-unfinished-todos.py · 37ms')).toBeTruthy();
   });
 
   it('says when a hook errored or blocked the stop', () => {
-    render(
-      <StreamMessage tabId="t"
-        message={summaryNode({
-          hookInfos: [{ command: '/a/lint.sh', durationMs: 1200 }, { command: '/b/todos.py', durationMs: 30 }],
-          hookErrors: ['exit 2'],
-          preventedContinuation: true,
-          stopReason: 'unfinished todos',
-        })}
-        streamMessages={[]}
-      />,
-    );
+    const node = summaryNode({
+      hookInfos: [{ command: '/a/lint.sh', durationMs: 1200 }, { command: '/b/todos.py', durationMs: 30 }],
+      hookErrors: ['exit 2'],
+      preventedContinuation: true,
+      stopReason: 'unfinished todos',
+    });
+    render(<StreamMessage tabId="t" message={node} lookups={lookupsFor(node, [])} />);
     expect(screen.getByText('lint.sh · 1200ms, todos.py · 30ms · 1 error · blocked stop: unfinished todos')).toBeTruthy();
   });
 });

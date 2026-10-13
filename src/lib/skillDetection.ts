@@ -1,4 +1,5 @@
 import type { JsonlNode } from '@/types/jsonl';
+import { transcriptIndex } from './transcriptIndex';
 
 export interface SkillInjection {
   skillName: string;
@@ -31,7 +32,7 @@ function getContent(m: JsonlNode): unknown[] | null {
  */
 export function detectSkillInjection(
   message: JsonlNode,
-  allMessages: JsonlNode[],
+  allMessages: readonly JsonlNode[],
 ): SkillInjection | null {
   if (message.kind !== 'user') return null;
 
@@ -48,25 +49,13 @@ export function detectSkillInjection(
   const hasText = content.some((c: any) => c?.type === 'text');
   if (!hasText) return null;
 
-  for (const candidate of allMessages) {
-    if (candidate.kind !== 'assistant') continue;
-    const candContent = getContent(candidate);
-    if (!candContent) continue;
-    // BetaContentBlock narrows to BetaToolUseBlock when type === 'tool_use'.
-    const tu = candContent.find(
-      (c): c is Extract<typeof c, { type: 'tool_use' }> =>
-        (c as any)?.type === 'tool_use' && (c as { id?: string }).id === sourceToolUseID,
-    );
-    if (!tu) continue;
-    // A companion from some other tool (Task, Bash) is not a skill body.
-    if ((tu as any).name !== 'Skill') return null;
-    const input = ((tu as any).input ?? {}) as Record<string, unknown>;
-    const skillName =
-      (typeof input.skill === 'string' && input.skill) ||
-      (typeof input.name === 'string' && input.name) ||
-      'unknown';
-    return { skillName };
-  }
-
-  return null;
+  const tu = transcriptIndex(allMessages).toolUses.get(sourceToolUseID);
+  // A companion from some other tool (Task, Bash) is not a skill body.
+  if (!tu || tu.name !== 'Skill') return null;
+  const input = tu.input;
+  const skillName =
+    (typeof input.skill === 'string' && input.skill) ||
+    (typeof input.name === 'string' && input.name) ||
+    'unknown';
+  return { skillName };
 }

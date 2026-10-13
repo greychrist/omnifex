@@ -27,6 +27,7 @@ vi.mock('@/components/CardActionBar', () => ({
 
 import { StreamMessage } from '../StreamMessage';
 import type { JsonlNode } from '@/types/jsonl';
+import { lookupsFor } from './rowLookupsFor';
 
 afterEach(() => { cleanup(); });
 
@@ -53,7 +54,7 @@ describe('StreamMessage slash-command envelope', () => {
       '<command-message>timesheet-review</command-message>\n'
       + '<command-name>/timesheet-review</command-name>',
     );
-    render(<StreamMessage message={node} streamMessages={[node]} tabId="tab-1" />);
+    render(<StreamMessage message={node} lookups={lookupsFor(node, [node])} tabId="tab-1" />);
 
     expect(screen.getByText('/timesheet-review')).toBeTruthy();
     expect(screen.queryByText(/<command-name>/)).toBeNull();
@@ -64,7 +65,7 @@ describe('StreamMessage slash-command envelope', () => {
     const node = userNode(
       '<command-name>/usage</command-name>\n<command-message>usage</command-message>\n<command-args>--json</command-args>',
     );
-    render(<StreamMessage message={node} streamMessages={[node]} tabId="tab-1" />);
+    render(<StreamMessage message={node} lookups={lookupsFor(node, [node])} tabId="tab-1" />);
 
     expect(screen.getByText('/usage')).toBeTruthy();
     expect(screen.getByText('--json')).toBeTruthy();
@@ -75,13 +76,13 @@ describe('StreamMessage slash-command envelope', () => {
   // the whole prompt render as that stdout alone.
   it('renders a prompt that quotes a stdout envelope in full', () => {
     const node = userNode('Look at this session.\n\n{"type":"system","content":"<local-command-stdout>You want every session</local-command-stdout>"}');
-    render(<StreamMessage message={node} streamMessages={[node]} tabId="tab-1" />);
+    render(<StreamMessage message={node} lookups={lookupsFor(node, [node])} tabId="tab-1" />);
     expect(document.body.textContent).toContain('Look at this session.');
   });
 
   it('renders a prompt that quotes a command name as text, not a command widget', () => {
     const node = userNode('Why does this show twice? <command-name>/recap</command-name>');
-    render(<StreamMessage message={node} streamMessages={[node]} tabId="tab-1" />);
+    render(<StreamMessage message={node} lookups={lookupsFor(node, [node])} tabId="tab-1" />);
     expect(document.body.textContent).toContain('Why does this show twice?');
   });
 
@@ -94,7 +95,7 @@ describe('StreamMessage slash-command envelope', () => {
         content: '<local-command-stdout>We fixed several display problems.</local-command-stdout>',
         commandRun: { command: 'recap', args: '' } },
     } as unknown as JsonlNode;
-    render(<StreamMessage message={recap} streamMessages={[recap]} tabId="tab-1" />);
+    render(<StreamMessage message={recap} lookups={lookupsFor(recap, [recap])} tabId="tab-1" />);
     const text = screen.getByText('We fixed several display problems.');
     expect(text.closest('pre')).toBeNull();
     expect(text.closest('.prose')).not.toBeNull();
@@ -108,7 +109,7 @@ describe('StreamMessage slash-command envelope', () => {
         content: '<local-command-stdout>Session: 12%</local-command-stdout>',
         commandRun: { command: 'usage', args: '' } },
     } as unknown as JsonlNode;
-    render(<StreamMessage message={usage} streamMessages={[usage]} tabId="tab-1" />);
+    render(<StreamMessage message={usage} lookups={lookupsFor(usage, [usage])} tabId="tab-1" />);
     expect(screen.getByText(/Session: 12%/).closest('pre')).not.toBeNull();
   });
 });

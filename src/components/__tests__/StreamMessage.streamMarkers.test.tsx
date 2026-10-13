@@ -44,6 +44,7 @@ vi.mock('@/components/CardActionBar', () => ({
 import { StreamMessage } from '../StreamMessage';
 import { classifyJsonlLine } from '@/lib/jsonlClassifier';
 import type { JsonlNode } from '@/types/jsonl';
+import { lookupsFor } from './rowLookupsFor';
 
 afterEach(() => {
   cleanup();
@@ -94,7 +95,7 @@ function initNode(): JsonlNode {
 describe('compaction boundaries render as their own kind', () => {
   it('resolves to system.compact_boundary, not the unknown catch-all', () => {
     const { container } = render(
-      <StreamMessage tabId="t" message={boundaryNode({ trigger: 'manual' })} streamMessages={[]} />,
+      <StreamMessage tabId="t" message={boundaryNode({ trigger: 'manual' })} lookups={lookupsFor(boundaryNode({ trigger: 'manual' }), [])} />,
     );
     expect(kindOf(container)).toBe('system.compact_boundary');
   });
@@ -103,32 +104,32 @@ describe('compaction boundaries render as their own kind', () => {
     render(
       <StreamMessage tabId="t"
         message={boundaryNode({ trigger: 'manual', preTokens: 465250, postTokens: 11410, durationMs: 58080 })}
-        streamMessages={[]}
+        lookups={lookupsFor(boundaryNode({ trigger: 'manual', preTokens: 465250, postTokens: 11410, durationMs: 58080 }), [])}
       />,
     );
     expect(screen.getByText('Conversation compacted · manual · 465k → 11k tokens · 58.08s')).toBeTruthy();
   });
 
   it('falls back to the bare line when the record carries no metadata', () => {
-    render(<StreamMessage tabId="t" message={boundaryNode(undefined)} streamMessages={[]} />);
+    render(<StreamMessage tabId="t" message={boundaryNode(undefined)} lookups={lookupsFor(boundaryNode(undefined), [])} />);
     expect(screen.getByText('Conversation compacted')).toBeTruthy();
   });
 });
 
 describe('stream envelopes render through the kind registry', () => {
   it('a turn result resolves to system.result with its outcome, duration and turns', () => {
-    const { container } = render(<StreamMessage tabId="t" message={resultNode()} streamMessages={[]} />);
+    const { container } = render(<StreamMessage tabId="t" message={resultNode()} lookups={lookupsFor(resultNode(), [])} />);
     expect(kindOf(container)).toBe('system.result');
     expect(screen.getByText('success · 58.10s · 3 turns')).toBeTruthy();
   });
 
   it('a single-turn result says "1 turn"', () => {
-    render(<StreamMessage tabId="t" message={resultNode({ num_turns: 1 })} streamMessages={[]} />);
+    render(<StreamMessage tabId="t" message={resultNode({ num_turns: 1 })} lookups={lookupsFor(resultNode({ num_turns: 1 }), [])} />);
     expect(screen.getByText('success · 58.10s · 1 turn')).toBeTruthy();
   });
 
   it('a session init resolves to system.init with its model and folder', () => {
-    const { container } = render(<StreamMessage tabId="t" message={initNode()} streamMessages={[]} />);
+    const { container } = render(<StreamMessage tabId="t" message={initNode()} lookups={lookupsFor(initNode(), [])} />);
     expect(kindOf(container)).toBe('system.init');
     expect(screen.getByText('claude-opus-5-5[1m] · /Users/g/Repos/omnifex')).toBeTruthy();
   });

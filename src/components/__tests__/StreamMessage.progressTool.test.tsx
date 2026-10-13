@@ -35,6 +35,7 @@ vi.mock('@/components/CardActionBar', () => ({
 
 import { StreamMessage } from '../StreamMessage';
 import type { JsonlNode } from '@/types/jsonl';
+import { lookupsFor } from './rowLookupsFor';
 
 afterEach(() => { cleanup(); });
 
@@ -55,7 +56,7 @@ function toolUseNode(name: string, input: unknown): JsonlNode {
 }
 
 function renderNode(node: JsonlNode) {
-  return render(<StreamMessage tabId="tab-test" message={node} streamMessages={[node]} />);
+  return render(<StreamMessage tabId="tab-test" message={node} lookups={lookupsFor(node, [node])} />);
 }
 
 describe('StreamMessage — the progress tool', () => {

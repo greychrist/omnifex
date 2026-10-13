@@ -44,6 +44,7 @@ vi.mock('@/components/CardActionBar', () => ({
 import { StreamMessage } from '../StreamMessage';
 import { classifyJsonlLine } from '@/lib/jsonlClassifier';
 import type { JsonlNode } from '@/types/jsonl';
+import { lookupsFor } from './rowLookupsFor';
 
 afterEach(() => {
   cleanup();
@@ -71,7 +72,7 @@ const deniedResult = classifyJsonlLine({
 
 describe('auto-mode denials render as an actionable card', () => {
   it('renders the live permission_denied event as the card, with the command it blocked', () => {
-    render(<StreamMessage tabId="t" message={deniedEvent} streamMessages={[toolUse, deniedEvent]} />);
+    render(<StreamMessage tabId="t" message={deniedEvent} lookups={lookupsFor(deniedEvent, [toolUse, deniedEvent])} />);
     expect(screen.getByText('Auto mode blocked this')).toBeTruthy();
     expect(screen.getByText('Irreversible Local Destruction')).toBeTruthy();
     expect(screen.getByText('`rm -rf build`')).toBeTruthy();
@@ -80,13 +81,13 @@ describe('auto-mode denials render as an actionable card', () => {
   // After a reload the event is gone (the CLI never writes it to the JSONL);
   // the tool_result is all that is left, and it rebuilds the card.
   it('rebuilds the card from the tool_result when the event is gone', () => {
-    render(<StreamMessage tabId="t" message={deniedResult} streamMessages={[toolUse, deniedResult]} />);
+    render(<StreamMessage tabId="t" message={deniedResult} lookups={lookupsFor(deniedResult, [toolUse, deniedResult])} />);
     expect(screen.getByText('Auto mode blocked this')).toBeTruthy();
     expect(screen.getByText('`rm -rf build`')).toBeTruthy();
   });
 
   it('does not render the card twice when the live event is present', () => {
-    render(<StreamMessage tabId="t" message={deniedResult} streamMessages={[toolUse, deniedEvent, deniedResult]} />);
+    render(<StreamMessage tabId="t" message={deniedResult} lookups={lookupsFor(deniedResult, [toolUse, deniedEvent, deniedResult])} />);
     expect(screen.queryByText('Auto mode blocked this')).toBeNull();
   });
 });

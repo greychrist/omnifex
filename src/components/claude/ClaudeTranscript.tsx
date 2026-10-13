@@ -15,6 +15,7 @@ import { renderProfiler } from "@/lib/renderProfiler";
 import { buildCompactItems, withoutNeverShown } from "@/lib/compactGrouping";
 import { collapseRepeats } from "@/lib/collapseRepeats";
 import { filterDisplayableMessages } from "@/lib/messageFilters";
+import { createRowLookupCache, rowLookups } from "@/lib/rowLookups";
 import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
 import { useAutoScroll } from "@/contexts/AutoScrollContext";
 import { useSessionGauges } from "@/contexts/SessionGaugesContext";
@@ -45,7 +46,7 @@ const StepIcon: React.FC<{
 );
 
 export interface ClaudeTranscriptProps extends InspectorGutterButtonProps {
-  /** All stream messages for this tab — passed to StreamMessage as the streamMessages context. */
+  /** All stream messages for this tab. Rows get only what they read of it — see `rowLookups`. */
   messages: JsonlNode[];
   /** Verbose vs. compact rendering mode. */
   viewMode: ViewMode;
@@ -217,6 +218,15 @@ function ClaudeTranscriptImpl({
   // Recorded as a bulk count: in verbose mode it is exactly the rows rendered,
   // in compact mode an upper bound (grouping folds some rows together).
   renderProfiler.recordRenders('TranscriptRow(displayable)', displayableMessages.length);
+
+  // What each row needs from the rest of the transcript, as an object that
+  // keeps its identity while the answers do — which is what lets a row's memo
+  // hold when a record is appended. See `rowLookups` for the freeze this fixes.
+  const [rowLookupCache] = useState(createRowLookupCache);
+  const lookupsFor = useCallback(
+    (node: JsonlNode) => rowLookups(node, messages, rowLookupCache),
+    [messages, rowLookupCache],
+  );
 
   const parentRef = useRef<HTMLDivElement>(null);
   // Find-in-chat state. Cmd/Ctrl+F opens the floating FindBar; `useFindInChat`
@@ -595,7 +605,7 @@ function ClaudeTranscriptImpl({
                     <TranscriptRowBoundary>
                       <StreamMessage
                         message={message}
-                        streamMessages={messages}
+                        lookups={lookupsFor(message)}
                         tabId={tabId}
                         accountType={accountType}
                         onResend={onResend}
@@ -620,7 +630,7 @@ function ClaudeTranscriptImpl({
                         <TranscriptRowBoundary>
                           <StreamMessage
                             message={item.message}
-                            streamMessages={messages}
+                            lookups={lookupsFor(item.message)}
                             tabId={tabId}
                             accountType={accountType}
                             compact
@@ -640,7 +650,7 @@ function ClaudeTranscriptImpl({
                         item.messages[item.messages.length - 1],
                         <HiddenEventsGroup
                           messages={item.messages}
-                          streamMessages={messages}
+                          lookupsFor={lookupsFor}
                           tabId={tabId}
                           accountType={accountType}
                           onResend={onResend}

@@ -22,6 +22,7 @@
 
 import type { JsonlNode } from '@/types/jsonl';
 import { isSubagentPrompt } from './subagentDispatch';
+import { transcriptIndex } from './transcriptIndex';
 import { detectSkillInjection } from './skillDetection';
 import { isSystemContextText } from './blockKind';
 import { commandEnvelopeKind, isRecapCommandRecord } from './commandEnvelope';
@@ -48,33 +49,15 @@ function isRenderableBlockLocal(b: unknown): boolean {
   return false;
 }
 
-function hasMatchingToolResult(toolUseId: string, allMessages: JsonlNode[]): boolean {
-  for (const m of allMessages) {
-    if (m.kind !== 'user') continue;
-    const content = (m.raw as { message?: { content?: unknown } }).message?.content;
-    if (!Array.isArray(content)) continue;
-    for (const b of content) {
-      const block = b as { type?: string; tool_use_id?: string };
-      if (block?.type === 'tool_result' && block.tool_use_id === toolUseId) return true;
-    }
-  }
-  return false;
+function hasMatchingToolResult(toolUseId: string, allMessages: readonly JsonlNode[]): boolean {
+  return transcriptIndex(allMessages).toolResults.has(toolUseId);
 }
 
 function findMatchingToolUseName(
   toolUseId: string,
-  allMessages: JsonlNode[],
+  allMessages: readonly JsonlNode[],
 ): string | undefined {
-  for (const m of allMessages) {
-    if (m.kind !== 'assistant') continue;
-    const content = (m.raw as { message?: { content?: unknown } }).message?.content;
-    if (!Array.isArray(content)) continue;
-    for (const b of content) {
-      const block = b as { type?: string; id?: string; name?: string };
-      if (block?.type === 'tool_use' && block.id === toolUseId) return block.name;
-    }
-  }
-  return undefined;
+  return transcriptIndex(allMessages).toolUses.get(toolUseId)?.name;
 }
 
 /**
@@ -131,7 +114,7 @@ const MOD_LINE_SUBTYPES: ReadonlySet<string> = new Set(['ui_log', 'ui_toast']);
 
 export function classifyStandaloneKind(
   msg: JsonlNode,
-  allMessages: JsonlNode[],
+  allMessages: readonly JsonlNode[],
 ): string | null {
   // permission_request comes through as 'unknown' kind with raw.type === 'permission_request'
   if (msg.kind === 'unknown') {

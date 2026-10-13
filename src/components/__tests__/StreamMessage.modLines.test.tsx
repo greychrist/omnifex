@@ -45,6 +45,7 @@ import { StreamMessage } from '../StreamMessage';
 import { classifyJsonlLine } from '@/lib/jsonlClassifier';
 import { resolveKind, createDefaultConfig } from '@/lib/messageRenderingConfig';
 import type { JsonlNode } from '@/types/jsonl';
+import { lookupsFor } from './rowLookupsFor';
 
 afterEach(() => {
   cleanup();
@@ -71,7 +72,7 @@ const kindOf = (container: HTMLElement) =>
 describe('mod log and toast lines', () => {
   it.each(['ui_log', 'ui_toast'] as const)('renders system:%s as its own kind with the plugin name', (subtype) => {
     const { container } = render(
-      <StreamMessage tabId="tab-test" message={modLine(subtype, 'Clear · 41% used')} streamMessages={[]} />,
+      <StreamMessage tabId="tab-test" message={modLine(subtype, 'Clear · 41% used')} lookups={lookupsFor(modLine(subtype, 'Clear · 41% used'), [])} />,
     );
     expect(kindOf(container)).toBe(`system.${subtype}`);
     expect(screen.getByText('token-weather · Clear · 41% used')).toBeTruthy();

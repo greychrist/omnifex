@@ -52,6 +52,7 @@ vi.mock('@/components/CardActionBar', () => ({
 
 import { StreamMessage } from '../StreamMessage';
 import type { JsonlNode } from '@/types/jsonl';
+import { lookupsFor } from './rowLookupsFor';
 
 afterEach(() => { cleanup(); });
 
@@ -68,7 +69,7 @@ function assistantNode(content: unknown[], stop_reason: string | null = null): J
 }
 
 function renderNode(node: JsonlNode) {
-  return render(<StreamMessage tabId="tab-test" message={node} streamMessages={[node]} />);
+  return render(<StreamMessage tabId="tab-test" message={node} lookups={lookupsFor(node, [node])} />);
 }
 
 describe('StreamMessage — content block missing its narrative field (CLI 2.1.234 class)', () => {

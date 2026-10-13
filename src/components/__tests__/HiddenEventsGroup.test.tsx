@@ -7,6 +7,7 @@ import { MessageRenderingPreviewProvider } from '@/contexts/MessageRenderingCont
 import { createDefaultConfig, type HiddenEventsStyle } from '@/lib/messageRenderingConfig';
 import { DARK_TEXT } from '@/lib/accentStyle';
 import type { JsonlNode } from '@/types/jsonl';
+import { lookupsFor } from './rowLookupsFor';
 
 // The rows' own rendering is StreamMessage's business; this file is about the
 // card around them.
@@ -26,7 +27,7 @@ function renderBar(patch: Partial<HiddenEventsStyle>) {
   config.hiddenEvents = hiddenEvents;
   render(
     <MessageRenderingPreviewProvider config={config}>
-      <HiddenEventsGroup messages={hidden} streamMessages={hidden} tabId="t1" />
+      <HiddenEventsGroup messages={hidden} lookupsFor={(m) => lookupsFor(m, hidden)} tabId="t1" />
     </MessageRenderingPreviewProvider>,
   );
   return screen.getByRole('button', { name: /hidden event/i });

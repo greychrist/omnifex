@@ -126,17 +126,17 @@ describe('turnDuration', () => {
       userPrompt('2026-05-27T00:00:00.000Z'),
       assistantWithStop('2026-05-27T00:00:02.500Z', 'end_turn'),
     ];
-    expect(turnDuration(msgs, 1)).toBe(2500);
+    expect(turnDuration(msgs, msgs[1])).toBe(2500);
   });
 
   it('returns null when the assistant has no preceding user prompt in the array', () => {
     const msgs = [assistantWithStop('2026-05-27T00:00:01Z', 'end_turn')];
-    expect(turnDuration(msgs, 0)).toBeNull();
+    expect(turnDuration(msgs, msgs[0])).toBeNull();
   });
 
-  it('returns null when the index does not point at an assistant', () => {
+  it('returns null for a node that is not an assistant', () => {
     const msgs = [userPrompt('2026-05-27T00:00:00Z')];
-    expect(turnDuration(msgs, 0)).toBeNull();
+    expect(turnDuration(msgs, msgs[0])).toBeNull();
   });
 
   it('returns null when the user prompt has an unparseable timestamp', () => {
@@ -155,7 +155,7 @@ describe('turnDuration', () => {
       },
       assistantWithStop('2026-05-27T00:00:01Z', 'end_turn'),
     ];
-    expect(turnDuration(msgs, 1)).toBeNull();
+    expect(turnDuration(msgs, msgs[1])).toBeNull();
   });
 });
 
@@ -325,7 +325,7 @@ describe('forwarded subagent messages (--forward-subagent-text)', () => {
       forwardedUserPrompt('2026-07-22T10:00:30Z'),
       assistantWithStop('2026-07-22T10:01:00Z', 'end_turn'),
     ];
-    expect(turnDuration(msgs, 2)).toBe(60_000);
+    expect(turnDuration(msgs, msgs[2])).toBe(60_000);
   });
 });
 

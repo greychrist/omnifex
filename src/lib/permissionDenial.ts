@@ -14,6 +14,7 @@
  */
 import { formatFilePathForRule } from './rulePaths';
 import type { JsonlNode } from '@/types/jsonl';
+import { transcriptIndex, type ToolUseRef } from './transcriptIndex';
 
 export type DenialKind = 'classifier-block' | 'classifier-unavailable' | 'other';
 
@@ -129,24 +130,12 @@ export function retryPrompt(kind: DenialKind, toolName: string, input: Record<st
   return `I approve this action — go ahead and retry it: ${action}`;
 }
 
-/** The tool call `toolUseId` — its name and input — searched newest first. */
+/** The tool call `toolUseId` — its name and input — or null when it is not in the transcript. */
 export function findToolUse(
   nodes: readonly JsonlNode[],
   toolUseId: string,
-): { name: string; input: Record<string, unknown> } | null {
-  for (let i = nodes.length - 1; i >= 0; i--) {
-    const node = nodes[i];
-    if (node.kind !== 'assistant') continue;
-    const content = node.raw.message?.content;
-    if (!Array.isArray(content)) continue;
-    for (const block of content as Array<{ type?: string; id?: string; name?: string; input?: unknown }>) {
-      if (block?.type === 'tool_use' && block.id === toolUseId) {
-        const input = block.input && typeof block.input === 'object' ? (block.input as Record<string, unknown>) : {};
-        return { name: block.name ?? 'tool', input };
-      }
-    }
-  }
-  return null;
+): ToolUseRef | null {
+  return transcriptIndex(nodes).toolUses.get(toolUseId) ?? null;
 }
 
 /** Just the input of that call, or null when it is not in the transcript. */
@@ -168,10 +157,7 @@ export function toolResultText(content: unknown): string {
 
 /** Whether a live `permission_denied` event for this call is in the transcript. */
 export function hasLiveDenial(nodes: readonly JsonlNode[], toolUseId: string): boolean {
-  return nodes.some(
-    (n) => n.kind === 'system' && n.subtype === 'permission_denied'
-      && (n.raw as { tool_use_id?: unknown }).tool_use_id === toolUseId,
-  );
+  return transcriptIndex(nodes).liveDenials.has(toolUseId);
 }
 
 /** What "Always allow" sends once the rule is saved. */

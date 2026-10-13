@@ -9,10 +9,12 @@ import { useScrollAnchor } from '@/lib/useScrollAnchor';
 import { currentThemeBackdrop, hiddenEventsColors } from '@/lib/accentStyle';
 import { useMessageRenderingConfig } from '@/contexts/MessageRenderingContext';
 import type { JsonlNode } from '@/types/jsonl';
+import type { RowLookups } from '@/lib/rowLookups';
 
 interface Props {
   messages: JsonlNode[];
-  streamMessages: JsonlNode[];
+  /** Each wrapped row's view of the rest of the transcript — see `rowLookups`. */
+  lookupsFor: (message: JsonlNode) => RowLookups;
   /** Owning tab — forwarded so nested tool rows can read live tool progress. */
   tabId: string;
   accountType?: string;
@@ -27,7 +29,7 @@ interface Props {
  */
 export const HiddenEventsGroup: React.FC<Props> = ({
   messages,
-  streamMessages,
+  lookupsFor,
   tabId,
   accountType,
   onResend,
@@ -88,7 +90,7 @@ export const HiddenEventsGroup: React.FC<Props> = ({
           <TranscriptRowBoundary key={idx}>
             <StreamMessage
               message={message}
-              streamMessages={streamMessages}
+              lookups={lookupsFor(message)}
               tabId={tabId}
               accountType={accountType}
               onResend={onResend}

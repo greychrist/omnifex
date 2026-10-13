@@ -28,6 +28,7 @@ vi.mock('@/components/CardActionBar', () => ({
 
 import { StreamMessage } from '../StreamMessage';
 import type { JsonlNode } from '@/types/jsonl';
+import { lookupsFor } from './rowLookupsFor';
 
 afterEach(() => { cleanup(); });
 
@@ -47,7 +48,7 @@ function userNode(text: string, extra: Record<string, unknown> = {}): JsonlNode 
 }
 
 function kindOf(node: JsonlNode): string | null {
-  render(<StreamMessage message={node} streamMessages={[node]} tabId="tab-1" />);
+  render(<StreamMessage message={node} lookups={lookupsFor(node, [node])} tabId="tab-1" />);
   return screen.getByTestId('message-frame').getAttribute('data-stream-kind');
 }
 
@@ -69,7 +70,7 @@ describe('StreamMessage — records the CLI stamped as injected', () => {
       'The coordinator sent a message while you were working:\nTask 8 fix round 1',
       { origin: { kind: 'coordinator' }, isMeta: true },
     );
-    render(<StreamMessage message={node} streamMessages={[node]} tabId="tab-1" />);
+    render(<StreamMessage message={node} lookups={lookupsFor(node, [node])} tabId="tab-1" />);
     expect(screen.queryByTestId('message-frame')).toBeNull();
   });
 

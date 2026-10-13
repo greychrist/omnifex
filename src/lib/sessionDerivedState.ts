@@ -74,24 +74,39 @@ export function conversationStatus(
     : 'idle';
 }
 
-// Duration in ms between the assistant at `assistantIndex` and the
-// nearest preceding user.prompt (by raw.timestamp). Returns null if
-// the assistant has no preceding prompt in the array (e.g. resumed
-// session where the prompt was in an earlier batch).
-export function turnDuration(messages: JsonlNode[], assistantIndex: number): number | null {
-  const node = messages[assistantIndex];
-  if (!node || node.kind !== 'assistant') return null;
-  for (let i = assistantIndex - 1; i >= 0; i -= 1) {
-    const candidate = messages[i];
-    if (candidate.kind === 'user' && candidate.userKind === 'prompt' && isMainUserNode(candidate)) {
-      const start = Date.parse((candidate.raw as { timestamp?: string }).timestamp ?? '');
-      const end = Date.parse((node.raw as { timestamp?: string }).timestamp ?? '');
-      if (Number.isFinite(start) && Number.isFinite(end)) return Math.max(0, end - start);
-      return null;
-    }
-  }
-  return null;
+// Duration in ms between an assistant and the nearest preceding main-chain
+// user.prompt (by raw.timestamp). Returns null if the assistant has no
+// preceding prompt in the array (e.g. resumed session where the prompt was in
+// an earlier batch).
+export function turnDuration(messages: readonly JsonlNode[], assistant: JsonlNode): number | null {
+  if (assistant.kind !== 'assistant') return null;
+  const prompt = turnPrompts(messages).get(assistant);
+  if (!prompt) return null;
+  const start = Date.parse((prompt as { raw: { timestamp?: string } }).raw.timestamp ?? '');
+  const end = Date.parse((assistant.raw as { timestamp?: string }).timestamp ?? '');
+  return Number.isFinite(start) && Number.isFinite(end) ? Math.max(0, end - start) : null;
 }
+
+/**
+ * Each assistant's turn-opening prompt, in one forward pass per array. Every
+ * completion band asks, and walking back from each one was O(turn length) per
+ * row per render. Same per-array cache contract as `transcriptIndex`.
+ */
+function turnPrompts(messages: readonly JsonlNode[]): Map<JsonlNode, JsonlNode> {
+  let prompts = turnPromptCache.get(messages);
+  if (!prompts) {
+    prompts = new Map();
+    let prompt: JsonlNode | undefined;
+    for (const node of messages) {
+      if (node.kind === 'user' && node.userKind === 'prompt' && isMainUserNode(node)) prompt = node;
+      else if (node.kind === 'assistant' && prompt) prompts.set(node, prompt);
+    }
+    turnPromptCache.set(messages, prompts);
+  }
+  return prompts;
+}
+
+const turnPromptCache = new WeakMap<readonly JsonlNode[], Map<JsonlNode, JsonlNode>>();
 
 export function sessionStartedAt(messages: JsonlNode[]): string | null {
   const first = messages[0];

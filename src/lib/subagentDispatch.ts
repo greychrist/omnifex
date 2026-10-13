@@ -1,4 +1,5 @@
 import type { JsonlNode } from '@/types/jsonl';
+import { transcriptIndex } from './transcriptIndex';
 
 /**
  * The Claude Code CLI emits subagent-dispatch tool_use blocks under
@@ -71,15 +72,6 @@ export function isSubagentPrompt(
   const parentId = (msg.raw as { parent_tool_use_id?: string | null }).parent_tool_use_id;
   if (typeof parentId !== 'string' || parentId.length === 0) return false;
 
-  for (const m of allMessages) {
-    if (m.kind !== 'assistant') continue;
-    const content = (m.raw as { message?: { content?: unknown } }).message?.content;
-    if (!Array.isArray(content)) continue;
-    for (const b of content) {
-      if ((b as any)?.type === 'tool_use' && (b as any).id === parentId && isForwardedPromptParent((b as any).name)) {
-        return true;
-      }
-    }
-  }
-  return false;
+  const parent = transcriptIndex(allMessages).toolUses.get(parentId);
+  return parent !== undefined && isForwardedPromptParent(parent.name);
 }

@@ -14,13 +14,14 @@ import { MessageRenderingPreviewProvider } from '@/contexts/MessageRenderingCont
 import { createDefaultConfig } from '@/lib/messageRenderingConfig';
 import { StreamMessage } from '@/components/StreamMessage';
 import type { JsonlNode } from '@/types/jsonl';
+import { lookupsFor } from './rowLookupsFor';
 
 afterEach(() => { cleanup(); });
 
 function renderNode(node: JsonlNode) {
   return render(
     <MessageRenderingPreviewProvider config={createDefaultConfig()}>
-      <StreamMessage tabId="tab-test" message={node} streamMessages={[node]} />
+      <StreamMessage tabId="tab-test" message={node} lookups={lookupsFor(node, [node])} />
     </MessageRenderingPreviewProvider>,
   );
 }
@@ -59,7 +60,7 @@ describe('bookkeeping JSONL kinds render (were return null)', () => {
     const deq = { kind: 'queue-operation', raw: { type: 'queue-operation', operation: 'dequeue', timestamp: '2026-09-28T15:00:42.000Z' }, sessionId: 's', receivedAt: '2026-09-28T15:00:42.000Z' } as unknown as JsonlNode;
     render(
       <MessageRenderingPreviewProvider config={createDefaultConfig()}>
-        <StreamMessage tabId="tab-test" message={deq} streamMessages={[enq, deq]} />
+        <StreamMessage tabId="tab-test" message={deq} lookups={lookupsFor(deq, [enq, deq])} />
       </MessageRenderingPreviewProvider>,
     );
     expect(screen.getByText('Input queue: dequeue · waited 42.00s')).toBeInTheDocument();
@@ -70,7 +71,7 @@ describe('bookkeeping JSONL kinds render (were return null)', () => {
     const deq = { kind: 'queue-operation', raw: { type: 'queue-operation', operation: 'dequeue', timestamp: '2026-09-28T15:00:00.001Z' }, sessionId: 's', receivedAt: '2026-09-28T15:00:00.001Z' } as unknown as JsonlNode;
     render(
       <MessageRenderingPreviewProvider config={createDefaultConfig()}>
-        <StreamMessage tabId="tab-test" message={deq} streamMessages={[enq, deq]} />
+        <StreamMessage tabId="tab-test" message={deq} lookups={lookupsFor(deq, [enq, deq])} />
       </MessageRenderingPreviewProvider>,
     );
     expect(screen.getByText('Input queue: dequeue')).toBeInTheDocument();
