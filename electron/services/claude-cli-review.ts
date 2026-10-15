@@ -40,7 +40,172 @@ import { buildClaudeEnv } from './util/claude-env';
  *    spend reaches the host;
  *    cancelled by a host-sent `control_cancel_request {request_id}`, which
  *    the CLI answers with the error "Side question cancelled". Its own
- *    deadline is 600 s. Only the SDK's `askSideQuestion()` documents it.
+ *    deadline is 660 s (600 s before 2.1.299), answered with the error
+ *    "side_question timed out: the host did not answer in time". Only the
+ *    SDK's `askSideQuestion()` documents it.
+ *
+ * Last review: 2.1.299 -> 2.1.300 on 2026-10-14. Findings:
+ *
+ *  Changelog coverage: 2.1.300 has ~90 entries. Both endpoints installed,
+ *  so the wire claims are a real binary diff.
+ *
+ *  WIRE DIFF (unique literals): merge-strategy map 40 -> 40, set-identical
+ *  (4 tagged `transcript`). `hook_event_name` 33, `type:"control_*"` 4,
+ *  SDK `this.request({subtype})` 54, `subtype:` 156, `origin:{kind}` 12,
+ *  `"ui_*"` 29 — all set-identical. `type:` 1006 -> 1008: +
+ *  `output_limit_note` (an attachment the CLI writes to tell the model its
+ *  output cap; summariseContextAttachment returns null, so hidden),
+ *  `properties` (zod internals), `resumed` (launcher state log, not a
+ *  record); − `withdrawn_attachments` (gone from the writer; older
+ *  transcripts still carry it, still hidden). Record keys on 2.1.300
+ *  transcripts: assistant + `requestRef` (points at the matching
+ *  `api-request` id; nothing reads it). `.describe()` 2312 -> 2318, all
+ *  `@internal`: user-input `text_not_typed` (server/app-composed text, no
+ *  slash dispatch — OmniFex only sends typed prompts), model-catalog
+ *  `supportsThinkingOff` (OmniFex has no thinking picker since v0.4.70),
+ *  `set_permission_mode.from_settings`, handback / joined-queue / mcp-task
+ *  / PDF-page fields. None is a host obligation. `/usage` anchors:
+ *  `resets` 492 -> 493, `MCP servers` 473 -> 484 — occurrence drift; the
+ *  rest count-identical.
+ *
+ *  1. REQUEST-REPLAY RECORDS ARE NOW ON BY DEFAULT, AND IN AUTO MODE THEY
+ *     GROW PER CALL. FIXED IN THIS PASS (util/request-replay.ts).
+ *
+ *     `tengu_elegant_meadow`'s default flipped `!1` -> `!0` (the changelog's
+ *     "local session transcripts also record each API request's system
+ *     prompt, tools and parameters"). The three types were already
+ *     classified as bookkeeping (cliSidechannelRecords.ts, 2.1.282 review),
+ *     so nothing renders. The cost is size: every `api-request` carries
+ *     the full `params`, and in auto mode `params.safeguards[0].
+ *     classifier_context.prior_turn_context` grows ~0.8 KB per call up to
+ *     the CLI's 256 KB ceiling (`OJe=256000`). Measured on this review's
+ *     own session: 32 calls, records 7.3 KB -> 32.6 KB, request-replay 39%
+ *     of the file already. A long auto-mode session approaches 256 KB per
+ *     model call — hundreds of MB of transcript. Every whole-file reader
+ *     pays it: loadSessionHistory (claude.ts:751, ships every line to the
+ *     renderer, over the WebSocket in remote mode), extractSessionMetadata
+ *     (claude.ts:344), usage.ts readJsonlFile, and the live tail
+ *     (runtime.ts:109, `filter: 'all'`). Opt-out: `CLAUDE_CODE_ELEGANT_
+ *     MEADOW` is a tri-bool env read before the flag, so `=0` turns it off.
+ *
+ *     Fix, both halves: `buildClaudeEnv` sets `CLAUDE_CODE_ELEGANT_MEADOW=0`
+ *     unless the shell already set it (every OmniFex-spawned CLI stops
+ *     writing them); and `isRequestReplayLine` drops the lines before
+ *     JSON.parse in claude.ts readJsonlFile, the jsonl tail, usage.ts,
+ *     sessions-summary.ts and brain/distill.ts, for transcripts written by
+ *     a terminal CLI. The renderer's cliSidechannelRecords entry stays as
+ *     the backstop. If a later CLI renames the env var, the reader skip
+ *     still holds; re-check `ELEGANT_MEADOW` in the bundle each review.
+ *
+ *  Checked and inert:
+ *
+ *   - PreToolUse/PermissionRequest `updatedInput` now schema-validated
+ *     (unknown keys dropped): OmniFex's only updatedInput is
+ *     AskUserQuestionCard's `{questions, answers, annotations?}`, all in
+ *     the tool's input schema.
+ *   - Headless/SDK resume losing compaction-kept messages or summary, first
+ *     entry lost after a torn last line, mod hot-reload note recorded as a
+ *     typed prompt, MCP 400 on a rejected input schema, MCP tools unknown
+ *     after compaction, SessionEnd hooks skipped with a background command,
+ *     exit force-killing background commands after 1.5 s: CLI fixes in our
+ *     favour.
+ *   - Mods: `virtualText`, `$.ui.view`, `Text dir`, `prompt.change`,
+ *     `agent.spawn` rewriting workflow agents, `prompt.edit` on
+ *     `chat:newline`: OmniFex renders no mod trees; the bundled mod hooks
+ *     none of these.
+ *   - `/advisor` on AWS, OTel attributes and cache-split fields,
+ *     `/autocompact` warning, ENABLE_TOOL_SEARCH=auto, forceLoginOrgUUID,
+ *     reftable/`--worktree` fixes, U+2028 in `/branch`, gzip request
+ *     bodies, scratchpad paths, `claude daemon stop`, agents view, cloud,
+ *     Cowork, Remote Control, self-hosted runner, VSCode, Claude Tag, Code
+ *     Review: no OmniFex surface.
+ *
+ * Last review: 2.1.296 -> 2.1.299 on 2026-10-13. Findings:
+ *
+ *  Changelog coverage: 2.1.297 and 2.1.298 have no changelog entry (absent,
+ *  not skipped); 2.1.299 has ~200. Both endpoints (2.1.296, 2.1.299)
+ *  installed, so the wire claims are a real binary diff.
+ *
+ *  WIRE DIFF (unique literals): merge-strategy map 40 -> 40 (4 tagged
+ *  `transcript`), `hook_event_name` 33, `type:"control_*"` 4, SDK
+ *  `this.request({subtype})` 54, `origin:{kind}` 12, `"ui_*"` 29 — all
+ *  set-identical. `subtype:` 154 -> 155: `rewind_stand_in`, a `system`
+ *  record the CLI appends to the conversation and stores
+ *  (`{type:"system", subtype:"rewind_stand_in", source_uuid, content:"",
+ *  level:"info"}`) so a client message with no user row of its own can
+ *  still be a rewind target. Trigger not pinned — it lives beside the
+ *  worker / resume-hold code — and zero occurrences in either account's
+ *  transcripts so far, but it is a transcript-tagged type and
+ *  classifySystem's closed SYSTEM_SUBTYPES would draw an orange
+ *  "Unrecognized record: system" card for it. `type:` +5, one a record:
+ *  `withdrawn_attachments` (an attachment; summariseContextAttachment
+ *  returns null for it, so messageFilters hides it); the rest are not
+ *  records — `omitted_turns` (auto-mode classifier API content),
+ *  `hooks-passed-over` (/plugin diagnostic), `reserved_name` (MCP config
+ *  validation + protobuf), `rewind_stand_in` (above). `.describe()` +18/-5:
+ *  all new ones `@internal` — result `process_*_mib` / `process_*_ms` /
+ *  `api_error_origin`, PreToolUse `permissionDisplay` (Desktop host only),
+ *  `decision_reason` rule source ("a host should not decide by it"),
+ *  `$.command.register` plugin name on commands, ui.render `part`, doc
+ *  versions, turn_handoff; `cancel_async_message` reworded (we never send
+ *  it); sandbox depth / credential-path rewordings. `/usage` anchors:
+ *  `resets` 489 -> 492, `MCP servers` 462 -> 473 — occurrence drift;
+ *  `Current session`/`week`, `Extra usage`, `% used`, `Total cost`
+ *  count-identical. New "What's contributing" headlines (max effort,
+ *  workflows, always-on context over 40k, tool results over 10k) keep the
+ *  `N% of your usage ...` shape parseContributing keys on.
+ *
+ *  Fixed in this pass: the side_question deadline note above (600 -> 660 s,
+ *  `Hbo=660000`). SIDE_QUESTION_TIMEOUT_MS (queries.ts) stays 600 s, so
+ *  ours still fires first; the CLI's fork then runs up to a minute more,
+ *  since the registry timeout sends no control_cancel_request.
+ *
+ *  Declined by Greg on 2026-10-14 — revisit only if they actually show up:
+ *
+ *   - `rewind_stand_in`: classify as default-Never bookkeeping (same shape as
+ *     the ui_* frames in bee3f28f — SYSTEM_SUBTYPES, SystemSubtype,
+ *     STREAM_BOOKKEEPING_SUBTYPES, messageRenderingConfig, tests).
+ *   - SDK/headless sessions now leave auto mode when the host set_model's to
+ *     a model without auto support (`kickOutOfAutoIfNeeded`, now applied
+ *     headless). handle.permissionMode and the dropdown keep saying `auto`;
+ *     the decider returns null for `auto`, so the user is asked — safe, but
+ *     the picker lies until the next prompt's `permissionMode` is read on
+ *     resume (lastPermissionMode).
+ *
+ *  Checked and inert:
+ *
+ *   - Queued stream-json content-block prompts merged without a line break,
+ *     document blocks / full-size images dropped or oversized when sent
+ *     mid-turn, approved tool calls or MCP calls run twice after a restart
+ *     or reconnect, ScheduleWakeup not firing during a background task,
+ *     cut-off replies ending silently, plan mode running hook-allowed
+ *     writes, headless `/btw` not cancelled at session end: CLI fixes in
+ *     our favour.
+ *   - `/usage` >100% fix: parser reads whatever percentage is printed.
+ *   - MCP allow rules no longer reaching `a__b` from `mcp__a`; deny/ask on
+ *     `__`-named servers; agent `tools:` MCP scoping: docs/permission-
+ *     syntax.md's `mcp__<server>` forms still hold; OmniFex writes no agent
+ *     `tools:` lists.
+ *   - `UserPromptSubmit` now before skill/command expansion; skill
+ *     front-matter hook timing: CLI hook runner; HooksEditor unaffected.
+ *   - Idle compaction ("in the terminal"; `idleCompaction`,
+ *     `CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS`): REPL SleepCompact; if it ever
+ *     fires headless it is an ordinary compact_boundary.
+ *   - `CLAUDE_CODE_DISABLE_FILE_MENTIONS`, PDF @-mention bytes no longer
+ *     stored, `enabledMcpjsonServers` as a plain string, empty `.mcp.json`
+ *     validity, `claude -p` text-mode settings errors, skill names with
+ *     hidden characters: no OmniFex reader or writer affected.
+ *   - Mods: `$.prompt.media`, `$.session.identity()`, Text `size`/`weight`/
+ *     `mono`/`tabular` (`bold` deprecated), Box spacing, `part` roots,
+ *     `session.append` `queue` door, `turn.start` hearing subagents,
+ *     `agent.spawn` `resume`, `$.ui.open` honesty in `-p`, hot-reload and
+ *     guard fixes: OmniFex renders no mod trees and the bundled mod hooks
+ *     none of these.
+ *   - Agent view `/effort` `/fast` `/model` pickers, safe-mode peek line,
+ *     plan-mode bypass note, resume-command printing, fullscreen/CJK/table
+ *     rendering, sandbox, Chrome, gateway, self-hosted runner, cloud
+ *     sessions, Remote Control, Cowork, Artifact, plugin eval/test/validate,
+ *     VSCode, Windows, Claude Tag, Code Review: no OmniFex surface.
  *
  * Last review: 2.1.295 -> 2.1.296 on 2026-10-09. Findings:
  *
@@ -4131,7 +4296,7 @@ import { buildClaudeEnv } from './util/claude-env';
  * `~/.claude.json` fix (we read-modify-write that file, never replace it), and
  * the VSCode screen-reader work.
  */
-export const REVIEWED_CLI_VERSION = '2.1.296';
+export const REVIEWED_CLI_VERSION = '2.1.300';
 
 /**
  * app_settings key holding the user's explicit OmniFex-checkout override.

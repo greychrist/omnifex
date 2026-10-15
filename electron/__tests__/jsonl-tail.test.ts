@@ -90,6 +90,24 @@ describe('createJsonlTail', () => {
     expect((received[0] as { type: string }).type).toBe('attachment');
   });
 
+  it('never forwards request-replay records, even with filter all', async () => {
+    fs.writeFileSync(jsonlPath, '');
+    tail = createJsonlTail({
+      jsonlPath,
+      filter: 'all',
+      onMessage: (m) => received.push(m),
+    });
+    fs.appendFileSync(
+      jsonlPath,
+      JSON.stringify({ type: 'api-request', params: {} }) + '\n' +
+        JSON.stringify({ type: 'api-request-blob', message: { role: 'user' } }) + '\n' +
+        JSON.stringify({ type: 'assistant', message: { content: [] } }) + '\n',
+    );
+    await waitUntil(() => received.length >= 1);
+    await wait();
+    expect((received as Array<{ type: string }>).map((r) => r.type)).toEqual(['assistant']);
+  });
+
   it('does not corrupt a multibyte UTF-8 codepoint split across two drains', async () => {
     // The CLI flushes the JSONL incrementally. If a drain boundary lands in the
     // middle of a multibyte character, a naive string-based pendingTail loses the

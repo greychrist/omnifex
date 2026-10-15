@@ -1,5 +1,6 @@
 import os from 'node:os';
 import path from 'node:path';
+import { REQUEST_REPLAY_ENV } from './request-replay';
 
 /**
  * Single source of truth for the env passed to every Claude Code subprocess
@@ -77,6 +78,10 @@ export function buildClaudeEnv(
   // place AND collapse every project into one directory, which the Brain reads
   // as project identity. We own the derivation, so we own the variable.
   delete result.CLAUDE_CODE_PROJECT_DIR_NAME;
+
+  // Request replay off unless the user's shell already chose (CLI 2.1.300
+  // turned it on by default). See util/request-replay.ts for why it costs.
+  if (result[REQUEST_REPLAY_ENV] === undefined) result[REQUEST_REPLAY_ENV] = '0';
   for (const [k, v] of Object.entries(extras)) {
     if (v === undefined) {
       // eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- justified: env-var removal API; key is bounded by Object.entries(extras).

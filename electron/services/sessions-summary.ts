@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { isRequestReplayLine } from './util/request-replay';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -143,7 +144,7 @@ export function extractTranscript(jsonlContent: string): ExtractedTranscript {
   let messageCount = 0;
 
   for (const rawLine of jsonlContent.split('\n')) {
-    if (!rawLine.trim()) continue;
+    if (!rawLine.trim() || isRequestReplayLine(rawLine)) continue;
     let entry: any;
     try {
       entry = JSON.parse(rawLine);

@@ -145,7 +145,8 @@ export function createQueryPassthroughs(
   }
 
   // Side questions are slow — a fork of the whole context — and the CLI gives
-  // them 600 s against 75 s for other subtypes. The registry default is 10 s.
+  // them 660 s (600 s before 2.1.299) against 75 s for other subtypes. The
+  // registry default is 10 s.
   const SIDE_QUESTION_TIMEOUT_MS = 600_000;
   const sideChatAborts = new Map<string, AbortController>();
 

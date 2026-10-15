@@ -22,6 +22,7 @@
 // in `runtime.ts`.
 
 import fs from 'node:fs';
+import { isRequestReplayLine } from '../util/request-replay';
 
 export interface CreateJsonlTailArgs {
   /** Absolute path to the JSONL file to watch. Need not exist yet — the
@@ -190,7 +191,7 @@ export function createJsonlTail(args: CreateJsonlTailArgs): JsonlTailHandle {
       const line = combined.toString('utf8', lineStart, nl);
       lineStart = nl + 1;
       nl = combined.indexOf(NEWLINE, lineStart);
-      if (!line) continue;
+      if (!line || isRequestReplayLine(line)) continue;
       let parsed: unknown;
       try {
         parsed = JSON.parse(line);

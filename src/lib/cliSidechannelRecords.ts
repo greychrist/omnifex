@@ -61,7 +61,8 @@ export const CLI_SIDECHANNEL_RECORD_TYPES: ReadonlySet<string> = new Set([
   'content-replacement',
   'fork-context-ref',
   'frame-link',
-  // Request replay (CLI >= 2.1.282, behind the `tengu_elegant_meadow` flag):
+  // Request replay (CLI >= 2.1.282 behind `tengu_elegant_meadow`; on by
+  // default since 2.1.300):
   // the exact API request per model call, plus its deduplicated system+tools
   // shape and message blobs. `api-request-blob` carries a `message`, but it
   // is a request param, not a turn.

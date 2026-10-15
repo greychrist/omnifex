@@ -11,6 +11,7 @@ import type { AccountsService } from './accounts';
 import { createProjectPinsService } from './project-pins';
 import { decodeProjectId, encodeProjectId, recoverProjectPath } from './project-paths';
 import { buildClaudeEnv } from './util/claude-env';
+import { isRequestReplayLine } from './util/request-replay';
 import { findOnPath } from './util/path-lookup';
 import { isSummaryScratchProject } from './sessions/internal-spend';
 
@@ -205,7 +206,7 @@ function readJsonlFile(filePath: string): unknown[] {
     const results: unknown[] = [];
     for (const line of content.split('\n')) {
       const trimmed = line.trim();
-      if (!trimmed) continue;
+      if (!trimmed || isRequestReplayLine(trimmed)) continue;
       try {
         results.push(JSON.parse(trimmed));
       } catch {

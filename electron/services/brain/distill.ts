@@ -1,4 +1,5 @@
 import type { DistilledItem, SessionMetadata } from './sources/types';
+import { isRequestReplayLine } from '../util/request-replay';
 
 /**
  * A distillation that is definitely a session.
@@ -77,7 +78,7 @@ function asString(value: unknown): string | null {
 function parseRows(jsonl: string): Row[] {
   const rows: Row[] = [];
   for (const line of jsonl.split('\n')) {
-    if (!line.trim()) continue;
+    if (!line.trim() || isRequestReplayLine(line)) continue;
     try {
       const row = asRecord(JSON.parse(line) as unknown);
       if (row) rows.push(row);

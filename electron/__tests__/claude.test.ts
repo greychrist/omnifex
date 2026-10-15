@@ -529,6 +529,29 @@ describe('claude service', () => {
       expect(Array.isArray(result)).toBe(true);
       expect(result.length).toBe(3);
     });
+
+    it('drops request-replay records (api-request*) before they reach the renderer', async () => {
+      const configDir = path.join(tmpDir, '.claude-replay');
+      const projectPath = path.join(tmpDir, 'replay-project');
+      const projectId = projectPath.replace(/\//g, '-');
+      const projectDir = path.join(configDir, 'projects', projectId);
+      fs.mkdirSync(projectDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(projectDir, 's.jsonl'),
+        [
+          JSON.stringify({ type: 'user', message: { content: 'hi' } }),
+          JSON.stringify({ type: 'api-request', params: { model: 'x' } }),
+          JSON.stringify({ type: 'api-request-shape', system: [] }),
+          JSON.stringify({ type: 'api-request-blob', message: { role: 'user' } }),
+          JSON.stringify({ type: 'assistant', message: { content: [] } }),
+        ].join('\n'),
+      );
+      const account = accounts.createAccount({ name: 'Replay', configDir });
+      accounts.addPathRule(account.id, tmpDir);
+
+      const result = await service.loadSessionHistory('s', projectId, projectPath);
+      expect((result as Array<{ type: string }>).map((r) => r.type)).toEqual(['user', 'assistant']);
+    });
   });
 
 

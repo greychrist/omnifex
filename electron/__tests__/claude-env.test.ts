@@ -165,4 +165,32 @@ describe('buildClaudeEnv — CLAUDE_CODE_PROJECT_DIR_NAME (CLI 2.1.234)', () => 
     const env = buildClaudeEnv('/Users/test/.claude-personal', {}, fakeDeps());
     expect('CLAUDE_CODE_PROJECT_DIR_NAME' in env).toBe(false);
   });
+
+  // CLI 2.1.300 turned request replay on by default. In auto mode each
+  // `api-request` record carries a classifier context that grows per call up
+  // to 256 KB, and every OmniFex reader of the transcript pays for it.
+  describe('request replay opt-out', () => {
+    it('turns request replay off by default', () => {
+      const env = buildClaudeEnv('/Users/test/.claude-personal', {}, fakeDeps());
+      expect(env.CLAUDE_CODE_ELEGANT_MEADOW).toBe('0');
+    });
+
+    it('leaves a value the user set in their shell alone', () => {
+      const env = buildClaudeEnv(
+        '/Users/test/.claude-personal',
+        {},
+        fakeDeps({ processEnv: { PATH: '/usr/bin', CLAUDE_CODE_ELEGANT_MEADOW: '1' } }),
+      );
+      expect(env.CLAUDE_CODE_ELEGANT_MEADOW).toBe('1');
+    });
+
+    it('lets caller extras override it', () => {
+      const env = buildClaudeEnv(
+        '/Users/test/.claude-personal',
+        { CLAUDE_CODE_ELEGANT_MEADOW: '1' },
+        fakeDeps(),
+      );
+      expect(env.CLAUDE_CODE_ELEGANT_MEADOW).toBe('1');
+    });
+  });
 });

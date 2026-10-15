@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { AccountsService } from './accounts';
 import type { LoggingService } from './logging';
+import { isRequestReplayLine } from './util/request-replay';
 import { computeMessageCost } from '../../src/lib/pricing';
 
 // ---------------------------------------------------------------------------
@@ -201,7 +202,7 @@ function recoverProjectPathFromMessages(messages: RawMessage[]): string | null {
 
 function parseJsonlLine(line: string): RawMessage | null {
   const trimmed = line.trim();
-  if (!trimmed) return null;
+  if (!trimmed || isRequestReplayLine(trimmed)) return null;
   try {
     return JSON.parse(trimmed) as RawMessage;
   } catch {
