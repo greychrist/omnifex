@@ -5,6 +5,16 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.235] — 2026-10-15
+
+### Fixed
+
+- Session transcripts no longer balloon in auto mode. Claude Code 2.1.300 started writing a copy of every API request into the session file — up to 256 KB per model call in auto mode. OmniFex now turns that off for the sessions it starts, and skips those records when reading any transcript, so opening a session, listing projects, usage, summaries and the Brain no longer pay for them.
+
+### Changed
+
+- Reviewed Claude Code 2.1.297 through 2.1.300 for changes affecting OmniFex.
+
 ## [0.4.234] — 2026-10-13
 
 ### Fixed
