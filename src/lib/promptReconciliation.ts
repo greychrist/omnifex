@@ -40,7 +40,7 @@ function rawOf(node: JsonlNode): Record<string, unknown> | null {
   return 'raw' in node ? (node.raw as Record<string, unknown>) : null;
 }
 
-function uuidOf(node: JsonlNode): string | null {
+export function uuidOf(node: JsonlNode): string | null {
   const uuid = rawOf(node)?.uuid;
   return typeof uuid === 'string' && uuid.length > 0 ? uuid : null;
 }

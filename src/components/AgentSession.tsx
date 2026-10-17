@@ -67,6 +67,7 @@ import { changeSessionModel } from '@/lib/sessionModelChange';
 import { forwardedParentToolUseId } from '@/lib/subagentDispatch';
 import { reduceSessionStreamMessage } from '@/lib/sessionStreamReducer';
 import { isCliPromptRecord } from '@/lib/promptReconciliation';
+import { isRepeatedRecord, withoutRepeatedRecords } from '@/lib/repeatedRecords';
 import {
   POST_COMPACT_ENABLED_SETTING_KEY,
   POST_COMPACT_PROMPT_SETTING_KEY,
@@ -1333,7 +1334,9 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
         .filter((n): n is NonNullable<typeof n> => n !== null)
         .map((n) => normalizeJsonlNode(n));
 
-      streamCtxRef.current.setMessages(nodes);
+      // The CLI can re-append a compacted segment it already wrote; one row
+      // per uuid. See repeatedRecords.ts.
+      streamCtxRef.current.setMessages(withoutRepeatedRecords(nodes));
 
       // Restore the permission mode the session was last in (resume fidelity).
       // Priority: last mode recorded in the JSONL → account default → leave the
@@ -1495,6 +1498,11 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
         return;
       }
       if (node.kind === 'stream-event' || node.kind === 'rate-limit' || node.kind === 'lifecycle') return;
+      // A record the tab already holds — the CLI re-appending a compacted
+      // segment, or a reconnect replay overlapping what landed. Dropped before
+      // the reducer so it neither renders nor fires effects. See
+      // repeatedRecords.ts.
+      if (isRepeatedRecord(useClaudeSessionStore.getState().selectTab(sessionTabId).messages, node)) return;
       // Live-only: drives the tool row's chip and the perms readout. The node
       // still flows on into messages[] as its own (default Never) kind.
       const permissionCheck = permissionCheckFrame(node);
