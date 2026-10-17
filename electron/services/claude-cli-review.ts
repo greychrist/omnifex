@@ -44,6 +44,103 @@ import { buildClaudeEnv } from './util/claude-env';
  *    "side_question timed out: the host did not answer in time". Only the
  *    SDK's `askSideQuestion()` documents it.
  *
+ * Last review: 2.1.301 -> 2.1.302 on 2026-10-17. Findings: one cost
+ * double-count, from fork subagents now reaching OmniFex sessions.
+ *
+ *  Changelog coverage: 2.1.302 has ~70 entries. Both endpoints installed,
+ *  so the wire claims are a real binary diff.
+ *
+ *  WIRE DIFF (unique literals): merge-strategy map 40 -> 40, `subtype:`
+ *  155, `hook_event_name` 33, `type:"control_*"` 4, SDK
+ *  `this.request({subtype})` 54 — all set-identical. turnOrigin value set
+ *  unchanged. Record-key diff is Node-builtin identifier noise only.
+ *  Double-quoted `.describe()` changes: two rewordings — the Agent
+ *  `run_in_background` note (fork gate -> "forced into the background")
+ *  and an artifact quickstart kind. No host obligation. `/usage` anchors
+ *  count-identical; `cache write` 40 -> 41 is occurrence drift.
+ *
+ *  BUG — fork subagents ("on by default in `claude -p` and the Agent SDK";
+ *  2.1.301 gated them off when non-interactive, so this is the first
+ *  release they reach OmniFex sessions). Probed live: a fork writes
+ *  `subagents/agent-<id>.jsonl` (meta `agentType:"fork"`, `isFork:true`)
+ *  starting with a `fork-context-ref` record (already in
+ *  cliSidechannelRecords.ts), then a COPY of the parent's assistant record
+ *  that issued the Agent call — same `requestId` and `message.id`, full
+ *  `usage` (~70K cache read in the probe) — then a synthetic tool_result
+ *  ("Fork started — processing in background") + `<fork-boilerplate>`
+ *  directive. session-cost-core.ts and cost-history.ts run
+ *  `extractDedupedUsage` per file, so that parent turn is priced twice:
+ *  once in the main loop, once under `bySubagent[forkId]`.
+ *
+ *  Checked and inert:
+ *
+ *   - `CLAUDE_CODE_AUTO_MODE_MODEL` (client-side classifier only):
+ *     opportunity against the invisible classifier spend, not a bug.
+ *   - `-p` / SDK sessions with no permission mode start in `default` on
+ *     third-party providers: claude-cli-engine.ts passes
+ *     `--permission-mode` whenever the user picked one; first-party
+ *     accounts unaffected.
+ *   - A subagent's own Agent calls now foreground by default in `-p`:
+ *     subagentStreams.ts handles both shapes. Desktop/VS Code background
+ *     forcing does not apply to stream-json hosts.
+ *   - Idle compaction `/config` row: REPL-only, see 2.1.299 notes.
+ *   - Prompt/agent hooks capped at 12 concurrent per event; MCP
+ *     2026-07-28 missing `resultType`/`ttlMs`/`cacheScope`; stop during
+ *     compaction "Prompt is too long"; Read image 128 MB cap; prompt-cache
+ *     miss after ToolSearch reload; plugin subcommand write loss; reftable
+ *     marketplaces: CLI fixes in our favour.
+ *   - Prompt suggestions on credits (we render none), `/design*`, OTel
+ *     `tool_decision`, agents-view rows, `remote-control --help`, artifacts,
+ *     Chrome prompt placement, PowerShell, Windows, VSCode, cloud sessions,
+ *     Remote Control, Claude Tag, Code Review: no OmniFex surface.
+ *
+ * Last review: 2.1.300 -> 2.1.301 on 2026-10-16. Findings: nothing to
+ * change.
+ *
+ *  Changelog coverage: 2.1.301 has ~55 entries. Both endpoints installed,
+ *  so the wire claims are a real binary diff.
+ *
+ *  WIRE DIFF (unique literals): merge-strategy map 40 -> 40, set-identical.
+ *  `hook_event_name` 33, `type:"control_*"` 4, SDK `this.request({subtype})`
+ *  54, `subtype:` 155, `type:` 1008, `origin:{kind}` 12, `"ui_*"` 29 — all
+ *  set-identical. turnOrigin sanitizer set (`auto_default, auto_settings,
+ *  explicit, sdk`) unchanged. `ELEGANT_MEADOW` still read (3 hits), so the
+ *  request-replay opt-out from the last pass holds. Double-quoted
+ *  `.describe()` 1909 -> 1911, both `@internal`: assistant
+ *  `refused_message_id` (API msg id on a refusal record; nothing reads it)
+ *  and a background task's remote output-file path; plus the MCP per-tool
+ *  permission policy now also applies to host-registered sdk servers
+ *  (OmniFex registers none). No host obligation. `/usage` anchors
+ *  (`Total cost:`, `Total code changes:`, `Current session`, `Current
+ *  week`, `MCP servers`) count-identical; `resets` 116 -> 114 and `Usage:`
+ *  186 -> 187 are occurrence drift.
+ *
+ *  Checked and inert:
+ *
+ *   - Mod hook `.catch` now runs only on throw/timeout, not for events
+ *     raised beneath the hook's own calls: omnifex-mod/hooks/register.ts's
+ *     three `.catch`es are throw fallbacks that forward the event, so the
+ *     narrower trigger is what they assumed. `$.env.set` result shape,
+ *     `Input.rows`, `$.model.fork` before first response, 48-row Markdown
+ *     tree above the question dialog: the bundled mod uses none; OmniFex
+ *     renders no mod trees.
+ *   - Switching to a smaller-context model now summarises with the previous
+ *     model first: OmniFex's mid-session picker sends `set_model`
+ *     (queries.ts:96); a resulting compaction arrives as an ordinary
+ *     compact_boundary, already handled. CLI fix in our favour.
+ *   - Mid-turn message cutting off a tool's permission check no longer
+ *     reported as user rejection; `fable`/`best` alias retrying the
+ *     previous Fable; Grep/Glob search failure now an error; Read on binary
+ *     files; skills unlisted after `/rewind`; skill-argument stalls; sign-in
+ *     refresh races after `claude auth status`; full-disk login message;
+ *     repeated compaction behind gateways: CLI fixes in our favour.
+ *   - RETRY_WATCHDOG env, OTel `tool_decision` fields, claude-api skill,
+ *     vim `%`/INSERT/AskUserQuestion, VTE/iTerm2 stray text, Markdown
+ *     header-only table, ANSI theme dim text, `/diff` reftable, workflow
+ *     agent fixes, artifacts, WorktreeCreate quit, awsAuthRefresh,
+ *     fullscreen compact freeze, self-hosted runner, Windows, VSCode: no
+ *     OmniFex surface.
+ *
  * Last review: 2.1.299 -> 2.1.300 on 2026-10-14. Findings:
  *
  *  Changelog coverage: 2.1.300 has ~90 entries. Both endpoints installed,
@@ -4296,7 +4393,7 @@ import { buildClaudeEnv } from './util/claude-env';
  * `~/.claude.json` fix (we read-modify-write that file, never replace it), and
  * the VSCode screen-reader work.
  */
-export const REVIEWED_CLI_VERSION = '2.1.300';
+export const REVIEWED_CLI_VERSION = '2.1.302';
 
 /**
  * app_settings key holding the user's explicit OmniFex-checkout override.
