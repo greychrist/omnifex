@@ -26,6 +26,7 @@ import { nextFollowing, USER_SCROLL_INTENT_MS } from "@/lib/autoScrollFollow";
 import { stepTarget, isStepStop, isMainPrompt, STEP_MARGIN_PX, type StepDirection } from "@/lib/transcriptStepper";
 import { cn } from "@/lib/utils";
 import { logAndForget } from "@/lib/fireAndLog";
+import { rowKeyOf } from "@/lib/rowKey";
 import type { JsonlNode } from "@/types/jsonl";
 import type { ViewMode } from "@/components/SessionViewToggle";
 
@@ -592,9 +593,9 @@ function ClaudeTranscriptImpl({
               than counted in an array so they follow whatever the filters and
               the view mode actually rendered. */}
           {viewMode === 'verbose'
-            ? displayableMessages.map((message, idx) => (
+            ? displayableMessages.map((message) => (
                 <div
-                  key={idx}
+                  key={rowKeyOf(message)}
                   className={ROW_CLASS}
                   data-message-uuid={messageUuidOf(message)}
                   data-transcript-step={isStepStop(message) ? "" : undefined}

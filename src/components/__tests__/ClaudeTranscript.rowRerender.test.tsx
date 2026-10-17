@@ -147,6 +147,24 @@ describe.each(['verbose', 'compact'] as const)('ClaudeTranscript row re-renders 
     // or into a collapsed group with it (compact).
     expect(rowRendersOnUpdate(before, after, viewMode)).toBeLessThanOrEqual(1);
   });
+
+  // The CLI's stream `init` is inserted before the first user record, not
+  // appended — it arrives on every process start, including the one after a
+  // /compact. Index-keyed rows each received a different message on that
+  // insert, so the whole tab re-rendered: 1,779 rows on a real 12 MB
+  // transcript, the trigger for the 2026-10-16 post-compact window stall.
+  it('renders only the inserted row when a record lands above every other', () => {
+    const before = conversation(40);
+    const init: JsonlNode = {
+      kind: 'cli-stream-init',
+      sessionId: 's',
+      receivedAt: ts(500),
+      raw: { type: 'system', subtype: 'init', session_id: 's' } as never,
+    };
+    const after = [init, ...before];
+
+    expect(rowRendersOnUpdate(before, after, viewMode)).toBeLessThanOrEqual(1);
+  });
 });
 
 it('re-renders a tool call row when its result lands', () => {

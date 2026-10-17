@@ -12,6 +12,7 @@ import { installRenderProfilerConsole } from "@/lib/renderProfilerConsole";
 import { parsePrintHash } from "@/lib/costReportPrint";
 import { CostReportPrintPage } from "@/components/cost-report/CostReportPrintPage";
 import { installRemoteBridge } from "@/lib/remote/bootstrap";
+import { installStallWatchdog } from "@/lib/stallWatchdog";
 
 // Everything below talks to `window.electronAPI`, so the decision about what
 // that object IS — the preload bridge, or the OmniFex Remote shim over a
@@ -28,6 +29,10 @@ logAndForget('main:initialize', logService.initialize());
 // Render profiler — off unless explicitly enabled, including in packaged
 // builds. `__omnifexProfile.on()` in the devtools console, then reload.
 installRenderProfilerConsole(window as unknown as Record<string, unknown>);
+
+// Logs a `renderer-stall` warn to app_logs whenever the main thread stops
+// running timers for 2s+. See stallWatchdog.ts for the freeze it exists for.
+installStallWatchdog();
 
 // Check log count and warn if excessive
 api.logCount().then((count) => {

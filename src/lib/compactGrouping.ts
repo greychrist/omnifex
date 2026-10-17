@@ -5,6 +5,7 @@ import { isHiddenInCompact, isNeverShown, resolveKind, type KindStyle } from './
 import { classifyStandaloneKind } from './messageKind';
 import { classifyBlockKind } from './blockKind';
 import { countHiddenEvents } from './hiddenEventsSummary';
+import { rowKeyOf } from './rowKey';
 
 /**
  * Resolve the whole-message kind ID for compact-grouping purposes.
@@ -154,11 +155,11 @@ export function buildCompactItems(
 ): CompactItem[] {
   const items: CompactItem[] = [];
 
-  messages.forEach((message, idx) => {
+  messages.forEach((message) => {
     const fullyHidden = isMessageFullyHidden(message, messages, config);
 
     if (!fullyHidden) {
-      items.push({ kind: 'single', message, key: `m-${idx}` });
+      items.push({ kind: 'single', message, key: `m-${rowKeyOf(message)}` });
       return;
     }
 
@@ -166,7 +167,7 @@ export function buildCompactItems(
     if (last?.kind === 'group') {
       last.messages.push(message);
     } else {
-      items.push({ kind: 'group', messages: [message], key: `g-${idx}` });
+      items.push({ kind: 'group', messages: [message], key: `g-${rowKeyOf(message)}` });
     }
   });
 

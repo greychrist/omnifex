@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import '@testing-library/jest-dom/vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import type { JsonlNode } from '@/types/jsonl';
@@ -270,7 +270,11 @@ describe('stepper button icons', () => {
 });
 
 describe('ClaudeTranscript — jumping to a message', () => {
-  const transcript = () => [prompt('p1'), assistant(), prompt('p2'), assistant()];
+  // One array, rendered twice: rows are keyed by record identity, so a fresh
+  // copy on rerender would remount every row and drop the faked layout.
+  let messages: JsonlNode[];
+  beforeEach(() => { messages = [prompt('p1'), assistant(), prompt('p2'), assistant()]; });
+  const transcript = () => messages;
 
   it('scrolls to the row holding the requested message', () => {
     const { container, rerender } = render(transcriptElement(transcript()));
