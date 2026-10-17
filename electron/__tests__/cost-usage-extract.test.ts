@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { extractDedupedUsage } from '../services/cost/usage-extract';
+import { extractDedupedUsage, extractSessionUsage } from '../services/cost/usage-extract';
 
 function line(obj: unknown): string {
   return JSON.stringify(obj);
@@ -53,5 +53,43 @@ describe('extractDedupedUsage', () => {
     const rows = extractDedupedUsage(line({ type: 'assistant', message: { id: 'm', usage: usageA } }));
     expect(rows[0].model).toBe('unknown');
     expect(rows[0].timestamp).toBe('');
+  });
+});
+
+describe('extractSessionUsage', () => {
+  const asst = (req: string, usage: unknown) =>
+    line({ type: 'assistant', requestId: req, timestamp: '2026-10-17T01:00:00Z', message: { id: `msg_${req}`, model: 'claude-opus-5-5', usage } });
+
+  it('drops a fork transcript\'s copy of the parent request, keeping the main loop\'s', () => {
+    // A fork's agent-<id>.jsonl opens with a fork-context-ref and a copy of
+    // the parent's assistant record that made the Agent call — same
+    // requestId, full usage (CLI 2.1.302).
+    const main = [asst('req_parent', { output_tokens: 538, cache_read_input_tokens: 70507 })].join('\n');
+    const fork = [
+      line({ type: 'fork-context-ref', agentId: 'f1', parentSessionId: 's', parentLastUuid: 'u', contextLength: 69 }),
+      asst('req_parent', { output_tokens: 538, cache_read_input_tokens: 70507 }),
+      asst('req_fork', { output_tokens: 5 }),
+    ].join('\n');
+    const result = extractSessionUsage(main, [{ agentId: 'f1', content: fork }]);
+    expect(result.main.map((r) => r.key)).toEqual(['req_parent']);
+    expect(result.subagents).toEqual([{ agentId: 'f1', rows: [expect.objectContaining({ key: 'req_fork' })] }]);
+  });
+
+  it('drops a request already claimed by an earlier subagent file', () => {
+    const result = extractSessionUsage('', [
+      { agentId: 'a', content: asst('req_a', { output_tokens: 1 }) },
+      { agentId: 'b', content: [asst('req_a', { output_tokens: 1 }), asst('req_b', { output_tokens: 2 })].join('\n') },
+    ]);
+    expect(result.subagents.map((s) => [s.agentId, s.rows.map((r) => r.key)])).toEqual([
+      ['a', ['req_a']],
+      ['b', ['req_b']],
+    ]);
+  });
+
+  it('never collapses line-number fallback keys across files', () => {
+    const noIds = line({ type: 'assistant', message: { model: 'm', usage: usageA } });
+    const result = extractSessionUsage(noIds, [{ agentId: 'a', content: noIds }]);
+    expect(result.main).toHaveLength(1);
+    expect(result.subagents[0].rows).toHaveLength(1);
   });
 });

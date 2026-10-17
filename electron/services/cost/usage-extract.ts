@@ -54,3 +54,33 @@ export function extractDedupedUsage(content: string): ExtractedUsageRow[] {
   }
   return [...map.values()];
 }
+
+export interface SubagentUsage {
+  agentId: string;
+  rows: ExtractedUsageRow[];
+}
+
+/**
+ * One session's billed requests across its main transcript and every
+ * subagent transcript, each request counted once.
+ *
+ * Deduping per file is not enough: a fork subagent's transcript opens with a
+ * copy of the parent's assistant record that made the Agent call — same
+ * `requestId`, full `usage` (CLI 2.1.302, when forks reached `-p` sessions).
+ * The main loop owns any request it holds; otherwise the first subagent file
+ * to hold it does. Line-number fallback keys are file-local and never match
+ * across files.
+ */
+export function extractSessionUsage(
+  sessionContent: string,
+  subagentFiles: readonly { agentId: string; content: string }[],
+): { main: ExtractedUsageRow[]; subagents: SubagentUsage[] } {
+  const main = extractDedupedUsage(sessionContent);
+  const claimed = new Set(main.map((r) => r.key));
+  const subagents = subagentFiles.map((file) => {
+    const rows = extractDedupedUsage(file.content).filter((r) => r.key.startsWith('line:') || !claimed.has(r.key));
+    for (const r of rows) claimed.add(r.key);
+    return { agentId: file.agentId, rows };
+  });
+  return { main, subagents };
+}

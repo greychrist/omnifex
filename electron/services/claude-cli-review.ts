@@ -45,7 +45,7 @@ import { buildClaudeEnv } from './util/claude-env';
  *    SDK's `askSideQuestion()` documents it.
  *
  * Last review: 2.1.301 -> 2.1.302 on 2026-10-17. Findings: one cost
- * double-count, from fork subagents now reaching OmniFex sessions.
+ * double-count, from fork subagents now reaching OmniFex sessions (fixed).
  *
  *  Changelog coverage: 2.1.302 has ~70 entries. Both endpoints installed,
  *  so the wire claims are a real binary diff.
@@ -70,7 +70,10 @@ import { buildClaudeEnv } from './util/claude-env';
  *  ("Fork started — processing in background") + `<fork-boilerplate>`
  *  directive. session-cost-core.ts and cost-history.ts run
  *  `extractDedupedUsage` per file, so that parent turn is priced twice:
- *  once in the main loop, once under `bySubagent[forkId]`.
+ *  once in the main loop, once under `bySubagent[forkId]`. FIXED in the
+ *  same pass: usage-extract.ts `extractSessionUsage` dedupes requests
+ *  across the main file and every subagent file (main loop owns a shared
+ *  request), used by both callers.
  *
  *  Checked and inert:
  *

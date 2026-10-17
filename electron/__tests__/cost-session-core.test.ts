@@ -106,4 +106,22 @@ describe('computeSessionCost', () => {
     expect(dailyRows[0].cache_write_5m_tokens).toBe(111);
     expect(dailyRows[0].cache_write_1h_tokens).toBe(222);
   });
+
+  it('prices a fork\'s copy of the parent request once, in the main loop', () => {
+    const parent = assistantLine('r_parent', '2026-10-17T01:00:00Z', 'claude-opus-4-8', { output_tokens: 500, cache_read_input_tokens: 70000 });
+    const fork = [
+      line({ type: 'fork-context-ref', agentId: 'f1', parentSessionId: 'sess1', parentLastUuid: 'u', contextLength: 69 }),
+      parent,
+      assistantLine('r_fork', '2026-10-17T01:00:05Z', 'claude-opus-4-8', { output_tokens: 10 }),
+    ].join('\n');
+    const { snapshot, dailyRows } = computeSessionCost({ ...baseArgs, sessionContent: parent, subagentFiles: [{ agentId: 'f1', content: fork }] });
+
+    const parentUsd = (500 * 25 + 70000 * 0.5) / M;
+    const forkUsd = (10 * 25) / M;
+    expect(snapshot.totalUsd).toBeCloseTo(parentUsd + forkUsd, 10);
+    expect(snapshot.bySubagent.f1.usd).toBeCloseTo(forkUsd, 10);
+    expect(snapshot.tokens.cacheRead).toBe(70000);
+    expect(dailyRows.reduce((n, r) => n + r.request_count, 0)).toBe(2);
+  });
 });
+

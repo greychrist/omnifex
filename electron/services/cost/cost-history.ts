@@ -13,7 +13,7 @@ import type { Database } from '../database';
 import { createModelPricingService } from '../model-pricing';
 import type { ModelPricingInput } from '../../../src/lib/pricing';
 import { computeSessionCost, type SessionCostDailyRow, type SubagentFile } from './session-cost-core';
-import { extractDedupedUsage } from './usage-extract';
+import { extractSessionUsage } from './usage-extract';
 import { createCliProcessUsageStore, type CliProcessUsage } from './cli-process-usage';
 import { computeUnloggedRows, UNLOGGED_SESSION_PREFIX } from './unlogged-spend';
 import {
@@ -675,13 +675,14 @@ export function createCostHistoryService(db: Database, fsDeps: CostFs = nodeCost
           });
           replaceSession(sessionId, dailyRows);
           if (processes.length > 0) {
+            const usage = extractSessionUsage(sessionContent, subagentFiles);
             const { rows, skipped } = computeUnloggedRows({
               sessionId,
               accountName: account.name,
               configDir: account.config_dir,
               projectPath,
               processes,
-              transcript: [sessionContent, ...subagentFiles.map((f) => f.content)].flatMap((c) => extractDedupedUsage(c)),
+              transcript: [...usage.main, ...usage.subagents.flatMap((sub) => sub.rows)],
               overrides,
             });
             for (const skip of skipped) {

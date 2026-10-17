@@ -11,7 +11,7 @@ import {
   splitCacheWriteTokens,
   type ModelPricingInput,
 } from '../../../src/lib/pricing';
-import { extractDedupedUsage, type ExtractedUsageRow } from './usage-extract';
+import { extractSessionUsage, type ExtractedUsageRow } from './usage-extract';
 
 export interface SessionCostSnapshot {
   totalUsd: number;
@@ -204,10 +204,11 @@ export function computeSessionCost(args: ComputeSessionCostArgs): {
     }
   };
 
-  ingest(extractDedupedUsage(args.sessionContent), null);
-  for (const file of args.subagentFiles) {
-    const agent = (snapshot.bySubagent[file.agentId] ??= { usd: 0, estimated: false, contextTokens: 0, model: 'unknown' });
-    ingest(extractDedupedUsage(file.content), agent);
+  const usage = extractSessionUsage(args.sessionContent, args.subagentFiles);
+  ingest(usage.main, null);
+  for (const sub of usage.subagents) {
+    const agent = (snapshot.bySubagent[sub.agentId] ??= { usd: 0, estimated: false, contextTokens: 0, model: 'unknown' });
+    ingest(sub.rows, agent);
   }
 
   snapshot.byModel = [...byModel.values()].sort((a, b) => b.usd - a.usd);
