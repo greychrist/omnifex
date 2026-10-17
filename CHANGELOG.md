@@ -5,6 +5,20 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.236] — 2026-10-17
+
+### Fixed
+
+- Sessions that spawn fork subagents no longer overstate their cost. Claude Code 2.1.302 turned fork subagents on for the sessions OmniFex runs, and each fork's transcript carries a copy of the parent's turn that started it; that turn was priced twice — in the session and again under the fork. Each API request is now counted once across a session and all its subagents, in the session cost, the Cost Report and unlogged-spend reconciliation.
+- Tabs no longer stall or show day-old dates and hidden messages after a compaction. Claude Code can re-append an earlier compacted stretch of the conversation under the same record ids; OmniFex now keeps the first copy and drops the repeats.
+- A Claude process restarting (including after `/compact`) no longer redraws every message in the tab. Rows are now keyed by record identity rather than position.
+
+### Changed
+
+- Brain search results on large notes now show the sections and lines that match the query, instead of whatever came first.
+- Renderer stalls of two seconds or more are logged to the app log, to diagnose freezes after compaction.
+- Reviewed Claude Code 2.1.301 and 2.1.302 for changes affecting OmniFex.
+
 ## [0.4.235] — 2026-10-15
 
 ### Fixed
