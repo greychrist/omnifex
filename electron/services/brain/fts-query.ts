@@ -52,3 +52,19 @@ export function toFtsQuery(input: string): string | null {
   // correct if TOKEN ever widens.
   return tokens.map((t) => `"${t.replace(/"/g, '""')}"`).join(' OR ');
 }
+
+/**
+ * The query's terms, for finding which lines of a hit matched.
+ *
+ * Same token rule and keyword filter as `toFtsQuery`, so a caller looks for
+ * exactly what the index matched on — `node-pty` stays one term. Lowercased
+ * and deduplicated; single characters are dropped because they match nearly
+ * every line and would make any selection by them meaningless.
+ */
+export function queryTerms(input: string): string[] {
+  if (typeof input !== 'string') return [];
+  const tokens = (input.slice(0, MAX_QUERY_CHARS).match(TOKEN) ?? []).filter(
+    (t) => !FTS_KEYWORDS.has(t) && t.length >= 2,
+  );
+  return [...new Set(tokens.map((t) => t.toLowerCase()))];
+}

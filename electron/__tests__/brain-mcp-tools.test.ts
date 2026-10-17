@@ -290,6 +290,113 @@ describe('brain MCP tools', () => {
       expect(body).toContain('more in this section');
     });
 
+    it('spends a part-shown section on the lines that match the query', () => {
+      // The failure this prevents, observed 2026-10-16: four hits, each Summary
+      // plus the opening Key facts and "97 more in this section", and the
+      // bullet that matched was never among the ones shown.
+      const vault = createVault(vaultA);
+      const facts = Array.from({ length: 120 }, (_, i) =>
+        i === 100 ? '- NEEDLE-LINE the turnOrigin sanitizer moved' : `- FACT-${String(i)} filler detail`,
+      );
+      vault.writeNote(
+        'Subsystems/Deep.md',
+        note(['# Deep', '', '## Summary', 'a summary', '', '## Key facts', ...facts, ''].join('\n')),
+      );
+      createVaultIndex(join(vaultA, '.omnifex', 'index.db')).rebuild(vault);
+
+      const res = toolsFor(vaultA).search({ query: 'turnOrigin' });
+      expect(res.ok).toBe(true);
+      if (!res.ok) return;
+      const deep = res.hits.find((h) => h.notePath === 'Subsystems/Deep.md')!;
+      expect(deep.body!.length).toBeLessThanOrEqual(MAX_BODY_CHARS);
+      expect(deep.body).toContain('NEEDLE-LINE');
+      expect(deep.body).toContain('a summary');
+      // Leftover budget still goes to the section's leading lines, in order.
+      expect(deep.body).toContain('FACT-0 ');
+      expect(deep.body!.indexOf('FACT-0 ')).toBeLessThan(deep.body!.indexOf('NEEDLE-LINE'));
+      // A selection must say it is one, or it reads as the top of the section.
+      expect(deep.body).toContain('lines matching the query kept');
+      expect(deep.bodyTruncated).toBe(true);
+    });
+
+    it('gives a matching section the budget before a non-matching one', () => {
+      // Decisions ranks below Key facts and fits whole, so a greedy pass would
+      // keep it and leave the matching section nothing to show its match with.
+      const vault = createVault(vaultA);
+      const decisions = Array.from({ length: 16 }, (_, i) => `- **2026-08-0${String(i % 9)}**: DECISION-${String(i)} ${'d'.repeat(80)}`);
+      const facts = Array.from({ length: 60 }, (_, i) =>
+        i === 50 ? '- NEEDLE-LINE drainConcurrency is one' : `- FACT-${String(i)} ${'f'.repeat(60)}`,
+      );
+      vault.writeNote(
+        'Subsystems/Crowded.md',
+        note(
+          [
+            '# Crowded', '', '## Summary', 'a summary', '',
+            '## Decisions', ...decisions, '',
+            '## Key facts', ...facts, '',
+          ].join('\n'),
+        ),
+      );
+      createVaultIndex(join(vaultA, '.omnifex', 'index.db')).rebuild(vault);
+
+      const res = toolsFor(vaultA).search({ query: 'drainConcurrency' });
+      expect(res.ok).toBe(true);
+      if (!res.ok) return;
+      const body = res.hits.find((h) => h.notePath === 'Subsystems/Crowded.md')!.body!;
+      expect(body.length).toBeLessThanOrEqual(MAX_BODY_CHARS);
+      expect(body).toContain('NEEDLE-LINE');
+      expect(body).toMatch(/sections omitted[^)]*Decisions/);
+    });
+
+    it('still keeps a small matching section whole after a large one spills', () => {
+      // Measured on the real vault: a note matched in both Key facts and
+      // Timeline. Stopping at the first matching section that spilled gave
+      // Key facts the whole budget and dropped Timeline's matching line.
+      const vault = createVault(vaultA);
+      const facts = Array.from({ length: 60 }, (_, i) =>
+        i === 1 ? '- NEEDLE-FACT drainConcurrency is one' : `- FACT-${String(i)} ${'f'.repeat(60)}`,
+      );
+      vault.writeNote(
+        'Subsystems/Twice.md',
+        note(
+          [
+            '# Twice', '', '## Summary', 'a summary', '',
+            '## Timeline', '- **2026-08-01**: NEEDLE-TIMELINE drainConcurrency set', '',
+            '## Key facts', ...facts, '',
+          ].join('\n'),
+        ),
+      );
+      createVaultIndex(join(vaultA, '.omnifex', 'index.db')).rebuild(vault);
+
+      const res = toolsFor(vaultA).search({ query: 'drainConcurrency' });
+      expect(res.ok).toBe(true);
+      if (!res.ok) return;
+      const body = res.hits.find((h) => h.notePath === 'Subsystems/Twice.md')!.body!;
+      expect(body.length).toBeLessThanOrEqual(MAX_BODY_CHARS);
+      expect(body).toContain('NEEDLE-FACT');
+      expect(body).toContain('NEEDLE-TIMELINE');
+    });
+
+    it('condenses exactly as before when no line matches the query', () => {
+      // A hit can match on its title alone. With nothing to prefer, the
+      // excerpt is the leading lines and claims no selection.
+      const facts = Array.from({ length: 120 }, (_, i) => `- FACT-${String(i)} filler detail`);
+      const index = createVaultIndex(join(vaultA, '.omnifex', 'index.db'));
+      const vault = createVault(vaultA);
+      const body = ['# Zebra', '', '## Summary', 'a summary', '', '## Key facts', ...facts, ''].join('\n');
+      vault.writeNote('Subsystems/Zebra.md', note(body));
+      index.upsert('Subsystems/Zebra.md', 'Zebra', note(body));
+      index.close();
+
+      const res = toolsFor(vaultA).search({ query: 'zebra' });
+      expect(res.ok).toBe(true);
+      if (!res.ok) return;
+      const hit = res.hits.find((h) => h.notePath === 'Subsystems/Zebra.md')!.body!;
+      expect(hit).toContain('FACT-0 ');
+      expect(hit).toContain('more in this section');
+      expect(hit).not.toContain('lines matching the query kept');
+    });
+
     it('drops Connected to from an over-cap body', () => {
       // Wikilinks are navigation, not content. They are the single largest
       // thing standing between the cap and the sections that answer a query.

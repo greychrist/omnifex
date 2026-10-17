@@ -13,6 +13,7 @@ import type { ParsedNote } from './types';
 import type { ReadonlyVaultIndex, SearchHit, SearchOptions } from './search';
 import { NoteParseError } from './frontmatter';
 import { SECTION_ORDER, parseSections, type Sections } from './merge';
+import { queryTerms } from './fts-query';
 
 /** What `brain_remember` writes, and what the capture source reads back. */
 export interface CaptureFile {
@@ -133,6 +134,24 @@ interface PartialSection {
   name: string;
   lines: readonly string[];
   dropped: number;
+  /** True when `lines` is a selection by query match rather than the
+   *  section's leading lines — the reader is told which one it is reading. */
+  selected: boolean;
+}
+
+/** Inflections stripped from a term before a second look, so `drains` finds
+ *  `drain`. A cheap stand-in for the index's Porter stemmer: a miss costs only
+ *  the leading-lines excerpt every hit got before. */
+const INFLECTION = /(?:ing|ed|es|s)$/;
+
+function lineMatches(line: string, terms: readonly string[]): boolean {
+  if (terms.length === 0) return false;
+  const lower = line.toLowerCase();
+  return terms.some((term) => {
+    if (lower.includes(term)) return true;
+    const stem = term.replace(INFLECTION, '');
+    return stem !== term && stem.length >= 4 && lower.includes(stem);
+  });
 }
 
 /**
@@ -166,7 +185,9 @@ function renderCondensed(
       parts.push(
         `## ${name}`,
         ...partial.lines,
-        `_(${String(partial.dropped)} more in this section)_`,
+        `_(${String(partial.dropped)} more in this section${
+          partial.selected ? '; lines matching the query kept' : ''
+        })_`,
         '',
       );
     }
@@ -181,8 +202,8 @@ function renderCondensed(
  * Fit a body into `cap` by choosing sections rather than by cutting at `cap`.
  *
  * Two passes. The first takes whole sections in priority order; the second
- * spends whatever budget is left on the leading lines of the best section that
- * did not fit. The second pass is not a refinement — without it the largest
+ * spends whatever budget is left on the best section that did not fit — its
+ * lines that match the query first, then its leading lines. The second pass is not a refinement — without it the largest
  * notes are the worst served, because the section carrying most of their
  * content is the one guaranteed to bust the cap on its own. Measured before it
  * existed: `Projects/OmniFex.md` returned its 441-byte Summary and nothing
@@ -192,8 +213,17 @@ function renderCondensed(
  * single `## Summary`, and some carry none — has nothing to select, so it falls
  * back to the prefix. That path is why this returns a string rather than
  * refusing: a stub body is worse than a cut one.
+ *
+ * The query decides what survives on exactly the notes that need condensing:
+ * the large ones, whose Key facts run to a hundred bullets and whose matching
+ * bullet is rarely among the first few. Observed before this: four hits, each
+ * Summary plus the opening facts and "97 more in this section", none of it
+ * bearing on the query. Summary stays first regardless — it orients — and a
+ * section holding a match outranks one that does not. With no terms, or no
+ * line matching them, the output is what it was before the query was
+ * consulted. See docs/superpowers/specs/2026-10-17-brain-query-aware-excerpt-design.md.
  */
-function condenseBody(body: string, cap: number): string {
+function condenseBody(body: string, cap: number, terms: readonly string[]): string {
   const { title, sections } = parseSections(body);
   const present = [...sections]
     .filter(([, lines]) => lines.some((line) => line.trim() !== ''))
@@ -205,31 +235,66 @@ function condenseBody(body: string, cap: number): string {
   // box lossy in a way `Connected to` is not.
   const known: readonly string[] = SECTION_ORDER;
   const order = [...BODY_SECTION_PRIORITY, ...present.filter((name) => !known.includes(name))];
-  const wanted = order.filter((name) => present.includes(name));
+  const matching = new Set(
+    present.filter((name) => (sections.get(name) ?? []).some((line) => lineMatches(line, terms))),
+  );
+  const ranked = order.filter((name) => present.includes(name));
+  // Stable partition behind Summary: matching sections, then the rest.
+  const wanted = [
+    ...ranked.filter((name) => name === 'Summary'),
+    ...ranked.filter((name) => name !== 'Summary' && matching.has(name)),
+    ...ranked.filter((name) => name !== 'Summary' && !matching.has(name)),
+  ];
 
   const keep = new Set<string>();
+  let spill: string | undefined;
   for (const name of wanted) {
+    // Once a matching section has spilled, only other matching sections may
+    // still be kept whole; a non-matching one would spend what the spilled
+    // match needs to be shown at all. `wanted` puts every matching section
+    // ahead of every non-matching one, so this ends the pass.
+    if (spill !== undefined && !matching.has(name)) break;
     const candidate = new Set(keep).add(name);
-    if (renderCondensed(title, sections, candidate, null, present).length <= cap) keep.add(name);
+    if (renderCondensed(title, sections, candidate, null, present).length <= cap) {
+      keep.add(name);
+    } else if (matching.has(name)) {
+      spill ??= name;
+    }
   }
+  spill ??= wanted.find((name) => !keep.has(name));
 
   let partial: PartialSection | null = null;
-  const spill = wanted.find((name) => !keep.has(name));
   if (spill !== undefined) {
-    const lines = sections.get(spill) ?? [];
-    // Grow one line at a time from an empty partial, so the footer and the
-    // heading are already paid for and each step's cost is exactly the line.
-    let best: PartialSection | null = null;
-    for (let n = 1; n <= lines.length; n++) {
-      const candidate: PartialSection = {
-        name: spill,
-        lines: lines.slice(0, n),
-        dropped: lines.length - n,
+    const name = spill;
+    const lines = sections.get(name) ?? [];
+    const chosen = new Set<number>();
+    const toPartial = (): PartialSection => {
+      const picked = [...chosen].sort((x, y) => x - y);
+      return {
+        name,
+        lines: picked.map((i) => lines[i]),
+        dropped: lines.length - picked.length,
+        selected: picked.some((i, n) => i !== n),
       };
-      if (renderCondensed(title, sections, keep, candidate, present).length > cap) break;
-      best = candidate;
+    };
+    // Grow one line at a time, so the footer and the heading are already paid
+    // for and each step's cost is exactly the line.
+    const tryAdd = (i: number): boolean => {
+      chosen.add(i);
+      if (renderCondensed(title, sections, keep, toPartial(), present).length <= cap) return true;
+      chosen.delete(i);
+      return false;
+    };
+    // Matching lines first, and a long one does not stop a shorter one after
+    // it. Then the leading lines, stopping at the first that does not fit so
+    // the filler stays a contiguous run from the top.
+    lines.forEach((line, i) => {
+      if (lineMatches(line, terms)) tryAdd(i);
+    });
+    for (let i = 0; i < lines.length; i++) {
+      if (!chosen.has(i) && !tryAdd(i)) break;
     }
-    partial = best;
+    if (chosen.size > 0) partial = toPartial();
   }
 
   const out = renderCondensed(title, sections, keep, partial, present);
@@ -326,7 +391,7 @@ function message(err: unknown): string {
  * query is an ordinary race — losing the other hits over it would be a much
  * worse outcome than one stub.
  */
-function attachBodies(hits: SearchHit[], vault: Vault): SearchResultHit[] {
+function attachBodies(hits: SearchHit[], vault: Vault, terms: readonly string[]): SearchResultHit[] {
   let budget = MAX_TOTAL_BODY_CHARS;
   return hits.map((hit) => {
     if (budget < MIN_USEFUL_BODY_CHARS) {
@@ -343,7 +408,7 @@ function attachBodies(hits: SearchHit[], vault: Vault): SearchResultHit[] {
       budget -= body.length;
       return { ...hit, body, bodyTruncated: false };
     }
-    const condensed = condenseBody(body, cap);
+    const condensed = condenseBody(body, cap, terms);
     budget -= condensed.length;
     return { ...hit, body: condensed, bodyTruncated: true };
   });
@@ -362,7 +427,7 @@ export function createBrainMcpTools(deps: BrainMcpDeps): BrainMcpTools {
       }
       try {
         const hits = index.search(query, { type, project, limit: limit ?? MCP_DEFAULT_LIMIT });
-        return { ok: true, hits: attachBodies(hits, deps.vault) };
+        return { ok: true, hits: attachBodies(hits, deps.vault, queryTerms(query)) };
       } catch (err) {
         return { ok: false, error: message(err) };
       } finally {

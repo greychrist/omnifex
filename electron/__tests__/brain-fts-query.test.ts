@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { toFtsQuery } from '../services/brain/fts-query';
+import { toFtsQuery, queryTerms } from '../services/brain/fts-query';
 
 describe('toFtsQuery', () => {
   it('returns null for empty or whitespace input', () => {
@@ -76,5 +76,22 @@ describe('toFtsQuery', () => {
 
   it('still returns null for a query that is only whitespace, however long', () => {
     expect(toFtsQuery(' '.repeat(5000))).toBeNull();
+  });
+});
+
+describe('queryTerms', () => {
+  it('splits on the same token rule the index uses, lowercased and deduplicated', () => {
+    // `node-pty` must stay one term exactly as it is one indexed token, or the
+    // excerpt would hunt for "node" and "pty" the index never matched on.
+    expect(queryTerms('node-pty Leak node-pty')).toEqual(['node-pty', 'leak']);
+  });
+
+  it('drops FTS operators and single characters', () => {
+    expect(queryTerms('drain OR queue AND x')).toEqual(['drain', 'queue']);
+  });
+
+  it('returns no terms for input with nothing searchable', () => {
+    expect(queryTerms('*** ???')).toEqual([]);
+    expect(queryTerms(42 as unknown as string)).toEqual([]);
   });
 });
