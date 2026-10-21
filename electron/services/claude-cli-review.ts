@@ -44,6 +44,85 @@ import { buildClaudeEnv } from './util/claude-env';
  *    "side_question timed out: the host did not answer in time". Only the
  *    SDK's `askSideQuestion()` documents it.
  *
+ * Last review: 2.1.303 -> 2.1.304 on 2026-10-19. Findings: none broken;
+ * two optional opportunities (get_context_usage row ids, mod
+ * `decider:"person"`).
+ *
+ *  Changelog coverage: 2.1.304 has ~75 entries. Both endpoints installed,
+ *  so the wire claims are a real binary diff.
+ *
+ *  WIRE DIFF (unique literals): merge-strategy map, `subtype:` 155,
+ *  `hook_event_name` 33, `type:"control_*"` 4, SDK
+ *  `this.request({subtype})` 54 — all set-identical. turnOrigin value set
+ *  unchanged. `type:` gains only `"passed_by"`, a hooks-worker ->
+ *  host postMessage (never on stdout or in JSONL). Object-key diff
+ *  (~590 new keys) is usage-credit offers, sandbox proxy, surveys,
+ *  settings.read layers, cloud/Remote Control — none on user/assistant
+ *  records. `.describe()` 2175 -> 2188: new `get_context_usage` fields
+ *  (a stable per-row id "match a particular row on this", an
+ *  `mcp_instructions` row by server, skill/agent file paths, pluginId);
+ *  ui_press `answers_press` / drawing; keep_alive may carry
+ *  `startup_mark` only when CLAUDE_CODE_SDK_READS_STARTUP_MARKS is set
+ *  (we don't); sandbox-runtime options.
+ *
+ *  Checked and inert:
+ *   - `/usage` stale banner suffix "(rate limited — try again in a
+ *     moment)" now "(rate limited until <time>)" when the reset is known.
+ *     usage-runner/parser.ts STALE_MARKER anchors on the "Showing
+ *     last-known usage" prefix only, so safe; the parser.ts:198 comment and
+ *     test fixtures still show the old suffix (cosmetic).
+ *   - Resume-cost warning on Pro/Max: `/resume` local-jsx dialog in the
+ *     TUI; OmniFex resumes with `--resume` over stream-json, never sees it.
+ *   - "Plugin ran first and skipped your mod's hook" line: a live-only
+ *     `system:ui_log` under the skipped mod's name (already rendered as a
+ *     mod log line). It fires for the bundled `omnifex` mod on the Work
+ *     account: the built-in `cc-plugin-sec-default@builtin` seats itself
+ *     outermost under managed settings / Team & Enterprise and passes
+ *     `prompt.compose` on past us, so omnifex-mod's MAIN_HINT section is
+ *     not added there. Likely pre-existing — 2.1.304 only made it visible.
+ *     Progress still gets called in Work sessions (the tool is registered;
+ *     only the system-prompt nudge is lost). The order is a managed-settings
+ *     plugin-order list, not ours to change.
+ *   - Mod `tool.check` `decider:"person"` / `e.isReadOnly`: additive;
+ *     omnifex-mod/hooks/register.ts:57 returns plain `allow` for its own
+ *     tool.
+ *   - Compaction summary now lists earlier tool names (`toolNamesUsed`
+ *     folded into the isCompactSummary text) — text only.
+ *   - Write result paths `~/…` instead of `../../…`: WriteWidget ignores
+ *     the result text.
+ *   - Auto-mode classifier context no longer stored per request: shrinks
+ *     JSONL; we never read it (classifier cost was already invisible).
+ *   - Model switch / messages / interrupts no longer wait behind a context
+ *     usage check in SDK sessions; faster resume of large compacted
+ *     sessions in headless mode — both free wins for our host.
+ *   - CLAUDE_CODE_EFFORT_LEVEL / AUTO_COMPACT_WINDOW / TRANSCRIPT_LOCAL_GC,
+ *     --max-turns, --worktree, sandbox, Remote Control, VSCode, Cowork,
+ *     Claude Tag, Code Review, /auto-mode-setup, /claude-api, tool search
+ *     behind ANTHROPIC_BASE_URL (we only pass it through), settings.read
+ *     layers, skill-hook caps: not used by OmniFex.
+ *
+ * Last review: 2.1.302 -> 2.1.303 on 2026-10-19. Findings: none — no
+ * OmniFex impact.
+ *
+ *  Changelog coverage: 2.1.303 has one entry, "Bug fixes and reliability
+ *  improvements". Both endpoints installed, so the binary diff is the
+ *  review.
+ *
+ *  WIRE DIFF (unique literals): merge-strategy map 40 -> 40, `subtype:`
+ *  155, `hook_event_name` 33, `type:"control_*"` 4, SDK
+ *  `this.request({subtype})` 54, double-quoted `.describe()` 2034, `type:`
+ *  1007 — all set-identical. turnOrigin value set unchanged. `/usage`
+ *  anchors count-identical.
+ *
+ *  The only real change: TLS root-certificate handling. Three SHA-256
+ *  hashes added as a root deny list; deny-listed roots are cut out of the
+ *  system store and of `NODE_EXTRA_CA_CERTS` (new warnings when a file's
+ *  denied roots are nested too deeply to cut, and when no roots remain);
+ *  `stores=system` without a system CA API now falls back to bundled roots
+ *  instead of "deferring to runtime". OmniFex never sets
+ *  `NODE_EXTRA_CA_CERTS` or CA options (grep: zero hits outside this
+ *  file), so inert. The rest is minifier renaming.
+ *
  * Last review: 2.1.301 -> 2.1.302 on 2026-10-17. Findings: one cost
  * double-count, from fork subagents now reaching OmniFex sessions (fixed).
  *
@@ -4396,7 +4475,7 @@ import { buildClaudeEnv } from './util/claude-env';
  * `~/.claude.json` fix (we read-modify-write that file, never replace it), and
  * the VSCode screen-reader work.
  */
-export const REVIEWED_CLI_VERSION = '2.1.302';
+export const REVIEWED_CLI_VERSION = '2.1.304';
 
 /**
  * app_settings key holding the user's explicit OmniFex-checkout override.
