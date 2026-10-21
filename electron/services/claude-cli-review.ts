@@ -44,6 +44,67 @@ import { buildClaudeEnv } from './util/claude-env';
  *    "side_question timed out: the host did not answer in time". Only the
  *    SDK's `askSideQuestion()` documents it.
  *
+ * Last review: 2.1.304 -> 2.1.306 on 2026-10-21. Findings: one `/usage`
+ * scraper boundary fixed (footer gains an `f to fix …` lead); otherwise
+ * inert.
+ *
+ *  Changelog coverage: 2.1.305 (~40 entries) and 2.1.306 (2). 2.1.305 was
+ *  never installed, so the wire claims diff 2.1.304 against 2.1.306.
+ *
+ *  WIRE DIFF (unique literals): merge-strategy map 80, `hook_event_name`
+ *  33, `type:"control_*"` 4, SDK `this.request({subtype})` 54 — all
+ *  set-identical. turnOrigin sanitizer set unchanged. `subtype:` and
+ *  `type:` each gain only `"checkpoint_done"`: an ephemeral `system`
+ *  event the CCR client-event uploader enqueues for a cloud viewer
+ *  (`yieldRowsForViewer`) — never on our stdout or in JSONL. Object-key
+ *  diff (+~290/−23) is plugin-validate codes (HOOKS_*, MANIFEST_*,
+ *  README_*…), sandbox profile grants, CCR flush policy, telemetry
+ *  fields, /usage recommendations — none on user/assistant records.
+ *  `.describe()` 2046 -> 2051: the @internal CCR one-shot shell-command
+ *  input was removed (we never sent it); `get_usage` behaviors gain
+ *  `recommendations[] {key,pct,title,detail}` and `fix {keys,messages}` —
+ *  additive, and cli-usage.ts:59 asks with `skip_behaviors: true`.
+ *
+ *  Fixed:
+ *   - `/usage` "Improved: each warning is now a one-line fix … `f`
+ *     applies the fixes". The contributing entries render as one row
+ *     each (`<pct>%  <title> · <detail>`, no blank line between), and
+ *     when any is fixable in the session the footer becomes
+ *     `f to fix all N · d to day · w to week`. `tables_footer` was
+ *     anchored on `d to day` at line start, so it stopped matching: the
+ *     window-less (Work/enterprise) fast path never fired and the last
+ *     table lost its end bound. parser.ts now allows the optional lead.
+ *     Rows still parse (each starts with `NN%`); the headline now holds
+ *     the whole row and detail is usually empty — UsageDetailPopover
+ *     renders that fine. Preamble now "Approximate · sessions on this
+ *     machine only" / "Last 24h · shares overlap" — ignored, as before.
+ *     READY_MARKERS / ESC_DISMISSIBLE anchors unchanged.
+ *     Confirmed on a live capture (`f to fix 1 of 2 · d to day · w to
+ *     week`), now fixtures/usage-2.1.306-render.raw. The capture needed
+ *     scripts/probe-usage-runner.ts rewritten to drive the real runner:
+ *     the old .mjs re-implemented startup and captured 0 bytes on 2.1.306.
+ *
+ *  Checked and inert:
+ *   - `/usage` rows cut off in narrow terminals: we scrape at 200 cols.
+ *   - Startup warnings to the debug log, no-op permission rules shown as
+ *     banner warning rows: TUI only; the scraper keys on the footer.
+ *   - setMcpServers same-name replacement: we never send it.
+ *   - Subagent fallback model naming: model text only; SubagentBar reads
+ *     model from subagents/agent-*.jsonl.
+ *   - /effort and /autocompact vs `modelOverrides` casing: no
+ *     modelOverrides in OmniFex.
+ *   - Tool-search retry on gateways, "prompt is too long" with many MCP
+ *     tools (2.1.306): free wins, nothing to change.
+ *   - Bare-repo worktree base / subagent worktree cleanup, ENOSPC
+ *     message, Workflow journal resume, cloud/teammate compaction
+ *     notice, `allowedMcpServers` + managed-mcp, Desktop-mounted plugin
+ *     allowed-tools, sandbox.allowNestedUserNamespaces,
+ *     RETRY_WATCHDOG_USAGE_LIMIT_RECHECK_MS, screen-reader setting scope,
+ *     /artifacts confirm keys, mod Image/iTerm2 and dock width, MCP
+ *     consent Enter, Remote Control, self-hosted runner, VSCode, Cloud,
+ *     Claude Tag, Code Review, `claude -p` in cloud sessions: not used by
+ *     OmniFex.
+ *
  * Last review: 2.1.303 -> 2.1.304 on 2026-10-19. Findings: none broken;
  * two optional opportunities (get_context_usage row ids, mod
  * `decider:"person"`).
@@ -4475,7 +4536,7 @@ import { buildClaudeEnv } from './util/claude-env';
  * `~/.claude.json` fix (we read-modify-write that file, never replace it), and
  * the VSCode screen-reader work.
  */
-export const REVIEWED_CLI_VERSION = '2.1.304';
+export const REVIEWED_CLI_VERSION = '2.1.306';
 
 /**
  * app_settings key holding the user's explicit OmniFex-checkout override.

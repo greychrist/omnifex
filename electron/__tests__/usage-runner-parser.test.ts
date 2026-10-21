@@ -200,6 +200,39 @@ d to day · w to week
     expect(isUsageOutputComplete(FIXTURE)).toBe(true);
   });
 
+  it('accepts a window-less render whose footer leads with the 2.1.305 fix hint', () => {
+    // 2.1.305 turned the contributing entries into one-line recommendation
+    // rows and, when any of them can be applied in the session, prepends an
+    // `f to fix …` hint to the footer — so `d to day` is no longer the first
+    // thing on its line.
+    const FIXTURE = `
+Session
+Total cost: $0.0000
+
+Loading usage data…
+
+What's contributing to your limits usage?
+Approximate · sessions on this machine only
+
+Last 24h · shares overlap
+
+100%  Configure subagents with a cheaper model · general-purpose
+
+Subagents % of usage
+general-purpose 16%
+
+f to fix this · d to day · w to week
+`;
+    expect(isUsageOutputComplete(FIXTURE)).toBe(true);
+    const result = parseUsageOutput(FIXTURE);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.contributing).toEqual([
+      { headline: '100%  Configure subagents with a cheaper model · general-purpose', detail: '' },
+    ]);
+    expect(result.data.subagents.rows).toEqual([{ name: 'general-purpose', pct_used: 16 }]);
+  });
+
   it('keeps waiting on a window-less render before the tables footer prints', () => {
     // Still mid-load: contributing header is up but the local-session scan
     // hasn't finished (no tables footer yet). Don't snapshot a partial render.

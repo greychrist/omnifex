@@ -103,8 +103,9 @@ const SECTION_HEADERS = {
   // the Loops block and adopted its `… N more` line as its own `more_count`.
   loops_table: /^[ \t]*Loops\s+every\s+runs\s+tokens\b/m,
   // Footer hint Claude prints after the tables ("d to day · w to week").
-  // Used as a hard end-boundary for the last table.
-  tables_footer: /^[ \t]*d to day\b/m,
+  // Used as a hard end-boundary for the last table. Since 2.1.305 it can
+  // lead with an `f to fix …` hint when a recommendation is applicable.
+  tables_footer: /^[ \t]*(?:f to [^\n·]*·[ \t]*)?d to day\b/m,
 };
 
 /**
