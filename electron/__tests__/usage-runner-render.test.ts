@@ -77,3 +77,39 @@ describe('real 2.1.236 /usage render', () => {
     expect(r.data.contributing[1].detail).toContain('so make sure it is intentional.');
   });
 });
+
+/**
+ * A real 2.1.306 render, captured with scripts/probe-usage-runner.ts. 2.1.305
+ * turned the contributing entries into one-line recommendations and, when one
+ * can be applied in the session, leads the footer with `f to fix …` — which
+ * pushed `d to day` off the start of its line.
+ */
+describe('real 2.1.306 /usage render', () => {
+  const text = stripAnsi(fs.readFileSync(
+    path.join(__dirname, 'fixtures/usage-2.1.306-render.raw'),
+    'utf8',
+  ));
+
+  it('carries the fix hint ahead of the period keys', () => {
+    expect(text).toMatch(/^\s*f to fix 1 of 2 · d to day · w to week\s*$/m);
+  });
+
+  it('parses each one-line recommendation as its own entry', () => {
+    const r = parseUsageOutput(text);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.data.contributing).toEqual([
+      { headline: '29% Trim ~/Repos/personal/omnifex/CLAUDE.md · 7k tokens per request', detail: '' },
+      { headline: '14% Start fresh when you switch tasks · run /clear', detail: '' },
+    ]);
+  });
+
+  it('keeps the last ranked table bounded above the footer', () => {
+    const r = parseUsageOutput(text);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.data.mcp_servers.rows).toEqual([{ name: 'omnifex-brain', pct_used: 1 }]);
+    expect(r.data.mcp_servers.more_count).toBeNull();
+    expect(r.data.windows.map((w) => w.label)).toEqual(['current_session', 'week_all_models', 'week_fable']);
+  });
+});
