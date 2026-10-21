@@ -30,6 +30,7 @@ describe('stale (last-known) render detection', () => {
   // refresh fails), /usage renders last-known bars with a marker line:
   //   "Showing last-known usage as of <time> (rate limited — try again in a moment)"
   //   "Showing last-known usage as of <time> (could not refresh)"
+  // 2.1.304 adds "(rate limited until <time>)" when the reset is known.
   // The bars parse normally, but the data is stale and must be flagged so
   // the runner doesn't record it as fresh utilization.
   const WINDOWS = `
@@ -50,6 +51,15 @@ Resets 7pm (America/New_York)
     const result = parseUsageOutput(
       `Showing last-known usage as of 5:43pm (could not refresh)\n${WINDOWS}`,
     );
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.data.stale).toBe(true);
+  });
+
+  it.each([
+    'Showing last-known usage as of 5:43pm (rate limited — try again in a moment)',
+    'Showing last-known usage as of 5:43pm (rate limited until 6:00pm)',
+  ])('flags the rate-limited variant as stale: %s', (marker) => {
+    const result = parseUsageOutput(`${marker}\n${WINDOWS}`);
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.data.stale).toBe(true);
   });

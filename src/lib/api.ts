@@ -1124,6 +1124,9 @@ export interface CliPermissionRulesState {
 }
 
 export interface SessionContextUsageCategory {
+  /** Stable row id (CLI 2.1.304+), e.g. "messages", "free_space". Absent
+   *  from older CLIs; a later CLI may add values. */
+  id?: string;
   name: string;
   tokens: number;
   color: string;

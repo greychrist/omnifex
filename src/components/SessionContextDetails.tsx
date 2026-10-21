@@ -1,7 +1,7 @@
 import * as React from "react";
 import { Copy, Check, ChevronRight, Layers } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { SessionContextUsage } from "@/lib/api";
+import type { SessionContextUsage, SessionContextUsageCategory } from "@/lib/api";
 import { fireAndLog } from "@/lib/fireAndLog";
 import { SignalActionCard } from "./signals/SignalActionCard";
 import { SignalEventLog } from "./signals/SignalEventLog";
@@ -107,7 +107,11 @@ const CATEGORY_COLORS = [
 ];
 
 const FREE_COLOR = "rgba(148, 163, 184, 0.35)";
-const isFreeCategory = (name: string): boolean => /free|remaining|available/i.test(name);
+// The CLI's row `id` (2.1.304+) is the stable key — its schema says to
+// match on it, not the English name. The name test stays for older CLIs,
+// which send no id.
+const isFreeCategory = (c: SessionContextUsageCategory): boolean =>
+  c.id !== undefined ? c.id === "free_space" : /free|remaining|available/i.test(c.name);
 
 export interface ContextBand {
   name: string;
@@ -166,7 +170,7 @@ export function readContext({
           .slice()
           .sort((a, b) => b.tokens - a.tokens)
           .filter((c) => c.tokens > 0)
-          .filter((c) => !isClamped || !isFreeCategory(c.name))
+          .filter((c) => !isClamped || !isFreeCategory(c))
       : [];
 
   const categoriesSum = sorted.reduce((acc, c) => acc + c.tokens, 0);
@@ -174,7 +178,7 @@ export function readContext({
   const slices = sorted.map((c) => ({
     name: c.name,
     value: c.tokens,
-    color: isFreeCategory(c.name)
+    color: isFreeCategory(c)
       ? FREE_COLOR
       : CATEGORY_COLORS[usedColorIdx++ % CATEGORY_COLORS.length],
   }));

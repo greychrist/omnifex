@@ -193,9 +193,10 @@ function windowBlock(text: string, windows: FoundWindow[], idx: number): string 
   return text.slice(windows[idx].bodyStart, end);
 }
 
-// 2.1.208+ rate-limited / refresh-failed render marker. Both observed
-// variants share the prefix:
+// 2.1.208+ rate-limited / refresh-failed render marker. Every observed
+// variant shares the prefix, so only the prefix is matched:
 //   "Showing last-known usage as of <time> (rate limited — try again in a moment)"
+//   "Showing last-known usage as of <time> (rate limited until <time>)"  (2.1.304+)
 //   "Showing last-known usage as of <time> (could not refresh)"
 const STALE_MARKER = /^[ \t]*Showing last-known usage/m;
 
