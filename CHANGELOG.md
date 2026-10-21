@@ -5,6 +5,21 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.237] — 2026-10-21
+
+### Added
+
+- An **All** chat format alongside Compact and Verbose. It shows everything Verbose does plus the message kinds set to "Never" in Appearance settings, without changing those settings.
+
+### Fixed
+
+- Account usage refreshes promptly again on Claude Code 2.1.305 and later. `/usage` now puts an "f to fix" hint in front of its footer whenever one of its suggestions can be applied, and OmniFex stopped recognising the footer — accounts without rate-limit windows waited out the full timeout on every refresh, and the last usage table lost its end boundary.
+- The Session context panel's free-space row is matched by the stable row id Claude Code 2.1.304 added, with the English label kept as the fallback for older versions. The new "(rate limited until …)" `/usage` banner is recognised as a stale render.
+
+### Changed
+
+- Reviewed Claude Code 2.1.303 through 2.1.306 for changes affecting OmniFex.
+
 ## [0.4.236] — 2026-10-17
 
 ### Fixed
