@@ -227,6 +227,10 @@ describe('buildContextTimeline — previous reading', () => {
 });
 
 describe('showsGutterDelta', () => {
+  it('prints every delta in All, as in Verbose', () => {
+    expect(showsGutterDelta(120, 'all')).toBe(true);
+  });
+
   it('prints every non-zero delta in Verbose', () => {
     expect(showsGutterDelta(120, 'verbose')).toBe(true);
     expect(showsGutterDelta(-120, 'verbose')).toBe(true);

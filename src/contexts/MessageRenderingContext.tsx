@@ -122,6 +122,24 @@ export const MessageRenderingPreviewProvider: React.FC<{
   </MessageRenderingContext.Provider>
 );
 
+/**
+ * Renders a subtree through `config` instead of the saved one, keeping the
+ * parent's `setConfig` and `loaded`. Memoised: every transcript row reads this
+ * context, so a fresh value per render would re-render the whole session.
+ */
+export const MessageRenderingOverrideProvider: React.FC<{
+  config: MessageRenderingConfig;
+  children: React.ReactNode;
+}> = ({ config, children }) => {
+  const { setConfig, loaded } = useMessageRenderingConfig();
+  const value = useMemo(() => ({ config, setConfig, loaded }), [config, setConfig, loaded]);
+  return (
+    <MessageRenderingContext.Provider value={value}>
+      {children}
+    </MessageRenderingContext.Provider>
+  );
+};
+
 export function useMessageRenderingConfig(): MessageRenderingContextValue {
   const ctx = useContext(MessageRenderingContext);
   if (!ctx) {

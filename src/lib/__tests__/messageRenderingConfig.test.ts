@@ -15,6 +15,7 @@ import {
   categoryOf,
   isHiddenInCompact,
   isNeverShown,
+  revealNeverShown,
 } from "../messageRenderingConfig";
 
 // ─── config v5 ──────────────────────────────────────────────────────────────
@@ -893,5 +894,38 @@ describe("visibility predicates", () => {
   it("never hides a boundary-locked kind", () => {
     expect(isHiddenInCompact(style("user.prompt", "never"))).toBe(false);
     expect(isNeverShown(style("user.prompt", "never"))).toBe(false);
+  });
+});
+
+// ─── "All" chat format ──────────────────────────────────────────────────────
+
+describe("revealNeverShown", () => {
+  it("turns every never-shown kind into verbose-only, leaving the rest alone", () => {
+    const cfg = createDefaultConfig();
+    cfg.kinds["assistant.thinking"] = { visibility: "never" };
+    const revealed = revealNeverShown(cfg);
+
+    expect(resolveKind(revealed, "system.hook_started").visibility).toBe("verbose");
+    expect(resolveKind(revealed, "assistant.thinking").visibility).toBe("verbose");
+    for (const id of Object.keys(KIND_REGISTRY)) {
+      expect(isNeverShown(resolveKind(revealed, id))).toBe(false);
+      if (!isNeverShown(resolveKind(cfg, id))) {
+        expect(resolveKind(revealed, id)).toEqual(resolveKind(cfg, id));
+      }
+    }
+  });
+
+  it("reveals a category set to never, so unregistered kinds in it show too", () => {
+    const cfg = createDefaultConfig();
+    cfg.categories.system = { ...cfg.categories.system, visibility: "never" };
+    const revealed = revealNeverShown(cfg);
+    expect(resolveKind(revealed, "system.some_future_kind").visibility).toBe("verbose");
+  });
+
+  it("does not mutate the saved config", () => {
+    const cfg = createDefaultConfig();
+    const before = structuredClone(cfg);
+    revealNeverShown(cfg);
+    expect(cfg).toEqual(before);
   });
 });

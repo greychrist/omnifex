@@ -22,6 +22,7 @@ vi.mock('@/contexts/MessageRenderingContext', async () => {
   const config = createDefaultConfig();
   return {
     useMessageRenderingConfig: () => ({ config, setConfig: () => {}, loaded: true }),
+    MessageRenderingOverrideProvider: ({ children }: { children: React.ReactNode }) => children,
   };
 });
 vi.mock('@/contexts/AutoScrollContext', () => ({

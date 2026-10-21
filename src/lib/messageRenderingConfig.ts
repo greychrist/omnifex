@@ -429,6 +429,23 @@ export function isNeverShown(style: KindStyle): boolean {
   return !style.compactBoundaryLocked && style.visibility === "never";
 }
 
+/**
+ * `config` with every kind and category set to "Never" demoted to
+ * verbose-only — what the transcript renders through in the "All" chat
+ * format. A copy: the saved config is untouched.
+ */
+export function revealNeverShown(config: MessageRenderingConfig): MessageRenderingConfig {
+  const categories = { ...config.categories };
+  for (const c of CATEGORIES) {
+    if (categories[c].visibility === "never") categories[c] = { ...categories[c], visibility: "verbose" };
+  }
+  const kinds = { ...config.kinds };
+  for (const id of new Set([...Object.keys(KIND_REGISTRY), ...Object.keys(config.kinds)])) {
+    if (resolveKind(config, id).visibility === "never") kinds[id] = { ...kinds[id], visibility: "verbose" };
+  }
+  return { ...config, categories, kinds };
+}
+
 // ─── typography ─────────────────────────────────────────────────────────────
 //
 // Global typography applied to every message kind. Two style slots — the

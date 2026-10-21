@@ -14,6 +14,7 @@ import type { JsonlNode } from '@/types/jsonl';
 
 vi.mock('@/contexts/MessageRenderingContext', () => ({
   useMessageRenderingConfig: () => ({ config: {} }),
+  MessageRenderingOverrideProvider: ({ children }: { children: React.ReactNode }) => children,
 }));
 vi.mock('@/contexts/AutoScrollContext', () => ({
   useAutoScroll: () => ({ followPx: 200 }),

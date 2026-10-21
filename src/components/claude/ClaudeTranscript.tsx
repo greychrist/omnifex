@@ -16,7 +16,8 @@ import { buildCompactItems, withoutNeverShown } from "@/lib/compactGrouping";
 import { collapseRepeats } from "@/lib/collapseRepeats";
 import { filterDisplayableMessages } from "@/lib/messageFilters";
 import { createRowLookupCache, rowLookups } from "@/lib/rowLookups";
-import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
+import { MessageRenderingOverrideProvider, useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
+import { revealNeverShown } from "@/lib/messageRenderingConfig";
 import { useAutoScroll } from "@/contexts/AutoScrollContext";
 import { useSessionGauges } from "@/contexts/SessionGaugesContext";
 import { buildContextTimeline } from "@/lib/contextTimeline";
@@ -134,7 +135,14 @@ function ClaudeTranscriptImpl({
   jumpTo = null,
 }: ClaudeTranscriptProps): React.ReactElement {
   useRenderProfile('ClaudeTranscript');
-  const { config: renderConfig } = useMessageRenderingConfig();
+  const { config: savedRenderConfig } = useMessageRenderingConfig();
+  // The "All" chat format renders through a copy of the config with every
+  // "Never" kind demoted to verbose-only; rows get it from context below.
+  const showAll = viewMode === 'all';
+  const renderConfig = useMemo(
+    () => (showAll ? revealNeverShown(savedRenderConfig) : savedRenderConfig),
+    [showAll, savedRenderConfig],
+  );
   const { followPx } = useAutoScroll();
   const { contextTimelineEnabled, setContextTimelineEnabled, contextJump, contextPressure } =
     useSessionGauges();
@@ -452,6 +460,7 @@ function ClaudeTranscriptImpl({
   }, [isNearBottomRef, followPx]);
 
   return (
+    <MessageRenderingOverrideProvider config={renderConfig}>
     <div
       className="flex-1 min-h-0 px-10 py-2 bg-muted/30 relative"
       onWheel={markUserInput}
@@ -592,7 +601,7 @@ function ClaudeTranscriptImpl({
               last-prompt buttons measure. Marked on the row wrapper rather
               than counted in an array so they follow whatever the filters and
               the view mode actually rendered. */}
-          {viewMode === 'verbose'
+          {viewMode !== 'compact'
             ? displayableMessages.map((message) => (
                 <div
                   key={rowKeyOf(message)}
@@ -732,6 +741,7 @@ function ClaudeTranscriptImpl({
       </div>
     </div>
     </div>
+    </MessageRenderingOverrideProvider>
   );
 }
 

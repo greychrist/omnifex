@@ -9,6 +9,7 @@
 
 import type { JsonlNode } from '@/types/jsonl';
 import { turnContextTotal } from '@/lib/turnDelta';
+import type { ViewMode } from '@/components/SessionViewToggle';
 import {
   contextPressureLevel,
   type ContextPressureLevel,
@@ -150,9 +151,9 @@ export const COMPACT_MODE_MIN_DELTA_TOKENS = 2_000;
 /** Does this delta earn a line in the gutter under the current output mode? */
 export function showsGutterDelta(
   delta: number | null,
-  viewMode: 'compact' | 'verbose',
+  viewMode: ViewMode,
 ): boolean {
   if (delta === null || delta === 0) return false;
-  if (viewMode === 'verbose') return true;
+  if (viewMode !== 'compact') return true;
   return Math.abs(delta) >= COMPACT_MODE_MIN_DELTA_TOKENS;
 }

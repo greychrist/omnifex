@@ -11,6 +11,7 @@ import { STEP_MARGIN_PX } from '@/lib/transcriptStepper';
 // navigation anchors, so everything below the row wrapper is stubbed out.
 vi.mock('@/contexts/MessageRenderingContext', () => ({
   useMessageRenderingConfig: () => ({ config: {} }),
+  MessageRenderingOverrideProvider: ({ children }: { children: React.ReactNode }) => children,
 }));
 vi.mock('@/contexts/AutoScrollContext', () => ({
   useAutoScroll: () => ({ followPx: 200 }),
