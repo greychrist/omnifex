@@ -37,6 +37,12 @@ function unsupported(what: string): Promise<never> {
   return Promise.reject(new Error(`${what} is not available in the web client`));
 }
 
+/** Only http(s) may reach a browser: some URLs come from a remote server's metadata. */
+function assertWebUrl(url: string): void {
+  const parsed = new URL(url);
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') throw new Error('Unsafe protocol');
+}
+
 export interface Platform {
   readonly isElectron: boolean;
   showOpenDialog(options: Record<string, unknown>): Promise<{ canceled: boolean; filePaths: string[] }>;
@@ -56,8 +62,7 @@ export function createPlatform(bridge: NativeBridge | null): Platform {
       showOpenDialog: () => unsupported('The file dialog'),
       showSaveDialog: () => unsupported('The save dialog'),
       openExternal: async (url) => {
-        const parsed = new URL(url);
-        if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') throw new Error('Unsafe protocol');
+        assertWebUrl(url);
         window.open(url, '_blank', 'noopener,noreferrer');
       },
       revealInFinder: () => unsupported('Reveal in Finder'),
@@ -70,7 +75,12 @@ export function createPlatform(bridge: NativeBridge | null): Platform {
     isElectron: true,
     showOpenDialog: (o) => bridge.invoke('dialog:open', o) as Promise<{ canceled: boolean; filePaths: string[] }>,
     showSaveDialog: (o) => bridge.invoke('dialog:save', o) as Promise<{ canceled: boolean; filePath?: string }>,
-    openExternal: (url) => bridge.invoke('shell:openExternal', { url } as unknown as Record<string, unknown>).then(() => undefined),
+    // The main handler takes the bare url string (`(_event, url: string)`),
+    // as the remote shim already sends it; an object never opened anything.
+    openExternal: async (url) => {
+      assertWebUrl(url);
+      await bridge.invoke('shell:openExternal', url as unknown as Record<string, unknown>);
+    },
     revealInFinder: (path) => bridge.invoke('reveal_path_in_finder', { path }).then(() => undefined),
     savePastedImage: (dataUrl) => bridge.invoke('save_pasted_image', { dataUrl }) as Promise<string>,
     getAppVersion: () => bridge.invoke('get_app_version') as Promise<string>,

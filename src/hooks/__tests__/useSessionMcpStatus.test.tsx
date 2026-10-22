@@ -140,4 +140,19 @@ describe('useSessionMcpStatus watchUntil', () => {
     expect(outcome).toBe(true);
     expect(result.current.servers).toEqual(pending);
   });
+
+  // A 180 s watch must not re-render the whole session tab every tick.
+  it('an unchanged tick keeps the same servers reference', async () => {
+    vi.useFakeTimers();
+    const needsAuth = () => [{ name: 'atlassian', status: 'needs-auth', scope: 'claudeai' }];
+    sessionMcpServerStatus.mockImplementation(() => Promise.resolve(needsAuth()));
+    const { result } = renderHook(() => useSessionMcpStatus('tab1', false, 1000));
+    act(() => { void result.current.watchUntil('atlassian', (s) => s?.status === 'connected', 10_000); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(100); });
+    const first = result.current.servers;
+    expect(first).toEqual(needsAuth());
+    await act(async () => { await vi.advanceTimersByTimeAsync(2500); });
+    expect(sessionMcpServerStatus.mock.calls.length).toBeGreaterThanOrEqual(3);
+    expect(result.current.servers).toBe(first);
+  });
 });

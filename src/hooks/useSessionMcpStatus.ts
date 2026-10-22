@@ -81,7 +81,9 @@ export function useSessionMcpStatus(
         // The main process answers [] on its own timeout, on a control error
         // and when the engine is not live: no answer this tick, not "none".
         if (result.length > 0) {
-          setServers(result);
+          // Unchanged answer → keep the reference, so a long watch does not
+          // re-render the session tab on every tick.
+          setServers((prev) => (prev !== null && JSON.stringify(prev) === JSON.stringify(result) ? prev : result));
           if (done(result.find((s) => s.name === serverName))) return true;
         }
       } catch (err) {
