@@ -1,6 +1,9 @@
 import React, { useState } from "react";
 import { Spinner } from "@/components/ui/spinner";
 import type { SessionMcpServerStatus } from "@/lib/api";
+import type { McpWatchUntil } from "@/hooks/useSessionMcpStatus";
+import { McpRowNotice, McpServerActionsMenu, useMcpRowActions } from "@/components/sessionContext/McpServerActionsMenu";
+import { logAndForget } from "@/lib/fireAndLog";
 import {
   DetailBlock, DetailRow, EmptyLine, GroupHeader, RowTag, StatusDot, rowClass, scopeIcon, useCollapsedGroups,
 } from "@/components/sessionContext/rows";
@@ -13,6 +16,10 @@ import {
 interface SessionMCPStatusProps {
   /** Null while the list is being fetched. */
   servers: SessionMcpServerStatus[] | null;
+  /** The session the row actions go to. */
+  tabId: string;
+  /** From useSessionMcpStatus: polls until an action's effect shows up. */
+  watchUntil: McpWatchUntil;
 }
 
 const STATUS_DOT: Record<string, string> = {
@@ -23,9 +30,10 @@ const STATUS_DOT: Record<string, string> = {
   disabled: "bg-muted-foreground/40",
 };
 
-export const SessionMCPStatus: React.FC<SessionMCPStatusProps> = ({ servers }) => {
+export const SessionMCPStatus: React.FC<SessionMCPStatusProps> = ({ servers, tabId, watchUntil }) => {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [collapsed, toggleGroup] = useCollapsedGroups();
+  const rowActions = useMcpRowActions(tabId, watchUntil);
 
   if (servers === null) {
     return (
@@ -64,8 +72,10 @@ export const SessionMCPStatus: React.FC<SessionMCPStatusProps> = ({ servers }) =
                     url?: string;
                     type?: string;
                   };
+                  const rowState = rowActions.stateFor(server.name);
                   return (
                     <li key={server.name} className="flex flex-col">
+                      <div className="flex items-center pr-1">
                       <button
                         type="button"
                         aria-expanded={isOpen}
@@ -79,6 +89,13 @@ export const SessionMCPStatus: React.FC<SessionMCPStatusProps> = ({ servers }) =
                           {server.status === "connected" ? (toolCount > 0 ? `${toolCount} tools` : "") : server.status}
                         </span>
                       </button>
+                      <McpServerActionsMenu
+                        server={server}
+                        busy={rowState.busy}
+                        onAction={(action) => { logAndForget('mcp-row-action', rowActions.run(server.name, action)); }}
+                      />
+                      </div>
+                      <McpRowNotice state={rowState} />
                       {isOpen && (
                         <DetailBlock>
                           {server.error && (

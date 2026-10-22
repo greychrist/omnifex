@@ -3112,7 +3112,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
                   mcpCount={sessionMcp.servers?.length ?? initMcpCount}
                   mcp={
                     <>
-                      <SessionMCPStatus servers={sessionMcp.servers} />
+                      <SessionMCPStatus servers={sessionMcp.servers} tabId={tabIdRef.current} watchUntil={sessionMcp.watchUntil} />
                       {/* What the badge on the Session context button
                           counts. Without it the badge's number would have
                           no explanation anywhere. */}

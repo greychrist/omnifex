@@ -792,6 +792,13 @@ export interface SessionMcpServerStatus {
   tools?: { name: string; description?: string }[];
 }
 
+/** What `mcp_authenticate` answers; mirrors McpAuthResult in electron/services/sessions/types.ts. */
+export interface McpAuthResult {
+  authUrl: string | null;
+  requiresUserAction: boolean;
+  callbackExpected: boolean;
+}
+
 /**
  * Loaded plugin in an active session, enriched with .claude-plugin/plugin.json
  * manifest fields when available.
@@ -2032,6 +2039,21 @@ export const api = {
 
   async sessionMcpServerStatus(tabId: string): Promise<SessionMcpServerStatus[]> {
     return apiCall("session_mcp_server_status", { tabId });
+  },
+
+  /** Start OAuth for an MCP server; the caller opens `authUrl`. Rejects with the CLI's message. */
+  async sessionMcpAuthenticate(tabId: string, serverName: string): Promise<McpAuthResult> {
+    return apiCall("session_mcp_authenticate", { tabId, serverName });
+  },
+
+  /** Clear an MCP server's stored auth, then start OAuth again. */
+  async sessionMcpReauthenticate(tabId: string, serverName: string): Promise<McpAuthResult> {
+    return apiCall("session_mcp_reauthenticate", { tabId, serverName });
+  },
+
+  /** Enable or disable an MCP server; the CLI persists it per project. */
+  async sessionMcpSetEnabled(tabId: string, serverName: string, enabled: boolean): Promise<void> {
+    return apiCall("session_mcp_set_enabled", { tabId, serverName, enabled });
   },
 
   async sessionPlugins(tabId: string, force = false): Promise<SessionPluginInfo[]> {

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, waitFor, act } from '@testing-library/react';
 
 const { sessionMcpServerStatus } = vi.hoisted(() => ({ sessionMcpServerStatus: vi.fn() }));
@@ -50,5 +50,69 @@ describe('useSessionMcpStatus', () => {
     sessionMcpServerStatus.mockRejectedValue(new Error('x'));
     const { result } = renderHook(() => useSessionMcpStatus('tab1', true, 1000));
     await waitFor(() => { expect(result.current.servers).toEqual([]); });
+  });
+});
+
+describe('useSessionMcpStatus watchUntil', () => {
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('watchUntil resolves true once the server leaves needs-auth', async () => {
+    vi.useFakeTimers();
+    const needsAuth = [{ name: 'atlassian', status: 'needs-auth', scope: 'claudeai' }];
+    const connected = [{ name: 'atlassian', status: 'connected', scope: 'claudeai' }];
+    sessionMcpServerStatus
+      .mockResolvedValueOnce(needsAuth)
+      .mockResolvedValueOnce(needsAuth)
+      .mockResolvedValue(connected);
+    const { result } = renderHook(() => useSessionMcpStatus('tab1', false, 1000));
+    let outcome: boolean | undefined;
+    act(() => {
+      void result.current
+        .watchUntil('atlassian', (s) => s?.status === 'connected')
+        .then((v) => { outcome = v; });
+    });
+    await act(async () => { await vi.advanceTimersByTimeAsync(2500); });
+    expect(outcome).toBe(true);
+    expect(result.current.servers).toEqual(connected);
+    const calls = sessionMcpServerStatus.mock.calls.length;
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    expect(sessionMcpServerStatus.mock.calls.length).toBe(calls);
+  });
+
+  it('watchUntil resolves false after timeoutMs', async () => {
+    vi.useFakeTimers();
+    sessionMcpServerStatus.mockResolvedValue([{ name: 'atlassian', status: 'needs-auth', scope: 'claudeai' }]);
+    const { result } = renderHook(() => useSessionMcpStatus('tab1', false, 1000));
+    let outcome: boolean | undefined;
+    act(() => {
+      void result.current
+        .watchUntil('atlassian', (s) => s?.status === 'connected', 5000)
+        .then((v) => { outcome = v; });
+    });
+    await act(async () => { await vi.advanceTimersByTimeAsync(4500); });
+    expect(outcome).toBeUndefined();
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    expect(outcome).toBe(false);
+    const calls = sessionMcpServerStatus.mock.calls.length;
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    expect(sessionMcpServerStatus.mock.calls.length).toBe(calls);
+  });
+
+  it('watchUntil resolves false and stops polling on unmount', async () => {
+    vi.useFakeTimers();
+    sessionMcpServerStatus.mockResolvedValue([{ name: 'atlassian', status: 'needs-auth', scope: 'claudeai' }]);
+    const { result, unmount } = renderHook(() => useSessionMcpStatus('tab1', false, 1000));
+    let outcome: boolean | undefined;
+    act(() => {
+      void result.current
+        .watchUntil('atlassian', (s) => s?.status === 'connected')
+        .then((v) => { outcome = v; });
+    });
+    await act(async () => { await vi.advanceTimersByTimeAsync(1500); });
+    unmount();
+    const calls = sessionMcpServerStatus.mock.calls.length;
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    expect(outcome).toBe(false);
+    expect(sessionMcpServerStatus.mock.calls.length).toBe(calls);
   });
 });
