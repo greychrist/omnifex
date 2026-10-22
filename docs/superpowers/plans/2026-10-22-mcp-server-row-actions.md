@@ -23,8 +23,8 @@
 - `daemon.ts` and `main.ts` adapter bags change together (root CLAUDE.md, "Change both, or neither").
 - Menu-item gating mirrors the CLI's `/mcp` menu (binary, `Qe.push({label:…})` block):
   - `disabled` → **Enable** only.
-  - otherwise → **Disable** always.
-  - OAuth-capable (`config.type` is `http` or `sse`, or the server is a claude.ai connector): `needs-auth` → **Authenticate**; `connected` → **Re-authenticate** (HTTP/SSE only — the CLI offers no re-auth for claude.ai connectors).
+  - otherwise → **Disable** always. The label stays plain "Disable": `mcp_toggle` persists (see `## Verified` (b)), it is not session-only.
+  - OAuth-capable (`config.type` is `http`, `sse` or `claudeai-proxy` — verified, see `## Verified`; `scope` is `claudeai` for connectors): `needs-auth` → **Authenticate**; `connected` → **Re-authenticate** (HTTP/SSE only — the CLI offers no re-auth for claude.ai connectors).
   - stdio servers get no auth items.
 
 ## Review Focus
@@ -141,3 +141,15 @@ No code. Records facts the later tasks depend on into this plan file under a new
 
 - [ ] **Step 1:** `bash .claude/skills/verify/scripts/verify.sh` (check, build, test:coverage, rebuild:electron) → all pass. Tee output to a log.
 - [ ] **Step 2:** `npm run package`; Greg launches the packaged build himself (no `npm start` — never spawn dev instances). Exercise: authenticate a `needs-auth` HTTP server, re-authenticate a connected one, disable and re-enable one, authenticate a claude.ai connector. Record outcomes in this plan under `## Verified`.
+
+## Verified
+
+2026-10-22, CLI 2.1.307 (spike ran on 2.1.308; `CLAUDE_CONFIG_DIR=~/.claude-personal`, scratch cwd, `--model haiku`). Driver kept outside the repo.
+
+- **(a) `mcp_status` shapes.** claude.ai connectors: `config.type === "claudeai-proxy"`, `scope === "claudeai"`, `source === "claudeai"`; `config` is `{type,url,id}`. The plan's predicate is confirmed (no change beyond naming `claudeai-proxy` explicitly). Plugin http server: `config.type "http"`, `scope "dynamic"`. stdio: `config.type "stdio"`, `scope "user"` (user-configured) or `"dynamic"` (plugin). No sse server was available to observe. Connected entry fields: `name, status, serverInfo{name,version}, config, scope, source, tools[{name,annotations}]`.
+- **(b) `mcp_toggle` persists.** `{enabled:false}` writes `disabledMcpServers: ["<name>"]` under `projects["<realpath of cwd>"]` in `$CLAUDE_CONFIG_DIR/.claude.json` (per project, per account). `{enabled:true}` writes the array back to `[]`. `settings.json` and `<cwd>/.claude/settings.local.json` were untouched. So the Disable label stays "Disable" (Step 3 consequence: none); the effect is per-project and survives restarts.
+- **(c) `mcp_authenticate` payloads** (success responses, `state` redacted):
+  - http (`plugin:context7:context7`): `{authUrl:"https://clerk.context7.com/oauth/authorize?...redirect_uri=http%3A%2F%2Flocalhost%3A61687%2Fcallback&state=<redacted>...", requiresUserAction:true, callbackExpected:true, redirectScheme:"localhost", state:"<redacted>", callbackPort:61687}`
+  - claude.ai connector (`claude.ai Google Calendar`): `{authUrl:"https://claude.ai/api/organizations/<org>/mcp/start-auth/<mcpsrv_id>?product_surface=sdk-cli", requiresUserAction:true, callbackExpected:false}` (no `state`, `redirectScheme` or `callbackPort`).
+  - Each answered in well under the 60 s timeout.
+- **(d) needs-auth to connected on its own:** settled from the binary, confirm in Task 5. Task 2 gets no `mcp_reconnect` addition for now.
