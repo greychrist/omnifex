@@ -974,6 +974,44 @@ describe('claude service', () => {
       expect(byId['sess-renamed-twice'].custom_title).toBe('Second name');
     });
 
+    // Resuming an old session should bring it to the top: the list orders by
+    // last activity, not by when the transcript file was created.
+    it('sorts by most recent activity, not creation time', async () => {
+      const configDir = path.join(tmpDir, '.claude-order');
+      const projectPath = path.join(tmpDir, 'order-test');
+      const projectId = projectPath.replace(/\//g, '-');
+      const projectDir = path.join(configDir, 'projects', projectId);
+      fs.mkdirSync(projectDir, { recursive: true });
+      const account = accounts.createAccount({ name: 'OrderTest', configDir });
+      accounts.addPathRule(account.id, tmpDir);
+
+      const record = (ts: string) =>
+        JSON.stringify({ type: 'user', timestamp: ts, message: { content: 'x' } });
+
+      // Created first, but worked on most recently.
+      fs.writeFileSync(
+        path.join(projectDir, 'sess-resumed.jsonl'),
+        [record('2026-01-01T00:00:00.000Z'), record('2026-10-20T12:00:00.000Z')].join('\n'),
+      );
+      // Created later, last touched in the middle.
+      fs.writeFileSync(
+        path.join(projectDir, 'sess-middle.jsonl'),
+        record('2026-06-01T00:00:00.000Z'),
+      );
+      // No timestamps at all: falls back to file mtime.
+      const untimed = path.join(projectDir, 'sess-untimed.jsonl');
+      fs.writeFileSync(untimed, JSON.stringify({ type: 'user', message: { content: 'x' } }));
+      const march = new Date('2026-03-01T00:00:00.000Z');
+      fs.utimesSync(untimed, march, march);
+
+      const sessions = await service.getProjectSessions(projectId, projectPath);
+      expect(sessions.map((s) => s.id)).toEqual([
+        'sess-resumed',
+        'sess-middle',
+        'sess-untimed',
+      ]);
+    });
+
     it('uses the explicit projectPath as a resolution hint when given', async () => {
       const configDir = path.join(tmpDir, '.claude-hint');
       const projectPath = path.join(tmpDir, 'hinted');

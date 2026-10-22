@@ -740,8 +740,14 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
     }
     const deduped = [...byId.values()];
 
-    // Sort by created_at DESC
-    deduped.sort((a, b) => b.created_at - a.created_at);
+    // Sort by last activity DESC, so a resumed old session rises to the top.
+    // created_at (file birthtime) only stands in when no timestamp parses.
+    const lastActivityMs = (s: Session): number => {
+      const ts = s.message_timestamp ?? s.last_timestamp;
+      const parsed = ts ? Date.parse(ts) : NaN;
+      return Number.isNaN(parsed) ? s.created_at * 1000 : parsed;
+    };
+    deduped.sort((a, b) => lastActivityMs(b) - lastActivityMs(a));
     return deduped;
   }
 
