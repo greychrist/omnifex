@@ -44,6 +44,49 @@ import { buildClaudeEnv } from './util/claude-env';
  *    "side_question timed out: the host did not answer in time". Only the
  *    SDK's `askSideQuestion()` documents it.
  *
+ * Last review: 2.1.306 -> 2.1.307 on 2026-10-21. Findings: one timeout
+ * fixed (`set_model`); otherwise inert.
+ *
+ *  Changelog coverage: 2.1.307 (~45 entries). Both ends installed.
+ *
+ *  WIRE DIFF (unique literals): merge-strategy map 40 entries, `subtype:`
+ *  156, `hook_event_name` 33, `type:"control_*"` 4, SDK
+ *  `this.request({subtype})` 54 — all set-identical. turnOrigin sanitizer
+ *  set unchanged. `/usage` anchors (section headers, `% of usage`, stale
+ *  marker) unchanged. `type:` +3/−2: `recorded_agent` / `subagent_history`
+ *  are TUI agent-panel row kinds (gated by CLAUDE_CODE_SUBAGENT_HISTORY);
+ *  `projects_thread_ask` is a new ATTACHMENT subtype (auto-mode "projects"
+ *  thread asks, behind tengu_projects_* gates) — attachments classify
+ *  generically and `summariseContextAttachment` returns null for unknown
+ *  subtypes, so it renders nothing, no Unrecognized card. Object-key diff
+ *  (+359/−43) is runner, sandbox, CCR, keychain and telemetry plumbing;
+ *  none on user/assistant records. `.describe()` 2051 -> 2075: new
+ *  @internal host->CLI control requests `list_cloud_sessions {user_initiated?}`,
+ *  `get_cloud_session {session_id}`, `get_cloud_session_transcript`
+ *  (cursor-paged), answered only over the launching program's stdin —
+ *  an opportunity (cloud sessions in the Projects list), not drift.
+ *  `set_model` now documents a success payload `{model?}`: the resolved id
+ *  the next turn runs as (alias -> id, spelled like system/init's
+ *  `model`), written by `claude -p`. queries.ts logs it as `response`
+ *  already; nothing reads it yet.
+ *
+ *  Fixed:
+ *   - "setModel() refused when the API took more than 5 seconds to
+ *     confirm the model; Claude Code now waits up to 15 seconds". The
+ *     registry default is 10 s, so a 10–15 s confirmation logged a failure
+ *     for a switch the CLI then applied. queries.ts setModel now passes
+ *     SET_MODEL_TIMEOUT_MS = 20 s.
+ *
+ *  Inert, checked: subagent transcripts' placeholder usage / empty
+ *  stop_reason fix (improves the data session_subagent_meta reads — the
+ *  authoritative totals come from toolUseResult anyway); background-command
+ *  stop notice wording (we match no such text); unparseable tool-call
+ *  retries; fork-subagent launch identity; `[1m]` alias under
+ *  CLAUDE_CODE_DISABLE_1M_CONTEXT; MCP keychain/sleep/double-send fixes;
+ *  /permissions Recently denied (TUI); `claude_code.safety_event` OTel;
+ *  `/claude-api api-version`; axScreenReader settings scope; cloud,
+ *  self-hosted runner, VSCode and Code Review entries.
+ *
  * Last review: 2.1.304 -> 2.1.306 on 2026-10-21. Findings: one `/usage`
  * scraper boundary fixed (footer gains an `f to fix …` lead); otherwise
  * inert.
@@ -4536,7 +4579,7 @@ import { buildClaudeEnv } from './util/claude-env';
  * `~/.claude.json` fix (we read-modify-write that file, never replace it), and
  * the VSCode screen-reader work.
  */
-export const REVIEWED_CLI_VERSION = '2.1.306';
+export const REVIEWED_CLI_VERSION = '2.1.307';
 
 /**
  * app_settings key holding the user's explicit OmniFex-checkout override.
