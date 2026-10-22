@@ -1376,6 +1376,9 @@ app.whenReady().then(() => {
       getSupportedCommands: (sessionId: string) => sessionsService.getSupportedCommands(sessionId),
       getSupportedModels: (sessionId: string) => sessionsService.getSupportedModels(sessionId),
       getMcpServerStatus: (sessionId: string) => sessionsService.getMcpServerStatus(sessionId),
+      mcpAuthenticate: (sessionId: string, serverName: string) => sessionsService.mcpAuthenticate(sessionId, serverName),
+      mcpReauthenticate: (sessionId: string, serverName: string) => sessionsService.mcpReauthenticate(sessionId, serverName),
+      mcpSetEnabled: (sessionId: string, serverName: string, enabled: boolean) => sessionsService.mcpSetEnabled(sessionId, serverName, enabled),
       getPlugins: (sessionId: string, force?: boolean) => sessionsService.getPlugins(sessionId, force),
       getSubagentMeta: (args: { configDir: string; projectPath: string; sessionId: string }) =>
         readSubagentMeta(args),

@@ -18,6 +18,7 @@ import type {
   CliControlGetContextUsageResponse,
   CliStatusReport,
   CliPermissionRulesState,
+  McpAuthResult,
   McpServerStatus,
   SendToRenderer,
 } from './types';
@@ -521,6 +522,51 @@ export function createQueryPassthroughs(
     return [];
   }
 
+  /** Run one MCP control request; CLI errors propagate with the CLI's message. */
+  async function mcpControl<T>(
+    subtype: string,
+    tabId: string,
+    serverName: string,
+    extra: Record<string, unknown> = {},
+    opts?: { timeoutMs?: number },
+  ): Promise<T | undefined> {
+    const handle = liveEngine(tabId);
+    if (!handle) {
+      logControl(subtype, tabId, { ok: false, reason: 'no-live-engine', serverName });
+      throw new Error('Session is not running');
+    }
+    try {
+      const res = await handle.engine.sendControlRequest<T>(subtype, { serverName, ...extra }, opts);
+      logControl(subtype, tabId, { ok: true, serverName, ...extra });
+      return res;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[sessions] ${subtype} failed for tab ${tabId}:`, err);
+      logControl(subtype, tabId, { ok: false, serverName, error: msg });
+      throw err instanceof Error ? err : new Error(msg);
+    }
+  }
+
+  async function mcpAuthenticate(tabId: string, serverName: string): Promise<McpAuthResult> {
+    const res = await mcpControl<{ authUrl?: string; requiresUserAction?: boolean; callbackExpected?: boolean }>(
+      'mcp_authenticate', tabId, serverName, {}, { timeoutMs: 60_000 },
+    );
+    return {
+      authUrl: res?.authUrl ?? null,
+      requiresUserAction: res?.requiresUserAction === true,
+      callbackExpected: res?.callbackExpected === true,
+    };
+  }
+
+  async function mcpReauthenticate(tabId: string, serverName: string): Promise<McpAuthResult> {
+    await mcpControl('mcp_clear_auth', tabId, serverName);
+    return mcpAuthenticate(tabId, serverName);
+  }
+
+  async function mcpSetEnabled(tabId: string, serverName: string, enabled: boolean): Promise<void> {
+    await mcpControl('mcp_toggle', tabId, serverName, { enabled });
+  }
+
   // reload_plugins is side-effectful — it re-runs every mod's session.start —
   // so it is sent only when the caller asks for a refresh. Otherwise the list
   // comes from the latest system:init, which carries it, and falls back to a
@@ -595,6 +641,9 @@ export function createQueryPassthroughs(
     getSupportedModels,
     getSupportedAgents,
     getMcpServerStatus,
+    mcpAuthenticate,
+    mcpReauthenticate,
+    mcpSetEnabled,
     getPlugins,
     evictPluginCache,
   };

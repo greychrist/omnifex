@@ -901,3 +901,62 @@ describe('side chat', () => {
   });
 });
 
+
+// ---------------------------------------------------------------------------
+// MCP server row actions
+// ---------------------------------------------------------------------------
+
+describe('mcp server actions', () => {
+  it('mcpAuthenticate sends mcp_authenticate with serverName and a 60 s timeout', async () => {
+    const { engine, calls } = createEngine({ control: () => ({ authUrl: 'https://x', requiresUserAction: true, callbackExpected: true }) });
+    const { q } = setup({ engine });
+    await q.mcpAuthenticate('tab1', 'atlassian');
+    expect(calls[0]).toEqual({ subtype: 'mcp_authenticate', payload: { serverName: 'atlassian' } });
+    expect((engine.sendControlRequest as ReturnType<typeof vi.fn>).mock.calls[0][2]).toMatchObject({ timeoutMs: 60_000 });
+  });
+
+  it('mcpAuthenticate normalises the payload', async () => {
+    const a = createEngine({ control: () => ({ authUrl: 'https://x', requiresUserAction: true, callbackExpected: true, callbackPort: 5555 }) });
+    await expect(setup({ engine: a.engine }).q.mcpAuthenticate('tab1', 's')).resolves.toEqual({
+      authUrl: 'https://x', requiresUserAction: true, callbackExpected: true,
+    });
+    const b = createEngine({ control: () => ({ requiresUserAction: false, callbackExpected: false }) });
+    await expect(setup({ engine: b.engine }).q.mcpAuthenticate('tab1', 's')).resolves.toEqual({
+      authUrl: null, requiresUserAction: false, callbackExpected: false,
+    });
+  });
+
+  it('mcpReauthenticate clears auth before authenticating', async () => {
+    const { engine, calls } = createEngine({ control: () => ({ authUrl: 'https://x', requiresUserAction: true, callbackExpected: true }) });
+    const res = await setup({ engine }).q.mcpReauthenticate('tab1', 'atlassian');
+    expect(calls.map((c) => c.subtype)).toEqual(['mcp_clear_auth', 'mcp_authenticate']);
+    expect(res.authUrl).toBe('https://x');
+  });
+
+  it('mcpReauthenticate does not authenticate when clear_auth fails', async () => {
+    const { engine, calls } = createEngine({ control: (s) => { if (s === 'mcp_clear_auth') throw new Error('Cannot clear auth for server type stdio'); return {}; } });
+    await expect(setup({ engine }).q.mcpReauthenticate('tab1', 's')).rejects.toThrow('Cannot clear auth for server type stdio');
+    expect(calls).toHaveLength(1);
+  });
+
+  it('mcpSetEnabled sends mcp_toggle', async () => {
+    const { engine, calls } = createEngine({ control: () => undefined });
+    await setup({ engine }).q.mcpSetEnabled('tab1', 'github', false);
+    expect(calls[0]).toEqual({ subtype: 'mcp_toggle', payload: { serverName: 'github', enabled: false } });
+  });
+
+  it('rejects with "Session is not running" when no live engine', async () => {
+    const { q } = setup({ registered: false });
+    await expect(q.mcpAuthenticate('tab1', 's')).rejects.toThrow('Session is not running');
+    await expect(q.mcpReauthenticate('tab1', 's')).rejects.toThrow('Session is not running');
+    await expect(q.mcpSetEnabled('tab1', 's', true)).rejects.toThrow('Session is not running');
+  });
+
+  it("rethrows the CLI's error message", async () => {
+    const { engine } = createEngine({ control: () => { throw new Error('Server not found: x'); } });
+    const { q } = setup({ engine });
+    await expect(q.mcpAuthenticate('tab1', 'x')).rejects.toThrow('Server not found: x');
+    await expect(q.mcpReauthenticate('tab1', 'x')).rejects.toThrow('Server not found: x');
+    await expect(q.mcpSetEnabled('tab1', 'x', true)).rejects.toThrow('Server not found: x');
+  });
+});

@@ -62,6 +62,12 @@ export interface SlashCommand {
   [k: string]: unknown;
 }
 
+export interface McpAuthResult {
+  authUrl: string | null;
+  requiresUserAction: boolean;
+  callbackExpected: boolean;
+}
+
 export interface McpServerStatus {
   name: string;
   status?: string;
@@ -382,6 +388,12 @@ export interface SessionsService {
   getSupportedAgents(tabId: string): Promise<AgentInfo[]>;
   /** Get live MCP server status for an active session. Empty if no tab. */
   getMcpServerStatus(tabId: string): Promise<McpServerStatus[]>;
+  /** Start OAuth for an MCP server. Rejects with the CLI's message, or 'Session is not running'. */
+  mcpAuthenticate(tabId: string, serverName: string): Promise<McpAuthResult>;
+  /** Clear a server's stored auth, then start OAuth again. */
+  mcpReauthenticate(tabId: string, serverName: string): Promise<McpAuthResult>;
+  /** Enable or disable an MCP server (the CLI persists this). */
+  mcpSetEnabled(tabId: string, serverName: string, enabled: boolean): Promise<void>;
   /** Get loaded plugins for an active session, enriched with manifest data. */
   getPlugins(tabId: string, force?: boolean): Promise<import('./plugins').EnrichedPlugin[]>;
 }

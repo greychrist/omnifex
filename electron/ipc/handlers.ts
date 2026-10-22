@@ -108,6 +108,9 @@ export interface Services {
     getSupportedCommands(sessionId: string): unknown;
     getSupportedModels(sessionId: string): unknown;
     getMcpServerStatus(sessionId: string): unknown;
+    mcpAuthenticate(sessionId: string, serverName: string): unknown;
+    mcpReauthenticate(sessionId: string, serverName: string): unknown;
+    mcpSetEnabled(sessionId: string, serverName: string, enabled: boolean): unknown;
     getPlugins(sessionId: string, force?: boolean): unknown;
     getSubagentMeta(args: { configDir: string; projectPath: string; sessionId: string }): unknown;
   };
@@ -564,6 +567,9 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     session_supported_commands: wrapWith((p: Record<string, unknown>) => sessions?.getSupportedCommands((p?.tabId ?? p?.session_id) as string) ?? null),
     session_supported_models: wrapWith((p: Record<string, unknown>) => sessions?.getSupportedModels((p?.tabId ?? p?.session_id) as string) ?? null),
     session_mcp_server_status: wrapWith((p: Record<string, unknown>) => sessions?.getMcpServerStatus((p?.tabId ?? p?.session_id) as string) ?? null),
+    session_mcp_authenticate: wrapWith((p: Record<string, unknown>) => sessions?.mcpAuthenticate((p?.tabId ?? p?.session_id) as string, (p?.serverName ?? p?.server_name) as string) ?? null),
+    session_mcp_reauthenticate: wrapWith((p: Record<string, unknown>) => sessions?.mcpReauthenticate((p?.tabId ?? p?.session_id) as string, (p?.serverName ?? p?.server_name) as string) ?? null),
+    session_mcp_set_enabled: wrapWith((p: Record<string, unknown>) => sessions?.mcpSetEnabled((p?.tabId ?? p?.session_id) as string, (p?.serverName ?? p?.server_name) as string, p?.enabled as boolean) ?? null),
     session_plugins: wrapWith((p: Record<string, unknown>) => sessions?.getPlugins((p?.tabId ?? p?.session_id) as string, Boolean(p?.force)) ?? null),
     session_subagent_meta: wrapWith((p: Record<string, unknown>) => sessions?.getSubagentMeta({
       configDir: (p?.configDir ?? p?.config_dir) as string,
