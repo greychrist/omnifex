@@ -44,6 +44,21 @@ import { buildClaudeEnv } from './util/claude-env';
  *    "side_question timed out: the host did not answer in time". Only the
  *    SDK's `askSideQuestion()` documents it.
  *
+ * Last review: 2.1.307 -> 2.1.308 on 2026-10-22. Findings: none — inert.
+ *
+ *  Changelog coverage: 2.1.308 (one entry: "Bug fixes and reliability
+ *  improvements"). Both ends installed.
+ *
+ *  WIRE DIFF (unique literals): merge-strategy map, `subtype:` 156,
+ *  `hook_event_name` 33, `type:"control_*"` 4, SDK `this.request({subtype})`
+ *  54, `type:` 862, `.describe()` strings — all set-identical. turnOrigin
+ *  sanitizer context byte-identical. `/usage` anchors unchanged. Object-key
+ *  diff (+1/−3) is two-to-three-letter minifier identifiers. A full
+ *  string-literal diff (53210 -> 53216) is entirely Bun runtime natives
+ *  (`vm` contextCodeGeneration/contextName/contextOrigin options,
+ *  ERR_MEMORY_ALLOCATION_FAILED, bundler strings, embedded commit hash):
+ *  a runtime bump, no JS-level change. Nothing for OmniFex to do.
+ *
  * Last review: 2.1.306 -> 2.1.307 on 2026-10-21. Findings: one timeout
  * fixed (`set_model`); otherwise inert.
  *
@@ -4579,7 +4594,7 @@ import { buildClaudeEnv } from './util/claude-env';
  * `~/.claude.json` fix (we read-modify-write that file, never replace it), and
  * the VSCode screen-reader work.
  */
-export const REVIEWED_CLI_VERSION = '2.1.307';
+export const REVIEWED_CLI_VERSION = '2.1.308';
 
 /**
  * app_settings key holding the user's explicit OmniFex-checkout override.
