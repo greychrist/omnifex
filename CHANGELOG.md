@@ -5,6 +5,14 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.240] — 2026-10-22
+
+### Added
+- MCP server rows in the Session context panel now have a ⋯ menu with **Authenticate**, **Re-authenticate**, **Enable** and **Disable** — the actions the terminal's `/mcp` screen offers, which chat mode could not reach. Authenticate opens the server's sign-in page in your browser and the row updates when the CLI reconnects. Sign-in actions are hidden in the web client, where the sign-in redirect cannot return.
+
+### Fixed
+- Opening an external link through the desktop platform bridge passed an object instead of a URL, so the browser never opened; it now passes the URL and refuses anything that is not http or https.
+
 ## [0.4.239] — 2026-10-22
 
 ### Fixed
