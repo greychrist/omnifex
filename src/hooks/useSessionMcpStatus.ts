@@ -18,8 +18,9 @@ import { logAndForget } from '@/lib/fireAndLog';
  *
  * `watchUntil` is a second, independent loop for a row action (Authenticate,
  * Disable, ...): it polls the same status every `pollMs`, writes `servers` on
- * each tick, and resolves true once `done` holds for the named server, false
- * at `timeoutMs` or unmount. It never touches the initial-load loop above.
+ * each non-empty tick, and resolves true once `done` holds for the named
+ * server, false at `timeoutMs` or unmount. An empty tick is skipped. It never
+ * touches the initial-load loop above.
  */
 export type McpWatchUntil = (
   serverName: string,
@@ -77,8 +78,12 @@ export function useSessionMcpStatus(
       try {
         const result = (await api.sessionMcpServerStatus(tabId)) ?? [];
         if (!mountedRef.current) return false;
-        setServers(result);
-        if (done(result.find((s) => s.name === serverName))) return true;
+        // The main process answers [] on its own timeout, on a control error
+        // and when the engine is not live: no answer this tick, not "none".
+        if (result.length > 0) {
+          setServers(result);
+          if (done(result.find((s) => s.name === serverName))) return true;
+        }
       } catch (err) {
         console.error('[useSessionMcpStatus] watch poll failed:', err);
       }

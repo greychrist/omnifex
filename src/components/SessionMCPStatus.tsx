@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { cn } from "@/lib/utils";
 import { Spinner } from "@/components/ui/spinner";
 import type { SessionMcpServerStatus } from "@/lib/api";
 import type { McpWatchUntil } from "@/hooks/useSessionMcpStatus";
@@ -76,24 +77,24 @@ export const SessionMCPStatus: React.FC<SessionMCPStatusProps> = ({ servers, tab
                   return (
                     <li key={server.name} className="flex flex-col">
                       <div className="flex items-center pr-1">
-                      <button
-                        type="button"
-                        aria-expanded={isOpen}
-                        onClick={() => { setExpanded(isOpen ? null : server.name); }}
-                        className={rowClass(true)}
-                      >
-                        <StatusDot className={STATUS_DOT[server.status] ?? "bg-yellow-500"} label={server.status} />
-                        <span className="truncate">{server.name}</span>
-                        {cfg.type && <RowTag>{cfg.type}</RowTag>}
-                        <span className="ml-auto flex-none tabular-nums text-[10px] text-muted-foreground/70">
-                          {server.status === "connected" ? (toolCount > 0 ? `${toolCount} tools` : "") : server.status}
-                        </span>
-                      </button>
-                      <McpServerActionsMenu
-                        server={server}
-                        busy={rowState.busy}
-                        onAction={(action) => { logAndForget('mcp-row-action', rowActions.run(server.name, action)); }}
-                      />
+                        <button
+                          type="button"
+                          aria-expanded={isOpen}
+                          onClick={() => { setExpanded(isOpen ? null : server.name); }}
+                          className={cn(rowClass(true), "min-w-0")}
+                        >
+                          <StatusDot className={STATUS_DOT[server.status] ?? "bg-yellow-500"} label={server.status} />
+                          <span className="truncate">{server.name}</span>
+                          {cfg.type && <RowTag>{cfg.type}</RowTag>}
+                          <span className="ml-auto flex-none tabular-nums text-[10px] text-muted-foreground/70">
+                            {server.status === "connected" ? (toolCount > 0 ? `${toolCount} tools` : "") : server.status}
+                          </span>
+                        </button>
+                        <McpServerActionsMenu
+                          server={server}
+                          busy={rowState.busy}
+                          onAction={(action) => { logAndForget('mcp-row-action', rowActions.run(server.name, action)); }}
+                        />
                       </div>
                       <McpRowNotice state={rowState} />
                       {isOpen && (

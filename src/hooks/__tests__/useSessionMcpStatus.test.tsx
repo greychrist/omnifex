@@ -115,4 +115,29 @@ describe('useSessionMcpStatus watchUntil', () => {
     expect(outcome).toBe(false);
     expect(sessionMcpServerStatus.mock.calls.length).toBe(calls);
   });
+
+  // The main process answers [] on its 3 s timeout, control errors, or a
+  // non-live engine: that is "no answer this tick", not "no servers".
+  it('an empty tick between two real answers neither blanks servers nor resolves the watch', async () => {
+    vi.useFakeTimers();
+    const disabled = [{ name: 'gh', status: 'disabled', scope: 'user' }];
+    const pending = [{ name: 'gh', status: 'pending', scope: 'user' }];
+    sessionMcpServerStatus
+      .mockResolvedValueOnce(disabled)
+      .mockResolvedValueOnce([])
+      .mockResolvedValue(pending);
+    const done = vi.fn((s?: { status: string }) => s !== undefined && s.status !== 'disabled');
+    const { result } = renderHook(() => useSessionMcpStatus('tab1', false, 1000));
+    let outcome: boolean | undefined;
+    act(() => {
+      void result.current.watchUntil('gh', done).then((v) => { outcome = v; });
+    });
+    await act(async () => { await vi.advanceTimersByTimeAsync(1500); });
+    expect(result.current.servers).toEqual(disabled);
+    expect(outcome).toBeUndefined();
+    expect(done).toHaveBeenCalledTimes(1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    expect(outcome).toBe(true);
+    expect(result.current.servers).toEqual(pending);
+  });
 });

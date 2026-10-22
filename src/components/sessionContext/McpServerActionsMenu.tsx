@@ -27,12 +27,31 @@ const LABEL: Record<McpServerAction, string> = {
   disable: "Disable",
 };
 
-const DONE: Record<McpServerAction, (s: SessionMcpServerStatus | undefined) => boolean> = {
-  authenticate: (s) => s?.status === "connected",
-  reauthenticate: (s) => s?.status === "connected",
-  disable: (s) => s?.status === "disabled",
-  enable: (s) => s?.status !== "disabled",
-};
+type Done = (s: SessionMcpServerStatus | undefined) => boolean;
+
+/**
+ * When the watch for an action is satisfied. Fresh per run: Re-authenticate's
+ * is stateful, because right after mcp_clear_auth the CLI can still report
+ * `connected` — it must see the server leave `connected` and come back.
+ */
+function doneFor(action: McpServerAction): Done {
+  switch (action) {
+    case "authenticate":
+      return (s) => s?.status === "connected";
+    case "reauthenticate": {
+      let left = false;
+      return (s) => {
+        if (s === undefined) return false;
+        if (s.status !== "connected") { left = true; return false; }
+        return left;
+      };
+    }
+    case "disable":
+      return (s) => s?.status === "disabled";
+    case "enable":
+      return (s) => s !== undefined && s.status !== "disabled";
+  }
+}
 
 const AUTH_WAITING = "Still waiting — reopen the panel after signing in";
 const TOGGLE_WAITING = "Still waiting for the CLI to apply this — reopen the panel to check";
@@ -67,7 +86,7 @@ export function useMcpRowActions(tabId: string, watchUntil: McpWatchUntil): {
       } else {
         await api.sessionMcpSetEnabled(tabId, serverName, action === "enable");
       }
-      const ok = await watchUntil(serverName, DONE[action]);
+      const ok = await watchUntil(serverName, doneFor(action));
       const isAuth = action === "authenticate" || action === "reauthenticate";
       set(serverName, { busy: false, error: null, waiting: ok ? null : isAuth ? AUTH_WAITING : TOGGLE_WAITING });
     } catch (err) {

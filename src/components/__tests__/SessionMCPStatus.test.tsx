@@ -200,4 +200,54 @@ describe('SessionMCPStatus row actions', () => {
     const trigger = screen.getByRole('button', { name: 'Actions for atlassian' });
     expect(trigger.parentElement?.closest('button')).toBeNull();
   });
+
+  // Drives the action's predicate through a status sequence, like the real
+  // watch: true at the first tick it holds, false (timeout) if it never does.
+  const feeding = (statuses: SessionMcpServerStatus['status'][]) => {
+    const seen: boolean[] = [];
+    const watchUntil = vi.fn<WatchUntil>((name, done) => {
+      for (const status of statuses) {
+        const ok = done(server(name, { status }));
+        seen.push(ok);
+        if (ok) return Promise.resolve(true);
+      }
+      return Promise.resolve(false);
+    });
+    return { watchUntil, seen };
+  };
+
+  it('Re-authenticate waits for the server to leave connected and come back', async () => {
+    sessionMcpReauthenticate.mockResolvedValue({ authUrl: 'https://y', requiresUserAction: true, callbackExpected: true });
+    const { watchUntil, seen } = feeding(['connected', 'connected', 'needs-auth', 'connected']);
+    renderStatus([server('ctx', { status: 'connected', config: { type: 'http' } })], watchUntil);
+    openMenu('ctx');
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Re-authenticate' }));
+    await waitFor(() => { expect(seen).toEqual([false, false, false, true]); });
+    expect(screen.queryByText(/Still waiting/)).toBeNull();
+  });
+
+  it('Re-authenticate that never leaves connected ends in the timeout hint', async () => {
+    sessionMcpReauthenticate.mockResolvedValue({ authUrl: 'https://y', requiresUserAction: true, callbackExpected: true });
+    const { watchUntil, seen } = feeding(['connected', 'connected', 'connected']);
+    renderStatus([server('ctx', { status: 'connected', config: { type: 'http' } })], watchUntil);
+    openMenu('ctx');
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Re-authenticate' }));
+    expect(await screen.findByText('Still waiting — reopen the panel after signing in')).toBeTruthy();
+    expect(seen).toEqual([false, false, false]);
+  });
+
+  it('Enable does not count a missing server as enabled', async () => {
+    const watchUntil = vi.fn<WatchUntil>().mockResolvedValue(true);
+    renderStatus([server('gh', { status: 'disabled' })], watchUntil);
+    openMenu('gh');
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Enable' }));
+    await waitFor(() => { expect(watchUntil).toHaveBeenCalled(); });
+    expect(watchUntil.mock.calls[0][1](undefined)).toBe(false);
+  });
+
+  it('lets a long server name shrink instead of pushing the ⋯ trigger out', () => {
+    renderStatus([atlassian]);
+    const expand = screen.getByText('atlassian').closest('button') as HTMLElement;
+    expect(expand.className).toMatch(/\bmin-w-0\b/);
+  });
 });
