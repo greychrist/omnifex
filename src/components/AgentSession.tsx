@@ -2714,12 +2714,14 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
             void changeSessionModel(newModel, {
               tabId: tabIdRef.current,
               hasLiveSession: !!persistentSessionRef.current,
+              previous: selectedModel,
               api,
               setSelectedModel,
               setContextUsage,
               appendMessage,
               onError: (err) => {
                 console.error('[sessions] sessionSetModel failed:', err);
+                setError(`Couldn't switch the model to ${newModel}: ${err instanceof Error ? err.message : String(err)}`);
               },
             });
           }}

@@ -17,15 +17,18 @@ function makeDeps(overrides?: {
   hasLiveSession?: boolean;
   contextUsageResult?: SessionContextUsage | null;
   setModelError?: Error;
+  resolvedModel?: string | null;
 }) {
   const calls: string[] = [];
   const deps = {
     tabId: 'tab-1',
     hasLiveSession: overrides?.hasLiveSession ?? true,
+    previous: 'claude-opus-4-8[1m]',
     api: {
       sessionSetModel: vi.fn(async () => {
         calls.push('setModel');
         if (overrides?.setModelError) throw overrides.setModelError;
+        return overrides?.resolvedModel ?? null;
       }),
       sessionContextUsage: vi.fn(async () => {
         calls.push('contextUsage');
@@ -94,5 +97,28 @@ describe('changeSessionModel', () => {
     await changeSessionModel('sonnet', deps);
     expect(deps.onError).toHaveBeenCalledWith(boom);
     expect(deps.setContextUsage).not.toHaveBeenCalled();
+  });
+
+  // A refused switch used to leave the picker on the model the CLI turned
+  // down, and drop a "Model → X" marker for a change that never happened.
+  it('restores the previous model and drops no marker when the CLI refuses', async () => {
+    const { deps } = makeDeps({ setModelError: new Error('model not available') });
+    await changeSessionModel('sonnet', deps);
+    expect(deps.setSelectedModel).toHaveBeenLastCalledWith('claude-opus-4-8[1m]');
+    expect(deps.appendMessage).not.toHaveBeenCalled();
+  });
+
+  // Since 2.1.307 `claude -p` answers set_model with the id the next turn
+  // runs as. An alias reads better with what it resolved to beside it.
+  it('names the resolved model in the marker when the CLI reports one', async () => {
+    const { deps } = makeDeps({ resolvedModel: 'claude-opus-5-5' });
+    await changeSessionModel('opus', deps);
+    expect(deps.appendMessage.mock.calls[0][0]).toMatchObject({ value: 'opus (claude-opus-5-5)' });
+  });
+
+  it('keeps the plain value when the resolved id is what was asked for', async () => {
+    const { deps } = makeDeps({ resolvedModel: 'claude-opus-5-5' });
+    await changeSessionModel('claude-opus-5-5', deps);
+    expect(deps.appendMessage.mock.calls[0][0]).toMatchObject({ value: 'claude-opus-5-5' });
   });
 });

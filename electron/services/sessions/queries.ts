@@ -86,19 +86,36 @@ export function createQueryPassthroughs(
     }
   }
 
-  async function setModel(tabId: string, model?: string): Promise<void> {
+  // The CLI waits up to 15 s for the API to confirm a model switch (5 s
+  // before 2.1.307) before refusing it. Outlast it, or a slow confirmation
+  // logs as a failure for a switch the CLI went on to apply.
+  const SET_MODEL_TIMEOUT_MS = 20_000;
+
+  /**
+   * Resolves to the model id the CLI says the next turn runs as — `claude -p`
+   * answers set_model with `{model}` since 2.1.307, an alias spelled as the id
+   * it stands for — or null when it acknowledges without one. Rejects when the
+   * CLI refuses or no session is live, so the renderer can roll back.
+   */
+  async function setModel(tabId: string, model?: string): Promise<string | null> {
     const handle = liveEngine(tabId);
     if (!handle) {
       logControl('set_model', tabId, { ok: false, reason: 'no-live-engine', model });
-      return;
+      throw new Error('No live session to switch the model of');
     }
     try {
-      const res = await handle.engine.sendControlRequest('set_model', { model });
+      const res = await handle.engine.sendControlRequest<{ model?: unknown } | undefined>(
+        'set_model',
+        { model },
+        { timeoutMs: SET_MODEL_TIMEOUT_MS },
+      );
       logControl('set_model', tabId, { ok: true, model, response: res ?? null });
+      return typeof res?.model === 'string' ? res.model : null;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error(`[sessions] setModel failed for tab ${tabId}:`, err);
       logControl('set_model', tabId, { ok: false, model, error: msg });
+      throw err;
     }
   }
 

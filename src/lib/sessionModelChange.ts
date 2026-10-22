@@ -11,8 +11,10 @@ export interface ChangeSessionModelDeps {
   tabId: string;
   /** True when a CLI session is running and can take control requests. */
   hasLiveSession: boolean;
+  /** The picker's model before this change, restored if the switch is refused. */
+  previous: string;
   api: {
-    sessionSetModel(tabId: string, model: string): Promise<void>;
+    sessionSetModel(tabId: string, model: string): Promise<string | null>;
     sessionContextUsage(tabId: string): Promise<SessionContextUsage | null>;
   };
   setSelectedModel(model: string): void;
@@ -24,9 +26,11 @@ export interface ChangeSessionModelDeps {
 /**
  * Apply a model change from the popover picker. Updates the selection
  * synchronously; on a live session, pushes the switch to the CLI via
- * set_model, drops a control-change transcript marker (model changes are
- * out-of-band control requests that never reach the JSONL, so the live-only
- * marker is the only scrollback record), then refreshes context usage —
+ * set_model — restoring `previous` if the CLI refuses — drops a
+ * control-change transcript marker naming what an alias resolved to (model
+ * changes are out-of-band control requests that never reach the JSONL, so the
+ * live-only marker is the only scrollback record), then refreshes context
+ * usage —
  * get_context_usage reports the new model as soon as set_model resolves
  * (verified against CLI 2.1.217), which keeps the header summary honest.
  */
@@ -36,15 +40,22 @@ export async function changeSessionModel(
 ): Promise<void> {
   deps.setSelectedModel(newModel);
   if (!deps.hasLiveSession) return;
+  let resolved: string | null;
   try {
-    await deps.api.sessionSetModel(deps.tabId, newModel);
-    deps.appendMessage({
-      kind: 'control-change',
-      control: 'model',
-      value: String(newModel),
-      sessionId: deps.tabId,
-      receivedAt: new Date().toISOString(),
-    });
+    resolved = await deps.api.sessionSetModel(deps.tabId, newModel);
+  } catch (err) {
+    deps.setSelectedModel(deps.previous);
+    deps.onError(err);
+    return;
+  }
+  deps.appendMessage({
+    kind: 'control-change',
+    control: 'model',
+    value: resolved && resolved !== newModel ? `${newModel} (${resolved})` : String(newModel),
+    sessionId: deps.tabId,
+    receivedAt: new Date().toISOString(),
+  });
+  try {
     const usage = await deps.api.sessionContextUsage(deps.tabId);
     if (usage) deps.setContextUsage(usage);
   } catch (err) {

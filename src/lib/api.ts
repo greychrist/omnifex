@@ -1880,7 +1880,8 @@ export const api = {
   },
 
   /** Switch the model used for subsequent turns in an active session. */
-  async sessionSetModel(tabId: string, model?: string): Promise<void> {
+  /** Resolves to the model id the CLI reports the switch landed on, or null. */
+  async sessionSetModel(tabId: string, model?: string): Promise<string | null> {
     return apiCall("session_set_model", { tabId, model });
   },
 

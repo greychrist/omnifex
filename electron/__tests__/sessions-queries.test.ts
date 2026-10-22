@@ -99,7 +99,7 @@ beforeEach(() => {
 describe('live-engine gating', () => {
   it('treats an unknown tab as having no live engine', async () => {
     const { q, meta } = setup({ registered: false });
-    await q.setModel('tab1', 'claude-opus-5');
+    await expect(q.setModel('tab1', 'claude-opus-5')).rejects.toThrow();
     expect(meta().reason).toBe('no-live-engine');
   });
 });
@@ -126,15 +126,41 @@ describe('setModel', () => {
     expect(calls).toEqual([{ subtype: 'set_model', payload: { model: undefined } }]);
   });
 
-  it('records the engine error instead of throwing', async () => {
+  // Since 2.1.307 the CLI waits up to 15 s for the API to confirm the model
+  // before refusing. The registry's 10 s default would log a failure for a
+  // switch the CLI then applied.
+  it('waits longer than the CLI does for the model confirmation', async () => {
+    const { engine } = createEngine();
+    const { q } = setup({ engine });
+    await q.setModel('tab1', 'claude-opus-5');
+    const opts = (engine.sendControlRequest as ReturnType<typeof vi.fn>).mock.calls[0][2];
+    expect(opts?.timeoutMs).toBeGreaterThan(15_000);
+  });
+
+  // Swallowing the error made both renderer fallbacks dead: the picker never
+  // rolled back a refused model, and useSendPrompt never restarted.
+  it('logs and rethrows the engine error so the caller can roll back', async () => {
     const { engine } = createEngine({
       control: () => {
         throw new Error('control channel closed');
       },
     });
     const { q, meta } = setup({ engine });
-    await expect(q.setModel('tab1', 'x')).resolves.toBeUndefined();
+    await expect(q.setModel('tab1', 'x')).rejects.toThrow('control channel closed');
     expect(meta()).toMatchObject({ ok: false, error: 'control channel closed' });
+  });
+
+  // 2.1.307: `claude -p` answers with the id the next turn runs as.
+  it('returns the model the CLI resolved the request to', async () => {
+    const { engine } = createEngine({ control: () => ({ model: 'claude-opus-5-5' }) });
+    const { q } = setup({ engine });
+    await expect(q.setModel('tab1', 'opus')).resolves.toBe('claude-opus-5-5');
+  });
+
+  it('returns null when the CLI acknowledges without a payload', async () => {
+    const { engine } = createEngine();
+    const { q } = setup({ engine });
+    await expect(q.setModel('tab1', 'opus')).resolves.toBeNull();
   });
 });
 
@@ -714,7 +740,7 @@ describe('optional deps', () => {
       }),
     } as unknown as LoggingService;
     const q = createQueryPassthroughs(sessions, null, logging);
-    await expect(q.setModel('tab1', 'claude-opus-5')).resolves.toBeUndefined();
+    await expect(q.setModel('tab1', 'claude-opus-5')).resolves.toBeNull();
     expect(calls).toHaveLength(1);
   });
 });

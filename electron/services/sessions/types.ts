@@ -332,7 +332,7 @@ export interface SessionsService {
   /** Interrupt the current assistant turn without ending the session. */
   interrupt(tabId: string): Promise<void>;
   /** Switch the model used for subsequent turns. */
-  setModel(tabId: string, model?: string): Promise<void>;
+  setModel(tabId: string, model?: string): Promise<string | null>;
   /**
    * Rename the session via the CLI's own `rename_session` control request.
    * Resolves false when the rename could not be sent (no live engine, blank
