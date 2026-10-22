@@ -5,6 +5,16 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.238] — 2026-10-22
+
+### Fixed
+- A mid-session model switch the CLI refuses (for example a model the account cannot use) now restores the previous model in the picker and shows the reason, instead of looking applied
+- The transcript's model-change marker names the model an alias resolved to, e.g. `opus (claude-opus-5-5)`
+- Model switches no longer log a false failure when the API takes 10–15 s to confirm the model (CLI 2.1.307 waits up to 15 s)
+
+### Changed
+- Reviewed Claude Code 2.1.307 against OmniFex
+
 ## [0.4.237] — 2026-10-21
 
 ### Added
