@@ -151,6 +151,26 @@ import Testing
         }
     }
 
+    // `emit` reaches WKWebView and `localBusy` reads main-actor tab state. The
+    // gate runs on the cooperative pool, so it must hop to the main actor for
+    // both: emitting off-main made WebKit kill the app on every Install click.
+    @Test(arguments: [false, true])
+    func callsTabStateAndEmitOnTheMainThread(force: Bool) async throws {
+        let i = installer(tmpdir: try tmp())
+        final class Seen: @unchecked Sendable { var threads: [Bool] = [] }
+        let seen = Seen()
+        try await Task.detached {
+            try await i.waitForIdle(
+                force: force,
+                localBusy: { seen.threads.append(Thread.isMainThread); return [] },
+                remoteInFlight: { nil },
+                emit: { _ in seen.threads.append(Thread.isMainThread) },
+                sleep: { _ in })
+        }.value
+        #expect(!seen.threads.isEmpty)
+        #expect(seen.threads.allSatisfy { $0 })
+    }
+
     @Test func forceIsNotDefeatedByAnEarlierCancel() async throws {
         let i = installer(tmpdir: try tmp())
         i.cancelWait()

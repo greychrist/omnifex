@@ -143,16 +143,20 @@ public final class Installer: @unchecked Sendable {
     /// local sessions and poll anyway, but the daemon owns the sessions and
     /// keeps reporting them, so the override hung forever — failing exactly
     /// when it was needed.
+    ///
+    /// `localBusy` and `emit` run on the main actor: the app's callers read
+    /// tab state and post to the WKWebView, and this gate itself runs on the
+    /// cooperative pool. WebKit kills the process on an off-main call.
     public func waitForIdle(
         force: Bool,
-        localBusy: () -> [String],
+        localBusy: @MainActor () -> [String],
         remoteInFlight: () async -> Int?,
-        emit: ([String: Any]) -> Void,
+        emit: @MainActor ([String: Any]) -> Void,
         sleep: (UInt64) async -> Void
     ) async throws {
         if force {
             lock.withLock { cancelToken = nil }
-            emit(["phase": "installing"])
+            await emit(["phase": "installing"])
             return
         }
         let token = CancelToken()
@@ -163,17 +167,17 @@ public final class Installer: @unchecked Sendable {
                 lock.withLock { if cancelToken === token { cancelToken = nil } }
                 throw InstallError.waitCancelled
             }
-            let local = localBusy()
+            let local = await localBusy()
             // Not double-counted: a local tab and the daemon may both report
             // the same turn, but the gate only asks "is anything running".
             let remote = await remoteInFlight() ?? 0
             let sessions = max(local.count, remote)
             if sessions == 0 {
                 lock.withLock { if cancelToken === token { cancelToken = nil } }
-                emit(["phase": "installing"])
+                await emit(["phase": "installing"])
                 return
             }
-            emit(["phase": "waiting", "activeSessions": sessions, "tabs": local.map { ["tabId": $0, "sessionStatus": "busy"] }])
+            await emit(["phase": "waiting", "activeSessions": sessions, "tabs": local.map { ["tabId": $0, "sessionStatus": "busy"] }])
             await sleep(1_000_000_000)
         }
     }

@@ -39,6 +39,8 @@ enum Bridge {
     })();
     """
 
+    /// Main actor only: WebKit kills the process on an off-main call.
+    @MainActor
     static func emit(_ channel: String, _ payload: Any, to webView: WKWebView) {
         guard let channelJSON = json(channel), let argsJSON = json([payload]) else { return }
         webView.evaluateJavaScript("window.__omnifexNativeEmit && window.__omnifexNativeEmit(\(channelJSON), \(argsJSON))")
