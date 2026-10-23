@@ -44,6 +44,39 @@ import { buildClaudeEnv } from './util/claude-env';
  *    "side_question timed out: the host did not answer in time". Only the
  *    SDK's `askSideQuestion()` documents it.
  *
+ * Last review: 2.1.308 -> 2.1.309 on 2026-10-22. Findings: none broken;
+ * MCP `sessionProxied` now gates row auth items (mcpServerActions.ts).
+ *
+ *  Changelog coverage: 2.1.309 (~85 entries). Both ends installed.
+ *
+ *  WIRE DIFF (unique literals): merge-strategy map, `hook_event_name` 33,
+ *  `type:"control_*"` 4 — set-identical. turnOrigin sanitizer set
+ *  identical. `/usage` parser anchors 19/40 present in both (unchanged).
+ *  `subtype:` 156 -> 158 and SDK `this.request({subtype})` 54 -> 55:
+ *  `submit_survey_feedback` (@internal host->CLI; the session-rating
+ *  follow-up box, with `feedback_survey_config` sent only to sessions a
+ *  VS Code / desktop host starts) and `turn_began_before_init` (self-hosted
+ *  runner startup phase, stderr diagnostic). `type:` +5: those two, plus
+ *  `slug` (artifact-tool rule field), `online` / `dialog_clients` (mod
+ *  worker IPC) — none reach a session file or stdout. mcp_status gains
+ *  `transport`, `urlHost` and `sessionProxied` (true for a claudeai-proxy
+ *  connector with scope `claudeai`, "so a client offers no OAuth sign-in
+ *  for it"); `config.type` is still `claudeai-proxy`, and mcp_authenticate's
+ *  connector branch is unchanged (it still returns a claude.ai auth URL), so
+ *  connectors keep Authenticate; only a proxied http/sse server loses it.
+ *  Prompt-fill gains `cursor`. `_simulatedSedEdit` input removed (sed -i is
+ *  a plain Bash prompt now) — OmniFex never read it. Object-key diff
+ *  (+337) is runner, artifact, survey and sandbox plumbing; none on
+ *  user/assistant records.
+ *
+ *  Entries in our favour, nothing to do: disabled MCP server no longer
+ *  reconnected by a later permission prompt in SDK sessions (our ⋯ Disable);
+ *  `/rename` names survive a non-interactive `--resume`; tool-output previews
+ *  no longer split an emoji into an unparseable JSONL line. Inert: mod
+ *  `turn.step` alias fix (our bundled mod has no turn.step), Desktop/VS Code
+ *  bypass `rm` deny (entrypoint-gated), sandbox/worktree/permission-check
+ *  hardening, TUI keys, VS Code / cloud / Slack / Code Review entries.
+ *
  * Last review: 2.1.307 -> 2.1.308 on 2026-10-22. Findings: none — inert.
  *
  *  Changelog coverage: 2.1.308 (one entry: "Bug fixes and reliability
@@ -4594,7 +4627,7 @@ import { buildClaudeEnv } from './util/claude-env';
  * `~/.claude.json` fix (we read-modify-write that file, never replace it), and
  * the VSCode screen-reader work.
  */
-export const REVIEWED_CLI_VERSION = '2.1.308';
+export const REVIEWED_CLI_VERSION = '2.1.309';
 
 /**
  * app_settings key holding the user's explicit OmniFex-checkout override.
