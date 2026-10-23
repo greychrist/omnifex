@@ -789,6 +789,8 @@ export interface SessionMcpServerStatus {
   error?: string;
   config?: Record<string, unknown>;
   scope?: string;
+  /** CLI ≥2.1.309: reached through the cloud session's MCP proxy (or a claude.ai connector); its sign-in is held there. */
+  sessionProxied?: boolean;
   tools?: { name: string; description?: string }[];
 }
 

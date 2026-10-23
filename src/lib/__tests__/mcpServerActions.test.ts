@@ -42,6 +42,21 @@ describe('mcpServerActions', () => {
     expect(mcpServerActions(mk('failed', 'http'), on)).toEqual(['disable']);
     expect(mcpServerActions(mk('pending', 'http'), on)).toEqual(['disable']);
   });
+  // 2.1.309: an http/sse server reached through the cloud session's MCP proxy
+  // has its sign-in held there; mcp_authenticate would start a local OAuth
+  // flow against the proxy, so offer none.
+  it('session-proxied http server -> disable only', () => {
+    const proxied = (status: SessionMcpServerStatus['status']) =>
+      ({ ...mk(status, 'http'), sessionProxied: true });
+    expect(mcpServerActions(proxied('needs-auth'), on)).toEqual(['disable']);
+    expect(mcpServerActions(proxied('connected'), on)).toEqual(['disable']);
+  });
+  // A claude.ai connector is also sessionProxied on 2.1.309, but
+  // mcp_authenticate's connector branch still returns a claude.ai auth URL.
+  it('session-proxied claude.ai connector keeps authenticate', () => {
+    const s = { ...mk('needs-auth', 'claudeai-proxy'), sessionProxied: true };
+    expect(mcpServerActions(s, on)).toEqual(['authenticate', 'disable']);
+  });
   it('no browser callback hides auth items', () => {
     const off = { canOpenBrowserCallback: false };
     expect(mcpServerActions(mk('needs-auth', 'http'), off)).toEqual(['disable']);
