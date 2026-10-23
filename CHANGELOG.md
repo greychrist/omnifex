@@ -5,6 +5,18 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] — 2026-10-23
+
+### Changed
+- OmniFex is now a native Mac app. The Electron shell is gone; the window is AppKit with the system's WebKit, the same engine as Safari and the iPad web client. The app is 161 MB instead of 353 MB, and the update download 54 MB instead of 143 MB.
+- The daemon now runs on Node 26.12.1, which OmniFex bundles and updates itself. Electron 41 bundled Node 24.18.0 and had stopped receiving releases, so the 2026-10-21 Node security release could not reach the app; a Node security fix now ships as an ordinary OmniFex update.
+- Requires macOS 27 or later.
+- Developer Tools (⌥⌘I, or right-click → Inspect Element) is now Safari's Web Inspector.
+- Updating from 0.4.x installs the new app in place and replaces the old daemon once its running turns finish. Sessions resume on their next message.
+
+### Removed
+- "Work locally" mode. The app always talks to its daemon; if the daemon is down, the connection banner and Retry bring it back.
+
 ## [0.4.242] — 2026-10-23
 
 ### Fixed
