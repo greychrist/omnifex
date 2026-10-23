@@ -87,6 +87,23 @@ export interface LoadServerConfigOptions {
   env?: Record<string, string | undefined>;
 }
 
+/** Loopback by name or address: what a page may treat as a secure context. */
+export function isLoopbackHost(host: string): boolean {
+  const h = host.replace(/^\[|\]$/g, '').toLowerCase();
+  return h === 'localhost' || h === '::1' || /^127\.\d+\.\d+\.\d+$/.test(h);
+}
+
+/**
+ * Addresses to listen on besides `host`. A daemon on the tailnet (or any
+ * specific address) also takes loopback, because that is where the Mac app
+ * loads from — see `localUrl` in launcher.ts for why. A wildcard bind already
+ * covers it.
+ */
+export function extraListenHosts(host: string): string[] {
+  if (isLoopbackHost(host) || host === '0.0.0.0' || host === '::') return [];
+  return ['127.0.0.1'];
+}
+
 export function defaultStateDir(env: Record<string, string | undefined> = process.env): string {
   return env.OMNIFEX_STATE_DIR ?? join(homedir(), '.omnifex');
 }

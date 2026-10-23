@@ -49,7 +49,7 @@ import Testing
 @Suite struct BridgeRouterTests {
     @Test func everyNativeChannelIsKnown() {
         #expect(NativeChannels.invoke.contains("remote:url"))
-        #expect(NativeChannels.invoke.count == 23)
+        #expect(NativeChannels.invoke.count == 24)
         #expect(NativeChannels.events.contains("session-inflight-count"))
     }
 

@@ -43,6 +43,12 @@ export interface RemoteServerLogger {
 
 export interface RemoteServerDeps {
   host: string;
+  /**
+   * Further addresses served on the same port — loopback, when `host` is the
+   * tailnet address (`extraListenHosts`). One that cannot be bound is logged
+   * and skipped: the main address is what the daemon exists to serve.
+   */
+  extraHosts?: string[];
   port: number;
   daemonVersion: string;
   capabilities?: Record<string, unknown>;
@@ -122,6 +128,7 @@ export function createRemoteServer(deps: RemoteServerDeps): RemoteServer {
   const subscribers = new Map<string, Set<Connection>>();
   let http: Server | null = null;
   let wss: WebSocketServer | null = null;
+  let extras: { http: Server; wss: WebSocketServer }[] = [];
   let heartbeat: NodeJS.Timeout | null = null;
   let address: { host: string; port: number } | null = null;
 
@@ -424,6 +431,29 @@ export function createRemoteServer(deps: RemoteServerDeps): RemoteServer {
   // Lifecycle
   // -------------------------------------------------------------------------
 
+  /** The same request handler and socket endpoint on each extra address. */
+  async function listenExtras(port: number): Promise<void> {
+    for (const host of deps.extraHosts ?? []) {
+      const extraHttp = createServer(onRequest);
+      const extraWss = new WebSocketServer({ server: extraHttp, path: '/ws' });
+      extraWss.on('connection', onSocket);
+      // `ws` re-emits the http server's errors; the bind failure is logged below.
+      extraWss.on('error', () => {});
+      const ok = await new Promise<boolean>((done) => {
+        extraHttp.once('error', (err) => {
+          log.warn('could not listen on an extra host', { host, port, error: String(err) });
+          extraWss.close();
+          done(false);
+        });
+        extraHttp.listen(port, host, () => done(true));
+      });
+      if (ok) {
+        extras.push({ http: extraHttp, wss: extraWss });
+        log.info('listening', { host, port, ws: '/ws' });
+      }
+    }
+  }
+
   return {
     get clients() {
       return [...connections];
@@ -479,7 +509,7 @@ export function createRemoteServer(deps: RemoteServerDeps): RemoteServer {
               ? { host: a.address, port: a.port }
               : { host: deps.host, port: deps.port };
           log.info('listening', { ...address, ws: '/ws' });
-          resolvePromise(address);
+          void listenExtras(address.port).then(() => resolvePromise(address!));
         });
       });
     },
@@ -500,6 +530,11 @@ export function createRemoteServer(deps: RemoteServerDeps): RemoteServer {
           return;
         }
         wss?.close();
+        for (const extra of extras) {
+          extra.wss.close();
+          extra.http.close();
+        }
+        extras = [];
         http.close(() => finish());
         http = null;
         wss = null;

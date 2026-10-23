@@ -19,6 +19,7 @@
  */
 import { createServerClient, type ServerClient, type WebSocketFactory } from '@/lib/remote/serverClient';
 import { createElectronApiShim } from '@/lib/remote/electronApiShim';
+import { installNativeClipboard } from '@/lib/remote/nativeClipboard';
 import type { NativeBridge } from '@/lib/platform';
 
 export type RemoteMode = 'desktop' | 'web';
@@ -116,7 +117,8 @@ export async function installRemoteBridge(opts: InstallRemoteBridgeOptions = {})
   client.connect().catch((err: unknown) => {
     console.warn('[remote] initial connect failed; will keep retrying', err);
   });
-  if (!native) registerServiceWorker();
+  if (native) installNativeClipboard(native);
+  else registerServiceWorker();
 
   const info: RemoteBridgeInfo = {
     mode, url, client,

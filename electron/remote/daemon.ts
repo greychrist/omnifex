@@ -114,7 +114,7 @@ import { getHandlerMap } from '../ipc/handlers';
 import { INVOKE_CHANNELS } from '../ipc/channels';
 import { classifyJsonlLine } from '../../src/lib/jsonlClassifier';
 
-import type { ServerConfig } from './config';
+import { extraListenHosts, type ServerConfig } from './config';
 import { createAccountWatchers } from './account-watchers';
 import { createSessionLog } from './session-log';
 import { createSessionBridge } from './bridge';
@@ -230,6 +230,7 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
   log.info('web root', { webRoot: webRoot ?? '(none — no web client served)' });
   const server = createRemoteServer({
     host: config.host,
+    extraHosts: extraListenHosts(config.host),
     port: config.port,
     daemonVersion: opts.version,
     capabilities: { rpcInvoke: true, attachments: 'base64', web: webRoot !== null, push: true },

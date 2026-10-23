@@ -5,6 +5,8 @@ import { join } from 'node:path';
 
 import {
   detectTailscaleIp,
+  extraListenHosts,
+  isLoopbackHost,
   loadServerConfig,
   DEFAULT_PORT,
   type NetworkInterfaces,
@@ -132,5 +134,30 @@ describe('remote server config', () => {
       writeFileSync(file, '{not json');
       expect(() => loadServerConfig({ file, interfaces: IFACES, env: {} })).toThrow(/server\.json/);
     });
+  });
+});
+
+// The Mac app loads its page from loopback (see `localUrl` in launcher.ts),
+// so a daemon on any other address listens there as well.
+describe('extraListenHosts', () => {
+  it('adds loopback to a tailnet or LAN address', () => {
+    expect(extraListenHosts('100.64.1.2')).toEqual(['127.0.0.1']);
+    expect(extraListenHosts('192.168.1.5')).toEqual(['127.0.0.1']);
+  });
+  it('adds nothing when the daemon is already on loopback', () => {
+    expect(extraListenHosts('127.0.0.1')).toEqual([]);
+    expect(extraListenHosts('localhost')).toEqual([]);
+    expect(extraListenHosts('::1')).toEqual([]);
+  });
+  it('adds nothing to a wildcard bind, which already covers loopback', () => {
+    expect(extraListenHosts('0.0.0.0')).toEqual([]);
+    expect(extraListenHosts('::')).toEqual([]);
+  });
+});
+
+describe('isLoopbackHost', () => {
+  it('knows the loopback names', () => {
+    for (const h of ['127.0.0.1', '127.0.0.53', 'localhost', '::1', '[::1]']) expect(isLoopbackHost(h)).toBe(true);
+    for (const h of ['100.64.1.2', '0.0.0.0', 'example.com']) expect(isLoopbackHost(h)).toBe(false);
   });
 });

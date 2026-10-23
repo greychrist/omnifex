@@ -67,18 +67,25 @@ describe('svgToPng', () => {
 });
 
 describe('canCopyImage', () => {
-  it('needs ClipboardItem, a secure context and clipboard.write', () => {
+  it('needs ClipboardItem and clipboard.write', () => {
     vi.stubGlobal('ClipboardItem', function ClipboardItem() { /* presence is all that is checked */ });
-    vi.stubGlobal('isSecureContext', true);
     vi.stubGlobal('navigator', { clipboard: { write: vi.fn() } });
     expect(canCopyImage()).toBe(true);
 
-    vi.stubGlobal('isSecureContext', false);
+    vi.stubGlobal('navigator', {});
     expect(canCopyImage()).toBe(false);
 
-    vi.stubGlobal('isSecureContext', true);
+    vi.stubGlobal('navigator', { clipboard: { write: vi.fn() } });
     vi.stubGlobal('ClipboardItem', undefined);
     expect(canCopyImage()).toBe(false);
+  });
+
+  // The Mac app's page is plain http; its clipboard comes from the bridge.
+  it('does not require a secure context', () => {
+    vi.stubGlobal('ClipboardItem', function ClipboardItem() { /* presence is all that is checked */ });
+    vi.stubGlobal('isSecureContext', false);
+    vi.stubGlobal('navigator', { clipboard: { write: vi.fn() } });
+    expect(canCopyImage()).toBe(true);
   });
 });
 

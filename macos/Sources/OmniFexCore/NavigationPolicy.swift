@@ -1,7 +1,8 @@
 import Foundation
 
 public enum NavigationDecision: Equatable, Sendable {
-    case allow, external, deny
+    /// `download`: save it — a `blob:`/`data:` link the page itself made.
+    case allow, external, deny, download
 }
 
 /// What a web view may navigate to.
@@ -22,9 +23,20 @@ public struct NavigationPolicy: Sendable {
         self.devServer = devServer
     }
 
-    public func classify(_ raw: String) -> NavigationDecision {
+    /// `isDownload` is `WKNavigationAction.shouldPerformDownload`: the link
+    /// carries a `download` attribute. Save image, export appearance and save
+    /// diagram all build one over a `blob:` URL, which WKWebView does nothing
+    /// with unless the navigation becomes a download.
+    public func classify(_ raw: String, isDownload: Bool = false) -> NavigationDecision {
         if raw.isEmpty || raw == "about:blank" { return .allow }
         guard let url = URL(string: raw), let scheme = url.scheme?.lowercased() else { return .deny }
+        if isDownload, scheme == "data" { return .download }
+        if isDownload, scheme == "blob" {
+            // A blob URL carries its creator's origin: `blob:http://host:port/uuid`.
+            let inner = URL(string: String(raw.dropFirst("blob:".count)))
+            let own = inner.map { u in [appOrigin, devServer].compactMap { $0 }.contains { Self.sameOrigin(u, $0) } } ?? false
+            return own ? .download : .deny
+        }
 
         for origin in [appOrigin, devServer].compactMap({ $0 }) where Self.sameOrigin(url, origin) {
             let path = url.path

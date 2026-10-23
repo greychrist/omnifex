@@ -126,6 +126,25 @@ enum NativeHandlers {
             return nil
         }
 
+        // MARK: clipboard
+        // The page has no async clipboard of its own: plain http is not a
+        // secure context to WebKit. Text, HTML and PNG, in one pasteboard item.
+        r.register("clipboard:write") { p, _ in
+            let entries = ClipboardPayload.parse(p)
+            guard !entries.isEmpty else { throw BridgeError("clipboard:write: nothing to write") }
+            let item = NSPasteboardItem()
+            for entry in entries {
+                switch entry {
+                case .text(let text): item.setString(text, forType: .string)
+                case .html(let html): item.setString(html, forType: .html)
+                case .png(let data): item.setData(data, forType: .png)
+                }
+            }
+            NSPasteboard.general.clearContents()
+            guard NSPasteboard.general.writeObjects([item]) else { throw BridgeError("clipboard:write: the pasteboard refused the write") }
+            return nil
+        }
+
         // MARK: tab status
         r.register("tab_status_publish") { p, caller in
             guard let summary = BridgeParams.dict(p, "summary") else { throw BridgeError("tab_status_publish requires summary.tabId") }

@@ -110,6 +110,14 @@ before changing any of it.
 - **There is one mode: the daemon.** The in-process fallback went with
   Electron. A daemon that is down is the connection banner plus the window's
   Retry, never a different code path.
+- **The Mac app loads its page from loopback, never the tailnet address.**
+  WebKit runs plain http on a non-loopback address in its EnhancedSecurity
+  process — no JIT, ~5× slower JavaScript — and gives it no secure context
+  (no async clipboard, no `crypto.randomUUID`). `securityRestrictionMode =
+  .none` does not override it. So a daemon on the tailnet also listens on
+  `127.0.0.1` (`extraListenHosts`) and `ensure` hands the app the loopback
+  URL when it answers there (`localUrl` in `launcher.ts`). Shipped in 0.5.0
+  without this; the app felt sluggish everywhere.
 - **The native bridge answers the main frame on the app's origin only**
   (`NavigationPolicy.allowsBridge`). The page shows link previews of arbitrary
   sites in iframes, and the bridge reaches `updater:download` /

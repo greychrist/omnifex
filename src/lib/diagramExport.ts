@@ -77,15 +77,13 @@ export async function svgToPng(svgMarkup: string, scale = 2): Promise<Blob> {
 }
 
 /**
- * Image copy needs the async clipboard and a secure context. The iPad client
- * served over plain http has neither, so the option is hidden there.
+ * Image copy needs the async clipboard. The iPad client served over plain
+ * http has none, so the option is hidden there. Not a secure-context check:
+ * the Mac app's page is plain http too, and its clipboard is the app's own
+ * (`remote/nativeClipboard.ts`).
  */
 export function canCopyImage(): boolean {
-  return (
-    typeof ClipboardItem !== 'undefined' &&
-    globalThis.isSecureContext &&
-    typeof navigator.clipboard?.write === 'function'
-  );
+  return typeof ClipboardItem !== 'undefined' && typeof navigator.clipboard?.write === 'function';
 }
 
 export async function copyPng(png: Blob): Promise<void> {

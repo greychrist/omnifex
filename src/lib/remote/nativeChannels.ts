@@ -45,6 +45,8 @@ export const NATIVE_INVOKE_CHANNELS: readonly string[] = [
   'remote:restart',
   /** OS notification on behalf of a daemon-side event. */
   'notify:show',
+  /** The page is plain http, which WebKit gives no async clipboard. */
+  'clipboard:write',
 ];
 
 /**

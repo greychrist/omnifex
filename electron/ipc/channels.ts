@@ -302,6 +302,7 @@ export const INVOKE_CHANNELS: readonly string[] = [
   'remote:url',
   'remote:restart',
   'notify:show',
+  'clipboard:write',
   'dialog:open',
   'dialog:save',
   'shell:openExternal',

@@ -350,3 +350,57 @@ describe('remote launcher', () => {
     });
   });
 });
+
+/**
+ * On a tailnet host the daemon also listens on loopback, and the Mac app must
+ * load from there: WebKit runs plain http on a non-loopback address in its
+ * EnhancedSecurity process — no JIT, ~5x slower JavaScript — and gives it no
+ * secure context (no async clipboard). Loopback is "potentially trustworthy".
+ */
+describe('remote launcher on a tailnet host', () => {
+  const TAILNET = { host: '100.64.1.2', port: 47700 } as ServerConfig;
+  const LOOPBACK_HEALTH = 'http://127.0.0.1:47700/healthz';
+
+  function tailnet(answers: (url: string, call: number) => DaemonHealth | null) {
+    let call = 0;
+    const probe = vi.fn(async (url: string) => answers(url, call++));
+    const launcher = createRemoteLauncher({
+      config: () => TAILNET,
+      probe,
+      spawn: () => true,
+      stop: async () => true,
+      appVersion: APP,
+      sleep: async () => {},
+      startupTimeoutMs: 1000,
+      pollIntervalMs: 250,
+    });
+    return { launcher, probe };
+  }
+
+  it('hands back the loopback url when the daemon answers there', async () => {
+    const { launcher, probe } = tailnet(() => same());
+    expect(await launcher.ensure()).toEqual({ url: 'ws://127.0.0.1:47700/ws', outdated: false });
+    expect(probe).toHaveBeenLastCalledWith(LOOPBACK_HEALTH);
+  });
+
+  it('keeps the tailnet url for a daemon that does not listen on loopback', async () => {
+    const { launcher } = tailnet((url) => (url === LOOPBACK_HEALTH ? null : same()));
+    expect(await launcher.ensure()).toEqual({ url: 'ws://100.64.1.2:47700/ws', outdated: false });
+  });
+
+  it('keeps the tailnet url for an older build kept mid-turn, which predates loopback', async () => {
+    const { launcher } = tailnet((url) => (url === LOOPBACK_HEALTH ? null : old(1)));
+    expect(await launcher.ensure()).toEqual({ url: 'ws://100.64.1.2:47700/ws', outdated: true });
+  });
+
+  it('applies to restart too', async () => {
+    // running → stopped → spawned and answering (both addresses)
+    const { launcher } = tailnet((url, call) => (call === 1 ? null : same()));
+    expect(await launcher.restart()).toEqual({ url: 'ws://127.0.0.1:47700/ws', outdated: false });
+  });
+
+  it('reports nothing when the daemon is down', async () => {
+    const { launcher } = tailnet(() => null);
+    expect((await launcher.ensure()).url).toBeNull();
+  });
+});

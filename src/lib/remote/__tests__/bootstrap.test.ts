@@ -67,6 +67,8 @@ describe('installRemoteBridge (desktop)', () => {
   });
   afterEach(() => {
     vi.restoreAllMocks();
+    delete (navigator as unknown as { clipboard?: unknown }).clipboard;
+    delete (globalThis as unknown as { ClipboardItem?: unknown }).ClipboardItem;
   });
 
   it('installs the shim over the daemon the app reports, keeping the native bridge for native channels', async () => {
@@ -83,6 +85,16 @@ describe('installRemoteBridge (desktop)', () => {
     expect(w.__omnifexNative).toBe(native);
     await tick();
     expect(FakeSocket.instances.at(-1)!.url).toBe(URL);
+  });
+
+  // The page is plain http on the tailnet address, which WebKit does not
+  // count as secure, so the async clipboard is missing; the app supplies it.
+  it('gives the page the native clipboard', async () => {
+    const native = nativeBridge(URL);
+    w.__omnifexNative = native;
+    await installRemoteBridge({ createSocket: (url) => new FakeSocket(url) });
+    await navigator.clipboard.writeText('copied');
+    expect(native.invoke).toHaveBeenCalledWith('clipboard:write', { items: [{ type: 'text/plain', text: 'copied' }] });
   });
 
   // Install first, connect second, as on the web: there is nothing to fall

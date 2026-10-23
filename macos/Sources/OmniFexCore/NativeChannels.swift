@@ -33,6 +33,7 @@ public enum NativeChannels {
         "remote:url",
         "remote:restart",
         "notify:show",
+        "clipboard:write",
     ]
 
     /// Events this app emits into pages.

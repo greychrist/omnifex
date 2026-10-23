@@ -339,3 +339,49 @@ describe('remote server', () => {
     });
   });
 });
+
+// The Mac app loads from loopback while the daemon's main address is the
+// tailnet one (see `extraListenHosts`). Here `::1` stands in for the extra
+// address, since a test cannot bind a tailnet IP.
+describe('remote server on extra hosts', () => {
+  const getText = (url: string) =>
+    new Promise<{ status: number; body: string }>((res, rej) => {
+      httpGet(url, (r) => {
+        let body = '';
+        r.on('data', (d) => { body += d; });
+        r.on('end', () => res({ status: r.statusCode ?? 0, body }));
+      }).on('error', rej);
+    });
+  const api = { health: () => ({ ok: true }), sessions: () => [], projects: () => [] };
+
+  it('serves http and the socket on every host, on the port the main host got', async () => {
+    const server = createRemoteServer({ host: '127.0.0.1', extraHosts: ['::1'], port: 0, daemonVersion: 't', heartbeatMs: 0, api });
+    server.register(handlers());
+    const { port } = await server.listen();
+    try {
+      expect(JSON.parse((await getText(`http://[::1]:${port}/healthz`)).body)).toEqual({ ok: true });
+      const client = new TestClient(`ws://[::1]:${port}/ws`);
+      await client.open();
+      expect(await client.hello('desktop')).toMatchObject({ ok: true });
+      client.close();
+    } finally {
+      await server.close();
+    }
+    await expect(getText(`http://[::1]:${port}/healthz`)).rejects.toThrow();
+  });
+
+  it('still starts when an extra host cannot be bound, and says so', async () => {
+    const warn = vi.fn();
+    const server = createRemoteServer({
+      host: '127.0.0.1', extraHosts: ['203.0.113.7'], port: 0, daemonVersion: 't', heartbeatMs: 0, api,
+      log: { debug() {}, info() {}, warn, error() {} },
+    });
+    const { port } = await server.listen();
+    try {
+      expect((await getText(`http://127.0.0.1:${port}/healthz`)).status).toBe(200);
+      expect(warn).toHaveBeenCalledWith('could not listen on an extra host', expect.objectContaining({ host: '203.0.113.7' }));
+    } finally {
+      await server.close();
+    }
+  });
+});

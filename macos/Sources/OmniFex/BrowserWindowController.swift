@@ -6,7 +6,7 @@ import OmniFexCore
 /// One OmniFex window: a native "starting" view while the daemon comes up,
 /// then the renderer the daemon serves.
 @MainActor
-final class BrowserWindowController: NSWindowController, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate {
+final class BrowserWindowController: NSWindowController, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate {
     static let background = NSColor(srgbRed: 0x1a / 255, green: 0x1a / 255, blue: 0x2e / 255, alpha: 1)
 
     private unowned let services: AppServices
@@ -137,13 +137,40 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, WKNav
         guard action.targetFrame?.isMainFrame ?? true, let url = action.request.url else {
             return decisionHandler(.allow)
         }
-        switch policy.classify(url.absoluteString) {
+        switch policy.classify(url.absoluteString, isDownload: action.shouldPerformDownload) {
         case .allow: decisionHandler(.allow)
+        case .download: decisionHandler(.download)
         case .external:
             NSWorkspace.shared.open(url)
             decisionHandler(.cancel)
         case .deny: decisionHandler(.cancel)
         }
+    }
+
+    func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) {
+        download.delegate = self
+    }
+
+    // MARK: - WKDownloadDelegate
+
+    /// Where a page-made download goes: a save panel over this window, as
+    /// Electron gave it, starting in Downloads with the page's file name.
+    func download(_ download: WKDownload, decideDestinationUsing response: URLResponse, suggestedFilename: String, completionHandler: @escaping @MainActor @Sendable (URL?) -> Void) {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = suggestedFilename
+        panel.directoryURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
+        panel.canCreateDirectories = true
+        let finish: (NSApplication.ModalResponse) -> Void = { response in
+            guard response == .OK, let url = panel.url else { return completionHandler(nil) }
+            // The panel already asked about replacing; WKDownload refuses an existing file.
+            try? FileManager.default.removeItem(at: url)
+            completionHandler(url)
+        }
+        if let window { panel.beginSheetModal(for: window, completionHandler: finish) } else { finish(panel.runModal()) }
+    }
+
+    func download(_ download: WKDownload, didFailWithError error: Error, resumeData: Data?) {
+        NSLog("[omnifex] download failed: %@", error.localizedDescription)
     }
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {

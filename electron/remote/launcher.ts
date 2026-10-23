@@ -24,7 +24,7 @@
  */
 import { get as httpGet } from 'node:http';
 
-import type { ServerConfig } from './config';
+import { isLoopbackHost, type ServerConfig } from './config';
 
 /** What the launcher needs from `GET /healthz`. */
 export interface DaemonHealth {
@@ -100,6 +100,26 @@ export function wsUrlFor(config: Pick<ServerConfig, 'host' | 'port'>): string {
  * daemon that does not report `sessions.inFlight` yet: that reads as idle,
  * which is what makes it replaceable by the build that does.
  */
+const LOOPBACK = '127.0.0.1';
+
+/**
+ * The URL for a client on this machine. A daemon on a tailnet address also
+ * listens on loopback (`extraListenHosts`), and the Mac app must use that:
+ * WebKit runs plain http on a non-loopback address in its EnhancedSecurity
+ * process — no JIT, about 5x slower JavaScript — and denies it a secure
+ * context, so no async clipboard either. Loopback is neither. An older daemon
+ * that does not listen there keeps the configured URL.
+ */
+async function localUrl(
+  result: EnsureResult,
+  config: Pick<ServerConfig, 'host' | 'port'>,
+  probe: (healthUrl: string) => Promise<DaemonHealth | null>,
+): Promise<EnsureResult> {
+  if (!result.url || isLoopbackHost(config.host)) return result;
+  const loopback = { host: LOOPBACK, port: config.port };
+  return (await probe(healthUrlFor(loopback))) ? { ...result, url: wsUrlFor(loopback) } : result;
+}
+
 export function parseDaemonHealth(body: string): DaemonHealth | null {
   try {
     const h = JSON.parse(body) as { version?: unknown; build?: unknown; script?: unknown; sessions?: { inFlight?: unknown } };
@@ -252,12 +272,21 @@ export function createRemoteLauncher(deps: RemoteLauncherDeps): RemoteLauncher {
     return p;
   }
 
+  /** `fn`, then the loopback URL in place of the configured one if it answers. */
+  function local(fn: () => Promise<EnsureResult>): () => Promise<EnsureResult> {
+    return async () => {
+      const result = await fn();
+      const config = readConfig();
+      return config ? localUrl(result, config, deps.probe) : result;
+    };
+  }
+
   function ensure(): Promise<EnsureResult> {
-    return inFlight ?? occupy(attempt, null);
+    return inFlight ?? occupy(local(attempt), null);
   }
 
   function restart(): Promise<EnsureResult> {
-    return occupy(restartAttempt, inFlight);
+    return occupy(local(restartAttempt), inFlight);
   }
 
   return { ensure, restart };
