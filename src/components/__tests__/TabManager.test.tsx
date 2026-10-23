@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, act } from '@testing-library/react';
 import { Folder, List, MessageSquare, DollarSign } from 'lucide-react';
 import { getTabIcon, TabManager, TAB_REVEAL_MARGIN_PX } from '../TabManager';
@@ -475,6 +475,51 @@ describe('TabManager — revealing a clipped tab', () => {
     const scrollTo = layout(container, { b: [200, 300] });
     fireEvent.click(screen.getByText('B'));
     expect(scrollTo).not.toHaveBeenCalled();
+  });
+
+  // Scrolling off 0 mounts the left scroll button, which narrows the strip
+  // mid-scroll: the target computed at click time falls short by the
+  // button's width and the tab's × stays clipped until a second click.
+  describe('when the strip resizes after a reveal', () => {
+    let resize: () => void = () => {};
+    beforeEach(() => {
+      vi.stubGlobal('ResizeObserver', class {
+        constructor(cb: () => void) { resize = () => act(() => { cb(); }); }
+        observe() {}
+        disconnect() {}
+      });
+    });
+    afterEach(() => { vi.unstubAllGlobals(); });
+
+    function narrow(container: HTMLElement, tabRect: [number, number], tabId = 'c') {
+      const strip = container.querySelector<HTMLElement>('[data-testid="tab-strip-scroll"]')!;
+      strip.getBoundingClientRect = () => rect(30, 500);
+      container.querySelector<HTMLElement>(`[data-tab-id="${tabId}"]`)!.getBoundingClientRect = () => rect(...tabRect);
+    }
+
+    it('re-reveals the tab it was revealing', () => {
+      installState({ tabs, activeTabId: 'c' });
+      const { container } = render(<TabManager />);
+      const scrollTo = layout(container, { c: [450, 600] });
+      fireEvent.click(screen.getByText('C'));
+      // Mid-scroll: the strip lost 30px on the left, the tab is still clipped.
+      narrow(container, [400, 550]);
+      scrollTo.mockClear();
+      resize();
+      expect(scrollTo).toHaveBeenCalledWith({ left: 100 + 50 + TAB_REVEAL_MARGIN_PX, behavior: 'smooth' });
+    });
+
+    it('stops following once the user scrolls the strip themselves', () => {
+      installState({ tabs, activeTabId: 'c' });
+      const { container } = render(<TabManager />);
+      const scrollTo = layout(container, { c: [450, 600] });
+      fireEvent.click(screen.getByText('C'));
+      fireEvent.wheel(container.querySelector('[data-testid="tab-strip-scroll"]')!, { deltaX: 40 });
+      narrow(container, [400, 550]);
+      scrollTo.mockClear();
+      resize();
+      expect(scrollTo).not.toHaveBeenCalled();
+    });
   });
 
   it('keeps the + button outside the scrolling strip so it is never scrolled away', () => {

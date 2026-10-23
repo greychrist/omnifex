@@ -569,6 +569,7 @@ export const TabManager: React.FC<TabManagerProps> = ({ className }) => {
       delta = tab.right - strip.right + TAB_REVEAL_MARGIN_PX;
     }
     const left = Math.max(0, container.scrollLeft + delta);
+    followActiveRef.current = true;
     if (left === container.scrollLeft) return;
     container.scrollTo({ left, behavior: 'smooth' });
   };
@@ -578,9 +579,35 @@ export const TabManager: React.FC<TabManagerProps> = ({ className }) => {
     if (activeTabId) revealTab(activeTabId);
   }, [activeTabId]);
 
+  // The strip's width is not fixed while a reveal runs: scrolling off 0 mounts
+  // the left scroll button and narrows it, so the target computed at click time
+  // falls short and the tab's × stays clipped until a second click. Re-reveal
+  // the active tab whenever the strip resizes, until the user scrolls it.
+  const followActiveRef = useRef(false);
+  const activeTabIdRef = useRef(activeTabId);
+  activeTabIdRef.current = activeTabId;
+  const revealTabRef = useRef(revealTab);
+  revealTabRef.current = revealTab;
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => {
+      const id = activeTabIdRef.current;
+      if (followActiveRef.current && id) revealTabRef.current(id);
+    });
+    observer.observe(container);
+    const stopFollowing = () => { followActiveRef.current = false; };
+    container.addEventListener('wheel', stopFollowing, { passive: true });
+    return () => {
+      observer.disconnect();
+      container.removeEventListener('wheel', stopFollowing);
+    };
+  }, []);
+
   const scrollTabs = (direction: 'left' | 'right') => {
     const container = scrollContainerRef.current;
     if (!container) return;
+    followActiveRef.current = false;
 
     const scrollAmount = 200;
     const newScrollLeft = direction === 'left'
