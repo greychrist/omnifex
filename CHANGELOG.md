@@ -5,6 +5,23 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.4] — 2026-10-23
+
+### Changed
+
+- Daemon connectivity moved from the title bar to the session status bar. Clicking the `daemon` readout opens the daemon details — version, address, clients, sessions, uptime, Refresh and Restart — and now also says whether this session's events are arriving.
+- The model, effort and permission pickers on the status bar match the other status-bar popovers: compact rows and small-caps section labels, without the double padding.
+- Diagrams are drawn in OmniFex's own palette: rounded cards with 1px borders and soft shadows, muted lines, and amber notes, in both the gray and light themes. Sequence diagrams show their participants once, at the top.
+- Colours a diagram sets for itself are mapped onto OmniFex's accent colours, as a tinted card with a coloured border, instead of pastel blocks with dark text.
+
+### Fixed
+
+- Bold and italic tags in diagram labels (`<b>`, `<i>`) render as bold and italic instead of printing as text. Claude is also told to use Mermaid's markdown labels for emphasis.
+
+### Removed
+
+- The Daemon button in the title bar.
+
 ## [0.5.3] — 2026-10-23
 
 ### Fixed
