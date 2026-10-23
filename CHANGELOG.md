@@ -5,6 +5,16 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] — 2026-10-23
+
+### Fixed
+- The app was slow to respond everywhere. It loaded its page from your Tailscale address over plain http, which macOS's WebKit runs with its JavaScript compiler switched off, about five times slower. The app now loads from your own machine (127.0.0.1) and runs at full speed. The daemon still serves the iPad on the Tailscale address as before.
+- Copy buttons (message headers, code blocks, session IDs, MCP commands, raw JSON) work again, and so do Copy Image and the diagram's copy option.
+- Save Image, Export appearance settings and Save diagram now open a save dialog. They did nothing in 0.5.0.
+
+### Changed
+- Open tabs, theme, font and panel widths reset once after this update: the page's local storage belongs to its address, and the address changed. Sessions are unaffected; reopen them from Projects or Sessions.
+
 ## [0.5.0] — 2026-10-23
 
 ### Changed
