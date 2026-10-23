@@ -8,6 +8,7 @@ import { CacheTimerRow } from '@/components/CacheTimerRow';
 import { InlineDivider } from '@/components/ui/inline-divider';
 import { Popover } from '@/components/ui/popover';
 import { AgentsStatusItem, ShellsStatusItem, type BackgroundWork } from '@/components/BackgroundWorkItems';
+import { DaemonStatusItem } from '@/components/DaemonStatusItem';
 import type { SessionActivity } from '@/lib/signals/emitters';
 import type { SessionSignal } from '@/lib/signals/types';
 
@@ -427,7 +428,9 @@ export function ChatStatusBar({
   }
 
   if (link.connection !== null) {
-    items.push(<LinkGlyph key="link" {...link} />);
+    // The readout opens the daemon's detail — it replaced the title bar's
+    // Daemon button, since connectivity is about the session you are in.
+    items.push(<DaemonStatusItem key="link" link={link} />);
   }
 
   if (elapsedMs !== null) {

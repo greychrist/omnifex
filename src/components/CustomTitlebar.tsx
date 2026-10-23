@@ -11,7 +11,6 @@ import { cn } from '@/lib/utils';
 import { TITLEBAR_LABEL } from '@/lib/titlebar';
 import OmniFexIcon from '../../icons/icon.png';
 import { TabStatusPopover } from '@/components/TabStatusPopover';
-import { DaemonStatusPopover } from '@/components/DaemonStatusPopover';
 import { BrainRunIndicator } from '@/components/brain/BrainRunIndicator';
 import { useOptionalAccounts } from '@/contexts/AccountsContext';
 import { fireAndLog } from "@/lib/fireAndLog";
@@ -539,8 +538,6 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
               the Sessions popover can escape the group's bounds (otherwise
               its absolutely-positioned content gets clipped to ~32px tall). */}
           <div className="inline-flex items-center rounded-md border border-border/60 bg-background/30 [&>*+*]:border-l [&>*+*]:border-border/50">
-          <DaemonStatusPopover appVersion={appVersion || undefined} />
-
           {onLimaClick && (
             <motion.button
               onClick={onLimaClick}

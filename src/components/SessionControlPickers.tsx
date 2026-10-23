@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils';
 import type { AccountEngine } from '@/lib/api';
 import { Popover } from '@/components/ui/popover';
 import { InlineDivider } from '@/components/ui/inline-divider';
+import { POPOVER_SECTION, popoverOption } from '@/components/ui/popover-list';
 import {
   EFFORT_LEVELS,
   catalogEffortLevels,
@@ -117,20 +118,15 @@ function OptionList({
   heading: string;
 }): React.JSX.Element {
   return (
-    <div className="w-[240px] p-1">
-      <div className="text-[10px] uppercase tracking-wider text-muted-foreground px-3 pt-2 pb-1.5 border-b border-border/50 mb-1">
-        {heading}
-      </div>
+    <div className="w-72 flex flex-col gap-0.5">
+      <div className={cn(POPOVER_SECTION, 'mb-1')}>{heading}</div>
       {options.map((opt) => (
         <button
           key={opt.id}
           type="button"
           onClick={() => { onSelect(opt.id); }}
           title={opt.description}
-          className={cn(
-            'w-full flex items-start p-2.5 rounded-md text-left text-sm hover:bg-accent',
-            opt.id === value && 'bg-accent',
-          )}
+          className={cn(popoverOption(opt.id === value), 'font-medium')}
         >
           {opt.label}
         </button>

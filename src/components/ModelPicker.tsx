@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Popover, FIELD_TRIGGER } from "@/components/ui/popover";
 import { ACCOUNT_DEFAULT_MARK, splitLatestModels } from "@/lib/modelCatalog";
 import { EFFORT_LEVELS, EffortPickerDropdown, type EffortLevel } from "@/components/ControlBar";
+import { POPOVER_SECTION, POPOVER_OPTION_DETAIL, POPOVER_RULE, popoverOption } from "@/components/ui/popover-list";
 
 export interface Model {
   id: string;
@@ -68,7 +69,7 @@ export function ModelPickerDropdown({
 
   if (panel === 'effort' && showEffort) {
     return (
-      <div className="w-[300px] p-1">
+      <div className="w-72 flex flex-col gap-0.5">
         <PanelHeader title="Effort" onBack={() => { setPanel('models'); }} />
         <EffortPickerDropdown
           effort={effort as EffortLevel}
@@ -82,19 +83,15 @@ export function ModelPickerDropdown({
 
   if (panel === 'more' && showMore) {
     return (
-      <div className="w-[300px] p-1">
+      <div className="w-72 flex flex-col gap-0.5">
         <PanelHeader title="More models" onBack={() => { setPanel('models'); }} />
         {more.map((model) => (
           <button
             key={model.id}
             onClick={() => { onSelect(model.id); }}
-            className={cn(
-              'w-full flex items-center gap-3 px-3 py-2 rounded-md transition-colors text-left',
-              'hover:bg-accent',
-              selectedModel === model.id && 'bg-accent',
-            )}
+            className={popoverOption(selectedModel === model.id)}
           >
-            <span className="font-medium text-sm">{model.name}</span>
+            <span className="font-medium">{model.name}</span>
           </button>
         ))}
       </div>
@@ -120,10 +117,23 @@ function PanelHeader({ title, onBack }: { title: string; onBack: () => void }) {
       type="button"
       aria-label={`Back to models (${title})`}
       onClick={onBack}
-      className="w-full flex items-center gap-1.5 px-3 pt-2 pb-1.5 mb-1 border-b border-border/50 text-[10px] uppercase tracking-wider text-muted-foreground hover:text-foreground transition-colors"
+      className={cn(POPOVER_SECTION, "mb-1 flex items-center gap-1 text-left hover:text-foreground transition-colors")}
     >
       <ChevronLeft className="h-3 w-3" />
       <span>{title}</span>
+    </button>
+  );
+}
+
+/** A row that opens a secondary panel: `label … value ›`. */
+function PanelLink({ label, value, onClick }: { label: string; value?: React.ReactNode; onClick: () => void }) {
+  return (
+    <button type="button" onClick={onClick} className={cn(popoverOption(false), "items-center justify-between")}>
+      <span className="font-medium">{label}</span>
+      <span className="flex items-center gap-1 text-muted-foreground">
+        {value}
+        <ChevronRight className="h-3 w-3" />
+      </span>
     </button>
   );
 }
@@ -147,8 +157,8 @@ function ModelList({
   // the header carries the key for the mark (see withAccountDefaultLabel).
   const marked = models.some((m) => m.name.endsWith(ACCOUNT_DEFAULT_MARK));
   return (
-    <div className="w-[300px] p-1">
-      <div className="flex items-baseline justify-between gap-2 text-[10px] uppercase tracking-wider text-muted-foreground px-3 pt-2 pb-1.5 border-b border-border/50 mb-1">
+    <div className="w-72 flex flex-col gap-0.5">
+      <div className={cn(POPOVER_SECTION, "mb-1 flex items-baseline justify-between gap-2")}>
         <span>Model</span>
         {marked && (
           <span className="normal-case tracking-normal">
@@ -160,54 +170,22 @@ function ModelList({
         <button
           key={model.id}
           onClick={() => { onSelect(model.id); }}
-          className={cn(
-            "w-full flex items-start gap-3 p-3 rounded-md transition-colors text-left",
-            "hover:bg-accent",
-            selectedModel === model.id && "bg-accent"
-          )}
+          className={popoverOption(selectedModel === model.id)}
         >
-          <div className="mt-0.5">
-            <span className={model.color}>
-              {model.icon}
-            </span>
-          </div>
-          <div className="flex-1 space-y-1">
-            <div className="font-medium text-sm">{model.name}</div>
-            <div className="text-xs text-muted-foreground">
+          <span className={cn("mt-px shrink-0", model.color)}>
+            {model.icon}
+          </span>
+          <div className="flex-1 min-w-0">
+            <div className="font-medium">{model.name}</div>
+            <div className={POPOVER_OPTION_DETAIL}>
               {model.description}
             </div>
           </div>
         </button>
       ))}
-      {onOpenEffort && (
-        <>
-          <div className="my-1 border-t border-border/50" />
-          <button
-            type="button"
-            onClick={onOpenEffort}
-            className="w-full flex items-center justify-between gap-3 px-3 py-2 rounded-md hover:bg-accent transition-colors text-left"
-          >
-            <span className="font-medium text-sm">Effort</span>
-            <span className="flex items-center gap-1 text-xs text-muted-foreground">
-              {effortName}
-              <ChevronRight className="h-3 w-3" />
-            </span>
-          </button>
-        </>
-      )}
-      {onOpenMore && (
-        <>
-          <div className="my-1 border-t border-border/50" />
-          <button
-            type="button"
-            onClick={onOpenMore}
-            className="w-full flex items-center justify-between gap-3 px-3 py-2 rounded-md hover:bg-accent transition-colors text-left"
-          >
-            <span className="font-medium text-sm">More models</span>
-            <ChevronRight className="h-3 w-3 text-muted-foreground" />
-          </button>
-        </>
-      )}
+      {(onOpenEffort || onOpenMore) && <div className={cn(POPOVER_RULE, "my-1")} />}
+      {onOpenEffort && <PanelLink label="Effort" value={effortName} onClick={onOpenEffort} />}
+      {onOpenMore && <PanelLink label="More models" onClick={onOpenMore} />}
     </div>
   );
 }

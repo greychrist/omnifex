@@ -60,12 +60,22 @@ describe('title-bar buttons on a narrow window', () => {
       <CustomTitlebar onSettingsClick={() => {}} onLimaClick={() => {}} onBrainClick={() => {}} onCostClick={() => {}} />,
     );
     expect(TITLEBAR_LABEL.split(' ')).toEqual(expect.arrayContaining(['hidden', 'lg:inline']));
-    for (const label of ['Daemon', 'Lima', 'Brain', 'Cost', 'Sessions', 'Settings', 'Updates']) {
+    for (const label of ['Lima', 'Brain', 'Cost', 'Sessions', 'Settings', 'Updates']) {
       const span = screen.getByText(label, { selector: 'button span' });
       expect(span.className, label).toContain('hidden');
       expect(span.className, label).toContain('lg:inline');
       const button = span.closest('button')!;
       expect(button.getAttribute('title') || button.getAttribute('aria-label'), `${label} button name`).toBeTruthy();
     }
+  });
+});
+
+// Daemon connectivity is about the session you are in, so it lives on the
+// session's status bar (DaemonStatusItem), not in the app's title bar.
+describe('title bar', () => {
+  it('has no Daemon button', () => {
+    render(<CustomTitlebar onSettingsClick={() => {}} />);
+    expect(screen.queryByText('Daemon')).toBeNull();
+    expect(document.querySelector('[data-daemon-trigger]')).toBeNull();
   });
 });

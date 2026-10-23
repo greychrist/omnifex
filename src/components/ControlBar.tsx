@@ -12,6 +12,7 @@ import {
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Popover, FIELD_TRIGGER } from "@/components/ui/popover";
+import { POPOVER_SECTION, POPOVER_OPTION_DETAIL, popoverOption } from "@/components/ui/popover-list";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip-modern";
 import { motion } from "framer-motion";
 import type { SessionModelInfo } from "@/lib/api";
@@ -166,28 +167,20 @@ export function EffortPickerDropdown({ effort, onSelect, levels, bare = false }:
   // `bare` drops the frame and heading so the model dropdown can host this
   // list under its own back header — one panel, not a box inside a box.
   return (
-    <div className={bare ? undefined : "w-[280px] p-1"}>
-      {!bare && (
-        <div className="text-[10px] uppercase tracking-wider text-muted-foreground px-3 pt-2 pb-1.5 border-b border-border/50 mb-1">
-          Effort
-        </div>
-      )}
+    <div className={cn("flex flex-col gap-0.5", !bare && "w-72")}>
+      {!bare && <div className={cn(POPOVER_SECTION, "mb-1")}>Effort</div>}
       {visible.map((level) => (
         <button
           key={level.id}
           onClick={() => { onSelect(level.id); }}
-          className={cn(
-            "w-full flex items-start gap-3 p-3 rounded-md transition-colors text-left",
-            "hover:bg-accent",
-            effort === level.id && "bg-accent"
-          )}
+          className={popoverOption(effort === level.id)}
         >
-          <span className={cn("text-sm font-bold mt-0.5", level.color)}>
+          <span className={cn("w-5 shrink-0 font-bold", level.color)}>
             {level.shortName}
           </span>
-          <div className="flex-1 space-y-1">
-            <div className="font-medium text-sm">{level.name}</div>
-            <div className="text-xs text-muted-foreground">{level.description}</div>
+          <div className="flex-1 min-w-0">
+            <div className="font-medium">{level.name}</div>
+            <div className={POPOVER_OPTION_DETAIL}>{level.description}</div>
           </div>
         </button>
       ))}
@@ -338,10 +331,8 @@ export function PermissionPickerDropdown({
   onRestartInBypass?: () => void;
 }) {
   return (
-    <div className="w-[300px] p-1">
-      <div className="text-[10px] uppercase tracking-wider text-muted-foreground px-3 pt-2 pb-1.5 border-b border-border/50 mb-1">
-        Permissions
-      </div>
+    <div className="w-72 flex flex-col gap-0.5">
+      <div className={cn(POPOVER_SECTION, "mb-1")}>Permissions</div>
       {PERMISSION_MODES.map((mode) => {
         const isActive = mode.id === normalizedMode;
         if (mode.id === "bypassPermissions" && onRestartInBypass) {
@@ -349,28 +340,29 @@ export function PermissionPickerDropdown({
             <div
               key={mode.id}
               aria-disabled="true"
-              className="w-full flex items-start gap-3 p-3 rounded-md text-left"
+              className={cn(popoverOption(false), "hover:bg-transparent")}
             >
-              <span className={cn("mt-0.5 opacity-50", mode.color)}>
+              <span className={cn("mt-px shrink-0 opacity-50", mode.color)}>
                 {mode.icon}
               </span>
-              <div className="flex-1 space-y-1">
-                <div className={cn("font-medium text-sm opacity-50", mode.color)}>
+              <div className="flex-1 min-w-0">
+                <div className={cn("font-medium opacity-50", mode.color)}>
                   {mode.name}
                 </div>
-                <div className="text-xs text-muted-foreground">
+                <div className={POPOVER_OPTION_DETAIL}>
                   Only available in a session started in Bypass.
                 </div>
-                <button
-                  type="button"
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-1.5 h-6 px-2 text-[11px]"
                   onClick={() => {
                     onRestartInBypass();
                     onOpenChange(false);
                   }}
-                  className="mt-1 rounded-sm border border-border/60 px-2 py-0.5 text-xs text-foreground hover:bg-accent transition-colors"
                 >
                   Restart in Bypass
-                </button>
+                </Button>
               </div>
             </div>
           );
@@ -382,20 +374,16 @@ export function PermissionPickerDropdown({
               onPermissionModeChange?.(mode.id);
               onOpenChange(false);
             }}
-            className={cn(
-              "w-full flex items-start gap-3 p-3 rounded-md transition-colors text-left",
-              "hover:bg-accent",
-              isActive && "bg-accent",
-            )}
+            className={popoverOption(isActive)}
           >
-            <span className={cn("mt-0.5", mode.color)}>
+            <span className={cn("mt-px shrink-0", mode.color)}>
               {mode.icon}
             </span>
-            <div className="flex-1 space-y-1">
-              <div className={cn("font-medium text-sm", mode.color)}>
+            <div className="flex-1 min-w-0">
+              <div className={cn("font-medium", mode.color)}>
                 {mode.name}
               </div>
-              <div className="text-xs text-muted-foreground">
+              <div className={POPOVER_OPTION_DETAIL}>
                 {mode.description}
               </div>
             </div>
