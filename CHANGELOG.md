@@ -5,6 +5,11 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.242] — 2026-10-23
+
+### Fixed
+- Clicking a tab cut off at the right edge of the tab strip now brings it fully into view, close button included, on the first click. The scroll used to stop short whenever it started from the far left, because the left scroll arrow appearing mid-scroll narrowed the strip.
+
 ## [0.4.241] — 2026-10-23
 
 ### Fixed
