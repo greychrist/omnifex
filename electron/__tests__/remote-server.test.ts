@@ -385,3 +385,35 @@ describe('remote server on extra hosts', () => {
     }
   });
 });
+
+// A daemon that started before Tailscale was up took loopback alone; the
+// tailnet watch adds the address once it appears.
+describe('remote server addHost', () => {
+  const api = { health: () => ({ ok: true }), sessions: () => [], projects: () => [] };
+  const getStatus = (url: string) =>
+    new Promise<number>((res, rej) => { httpGet(url, (r) => { r.resume(); res(r.statusCode ?? 0); }).on('error', rej); });
+
+  it('starts serving another address on the running port, and lists it', async () => {
+    const server = createRemoteServer({ host: '127.0.0.1', port: 0, daemonVersion: 't', heartbeatMs: 0, api });
+    const { port } = await server.listen();
+    try {
+      await expect(getStatus(`http://[::1]:${port}/healthz`)).rejects.toThrow();
+      expect(await server.addHost('::1')).toBe(true);
+      expect(await getStatus(`http://[::1]:${port}/healthz`)).toBe(200);
+      expect(server.hosts).toEqual(['127.0.0.1', '::1']);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('reports false for an address it cannot bind', async () => {
+    const server = createRemoteServer({ host: '127.0.0.1', port: 0, daemonVersion: 't', heartbeatMs: 0, api });
+    await server.listen();
+    try {
+      expect(await server.addHost('203.0.113.7')).toBe(false);
+      expect(server.hosts).toEqual(['127.0.0.1']);
+    } finally {
+      await server.close();
+    }
+  });
+});

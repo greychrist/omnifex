@@ -52,6 +52,12 @@ const FileSchema = z.looseObject({
 
 export interface ServerConfig {
   host: string;
+  /**
+   * Loopback only because Tailscale was not up yet — not chosen by
+   * server.json. The daemon then watches for the tailnet address
+   * (`tailnet-watch.ts`).
+   */
+  hostIsFallback?: boolean;
   port: number;
   webRoot: string | null;
   ringSize: number;
@@ -132,10 +138,12 @@ export function loadServerConfig(opts: LoadServerConfigOptions = {}): ServerConf
   const f = parsed.data;
 
   const interfaces = opts.interfaces ?? (require('node:os') as typeof import('node:os')).networkInterfaces();
-  const host = f.host ?? detectTailscaleIp(interfaces as NetworkInterfaces) ?? '127.0.0.1';
+  const tailnet = f.host ? null : detectTailscaleIp(interfaces as NetworkInterfaces);
+  const host = f.host ?? tailnet ?? '127.0.0.1';
 
   return {
     host,
+    hostIsFallback: !f.host && !tailnet,
     port: portFromEnv(env) ?? f.port ?? DEFAULT_PORT,
     webRoot: f.webRoot ?? null,
     ringSize: f.ringSize ?? 5_000,

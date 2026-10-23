@@ -55,6 +55,16 @@ describe('remote server config', () => {
       const { utun4: _utun, ...rest } = IFACES;
       const cfg = loadServerConfig({ file: join(dir, 'server.json'), interfaces: rest, env: {} });
       expect(cfg.host).toBe('127.0.0.1');
+      // …and says it is a fallback, so the daemon watches for Tailscale.
+      expect(cfg.hostIsFallback).toBe(true);
+    });
+
+    it('is not a fallback when Tailscale was found or the file chose the host', () => {
+      expect(loadServerConfig({ file: join(dir, 'server.json'), interfaces: IFACES, env: {} }).hostIsFallback).toBe(false);
+      const file = join(dir, 'server.json');
+      writeFileSync(file, JSON.stringify({ host: '127.0.0.1' }));
+      const { utun4: _utun, ...rest } = IFACES;
+      expect(loadServerConfig({ file, interfaces: rest, env: {} }).hostIsFallback).toBe(false);
     });
 
     it('lets the file override host, port, webRoot, ringSize and the permission timeout', () => {

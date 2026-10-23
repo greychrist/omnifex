@@ -399,6 +399,38 @@ describe('remote launcher on a tailnet host', () => {
     expect(await launcher.restart()).toEqual({ url: 'ws://127.0.0.1:47700/ws', outdated: false });
   });
 
+  // A daemon started before Tailscale came up listens on loopback only. The
+  // launcher computes the tailnet address now, finds nothing there, and used
+  // to spawn a second daemon beside the running one.
+  it('finds a daemon that answers only on loopback instead of spawning another', async () => {
+    let spawned = 0;
+    const probe = vi.fn(async (url: string) => (url === LOOPBACK_HEALTH ? same() : null));
+    const launcher = createRemoteLauncher({
+      config: () => TAILNET, probe, spawn: () => { spawned++; return true; }, stop: async () => true,
+      appVersion: APP, sleep: async () => {}, startupTimeoutMs: 1000, pollIntervalMs: 250,
+    });
+    expect(await launcher.ensure()).toEqual({ url: 'ws://127.0.0.1:47700/ws', outdated: false });
+    expect(spawned).toBe(0);
+  });
+
+  it('replaces an outdated loopback-only daemon, as on any address', async () => {
+    let calls = 0;
+    const stop = vi.fn(async () => true);
+    // loopback answers old → stopped → spawned daemon answers on both
+    const probe = vi.fn(async (url: string) => {
+      calls++;
+      if (calls <= 2) return url === LOOPBACK_HEALTH ? old() : null;
+      if (calls <= 4) return null;
+      return same();
+    });
+    const launcher = createRemoteLauncher({
+      config: () => TAILNET, probe, spawn: () => true, stop,
+      appVersion: APP, sleep: async () => {}, startupTimeoutMs: 1000, pollIntervalMs: 250,
+    });
+    expect((await launcher.ensure()).url).toBe('ws://127.0.0.1:47700/ws');
+    expect(stop).toHaveBeenCalledTimes(1);
+  });
+
   it('reports nothing when the daemon is down', async () => {
     const { launcher } = tailnet(() => null);
     expect((await launcher.ensure()).url).toBeNull();

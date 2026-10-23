@@ -75,6 +75,13 @@ export interface RemoteServer extends ProtocolServer {
   listen(): Promise<{ host: string; port: number }>;
   close(): Promise<void>;
   readonly address: { host: string; port: number } | null;
+  /** Every address being served: the main host, then the extras. */
+  readonly hosts: readonly string[];
+  /**
+   * Serve one more address on the running port — the tailnet address that
+   * was not up when the daemon started. False when it cannot be bound.
+   */
+  addHost(host: string): Promise<boolean>;
   /** Connections accepted since startup. Monotonic, so "was anyone ever
    *  here?" survives a client that came and went between two observations. */
   readonly connectionsSeen: number;
@@ -128,7 +135,7 @@ export function createRemoteServer(deps: RemoteServerDeps): RemoteServer {
   const subscribers = new Map<string, Set<Connection>>();
   let http: Server | null = null;
   let wss: WebSocketServer | null = null;
-  let extras: { http: Server; wss: WebSocketServer }[] = [];
+  let extras: { host: string; http: Server; wss: WebSocketServer }[] = [];
   let heartbeat: NodeJS.Timeout | null = null;
   let address: { host: string; port: number } | null = null;
 
@@ -431,28 +438,32 @@ export function createRemoteServer(deps: RemoteServerDeps): RemoteServer {
   // Lifecycle
   // -------------------------------------------------------------------------
 
-  /** The same request handler and socket endpoint on each extra address. */
-  async function listenExtras(port: number): Promise<void> {
-    for (const host of deps.extraHosts ?? []) {
-      const extraHttp = createServer(onRequest);
-      const extraWss = new WebSocketServer({ server: extraHttp, path: '/ws' });
-      extraWss.on('connection', onSocket);
-      // `ws` re-emits the http server's errors; the bind failure is logged below.
-      extraWss.on('error', () => {});
-      const ok = await new Promise<boolean>((done) => {
-        extraHttp.once('error', (err) => {
-          log.warn('could not listen on an extra host', { host, port, error: String(err) });
-          extraWss.close();
-          done(false);
-        });
-        extraHttp.listen(port, host, () => done(true));
+  /** The same request handler and socket endpoint on one more address. */
+  async function listenOn(host: string, port: number): Promise<boolean> {
+    const extraHttp = createServer(onRequest);
+    const extraWss = new WebSocketServer({ server: extraHttp, path: '/ws' });
+    extraWss.on('connection', onSocket);
+    // `ws` re-emits the http server's errors; the bind failure is logged below.
+    extraWss.on('error', () => {});
+    const ok = await new Promise<boolean>((done) => {
+      extraHttp.once('error', (err) => {
+        log.warn('could not listen on an extra host', { host, port, error: String(err) });
+        extraWss.close();
+        done(false);
       });
-      if (ok) {
-        extras.push({ http: extraHttp, wss: extraWss });
-        log.info('listening', { host, port, ws: '/ws' });
-      }
+      extraHttp.listen(port, host, () => done(true));
+    });
+    if (ok) {
+      extras.push({ host, http: extraHttp, wss: extraWss });
+      log.info('listening', { host, port, ws: '/ws' });
     }
+    return ok;
   }
+
+  async function listenExtras(port: number): Promise<void> {
+    for (const host of deps.extraHosts ?? []) await listenOn(host, port);
+  }
+
 
   return {
     get clients() {
@@ -471,6 +482,15 @@ export function createRemoteServer(deps: RemoteServerDeps): RemoteServer {
 
     register(h) {
       handlers = h;
+    },
+
+    get hosts() {
+      return address ? [deps.host, ...extras.map((e) => e.host)] : [];
+    },
+
+    addHost(host) {
+      if (!address) return Promise.resolve(false);
+      return listenOn(host, address.port);
     },
 
     pushToSession(sessionId, message: SessionScopedPush) {

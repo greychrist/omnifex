@@ -156,7 +156,10 @@ function num(v: unknown): number | null {
 }
 
 export async function runCliOnce(p: RunPromptParams): Promise<CliRunResult> {
-  const args: string[] = ['-p', p.prompt, '--output-format', 'json'];
+  // argv cannot carry a NUL, and a transcript can (binary tool output): Node
+  // refused the spawn outright, so those sessions were never summarised or
+  // indexed. A NUL means nothing to the model; drop it.
+  const args: string[] = ['-p', p.prompt.replaceAll('\0', ''), '--output-format', 'json'];
   if (p.model) args.push('--model', p.model);
   args.push('--permission-mode', 'bypassPermissions');
   args.push('--disallowed-tools', '*');

@@ -16,6 +16,7 @@
  * Runs on Node 26: the app's bundled `omnifexd`, or a checkout's `node`.
  */
 import { execFileSync } from 'node:child_process';
+import { networkInterfaces } from 'node:os';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -114,7 +115,8 @@ import { getHandlerMap } from '../ipc/handlers';
 import { INVOKE_CHANNELS } from '../ipc/channels';
 import { classifyJsonlLine } from '../../src/lib/jsonlClassifier';
 
-import { extraListenHosts, type ServerConfig } from './config';
+import { detectTailscaleIp, extraListenHosts, type NetworkInterfaces, type ServerConfig } from './config';
+import { createTailnetWatch } from './tailnet-watch';
 import { createAccountWatchers } from './account-watchers';
 import { createSessionLog } from './session-log';
 import { createSessionBridge } from './bridge';
@@ -969,6 +971,19 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
 
   const address = await server.listen();
   log.info('omnifex-server ready', { version: opts.version, ...address, stateDir: config.stateDir, userDataDir: config.userDataDir });
+
+  // Started before Tailscale was up: serve the tailnet address once it is.
+  if (config.hostIsFallback) {
+    const tailnet = createTailnetWatch({
+      detect: () => detectTailscaleIp(networkInterfaces() as NetworkInterfaces),
+      listening: () => server.hosts,
+      addHost: (host) => server.addHost(host),
+      log,
+    });
+    const tailnetTimer = setInterval(() => void tailnet.check(), 30_000);
+    tailnetTimer.unref();
+    timers.push(tailnetTimer);
+  }
 
   return {
     address,

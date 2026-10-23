@@ -158,6 +158,18 @@ export function createRemoteLauncher(deps: RemoteLauncherDeps): RemoteLauncher {
     return false;
   }
 
+  /**
+   * The daemon on `config`'s address, or else on loopback. A daemon started
+   * before Tailscale came up listens on loopback only, while this computes
+   * the tailnet address now; looking only there spawned a second daemon
+   * beside the running one.
+   */
+  async function probeDaemon(config: ServerConfig): Promise<DaemonHealth | null> {
+    const found = await deps.probe(healthUrlFor(config));
+    if (found || isLoopbackHost(config.host)) return found;
+    return deps.probe(healthUrlFor({ host: LOOPBACK, port: config.port }));
+  }
+
   function readConfig(): ServerConfig | null {
     try {
       return deps.config();
@@ -172,28 +184,28 @@ export function createRemoteLauncher(deps: RemoteLauncherDeps): RemoteLauncher {
    * gone; the ws url when it has to be kept as is (unreachable, or it ignored
    * the stop) — spawning onto an occupied port would only fail.
    */
-  async function retire(config: ServerConfig, health: string, ws: string, meta: Record<string, unknown>): Promise<string | null> {
+  async function retire(config: ServerConfig, ws: string, meta: Record<string, unknown>): Promise<string | null> {
     if (!(await deps.stop(config))) {
       log('could not reach the running daemon to stop it; using it as is', meta);
       return ws;
     }
-    if (!(await waitUntil(async () => (await deps.probe(health)) === null))) {
+    if (!(await waitUntil(async () => (await probeDaemon(config)) === null))) {
       log('daemon did not exit in time; using it as is', meta);
       return ws;
     }
     return null;
   }
 
-  async function launch(config: ServerConfig, health: string, ws: string): Promise<EnsureResult> {
+  async function launch(config: ServerConfig, ws: string): Promise<EnsureResult> {
     if (!deps.spawn(config)) {
       log('daemon could not be spawned');
       return up(null);
     }
-    if (await waitUntil(async () => (await deps.probe(health)) !== null)) {
-      log('daemon started', { health });
+    if (await waitUntil(async () => (await probeDaemon(config)) !== null)) {
+      log('daemon started', { health: healthUrlFor(config) });
       return up(ws);
     }
-    log('daemon did not answer in time', { health, startupTimeoutMs });
+    log('daemon did not answer in time', { health: healthUrlFor(config), startupTimeoutMs });
     return up(null);
   }
 
@@ -203,7 +215,7 @@ export function createRemoteLauncher(deps: RemoteLauncherDeps): RemoteLauncher {
     const health = healthUrlFor(config);
     const ws = wsUrlFor(config);
 
-    const running = await deps.probe(health);
+    const running = await probeDaemon(config);
     if (running) {
       // A dev build is a guest on this port. It shares `~/.omnifex` and the
       // DB with the INSTALLED app, whose daemon holds every live CLI process
@@ -237,10 +249,10 @@ export function createRemoteLauncher(deps: RemoteLauncherDeps): RemoteLauncher {
         return { url: ws, outdated: true };
       }
       log('daemon is another build and idle; replacing it', versions);
-      const kept = await retire(config, health, ws, versions);
+      const kept = await retire(config, ws, versions);
       if (kept) return up(kept);
     }
-    return launch(config, health, ws);
+    return launch(config, ws);
   }
 
   async function restartAttempt(): Promise<EnsureResult> {
@@ -249,16 +261,16 @@ export function createRemoteLauncher(deps: RemoteLauncherDeps): RemoteLauncher {
     const health = healthUrlFor(config);
     const ws = wsUrlFor(config);
 
-    const running = await deps.probe(health);
+    const running = await probeDaemon(config);
     if (running) {
       const meta = { version: running.version, inFlight: running.inFlight };
       log('restarting the daemon', meta);
-      const kept = await retire(config, health, ws, meta);
+      const kept = await retire(config, ws, meta);
       if (kept) return up(kept);
     } else {
       log('restart requested but no daemon answers; starting one', { health });
     }
-    return launch(config, health, ws);
+    return launch(config, ws);
   }
 
   /** Run `fn` as the one in-flight attempt; `after` queues behind whatever is running. */
