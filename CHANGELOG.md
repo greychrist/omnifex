@@ -5,6 +5,15 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.241] — 2026-10-23
+
+### Fixed
+- Clicking a file link in the transcript no longer replaces the whole app window with that file. File paths now open in their default app, runnable files are revealed in Finder instead of being opened, web links go to your browser, and the window only ever shows OmniFex itself.
+- The MCP server ⋯ menu no longer offers **Authenticate** or **Re-authenticate** for a server whose sign-in is held by a cloud session's MCP proxy (Claude Code 2.1.309 reports this). claude.ai connectors keep **Authenticate**.
+
+### Changed
+- Reviewed Claude Code 2.1.309 against OmniFex
+
 ## [0.4.240] — 2026-10-22
 
 ### Added
