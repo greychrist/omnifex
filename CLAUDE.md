@@ -186,7 +186,7 @@ before changing any of it.
   Every open tab is mounted at once and the transcript is unvirtualised, so the
   default failure mode is "one click re-rendered every session in the app" —
   check that first.
-- Node.js 26 and Xcode (Swift 6) are the toolchain. No Rust.
+- Node.js 26 and Xcode with Swift 6.4+ are the toolchain (the package is Swift 6 language mode). No Rust.
 - Commands:
   - `npm start` — build and run the dev app (`out/dev/OmniFex Dev.app`) against
     the Vite dev server and the dev daemon. Never run it to demo something to
