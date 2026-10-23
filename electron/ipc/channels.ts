@@ -1,14 +1,16 @@
-// Single source of truth for IPC channel names.
+// Single source of truth for the channel names the renderer may `invoke`.
 //
-// This module has NO electron import on purpose: both the preload (which builds
-// the renderer-facing allow-list) and the IPC contract test import it. Keeping
-// the list here — instead of inline in preload.ts — lets a unit test assert that
-// the allow-list and the registered handler map stay in lockstep, which is the
-// guardrail that catches dead/broken channels before they ship.
+// Each one is served by exactly one of three things, and
+// `ipc-channel-contract.test.ts` holds the list to that:
+//   - the daemon's handler map (`getHandlerMap`), reached as `rpc.invoke`;
+//   - a typed session method (`TYPED_SESSION_CHANNELS`, rpc-allowlist.ts),
+//     which the renderer's shim translates;
+//   - the native Mac app (`NATIVE_INVOKE_CHANNELS`, src/lib/remote/nativeChannels.ts).
+//
+// The daemon's rpc allowlist starts from this list and subtracts, so a
+// channel added here is network-reachable unless it is denied there.
 
-/** Channels the renderer may `invoke`. Every entry must have a handler (either
- *  in `getHandlerMap()` or registered directly in `registerIpcHandlers` /
- *  `main.ts`); see `ipc-channel-contract.test.ts`. */
+/** Channels the renderer may `invoke`. */
 export const INVOKE_CHANNELS: readonly string[] = [
   // Brain (per-account Markdown vault registry)
   'brain_vault_path',
@@ -293,16 +295,15 @@ export const INVOKE_CHANNELS: readonly string[] = [
   'updater:install',
   'updater:install-cancel',
 
-  // Electron-specific
-  // OmniFex Remote: where the daemon listens (or null → legacy IPC), a
-  // restart of it, and an OS notification raised on behalf of a daemon-side
-  // event. All served by main.ts only; the daemon's rpc allowlist excludes them.
+  // Native app: where the daemon listens, a restart of it, an OS
+  // notification raised on behalf of a daemon-side event, and the window's
+  // own chrome. Served by the Mac app; the daemon's rpc allowlist excludes
+  // them (see NATIVE_INVOKE_CHANNELS).
   'remote:url',
   'remote:restart',
   'notify:show',
   'dialog:open',
   'dialog:save',
-  'save_pasted_image',
   'shell:openExternal',
   'reveal_path_in_finder',
   'open_path',
@@ -310,45 +311,4 @@ export const INVOKE_CHANNELS: readonly string[] = [
   'window:minimize',
   'window:maximize',
   'window:close',
-];
-
-/** Event-channel prefixes the renderer may subscribe to. Channel names carry a
- *  `:<suffix>` (usually a tabId), so membership is a `startsWith` test. */
-export const EVENT_CHANNEL_PREFIXES: readonly string[] = [
-  'session-',
-  // Engine output (Task 24 rename — main process emits on these).
-  'agent-output:',
-  'agent-error:',
-  'agent-complete:',
-  // Closure carriers tailed from the session JSONL.
-  'claude-output-extra:',
-  'claude-notification',
-  'claude-stream',
-  'claude-subagent:',
-  'claude-compact:',
-  'elicitation-request:',
-  'backend-log',
-  'updater:',
-  'notification-clicked',
-  'session-git-changed:',
-  'rate-limits:',
-  'tab-status:',
-  'one-shot-terminal-data:',
-  'one-shot-terminal-exit:',
-  'codex-auth-status-changed',
-];
-
-/** Event channels matched exactly (no suffix). */
-export const EVENT_CHANNEL_EXACT: readonly string[] = [
-  'log-error',
-  // Broadcast when a Claude account's signed-in identity actually changes on
-  // disk, so verification badges self-correct after a logout/login performed
-  // outside OmniFex. Payload: { configDir, verdict }.
-  'account-identity-changed',
-  // Main's powerMonitor: screen lock / suspend (src/lib/powerState.ts).
-  'system-power-state',
-  // Progress of the Brain indexing run in flight, or null when it ends. Sent
-  // to every window: the run outlives the pane that started it, so any mount
-  // must be able to pick it up. Payload: BrainRun | null.
-  'brain-run-progress',
 ];

@@ -215,6 +215,14 @@ describe('electronAPI shim', () => {
       expect(native.invoke).toHaveBeenCalledWith('notify:show', { title: 'OmniFex — x', body: 'done', isError: false, tabId: 'tab-A' });
     });
 
+    // "Permission Request:" / "Answer Needed:" is what tells a banner that
+    // wants an answer from one that reports a finished task.
+    it('carries the subtitle into the native banner', async () => {
+      await started();
+      f.push({ type: 'event', sessionId: 'sid-1', seq: 3, kind: 'notification', channel: 'claude-notification', payload: { tab_id: 'sid-1', title: 'OmniFex — x', body: 'Run ls?', is_error: false, subtitle: 'Permission Request:' } });
+      expect(native.invoke).toHaveBeenCalledWith('notify:show', { title: 'OmniFex — x', body: 'Run ls?', isError: false, tabId: 'tab-A', subtitle: 'Permission Request:' });
+    });
+
     it('re-emits a tab-scoped channel that rides the notification kind, and raises no banner for it', async () => {
       const api = await started();
       const cost: unknown[] = [];
@@ -225,6 +233,19 @@ describe('electronAPI shim', () => {
       expect(cost).toEqual([{ totalUsd: 1.25, estimated: false }]);
       expect(notif).toEqual([]);
       expect(native.invoke).not.toHaveBeenCalledWith('notify:show', expect.anything());
+    });
+
+    // A rate-limit threshold belongs to no session. The daemon broadcasts it
+    // as a tab-less `claude-notification`; while the daemon dropped these
+    // (no display to show them on), crossing a threshold in remote mode was
+    // silent.
+    it('raises a native banner for an app-wide notification that names no tab', async () => {
+      const api = shim();
+      const seen: unknown[] = [];
+      api.onEvent('claude-notification', (p) => seen.push(p));
+      f.push({ type: 'channel', channel: 'claude-notification', payload: { title: 'Rate limit', body: '80% used', is_error: true } });
+      expect(seen).toEqual([{ title: 'Rate limit', body: '80% used', is_error: true }]);
+      expect(native.invoke).toHaveBeenCalledWith('notify:show', { title: 'Rate limit', body: '80% used', isError: true, tabId: null });
     });
 
     it('re-emits app-wide channel broadcasts under their own names', async () => {
@@ -254,21 +275,12 @@ describe('electronAPI shim', () => {
       expect(await web.invoke('get_app_version')).toBe(APP_VERSION);
     });
 
-    it('answers codex_binary_path natively, and null on the web', async () => {
-      // The binary is on the machine running main, so only main can resolve
-      // it. Routed to the daemon it would come back `null` from an adapter bag
-      // that has no codexAuth — the same value as "Codex is not installed",
-      // which is why this has to be native.
+    // Codex runs beside the daemon, so the daemon is what finds its binary —
+    // and an iPad asking gets the answer for the machine that will run it.
+    it('asks the daemon for codex_binary_path, from either client', async () => {
       const api = shim();
-      native.invoke.mockResolvedValueOnce('/opt/homebrew/bin/codex');
-      expect(await api.invoke('codex_binary_path', {})).toBe('/opt/homebrew/bin/codex');
-      expect(f.requests).toEqual([]);
-
-      // On the iPad there is no local codex to find. `null` is the contract
-      // api.ts documents for that, so the sign-in modal shows "not found"
-      // rather than an error toast.
-      const web = createElectronApiShim({ client: f.client, native: null, storage });
-      expect(await web.invoke('codex_binary_path', {})).toBeNull();
+      expect(await api.invoke('codex_binary_path', {})).toEqual({ rpc: 'codex_binary_path', params: {} });
+      expect(native.invoke).not.toHaveBeenCalled();
     });
 
     it('passes everything else through rpc.invoke, rewriting a tabId on session_* channels', async () => {

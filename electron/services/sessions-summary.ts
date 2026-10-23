@@ -24,7 +24,7 @@ export const PROMPT_TEMPLATE_SETTING_KEY = 'sessionsSummary.promptTemplate';
  *   by this flag (it's gated by `enabled` only).
  *
  * Neither flag is checked inside `generateSummary` — gating is the
- * caller's responsibility (see the lifecycle hook in `main.ts`). That
+ * caller's responsibility (see the close hook (`electron/session-close-work.ts`)). That
  * keeps the service stateless w.r.t. global config and lets each
  * caller decide which mix of flags applies.
  */
@@ -259,7 +259,7 @@ export function parseSummaryXML(response: string): ParsedSummary | null {
 /**
  * Default prompt template used when the user hasn't customized one.
  * Loaded as the initial value into the app_settings table on first
- * launch (see `ensureDefaultSettings` in main.ts) and exposed via the
+ * launch (see `ensureDefaultSettings` in remote/daemon.ts) and exposed via the
  * settings UI. Editing the template in the UI rewrites the
  * app_settings row; the in-memory `runQuery` callback always reads the
  * latest value at call time.

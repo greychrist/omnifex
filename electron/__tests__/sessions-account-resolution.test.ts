@@ -42,9 +42,7 @@ describe('sessions.start — account re-resolution', () => {
     const resolveAccountConfigDir = vi.fn(() => '/fresh-config-from-resolver');
     const sessions = createSessionsService(
       vi.fn(),     // sendToRenderer
-      undefined,   // notificationHooks
       null,        // logging
-      null,        // ownership
       null,        // persistPermissionRule
       null,        // rateLimitHook
       null,        // onSessionClosed
@@ -63,7 +61,7 @@ describe('sessions.start — account re-resolution', () => {
   it('cold-start with manualAccountOverride=true trusts the renderer-supplied configDir', () => {
     const resolveAccountConfigDir = vi.fn(() => '/would-be-resolved');
     const sessions = createSessionsService(
-      vi.fn(), undefined, null, null, null, null, null,
+      vi.fn(), null, null, null, null,
       resolveAccountConfigDir,
     );
 
@@ -83,7 +81,7 @@ describe('sessions.start — account re-resolution', () => {
     // saved transcript.
     const resolveAccountConfigDir = vi.fn(() => '/different-account');
     const sessions = createSessionsService(
-      vi.fn(), undefined, null, null, null, null, null,
+      vi.fn(), null, null, null, null,
       resolveAccountConfigDir,
     );
 
@@ -127,9 +125,7 @@ describe('sessions.start — account identity verification', () => {
   ) {
     return createSessionsService(
       sendToRenderer,
-      undefined,               // notificationHooks
       null,                    // logging
-      null,                    // ownership
       null,                    // persistPermissionRule
       null,                    // rateLimitHook
       null,                    // onSessionClosed

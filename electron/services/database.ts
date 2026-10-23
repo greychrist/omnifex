@@ -1140,8 +1140,8 @@ export function createDatabase(dbPath: string): Database {
   raw.pragma('auto_vacuum = INCREMENTAL');
   raw.pragma('journal_mode = WAL');
   raw.pragma('foreign_keys = ON');
-  // Two processes share this file while the OmniFex Remote daemon and the
-  // Electron main process both run (Phase 2 of the split). WAL lets readers
+  // Two processes can share this file: the real daemon and the dev
+  // instance's, and the app reads notification settings from it. WAL lets readers
   // and one writer coexist, but a second writer still gets SQLITE_BUSY
   // instantly unless told to wait. Five seconds is far above any write here.
   raw.pragma('busy_timeout = 5000');
@@ -1190,7 +1190,7 @@ export function createDatabase(dbPath: string): Database {
 
 /**
  * Write default values for app_settings keys that don't yet have a stored
- * value. Called from `main.ts` on app startup — gives new installs sensible
+ * value. Called from the daemon on startup — gives new installs sensible
  * defaults without clobbering user-edited values.
  *
  * An empty string counts as user-set ("I deliberately cleared this"); only

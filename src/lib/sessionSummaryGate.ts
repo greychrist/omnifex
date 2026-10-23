@@ -5,7 +5,7 @@ import {
 } from '@/lib/api';
 
 /**
- * Renderer-side mirror of the auto-on-close gate in `electron/main.ts`.
+ * Renderer-side mirror of the auto-on-close gate in `electron/session-close-work.ts`.
  *
  * The lifecycle close hook in main only fires `summaryGenerate` when both
  *   - sessionsSummary.enabled (master switch), AND

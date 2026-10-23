@@ -1,47 +1,34 @@
 /**
- * Decide, once per page load, what `window.electronAPI` is.
+ * Decide, once per page load, what `window.electronAPI` is. (The name is the
+ * Electron era's; every call site uses it, so it stayed.)
  *
- *  - Electron, daemon reachable  → the remote shim over a WebSocket; the
- *    preload bridge stays available as `window.__omnifexNative` for the
- *    channels only Electron can serve.
- *  - Electron, no daemon         → the preload bridge itself. This is the
- *    pre-split app, unchanged. `remote:url` answers null when the daemon is
- *    disabled (`OMNIFEX_REMOTE=0`, `remote.enabled=false`) or failed to
- *    start, so nothing about the laptop experience depends on the daemon
- *    being healthy.
- *  - Web (no preload)            → the shim over `ws(s)://<this host>/ws`.
- *    The daemon served the page, so the daemon is where the socket goes.
+ *  - Desktop (the native app's bridge is present) → the shim over a
+ *    WebSocket to the daemon the app started, with the bridge kept as
+ *    `window.__omnifexNative` for the channels only the app can serve.
+ *  - Web (no bridge)                               → the shim over
+ *    `ws(s)://<this host>/ws`. The daemon served the page, so the daemon is
+ *    where the socket goes.
  *
- * The preload publishes the bridge as `__omnifexNative` only, and this is the
- * one place `window.electronAPI` is defined. contextBridge properties are
- * read-only and undeletable, so had the preload defined `electronAPI`, the
- * shim could never take its place (it tried, threw, and the app quietly ran
- * legacy IPC forever). The bridge is installed as `electronAPI` on the first
- * line — before the daemon is probed — so a failure anywhere below leaves a
- * working app, not an undefined one.
+ * Both install first and connect second: there is no other transport to fall
+ * back to — the in-process mode went with Electron — and the shim queues
+ * requests while the socket comes up. A daemon that is down shows as the
+ * connection banner, and the client keeps retrying.
  *
  * Must run before anything imports `api.ts` at module scope and calls it —
  * `main.tsx` awaits this before booting React.
  */
 import { createServerClient, type ServerClient, type WebSocketFactory } from '@/lib/remote/serverClient';
-import { localModeForced } from '@/lib/remote/localMode';
 import { createElectronApiShim } from '@/lib/remote/electronApiShim';
 import type { NativeBridge } from '@/lib/platform';
 
-export type RemoteMode = 'electron-legacy' | 'electron-remote' | 'web';
+export type RemoteMode = 'desktop' | 'web';
 
 export interface RemoteBridgeInfo {
   mode: RemoteMode;
   url: string | null;
   client: ServerClient | null;
-  /**
-   * Legacy because the user asked for it, not because no daemon answered.
-   * The two look identical from here and need opposite things on screen: one
-   * offers a way back, the other has nothing to go back to.
-   */
-  forcedLocal: boolean;
-  /** Present in remote modes: whether a session's events are actually being
-   *  delivered to this client. Connectivity is global, delivery is not. */
+  /** Whether a session's events are actually being delivered to this
+   *  client. Connectivity is global, delivery is not. */
   isSessionSubscribed?: (sessionId: string) => boolean;
 }
 
@@ -88,20 +75,7 @@ function registerServiceWorker(): void {
   });
 }
 
-async function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`${what} timed out after ${ms}ms`)), ms);
-  });
-  try {
-    return await Promise.race([p, timeout]);
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
 export interface InstallRemoteBridgeOptions {
-  connectTimeoutMs?: number;
   /** Test seam; defaults to the global `WebSocket`. */
   createSocket?: WebSocketFactory;
 }
@@ -110,65 +84,45 @@ function setElectronApi(api: unknown): void {
   (window as unknown as { electronAPI: unknown }).electronAPI = api;
 }
 
-export async function installRemoteBridge(opts: InstallRemoteBridgeOptions = {}): Promise<RemoteBridgeInfo> {
-  const connectTimeoutMs = opts.connectTimeoutMs ?? 8_000;
-  const native: NativeBridge | null = window.__omnifexNative ?? null;
+/** The daemon's socket on the host that served this page. */
+function pageSocketUrl(): string {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  return `${proto}://${location.host}/ws`;
+}
 
-  let info: RemoteBridgeInfo;
-
-  if (native) {
-    setElectronApi(native);
-    // Honoured before anything is probed. `remote:url` STARTS a daemon when
-    // none is running, so asking would resurrect the process the user just
-    // chose to step away from — see localMode.ts.
-    if (localModeForced()) {
-      window.__omnifexRemote = { mode: 'electron-legacy', url: null, client: null, forcedLocal: true };
-      console.info('[remote] mode=electron-legacy (forced by the user)');
-      return window.__omnifexRemote;
-    }
-    let url: string | null = null;
-    try {
-      url = (await native.invoke('remote:url')) as string | null;
-    } catch (err) {
-      console.warn('[remote] remote:url failed; staying on legacy IPC', err);
-    }
-    if (!url) {
-      info = { mode: 'electron-legacy', url: null, client: null, forcedLocal: false };
-    } else {
-      const client = createServerClient({ url, clientId: clientId(), clientKind: 'electron', createSocket: opts.createSocket });
-      try {
-        await withTimeout(client.connect(), connectTimeoutMs, 'daemon handshake');
-        const shim = createElectronApiShim({ client, native });
-        setElectronApi(shim);
-        info = {
-          mode: 'electron-remote', url, client, forcedLocal: false,
-          isSessionSubscribed: (id) => shim.isSessionSubscribed(id),
-        };
-      } catch (err) {
-        console.warn('[remote] daemon handshake failed; staying on legacy IPC', err);
-        client.disconnect();
-        info = { mode: 'electron-legacy', url, client: null, forcedLocal: false };
-      }
-    }
-  } else {
-    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-    const url = `${proto}://${location.host}/ws`;
-    const client = createServerClient({ url, clientId: clientId(), clientKind: 'web', createSocket: opts.createSocket });
-    // Install first, connect second: on the web there is nothing to fall back
-    // to, and the shim queues requests while the socket comes up.
-    const shim = createElectronApiShim({ client, native: null, webNotify });
-    setElectronApi(shim);
-    client.connect().catch((err: unknown) => {
-      console.warn('[remote] initial connect failed; will keep retrying', err);
-    });
-    info = {
-      mode: 'web', url, client, forcedLocal: false,
-      isSessionSubscribed: (id) => shim.isSessionSubscribed(id),
-    };
-    registerServiceWorker();
+/**
+ * Where the native app says its daemon is. It started the daemon and served
+ * this page from it, so the page's own origin is the right answer whenever
+ * the app cannot give one; the dev server is the one origin that is not.
+ */
+async function desktopSocketUrl(native: NativeBridge): Promise<string> {
+  try {
+    const url = (await native.invoke('remote:url')) as string | null;
+    if (url) return url;
+  } catch (err) {
+    console.warn('[remote] remote:url failed; using the page origin', err);
   }
+  return pageSocketUrl();
+}
 
+export async function installRemoteBridge(opts: InstallRemoteBridgeOptions = {}): Promise<RemoteBridgeInfo> {
+  const native: NativeBridge | null = window.__omnifexNative ?? null;
+  const mode: RemoteMode = native ? 'desktop' : 'web';
+  const url = native ? await desktopSocketUrl(native) : pageSocketUrl();
+
+  const client = createServerClient({ url, clientId: clientId(), clientKind: mode, createSocket: opts.createSocket });
+  const shim = createElectronApiShim({ client, native, ...(native ? {} : { webNotify }) });
+  setElectronApi(shim);
+  client.connect().catch((err: unknown) => {
+    console.warn('[remote] initial connect failed; will keep retrying', err);
+  });
+  if (!native) registerServiceWorker();
+
+  const info: RemoteBridgeInfo = {
+    mode, url, client,
+    isSessionSubscribed: (id) => shim.isSessionSubscribed(id),
+  };
   window.__omnifexRemote = info;
-  console.info(`[remote] mode=${info.mode}${info.url ? ` url=${info.url}` : ''}`);
+  console.info(`[remote] mode=${info.mode} url=${url}`);
   return info;
 }

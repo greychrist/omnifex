@@ -509,6 +509,27 @@ describe('TabManager — revealing a clipped tab', () => {
       expect(scrollTo).toHaveBeenCalledWith({ left: 100 + 50 + TAB_REVEAL_MARGIN_PX, behavior: 'smooth' });
     });
 
+    // The scroll arrows narrow and widen the strip as they mount and unmount,
+    // and a width change can land the strip at its end with no scroll event.
+    // The right arrow then sat there pointing at nothing.
+    it('re-checks the scroll arrows when the strip resizes without scrolling', () => {
+      installState({ tabs, activeTabId: 'c' });
+      const { container } = render(<TabManager />);
+      const strip = container.querySelector<HTMLElement>('[data-testid="tab-strip-scroll"]')!;
+      strip.scrollTo = vi.fn();
+      const size = (scrollLeft: number, clientWidth: number) => {
+        strip.scrollLeft = scrollLeft;
+        Object.defineProperty(strip, 'clientWidth', { configurable: true, value: clientWidth });
+        Object.defineProperty(strip, 'scrollWidth', { configurable: true, value: 800 });
+      };
+      size(270, 500);
+      fireEvent.scroll(strip);
+      expect(screen.queryByTitle('Scroll tabs right')).not.toBeNull();
+      size(270, 530);
+      resize();
+      expect(screen.queryByTitle('Scroll tabs right')).toBeNull();
+    });
+
     it('stops following once the user scrolls the strip themselves', () => {
       installState({ tabs, activeTabId: 'c' });
       const { container } = render(<TabManager />);

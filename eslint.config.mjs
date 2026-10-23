@@ -37,28 +37,26 @@ export default defineConfig(
   {
     ignores: [
       'node_modules/**',
-      'dist/**',
-      'dist-electron/**',
+      'dist-web/**',
       '.vite/**',
       'out/**',
       'coverage/**',
-      // Generated/Vite/Forge/Electron output that doesn't belong in lint.
+      // The Swift app; SwiftPM's build tree holds generated sources.
+      'macos/**',
+      // Generated/Vite output that doesn't belong in lint.
       '**/*.d.ts.map',
       '**/*.js.map',
       // The eslint config itself doesn't need to lint itself.
       'eslint.config.mjs',
       // Plain-JS rule fragments imported by this config; no tsconfig covers them.
       'eslint/**',
-      // Forge config + vite configs are mostly Node scripts; defer for
-      // a future tightening pass once the renderer + electron passes
-      // are stable.
-      'forge.config.ts',
+      // Vite configs are mostly Node scripts; defer for a future
+      // tightening pass.
       'vite.*.config.ts',
       'vitest.config.ts',
       // Plain-JS scripts and root-level JS aren't in any tsconfig and
       // would just produce parsing errors under typed linting. Skip
       // for the same "future tightening" reason.
-      'main.js',
       'postcss.config.js',
       'scripts/**',
     ],

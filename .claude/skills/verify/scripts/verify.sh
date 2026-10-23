@@ -1,15 +1,24 @@
 #!/bin/bash
-# OmniFex verification gate. Stops at the first failing gate, always leaves
-# the native modules on the Electron ABI afterwards, and keeps every log so a
-# failure is replayed from disk instead of re-run (re-running resamples flakes).
-#   bash verify.sh          # check → build → test:coverage → coverage:areas
-#   bash verify.sh --quick  # check → test
+# OmniFex verification gate. Stops at the first failing gate and keeps every
+# log so a failure is replayed from disk instead of re-run (re-running
+# resamples flakes).
+#   bash verify.sh          # check → build → test:coverage → test:swift → coverage:areas
+#   bash verify.sh --quick  # check → test → test:swift
 ROOT=$(git -C "$(dirname "$0")" rev-parse --show-toplevel)
 cd "$ROOT"
 LOGDIR=/tmp/omnifex-verify/$(date +%Y%m%d-%H%M%S)
 mkdir -p "$LOGDIR"
-ran_tests=0
 status=0
+
+# One Node major everywhere: the native modules are built for it, and the app
+# bundles it. A different node here fails ~286 jsdom tests and every native
+# require, which reads as a mass regression and is not one.
+want=$(cat .nvmrc 2>/dev/null)
+have=$(node -p 'process.versions.node.split(".")[0]')
+if [ -n "$want" ] && [ "$have" != "$want" ]; then
+  echo "FAIL  node $have, but .nvmrc says $want — run: nvm use"
+  exit 1
+fi
 
 gate() { # gate <name> <npm script>
   local name=$1 script=$2
@@ -27,10 +36,9 @@ gate() { # gate <name> <npm script>
 
 gate check check || exit 1
 if [ "${1:-}" = "--quick" ]; then
-  ran_tests=1
-  gate test test
+  gate test test && gate swift test:swift
 else
-  gate build build && { ran_tests=1; gate coverage test:coverage; }
+  gate build build && gate coverage test:coverage && gate swift test:swift
 fi
 rc=$status
 
@@ -41,15 +49,5 @@ if [ $rc = 0 ] && [ "${1:-}" != "--quick" ]; then
   npm run coverage:areas 2>&1 | tail -n 30 | sed 's/^/      /'
 fi
 
-if [ $ran_tests = 1 ]; then
-  echo "== npm run rebuild:electron (vitest left native modules on the Node ABI)"
-  if npm run rebuild:electron >"$LOGDIR/rebuild.log" 2>&1; then
-    echo "PASS  rebuild:electron"
-  else
-    echo "FAIL  rebuild:electron — the app will crash on next npm start (log: $LOGDIR/rebuild.log)"
-    tail -n 10 "$LOGDIR/rebuild.log" | sed 's/^/      /'
-    rc=1
-  fi
-fi
 echo "logs: $LOGDIR"
 exit $rc

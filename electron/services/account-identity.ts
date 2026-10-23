@@ -267,11 +267,11 @@ export function emailsMatch(
 }
 
 /**
- * The verdict both composition roots hand to the sessions service.
+ * The verdict the daemon hands to the sessions service.
  *
- * Lives here, next to `classifyIdentity`, because `electron/main.ts` and
- * `electron/remote/daemon.ts` each built their own identical copy of it — and
- * only main.ts kept the reasoning for the `unknown-account` warning.
+ * Lives here, next to `classifyIdentity`, because two composition roots once
+ * built their own copies of it — and only one kept the reasoning for the
+ * `unknown-account` warning.
  *
  * Cheap by construction: the `.claude.json` read, never a CLI spawn, and an
  * account with no `expected_email` short-circuits before any I/O. The session

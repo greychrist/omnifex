@@ -1,41 +1,28 @@
 import path from 'node:path';
 
 /**
- * macOS Developer ID signing + notarization config, factored out of
- * forge.config.ts so it can be unit-tested without running a build.
+ * macOS Developer ID signing + notarization settings, kept apart from the
+ * package script so they can be unit-tested without running a build.
  *
- * Paths are resolved from the working directory, matching the existing
- * cwd-relative convention in forge.config.ts (Forge and vitest both run from
- * the repo root).
+ * Paths are resolved from the working directory (the repo root, for both the
+ * package script and vitest).
  */
 
+/** Entitlements for the bundled node, `Contents/MacOS/omnifexd`. */
 export const ENTITLEMENTS = path.resolve('signing', 'entitlements.plist');
-export const ENTITLEMENTS_INHERIT = path.resolve('signing', 'entitlements.inherit.plist');
 
 /** Default `notarytool store-credentials` profile name. */
 export const DEFAULT_KEYCHAIN_PROFILE = 'omnifex-notary';
 
-export interface FileSigningOptions {
-  hardenedRuntime: boolean;
-  entitlements: string;
-}
-
 /**
- * Per-file signing options handed to @electron/osx-sign.
+ * Which entitlements a file in the bundle is signed with, or null for none.
  *
- * Hardened runtime is mandatory: the notary service rejects any submission
- * containing an executable signed without it.
+ * Only node needs any. Everything is signed with hardened runtime — the
+ * notary service rejects an executable without it — and the Swift app needs
+ * nothing beyond it: WKWebView's JIT runs in WebKit's own processes.
  */
-export function optionsForFile(filePath: string): FileSigningOptions {
-  // Renderer / GPU / Plugin helpers are separate bundles with their own
-  // signatures. Everything else — the main app, the framework, the .node
-  // addons and node-pty's spawn-helper — takes the main entitlements.
-  const isHelper = path.basename(filePath).startsWith('OmniFex Helper');
-
-  return {
-    hardenedRuntime: true,
-    entitlements: isHelper ? ENTITLEMENTS_INHERIT : ENTITLEMENTS,
-  };
+export function entitlementsFor(filePath: string): string | null {
+  return path.basename(filePath) === 'omnifexd' ? ENTITLEMENTS : null;
 }
 
 export interface NotarizeConfig {

@@ -42,7 +42,7 @@ export type WebSocketFactory = (url: string) => WebSocketLike;
 export interface ServerClientOptions {
   url: string;
   clientId: string;
-  clientKind: 'electron' | 'web';
+  clientKind: 'desktop' | 'web';
   /** Defaults to the global `WebSocket`. */
   createSocket?: WebSocketFactory;
   /** `false` disables reconnect; otherwise exponential backoff between the two. */

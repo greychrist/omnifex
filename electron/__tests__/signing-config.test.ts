@@ -4,22 +4,19 @@ import path from 'node:path';
 
 import {
   ENTITLEMENTS,
-  ENTITLEMENTS_INHERIT,
-  optionsForFile,
+  entitlementsFor,
   osxNotarizeConfig,
 } from '../../signing';
 
-// Entitlements Electron needs under hardened runtime. V8 JITs, so it must be
-// allowed to mark memory executable and run code it generated itself; the app
-// loads better-sqlite3 / node-pty .node addons and spawns node-pty's
-// spawn-helper, so library validation has to come off; and the Brain MCP
-// server is launched as `process.execPath` with ELECTRON_RUN_AS_NODE=1, which
-// means the child is started with a modified environment.
+// What the bundled node (`Contents/MacOS/omnifexd`) needs under hardened
+// runtime. V8 JITs, so it must be allowed to mark memory executable and run
+// code it generated itself, and it loads the better-sqlite3 / node-pty .node
+// addons, so library validation comes off. The Swift app needs nothing beyond
+// hardened runtime: the web view's JIT runs in WebKit's own processes.
 const REQUIRED_ENTITLEMENTS = [
   'com.apple.security.cs.allow-jit',
   'com.apple.security.cs.allow-unsigned-executable-memory',
   'com.apple.security.cs.disable-library-validation',
-  'com.apple.security.cs.allow-dyld-environment-variables',
 ];
 
 function readPlist(p: string): string {
@@ -27,66 +24,29 @@ function readPlist(p: string): string {
 }
 
 describe('macOS signing configuration', () => {
-  describe('entitlements files', () => {
-    it('ships a main entitlements plist', () => {
+  describe('entitlements', () => {
+    it('ships the node entitlements plist', () => {
       expect(fs.existsSync(ENTITLEMENTS)).toBe(true);
+      expect(path.isAbsolute(ENTITLEMENTS)).toBe(true);
     });
 
-    it('ships an inherit entitlements plist for child processes', () => {
-      expect(fs.existsSync(ENTITLEMENTS_INHERIT)).toBe(true);
-    });
-
-    it.each(REQUIRED_ENTITLEMENTS)('main plist grants %s', (key) => {
+    it.each(REQUIRED_ENTITLEMENTS)('grants node %s', (key) => {
       expect(readPlist(ENTITLEMENTS)).toContain(key);
     });
 
-    // @electron/osx-sign ships no non-MAS inherit plist, and helper processes
-    // are signed separately from the main binary — an entitlement missing here
-    // fails at runtime in the helper, not at signing time.
-    it.each(REQUIRED_ENTITLEMENTS)('inherit plist grants %s', (key) => {
-      expect(readPlist(ENTITLEMENTS_INHERIT)).toContain(key);
-    });
-
-    it('does not request device entitlements the app never uses', () => {
-      // osx-sign's default.darwin.plist asks for camera, mic, bluetooth and
-      // USB. OmniFex uses none of them, and requesting them invites TCC
-      // prompts for hardware the app never touches.
+    it('does not request device entitlements nothing uses', () => {
       const main = readPlist(ENTITLEMENTS);
       expect(main).not.toContain('com.apple.security.device.camera');
       expect(main).not.toContain('com.apple.security.device.audio-input');
       expect(main).not.toContain('com.apple.security.device.bluetooth');
       expect(main).not.toContain('com.apple.security.device.usb');
     });
-  });
 
-  describe('optionsForFile', () => {
-    it('enables hardened runtime, which notarization requires', () => {
-      expect(optionsForFile('/tmp/OmniFex.app').hardenedRuntime).toBe(true);
-    });
-
-    it('gives the main app bundle the main entitlements', () => {
-      const opts = optionsForFile('/tmp/out/OmniFex.app');
-      expect(opts.entitlements).toBe(ENTITLEMENTS);
-    });
-
-    it.each([
-      '/tmp/out/OmniFex.app/Contents/Frameworks/OmniFex Helper.app',
-      '/tmp/out/OmniFex.app/Contents/Frameworks/OmniFex Helper (GPU).app',
-      '/tmp/out/OmniFex.app/Contents/Frameworks/OmniFex Helper (Renderer).app',
-      '/tmp/out/OmniFex.app/Contents/Frameworks/OmniFex Helper (Plugin).app',
-    ])('gives %s the inherit entitlements', (filePath) => {
-      expect(optionsForFile(filePath).entitlements).toBe(ENTITLEMENTS_INHERIT);
-    });
-
-    it('gives the omnifexd daemon stub the main entitlements — it loads the same .node addons and spawns the CLI', () => {
-      expect(optionsForFile('/tmp/out/OmniFex.app/Contents/MacOS/omnifexd').entitlements).toBe(ENTITLEMENTS);
-    });
-
-    it('points at entitlements files that actually exist', () => {
-      for (const p of [ENTITLEMENTS, ENTITLEMENTS_INHERIT]) {
-        expect(fs.existsSync(p)).toBe(true);
-        expect(path.isAbsolute(p)).toBe(true);
-      }
+    it('gives the bundled node the node entitlements, and everything else none', () => {
+      expect(entitlementsFor('/out/OmniFex.app/Contents/MacOS/omnifexd')).toBe(ENTITLEMENTS);
+      expect(entitlementsFor('/out/OmniFex.app')).toBeNull();
+      expect(entitlementsFor('/out/OmniFex.app/Contents/Resources/app/node_modules/node-pty/build/Release/spawn-helper')).toBeNull();
+      expect(entitlementsFor('/out/OmniFex.app/Contents/Resources/app/node_modules/better-sqlite3/build/Release/better_sqlite3.node')).toBeNull();
     });
   });
 

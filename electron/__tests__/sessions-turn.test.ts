@@ -167,7 +167,7 @@ describe('sessions — automatic recap', () => {
     const prompts: string[] = [];
     sendImpl.current = async (p: string) => { prompts.push(p); };
     const sessions = createSessionsService(
-      () => {}, {}, null, null, null, null, null, null, null, null, null, null, null, null,
+      () => {}, null, null, null, null, null, null, null, null, null, null, null,
       () => ({ enabled, delayMs: 5 * 60_000 }),
     );
     sessions.start({ tabId: 't1', projectPath, configDir: tmpConfig, model: 'opus', permissionMode: 'default' });

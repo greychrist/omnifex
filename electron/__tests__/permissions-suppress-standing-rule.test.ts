@@ -30,7 +30,6 @@ function handlerHarness() {
     handle,
     'tab-1',
     sendToRenderer as never,
-    { showNotification: vi.fn(), incrementUnread: vi.fn() } as never,
     null,
   );
   return { fn, handle, sendToRenderer };

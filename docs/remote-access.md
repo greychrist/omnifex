@@ -2,7 +2,7 @@
 
 OmniFex Remote splits the app in two: a **daemon** on the Mac that owns every
 Claude CLI session, and **clients** that talk to it over a WebSocket protocol.
-The Electron app is one client. The same renderer, served by the daemon, is a
+The Mac app (`macos/`) is one client. The same renderer, served by the daemon, is a
 Safari Home Screen app on the iPad.
 
 The boundary is your tailnet. There is no login: the daemon binds to the
@@ -13,11 +13,11 @@ address is you.
 
 | Piece | Where | Notes |
 |---|---|---|
-| Daemon | `omnifex-server` (built to `.vite/build/omnifex-server.js`) | Runs as the Electron binary with `ELECTRON_RUN_AS_NODE=1` — one native ABI. |
+| Daemon | `omnifex-server` (built to `.vite/build/omnifex-server.js`) | Runs on the app's bundled Node 26 (`Contents/MacOS/omnifexd`), or a checkout's node — one native ABI. |
 | Config | `~/.omnifex/server.json` | `host`, `port` (47700), `webRoot`, `ringSize`, `permissionTimeoutMs` (null = never), `rpcAllow`, `rpcDeny`. |
 | State | `~/.omnifex/sessions/`, `~/.omnifex/projects.json`, `~/.omnifex/server.pid` | Per-session event log + meta; project registry. |
-| Database | `~/Library/Application Support/OmniFex/greychrist.db` | Shared with the Electron app (WAL + busy timeout). |
-| Web client | `dist-web/` (`npm run build:web`) | Served at `/`. Also packaged as an extra resource. |
+| Database | `~/Library/Application Support/OmniFex/greychrist.db` | Shared with the dev daemon when one runs (WAL + busy timeout). |
+| Web client | `dist-web/` (`npm run build:web`) | Served at `/` to the Mac app's window and to browsers alike. Packaged in `Contents/Resources/dist-web`. |
 | Logs | `~/Library/Logs/omnifex-server.log` | launchd's stdout/stderr. |
 
 ## Install as a LaunchAgent
@@ -25,7 +25,7 @@ address is you.
 From a login shell (so `PATH` — where `claude` lives — is captured):
 
 ```sh
-npm run build:daemon          # .vite/build/omnifex-server.js  (forge builds it too)
+npm run build:daemon          # .vite/build/omnifex-server.js + brain-mcp.js
 npm run build:web             # dist-web/
 ./scripts/omnifex-server install
 ./scripts/omnifex-server status
@@ -36,12 +36,13 @@ npm run build:web             # dist-web/
 re-derives `PATH` from your login shell on every start (`fixPath`), and refuses
 to start if `claude` cannot be found.
 
-Other commands: `start` (foreground), `stop`, `status --json`, `uninstall`,
-`config`.
+Other commands: `start` (foreground), `stop`, `status --json`, `ensure`,
+`restart`, `uninstall`, `config`.
 
-The Electron app will also start the daemon itself if none is running
-(detached, so it survives quitting the app). Set `OMNIFEX_REMOTE=0` or the
-`remote.enabled=false` setting to make the app use its built-in IPC instead.
+The Mac app starts the daemon itself if none is running — `omnifexd
+omnifex-server.js ensure` — detached, so it survives quitting the app. There
+is no in-process alternative: the app is a client of the daemon, like the
+iPad.
 
 ## Upgrades
 
@@ -163,6 +164,7 @@ invalidates every subscription — a decision, not a side effect.
 
 ## What the web client cannot do
 
-- File dialogs, Reveal in Finder, pasting an image to a temp file, the
-  updater, window chrome — Electron-only, behind `src/lib/platform.ts`.
+- File dialogs, Reveal in Finder, the updater, window chrome, OS
+  notifications through the dock — the Mac app's native channels
+  (`src/lib/remote/nativeChannels.ts`), behind `src/lib/platform.ts`.
 - Anything on the daemon's `rpcDeny` list (raw SQL and row editing by default).

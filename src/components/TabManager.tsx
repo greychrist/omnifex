@@ -583,6 +583,9 @@ export const TabManager: React.FC<TabManagerProps> = ({ className }) => {
   // the left scroll button and narrows it, so the target computed at click time
   // falls short and the tab's × stays clipped until a second click. Re-reveal
   // the active tab whenever the strip resizes, until the user scrolls it.
+  // The same width change can land the strip at its end without a scroll
+  // event, so the arrows are re-checked here too — otherwise the right one
+  // stayed up after the first reveal, pointing at nothing.
   const followActiveRef = useRef(false);
   const activeTabIdRef = useRef(activeTabId);
   activeTabIdRef.current = activeTabId;
@@ -592,6 +595,7 @@ export const TabManager: React.FC<TabManagerProps> = ({ className }) => {
     const container = scrollContainerRef.current;
     if (!container || typeof ResizeObserver === 'undefined') return;
     const observer = new ResizeObserver(() => {
+      checkScrollButtons();
       const id = activeTabIdRef.current;
       if (followActiveRef.current && id) revealTabRef.current(id);
     });

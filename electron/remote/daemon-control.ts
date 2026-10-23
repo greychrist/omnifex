@@ -1,5 +1,6 @@
 /**
- * Stopping and starting the daemon from Electron main, launchd-aware.
+ * Stopping and starting the daemon, launchd-aware. Driven by the
+ * `ensure` / `restart` / `stop` CLI commands the macOS app runs.
  *
  * Two ways a daemon can be running:
  *
@@ -24,7 +25,7 @@ import type { ServerConfig } from './config';
 import { defaultLogPath, launchAgentPath, launchctlCommands, type DaemonInvocation } from './launchd';
 
 export interface DaemonControlDeps {
-  /** This bundle's Electron binary and built daemon script. */
+  /** This bundle's node binary and built daemon script. */
   invocation: DaemonInvocation;
   home?: string;
   uid?: number;
@@ -78,7 +79,7 @@ function defaultSpawnDetached(
     const child = spawnChild(invocation.execPath, [invocation.script, 'start'], {
       detached: opts.detached,
       stdio: ['ignore', fd, fd],
-      env: { ...env, ELECTRON_RUN_AS_NODE: '1' },
+      env,
     });
     // Unref either way: whether the daemon shares this process group is about
     // signals, not about holding the parent's event loop open.

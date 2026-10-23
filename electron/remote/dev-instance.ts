@@ -107,7 +107,10 @@ export interface DevIdleWatch {
  * on 47701 still running an hour-old build is the leftover this whole
  * instance exists to avoid, and it would be adopted by the next dev launch.
  * The app SIGTERMs it on quit and it shares the app's process group, so
- * Ctrl-C in the `npm start` terminal reaches it too; neither survives the app
+ * Ctrl-C in the `npm start` terminal reaches it too. (`ensure` spawns it
+ * non-detached, i.e. into `ensure`'s own group, so the Mac app runs `ensure`
+ * inside its group — `LauncherProcessGroup` in macos/. Foundation's `Process`
+ * would give `ensure` a fresh group.) Neither survives the app
  * being killed outright. This does: no client attached, nothing running, no
  * reason to still be here.
  *

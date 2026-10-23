@@ -13,10 +13,8 @@ import type {
   TurnState,
   SessionsService,
   SendToRenderer,
-  NotificationHooks,
   PermissionDecision,
   LoggingService,
-  SessionOwnership,
   PersistPermissionRuleFn,
   RateLimitHook,
   AccountMismatch,
@@ -69,9 +67,7 @@ function resolveSessionId(resumeId?: string): string {
 
 export function createSessionsService(
   sendToRenderer: SendToRenderer,
-  notificationHooks: NotificationHooks = {},
   logging: LoggingService | null = null,
-  ownership: SessionOwnership | null = null,
   persistPermissionRule: PersistPermissionRuleFn | null = null,
   rateLimitHook: RateLimitHook | null = null,
   onSessionClosed: SessionClosedHook | null = null,
@@ -97,7 +93,7 @@ export function createSessionsService(
    * is actually authenticated there, or null when it matches / no expectation
    * is set. Injected as a closure so lifecycle keeps no DB dependency.
    *
-   * MUST be cheap — this runs on every cold start. main.ts wires it to the
+   * MUST be cheap — this runs on every cold start. the daemon wires it to the
    * `.claude.json` read, never to a CLI spawn. See
    * docs/superpowers/specs/2026-07-27-account-email-verification-design.md
    */
@@ -116,7 +112,7 @@ export function createSessionsService(
    * configDir. Returns [] when there is nothing to add.
    *
    * Injected rather than computed here so the session layer keeps no knowledge
-   * of the Brain: main.ts is where accounts, vaults and app paths are all in
+   * of the Brain: the daemon is where accounts, vaults and app paths are all in
    * scope, and it is the only place that can map a configDir to a vault
    * without this module growing a dependency on either.
    */
@@ -183,9 +179,7 @@ export function createSessionsService(
 
   const runtimeDeps: RuntimeDeps = {
     sendToRenderer,
-    notificationHooks,
     rateLimitHook,
-    ownership,
     sessions,
     logging,
     modelCatalogSink,
@@ -261,7 +255,6 @@ export function createSessionsService(
       endSideChat(existing.sideChat, tabId, sendToRenderer);
       void existing.engine.close().catch(() => { /* ignore */ });
       sessions.delete(tabId);
-      ownership?.unregister(tabId);
       queryPassthroughs.evictPluginCache(tabId);
     }
 
@@ -353,22 +346,16 @@ export function createSessionsService(
     };
 
     sessions.set(tabId, handle);
-    // Register tab ownership BEFORE any message can route through
-    // `agent-output:<tabId>` — without this the routing table drops
-    // tab-scoped events on the floor.
-    if (params.ownerWebContentsId !== undefined) {
-      ownership?.register(tabId, params.ownerWebContentsId);
-    }
 
     // Wire permission-request handler + runtime message subscribers
     // before spawning so the very first message lands somewhere.
     engine.onPermissionRequest(
-      createPermissionRequestHandler(handle, tabId, sendToRenderer, notificationHooks, logging),
+      createPermissionRequestHandler(handle, tabId, sendToRenderer, logging),
     );
-    const elicitations = createElicitationHandlers(handle, tabId, sendToRenderer, notificationHooks);
+    const elicitations = createElicitationHandlers(handle, tabId, sendToRenderer);
     engine.onElicitationRequest?.(elicitations.onRequest);
     engine.onControlCancel?.(elicitations.onCancel);
-    engine.onControlCancel?.(createPermissionCancelHandler(handle, tabId, sendToRenderer, notificationHooks));
+    engine.onControlCancel?.(createPermissionCancelHandler(handle, tabId, sendToRenderer));
     listenToMessages(tabId, handle, runtimeDeps).catch((err: unknown) => {
       console.error(`[sessions] Unhandled error in listenToMessages for tab ${tabId}:`, err);
     });
@@ -506,17 +493,6 @@ export function createSessionsService(
   }
 
   // -------------------------------------------------------------------------
-  // rebind()
-  // -------------------------------------------------------------------------
-
-  function rebind(tabId: string, ownerWebContentsId: number): boolean {
-    const handle = sessions.get(tabId);
-    if (!handle) return false;
-    ownership?.register(tabId, ownerWebContentsId);
-    return true;
-  }
-
-  // -------------------------------------------------------------------------
   // respondPermission()
   // -------------------------------------------------------------------------
 
@@ -534,7 +510,6 @@ export function createSessionsService(
       handle,
       tabId,
       sendToRenderer,
-      notificationHooks,
       behavior,
       updatedInput,
       updatedPermissions,
@@ -579,7 +554,6 @@ export function createSessionsService(
     endSideChat(handle.sideChat, tabId, sendToRenderer);
     void handle.engine.close().catch(() => { /* ignore */ });
     sessions.delete(tabId);
-    ownership?.unregister(tabId);
     // Evict the per-tab plugin cache so closed-tab entries don't accumulate
     // over the lifetime of the service.
     queryPassthroughs.evictPluginCache(tabId);
@@ -711,7 +685,6 @@ export function createSessionsService(
 
   return {
     start,
-    rebind,
     sendMessage,
     sendStructuredMessage,
     respondPermission,

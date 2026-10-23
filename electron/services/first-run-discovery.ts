@@ -16,7 +16,7 @@
 // (`~/.codex*`) config dirs and tags each with its engine so the created
 // account row routes to the right CLI.
 //
-// The caller (electron/main.ts) supplies the `discover` function, which in
+// The caller (electron/remote/daemon.ts) supplies the `discover` function, which in
 // production is `accountsService.discoverAccounts`. Injectable for tests.
 
 import fs from 'node:fs/promises';

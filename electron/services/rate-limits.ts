@@ -1,6 +1,5 @@
 import type { Database } from './database';
 import type { AccountsService } from './accounts';
-import type { NotificationsService } from './notifications';
 import type { LoggingService } from './logging';
 
 // ---------------------------------------------------------------------------
@@ -73,7 +72,12 @@ export interface RateLimitsService {
 export interface RateLimitsDeps {
   db: Database;
   accounts: AccountsService;
-  notifications: Pick<NotificationsService, 'show'>;
+  /**
+   * An OS notification for a crossed threshold. The daemon has no display:
+   * it hands this to its clients, and the app on the Mac raises the banner
+   * (see `notifyClients` in remote/daemon.ts).
+   */
+  notifications: { show(title: string, body: string, isError: boolean): void };
   sendToRenderer: (channel: string, payload: unknown) => void;
   logging?: LoggingService | null;
   /** Override for tests so we can drive time forward deterministically. */

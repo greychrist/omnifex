@@ -15,7 +15,7 @@
 
 import path from 'node:path';
 import { truncate } from './permissions';
-import type { SessionHandle, SendToRenderer, NotificationHooks } from './types';
+import type { SessionHandle, SendToRenderer } from './types';
 import type { AgentElicitationRequest, ElicitationAction } from '../agents/types';
 
 /**
@@ -35,26 +35,23 @@ export function createElicitationHandlers(
   handle: SessionHandle,
   tabId: string,
   sendToRenderer: SendToRenderer,
-  notificationHooks: NotificationHooks,
 ): { onRequest: (req: AgentElicitationRequest) => void; onCancel: (requestId: string) => void } {
   function onRequest(req: AgentElicitationRequest): void {
     handle.elicitationQueue.push(req);
     if (handle.elicitationQueue.length !== 1) return;
     showHead(handle, tabId, sendToRenderer);
 
+    // A banner like a permission prompt's: the session is parked until the
+    // user answers. It once went only to an Electron-main hook, so under the
+    // daemon an MCP server's question arrived silently.
     const projectName = path.basename(handle.projectPath) || 'OmniFex';
-    try {
-      notificationHooks.showNotification?.(
-        `OmniFex — ${projectName}`,
-        truncate(req.message),
-        false,
-        { tabId },
-        { subtitle: `${req.displayName ?? req.serverName} needs your input` },
-      );
-      notificationHooks.incrementUnread?.();
-    } catch (e) {
-      console.error('[sessions] elicitation notification hook failed:', e);
-    }
+    sendToRenderer('claude-notification', {
+      tab_id: tabId,
+      title: `OmniFex — ${projectName}`,
+      body: truncate(req.message),
+      is_error: false,
+      subtitle: `${req.displayName ?? req.serverName} needs your input`,
+    });
   }
 
   function onCancel(requestId: string): void {

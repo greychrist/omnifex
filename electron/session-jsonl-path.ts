@@ -1,12 +1,9 @@
 /**
  * Where a session's JSONL transcript lives, searched across accounts.
  *
- * One module, two composition roots — `electron/main.ts` and
- * `electron/remote/daemon.ts` both build a `SessionsSummaryService` and both
- * carried their own copy of this. They agreed, but only by hand: one hoisted
- * `projectsDir` where the other inlined it, one wrote `import('fs').Dirent`
- * and the other `fs.Dirent`. Cosmetic differences are the evidence that the
- * next fix to one would not reach the other.
+ * Its own module because it was once hand-copied into two composition roots
+ * (Electron main and the daemon) — and the copies had already started to
+ * differ.
  *
  * What it must never do is assume `~/.claude`. The root is always some
  * account's `config_dir`; an unresolvable project returns null so the caller's

@@ -106,7 +106,7 @@ export function McpServerActionsMenu({
   busy: boolean;
   onAction: (action: McpServerAction) => void;
 }): React.JSX.Element | null {
-  const actions = mcpServerActions(server, { canOpenBrowserCallback: platform.isElectron });
+  const actions = mcpServerActions(server, { canOpenBrowserCallback: platform.isDesktop });
   if (actions.length === 0) return null;
   return (
     <DropdownMenu>

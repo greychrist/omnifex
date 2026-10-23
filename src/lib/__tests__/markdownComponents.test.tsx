@@ -21,7 +21,7 @@ const { openExternal, openPath } = vi.hoisted(() => ({
   openExternal: vi.fn(async () => {}),
   openPath: vi.fn(async () => {}),
 }));
-vi.mock("@/lib/platform", () => ({ platform: { isElectron: true, openExternal, openPath } }));
+vi.mock("@/lib/platform", () => ({ platform: { isDesktop: true, openExternal, openPath } }));
 
 import { buildMarkdownComponents } from "../markdownComponents";
 import { SessionActionsProvider, type SessionActions } from "@/contexts/SessionActionsContext";

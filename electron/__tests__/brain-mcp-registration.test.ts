@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtempSync, mkdirSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -11,11 +11,12 @@ import {
   createBrainMcpRegistration,
   findInstalledApp,
   persistentServerEnv,
+  refreshBrainRegistrations,
   writeBrainSpawnConfig,
 } from '../services/brain/mcp-registration';
 
-const EXEC = '/Applications/OmniFex.app/Contents/MacOS/omnifex';
-const SCRIPT = '/Applications/OmniFex.app/Contents/Resources/app.asar/.vite/build/brain-mcp.js';
+const EXEC = '/Applications/OmniFex.app/Contents/MacOS/omnifexd';
+const SCRIPT = '/Applications/OmniFex.app/Contents/Resources/app/build/brain-mcp.js';
 
 const env = (userDataDir: string) => ({ execPath: EXEC, serverScript: SCRIPT, userDataDir });
 
@@ -31,13 +32,11 @@ describe('brain MCP registration', () => {
   });
 
   describe('buildBrainServerConfig', () => {
-    it('runs Electron as node against exactly one vault', () => {
+    it('runs the bundled node against exactly one vault', () => {
       expect(buildBrainServerConfig('/vaults/personal', env(tmp))).toEqual({
         command: EXEC,
         args: [SCRIPT],
         env: {
-          // Not system node: better-sqlite3 is built for the Electron ABI.
-          ELECTRON_RUN_AS_NODE: '1',
           OMNIFEX_VAULT: '/vaults/personal',
           OMNIFEX_BRAIN_DB: join('/vaults/personal', '.omnifex', 'index.db'),
         },
@@ -217,7 +216,7 @@ describe('brain MCP registration', () => {
  */
 describe('persistent registration targets the installed app', () => {
   const CHECKOUT = {
-    execPath: '/Users/me/Repos/omnifex/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron',
+    execPath: '/Users/me/.nvm/versions/node/v26.12.1/bin/node',
     serverScript: '/Users/me/Repos/omnifex/.vite/build/brain-mcp.js',
     userDataDir: '/ud',
   };
@@ -228,6 +227,17 @@ describe('persistent registration targets the installed app', () => {
     expect(persistentServerEnv(packaged, () => null)).toEqual(packaged);
   });
 
+  // Every account registered before the Swift app names the Electron binary
+  // and a script inside app.asar — both gone once the update lands.
+  it('swaps a registration that names the old Electron bundle for the installed app', () => {
+    const electron = {
+      execPath: '/Applications/OmniFex.app/Contents/MacOS/omnifex',
+      serverScript: '/Applications/OmniFex.app/Contents/Resources/app.asar/.vite/build/brain-mcp.js',
+      userDataDir: '/ud',
+    };
+    expect(persistentServerEnv(electron, () => INSTALLED)).toEqual({ ...INSTALLED, userDataDir: '/ud' });
+  });
+
   it('swaps a checkout for the installed app', () => {
     expect(persistentServerEnv(CHECKOUT, () => INSTALLED)).toEqual({ ...INSTALLED, userDataDir: '/ud' });
   });
@@ -236,9 +246,9 @@ describe('persistent registration targets the installed app', () => {
     expect(persistentServerEnv(CHECKOUT, () => null)).toBeNull();
   });
 
-  it('finds the app by its real files, not by paths inside the asar', () => {
+  it('finds the app by its node and its server script', () => {
     const app = '/Applications/OmniFex.app';
-    const present = new Set([`${app}/Contents/MacOS/omnifex`, `${app}/Contents/Resources/app.asar`]);
+    const present = new Set([`${app}/Contents/MacOS/omnifexd`, `${app}/Contents/Resources/app/build/brain-mcp.js`]);
     expect(findInstalledApp(app, (p) => present.has(p))).toEqual(INSTALLED);
     expect(findInstalledApp(app, () => false)).toBeNull();
   });
@@ -267,5 +277,45 @@ describe('persistent registration targets the installed app', () => {
       expect(() => { reg.register(configDir, '/vaults/personal'); }).toThrow(/installed/i);
       expect(reg.isRegistered(configDir)).toBe(false);
     });
+  });
+});
+
+/**
+ * A persistent registration outlives the build that wrote it. Re-writing the
+ * ones that exist at daemon start is what carries them across an update that
+ * moves the server — the Electron → Swift one moved both the executable and
+ * the script.
+ */
+describe('refreshBrainRegistrations', () => {
+  const reg = (registered: string[], failOn?: string) => ({
+    isRegistered: (configDir: string) => registered.includes(configDir),
+    register: vi.fn((configDir: string) => {
+      if (configDir === failOn) throw new Error('not installed');
+    }),
+    unregister: vi.fn(),
+  });
+
+  it('re-registers only the accounts that are registered and have a vault', () => {
+    const r = reg(['/a', '/c']);
+    const warn = vi.fn();
+    const refreshed = refreshBrainRegistrations(r, [
+      { configDir: '/a', vaultRoot: '/v/a' },
+      { configDir: '/b', vaultRoot: '/v/b' },
+      { configDir: '/c', vaultRoot: null },
+    ], warn);
+    expect(refreshed).toBe(1);
+    expect(r.register).toHaveBeenCalledTimes(1);
+    expect(r.register).toHaveBeenCalledWith('/a', '/v/a');
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('keeps going past an account that fails, and says which', () => {
+    const r = reg(['/a', '/b'], '/a');
+    const warn = vi.fn();
+    expect(refreshBrainRegistrations(r, [
+      { configDir: '/a', vaultRoot: '/v/a' },
+      { configDir: '/b', vaultRoot: '/v/b' },
+    ], warn)).toBe(1);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('/a'));
   });
 });

@@ -1,11 +1,11 @@
 /**
  * Process entry for `omnifex-server`.
  *
- * Built by Forge alongside main.js and brain-mcp.js (see forge.config.ts), and
- * on its own by `node scripts/build-daemon.mjs`. Always run as the Electron
- * binary with ELECTRON_RUN_AS_NODE=1 — `scripts/omnifex-server` does that. In
- * a packaged app the binary is the `omnifexd` stub beside `omnifex`, which is
- * what names the process (see remote/daemon-exec.ts).
+ * Built with brain-mcp.js by `node scripts/build-daemon.mjs`. Run on Node 26:
+ * in the app that is the bundled `Contents/MacOS/omnifexd` — the executable's
+ * own name is what names the process — and in a checkout it is the system
+ * `node`, which `scripts/omnifex-server` finds. One Node major everywhere, so
+ * `better-sqlite3` and `node-pty` have a single ABI.
  */
 import { readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -14,13 +14,19 @@ import { loadServerConfig } from './remote/config';
 import {
   HELP,
   installCommand,
+  isProcessAlive,
+  launchdAllowed,
+  lifecycleEnv,
   parseCliArgs,
+  readPid,
   removePidFile,
   statusCommand,
-  stopDaemon,
+  stopCommand,
   uninstallCommand,
   writePidFile,
 } from './remote/cli';
+import { createDaemonControl } from './remote/daemon-control';
+import { createRemoteLauncher, probeDaemonHealth } from './remote/launcher';
 import { startDaemon } from './remote/daemon';
 import type { RemoteServerLogger } from './remote/server';
 import { createDevIdleWatch, isDevDaemon } from './remote/dev-instance';
@@ -44,8 +50,9 @@ function readVersion(): string {
 
 /**
  * This bundle's mtime. In a dev checkout the version never moves between
- * builds, so the Electron launcher compares this instead to know the daemon
- * on the port is stale. Packaged builds do not compare it (see main.ts).
+ * builds, so `ensure --app-build` compares this instead to know the daemon
+ * on the port is stale. Packaged builds pass no `--app-build`, so it is not
+ * compared there.
  */
 function readBuildStamp(): string | undefined {
   try {
@@ -81,6 +88,44 @@ async function main(argv: string[]): Promise<number> {
   }
 
   const config = loadServerConfig();
+  const dev = args.flags.dev === true;
+
+  /**
+   * ensure / restart / stop act on an instance: the real one, or with `--dev`
+   * the dev one. Their log goes to stderr so stdout carries only the answer.
+   */
+  const lifecycle = () => {
+    const env = lifecycleEnv(process.env, { dev });
+    const instanceConfig = () => loadServerConfig({ env });
+    const log = (message: string, meta?: Record<string, unknown>) => {
+      process.stderr.write(`[lifecycle] ${message}${meta ? ` ${JSON.stringify(meta)}` : ''}\n`);
+    };
+    const control = createDaemonControl({
+      invocation: { execPath: process.execPath, script: __filename },
+      env,
+      allowLaunchd: launchdAllowed(env, { dev }),
+      // The dev daemon belongs to the dev app: same process group (the app
+      // runs this CLI inside its own group), so Ctrl-C in its terminal
+      // reaches it, and the app stops it on quit.
+      detached: !dev,
+      log,
+    });
+    const flag = (name: string) => {
+      const value = args.flags[name];
+      return typeof value === 'string' ? value : undefined;
+    };
+    const launcher = createRemoteLauncher({
+      config: instanceConfig,
+      appVersion: flag('app-version') ?? version,
+      appBuild: flag('app-build'),
+      appScript: __filename,
+      probe: probeDaemonHealth,
+      spawn: (c) => control.spawn(c),
+      stop: (c) => control.stop(c),
+      log,
+    });
+    return { control, launcher, config: instanceConfig() };
+  };
 
   switch (args.command) {
     case 'config':
@@ -90,8 +135,25 @@ async function main(argv: string[]): Promise<number> {
     case 'status':
       return statusCommand(config, args.flags.json === true, out);
 
-    case 'stop':
-      return stopDaemon(config, out);
+    case 'stop': {
+      const { control, config: instance } = lifecycle();
+      return stopCommand(instance, control, {
+        readPid,
+        isAlive: isProcessAlive,
+        removePidFile,
+        sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+        out,
+      });
+    }
+
+    case 'ensure':
+    case 'restart': {
+      const { launcher } = lifecycle();
+      const result = args.command === 'ensure' ? await launcher.ensure() : await launcher.restart();
+      // One JSON line, last on stdout: what the app parses.
+      out(JSON.stringify(result));
+      return 0;
+    }
 
     case 'install':
       return installCommand({ execPath: process.execPath, script: __filename }, out);

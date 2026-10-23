@@ -1,31 +1,28 @@
 /**
- * The OmniFex Remote daemon — composition root.
+ * The OmniFex daemon — the composition root.
  *
- * Builds the same service graph `electron/main.ts` builds, minus everything
- * that needs a window or a display, and fronts it with the protocol server
- * instead of `ipcMain`. The session layer, the database, the accounts, the
- * Brain, the cost ledger: all the same factories, all the same rules. What
- * differs is the edge — `sendToRenderer` is the session bridge, not a
- * BrowserWindow, and `rpc.invoke` reaches the very same handler map the
- * renderer's `invoke()` does today, behind an allowlist.
+ * Every service OmniFex has is built here, once, and fronted with the
+ * protocol server: the session layer, the database, the accounts, the Brain,
+ * the cost ledger, the sign-in pty, the identity watchers. `sendToRenderer`
+ * is the session bridge, and `rpc.invoke` reaches the handler map behind an
+ * allowlist. The macOS app is a client like the iPad is; what it serves
+ * itself (windows, Finder, notifications) is in `src/lib/remote/nativeChannels.ts`.
  *
- * Runs as the Electron binary with `ELECTRON_RUN_AS_NODE=1` (see
- * `scripts/omnifex-server`): `better-sqlite3` and `node-pty` are built for
- * Electron's ABI, and this keeps one ABI instead of two. Nothing here may
- * touch the `electron` module — the one `require('electron')` on the daemon's
- * import graph is inside `registerIpcHandlers`, which is never called.
+ * Until 2026-10-23 Electron main built this same graph a second time, and the
+ * "change both or neither" rule that came with it was a standing hazard —
+ * a service added to one root and not the other worked on the desktop and
+ * silently degraded over the wire. With Electron gone this is the only root.
  *
- * Deliberate duplication: the ~200 lines of service wiring below mirror
- * main.ts rather than share a factory with it. Extracting a common
- * composition root out of a 1,900-line main.ts unattended was the wrong risk
- * to take; it is the first follow-up in the plan.
+ * Runs on Node 26: the app's bundled `omnifexd`, or a checkout's `node`.
  */
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
+import type { Services } from '../ipc/handlers';
+
 import { startPeriodicWork } from '../periodic-work';
-import { periodicWorkGate } from './dev-instance';
+import { isDevDaemon, periodicWorkGate } from './dev-instance';
 import { createLoggingOptions } from '../logging-options';
 import { createSessionCloseWork } from '../session-close-work';
 import { createSessionJsonlPathResolver } from '../session-jsonl-path';
@@ -38,8 +35,13 @@ import {
   fetchLatestCliVersion,
   probeCliVersion,
   CLI_REVIEW_REPO_DIR_SETTING_KEY,
+  CLI_AUTO_UPDATE_SETTING_KEY,
   CLI_CHECKED_VERSION_SETTING_KEY,
 } from '../services/claude-cli-review';
+import { runFirstTimeDiscovery } from '../services/first-run-discovery';
+import { createOneShotTerminalService } from '../services/one-shot-terminal';
+import { createClaudeAuthService } from '../services/auth/claude-auth';
+import { createCodexAuthService } from '../services/auth/codex-auth';
 import { createSessionsService } from '../services/sessions';
 import { createClaudeService } from '../services/claude';
 import { createUsageService } from '../services/usage';
@@ -58,6 +60,7 @@ import {
   probeAuthStatus,
   classifyIdentity,
   createAccountIdentityVerdict,
+  watchOauthIdentity,
 } from '../services/account-identity';
 import {
   createSessionsSummaryService,
@@ -89,6 +92,7 @@ import { createRepoArtifactSource } from '../services/brain/sources/repo-artifac
 import {
   brainSpawnArgs,
   createBrainMcpRegistration,
+  refreshBrainRegistrations,
   writeBrainSpawnConfig,
   type BrainMcpEnvironment,
 } from '../services/brain/mcp-registration';
@@ -111,7 +115,7 @@ import { INVOKE_CHANNELS } from '../ipc/channels';
 import { classifyJsonlLine } from '../../src/lib/jsonlClassifier';
 
 import type { ServerConfig } from './config';
-import { appExecPath } from './daemon-exec';
+import { createAccountWatchers } from './account-watchers';
 import { createSessionLog } from './session-log';
 import { createSessionBridge } from './bridge';
 import type { SessionScopedPush } from '../../src/protocol';
@@ -144,8 +148,7 @@ export interface RunningDaemon {
 
 /**
  * launchd and Finder both start processes with a minimal PATH. Re-derive it
- * from the login shell so `claude` (nvm, homebrew, ~/.local/bin) resolves —
- * the same fix `main.ts` applies for the same reason.
+ * from the login shell so `claude` (nvm, homebrew, ~/.local/bin) resolves.
  */
 export function fixPath(log: RemoteServerLogger): void {
   if (process.platform !== 'darwin' && process.platform !== 'linux') return;
@@ -176,7 +179,7 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
   fs.mkdirSync(config.userDataDir, { recursive: true });
 
   // ---------------------------------------------------------------------------
-  // Database + the services main.ts builds first
+  // Database + the services everything else is built on
   // ---------------------------------------------------------------------------
 
   const db = createDatabase(path.join(config.userDataDir, 'greychrist.db'));
@@ -312,6 +315,9 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
 
   pushServiceRef = pushService;
 
+  // Closed for the dev daemon, absent for the real one: see dev-instance.ts.
+  const periodicGate = periodicWorkGate(process.env);
+
   // Set once the logging service exists, below. Events are memory-only, so
   // state transitions go to app_logs: the trail session-trace reads.
   let traceState: ((push: Extract<SessionScopedPush, { type: 'session.state' }>) => void) | null = null;
@@ -341,7 +347,7 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
   projects.onChange((list) => server.broadcast({ type: 'project.changed', projects: list }));
 
   // ---------------------------------------------------------------------------
-  // The rest of the graph, in main.ts order
+  // The rest of the graph
   // ---------------------------------------------------------------------------
 
   let brainRef: BrainService | undefined;
@@ -380,11 +386,10 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
   });
   brainRef = brainService;
 
-  // `__dirname` is `.vite/build` for this bundle, beside brain-mcp.js. The
-  // command is the app's executable, not this process's `omnifexd` stub: the
-  // app registers the same server, and the two must agree on the path.
+  // `__dirname` is this bundle's build dir, beside brain-mcp.js, and the
+  // server runs on the same node this daemon does.
   const brainMcpEnv: BrainMcpEnvironment = {
-    execPath: appExecPath(process.execPath),
+    execPath: process.execPath,
     serverScript: path.join(__dirname, 'brain-mcp.js'),
     userDataDir: config.userDataDir,
   };
@@ -412,15 +417,21 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
     }]);
   };
 
-  // No display: OS notifications are the client's job. The bridge already
-  // carries `claude-notification` events, which is what a client renders.
-  const notificationsStub = { show() {}, dismissAll() {} };
+  // No display: OS notifications are the clients' job. A session's own
+  // notifications ride its events; this is for the rest (a rate-limit
+  // threshold), broadcast to every client as a `claude-notification` with no
+  // tab — the app on the Mac raises the banner, a browser its own.
+  const notifyClients = {
+    show(title: string, body: string, isError: boolean) {
+      sendToRenderer('claude-notification', { title, body, is_error: isError });
+    },
+  };
 
   const permissionsIOService = createPermissionsIOService();
   const rateLimitsService = createRateLimitsService({
     db,
     accounts: accountsService,
-    notifications: notificationsStub,
+    notifications: notifyClients,
     sendToRenderer: (channel, payload) => sendToRenderer(channel, payload),
     logging: loggingService,
   });
@@ -443,9 +454,7 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
 
   const sessionsService = createSessionsService(
     sendToRenderer,
-    { showNotification: () => {}, incrementUnread: () => {} },
     loggingService,
-    null,
     (params) =>
       permissionsIOService.updatePermission({
         scope: params.scope,
@@ -462,6 +471,9 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
       brain: () => brainService,
       summary: () => sessionsSummaryServiceRef,
       warn: (message, meta) => { log.warn(message, meta); },
+      // Same gate as the periodic work below: the dev daemon shares the
+      // database, and a second worker on the Brain queue pays twice.
+      ...(periodicGate ? { drainEnabled: periodicGate } : {}),
     }),
     (projectPath: string) => accountsService.resolve(projectPath).claude?.account.config_dir ?? null,
     (configDir, models) => modelsService.upsertCatalog(configDir, models as ModelInfo[]),
@@ -549,19 +561,93 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
     listCodexAccounts: () => accountsService.listAccounts().filter((a) => a.engine === 'codex'),
   });
 
+  // The one-shot pty behind `claude auth login` and `codex login`. Its output
+  // is broadcast — `one-shot-terminal-data:<handle>` names no session — and
+  // the sign-in modal that spawned it is the one listening for that handle.
+  // Subscriptions last until the pty exits or the client kills it; the
+  // service tears down its own subscribers on exit.
+  const oneShotTerminalService = createOneShotTerminalService();
+  const spawnOneShotTerminal = (
+    spawnOpts: Parameters<typeof oneShotTerminalService.spawn>[0],
+  ): { ptyHandle: string } => {
+    const handle = oneShotTerminalService.spawn(spawnOpts);
+    oneShotTerminalService.onData(handle.ptyHandle, (data) => {
+      sendToRenderer(`one-shot-terminal-data:${handle.ptyHandle}`, data);
+    });
+    oneShotTerminalService.onExit(handle.ptyHandle, (info) => {
+      sendToRenderer(`one-shot-terminal-exit:${handle.ptyHandle}`, info);
+    });
+    return handle;
+  };
+  const codexAuthService = createCodexAuthService({ oneShotTerminal: oneShotTerminalService });
+  const claudeAuthService = createClaudeAuthService({
+    spawnTerminal: spawnOneShotTerminal,
+    resolveBinary: () => claudeBinaryService.findBestBinary(),
+  });
+
+  // Sign-in state that changes outside OmniFex (a terminal login/logout)
+  // reaches every client. Re-synced after every account mutation below.
+  const accountWatchers = createAccountWatchers({
+    listAccounts: () => accountsService.listAccounts(),
+    watchCodexAuth: (dir, onChange) => codexAuthService.watch(dir, onChange),
+    watchClaudeIdentity: (dir, onChange) => watchOauthIdentity(dir, onChange),
+    onCodexAuthChanged: (configDir, status) => {
+      sendToRenderer('codex-auth-status-changed', { configDir, status });
+    },
+    onIdentityChanged: (configDir) => {
+      sendToRenderer('account-identity-changed', { configDir, verdict: accountIdentityVerdict(configDir) });
+    },
+  });
+  accountWatchers.sync();
+
+  // First launch: create one account per `.claude*` dir in $HOME, so the
+  // picker is not empty when the first project opens. Resolution still needs
+  // an explicit choice; this only populates the list. One-and-done via the
+  // `discovery_completed` flag; Settings has a manual rescan for later.
+  void runFirstTimeDiscovery({
+    accounts: accountsService,
+    db,
+    discover: () => accountsService.discoverAccounts(),
+    readIdentity: readOauthIdentity,
+  })
+    .then(() => { accountWatchers.sync(); })
+    .catch((err: unknown) => { log.warn('first-run discovery failed', { error: String(err) }); });
+
+  // Persistent Brain registrations name a path in `.claude.json` that the
+  // build which wrote it chose. Rewrite the ones that exist so they name this
+  // one — an update that moved the server would otherwise strand them.
+  refreshBrainRegistrations(
+    brainMcpRegistration,
+    accountsService.listAccounts().map((a) => ({
+      configDir: a.config_dir,
+      vaultRoot: brainService?.vaultPath(a.id) ?? null,
+    })),
+    (message) => { log.warn(message); },
+  );
+
+  // Opt-in: the auto-update a terminal user of the CLI gets for free lives in
+  // its Ink REPL, which headless sessions never render. Unawaited — it
+  // downloads ~200MB and is auxiliary work that must never delay startup —
+  // and gated on an upgrade actually being available, so a start with none
+  // costs one dist-tags fetch rather than a `claude update` per account.
+  if (db.getSetting(CLI_AUTO_UPDATE_SETTING_KEY) === 'true') {
+    void (async () => {
+      const status = await claudeCliReviewService.getStatus();
+      if (!status.upgrade_available) return;
+      const result = await claudeCliReviewService.runUpdate();
+      log.info('cli auto-update', { from: result.from, to: result.to, accounts: result.accounts });
+    })().catch((err: unknown) => { log.warn('cli auto-update failed', { error: String(err) }); });
+  }
+
   // ---------------------------------------------------------------------------
-  // Periodic work, shared verbatim with electron/main.ts
+  // Periodic work
   // ---------------------------------------------------------------------------
   //
-  // The daemon owns it outright and passes no `enabled` gate; main.ts closes
-  // its own gate whenever a renderer is on this process. See
-  // electron/periodic-work.ts for why running both at once costs real money.
-  // The one daemon that does pass a gate is the dev instance's, which shares
-  // the database with the real pair and so must not sweep it — see
-  // remote/dev-instance.ts.
+  // The real daemon owns it outright and passes no `enabled` gate. The dev
+  // instance's daemon shares the database with it and so must not sweep —
+  // see electron/periodic-work.ts for why two sweepers cost real money.
 
   const timers: NodeJS.Timeout[] = [];
-  const periodicGate = periodicWorkGate(process.env);
   const stopPeriodicWork = startPeriodicWork({
     ...(periodicGate ? { enabled: periodicGate } : {}),
     db,
@@ -577,7 +663,7 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
   // The IPC handler map, reached through rpc.invoke
   // ---------------------------------------------------------------------------
 
-  /* eslint-disable @typescript-eslint/no-explicit-any -- mirrors the adapter bag in main.ts */
+  /* eslint-disable @typescript-eslint/no-explicit-any -- the handler interface is loosely typed at the IPC edge */
   const handlerMap = getHandlerMap({
     database: db,
     modelPricing: {
@@ -593,11 +679,13 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
       unregister: (configDir) => { brainMcpRegistration.unregister(configDir); },
       configDirFor: (accountId) => accountsService.listAccounts().find((a) => a.id === accountId)?.config_dir ?? null,
     },
-    allowRawSql: false,
+    // The dev daemon only, and even there `rpcAllow` must name the channel:
+    // the rpc allowlist denies raw SQL by default.
+    allowRawSql: isDevDaemon(process.env),
     accounts: {
       list: () => accountsService.listAccounts(),
-      create: (data: any) =>
-        accountsService.createAccount({
+      create: (data: any) => {
+        const acct = accountsService.createAccount({
           name: data.name,
           configDir: data.configDir ?? data.config_dir,
           engine: data.engine,
@@ -608,7 +696,10 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
           sessionDefaults: data.sessionDefaults ?? data.session_defaults,
           cliPath: data.cliPath ?? data.cli_path ?? null,
           expectedEmail: data.expectedEmail ?? data.expected_email ?? null,
-        }),
+        });
+        accountWatchers.sync();
+        return acct;
+      },
       update: (_id: any, data: any) => {
         accountsService.updateAccount(data.id, {
           name: data.name,
@@ -625,6 +716,7 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
               ? ((data.expectedEmail ?? data.expected_email ?? null) as string | null)
               : undefined,
         });
+        accountWatchers.sync();
       },
       updateSummarySettings: (data: any) =>
         accountsService.updateSummarySettings(
@@ -632,7 +724,10 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
           !!(data.summarizeOnClose ?? data.summarize_on_close),
           (data.summaryModel ?? data.summary_model ?? null) as string | null,
         ),
-      delete: (id: any) => accountsService.deleteAccount(id),
+      delete: (id: any) => {
+        accountsService.deleteAccount(id);
+        accountWatchers.sync();
+      },
       listPathRules: () => accountsService.listPathRules(),
       addPathRule: (rule: any) =>
         accountsService.addPathRule(rule.accountId ?? rule.account_id, rule.pathPrefix ?? rule.path_prefix, rule.priority),
@@ -641,7 +736,11 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
       setProjectOverride: (projectPath: string, accountId: any) => accountsService.setProjectOverride(projectPath, accountId),
       listProjectOverrides: () => accountsService.listProjectOverrides(),
       discoverAccounts: () => accountsService.discoverAccounts(),
-      scanForNewAccounts: () => accountsService.scanForNewAccounts(),
+      scanForNewAccounts: async () => {
+        const created = await accountsService.scanForNewAccounts();
+        accountWatchers.sync();
+        return created;
+      },
       explainResolution: (projectPath: string, engine?: string) => accountsService.explainResolution(projectPath, engine as never),
       knownConfigDirs: () => accountsService.listAccounts().map((a) => a.config_dir).filter(Boolean),
     },
@@ -669,17 +768,9 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
       getCliUsage: (configDir?: string) => claudeService.getCliUsage(configDir),
     },
     sessions: {
-      start: (data: any) => sessionsService.start(data),
-      rebind: () => true,
-      sendMessage: (id, message: any) => sessionsService.sendMessage(id, typeof message === 'string' ? message : String(message ?? '')),
-      sendStructuredMessage: (id, content: any) => sessionsService.sendStructuredMessage(id, content),
-      respondPermission: (id, behavior, updatedInput, updatedPermissions?: any[]) =>
-        sessionsService.respondPermission(id, behavior as 'allow' | 'deny', updatedInput, updatedPermissions),
       respondElicitation: (id, action, content, requestId) => sessionsService.respondElicitation(id, toElicitationAction(action), content, requestId),
-      stop: (id) => sessionsService.stop(id),
       getInfo: (id) => sessionsService.getInfo(id),
       getHealth: (id) => sessionsService.getHealth(id),
-      interrupt: (id) => sessionsService.interrupt(id),
       setModel: (id, model) => sessionsService.setModel(id, model),
       setTitle: (id, title) => sessionsService.setTitle(id, title),
       askSideQuestion: (id, question) => sessionsService.askSideQuestion(id, question),
@@ -802,13 +893,27 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
       stopContainer: (vm, id) => limaService.stopContainer(vm, id),
     },
     filesystem: filesystemService,
+    oneShotTerminal: {
+      spawn: spawnOneShotTerminal,
+      write: (ptyHandle, data) => oneShotTerminalService.write(ptyHandle, data),
+      resize: (ptyHandle, cols, rows) => oneShotTerminalService.resize(ptyHandle, cols, rows),
+      kill: (ptyHandle) => oneShotTerminalService.kill(ptyHandle),
+    },
+    codexAuth: {
+      getStatus: (configDir) => codexAuthService.getStatus(configDir),
+      startLoginFlow: (o) => codexAuthService.startLoginFlow(o),
+      cancelLoginFlow: (ptyHandle) => codexAuthService.cancelLoginFlow(ptyHandle),
+      getBinaryPath: () => codexAuthService.getBinaryPath(),
+      logout: (configDir) => codexAuthService.logout(configDir),
+    },
+    claudeAuth: claudeAuthService,
     codexSessionWalker: { listSessions: () => codexSessionWalkerService.listSessions() },
     accountIdentity: {
       read: (configDir) => readOauthIdentity(configDir),
       probe: (configDir) => probeAuthStatus(configDir, { resolveBinary: () => claudeBinaryService.findBestBinary() }),
       verdict: (configDir) => accountIdentityVerdict(configDir),
     },
-  }) as Record<string, RpcHandler>;
+  } satisfies Required<Services>) as Record<string, RpcHandler>;
   /* eslint-enable @typescript-eslint/no-explicit-any */
 
   // ---------------------------------------------------------------------------
@@ -873,6 +978,7 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
     }),
     async close() {
       stopPeriodicWork();
+      accountWatchers.disposeAll();
       for (const t of timers) clearInterval(t);
       for (const t of permissionTimers.values()) clearTimeout(t);
       await server.close();

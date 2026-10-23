@@ -56,7 +56,7 @@ function make(overrides: Partial<Parameters<typeof createServerClient>[0]> = {})
   return createServerClient({
     url: 'ws://daemon/ws',
     clientId: 'c1',
-    clientKind: 'electron',
+    clientKind: 'desktop',
     createSocket: (url) => new FakeSocket(url),
     reconnect: { initialMs: 100, maxMs: 400 },
     requestTimeoutMs: 5000,
@@ -91,7 +91,7 @@ describe('server client', () => {
     const sock = FakeSocket.instances[0];
     expect(sock.url).toBe('ws://daemon/ws');
     sock.open();
-    expect(sock.sent[0]).toMatchObject({ type: 'hello', clientId: 'c1', clientKind: 'electron', protocolVersion: PROTOCOL_VERSION });
+    expect(sock.sent[0]).toMatchObject({ type: 'hello', clientId: 'c1', clientKind: 'desktop', protocolVersion: PROTOCOL_VERSION });
     sock.receive({ type: 'welcome', ...WELCOME });
     sock.answer('hello', WELCOME);
     expect(await p).toEqual(WELCOME);

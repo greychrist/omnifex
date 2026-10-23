@@ -21,6 +21,12 @@ export default defineConfig({
       'src/**/*.test.tsx',
     ],
     environment: 'node',
+    // Node 26 ships Web Storage on by default, and without a
+    // `--localstorage-file` its `localStorage` global is a getter returning
+    // undefined. jsdom's environment does not overwrite a global that is
+    // already defined, so every DOM test saw `localStorage` as undefined
+    // (~286 failures when the toolchain moved to Node 26). Off in workers.
+    execArgv: ['--no-webstorage'],
     // `default` still prints to the terminal; `json` leaves a record behind.
     //
     // Terminal output is the only account of a run, and it is routinely piped

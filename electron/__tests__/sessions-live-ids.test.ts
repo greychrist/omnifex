@@ -110,7 +110,7 @@ describe('listActiveSessionIds', () => {
     const seen: string[][] = [];
     let closedId: string | null = null;
     const sessions = createSessionsService(
-      vi.fn(), {}, null, null, null, null,
+      vi.fn(), null, null, null,
       (sessionId) => {
         closedId = sessionId;
         seen.push(sessions.listActiveSessionIds());
@@ -136,7 +136,7 @@ describe('listActiveSessionIds', () => {
     // write anything, so the hook needs to know which kind of close this is.
     const reasons: string[] = [];
     const sessions = createSessionsService(
-      vi.fn(), {}, null, null, null, null,
+      vi.fn(), null, null, null,
       (_id, _p, _c, reason) => { reasons.push(reason); },
     );
     for (const tabId of ['t1', 't2', 't3']) {

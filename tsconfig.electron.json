@@ -20,5 +20,5 @@
       "@/*": ["./src/*"]
     }
   },
-  "include": ["electron"]
+  "include": ["electron", "packaging", "signing", "scripts/package-mac.ts", "scripts/dev.ts"]
 }

@@ -1,6 +1,6 @@
 /**
- * `omnifex-server <start|stop|status|install|uninstall|config|help>` —
- * argument parsing and the subcommands that do not need the daemon itself.
+ * `omnifex-server <start|stop|status|ensure|restart|install|uninstall|config|help>`
+ * — argument parsing and the subcommands that do not need the daemon itself.
  *
  * Kept apart from the process entry (`electron/omnifex-server.ts`) so the
  * parsing and the launchd plumbing can be unit-tested without spawning
@@ -9,9 +9,11 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { get as httpGet } from 'node:http';
-import { dirname, join } from 'node:path';
+import { homedir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
 
-import type { ServerConfig } from './config';
+import { defaultStateDir, type ServerConfig } from './config';
+import { devInstanceEnv, type Env } from './dev-instance';
 import {
   buildLaunchAgentPlist,
   launchAgentPath,
@@ -20,7 +22,7 @@ import {
   type DaemonInvocation,
 } from './launchd';
 
-export type CliCommand = 'start' | 'stop' | 'status' | 'install' | 'uninstall' | 'config' | 'help';
+export type CliCommand = 'start' | 'stop' | 'status' | 'ensure' | 'restart' | 'install' | 'uninstall' | 'config' | 'help';
 
 export interface CliArgs {
   command: CliCommand;
@@ -28,7 +30,7 @@ export interface CliArgs {
   unknown?: string;
 }
 
-const COMMANDS: readonly CliCommand[] = ['start', 'stop', 'status', 'install', 'uninstall', 'config', 'help'];
+const COMMANDS: readonly CliCommand[] = ['start', 'stop', 'status', 'ensure', 'restart', 'install', 'uninstall', 'config', 'help'];
 
 export function parseCliArgs(argv: string[]): CliArgs {
   const [first, ...rest] = argv;
@@ -53,16 +55,85 @@ export function parseCliArgs(argv: string[]): CliArgs {
 export const HELP = `omnifex-server — the OmniFex Remote daemon
 
   start        run the daemon in the foreground (what launchd runs)
-  stop         SIGTERM the running daemon (via ~/.omnifex/server.pid)
+  stop         stop the running daemon (launchd bootout when it owns it, then
+               SIGTERM via ~/.omnifex/server.pid)
   status       ping /healthz and print the result (--json for raw)
+  ensure       make sure THIS build's daemon is running; prints one JSON line
+               {"url": ws-url|null, "outdated": bool}. What the app runs at
+               launch. --app-version <v>, --app-build <stamp>
+  restart      stop whatever answers on the port and start this build's;
+               same output as ensure
   install      write ~/Library/LaunchAgents/com.omnifex.server.plist and load it
   uninstall    unload and remove the LaunchAgent
   config       print the resolved configuration
   help         this
 
+  --dev        (ensure, restart, stop) act on the dev instance:
+               ~/.omnifex-dev, port 47701, never the LaunchAgent
+
 Config: ~/.omnifex/server.json  { host, port, webRoot, ringSize, permissionTimeoutMs, rpcAllow, rpcDeny }
-Env:    OMNIFEX_STATE_DIR (default ~/.omnifex), OMNIFEX_USER_DATA_DIR (default Electron userData)
+Env:    OMNIFEX_STATE_DIR (default ~/.omnifex),
+        OMNIFEX_USER_DATA_DIR (default ~/Library/Application Support/OmniFex)
 `;
+
+/**
+ * The environment a lifecycle command acts in. `--dev` moves it onto the dev
+ * instance — the overlay is applied here, to the command's own copy, never to
+ * `process.env` (see dev-instance.ts for what leaking it once cost).
+ */
+export function lifecycleEnv(env: Env, opts: { dev: boolean }, home: string = homedir()): Env {
+  return opts.dev ? { ...env, ...devInstanceEnv(env, home) } : env;
+}
+
+/**
+ * Whether a lifecycle command may drive the `com.omnifex.server` LaunchAgent.
+ *
+ * Only the real instance may: the plist pins one bundle's script with
+ * KeepAlive, so the dev instance re-pointing it hands the user's daemon to a
+ * working tree, and a smoke run of a packaged build under a throwaway
+ * `OMNIFEX_STATE_DIR` would hand it to a build under test.
+ */
+export function launchdAllowed(env: Env, opts: { dev: boolean }): boolean {
+  if (opts.dev) return false;
+  return resolve(defaultStateDir(env)) === resolve(join(homedir(), '.omnifex'));
+}
+
+export interface StopCommandDeps {
+  readPid(config: ServerConfig): number | null;
+  isAlive(pid: number): boolean;
+  removePidFile(config: ServerConfig): void;
+  sleep(ms: number): Promise<void>;
+  out(s: string): void;
+}
+
+/**
+ * `stop`: stop the daemon the way `daemon-control` does — `launchctl bootout`
+ * first when the LaunchAgent owns it, or KeepAlive resurrects the old build
+ * seconds later — then wait for the pid to go. The app's updater runs this
+ * right before it swaps the bundle the daemon is running from.
+ */
+export async function stopCommand(
+  config: ServerConfig,
+  control: { stop(config: ServerConfig): Promise<boolean> },
+  deps: StopCommandDeps,
+): Promise<number> {
+  const pid = deps.readPid(config);
+  if (!(await control.stop(config))) {
+    deps.removePidFile(config);
+    deps.out('omnifex-server is not running');
+    return 0;
+  }
+  for (let i = 0; i < 50; i++) {
+    if (!pid || !deps.isAlive(pid)) {
+      deps.removePidFile(config);
+      deps.out(pid ? `stopped omnifex-server (pid ${pid})` : 'stopped omnifex-server');
+      return 0;
+    }
+    await deps.sleep(100);
+  }
+  deps.out(`omnifex-server (pid ${pid}) did not exit within 5s`);
+  return 1;
+}
 
 export function pidFilePath(config: ServerConfig): string {
   return join(config.stateDir, 'server.pid');
@@ -93,27 +164,6 @@ export function isProcessAlive(pid: number): boolean {
   } catch {
     return false;
   }
-}
-
-/** `stop`: signal the pid on file and wait for it to go. */
-export async function stopDaemon(config: ServerConfig, out: (s: string) => void): Promise<number> {
-  const pid = readPid(config);
-  if (!pid || !isProcessAlive(pid)) {
-    removePidFile(config);
-    out('omnifex-server is not running');
-    return 0;
-  }
-  process.kill(pid, 'SIGTERM');
-  for (let i = 0; i < 50; i++) {
-    if (!isProcessAlive(pid)) {
-      removePidFile(config);
-      out(`stopped omnifex-server (pid ${pid})`);
-      return 0;
-    }
-    await new Promise((r) => setTimeout(r, 100));
-  }
-  out(`omnifex-server (pid ${pid}) did not exit within 5s`);
-  return 1;
 }
 
 export function fetchHealth(config: ServerConfig): Promise<unknown> {

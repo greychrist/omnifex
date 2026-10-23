@@ -461,7 +461,7 @@ export const SessionList: React.FC<SessionListProps> = ({
         // disappears (rows fall back to first-message previews). On
         // requires a model on the resolved account before the refresh
         // button is shown. The auto-on-close toggle is unrelated here —
-        // it only gates the lifecycle hook in main.ts.
+        // it only gates the close hook in the daemon (session-close-work.ts).
         const enabled = enabledSetting === null ? true : enabledSetting === 'true';
         setSummarizeEnabledForProject(!!(enabled && acct?.summaryModel));
         setResolvedConfigDir(acct?.config_dir ?? null);

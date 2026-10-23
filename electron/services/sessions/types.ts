@@ -237,8 +237,6 @@ export interface SessionStartParams {
   permissionMode: string;
   resumeSessionId?: string;
   effort?: 'auto' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
-  /** webContents.id of the window that started this session — used to route tab-scoped events back to that window only. */
-  ownerWebContentsId?: number;
   /**
    * True when the user explicitly picked a non-default account for this
    * session on the new-session form (`match_type === 'manual_override'`).
@@ -259,21 +257,8 @@ export interface SessionStartParams {
   agent?: AgentKind;
 }
 
-/** Lets the service tell the main process which window owns each tab, so tab-scoped events are routed per-window. */
-export interface SessionOwnership {
-  register(tabId: string, ownerWebContentsId: number): void;
-  unregister(tabId: string): void;
-}
-
 export interface SessionsService {
   start(params: SessionStartParams): void | Promise<void>;
-  /**
-   * Re-attach an existing session to a (new) owner webContents without tearing
-   * down the CLI session. Returns true if a session was found and re-bound,
-   * false if no session exists for that tabId. Used when the renderer reloads
-   * (Cmd+R) and needs to re-claim its in-flight sessions.
-   */
-  rebind(tabId: string, ownerWebContentsId: number): boolean;
   sendMessage(tabId: string, prompt: string): void;
   sendStructuredMessage(tabId: string, content: Record<string, unknown>[]): void;
   /**
@@ -400,26 +385,10 @@ export interface SessionsService {
 
 export type SendToRenderer = (channel: string, ...args: unknown[]) => void;
 
-export interface NotificationHooks {
-  /**
-   * Show a native OS notification. The optional `payload` carries context
-   * (currently `{ tabId }`) delivered to the click handler so the renderer
-   * can route the click back to the originating tab.
-   */
-  showNotification?: (
-    title: string,
-    body: string,
-    isError: boolean,
-    payload?: { tabId?: string },
-    options?: { subtitle?: string },
-  ) => void;
-  /** Increment unread count / update dock badge */
-  incrementUnread?: () => void;
-}
 
 /**
  * Forwarded to the rate-limits service on every `rate_limit_event` message
- * the CLI streams. Wired in main.ts; tests typically leave it undefined.
+ * the CLI streams. Wired in the daemon (remote/daemon.ts); tests typically leave it undefined.
  */
 export type RateLimitHook = (
   configDir: string,

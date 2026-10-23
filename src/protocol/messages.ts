@@ -139,10 +139,9 @@ export const SessionOptionsSchema = z.looseObject({
 /**
  * Bytes, never a path.
  *
- * `save_pasted_image` writes a temp file and hands the CLI its path, which
- * works precisely because the renderer and the CLI share a filesystem. An iPad
- * shares nothing, so the wire shape has to be the bytes themselves — the
- * daemon is what lands them on disk for the CLI to read.
+ * A file path only works when the client and the CLI share a filesystem. An
+ * iPad shares nothing, so the wire shape is the bytes themselves — the daemon
+ * is what lands them on disk for the CLI to read.
  */
 export const AttachmentSchema = z.strictObject({
   name: z.string(),
@@ -201,7 +200,7 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
     ...req,
     type: z.literal('hello'),
     clientId: z.string(),
-    clientKind: z.enum(['electron', 'web']),
+    clientKind: z.enum(['desktop', 'web']),
     protocolVersion: z.number().int(),
   }),
 

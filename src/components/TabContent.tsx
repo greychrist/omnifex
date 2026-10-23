@@ -594,7 +594,7 @@ const TabPanelImpl: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                       onOpenProject={handleOpenProject}
                       // The save dialog is native-only; on the web client the
                       // button could only fail, so it is not offered there.
-                      onNewProject={platform.isElectron ? handleNewProject : undefined}
+                      onNewProject={platform.isDesktop ? handleNewProject : undefined}
                       onQuickLaunch={fireAndLog('tab-content:project-quick-launch', handleQuickLaunch)}
                       onTogglePin={handleTogglePin}
                       onOpenSettings={fireAndLog('tab-content:project-settings', setSettingsProject)}

@@ -7,7 +7,7 @@
 // duplicating the title/body/IPC shape.
 
 import path from 'node:path';
-import type { NotificationHooks, SendToRenderer } from './types';
+import type { SendToRenderer } from './types';
 import type { RuntimeEvent } from './events';
 
 export interface DispatchArgs {
@@ -15,11 +15,10 @@ export interface DispatchArgs {
   projectPath: string;
   event: Extract<RuntimeEvent, { kind: 'result' }>;
   sendToRenderer: SendToRenderer;
-  notificationHooks: NotificationHooks;
 }
 
 export function dispatchResultNotification(args: DispatchArgs): void {
-  const { tabId, projectPath, event, sendToRenderer, notificationHooks } = args;
+  const { tabId, projectPath, event, sendToRenderer } = args;
   const projectName = path.basename(projectPath) || 'OmniFex';
   const title = `OmniFex — ${projectName}`;
 
@@ -29,13 +28,6 @@ export function dispatchResultNotification(args: DispatchArgs): void {
     body: event.body,
     is_error: event.isError,
   });
-
-  try {
-    notificationHooks.showNotification?.(title, event.body, event.isError, { tabId });
-    notificationHooks.incrementUnread?.();
-  } catch (e) {
-    console.error('[sessions] notification hook failed:', e);
-  }
 }
 
 export interface DispatchAgentArgs {
@@ -45,7 +37,6 @@ export interface DispatchAgentArgs {
   description: string;
   event: Extract<RuntimeEvent, { kind: 'taskNotification' }>;
   sendToRenderer: SendToRenderer;
-  notificationHooks: NotificationHooks;
 }
 
 /** `44630` → `44s`, `724000` → `12m 04s`. Empty for a missing duration. */
@@ -70,7 +61,7 @@ function formatDuration(ms: number | null): string {
  * be pages long, and its subagent row already carries it.
  */
 export function dispatchAgentNotification(args: DispatchAgentArgs): void {
-  const { tabId, projectPath, description, event, sendToRenderer, notificationHooks } = args;
+  const { tabId, projectPath, description, event, sendToRenderer } = args;
   const projectName = path.basename(projectPath) || 'OmniFex';
   const title = `OmniFex — ${projectName}`;
   const isError = event.status !== 'completed';
@@ -88,11 +79,4 @@ export function dispatchAgentNotification(args: DispatchAgentArgs): void {
     body,
     is_error: isError,
   });
-
-  try {
-    notificationHooks.showNotification?.(title, body, isError, { tabId });
-    notificationHooks.incrementUnread?.();
-  } catch (e) {
-    console.error('[sessions] agent notification hook failed:', e);
-  }
 }

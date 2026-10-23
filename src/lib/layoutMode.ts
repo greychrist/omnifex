@@ -6,7 +6,7 @@
  *    is the root, a session is a pushed view, the tab strip hides.
  *  - `touch`:  the primary pointer is coarse. Targets grow, swipe and
  *    pull-to-refresh are on, permission prompts become a sheet.
- *  - `web`:    no preload bridge — served by the daemon. Some affordances
+ *  - `web`:    no native bridge — served by the daemon to a browser. Some affordances
  *    (file dialogs, Finder) do not exist here regardless of size.
  *
  * An iPad in landscape with a Magic Keyboard is `touch` but not `narrow`; a
@@ -21,7 +21,7 @@ export const NARROW_MAX_WIDTH = 900;
 export interface LayoutInputs {
   width: number;
   coarsePointer: boolean;
-  remoteMode: 'electron-legacy' | 'electron-remote' | 'web' | null | undefined;
+  remoteMode: 'desktop' | 'web' | null | undefined;
 }
 
 export interface LayoutMode {

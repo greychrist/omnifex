@@ -11,19 +11,24 @@ import { parseCliArgs } from '../remote/cli';
 
 describe('launchd plist', () => {
   const spec = launchAgentSpecFor(
-    { execPath: '/Applications/OmniFex.app/Contents/MacOS/omnifex', script: '/Applications/OmniFex.app/Contents/Resources/app.asar/.vite/build/omnifex-server.js' },
+    { execPath: '/Applications/OmniFex.app/Contents/MacOS/omnifexd', script: '/Applications/OmniFex.app/Contents/Resources/app/build/omnifex-server.js' },
     { PATH: '/opt/homebrew/bin:/usr/bin:/bin', OMNIFEX_STATE_DIR: undefined },
     '/Users/greg',
   );
   const plist = buildLaunchAgentPlist(spec);
 
-  it('runs the Electron binary as node with the built script and `start`', () => {
+  it('runs the bundled node with the built script and `start`', () => {
     expect(spec.programArguments).toEqual([
-      '/Applications/OmniFex.app/Contents/MacOS/omnifex',
-      '/Applications/OmniFex.app/Contents/Resources/app.asar/.vite/build/omnifex-server.js',
+      '/Applications/OmniFex.app/Contents/MacOS/omnifexd',
+      '/Applications/OmniFex.app/Contents/Resources/app/build/omnifex-server.js',
       'start',
     ]);
-    expect(spec.environment.ELECTRON_RUN_AS_NODE).toBe('1');
+  });
+
+  // The binary is plain node now. A plist that still set the Electron switch
+  // would be harmless, and a sign the generator was never updated.
+  it('carries no Electron environment', () => {
+    expect(spec.environment).not.toHaveProperty('ELECTRON_RUN_AS_NODE');
   });
 
   it('bakes the installing shell\'s PATH and HOME into the agent environment', () => {

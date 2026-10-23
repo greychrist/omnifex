@@ -1,11 +1,8 @@
 /**
  * How the log store decides what to keep and what to toast.
  *
- * Shared because both composition roots build a `LoggingService` and both need
- * the same two predicates — `electron/main.ts` kept the reasoning in comments
- * and `electron/remote/daemon.ts` carried the same code with every one of them
- * stripped. See `periodic-work.ts` for why that arrangement is a hazard rather
- * than a style choice.
+ * Its own module because it was once hand-copied into two composition roots
+ * (Electron main kept the reasoning, the daemon's copy had it stripped).
  *
  * Both predicates read `app_settings` live on every entry, so toggling a
  * switch in the Log tab takes effect without a restart.

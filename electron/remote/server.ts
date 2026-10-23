@@ -101,7 +101,7 @@ interface Connection extends ClientContext {
   /** Set once `hello` has been accepted; requests before it are refused. */
   greeted: boolean;
   clientId: string;
-  clientKind: 'electron' | 'web';
+  clientKind: 'desktop' | 'web';
   subscriptions: Set<string>;
   closeListeners: (() => void)[];
 }

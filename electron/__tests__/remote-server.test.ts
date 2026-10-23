@@ -57,7 +57,7 @@ class TestClient {
     });
   }
 
-  hello(kind: 'electron' | 'web' = 'web', version = PROTOCOL_VERSION) {
+  hello(kind: 'desktop' | 'web' = 'web', version = PROTOCOL_VERSION) {
     return this.request('hello', { clientId: `c-${kind}`, clientKind: kind, protocolVersion: version });
   }
 
@@ -122,10 +122,10 @@ describe('remote server', () => {
   it('answers hello with welcome and a response, and counts the client', async () => {
     const c = new TestClient(url);
     await c.open();
-    const res = await c.hello('electron');
+    const res = await c.hello('desktop');
     expect(res).toMatchObject({ ok: true, result: { protocolVersion: PROTOCOL_VERSION, daemonVersion: '0.0.0-test' } });
     expect(c.frames.map((f) => f.type)).toEqual(['welcome', 'response']);
-    expect(server.clients.map((x) => x.clientKind)).toEqual(['electron']);
+    expect(server.clients.map((x) => x.clientKind)).toEqual(['desktop']);
     c.close();
   });
 
@@ -136,7 +136,7 @@ describe('remote server', () => {
     const b = new TestClient(url);
     await a.open();
     await b.open();
-    const ra = (await a.hello('electron')) as { result: { bootId?: unknown } };
+    const ra = (await a.hello('desktop')) as { result: { bootId?: unknown } };
     const rb = (await b.hello('web')) as { result: { bootId?: unknown } };
     expect(typeof ra.result.bootId).toBe('string');
     expect((ra.result.bootId as string).length).toBeGreaterThan(0);
@@ -168,7 +168,7 @@ describe('remote server', () => {
     server.register(handlers({ 'rpc.invoke': (_p, ctx) => { ctx.onClose(closed); return null; } }));
     const c = new TestClient(url);
     await c.open();
-    await c.hello('electron');
+    await c.hello('desktop');
     await c.request('rpc.invoke', { channel: 'x' });
     expect(closed).not.toHaveBeenCalled();
     c.close();
@@ -218,7 +218,7 @@ describe('remote server', () => {
     const b = new TestClient(url);
     const lurker = new TestClient(url);
     await Promise.all([a.open(), b.open(), lurker.open()]);
-    await a.hello('electron');
+    await a.hello('desktop');
     await b.hello('web');
     // lurker never says hello.
 

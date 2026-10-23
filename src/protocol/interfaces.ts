@@ -30,7 +30,7 @@ export type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'rec
 /** Params (minus `requestId`, which the transport mints) and result per method. */
 export interface ProtocolRequestMap {
   'hello': {
-    params: { clientId: string; clientKind: 'electron' | 'web'; protocolVersion: number };
+    params: { clientId: string; clientKind: 'desktop' | 'web'; protocolVersion: number };
     result: { protocolVersion: number; daemonVersion: string; bootId?: string; capabilities?: Record<string, unknown> };
   };
   'project.list': { params: Record<string, never>; result: Project[] };
@@ -112,7 +112,7 @@ export interface ProtocolClient {
  */
 export interface ClientContext {
   readonly clientId: string;
-  readonly clientKind: 'electron' | 'web';
+  readonly clientKind: 'desktop' | 'web';
   readonly subscriptions: ReadonlySet<string>;
   subscribe(sessionId: string): void;
   unsubscribe(sessionId: string): void;

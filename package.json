@@ -4,29 +4,21 @@
   "version": "0.4.242",
   "productName": "OmniFex",
   "license": "AGPL-3.0",
-  "main": ".vite/build/main.js",
   "scripts": {
-    "prestart": "electron-rebuild -f -w better-sqlite3,node-pty 2>/dev/null || true",
-    "start": "electron-forge start",
-    "package": "electron-forge package",
-    "premake": "npm rebuild macos-alias fs-xattr && npm run build:web",
-    "make": "electron-forge make",
-    "dev": "vite --config vite.renderer.config.ts",
-    "build": "tsc && vite build --config vite.renderer.config.ts",
-    "preview": "vite preview",
+    "start": "node --import ./scripts/lib/register-ts.mjs scripts/dev.ts",
+    "dev": "vite --config vite.web.config.ts",
+    "build": "tsc && vite build --config vite.web.config.ts",
     "check": "tsc --noEmit && tsc --noEmit -p tsconfig.electron.json",
-    "rebuild:electron": "electron-rebuild -f -w better-sqlite3,node-pty && node -e \"const mods=['better-sqlite3/build/Release/better_sqlite3.node']; const path=require('path'); const fs=require('fs'); for (const m of mods){const p=path.resolve('./node_modules/'+m); try{process.dlopen({exports:{}},p);process.stderr.write('rebuild:electron FAILED for '+m+' — binary is still Node ABI. Electron will crash.\\n');process.exit(1)}catch(e){if(!e.message.includes('145')){process.stderr.write('rebuild:electron UNEXPECTED: '+e.message+'\\n');process.exit(1)}}}; try{const ptyn=require('fs').readdirSync(path.resolve('./node_modules/node-pty/bin')).find(d=>d.includes('145')); if(!ptyn){process.stderr.write('rebuild:electron: node-pty Electron ABI binary not found\\n');process.exit(1)}}catch(e){process.stderr.write('rebuild:electron: node-pty Electron ABI binary not found\\n');process.exit(1)} console.log('verified: native modules at NMV 145 (Electron ABI)')\"",
-    "pretest": "rm -f node_modules/better-sqlite3/build/Release/better_sqlite3.node && npm rebuild better-sqlite3 node-pty",
     "test": "vitest run",
-    "pretest:watch": "rm -f node_modules/better-sqlite3/build/Release/better_sqlite3.node && npm rebuild better-sqlite3 node-pty",
     "test:watch": "vitest",
-    "pretest:coverage": "rm -f node_modules/better-sqlite3/build/Release/better_sqlite3.node && npm rebuild better-sqlite3 node-pty",
     "test:coverage": "vitest run --coverage",
+    "test:swift": "swift test --package-path macos",
     "lint": "eslint .",
     "coverage:areas": "node scripts/coverage-areas.mjs",
     "build:web": "vite build --config vite.web.config.ts",
     "build:daemon": "node scripts/build-daemon.mjs",
-    "prepackage": "npm run build:web"
+    "package": "node --import ./scripts/lib/register-ts.mjs scripts/package-mac.ts",
+    "make": "node --import ./scripts/lib/register-ts.mjs scripts/package-mac.ts --make"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.31.0",
@@ -93,13 +85,6 @@
     "source-map-js": "^1.2.2"
   },
   "devDependencies": {
-    "@electron-forge/cli": "^7.11.1",
-    "@electron-forge/maker-deb": "^7.11.1",
-    "@electron-forge/maker-dmg": "^7.11.1",
-    "@electron-forge/maker-squirrel": "^7.11.1",
-    "@electron-forge/maker-zip": "^7.11.1",
-    "@electron-forge/plugin-vite": "^7.11.1",
-    "@electron-forge/shared-types": "^7.11.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@types/better-sqlite3": "^7.6.13",
@@ -110,7 +95,6 @@
     "@types/web-push": "^3.6.4",
     "@vitejs/plugin-react": "^4.3.4",
     "@vitest/coverage-v8": "^4.1.11",
-    "electron": "^41.10.7",
     "eslint": "^9.39.4",
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^7.1.1",
@@ -128,5 +112,8 @@
   "optionalDependencies": {
     "@esbuild/linux-x64": "^0.25.6",
     "@rollup/rollup-linux-x64-gnu": "^4.45.1"
+  },
+  "engines": {
+    "node": ">=26 <27"
   }
 }

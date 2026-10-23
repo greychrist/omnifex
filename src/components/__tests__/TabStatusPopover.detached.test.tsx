@@ -22,7 +22,7 @@ vi.mock('@/lib/api', () => ({
 
 function setDaemon(sessions: unknown[], projects: unknown[]) {
   (window as unknown as { __omnifexRemote?: unknown }).__omnifexRemote = {
-    mode: 'electron',
+    mode: 'desktop',
     client: {
       request: (method: string) =>
         Promise.resolve(method === 'session.list' ? sessions : projects),
@@ -126,7 +126,7 @@ describe('TabStatusPopover — detached sessions', () => {
 
   it('survives a daemon that rejects the request', async () => {
     (window as unknown as { __omnifexRemote?: unknown }).__omnifexRemote = {
-      mode: 'electron',
+      mode: 'desktop',
       client: { request: () => Promise.reject(new Error('ECONNREFUSED')) },
     };
     await openPopover();

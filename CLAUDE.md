@@ -6,11 +6,11 @@ that said "keep both in sync"; it drifted instead, still describing the app
 under its pre-rename name and missing six sections. Don't replace the symlink
 with a copy.
 
-OmniFex (by GreyChrist) is an **Electron** desktop app for Claude Code. The current product surface centers on multi-account routing, interactive Claude sessions, custom agents, MCP management, and usage analytics.
+OmniFex (by GreyChrist) is a **native macOS** app for Claude Code: a Swift (AppKit + WKWebView) window around a React renderer, talking to a Node daemon. The current product surface centers on multi-account routing, interactive Claude sessions, custom agents, MCP management, and usage analytics.
 
 The shipping app is OmniFex. Internal identifiers like `greychrist.db`, the `greychrist-file://` protocol, and localStorage keys retain the legacy name to avoid migration churn — only the user-facing brand and the repo/folder name changed.
 
-The repo migrated from Tauri 2 (Rust) to Electron (Node.js/TypeScript) in April 2026. The app drives the Claude CLI binary directly via `child_process` (stream-json), plus `node-pty` for the `/usage` scraper and Codex sign-in, which is why a Node runtime is required. Any reference to `src-tauri/`, `cargo`, `just`, `nix-shell`, or an Axum web server in source code is legacy noise. (The `@anthropic-ai/claude-agent-sdk-*` package names that remain in `electron/services/claude-binary.ts` are intentional — they name the npm packages the binary resolver searches for, not a live dependency.)
+The repo migrated from Tauri 2 (Rust) to Electron in April 2026, and from Electron to the Swift shell on 2026-10-23 (`docs/superpowers/specs/2026-10-23-swift-shell-design.md`): Electron had become only a window around a renderer that already talked to the daemon, and its release cadence decided when OmniFex could ship a Node security fix. The daemon drives the Claude CLI binary directly via `child_process` (stream-json), plus `node-pty` for the `/usage` scraper and Codex sign-in, which is why the app bundles Node (26, `Contents/MacOS/omnifexd`). The `electron/` directory kept its name — it is the daemon's TypeScript now, and no Electron is left in the repo. Any reference to `src-tauri/`, `cargo`, `just`, `nix-shell`, or an Axum web server in source code is legacy noise. (The `@anthropic-ai/claude-agent-sdk-*` package names that remain in `electron/services/claude-binary.ts` are intentional — they name the npm packages the binary resolver searches for, not a live dependency.)
 
 ## No worktrees
 
@@ -54,100 +54,99 @@ A per-account memory vault: Markdown notes distilled from past sessions, repo ar
 
 - **One vault per account, and isolation is enforced by process environment**, not query filters. The MCP server has no account concept — it reads the single `OMNIFEX_VAULT` path it was handed. Never add a "which vault?" parameter to it.
 - **The account that owns a source is the account that indexes it and whose vault receives it.** Ownership comes from the source's location (`getAccountByConfigDir` for transcripts), never from `resolve()`. No silent default-account fallback — an unresolved item is `blocked` and surfaced.
-- **Spawn the MCP server as `process.execPath` with `ELECTRON_RUN_AS_NODE=1`**, never system `node`: `better-sqlite3` is built against the Electron ABI.
+- **Spawn the MCP server as `process.execPath`** — the daemon's own node (`omnifexd` in the app) — never whatever `node` is on PATH: `better-sqlite3` is built for one Node major (26).
 - **The Brain is auxiliary.** Nothing in it may break a session, block the UI, or consume rate limit needed for real work. A failed item never blocks the queue.
 - **`merge.ts` must stay pure and idempotent** — indexing the same session twice produces a byte-identical note. It is the property tested hardest.
 - **Money is recorded in `brain_spend`, never inferred.** `brain_sources.cost_usd` is a per-item snapshot that re-indexing overwrites; the ledger is append-only and is what `stats.spentUsd` and the Brain tab read. It is an *audit* record, not a reporting one — the Cost Report reads `session_cost_daily` only, so nothing is counted twice.
 - **A vault must never live under a file provider.** `~/Documents` and `~/Desktop` are claimed by iCloud Drive whenever "Desktop & Documents Folders" is on; Dropbox/OneDrive/Drive claim their own folders. With storage optimisation, contents are evicted to `SF_DATALESS` stubs costing ~0.6s per read, which turns one `git add -A` into minutes of silent hang — this was the original default and it shipped the bug. `offloaded.ts` probes the flag; `status().offloadedCount` surfaces it. Null there means "not determined", never "none".
 - **OmniFex's own CLI transcripts are never kept — only their spend.** Summaries, Brain indexing and Brain curation run `claude -p` in a scratch cwd (`<tmpdir>/omnifex-summary-scratch`). As each call returns, the runner prices its transcript into `session_cost_daily` (`costHistory.recordInternal`, labelled `OmniFex/Brain index` etc. with `internal_kind`) and deletes it; `settleStrandedScratch` in the hourly sweep does the same for strays older than ten minutes. A transcript whose spend fails to record is left in place, never deleted. The scratch dir is skipped by the Projects list, the cost walk and the Brain. The runner must encode the scratch cwd's **realpath** — macOS's tmpdir is a `/var` symlink, and encoding the unresolved path stranded every transcript from June to October 2026. See `electron/services/sessions/internal-spend.ts`; the archive design it replaced (`2026-08-26-internal-session-archive-design.md`) is superseded.
 
-## OmniFex Remote
+## The Shape of the App
 
-The app is split into a headless **daemon** that owns every CLI session and thin
-**clients** that talk to it over a versioned WebSocket protocol. The Electron app
-is one client; the same renderer, served by the daemon, is a Safari Home Screen
-app on the iPad. Start from `docs/remote-access.md` and
-`docs/superpowers/specs/` before changing any of it.
+One **daemon** owns every CLI session and every service; **clients** talk to
+it over a versioned WebSocket protocol. The Mac app (`macos/`, Swift) is one
+client; the same renderer, served by the daemon, is a Safari Home Screen app
+on the iPad. Start from `docs/remote-access.md`,
+`docs/superpowers/specs/2026-10-23-swift-shell-design.md` and `macos/README.md`
+before changing any of it.
 
 ### Shape
 
-- **Daemon** — `electron/omnifex-server.ts` → `electron/remote/daemon.ts`, built to
-  `.vite/build/omnifex-server.js`. Runs as the app's own Electron executable with
-  `ELECTRON_RUN_AS_NODE=1` so `better-sqlite3` and `node-pty` keep one ABI.
-- **Process name** — `omnifexd`, and it comes from a second copy of the Electron
-  stub shipped in the bundle. Never `process.title`: on macOS that registers a
-  headless process with LaunchServices as a launching Foreground app and the Dock
-  bounces forever. A symlink does not work either — the kernel resolves it.
+- **Daemon** — `electron/omnifex-server.ts` → `electron/remote/daemon.ts`, built
+  by `scripts/build-daemon.mjs` to `.vite/build/omnifex-server.js` (plus
+  `brain-mcp.js`). The only composition root: every service is built there.
+- **Node** — 26.x, one major everywhere: the bundled `omnifexd`, the system
+  node that runs tests and `npm start`, and the ABI `npm install` builds
+  `better-sqlite3` / `node-pty` for. `packaging/node-runtime.ts` pins the
+  bundled version; bumping it and releasing is how a Node security fix ships.
+  `.nvmrc` says 26.
+- **Process name** — `omnifexd` is the bundled node binary's own file name.
+  Never `process.title`: on macOS that registers a headless process with
+  LaunchServices as a launching Foreground app and the Dock bounces forever.
+  The Brain MCP server runs on the same binary, so it is `omnifexd` too.
+- **Mac app** — `macos/`: `OmniFexCore` (pure, tested rules) and `OmniFex`
+  (AppKit wiring). It runs `omnifexd omnifex-server.js ensure` to start or
+  adopt the daemon (the replace-outdated / launchd rules stay in
+  `electron/remote/launcher.ts` and `daemon-control.ts`), then loads the page
+  the daemon serves and injects `window.__omnifexNative`.
 - **State** — `~/.omnifex/` (`server.json`, `server.pid`, `projects.json`,
-  `sessions/<id>.meta.json`). The SQLite DB stays in userData and is shared
-  with the app. Session events are memory-only (a 5,000-event ring per
-  session); a reconnect the ring cannot serve, or one across a daemon restart
-  (`welcome.bootId` changed), gets `resync` and the tab reloads from the CLI's
-  JSONL. The CLI's transcript is the history — never add an events file back.
-  State transitions go to `app_logs` (`category='session-state'`) for
+  `sessions/<id>.meta.json`). The SQLite DB is in
+  `~/Library/Application Support/OmniFex` (`OMNIFEX_USER_DATA_DIR`). Session
+  events are memory-only (a 5,000-event ring per session); a reconnect the
+  ring cannot serve, or one across a daemon restart (`welcome.bootId`
+  changed), gets `resync` and the tab reloads from the CLI's JSONL. The CLI's
+  transcript is the history — never add an events file back. State
+  transitions go to `app_logs` (`category='session-state'`) for
   `session-trace`.
 - **Protocol** — `src/protocol/` (types), `electron/remote/server.ts` (transport),
   `electron/remote/handlers.ts` (methods). The protocol's `sessionId` IS the
   sessions service's `tabId`; that equivalence is the whole trick.
-- **Client side** — `src/lib/remote/bootstrap.ts` picks the mode,
-  `electronApiShim.ts` maps `invoke()` onto typed methods or `rpc.invoke`, and
-  `nativeChannels.ts` names what stays in Electron.
+- **Client side** — `src/lib/remote/bootstrap.ts` installs the shim,
+  `electronApiShim.ts` maps `invoke()` onto typed methods, `rpc.invoke` or the
+  native bridge, and `nativeChannels.ts` names what the Mac app serves.
 
 ### Rules that are load-bearing
 
-- **Remote mode is the default.** `remote:url` returns a URL unless
-  `OMNIFEX_REMOTE=0` or `remote.enabled=false`, and the app starts a daemon if
-  none is running. "Desktop" and "legacy IPC" are not the same thing — a
-  desktop-only bug can still be a remote-mode bug.
-- **The preload publishes `__omnifexNative`, never `electronAPI`.** See the
-  Process Model note above.
+- **There is one mode: the daemon.** The in-process fallback went with
+  Electron. A daemon that is down is the connection banner plus the window's
+  Retry, never a different code path.
+- **The native bridge answers the main frame on the app's origin only**
+  (`NavigationPolicy.allowsBridge`). The page shows link previews of arbitrary
+  sites in iframes, and the bridge reaches `updater:download` /
+  `updater:install`.
 - **The rpc allow-list is subtractive** (`electron/remote/rpc-allowlist.ts`): it
-  starts from every renderer channel and removes Electron-only, typed-session and
+  starts from every renderer channel and removes native-only, typed-session and
   raw-SQL groups. A new channel is therefore network-reachable by default. If it
   should not be, deny it explicitly.
-- **`NATIVE_INVOKE_CHANNELS` is one list with two readers** — the daemon's deny
-  list and the client's routing table. It lives in `src/` because both sides load
-  it. Keep it pure data.
-- **The daemon must never `import` the `electron` module.** The one
-  `require('electron')` on its import graph is inside `registerIpcHandlers`,
-  which the daemon never calls.
-- **`electron/remote/daemon.ts` duplicates main.ts's service wiring on purpose**,
-  and that duplication is a standing hazard: a service added to one and not the
-  other yields a feature that works on the desktop and silently degrades over the
-  wire. Change both, or neither. What is deliberate is the *wiring* — imports,
-  service construction, and the adapter bags handed to the handler surface.
-  Behaviour is not: anything with a rule in it belongs in a module both roots
-  import. `periodic-work.ts`, `session-close-work.ts`, `session-jsonl-path.ts`,
-  `logging-options.ts` and `createAccountIdentityVerdict` are those modules, and
-  each one exists because the copy in one root had been re-typed by hand and the
-  reasoning survived in the other. A new callback with a branch in it goes there
-  too, not into both roots.
+- **`NATIVE_INVOKE_CHANNELS` is one list with three readers** — the daemon's
+  deny list, the client's routing table, and the Swift router
+  (`macos/Sources/OmniFexCore/NativeChannels.swift`, held to the list by
+  `ipc-channel-contract.test.ts`). Keep it pure data. Native means it needs the
+  machine the window is on (display, Finder, dock, notification centre, the
+  bundle); anything that can run headless belongs in the daemon, where the iPad
+  reaches it too.
+- **Every adapter the handler map reads is built by the daemon** —
+  `daemon.ts` passes its bag `satisfies Required<Services>`, so a service the
+  map needs and the daemon forgot is a compile error, not a silent `null`.
 - **A dev build is a guest: `npm start` runs its own instance, and a
-  temporary one.** `~/.omnifex-dev`, port 47701, `OMNIFEX_DEV_DAEMON=1` (see
-  `electron/remote/dev-instance.ts`, applied at the top of `main.ts` before
-  anything reads `loadServerConfig()`). Dev and the installed app used to
-  share one daemon on one port — the daemon holding every live CLI process
-  the user actually works in — so `npm start` SIGTERM'd it and killed those
-  sessions. A dev build also retires only a daemon that reports its own
-  script path in `/healthz`, and never drives the LaunchAgent. The database
-  stays shared, which is why the dev daemon is the one daemon that passes an
-  `enabled` gate to `startPeriodicWork`: two sweepers on one `brain_spend`
-  pay twice. It is also the one daemon that does not outlive its app —
-  app's process group, SIGTERM on quit, and `createDevIdleWatch` as the
-  backstop — so each `npm start` gets a fresh one and nothing is left on
-  47701. `OMNIFEX_DEV_INSTANCE=0` opts out.
-- **Periodic work lives in `electron/periodic-work.ts`, and only one process
-  runs it.** The cost-history backfill, the archive prune, `reclaimFreePages`
-  and the Brain sweep/drain used to be copy-pasted into both composition roots
-  and both ran, because remote mode is the default and both processes are
-  normally alive. Two Brain workers drained one queue, and `recoverOrphans()`
-  at startup re-queued items the other process was paying to extract — billed
-  twice, since `brain_spend` is append-only. `startPeriodicWork` takes an
-  `enabled` gate: main passes `() => !remoteInUse`, the daemon passes none.
-  The gate is read **per tick**, never sampled at construction — main does not
-  learn whether a daemon answered until the renderer asks for `remote:url`,
-  which is after the timers are armed. Add new periodic work here, not to a
-  composition root.
+  temporary one.** `ensure --dev` puts it on `~/.omnifex-dev`, port 47701,
+  `OMNIFEX_DEV_DAEMON=1` (see `electron/remote/dev-instance.ts`). Dev and the
+  installed app used to share one daemon on one port — the daemon holding every
+  live CLI process the user actually works in — so `npm start` SIGTERM'd it and
+  killed those sessions. A dev build also retires only a daemon that reports
+  its own script path in `/healthz`, and never drives the LaunchAgent. The
+  database stays shared, which is why the dev daemon passes a closed gate to
+  `startPeriodicWork` and to the close-time Brain drain: two sweepers on one
+  `brain_spend` pay twice. It is also the one daemon that does not outlive its
+  app — app's process group, `stop --dev` on quit, and `createDevIdleWatch` as
+  the backstop. `OMNIFEX_DEV_INSTANCE=0` opts out.
+- **The LaunchAgent belongs to the real instance.** Only `ensure`/`stop` with
+  the default state dir may drive `com.omnifex.server` (`launchdAllowed`). A
+  packaged build is smoke-tested with `OMNIFEX_STATE_DIR` /
+  `OMNIFEX_USER_DATA_DIR` / `OMNIFEX_PORT` pointed somewhere throwaway, and
+  `OMNIFEX_SMOKE_DIR` makes the app write a PNG of each window it loads.
+- **Periodic work lives in `electron/periodic-work.ts`.** Add new periodic work
+  there, not to the composition root. Its `enabled` gate is read per tick.
 
 ## Research And Code Intelligence
 
@@ -173,23 +172,25 @@ app on the iPad. Start from `docs/remote-access.md` and
   once about the tab-drag flash and was wrong; the real cause was an
   unmemoised render storm that was present in both.
 - Measure renderer performance, do not reason about it. `__omnifexProfile.on()`
-  in the devtools console (works in packaged builds — the app menu keeps
-  `role: 'toggleDevTools'`), reload, then interact: each tab switch or drag
+  in the Web Inspector console (works in packaged builds — View → Toggle
+  Developer Tools, ⌥⌘I, or Safari's Develop menu), reload, then interact: each tab switch or drag
   crossing prints its render count and duration. See `src/lib/renderProfiler.ts`.
   Every open tab is mounted at once and the transcript is unvirtualised, so the
   default failure mode is "one click re-rendered every session in the app" —
   check that first.
-- Node.js is the only required runtime. No Rust toolchain is needed.
+- Node.js 26 and Xcode (Swift 6) are the toolchain. No Rust.
 - Commands:
-  - `npm start` — launch the Electron app via Electron Forge
-  - `npm run dev` — renderer-only Vite dev server
-  - `npm run build` — `tsc && vite build --config vite.renderer.config.ts`
-  - `npm run check` — TypeScript check across renderer and main process
-  - `npm run package` — Electron Forge package output
-  - `npm run make` — Electron Forge installers (signed + notarized with `OMNIFEX_NOTARIZE=1`)
-  - `npm run build:web` — the browser client into `dist-web/`
-  - `npm run build:daemon` — the daemon bundle into `.vite/build/omnifex-server.js`
-  - `npm test` — Vitest one-shot
+  - `npm start` — build and run the dev app (`out/dev/OmniFex Dev.app`) against
+    the Vite dev server and the dev daemon. Never run it to demo something to
+    Greg; he runs his own.
+  - `npm run dev` — the Vite dev server alone
+  - `npm run build` — `tsc && vite build` of the renderer into `dist-web/`
+  - `npm run check` — TypeScript check across renderer and daemon
+  - `npm run package` — `out/OmniFex-darwin-arm64/OmniFex.app`, signed
+  - `npm run make` — plus the release zip and DMG; `OMNIFEX_NOTARIZE=1`
+    notarizes and staples both
+  - `npm run build:daemon` — `.vite/build/omnifex-server.js` + `brain-mcp.js`
+  - `npm test` — Vitest one-shot; `npm run test:swift` — the Swift tests
   - `npm run test:watch` — Vitest watch mode
   - `npm run test:coverage` — Vitest with v8 coverage
 
@@ -197,20 +198,19 @@ app on the iPad. Start from `docs/remote-access.md` and
 
 ### Process Model
 
-- **Main process**: `electron/**`
-  Owns SQLite, filesystem access, Claude CLI spawning (interactive sessions, agents, usage), account resolution, and all privileged work.
-- **Preload**: `electron/preload.ts`
-  Publishes one object, `window.__omnifexNative`, through a strict allow-list read from `electron/ipc/channels.ts`. Missing channels fail here first.
-  It must NOT publish `electronAPI`: `contextBridge` defines its properties non-writable and non-configurable, so the remote shim could never replace one — the assignment threw and every launch silently fell back to legacy IPC. `src/lib/remote/bootstrap.ts` is the only place `window.electronAPI` is assigned.
+- **Daemon**: `electron/**`
+  Owns SQLite, filesystem access, Claude CLI spawning (interactive sessions, agents, usage), account resolution, and all privileged work. Runs on the bundled node.
+- **Mac app**: `macos/**`
+  Windows, menus, dialogs, Finder, notifications and the dock badge, PDF export, the updater, tab-status aggregation — the channels in `nativeChannels.ts`. Injects `window.__omnifexNative` (`invoke` / `onEvent`) at document start.
 - **Renderer**: `src/**`
-  UI layer. Most main-process access goes through `src/lib/api.ts` and `src/lib/apiAdapter.ts`, though some older components still call preload APIs directly. No direct Node.js access.
+  UI layer, served by the daemon. Backend access goes through `src/lib/api.ts` and `src/lib/apiAdapter.ts` onto `window.electronAPI` — the shim `bootstrap.ts` installs (the name is the Electron era's; every call site uses it). No direct Node.js access.
 
 ### Service Pattern
 
-- Main-process services live in `electron/services/`.
+- Daemon services live in `electron/services/`.
 - Services are factory functions: `createFooService(deps) -> FooService`.
 - Dependencies are injected so services can be tested with `createDatabase(':memory:')`.
-- Services are constructed in `electron/main.ts` and passed to `registerIpcHandlers(...)` in `electron/ipc/handlers.ts`.
+- Services are constructed in `electron/remote/daemon.ts` and handed to `getHandlerMap(...)` in `electron/ipc/handlers.ts`.
 - Keep business logic in services, not renderer components or thin IPC adapters.
 
 ### Core Services
@@ -241,12 +241,14 @@ app on the iPad. Start from `docs/remote-access.md` and
   Durable cost history, per-session cost, and the internal-transcript archive's pricing.
 - `electron/services/model-pricing.ts` / `models.ts`
   Effective-dated pricing rows layered over `SHIPPED_PRICING`, and the dynamic model catalog.
-- `electron/services/installer.ts` + `installer/`
-  In-app updater install gate — waits for turns to go idle (renderer-derived, via `tab-status.ts`) before swapping the bundle.
-- `electron/services/updater.ts`, `notifications.ts`, `notification-sounds.ts`, `proxy.ts`, `permissions-io.ts`, `filesystem.ts`, `project-pins.ts`, `git-branches.ts`, `git-watcher.ts`, `branch-colors.ts`
-  Electron-side supporting services. The first four are main-process-only — the daemon has no adapter for them.
+- `electron/services/proxy.ts`, `permissions-io.ts`, `filesystem.ts`, `project-pins.ts`, `git-branches.ts`, `git-watcher.ts`, `branch-colors.ts`
+  Supporting services.
+- `electron/remote/account-watchers.ts`
+  Identity / Codex-auth file watchers, broadcast to every client.
+- `macos/Sources/OmniFexCore/` — `Updater.swift` + `Installer.swift` (GitHub-release updates, the idle gate, the bundle swap), `TabStatusStore.swift`, `NotificationSound.swift`, `NavigationPolicy.swift`, `ProtocolFilePolicy.swift`, `OpenPathPlanner.swift`
+  The native side's rules, each ported from the Electron-era TypeScript with its tests.
 - `electron/services/database.ts`
-  `better-sqlite3` factory, schema init, migrations. WAL + `busy_timeout=5000`, because the daemon and the Electron app hold the file open at the same time.
+  `better-sqlite3` factory, schema init, migrations. WAL + `busy_timeout=5000`, because two daemons (the real one and the dev one) can hold the file open at the same time.
 
 This is a multi-engine app (Claude + Codex). Codex is reachable but partial — `codex-cli-engine.ts` has explicit `not yet wired` stubs for some control paths, and Codex deliberately reads a single `~/.codex` (it does not consume the per-account CODEX_HOME that `resolve()` can compute).
 
@@ -290,11 +292,10 @@ Other account rules:
 
 ## Repo Rules
 
-- New renderer IPC work should go through `src/lib/api.ts` when possible. Some older components still call preload APIs directly.
+- New renderer IPC work should go through `src/lib/api.ts` when possible. Some older components still call `window.electronAPI` directly.
 - Strip `undefined` optional params before crossing IPC.
-- Every new invoke channel must be added to `INVOKE_CHANNELS` in `electron/ipc/channels.ts` (which is what `preload.ts` reads). `ipc-channel-contract.test.ts` pins that list against the registered handlers in both directions.
-- Decide, for every new channel, whether it is **native-only**. If it needs a `BrowserWindow`, a display, a pty, or the updater, add it to `NATIVE_INVOKE_CHANNELS` in `src/lib/remote/nativeChannels.ts` — otherwise the shim routes it to the daemon, whose adapter bag does not have that service, and the optional-chained handler returns `null` instead of failing. That silent `null` is indistinguishable from "not configured".
-- Event channels must match the preload prefix allow-lists.
+- Every new invoke channel must be added to `INVOKE_CHANNELS` in `electron/ipc/channels.ts`, and has exactly one owner: the daemon's handler map, a typed session method, or the Mac app. `ipc-channel-contract.test.ts` checks all three, and that the Swift router names every native channel.
+- Decide, for every new channel, whether it is **native-only** (needs a window, a display, Finder, the dock, the bundle). Native channels go in `NATIVE_INVOKE_CHANNELS` *and* get a Swift handler (`macos/Sources/OmniFex/NativeHandlers.swift`); native events go in `NATIVE_EVENT_PREFIXES`. Everything else is the daemon's.
 - Handler adapters should accept both camelCase and snake_case params, for example `data.configDir ?? data.config_dir`.
 - Preserve the end-to-end account-aware path whenever a change touches projects, sessions, agents, usage, hooks, MCP, or Claude settings.
 - The daemon serves HTTP (`/healthz`, `/api/sessions`, `/api/projects`, `/api/push/*`) and the web client. It is not a general REST API and new functionality belongs on the WebSocket protocol or an allow-listed `rpc.invoke`, not a new route.
@@ -302,12 +303,12 @@ Other account rules:
 
 ## High-Value Paths
 
-- `electron/main.ts`
-  App bootstrap, service construction, adapter wiring.
+- `electron/remote/daemon.ts`
+  The composition root: service construction, adapter wiring.
 - `electron/ipc/handlers.ts`
-  IPC registration and handler surface.
-- `electron/preload.ts`
-  IPC allow-list and event bridge.
+  The channel → handler map the daemon serves over `rpc.invoke`.
+- `macos/Sources/OmniFex/` — `AppServices.swift`, `BrowserWindowController.swift`, `Bridge.swift`, `NativeHandlers.swift`
+  The Mac app.
 - `src/lib/api.ts`
   Typed renderer API surface.
 - `src/lib/apiAdapter.ts`
@@ -318,8 +319,8 @@ Other account rules:
   Accounts and path-rule UI.
 - `src/components/AgentSession.tsx`
   Core session UX and stream handling (formerly `ClaudeCodeSession.tsx`).
-- `electron/remote/daemon.ts`
-  The daemon's composition root — the second place the service graph is built.
+- `packaging/` + `scripts/package-mac.ts`
+  The bundle layout, the bundled Node, signing and notarization.
 - `src/lib/remote/bootstrap.ts`
   Decides what `window.electronAPI` is, once per page load.
 - `src/protocol/messages.ts`
@@ -327,7 +328,7 @@ Other account rules:
 
 ## Testing And Verification
 
-- Tests live in `electron/__tests__/*.test.ts`.
+- Tests live in `electron/__tests__/*.test.ts` (daemon, packaging), beside the renderer code in `src/**/__tests__/`, and in `macos/Tests/` (Swift Testing, `npm run test:swift`).
 - **Coverage target is 80% lines, repo-wide** — not backend-only. The target
   used to read "for backend work", which quietly excused the renderer and made
   the headline number unanswerable: a blended 79% could mean anything.
@@ -357,7 +358,7 @@ commands were folded into skills 2026-09-24). Deterministic steps live in each
 skill's `scripts/` and are invoked as `bash ${CLAUDE_SKILL_DIR}/scripts/<x>.sh`;
 the prose in `SKILL.md` covers only the judgment calls.
 
-- `verify` — the verification gate (`scripts/verify.sh`, `--quick` for check + test); always ends with `rebuild:electron`
+- `verify` — the verification gate (`scripts/verify.sh`, `--quick` for check + test); runs the Swift tests too
 - `commit` — verify, commit, optionally push; no approval step
 - `resume` — "where were we"; git state is pre-injected
 - `omnifex-release` — the release runbook; preflight is pre-injected, gatekeeper and publish checks are scripts

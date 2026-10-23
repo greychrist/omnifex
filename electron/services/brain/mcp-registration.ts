@@ -34,11 +34,11 @@ export const BRAIN_MCP_READ_TOOLS = [
 ] as const;
 
 export interface BrainMcpEnvironment {
-  /** The Electron binary, run as node by the spawned server. */
+  /** The node the server runs on: the app's `omnifexd`, or a checkout's node. */
   execPath: string;
   /** Absolute path to the built `brain-mcp.js`. */
   serverScript: string;
-  /** `app.getPath('userData')`. */
+  /** `~/Library/Application Support/OmniFex`, where greychrist.db lives. */
   userDataDir: string;
 }
 
@@ -47,21 +47,20 @@ export const INSTALLED_APP_PATH = '/Applications/OmniFex.app';
 
 export type InstalledApp = Pick<BrainMcpEnvironment, 'execPath' | 'serverScript'>;
 
+/** Inside an app bundle, the server script sits here (see the package script). */
+const BUNDLED_SCRIPT = ['Contents', 'Resources', 'app', 'build', 'brain-mcp.js'];
+
 /**
- * The installed app's executable and `brain-mcp.js`, or null when it is not
- * there. Existence is checked on the executable and the `app.asar` archive —
- * real files — because a path INSIDE the asar only resolves for a process
- * with Electron's asar support, which plain node does not have. Electron run
- * as node does, which is how the CLI spawns it.
+ * The installed app's node and `brain-mcp.js`, or null when it is not there.
  */
 export function findInstalledApp(
   appPath: string = INSTALLED_APP_PATH,
   exists: (path: string) => boolean = existsSync,
 ): InstalledApp | null {
-  const execPath = join(appPath, 'Contents', 'MacOS', 'omnifex');
-  const asar = join(appPath, 'Contents', 'Resources', 'app.asar');
-  if (!exists(execPath) || !exists(asar)) return null;
-  return { execPath, serverScript: join(asar, '.vite', 'build', 'brain-mcp.js') };
+  const execPath = join(appPath, 'Contents', 'MacOS', 'omnifexd');
+  const serverScript = join(appPath, ...BUNDLED_SCRIPT);
+  if (!exists(execPath) || !exists(serverScript)) return null;
+  return { execPath, serverScript };
 }
 
 /**
@@ -73,16 +72,19 @@ export function findInstalledApp(
  * `better_sqlite3.node` loaded — and `npm test`'s pretest rebuild overwrote
  * that file in place underneath them, which macOS answers with SIGKILL (Code
  * Signature Invalid): ~4 crash reports a day, and a Brain server killed
- * mid-session. A packaged app (its script inside an `app.asar`) is named as
- * it is; anything else is swapped for the installed app, or refused (null)
- * when there is none. The spawn-time config is not affected: it is rewritten
- * per session by the instance that launches it.
+ * mid-session. A packaged app (its script at `Contents/Resources/app/build`
+ * inside an `.app`) is named as it is; anything else is swapped for the
+ * installed app, or refused (null) when there is none. "Anything else"
+ * includes a registration naming the pre-2026-10-23 Electron bundle, whose
+ * script lived inside `app.asar` — re-registering names the new layout. The
+ * spawn-time config is not affected: it is rewritten per session by the
+ * instance that launches it.
  */
 export function persistentServerEnv(
   env: BrainMcpEnvironment,
   findInstalled: () => InstalledApp | null = findInstalledApp,
 ): BrainMcpEnvironment | null {
-  if (env.serverScript.includes(`${sep}app.asar${sep}`)) return env;
+  if (env.serverScript.includes(`.app${sep}${BUNDLED_SCRIPT.join(sep)}`)) return env;
   const installed = findInstalled();
   return installed ? { ...env, ...installed } : null;
 }
@@ -95,9 +97,6 @@ export function buildBrainServerConfig(
     command: env.execPath,
     args: [env.serverScript],
     env: {
-      // Not system node: better-sqlite3 is compiled against the Electron ABI
-      // in a packaged build and would abort on open under the wrong one.
-      ELECTRON_RUN_AS_NODE: '1',
       // The server has no account concept. This one path IS the isolation.
       OMNIFEX_VAULT: vaultRoot,
       OMNIFEX_BRAIN_DB: join(vaultRoot, '.omnifex', 'index.db'),
@@ -218,4 +217,34 @@ export function createBrainMcpRegistration(
       setAllowRules(configDir, false);
     },
   };
+}
+
+/**
+ * Re-write every persistent registration that exists, so it names this
+ * build's server. Run once at daemon start.
+ *
+ * `.claude.json` keeps whatever path wrote it, and an update that moves the
+ * server leaves every registered account pointing at a file that is gone —
+ * the Electron → Swift update moved both the executable (`omnifex` →
+ * `omnifexd`) and the script (out of `app.asar`). Accounts that never opted
+ * in are untouched: registering is the user's choice, not this function's.
+ * One account failing (no installed app to name, an unwritable config) costs
+ * that account's refresh, never the others' or the daemon's start.
+ */
+export function refreshBrainRegistrations(
+  registration: BrainMcpRegistration,
+  targets: { configDir: string; vaultRoot: string | null }[],
+  warn: (message: string) => void,
+): number {
+  let refreshed = 0;
+  for (const { configDir, vaultRoot } of targets) {
+    if (!vaultRoot || !registration.isRegistered(configDir)) continue;
+    try {
+      registration.register(configDir, vaultRoot);
+      refreshed++;
+    } catch (err) {
+      warn(`brain MCP registration for ${configDir} not refreshed: ${String(err)}`);
+    }
+  }
+  return refreshed;
 }

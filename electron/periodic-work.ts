@@ -5,23 +5,17 @@
  * the Brain's discovery sweep + queue drain, and the catch-up sweep for
  * session summaries the close path never delivered.
  *
- * One module, two composition roots. `electron/main.ts` and
- * `electron/remote/daemon.ts` build the same service graph, and until this
- * existed they each carried their own copy of these four blocks — the exact
- * "change both or neither" hazard CLAUDE.md warns about, except here the
- * failure was worse than drift: remote mode is the default, so both processes
- * are normally alive and both ran every block against the one database.
+ * Two processes can hold the database at once: the real daemon and the dev
+ * instance's (until 2026-10-23, also Electron main). Running these blocks in
+ * both is worse than redundant. `createBrainService()` calls
+ * `queueStore.recoverOrphans()` at construction, which flips every `running`
+ * row back to `pending`, so a second process starting while the first is
+ * mid-extraction distils that transcript again. `merge.ts` is idempotent so
+ * the note is unchanged — but `brain_spend` is an append-only ledger, so the
+ * second Sonnet call is billed for real.
  *
- * `createBrainService()` calls `queueStore.recoverOrphans()` at construction,
- * which flips every `running` row back to `pending`. Launch the app while the
- * daemon is mid-extraction and that transcript is distilled a second time.
- * `merge.ts` is idempotent so the note is unchanged — but `brain_spend` is an
- * append-only ledger, so the second Sonnet call is billed for real.
- *
- * Hence `enabled`: main passes a gate that closes whenever the daemon answered
- * `remote:url`, and the daemon passes none. Read per tick, never sampled at
- * construction — main does not know whether a daemon exists until the renderer
- * asks, which happens after the timers are armed.
+ * Hence `enabled`: the dev daemon passes a closed gate, the real one none.
+ * Read per tick, never sampled at construction.
  */
 
 import {

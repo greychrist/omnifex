@@ -160,7 +160,7 @@ export interface ExtractorDeps {
    * The shared `claude -p` runner. REQUIRED — it used to default to a
    * self-constructed one, but the runner now needs an archive root it cannot
    * invent, and a silent default would mean extraction transcripts went back
-   * to being discarded. main.ts owns construction; tests inject a fake.
+   * to being discarded. the daemon owns construction; tests inject a fake.
    *
    * The runner pins a stable scratch cwd and moves the resulting JSONL into
    * the internal archive; the Brain's own discovery excludes that archive, so

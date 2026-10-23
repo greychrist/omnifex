@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest';
 import { INVOKE_CHANNELS } from '../ipc/channels';
 import {
   buildRpcAllowlist,
-  ELECTRON_ONLY_CHANNELS,
+  NATIVE_ONLY_CHANNELS,
   TYPED_SESSION_CHANNELS,
   RAW_DATABASE_CHANNELS,
 } from '../remote/rpc-allowlist';
@@ -12,7 +12,7 @@ describe('rpc allowlist', () => {
   const allow = buildRpcAllowlist(INVOKE_CHANNELS);
 
   it('starts from the renderer allow-list minus the three denied groups', () => {
-    for (const ch of [...ELECTRON_ONLY_CHANNELS, ...TYPED_SESSION_CHANNELS, ...RAW_DATABASE_CHANNELS]) {
+    for (const ch of [...NATIVE_ONLY_CHANNELS, ...TYPED_SESSION_CHANNELS, ...RAW_DATABASE_CHANNELS]) {
       expect(allow.has(ch), ch).toBe(false);
     }
     // A representative of each family that must still work remotely.
@@ -28,7 +28,7 @@ describe('rpc allowlist', () => {
   it('every denied channel names something that actually exists — the lists cannot rot silently', () => {
     // `remote:url` and `notify:show` are registered inline in main.ts and
     // listed in channels.ts like the other Electron-native channels.
-    for (const ch of [...ELECTRON_ONLY_CHANNELS, ...TYPED_SESSION_CHANNELS, ...RAW_DATABASE_CHANNELS]) {
+    for (const ch of [...NATIVE_ONLY_CHANNELS, ...TYPED_SESSION_CHANNELS, ...RAW_DATABASE_CHANNELS]) {
       expect(INVOKE_CHANNELS, ch).toContain(ch);
     }
   });

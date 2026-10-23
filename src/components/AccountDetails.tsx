@@ -351,7 +351,7 @@ export function useAccountDetailsPopover(inputs: AccountDetailsInputs): AccountD
 
   // Claude only — Codex signs in from Account Settings. And desktop only: the
   // login runs in a pty on this machine, which the web client does not have.
-  const canManageAuth = platform.isElectron && agent !== "codex";
+  const canManageAuth = platform.isDesktop && agent !== "codex";
 
   return {
     open,

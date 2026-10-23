@@ -21,7 +21,7 @@ vi.mock('@/contexts/AccountsContext', () => ({
 }));
 vi.mock('@/hooks', () => ({ useTheme: () => ({ theme: 'gray', setTheme: async () => {} }) }));
 vi.mock('@/lib/api', () => ({ api: { claudeLogout: vi.fn() } }));
-vi.mock('@/lib/platform', () => ({ platform: { isElectron: true } }));
+vi.mock('@/lib/platform', () => ({ platform: { isDesktop: true } }));
 vi.mock('../ClaudeSignInModal', () => ({ ClaudeSignInModal: () => null }));
 vi.mock('../claude-code-session/UsageDetailPopover', () => ({
   UsageDetailPopover: (props: {

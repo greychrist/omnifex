@@ -17,7 +17,7 @@ import {
  * sample here fails `covers every declared method`.
  */
 const CLIENT_SAMPLES: ClientMessage[] = [
-  { type: 'hello', requestId: 'r1', clientId: 'c1', clientKind: 'electron', protocolVersion: PROTOCOL_VERSION },
+  { type: 'hello', requestId: 'r1', clientId: 'c1', clientKind: 'desktop', protocolVersion: PROTOCOL_VERSION },
   { type: 'project.list', requestId: 'r2' },
   { type: 'project.add', requestId: 'r3', path: '/Users/greg/Repos/omnifex' },
   { type: 'project.remove', requestId: 'r4', projectId: 'p1' },

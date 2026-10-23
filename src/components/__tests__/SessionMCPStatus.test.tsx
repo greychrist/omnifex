@@ -8,7 +8,7 @@ const { sessionMcpAuthenticate, sessionMcpReauthenticate, sessionMcpSetEnabled, 
   sessionMcpAuthenticate: vi.fn(),
   sessionMcpReauthenticate: vi.fn(),
   sessionMcpSetEnabled: vi.fn(),
-  mockPlatform: { isElectron: true, openExternal: vi.fn() },
+  mockPlatform: { isDesktop: true, openExternal: vi.fn() },
 }));
 vi.mock('@/lib/api', () => ({
   api: { sessionMcpAuthenticate, sessionMcpReauthenticate, sessionMcpSetEnabled },
@@ -83,7 +83,7 @@ describe('SessionMCPStatus row actions', () => {
     sessionMcpAuthenticate.mockReset();
     sessionMcpReauthenticate.mockReset();
     sessionMcpSetEnabled.mockReset().mockResolvedValue(undefined);
-    mockPlatform.isElectron = true;
+    mockPlatform.isDesktop = true;
     mockPlatform.openExternal.mockReset().mockResolvedValue(undefined);
   });
 
@@ -188,7 +188,7 @@ describe('SessionMCPStatus row actions', () => {
   });
 
   it('hides auth items in the web client', () => {
-    mockPlatform.isElectron = false;
+    mockPlatform.isDesktop = false;
     renderStatus([atlassian]);
     openMenu('atlassian');
     expect(screen.queryByRole('menuitem', { name: 'Authenticate' })).toBeNull();

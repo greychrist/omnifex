@@ -41,7 +41,7 @@ function makeFakeEngine() {
 
 /** createSessionsService with only the trailing pluginDirs parameter set. */
 function serviceWith(pluginDirs: (() => string[]) | null) {
-  const args = new Array(14).fill(undefined);
+  const args = new Array(12).fill(undefined);
   return (createSessionsService as unknown as (...a: unknown[]) => ReturnType<typeof createSessionsService>)(
     vi.fn(), ...args, pluginDirs,
   );

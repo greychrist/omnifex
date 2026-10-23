@@ -12,9 +12,9 @@ describe('layout mode', () => {
 
   it('keeps the three facts independent', () => {
     // A thin desktop window: narrow, not touch, not web.
-    expect(computeLayoutMode({ width: NARROW_MAX_WIDTH - 1, coarsePointer: false, remoteMode: 'electron-remote' })).toEqual({ narrow: true, touch: false, web: false });
-    // A wide Electron window in legacy mode: none of the three.
-    expect(computeLayoutMode({ width: 1440, coarsePointer: false, remoteMode: 'electron-legacy' })).toEqual({ narrow: false, touch: false, web: false });
+    expect(computeLayoutMode({ width: NARROW_MAX_WIDTH - 1, coarsePointer: false, remoteMode: 'desktop' })).toEqual({ narrow: true, touch: false, web: false });
+    // A wide desktop window: none of the three.
+    expect(computeLayoutMode({ width: 1440, coarsePointer: false, remoteMode: 'desktop' })).toEqual({ narrow: false, touch: false, web: false });
     expect(computeLayoutMode({ width: 1440, coarsePointer: false, remoteMode: null })).toMatchObject({ web: false });
   });
 

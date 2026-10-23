@@ -66,7 +66,7 @@ export interface LoggingServiceOptions {
   shouldAccept?: (entry: LogEntry) => boolean;
   /**
    * Fired once per error-level entry that survives `shouldAccept` and is
-   * successfully persisted. Used by main.ts to broadcast a renderer toast
+   * successfully persisted. Used by the daemon to broadcast a renderer toast
    * so the user can correlate the error with whatever they were just doing.
    *
    * Handler exceptions are swallowed — a misbehaving observer must never

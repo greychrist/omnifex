@@ -8,7 +8,17 @@ import type { SessionHandle } from '../services/sessions/types';
  */
 function harness() {
   const messageCbs: Array<(m: unknown) => void> = [];
-  const showNotification = vi.fn();
+  const sendToRenderer = vi.fn();
+  // The banner a client raises, as (title, body, isError, tabId).
+  const showNotification = {
+    get mock() {
+      return {
+        calls: sendToRenderer.mock.calls
+          .filter(([ch]) => ch === 'claude-notification')
+          .map(([, p]) => [p.title, p.body, p.is_error, { tabId: p.tab_id }]),
+      };
+    },
+  };
   const engine = {
     onMessage: (cb: (m: unknown) => void) => { messageCbs.push(cb); return { dispose: () => {} }; },
     onError: () => ({ dispose: () => {} }),
@@ -25,10 +35,8 @@ function harness() {
   } as unknown as SessionHandle;
 
   void listenToMessages('tab-1', handle, {
-    sendToRenderer: vi.fn(),
-    notificationHooks: { showNotification, incrementUnread: vi.fn() },
+    sendToRenderer,
     rateLimitHook: null,
-    ownership: null,
     sessions: new Map(),
   });
 
@@ -48,19 +56,19 @@ describe('background agent completion notification', () => {
     // The turn that launched it ends here — this is the notification the
     // user already gets, minutes before the agent is actually done.
     emit({ type: 'result', subtype: 'success', result: 'dispatched' });
-    expect(showNotification).toHaveBeenCalledTimes(1);
+    expect(showNotification.mock.calls).toHaveLength(1);
 
     emit({
       type: 'system', subtype: 'task_notification', task_id: 'a53f', tool_use_id: 'toolu_1',
       status: 'completed', summary: 'No blockers.', usage: { duration_ms: 44630 },
     });
-    expect(showNotification).toHaveBeenCalledTimes(2);
-    expect(showNotification).toHaveBeenLastCalledWith(
+    expect(showNotification.mock.calls).toHaveLength(2);
+    expect(showNotification.mock.calls.at(-1)).toEqual([
       'OmniFex — pi-tuitive',
       'Agent finished: Adversarial pre-push review · 45s',
       false,
       { tabId: 'tab-1' },
-    );
+    ]);
   });
 
   it('stays silent for a backgrounded shell', () => {
@@ -73,7 +81,7 @@ describe('background agent completion notification', () => {
       type: 'system', subtype: 'task_notification', task_id: 'bnnc', tool_use_id: 'toolu_2',
       status: 'completed', summary: 'Background command completed (exit code 0)',
     });
-    expect(showNotification).not.toHaveBeenCalled();
+    expect(showNotification.mock.calls).toEqual([]);
   });
 
   it('stays silent for a task it never saw start (attached mid-run)', () => {
@@ -82,6 +90,6 @@ describe('background agent completion notification', () => {
       type: 'system', subtype: 'task_notification', task_id: 'orphan',
       status: 'completed', summary: 'done',
     });
-    expect(showNotification).not.toHaveBeenCalled();
+    expect(showNotification.mock.calls).toEqual([]);
   });
 });

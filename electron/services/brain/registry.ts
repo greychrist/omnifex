@@ -483,7 +483,7 @@ export interface BrainService {
    *
    * Matched on each item's own key rather than on keys reconstructed by the
    * caller: the key formats belong to the adapters, and a second spelling in
-   * `main.ts` would go quietly stale the moment one changed.
+   * a composition root would go quietly stale the moment one changed.
    */
   enqueueProjectSources(accountId: number, projectPath: string): Promise<number>;
   /**
@@ -734,7 +734,7 @@ export interface BrainServiceOptions {
   now?: () => number;
   /**
    * Called on every change to the run in flight, and once with `null` when it
-   * ends. `main.ts` forwards this to the renderer; tests record the sequence.
+   * ends. The daemon forwards this to its clients; tests record the sequence.
    *
    * The terminating `null` is load-bearing: without it a live pane would hang
    * on the last frame forever, showing a bar for a run that had finished.

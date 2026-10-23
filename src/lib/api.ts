@@ -666,6 +666,7 @@ export type { ModelPricingInput, ModelPricingRow } from '@/lib/pricing';
 import type { ModelPricingInput, ModelPricingRow } from '@/lib/pricing';
 import type { CostFilterState } from '@/lib/costReportFilters';
 import type { PrintMeasurement } from '@/lib/costReportPrintMeasure';
+import { buildPrintHash } from '@/lib/costReportPrint';
 
 /** Range-wide totals. Separate from the period rows because `session_count`
  *  must be counted once over the range, not summed per period — a session
@@ -2160,8 +2161,10 @@ export const api = {
    * Render the Cost Report to a PDF at `savePath`.
    *
    * Takes the filter *state*, not the derived query params: the export renders
-   * the report a second time in a hidden window, so what has to travel is what
-   * the filter bar is set to, and the queries are re-run over there.
+   * the report a second time in a hidden view, so what has to travel is what
+   * the filter bar is set to, and the queries are re-run over there. The Mac
+   * app loads that view at the print hash, which is computed here — its
+   * escaping rules are this codebase's, not something to restate in Swift.
    *
    * Resolves once the file is written. Rejects rather than writing a partial
    * or blank file if the report never finishes drawing.
@@ -2170,7 +2173,7 @@ export const api = {
     filters: CostFilterState;
     savePath: string;
   }): Promise<{ path: string }> {
-    return apiCall("cost_report_export_pdf", params as unknown as Record<string, unknown>);
+    return apiCall("cost_report_export_pdf", { ...params, hash: buildPrintHash(params.filters) });
   },
 
   /** Print-window only: report that the report has drawn, and how big it is. */

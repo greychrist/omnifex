@@ -139,9 +139,7 @@ describe('runtime.listenToMessages — model catalog write-through', () => {
     const modelCatalogSink = vi.fn();
     void listenToMessages('tab-1', handle, {
       sendToRenderer: vi.fn(),
-      notificationHooks: {},
       rateLimitHook: null,
-      ownership: null,
       sessions,
       modelCatalogSink,
     });
@@ -194,9 +192,7 @@ describe('runtime.listenToMessages — account identity re-check', () => {
       sendToRenderer: ((ch: string, ...args: unknown[]) => {
         sent.push([ch, args[0]]);
       }) as SendToRenderer,
-      notificationHooks: {},
       rateLimitHook: null,
-      ownership: null,
       sessions,
       accountMismatchSink,
     });
@@ -267,9 +263,7 @@ describe('runtime.listenToMessages — engine.onError', () => {
 
     void listenToMessages('tab-1', handle, {
       sendToRenderer,
-      notificationHooks: {},
       rateLimitHook: null,
-      ownership: null,
       sessions,
     });
 
@@ -288,9 +282,7 @@ describe('runtime.listenToMessages — engine.onError', () => {
 
     void listenToMessages('tab-1', handle, {
       sendToRenderer,
-      notificationHooks: {},
       rateLimitHook: null,
-      ownership: null,
       sessions,
     });
 
@@ -318,9 +310,7 @@ describe('runtime.listenToMessages — engine.onError', () => {
 
     void listenToMessages('tab-1', handle, {
       sendToRenderer,
-      notificationHooks: {},
       rateLimitHook: null,
-      ownership: null,
       sessions,
       logging: service,
     });
@@ -342,9 +332,7 @@ describe('runtime.listenToMessages — engine.onError', () => {
 
     void listenToMessages('tab-1', handle, {
       sendToRenderer,
-      notificationHooks: {},
       rateLimitHook: null,
-      ownership: null,
       sessions,
     });
 
@@ -370,9 +358,7 @@ describe('runtime.listenToMessages — hook lifecycle messages', () => {
 
     void listenToMessages('tab-1', handle, {
       sendToRenderer,
-      notificationHooks: {},
       rateLimitHook: null,
-      ownership: null,
       sessions,
     });
 
@@ -395,9 +381,7 @@ describe('runtime.listenToMessages — hook lifecycle messages', () => {
 
     void listenToMessages('tab-1', handle, {
       sendToRenderer,
-      notificationHooks: {},
       rateLimitHook: null,
-      ownership: null,
       sessions,
     });
 
@@ -417,7 +401,7 @@ describe('runtime.listenToMessages — engine.onExit', () => {
     const handle = makeHandle(engine);
     const sendToRenderer: SendToRenderer = vi.fn();
     const sessions = new Map<string, SessionHandle>([['tab-1', handle]]);
-    void listenToMessages('tab-1', handle, { sendToRenderer, notificationHooks: {}, rateLimitHook: null, ownership: null, sessions });
+    void listenToMessages('tab-1', handle, { sendToRenderer, rateLimitHook: null, sessions });
     engine._emitExit({ code: 0 });
     expect(sendToRenderer).toHaveBeenCalledWith('session-side-chat:tab-1', { exchanges: [] });
   });
@@ -426,7 +410,7 @@ describe('runtime.listenToMessages — engine.onExit', () => {
     const engine = makeFakeEngine();
     const handle = makeHandle(engine);
     const sessions = new Map<string, SessionHandle>([['tab-1', handle]]);
-    void listenToMessages('tab-1', handle, { sendToRenderer: vi.fn(), notificationHooks: {}, rateLimitHook: null, ownership: null, sessions });
+    void listenToMessages('tab-1', handle, { sendToRenderer: vi.fn(), rateLimitHook: null, sessions });
     engine._emitMessage({ type: 'assistant', message: { model: 'claude-opus-5-5', content: [] } });
     engine._emitMessage({ type: 'assistant', message: { model: '<synthetic>', content: [] } });
     expect(handle.lastModel).toBe('claude-opus-5-5');
@@ -442,9 +426,7 @@ describe('runtime.listenToMessages — engine.onExit', () => {
 
     void listenToMessages('tab-1', handle, {
       sendToRenderer,
-      notificationHooks: {},
       rateLimitHook: null,
-      ownership: null,
       sessions,
     });
 
@@ -464,9 +446,7 @@ describe('runtime.listenToMessages — engine.onExit', () => {
 
     void listenToMessages('tab-1', handle, {
       sendToRenderer,
-      notificationHooks: {},
       rateLimitHook: null,
-      ownership: null,
       sessions,
     });
 
@@ -495,9 +475,7 @@ describe('runtime.listenToMessages — stream forwarding after the inversion', (
     const sendToRenderer: SendToRenderer = vi.fn();
     void listenToMessages('tab-1', handle, {
       sendToRenderer,
-      notificationHooks: {},
       rateLimitHook: null,
-      ownership: null,
       sessions,
     });
     const outputPayloads = (): unknown[] =>
@@ -570,18 +548,16 @@ describe('runtime.listenToMessages — stream forwarding after the inversion', (
     // event. Acting on a message and relaying it are separate decisions.
     const engine = makeFakeEngine();
     const handle = makeHandle(engine);
-    const showNotification = vi.fn();
+    const sendToRenderer = vi.fn();
     void listenToMessages('tab-1', handle, {
-      sendToRenderer: vi.fn(),
-      notificationHooks: { showNotification },
+      sendToRenderer,
       rateLimitHook: null,
-      ownership: null,
       sessions: new Map<string, SessionHandle>([['tab-1', handle]]),
     });
 
     engine._emitMessage({ type: 'result', subtype: 'success', result: 'done' });
 
-    expect(showNotification).toHaveBeenCalled();
+    expect(sendToRenderer).toHaveBeenCalledWith('claude-notification', expect.objectContaining({ tab_id: 'tab-1' }));
   });
 
   it('still captures the init model catalog for a row it does not forward', () => {
@@ -591,9 +567,7 @@ describe('runtime.listenToMessages — stream forwarding after the inversion', (
     const modelCatalogSink = vi.fn();
     void listenToMessages('tab-1', handle, {
       sendToRenderer: vi.fn(),
-      notificationHooks: {},
       rateLimitHook: null,
-      ownership: null,
       sessions: new Map<string, SessionHandle>([['tab-1', handle]]),
       modelCatalogSink,
     });
@@ -635,9 +609,7 @@ describe('runtime.listenToMessages — JSONL tail as transcript source', () => {
     const sendToRenderer: SendToRenderer = vi.fn();
     void listenToMessages('tab-1', handle, {
       sendToRenderer,
-      notificationHooks: {},
       rateLimitHook: null,
-      ownership: null,
       sessions: new Map<string, SessionHandle>([['tab-1', handle]]),
     });
     const sent = (channel: string): unknown[] =>

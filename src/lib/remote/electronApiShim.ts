@@ -1,15 +1,16 @@
 /**
  * A `window.electronAPI` that talks to the daemon.
  *
- * The renderer funnels every main-process call through
+ * The renderer funnels every backend call through
  * `window.electronAPI.invoke(channel, params)` and every subscription through
  * `window.electronAPI.onEvent(channel, cb)`, with channel names from the
- * Electron IPC era. Rather than touch the ~230 call sites, this object keeps
- * that surface and changes what is behind it:
+ * Electron IPC era (the name stuck; Electron did not). Rather than touch the
+ * ~230 call sites, this object keeps that surface and changes what is behind
+ * it:
  *
  *  - session lifecycle channels become the typed protocol methods;
- *  - everything else becomes `rpc.invoke`, except channels that only Electron
- *    can serve, which go to the preload bridge when there is one;
+ *  - everything else becomes `rpc.invoke`, except channels that only the
+ *    native app can serve, which go to its bridge when there is one;
  *  - protocol pushes are re-emitted on the legacy channel names the renderer
  *    already subscribes to, with the daemon's `sessionId` mapped back to the
  *    renderer's `tabId`.
@@ -37,7 +38,7 @@ export interface StorageLike {
 
 export interface ShimOptions {
   client: ProtocolClient;
-  /** The preload bridge in Electron; null on the web. */
+  /** The native app's bridge on the Mac; null on the web. */
   native: NativeBridge | null;
   storage?: StorageLike | null;
   log?: (message: string, meta?: Record<string, unknown>) => void;
@@ -72,9 +73,9 @@ const TYPED = new Set([
 ]);
 
 /**
- * Baked in by `vite.web.config.ts`. The Electron renderer defines nothing
- * here — it has main to ask — so the guard is the desktop path, not a
- * defensive branch.
+ * Baked in by `vite.web.config.ts` (and by vitest). The Vite dev server the
+ * dev app loads defines nothing here — it has the native app to ask — so the
+ * guard is that path, not a defensive branch.
  */
 declare const __APP_VERSION__: string | undefined;
 const BUILD_VERSION = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : 'web';
@@ -94,8 +95,6 @@ const WEB_FALLBACKS: Record<string, unknown> = {
   // The daemon served this page, so the page has a version: the build it came
   // from. The popover compares it against the daemon's.
   'get_app_version': BUILD_VERSION,
-  // No local codex on the tablet; `null` is api.ts's "not installed".
-  'codex_binary_path': null,
 };
 
 /** The IPC layer's error encoding, which `apiAdapter.decodeApiError` reverses. */
@@ -226,9 +225,9 @@ export function createElectronApiShim(opts: ShimOptions): ShimHandle {
     for (const tab of tabs) emit(`${prefix}:${tab}`, ...args);
   }
 
-  function notifyNative(title: string, body: string, isError: boolean, tabId: string | null): void {
+  function notifyNative(title: string, body: string, isError: boolean, tabId: string | null, subtitle?: string): void {
     if (native) {
-      void native.invoke('notify:show', { title, body, isError, tabId }).catch(() => {});
+      void native.invoke('notify:show', { title, body, isError, tabId, ...(subtitle ? { subtitle } : {}) }).catch(() => {});
     } else {
       opts.webNotify?.(title, body);
     }
@@ -250,10 +249,10 @@ export function createElectronApiShim(opts: ShimOptions): ShimHandle {
           emitForSession(m.sessionId, prefix, m.payload);
         } else if (m.kind === 'notification' && prefix === 'claude-notification') {
           const tabs = sessionToTabs.get(m.sessionId);
-          const p = (m.payload ?? {}) as { title?: string; body?: string; is_error?: boolean };
+          const p = (m.payload ?? {}) as { title?: string; body?: string; is_error?: boolean; subtitle?: string };
           for (const tab of tabs ?? []) {
             emit('claude-notification', { ...(m.payload as Record<string, unknown>), tab_id: tab });
-            notifyNative(p.title ?? 'OmniFex', p.body ?? '', !!p.is_error, tab);
+            notifyNative(p.title ?? 'OmniFex', p.body ?? '', !!p.is_error, tab, p.subtitle);
           }
         } else {
           // `notification` is two things on the wire: the OS-notification
@@ -293,6 +292,12 @@ export function createElectronApiShim(opts: ShimOptions): ShimHandle {
       }
       case 'channel':
         emit(m.channel, m.payload);
+        // A notification that belongs to no session (a rate-limit threshold)
+        // is broadcast rather than routed; it still deserves the banner.
+        if (m.channel === 'claude-notification') {
+          const p = (m.payload ?? {}) as { title?: string; body?: string; is_error?: boolean; subtitle?: string };
+          notifyNative(p.title ?? 'OmniFex', p.body ?? '', !!p.is_error, null, p.subtitle);
+        }
         return;
       case 'project.changed':
       case 'session.changed':

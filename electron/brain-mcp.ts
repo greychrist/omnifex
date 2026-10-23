@@ -1,9 +1,9 @@
 /**
  * The Brain MCP server.
  *
- * Spawned by the Claude CLI — never by OmniFex — as `process.execPath` with
- * ELECTRON_RUN_AS_NODE=1, so `better-sqlite3` loads against the Electron ABI it
- * was built for. System `node` would load a module built for the wrong ABI and
+ * Spawned by the Claude CLI — never by OmniFex — on the daemon's own node
+ * (the app's `omnifexd`), so `better-sqlite3` loads against the one Node ABI
+ * it was built for. Whatever `node` is on PATH may be another major, and would
  * abort on open.
  *
  * It has no account concept and cannot enumerate vaults: it reads the one path

@@ -3,9 +3,9 @@
  * daemon this page is attached to, and the shape of its answer.
  *
  * The socket URL is the only thing the renderer knows about the daemon's
- * address (Electron gets it from `remote:url`; the web client is served by
- * the daemon itself), so the health URL is derived from it rather than
- * configured twice.
+ * address (the Mac app reports it through `remote:url`; the web client is
+ * served by the daemon itself), so the health URL is derived from it rather
+ * than configured twice.
  */
 
 export interface DaemonHealthInfo {
@@ -20,7 +20,7 @@ export interface DaemonHealthInfo {
 }
 
 export interface RemoteInfoLike {
-  mode: 'electron-legacy' | 'electron-remote' | 'web';
+  mode: 'desktop' | 'web';
   url: string | null;
 }
 
@@ -28,7 +28,7 @@ export interface RemoteInfoLike {
 export function daemonHealthUrl(info: RemoteInfoLike | undefined, origin: string): string | null {
   if (!info) return null;
   if (info.mode === 'web') return `${origin}/healthz`;
-  if (info.mode === 'electron-remote' && info.url) {
+  if (info.url) {
     return info.url.replace(/^ws(s?):\/\//, 'http$1://').replace(/\/ws$/, '/healthz');
   }
   return null;

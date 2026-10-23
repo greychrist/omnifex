@@ -14,12 +14,12 @@ import { CostReportPrintPage } from "@/components/cost-report/CostReportPrintPag
 import { installRemoteBridge } from "@/lib/remote/bootstrap";
 import { installStallWatchdog } from "@/lib/stallWatchdog";
 
-// Everything below talks to `window.electronAPI`, so the decision about what
-// that object IS — the preload bridge, or the OmniFex Remote shim over a
-// WebSocket — has to land first. A failure here falls back to the preload
-// bridge; nothing about the laptop depends on the daemon.
+// Everything below talks to `window.electronAPI`, so the shim over the
+// daemon's WebSocket has to be installed first. It installs before it
+// connects, so a daemon that is down is a reconnecting banner, not a blank
+// window.
 void installRemoteBridge()
-  .catch((err: unknown) => { console.warn('[remote] bootstrap failed; legacy IPC', err); })
+  .catch((err: unknown) => { console.warn('[remote] bootstrap failed', err); })
   .then(() => { boot(); });
 
 function boot(): void {

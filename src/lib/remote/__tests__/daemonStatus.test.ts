@@ -3,10 +3,10 @@ import { describe, it, expect, vi } from 'vitest';
 import { daemonHealthUrl, fetchDaemonHealth, formatUptime, parseDaemonHealthInfo } from '@/lib/remote/daemonStatus';
 
 describe('daemonHealthUrl', () => {
-  it('derives /healthz from the Electron socket url', () => {
-    expect(daemonHealthUrl({ mode: 'electron-remote', url: 'ws://100.64.0.1:47700/ws' }, 'http://localhost:5174'))
+  it('derives /healthz from the desktop socket url', () => {
+    expect(daemonHealthUrl({ mode: 'desktop', url: 'ws://100.64.0.1:47700/ws' }, 'http://localhost:5174'))
       .toBe('http://100.64.0.1:47700/healthz');
-    expect(daemonHealthUrl({ mode: 'electron-remote', url: 'wss://mac.tail.ts.net/ws' }, 'x'))
+    expect(daemonHealthUrl({ mode: 'desktop', url: 'wss://mac.tail.ts.net/ws' }, 'x'))
       .toBe('https://mac.tail.ts.net/healthz');
   });
 
@@ -16,8 +16,7 @@ describe('daemonHealthUrl', () => {
   });
 
   it('is null without a daemon', () => {
-    expect(daemonHealthUrl({ mode: 'electron-legacy', url: null }, 'x')).toBeNull();
-    expect(daemonHealthUrl({ mode: 'electron-remote', url: null }, 'x')).toBeNull();
+    expect(daemonHealthUrl({ mode: 'desktop', url: null }, 'x')).toBeNull();
     expect(daemonHealthUrl(undefined, 'x')).toBeNull();
   });
 });

@@ -2,14 +2,14 @@
 
 React 19 + TypeScript + Tailwind v4 renderer for OmniFex, built with Vite. The renderer has no Node.js access.
 
-The same bundle runs in two places: inside Electron, and in a browser served by the OmniFex Remote daemon. `src/lib/remote/bootstrap.ts` decides at boot what `window.electronAPI` is — the preload bridge, or a WebSocket shim onto the daemon that keeps the bridge for Electron-only channels. Feature code should never care which; if it does, that is a bug in the shim, not a reason to branch.
+The same bundle, served by the daemon, runs in two places: the Mac app's WKWebView and a browser. `src/lib/remote/bootstrap.ts` installs `window.electronAPI` (the name is the Electron era's) — a WebSocket shim onto the daemon that, on the Mac, sends the native-only channels to the app's bridge (`window.__omnifexNative`). Feature code should never care which host it is in; if it does, that is a bug in the shim, not a reason to branch.
 
 See the root `CLAUDE.md` for the full architecture, build commands, and account-aware rules.
 
 ## Focus
 
 - Frontend code should call `src/lib/api.ts` (typed API surface), which routes through `src/lib/apiAdapter.ts` (`window.electronAPI.invoke`). Do not call `window.electronAPI.invoke()` directly from feature components — that is also what makes the remote shim a single seam rather than a per-component concern.
-- Strip `undefined` from optional params before they cross the IPC boundary — the main process does not distinguish `undefined` from missing.
+- Strip `undefined` from optional params before they cross the IPC boundary — the daemon does not distinguish `undefined` from missing.
 
 ## Rules
 
@@ -25,7 +25,7 @@ See the root `CLAUDE.md` for the full architecture, build commands, and account-
 - `src/App.tsx`
   Project picker, account picker handoff, high-level navigation, tab system integration
 - `src/components/AgentSession.tsx`
-  Streaming session UX (formerly `ClaudeCodeSession.tsx`) — subscribes to `session-*` / `claude-stream` / `agent-output:*` event channels exposed via the preload prefix allow-list
+  Streaming session UX (formerly `ClaudeCodeSession.tsx`) — subscribes to `session-*` / `claude-stream` / `agent-output:*` event channels the shim re-emits from daemon pushes
 - `src/components/AccountSettings.tsx`
   Accounts + path rule management UI
 - `src/components/Settings.tsx`
@@ -39,20 +39,16 @@ See the root `CLAUDE.md` for the full architecture, build commands, and account-
 - `src/lib/apiAdapter.ts`
   IPC transport — thin wrapper over `window.electronAPI.invoke`
 - `src/lib/remote/`
-  The other end of that call in remote mode: `bootstrap.ts` (mode selection), `electronApiShim.ts` (channel → protocol method or `rpc.invoke`), `nativeChannels.ts` (what stays in Electron)
+  The other end of that call: `bootstrap.ts` (installs the shim), `electronApiShim.ts` (channel → protocol method, `rpc.invoke` or the native bridge), `nativeChannels.ts` (what the Mac app serves)
 
 ## Adding a New IPC Call
 
 1. Add the service method + test in `electron/services/foo.ts` and `electron/__tests__/foo.test.ts` (TDD).
-2. Wire the handler adapter in `electron/main.ts` and the interface entry in `electron/ipc/handlers.ts`.
-3. Add the channel name to `INVOKE_CHANNELS` in `electron/ipc/channels.ts` — that is the list `electron/preload.ts` reads, and without an entry the preload layer rejects the invoke.
-4. Decide whether the channel is **native-only**. If serving it needs a `BrowserWindow`, a display, a pty, or the updater, add it to `NATIVE_INVOKE_CHANNELS` in `src/lib/remote/nativeChannels.ts`.
+2. Wire it in `electron/remote/daemon.ts` and add the handler + interface entry in `electron/ipc/handlers.ts`.
+3. Add the channel name to `INVOKE_CHANNELS` in `electron/ipc/channels.ts`. The rpc allowlist starts from that list, so the channel is now reachable from every client — deny it in `electron/remote/rpc-allowlist.ts` if it should not be.
+4. Decide whether the channel is **native-only**: it needs the machine the window is on (a dialog, Finder, the dock, notifications, the app bundle). If so it does not go in the daemon at all — add it to `NATIVE_INVOKE_CHANNELS` in `src/lib/remote/nativeChannels.ts`, to `macos/Sources/OmniFexCore/NativeChannels.swift`, and give it a handler in `macos/Sources/OmniFex/NativeHandlers.swift`. `ipc-channel-contract.test.ts` fails until all three agree.
 5. Add the typed wrapper method in `src/lib/api.ts`.
 6. Use it from the component.
-
-Skipping step 3 is the most common "why is nothing happening?" bug — check `channels.ts` first when a new call silently fails.
-
-Skipping step 4 is worse, because it does not fail: remote mode is the default, so the shim sends the channel to the daemon, the daemon's adapter bag has no such service, and the optional-chained handler returns `null`. The feature reads as "not configured" instead of broken.
 
 ## Verification
 

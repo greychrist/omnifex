@@ -38,7 +38,7 @@ Act on it before anything else:
 
 ## Runbook
 
-1. **Gates** — `npm run check && npm test && npm run build`. All three pass or stop.
+1. **Gates** — `npm run check && npm test && npm run test:swift && npm run build`. All pass or stop.
 2. **Release notes** — write the CHANGELOG body for this version to
    `/tmp/changelog-$V.md` with the Write tool (body only: `### Added` /
    `### Changed` / `### Fixed` / `### Removed`, Keep-a-Changelog style,
@@ -58,12 +58,17 @@ Act on it before anything else:
    ```bash
    rm -rf out/make && OMNIFEX_NOTARIZE=1 npm run make > /tmp/release-$V-make.log 2>&1
    ```
-   Normal duration 15–25 min (build 8–12 + two notary round trips). Past 30 min:
+   `make` builds the renderer, the daemon bundles and the Swift app, bundles
+   Node (`packaging/node-runtime.ts`), signs, then notarizes and staples the
+   app and the DMG. Normal duration 10–20 min, mostly the two notary round
+   trips. Past 30 min:
    `xcrun notarytool history --keychain-profile omnifex-notary | head -12` —
    `In Progress` means Apple still has it. `OMNIFEX_NOTARIZE=1` is the only
-   thing that makes this build shippable; without it the run exits 0 unsigned.
+   thing that makes this build shippable; without it the run exits 0 signed
+   but never notarized.
 7. **Gatekeeper gate** — `bash ${CLAUDE_SKILL_DIR}/scripts/gatekeeper.sh $V`.
-   Non-zero exit → do not upload; report the FAIL lines. `local` mode: skip to 10.
+   Non-zero exit → do not upload; report the FAIL lines. `local` mode: stop
+   after this.
 8. **Publish** —
    ```bash
    bash ${CLAUDE_SKILL_DIR}/scripts/release-notes.sh $V
@@ -74,7 +79,6 @@ Act on it before anything else:
 9. **Confirm** — `bash ${CLAUDE_SKILL_DIR}/scripts/publish-check.sh $V`. This
    reads the same `releases/latest` endpoint the updater polls. It is the only
    post-publish check; `gh release view --json isLatest` does not exist.
-10. **Rebuild ABI** — `npm run rebuild:electron`, so Greg's next `npm start` works.
 
 ## Report
 
@@ -88,7 +92,10 @@ Act on it before anything else:
 - Don't use `--draft`; Greg removed the manual publish click on purpose.
 - Don't re-point an existing tag; take the next number.
 - Don't fold feature work into the bump commit; preflight commits it separately first.
-- Don't rename artifacts without updating the regex in `electron/services/updater.ts`.
-- Don't skip step 10.
+- Don't rename artifacts without updating the zip pattern in
+  `macos/Sources/OmniFexCore/Updater.swift`. The pre-Swift Electron app (one
+  other user may still run it) parses the same name and checks
+  `Contents/MacOS/OmniFex` + `CFBundleShortVersionString`, which is how it
+  installs the Swift app.
 
 Signing setup, identifiers and notary troubleshooting: `reference/signing.md`.

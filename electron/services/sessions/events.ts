@@ -106,7 +106,7 @@ export function classifyRuntimeEvent(raw: unknown): RuntimeEvent {
 
   if (m.type === 'system' && m.subtype === 'compact_boundary') {
     // CliCompactBoundaryMessage's `compact_metadata` shape — typed inline
-    // because the CLI types aren't pulled in here (electron main process).
+    // because the CLI types aren't pulled in here (the daemon).
     const meta = m.compact_metadata as
       | { trigger?: 'manual' | 'auto'; pre_tokens?: number }
       | undefined;

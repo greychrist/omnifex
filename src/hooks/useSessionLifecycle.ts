@@ -458,8 +458,8 @@ export function useSessionLifecycle({
   //      before re-mount in StrictMode and before any IPC event from main
   //      reaches the renderer, so tearing them off here loses real events.
   //      Listeners are owned by the main-process session, not the React tree;
-  //      cleanup belongs in tab-close (TabContext.removeTab) and app-quit
-  //      (main.ts before-quit → sessionsService.stopAll).
+  //      cleanup belongs in tab-close (TabContext.removeTab); quitting the
+  //      app leaves the session running in the daemon.
   useEffect(() => {
     isMountedRef.current = true;
     if (persistentSessionRef.current && unlistenRefs.current.length === 0) {

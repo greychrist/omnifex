@@ -9,8 +9,8 @@
  * launchd does not run a login shell, so `PATH` is whatever the plist says.
  * `install` therefore bakes in the PATH of the shell it was run from, and the
  * daemon additionally re-derives PATH from the login shell at startup
- * (`fixPath()` in daemon.ts, the same trick `main.ts` uses for Finder
- * launches). Belt and braces: either alone has failed before.
+ * (`fixPath()` in daemon.ts — an app launched from Finder hands its own
+ * minimal PATH to `install`). Belt and braces: either alone has failed before.
  */
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -19,7 +19,7 @@ export const LAUNCH_AGENT_LABEL = 'com.omnifex.server';
 
 export interface LaunchAgentSpec {
   label: string;
-  /** argv[0] is the Electron binary; the rest is the script and its args. */
+  /** argv[0] is the bundled node; the rest is the script and its args. */
   programArguments: string[];
   environment: Record<string, string>;
   stdoutPath: string;
@@ -84,7 +84,7 @@ export function defaultLogPath(home: string = homedir()): string {
 }
 
 export interface DaemonInvocation {
-  /** The Electron binary, run as node. */
+  /** The node binary — `Contents/MacOS/omnifexd` in the app. */
   execPath: string;
   /** The built `omnifex-server.js`. */
   script: string;
@@ -100,7 +100,6 @@ export function launchAgentSpecFor(
   home: string = homedir(),
 ): LaunchAgentSpec {
   const environment: Record<string, string> = {
-    ELECTRON_RUN_AS_NODE: '1',
     HOME: home,
     PATH: env.PATH ?? '/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin',
   };

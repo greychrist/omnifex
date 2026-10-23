@@ -1665,7 +1665,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
       // throws here, the user needs the toast NOW so they can correlate
       // it with what they just saw, and we don't want a swallowed payload
       // to vanish if the renderer reloads before the batch flushes. The
-      // main-process onError observer (main.ts → log_error_toast_enabled)
+      // main-process onError observer (the daemon → log_error_toast_enabled)
       // turns this into a user-visible toast with a "View in Log" action.
       const errMsg =
         err instanceof Error
@@ -2472,7 +2472,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   // session is torn down (tab close); back-button keeps the CLI
   // session alive but we still want the summary to reflect the work
   // that just happened. Gated on the same `enabled && autoOnClose`
-  // pair the lifecycle hook in main.ts checks — the back-button is
+  // pair the close hook in the daemon (session-close-work.ts) checks — the back-button is
   // semantically "leaving the session," so the user's auto-on-close
   // toggle controls it. The service's in-flight dedup map prevents
   // double-spend if both back-button and tab-close fire for the same

@@ -35,12 +35,10 @@ function req(toolName: string, input: Record<string, unknown>): AgentPermissionR
 function handlerFor(mode: string) {
   const { handle, respondPermission } = makeHandle(mode);
   const sendToRenderer = vi.fn();
-  const notificationHooks = { showNotification: vi.fn(), incrementUnread: vi.fn() };
   const fn = createPermissionRequestHandler(
     handle,
     'tab-1',
     sendToRenderer as never,
-    notificationHooks as never,
     null,
   );
   return { fn, handle, respondPermission, sendToRenderer };

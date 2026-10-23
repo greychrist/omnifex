@@ -24,8 +24,7 @@ import {
 import type {
   SessionHandle,
   SendToRenderer,
-  NotificationHooks,
-} from '../services/sessions/types';
+  } from '../services/sessions/types';
 import type { LoggingService } from '../services/logging';
 
 type Queued = {
@@ -50,23 +49,19 @@ function setup(queue: Queued[], opts: { engine?: boolean } = {}) {
   } as unknown as SessionHandle;
 
   const sent: { channel: string; args: unknown[] }[] = [];
+  // Banners the client would raise: the `claude-notification` payloads.
+  const notifications: unknown[] = [];
   const sendToRenderer: SendToRenderer = (channel, ...args) => {
     sent.push({ channel, args });
+    if (channel === 'claude-notification') notifications.push(args[0]);
   };
-  const notifications: unknown[][] = [];
-  const hooks = {
-    showNotification: vi.fn((...a: unknown[]) => {
-      notifications.push(a);
-    }),
-    incrementUnread: vi.fn(),
-  } as unknown as NotificationHooks;
 
   const persisted: Record<string, unknown>[] = [];
   const persist = vi.fn((r: Record<string, unknown>) => {
     persisted.push(r);
   });
 
-  return { handle, sendToRenderer, hooks, persist, responses, sent, notifications, persisted };
+  return { handle, sendToRenderer, persist, responses, sent, notifications, persisted };
 }
 
 const allowRule = (destination: string, toolName = 'Edit', ruleContent?: string) => ({
@@ -79,7 +74,7 @@ const allowRule = (destination: string, toolName = 'Edit', ruleContent?: string)
 describe('respondPermission — engine response body', () => {
   it('sends behavior and updatedInput on allow', () => {
     const t = setup([{ requestId: 'req1', toolInput: { file_path: '/a.ts' } }]);
-    respondPermission(t.handle, 'tab1', t.sendToRenderer, t.hooks, 'allow');
+    respondPermission(t.handle, 'tab1', t.sendToRenderer, 'allow');
     expect(t.responses).toEqual([
       { requestId: 'req1', behavior: 'allow', body: { behavior: 'allow', updatedInput: { file_path: '/a.ts' } } },
     ]);
@@ -89,32 +84,32 @@ describe('respondPermission — engine response body', () => {
   // is the fallback — never `{}` when we have the real input.
   it('prefers caller-supplied updatedInput over the captured original', () => {
     const t = setup([{ requestId: 'req1', toolInput: { file_path: '/a.ts' } }]);
-    respondPermission(t.handle, 'tab1', t.sendToRenderer, t.hooks, 'allow', { file_path: '/b.ts' });
+    respondPermission(t.handle, 'tab1', t.sendToRenderer, 'allow', { file_path: '/b.ts' });
     expect((t.responses[0].body as { updatedInput: unknown }).updatedInput).toEqual({ file_path: '/b.ts' });
   });
 
   it('falls back to an empty object when nothing captured the input', () => {
     const t = setup([{ requestId: 'req1' }]);
-    respondPermission(t.handle, 'tab1', t.sendToRenderer, t.hooks, 'allow');
+    respondPermission(t.handle, 'tab1', t.sendToRenderer, 'allow');
     expect((t.responses[0].body as { updatedInput: unknown }).updatedInput).toEqual({});
   });
 
   it('sends a denial message rather than updatedInput on deny', () => {
     const t = setup([{ requestId: 'req1', toolInput: { file_path: '/a.ts' } }]);
-    respondPermission(t.handle, 'tab1', t.sendToRenderer, t.hooks, 'deny');
+    respondPermission(t.handle, 'tab1', t.sendToRenderer, 'deny');
     expect(t.responses[0].body).toEqual({ behavior: 'deny', message: 'User denied permission' });
   });
 
   it('is a no-op on an empty queue', () => {
     const t = setup([]);
-    respondPermission(t.handle, 'tab1', t.sendToRenderer, t.hooks, 'allow');
+    respondPermission(t.handle, 'tab1', t.sendToRenderer, 'allow');
     expect(t.responses).toEqual([]);
     expect(t.sent).toEqual([]);
   });
 
   it('still drains the queue when no engine is attached', () => {
     const t = setup([{ requestId: 'req1' }], { engine: false });
-    respondPermission(t.handle, 'tab1', t.sendToRenderer, t.hooks, 'allow');
+    respondPermission(t.handle, 'tab1', t.sendToRenderer, 'allow');
     expect(t.handle.permissionQueue).toHaveLength(0);
   });
 
@@ -125,7 +120,7 @@ describe('respondPermission — engine response body', () => {
     (t.handle.engine as unknown as { respondPermission: ReturnType<typeof vi.fn> })
       .respondPermission.mockRejectedValueOnce(new Error('closed'));
     expect(() =>
-      respondPermission(t.handle, 'tab1', t.sendToRenderer, t.hooks, 'allow'),
+      respondPermission(t.handle, 'tab1', t.sendToRenderer, 'allow'),
     ).not.toThrow();
   });
 });
@@ -135,7 +130,7 @@ describe('respondPermission — the session-destination twin', () => {
   it('mirrors a persistent allow rule to the session destination', () => {
     const t = setup([{ requestId: 'req1' }]);
     respondPermission(
-      t.handle, 'tab1', t.sendToRenderer, t.hooks, 'allow', undefined,
+      t.handle, 'tab1', t.sendToRenderer, 'allow', undefined,
       [allowRule('localSettings')] as never,
     );
     const body = t.responses[0].body as { updatedPermissions: { destination: string }[] };
@@ -147,7 +142,7 @@ describe('respondPermission — the session-destination twin', () => {
   it('does not augment on deny', () => {
     const t = setup([{ requestId: 'req1' }]);
     respondPermission(
-      t.handle, 'tab1', t.sendToRenderer, t.hooks, 'deny', undefined,
+      t.handle, 'tab1', t.sendToRenderer, 'deny', undefined,
       [allowRule('localSettings')] as never,
     );
     expect(t.responses[0].body).toEqual({ behavior: 'deny', message: 'User denied permission' });
@@ -155,7 +150,7 @@ describe('respondPermission — the session-destination twin', () => {
 
   it('omits updatedPermissions entirely when there are none', () => {
     const t = setup([{ requestId: 'req1' }]);
-    respondPermission(t.handle, 'tab1', t.sendToRenderer, t.hooks, 'allow', undefined, [] as never);
+    respondPermission(t.handle, 'tab1', t.sendToRenderer, 'allow', undefined, [] as never);
     expect('updatedPermissions' in (t.responses[0].body as object)).toBe(false);
   });
 });
@@ -164,7 +159,7 @@ describe('respondPermission — persisting rules to disk', () => {
   it('writes a rule for each settings-file destination', () => {
     const t = setup([{ requestId: 'req1' }]);
     respondPermission(
-      t.handle, 'tab1', t.sendToRenderer, t.hooks, 'allow', undefined,
+      t.handle, 'tab1', t.sendToRenderer, 'allow', undefined,
       [allowRule('userSettings', 'Bash', 'ls:*')] as never,
       t.persist,
     );
@@ -182,7 +177,7 @@ describe('respondPermission — persisting rules to disk', () => {
   it('maps every destination to its settings scope', () => {
     const t = setup([{ requestId: 'req1' }]);
     respondPermission(
-      t.handle, 'tab1', t.sendToRenderer, t.hooks, 'allow', undefined,
+      t.handle, 'tab1', t.sendToRenderer, 'allow', undefined,
       [
         allowRule('userSettings', 'A'),
         allowRule('projectSettings', 'B'),
@@ -198,7 +193,7 @@ describe('respondPermission — persisting rules to disk', () => {
   it('never writes the session twin to disk', () => {
     const t = setup([{ requestId: 'req1' }]);
     respondPermission(
-      t.handle, 'tab1', t.sendToRenderer, t.hooks, 'allow', undefined,
+      t.handle, 'tab1', t.sendToRenderer, 'allow', undefined,
       [allowRule('localSettings'), allowRule('session')] as never,
       t.persist,
     );
@@ -209,7 +204,7 @@ describe('respondPermission — persisting rules to disk', () => {
   it('renders a rule with no content as a bare tool name', () => {
     const t = setup([{ requestId: 'req1' }]);
     respondPermission(
-      t.handle, 'tab1', t.sendToRenderer, t.hooks, 'allow', undefined,
+      t.handle, 'tab1', t.sendToRenderer, 'allow', undefined,
       [allowRule('localSettings', 'Read')] as never,
       t.persist,
     );
@@ -219,7 +214,7 @@ describe('respondPermission — persisting rules to disk', () => {
   it('carries a deny suggestion through as a deny rule', () => {
     const t = setup([{ requestId: 'req1' }]);
     respondPermission(
-      t.handle, 'tab1', t.sendToRenderer, t.hooks, 'allow', undefined,
+      t.handle, 'tab1', t.sendToRenderer, 'allow', undefined,
       [{ ...allowRule('localSettings', 'Bash', 'rm:*'), behavior: 'deny' }] as never,
       t.persist,
     );
@@ -229,7 +224,7 @@ describe('respondPermission — persisting rules to disk', () => {
   it('skips malformed rule entries rather than writing junk', () => {
     const t = setup([{ requestId: 'req1' }]);
     respondPermission(
-      t.handle, 'tab1', t.sendToRenderer, t.hooks, 'allow', undefined,
+      t.handle, 'tab1', t.sendToRenderer, 'allow', undefined,
       [{
         type: 'addRules', behavior: 'allow', destination: 'localSettings',
         rules: [null, { toolName: '' }, { toolName: '   ' }, { toolName: 42 }, { toolName: 'Edit' }],
@@ -242,7 +237,7 @@ describe('respondPermission — persisting rules to disk', () => {
   it('tolerates a suggestion carrying no rules array', () => {
     const t = setup([{ requestId: 'req1' }]);
     respondPermission(
-      t.handle, 'tab1', t.sendToRenderer, t.hooks, 'allow', undefined,
+      t.handle, 'tab1', t.sendToRenderer, 'allow', undefined,
       [{ type: 'addRules', behavior: 'allow', destination: 'localSettings' }] as never,
       t.persist,
     );
@@ -259,7 +254,7 @@ describe('respondPermission — persisting rules to disk', () => {
       })
       .mockImplementation(() => {});
     respondPermission(
-      t.handle, 'tab1', t.sendToRenderer, t.hooks, 'allow', undefined,
+      t.handle, 'tab1', t.sendToRenderer, 'allow', undefined,
       [allowRule('userSettings', 'A'), allowRule('localSettings', 'B')] as never,
       persist,
     );
@@ -269,7 +264,7 @@ describe('respondPermission — persisting rules to disk', () => {
   it('persists nothing on deny', () => {
     const t = setup([{ requestId: 'req1' }]);
     respondPermission(
-      t.handle, 'tab1', t.sendToRenderer, t.hooks, 'deny', undefined,
+      t.handle, 'tab1', t.sendToRenderer, 'deny', undefined,
       [allowRule('localSettings')] as never,
       t.persist,
     );
@@ -280,7 +275,7 @@ describe('respondPermission — persisting rules to disk', () => {
   it('persists nothing for session-only or destination-less suggestions', () => {
     const t = setup([{ requestId: 'req1' }]);
     respondPermission(
-      t.handle, 'tab1', t.sendToRenderer, t.hooks, 'allow', undefined,
+      t.handle, 'tab1', t.sendToRenderer, 'allow', undefined,
       [allowRule('session'), { type: 'addRules', behavior: 'allow', rules: [{ toolName: 'X' }] },
        allowRule('somethingNew')] as never,
       t.persist,
@@ -298,7 +293,7 @@ describe('respondPermission — draining a stacked queue', () => {
 
   it('pushes the next queued request to the renderer and re-notifies', () => {
     const t = setup([{ requestId: 'req1' }, { requestId: 'req2', payload: nextTool }]);
-    respondPermission(t.handle, 'tab1', t.sendToRenderer, t.hooks, 'allow');
+    respondPermission(t.handle, 'tab1', t.sendToRenderer, 'allow');
 
     expect(t.sent[0]).toEqual({ channel: 'agent-output:tab1', args: [nextTool] });
     const notif = t.sent[1];
@@ -306,13 +301,14 @@ describe('respondPermission — draining a stacked queue', () => {
     // Title carries the project basename so a stacked prompt says which repo.
     expect((notif.args[0] as { title: string }).title).toBe('OmniFex — omnifex');
     expect(t.notifications).toHaveLength(1);
-    expect((t.hooks as unknown as { incrementUnread: ReturnType<typeof vi.fn> }).incrementUnread)
-      .toHaveBeenCalledTimes(1);
+    // The subtitle rides the payload: it is what says this banner wants an
+    // answer, not that a task finished.
+    expect(t.notifications[0]).toMatchObject({ subtitle: 'Permission Request:' });
   });
 
   it('sends nothing when the queue is drained', () => {
     const t = setup([{ requestId: 'req1' }]);
-    respondPermission(t.handle, 'tab1', t.sendToRenderer, t.hooks, 'allow');
+    respondPermission(t.handle, 'tab1', t.sendToRenderer, 'allow');
     expect(t.sent).toEqual([]);
   });
 
@@ -322,38 +318,27 @@ describe('respondPermission — draining a stacked queue', () => {
       { requestId: 'req1' },
       { requestId: 'req2', payload: { kind: 'patch', summary: 'Apply 3 edits to api.ts' } },
     ]);
-    respondPermission(t.handle, 'tab1', t.sendToRenderer, t.hooks, 'allow');
+    respondPermission(t.handle, 'tab1', t.sendToRenderer, 'allow');
     expect((t.sent[1].args[0] as { body: string }).body).toBe('Apply 3 edits to api.ts');
   });
 
   it('falls back to a generic label for a summary-less Codex patch', () => {
     const t = setup([{ requestId: 'req1' }, { requestId: 'req2', payload: { kind: 'patch' } }]);
-    respondPermission(t.handle, 'tab1', t.sendToRenderer, t.hooks, 'allow');
+    respondPermission(t.handle, 'tab1', t.sendToRenderer, 'allow');
     expect((t.sent[1].args[0] as { body: string }).body).toBe('Apply patch');
   });
 
   it('falls back to a generic label for a summary-less Codex exec', () => {
     const t = setup([{ requestId: 'req1' }, { requestId: 'req2', payload: { kind: 'exec' } }]);
-    respondPermission(t.handle, 'tab1', t.sendToRenderer, t.hooks, 'allow');
+    respondPermission(t.handle, 'tab1', t.sendToRenderer, 'allow');
     expect((t.sent[1].args[0] as { body: string }).body).toBe('Run command');
   });
 
-  // Diagnostics must not take down the click handler mid-drain.
-  it('survives a throwing notification hook', () => {
-    const t = setup([{ requestId: 'req1' }, { requestId: 'req2', payload: nextTool }]);
-    (t.hooks as unknown as { showNotification: ReturnType<typeof vi.fn> })
-      .showNotification.mockImplementation(() => {
-        throw new Error('no display');
-      });
-    expect(() =>
-      respondPermission(t.handle, 'tab1', t.sendToRenderer, t.hooks, 'allow'),
-    ).not.toThrow();
-  });
 
   it('names the app when the project path has no basename', () => {
     const t = setup([{ requestId: 'req1' }, { requestId: 'req2', payload: nextTool }]);
     (t.handle as unknown as { projectPath: string }).projectPath = '/';
-    respondPermission(t.handle, 'tab1', t.sendToRenderer, t.hooks, 'allow');
+    respondPermission(t.handle, 'tab1', t.sendToRenderer, 'allow');
     expect((t.sent[1].args[0] as { title: string }).title).toBe('OmniFex — OmniFex');
   });
 });
@@ -363,19 +348,19 @@ describe('respondPermission — Codex approvals', () => {
   // A Claude-shaped body would spread garbage into that result.
   it('sends a bare decision for a patch approval', () => {
     const t = setup([{ requestId: 'req1', payload: { kind: 'patch' } }]);
-    respondPermission(t.handle, 'tab1', t.sendToRenderer, t.hooks, 'allow');
+    respondPermission(t.handle, 'tab1', t.sendToRenderer, 'allow');
     expect(t.responses).toEqual([{ requestId: 'req1', behavior: 'allow', body: undefined }]);
   });
 
   it('sends a bare decision for an exec approval', () => {
     const t = setup([{ requestId: 'req1', payload: { kind: 'exec' } }]);
-    respondPermission(t.handle, 'tab1', t.sendToRenderer, t.hooks, 'deny');
+    respondPermission(t.handle, 'tab1', t.sendToRenderer, 'deny');
     expect(t.responses).toEqual([{ requestId: 'req1', behavior: 'deny', body: undefined }]);
   });
 
   it('sends the Claude body for a tool-kind payload', () => {
     const t = setup([{ requestId: 'req1', payload: { kind: 'tool' }, toolInput: { a: 1 } }]);
-    respondPermission(t.handle, 'tab1', t.sendToRenderer, t.hooks, 'allow');
+    respondPermission(t.handle, 'tab1', t.sendToRenderer, 'allow');
     expect(t.responses[0].body).toEqual({ behavior: 'allow', updatedInput: { a: 1 } });
   });
 });
@@ -428,7 +413,7 @@ describe('createPermissionRequestHandler — Codex approvals', () => {
       }),
     } as unknown as LoggingService;
     const onRequest = createPermissionRequestHandler(
-      t.handle, 'tab1', t.sendToRenderer, t.hooks, logging,
+      t.handle, 'tab1', t.sendToRenderer, logging,
     );
     const meta = (n = 0) => JSON.parse(rows[n].metadata as string) as Record<string, unknown>;
     return { ...t, onRequest, rows, meta, logging };
@@ -522,7 +507,7 @@ describe('createPermissionRequestHandler — Codex approvals', () => {
   it('works with no logging wired', () => {
     const t = setup([]);
     const onRequest = createPermissionRequestHandler(
-      t.handle, 'tab1', t.sendToRenderer, t.hooks, null,
+      t.handle, 'tab1', t.sendToRenderer, null,
     );
     expect(() => onRequest(patchReq())).not.toThrow();
     expect(t.handle.permissionQueue).toHaveLength(1);
@@ -536,20 +521,12 @@ describe('createPermissionRequestHandler — Codex approvals', () => {
       }),
     } as unknown as LoggingService;
     const onRequest = createPermissionRequestHandler(
-      t.handle, 'tab1', t.sendToRenderer, t.hooks, logging,
+      t.handle, 'tab1', t.sendToRenderer, logging,
     );
     expect(() => onRequest(patchReq())).not.toThrow();
     expect(t.handle.permissionQueue).toHaveLength(1);
   });
 
-  it('survives a throwing notification hook', () => {
-    const t = codexSetup();
-    (t.hooks as unknown as { showNotification: ReturnType<typeof vi.fn> })
-      .showNotification.mockImplementation(() => {
-        throw new Error('no display');
-      });
-    expect(() => t.onRequest(patchReq())).not.toThrow();
-  });
 });
 
 // The Remote daemon answers a permission by id, not by queue position: with two
@@ -559,7 +536,7 @@ describe('createPermissionRequestHandler — Codex approvals', () => {
 // behaviour exactly.
 describe('respondPermission — addressed by requestId', () => {
   const byId = (t: ReturnType<typeof setup>, requestId?: string) =>
-    respondPermission(t.handle, 'tab1', t.sendToRenderer, t.hooks, 'allow', undefined, undefined, undefined, requestId);
+    respondPermission(t.handle, 'tab1', t.sendToRenderer, 'allow', undefined, undefined, undefined, requestId);
 
   it('answers the head and reports success when no requestId is given', () => {
     const t = setup([
@@ -613,7 +590,7 @@ describe('createPermissionCancelHandler — CLI-withdrawn requests', () => {
       { requestId: 'a', payload: payload('a') },
       { requestId: 'b', payload: payload('b') },
     ]);
-    createPermissionCancelHandler(t.handle, 'tab1', t.sendToRenderer, t.hooks)('a');
+    createPermissionCancelHandler(t.handle, 'tab1', t.sendToRenderer)('a');
     expect(t.handle.permissionQueue.map((p) => p.requestId)).toEqual(['b']);
     expect(t.sent).toContainEqual({ channel: 'agent-output:tab1', args: [payload('b')] });
     expect(t.notifications).toHaveLength(1);
@@ -622,7 +599,7 @@ describe('createPermissionCancelHandler — CLI-withdrawn requests', () => {
 
   it('tells the renderer to drop the card when the queue empties', () => {
     const t = setup([{ requestId: 'a', payload: payload('a') }]);
-    createPermissionCancelHandler(t.handle, 'tab1', t.sendToRenderer, t.hooks)('a');
+    createPermissionCancelHandler(t.handle, 'tab1', t.sendToRenderer)('a');
     expect(t.handle.permissionQueue).toEqual([]);
     expect(t.sent).toEqual([
       { channel: 'agent-output:tab1', args: [{ type: 'permission_withdrawn', request_id: 'a' }] },
@@ -634,14 +611,14 @@ describe('createPermissionCancelHandler — CLI-withdrawn requests', () => {
       { requestId: 'a', payload: payload('a') },
       { requestId: 'b', payload: payload('b') },
     ]);
-    createPermissionCancelHandler(t.handle, 'tab1', t.sendToRenderer, t.hooks)('b');
+    createPermissionCancelHandler(t.handle, 'tab1', t.sendToRenderer)('b');
     expect(t.handle.permissionQueue.map((p) => p.requestId)).toEqual(['a']);
     expect(t.sent).toEqual([]);
   });
 
   it('ignores ids it does not hold (an elicitation, or already answered)', () => {
     const t = setup([{ requestId: 'a', payload: payload('a') }]);
-    createPermissionCancelHandler(t.handle, 'tab1', t.sendToRenderer, t.hooks)('zzz');
+    createPermissionCancelHandler(t.handle, 'tab1', t.sendToRenderer)('zzz');
     expect(t.handle.permissionQueue).toHaveLength(1);
     expect(t.sent).toEqual([]);
   });

@@ -2,20 +2,13 @@
  * Everything that happens because a session closed: the auto-summary, the
  * Brain's enqueues, and the drain behind them.
  *
- * One module, two composition roots — the same arrangement, and the same
- * reasons, as `periodic-work.ts`. `electron/main.ts` and
- * `electron/remote/daemon.ts` each carried a hand-copied version of this block.
- * They had not drifted semantically, but they had been re-typed (one hoisted a
- * local the other inlined, one kept the rationale comments and the other
- * dropped every one of them), which is what makes the next fix to one of them
- * miss the other.
- *
- * The drain at the end is why this matters beyond tidiness. `periodic-work.ts`
- * gates its drain on whether this process owns the work; this path did not, so
- * it was the remaining way to put a second worker on a queue that two
- * processes share through one SQLite file. `enabled` there, `drainEnabled`
- * here, and for the same reason: the gate is a convention until every call
- * site is made to ask.
+ * The drain at the end is gated like `periodic-work.ts` gates its own: two
+ * daemons can share one SQLite file (the dev instance runs beside the real
+ * one), and a second worker on the Brain queue pays twice for one
+ * distillation. `enabled` there, `drainEnabled` here, and for the same
+ * reason: the gate is a convention until every call site is made to ask.
+ * (Until 2026-10-23 the second process was Electron main, which carried a
+ * hand-copied version of this block.)
  */
 
 import {
@@ -45,17 +38,15 @@ export interface SessionCloseWorkDeps {
    */
   accounts: { getAccountByConfigDir(configDir: string): { id: number } | null | undefined };
   /**
-   * Read per close, not captured: both roots assign these refs after the
+   * Read per close, not captured: the daemon assigns these refs after the
    * service graph is built, and a session can close before either resolves.
    */
   brain: () => BrainLike | null | undefined;
   summary: () => SummaryLike | null | undefined;
   warn: (message: string, meta: Record<string, unknown>) => void;
   /**
-   * Whether this process owns the queue drain right now. Omitted means
-   * "always" — that is the daemon. Evaluated per close, never sampled at
-   * construction, because main does not learn whether a daemon answered until
-   * the renderer asks for `remote:url`.
+   * Whether this process owns the queue drain. Omitted means "always" — the
+   * real daemon. The dev daemon passes a closed gate. Evaluated per close.
    *
    * Only the drain is gated. The enqueues are idempotent and near-free, and
    * the queue is durable, so the process that does own the drain picks the

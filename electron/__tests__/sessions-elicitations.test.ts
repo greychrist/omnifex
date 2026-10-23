@@ -22,16 +22,15 @@ function harness() {
     sideChat: createSideChatStore(),
   } as unknown as SessionHandle;
   const sendToRenderer = vi.fn();
-  const showNotification = vi.fn();
-  const handlers = createElicitationHandlers(handle, 'tab-1', sendToRenderer, {
-    showNotification,
-    incrementUnread: vi.fn(),
-  });
+  const handlers = createElicitationHandlers(handle, 'tab-1', sendToRenderer);
+  // The banner the client raises for it.
+  const banners = () =>
+    sendToRenderer.mock.calls.filter(([channel]) => channel === 'claude-notification').map(([, p]) => p);
   const shown = () =>
     sendToRenderer.mock.calls
       .filter(([channel]) => channel === 'elicitation-request:tab-1')
       .map(([, payload]) => payload as AgentElicitationRequest | null);
-  return { handle, handlers, sendToRenderer, showNotification, respondElicitation, shown };
+  return { handle, handlers, sendToRenderer, banners, respondElicitation, shown };
 }
 
 const req = (requestId: string, extra: Partial<AgentElicitationRequest> = {}): AgentElicitationRequest => ({
@@ -43,17 +42,20 @@ const req = (requestId: string, extra: Partial<AgentElicitationRequest> = {}): A
 });
 
 describe('MCP elicitations', () => {
-  it('shows the first request and notifies', () => {
-    const { handlers, shown, showNotification } = harness();
+  // The session is parked until the user answers, so it gets a banner like a
+  // permission prompt does. Before the daemon carried it as a
+  // claude-notification, an MCP server's question arrived silently.
+  it('shows the first request and raises a banner for its tab', () => {
+    const { handlers, shown, banners } = harness();
     handlers.onRequest(req('e1'));
     expect(shown()).toEqual([req('e1')]);
-    expect(showNotification).toHaveBeenCalledWith(
-      'OmniFex — omnifex',
-      'Question e1',
-      false,
-      { tabId: 'tab-1' },
-      { subtitle: 'github needs your input' },
-    );
+    expect(banners()).toEqual([{
+      tab_id: 'tab-1',
+      title: 'OmniFex — omnifex',
+      body: 'Question e1',
+      is_error: false,
+      subtitle: 'github needs your input',
+    }]);
   });
 
   it('queues a second request behind the one on screen', () => {
@@ -116,9 +118,9 @@ describe('MCP elicitations', () => {
   });
 
   it('names the server by its display name when the CLI sends one', () => {
-    const { handlers, showNotification } = harness();
+    const { handlers, banners } = harness();
     handlers.onRequest(req('e1', { displayName: 'GitHub' }));
-    expect(showNotification.mock.calls[0][4]).toEqual({ subtitle: 'GitHub needs your input' });
+    expect(banners()[0]).toMatchObject({ subtitle: 'GitHub needs your input' });
   });
 });
 

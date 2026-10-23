@@ -6,7 +6,7 @@ import type { SessionVerification } from '@/lib/accountVerification';
 
 const { apiMock, platformMock } = vi.hoisted(() => ({
   apiMock: { claudeLogout: vi.fn() },
-  platformMock: { platform: { isElectron: true } },
+  platformMock: { platform: { isDesktop: true } },
 }));
 
 vi.mock('@/lib/api', () => ({ api: apiMock }));
@@ -86,7 +86,7 @@ beforeEach(() => {
   announceMock.mockReset();
   apiMock.claudeLogout.mockReset();
   apiMock.claudeLogout.mockResolvedValue(undefined);
-  platformMock.platform.isElectron = true;
+  platformMock.platform.isDesktop = true;
 });
 
 afterEach(() => { cleanup(); });
@@ -171,7 +171,7 @@ describe('AccountCard — sign in / sign out', () => {
   });
 
   it('hides the controls in the web client, which has no pty to log in with', () => {
-    platformMock.platform.isElectron = false;
+    platformMock.platform.isDesktop = false;
     renderCard();
     expect(screen.queryByRole('button', { name: /sign out/i })).toBeNull();
     expect(screen.queryByRole('button', { name: /re-authenticate/i })).toBeNull();

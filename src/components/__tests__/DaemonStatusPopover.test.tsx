@@ -38,7 +38,7 @@ let listeners: Array<(p: unknown) => void>;
 let fetchMock: ReturnType<typeof vi.fn>;
 let invokeMock: ReturnType<typeof vi.fn>;
 
-function remote(state: string, welcomeVersion = '0.4.156', mode = 'electron-remote') {
+function remote(state: string, welcomeVersion = '0.4.156', mode = 'desktop') {
   w.__omnifexRemote = {
     mode,
     url: 'ws://100.64.0.1:47700/ws',

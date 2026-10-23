@@ -173,12 +173,8 @@ describe('ipc handlers — structure', () => {
       'update_hooks_config',
       'validate_hook_command',
       'get_merged_hooks_config',
-      // Sessions
-      'session_start',
-      'session_send_message',
-      'session_send_structured_message',
-      'session_respond_permission',
-      'session_stop',
+      // Sessions (start/send/respond/stop/interrupt are typed protocol
+      // methods, not handler-map channels — see TYPED_SESSION_CHANNELS)
       'session_get_info',
       'session_set_effort',
       'session_mcp_server_status',
@@ -204,7 +200,6 @@ describe('ipc handlers — structure', () => {
       'storage_execute_sql',
       'get_setting',
       'save_setting',
-      'preview_notification_sound',
       // Proxy
       'get_proxy_settings',
       // Git
@@ -226,7 +221,7 @@ describe('ipc handlers — structure', () => {
       { channel: 'list_accounts' },
       { channel: 'create_account', params: { name: 'X' } },
       { channel: 'get_home_directory' },
-      { channel: 'session_start', params: { tabId: 't' } },
+      { channel: 'session_get_info', params: { tabId: 't' } },
       { channel: 'mcp_list' },
     ];
 
@@ -420,51 +415,18 @@ describe('ipc handlers — dispatch to services', () => {
 
   // ── Sessions ────────────────────────────────────────────────────────────
 
-  it('session_start forwards the full params object', async () => {
-    const params = { tabId: 't1', projectPath: '/p', model: 'sonnet' };
-    await invoke(handlers, 'session_start', params);
-    expect(services.sessions.start).toHaveBeenCalledWith(params);
-  });
-
-  it('session_send_message accepts tabId or session_id + prompt or message', async () => {
-    await invoke(handlers, 'session_send_message', { tabId: 't', prompt: 'hi' });
-    await invoke(handlers, 'session_send_message', {
-      session_id: 's',
-      message: 'yo',
-    });
-    expect(services.sessions.sendMessage).toHaveBeenNthCalledWith(1, 't', 'hi');
-    expect(services.sessions.sendMessage).toHaveBeenNthCalledWith(2, 's', 'yo');
-  });
-
-  it('session_send_structured_message forwards content array', async () => {
-    const content = [{ type: 'text', text: 'hey' }];
-    await invoke(handlers, 'session_send_structured_message', {
-      tabId: 't',
-      content,
-    });
-    expect(services.sessions.sendStructuredMessage).toHaveBeenCalledWith('t', content);
-  });
-
-  it('session_respond_permission forwards tabId, behavior, updatedInput, and updatedPermissions', async () => {
-    await invoke(handlers, 'session_respond_permission', {
-      tabId: 't',
-      behavior: 'allow',
-      updatedInput: { a: 1 },
-      updatedPermissions: [{ type: 'addRules', rules: [{ toolName: 'Bash' }], behavior: 'allow', destination: 'session' }],
-    });
-    expect(services.sessions.respondPermission).toHaveBeenCalledWith(
-      't',
-      'allow',
-      { a: 1 },
-      [{ type: 'addRules', rules: [{ toolName: 'Bash' }], behavior: 'allow', destination: 'session' }],
-    );
-  });
-
-  it('session_stop and session_get_info normalize the tab id', async () => {
-    await invoke(handlers, 'session_stop', { tabId: 'a' });
+  it('session_get_info normalizes the tab id', async () => {
     await invoke(handlers, 'session_get_info', { session_id: 'b' });
-    expect(services.sessions.stop).toHaveBeenCalledWith('a');
     expect(services.sessions.getInfo).toHaveBeenCalledWith('b');
+  });
+
+  // The typed session channels belong to the protocol: the renderer's shim
+  // turns them into session.create / turn.send / ..., and the rpc allowlist
+  // denies them. A handler-map entry for one would be unreachable.
+  it('serves none of the typed session channels', () => {
+    for (const ch of ['session_start', 'session_rebind', 'session_send_message', 'session_send_structured_message', 'session_respond_permission', 'session_stop', 'session_interrupt']) {
+      expect(handlers[ch]).toBeUndefined();
+    }
   });
 
   it('session_set_effort accepts tabId or session_id and level or effort', async () => {

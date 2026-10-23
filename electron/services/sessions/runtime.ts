@@ -12,9 +12,7 @@ import path from 'node:path';
 import type {
   SessionHandle,
   SendToRenderer,
-  NotificationHooks,
   RateLimitHook,
-  SessionOwnership,
   LoggingService,
   AccountMismatch,
 } from './types';
@@ -32,9 +30,7 @@ import { beginCliProcess, recordResultUsage, type CliUsageSink } from './cli-usa
 
 export interface RuntimeDeps {
   sendToRenderer: SendToRenderer;
-  notificationHooks: NotificationHooks;
   rateLimitHook: RateLimitHook | null;
-  ownership: SessionOwnership | null;
   /**
    * Live session map. Runtime uses identity-checks
    * (sessions.get(tabId) !== handle) to skip cleanup when start() has
@@ -44,7 +40,7 @@ export interface RuntimeDeps {
   sessions: Map<string, SessionHandle>;
   /**
    * Optional app_logs sink. Engine errors are written here at level=error
-   * so the renderer toast (wired in main.ts via the LoggingService onError
+   * so the renderer toast (wired in remote/daemon.ts via the LoggingService onError
    * observer) fires for every CLI stderr line we surface. Distinct from
    * `sendToRenderer('agent-error:…')`, which is a console-level diagnostic
    * stream the renderer's `LogService` already routes to app_logs as a
@@ -160,7 +156,7 @@ export function listenToMessages(
   handle: SessionHandle,
   deps: RuntimeDeps,
 ): Promise<void> {
-  const { sendToRenderer, notificationHooks, rateLimitHook, ownership, sessions, logging } = deps;
+  const { sendToRenderer, rateLimitHook, sessions, logging } = deps;
   const engine = handle.engine;
   if (!engine) return Promise.resolve();
 
@@ -259,7 +255,6 @@ export function listenToMessages(
               description: agent.description,
               event,
               sendToRenderer,
-              notificationHooks,
             });
           }
           break;
@@ -288,7 +283,6 @@ export function listenToMessages(
           projectPath: handle.projectPath,
           event,
           sendToRenderer,
-          notificationHooks,
         });
         // The CLI's result row is the turn-closer while the process lives.
         setTurn(handle, 'idle', tabId, sendToRenderer);
@@ -304,7 +298,7 @@ export function listenToMessages(
     // (CLI subprocess actually exited).
     //
     // So: surface the error so the user sees it (toast via the LoggingService
-    // onError observer wired in main.ts) and keep going. We do NOT:
+    // onError observer wired in remote/daemon.ts) and keep going. We do NOT:
     //   - emit claude-complete (the renderer treats that as "tear down all
     //     IPC listeners for this session" — see useSessionLifecycle.ts);
     //   - flip sessionStatus to 'error' (next message would still arrive
@@ -350,7 +344,6 @@ export function listenToMessages(
       // The side chat lives exactly as long as the engine.
       endSideChat(handle.sideChat, tabId, sendToRenderer);
       sessions.delete(tabId);
-      ownership?.unregister(tabId);
       teardownJsonlTail(jsonlState);
       for (const s of subscriptions) s.dispose();
       if (exitResolve) exitResolve();

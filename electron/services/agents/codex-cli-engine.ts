@@ -133,7 +133,7 @@ export function createCodexCliEngine(
     // any leftover partial line from the prior child belongs to that child.
     stderrBuf = '';
 
-    // Strip CLAUDE_CONFIG_DIR from inherited env — the Electron main process
+    // Strip CLAUDE_CONFIG_DIR from inherited env — the daemon
     // sets it to the current Claude account's config dir, and letting Codex
     // see it is a silent coupling we don't want. Keep everything else (PATH,
     // HOME, etc.) intact.

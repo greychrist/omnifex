@@ -62,8 +62,8 @@ export const CommandOutputWidget: React.FC<{
       // Make links clickable within this part. These used to feed an
       // in-app preview pane; that pane was unreachable dead code and is
       // gone, so a click now opens the system browser — `window.open` is
-      // caught by setWindowOpenHandler in main.ts, which routes http/https
-      // through shell.openExternal.
+      // caught by the Mac app's WKUIDelegate, which opens http/https in the
+      // default browser (BrowserWindowController.createWebViewWith).
       const linkElements = makeLinksClickable(part, (url) => {
         window.open(url, '_blank', 'noopener,noreferrer');
       });

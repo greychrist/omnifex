@@ -283,3 +283,21 @@ describe('api — optional-param assembly', () => {
     });
   });
 });
+
+// The Mac app renders the print view by loading the page at a hash, and the
+// hash encoding (URLSearchParams escaping, repeated keys) is TypeScript's —
+// so the renderer computes it and sends it along with the filters.
+describe('api.costReportExportPdf', () => {
+  it('sends the print hash for the filters it exports', async () => {
+    const { buildPrintHash } = await import('../costReportPrint');
+    const { emptyFilterState } = await import('../costFilterState');
+    const filters = { ...emptyFilterState(), projects: ['/a&b=c'] };
+    apiCallMock.mockResolvedValue({ path: '/tmp/r.pdf' });
+    await api.costReportExportPdf({ filters, savePath: '/tmp/r.pdf' });
+    expect(apiCallMock).toHaveBeenCalledWith('cost_report_export_pdf', {
+      filters,
+      savePath: '/tmp/r.pdf',
+      hash: buildPrintHash(filters),
+    });
+  });
+});

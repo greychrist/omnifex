@@ -17,7 +17,7 @@
 > [!NOTE]
 > This project is not affiliated with, endorsed by, or sponsored by Anthropic. Claude is a trademark of Anthropic, PBC. This is an independent project that drives the Claude Code CLI you install yourself.
 >
-> OmniFex is a long-running fork of [opcode](https://github.com/getAsterisk/opcode) by Asterisk, licensed under AGPL-3.0. It has since been rewritten on Electron and reshaped around multi-account workflows; little of the original Tauri/Rust codebase remains.
+> OmniFex is a long-running fork of [opcode](https://github.com/getAsterisk/opcode) by Asterisk, licensed under AGPL-3.0. It has since been rewritten — a Node daemon and a native Swift app around a React renderer — and reshaped around multi-account workflows; little of the original Tauri/Rust codebase remains.
 
 ## Status
 
@@ -145,7 +145,7 @@ Once installed, OmniFex checks `releases/latest` on launch and offers in-place u
 ### Prerequisites
 
 - **Claude Code CLI** installed and authenticated. See [Anthropic's setup guide](https://docs.anthropic.com/en/docs/claude-code).
-- Apple Silicon Mac running a current macOS.
+- Apple Silicon Mac running macOS 27 or later.
 - *(Optional)* the **Codex CLI** and **Lima** on your `PATH` if you want the Codex-account and VM-viewer features.
 
 ## Build from source
@@ -153,31 +153,34 @@ Once installed, OmniFex checks `releases/latest` on launch and offers in-place u
 ```bash
 git clone https://github.com/greychrist/omnifex.git
 cd omnifex
+nvm use              # Node 26 — see .nvmrc
 npm install
-npm start            # run in dev (Electron Forge + Vite)
+npm start            # dev app: Swift debug build + Vite dev server + dev daemon
 ```
+
+Building needs Node 26 and Xcode (Swift 6).
 
 For a production build:
 
 ```bash
-npm run make         # produces .dmg and .zip in out/make/
+npm run package      # out/OmniFex-darwin-arm64/OmniFex.app, signed
+npm run make         # plus the .dmg and .zip in out/make/
 ```
 
 Other useful scripts:
 
 ```bash
-npm run check              # tsc --noEmit across renderer and main process
+npm run check              # tsc --noEmit across renderer and daemon
 npm test                   # vitest one-shot
+npm run test:swift         # the Swift app's tests
 npm run test:coverage
-npm run rebuild:electron   # rebuild better-sqlite3 / node-pty for Electron's ABI
 ```
 
 ## Tech stack
 
-- **Runtime**: Electron 41 (Node 22, Chromium)
-- **Renderer**: React 19 + TypeScript + Vite 6 + Tailwind v4 + Radix / shadcn
-- **Main process**: TypeScript on Node, services wired through a typed, allow-listed IPC layer
-- **Remote**: a headless daemon (the same Electron binary under `ELECTRON_RUN_AS_NODE`) speaking a versioned WebSocket protocol to the Electron app and to a browser client
+- **App**: Swift (AppKit + WKWebView), macOS 27+
+- **Renderer**: React 19 + TypeScript + Vite 6 + Tailwind v4 + Radix / shadcn, served by the daemon
+- **Daemon**: TypeScript on a bundled Node 26 (`omnifexd`), owning every session and service, speaking a versioned WebSocket protocol to the Mac app and to a browser client
 - **Persistence**: `better-sqlite3`
 - **Terminal**: `node-pty` + `@xterm/xterm` (the `/usage` scraper and Claude / Codex sign-in)
 - **Claude/Codex integration**: drives the CLI binaries directly over `child_process` streaming JSON
@@ -186,11 +189,10 @@ npm run rebuild:electron   # rebuild better-sqlite3 / node-pty for Electron's AB
 
 ```
 omnifex/
-├── electron/              # Main process
-│   ├── main.ts            # App bootstrap, service wiring
-│   ├── preload.ts         # contextBridge (publishes __omnifexNative)
-│   ├── ipc/               # IPC handlers + the channel allow-list (channels.ts)
-│   ├── remote/            # OmniFex Remote: daemon, protocol server, push
+├── macos/                 # The Mac app (Swift): window, menus, native channels
+├── electron/              # The daemon (the directory kept its Electron-era name)
+│   ├── ipc/               # The channel → handler map + the channel list
+│   ├── remote/            # Composition root, protocol server, launcher, push
 │   ├── omnifex-server.ts  # Daemon entry point (the `omnifexd` process)
 │   ├── services/          # Business logic
 │   │   ├── accounts.ts    #   multi-account resolution & path rules
@@ -203,7 +205,8 @@ omnifex/
 │   │   ├── mcp.ts         #   MCP management
 │   │   ├── brain/         #   the memory vault: sources, distill, merge, index
 │   │   └── …              #   slash commands, hooks, lima, git, updater, …
-│   └── __tests__/         # Vitest suites for main-process code
+│   └── __tests__/         # Vitest suites for the daemon and packaging
+├── packaging/             # App bundle layout, bundled Node, signing helpers
 ├── src/                   # Renderer (React)
 │   ├── components/        # UI (sessions, accounts, MCP, usage, settings, …)
 │   ├── contexts/          # Theme, tabs, accounts, message rendering
@@ -219,7 +222,7 @@ omnifex/
 ## Security and privacy
 
 - All persistence is local (SQLite + your existing Claude/Codex config dirs). No telemetry, no analytics, no remote logging.
-- Remote access is opt-out, not opt-in: the daemon listens on your Tailscale address when one is up and on loopback otherwise, never on `0.0.0.0` unless you write that into `~/.omnifex/server.json` yourself. It has no login — reaching the address *is* the authentication — so the tailnet is the boundary. Set `remote.enabled=false` (or `OMNIFEX_REMOTE=0`) to keep everything in-process. The channels a remote client may reach are allow-listed server-side; dialogs, the updater, terminals and raw SQL are refused there regardless of what the client asks for.
+- Remote access is opt-out, not opt-in: the daemon listens on your Tailscale address when one is up and on loopback otherwise, never on `0.0.0.0` unless you write that into `~/.omnifex/server.json` yourself. It has no login — reaching the address *is* the authentication — so the tailnet is the boundary. The channels a remote client may reach are allow-listed server-side; dialogs, the updater and raw SQL are refused there regardless of what the client asks for.
 - OmniFex talks to model providers only through the CLI binaries you install and authenticate; it sends nothing to Anthropic or OpenAI itself.
 - Per-session permission gating for tool use, mirroring Claude Code's native permission model.
 - Brain vaults are plain files on your disk, one per account, and never leave it. Distilling a session is a call to the CLI under that account's own credentials; what each call costs is recorded in the Cost Report and its transcript then deleted, so OmniFex's own runs never accumulate on disk or show up as a project, and the vault a session can reach is fixed by the process it was launched with.
@@ -233,5 +236,5 @@ OmniFex is published by GreyChrist.
 ## Acknowledgments
 
 - Originally forked from [opcode](https://github.com/getAsterisk/opcode) by [Asterisk](https://asterisk.so/).
-- Built on [Electron](https://www.electronjs.org/) and [Claude Code](https://docs.anthropic.com/en/docs/claude-code).
+- Built on [Node.js](https://nodejs.org/), WebKit and [Claude Code](https://docs.anthropic.com/en/docs/claude-code).
 - [Claude](https://claude.ai) by Anthropic.

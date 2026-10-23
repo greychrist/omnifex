@@ -63,7 +63,7 @@ function setup(sink: (e: CliUsageEvent) => void) {
   const sent: { channel: string; payload: unknown }[] = [];
   const sessions = createSessionsService(
     (channel: string, ...args: unknown[]) => { sent.push({ channel, payload: args[0] }); },
-    {}, null, null, null, null, null, null, null, null, null, null, null,
+    null, null, null, null, null, null, null, null, null, null,
     sink,
   );
   sessions.start({ tabId: 't1', projectPath: '/Users/test/proj', configDir: tmpConfig, model: 'opus', permissionMode: 'default' });

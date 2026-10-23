@@ -91,7 +91,7 @@ describe('sessions.start — engine factory dispatch on params.agent', () => {
     vi.mocked(createClaudeCliEngine).mockClear();
 
     const sessions = createSessionsService(
-      vi.fn(), {}, null, null, null, null, null, null, null, null, null, null,
+      vi.fn(), null, null, null, null, null, null, null, null, null,
       () => '/picked/in/settings/claude',
     );
     sessions.start({ ...baseParams, agent: 'claude' });

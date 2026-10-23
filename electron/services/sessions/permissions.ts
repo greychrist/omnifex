@@ -11,7 +11,6 @@ import type {
   PermissionDecision,
   PendingPermission,
   SendToRenderer,
-  NotificationHooks,
   PersistPermissionRuleFn,
 } from './types';
 import type { AgentPermissionRequest } from '../agents/types';
@@ -372,7 +371,6 @@ export function createPermissionRequestHandler(
   handle: SessionHandle,
   tabId: string,
   sendToRenderer: SendToRenderer,
-  notificationHooks: NotificationHooks,
   logging: LoggingService | null = null,
 ): (req: AgentPermissionRequest) => void {
   const logEntry = (entry: {
@@ -487,15 +485,7 @@ export function createPermissionRequestHandler(
       const projectName = path.basename(handle.projectPath) || 'OmniFex';
       const title = `OmniFex — ${projectName}`;
       const body = truncate(summary);
-      sendToRenderer('claude-notification', { tab_id: tabId, title, body, is_error: false });
-      try {
-        notificationHooks.showNotification?.(title, body, false, { tabId }, {
-          subtitle: 'Permission Request:',
-        });
-        notificationHooks.incrementUnread?.();
-      } catch (e) {
-        console.error('[sessions] permission notification hook failed:', e);
-      }
+      sendToRenderer('claude-notification', { tab_id: tabId, title, body, is_error: false, subtitle: 'Permission Request:' });
     }
   }
 
@@ -638,13 +628,7 @@ export function createPermissionRequestHandler(
         title: rawPayload.title,
         displayName: rawPayload.display_name,
       });
-      sendToRenderer('claude-notification', { tab_id: tabId, title, body, is_error: false });
-      try {
-        notificationHooks.showNotification?.(title, body, false, { tabId }, { subtitle });
-        notificationHooks.incrementUnread?.();
-      } catch (e) {
-        console.error('[sessions] permission notification hook failed:', e);
-      }
+      sendToRenderer('claude-notification', { tab_id: tabId, title, body, is_error: false, subtitle });
     }
   };
 }
@@ -657,7 +641,6 @@ export function respondPermission(
   handle: SessionHandle,
   tabId: string,
   sendToRenderer: SendToRenderer,
-  notificationHooks: NotificationHooks,
   behavior: 'allow' | 'deny',
   updatedInput?: Record<string, unknown>,
   updatedPermissions?: PermissionDecision['updatedPermissions'],
@@ -753,7 +736,7 @@ export function respondPermission(
   // Show the next queued request, if any — but only when the one just
   // answered WAS the head. Answering a queued-behind request by id leaves the
   // head where it is, and the renderer is already showing it.
-  if (index === 0) showNextPermission(handle, tabId, sendToRenderer, notificationHooks);
+  if (index === 0) showNextPermission(handle, tabId, sendToRenderer);
   // Queue drained — conversationStatus is now derived by the renderer.
   return true;
 }
@@ -767,7 +750,6 @@ function showNextPermission(
   handle: SessionHandle,
   tabId: string,
   sendToRenderer: SendToRenderer,
-  notificationHooks: NotificationHooks,
 ): void {
   if (handle.permissionQueue.length === 0) return;
   const next = handle.permissionQueue[0];
@@ -792,13 +774,7 @@ function showNextPermission(
       { title: nextPayload.title, displayName: nextPayload.display_name },
     ));
   }
-  sendToRenderer('claude-notification', { tab_id: tabId, title, body, is_error: false });
-  try {
-    notificationHooks.showNotification?.(title, body, false, { tabId }, { subtitle });
-    notificationHooks.incrementUnread?.();
-  } catch (e) {
-    console.error('[sessions] permission notification hook failed:', e);
-  }
+  sendToRenderer('claude-notification', { tab_id: tabId, title, body, is_error: false, subtitle });
 }
 
 /**
@@ -813,7 +789,6 @@ export function createPermissionCancelHandler(
   handle: SessionHandle,
   tabId: string,
   sendToRenderer: SendToRenderer,
-  notificationHooks: NotificationHooks,
 ): (requestId: string) => void {
   return (requestId) => {
     const index = handle.permissionQueue.findIndex((p) => p.requestId === requestId);
@@ -821,7 +796,7 @@ export function createPermissionCancelHandler(
     handle.permissionQueue.splice(index, 1);
     if (index !== 0) return;
     if (handle.permissionQueue.length > 0) {
-      showNextPermission(handle, tabId, sendToRenderer, notificationHooks);
+      showNextPermission(handle, tabId, sendToRenderer);
     } else {
       sendToRenderer(`agent-output:${tabId}`, { type: 'permission_withdrawn', request_id: requestId });
     }

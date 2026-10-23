@@ -1,18 +1,17 @@
 /**
- * IPC Handler Registration
+ * The daemon's channel → handler map.
  *
- * Maintains the map of channel names to handler functions and registers them
- * with ipcMain. Services are injected so handlers can be registered
- * incrementally as services are implemented in later tasks.
- *
- * The handler map is also exported for testing without requiring ipcMain.
+ * Every channel the renderer invokes that is not native (see
+ * `src/lib/remote/nativeChannels.ts`) and not a typed session method (see
+ * `TYPED_SESSION_CHANNELS` in `electron/remote/rpc-allowlist.ts`) is served
+ * here, reached over the WebSocket as `rpc.invoke`. The channel names are the
+ * Electron IPC vocabulary the renderer was written against; the transport
+ * changed underneath them.
  */
 
 import type { Database } from '../services/database';
 import type { PermissionsIOService } from '../services/permissions-io';
 import { validateCliPath } from '../services/cli-path-validator';
-import os from 'node:os';
-import { planOpenPath } from '../services/open-path';
 import { gitBinary } from '../services/git-binary';
 import type { WatchHolder } from '../services/git-watcher';
 import { createBrainHandlers, type BrainMcpHandlerDeps } from './brain-handlers';
@@ -76,13 +75,7 @@ export interface Services {
     getCliUsage(configDir?: string): unknown;
   };
   sessions?: {
-    start(data: unknown): unknown;
-    rebind(tabId: string, ownerWebContentsId: number): boolean;
-    sendMessage(sessionId: string, message: unknown): unknown;
-    sendStructuredMessage(sessionId: string, content: unknown): unknown;
-    respondPermission(sessionId: string, behavior: string, updatedInput?: Record<string, unknown>, updatedPermissions?: unknown[]): unknown;
     respondElicitation(tabId: string, action: string, content?: Record<string, unknown>, requestId?: string): unknown;
-    stop(sessionId: string): unknown;
     getInfo(sessionId: string): unknown;
     getHealth(sessionId: string): {
       alive: boolean;
@@ -92,7 +85,6 @@ export interface Services {
       launchPermissionMode?: string | null;
     };
     // Wave 2 — Query-method passthroughs
-    interrupt(sessionId: string): unknown;
     setModel(sessionId: string, model?: string): unknown;
     setTitle(sessionId: string, title: string): unknown;
     askSideQuestion(sessionId: string, question: string): unknown;
@@ -133,11 +125,6 @@ export interface Services {
     unpriced(filters: Record<string, unknown>): unknown;
     facets(filters: Record<string, unknown>): unknown;
     rescan(): unknown;
-  };
-  /** Cost Report → PDF. See electron/services/cost-report-pdf.ts. */
-  costReportPdf?: {
-    exportPdf(params: { filters: unknown; savePath: string }): Promise<{ path: string }>;
-    reportReady(webContentsId: number, metrics: unknown): void;
   };
   /** User-editable model pricing — the delta layer over the shipped rates.
    *  See `services/model-pricing.ts` for why it is a delta and not a seed. */
@@ -265,9 +252,6 @@ export interface Services {
     searchFiles(basePath: string, query: string): Promise<unknown[]>;
     createDirectory(directoryPath: string): Promise<string>;
   };
-  notificationSounds?: {
-    preview(id: string): { played: boolean; path: string | null };
-  };
   oneShotTerminal?: {
     spawn(opts: {
       binary: string;
@@ -292,8 +276,8 @@ export interface Services {
     getBinaryPath(): string | null;
     logout(configDir: string): Promise<void>;
   };
-  /** `claude auth login` / `logout` for one account's config dir. Main only:
-   *  login needs the one-shot pty and its event forwarding. */
+  /** `claude auth login` / `logout` for one account's config dir. Login runs
+   *  in the one-shot pty, whose output is broadcast to every client. */
   claudeAuth?: {
     startLoginFlow(configDir: string, size: { cols?: number; rows?: number }): { ptyHandle: string };
     logout(configDir: string): Promise<void>;
@@ -312,10 +296,11 @@ export interface Services {
     verdict(configDir: string): import('../services/account-identity').IdentityVerdict;
   };
   /**
-   * Enables the arbitrary-SQL admin channel (`storage_execute_sql`). Set from
-   * `!app.isPackaged` in main.ts so the raw-SQL escape hatch only exists in dev
-   * builds — a compromised renderer (e.g. via rendered tool/MCP output) must not
-   * be able to run raw SQL against the live database in a shipped app.
+   * Enables the arbitrary-SQL admin channel (`storage_execute_sql`). Only the
+   * dev daemon sets it, so the raw-SQL escape hatch never exists in a shipped
+   * app — a compromised renderer (e.g. via rendered tool/MCP output) must not
+   * be able to run raw SQL against the live database. The rpc allowlist denies
+   * the channel as well; `rpcAllow` in server.json is the dev opt-in.
    */
   allowRawSql?: boolean;
 }
@@ -339,10 +324,11 @@ type HandlerFn = (event: unknown, params?: Record<string, unknown>) => Promise<u
 /**
  * Repackage a thrown error for the IPC boundary.
  *
- * Electron's `ipcMain.handle` only preserves `error.message` and `error.stack`
- * across the structured-clone boundary — custom properties (like `code`,
- * `name`, `projectPath`) are stripped. To let the renderer recognize specific
- * error classes we encode the code as a `[CODE]` prefix on the message.
+ * An `rpc.invoke` error reply carries the message and nothing else — custom
+ * properties (like `code`, `name`, `projectPath`) are stripped, as Electron's
+ * `ipcMain.handle` stripped them before it. To let the renderer recognize
+ * specific error classes we encode the code as a `[CODE]` prefix on the
+ * message.
  *
  * The renderer's `api.ts` strips the prefix and surfaces `error.code` again so
  * components can `if (err.code === 'NO_ACCOUNT_FOR_PROJECT')` without
@@ -417,7 +403,7 @@ function costFilters(p: Record<string, unknown> | undefined): Record<string, unk
  * renderer gets a defined (but empty) response rather than a blocked channel.
  */
 export function getHandlerMap(services: Services = {}): Record<string, HandlerFn> {
-  const { brain, brainMcp, accounts, claude, sessions, cost, costReportPdf, modelPricing, usage, rateLimits, usageRunner, claudeBinary, mcp, slashCommands, sessionsSummary, logging, database, proxy, permissionsIO, models, commands, gitWatcher, branchColors, gitBranches, gitDiff, lima, filesystem, notificationSounds, oneShotTerminal, codexAuth, claudeAuth, codexSessionWalker, accountIdentity, allowRawSql } = services;
+  const { brain, brainMcp, accounts, claude, sessions, cost, modelPricing, usage, rateLimits, usageRunner, claudeBinary, mcp, slashCommands, sessionsSummary, logging, database, proxy, permissionsIO, models, commands, gitWatcher, branchColors, gitBranches, gitDiff, lima, filesystem, oneShotTerminal, codexAuth, claudeAuth, codexSessionWalker, accountIdentity, allowRawSql } = services;
 
   // Positive account-ownership guard for config-editing channels. A non-empty
   // configDir supplied by the renderer must belong to a known account, so a
@@ -538,22 +524,10 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     get_cli_usage: wrapWith((p: Record<string, unknown>) => claude?.getCliUsage((p?.configDir ?? p?.config_dir) as string | undefined) ?? null),
 
     // ── Sessions ──────────────────────────────────────────────────────────────
-    session_start: wrapWith((p: Record<string, unknown>) => sessions?.start(p) ?? null),
-    session_rebind: wrapWith((p: Record<string, unknown>) => {
-      const tabId = (p?.tabId ?? p?.session_id) as string;
-      const ownerWebContentsId = p?.ownerWebContentsId as number | undefined;
-      if (!tabId || ownerWebContentsId === undefined) return false;
-      return sessions?.rebind(tabId, ownerWebContentsId) ?? false;
-    }),
-    session_send_message: wrapWith((p: Record<string, unknown>) => sessions?.sendMessage((p?.tabId ?? p?.session_id) as string, (p?.prompt ?? p?.message) as string) ?? null),
-    session_send_structured_message: wrapWith((p: Record<string, unknown>) => sessions?.sendStructuredMessage((p?.tabId ?? p?.session_id) as string, p?.content as Record<string, unknown>[]) ?? null),
-    session_respond_permission: wrapWith((p: Record<string, unknown>) => sessions?.respondPermission((p?.tabId ?? p?.session_id) as string, p?.behavior as string, p?.updatedInput as Record<string, unknown> | undefined, p?.updatedPermissions as any) ?? null),
     session_respond_elicitation: wrapWith((p: Record<string, unknown>) => sessions?.respondElicitation((p?.tabId ?? p?.tab_id) as string, (p?.action) as string, p?.content as Record<string, unknown> | undefined, (p?.requestId ?? p?.request_id) as string | undefined) ?? null),
-    session_stop: wrapWith((p: Record<string, unknown>) => sessions?.stop((p?.tabId ?? p?.session_id) as string) ?? null),
     session_get_info: wrapWith((p: Record<string, unknown>) => sessions?.getInfo((p?.tabId ?? p?.session_id) as string) ?? null),
     session_get_health: wrapWith((p: Record<string, unknown>) => sessions?.getHealth((p?.tabId ?? p?.session_id) as string) ?? { alive: false, sessionId: null, sessionStatus: 'stopped', turn: { status: 'idle', since: null }, launchPermissionMode: null }),
     // Wave 2 — Query-method passthroughs
-    session_interrupt: wrapWith((p: Record<string, unknown>) => sessions?.interrupt((p?.tabId ?? p?.session_id) as string) ?? null),
     session_set_model: wrapWith((p: Record<string, unknown>) => sessions?.setModel((p?.tabId ?? p?.session_id) as string, p?.model as string | undefined) ?? null),
     session_set_title: wrapWith((p: Record<string, unknown>) => sessions?.setTitle((p?.tabId ?? p?.session_id) as string, (p?.title ?? '') as string) ?? null),
     session_side_chat_ask: wrapWith((p: Record<string, unknown>) => sessions?.askSideQuestion((p?.tabId ?? p?.tab_id) as string, (p?.question ?? '') as string) ?? { ok: false, error: 'No live session' }),
@@ -619,25 +593,6 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     session_cost_subagent_split: wrapWith((p: Record<string, unknown>) => cost?.subagentSplit(costFilters(p)) ?? []),
     session_cost_unpriced: wrapWith((p: Record<string, unknown>) => cost?.unpriced(costFilters(p)) ?? []),
     session_cost_facets: wrapWith((p: Record<string, unknown>) => cost?.facets(costFilters(p)) ?? null),
-
-    // Cost Report → PDF. The filters cross as the renderer's own filter-state
-    // shape, not as query params: the print window re-runs the queries itself,
-    // so what it needs is the state, not the derived params.
-    cost_report_export_pdf: wrapWith(async (p: Record<string, unknown>) => {
-      if (!costReportPdf) throw new Error('cost_report_export_pdf: PDF export is unavailable');
-      const savePath = p?.savePath ?? p?.save_path;
-      if (typeof savePath !== 'string' || !savePath) {
-        throw new Error('cost_report_export_pdf: savePath is required');
-      }
-      return costReportPdf.exportPdf({ filters: p?.filters, savePath });
-    }),
-    // Sender-scoped: `ownerWebContentsId` is injected below, and is what tells
-    // one in-flight export's window from another's.
-    cost_report_print_ready: wrapWith((p: Record<string, unknown>) => {
-      const id = p?.ownerWebContentsId;
-      if (typeof id === 'number') costReportPdf?.reportReady(id, p);
-      return null;
-    }),
 
     // ── Model pricing (user-editable rate + display table) ─────────────────
     // Writes are validated in the service and THROW on bad input rather than
@@ -910,8 +865,9 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     }),
     storage_execute_sql: wrapWith((p: Record<string, unknown>) => {
       if (!database) return null;
-      // Dev-only escape hatch. Disabled in packaged builds (allowRawSql is set
-      // from !app.isPackaged) so rendered tool/MCP output can never drive raw SQL.
+      // Dev-only escape hatch. Only the dev daemon sets allowRawSql (and the
+      // rpc allowlist denies it unless server.json allows it), so rendered
+      // tool/MCP output can never drive raw SQL in a shipped app.
       if (!allowRawSql) {
         throw new Error('Raw SQL execution is disabled in this build');
       }
@@ -925,9 +881,6 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
       database?.saveSetting(p?.key as string, p?.value as string);
       return null;
     }),
-    preview_notification_sound: wrapWith((p: Record<string, unknown>) =>
-      notificationSounds?.preview((p?.id ?? '') as string) ?? { played: false, path: null },
-    ),
 
     // ── Git ──────────────────────────────────────────────────────────────────
     get_git_branch: wrapWith(async (p: Record<string, unknown>) => {
@@ -1176,130 +1129,3 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
 
   return map;
 }
-
-/**
- * Register all handlers with ipcMain and add the Electron-specific handlers
- * for dialog, shell, and window controls.
- *
- * This function must only be called from the main process.
- *
- * Coverage note: this function is excluded from unit-test coverage because
- * it requires the real `electron` module, which is not available under Node.
- * The dispatch logic it wires up is fully covered via `getHandlerMap()` tests.
- */
-/* v8 ignore start */
-export function registerIpcHandlers(services: Services = {}): void {
-  // Lazy-require Electron main-process modules so this file can be imported
-  // in test environments where `electron` is not available.
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { ipcMain, dialog, shell, BrowserWindow } = require('electron') as typeof import('electron');
-
-  const handlerMap = getHandlerMap(services);
-
-  // Channels that should have the caller's webContents.id injected into their
-  // params so the corresponding service can register per-window event routing.
-  // (Session and agent event channels are window-scoped so streams don't leak
-  // into other windows when the user has multiple open.)
-  const OWNER_INJECTED_CHANNELS = new Set([
-    'session_start',
-    'session_rebind',
-    'execute_agent',
-    // The print window identifies itself by its webContents id; that is
-    // what pairs its "I have drawn" report with the export waiting on it.
-    'cost_report_print_ready',
-  ]);
-
-  for (const [channel, handler] of Object.entries(handlerMap)) {
-    if (OWNER_INJECTED_CHANNELS.has(channel)) {
-      ipcMain.handle(channel, async (event, params) => {
-        const augmented = {
-          ...(params ?? {}),
-          ownerWebContentsId: event.sender.id,
-        };
-        return handler(event, augmented);
-      });
-    } else {
-      ipcMain.handle(channel, handler);
-    }
-  }
-
-  // ── Dialog handlers ────────────────────────────────────────────────────────
-  ipcMain.handle('dialog:open', async (_event, options: Electron.OpenDialogOptions) => {
-    const result = await dialog.showOpenDialog(options);
-    return result.canceled ? null : result.filePaths;
-  });
-
-  ipcMain.handle('dialog:save', async (_event, options: Electron.SaveDialogOptions) => {
-    const result = await dialog.showSaveDialog(options);
-    return result.canceled ? null : result.filePath;
-  });
-
-  // ── Shell handler ──────────────────────────────────────────────────────────
-  ipcMain.handle('shell:openExternal', async (_event, url: string) => {
-    return shell.openExternal(url);
-  });
-
-  ipcMain.handle('reveal_path_in_finder', async (_event, data: any) => {
-    const p: string = data?.path ?? data;
-    if (!p || typeof p !== 'string') throw new Error('reveal_path_in_finder: path is required');
-    shell.showItemInFolder(p);
-    return null;
-  });
-
-  // A file link clicked in a transcript. Failures surface as a dialog here:
-  // the click has no other place to report to.
-  ipcMain.handle('open_path', async (event, data: any) => {
-    const raw: string = data?.path ?? data;
-    if (!raw || typeof raw !== 'string') throw new Error('open_path: path is required');
-    const cwd: string | undefined = data?.cwd ?? data?.project_path ?? undefined;
-    const plan = await planOpenPath(raw, { cwd, homeDir: os.homedir() });
-    let error = plan.kind === 'error' ? plan.message : '';
-    if (plan.kind === 'reveal') shell.showItemInFolder(plan.path);
-    if (plan.kind === 'open') error = await shell.openPath(plan.path);
-    if (error) {
-      const win = BrowserWindow.fromWebContents(event.sender);
-      const options = { type: 'warning' as const, message: "Couldn't open the file", detail: error };
-      void (win ? dialog.showMessageBox(win, options) : dialog.showMessageBox(options));
-    }
-    return null;
-  });
-
-  // ── Window control handlers ────────────────────────────────────────────────
-  ipcMain.handle('window:minimize', () => {
-    BrowserWindow.getFocusedWindow()?.minimize();
-  });
-
-  ipcMain.handle('window:maximize', () => {
-    const win = BrowserWindow.getFocusedWindow();
-    if (win) {
-      // eslint-disable-next-line @typescript-eslint/no-unused-expressions -- side-effect expression intentional in this context.
-      win.isMaximized() ? win.unmaximize() : win.maximize();
-    }
-  });
-
-  ipcMain.handle('window:close', () => {
-    BrowserWindow.getFocusedWindow()?.close();
-  });
-
-  // ── File handlers ─────────────────────────────────────────────────────────
-  ipcMain.handle('save_pasted_image', async (_event, params: { dataUrl: string }) => {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const fs = require('node:fs') as typeof import('node:fs');
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const path = require('node:path') as typeof import('node:path');
-
-    const { dataUrl } = params;
-    const match = /^data:image\/(\w+);base64,(.+)$/.exec(dataUrl);
-    if (!match) throw new Error('Invalid image data URL');
-    const ext = match[1];
-    const base64 = match[2];
-
-    const tmpDir = path.join(os.tmpdir(), 'greychrist-pastes');
-    fs.mkdirSync(tmpDir, { recursive: true });
-    const fileName = `paste-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
-    const filePath = path.join(tmpDir, fileName);
-    fs.writeFileSync(filePath, Buffer.from(base64, 'base64'));
-    return filePath;
-  });
-}
-/* v8 ignore stop */

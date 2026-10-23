@@ -2,8 +2,8 @@ import { describe, it, expect, vi } from 'vitest';
 
 import {
   developerIdIdentities,
-  dmgArtifacts,
   pickSigningIdentity,
+  notarizeApp,
   notarizeDmg,
 } from '../../signing/dmg';
 
@@ -54,21 +54,6 @@ describe('pickSigningIdentity', () => {
 
   it('fails with an actionable message when none is installed', () => {
     expect(() => pickSigningIdentity([], undefined)).toThrow(/Developer ID Application/);
-  });
-});
-
-describe('dmgArtifacts', () => {
-  it('selects only .dmg paths across make results', () => {
-    const results = [
-      { artifacts: ['/out/OmniFex.dmg', '/out/OmniFex.zip'] },
-      { artifacts: ['/out/other.zip'] },
-      { artifacts: ['/out/Second.DMG'] },
-    ];
-    expect(dmgArtifacts(results)).toEqual(['/out/OmniFex.dmg', '/out/Second.DMG']);
-  });
-
-  it('tolerates a make result with no artifacts', () => {
-    expect(dmgArtifacts([{ artifacts: [] }, {}])).toEqual([]);
   });
 });
 
@@ -138,5 +123,35 @@ describe('notarizeDmg', () => {
     await expect(
       notarizeDmg('/out/OmniFex.dmg', { keychainProfile: 'omnifex-notary' }, d),
     ).rejects.toThrow(/notarization rejected/);
+  });
+});
+
+describe('notarizeApp', () => {
+  function deps() {
+    const run = vi.fn((_cmd: string, _args: string[]) => '');
+    return { run, log: vi.fn() };
+  }
+
+  // notarytool takes an archive, not a bundle, and the ticket is stapled to
+  // the bundle itself — the zip the updater downloads is made AFTER this, so
+  // the app inside it carries its ticket offline.
+  it('zips the app, waits on the notary verdict, and staples the app', async () => {
+    const d = deps();
+    await notarizeApp('/out/OmniFex.app', '/tmp/notarize.zip', { keychainProfile: 'omnifex-notary' }, d);
+    const [zip, submit, staple] = d.run.mock.calls;
+    expect(zip).toEqual(['ditto', ['-c', '-k', '--sequesterRsrc', '--keepParent', '/out/OmniFex.app', '/tmp/notarize.zip']]);
+    expect(submit[0]).toBe('xcrun');
+    expect(submit[1]).toEqual(['notarytool', 'submit', '/tmp/notarize.zip', '--keychain-profile', 'omnifex-notary', '--wait']);
+    expect(staple).toEqual(['xcrun', ['stapler', 'staple', '/out/OmniFex.app']]);
+  });
+
+  it('propagates a rejection rather than stapling nothing', async () => {
+    const d = deps();
+    d.run.mockImplementation((cmd: string, args: string[]) => {
+      if (cmd === 'xcrun' && args[0] === 'notarytool') throw new Error('Invalid');
+      return '';
+    });
+    await expect(notarizeApp('/out/OmniFex.app', '/tmp/n.zip', { keychainProfile: 'p' }, d)).rejects.toThrow('Invalid');
+    expect(d.run.mock.calls.some(([, a]) => a[0] === 'stapler')).toBe(false);
   });
 });

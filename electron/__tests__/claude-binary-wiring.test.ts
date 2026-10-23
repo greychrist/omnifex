@@ -25,8 +25,8 @@ function callText(src: string, name: string): string {
 
 const FIND_BEST = /\(\)\s*=>\s*claudeBinaryService\.findBestBinary\(\)/;
 
-describe('claude binary wiring in the composition roots', () => {
-  for (const root of ['main.ts', 'remote/daemon.ts']) {
+describe('claude binary wiring in the composition root', () => {
+  for (const root of ['remote/daemon.ts']) {
     const src = fs.readFileSync(path.join(__dirname, '..', root), 'utf8');
 
     it(`${root} never launches from the bare saved setting`, () => {
@@ -42,6 +42,14 @@ describe('claude binary wiring in the composition roots', () => {
         );
       });
     }
+
+    // `claude auth login` moved here from Electron main with the one-shot
+    // pty; sign-in from the bare saved setting is the exact failure above.
+    it(`${root} hands findBestBinary to createClaudeAuthService`, () => {
+      expect(callText(src, 'createClaudeAuthService')).toMatch(
+        new RegExp(`resolveBinary:\\s*${FIND_BEST.source}`),
+      );
+    });
 
     // The /usage scraper used to carry its own `which claude` finder, so it
     // ignored the Settings pick and shelled out on every 5-minute refresh.

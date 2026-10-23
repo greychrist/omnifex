@@ -1,14 +1,15 @@
 /**
- * Sign, notarize, and staple the built `.dmg`.
+ * Notarize the app and the disk image, and staple both.
  *
- * Forge notarizes and staples the `.app` during packaging, then `maker-dmg`
- * wraps that stapled app in a **new disk image that nobody signed**. The app
- * inside is fine once copied out — its ticket travels with it — but the
- * container itself fails Gatekeeper (`spctl` → "no usable signature"), which is
- * what a user actually double-clicks after downloading.
+ * The app is notarized first (`notarizeApp`), and the DMG is then built
+ * around the stapled app — a disk image is a fresh container that carries
+ * no signature of its own, so it is signed, notarized and stapled separately
+ * (`notarizeDmg`). The app inside is fine once copied out, its ticket travels
+ * with it, but the container itself fails Gatekeeper (`spctl` → "no usable
+ * signature") and that is what a user actually double-clicks.
  *
- * This runs as a `postMake` hook, gated on the same `OMNIFEX_NOTARIZE=1` as the
- * app-level notarization, so ordinary local builds don't touch Apple.
+ * Gated on `OMNIFEX_NOTARIZE=1` by the package script, so ordinary local
+ * builds don't touch Apple.
  */
 
 /** Injected so the whole flow is testable without shelling out. */
@@ -68,15 +69,6 @@ export function pickSigningIdentity(
   );
 }
 
-/** Pull every `.dmg` path out of Forge's make results. */
-export function dmgArtifacts(
-  makeResults: { artifacts?: string[] }[],
-): string[] {
-  return makeResults
-    .flatMap((r) => r.artifacts ?? [])
-    .filter((p) => p.toLowerCase().endsWith('.dmg'));
-}
-
 export async function notarizeDmg(
   dmgPath: string,
   options: NotarizeDmgOptions,
@@ -110,4 +102,26 @@ export async function notarizeDmg(
   run('xcrun', ['stapler', 'staple', dmgPath]);
 
   log?.(`[signing] ${dmgPath} signed, notarized, and stapled`);
+}
+
+/**
+ * Notarize and staple an already-signed app bundle.
+ *
+ * notarytool takes an archive, not a bundle, so the app is zipped to
+ * `zipPath` for the submission; the ticket is then stapled to the bundle
+ * itself. The zip the updater downloads is made after this, from the stapled
+ * app, so the app inside it passes Gatekeeper offline.
+ */
+export async function notarizeApp(
+  appPath: string,
+  zipPath: string,
+  options: Pick<NotarizeDmgOptions, 'keychainProfile'>,
+  deps: NotarizeDmgDeps,
+): Promise<void> {
+  const { run, log } = deps;
+  run('ditto', ['-c', '-k', '--sequesterRsrc', '--keepParent', appPath, zipPath]);
+  log?.('[signing] submitting the app to the notary service (this can take a while)');
+  run('xcrun', ['notarytool', 'submit', zipPath, '--keychain-profile', options.keychainProfile, '--wait']);
+  log?.('[signing] stapling the notary ticket to the app');
+  run('xcrun', ['stapler', 'staple', appPath]);
 }
