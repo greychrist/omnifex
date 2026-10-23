@@ -17,7 +17,7 @@ final class PDFExporter {
 
     init(services: AppServices) { self.services = services }
 
-    func reportReady(sourceId: Int, metrics: [String: Any]) {
+    func reportReady(sourceId: Int, metrics: sending [String: Any]) {
         pending.removeValue(forKey: sourceId)?.resume(returning: metrics)
     }
 

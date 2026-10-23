@@ -2,7 +2,8 @@ import Foundation
 import Darwin
 import OmniFexCore
 
-enum Spawn {
+/// Process plumbing, nothing UI: off the main actor.
+nonisolated enum Spawn {
     struct Output {
         var status: Int32
         var stdout: String
@@ -19,6 +20,10 @@ enum Spawn {
     /// child a new group's leader and `group: .callers` must not: a dev daemon
     /// `ensure` starts inherits `ensure`'s group, and has to share the app's.
     /// See `LauncherProcessGroup`.
+    ///
+    /// `@concurrent`: the final drain blocks until every holder of the pipes
+    /// exits, which must never be the main thread.
+    @concurrent
     static func output(_ exe: String, _ args: [String], timeout: TimeInterval, group: LauncherProcessGroup = .own) async throws -> Output {
         let out = Pipe(), err = Pipe()
         var fileActions: posix_spawn_file_actions_t?
@@ -41,6 +46,7 @@ enum Spawn {
         try? out.fileHandleForWriting.close()
         try? err.fileHandleForWriting.close()
         guard rc == 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(rc)) }
+        let child = pid
 
         let collected = Collected()
         // Drained as it arrives: a pipe left unread past 64 KB blocks the
@@ -50,12 +56,12 @@ enum Spawn {
         let reaped = Reaped()
         DispatchQueue.global().asyncAfter(deadline: .now() + timeout) {
             // Checked under the lock so a reaped pid, possibly reused, is never signalled.
-            reaped.unlessReaped { kill(pid, SIGTERM) }
+            reaped.unlessReaped { kill(child, SIGTERM) }
         }
         let status: Int32 = await withCheckedContinuation { cont in
             DispatchQueue.global().async {
                 var raw: Int32 = 0
-                while waitpid(pid, &raw, 0) == -1 && errno == EINTR {}
+                while waitpid(child, &raw, 0) == -1 && errno == EINTR {}
                 reaped.mark()
                 cont.resume(returning: raw)
             }

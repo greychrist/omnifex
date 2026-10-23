@@ -90,7 +90,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
 final class PowerMonitor {
     private var tokens: [(NotificationCenter, NSObjectProtocol)] = []
 
-    init(report: @escaping (Bool) -> Void) {
+    init(report: @escaping @MainActor (Bool) -> Void) {
         let ws = NSWorkspace.shared.notificationCenter
         let dist = DistributedNotificationCenter.default()
         let watch: [(NotificationCenter, Notification.Name, Bool)] = [
