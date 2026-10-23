@@ -1,4 +1,6 @@
 import type { ThemeMode } from '@/contexts/ThemeContext';
+import { mermaidTheme } from './mermaidTheme';
+import { prepareSource } from './prepareSource';
 
 /**
  * The one way the renderer draws mermaid.
@@ -27,7 +29,7 @@ async function renderNow(source: string, theme: ThemeMode): Promise<string> {
   mermaid.initialize({
     startOnLoad: false,
     securityLevel: 'strict',
-    theme: theme === 'light' ? 'default' : 'dark',
+    ...mermaidTheme(theme),
     // SVG <text> labels, not <foreignObject> HTML: a canvas that draws an SVG
     // holding foreignObject is tainted in Safari, which would break PNG
     // export, and plain-SVG labels survive being opened in other tools.
@@ -36,7 +38,7 @@ async function renderNow(source: string, theme: ThemeMode): Promise<string> {
   counter += 1;
   const id = `omnifex-mermaid-${counter}`;
   try {
-    const { svg } = await mermaid.render(id, source);
+    const { svg } = await mermaid.render(id, prepareSource(source, theme));
     return svg;
   } finally {
     // On a parse error mermaid can leave its scratch container (`d<id>`) in

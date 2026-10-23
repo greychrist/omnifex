@@ -53,7 +53,9 @@ export const OMNIFEX_SYSTEM_PROMPT_APPENDIX =
   'You are running inside OmniFex, a desktop client for Claude Code. ' +
   'OmniFex renders ```mermaid fenced code blocks as diagrams the user can expand full screen, ' +
   'pan, zoom, and export as SVG or PNG. When a process, flow, architecture, state machine or ' +
-  'data model is easier to understand as a picture, illustrate it with a ```mermaid block.';
+  'data model is easier to understand as a picture, illustrate it with a ```mermaid block. ' +
+  'For bold or italic text in a node label, use a markdown string such as A["`**Title**\n*detail*`"], ' +
+  'not HTML tags: labels are drawn as SVG text, which prints <b> and <i> literally.';
 
 /**
  * Build the argv for `claude` in stream-json headless mode. Per the docs at

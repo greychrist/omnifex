@@ -13,14 +13,29 @@ beforeEach(() => {
 });
 
 describe('renderMermaid', () => {
-  it('initializes strict, with the theme matching the app theme', async () => {
+  it('initializes strict, in the app palette for the app theme', async () => {
     render.mockResolvedValue({ svg: '<svg/>' });
     await renderMermaid('flowchart LR\n A-->B', 'light');
     expect(initialize).toHaveBeenLastCalledWith(
-      expect.objectContaining({ startOnLoad: false, securityLevel: 'strict', theme: 'default', htmlLabels: false }),
+      expect.objectContaining({
+        startOnLoad: false,
+        securityLevel: 'strict',
+        htmlLabels: false,
+        // `base` is the only mermaid theme whose colours come entirely from
+        // themeVariables; the stock ones (default/dark) were what read as
+        // rudimentary — lavender boxes and a yellow subgraph.
+        theme: 'base',
+        look: 'neo',
+        themeVariables: expect.objectContaining({ darkMode: false, primaryColor: '#ffffff' }),
+      }),
     );
     await renderMermaid('flowchart LR\n A-->B', 'gray');
-    expect(initialize).toHaveBeenLastCalledWith(expect.objectContaining({ theme: 'dark' }));
+    expect(initialize).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        theme: 'base',
+        themeVariables: expect.objectContaining({ darkMode: true, primaryColor: '#22272b' }),
+      }),
+    );
   });
 
   it('returns the svg and gives every render a unique id', async () => {

@@ -96,6 +96,10 @@ describe('ClaudeCliEngine', () => {
     const i = args.indexOf('--append-system-prompt');
     expect(i).toBeGreaterThan(-1);
     expect(args[i + 1]).toMatch(/```mermaid/);
+    // Labels are drawn as SVG text, which prints HTML tags literally; the
+    // markdown-string form is the one that renders bold and italic.
+    expect(args[i + 1]).toMatch(/markdown string/i);
+    expect(args[i + 1]).toMatch(/not HTML tags/);
   });
 
   it('passes --model for a concrete model id', async () => {
