@@ -7,6 +7,9 @@ import type { ComponentProps } from "react";
 import { MarkdownBlock } from "@/components/MarkdownBlock";
 import { MermaidBlock } from "@/components/diagram/MermaidBlock";
 import { CopyButton } from "@/components/ui/copy-button";
+import { FileText } from "lucide-react";
+import { platform } from "@/lib/platform";
+import { useSessionActions } from "@/contexts/SessionActionsContext";
 
 type SyntaxTheme = Record<string, CSSProperties>;
 type CodeComponentProps = ComponentProps<"code"> & ExtraProps;
@@ -39,6 +42,47 @@ function UntaggedFence(props: ComponentProps<"pre">): React.JSX.Element {
   );
 }
 
+type LinkKind = "web" | "file" | "other";
+
+/**
+ * A scheme-less href is a file path: react-markdown passes `/Users/…` and
+ * `reports/x.md` through untouched, and the browser would resolve either
+ * against the app's own page. Other schemes (mailto:, …) and in-page anchors
+ * keep default behaviour, which main's navigation policy contains.
+ */
+function linkKind(href: string | undefined): LinkKind {
+  if (!href || href.startsWith("#")) return "other";
+  const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(href)?.[1]?.toLowerCase();
+  if (scheme === "http" || scheme === "https") return "web";
+  return scheme ? "other" : "file";
+}
+
+const logOpenFailure = (err: unknown): void => { console.error("[markdown-link]", err); };
+
+/**
+ * Web links open in the browser and file links in their default app — never
+ * in the app window, which a bare `/Users/…` link replaced (2026-10-22). A
+ * relative file link resolves against the session's project directory.
+ */
+function MarkdownLink({ node: _node, href, children, ...props }: ComponentProps<"a"> & ExtraProps): React.JSX.Element {
+  const session = useSessionActions();
+  const kind = linkKind(href);
+  if (kind === "other" || !href) return <a href={href} {...props}>{children}</a>;
+  const onClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    e.preventDefault();
+    const opened = kind === "web" ? platform.openExternal(href) : platform.openPath(href, session?.projectPath);
+    opened.catch(logOpenFailure);
+  };
+  return (
+    <a href={href} {...props} onClick={onClick} title={kind === "file" ? `Open ${href}` : props.title}>
+      {kind === "file" && (
+        <FileText data-file-link-icon aria-hidden className="inline h-3.5 w-3.5 mr-0.5 -mt-0.5 align-middle" />
+      )}
+      {children}
+    </a>
+  );
+}
+
 /**
  * Returns the `components` map for `react-markdown`'s ReactMarkdown component.
  *
@@ -52,6 +96,9 @@ function UntaggedFence(props: ComponentProps<"pre">): React.JSX.Element {
  * Every fenced block gets a copy button: untagged ones on the <pre> (see
  * `UntaggedFence`), tagged ones on their card, markdown ones in
  * MarkdownBlock's own toolbar. Inline code never reaches either path.
+ *
+ * Links go through `MarkdownLink`: web links to the browser, file paths to
+ * their default app.
  *
  * `react-markdown` v9 removed the `inline` prop on the `code` component;
  * dispatch is by className alone, since v9 never assigns a `language-*`
@@ -78,6 +125,7 @@ export function buildMarkdownComponents(
   options: { streaming?: boolean } = {},
 ): Components & { code: (props: CodeComponentProps) => React.JSX.Element } {
   return {
+    a: MarkdownLink,
     // Conditional <pre> passthrough.
     //
     // react-markdown wraps every fenced code block in <pre><code>…</code></pre>,

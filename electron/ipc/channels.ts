@@ -305,6 +305,7 @@ export const INVOKE_CHANNELS: readonly string[] = [
   'save_pasted_image',
   'shell:openExternal',
   'reveal_path_in_finder',
+  'open_path',
   'get_app_version',
   'window:minimize',
   'window:maximize',

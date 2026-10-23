@@ -48,6 +48,8 @@ export interface Platform {
   showOpenDialog(options: Record<string, unknown>): Promise<{ canceled: boolean; filePaths: string[] }>;
   showSaveDialog(options: Record<string, unknown>): Promise<{ canceled: boolean; filePath?: string }>;
   openExternal(url: string): Promise<void>;
+  /** Open a file in its default app; a relative path resolves against `cwd`. */
+  openPath(path: string, cwd?: string): Promise<void>;
   revealInFinder(path: string): Promise<void>;
   /** Persist pasted image bytes to a temp file the CLI can read; Electron only. */
   savePastedImage(dataUrl: string): Promise<string>;
@@ -65,6 +67,7 @@ export function createPlatform(bridge: NativeBridge | null): Platform {
         assertWebUrl(url);
         window.open(url, '_blank', 'noopener,noreferrer');
       },
+      openPath: () => unsupported('Opening a file'),
       revealInFinder: () => unsupported('Reveal in Finder'),
       savePastedImage: () => unsupported('Saving a pasted image to disk'),
       getAppVersion: async () => 'web',
@@ -81,6 +84,7 @@ export function createPlatform(bridge: NativeBridge | null): Platform {
       assertWebUrl(url);
       await bridge.invoke('shell:openExternal', url as unknown as Record<string, unknown>);
     },
+    openPath: (path, cwd) => bridge.invoke('open_path', cwd ? { path, cwd } : { path }).then(() => undefined),
     revealInFinder: (path) => bridge.invoke('reveal_path_in_finder', { path }).then(() => undefined),
     savePastedImage: (dataUrl) => bridge.invoke('save_pasted_image', { dataUrl }) as Promise<string>,
     getAppVersion: () => bridge.invoke('get_app_version') as Promise<string>,

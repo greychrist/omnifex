@@ -16,6 +16,7 @@ export const NATIVE_INVOKE_CHANNELS: readonly string[] = [
   'dialog:save',
   'shell:openExternal',
   'reveal_path_in_finder',
+  'open_path',
   'save_pasted_image',
   'window:minimize',
   'window:maximize',

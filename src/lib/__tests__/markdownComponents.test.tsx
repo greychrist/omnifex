@@ -17,7 +17,14 @@ vi.mock("@/components/diagram/MermaidBlock", () => ({
   ),
 }));
 
+const { openExternal, openPath } = vi.hoisted(() => ({
+  openExternal: vi.fn(async () => {}),
+  openPath: vi.fn(async () => {}),
+}));
+vi.mock("@/lib/platform", () => ({ platform: { isElectron: true, openExternal, openPath } }));
+
 import { buildMarkdownComponents } from "../markdownComponents";
+import { SessionActionsProvider, type SessionActions } from "@/contexts/SessionActionsContext";
 
 afterEach(() => { cleanup(); });
 
@@ -232,5 +239,66 @@ describe("buildMarkdownComponents — copy buttons", () => {
   it("puts no button on inline code", () => {
     renderMd("Run `npm test` first.");
     expect(screen.queryByLabelText("Copy code")).toBeNull();
+  });
+});
+
+describe("buildMarkdownComponents — links", () => {
+  beforeEach(() => { openExternal.mockClear(); openPath.mockClear(); });
+
+  const session = { projectPath: "/Users/me/Repos/work/management", homeDir: "/Users/me" } as SessionActions;
+  const renderMd = (md: string, actions: SessionActions | null = session) =>
+    render(
+      <SessionActionsProvider value={actions}>
+        <ReactMarkdown remarkPlugins={[remarkGfm]} components={buildMarkdownComponents({})}>
+          {md}
+        </ReactMarkdown>
+      </SessionActionsProvider>,
+    );
+
+  it("opens a web link in the browser, not in the app window", () => {
+    renderMd("[docs](https://example.com/x)");
+    const link = screen.getByText("docs");
+    const click = fireEvent.click(link);
+    expect(click).toBe(false); // default navigation prevented
+    expect(openExternal).toHaveBeenCalledWith("https://example.com/x");
+    expect(openPath).not.toHaveBeenCalled();
+  });
+
+  // Clicking `/Users/...` used to navigate the whole app window to the file.
+  it("opens an absolute file link in its default app", () => {
+    renderMd("[draft](/Users/me/Repos/work/management/reports/draft.md)");
+    const click = fireEvent.click(screen.getByText("draft"));
+    expect(click).toBe(false);
+    expect(openPath).toHaveBeenCalledWith(
+      "/Users/me/Repos/work/management/reports/draft.md",
+      "/Users/me/Repos/work/management",
+    );
+    expect(openExternal).not.toHaveBeenCalled();
+  });
+
+  it("hands a relative file link the session's project directory", () => {
+    renderMd("[draft](reports/draft.md)");
+    fireEvent.click(screen.getByText("draft"));
+    expect(openPath).toHaveBeenCalledWith("reports/draft.md", "/Users/me/Repos/work/management");
+  });
+
+  it("opens a file link outside a session with no directory", () => {
+    renderMd("[n](/tmp/n.md)", null);
+    fireEvent.click(screen.getByText("n"));
+    expect(openPath).toHaveBeenCalledWith("/tmp/n.md", undefined);
+  });
+
+  it("marks a file link with a file icon and a web link without one", () => {
+    renderMd("[draft](reports/draft.md) and [docs](https://example.com)");
+    expect(screen.getByText("draft").closest("a")?.querySelector("[data-file-link-icon]")).toBeTruthy();
+    expect(screen.getByText("docs").closest("a")?.querySelector("[data-file-link-icon]")).toBeNull();
+  });
+
+  it("leaves in-page anchors alone", () => {
+    renderMd("[top](#top)");
+    const click = fireEvent.click(screen.getByText("top"));
+    expect(click).toBe(true);
+    expect(openPath).not.toHaveBeenCalled();
+    expect(openExternal).not.toHaveBeenCalled();
   });
 });

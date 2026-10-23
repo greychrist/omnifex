@@ -2,36 +2,45 @@ export type NavigationDecision = 'allow' | 'external' | 'deny';
 
 export interface NavigationPolicyOptions {
   devServerUrl?: string;
+  /** The packaged renderer's `file://…/index.html`. */
+  appIndexUrl?: string;
 }
 
-const INTERNAL_PROTOCOLS = new Set(['file:', 'greychrist-file:']);
+function parse(url: string | undefined): URL | null {
+  if (!url) return null;
+  try {
+    return new URL(url);
+  } catch {
+    return null;
+  }
+}
 
 function sameOrigin(a: URL, b: URL): boolean {
   return a.protocol === b.protocol && a.host === b.host;
 }
 
+/**
+ * The window may only ever show the app's own page. A transcript link to
+ * `/Users/me/report.md` resolves against that page — onto `file://` when
+ * packaged, onto the dev origin in dev — so allowing the whole protocol or
+ * origin let one click replace the app window with the file (2026-10-22).
+ * Hash routes are in-page navigations and never reach this policy.
+ */
 export function classifyNavigation(
   url: string,
   options: NavigationPolicyOptions = {}
 ): NavigationDecision {
   if (url === 'about:blank' || url === '') return 'allow';
 
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    return 'deny';
-  }
+  const parsed = parse(url);
+  if (!parsed) return 'deny';
 
-  if (INTERNAL_PROTOCOLS.has(parsed.protocol)) return 'allow';
+  const app = parse(options.appIndexUrl);
+  if (app && sameOrigin(parsed, app) && parsed.pathname === app.pathname) return 'allow';
 
-  if (options.devServerUrl) {
-    try {
-      const dev = new URL(options.devServerUrl);
-      if (sameOrigin(parsed, dev)) return 'allow';
-    } catch {
-      // ignore bad dev URL, fall through
-    }
+  const dev = parse(options.devServerUrl);
+  if (dev && sameOrigin(parsed, dev)) {
+    return parsed.pathname === '/' || parsed.pathname === '/index.html' ? 'allow' : 'deny';
   }
 
   if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {

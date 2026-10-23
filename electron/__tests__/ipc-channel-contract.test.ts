@@ -15,6 +15,7 @@ const DIRECTLY_REGISTERED_CHANNELS = [
   'dialog:save',
   'shell:openExternal',
   'reveal_path_in_finder',
+  'open_path',
   'window:minimize',
   'window:maximize',
   'window:close',

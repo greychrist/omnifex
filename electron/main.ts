@@ -5,6 +5,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 // ---------------------------------------------------------------------------
 // Fix PATH for packaged apps
@@ -180,6 +181,9 @@ if (devInstance) {
 
 declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string | undefined;
 declare const MAIN_WINDOW_VITE_NAME: string;
+
+/** The packaged renderer page — the only `file://` page a window may show. */
+const appIndexPath = path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`);
 
 const windows = new Set<BrowserWindow>();
 const router = createWindowRouter();
@@ -392,9 +396,7 @@ function createWindow(): BrowserWindow {
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
     win.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL).catch((err: unknown) => { console.error('[main:load-url]', err); });
   } else {
-    win.loadFile(
-      path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`)
-    ).catch((err: unknown) => { console.error('[main:load-file]', err); });
+    win.loadFile(appIndexPath).catch((err: unknown) => { console.error('[main:load-file]', err); });
   }
 
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
@@ -420,15 +422,18 @@ function createWindow(): BrowserWindow {
   // Route link clicks: in-app navigation away from the renderer would turn the
   // window into a browser and lose session state. Send external URLs to the OS
   // browser instead; deny unknown protocols.
-  const devServerUrl = MAIN_WINDOW_VITE_DEV_SERVER_URL;
+  const navigationOptions = {
+    devServerUrl: MAIN_WINDOW_VITE_DEV_SERVER_URL,
+    appIndexUrl: pathToFileURL(appIndexPath).href,
+  };
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (classifyNavigation(url, { devServerUrl }) === 'external') {
+    if (classifyNavigation(url, navigationOptions) === 'external') {
       shell.openExternal(url).catch((err: unknown) => { console.error('[main:window-open-external]', err); });
     }
     return { action: 'deny' };
   });
   win.webContents.on('will-navigate', (event, url) => {
-    const decision = classifyNavigation(url, { devServerUrl });
+    const decision = classifyNavigation(url, navigationOptions);
     if (decision === 'allow') return;
     event.preventDefault();
     if (decision === 'external') shell.openExternal(url).catch((err: unknown) => { console.error('[main:will-navigate-external]', err); });
@@ -849,10 +854,7 @@ app.whenReady().then(() => {
       if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
         await win.loadURL(`${MAIN_WINDOW_VITE_DEV_SERVER_URL}${hash}`);
       } else {
-        await win.loadFile(
-          path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`),
-          { hash: hash.replace(/^#/, '') },
-        );
+        await win.loadFile(appIndexPath, { hash: hash.replace(/^#/, '') });
       }
     },
     writeFile: (target, data) => fs.promises.writeFile(target, data),

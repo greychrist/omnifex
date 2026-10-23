@@ -25,3 +25,22 @@ describe('createPlatform(bridge).openExternal', () => {
     expect(invoke).not.toHaveBeenCalled();
   });
 });
+
+describe('createPlatform(bridge).openPath', () => {
+  it('invokes open_path with the path and the directory to resolve it against', async () => {
+    const { bridge, invoke } = fakeBridge();
+    await createPlatform(bridge).openPath('reports/a.md', '/proj');
+    expect(invoke).toHaveBeenCalledWith('open_path', { path: 'reports/a.md', cwd: '/proj' });
+  });
+
+  // Strip undefined before crossing IPC.
+  it('omits cwd when there is none', async () => {
+    const { bridge, invoke } = fakeBridge();
+    await createPlatform(bridge).openPath('/tmp/a.md');
+    expect(invoke).toHaveBeenCalledWith('open_path', { path: '/tmp/a.md' });
+  });
+
+  it('is unsupported in the web client', async () => {
+    await expect(createPlatform(null).openPath('/tmp/a.md')).rejects.toThrow(/not available in the web client/);
+  });
+});

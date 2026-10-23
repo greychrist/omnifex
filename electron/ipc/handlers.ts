@@ -11,6 +11,8 @@
 import type { Database } from '../services/database';
 import type { PermissionsIOService } from '../services/permissions-io';
 import { validateCliPath } from '../services/cli-path-validator';
+import os from 'node:os';
+import { planOpenPath } from '../services/open-path';
 import { gitBinary } from '../services/git-binary';
 import type { WatchHolder } from '../services/git-watcher';
 import { createBrainHandlers, type BrainMcpHandlerDeps } from './brain-handlers';
@@ -1244,6 +1246,24 @@ export function registerIpcHandlers(services: Services = {}): void {
     return null;
   });
 
+  // A file link clicked in a transcript. Failures surface as a dialog here:
+  // the click has no other place to report to.
+  ipcMain.handle('open_path', async (event, data: any) => {
+    const raw: string = data?.path ?? data;
+    if (!raw || typeof raw !== 'string') throw new Error('open_path: path is required');
+    const cwd: string | undefined = data?.cwd ?? data?.project_path ?? undefined;
+    const plan = await planOpenPath(raw, { cwd, homeDir: os.homedir() });
+    let error = plan.kind === 'error' ? plan.message : '';
+    if (plan.kind === 'reveal') shell.showItemInFolder(plan.path);
+    if (plan.kind === 'open') error = await shell.openPath(plan.path);
+    if (error) {
+      const win = BrowserWindow.fromWebContents(event.sender);
+      const options = { type: 'warning' as const, message: "Couldn't open the file", detail: error };
+      void (win ? dialog.showMessageBox(win, options) : dialog.showMessageBox(options));
+    }
+    return null;
+  });
+
   // ── Window control handlers ────────────────────────────────────────────────
   ipcMain.handle('window:minimize', () => {
     BrowserWindow.getFocusedWindow()?.minimize();
@@ -1267,8 +1287,6 @@ export function registerIpcHandlers(services: Services = {}): void {
     const fs = require('node:fs') as typeof import('node:fs');
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const path = require('node:path') as typeof import('node:path');
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const os = require('node:os') as typeof import('node:os');
 
     const { dataUrl } = params;
     const match = /^data:image\/(\w+);base64,(.+)$/.exec(dataUrl);
