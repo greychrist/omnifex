@@ -158,7 +158,7 @@ npm install
 npm start            # dev app: Swift debug build + Vite dev server + dev daemon
 ```
 
-Building needs Node 26 and Xcode (Swift 6).
+Building needs Node 26 and Xcode with Swift 6.4 or newer.
 
 For a production build:
 
