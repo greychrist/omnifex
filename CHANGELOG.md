@@ -5,6 +5,28 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.5] — 2026-10-24
+
+### Added
+
+- Each Claude account can have its own sign-in browser (Settings → edit account → Sign-in browser) — Chrome for one account, Safari for another. Claude sign-in and MCP sign-in links for that account open there.
+- Claude sign-in works from the iPad: open the sign-in page, sign in, and paste the code it shows.
+- Stop buttons on the status bar's shell and agent rows, and Move to background for a running foreground agent.
+- Reconnect in an MCP server's ⋯ menu, for a failed or stuck server.
+- MCP servers can be signed in to from the iPad by pasting the address the browser ends on after sign-in.
+- The Context panel lists claude.ai project documents read into the session, under Project docs.
+- The hooks editor offers the Pre Model Switch and Post Model Switch events.
+
+### Changed
+
+- Claude sign-in runs through Claude Code's own sign-in requests instead of a terminal window. On the Mac the page opens straight away and the dialog closes when you finish; a code can be pasted instead.
+- Progress records in a transcript show as a one-line entry instead of an "Unrecognized record" card.
+- The Claude Code changelog review checks the installed CLI against what OmniFex depends on, as well as against the previous release, and keeps its own instructions up to date.
+
+### Removed
+
+- The editable changelog-review prompt in Settings → General. The built-in prompt is always used.
+
 ## [0.5.4] — 2026-10-23
 
 ### Changed
