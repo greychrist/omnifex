@@ -96,6 +96,12 @@ and restored tab doesn't re-send the prompt on the next app launch.
 > `src/lib/cliReviewPrompt.ts`, with a `cliReview.promptTemplate` override in
 > `app_settings` for editing without a rebuild, and named
 > `{reviewedVersion}`/`{installedVersion}` placeholders instead of `$1`/`$2`.
+>
+> **Override removed 2026-10-24.** The prompt is now `CLI_REVIEW_PROMPT`, not
+> editable in the app: a saved override froze it at the version saved (and
+> "Reset to default" saved one), while the prompt's own procedure now repairs
+> it in the repo. The mechanical binary diff moved to
+> `scripts/cli-review-diff.ts` (`npm run cli-review:diff`).
 > The section below describes the original design.
 
 `.claude/commands/cli-changelog-review.md`, taking `$1` (reviewed watermark) and

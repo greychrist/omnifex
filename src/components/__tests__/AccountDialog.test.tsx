@@ -18,6 +18,13 @@ const { apiMock, useCodexAuthStatusMock } = vi.hoisted(() => ({
   useCodexAuthStatusMock: vi.fn(),
 }));
 
+const { platformMock, signInBrowserMock } = vi.hoisted(() => ({
+  platformMock: { isDesktop: true, listBrowsers: vi.fn() },
+  signInBrowserMock: { getSignInBrowser: vi.fn(), setSignInBrowser: vi.fn() },
+}));
+vi.mock('@/lib/platform', () => ({ platform: platformMock }));
+vi.mock('@/lib/signInBrowser', () => signInBrowserMock);
+
 vi.mock('@/lib/api', () => ({
   api: apiMock,
 }));
@@ -45,6 +52,13 @@ beforeEach(() => {
   apiMock.getClaudeSettings.mockReset().mockResolvedValue({});
   apiMock.probeAccountAuthStatus.mockReset().mockResolvedValue(null);
   useCodexAuthStatusMock.mockReset().mockReturnValue(null);
+  platformMock.isDesktop = true;
+  platformMock.listBrowsers.mockReset().mockResolvedValue([
+    { bundleId: 'com.google.Chrome', name: 'Google Chrome' },
+    { bundleId: 'com.apple.Safari', name: 'Safari' },
+  ]);
+  signInBrowserMock.getSignInBrowser.mockReset().mockResolvedValue(null);
+  signInBrowserMock.setSignInBrowser.mockReset().mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -311,5 +325,39 @@ describe('AccountDialog', () => {
       );
       expect(screen.queryByLabelText(/^email$/i)).toBeNull();
     });
+  });
+});
+
+describe('AccountDialog — sign-in browser', () => {
+  const claude = () => makeAccount({ engine: 'claude', config_dir: '/home/test/.claude-work' });
+
+  it("lists the Mac's browsers and shows the account's current choice", async () => {
+    signInBrowserMock.getSignInBrowser.mockResolvedValue('com.apple.Safari');
+    render(<AccountDialog mode="edit" account={claude()} open onClose={() => {}} onSave={() => {}} />);
+    const select = await screen.findByLabelText('Sign-in browser') as HTMLSelectElement;
+    await waitFor(() => { expect(select.value).toBe('com.apple.Safari'); });
+    expect([...select.options].map((o) => o.textContent)).toEqual(['Default browser', 'Google Chrome', 'Safari']);
+    expect(signInBrowserMock.getSignInBrowser).toHaveBeenCalledWith('/home/test/.claude-work');
+  });
+
+  it('stores the choice on Save', async () => {
+    render(<AccountDialog mode="edit" account={claude()} open onClose={() => {}} onSave={() => {}} />);
+    const select = await screen.findByLabelText('Sign-in browser');
+    await screen.findByRole('option', { name: 'Google Chrome' });
+    fireEvent.change(select, { target: { value: 'com.google.Chrome' } });
+    fireEvent.click(screen.getByRole('button', { name: /save/i }));
+    await waitFor(() => {
+      expect(signInBrowserMock.setSignInBrowser).toHaveBeenCalledWith('/home/test/.claude-work', 'com.google.Chrome');
+    });
+  });
+
+  it('is not offered where the browser cannot be chosen, or for Codex', () => {
+    platformMock.isDesktop = false;
+    render(<AccountDialog mode="edit" account={claude()} open onClose={() => {}} onSave={() => {}} />);
+    expect(screen.queryByLabelText('Sign-in browser')).toBeNull();
+    cleanup();
+    platformMock.isDesktop = true;
+    render(<AccountDialog mode="edit" account={makeAccount()} open onClose={() => {}} onSave={() => {}} />);
+    expect(screen.queryByLabelText('Sign-in browser')).toBeNull();
   });
 });

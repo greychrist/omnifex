@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { Account, ResolvePair, ResolveSlot } from '@/lib/api';
-import { buildCliReviewPrompt, buildCliReviewLaunch } from '@/lib/cliReviewLaunch';
+import { buildCliReviewLaunch } from '@/lib/cliReviewLaunch';
+import { renderCliReviewPrompt } from '@/lib/cliReviewPrompt';
 
 const account = (overrides: Partial<Account> = {}): Account =>
   ({
@@ -26,31 +27,26 @@ const pair = (claude: ResolveSlot | null, codex: ResolveSlot | null = null): Res
   codex,
 });
 
-describe('buildCliReviewPrompt', () => {
+describe('renderCliReviewPrompt', () => {
   it('carries the whole procedure, not a slash-command invocation', () => {
     // The procedure used to live in .claude/commands/cli-changelog-review.md,
     // which is gitignored — so on any machine but the author's the drift
     // warning fired a slash command the CLI had never heard of. The app now
     // ships the prompt itself.
-    const prompt = buildCliReviewPrompt('2.1.222', '2.1.224');
+    const prompt = renderCliReviewPrompt('2.1.222', '2.1.224');
     expect(prompt).not.toMatch(/^\/cli-changelog-review/);
     expect(prompt).toContain('src/types/jsonl.ts');
     expect(prompt.length).toBeGreaterThan(500);
   });
 
   it('interpolates the drifted range', () => {
-    const prompt = buildCliReviewPrompt('2.1.222', '2.1.224');
+    const prompt = renderCliReviewPrompt('2.1.222', '2.1.224');
     expect(prompt).toContain('2.1.222');
     expect(prompt).toContain('2.1.224');
     expect(prompt).not.toContain('{reviewedVersion}');
     expect(prompt).not.toContain('{installedVersion}');
   });
 
-  it('honours a user-supplied template override', () => {
-    expect(buildCliReviewPrompt('2.1.222', '2.1.224', 'check {installedVersion}')).toBe(
-      'check 2.1.224',
-    );
-  });
 });
 
 describe('buildCliReviewLaunch', () => {
@@ -123,25 +119,16 @@ describe('buildCliReviewLaunch', () => {
   });
 });
 
-describe('buildCliReviewLaunch — prompt template', () => {
-  const base = {
-    repoDir: '/Users/x/Repos/personal/omnifex',
-    reviewedVersion: '2.1.222',
-    installedVersion: '2.1.224',
-  };
-
-  it('threads a custom template into the tab prompt', () => {
+describe('buildCliReviewLaunch — prompt', () => {
+  it('always sends the shipped prompt for the drifted range', () => {
+    // There is no user override any more: the prompt repairs itself in the
+    // repo, and a saved copy would freeze it at whatever version was saved.
     const { tab } = buildCliReviewLaunch({
-      ...base,
+      repoDir: '/Users/x/Repos/personal/omnifex',
+      reviewedVersion: '2.1.222',
+      installedVersion: '2.1.224',
       pair: pair(slot(account())),
-      promptTemplate: 'review {reviewedVersion}..{installedVersion}',
     });
-    expect(tab.initialPrompt).toBe('review 2.1.222..2.1.224');
-  });
-
-  it('falls back to the shipped default when no template is stored', () => {
-    const { tab } = buildCliReviewLaunch({ ...base, pair: pair(slot(account())) });
-    expect(tab.initialPrompt).toContain('src/types/jsonl.ts');
-    expect(tab.initialPrompt).toContain('2.1.224');
+    expect(tab.initialPrompt).toBe(renderCliReviewPrompt('2.1.222', '2.1.224'));
   });
 });

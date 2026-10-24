@@ -419,6 +419,57 @@ export function createQueryPassthroughs(
   }
 
   /**
+   * Stop one background task — a backgrounded shell, Monitor or agent — by
+   * the task_id `background_tasks_changed` / `task_started` reported
+   * (`stop_task`). A user action, so the CLI's refusal propagates for the row
+   * to show rather than vanishing.
+   */
+  async function stopTask(tabId: string, taskId: string): Promise<void> {
+    const handle = liveEngine(tabId);
+    if (!handle) {
+      logControl('stop_task', tabId, { ok: false, reason: 'no-live-engine', taskId });
+      throw new Error('Session is not running');
+    }
+    try {
+      await handle.engine.sendControlRequest('stop_task', { task_id: taskId });
+      logControl('stop_task', tabId, { ok: true, taskId });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logControl('stop_task', tabId, { ok: false, taskId, error: msg });
+      throw err instanceof Error ? err : new Error(msg);
+    }
+  }
+
+  /**
+   * Move one running foreground task — a Bash call or a subagent, named by
+   * the tool_use that started it — to the background (`background_tasks`,
+   * the control-request form of Ctrl+B). The blocking tool call returns at
+   * once with a "running in the background" result and the turn carries on;
+   * the task reports back with a task notification. Resolves false when the
+   * CLI found no foreground task for that tool_use (it already finished).
+   */
+  async function backgroundTask(tabId: string, toolUseId: string): Promise<boolean> {
+    const handle = liveEngine(tabId);
+    if (!handle) {
+      logControl('background_tasks', tabId, { ok: false, reason: 'no-live-engine', toolUseId });
+      throw new Error('Session is not running');
+    }
+    try {
+      const res = await handle.engine.sendControlRequest<{ backgrounded?: unknown }>(
+        'background_tasks',
+        { tool_use_id: toolUseId },
+      );
+      const moved = res?.backgrounded !== false;
+      logControl('background_tasks', tabId, { ok: true, toolUseId, backgrounded: moved });
+      return moved;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logControl('background_tasks', tabId, { ok: false, toolUseId, error: msg });
+      throw err instanceof Error ? err : new Error(msg);
+    }
+  }
+
+  /**
    * The CLI's `/status` screen, as the rows it would draw (`get_status`, CLI
    * 2.1.280+ — the request the VSCode extension's Status dialog uses). Chat
    * mode has no TUI to type `/status` into, so this is the only way to see it.
@@ -567,6 +618,22 @@ export function createQueryPassthroughs(
     await mcpControl('mcp_toggle', tabId, serverName, { enabled });
   }
 
+  /** Reconnect a failed or disconnected server (the /mcp menu's Reconnect). */
+  async function mcpReconnect(tabId: string, serverName: string): Promise<void> {
+    await mcpControl('mcp_reconnect', tabId, serverName);
+  }
+
+  /**
+   * Finish an MCP OAuth sign-in by handing the CLI the URL the browser was
+   * redirected to. For a client that is not on the daemon's machine (the
+   * iPad): the redirect targets the CLI's localhost listener, which the
+   * client's browser cannot reach, so the user pastes the URL it landed on.
+   * The CLI checks it carries `code` or `error`.
+   */
+  async function mcpSubmitCallbackUrl(tabId: string, serverName: string, callbackUrl: string): Promise<void> {
+    await mcpControl('mcp_oauth_callback_url', tabId, serverName, { callbackUrl }, { timeoutMs: 60_000 });
+  }
+
   // reload_plugins is side-effectful — it re-runs every mod's session.start —
   // so it is sent only when the caller asks for a refresh. Otherwise the list
   // comes from the latest system:init, which carries it, and falls back to a
@@ -636,6 +703,8 @@ export function createQueryPassthroughs(
     getAccountInfo,
     getContextUsage,
     getTaskOutput,
+    stopTask,
+    backgroundTask,
     getCliStatus,
     getSupportedCommands,
     getSupportedModels,
@@ -643,6 +712,8 @@ export function createQueryPassthroughs(
     getMcpServerStatus,
     mcpAuthenticate,
     mcpReauthenticate,
+    mcpReconnect,
+    mcpSubmitCallbackUrl,
     mcpSetEnabled,
     getPlugins,
     evictPluginCache,

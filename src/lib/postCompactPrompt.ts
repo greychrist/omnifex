@@ -18,7 +18,6 @@
  * and a hand-typed `/compact`, not just OmniFex's own banner click).
  *
  * Shipped as a constant with an `app_settings` override, the same shape as
- * `DEFAULT_CLI_REVIEW_PROMPT` + `cliReview.promptTemplate` and
  * `DEFAULT_SUMMARY_PROMPT` + `sessionsSummary.promptTemplate`.
  */
 

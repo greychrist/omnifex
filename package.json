@@ -15,6 +15,7 @@
     "test:swift": "swift test --package-path macos",
     "lint": "eslint .",
     "coverage:areas": "node scripts/coverage-areas.mjs",
+    "cli-review:diff": "node --no-warnings --import ./scripts/lib/register-ts.mjs scripts/cli-review-diff.ts",
     "build:web": "vite build --config vite.web.config.ts",
     "build:daemon": "node scripts/build-daemon.mjs",
     "package": "node --import ./scripts/lib/register-ts.mjs scripts/package-mac.ts",

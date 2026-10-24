@@ -235,6 +235,9 @@ export function classifyStandaloneKind(
     return 'system.rate_limit';
   }
 
+  // Top-level `progress` record: one id for every `data.type` variant.
+  if (msg.kind === 'progress') return 'system.progress';
+
   // The stream's session-start and turn-end envelopes. Without a kind they
   // were invisible to Appearance settings and drew a hard-coded badge.
   if (msg.kind === 'cli-stream-init') return 'system.init';

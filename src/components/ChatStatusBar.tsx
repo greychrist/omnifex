@@ -496,6 +496,8 @@ export function ChatStatusBar({
         costs={background.subagentCost}
         onDismiss={background.onDismissSubagent}
         onDismissAllCompleted={background.onDismissAllCompletedSubagents}
+        onStop={background.stopTask}
+        onBackground={background.backgroundTask}
       />,
     );
   }
@@ -508,6 +510,7 @@ export function ChatStatusBar({
         readShellOutput={background.readShellOutput}
         onDismiss={background.onDismissShell}
         onDismissAllEnded={background.onDismissAllEndedShells}
+        onStop={background.stopTask}
       />,
     );
   }

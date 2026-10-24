@@ -32,6 +32,10 @@ export interface BackgroundWork {
   readShellOutput: (taskId: string) => Promise<TaskOutputTail | null>;
   onDismissShell?: (taskId: string) => void;
   onDismissAllEndedShells?: () => void;
+  /** Stop a background shell, Monitor or agent by task id (`stop_task`). */
+  stopTask?: (taskId: string) => Promise<void>;
+  /** Move a running foreground agent to the background (`background_tasks`). */
+  backgroundTask?: (toolUseId: string) => Promise<boolean>;
 }
 
 interface ReadoutProps {
@@ -122,11 +126,15 @@ export function AgentsStatusItem({
   costs,
   onDismiss,
   onDismissAllCompleted,
+  onStop,
+  onBackground,
 }: {
   subagents: Subagent[];
   costs?: Record<string, SubagentCost> | null;
   onDismiss?: (toolUseId: string) => void;
   onDismissAllCompleted?: () => void;
+  onStop?: (taskId: string) => Promise<void>;
+  onBackground?: (toolUseId: string) => Promise<boolean>;
 }): React.JSX.Element {
   const totals = subagentTotals(subagents, costs);
   return (
@@ -141,7 +149,14 @@ export function AgentsStatusItem({
       headerExtra={totals.usd !== undefined ? `≈${formatCost(totals.usd)}` : undefined}
     >
       {subagents.map((sub) => (
-        <SubagentRow key={sub.toolUseId} sub={sub} onDismiss={onDismiss} costs={costs} />
+        <SubagentRow
+          key={sub.toolUseId}
+          sub={sub}
+          onDismiss={onDismiss}
+          costs={costs}
+          onStop={onStop}
+          onBackground={onBackground}
+        />
       ))}
     </BackgroundReadout>
   );
@@ -152,11 +167,13 @@ export function ShellsStatusItem({
   readShellOutput,
   onDismiss,
   onDismissAllEnded,
+  onStop,
 }: {
   shells: BackgroundShell[];
   readShellOutput: (taskId: string) => Promise<TaskOutputTail | null>;
   onDismiss?: (taskId: string) => void;
   onDismissAllEnded?: () => void;
+  onStop?: (taskId: string) => Promise<void>;
 }): React.JSX.Element {
   return (
     <BackgroundReadout
@@ -168,7 +185,7 @@ export function ShellsStatusItem({
       onClearDone={onDismissAllEnded}
     >
       {shells.map((shell) => (
-        <ShellRow key={shell.taskId} shell={shell} read={readShellOutput} onDismiss={onDismiss} />
+        <ShellRow key={shell.taskId} shell={shell} read={readShellOutput} onDismiss={onDismiss} onStop={onStop} />
       ))}
     </BackgroundReadout>
   );

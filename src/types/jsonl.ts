@@ -410,6 +410,21 @@ export interface ToolProgressRaw {
   };
 }
 
+/**
+ * A top-level `progress` record. The CLI's merge-strategy map lists it
+ * ("boundary-cleared") and its code builds them for hooks, agents, skills,
+ * bash and tool heartbeats, but no transcript on this machine has one (checked
+ * 2026-10-24, CLI 2.1.310). `data.type` names the variant — `hook_progress`,
+ * `agent_progress`, `skill_progress`, `bash_progress`, `tool_heartbeat`,
+ * `agent_api_retry`, … — so the renderer stays generic over it.
+ */
+export interface ProgressRaw extends RawLineBase {
+  type: 'progress';
+  data?: { type?: string; [key: string]: unknown };
+  toolUseID?: string;
+  parentToolUseID?: string;
+}
+
 export interface RateLimitEventRaw extends RawLineBase {
   type: 'rate_limit_event';
   session_id?: string;
@@ -460,6 +475,9 @@ export type JsonlNode =
   // receivedAt is nullable because real rate_limit_event lines have been
   // observed with no top-level `timestamp` field (same tolerance as 'unknown').
   | { kind: 'rate-limit-event'; raw: RateLimitEventRaw; sessionId: string; receivedAt: string | null }
+  // Top-level `progress` record (see ProgressRaw). Nullable receivedAt for the
+  // same reason as rate-limit-event: shape unobserved, so tolerate no timestamp.
+  | { kind: 'progress'; raw: ProgressRaw; sessionId: string; receivedAt: string | null }
   // Overlay (CLI stream only — never enters messages[])
   | { kind: 'stream-event'; uuid: string; deltaText: string }
   | { kind: 'rate-limit'; info: RateLimitInfo }

@@ -10,8 +10,9 @@ import { CompactionPromptSettings } from './CompactionPromptSettings';
  * rather than scattering a tab per prompt across the top-level bar. Sub-tabs
  * follow the Chats tab's `variant="line"` pattern.
  *
- * Add a sub-tab here whenever a new OmniFex-authored prompt ships — the CLI
- * review prompt (`cliReview.promptTemplate`) is the obvious next one.
+ * Add a sub-tab here whenever a new OmniFex-authored prompt ships. The CLI
+ * review prompt is deliberately absent: it is not user-editable (see
+ * `src/lib/cliReviewPrompt.ts`).
  */
 export const SystemPromptSettings: React.FC = () => {
   const [activeTab, setActiveTab] = useState('summaries');

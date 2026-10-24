@@ -795,6 +795,22 @@ export interface SessionMcpServerStatus {
   tools?: { name: string; description?: string }[];
 }
 
+/** A Claude sign-in in progress (`claude_auth_begin`). */
+export interface ClaudeSignInFlow {
+  flowId: string;
+  /** Shows a code to paste back — works from any device. */
+  manualUrl: string;
+  /** Redirects to the CLI on the daemon's machine and finishes by itself. */
+  automaticUrl: string;
+}
+
+/** Who the CLI says signed in. */
+export interface ClaudeSignedInAccount {
+  email?: string;
+  organization?: string;
+  subscriptionType?: string;
+}
+
 /** What `mcp_authenticate` answers; mirrors McpAuthResult in electron/services/sessions/types.ts. */
 export interface McpAuthResult {
   authUrl: string | null;
@@ -2004,6 +2020,17 @@ export const api = {
     return apiCall("session_get_task_output", { tabId, taskId });
   },
 
+  /** Stop one background task. Rejects with the CLI's message. */
+  async sessionStopTask(tabId: string, taskId: string): Promise<void> {
+    return apiCall("session_stop_task", { tabId, taskId });
+  },
+
+  /** Move a running foreground Bash call or subagent to the background;
+   *  false when it had already finished. */
+  async sessionBackgroundTask(tabId: string, toolUseId: string): Promise<boolean> {
+    return apiCall("session_background_task", { tabId, toolUseId });
+  },
+
   /** The CLI's `/status` rows for a live session (CLI 2.1.280+); null when
    *  there is no live session or the CLI predates `get_status`. */
   async sessionCliStatus(tabId: string): Promise<SessionStatusReport | null> {
@@ -2052,6 +2079,16 @@ export const api = {
   /** Clear an MCP server's stored auth, then start OAuth again. */
   async sessionMcpReauthenticate(tabId: string, serverName: string): Promise<McpAuthResult> {
     return apiCall("session_mcp_reauthenticate", { tabId, serverName });
+  },
+
+  /** Reconnect a failed or disconnected MCP server. */
+  async sessionMcpReconnect(tabId: string, serverName: string): Promise<void> {
+    return apiCall("session_mcp_reconnect", { tabId, serverName });
+  },
+
+  /** Finish MCP OAuth with the URL the browser was redirected to (remote clients). */
+  async sessionMcpSubmitCallbackUrl(tabId: string, serverName: string, callbackUrl: string): Promise<void> {
+    return apiCall("session_mcp_submit_callback_url", { tabId, serverName, callbackUrl });
   },
 
   /** Enable or disable an MCP server; the CLI persists it per project. */
@@ -3568,19 +3605,26 @@ export const api = {
 
   // ── Claude auth ─────────────────────────────────────────────────────────
   /**
-   * Spawn `claude auth login` for one account in a one-shot pty. Main builds
-   * the env (CLAUDE_CONFIG_DIR + the inherited shell env the Keychain needs),
-   * so the renderer never names a binary or an env. Attach an xterm to the
-   * returned handle via the `one-shot-terminal-data:<handle>` events.
+   * Start a Claude sign-in for one account: the daemon starts a CLI for its
+   * config dir and asks it for the OAuth links (`claude_authenticate`).
+   * `automaticUrl` finishes by itself in a browser on the daemon's machine;
+   * `manualUrl` shows a code to paste into `claudeSignInSubmitCode`.
    */
-  async startClaudeLoginFlow(
-    configDir: string,
-    size: { cols?: number; rows?: number } = {},
-  ): Promise<{ ptyHandle: string }> {
-    const params: Record<string, unknown> = { configDir };
-    if (size.cols !== undefined) params.cols = size.cols;
-    if (size.rows !== undefined) params.rows = size.rows;
-    return apiCall<{ ptyHandle: string }>('claude_auth_start_login', params);
+  async claudeSignInBegin(configDir: string): Promise<ClaudeSignInFlow> {
+    return apiCall<ClaudeSignInFlow>('claude_auth_begin', { configDir });
+  },
+  /** Finish with the code the manual page showed. Rejects on a bad code;
+   *  the flow stays open for another try. */
+  async claudeSignInSubmitCode(flowId: string, code: string): Promise<ClaudeSignedInAccount> {
+    return apiCall<ClaudeSignedInAccount>('claude_auth_submit_code', { flowId, code });
+  },
+  /** Resolves when the browser finishes on the localhost callback. */
+  async claudeSignInWait(flowId: string): Promise<ClaudeSignedInAccount> {
+    return apiCall<ClaudeSignedInAccount>('claude_auth_wait', { flowId });
+  },
+  /** Abandon a sign-in and close its CLI. */
+  async claudeSignInCancel(flowId: string): Promise<void> {
+    return apiCall<void>('claude_auth_cancel', { flowId });
   },
   /**
    * `claude auth logout` for one account. Rejects with the CLI's stderr. The

@@ -13,6 +13,7 @@ public enum NativeChannels {
         "dialog:open",
         "dialog:save",
         "shell:openExternal",
+        "shell:listBrowsers",
         "reveal_path_in_finder",
         "open_path",
         "window:minimize",

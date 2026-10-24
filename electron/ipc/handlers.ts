@@ -98,6 +98,8 @@ export interface Services {
     getAccountInfo(sessionId: string): unknown;
     getContextUsage(sessionId: string): unknown;
     getTaskOutput(sessionId: string, taskId: string): unknown;
+    stopTask(sessionId: string, taskId: string): unknown;
+    backgroundTask(sessionId: string, toolUseId: string): unknown;
     getCliStatus(sessionId: string): unknown;
     getSupportedCommands(sessionId: string): unknown;
     getSupportedModels(sessionId: string): unknown;
@@ -105,6 +107,8 @@ export interface Services {
     mcpAuthenticate(sessionId: string, serverName: string): unknown;
     mcpReauthenticate(sessionId: string, serverName: string): unknown;
     mcpSetEnabled(sessionId: string, serverName: string, enabled: boolean): unknown;
+    mcpReconnect(sessionId: string, serverName: string): unknown;
+    mcpSubmitCallbackUrl(sessionId: string, serverName: string, callbackUrl: string): unknown;
     getPlugins(sessionId: string, force?: boolean): unknown;
     getSubagentMeta(args: { configDir: string; projectPath: string; sessionId: string }): unknown;
   };
@@ -276,10 +280,13 @@ export interface Services {
     getBinaryPath(): string | null;
     logout(configDir: string): Promise<void>;
   };
-  /** `claude auth login` / `logout` for one account's config dir. Login runs
-   *  in the one-shot pty, whose output is broadcast to every client. */
+  /** Sign-in (claude_authenticate through a short-lived CLI) and
+   *  `claude auth logout`, for one account's config dir. */
   claudeAuth?: {
-    startLoginFlow(configDir: string, size: { cols?: number; rows?: number }): { ptyHandle: string };
+    beginSignIn(configDir: string): Promise<unknown>;
+    submitCode(flowId: string, code: string): Promise<unknown>;
+    waitForCompletion(flowId: string): Promise<unknown>;
+    cancel(flowId: string): Promise<void>;
     logout(configDir: string): Promise<void>;
   };
   codexSessionWalker?: {
@@ -539,6 +546,8 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     session_account_info: wrapWith((p: Record<string, unknown>) => sessions?.getAccountInfo((p?.tabId ?? p?.session_id) as string) ?? null),
     session_context_usage: wrapWith((p: Record<string, unknown>) => sessions?.getContextUsage((p?.tabId ?? p?.session_id) as string) ?? null),
     session_get_task_output: wrapWith((p: Record<string, unknown>) => sessions?.getTaskOutput((p?.tabId ?? p?.session_id) as string, (p?.taskId ?? p?.task_id) as string) ?? null),
+    session_stop_task: wrapWith((p: Record<string, unknown>) => sessions?.stopTask((p?.tabId ?? p?.session_id) as string, (p?.taskId ?? p?.task_id) as string) ?? null),
+    session_background_task: wrapWith((p: Record<string, unknown>) => sessions?.backgroundTask((p?.tabId ?? p?.session_id) as string, (p?.toolUseId ?? p?.tool_use_id) as string) ?? null),
     session_cli_status: wrapWith((p: Record<string, unknown>) => sessions?.getCliStatus((p?.tabId ?? p?.session_id) as string) ?? null),
     session_supported_commands: wrapWith((p: Record<string, unknown>) => sessions?.getSupportedCommands((p?.tabId ?? p?.session_id) as string) ?? null),
     session_supported_models: wrapWith((p: Record<string, unknown>) => sessions?.getSupportedModels((p?.tabId ?? p?.session_id) as string) ?? null),
@@ -546,6 +555,8 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     session_mcp_authenticate: wrapWith((p: Record<string, unknown>) => sessions?.mcpAuthenticate((p?.tabId ?? p?.session_id) as string, (p?.serverName ?? p?.server_name) as string) ?? null),
     session_mcp_reauthenticate: wrapWith((p: Record<string, unknown>) => sessions?.mcpReauthenticate((p?.tabId ?? p?.session_id) as string, (p?.serverName ?? p?.server_name) as string) ?? null),
     session_mcp_set_enabled: wrapWith((p: Record<string, unknown>) => sessions?.mcpSetEnabled((p?.tabId ?? p?.session_id) as string, (p?.serverName ?? p?.server_name) as string, p?.enabled as boolean) ?? null),
+    session_mcp_reconnect: wrapWith((p: Record<string, unknown>) => sessions?.mcpReconnect((p?.tabId ?? p?.session_id) as string, (p?.serverName ?? p?.server_name) as string) ?? null),
+    session_mcp_submit_callback_url: wrapWith((p: Record<string, unknown>) => sessions?.mcpSubmitCallbackUrl((p?.tabId ?? p?.session_id) as string, (p?.serverName ?? p?.server_name) as string, (p?.callbackUrl ?? p?.callback_url) as string) ?? null),
     session_plugins: wrapWith((p: Record<string, unknown>) => sessions?.getPlugins((p?.tabId ?? p?.session_id) as string, Boolean(p?.force)) ?? null),
     session_subagent_meta: wrapWith((p: Record<string, unknown>) => sessions?.getSubagentMeta({
       configDir: (p?.configDir ?? p?.config_dir) as string,
@@ -1106,14 +1117,31 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     }),
 
     // ── Claude auth ──────────────────────────────────────────────────────────
-    claude_auth_start_login: wrapWith((p: Record<string, unknown>) => {
+    claude_auth_begin: wrapWith((p: Record<string, unknown>) => {
       const configDir = (p?.configDir ?? p?.config_dir) as string | undefined;
-      if (!configDir) throw new Error('claude_auth_start_login: configDir is required');
-      if (!claudeAuth) throw new Error('claude_auth_start_login: claude auth service not available');
-      const size: { cols?: number; rows?: number } = {};
-      if (typeof p.cols === 'number') size.cols = p.cols;
-      if (typeof p.rows === 'number') size.rows = p.rows;
-      return claudeAuth.startLoginFlow(configDir, size);
+      if (!configDir) throw new Error('claude_auth_begin: configDir is required');
+      if (!claudeAuth) throw new Error('claude_auth_begin: claude auth service not available');
+      return claudeAuth.beginSignIn(configDir);
+    }),
+    claude_auth_submit_code: wrapWith((p: Record<string, unknown>) => {
+      const flowId = (p?.flowId ?? p?.flow_id) as string | undefined;
+      const code = p?.code as string | undefined;
+      if (!flowId) throw new Error('claude_auth_submit_code: flowId is required');
+      if (!code) throw new Error('claude_auth_submit_code: code is required');
+      if (!claudeAuth) throw new Error('claude_auth_submit_code: claude auth service not available');
+      return claudeAuth.submitCode(flowId, code);
+    }),
+    claude_auth_wait: wrapWith((p: Record<string, unknown>) => {
+      const flowId = (p?.flowId ?? p?.flow_id) as string | undefined;
+      if (!flowId) throw new Error('claude_auth_wait: flowId is required');
+      if (!claudeAuth) throw new Error('claude_auth_wait: claude auth service not available');
+      return claudeAuth.waitForCompletion(flowId);
+    }),
+    claude_auth_cancel: wrapWith(async (p: Record<string, unknown>) => {
+      const flowId = (p?.flowId ?? p?.flow_id) as string | undefined;
+      if (!flowId || !claudeAuth) return null;
+      await claudeAuth.cancel(flowId);
+      return null;
     }),
     claude_auth_logout: wrapWith(async (p: Record<string, unknown>) => {
       const configDir = (p?.configDir ?? p?.config_dir) as string | undefined;

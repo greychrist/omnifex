@@ -6,7 +6,6 @@ import type { SessionVerification } from "@/lib/accountVerification";
 import type { SessionAuthFailure } from "@/lib/sessionDerivedState";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
-import { platform } from "@/lib/platform";
 import { announceAccountSignedIn } from "@/lib/accountSignIn";
 import { ClaudeSignInModal } from "./ClaudeSignInModal";
 
@@ -242,7 +241,7 @@ function AccountDetails({
             size="sm"
             className="h-6 px-2 text-[11px]"
             onClick={onSignIn}
-            title="Run `claude auth login` for this account's config directory."
+            title="Sign this account in to Claude — opens in the browser set for it."
           >
             <LogIn className="w-3 h-3 mr-1" />
             {signedInEmail === null || sessionAuthFailure ? "Sign in" : "Re-authenticate"}
@@ -338,7 +337,7 @@ export interface AccountDetailsPopover {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   content: React.ReactNode;
-  /** The sign-in terminal. Rendered beside the popover, not inside it: the
+  /** The sign-in dialog. Rendered beside the popover, not inside it: the
    *  popover closes as the dialog opens. */
   signInModal: React.ReactNode;
 }
@@ -349,9 +348,9 @@ export function useAccountDetailsPopover(inputs: AccountDetailsInputs): AccountD
   const [signInOpen, setSignInOpen] = React.useState(false);
   const { accountName, agent, configDir, onRecheck } = inputs;
 
-  // Claude only — Codex signs in from Account Settings. And desktop only: the
-  // login runs in a pty on this machine, which the web client does not have.
-  const canManageAuth = platform.isDesktop && agent !== "codex";
+  // Claude only — Codex signs in from Account Settings. Any client: the
+  // daemon runs the sign-in, and the iPad finishes it by pasting a code.
+  const canManageAuth = agent !== "codex";
 
   return {
     open,

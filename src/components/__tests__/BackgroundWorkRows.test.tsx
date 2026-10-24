@@ -441,3 +441,69 @@ describe('ShellRow', () => {
     expect(onDismiss).toHaveBeenCalledWith('b1');
   });
 });
+
+describe('task controls', () => {
+  const shell = (status: BackgroundShell['status']): BackgroundShell => ({ taskId: 'b1', description: 'npm run dev', status });
+  const noRead = async (): Promise<TaskOutputTail | null> => null;
+
+  it('stops a running shell by its task id', async () => {
+    const onStop = vi.fn(async () => {});
+    render(<ShellRow shell={shell('running')} read={noRead} onStop={onStop} />);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Stop' })); });
+    expect(onStop).toHaveBeenCalledWith('b1');
+  });
+
+  it('offers no Stop on an ended shell', () => {
+    render(<ShellRow shell={shell('ended')} read={noRead} onStop={vi.fn()} />);
+    expect(screen.queryByRole('button', { name: 'Stop' })).toBeNull();
+  });
+
+  it("shows the CLI's refusal on the row", async () => {
+    const onStop = vi.fn(async () => { throw new Error('No task found with ID: b1'); });
+    render(<ShellRow shell={shell('running')} read={noRead} onStop={onStop} />);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Stop' })); });
+    expect(screen.getByRole('alert').textContent).toContain('No task found with ID: b1');
+  });
+
+  it('stopping does not expand the row', async () => {
+    const { container } = render(<ShellRow shell={shell('running')} read={noRead} onStop={vi.fn(async () => {})} />);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Stop' })); });
+    expect(container.querySelector('[data-shell-description]')).toBeNull();
+  });
+
+  it('stops a running agent that has a task id', async () => {
+    const onStop = vi.fn(async () => {});
+    render(<SubagentRow sub={makeSub({ toolUseId: 't1', taskId: 'a1', status: 'running', isBackground: true })} onStop={onStop} />);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Stop' })); });
+    expect(onStop).toHaveBeenCalledWith('a1');
+  });
+
+  it('offers no Stop for an agent without a task id, or one that has finished', () => {
+    render(<SubagentRow sub={makeSub({ toolUseId: 't1', status: 'running' })} onStop={vi.fn()} />);
+    expect(screen.queryByRole('button', { name: 'Stop' })).toBeNull();
+    cleanup();
+    render(<SubagentRow sub={makeSub({ toolUseId: 't1', taskId: 'a1', status: 'completed' })} onStop={vi.fn()} />);
+    expect(screen.queryByRole('button', { name: 'Stop' })).toBeNull();
+  });
+
+  it('moves a running foreground agent to the background by its tool_use id', async () => {
+    const onBackground = vi.fn(async () => true);
+    render(<SubagentRow sub={makeSub({ toolUseId: 't1', status: 'running', isBackground: false })} onBackground={onBackground} />);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Move to background' })); });
+    expect(onBackground).toHaveBeenCalledWith('t1');
+  });
+
+  it('offers no Move to background for a background or nested agent', () => {
+    render(<SubagentRow sub={makeSub({ toolUseId: 't1', status: 'running', isBackground: true })} onBackground={vi.fn()} />);
+    expect(screen.queryByRole('button', { name: 'Move to background' })).toBeNull();
+    cleanup();
+    render(<SubagentRow sub={makeSub({ toolUseId: 't2', status: 'running', isBackground: false, parentToolUseId: 't1' })} onBackground={vi.fn()} />);
+    expect(screen.queryByRole('button', { name: 'Move to background' })).toBeNull();
+  });
+
+  it('says so when the agent had already finished', async () => {
+    render(<SubagentRow sub={makeSub({ toolUseId: 't1', status: 'running', isBackground: false })} onBackground={vi.fn(async () => false)} />);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Move to background' })); });
+    expect(screen.getByRole('alert').textContent).toContain('already finished');
+  });
+});

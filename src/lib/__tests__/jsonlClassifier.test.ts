@@ -421,6 +421,29 @@ describe('classifyJsonlLine', () => {
     expect(node?.kind).toBe('rate-limit-event');
   });
 
+  // `progress` is in the CLI's merge-strategy map ("boundary-cleared") but no
+  // transcript on this machine holds one. Classified so that if the CLI writes
+  // one it shows as a progress line, not an Unrecognized card.
+  it('classifies a progress record as its own kind, keeping its data payload', () => {
+    const node = classifyJsonlLine({
+      type: 'progress',
+      data: { type: 'hook_progress', hookEvent: 'PreToolUse', hookName: 'PreToolUse:Bash', command: 'lint.sh' },
+      toolUseID: 'toolu_1',
+      parentToolUseID: 'toolu_1',
+      timestamp: '2026-10-24T12:00:00.000Z',
+      sessionId: 's1',
+    });
+    expect(node?.kind).toBe('progress');
+    if (node?.kind === 'progress') {
+      expect(node.raw.data?.type).toBe('hook_progress');
+      expect(node.receivedAt).toBe('2026-10-24T12:00:00.000Z');
+    }
+  });
+
+  it('classifies a progress record with no data or timestamp, never as unknown', () => {
+    expect(classifyJsonlLine({ type: 'progress', sessionId: 's1' })?.kind).toBe('progress');
+  });
+
   it('classifies system/away_summary', () => {
     const node = classifyJsonlLine(JSONL_SAMPLES['system/away_summary']);
     expect(node?.kind).toBe('system');

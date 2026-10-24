@@ -16,6 +16,8 @@ import {
   Ghost,
   X,
   SquareTerminal,
+  Square,
+  ArrowDownToLine,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { SubagentCost } from '@/lib/api';
@@ -69,16 +71,83 @@ function formatModel(model?: string): string {
 
 const kTokens = (n: number): string => `${Math.round(n / 1000)}k`;
 
+/**
+ * A row's Stop / Move-to-background in flight, and the CLI's refusal if it
+ * gave one. The row stays as it is until the CLI's own task events move it:
+ * the request answers before the task has actually ended.
+ */
+function useRowAction(): {
+  busy: boolean;
+  error: string | null;
+  run: (fn: () => Promise<string | null>) => void;
+} {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const run = (fn: () => Promise<string | null>) => {
+    setBusy(true);
+    setError(null);
+    fn()
+      .then((problem) => { setError(problem); })
+      .catch((err: unknown) => { setError(err instanceof Error ? err.message : String(err)); })
+      .finally(() => { setBusy(false); });
+  };
+  return { busy, error, run };
+}
+
+/** An icon button inside a row's header button (hence a span, like Dismiss). */
+function RowActionButton({
+  label, icon, busy, onActivate,
+}: {
+  label: string;
+  icon: React.ReactNode;
+  busy: boolean;
+  onActivate: () => void;
+}): React.JSX.Element {
+  return (
+    <span
+      role="button"
+      aria-label={label}
+      aria-disabled={busy || undefined}
+      title={label}
+      onClick={(e) => {
+        e.stopPropagation();
+        if (!busy) onActivate();
+      }}
+      className={cn(
+        'ml-1 inline-flex h-4 w-4 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground hover:bg-white/10 shrink-0',
+        busy && 'animate-pulse opacity-50',
+      )}
+    >
+      {icon}
+    </span>
+  );
+}
+
+function RowActionError({ error }: { error: string | null }): React.JSX.Element | null {
+  if (!error) return null;
+  return (
+    <div role="alert" className="mx-3 mb-1.5 rounded bg-destructive/5 px-1.5 py-1 text-[11px] text-destructive">
+      {error}
+    </div>
+  );
+}
+
 interface SubagentRowProps {
   sub: Subagent;
   onDismiss?: (toolUseId: string) => void;
   /** Per-agent cost and context from the session cost watcher, keyed by
    *  agent id. Absent until its first snapshot. */
   costs?: Record<string, SubagentCost> | null;
+  /** Stop the agent (`stop_task`), by the task id the CLI gave it. */
+  onStop?: (taskId: string) => Promise<void>;
+  /** Move a foreground agent to the background (`background_tasks`); false
+   *  when the CLI found it already finished. */
+  onBackground?: (toolUseId: string) => Promise<boolean>;
 }
 
-export const SubagentRow: React.FC<SubagentRowProps> = ({ sub, onDismiss, costs }) => {
+export const SubagentRow: React.FC<SubagentRowProps> = ({ sub, onDismiss, costs, onStop, onBackground }) => {
   const [expanded, setExpanded] = useState(false);
+  const action = useRowAction();
   const color = PALETTE[sub.colorIndex % PALETTE.length];
   const latest = sub.latest;
   const dim = sub.status !== 'running';
@@ -162,6 +231,12 @@ export const SubagentRow: React.FC<SubagentRowProps> = ({ sub, onDismiss, costs 
   // session) is indented under its parent. It shares the parent's colour, so
   // the indent is what distinguishes it from a sibling.
   const nested = !!sub.parentToolUseId;
+  const running = sub.status === 'running';
+  // Stop needs the CLI's task id, which a nested row synthesised from the
+  // sidecar may lack. Backgrounding is for the session's own foreground
+  // agents: a nested one blocks its parent agent, not the turn.
+  const canStop = onStop && running && !!sub.taskId;
+  const canBackground = onBackground && running && sub.isBackground !== true && !nested;
 
   // Foreground or background, as the dispatch, the CLI's launch ACK or a
   // later `is_backgrounded` patch last set it. Nested rows are synthesised
@@ -213,6 +288,27 @@ export const SubagentRow: React.FC<SubagentRowProps> = ({ sub, onDismiss, costs 
             <ChevronDown className="h-3.5 w-3.5 mt-px text-muted-foreground shrink-0" />
           ) : (
             <ChevronRight className="h-3.5 w-3.5 mt-px text-muted-foreground shrink-0" />
+          )}
+          {canBackground && (
+            <RowActionButton
+              label="Move to background"
+              icon={<ArrowDownToLine className="h-3 w-3" />}
+              busy={action.busy}
+              onActivate={() => {
+                action.run(async () => (await onBackground(sub.toolUseId)) ? null : 'It had already finished.');
+              }}
+            />
+          )}
+          {canStop && sub.taskId && (
+            <RowActionButton
+              label="Stop"
+              icon={<Square className="h-2.5 w-2.5 fill-current" />}
+              busy={action.busy}
+              onActivate={() => {
+                const taskId = sub.taskId as string;
+                action.run(async () => { await onStop(taskId); return null; });
+              }}
+            />
           )}
           {dismissable && (
             <span
@@ -268,6 +364,7 @@ export const SubagentRow: React.FC<SubagentRowProps> = ({ sub, onDismiss, costs 
           />
         </span>
       </button>
+      <RowActionError error={action.error} />
 
       {expanded && (
         <div className="px-3 pb-2 pt-0.5 border-t border-white/5 space-y-0.5">
@@ -374,10 +471,13 @@ interface ShellRowProps {
   shell: BackgroundShell;
   read: (taskId: string) => Promise<TaskOutputTail | null>;
   onDismiss?: (taskId: string) => void;
+  /** Stop the shell or Monitor (`stop_task`). */
+  onStop?: (taskId: string) => Promise<void>;
 }
 
-export const ShellRow: React.FC<ShellRowProps> = ({ shell, read, onDismiss }) => {
+export const ShellRow: React.FC<ShellRowProps> = ({ shell, read, onDismiss, onStop }) => {
   const [expanded, setExpanded] = useState(false);
+  const action = useRowAction();
   const running = shell.status === 'running';
   const { tail, loaded } = useShellOutput(shell.taskId, running, expanded, read);
   const dismissable = onDismiss && !running;
@@ -409,6 +509,14 @@ export const ShellRow: React.FC<ShellRowProps> = ({ shell, read, onDismiss }) =>
         ) : (
           <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
         )}
+        {onStop && running && (
+          <RowActionButton
+            label="Stop"
+            icon={<Square className="h-2.5 w-2.5 fill-current" />}
+            busy={action.busy}
+            onActivate={() => { action.run(async () => { await onStop(shell.taskId); return null; }); }}
+          />
+        )}
         {dismissable && (
           <span
             role="button"
@@ -424,6 +532,7 @@ export const ShellRow: React.FC<ShellRowProps> = ({ shell, read, onDismiss }) =>
           </span>
         )}
       </button>
+      <RowActionError error={action.error} />
 
       {expanded && (
         <div className="px-3 pb-2 pt-1 border-t border-white/5 space-y-1">

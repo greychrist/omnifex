@@ -9,7 +9,8 @@ import {
 } from '@/types/hooks';
 
 // The authoritative list from https://code.claude.com/docs/en/hooks,
-// checked 2026-08-05 against CLI 2.1.222.
+// checked 2026-08-05 against CLI 2.1.222; model-switch events (CLI 2.1.251)
+// added 2026-10-24 against 2.1.310.
 const DOCUMENTED_EVENTS = [
   'SessionStart', 'Setup', 'UserPromptSubmit', 'UserPromptExpansion',
   'PreToolUse', 'PermissionRequest', 'PermissionDenied', 'PostToolUse',
@@ -18,7 +19,7 @@ const DOCUMENTED_EVENTS = [
   'StopFailure', 'TeammateIdle', 'InstructionsLoaded', 'ConfigChange',
   'CwdChanged', 'DirectoryAdded', 'FileChanged', 'WorktreeCreate',
   'WorktreeRemove', 'PreCompact', 'PostCompact', 'Elicitation',
-  'ElicitationResult', 'SessionEnd',
+  'ElicitationResult', 'SessionEnd', 'PreModelSwitch', 'PostModelSwitch',
 ];
 
 // Per the docs, these fire on every occurrence and silently ignore a
@@ -61,6 +62,16 @@ describe('HOOK_EVENT_INFO', () => {
     const used = new Set(HOOK_EVENTS.map((e) => HOOK_EVENT_INFO[e].group));
     // No empty group headers in the picker.
     for (const g of HOOK_EVENT_GROUPS) expect(used.has(g)).toBe(true);
+  });
+});
+
+describe('model-switch events', () => {
+  it('match on the canonical model name, per the docs', () => {
+    for (const e of ['PreModelSwitch', 'PostModelSwitch'] as HookEvent[]) {
+      const m = HOOK_EVENT_INFO[e].matcher;
+      expect(m, e).not.toBe(false);
+      if (m) expect(m.examples).toContain('claude-opus-5');
+    }
   });
 });
 

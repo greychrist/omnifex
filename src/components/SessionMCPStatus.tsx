@@ -21,6 +21,8 @@ interface SessionMCPStatusProps {
   tabId: string;
   /** From useSessionMcpStatus: polls until an action's effect shows up. */
   watchUntil: McpWatchUntil;
+  /** The session's account, whose chosen browser sign-in links open in. */
+  configDir?: string | null;
 }
 
 const STATUS_DOT: Record<string, string> = {
@@ -31,10 +33,10 @@ const STATUS_DOT: Record<string, string> = {
   disabled: "bg-muted-foreground/40",
 };
 
-export const SessionMCPStatus: React.FC<SessionMCPStatusProps> = ({ servers, tabId, watchUntil }) => {
+export const SessionMCPStatus: React.FC<SessionMCPStatusProps> = ({ servers, tabId, watchUntil, configDir }) => {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [collapsed, toggleGroup] = useCollapsedGroups();
-  const rowActions = useMcpRowActions(tabId, watchUntil);
+  const rowActions = useMcpRowActions(tabId, watchUntil, configDir);
 
   if (servers === null) {
     return (
@@ -96,7 +98,10 @@ export const SessionMCPStatus: React.FC<SessionMCPStatusProps> = ({ servers, tab
                           onAction={(action) => { logAndForget('mcp-row-action', rowActions.run(server.name, action)); }}
                         />
                       </div>
-                      <McpRowNotice state={rowState} />
+                      <McpRowNotice
+                        state={rowState}
+                        onSubmitCallback={(url) => { logAndForget('mcp-row-callback', rowActions.submitCallback(server.name, url)); }}
+                      />
                       {isOpen && (
                         <DetailBlock>
                           {server.error && (

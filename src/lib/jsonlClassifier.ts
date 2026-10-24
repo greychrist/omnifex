@@ -15,6 +15,7 @@ import type {
   CliInitRaw,
   CliResultRaw,
   RateLimitEventRaw,
+  ProgressRaw,
   ToolProgressRaw,
 } from '@/types/jsonl';
 import { anchorToolUseId } from './toolProgress';
@@ -81,6 +82,8 @@ export function classifyJsonlLine(raw: unknown): JsonlNode | null {
       return classifyCliResult(r, sessionId, receivedAt);
     case 'rate_limit_event':
       return classifyRateLimitEvent(r, sessionId, receivedAt);
+    case 'progress':
+      return { kind: 'progress', raw: r as unknown as ProgressRaw, sessionId, receivedAt };
     case 'tool_progress':
       return classifyToolProgress(r);
     default:

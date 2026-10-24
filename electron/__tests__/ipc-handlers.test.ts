@@ -103,7 +103,7 @@ function buildMockServices() {
       'getBinaryPath',
       'logout',
     ] as const),
-    claudeAuth: mockService(['startLoginFlow', 'logout'] as const),
+    claudeAuth: mockService(['beginSignIn', 'submitCode', 'waitForCompletion', 'cancel', 'logout'] as const),
     proxy: mockService(['getSettings', 'saveSettings'] as const),
     permissionsIO: createPermissionsIOService(),
     gitWatcher: mockService(['startSession', 'stopSession', 'reconnectSession', 'setSessionVisible', 'listWorktrees'] as const),
@@ -340,16 +340,30 @@ describe('ipc handlers — dispatch to services', () => {
 
   // ── Claude auth (per-configDir) ───────────────────────────────────────────
 
-  it('claude_auth_start_login forwards configDir (both case styles) and terminal size', async () => {
-    await invoke(handlers, 'claude_auth_start_login', { configDir: '/tmp/.claude-a', cols: 90, rows: 20 });
-    await invoke(handlers, 'claude_auth_start_login', { config_dir: '/tmp/.claude-b' });
-    expect(services.claudeAuth.startLoginFlow).toHaveBeenNthCalledWith(1, '/tmp/.claude-a', { cols: 90, rows: 20 });
-    expect(services.claudeAuth.startLoginFlow).toHaveBeenNthCalledWith(2, '/tmp/.claude-b', {});
+  it('claude_auth_begin forwards configDir (both case styles)', async () => {
+    await invoke(handlers, 'claude_auth_begin', { configDir: '/tmp/.claude-a' });
+    await invoke(handlers, 'claude_auth_begin', { config_dir: '/tmp/.claude-b' });
+    expect(services.claudeAuth.beginSignIn).toHaveBeenNthCalledWith(1, '/tmp/.claude-a');
+    expect(services.claudeAuth.beginSignIn).toHaveBeenNthCalledWith(2, '/tmp/.claude-b');
   });
 
-  it('claude_auth_start_login rejects a missing configDir', async () => {
-    await expect(invoke(handlers, 'claude_auth_start_login', {})).rejects.toThrow(/configDir is required/);
-    expect(services.claudeAuth.startLoginFlow).not.toHaveBeenCalled();
+  it('claude_auth_begin rejects a missing configDir', async () => {
+    await expect(invoke(handlers, 'claude_auth_begin', {})).rejects.toThrow(/configDir is required/);
+    expect(services.claudeAuth.beginSignIn).not.toHaveBeenCalled();
+  });
+
+  it('claude_auth_submit_code / _wait / _cancel forward the flow id', async () => {
+    await invoke(handlers, 'claude_auth_submit_code', { flowId: 'f1', code: 'abc#st' });
+    await invoke(handlers, 'claude_auth_wait', { flow_id: 'f1' });
+    await invoke(handlers, 'claude_auth_cancel', { flowId: 'f1' });
+    expect(services.claudeAuth.submitCode).toHaveBeenCalledWith('f1', 'abc#st');
+    expect(services.claudeAuth.waitForCompletion).toHaveBeenCalledWith('f1');
+    expect(services.claudeAuth.cancel).toHaveBeenCalledWith('f1');
+  });
+
+  it('claude_auth_submit_code rejects a missing flow id or code', async () => {
+    await expect(invoke(handlers, 'claude_auth_submit_code', { code: 'x' })).rejects.toThrow(/flowId is required/);
+    await expect(invoke(handlers, 'claude_auth_submit_code', { flowId: 'f1' })).rejects.toThrow(/code is required/);
   });
 
   it('claude_auth_logout forwards configDir to the service', async () => {

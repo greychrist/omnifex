@@ -40,6 +40,7 @@ export const KIND_FIXTURES: Record<string, string> = {
   "system.away_summary": "While you were away: the test suite finished (42 passed) and the build completed.",
   "system.thinking_tokens": "Thought ~800 tokens",
   "system.rate_limit": "5h · allowed · resets 4:00 PM",
+  "system.progress": "progress · hook_progress\nhookEvent=PreToolUse · hookName=PreToolUse:Bash · command=lint.sh",
   "system.stop_hook_summary": "check-unfinished-todos.py · 37ms",
   "system.feedback_draft_queued": "bug · Edit reported success on a no-op\nThe Edit tool returned success but the file was unchanged.",
   "system.local_command": "Current session: 5% used · resets 6:20pm\nCurrent week (all models): 26% used · resets Sep 28 at 7pm",
@@ -79,6 +80,7 @@ export const KIND_FIXTURES: Record<string, string> = {
   "attachment.agent_listing_delta": "Agents +9",
   "attachment.deferred_tools_delta": "Deferred tools +197",
   "attachment.skill_listing": "Skills listing",
+  "attachment.project_doc_reads": "Project docs — 2 read",
   "file-history-snapshot": "File snapshot",
 
   // ── synthetic control-change markers ──

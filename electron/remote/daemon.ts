@@ -42,6 +42,7 @@ import {
 import { runFirstTimeDiscovery } from '../services/first-run-discovery';
 import { createOneShotTerminalService } from '../services/one-shot-terminal';
 import { createClaudeAuthService } from '../services/auth/claude-auth';
+import { createClaudeCliEngine } from '../services/agents/claude-cli-engine';
 import { createCodexAuthService } from '../services/auth/codex-auth';
 import { createSessionsService } from '../services/sessions';
 import { createClaudeService } from '../services/claude';
@@ -584,8 +585,11 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
   };
   const codexAuthService = createCodexAuthService({ oneShotTerminal: oneShotTerminalService });
   const claudeAuthService = createClaudeAuthService({
-    spawnTerminal: spawnOneShotTerminal,
     resolveBinary: () => claudeBinaryService.findBestBinary(),
+    createEngine: (binary) => createClaudeCliEngine({
+      tabId: `signin-${Date.now().toString(36)}`,
+      claudeBinaryPath: binary,
+    }),
   });
 
   // Sign-in state that changes outside OmniFex (a terminal login/logout)
@@ -786,6 +790,8 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
       getAccountInfo: (id) => sessionsService.getAccountInfo(id),
       getContextUsage: (id) => sessionsService.getContextUsage(id),
       getTaskOutput: (id, taskId) => sessionsService.getTaskOutput(id, taskId),
+      stopTask: (id, taskId) => sessionsService.stopTask(id, taskId),
+      backgroundTask: (id, toolUseId) => sessionsService.backgroundTask(id, toolUseId),
       getCliStatus: (id) => sessionsService.getCliStatus(id),
       listPermissionRules: (id) => sessionsService.listPermissionRules(id),
       getSupportedCommands: (id) => sessionsService.getSupportedCommands(id),
@@ -794,6 +800,8 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
       mcpAuthenticate: (id, serverName) => sessionsService.mcpAuthenticate(id, serverName),
       mcpReauthenticate: (id, serverName) => sessionsService.mcpReauthenticate(id, serverName),
       mcpSetEnabled: (id, serverName, enabled) => sessionsService.mcpSetEnabled(id, serverName, enabled),
+      mcpReconnect: (id, serverName) => sessionsService.mcpReconnect(id, serverName),
+      mcpSubmitCallbackUrl: (id, serverName, callbackUrl) => sessionsService.mcpSubmitCallbackUrl(id, serverName, callbackUrl),
       getPlugins: (id, force) => sessionsService.getPlugins(id, force),
       getSubagentMeta: (args) => readSubagentMeta(args),
     },

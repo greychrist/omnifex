@@ -170,11 +170,13 @@ describe('AccountCard — sign in / sign out', () => {
     expect(screen.queryByRole('button', { name: /re-authenticate/i })).toBeNull();
   });
 
-  it('hides the controls in the web client, which has no pty to log in with', () => {
+  // The daemon runs the sign-in now (claude_authenticate), and the web
+  // client finishes it by pasting a code — no pty on the client's machine.
+  it('offers the controls in the web client too', () => {
     platformMock.platform.isDesktop = false;
     renderCard();
-    expect(screen.queryByRole('button', { name: /sign out/i })).toBeNull();
-    expect(screen.queryByRole('button', { name: /re-authenticate/i })).toBeNull();
+    expect(screen.getByRole('button', { name: /sign out/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /re-authenticate/i })).toBeTruthy();
   });
 });
 

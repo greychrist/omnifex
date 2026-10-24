@@ -18,6 +18,19 @@ describe('createPlatform(bridge).openExternal', () => {
     expect(typeof invoke.mock.calls[0][1]).toBe('string');
   });
 
+  it('names the browser when one is chosen', async () => {
+    const { bridge, invoke } = fakeBridge();
+    await createPlatform(bridge).openExternal('https://x', { browser: 'com.google.Chrome' });
+    expect(invoke).toHaveBeenCalledWith('shell:openExternal', { url: 'https://x', browser: 'com.google.Chrome' });
+  });
+
+  it('a web client ignores the browser and opens a tab', async () => {
+    const open = vi.spyOn(window, 'open').mockReturnValue(null);
+    await createPlatform(null).openExternal('https://x', { browser: 'com.google.Chrome' });
+    expect(open).toHaveBeenCalledWith('https://x', '_blank', 'noopener,noreferrer');
+    open.mockRestore();
+  });
+
   // OAuth URLs come from a server's metadata: refuse anything not http(s).
   it('refuses a non-http(s) url without invoking the bridge', async () => {
     const { bridge, invoke } = fakeBridge();
@@ -42,5 +55,18 @@ describe('createPlatform(bridge).openPath', () => {
 
   it('is unsupported in the web client', async () => {
     await expect(createPlatform(null).openPath('/tmp/a.md')).rejects.toThrow(/not available in the web client/);
+  });
+});
+
+describe('createPlatform().listBrowsers', () => {
+  it('asks the Mac app', async () => {
+    const { bridge, invoke } = fakeBridge();
+    invoke.mockResolvedValue([{ bundleId: 'com.apple.Safari', name: 'Safari' }]);
+    await expect(createPlatform(bridge).listBrowsers()).resolves.toEqual([{ bundleId: 'com.apple.Safari', name: 'Safari' }]);
+    expect(invoke).toHaveBeenCalledWith('shell:listBrowsers');
+  });
+
+  it('is empty on a web client, which cannot choose', async () => {
+    await expect(createPlatform(null).listBrowsers()).resolves.toEqual([]);
   });
 });

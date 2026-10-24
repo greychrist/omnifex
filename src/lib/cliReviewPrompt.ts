@@ -8,14 +8,17 @@
  * cloned OmniFex and clicked the drift warning got a session that fired a slash
  * command the CLI had never heard of.
  *
- * Shipping the prompt as a constant fixes that, and a user override in
- * `app_settings` keeps it editable without a rebuild — the same shape as the
- * session-summary prompt (`DEFAULT_SUMMARY_PROMPT` +
- * `sessionsSummary.promptTemplate`).
+ * Shipping the prompt as a constant fixes that. It is deliberately not
+ * editable in the app: a saved copy froze the prompt at the version saved
+ * (and "Reset to default" saved one), while the prompt's own last step is to
+ * repair itself here, in the repo. The `cliReview.promptTemplate` override
+ * and its Settings box were removed 2026-10-24.
+ *
+ * The prompt names files and symbols, never line numbers; its tests fail when
+ * a named path or symbol goes away. The mechanical binary diffing lives in
+ * `scripts/cli-review-diff.ts` (`npm run cli-review:diff`), where each check
+ * is tested — it used to be hand-typed `rg` one-liners in this text.
  */
-
-/** app_settings key holding the user's edited review prompt, if any. */
-export const CLI_REVIEW_PROMPT_SETTING_KEY = 'cliReview.promptTemplate';
 
 /**
  * Placeholders the app fills in before sending. Named rather than positional:
@@ -26,146 +29,191 @@ export const CLI_REVIEW_PROMPT_SETTING_KEY = 'cliReview.promptTemplate';
 export const REVIEWED_VERSION_PLACEHOLDER = '{reviewedVersion}';
 export const INSTALLED_VERSION_PLACEHOLDER = '{installedVersion}';
 
-export const DEFAULT_CLI_REVIEW_PROMPT = `# CLI Changelog Review
+export const CLI_REVIEW_PROMPT = `# Claude Code release review
 
 Review every Claude Code release **after \`{reviewedVersion}\` up to and
-including \`{installedVersion}\`** against this codebase, and report what OmniFex
-needs to do about it.
+including \`{installedVersion}\`** against this codebase, report what OmniFex
+needs to do about it, and record the result.
 
-\`{reviewedVersion}\` is the last release marked as checked — normally
+\`{reviewedVersion}\` is the last release marked as checked (normally
 \`REVIEWED_CLI_VERSION\` in \`electron/services/claude-cli-review.ts\`, unless a
-later one was marked in the app without a build; \`{installedVersion}\` is the
-CLI the user is actually running.
+later one was marked in the app without a build). \`{installedVersion}\` is the
+CLI the user is running.
 
 ## Why this exists
 
-OmniFex drives a CLI it does not ship. Every release can move a surface we
-depend on, and the old \`@anthropic-ai/claude-agent-sdk\` dependency that used to
-pin a version to diff against is gone. This review is the only drift signal
-left — treat it as a real audit, not a formality.
+OmniFex drives a CLI it does not ship. Any release can move a surface we
+depend on, and there is no pinned dependency left to diff against. This
+review is the only drift signal, so treat it as an audit: every claim needs a
+grep, a file read or a transcript behind it.
+
+## How this prompt stays true
+
+- **The prompt carries the method; the code carries the inventory.** It names
+  files and the symbols in them, never line numbers or counts. A test
+  (\`src/lib/__tests__/cliReviewPrompt.test.ts\`) fails when a named path or
+  symbol disappears, but it cannot see a surface that was never listed.
+- **Fix what you find stale in the same change.** If a pointer here led
+  nowhere, a check missed something, or a new kind of surface bit us, update
+  this prompt (\`src/lib/cliReviewPrompt.ts\`), the diff script
+  (\`scripts/cli-review-diff.ts\`) and their tests, and say so in the report.
+  A prompt that only ever gets read gets thinner with every refactor.
+- **Diff both ways.** Comparing version to version shows what moved in this
+  range. Comparing the installed binary to OmniFex shows gaps that earlier
+  reviews let through, which no range diff will ever show again.
 
 ## Steps
 
-1. **Get the entries.** Fetch
+1. **Start from the history.** Read the header of
+   \`electron/services/claude-cli-review.ts\` (\`REVIEWED_CLI_VERSION\`): the
+   standing list of undocumented surface we drive, and the latest
+   "Last review:" blocks. Note every item still marked open (gap, parked,
+   not taken). Re-check those; don't re-derive them.
+
+2. **Get the changelog entries.** Fetch
    \`https://raw.githubusercontent.com/anthropics/claude-code/main/CHANGELOG.md\`
-   and take every entry in the range \`({reviewedVersion}, {installedVersion}]\`.
-   If a version in the range is missing from the changelog, say so rather than
-   silently skipping it.
+   and take every entry in \`({reviewedVersion}, {installedVersion}]\`. If a
+   version in the range has no entry, say so.
 
-2. **Map each entry to our surfaces.** For every entry, decide whether it
-   touches something OmniFex depends on. Read the local code before claiming it
-   does or doesn't — this is an evidence exercise, not a vibe check. The
-   surfaces that have actually bitten us:
+3. **Run the bundle diff.**
 
-   - **JSONL stream shapes** — \`src/types/jsonl.ts\`, the parsing in
-     \`electron/services/sessions/\`, \`src/components/StreamMessage.tsx\`
-   - **Control requests / responses** — \`electron/services/sessions/runtime.ts\`,
-     \`permissions.ts\` (permission-prompt-tool stdio decider, \`apply_flag_settings\`)
-   - **TUI rendering we scrape** — \`electron/services/usage-runner.ts\` (\`/usage\`)
-   - **Hook event names + payloads** — \`electron/services/claude.ts\` hooks config
-   - **Permission-rule semantics** — \`docs/permission-syntax.md\`, the rules UI
-   - **Session lifecycle / status** — \`docs/session-lifecycle.md\`
-   - **Model, effort, thinking, fast-mode plumbing** — \`src/lib/api.ts\`
-     \`startSession\` params and the pickers that feed it
-   - **Slash commands, subagents, MCP, plugins, settings.json keys**
+   \`\`\`sh
+   npm run cli-review:diff -- {reviewedVersion} {installedVersion}
+   \`\`\`
 
-3. **Diff the binaries, not just the prose.** The changelog is not the whole
-   surface: a record type can ship without an entry. Installed versions live in
-   \`~/.local/share/claude/versions/<version>\` and are greppable JS
-   (\`rg -a\`). With two versions in the range installed, diff at least:
+   It reads \`~/.local/share/claude/versions/<version>\` (set
+   \`CLAUDE_VERSIONS_DIR\`, or pass a file path instead of a version, for any
+   other location). It reports:
+   - **version to version**: the merge-strategy map, every \`type:"…"\`
+     literal, \`subtype:"…"\`, \`hook_event_name\`, \`control_*\` envelopes, the
+     SDK's control requests, CLI flags, \`origin.kind\` values, the
+     \`can_use_tool\` payload keys, every object key, the stream-json schemas'
+     \`.describe()\` strings, and the \`/usage\` anchors;
+   - **installed vs OmniFex**: record types we would draw as
+     "Unrecognized record", hook events missing from \`HOOK_EVENTS\`, control
+     subtypes we send and flags we pass that the binary no longer has, and
+     SDK requests we never use.
 
-   - **The JSONL record-type map** — the CLI's merge-strategy map. One object
-     mapping every record type it writes into a session file to a strategy, with
-     exactly four — \`user\`, \`assistant\`, \`system\`, \`attachment\` — tagged
-     \`"transcript"\` and the rest being per-session bookkeeping. Find it via a
-     key you know is in it and widen to the enclosing object:
+   Read the output; don't just quote it. Lists stop at 40 items; add
+   \`--full\` to see all of them. Do ad-hoc binary searches with \`node\`, not
+   the shell's \`grep\`, which may be ugrep and refuses long bounded
+   repeats.
+   - Most movement is minifier renaming. Say which lines are real.
+   - Exit 2 / \`ANCHOR NOT FOUND\` means the CLI or the script moved. An empty
+     set is not a clean result: fix the script, then rerun.
+   - If \`{reviewedVersion}\` is not installed, the script still runs the
+     coverage half. Say the version diff was skipped, and lean harder on
+     step 4.
+   - Before calling a coverage line a bug, check real transcripts under each
+     account's \`projects/\` directory to see whether the CLI actually writes
+     or sends it.
 
-     \`\`\`sh
-     rg -a -o '\\{[^{}]{0,1200}"atis-latch":"[a-z-]+"[^{}]{0,600}\\}' \\
-       ~/.local/share/claude/versions/<version>
-     \`\`\`
+4. **Check what the script can't judge.**
+   - **New fields on records we already classify.** In 2.1.277 the CLI
+     started stamping stdin prompts \`turnOrigin:"sdk"\` and stopped naming
+     sessions whose \`origin\` was absent. 36 sessions went nameless while
+     every type set read clean. The script's object-key diff lists new keys,
+     mostly noise. Read the context of any key that could sit on a
+     \`user\` / \`assistant\` record, a permission request or an
+     \`initialize\` reply.
+   - **New \`.describe()\` text** is where the CLI writes down host
+     obligations ("A host wrapping keyboard input must stamp
+     {kind:'human'}"). Read every new or changed string the script lists.
+   - **Attachment subtypes.** Unknown ones render as nothing, not as a
+     card, so a new context source disappears silently. They show up in the
+     \`type:"…"\` diff; decide whether \`src/lib/contextLedger.ts\`
+     (\`IN_SCOPE\`, \`summariseContextAttachment\`) should take them.
+   - **New CLI → host control requests.** \`electron/services/agents/claude-cli-engine.ts\`
+     answers unknown ones with an error, so they don't stall a session.
+     But a new one may be a capability the CLI now expects a host to serve.
 
-     A new entry is a new record type. Decide which it is: something OmniFex
-     must render (add a case to \`src/lib/jsonlClassifier.ts\`), or bookkeeping
-     (add it to \`src/lib/cliSidechannelRecords.ts\`). Left undecided it becomes
-     an orange "Unrecognized record" card on every occurrence — which is how
-     \`atis-latch\` reached hundreds of cards before anyone noticed.
-   - \`subtype:"…"\` literals, \`hook_event_name\` literals, \`type:"control_*"\`
-     envelopes, and the \`/usage\` anchors \`usage-runner/parser.ts\` reads.
-   - **The keys on \`user\` / \`assistant\` records**, not just the record
-     \`type:\` literals. A field can appear on a record we already classify and
-     change what the CLI does with it: 2.1.277 started stamping stdin prompts
-     \`turnOrigin:"sdk"\` and stopped auto-naming sessions whose \`origin\`
-     was absent — 36 sessions went nameless while the record-type map read
-     "clean". Compare the allowed-value lists too (the \`turnOrigin\`
-     sanitizer set is one \`var\`). Fix on our side was one field:
-     \`origin:{kind:"human"}\` in \`claude-cli-engine.ts\` writeUserMessage.
-   - **The stream-json input schemas' \`.describe()\` strings** — the CLI
-     documents host obligations there ("A host wrapping keyboard input must
-     stamp {kind:'human'} explicitly"). Grep \`type:R("user")\` and read the
-     fields' descriptions, not only their names.
-   - **The SDK client's control subtypes** vs ours:
-     \`rg -a -o 'this\\.request\\(\\{subtype:"[a-z_]+"'\` in the bundle lists what
-     an SDK host can ask for; \`sendControlRequest('…')\` in
-     \`electron/services/sessions/queries.ts\` is what we ask for. A new
-     subtype is a capability we may be missing, not just noise.
+5. **Map each entry and each real diff line to our surfaces.** Read the
+   local code before saying something is or isn't affected. These are
+   starting points. If an entry touches a surface missing from this list,
+   handle it and add it here.
 
-   Report counts both ways round. Most movement is minifier noise — identifier
-   renaming shifts occurrence counts without changing the literal set — so say
-   which it is rather than reporting a number that moved.
+   - **Transcript records**: \`src/lib/jsonlClassifier.ts\` (\`classifyJsonlLine\`),
+     \`src/lib/cliSidechannelRecords.ts\` (\`CLI_SIDECHANNEL_RECORD_TYPES\`),
+     \`src/types/jsonl.ts\`, \`src/components/StreamMessage.tsx\`
+   - **Stream-json I/O and the control protocol**:
+     \`electron/services/agents/claude-cli-engine.ts\` (\`writeUserMessage\`, \`--permission-prompt-tool\`, \`control_request\`),
+     \`electron/services/sessions/queries.ts\` (\`sendControlRequest\`, \`apply_flag_settings\`),
+     \`electron/services/sessions/permissions.ts\`
+   - **Session lifecycle and turn state**: \`docs/session-lifecycle.md\`,
+     \`electron/services/sessions/stream-forward.ts\`
+   - **Permission rules**: \`docs/permission-syntax.md\`, plus the official
+     permissions docs
+   - **Hooks**: \`src/types/hooks.ts\` (\`HOOK_EVENTS\`), \`src/components/HooksEditor.tsx\`
+   - **\`/usage\` scraping**: \`electron/services/usage-runner.ts\`,
+     \`electron/services/usage-runner/parser.ts\`
+   - **Models, effort, thinking, fast mode**: \`electron/services/models.ts\` (\`initialize\`),
+     \`src/lib/pricing.ts\` (\`SHIPPED_PRICING\`), \`src/lib/api.ts\` (\`startSession\`).
+     A new model needs a price row as well as a picker entry.
+   - **Mods, plugins, MCP**: \`electron/services/sessions/mods.ts\`,
+     \`electron/services/sessions/plugins.ts\`, \`electron/services/bundled-mod.ts\`,
+     \`electron/services/mcp.ts\`, \`omnifex-mod/\`
+   - **The Brain's MCP server**: \`electron/brain-mcp.ts\`,
+     \`electron/services/brain/instructions.ts\`,
+     \`electron/services/brain/mcp-registration.ts\` (\`--mcp-config\`).
+     How the CLI treats server \`instructions\` decides whether the Brain is
+     used at all.
+   - **OmniFex's own \`claude -p\` runs**: \`electron/services/sessions/summary-query.ts\`,
+     \`electron/services/sessions/internal-spend.ts\`
+   - **Where transcripts live**: \`electron/services/project-paths.ts\` (\`encodeProjectId\`).
+     Encoding or relocation changes strand history and spend.
+   - **Locating and updating the CLI**: \`electron/services/claude-binary.ts\`,
+     \`electron/services/claude-cli-review.ts\`
+   - **Slash commands and settings keys**: \`electron/services/slash-commands.ts\`,
+     \`electron/services/commands-catalog.ts\`, \`electron/services/claude.ts\`
 
-4. **Report.** For each entry that matters: what changed, which OmniFex files
-   are affected, and whether it is (a) already handled, (b) a bug we now have,
-   or (c) an opportunity worth taking. Cite \`file:line\`. Group the rest under a
-   one-line "no OmniFex impact" list — don't pad the report with them.
+6. **Report.** Lead with one line: is the current build broken? Then, for
+   each entry or diff line that matters: what changed, the OmniFex files it
+   touches (\`file:line\`), and which it is:
+   - (a) already handled
+   - (b) a bug we now have
+   - (c) an opportunity worth taking
 
-5. **Recommend, don't sprawl.** Propose the smallest set of follow-ups, ordered
-   by whether the current build is actually broken. Ask before implementing
-   anything beyond a trivial fix.
+   Put everything else on one "no OmniFex impact" list, and list the open
+   items carried from step 1 with their status.
 
-6. **Bump the watermark. Always — it is the closing step of every review.**
-   Update \`REVIEWED_CLI_VERSION\` to \`{installedVersion}\` in
-   \`electron/services/claude-cli-review.ts\`, and add a "Last review:" block
-   above the existing ones recording what you found — including the entries
-   that turned out to be inert, so the next reviewer does not re-derive them.
+7. **Recommend, don't sprawl.** Propose the smallest set of follow-ups,
+   most broken first. Ask before implementing anything beyond a trivial fix.
 
-   This does not need its own go-ahead. The source watermark is what the next
-   *build* was reviewed against; it reaches the app only with a release. Do it
-   even when the answer is "nothing to change" — a clean pass is a result, and
-   recording it is the point.
+8. **Record it. Always, because recording is how every review ends.**
+   - Set \`REVIEWED_CLI_VERSION\` to \`{installedVersion}\`.
+   - Add a "Last review:" block above the existing ones. It records what you
+     found, including the inert entries and the diff lines you judged to be
+     noise, so the next reviewer doesn't re-derive them. It also lists every
+     open item still standing, so step 1 of the next review finds them in
+     one place.
+   - Do this even when the answer is "nothing to change". A clean pass is a
+     result.
+   - This needs no separate go-ahead. The source watermark is what the next
+     build was reviewed against.
+   - What is forbidden is bumping it without doing the work. The block is
+     the evidence that the review happened.
 
-   The bump does not clear the drift badge — the user does, with "Mark
-   \`{installedVersion}\` as checked" in the Updates popover, once they have
-   read your report. End by telling them that.
-
-   What is forbidden is bumping it *without* doing the work. The comment block
-   is the evidence that the work happened; a bump with nothing to say is the
-   one thing that throws away the only drift signal we have.
+   The bump doesn't clear the drift badge. The user does that with "Mark
+   \`{installedVersion}\` as checked" in the Updates popover, after reading
+   your report. End by telling them so.
 
 ## Notes
 
-- Prefer official Anthropic docs over model memory for anything the changelog
-  only gestures at. The repo-local \`version-aware-research\` skill applies.
-- The changelog is terse. An entry like "fixed a rendering issue" can still be
-  the thing that broke our scraper — check the surface, don't trust the summary.
+- For anything the changelog only gestures at, check official Anthropic docs
+  rather than memory. The repo-local \`version-aware-research\` skill applies.
+- The changelog is terse. "Fixed a rendering issue" can be the entry that
+  broke the scraper. Check the surface; don't trust the summary.
 `;
 
 /**
- * Fill the version placeholders in `template`, falling back to the shipped
- * default when the user hasn't stored one (or has blanked the box).
+ * Fill the version placeholders.
  *
- * Uses a replacer function rather than a string replacement: `String.replace`
- * reads `$&`, `$1` and friends in a *replacement string* as backreferences, so
- * a version containing one would otherwise smear the matched text through the
- * prompt.
+ * Splits and joins rather than `String.replace`: `replace` reads `$&`, `$1`
+ * and friends in a *replacement string* as backreferences, so a version
+ * containing one would otherwise smear the matched text through the prompt.
  */
-export function renderCliReviewPrompt(
-  template: string | null | undefined,
-  reviewedVersion: string,
-  installedVersion: string,
-): string {
-  const source = template && template.trim() ? template : DEFAULT_CLI_REVIEW_PROMPT;
-  return source
+export function renderCliReviewPrompt(reviewedVersion: string, installedVersion: string): string {
+  return CLI_REVIEW_PROMPT
     .split(REVIEWED_VERSION_PLACEHOLDER)
     .join(reviewedVersion)
     .split(INSTALLED_VERSION_PLACEHOLDER)

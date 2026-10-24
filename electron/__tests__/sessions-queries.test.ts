@@ -515,6 +515,40 @@ describe('getTaskOutput', () => {
   });
 });
 
+describe('stopTask', () => {
+  it('sends stop_task with the task id', async () => {
+    const { engine, calls } = createEngine({ control: () => undefined });
+    await setup({ engine }).q.stopTask('tab1', 'b1');
+    expect(calls).toEqual([{ subtype: 'stop_task', payload: { task_id: 'b1' } }]);
+  });
+
+  it("rejects with the CLI's message so the row can show it", async () => {
+    const { engine } = createEngine({ control: () => { throw new Error('No task found with ID: b1'); } });
+    await expect(setup({ engine }).q.stopTask('tab1', 'b1')).rejects.toThrow('No task found with ID: b1');
+  });
+
+  it('rejects with no live engine', async () => {
+    await expect(setup({ registered: false }).q.stopTask('tab1', 'b1')).rejects.toThrow('Session is not running');
+  });
+});
+
+describe('backgroundTask', () => {
+  it('sends background_tasks for one tool_use and reports whether it moved', async () => {
+    const { engine, calls } = createEngine({ control: () => ({ backgrounded: true }) });
+    await expect(setup({ engine }).q.backgroundTask('tab1', 'toolu_1')).resolves.toBe(true);
+    expect(calls).toEqual([{ subtype: 'background_tasks', payload: { tool_use_id: 'toolu_1' } }]);
+  });
+
+  it('reports false when no matching foreground task was found', async () => {
+    const { engine } = createEngine({ control: () => ({ backgrounded: false }) });
+    await expect(setup({ engine }).q.backgroundTask('tab1', 'toolu_1')).resolves.toBe(false);
+  });
+
+  it('rejects with no live engine', async () => {
+    await expect(setup({ registered: false }).q.backgroundTask('tab1', 'toolu_1')).rejects.toThrow('Session is not running');
+  });
+});
+
 describe('getCliStatus', () => {
   const REPORT = {
     sections: [
@@ -945,8 +979,25 @@ describe('mcp server actions', () => {
     expect(calls[0]).toEqual({ subtype: 'mcp_toggle', payload: { serverName: 'github', enabled: false } });
   });
 
+  it('mcpReconnect sends mcp_reconnect', async () => {
+    const { engine, calls } = createEngine({ control: () => undefined });
+    await setup({ engine }).q.mcpReconnect('tab1', 'github');
+    expect(calls[0]).toEqual({ subtype: 'mcp_reconnect', payload: { serverName: 'github' } });
+  });
+
+  it('mcpSubmitCallbackUrl sends mcp_oauth_callback_url with the pasted URL', async () => {
+    const { engine, calls } = createEngine({ control: () => undefined });
+    await setup({ engine }).q.mcpSubmitCallbackUrl('tab1', 'atlassian', 'http://localhost:5555/callback?code=c&state=s');
+    expect(calls[0]).toEqual({
+      subtype: 'mcp_oauth_callback_url',
+      payload: { serverName: 'atlassian', callbackUrl: 'http://localhost:5555/callback?code=c&state=s' },
+    });
+  });
+
   it('rejects with "Session is not running" when no live engine', async () => {
     const { q } = setup({ registered: false });
+    await expect(q.mcpReconnect('tab1', 's')).rejects.toThrow('Session is not running');
+    await expect(q.mcpSubmitCallbackUrl('tab1', 's', 'http://x')).rejects.toThrow('Session is not running');
     await expect(q.mcpAuthenticate('tab1', 's')).rejects.toThrow('Session is not running');
     await expect(q.mcpReauthenticate('tab1', 's')).rejects.toThrow('Session is not running');
     await expect(q.mcpSetEnabled('tab1', 's', true)).rejects.toThrow('Session is not running');

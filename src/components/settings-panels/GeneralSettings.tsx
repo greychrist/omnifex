@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import {
   Check,
-  RotateCcw,
   Volume2,
 } from "lucide-react";
 import { Label } from "@/components/ui/label";
@@ -22,10 +21,6 @@ import {
   CLI_AUTO_UPDATE_SETTING_KEY,
   type ClaudeInstallation,
 } from "@/lib/api";
-import {
-  CLI_REVIEW_PROMPT_SETTING_KEY,
-  DEFAULT_CLI_REVIEW_PROMPT,
-} from "@/lib/cliReviewPrompt";
 import { cn } from "@/lib/utils";
 import { AutoRecapSettings } from "./AutoRecapSettings";
 import { ProgressModSettings } from "./ProgressModSettings";
@@ -151,7 +146,6 @@ export const GeneralSettings: React.FC = () => {
 
   // The prompt that same launch starts its session with. Empty means "use the
   // shipped default", which is the normal state.
-  const [cliReviewPrompt, setCliReviewPrompt] = useState('');
 
   // The Claude binary new sessions spawn. Saved as soon as one is picked.
   const [currentBinaryPath, setCurrentBinaryPath] = useState<string | null>(null);
@@ -176,8 +170,6 @@ export const GeneralSettings: React.FC = () => {
       savedCliReviewRepoDir.current = (await api.getSetting(CLI_REVIEW_REPO_DIR_SETTING_KEY)) ?? '';
       setCliReviewRepoDir(savedCliReviewRepoDir.current);
       setCliAutoUpdate((await api.getSetting(CLI_AUTO_UPDATE_SETTING_KEY)) === 'true');
-      savedCliReviewPrompt.current = (await api.getSetting(CLI_REVIEW_PROMPT_SETTING_KEY)) ?? '';
-      setCliReviewPrompt(savedCliReviewPrompt.current);
     })());
   }, []);
 
@@ -190,7 +182,6 @@ export const GeneralSettings: React.FC = () => {
   // What was last loaded or saved for each typed field, so leaving one
   // unchanged doesn't write it again.
   const savedCliReviewRepoDir = React.useRef('');
-  const savedCliReviewPrompt = React.useRef('');
 
   const saveCliReviewRepoDir = async (next: string) => {
     setCliReviewRepoDir(next);
@@ -199,14 +190,6 @@ export const GeneralSettings: React.FC = () => {
     await track(api.saveSetting(CLI_REVIEW_REPO_DIR_SETTING_KEY, next));
   };
 
-  const saveCliReviewPrompt = async (next: string) => {
-    // Blank is meaningful: it clears the override and restores the built-in.
-    const value = next.trim() ? next : '';
-    setCliReviewPrompt(value);
-    if (value === savedCliReviewPrompt.current) return;
-    savedCliReviewPrompt.current = value;
-    await track(api.saveSetting(CLI_REVIEW_PROMPT_SETTING_KEY, value));
-  };
 
   const browseForCliReviewRepoDir = async () => {
     const paths = (await window.electronAPI.showOpenDialog({
@@ -743,46 +726,6 @@ export const GeneralSettings: React.FC = () => {
                   Browse…
                 </Button>
               </div>
-            </div>
-
-            {/* The prompt that review session is started with. Shipped as a
-                constant so it works on a fresh clone; persisted override lives
-                in `cliReview.promptTemplate`. */}
-            <div className="space-y-3">
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <Label htmlFor="cli-review-prompt">Changelog review prompt</Label>
-                  <p className="text-caption text-muted-foreground mt-1">
-                    What that session is asked to do. <code>{'{reviewedVersion}'}</code> and{' '}
-                    <code>{'{installedVersion}'}</code> are filled in with the range that
-                    drifted. Leave blank to use the built-in prompt.
-                  </p>
-                </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="shrink-0"
-                  onClick={fireAndLog('general-settings:click', () =>
-                    saveCliReviewPrompt(DEFAULT_CLI_REVIEW_PROMPT),
-                  )}
-                >
-                  <RotateCcw className="w-3.5 h-3.5 mr-1.5" />
-                  Reset to default
-                </Button>
-              </div>
-              <textarea
-                id="cli-review-prompt"
-                value={cliReviewPrompt}
-                placeholder="Using the built-in prompt"
-                spellCheck={false}
-                rows={10}
-                onChange={(e) => { setCliReviewPrompt(e.target.value); }}
-                onBlur={fireAndLog('general-settings:blur', () =>
-                  saveCliReviewPrompt(cliReviewPrompt),
-                )}
-                className="w-full rounded-md border border-border bg-background p-2 font-mono text-xs outline-none focus:border-white/30"
-              />
             </div>
           </SettingsSection>
         </div>

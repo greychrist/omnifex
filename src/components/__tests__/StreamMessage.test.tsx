@@ -381,6 +381,39 @@ describe('system thinking_tokens rendering', () => {
   });
 });
 
+describe('progress record rendering', () => {
+  function makeProgressNode(data: Record<string, unknown> | undefined): JsonlNode {
+    return {
+      kind: 'progress',
+      sessionId: 'sess-1',
+      receivedAt: '2026-10-24T12:00:00Z',
+      raw: { type: 'progress', data, toolUseID: 'toolu_1' },
+    } as unknown as JsonlNode;
+  }
+
+  it('shows the progress type and its scalar fields', () => {
+    const node = makeProgressNode({
+      type: 'hook_progress', hookEvent: 'PreToolUse', hookName: 'PreToolUse:Bash', command: 'lint.sh',
+    });
+    render(<StreamMessage tabId="tab-test" message={node} lookups={lookupsFor(node, [node])} />);
+    expect(screen.getByText('progress · hook_progress')).toBeTruthy();
+    expect(screen.getByText('hookEvent=PreToolUse · hookName=PreToolUse:Bash · command=lint.sh')).toBeTruthy();
+    expect(screen.queryByText(/Unrecognized record/)).toBeNull();
+  });
+
+  it('truncates long values and skips nested objects', () => {
+    const node = makeProgressNode({ type: 'bash_progress', output: 'x'.repeat(200), nested: { a: 1 }, totalLines: 3 });
+    render(<StreamMessage tabId="tab-test" message={node} lookups={lookupsFor(node, [node])} />);
+    expect(screen.getByText(`output=${'x'.repeat(79)}… · totalLines=3`)).toBeTruthy();
+  });
+
+  it('still renders a line when the record has no data', () => {
+    const node = makeProgressNode(undefined);
+    render(<StreamMessage tabId="tab-test" message={node} lookups={lookupsFor(node, [node])} />);
+    expect(screen.getByText('progress')).toBeTruthy();
+  });
+});
+
 describe('rate_limit_event rendering', () => {
   // rate_limit_event is a TOP-LEVEL `type` (no `subtype`), unlike
   // thinking_tokens — classifyJsonlLine routes it to its own JsonlNode kind

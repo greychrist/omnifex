@@ -23,7 +23,8 @@ export type ContextEntryKind =
   | 'mcp-server'
   | 'agent'
   | 'skills'
-  | 'deferred-tool';
+  | 'deferred-tool'
+  | 'project-doc';
 
 /** Scopes the CLI is known to emit. `AutoMem` is the auto-memory MEMORY.md.
  *  Deliberately open: an earlier closed allow-list of the first four silently
@@ -80,7 +81,20 @@ const IN_SCOPE = new Set([
   'agent_listing_delta',
   'deferred_tools_delta',
   'skill_listing',
+  // claude.ai project documents read into the session for the user (CLI
+  // 2.1.310). Not seen in a transcript yet; shape from the CLI's schema.
+  'project_doc_reads',
 ]);
+
+/** One `project_doc_reads` entry's doc, or null when it is not well formed. */
+function projectDocOf(v: unknown): { path: string; content?: string } | null {
+  if (!v || typeof v !== 'object') return null;
+  const read = (v as { read?: unknown }).read;
+  if (!read || typeof read !== 'object') return null;
+  const path = str((read as Record<string, unknown>).path);
+  if (!path) return null;
+  return { path, content: str((read as Record<string, unknown>).content) };
+}
 
 function str(v: unknown): string | undefined {
   return typeof v === 'string' && v.length > 0 ? v : undefined;
@@ -104,6 +118,7 @@ function scopeOf(v: unknown): ContextScope | undefined {
  *   snapshot  `instructions`, `skill_listing`      later supersedes earlier
  *   delta     `*_delta`                            added / removed / readded
  *   additive  `nested_memory`                      append once, stays live
+ *   per-doc   `project_doc_reads`                  a changed doc replaces itself
  */
 export function foldContextLedger(records: readonly JsonlNode[]): ContextLedger {
   const entries: LedgerEntry[] = [];
@@ -223,6 +238,18 @@ export function foldContextLedger(records: readonly JsonlNode[]): ContextLedger 
         break;
       }
 
+      case 'project_doc_reads': {
+        for (const doc of (Array.isArray(att.reads) ? att.reads : []).map(projectDocOf)) {
+          if (!doc) continue;
+          // A doc that changed since its last read is a new arrival; an
+          // unchanged re-read is not.
+          const idx = liveIdx.get(`project-doc:${doc.path}`);
+          if (idx !== undefined && entries[idx].content !== doc.content) close('project-doc', doc.path, at);
+          open('project-doc', doc.path, at, { content: doc.content });
+        }
+        break;
+      }
+
       case 'skill_listing': {
         const content = str(att.content);
         if (content === undefined) break;
@@ -294,6 +321,11 @@ export function summariseContextAttachment(
       return delta('Deferred tools',
         strArray(attachment.addedNames).length + strArray(attachment.readdedNames).length,
         strArray(attachment.removedNames).length);
+
+    case 'project_doc_reads': {
+      const n = (Array.isArray(attachment.reads) ? attachment.reads : []).map(projectDocOf).filter(Boolean).length;
+      return n === 0 ? null : `Project docs — ${n} read`;
+    }
 
     case 'skill_listing':
       // The listing is one opaque markdown blob, so any count here would be a

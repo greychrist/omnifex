@@ -30,7 +30,7 @@ const EMITTABLE_IDS = [
   "system.userPromptSubmit", "system.api_error", "system.away_summary",
   "system.thinking_tokens", "system.rate_limit", "system.feedback_draft_queued",
   "system.local_command", "system.stop_hook_summary", "system.unknown",
-  "system.compact_boundary", "system.result", "system.init",
+  "system.compact_boundary", "system.result", "system.init", "system.progress",
   // stream-only CLI bookkeeping (default Never)
   "system.background_tasks_changed", "system.dev_intent",
   "system.per_turn_effort_changed", "system.elicitation_complete",
@@ -53,7 +53,7 @@ const EMITTABLE_IDS = [
   // session context sources (attachment channel)
   "attachment.instructions", "attachment.nested_memory",
   "attachment.mcp_instructions_delta", "attachment.agent_listing_delta",
-  "attachment.deferred_tools_delta", "attachment.skill_listing",
+  "attachment.deferred_tools_delta", "attachment.skill_listing", "attachment.project_doc_reads",
 ];
 
 describe('classifier ↔ registry coverage', () => {
@@ -400,6 +400,16 @@ describe('classifyStandaloneKind', () => {
       expect(
         classifyStandaloneKind(sys({ estimated_tokens: 800, estimated_tokens_delta: 50 }), []),
       ).toBe('system.thinking_tokens');
+    });
+  });
+
+  describe('system.progress', () => {
+    it('gives a top-level progress record its own stylable kind', () => {
+      const node = {
+        kind: 'progress', sessionId: '', receivedAt: null,
+        raw: { type: 'progress', data: { type: 'bash_progress' } },
+      } as unknown as JsonlNode;
+      expect(classifyStandaloneKind(node, [])).toBe('system.progress');
     });
   });
 

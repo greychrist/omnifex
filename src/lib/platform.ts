@@ -43,11 +43,21 @@ function assertWebUrl(url: string): void {
   if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') throw new Error('Unsafe protocol');
 }
 
+export interface BrowserInfo {
+  bundleId: string;
+  name: string;
+}
+
 export interface Platform {
   readonly isDesktop: boolean;
   showOpenDialog(options: Record<string, unknown>): Promise<{ canceled: boolean; filePaths: string[] }>;
   showSaveDialog(options: Record<string, unknown>): Promise<{ canceled: boolean; filePath?: string }>;
-  openExternal(url: string): Promise<void>;
+  /** Open a web link. `browser` (a bundle id) picks the browser on the Mac;
+   *  a web client has no say and opens a tab. */
+  openExternal(url: string, opts?: { browser?: string }): Promise<void>;
+  /** Browsers installed on the Mac, for choosing where sign-in links go.
+   *  Empty on a web client. */
+  listBrowsers(): Promise<BrowserInfo[]>;
   /** Open a file in its default app; a relative path resolves against `cwd`. */
   openPath(path: string, cwd?: string): Promise<void>;
   revealInFinder(path: string): Promise<void>;
@@ -66,6 +76,7 @@ export function createPlatform(bridge: NativeBridge | null): Platform {
         assertWebUrl(url);
         window.open(url, '_blank', 'noopener,noreferrer');
       },
+      listBrowsers: async () => [],
       openPath: () => unsupported('Opening a file'),
       revealInFinder: () => unsupported('Reveal in Finder'),
       getAppVersion: async () => 'web',
@@ -76,11 +87,18 @@ export function createPlatform(bridge: NativeBridge | null): Platform {
     isDesktop: true,
     showOpenDialog: (o) => bridge.invoke('dialog:open', o) as Promise<{ canceled: boolean; filePaths: string[] }>,
     showSaveDialog: (o) => bridge.invoke('dialog:save', o) as Promise<{ canceled: boolean; filePath?: string }>,
-    // The main handler takes the bare url string (`(_event, url: string)`),
-    // as the remote shim already sends it; an object never opened anything.
-    openExternal: async (url) => {
+    // A bare url string, or `{url, browser}` when a browser is chosen — the
+    // Swift handler reads either.
+    openExternal: async (url, opts) => {
       assertWebUrl(url);
-      await bridge.invoke('shell:openExternal', url as unknown as Record<string, unknown>);
+      await bridge.invoke(
+        'shell:openExternal',
+        opts?.browser ? { url, browser: opts.browser } : url as unknown as Record<string, unknown>,
+      );
+    },
+    listBrowsers: async () => {
+      const list = await bridge.invoke('shell:listBrowsers');
+      return Array.isArray(list) ? (list as BrowserInfo[]) : [];
     },
     openPath: (path, cwd) => bridge.invoke('open_path', cwd ? { path, cwd } : { path }).then(() => undefined),
     revealInFinder: (path) => bridge.invoke('reveal_path_in_finder', { path }).then(() => undefined),

@@ -14,7 +14,7 @@ describe('resolvePostCompactPrompt', () => {
   });
 
   it('falls back to the default when the user blanks the box', () => {
-    // Same semantics as renderCliReviewPrompt: a whitespace-only override is a
+    // A whitespace-only override is a
     // cleared field, not an instruction to send an empty turn.
     expect(resolvePostCompactPrompt('   \n  ')).toBe(DEFAULT_POST_COMPACT_PROMPT);
   });

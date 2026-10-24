@@ -12,6 +12,8 @@ import {
 import { ColorSwatchGrid } from "@/components/ui/ColorSwatchGrid";
 import { IconPicker, ICON_MAP } from "./IconPicker";
 import { SessionDefaultsRow } from "@/components/shared/SessionDefaultsRow";
+import { platform, type BrowserInfo } from "@/lib/platform";
+import { getSignInBrowser, setSignInBrowser } from "@/lib/signInBrowser";
 import { CodexSignInModal } from "@/components/codex/CodexSignInModal";
 import { useCodexAuthStatus } from "@/hooks/useCodexAuthStatus";
 import {
@@ -105,6 +107,12 @@ export const AccountDialog: React.FC<AccountDialogProps> = ({
   const [effort, setEffort] = useState(ENGINE_DEFAULTS.claude.effort);
   const [permission, setPermission] = useState(ENGINE_DEFAULTS.claude.permission);
 
+  // Where this account's sign-in links open (signInBrowser.ts). '' is the
+  // system default. Mac only: a web client cannot pick a browser.
+  const showSignInBrowser = platform.isDesktop && engine === "claude";
+  const [signInBrowser, setSignInBrowserChoice] = useState("");
+  const [browsers, setBrowsers] = useState<BrowserInfo[]>([]);
+
   const [showIconPicker, setShowIconPicker] = useState(false);
   const [showCodexSignIn, setShowCodexSignIn] = useState(false);
 
@@ -143,6 +151,18 @@ export const AccountDialog: React.FC<AccountDialogProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, mode, account]);
 
+  useEffect(() => {
+    if (!open || !showSignInBrowser) return;
+    let cancelled = false;
+    setSignInBrowserChoice("");
+    platform.listBrowsers().then((list) => { if (!cancelled) setBrowsers(list); }, () => {});
+    const dir = mode === "edit" ? account?.config_dir : undefined;
+    if (dir) {
+      void getSignInBrowser(dir).then((id) => { if (!cancelled) setSignInBrowserChoice(id ?? ""); });
+    }
+    return () => { cancelled = true; };
+  }, [open, mode, account, showSignInBrowser]);
+
   // When the engine flips in add mode, reset engine-specific session
   // defaults to sensible per-engine values. Edit mode never flips engine
   // (radios are disabled), so this is a no-op there.
@@ -159,6 +179,11 @@ export const AccountDialog: React.FC<AccountDialogProps> = ({
   );
 
   const handleSave = (): void => {
+    if (showSignInBrowser && configDir) {
+      setSignInBrowser(configDir, signInBrowser || null).catch((err: unknown) => {
+        console.error("[AccountDialog] saving the sign-in browser failed:", err);
+      });
+    }
     onSave({
       name,
       configDir,
@@ -377,6 +402,31 @@ export const AccountDialog: React.FC<AccountDialogProps> = ({
               </Button>
             </div>
           </div>
+
+          {showSignInBrowser && (
+            <div className="space-y-1">
+              <label htmlFor="account-sign-in-browser" className="text-xs text-muted-foreground">
+                Sign-in browser
+              </label>
+              <select
+                id="account-sign-in-browser"
+                value={signInBrowser}
+                onChange={(e) => { setSignInBrowserChoice(e.target.value); }}
+                className="h-8 w-full rounded-md border border-border bg-background px-2 text-sm"
+              >
+                <option value="">Default browser</option>
+                {browsers.map((b) => (
+                  <option key={b.bundleId} value={b.bundleId}>{b.name}</option>
+                ))}
+                {signInBrowser && !browsers.some((b) => b.bundleId === signInBrowser) && browsers.length > 0 && (
+                  <option value={signInBrowser}>{`${signInBrowser} (not installed)`}</option>
+                )}
+              </select>
+              <p className="text-[11px] text-muted-foreground">
+                Claude and MCP sign-in pages for this account open here — pick the browser it is signed in with.
+              </p>
+            </div>
+          )}
 
           {/* Session defaults */}
           <SessionDefaultsRow

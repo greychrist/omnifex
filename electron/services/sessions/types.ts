@@ -361,6 +361,11 @@ export interface SessionsService {
   getContextUsage(tabId: string): Promise<CliControlGetContextUsageResponse | null>;
   /** Tail of a background shell / Monitor task's output; null when unavailable. */
   getTaskOutput(tabId: string, taskId: string): Promise<TaskOutputTail | null>;
+  /** Stop one background task (`stop_task`). Rejects with the CLI's message. */
+  stopTask(tabId: string, taskId: string): Promise<void>;
+  /** Move a running foreground Bash call or subagent to the background (`background_tasks`).
+   *  False when the CLI found no foreground task for that tool_use. */
+  backgroundTask(tabId: string, toolUseId: string): Promise<boolean>;
   /** The CLI's `/status` rows for a live session; null when there is no live
    *  engine or the CLI predates `get_status`. */
   getCliStatus(tabId: string): Promise<CliStatusReport | null>;
@@ -379,6 +384,10 @@ export interface SessionsService {
   mcpReauthenticate(tabId: string, serverName: string): Promise<McpAuthResult>;
   /** Enable or disable an MCP server (the CLI persists this). */
   mcpSetEnabled(tabId: string, serverName: string, enabled: boolean): Promise<void>;
+  /** Reconnect a failed or disconnected MCP server. */
+  mcpReconnect(tabId: string, serverName: string): Promise<void>;
+  /** Finish MCP OAuth with the redirect URL the browser landed on. */
+  mcpSubmitCallbackUrl(tabId: string, serverName: string, callbackUrl: string): Promise<void>;
   /** Get loaded plugins for an active session, enriched with manifest data. */
   getPlugins(tabId: string, force?: boolean): Promise<import('./plugins').EnrichedPlugin[]>;
 }

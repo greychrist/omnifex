@@ -29,12 +29,29 @@ enum NativeHandlers {
             guard await run(panel, over: caller.window), let url = panel.url else { return nil }
             return url.path
         }
+        // `browser` (a bundle id) sends the link to that browser — an
+        // account's sign-in links go to the browser signed in as it. One
+        // that is no longer installed falls back to the default browser.
         r.register("shell:openExternal") { p, _ in
             guard let raw = BridgeParams.string(p, "url"), let url = URL(string: raw),
                   url.scheme == "https" || url.scheme == "http"
             else { throw BridgeError("Unsafe protocol") }
-            NSWorkspace.shared.open(url)
+            if let browser = (p as? [String: Any])?["browser"] as? String, !browser.isEmpty,
+               let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: browser) {
+                _ = try await NSWorkspace.shared.open([url], withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration())
+            } else {
+                NSWorkspace.shared.open(url)
+            }
             return nil
+        }
+        r.register("shell:listBrowsers") { _, _ in
+            guard let probe = URL(string: "https://example.com") else { return [] }
+            let raw = NSWorkspace.shared.urlsForApplications(toOpen: probe).compactMap { app -> BrowserList.Entry? in
+                guard let bundle = Bundle(url: app), let id = bundle.bundleIdentifier else { return nil }
+                let name = FileManager.default.displayName(atPath: app.path).replacingOccurrences(of: ".app", with: "")
+                return BrowserList.Entry(bundleId: id, name: name)
+            }
+            return BrowserList.bridgeValue(BrowserList.entries(raw, excluding: Bundle.main.bundleIdentifier))
         }
         r.register("reveal_path_in_finder") { p, _ in
             guard let path = BridgeParams.string(p, "path"), !path.isEmpty else { throw BridgeError("reveal_path_in_finder: path is required") }

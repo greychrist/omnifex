@@ -133,6 +133,50 @@ describe('foldContextLedger', () => {
     });
   });
 
+  // CLI 2.1.310: claude.ai project documents read into the session on the
+  // user's behalf. Shape from the CLI's own schema (no transcript has one yet):
+  // {reads:[{docId, read:{method:'project_read', path, version?, content, created_at}}]}.
+  describe('project_doc_reads', () => {
+    const read = (path: string, content: string, version?: string) => ({
+      docId: `doc_${path}`,
+      read: { method: 'project_read', path, content, created_at: null, ...(version ? { version } : {}) },
+    });
+
+    it('lists each project doc by name, with its content', () => {
+      const ledger = foldContextLedger([
+        att('project_doc_reads', { reads: [read('Roadmap', 'Q4 goals'), read('Style guide', 'Use sentence case')] }, T1),
+      ]);
+      expect(ledger.tracked).toBe(true);
+      expect(ledger.entries.map((e) => [e.kind, e.label, e.content, e.live])).toEqual([
+        ['project-doc', 'Roadmap', 'Q4 goals', true],
+        ['project-doc', 'Style guide', 'Use sentence case', true],
+      ]);
+    });
+
+    it('does not duplicate an unchanged re-read', () => {
+      const rec = att('project_doc_reads', { reads: [read('Roadmap', 'Q4 goals', 'v1')] }, T1);
+      expect(foldContextLedger([rec, { ...rec, receivedAt: T2 } as JsonlNode]).entries).toHaveLength(1);
+    });
+
+    it('treats a changed doc as a new arrival and closes the old one', () => {
+      const ledger = foldContextLedger([
+        att('project_doc_reads', { reads: [read('Roadmap', 'Q4 goals', 'v1')] }, T1),
+        att('project_doc_reads', { reads: [read('Roadmap', 'Q4 goals, revised', 'v2')] }, T2),
+      ]);
+      expect(ledger.entries.map((e) => [e.content, e.live, e.endedAt])).toEqual([
+        ['Q4 goals', false, T2],
+        ['Q4 goals, revised', true, undefined],
+      ]);
+    });
+
+    it('skips malformed entries', () => {
+      const ledger = foldContextLedger([
+        att('project_doc_reads', { reads: [{ docId: 'x' }, read('Roadmap', 'ok'), 'junk'] }, T1),
+      ]);
+      expect(ledger.entries.map((e) => e.label)).toEqual(['Roadmap']);
+    });
+  });
+
   describe('delta rule — mcp_instructions_delta', () => {
     it('adds a server and attaches its instruction block', () => {
       const ledger = foldContextLedger([
@@ -306,6 +350,13 @@ describe('foldContextLedger', () => {
 });
 
 describe('summariseContextAttachment', () => {
+  it('counts project docs read in', () => {
+    const r = (path: string) => ({ docId: 'd', read: { method: 'project_read', path, content: 'c', created_at: null } });
+    expect(summariseContextAttachment({ type: 'project_doc_reads', reads: [r('A'), r('B')] })).toBe('Project docs — 2 read');
+    expect(summariseContextAttachment({ type: 'project_doc_reads', reads: [r('A')] })).toBe('Project docs — 1 read');
+    expect(summariseContextAttachment({ type: 'project_doc_reads', reads: [] })).toBeNull();
+  });
+
   const sum = (type: string, body: Record<string, unknown>) =>
     summariseContextAttachment({ type, ...body });
 

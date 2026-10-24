@@ -29,11 +29,15 @@ export interface HookMatcher {
 /**
  * Every hook event the CLI fires, in lifecycle order.
  * Source: https://code.claude.com/docs/en/hooks (checked 2026-08-05, CLI
- * 2.1.222). The editor previously knew only five of these.
+ * 2.1.222; model-switch events added 2026-10-24, CLI 2.1.310). The editor
+ * previously knew only five of these. `npm run cli-review:diff` checks this
+ * list against the installed CLI on every release review.
  */
 export const HOOK_EVENTS = [
   // Session
   'SessionStart', 'Setup', 'SessionEnd', 'Stop', 'StopFailure',
+  // Model (CLI 2.1.251)
+  'PreModelSwitch', 'PostModelSwitch',
   // Prompt
   'UserPromptSubmit', 'UserPromptExpansion', 'MessageDisplay',
   // Tools
@@ -128,6 +132,24 @@ export const HOOK_EVENT_INFO: Record<HookEvent, HookEventInfo> = {
     description: 'Claude Code starts with --init-only, or --init / --maintenance in -p mode',
     group: 'Session',
     matcher: { hint: 'Which CLI flag triggered setup', examples: ['init', 'maintenance'] },
+  },
+  PreModelSwitch: {
+    label: 'Pre Model Switch',
+    description: 'Before a requested model switch (/model, the picker, set_model) is applied; exit 2 blocks it',
+    group: 'Session',
+    matcher: {
+      hint: 'Canonical name of the target model',
+      examples: ['claude-opus-5', 'claude-sonnet-5', 'claude-opus-4-6|claude-opus-5', '.*opus.*'],
+    },
+  },
+  PostModelSwitch: {
+    label: 'Post Model Switch',
+    description: "After the session's model changes, including automatic fallback and resume; stdout becomes context",
+    group: 'Session',
+    matcher: {
+      hint: 'Canonical name of the new model',
+      examples: ['claude-opus-5', 'claude-sonnet-5', '.*opus.*'],
+    },
   },
   SessionEnd: {
     label: 'Session End',

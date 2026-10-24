@@ -44,6 +44,72 @@ import { buildClaudeEnv } from './util/claude-env';
  *    "side_question timed out: the host did not answer in time". Only the
  *    SDK's `askSideQuestion()` documents it.
  *
+ * Last review: 2.1.309 -> 2.1.310 on 2026-10-24. Findings: none broken,
+ * nothing to change. Second pass the same day: the first used hand-typed
+ * rg; this one is the first run of the rewritten review prompt and
+ * `npm run cli-review:diff`, which supersedes it.
+ *
+ *  Changelog coverage: 2.1.310 (27 entries). Both ends installed.
+ *  Script: merge map (40), subtype (158), hook_event_name (33), control_*
+ *  (4), SDK requests (55), CLI flags (115), origin kinds (12),
+ *  can_use_tool payload keys (11) all identical; /usage anchors unchanged.
+ *  - `type:` +1: attachment subtype `project_doc_reads`,
+ *    {reads:[{docId, read:{method:"project_read", path, version?, content,
+ *    created_at}}]} — claude.ai project documents read into the session on
+ *    the user's behalf (the CLI also replays them to the model as synthetic
+ *    tool_use/tool_result pairs: "You did not make them"). Pushed beside
+ *    `context_sections` / `coordinator_context` / `date`. The first pass
+ *    misread it as refused reads from reason strings that sit nearby but
+ *    belong to wake subscriptions — read the schema, not the neighbours.
+ *    Now folded by contextLedger.ts as kind `project-doc` ("Project docs"
+ *    group; a changed doc replaces itself) with a transcript marker.
+ *  - `.describe()` +4 -2: `logs_followup` initialize capability (host must
+ *    not send `followup_*` survey events when absent — we send none);
+ *    `@internal connectorId` on SDK-hosted MCP servers plus the
+ *    sdkMcpServers describe naming it — we host none; VS Code feedback box
+ *    "nor for a desktop session". All inert.
+ *  - Object keys +268 -21: read in context, all inert — feedback-survey
+ *    config (`logs_followup`, `followup_box`), projects reply-gate telemetry
+ *    (`person_opened_turn`, `silent_turn`, `no_reply_only`), MCP meta schema
+ *    (`status_nudge`, `prompt_reminder`), `project_doc_reads` telemetry,
+ *    Chrome-tool rule hooks (`suggestedAllowRule`), TUI prompt model
+ *    (`symlinkUnchecked` — the read-prompt symlink entry; the can_use_tool
+ *    payload is unchanged), sandbox/cert/env plumbing.
+ *  - `side_question` (standing list): error strings, 660 s deadline and
+ *    request literal unchanged.
+ *  - Inert entries: Monitor on Bedrock/Vertex/Foundry; effort-beta and
+ *    mid-conversation system-message gateway retry; cleanupPeriodDays;
+ *    dense-text compaction; symlink target in read prompts (TUI only);
+ *    question auto-continue after external editor; Windows hook fix;
+ *    auto-mode outside-cwd wording; -p/SDK compaction memory; mod Image in
+ *    tmux/kitty; Linux sandbox AppArmor message; MCP elicitation-timeout
+ *    error text (in our favour: we answer elicitations, and an unanswered
+ *    one no longer invites a retry); all [VSCode], [Cloud sessions],
+ *    [Claude Tag], [Code Review] entries.
+ *
+ *  CLOSED the same day: `PreModelSwitch` / `PostModelSwitch` added to
+ *  HOOK_EVENTS (open since 2.1.251); merge-map type `progress` now has its
+ *  own kind (`system.progress`, a side-line showing `data.type` and its
+ *  scalar fields) instead of falling to an Unrecognized card — still never
+ *  seen on disk.
+ *
+ *  Control requests: every SDK request is now classified in
+ *  electron/services/sessions/cli-control-catalog.ts (wired / planned /
+ *  declined); the review script lists only ones the catalog has not
+ *  classified. Wired this pass: stop_task and background_tasks (Stop and
+ *  Move to background on the status bar's shell and agent rows),
+ *  mcp_reconnect (MCP row ⋯ Reconnect) and mcp_oauth_callback_url (MCP
+ *  sign-in from the iPad by pasting the redirect URL).
+ *
+ *  Also wired: claude_authenticate / claude_oauth_callback /
+ *  claude_oauth_wait_for_completion — account sign-in now runs through a
+ *  short-lived CLI (auth/claude-auth.ts) instead of the `claude auth login`
+ *  pty, so the link opens in the browser chosen for the account and the
+ *  iPad can sign in by pasting the code. Probed on 2.1.310 with an empty
+ *  config dir: no `initialize` needed first; a bad code answers HTTP 400.
+ *
+ *  OPEN ITEMS (carry forward; re-check each review): none.
+ *
  * Last review: 2.1.308 -> 2.1.309 on 2026-10-22. Findings: none broken;
  * MCP `sessionProxied` now gates row auth items (mcpServerActions.ts).
  *
@@ -4627,7 +4693,7 @@ import { buildClaudeEnv } from './util/claude-env';
  * `~/.claude.json` fix (we read-modify-write that file, never replace it), and
  * the VSCode screen-reader work.
  */
-export const REVIEWED_CLI_VERSION = '2.1.309';
+export const REVIEWED_CLI_VERSION = '2.1.310';
 
 /**
  * app_settings key holding the user's explicit OmniFex-checkout override.

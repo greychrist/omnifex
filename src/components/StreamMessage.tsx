@@ -668,6 +668,31 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, lookups
       );
     }
 
+    if (message.kind === 'progress') {
+      // One generic line for every `data.type` variant: the variant, then its
+      // scalar fields. No per-variant layout — the shape has never been seen
+      // on disk, so this shows whatever arrives rather than guessing at it.
+      const data = message.raw.data;
+      const variant = typeof data?.type === 'string' ? data.type : null;
+      const fields = data
+        ? Object.entries(data)
+          .filter(([k, v]) => k !== 'type' && v !== null && ['string', 'number', 'boolean'].includes(typeof v))
+          .map(([k, v]) => {
+            const s = String(v);
+            return `${k}=${s.length > 80 ? `${s.slice(0, 79)}…` : s}`;
+          })
+          .join(' · ')
+        : '';
+      return (
+        <MessageFrame streamKind={lookups.standaloneKind ?? 'system.progress'} message={message}>
+          <span className="text-xs font-mono opacity-70">{variant ? `progress · ${variant}` : 'progress'}</span>
+          {fields && (
+            <span className="block text-xs font-mono whitespace-pre-wrap break-words">{fields}</span>
+          )}
+        </MessageFrame>
+      );
+    }
+
     if (message.kind === 'cli-stream-init' || message.kind === 'cli-stream-result') {
       const text = message.kind === 'cli-stream-init'
         ? [message.raw.model, message.raw.cwd].filter(Boolean).join(' · ')

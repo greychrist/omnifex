@@ -1038,6 +1038,16 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     (taskId: string) => api.sessionTaskOutput(tabIdRef.current, taskId),
     [],
   );
+  // The rows' Stop and Move-to-background. The rows change state only when
+  // the CLI's own task events say so; these just ask.
+  const stopTask = useCallback(
+    (taskId: string) => api.sessionStopTask(tabIdRef.current, taskId),
+    [],
+  );
+  const backgroundTask = useCallback(
+    (toolUseId: string) => api.sessionBackgroundTask(tabIdRef.current, toolUseId),
+    [],
+  );
   const dismissSubagent = useCallback((toolUseId: string) => {
     colorAllocatorRef.current.release(toolUseId);
     setDismissedSubagents((prev) => {
@@ -1078,7 +1088,9 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     readShellOutput,
     onDismissShell: dismissShell,
     onDismissAllEndedShells: dismissAllEndedShells,
-  }), [subagents, dismissSubagent, dismissAllCompletedSubagents, shells, readShellOutput, dismissShell, dismissAllEndedShells]);
+    stopTask,
+    backgroundTask,
+  }), [subagents, dismissSubagent, dismissAllCompletedSubagents, shells, readShellOutput, dismissShell, dismissAllEndedShells, stopTask, backgroundTask]);
 
   // Tab context for title / promptStatus mirror. The usePublishTabStatus
   // call lives further down — it depends on `isSessionActive` /
@@ -3112,7 +3124,12 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
                   mcpCount={sessionMcp.servers?.length ?? initMcpCount}
                   mcp={
                     <>
-                      <SessionMCPStatus servers={sessionMcp.servers} tabId={tabIdRef.current} watchUntil={sessionMcp.watchUntil} />
+                      <SessionMCPStatus
+                        servers={sessionMcp.servers}
+                        tabId={tabIdRef.current}
+                        watchUntil={sessionMcp.watchUntil}
+                        configDir={accountResolution?.account.config_dir ?? null}
+                      />
                       {/* What the badge on the Session context button
                           counts. Without it the badge's number would have
                           no explanation anywhere. */}

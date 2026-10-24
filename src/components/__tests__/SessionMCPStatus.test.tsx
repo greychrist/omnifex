@@ -103,7 +103,7 @@ describe('SessionMCPStatus row actions', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: 'Authenticate' }));
     await waitFor(() => { expect(watchUntil).toHaveBeenCalled(); });
     expect(sessionMcpAuthenticate).toHaveBeenCalledWith('tab1', 'atlassian');
-    expect(mockPlatform.openExternal).toHaveBeenCalledWith('https://x');
+    expect(mockPlatform.openExternal).toHaveBeenCalledWith('https://x', undefined);
     expect(watchUntil.mock.calls[0][0]).toBe('atlassian');
     const done = watchUntil.mock.calls[0][1];
     expect(done(server('atlassian', { status: 'connected' }))).toBe(true);
@@ -128,7 +128,7 @@ describe('SessionMCPStatus row actions', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: 'Re-authenticate' }));
     await waitFor(() => { expect(watchUntil).toHaveBeenCalled(); });
     expect(sessionMcpReauthenticate).toHaveBeenCalledWith('tab1', 'ctx');
-    expect(mockPlatform.openExternal).toHaveBeenCalledWith('https://y');
+    expect(mockPlatform.openExternal).toHaveBeenCalledWith('https://y', undefined);
   });
 
   it("shows the CLI's error under the row when an action fails", async () => {
@@ -187,11 +187,13 @@ describe('SessionMCPStatus row actions', () => {
     expect(sessionMcpAuthenticate).toHaveBeenCalledTimes(1);
   });
 
-  it('hides auth items in the web client', () => {
+  // The web client finishes sign-in by pasting the redirect URL
+  // (mcp_oauth_callback_url), so it gets the same items as the desktop.
+  it('offers auth items in the web client too', () => {
     mockPlatform.isDesktop = false;
     renderStatus([atlassian]);
     openMenu('atlassian');
-    expect(screen.queryByRole('menuitem', { name: 'Authenticate' })).toBeNull();
+    expect(screen.getByRole('menuitem', { name: 'Authenticate' })).toBeTruthy();
     expect(screen.getByRole('menuitem', { name: 'Disable' })).toBeTruthy();
   });
 
