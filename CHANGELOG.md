@@ -5,6 +5,21 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.7] — 2026-10-26
+
+### Added
+
+- The Sessions list says where each session is open: Open Here, Open in App, Open in Browser, or Detached when no window or device is looking at it.
+- A Close button on detached sessions stops them on the daemon. A session that is still working asks once more first.
+
+### Changed
+
+- Closing a tab ends its session only when no other window or device still has it open. Closing a tab in the browser leaves the same session running in the app, and the reverse.
+
+### Fixed
+
+- The Sessions list in a browser listed none of the browser's own tabs.
+
 ## [0.5.6] — 2026-10-26
 
 ### Fixed
