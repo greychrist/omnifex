@@ -91,6 +91,22 @@ describe('TabStatusPopover — detached sessions', () => {
     });
   });
 
+  it('hands the tab the session to resume, not just its id', async () => {
+    // AgentSession resumes only when it is given `sessionData`; a tab with a
+    // bare `sessionId` rendered the New Session panel instead.
+    setDaemon([WIN_SESSION], [WIN_PROJECT]);
+    await openPopover();
+    await waitFor(() => { expect(screen.getByText('WIN')).toBeTruthy(); });
+
+    fireEvent.click(screen.getByText('WIN'));
+
+    expect(addTab.mock.calls[0][0].sessionData).toMatchObject({
+      id: WIN_SESSION.sessionId,
+      project_id: '-Users-g-Repos-WIN',
+      project_path: '/Users/g/Repos/WIN',
+    });
+  });
+
   it('focuses the existing tab instead of opening a second one', async () => {
     mockTabs = [{ id: 'tab-1', type: 'chat', order: 0, sessionId: WIN_SESSION.sessionId }];
     setDaemon([WIN_SESSION], [WIN_PROJECT]);

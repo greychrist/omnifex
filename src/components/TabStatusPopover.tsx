@@ -417,6 +417,14 @@ export const TabStatusPopover: React.FC = () => {
       title: row.title,
       agent: (row.agent as 'claude' | 'codex') ?? 'claude',
       sessionId: row.sessionId,
+      // AgentSession resumes only when handed a session; a bare sessionId
+      // gets the New Session panel. The daemon's sessionId is the CLI's.
+      sessionData: {
+        id: row.sessionId,
+        project_id: row.projectPath.replace(/[^a-zA-Z0-9]/g, '-'),
+        project_path: row.projectPath,
+        created_at: Date.now() / 1000,
+      },
       // What the session needs to reattach. Guaranteed non-null by the
       // guard above and by the card being disabled without it.
       initialProjectPath: row.projectPath,
