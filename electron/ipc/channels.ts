@@ -91,6 +91,7 @@ export const INVOKE_CHANNELS: readonly string[] = [
   'session_respond_permission',
   'session_respond_elicitation',
   'session_stop',
+  'session_release',
   'session_get_info',
   'session_get_health',
   // Wave 2 — Query-method passthroughs

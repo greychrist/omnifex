@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Atom, GitBranch, Activity, Bot, ListChecks, Database, Copy, Check, Unplug } from 'lucide-react';
+import { Atom, GitBranch, Activity, Bot, ListChecks, Database, Copy, Check, Unplug, X } from 'lucide-react';
 import { api, type TabStatusSummary } from '@/lib/api';
 import { useTabContext } from '@/contexts/TabContext';
 import { cn } from '@/lib/utils';
@@ -14,6 +14,7 @@ import {
   type RosterSession,
   type RosterProject,
   type DetachedRow,
+  type OpenIn,
 } from '@/lib/sessionRoster';
 
 const STATUS_LABEL: Record<TabStatusSummary['status'], string> = {
@@ -52,6 +53,30 @@ const WAITING_LABEL: Record<NonNullable<TabStatusSummary['waitingFor']>, string>
 };
 
 const WAITING_COLOR = 'text-indigo-300 bg-indigo-500/20';
+
+const OPEN_IN_LABEL: Record<OpenIn, string> = {
+  here: 'Open Here',
+  app: 'Open in App',
+  browser: 'Open in Browser',
+};
+
+/**
+ * Where the session is open. "Detached" is reserved for the case worth
+ * noticing: the daemon is holding a session no client is looking at.
+ */
+const OpenInTags: React.FC<{ openIn: readonly OpenIn[] }> = ({ openIn }) => (
+  <span className="shrink-0 inline-flex items-center gap-1">
+    {openIn.length === 0 ? (
+      <span className="rounded px-1.5 py-0.5 text-[10px] font-medium text-sky-300 bg-sky-500/15">Detached</span>
+    ) : (
+      openIn.map((where) => (
+        <span key={where} className="rounded px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground bg-foreground/10">
+          {OPEN_IN_LABEL[where]}
+        </span>
+      ))
+    )}
+  </span>
+);
 
 /**
  * The session GUID, copyable.
@@ -148,7 +173,10 @@ const TabStatusCard: React.FC<TabStatusCardProps> = ({ summary, branchColor, bra
           })()}
           <span className="truncate text-sm font-medium">{summary.title}</span>
         </div>
-        <span className="text-[10px] text-muted-foreground shrink-0">→</span>
+        <span className="text-[10px] text-muted-foreground shrink-0 inline-flex items-center gap-2">
+          <OpenInTags openIn={['here']} />
+          →
+        </span>
       </button>
 
       <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 px-3 pb-2.5 pt-1 text-xs">
@@ -251,11 +279,17 @@ const TabStatusCard: React.FC<TabStatusCardProps> = ({ summary, branchColor, bra
  * is no branch, context size or agent count to show honestly, so none is
  * shown rather than showing a stale one.
  */
-const DetachedSessionCard: React.FC<{ row: DetachedRow; onClick: () => void }> = ({ row, onClick }) => {
+const DetachedSessionCard: React.FC<{ row: DetachedRow; onClick: () => void; onClose: () => void }> = ({ row, onClick, onClose }) => {
   // Reattaching needs a real directory. Without one the tab would open on
   // nothing, so the row stays visible — the session IS running and you may
   // want its id — but is not clickable, and says why.
   const canOpen = row.projectPath !== null;
+  // Only a session no client is looking at can be closed from here: one that
+  // is open somewhere is closed from that tab. A working one asks once more,
+  // because stopping it loses the turn.
+  const canClose = row.openIn.length === 0;
+  const [confirming, setConfirming] = useState(false);
+  const busy = row.promptStatus === 'working' || row.waitingFor !== null;
   return (
   <div className="rounded-md border-0 bg-[color-mix(in_oklch,var(--color-background)_40%,var(--color-muted))] overflow-hidden shadow-[0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_25%,transparent),2px_2px_4px_rgb(0_0_0/0.08)]">
     <button
@@ -272,19 +306,22 @@ const DetachedSessionCard: React.FC<{ row: DetachedRow; onClick: () => void }> =
         <span
           className={cn(
             'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide',
-            row.waitingFor ? WAITING_COLOR : row.promptStatus === 'working' ? PROMPT_COLOR.working : 'text-sky-300 bg-sky-500/15',
+            row.waitingFor ? WAITING_COLOR : PROMPT_COLOR[row.promptStatus],
           )}
         >
           {(row.waitingFor || row.promptStatus === 'working') && (
             <span className="inline-block h-1.5 w-1.5 rounded-full bg-current animate-pulse" />
           )}
-          {row.waitingFor ? WAITING_LABEL.permission : row.promptStatus === 'working' ? 'Working' : 'Detached'}
+          {row.waitingFor ? WAITING_LABEL.permission : PROMPT_LABEL[row.promptStatus]}
         </span>
         <span className="truncate text-sm font-medium">{row.title}</span>
       </div>
-      <span className="text-[10px] text-muted-foreground shrink-0 inline-flex items-center gap-1">
-        <Unplug className="w-3 h-3" />
-        {canOpen ? 'Open' : 'No path'}
+      <span className="text-[10px] text-muted-foreground shrink-0 inline-flex items-center gap-2">
+        <OpenInTags openIn={row.openIn} />
+        <span className="inline-flex items-center gap-1">
+          <Unplug className="w-3 h-3" />
+          {canOpen ? 'Open' : 'No path'}
+        </span>
       </span>
     </button>
     <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 px-3 pb-2.5 pt-1 text-xs">
@@ -295,6 +332,29 @@ const DetachedSessionCard: React.FC<{ row: DetachedRow; onClick: () => void }> =
           <span className="font-mono text-[11px] text-foreground/70 truncate" title={row.projectPath}>
             {row.projectPath}
           </span>
+        </div>
+      )}
+      {canClose && (
+        <div className="col-span-2 flex justify-end">
+          <button
+            type="button"
+            aria-label={confirming ? `Stop working session ${row.title}` : `Close session ${row.title}`}
+            title="Stop this session on the daemon"
+            className={cn(
+              'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors app-no-drag',
+              confirming ? 'text-red-300 bg-red-500/20 hover:bg-red-500/30' : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground',
+            )}
+            onClick={() => {
+              if (busy && !confirming) {
+                setConfirming(true);
+                return;
+              }
+              onClose();
+            }}
+          >
+            <X className="w-3 h-3" />
+            {confirming ? 'Stop working session?' : 'Close'}
+          </button>
         </div>
       )}
     </div>
@@ -403,6 +463,16 @@ export const TabStatusPopover: React.FC = () => {
       .filter((b): b is string => b != null),
   });
 
+  /** Stop a session no client has open. It drops off the list straight away. */
+  const closeDetached = (row: DetachedRow) => {
+    const client = window.__omnifexRemote?.client;
+    if (!client) return;
+    setSessions((prev) => prev.filter((s) => s.sessionId !== row.sessionId));
+    client.request('session.kill', { sessionId: row.sessionId }).catch((err: unknown) => {
+      console.warn('[sessions] close failed', err);
+    });
+  };
+
   /** Focus the tab that already shows this session, or open one for it. */
   const openDetached = (row: DetachedRow) => {
     if (row.projectPath === null) return;
@@ -498,6 +568,7 @@ export const TabStatusPopover: React.FC = () => {
                           key={row.sessionId}
                           row={row}
                           onClick={() => { openDetached(row); }}
+                          onClose={() => { closeDetached(row); }}
                         />
                       );
                     }

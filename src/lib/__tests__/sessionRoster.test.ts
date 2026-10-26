@@ -219,3 +219,43 @@ describe('buildSessionRoster — counts', () => {
     expect(roster.filter((r) => r.promptStatus === 'working')).toHaveLength(2);
   });
 });
+
+describe('buildSessionRoster — where each session is open', () => {
+  it('marks this window\'s tabs as open here', () => {
+    const roster = buildSessionRoster({
+      summaries: [summary('t1')],
+      tabs: [tab('t1', 0)],
+      sessions: [session('sess-t1', { openIn: ['desktop'] })],
+      projects,
+    });
+    expect(roster[0].openIn).toEqual(['here']);
+  });
+
+  it('names the other clients a session without a tab here is open in', () => {
+    const roster = buildSessionRoster({
+      summaries: [],
+      tabs: [],
+      sessions: [
+        session('in-app', { openIn: ['desktop'] }),
+        session('in-browser', { openIn: ['web'] }),
+        session('both', { openIn: ['desktop', 'web'] }),
+      ],
+      projects,
+    });
+    expect(Object.fromEntries(roster.map((r) => [r.sessionId, r.openIn]))).toEqual({
+      'in-app': ['app'],
+      'in-browser': ['browser'],
+      both: ['app', 'browser'],
+    });
+  });
+
+  it('leaves a session no client is watching open nowhere — detached', () => {
+    const roster = buildSessionRoster({
+      summaries: [],
+      tabs: [],
+      sessions: [session('orphan', { openIn: [] }), session('old-daemon')],
+      projects,
+    });
+    expect(roster.map((r) => r.openIn)).toEqual([[], []]);
+  });
+});

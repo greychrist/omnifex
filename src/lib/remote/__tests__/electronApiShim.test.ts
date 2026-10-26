@@ -70,6 +70,7 @@ describe('electronAPI shim', () => {
     f.responders['turn.interrupt'] = () => undefined;
     f.responders['permission.respond'] = () => undefined;
     f.responders['session.kill'] = () => undefined;
+    f.responders['session.release'] = () => ({ stopped: false });
     f.responders['rpc.invoke'] = (p) => ({ rpc: p.channel, params: p.params });
   });
 
@@ -268,11 +269,29 @@ describe('electronAPI shim', () => {
       await expect(web.invoke('reveal_path_in_finder', { path: '/x' })).rejects.toThrow(/not available in the web client/);
       // Boot-time and timer-driven native calls get a quiet, benign answer.
       expect(await web.invoke('tab_status_list')).toEqual([]);
-      expect(await web.invoke('tab_status_publish', { tabId: 't' })).toBeNull();
       expect(await web.invoke('updater:check', {})).toBeNull();
       // The page was served by one specific daemon build; that version is
       // baked in, so the daemon popover can compare like with like.
       expect(await web.invoke('get_app_version')).toBe(APP_VERSION);
+    });
+
+    it('keeps the web page\'s own tab statuses, which the Mac app keeps natively', async () => {
+      // Without them the Sessions popover in a browser listed none of its
+      // own tabs: "0 sessions" with five chat tabs open.
+      const web = createElectronApiShim({ client: f.client, native: null, storage });
+      const changes: unknown[] = [];
+      web.onEvent('tab-status:changed', (list) => { changes.push(list); });
+
+      await web.invoke('tab_status_publish', { summary: { tabId: 'a', title: 'A' } });
+      await web.invoke('tab_status_publish', { summary: { tabId: 'b', title: 'B' } });
+      await web.invoke('tab_status_publish', { summary: { tabId: 'a', title: 'A2' } });
+      expect(await web.invoke('tab_status_list')).toEqual([{ tabId: 'a', title: 'A2' }, { tabId: 'b', title: 'B' }]);
+
+      await web.invoke('tab_status_remove', { tabId: 'a' });
+      expect(await web.invoke('tab_status_list')).toEqual([{ tabId: 'b', title: 'B' }]);
+      expect(changes).toHaveLength(4);
+      expect(changes[3]).toEqual([{ tabId: 'b', title: 'B' }]);
+      expect(f.requests).toEqual([]);
     });
 
     // Codex runs beside the daemon, so the daemon is what finds its binary —
@@ -307,6 +326,26 @@ describe('electronAPI shim', () => {
       expect(f.requests.at(-1)).toEqual({ method: 'session.kill', params: { sessionId: 'sid-1' } });
       expect(JSON.parse(storage.getItem(TAB_MAP_STORAGE_KEY)!)).toEqual({});
       await expect(api.invoke('session_send_message', { tabId: 'tab-A', prompt: 'x' })).rejects.toThrow('[SESSION_NOT_RUNNING]');
+    });
+  });
+
+  describe('session_release', () => {
+    it('asks the daemon to release the session and unmaps the tab, without killing it', async () => {
+      // A closed tab lets go of the session; the daemon decides whether
+      // anyone else still holds it.
+      const api = shim();
+      await api.invoke('session_start', { tabId: 'tab-A', projectPath: '/p', model: 'default', permissionMode: 'default' });
+      await api.invoke('session_release', { tabId: 'tab-A' });
+      expect(f.requests.at(-1)).toEqual({ method: 'session.release', params: { sessionId: 'sid-1' } });
+      expect(f.requests.some((r) => r.method === 'session.kill')).toBe(false);
+      expect(JSON.parse(storage.getItem(TAB_MAP_STORAGE_KEY)!)).toEqual({});
+      expect(api.isSessionSubscribed('sid-1')).toBe(false);
+    });
+
+    it('is a no-op for a tab with no session', async () => {
+      const api = shim();
+      expect(await api.invoke('session_release', { tabId: 'nothing' })).toBeNull();
+      expect(f.requests).toEqual([]);
     });
   });
 

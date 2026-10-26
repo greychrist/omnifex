@@ -154,7 +154,7 @@ const LIVE_WORK_KINDS: ReadonlySet<TabStatusIndicator['kind']> = new Set([
  * should be confirmed first.
  *
  * Closing a tab is the ONLY path that tears down the main-process CLI session
- * (`TabContext.removeTab` → `api.stopSession`) — a misclick on the × ends a
+ * (`TabContext.removeTab` → `api.releaseSession`, which stops it unless another client still has it open) — a misclick on the × ends a
  * running turn with no way back.
  *
  * Derived from `resolveTabStatusIndicator` rather than re-reading
@@ -506,7 +506,7 @@ export const TabManager: React.FC<TabManagerProps> = ({ className }) => {
    * Every user-initiated close funnels through here — the × and ⌘W both.
    *
    * Closing a tab is the only thing that tears down the main-process CLI
-   * session (`TabContext.removeTab` → `api.stopSession`), and it is not
+   * session (`TabContext.removeTab` → `api.releaseSession`, which stops it unless another client still has it open), and it is not
    * recoverable: the turn in flight is lost. So a tab with live work asks
    * first. Everything else closes as before — a confirmation on every tab
    * would train the reflex that makes the prompt useless on the one that

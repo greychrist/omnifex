@@ -36,6 +36,7 @@ export const TYPED_SESSION_CHANNELS: readonly string[] = [
   'session_send_structured_message',
   'session_respond_permission',
   'session_stop',
+  'session_release',
   'session_interrupt',
 ];
 

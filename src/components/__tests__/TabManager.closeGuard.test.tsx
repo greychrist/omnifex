@@ -20,7 +20,7 @@ const tab = (over: Partial<Tab> = {}): Tab =>
 
 /**
  * Closing a tab is the one path that tears down the main-process CLI session
- * (TabContext.removeTab → api.stopSession), so it must not happen by accident
+ * (TabContext.removeTab → api.releaseSession), so it must not happen by accident
  * while the session still has work in it.
  *
  * The predicate is derived from `resolveTabStatusIndicator` rather than

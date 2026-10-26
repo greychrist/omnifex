@@ -25,6 +25,7 @@ const CLIENT_SAMPLES: ClientMessage[] = [
   { type: 'session.create', requestId: 'r6', projectId: 'p1' },
   { type: 'session.resume', requestId: 'r7', sessionId: 's1' },
   { type: 'session.kill', requestId: 'r8', sessionId: 's1' },
+  { type: 'session.release', requestId: 'r8b', sessionId: 's1' },
   { type: 'session.subscribe', requestId: 'r9', sessionId: 's1', fromSeq: 12 },
   { type: 'session.unsubscribe', requestId: 'r10', sessionId: 's1' },
   { type: 'turn.send', requestId: 'r11', sessionId: 's1', content: 'hello' },

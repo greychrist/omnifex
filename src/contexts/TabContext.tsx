@@ -332,16 +332,17 @@ export const TabProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setActiveTabId(reorderedTabs[newActiveIndex].id);
       }
 
-      // Tab close is the only path that should tear down a main-process CLI
-      // session. React unmount alone must NOT — Cmd+R reload, StrictMode
-      // double-invoke, and tab visibility flips all trigger unmounts but
-      // should keep the live session so rebind can claim it. main.stop()
-      // is idempotent and a no-op for tabs with no live handle, so it's
-      // safe to fire for any chat tab regardless of running state.
+      // Tab close is the only path that should end a CLI session. React
+      // unmount alone must NOT — Cmd+R reload, StrictMode double-invoke, and
+      // tab visibility flips all trigger unmounts but should keep the live
+      // session so rebind can claim it. Even a close only releases: the
+      // daemon stops the session when this was the last client holding it,
+      // so closing a tab in the browser leaves the app's copy running. It is
+      // a no-op for a tab with no session.
       if (removedTab?.type === 'chat') {
         logAndForget(
-          `tab-context:stop-session-on-close:${id}`,
-          api.stopSession(id),
+          `tab-context:release-session-on-close:${id}`,
+          api.releaseSession(id),
         );
       }
 

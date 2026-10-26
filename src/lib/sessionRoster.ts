@@ -41,6 +41,12 @@ export interface RosterTab {
   sessionId?: string;
 }
 
+/**
+ * Where a session is open: a tab in this window, the Mac app, a browser.
+ * Empty means no client is watching it — the daemon holds it for no one.
+ */
+export type OpenIn = 'here' | 'app' | 'browser';
+
 export interface RosterSession {
   sessionId: string;
   projectId: string;
@@ -50,6 +56,8 @@ export interface RosterSession {
   inFlight: boolean;
   pendingPermissions: number;
   updatedAt?: string;
+  /** The kinds of the other clients subscribed (`session.list`'s `openIn`). */
+  openIn?: ('desktop' | 'web')[];
 }
 
 export interface RosterProject {
@@ -66,6 +74,7 @@ export interface AttachedRow {
   title: string;
   promptStatus: 'working' | 'ready';
   summary: RosterSummary;
+  openIn: ['here'];
 }
 
 /** A live session with no tab here. Clicking it opens one. */
@@ -79,6 +88,7 @@ export interface DetachedRow {
   promptStatus: 'working' | 'ready';
   waitingFor: 'permission' | null;
   updatedAt: string | null;
+  openIn: Exclude<OpenIn, 'here'>[];
 }
 
 export type RosterRow = (AttachedRow & { projectPath?: string | null }) | DetachedRow;
@@ -120,6 +130,7 @@ export function buildSessionRoster({
       title: summary.title,
       promptStatus: summary.promptStatus,
       summary,
+      openIn: ['here'],
     });
   }
 
@@ -153,6 +164,7 @@ export function buildSessionRoster({
       promptStatus: s.inFlight ? 'working' : 'ready',
       waitingFor: s.pendingPermissions > 0 ? 'permission' : null,
       updatedAt: s.updatedAt ?? null,
+      openIn: (s.openIn ?? []).map((kind) => (kind === 'desktop' ? 'app' : 'browser')),
     });
   }
 

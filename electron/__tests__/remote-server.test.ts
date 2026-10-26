@@ -75,6 +75,7 @@ const handlers = (overrides: Partial<ProtocolHandlers> = {}): ProtocolHandlers =
   'session.create': () => { throw new Error('boom: secret path /Users/greg'); },
   'session.resume': () => { throw { code: 'NOT_FOUND', message: 'no such session' }; },
   'session.kill': () => undefined,
+  'session.release': () => ({ stopped: true }),
   'session.subscribe': (p, ctx) => { ctx.subscribe(p.sessionId); return { fromSeq: p.fromSeq ?? 0, lastSeq: 0 }; },
   'session.unsubscribe': (p, ctx) => { ctx.unsubscribe(p.sessionId); },
   'turn.send': () => undefined,
@@ -243,6 +244,23 @@ describe('remote server', () => {
     expect(a.frames.filter((m) => m.type === 'event')).toHaveLength(1);
 
     a.close(); b.close(); lurker.close();
+  });
+
+  it('names the clients subscribed to a session, and forgets one that unsubscribes', async () => {
+    const a = new TestClient(url);
+    const b = new TestClient(url);
+    await Promise.all([a.open(), b.open()]);
+    await a.hello('desktop');
+    await b.hello('web');
+    await a.request('session.subscribe', { sessionId: 's1' });
+    await b.request('session.subscribe', { sessionId: 's1' });
+
+    expect(server.subscribers('s1').map((c) => c.clientKind).sort()).toEqual(['desktop', 'web']);
+    expect(server.subscribers('s2')).toEqual([]);
+
+    await b.request('session.unsubscribe', { sessionId: 's1' });
+    expect(server.subscribers('s1').map((c) => c.clientKind)).toEqual(['desktop']);
+    a.close(); b.close();
   });
 
   it('drops a client\'s subscriptions when its socket closes', async () => {

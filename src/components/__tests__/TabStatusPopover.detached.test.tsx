@@ -149,3 +149,86 @@ describe('TabStatusPopover — detached sessions', () => {
     await waitFor(() => { expect(screen.getByText('No chat tabs open.')).toBeTruthy(); });
   });
 });
+
+describe('TabStatusPopover — where each session is open', () => {
+  it('labels a session by where it is open, and Detached when nowhere', async () => {
+    setDaemon(
+      [
+        { ...WIN_SESSION, sessionId: 'in-app', title: 'AppOne', inFlight: false, openIn: ['desktop'] },
+        { ...WIN_SESSION, sessionId: 'in-browser', title: 'WebOne', inFlight: false, openIn: ['web'] },
+        { ...WIN_SESSION, sessionId: 'orphan', title: 'Nobody', inFlight: false, openIn: [] },
+      ],
+      [WIN_PROJECT],
+    );
+    await openPopover();
+    await waitFor(() => { expect(screen.getByText('Nobody')).toBeTruthy(); });
+
+    const card = (title: string) => screen.getByText(title).closest('button')!;
+    expect(card('AppOne').textContent).toContain('Open in App');
+    expect(card('WebOne').textContent).toContain('Open in Browser');
+    expect(card('Nobody').textContent).toContain('Detached');
+    expect(card('AppOne').textContent).not.toContain('Detached');
+  });
+
+  it('labels this window\'s own tab Open Here', async () => {
+    mockTabs = [{ id: 'tab-1', type: 'chat', order: 0, sessionId: 'mine' }];
+    listTabStatuses.mockResolvedValueOnce([{
+      tabId: 'tab-1', title: 'MyTab', sessionId: 'mine', status: 'idle', promptStatus: 'ready',
+      waitingFor: null, branch: null, filesChanged: 0, filesUntracked: 0, contextUsage: null,
+      mainTurnInFlight: false, activeAgents: 0, tasks: { total: 0, completed: 0, inFlight: false },
+    }]);
+    setDaemon([], []);
+    await openPopover();
+    await waitFor(() => { expect(screen.getByText('MyTab')).toBeTruthy(); });
+    expect(screen.getByText('MyTab').closest('button')!.textContent).toContain('Open Here');
+  });
+});
+
+describe('TabStatusPopover — closing a detached session', () => {
+  function daemonWithKill(sessions: unknown[]) {
+    const requests: Array<{ method: string; params: unknown }> = [];
+    (window as unknown as { __omnifexRemote?: unknown }).__omnifexRemote = {
+      mode: 'web',
+      client: {
+        request: (method: string, params: unknown) => {
+          requests.push({ method, params });
+          if (method === 'session.list') return Promise.resolve(sessions);
+          if (method === 'project.list') return Promise.resolve([WIN_PROJECT]);
+          return Promise.resolve(undefined);
+        },
+      },
+    };
+    return requests;
+  }
+  const kills = (requests: Array<{ method: string; params: unknown }>) =>
+    requests.filter((r) => r.method === 'session.kill').map((r) => r.params);
+
+  it('offers Close only on a session no client has open, and closing stops it', async () => {
+    const requests = daemonWithKill([
+      { ...WIN_SESSION, sessionId: 'orphan', title: 'Nobody', inFlight: false, openIn: [] },
+      { ...WIN_SESSION, sessionId: 'in-app', title: 'AppOne', inFlight: false, openIn: ['desktop'] },
+    ]);
+    await openPopover();
+    await waitFor(() => { expect(screen.getByText('Nobody')).toBeTruthy(); });
+
+    const closes = screen.getAllByRole('button', { name: /^Close session/ });
+    expect(closes).toHaveLength(1);
+    fireEvent.click(closes[0]);
+    await waitFor(() => { expect(kills(requests)).toEqual([{ sessionId: 'orphan' }]); });
+    // Closing is not opening.
+    expect(addTab).not.toHaveBeenCalled();
+  });
+
+  it('asks again before stopping a session that is still working', async () => {
+    const requests = daemonWithKill([
+      { ...WIN_SESSION, sessionId: 'busy', title: 'Busy', inFlight: true, openIn: [] },
+    ]);
+    await openPopover();
+    await waitFor(() => { expect(screen.getByText('Busy')).toBeTruthy(); });
+
+    fireEvent.click(screen.getByRole('button', { name: /^Close session/ }));
+    expect(kills(requests)).toEqual([]);
+    fireEvent.click(screen.getByRole('button', { name: /^Stop working session/ }));
+    await waitFor(() => { expect(kills(requests)).toEqual([{ sessionId: 'busy' }]); });
+  });
+});

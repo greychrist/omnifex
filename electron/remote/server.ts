@@ -20,6 +20,7 @@ import { WebSocketServer, type WebSocket } from 'ws';
 import {
   PROTOCOL_VERSION,
   decodeClientMessage,
+  type ClientKind,
   type ClientMessage,
   type ClientMethod,
   type ProtocolError,
@@ -87,6 +88,8 @@ export interface RemoteServer extends ProtocolServer {
   readonly connectionsSeen: number;
   /** How many clients are subscribed to a session right now. */
   subscriberCount(sessionId: string): number;
+  /** The clients subscribed to a session right now. */
+  subscribers(sessionId: string): readonly ClientContext[];
 }
 
 const NOOP_LOG: RemoteServerLogger = { debug() {}, info() {}, warn() {}, error() {} };
@@ -114,7 +117,7 @@ interface Connection extends ClientContext {
   /** Set once `hello` has been accepted; requests before it are refused. */
   greeted: boolean;
   clientId: string;
-  clientKind: 'desktop' | 'web';
+  clientKind: ClientKind;
   subscriptions: Set<string>;
   closeListeners: (() => void)[];
 }
@@ -478,6 +481,9 @@ export function createRemoteServer(deps: RemoteServerDeps): RemoteServer {
     },
     subscriberCount(sessionId) {
       return subscribers.get(sessionId)?.size ?? 0;
+    },
+    subscribers(sessionId) {
+      return [...(subscribers.get(sessionId) ?? [])];
     },
 
     register(h) {

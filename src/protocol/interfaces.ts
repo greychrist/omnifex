@@ -7,6 +7,7 @@
  * test double is an object literal rather than a fake server.
  */
 import type {
+  ClientKind,
   ClientMessage,
   ClientMethod,
   Project,
@@ -30,7 +31,7 @@ export type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'rec
 /** Params (minus `requestId`, which the transport mints) and result per method. */
 export interface ProtocolRequestMap {
   'hello': {
-    params: { clientId: string; clientKind: 'desktop' | 'web'; protocolVersion: number };
+    params: { clientId: string; clientKind: ClientKind; protocolVersion: number };
     result: { protocolVersion: number; daemonVersion: string; bootId?: string; capabilities?: Record<string, unknown> };
   };
   'project.list': { params: Record<string, never>; result: Project[] };
@@ -43,6 +44,7 @@ export interface ProtocolRequestMap {
   };
   'session.resume': { params: { sessionId: string }; result: SessionSummary };
   'session.kill': { params: { sessionId: string }; result: void };
+  'session.release': { params: { sessionId: string }; result: { stopped: boolean } };
   /** Result reports where replay began, so a client can tell a gap from a no-op. */
   'session.subscribe': {
     params: { sessionId: string; fromSeq?: number };
@@ -112,7 +114,7 @@ export interface ProtocolClient {
  */
 export interface ClientContext {
   readonly clientId: string;
-  readonly clientKind: 'desktop' | 'web';
+  readonly clientKind: ClientKind;
   readonly subscriptions: ReadonlySet<string>;
   subscribe(sessionId: string): void;
   unsubscribe(sessionId: string): void;

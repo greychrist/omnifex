@@ -16,12 +16,13 @@ import { randomUUID } from 'node:crypto';
 import { realpathSync } from 'node:fs';
 
 import type {
+  ClientKind,
   ErrorCode,
   Project,
   ProtocolError,
   SessionSummary,
 } from '../../src/protocol';
-import type { ProtocolHandlers } from '../../src/protocol/interfaces';
+import type { ClientContext, ProtocolHandlers } from '../../src/protocol/interfaces';
 import type { SessionsService, SessionStartParams } from '../services/sessions/types';
 import type { SessionBridge } from './bridge';
 import type { ProjectRegistry } from './projects';
@@ -35,6 +36,8 @@ export interface RemoteHandlerDeps {
   log: SessionLog;
   bridge: SessionBridge;
   projects: ProjectRegistry;
+  /** The clients subscribed to a session right now (the server's view). */
+  viewers(sessionId: string): readonly ClientContext[];
   rpc: {
     handlers: Record<string, RpcHandler>;
     allow: ReadonlySet<string>;
@@ -120,6 +123,30 @@ export function createRemoteHandlers(deps: RemoteHandlerDeps): RemoteHandlers {
     };
   }
 
+  /**
+   * Where else a session is open: the kinds of the clients subscribed to it,
+   * other than the one asking. The asker knows its own tabs; what it cannot
+   * see is whether the app, a browser, or no one at all is looking.
+   */
+  function openElsewhere(sessionId: string, ctx: ClientContext): ClientKind[] {
+    const kinds = new Set(deps.viewers(sessionId).filter((c) => c !== ctx).map((c) => c.clientKind));
+    return [...kinds].sort();
+  }
+
+  function kill(sessionId: string): void {
+    requireMeta(sessionId);
+    const wasActive = deps.sessions.isActive(sessionId);
+    deps.sessions.stop(sessionId);
+    // `stop()` deletes the handle before the engine exits, and runtime.ts
+    // then suppresses the exit's status event as "handle replaced". Nothing
+    // downstream would ever learn the session ended, so say it here — the
+    // same two frames the renderer expects on a user stop.
+    if (wasActive) {
+      deps.bridge.sendToRenderer(`session-status:${sessionId}`, { sessionStatus: 'stopped' });
+      deps.bridge.sendToRenderer(`agent-complete:${sessionId}`);
+    }
+  }
+
   function requireMeta(sessionId: string): SessionMeta {
     const meta = deps.log.meta(sessionId);
     if (!meta) throw protocolError('NOT_FOUND', `no session ${sessionId}`);
@@ -180,12 +207,12 @@ export function createRemoteHandlers(deps: RemoteHandlerDeps): RemoteHandlers {
     },
 
     // ---------------------------------------------------------------- sessions
-    'session.list': (p) =>
+    'session.list': (p, ctx) =>
       deps.log
         .list()
         .filter((m) => !p.projectId || m.projectId === p.projectId)
         .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1))
-        .map(summaryOf),
+        .map((meta) => ({ ...summaryOf(meta), openIn: openElsewhere(meta.sessionId, ctx) })),
 
     'session.create': async (p) => {
       const project = requireProject(p.projectId);
@@ -230,17 +257,15 @@ export function createRemoteHandlers(deps: RemoteHandlerDeps): RemoteHandlers {
     },
 
     'session.kill': (p) => {
+      kill(p.sessionId);
+    },
+
+    'session.release': (p, ctx) => {
       requireMeta(p.sessionId);
-      const wasActive = deps.sessions.isActive(p.sessionId);
-      deps.sessions.stop(p.sessionId);
-      // `stop()` deletes the handle before the engine exits, and runtime.ts
-      // then suppresses the exit's status event as "handle replaced". Nothing
-      // downstream would ever learn the session ended, so say it here — the
-      // same two frames the renderer expects on a user stop.
-      if (wasActive) {
-        deps.bridge.sendToRenderer(`session-status:${p.sessionId}`, { sessionStatus: 'stopped' });
-        deps.bridge.sendToRenderer(`agent-complete:${p.sessionId}`);
-      }
+      ctx.unsubscribe(p.sessionId);
+      if (deps.viewers(p.sessionId).some((c) => c !== ctx)) return { stopped: false };
+      kill(p.sessionId);
+      return { stopped: true };
     },
 
     'session.subscribe': (p, ctx) => {

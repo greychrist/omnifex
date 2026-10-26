@@ -69,6 +69,7 @@ const TYPED = new Set([
   'session_send_structured_message',
   'session_respond_permission',
   'session_stop',
+  'session_release',
   'session_interrupt',
 ]);
 
@@ -83,14 +84,12 @@ const BUILD_VERSION = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : 'w
 /**
  * Native-only channels the renderer calls unprompted at boot or on a timer.
  * On the web these have a benign answer rather than an error: the Updates
- * button reads "up to date", the tab-status popover is simply empty, and
- * nothing logs a red stack for a capability that was never going to exist.
- * Channels absent from this table still reject, loudly, so a real gap shows.
+ * button reads "up to date", and nothing logs a red stack for a capability
+ * that was never going to exist. Channels absent from this table still
+ * reject, loudly, so a real gap shows. (The `tab_status_*` channels are not
+ * here: the web page keeps its own, see `webTabStatus` below.)
  */
 const WEB_FALLBACKS: Record<string, unknown> = {
-  'tab_status_list': [],
-  'tab_status_publish': null,
-  'tab_status_remove': null,
   'updater:check': null,
   // The daemon served this page, so the page has a version: the build it came
   // from. The popover compares it against the daemon's.
@@ -539,12 +538,44 @@ export function createElectronApiShim(opts: ShimOptions): ShimHandle {
         }
         return null;
       }
+      case 'session_release': {
+        // The tab closed. Another tab in this page may still show the session;
+        // otherwise let the daemon decide — it stops the session only if no
+        // other client (the app, a browser) still has it open.
+        const tabId = String(p.tabId);
+        const sid = tabToSession.get(tabId);
+        if (!sid) return null;
+        const lastHere = sessionToTabs.get(sid)?.size === 1;
+        unlink(tabId);
+        if (lastHere) await client.request('session.release', { sessionId: sid });
+        return null;
+      }
       case 'session_interrupt':
         await client.request('turn.interrupt', { sessionId: requireSession(p.tabId) });
         return null;
       default:
         throw new Error(`unhandled typed channel ${channel}`);
     }
+  }
+
+  // ------------------------------------------------------ web tab statuses
+  // The Mac app aggregates its tabs' summaries natively (TabStatusStore.swift).
+  // A browser has no app, but its Sessions popover still needs its own tabs —
+  // without them it listed none. A page's tabs live and die with the page, so
+  // an in-memory map is the whole store. Insertion order, as the app's is.
+  const webTabStatus = new Map<string, Record<string, unknown>>();
+
+  function webTabStatusInvoke(channel: string, p: Record<string, unknown>): unknown {
+    if (channel === 'tab_status_list') return [...webTabStatus.values()];
+    if (channel === 'tab_status_publish') {
+      const summary = p.summary as Record<string, unknown> | undefined;
+      if (typeof summary?.tabId !== 'string') throw new Error('tab_status_publish requires summary.tabId');
+      webTabStatus.set(summary.tabId, summary);
+    } else {
+      webTabStatus.delete(String(p.tabId ?? p.tab_id));
+    }
+    emit('tab-status:changed', [...webTabStatus.values()]);
+    return null;
   }
 
   // --------------------------------------------------------------- surface
@@ -554,6 +585,7 @@ export function createElectronApiShim(opts: ShimOptions): ShimHandle {
       try {
         if (NATIVE_INVOKE_CHANNELS.includes(channel)) {
           if (!native) {
+            if (channel.startsWith('tab_status_')) return webTabStatusInvoke(channel, p);
             if (channel in WEB_FALLBACKS) return WEB_FALLBACKS[channel];
             throw new Error(`${channel} is not available in the web client`);
           }

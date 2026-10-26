@@ -936,6 +936,7 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
     log: sessionLog,
     bridge,
     projects,
+    viewers: (id) => server.subscribers(id),
     rpc: {
       handlers: handlerMap,
       allow: buildRpcAllowlist(INVOKE_CHANNELS, { allow: config.rpcAllow, deny: config.rpcDeny }),

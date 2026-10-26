@@ -30,6 +30,7 @@ vi.mock('@/services/sessionNameRegistry', () => ({
 vi.mock('@/lib/api', () => ({
   api: {
     listAccounts: vi.fn(async () => [{ id: 1, name: 'work', account_type: 'pro', config_dir: '/c' }]),
+    releaseSession: vi.fn(async () => undefined),
     stopSession: vi.fn(async () => undefined),
   },
 }));
@@ -212,7 +213,7 @@ describe('TabContext — addTab / removeTab', () => {
     expect(result.current.activeTabId).toBe(before.id);
   });
 
-  it('removeTab on a chat tab fires api.stopSession so the main-process CLI handle is torn down', async () => {
+  it('removeTab on a chat tab releases its session — the daemon stops it if no other client holds it', async () => {
     const { result } = renderHook(() => useTabContext(), { wrapper });
     await waitFor(() => { expect(result.current.tabs.length).toBe(1); });
 
@@ -220,13 +221,14 @@ describe('TabContext — addTab / removeTab', () => {
     act(() => {
       chatId = result.current.addTab({ type: 'chat', title: 'C', agent: 'claude', status: 'idle', hasUnsavedChanges: false });
     });
-    (api.stopSession as ReturnType<typeof vi.fn>).mockClear();
+    (api.releaseSession as ReturnType<typeof vi.fn>).mockClear();
 
     act(() => { result.current.removeTab(chatId); });
-    expect(api.stopSession).toHaveBeenCalledWith(chatId);
+    expect(api.releaseSession).toHaveBeenCalledWith(chatId);
+    expect(api.stopSession).not.toHaveBeenCalled();
   });
 
-  it('removeTab on a non-chat tab does NOT fire api.stopSession', async () => {
+  it('removeTab on a non-chat tab does NOT release a session', async () => {
     const { result } = renderHook(() => useTabContext(), { wrapper });
     await waitFor(() => { expect(result.current.tabs.length).toBe(1); });
 
@@ -234,10 +236,10 @@ describe('TabContext — addTab / removeTab', () => {
     act(() => {
       settingsId = result.current.addTab({ type: 'settings', title: 'S', agent: 'claude', status: 'idle', hasUnsavedChanges: false });
     });
-    (api.stopSession as ReturnType<typeof vi.fn>).mockClear();
+    (api.releaseSession as ReturnType<typeof vi.fn>).mockClear();
 
     act(() => { result.current.removeTab(settingsId); });
-    expect(api.stopSession).not.toHaveBeenCalled();
+    expect(api.releaseSession).not.toHaveBeenCalled();
   });
 });
 

@@ -47,6 +47,10 @@ export type SessionStatus = z.infer<typeof SessionStatusSchema>;
 
 export const AgentKindSchema = z.enum(['claude', 'codex']);
 
+/** What a client is: the Mac app's window, or a browser (Safari, the iPad). */
+export const ClientKindSchema = z.enum(['desktop', 'web']);
+export type ClientKind = z.infer<typeof ClientKindSchema>;
+
 /**
  * The turn axis, owned by the session (see docs/session-lifecycle.md). A
  * client renders it; it never infers a turn from the transcript.
@@ -119,6 +123,11 @@ export const SessionSummarySchema = z.looseObject({
   lastSeq: z.number().int().nonnegative(),
   pendingPermissions: z.number().int().nonnegative(),
   inFlight: z.boolean(),
+  /**
+   * `session.list` only: the kinds of the *other* clients subscribed to the
+   * session, deduplicated and sorted. Empty means no other client has it open.
+   */
+  openIn: z.array(ClientKindSchema).optional(),
   createdAt: z.string().optional(),
   updatedAt: z.string().optional(),
 });
@@ -200,7 +209,7 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
     ...req,
     type: z.literal('hello'),
     clientId: z.string(),
-    clientKind: z.enum(['desktop', 'web']),
+    clientKind: ClientKindSchema,
     protocolVersion: z.number().int(),
   }),
 
@@ -218,6 +227,12 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
   }),
   z.looseObject({ ...req, type: z.literal('session.resume'), sessionId: z.string() }),
   z.looseObject({ ...req, type: z.literal('session.kill'), sessionId: z.string() }),
+  /**
+   * This client is done with the session (its tab closed). The daemon drops
+   * the client's subscription and stops the session only if no other client
+   * still has it open.
+   */
+  z.looseObject({ ...req, type: z.literal('session.release'), sessionId: z.string() }),
 
   /**
    * `fromSeq` is the last seq the client already has. The daemon replays
@@ -282,6 +297,7 @@ export const CLIENT_METHODS = [
   'session.create',
   'session.resume',
   'session.kill',
+  'session.release',
   'session.subscribe',
   'session.unsubscribe',
   'turn.send',

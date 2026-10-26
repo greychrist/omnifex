@@ -1876,6 +1876,14 @@ export const api = {
     return apiCall("session_stop", { tabId });
   },
 
+  /**
+   * The tab is closing: let go of its session. Unlike `stopSession`, the
+   * daemon ends the session only if no other client still has it open.
+   */
+  async releaseSession(tabId: string): Promise<void> {
+    return apiCall("session_release", { tabId });
+  },
+
   async getSessionInfo(tabId: string): Promise<unknown> {
     return apiCall("session_get_info", { tabId });
   },

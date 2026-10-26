@@ -56,12 +56,12 @@ function fakeSessions(send: { current: (channel: string, ...args: unknown[]) => 
 
 const rpcSeen: { event: unknown; params: unknown }[] = [];
 
-function fakeCtx() {
+function fakeCtx(clientKind: ClientContext['clientKind'] = 'web') {
   const sent: ServerMessage[] = [];
   const subs = new Set<string>();
   const ctx: ClientContext = {
     clientId: 'c1',
-    clientKind: 'web',
+    clientKind,
     subscriptions: subs,
     subscribe: (id) => { subs.add(id); },
     unsubscribe: (id) => { subs.delete(id); },
@@ -83,6 +83,7 @@ describe('remote handlers', () => {
   const sendRef = { current: (() => {}) as (channel: string, ...args: unknown[]) => void };
   let ids: string[];
   let resolveAccount: (p: string) => { accountId: number; configDir: string } | null;
+  let viewers: Map<string, ClientContext[]>;
 
   beforeEach(() => {
     root = mkdtempSync(join(tmpdir(), 'omnifex-handlers-'));
@@ -91,6 +92,7 @@ describe('remote handlers', () => {
     published = [];
     ids = ['sid-1', 'sid-2', 'sid-3'];
     resolveAccount = () => ({ accountId: 1, configDir: '/cfg/personal' });
+    viewers = new Map();
     log = createSessionLog({ root: join(root, 'sessions') });
     bridge = createSessionBridge({ log, classify: classifyJsonlLine, publish: (p) => { published.push(p); }, broadcast: () => {} });
     sendRef.current = bridge.sendToRenderer;
@@ -101,6 +103,7 @@ describe('remote handlers', () => {
       log,
       bridge,
       projects,
+      viewers: (id) => viewers.get(id) ?? [],
       rpc: {
         handlers: {
           list_accounts: async (event: unknown, params?: Record<string, unknown>) => { rpcSeen.push({ event, params }); return [{ id: 1 }]; },
@@ -189,6 +192,25 @@ describe('remote handlers', () => {
     expect(published).toEqual([]);
   });
 
+  it('release stops the session only when no other client still has it open', async () => {
+    // Closing a tab in the browser must not end a session the app is showing.
+    const project = await addProject();
+    await h['session.create']({ projectId: project.projectId }, fakeCtx().ctx);
+    const browser = fakeCtx('web');
+    const app = fakeCtx('desktop');
+    browser.subs.add('sid-1');
+    app.subs.add('sid-1');
+    viewers.set('sid-1', [browser.ctx, app.ctx]);
+
+    expect(h['session.release']({ sessionId: 'sid-1' }, browser.ctx)).toEqual({ stopped: false });
+    expect(fake.calls.stop).toEqual([]);
+    expect([...browser.subs]).toEqual([]);
+
+    viewers.set('sid-1', [app.ctx]);
+    expect(h['session.release']({ sessionId: 'sid-1' }, app.ctx)).toEqual({ stopped: true });
+    expect(fake.calls.stop).toEqual(['sid-1']);
+  });
+
   it('refuses a turn on a session with no live process', async () => {
     const project = await addProject();
     await h['session.create']({ projectId: project.projectId }, fakeCtx().ctx);
@@ -210,7 +232,7 @@ describe('remote handlers', () => {
     const bridge2 = createSessionBridge({ log: log2, classify: classifyJsonlLine, publish: (p) => { published2.push(p); }, broadcast: () => {} });
     sendRef.current = bridge2.sendToRenderer;
     const fake2 = fakeSessions(sendRef);
-    const h2 = createRemoteHandlers({ sessions: fake2.svc, log: log2, bridge: bridge2, projects, rpc: { handlers: {}, allow: new Set() }, daemonVersion: 't' });
+    const h2 = createRemoteHandlers({ sessions: fake2.svc, log: log2, bridge: bridge2, projects, viewers: () => [], rpc: { handlers: {}, allow: new Set() }, daemonVersion: 't' });
 
     const summary = await h2['session.resume']({ sessionId: 'sid-1' }, fakeCtx().ctx);
     expect(fake2.calls.start[0]).toMatchObject({ tabId: 'sid-1', resumeSessionId: 'sid-1', model: 'claude-opus-5', permissionMode: 'acceptEdits', configDir: '/cfg/personal' });
@@ -286,6 +308,26 @@ describe('remote handlers', () => {
     expect(all.map((s) => s.sessionId).sort()).toEqual(['sid-1', 'sid-2']);
     const mine = await h['session.list']({ projectId: other.projectId }, fakeCtx().ctx);
     expect(mine.map((s) => s.sessionId)).toEqual(['sid-2']);
+  });
+
+  it('says which other clients have each session open, leaving out the one asking', async () => {
+    // The Sessions popover tells "open in the app", "open in a browser" and
+    // "no one is looking at it" apart. Its own tabs it already knows.
+    const project = await addProject();
+    await h['session.create']({ projectId: project.projectId }, fakeCtx().ctx);
+    await h['session.create']({ projectId: project.projectId }, fakeCtx().ctx);
+    await h['session.create']({ projectId: project.projectId }, fakeCtx().ctx);
+    const me = fakeCtx('web').ctx;
+    const app = fakeCtx('desktop').ctx;
+    const app2 = fakeCtx('desktop').ctx;
+    const ipad = fakeCtx('web').ctx;
+    viewers.set('sid-1', [me, app, app2]);
+    viewers.set('sid-2', [me]);
+    viewers.set('sid-3', [ipad, app]);
+
+    const list = await h['session.list']({}, me);
+    const openIn = Object.fromEntries(list.map((s) => [s.sessionId, s.openIn]));
+    expect(openIn).toEqual({ 'sid-1': ['desktop'], 'sid-2': [], 'sid-3': ['desktop', 'web'] });
   });
 
   it('subscribe answers resync instead of replaying a seq the log no longer has', async () => {
