@@ -35,6 +35,9 @@
 export const CLI_SIDECHANNEL_RECORD_TYPES: ReadonlySet<string> = new Set([
   // Conversation latches — per-session state, last one wins.
   'atis-latch',
+  // Every tool the conversation has called so far (CLI >= 2.1.311),
+  // re-written each time the set grows.
+  'tools-used',
   'isolation-latch',
   'mode',
   'memory-mode',

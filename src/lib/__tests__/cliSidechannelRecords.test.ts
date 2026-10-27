@@ -65,6 +65,19 @@ describe('isCliSidechannelRecord', () => {
     ).toBe(true);
   });
 
+  // New in CLI 2.1.311: a latch naming every tool the conversation has called
+  // so far. `last-wins` in the CLI's merge map; re-written whenever the set
+  // grows, so a busy session lands one per new tool.
+  it('recognises tools-used', () => {
+    expect(
+      isCliSidechannelRecord({
+        type: 'tools-used',
+        tools: ['mcp__omnifex__progress', 'Bash'],
+        sessionId: 'f43f8eb9-91dd-4f31-bfa0-b87e57667ebe',
+      }),
+    ).toBe(true);
+  });
+
   it('never claims one of the four transcript types', () => {
     for (const type of ['user', 'assistant', 'system', 'attachment']) {
       expect(isCliSidechannelRecord({ type })).toBe(false);
