@@ -131,6 +131,58 @@ describe('computeUnloggedRows', () => {
     ]);
   });
 
+  // CLI >= 2.1.311 reports how many of its cache writes had a 1-hour TTL.
+  // The hidden 1-hour part is what the CLI counted at 1h minus what the
+  // transcript rows already priced at 1h; the rest keeps the 5-minute rule.
+  it('prices hidden cache writes at the 1-hour rate when the CLI splits them', () => {
+    const { rows } = computeUnloggedRows({
+      ...base,
+      processes: [proc({
+        baseline: { 'claude-opus-5-5[1m]': { ...totals(0, 0, 0, 1000), cacheCreationEphemeral1hInputTokens: 1000 } },
+        latest: { 'claude-opus-5-5[1m]': { ...totals(0, 0, 0, 9000), cacheCreationEphemeral1hInputTokens: 7000 } },
+      })],
+      // The transcript already priced 4000 cache-write tokens, all at 1h.
+      transcript: [tx('claude-opus-5-5', '2026-09-25T10:30:00.000Z', 0, 0, 0, 4000)],
+    });
+    // Hidden: 9000 − 1000 − 4000 = 4000 in all; at 1h, 7000 − 1000 − 4000 = 2000.
+    expect(rows[0]).toMatchObject({ cache_write_5m_tokens: 2000, cache_write_1h_tokens: 2000 });
+    const expected = computeMessageCost('claude-opus-5-5', {
+      cache_creation_input_tokens: 4000,
+      cache_creation: { ephemeral_5m_input_tokens: 2000, ephemeral_1h_input_tokens: 2000 },
+    }, undefined, '2026-09-25');
+    expect(rows[0].cache_write_usd).toBeCloseTo(expected.cacheWriteUsd, 10);
+    expect(rows[0].cost_usd).toBeCloseTo(expected.usd, 10);
+  });
+
+  // A baseline restored from an older CLI's cost-state has no 1-hour figure,
+  // and the latest one counts only the turns since: nothing to subtract.
+  it('treats a baseline without the 1-hour figure as zero of it', () => {
+    const { rows } = computeUnloggedRows({
+      ...base,
+      processes: [proc({
+        baseline: { 'claude-opus-5-5': totals(0, 0, 0, 5000) },
+        latest: { 'claude-opus-5-5': { ...totals(0, 0, 0, 8000), cacheCreationEphemeral1hInputTokens: 3000 } },
+      })],
+      transcript: [],
+    });
+    expect(rows[0]).toMatchObject({ cache_write_5m_tokens: 0, cache_write_1h_tokens: 3000 });
+  });
+
+  // The transcript can sit ahead of the CLI's last report (a turn still
+  // running), so the 1-hour part is bounded by the hidden total.
+  it('never puts more at the 1-hour rate than the hidden cache writes', () => {
+    const { rows } = computeUnloggedRows({
+      ...base,
+      processes: [proc({
+        latest: { 'claude-opus-5-5': { ...totals(0, 10, 0, 6000), cacheCreationEphemeral1hInputTokens: 6000 } },
+      })],
+      transcript: [tx('claude-opus-5-5', '2026-09-25T10:30:00.000Z', 0, 0, 0, 5000)].map((r) => ({
+        ...r, usage: { ...r.usage, cache_creation: { ephemeral_5m_input_tokens: 5000, ephemeral_1h_input_tokens: 0 } },
+      })),
+    });
+    expect(rows[0]).toMatchObject({ cache_write_5m_tokens: 0, cache_write_1h_tokens: 1000 });
+  });
+
   it('merges two processes on the same day and model into one row', () => {
     const { rows } = computeUnloggedRows({
       ...base,

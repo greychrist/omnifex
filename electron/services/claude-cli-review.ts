@@ -44,6 +44,69 @@ import { buildClaudeEnv } from './util/claude-env';
  *    "side_question timed out: the host did not answer in time". Only the
  *    SDK's `askSideQuestion()` documents it.
  *
+ * Last review: 2.1.310 -> 2.1.311 on 2026-10-26. Findings: one bug, fixed
+ * in the same change — a new `tools-used` record drew an Unrecognized card.
+ *
+ *  Changelog coverage: 2.1.311 (~85 entries). Both ends installed.
+ *  Script: hook_event_name (33), control_* (4), SDK requests (55), CLI
+ *  flags (115), can_use_tool payload keys (11) identical; /usage anchors
+ *  unchanged; installed-vs-OmniFex clean after the fix.
+ *  - Merge map +1 / `type:` +2: `tools-used` (`last-wins`) —
+ *    `{type, tools: string[], sessionId}`, the names of every tool the
+ *    conversation has called, re-appended whenever the set grows (gated on
+ *    an internal flag, on for us: 2 records already in this review's own
+ *    transcript). FIXED: listed in CLI_SIDECHANNEL_RECORD_TYPES.
+ *    `post_turn_memory` is a background-task type ("memory save", id prefix
+ *    `p`) beside `dream` / `local_memory_import`, not a record type.
+ *  - `subtype:` +2: `ui_prompt_paint` (mod composer decoration layer, sent
+ *    by `sendUiHostRequest` only to a client that declares it answers it —
+ *    we declare none of the `ui_prompt_*` family); `inherited_asks_settled`
+ *    (cloud-worker handoff). Inert.
+ *  - `origin.kind` +1 `coordinator`: not new in kind — messageKind.ts
+ *    already maps it to `user.coordinatorMessage`. The new literal is the
+ *    CLI stamping a subagent's opening prompt (and back-filling unstamped
+ *    old ones in memory) as coordinator. 54 subagent transcripts carry it.
+ *  - `.describe()` +29 -6: `modelUsage` gains
+ *    `cacheCreationEphemeral5mInputTokens` / `...1hInputTokens` (costUSD
+ *    now priced per TTL; optional, an undercount on sessions partly run on an
+ *    older CLI; also in the saved cost-state and get_usage). TAKEN the same
+ *    day: sessions/cli-usage.ts keeps the 1h figure and
+ *    cost/unlogged-spend.ts prices the hidden 1h share (CLI 1h − baseline 1h
+ *    − transcript 1h, bounded by the hidden total) at the 1-hour rate; the
+ *    rest, and any older CLI's totals, stay 5-minute. Also: OAuth-token host request gains
+ *    `kind:'sessions'` (only for hosts that set
+ *    CLAUDE_CODE_SDK_HAS_SESSIONS_OAUTH_REFRESH — we don't), per-turn
+ *    process CPU/stream telemetry on result, turn_handoff rewind, Artifact
+ *    quickstart wording, subagent tools-used-before-summary line. Inert.
+ *  - Object keys +613 -26: env-var names, runner/cloud/OTel plumbing,
+ *    rewind/fork internals. None on user/assistant records, permission
+ *    requests or the initialize reply.
+ *  - `side_question` (standing list): error strings, 660 s deadline and
+ *    request literal unchanged.
+ *  - Entries in our favour, nothing to do: `-p`/SDK transcript ordering and
+ *    taken-back messages; standard-context sessions compact instead of
+ *    stopping on "Usage credits required for 1M"; interrupt no longer waits
+ *    on an MCP resource read; SubagentStop no longer fires twice a minute;
+ *    no retry of non-retryable requests; Write/Edit stall on huge diffs;
+ *    late-connecting MCP tools reach subagents.
+ *  - Checked, handled: stream-json now escapes DEL/C1/format chars as
+ *    \uXXXX (JSON.parse unchanged); `[1m]` dropped from ids where it has no
+ *    effect (unlogged-spend.ts strips any `[…]` suffix; contextLimit.ts
+ *    falls back to the native window, and only native-1M ids lose it);
+ *    `/usage` large prompt-cache-miss row under "What's contributing"
+ *    (parser takes contributing rows generically).
+ *  - Inert: self-hosted-runner flags, ultrathink/xhigh (interactive
+ *    terminal only), Explanatory-style tip, CLAUDE.md long-list freeze,
+ *    stale MEMORY.md after compaction, @ picker, worktree removal under
+ *    background subagents, auto-mode wake turns, Bash/env-block wording,
+ *    `claude mcp` scope/list fixes, Remote Control/cloud/Cowork entries,
+ *    background-service/daemon messages, /effort, /ide, /rewind, /mcp,
+ *    /teleport, /code-review wording, DISABLE_COMPACT, Bedrock/Vertex
+ *    model catalog, CLAUDE_CODE_SYNC_SKILLS, startup-time and TUI fixes,
+ *    all [VSCode], [Cloud sessions], [Claude Tag], [Code Review] entries.
+ *
+ *  OPEN ITEMS (carry forward; re-check each review): none.
+ *
  * Last review: 2.1.309 -> 2.1.310 on 2026-10-24. Findings: none broken,
  * nothing to change. Second pass the same day: the first used hand-typed
  * rg; this one is the first run of the rewritten review prompt and
@@ -4693,7 +4756,7 @@ import { buildClaudeEnv } from './util/claude-env';
  * `~/.claude.json` fix (we read-modify-write that file, never replace it), and
  * the VSCode screen-reader work.
  */
-export const REVIEWED_CLI_VERSION = '2.1.310';
+export const REVIEWED_CLI_VERSION = '2.1.311';
 
 /**
  * app_settings key holding the user's explicit OmniFex-checkout override.

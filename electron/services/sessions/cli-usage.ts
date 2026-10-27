@@ -24,7 +24,8 @@ export type CliUsageSink = (event: CliUsageEvent) => void;
 type Clock = () => Date;
 const systemClock: Clock = () => new Date();
 
-/** Keep the four token counts; the CLI's entries also carry costUSD, context sizes and more. */
+/** Keep the four token counts and the 1-hour cache-write share; the CLI's
+ *  entries also carry costUSD, context sizes and more. */
 function toModelUsage(raw: unknown): CliModelUsage | null {
   if (!raw || typeof raw !== 'object') return null;
   const out: CliModelUsage = {};
@@ -33,11 +34,13 @@ function toModelUsage(raw: unknown): CliModelUsage | null {
       const value = v?.[k];
       return typeof value === 'number' ? value : 0;
     };
+    const oneHour = v?.cacheCreationEphemeral1hInputTokens;
     out[model] = {
       inputTokens: n('inputTokens'),
       outputTokens: n('outputTokens'),
       cacheReadInputTokens: n('cacheReadInputTokens'),
       cacheCreationInputTokens: n('cacheCreationInputTokens'),
+      ...(typeof oneHour === 'number' && { cacheCreationEphemeral1hInputTokens: oneHour }),
     };
   }
   return out;

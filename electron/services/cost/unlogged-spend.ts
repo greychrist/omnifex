@@ -14,7 +14,7 @@
 //
 // Pure, like session-cost-core.ts, so the sweep and the tests share it.
 
-import { computeMessageCost, type ModelPricingInput } from '../../../src/lib/pricing';
+import { computeMessageCost, splitCacheWriteTokens, type ModelPricingInput } from '../../../src/lib/pricing';
 import type { SessionCostDailyRow } from './session-cost-core';
 import type { ExtractedUsageRow } from './usage-extract';
 import type { CliModelUsage, CliProcessUsage } from './cli-process-usage';
@@ -38,7 +38,16 @@ export interface UnloggedSkip {
   reason: 'no-baseline' | 'no-latest';
 }
 
-interface Tokens { input: number; output: number; cacheRead: number; cacheWrite: number }
+interface Tokens {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  /** The 1-hour share of cacheWrite; null where the CLI reported no split. */
+  cacheWrite1h: number | null;
+}
+
+const zero = (): Tokens => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cacheWrite1h: null });
 
 /**
  * The CLI keys its totals by the id it ran (`claude-opus-5-5[1m]`); the
@@ -53,11 +62,14 @@ function totalsByModel(usage: CliModelUsage): Map<string, Tokens> {
   const out = new Map<string, Tokens>();
   for (const [model, t] of Object.entries(usage)) {
     const key = modelKey(model);
-    const acc = out.get(key) ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+    const acc = out.get(key) ?? zero();
     acc.input += t.inputTokens;
     acc.output += t.outputTokens;
     acc.cacheRead += t.cacheReadInputTokens;
     acc.cacheWrite += t.cacheCreationInputTokens;
+    if (t.cacheCreationEphemeral1hInputTokens !== undefined) {
+      acc.cacheWrite1h = (acc.cacheWrite1h ?? 0) + t.cacheCreationEphemeral1hInputTokens;
+    }
     out.set(key, acc);
   }
   return out;
@@ -81,23 +93,24 @@ export function computeUnloggedRows(args: ComputeUnloggedArgs): {
       if (!row.timestamp || row.timestamp < proc.startedAt) continue;
       if (windowEnd && row.timestamp >= windowEnd) continue;
       const key = modelKey(row.model);
-      const acc = logged.get(key) ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+      const acc = logged.get(key) ?? zero();
       acc.input += row.usage.input_tokens ?? 0;
       acc.output += row.usage.output_tokens ?? 0;
       acc.cacheRead += row.usage.cache_read_input_tokens ?? 0;
       acc.cacheWrite += row.usage.cache_creation_input_tokens ?? 0;
+      acc.cacheWrite1h = (acc.cacheWrite1h ?? 0) + splitCacheWriteTokens(row.usage).t1h;
       logged.set(key, acc);
     }
 
     const baseline = totalsByModel(proc.baseline);
     const date = proc.latestAt.slice(0, 10);
     for (const [model, latest] of totalsByModel(proc.latest)) {
-      const before = baseline.get(model) ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
-      const seen = logged.get(model) ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+      const before = baseline.get(model) ?? zero();
+      const seen = logged.get(model) ?? zero();
       // Per category, never below zero: a transcript row written after the
       // CLI's last report (a turn still running) must not cancel spend in
       // another category.
-      const hidden: Tokens = {
+      const hidden = {
         input: Math.max(0, latest.input - before.input - seen.input),
         output: Math.max(0, latest.output - before.output - seen.output),
         cacheRead: Math.max(0, latest.cacheRead - before.cacheRead - seen.cacheRead),
@@ -105,14 +118,21 @@ export function computeUnloggedRows(args: ComputeUnloggedArgs): {
       };
       if (hidden.input + hidden.output + hidden.cacheRead + hidden.cacheWrite === 0) continue;
 
-      // The CLI's totals carry no cache-write TTL split, so these tokens take
-      // the same path as any unsplit usage: splitCacheWriteTokens prices them
-      // at the 5-minute rate, and they are stored in the 5-minute column.
+      // The 1-hour share, when the CLI reports one (>= 2.1.311). A baseline
+      // without it was restored from an older CLI whose writes the latest
+      // figure never counted, so it subtracts nothing. Bounded by the hidden
+      // total; the remainder, and everything from an older CLI, keeps the
+      // rule for unsplit writes — the 5-minute rate and column.
+      const hidden1h = latest.cacheWrite1h === null
+        ? 0
+        : Math.min(hidden.cacheWrite, Math.max(0, latest.cacheWrite1h - (before.cacheWrite1h ?? 0) - (seen.cacheWrite1h ?? 0)));
+      const hidden5m = hidden.cacheWrite - hidden1h;
       const cost = computeMessageCost(model, {
         input_tokens: hidden.input,
         output_tokens: hidden.output,
         cache_read_input_tokens: hidden.cacheRead,
         cache_creation_input_tokens: hidden.cacheWrite,
+        cache_creation: { ephemeral_5m_input_tokens: hidden5m, ephemeral_1h_input_tokens: hidden1h },
       }, args.overrides, date);
 
       const key = `${date}|${model}`;
@@ -147,7 +167,8 @@ export function computeUnloggedRows(args: ComputeUnloggedArgs): {
       d.input_tokens += hidden.input;
       d.output_tokens += hidden.output;
       d.cache_read_tokens += hidden.cacheRead;
-      d.cache_write_5m_tokens += hidden.cacheWrite;
+      d.cache_write_5m_tokens += hidden5m;
+      d.cache_write_1h_tokens += hidden1h;
       d.input_usd += cost.inputUsd;
       d.output_usd += cost.outputUsd;
       d.cache_read_usd += cost.cacheReadUsd;

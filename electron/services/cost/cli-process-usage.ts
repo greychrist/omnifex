@@ -22,6 +22,10 @@ export interface CliModelTotals {
   outputTokens: number;
   cacheReadInputTokens: number;
   cacheCreationInputTokens: number;
+  /** The part of cacheCreationInputTokens written with a 1-hour TTL. CLI >=
+   *  2.1.311; absent from older CLIs, and counts only turns a recording
+   *  version ran. */
+  cacheCreationEphemeral1hInputTokens?: number;
 }
 
 /** Keyed by the CLI's model id, e.g. `claude-opus-5-5[1m]`. */

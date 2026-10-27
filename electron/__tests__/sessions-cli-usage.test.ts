@@ -50,6 +50,19 @@ describe('CLI usage capture', () => {
     })]);
   });
 
+  // CLI >= 2.1.311 splits cache writes by TTL in its totals. The 1-hour count
+  // is kept so the unlogged remainder can be priced at the 1-hour rate; an
+  // older CLI's totals have no such field and none is invented.
+  it('keeps the 1-hour cache-write count when the CLI reports one', () => {
+    const events: CliUsageEvent[] = [];
+    const h = handle(() => ({}));
+    h.cliProcess = { id: 'p1', startedAt: 't0' };
+    const split = { ...OPUS, cacheCreationEphemeral5mInputTokens: 849, cacheCreationEphemeral1hInputTokens: 70000 };
+    recordResultUsage(h, { type: 'result', modelUsage: { a: split, b: OPUS } }, (e) => { events.push(e); }, now);
+    const base = { inputTokens: 2116, outputTokens: 5299, cacheReadInputTokens: 425072, cacheCreationInputTokens: 70849 };
+    expect(events[0].modelUsage).toEqual({ a: { ...base, cacheCreationEphemeral1hInputTokens: 70000 }, b: base });
+  });
+
   it('ignores a result with no totals, and a handle with no open process', () => {
     const sink = vi.fn();
     const h = handle(() => ({}));
