@@ -5,6 +5,17 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.8] — 2026-10-27
+
+### Changed
+
+- Spend the CLI counts but no transcript records (side questions, title generation) is now priced at the 1-hour cache-write rate for the share the CLI reports as 1-hour, instead of pricing every hidden cache write at the 5-minute rate. Needs Claude Code 2.1.311 or later; figures from older CLIs are priced as before.
+- Reviewed against Claude Code 2.1.311.
+
+### Fixed
+
+- Sessions on Claude Code 2.1.311 no longer show an "Unrecognized record: tools-used" card each time the conversation uses a new tool.
+
 ## [0.5.7] — 2026-10-26
 
 ### Added
