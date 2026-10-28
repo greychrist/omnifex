@@ -30,6 +30,9 @@ import {
   PlugIcon, SearchIcon, SparklesIcon, TerminalIcon, WrenchIcon, type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { accentStyleFor, cardRadiusStyle, swatchFor } from '@/lib/accentStyle';
+import { deriveSystemContextLabel } from '@/lib/blockKind';
+import { useMessageRenderingConfig } from '@/contexts/MessageRenderingContext';
 import { useClaudeSessionStore } from '@/stores/claudeSessionStore';
 import { MessageResponse, Shimmer } from './primitives';
 import {
@@ -154,7 +157,9 @@ export function ReasoningLine({
   return (
     <TraceCollapsible open={chosen ?? running} onOpenChange={setChosen}>
       <TraceCollapsibleTrigger>{line}</TraceCollapsibleTrigger>
-      <TraceCollapsibleContent className="whitespace-pre-wrap">{text}</TraceCollapsibleContent>
+      {/* Brighter than the muted step chrome around it, so the reasoning
+          itself stands out from the titles and commands. */}
+      <TraceCollapsibleContent className="whitespace-pre-wrap text-foreground/85">{text}</TraceCollapsibleContent>
     </TraceCollapsible>
   );
 }
@@ -295,6 +300,9 @@ function stepBody(entry: ToolEntry, ctx: RowContext): React.ReactNode {
       if (sources.length > 0) return <SourceList sources={sources} />;
       break;
     }
+    case 'Skill':
+      if (entry.skillBody) return <SkillBody text={entry.skillBody} />;
+      break;
     case 'Agent':
     case 'Task':
       return result ? <div className="text-foreground"><MessageResponse>{result}</MessageResponse></div> : null;
@@ -314,6 +322,27 @@ function stepBody(entry: ToolEntry, ctx: RowContext): React.ReactNode {
     );
   }
   return null;
+}
+
+/** A skill's SKILL.md, in the colours and corner radius of the classic
+ *  skill card it replaces (Appearance › Skill injection, All cards). */
+function SkillBody({ text }: { text: string }) {
+  const { config } = useMessageRenderingConfig();
+  const swatch = swatchFor(config, 'user.skillInjection');
+  return (
+    <div
+      data-skill-body
+      className="border px-3 py-2"
+      style={{ ...accentStyleFor(config, 'user.skillInjection'), ...cardRadiusStyle(config) }}
+    >
+      <div className="mb-1 text-xs font-medium" style={swatch ? { color: swatch } : undefined}>
+        {deriveSystemContextLabel(text)}
+      </div>
+      <div className="max-h-72 overflow-auto text-foreground">
+        <MessageResponse>{text}</MessageResponse>
+      </div>
+    </div>
+  );
 }
 
 /** Trace's code block: a step's output in the code face, red when it failed. */

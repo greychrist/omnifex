@@ -130,6 +130,18 @@ describe('keepUnchangedItems', () => {
     const third = keepUnchangedItems(second, buildModernItems([p, bash, res, done], createDefaultConfig()));
     expect(third.every((item, i) => item === second[i])).toBe(true);
   });
+
+  it('replaces a Skill step when its body arrives after the result', () => {
+    const use = toolUse('s1', 'Skill', { skill: 'x' });
+    const res = toolResult('s1', 'Launching skill: x');
+    const body = {
+      kind: 'user', userKind: 'meta-skill', sessionId: '', receivedAt: '',
+      raw: { type: 'user', isMeta: true, sourceToolUseID: 's1', message: { role: 'user', content: [{ type: 'text', text: '# X' }] } },
+    } as unknown as JsonlNode;
+    const first = buildModernItems([prompt('go'), use, res], createDefaultConfig());
+    const second = keepUnchangedItems(first, buildModernItems([prompt('go'), use, res, body], createDefaultConfig()));
+    expect(second[1]).not.toBe(first[1]);
+  });
 });
 
 describe('buildModernItems — results outside the displayable rows', () => {
@@ -310,5 +322,23 @@ describe('buildModernItems — injected user records', () => {
   it('still draws a prompt you typed', () => {
     const items = buildModernItems([injected('human', 'mine')], createDefaultConfig());
     expect(items.map((i) => (i.kind === 'prompt' ? i.text : i.kind))).toEqual(['mine']);
+  });
+
+  it('folds a skill body into its Skill step instead of drawing the classic card', () => {
+    const use = toolUse('s1', 'Skill', { skill: 'omnifex-release' });
+    const res = toolResult('s1', 'Launching skill: omnifex-release');
+    const body = {
+      kind: 'user', userKind: 'meta-skill', sessionId: '', receivedAt: '',
+      raw: { type: 'user', isMeta: true, sourceToolUseID: 's1', message: { role: 'user', content: [{ type: 'text', text: 'Base directory for this skill: /x\n\n# OmniFex Release' }] } },
+    } as unknown as JsonlNode;
+    const items = buildModernItems([prompt('ship'), use, res, body, text('Done.')], createDefaultConfig());
+
+    expect(kinds(items)).toEqual(['prompt', 'work', 'text']);
+    const work = items[1];
+    if (work.kind !== 'work') throw new Error('not work');
+    const [entry] = work.entries;
+    if (entry.type !== 'tool') throw new Error('not tool');
+    expect(entry.skillBody).toContain('# OmniFex Release');
+    expect(work.nodes).toContain(body);
   });
 });

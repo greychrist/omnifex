@@ -100,6 +100,14 @@ html {
 .modern-format .modern-answer > :last-child {
   margin-bottom: 0;
 }
+/* Your prompt in Modern: a faint blue tint over the theme's own muted
+   colour, a hairline blue border and a soft drop shadow, so it reads in
+   both the dark and light themes. */
+.modern-format .modern-prompt {
+  background-color: color-mix(in oklch, var(--color-muted) 82%, oklch(0.62 0.17 255));
+  border: 1px solid color-mix(in oklch, var(--color-border) 55%, oklch(0.62 0.17 255));
+  box-shadow: 0 1px 2px oklch(0 0 0 / 0.12), 0 2px 8px oklch(0.45 0.15 255 / 0.12);
+}
 
 
 /* Plus Jakarta Sans */

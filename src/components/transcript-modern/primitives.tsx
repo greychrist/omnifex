@@ -11,6 +11,8 @@ import * as React from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { cn } from '@/lib/utils';
+import { cardRadiusStyle } from '@/lib/accentStyle';
+import { useMessageRenderingConfig } from '@/contexts/MessageRenderingContext';
 import { useTheme } from '@/hooks';
 import { getClaudeSyntaxTheme } from '@/lib/claudeSyntaxTheme';
 import { buildMarkdownComponents } from '@/lib/markdownComponents';
@@ -36,9 +38,15 @@ export function Message({ from, children }: { from: 'user' | 'assistant'; childr
 }
 
 export function UserBubble({ children }: { children: React.ReactNode }) {
+  const { config } = useMessageRenderingConfig();
   return (
-    // shadcn's Bubble (variant muted): a pill, not a card.
-    <div className="max-w-[80%] rounded-3xl bg-muted px-3 py-2.5 text-sm leading-relaxed break-words text-foreground">
+    // Cornered like every card (All cards › Corner radius). Tint, border and
+    // shadow are `.modern-prompt` in styles.css — the unlayered
+    // `* { border-color }` reset there beats any Tailwind border-color utility.
+    <div
+      className="modern-prompt max-w-[80%] px-3 py-2.5 text-sm leading-relaxed break-words text-foreground"
+      style={cardRadiusStyle(config)}
+    >
       {children}
     </div>
   );

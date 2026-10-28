@@ -107,4 +107,24 @@ describe('Modern chain of thought — shadcn Trace steps', () => {
       expect(within(s as HTMLElement).getByRole('button', { name: /raw JSON/i })).toBeInTheDocument();
     });
   });
+
+  it('sets an opened thought brighter than the muted step chrome', () => {
+    open([thought, tool('Bash', { command: 'npm test' }, 'ok')]);
+    fireEvent.click(screen.getByRole('button', { name: /^Thought/ }));
+    const body = screen.getByText('hmm');
+    expect(body).not.toHaveClass('text-muted-foreground');
+    expect(body.className).toMatch(/text-foreground/);
+  });
+
+  it('opens a Skill step onto the skill body, in the skill card colours and corner radius', () => {
+    const skill = { ...tool('Skill', { skill: 'omnifex-release' }, 'Launching skill: omnifex-release'), skillBody: 'Base directory for this skill: /x\n\n# OmniFex Release\n\nShip it.' } as WorkEntry;
+    open([skill]);
+    fireEvent.click(screen.getByRole('button', { name: /Used omnifex-release/ }));
+    expect(screen.queryByText('Launching skill: omnifex-release')).toBeNull();
+    const box = screen.getByText('Ship it.').closest('[data-skill-body]') as HTMLElement;
+    expect(box).not.toBeNull();
+    expect(box.style.borderRadius).toBe('12px');
+    expect(box.style.borderColor).not.toBe('');
+    expect(within(box).getByText('Skill: OmniFex Release')).toBeInTheDocument();
+  });
 });

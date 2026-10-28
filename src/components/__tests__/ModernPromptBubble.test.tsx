@@ -31,4 +31,13 @@ describe('Modern prompt bubble', () => {
     render(<ModernTranscriptItem item={prompt('hello there')} live={false} ctx={ctx} />);
     expect(screen.getByText('hello there').closest('.font-mono')).toBeNull();
   });
+
+  it('draws the prompt in the tinted, bordered bubble', () => {
+    render(<ModernTranscriptItem item={prompt('hello there')} live={false} ctx={ctx} />);
+    const bubble = screen.getByText('hello there').closest('.modern-prompt');
+    expect(bubble).not.toBeNull();
+    expect(bubble).not.toHaveClass('bg-muted');
+    // The card corner radius (All cards › Corner radius), not a pill.
+    expect((bubble as HTMLElement).style.borderRadius).toBe('12px');
+  });
 });

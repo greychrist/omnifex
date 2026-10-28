@@ -53,6 +53,9 @@ export type WorkEntry =
       status: ToolStatus;
       resultNode?: JsonlNode;
       resultText?: string;
+      /** A Skill step's SKILL.md body — the CLI's companion record, folded in
+       *  so the step, not a classic card beside it, is the skill's one row. */
+      skillBody?: string;
     };
 
 export type ModernItem =
@@ -205,6 +208,7 @@ export function buildModernItems(
   // closures below reassign it, which flow analysis does not follow.
   let work = null as Extract<ModernItem, { kind: 'work' }> | null;
   let pendingTokens: number | null = null;
+  const skillEntries = new Map<string, { entry: Extract<WorkEntry, { type: 'tool' }>; work: Extract<ModernItem, { kind: 'work' }> }>();
 
   const closeWork = () => { work = null; };
   const openWork = (key: string) => {
@@ -274,12 +278,14 @@ export function buildModernItems(
               return;
             }
             const w = openWork(key);
-            w.entries.push({
+            const entry: Extract<WorkEntry, { type: 'tool' }> = {
               type: 'tool', key, node, id, name: b.name, input,
               status: res === undefined ? 'pending' : res.error ? 'error' : 'done',
               resultNode: res?.node,
               resultText: res?.text,
-            });
+            };
+            w.entries.push(entry);
+            if (b.name === 'Skill') skillEntries.set(id, { entry, work: w });
             if (!w.nodes.includes(node)) w.nodes.push(node);
             if (res && !w.nodes.includes(res.node)) w.nodes.push(res.node);
           }
@@ -297,6 +303,18 @@ export function buildModernItems(
       const n = (node.raw as { estimated_tokens?: unknown }).estimated_tokens;
       if (typeof n === 'number') pendingTokens = n;
       continue;
+    }
+
+    // A skill's body: the CLI names the Skill call it belongs to. A
+    // re-invocation sends a preamble and the body, so both are kept.
+    if (node.kind === 'user' && node.userKind === 'meta-skill') {
+      const source = skillEntries.get(String((node.raw as { sourceToolUseID?: unknown }).sourceToolUseID ?? ''));
+      if (source) {
+        const body = plainText(node);
+        source.entry.skillBody = source.entry.skillBody ? `${source.entry.skillBody}\n\n${body}` : body;
+        if (!source.work.nodes.includes(node)) source.work.nodes.push(node);
+        continue;
+      }
     }
 
     const notice = noticeOf(node);
@@ -347,7 +365,7 @@ function sameEntries(a: WorkEntry[], b: WorkEntry[]): boolean {
   return a.length === b.length && a.every((x, i) => {
     const y = b[i];
     if (x.type !== y.type || x.key !== y.key) return false;
-    if (x.type === 'tool' && y.type === 'tool') return x.node === y.node && x.resultNode === y.resultNode && x.status === y.status;
+    if (x.type === 'tool' && y.type === 'tool') return x.node === y.node && x.resultNode === y.resultNode && x.status === y.status && x.skillBody === y.skillBody;
     if (x.type === 'thinking' && y.type === 'thinking') return x.node === y.node && x.text === y.text && x.ms === y.ms && x.tokens === y.tokens;
     return false;
   });
