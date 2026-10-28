@@ -5,6 +5,11 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.14] — 2026-10-28
+
+### Changed
+- Modern chat: each step's icon sits in a small bordered chip, like the card-header icons in the other formats, and is brighter than the step's title so the kinds of step read at a glance. A failed step's chip turns red — icon, fill and border — to match its red line.
+
 ## [0.5.13] — 2026-10-28
 
 ### Changed
