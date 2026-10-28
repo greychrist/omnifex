@@ -146,4 +146,21 @@ describe('Modern chain of thought — shadcn Trace steps', () => {
     // utilities lose to the unlayered `* { border-color }` reset.
     expect(icon).toHaveClass('modern-step-icon');
   });
+
+  it('stays open when the run finishes if you opened a step inside it while it was live', () => {
+    const entries = [{ ...thought, text: 'reasoning here' }, tool('Bash', { command: 'npm test' }, 'ok')];
+    const r = render(<ChainOfThought entries={entries} nodes={[]} live ctx={ctx} />);
+    fireEvent.click(screen.getByRole('button', { name: /^Thought/ }));
+    expect(screen.getByText('reasoning here')).toBeVisible();
+    r.rerender(<ChainOfThought entries={entries} nodes={[]} live={false} ctx={ctx} />);
+    expect(screen.getByRole('button', { name: /Worked in/ })).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByText('reasoning here')).toBeVisible();
+  });
+
+  it('still closes a finished run nobody touched', () => {
+    const entries = [thought, tool('Bash', { command: 'npm test' }, 'ok')];
+    const r = render(<ChainOfThought entries={entries} nodes={[]} live ctx={ctx} />);
+    r.rerender(<ChainOfThought entries={entries} nodes={[]} live={false} ctx={ctx} />);
+    expect(screen.getByRole('button', { name: /Worked in/ })).toHaveAttribute('aria-expanded', 'false');
+  });
 });

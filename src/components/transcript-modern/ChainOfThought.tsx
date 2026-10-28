@@ -75,7 +75,8 @@ export const ChainOfThought = React.memo(function ChainOfThought({
   ctx: RowContext;
 }) {
   // Follows the run (open while live, closed once done) until the user
-  // chooses, then keeps their choice.
+  // chooses — by its header, or by clicking anything inside it — then keeps
+  // their choice.
   const [chosen, setChosen] = React.useState<boolean | null>(null);
   const open = chosen ?? live;
 
@@ -114,7 +115,9 @@ export const ChainOfThought = React.memo(function ChainOfThought({
             {!live && header.description && <TraceDescription>{header.description}</TraceDescription>}
           </TraceLine>
         </TraceCollapsibleTrigger>
-        <TraceCollapsibleContent>
+        {/* A click inside an open run — opening a step, say — pins it open:
+            otherwise the run closes over that step the moment it finishes. */}
+        <TraceCollapsibleContent onClickCapture={() => { if (chosen === null) setChosen(true); }}>
           <Trace>
             {entries.map((entry) => <Step key={entry.key} entry={entry} live={live} ctx={ctx} />)}
             {thought}
