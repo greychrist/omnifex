@@ -5,6 +5,17 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.12] — 2026-10-28
+
+### Changed
+- Modern chat format: each work step now shows an icon for what it did — a brain for a thought, a terminal for a command, a file for a read or edit, a globe for the web, git icons for commits and new branches — instead of the same check mark on every step. A failed step turns red and its title says "Failed to …".
+- Modern chat format: command steps are titled by what ran ("Ran npm test"); the model's description of the command is the tooltip.
+- Modern chat format: opening a step shows its result alone — a command's output, an edit's diff, a file's contents, the sources a web step used, a subagent's reply — instead of the full classic tool card. Errors show in a red block, and reads have nothing to open.
+- Modern chat format: copy and raw JSON sit beside every step on hover (always visible on the iPad).
+
+### Fixed
+- Modern chat format: a slash command's bubble sets only the command name in monospace, not its arguments.
+
 ## [0.5.11] — 2026-10-28
 
 ### Fixed
