@@ -91,7 +91,9 @@ export type ParseResult =
 const SECTION_HEADERS = {
   session: /^[ \t]*Session\s*$/m,
   current_session: /^[ \t]*Current session\s*$/m,
-  contributing: /^[ \t]*What's contributing to your limits usage\?\s*$/m,
+  // 2.1.312 dropped "limits" from the header; older CLIs, still possible on
+  // another account's config dir, print the original wording.
+  contributing: /^[ \t]*(?:What's contributing to your usage|What's contributing to your limits usage)\?\s*$/m,
   skills_table: /^[ \t]*Skills\s+% of usage\s*$/m,
   subagents_table: /^[ \t]*Subagents\s+% of usage\s*$/m,
   plugins_table: /^[ \t]*Plugins\s+% of usage\s*$/m,

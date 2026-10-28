@@ -101,6 +101,9 @@ grep, a file read or a transcript behind it.
    - Most movement is minifier renaming. Say which lines are real.
    - Exit 2 / \`ANCHOR NOT FOUND\` means the CLI or the script moved. An empty
      set is not a clean result: fix the script, then rerun.
+   - A \`/usage\` anchor marked \`DROPPED\` is a reword until shown otherwise.
+     The binary embeds its own changelog, which keeps quoting the old string,
+     so a nonzero count can still mean the scraper is blind.
    - If \`{reviewedVersion}\` is not installed, the script still runs the
      coverage half. Say the version diff was skipped, and lean harder on
      step 4.

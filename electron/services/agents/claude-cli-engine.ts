@@ -308,6 +308,7 @@ export function createClaudeCliEngine(
         models?: unknown[];
         agents?: unknown[];
         plugins?: unknown[];
+        capabilities?: unknown;
       };
       initData = {
         account: init.account,
@@ -315,6 +316,9 @@ export function createClaudeCliEngine(
         models: init.models,
         agents: init.agents,
         plugins: init.plugins,
+        capabilities: Array.isArray(init.capabilities)
+          ? init.capabilities.filter((c): c is string => typeof c === 'string')
+          : undefined,
       };
     }
     // --include-partial-messages defers the assistant's resolved stop_reason

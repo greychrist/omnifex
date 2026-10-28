@@ -44,6 +44,65 @@ import { buildClaudeEnv } from './util/claude-env';
  *    "side_question timed out: the host did not answer in time". Only the
  *    SDK's `askSideQuestion()` documents it.
  *
+ * Last review: 2.1.311 -> 2.1.312 on 2026-10-27. Findings: one `/usage`
+ * regression, fixed in the same change — the contributing header lost
+ * "limits".
+ *
+ *  Changelog coverage: 2.1.312 (~40 entries). Both ends installed.
+ *  Script: merge map (41), `type:` (850), `subtype:` (160),
+ *  hook_event_name (33), control_* (4), SDK requests (55), CLI flags (115),
+ *  origin kinds (13), can_use_tool keys (11) identical; installed-vs-OmniFex
+ *  clean.
+ *  - /usage: "What's contributing to your limits usage?" is now "What's
+ *    contributing to your usage?" (3 -> 0 in the UI; the 1 left is the
+ *    embedded changelog). The header is isUsageOutputComplete's "window list
+ *    finished" signal and windowBlock's lower bound, so every subscription
+ *    poll lost the fast path and paid the full quiet timeout. FIXED:
+ *    usage-runner/parser.ts matches both wordings (older CLIs on another
+ *    config dir still print the old one). Script: USAGE_ANCHORS carries
+ *    both; any count drop now prints DROPPED, since the embedded changelog
+ *    hid this one from the "0 means blind" rule.
+ *  - `.describe()` +18 -5 (after lifting the script's 800-char cap, which
+ *    had hidden the init `capabilities` text): AskUserQuestion annotations
+ *    gain optional `unanswered: 'skipped'|'replied_in_chat'|'dismissed'`,
+ *    gated on init capability `ask_user_question_unanswered_v1` ("send it
+ *    only to a session that advertises this"; 2.1.312 always does). TAKEN
+ *    the same day: claude-cli-engine.ts keeps `capabilities` in InitData;
+ *    sessions/permissions.ts turns Cancel on the card into an allow with
+ *    `dismissed`, and lifecycle.ts answers an open question as
+ *    `replied_in_chat` before writing a chat message the user sends over
+ *    it (user sends only, not auto-recap). Without the capability both stay
+ *    as before (deny / message queues behind the card). `skipped` not used —
+ *    the card has no per-question skip. `start_shell_task` (+ payload
+ *    strings) is @internal cloud-session Bash; `--await-claim` parked
+ *    spare; get_settings `applied` / effort wording ("next message"); shell
+ *    CPU telemetry. Inert.
+ *  - Object keys +239 -115: auto-mode classifier rewrite internals, effort
+ *    `sentEffort`/`turnEffort` on the spinner and stream_event
+ *    message_start (we don't read either), workshop/artifact removal,
+ *    bytecode stats, OIDC `user_id_claim`. None on user/assistant records,
+ *    permission requests or the initialize reply.
+ *  - `side_question` (standing list): error strings, 660 s deadline and
+ *    request literal unchanged.
+ *  - Checked, inert: "5-hour limit" replaces "session limit" in limit
+ *    messages — rate-limits.ts keys on structured `rateLimitType`, and
+ *    `/usage`'s "Current session" anchor is unchanged (3 -> 3); effort
+ *    named in transcripts as the level in force (we derive effort from our
+ *    own control-change, not the transcript).
+ *  - In our favour, nothing to do: an invalid command name no longer blanks
+ *    `claude -p` output (summary-query.ts); first reply after resume no
+ *    longer lost; Write won't clobber a huge CLAUDE.md seen only in part.
+ *  - Inert: Claude apps gateway OIDC, click-to-send, VS Code managed
+ *    settings, `paths:` skills after cd, pdftoppm race, /model + /effort
+ *    cache wording, agent-view waiting/Ctrl+C/Ctrl+D, vim counts, /verify
+ *    description, WebFetch cloud errors, Bedrock/Vertex/Foundry simple
+ *    prompt and refusal fallback, cloud session names, hook concurrency
+ *    caps (24 + 12), subagent autoCompactWindow, OTel mcp_server.name and
+ *    safety_event, all [VSCode], [Cloud sessions], [Remote Control],
+ *    [Claude Tag], [Code Review] entries.
+ *
+ *  OPEN ITEMS (carry forward; re-check each review): none.
+ *
  * Last review: 2.1.310 -> 2.1.311 on 2026-10-26. Findings: one bug, fixed
  * in the same change — a new `tools-used` record drew an Unrecognized card.
  *
@@ -4756,7 +4815,7 @@ import { buildClaudeEnv } from './util/claude-env';
  * `~/.claude.json` fix (we read-modify-write that file, never replace it), and
  * the VSCode screen-reader work.
  */
-export const REVIEWED_CLI_VERSION = '2.1.311';
+export const REVIEWED_CLI_VERSION = '2.1.312';
 
 /**
  * app_settings key holding the user's explicit OmniFex-checkout override.

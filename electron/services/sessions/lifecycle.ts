@@ -25,6 +25,7 @@ import {
   createPermissionRequestHandler,
   createPermissionCancelHandler,
   respondPermission as respondPermissionImpl,
+  answerPendingQuestionInChat,
 } from './permissions';
 import { createQueryPassthroughs } from './queries';
 import { createModInspector, createValidateRunner } from './mods';
@@ -450,10 +451,21 @@ export function createSessionsService(
   }
 
   function sendMessage(tabId: string, prompt: string): void {
+    replyToOpenQuestion(tabId);
     const handle = deliverMessage(tabId, prompt);
     if (!handle) return;
     autoRecap?.noteUserSend(tabId);
     maybeAutoTitle(tabId, handle, prompt);
+  }
+
+  /**
+   * A message the user sends while an AskUserQuestion card is open is their
+   * reply to it. Answering first keeps the CLI from sitting on the question
+   * with the message queued behind it. User sends only — never the auto-recap.
+   */
+  function replyToOpenQuestion(tabId: string): void {
+    const handle = sessions.get(tabId);
+    if (handle) answerPendingQuestionInChat(handle, tabId, sendToRenderer);
   }
 
   /** Hand a prompt to the CLI and open the turn — the user's, or the auto-recap's. */
@@ -482,6 +494,7 @@ export function createSessionsService(
     if (!handle) return;
 
     ensureLiveEngine(tabId, handle);
+    replyToOpenQuestion(tabId);
 
     autoRecap?.noteUserSend(tabId);
     setTurn(handle, 'running', tabId, sendToRenderer);

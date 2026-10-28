@@ -109,6 +109,9 @@ export interface InitData {
    *  with `path: "builtin"`. Read by sessions/queries.ts getPlugins so the
    *  list can be shown without a side-effectful reload_plugins. */
   plugins?: unknown[];
+  /** system:init's `capabilities` — protocol features this CLI supports,
+   *  an open set (`ask_user_question_unanswered_v1`, …). Absent on older CLIs. */
+  capabilities?: string[];
 }
 
 /** Per-call knobs for `sendControlRequest`. */

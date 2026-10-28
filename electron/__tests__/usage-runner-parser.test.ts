@@ -175,6 +175,25 @@ What's contributing to your limits usage?
     expect(isUsageOutputComplete(FIXTURE)).toBe(true);
   });
 
+  it('accepts the 2.1.312 header wording ("to your usage", no "limits")', () => {
+    const FIXTURE = `
+Session
+Total cost:             $0.0000
+
+Current session
+6% used
+Resets 3:40am (America/New_York)
+
+Current week (all models)
+7% used
+Resets May 25 at 7pm (America/New_York)
+
+What's contributing to your usage?
+81% of your usage was at >150k context
+`;
+    expect(isUsageOutputComplete(FIXTURE)).toBe(true);
+  });
+
   it('accepts a window-less (enterprise) render once the tables footer prints', () => {
     // Enterprise/Console accounts have no subscription rate-limit windows, so
     // the TUI never renders the "Current session"/"Current week" headers — it

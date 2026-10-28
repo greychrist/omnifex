@@ -85,6 +85,16 @@ describe('EXTRACTORS', () => {
   });
 });
 
+describe('.describe() strings', () => {
+  // 2.1.312 announced `ask_user_question_unanswered_v1` inside the init
+  // `capabilities` description, a ~2,000-character string. An 800-character
+  // cap dropped it, so the host obligation never reached the review.
+  it('keeps a long description whole', () => {
+    const long = `Protocol capabilities. ${'x'.repeat(2500)} send it only to a session that advertises this.`;
+    expect(extractor('.describe() strings').extract(`a.describe("${long}")`)).toEqual([long]);
+  });
+});
+
 describe('diffSets', () => {
   it('reports both directions', () => {
     expect(diffSets(['a', 'b'], ['b', 'c'])).toEqual({ added: ['c'], removed: ['a'] });
@@ -178,6 +188,20 @@ describe('runReview', () => {
     });
     expect(anchorsMissing).toContain('merge-strategy map');
     expect(report).toContain('ANCHOR NOT FOUND');
+  });
+
+  it('flags a /usage anchor whose count dropped, even when it is not zero', async () => {
+    // 2.1.312 reworded the contributing header; the old string survived only
+    // in the binary's embedded changelog, so the count went 3 -> 1 and the
+    // "0 means blind" rule never fired.
+    const old = "What's contributing to your limits usage";
+    const dir = tmpVersions({
+      '1.0.0': fakeBundle(`a="${old}?";b="${old}?";`),
+      '1.0.1': fakeBundle(`a="Fixed /usage under ${old}?";`),
+    });
+    const { report } = await runReview({ from: '1.0.0', to: '1.0.1', versionsDir: dir, repoRoot: REPO });
+    expect(report).toMatch(/limits usage: 2 -> 1 — DROPPED/);
+    expect(report).not.toMatch(/Total cost:: 0 -> 0 — DROPPED/);
   });
 
   it('caps long lists unless asked for all of them', async () => {

@@ -101,8 +101,10 @@ export const EXTRACTORS: Extractor[] = [
   // for new fields on records we already classify — the class of change the
   // type sets cannot see.
   { name: 'object keys', extract: (t) => all(/[{,]([a-zA-Z_][a-zA-Z0-9_]{3,40}):/g, t) },
-  // Where the stream-json schemas document what a host must do.
-  { name: '.describe() strings', extract: (t) => all(/\.describe\("((?:[^"\\]|\\.){10,800})"\)/g, t) },
+  // Where the stream-json schemas document what a host must do. The cap is
+  // generous on purpose: the init `capabilities` text runs past 2,000
+  // characters, and an 800 cap hid 2.1.312's new obligation in it.
+  { name: '.describe() strings', extract: (t) => all(/\.describe\("((?:[^"\\]|\\.){10,8000})"\)/g, t) },
 ];
 
 /**
@@ -112,6 +114,7 @@ export const EXTRACTORS: Extractor[] = [
 export const USAGE_ANCHORS = [
   'Current session',
   'Current week',
+  "What's contributing to your usage",
   "What's contributing to your limits usage",
   'Total cost:',
 ];
@@ -306,7 +309,12 @@ export async function runReview({ from, to, versionsDir, repoRoot, full = false 
     }
     out.push('', `## /usage anchors (occurrences ${from} -> ${to}; 0 means the scraper is blind)`);
     for (const a of USAGE_ANCHORS) {
-      out.push(`- ${a}: ${fromText.split(a).length - 1} -> ${toText.split(a).length - 1}`);
+      const before = fromText.split(a).length - 1;
+      const after = toText.split(a).length - 1;
+      // Any drop is worth a look: the binary embeds its own changelog, which
+      // keeps quoting a reworded string after the UI stops rendering it.
+      const dropped = after < before ? ' — DROPPED: check the string still renders, not just the changelog' : '';
+      out.push(`- ${a}: ${before} -> ${after}${dropped}`);
     }
   }
   if (!fs.existsSync(fromPath)) {

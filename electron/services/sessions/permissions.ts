@@ -634,6 +634,82 @@ export function createPermissionRequestHandler(
 }
 
 // ---------------------------------------------------------------------------
+// AskUserQuestion left unanswered (CLI 2.1.312+)
+// ---------------------------------------------------------------------------
+
+type QueuedPermission = PendingPermission & {
+  toolInput?: Record<string, unknown>;
+  payload?: { kind?: 'tool' | 'patch' | 'exec'; tool_name?: string };
+};
+
+/**
+ * The init capability that lets an answer carry
+ * `annotations[question].unanswered`. Sent only when advertised: an older CLI
+ * on a strict host refuses the whole answer.
+ */
+export const UNANSWERED_CAPABILITY = 'ask_user_question_unanswered_v1';
+
+type Unanswered = 'dismissed' | 'replied_in_chat';
+
+// The model never sees `unanswered`; it reads these.
+const UNANSWERED_TEXT: Record<Unanswered, string> = {
+  dismissed: 'The user dismissed this question without answering.',
+  replied_in_chat: 'The user did not answer this question and replied in chat instead; their message follows.',
+};
+
+function advertisesUnanswered(handle: SessionHandle): boolean {
+  const caps = handle.engine?.getInitData()?.capabilities;
+  return Array.isArray(caps) && caps.includes(UNANSWERED_CAPABILITY);
+}
+
+function unansweredQuestionInput(
+  toolInput: Record<string, unknown> | undefined,
+  how: Unanswered,
+): Record<string, unknown> {
+  const questions = Array.isArray(toolInput?.questions) ? toolInput.questions : [];
+  const answers: Record<string, string> = {};
+  const annotations: Record<string, { unanswered: Unanswered }> = {};
+  for (const q of questions) {
+    const text = (q as { question?: unknown } | null)?.question;
+    if (typeof text !== 'string') continue;
+    answers[text] = UNANSWERED_TEXT[how];
+    annotations[text] = { unanswered: how };
+  }
+  return { questions: toolInput?.questions ?? [], answers, annotations };
+}
+
+/**
+ * The user sent a chat message while an AskUserQuestion card was on screen.
+ * The CLI is blocked on that question, so the message would only queue behind
+ * it; answer the question as `replied_in_chat` instead, so the message is the
+ * reply. Returns false — and changes nothing — when the head is not a
+ * question or the CLI cannot record it.
+ */
+export function answerPendingQuestionInChat(
+  handle: SessionHandle,
+  tabId: string,
+  sendToRenderer: SendToRenderer,
+): boolean {
+  const head = handle.permissionQueue[0] as QueuedPermission | undefined;
+  if (!head || head.payload?.tool_name !== 'AskUserQuestion' || !advertisesUnanswered(handle)) return false;
+  respondPermission(
+    handle,
+    tabId,
+    sendToRenderer,
+    'allow',
+    unansweredQuestionInput(head.toolInput, 'replied_in_chat'),
+    undefined,
+    null,
+    head.requestId,
+  );
+  // The card's own client cleared it on click; this one was answered for it.
+  if (handle.permissionQueue.length === 0) {
+    sendToRenderer(`agent-output:${tabId}`, { type: 'permission_withdrawn', request_id: head.requestId });
+  }
+  return true;
+}
+
+// ---------------------------------------------------------------------------
 // respondPermission — called from IPC when the user clicks allow/deny
 // ---------------------------------------------------------------------------
 
@@ -669,10 +745,7 @@ export function respondPermission(
 
   // Take the addressed entry out of the queue and ship the decision back to
   // the engine.
-  const current = handle.permissionQueue.splice(index, 1)[0] as PendingPermission & {
-    toolInput?: Record<string, unknown>;
-    payload?: { kind?: 'tool' | 'patch' | 'exec' };
-  };
+  const current = handle.permissionQueue.splice(index, 1)[0] as QueuedPermission;
 
   // Codex approval entries carry kind='patch'/'exec' on the queued payload.
   // Their engine.respondPermission accepts just `decision` — passing the
@@ -681,6 +754,14 @@ export function respondPermission(
   // Codex; the engine maps the `decision` arg onto the wire shape itself.
   const isCodexApproval =
     current.payload?.kind === 'patch' || current.payload?.kind === 'exec';
+
+  // Cancel on an AskUserQuestion card closes the question rather than
+  // refusing a tool. A CLI that can record that gets an answer saying so.
+  if (behavior === 'deny' && !isCodexApproval && current.payload?.tool_name === 'AskUserQuestion'
+      && advertisesUnanswered(handle)) {
+    behavior = 'allow';
+    updatedInput = unansweredQuestionInput(current.toolInput, 'dismissed');
+  }
 
   if (handle.engine) {
     if (isCodexApproval) {
