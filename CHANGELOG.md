@@ -5,6 +5,12 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.11] — 2026-10-28
+
+### Fixed
+
+- The Modern chat format no longer shows a background task's completion notice, or an orchestrator's message to a subagent, as a message you typed. Like Compact, it hides task notifications by default.
+
 ## [0.5.10] — 2026-10-28
 
 ### Added
