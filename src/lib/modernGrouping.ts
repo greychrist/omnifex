@@ -25,6 +25,7 @@ import { isMessageFullyHidden } from './compactGrouping';
 import { isMainPrompt } from './transcriptStepper';
 import { rowKeyOf } from './rowKey';
 import { commandEnvelopeKind, parseCommandEnvelope } from './commandEnvelope';
+import { originInjectedKind } from './messageKind';
 import { formatTokens } from './contextPressure';
 import { shortDuration } from './modernSteps';
 
@@ -128,6 +129,9 @@ type PromptShape = Pick<Extract<ModernItem, { kind: 'prompt' }>, 'text' | 'image
  */
 function promptOf(node: JsonlNode): PromptShape | null {
   if (node.kind !== 'user') return null;
+  // A task notification or coordinator message: injected, not typed. Left
+  // to the rules every format shares (Compact hides it by default).
+  if (originInjectedKind(node.raw) !== null) return null;
   const text = plainText(node);
   const isEcho = commandEnvelopeKind(text) === 'echo';
   if (isEcho && (node.userKind === 'local-command' || isMainPrompt(node))) {

@@ -287,3 +287,28 @@ describe('buildModernItems — compaction', () => {
     expect(kinds(items)).toEqual(['compaction']);
   });
 });
+
+describe('buildModernItems — injected user records', () => {
+  const injected = (originKind: string, text: string) => ({
+    kind: 'user', userKind: 'prompt', sessionId: '', receivedAt: '',
+    raw: { type: 'user', origin: { kind: originKind }, message: { role: 'user', content: [{ type: 'text', text }] } },
+  } as unknown as JsonlNode);
+
+  // Stamped as injected, not typed: never your bubble. Compact hides a task
+  // notification by default, so Modern leaves it out too.
+  it('does not draw a task notification as your prompt', () => {
+    const note = injected('task-notification', '<task-notification>\n<summary>Background command "Build" completed (exit code 0)</summary>\n</task-notification>');
+    const items = buildModernItems([prompt('go'), note], createDefaultConfig());
+    expect(items.map((i) => (i.kind === 'prompt' ? i.text : i.kind))).toEqual(['go']);
+  });
+
+  it('does not draw a coordinator message as your prompt', () => {
+    const items = buildModernItems([injected('coordinator', 'carry on')], createDefaultConfig());
+    expect(items.filter((i) => i.kind === 'prompt')).toEqual([]);
+  });
+
+  it('still draws a prompt you typed', () => {
+    const items = buildModernItems([injected('human', 'mine')], createDefaultConfig());
+    expect(items.map((i) => (i.kind === 'prompt' ? i.text : i.kind))).toEqual(['mine']);
+  });
+});
