@@ -127,4 +127,23 @@ describe('Modern chain of thought — shadcn Trace steps', () => {
     expect(box.style.borderColor).not.toBe('');
     expect(within(box).getByText('Skill: OmniFex Release')).toBeInTheDocument();
   });
+
+  it('sets step icons in a bordered chip, brighter than the muted step titles', () => {
+    open([thought, tool('Bash', { command: 'npm test' }, 'ok')]);
+    document.querySelectorAll('[data-step-kind]').forEach((icon) => {
+      expect(icon.className).toMatch(/text-foreground\/85/);
+      expect(icon).toHaveClass('border', 'rounded-md');
+    });
+    expect(document.querySelectorAll('[data-step-kind]').length).toBe(2);
+  });
+
+  it('lets a failed step turn its icon chip red, over the brighter default', () => {
+    open([tool('Grep', { pattern: 'x' }, 'No such file or directory', 'error')]);
+    const icon = document.querySelector('[data-step-kind]')!;
+    expect(icon.closest('[data-status="error"]')).not.toBeNull();
+    expect(icon.className).toMatch(/in-data-\[status=error\]:text-destructive/);
+    // Its border is red via `.modern-step-icon` in styles.css: border-colour
+    // utilities lose to the unlayered `* { border-color }` reset.
+    expect(icon).toHaveClass('modern-step-icon');
+  });
 });

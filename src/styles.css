@@ -108,6 +108,12 @@ html {
   border: 1px solid color-mix(in oklch, var(--color-border) 55%, oklch(0.62 0.17 255));
   box-shadow: 0 1px 2px oklch(0 0 0 / 0.12), 0 2px 8px oklch(0.45 0.15 255 / 0.12);
 }
+/* A failed step's icon chip: red border to match its red icon and line.
+   A rule, not a utility, because the `* { border-color }` reset above beats
+   every Tailwind border-colour utility. */
+[data-status="error"] .modern-step-icon {
+  border-color: color-mix(in oklch, var(--color-destructive) 50%, transparent);
+}
 
 
 /* Plus Jakarta Sans */

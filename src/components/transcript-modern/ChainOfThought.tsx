@@ -185,7 +185,18 @@ const KIND_ICONS: Record<StepKind | 'thought', LucideIcon> = {
 
 function KindIcon({ kind }: { kind: StepKind | 'thought' }) {
   const Icon = KIND_ICONS[kind];
-  return <TraceIcon data-step-kind={kind}><Icon /></TraceIcon>;
+  // A chip like the classic card header's icon, as bright as an opened
+  // thought. The negative margins cancel the padding and border, so the
+  // chip keeps the 16px box the thought's left rule is centred under.
+  // A failed step's red border is `.modern-step-icon` in styles.css.
+  return (
+    <TraceIcon
+      data-step-kind={kind}
+      className="modern-step-icon -m-[3px] size-[22px] rounded-md border bg-muted/40 text-foreground/85 in-data-[status=error]:bg-destructive/10 in-data-[status=error]:text-destructive"
+    >
+      <Icon className="size-3" />
+    </TraceIcon>
+  );
 }
 
 type ToolEntry = Extract<WorkEntry, { type: 'tool' }>;
