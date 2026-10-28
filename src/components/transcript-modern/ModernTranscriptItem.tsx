@@ -35,6 +35,18 @@ function timeOf(node: JsonlNode): string | null {
   return Number.isNaN(d.getTime()) ? null : d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' });
 }
 
+/** A slash command's line: the `/name` in mono, its arguments in the body font. */
+function CommandLine({ text }: { text: string }) {
+  const at = text.indexOf(' ');
+  const name = at === -1 ? text : text.slice(0, at);
+  return (
+    <>
+      <span className="font-mono">{name}</span>
+      {at !== -1 && text.slice(at)}
+    </>
+  );
+}
+
 export const ModernTranscriptItem = React.memo(function ModernTranscriptItem({
   item,
   live,
@@ -64,7 +76,9 @@ export const ModernTranscriptItem = React.memo(function ModernTranscriptItem({
               </div>
             )}
             {item.text.trim() && (
-              <p className={item.command ? 'whitespace-pre-wrap break-words font-mono' : 'whitespace-pre-wrap break-words'}>{item.text}</p>
+              <p className="whitespace-pre-wrap break-words">
+                {item.command ? <CommandLine text={item.text} /> : item.text}
+              </p>
             )}
           </UserBubble>
           <MessageActions from="user">
