@@ -5,6 +5,13 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.13] — 2026-10-28
+
+### Changed
+- Modern chat: your prompt is drawn in a blue-tinted bubble with a subtle border and drop shadow, cornered like every other card (All cards › Corner radius).
+- Modern chat: an opened thought's text is brighter than the step titles around it, so the reasoning stands out.
+- Modern chat: a skill's instructions open inside its "Used <skill>" step, in the skill card's colours, instead of a separate classic skill card beneath it.
+
 ## [0.5.12] — 2026-10-28
 
 ### Changed
