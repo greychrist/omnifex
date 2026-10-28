@@ -238,8 +238,11 @@ describe('ClaudeCliEngine', () => {
     await engine.start(baseParams);
     await engine.send('hello there');
 
-    expect(fake.stdin._writes).toHaveLength(1);
-    const sent = JSON.parse(fake.stdin._writes[0]!.trim());
+    // Start writes the thinking-display request first (see
+    // claude-cli-engine-thinking-display.test.ts); the prompt follows it.
+    expect(fake.stdin._writes).toHaveLength(2);
+    expect(JSON.parse(fake.stdin._writes[0]!.trim()).request?.subtype).toBe('set_max_thinking_tokens');
+    const sent = JSON.parse(fake.stdin._writes[1]!.trim());
     expect(sent.type).toBe('user');
     expect(sent.message.content).toEqual([{ type: 'text', text: 'hello there' }]);
   });

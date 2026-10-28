@@ -104,3 +104,12 @@ describe('SessionViewToggle', () => {
     expect(onChange).toHaveBeenCalledWith('all');
   });
 });
+
+describe('SessionViewToggle — Modern', () => {
+  it('offers Modern as a fourth format', () => {
+    const onChange = vi.fn();
+    render(<SessionViewToggle mode="compact" onChange={onChange} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Modern' }));
+    expect(onChange).toHaveBeenCalledWith('modern');
+  });
+});

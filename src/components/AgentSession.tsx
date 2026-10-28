@@ -48,6 +48,9 @@ import { SessionMCPStatus } from "./SessionMCPStatus";
 import { SessionContextPanel, SessionContextRefreshButton } from "./SessionContextPanel";
 import { PermissionCard } from "./PermissionCard";
 import { AskUserQuestionCard } from "./AskUserQuestionCard";
+import { TranscriptSkeleton } from "./claude/TranscriptSkeleton";
+import { ModernQuestionCard } from "./transcript-modern/ModernQuestion";
+import { ModernPermissionCard } from "./transcript-modern/ModernPermissionCard";
 import { ElicitationDialog, type ElicitationRequest } from "./ElicitationDialog";
 import { SessionPermissionsEditor } from "./SessionPermissionsEditor";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -76,7 +79,7 @@ import {
 import type { ModelPricingInput } from '@/lib/pricing';
 import { runStreamEffect, drainQueuedPrompt } from '@/lib/sessionStreamEffects';
 import { QueuedPromptsPanel } from '@/components/QueuedPromptsPanel';
-import { appendInflightDelta } from '@/lib/inflightCoalescer';
+import { appendInflightDelta, appendInflightThinkingDelta, clearInflightThinking } from '@/lib/inflightCoalescer';
 import { maybeAutoGenerateSummaryOnLeave } from "@/lib/sessionSummaryGate";
 import { SessionViewToggle, type ViewMode } from "./SessionViewToggle";
 // deriveConversationStatus import removed — derivation moved into useSessionLifecycle (Task 2).
@@ -818,6 +821,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   useEffect(() => () => {
     const tabId = tabIdRef.current;
     clearInflightBuffer(tabId);
+    clearInflightThinking(tabId);
     useClaudeSessionStore.getState().clearInflightAssistant(tabId);
   }, []);
   const floatingPromptRef = useRef<FloatingPromptInputRef>(null);
@@ -1112,6 +1116,9 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   }, [taskEntries]);
 
   const [viewMode, setViewMode] = useState<ViewMode>('compact');
+  // The live question and permission cards follow the chat format's look.
+  const ActiveQuestionCard = viewMode === 'modern' ? ModernQuestionCard : AskUserQuestionCard;
+  const ActivePermissionCard = viewMode === 'modern' ? ModernPermissionCard : PermissionCard;
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -1494,6 +1501,19 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
         ) {
           appendInflightDelta(tabIdRef.current, m.uuid, event.delta.text, m.parent_tool_use_id);
         }
+        // The thought being had, as it is typed (summarized display — see
+        // claude-cli-engine start). A new thinking block starts a new thought.
+        if (event?.type === 'content_block_start' && event.content_block?.type === 'thinking') {
+          clearInflightThinking(tabIdRef.current);
+        }
+        if (
+          event?.type === 'content_block_delta' &&
+          event.delta?.type === 'thinking_delta' &&
+          typeof event.delta.thinking === 'string' &&
+          event.delta.thinking !== ''
+        ) {
+          appendInflightThinkingDelta(tabIdRef.current, event.delta.thinking);
+        }
         return;
       }
 
@@ -1638,6 +1658,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
         ) {
           store.clearInflightAssistant(tabIdRef.current);
           clearInflightBuffer(tabIdRef.current);
+          clearInflightThinking(tabIdRef.current);
         }
         if (
           message.kind === 'system' &&
@@ -1646,6 +1667,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
         ) {
           store.clearInflightAssistant(tabIdRef.current);
           clearInflightBuffer(tabIdRef.current);
+          clearInflightThinking(tabIdRef.current);
         }
 
         if (reduced.append === 'skip') return;
@@ -3171,12 +3193,15 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
                 scrolled anywhere. The token count moved to its tooltip. */}
             {messagesList}
             
-            {historyLoading && messages.length === 0 && (
+            {/* Loading an existing session's history draws the conversation's
+                shape; a new session has none, so it keeps the message. */}
+            {historyLoading && messages.length === 0 && session && <TranscriptSkeleton className="px-4 pt-8 pb-4" />}
+            {historyLoading && messages.length === 0 && !session && (
               <div className="flex items-center justify-center h-full">
                 <div className="flex items-center gap-3">
                   <div className="rotating-symbol text-primary" />
                   <span className="text-sm text-muted-foreground">
-                    {session ? "Loading session history..." : "Initializing Claude Code..."}
+                    Initializing Claude Code...
                   </span>
                 </div>
               </div>
@@ -3236,7 +3261,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
               // forward answers via updatedInput on allow. Other tools still
               // use the standard PermissionCard.
               pendingPermission.toolName === 'AskUserQuestion' ? (
-                <AskUserQuestionCard
+                <ActiveQuestionCard
                   request={pendingPermission}
                   onSubmit={(updatedInput) => {
                     handlePermissionAllowWithInput(tabIdRef.current, updatedInput);
@@ -3246,7 +3271,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
                   }}
                 />
               ) : (
-                <PermissionCard
+                <ActivePermissionCard
                   request={pendingPermission}
                   onAllow={(selectedSuggestions) => {
                     handlePermissionAllow(
@@ -3271,6 +3296,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
             <AttentionSlot queue={signals.queue} onDismiss={signals.dismiss} />
             <FloatingPromptInput
               ref={floatingPromptRef}
+              variant={viewMode === 'modern' ? 'modern' : 'classic'}
               onSend={fireAndLog('claude-code-session:send', handleSendPrompt)}
               onCancel={fireAndLog('claude-code-session:cancel', handleCancelExecution)}
               isLoading={isLoading}

@@ -154,6 +154,7 @@ export function showsGutterDelta(
   viewMode: ViewMode,
 ): boolean {
   if (delta === null || delta === 0) return false;
-  if (viewMode !== 'compact') return true;
+  // Modern filters as Compact does, so it prints the same deltas.
+  if (viewMode !== 'compact' && viewMode !== 'modern') return true;
   return Math.abs(delta) >= COMPACT_MODE_MIN_DELTA_TOKENS;
 }

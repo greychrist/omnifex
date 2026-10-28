@@ -97,9 +97,9 @@ export const CLI_CONTROL_REQUESTS: Readonly<Record<string, CliControlEntry>> = {
   reload_skills: { status: 'planned', params: '{}', note: 'Pick up new or edited skills without restarting the session.' },
   reload_output_styles: { status: 'planned', params: '{}', note: 'Same, for output styles.' },
   set_max_thinking_tokens: {
-    status: 'planned',
+    status: 'wired',
     params: '{max_thinking_tokens, thinking_display}',
-    note: 'Thinking budget mid-session.',
+    note: 'Sent at every start with thinking_display "summarized" only (no budget), so thinking streams as text.',
   },
   set_cwd: { status: 'planned', params: '{path, trust_accepted?}', note: 'Move a live session to another folder.' },
   set_prompt_suggestions_paused: { status: 'planned', params: '{paused}', note: 'Pause the CLI\'s prompt suggestions.' },

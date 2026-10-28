@@ -203,3 +203,26 @@
 .shimmer-hover:hover::before {
   animation: shimmer 1s ease-out;
 } 
+
+/* Modern chat format: AI Elements' Shimmer. Muted text with a band of the
+   background colour sweeping across it; --modern-shimmer-spread (set per
+   element from the text length) is the band's half-width. */
+@keyframes modern-shimmer {
+  from { background-position: 100% center, 0 0; }
+  to { background-position: 0% center, 0 0; }
+}
+.modern-shimmer {
+  display: inline-block;
+  color: transparent;
+  -webkit-background-clip: text;
+  background-clip: text;
+  background-image:
+    linear-gradient(90deg, #0000 calc(50% - var(--modern-shimmer-spread, 24px)), var(--color-background), #0000 calc(50% + var(--modern-shimmer-spread, 24px))),
+    linear-gradient(var(--color-muted-foreground), var(--color-muted-foreground));
+  background-size: 250% 100%, auto;
+  background-repeat: no-repeat, padding-box;
+  animation: modern-shimmer 2s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .modern-shimmer { animation: none; color: var(--color-muted-foreground); background: none; }
+}

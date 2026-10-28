@@ -466,6 +466,14 @@ export function createClaudeCliEngine(
       childRef.once('spawn', onSpawn);
       childRef.once('error', onErr);
     });
+
+    // Ask for summarized thinking. The CLI's default display ("updates")
+    // streams only token counts — thinking_delta.thinking is always "" — so a
+    // thought could never be shown as it is typed. Display only: without a
+    // max_thinking_tokens key the CLI leaves the budget alone. Written before
+    // any prompt; not awaited, so a CLI that refuses it never stalls a start.
+    void sendControlRequest('set_max_thinking_tokens', { thinking_display: 'summarized' })
+      .catch(() => { /* an older CLI keeps its default display */ });
   }
 
   /**

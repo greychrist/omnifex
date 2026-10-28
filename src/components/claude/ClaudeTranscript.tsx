@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { ArrowDown, ArrowUp, ChevronDown, ChevronUp, ChevronsDown, ChevronsUp, MessageSquare, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -7,7 +7,18 @@ import { SessionGutter, GUTTER_BUTTON, InspectorGutterButton, type InspectorGutt
 import { StreamMessage } from "@/components/StreamMessage";
 import { TranscriptRowBoundary } from "@/components/claude/TranscriptRowBoundary";
 import { HiddenEventsGroup } from "@/components/HiddenEventsGroup";
+import { TranscriptSkeleton } from "@/components/claude/TranscriptSkeleton";
+import { LiveActivity } from "@/components/transcript-modern/ChainOfThought";
+import { buildModernItems, keepUnchangedItems, type ModernItem } from "@/lib/modernGrouping";
+import {
+  ModernLiveAnswer,
+  ModernTranscriptItem,
+  anchorNodeOf,
+  firstNodeOf,
+  type ModernRowContext,
+} from "@/components/transcript-modern/ModernTranscriptItem";
 import { InflightAssistantBubble } from "@/components/InflightAssistantBubble";
+import { InflightThinking } from "@/components/InflightThinking";
 import { FindBar } from "@/components/FindBar";
 import { useFindInChat } from "@/hooks/useFindInChat";
 import { useRenderProfile } from "@/hooks/useRenderProfile";
@@ -117,7 +128,7 @@ const ROW_CLASS =
  */
 function ClaudeTranscriptImpl({
   messages,
-  viewMode,
+  viewMode: liveViewMode,
   accountType,
   onResend,
   waitingForPermission,
@@ -135,6 +146,20 @@ function ClaudeTranscriptImpl({
   jumpTo = null,
 }: ClaudeTranscriptProps): React.ReactElement {
   useRenderProfile('ClaudeTranscript');
+  // A tab's first paint of its history, and a chat-format switch, can mean
+  // thousands of rows. Both go through a transition: the skeleton commits at
+  // once, and the rows render in the background, interruptibly, instead of
+  // freezing the window with nothing on screen. Streamed messages are not
+  // deferred — each still renders exactly once.
+  const [viewMode, setViewMode] = useState(liveViewMode);
+  useEffect(() => {
+    if (viewMode !== liveViewMode) startTransition(() => { setViewMode(liveViewMode); });
+  }, [viewMode, liveViewMode]);
+  const [historyShown, setHistoryShown] = useState(false);
+  useEffect(() => {
+    if (!historyShown && messages.length > 0) startTransition(() => { setHistoryShown(true); });
+  }, [historyShown, messages.length]);
+  const rendering = (messages.length > 0 && !historyShown) || viewMode !== liveViewMode;
   const { config: savedRenderConfig } = useMessageRenderingConfig();
   // The "All" chat format renders through a copy of the config with every
   // "Never" kind demoted to verbose-only; rows get it from context below.
@@ -235,6 +260,30 @@ function ClaudeTranscriptImpl({
   const lookupsFor = useCallback(
     (node: JsonlNode) => rowLookups(node, messages, rowLookupCache),
     [messages, rowLookupCache],
+  );
+
+  // Modern format: the same displayable rows, grouped into a conversation.
+  // Unchanged items keep their previous object, and the row context reads
+  // lookups through a ref, so appending a record re-renders only the items it
+  // touched — not every row (see keepUnchangedItems).
+  const prevModernItemsRef = useRef<ModernItem[]>([]);
+  const modernItems = useMemo(() => {
+    const next = viewMode === 'modern'
+      ? keepUnchangedItems(prevModernItemsRef.current, buildModernItems(displayableMessages, renderConfig, messages))
+      : [];
+    prevModernItemsRef.current = next;
+    return next;
+  }, [viewMode, displayableMessages, renderConfig, messages]);
+  const lookupsForRef = useRef(lookupsFor);
+  lookupsForRef.current = lookupsFor;
+  const stableLookupsFor = useCallback((node: JsonlNode) => lookupsForRef.current(node), []);
+  const lastModernItem = modernItems.length > 0 ? modernItems[modernItems.length - 1] : undefined;
+  // The live run shows the turn's activity itself; otherwise it gets a line of
+  // its own below the items.
+  const liveRunShown = outstandingWork && lastModernItem?.kind === 'work';
+  const modernRowContext = useMemo<ModernRowContext>(
+    () => ({ lookupsFor: stableLookupsFor, tabId, accountType, onResend }),
+    [stableLookupsFor, tabId, accountType, onResend],
   );
 
   const parentRef = useRef<HTMLDivElement>(null);
@@ -595,13 +644,44 @@ function ClaudeTranscriptImpl({
           row instead, so the rail can run through it unbroken. */}
       <div
         ref={contentRef}
-        className={cn("relative w-full px-4 pt-8 pb-4", !timeline && "space-y-4")}
+        className={cn(
+          "relative w-full px-4 pt-8 pb-4",
+          viewMode === 'modern' && "modern-format",
+          !timeline && "space-y-4",
+        )}
       >
           {/* data-transcript-step / -prompt are the anchors the prev/next and
               last-prompt buttons measure. Marked on the row wrapper rather
               than counted in an array so they follow whatever the filters and
               the view mode actually rendered. */}
-          {viewMode !== 'compact'
+          {rendering
+            ? <TranscriptSkeleton />
+            : viewMode === 'modern'
+            ? modernItems.map((item, i) => {
+                const anchor = anchorNodeOf(item);
+                const first = firstNodeOf(item);
+                return (
+                  <div
+                    key={item.key}
+                    className={ROW_CLASS}
+                    data-message-uuid={messageUuidOf(first)}
+                    data-transcript-step={isStepStop(first) ? "" : undefined}
+                    data-transcript-prompt={item.kind === 'prompt' || isMainPrompt(first) ? "" : undefined}
+                  >
+                    {withTimeline(
+                      anchor,
+                      <TranscriptRowBoundary>
+                        <ModernTranscriptItem
+                          item={item}
+                          live={outstandingWork && i === modernItems.length - 1}
+                          ctx={modernRowContext}
+                        />
+                      </TranscriptRowBoundary>,
+                    )}
+                  </div>
+                );
+              })
+            : viewMode !== 'compact'
             ? displayableMessages.map((message) => (
                 <div
                   key={rowKeyOf(message)}
@@ -671,8 +751,22 @@ function ClaudeTranscriptImpl({
                 );
               })()}
 
-          {/* Streaming bubble — renders null when no in-flight slot is set. */}
-          <InflightAssistantBubble tabId={tabId} />
+          {/* The thought being typed (classic formats; Modern draws its own
+              in the live run). Renders null when no thought is streaming. */}
+          {viewMode !== 'modern' && !rendering && <InflightThinking tabId={tabId} />}
+
+          {/* Streaming answer — renders null when no in-flight slot is set.
+              Modern streams it in its own style, so the finished answer does
+              not change look when its record lands. */}
+          {viewMode === 'modern'
+            ? <ModernLiveAnswer tabId={tabId} />
+            : <InflightAssistantBubble tabId={tabId} />}
+
+          {/* Modern: the running turn's activity when no live run shows it. */}
+          {viewMode === 'modern' && !rendering && outstandingWork && !hasInflightAssistant && !waitingForPermission && !liveRunShown && withTimeline(
+            undefined,
+            <LiveActivity tabId={tabId} />,
+          )}
 
           {/* Loading indicator under the latest message — iMessage-style typing bubble.
               Rendered inside contentRef (and before messagesEndRef) so the ResizeObserver
@@ -680,7 +774,7 @@ function ClaudeTranscriptImpl({
               messagesEndRef scrolls past it instead of leaving it below the viewport.
               Also kept visible during awaiting_background so the visual "in-flight"
               cue bridges the parent's turn-end result to the eventual completion. */}
-          {outstandingWork && !hasInflightAssistant && withTimeline(
+          {outstandingWork && !hasInflightAssistant && viewMode !== 'modern' && withTimeline(
             // No node, so the gutter cell is the empty spacer and the rail
             // still ends on the last real message. The point is purely the
             // indent: unwrapped, the dots bubble started hard against the

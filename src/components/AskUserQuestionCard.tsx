@@ -7,6 +7,7 @@ import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
 import { CardFooter } from "@/components/StreamMessage/MessageFrameCard";
 import { CardActionBar } from "@/components/CardActionBar";
 import type { PermissionRequestPayload } from "@/lib/types/permissionRequest";
+import { buildAskUserQuestionAnswer, OTHER_VALUE } from "@/lib/askUserQuestionAnswer";
 
 /**
  * Custom-renderer card for the CLI's `AskUserQuestion` built-in tool.
@@ -45,7 +46,6 @@ interface QuestionShape {
   multiSelect?: boolean;
 }
 
-const OTHER_VALUE = '__omnifex_other__';
 
 function parseQuestions(input: Record<string, unknown>): QuestionShape[] {
   const raw = input?.questions;
@@ -135,35 +135,7 @@ export function AskUserQuestionCard({ request, onSubmit, onCancel }: AskUserQues
   };
 
   const handleSubmit = () => {
-    // Resolve each question's final answer string. Multi-select joins picks
-    // with ', ' per the CLI's documented `answers` value format.
-    const answers: Record<string, string> = {};
-    const annotations: Record<string, { notes?: string }> = {};
-    questions.forEach((q, i) => {
-      const sel = selections[i];
-      const otherText = otherTexts[i].trim();
-      const picksRaw = q.multiSelect
-        ? (Array.isArray(sel) ? sel : [])
-        : (typeof sel === 'string' ? [sel] : []);
-      // Replace the Other sentinel with the typed text.
-      const picks = picksRaw.map((p) => (p === OTHER_VALUE ? otherText : p)).filter(Boolean);
-      answers[q.question] = picks.join(', ');
-      // Note "Other" responses so the agent can see they were free-text.
-      if (picksRaw.includes(OTHER_VALUE)) {
-        annotations[q.question] = { notes: `User selected Other: "${otherText}"` };
-      }
-    });
-
-    const updatedInput: Record<string, unknown> = {
-      // Echo the original questions back unchanged — the CLI's output
-      // schema requires both `questions` and `answers`.
-      questions: request.toolInput.questions,
-      answers,
-    };
-    if (Object.keys(annotations).length > 0) {
-      updatedInput.annotations = annotations;
-    }
-    onSubmit(updatedInput);
+    onSubmit(buildAskUserQuestionAnswer(request.toolInput.questions, questions, selections, otherTexts));
   };
 
   // Render inline at the bottom of the chat, alongside PermissionCard. The

@@ -29,6 +29,9 @@ interface Buffer {
 }
 
 const buffers = new Map<string, Buffer>();
+/** The thought being had, per tab: `thinking_delta` text, flushed on the same
+ *  schedule as the answer's text into its own store slot. */
+const thinkingBuffers = new Map<string, string>();
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
 // -Infinity, not 0, so the first delta after an idle gap flushes on the next
 // tick instead of waiting out a full interval — the throttle must never delay
@@ -72,6 +75,18 @@ export function clearInflightBuffer(tabId: string): void {
   buffers.delete(tabId);
 }
 
+/** Append a `thinking_delta` chunk to the tab's current thought. */
+export function appendInflightThinkingDelta(tabId: string, deltaText: string): void {
+  thinkingBuffers.set(tabId, (thinkingBuffers.get(tabId) ?? '') + deltaText);
+  scheduleFlush();
+}
+
+/** The thought ended (its record landed), errored, or the tab closed. */
+export function clearInflightThinking(tabId: string): void {
+  thinkingBuffers.delete(tabId);
+  useClaudeSessionStore.getState().clearInflightThinking(tabId);
+}
+
 function scheduleFlush(): void {
   if (flushTimer !== null) return;
   const delay = Math.max(0, FLUSH_INTERVAL_MS - (Date.now() - lastFlushAt));
@@ -83,17 +98,21 @@ function flush(): void {
   // Nothing buffered means the turn was cleared before this fired. Leave
   // lastFlushAt alone: no store write happened, so the next real delta has
   // no reason to serve out a throttle window.
-  if (buffers.size === 0) return;
+  if (buffers.size === 0 && thinkingBuffers.size === 0) return;
   lastFlushAt = Date.now();
-  const { setInflightAssistantText } = useClaudeSessionStore.getState();
+  const { setInflightAssistantText, setInflightThinkingText } = useClaudeSessionStore.getState();
   for (const [tabId, buf] of buffers) {
     setInflightAssistantText(tabId, buf.uuid, buf.text, buf.parentToolUseId);
+  }
+  for (const [tabId, text] of thinkingBuffers) {
+    setInflightThinkingText(tabId, text);
   }
 }
 
 /** Test-only — wipe internal state between cases. */
 export function __resetCoalescerForTests(): void {
   buffers.clear();
+  thinkingBuffers.clear();
   if (flushTimer !== null) {
     clearTimeout(flushTimer);
     flushTimer = null;

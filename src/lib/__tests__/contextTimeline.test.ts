@@ -243,6 +243,11 @@ describe('showsGutterDelta', () => {
     expect(showsGutterDelta(-2_000, 'compact')).toBe(true);
   });
 
+  it('hides sub-2k noise in Modern, as in Compact', () => {
+    expect(showsGutterDelta(1_999, 'modern')).toBe(false);
+    expect(showsGutterDelta(2_000, 'modern')).toBe(true);
+  });
+
   it('has nothing to print with no reading or no movement', () => {
     expect(showsGutterDelta(null, 'verbose')).toBe(false);
     expect(showsGutterDelta(0, 'verbose')).toBe(false);

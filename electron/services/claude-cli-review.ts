@@ -43,6 +43,13 @@ import { buildClaudeEnv } from './util/claude-env';
  *    deadline is 660 s (600 s before 2.1.299), answered with the error
  *    "side_question timed out: the host did not answer in time". Only the
  *    SDK's `askSideQuestion()` documents it.
+ *  - `set_max_thinking_tokens {thinking_display: "summarized"}` sent at every
+ *    start (claude-cli-engine.ts), with no `max_thinking_tokens` key so the
+ *    budget is untouched. The default display ("updates") streams only token
+ *    counts (`thinking_delta.thinking` is ""); "summarized" streams the
+ *    thought's text, which the Modern format types out. Accepted values per
+ *    the CLI's own error string: "summarized", "omitted" ("highlights" is
+ *    refused). Records carry `thinking_duration_ms` too. Verified 2.1.312.
  *
  * Last review: 2.1.311 -> 2.1.312 on 2026-10-27. Findings: one `/usage`
  * regression, fixed in the same change — the contributing header lost

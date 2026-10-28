@@ -72,6 +72,36 @@ html {
   src: url('/src/assets/fonts/geist-mono/geist-mono.woff2') format('woff2-variations');
 }
 
+/* The Modern chat format is set in Geist, as shadcn's AI examples are,
+   whatever the app font is. Code keeps a monospace face: Geist Mono. */
+.modern-format {
+  font-family: 'Geist', var(--app-font-stack, ui-sans-serif, system-ui, sans-serif);
+}
+.modern-format .font-mono,
+.modern-format code,
+.modern-format kbd {
+  font-family: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+/* An answer in Modern is set as the shadcn example's is: 14px on a 20px
+   line, edge to edge. The .prose rules below are unlayered and read the Chats
+   → Typography variables, so Tailwind utilities cannot override them; these
+   rules can, and do so only inside Modern. */
+.modern-format .modern-answer.prose {
+  font-family: inherit;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+.modern-format .modern-answer :is(p, li) {
+  line-height: inherit;
+}
+.modern-format .modern-answer > :first-child {
+  margin-top: 0;
+}
+.modern-format .modern-answer > :last-child {
+  margin-bottom: 0;
+}
+
+
 /* Plus Jakarta Sans */
 @font-face {
   font-family: 'Plus Jakarta Sans';

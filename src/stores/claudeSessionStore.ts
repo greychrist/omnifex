@@ -48,6 +48,10 @@ export interface TabSessionState {
     text: string;
     parentToolUseId: string | null;
   } | null;
+  /** Thinking-streaming slot: the text of the thought being had, fed by the
+   *  coalescer from `thinking_delta` frames (summarized display). Cleared when
+   *  the thinking record lands, on stream error, or on tab close. */
+  inflightThinking: string | null;
   /** Live-only per-tool progress, keyed by the REAL tool_use id (see
    *  src/lib/toolProgress.ts). Never persisted and never part of
    *  `messages[]` — the CLI does not write `tool_progress` to disk, so a
@@ -67,6 +71,7 @@ export const EMPTY_TAB_SESSION: TabSessionState = {
   contextUsage: null,
   supportedModels: [],
   inflightAssistant: null,
+  inflightThinking: null,
   toolProgress: EMPTY_TOOL_PROGRESS,
   permissionChecks: EMPTY_PERMISSION_CHECKS,
 };
@@ -109,6 +114,8 @@ interface ClaudeSessionStoreState {
     parentToolUseId: string | null,
   ): void;
   clearInflightAssistant(tabId: string): void;
+  setInflightThinkingText(tabId: string, text: string): void;
+  clearInflightThinking(tabId: string): void;
   /** Fold one live `tool_progress` frame into the tab's map. */
   applyToolProgress(tabId: string, node: ToolProgressNode): void;
   /** Drop progress for tools no longer of interest (empty set at turn end). */
@@ -162,6 +169,22 @@ export const useClaudeSessionStore = create<ClaudeSessionStoreState>()(
             },
           },
         };
+      }); },
+
+    setInflightThinkingText: (tabId, text) =>
+      { set((state) => {
+        const existing = ensureTab(state.tabs, tabId);
+        // The flush rewrites every buffered tab; an unchanged thought must not
+        // hand subscribers a new object.
+        if (existing.inflightThinking === text) return state;
+        return { tabs: { ...state.tabs, [tabId]: { ...existing, inflightThinking: text } } };
+      }); },
+
+    clearInflightThinking: (tabId) =>
+      { set((state) => {
+        const existing = state.tabs[tabId];
+        if (!existing || existing.inflightThinking === null) return state;
+        return { tabs: { ...state.tabs, [tabId]: { ...existing, inflightThinking: null } } };
       }); },
 
     clearInflightAssistant: (tabId) =>

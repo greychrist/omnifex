@@ -29,7 +29,7 @@ interface OptionShape {
   preview?: string;
 }
 
-interface QuestionShape {
+export interface QuestionShape {
   question: string;
   header?: string;
   options: OptionShape[];
@@ -84,7 +84,7 @@ interface ParsedAnswerPayload {
  *   - Already-parsed object with that shape
  *   - Anthropic content-block array carrying either of the above
  */
-function parseAnswerPayload(
+export function parseAnswerPayload(
   raw: unknown,
   questions: QuestionShape[],
 ): ParsedAnswerPayload | null {
@@ -213,7 +213,7 @@ function parseAnswerPayload(
   };
 }
 
-function parseQuestions(input: unknown): QuestionShape[] {
+export function parseQuestions(input: unknown): QuestionShape[] {
   if (!input || typeof input !== 'object') return [];
   const raw = (input as { questions?: unknown }).questions;
   if (!Array.isArray(raw)) return [];

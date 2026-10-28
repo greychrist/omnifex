@@ -10,14 +10,20 @@
 import React from 'react';
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import '@testing-library/jest-dom/vitest';
-import { render, cleanup } from '@testing-library/react';
+import { render, cleanup, act } from '@testing-library/react';
+import { useClaudeSessionStore } from '@/stores/claudeSessionStore';
 import type { JsonlNode } from '@/types/jsonl';
 import { renderProfiler } from '@/lib/renderProfiler';
 
-vi.mock('@/contexts/MessageRenderingContext', () => ({
-  useMessageRenderingConfig: () => ({ config: {} }),
-  MessageRenderingOverrideProvider: ({ children }: { children: React.ReactNode }) => children,
-}));
+vi.mock('@/contexts/MessageRenderingContext', async () => {
+  // A real default config, created once: identity must hold across renders.
+  const { createDefaultConfig } = await import('@/lib/messageRenderingConfig');
+  const config = createDefaultConfig();
+  return {
+    useMessageRenderingConfig: () => ({ config }),
+    MessageRenderingOverrideProvider: ({ children }: { children: React.ReactNode }) => children,
+  };
+});
 vi.mock('@/contexts/AutoScrollContext', () => ({
   useAutoScroll: () => ({ followPx: 200 }),
 }));
@@ -60,7 +66,7 @@ const prompt = (i: number): JsonlNode => ({
  * not care about (a tab becoming active/inactive), holding every transcript
  * prop referentially stable across that re-render.
  */
-function Harness({ messages, tick }: { messages: JsonlNode[]; tick: number }) {
+function Harness({ messages, tick, viewMode = 'verbose' }: { messages: JsonlNode[]; tick: number; viewMode?: 'verbose' | 'modern' }) {
   // Stable identities, exactly as AgentSession must supply them.
   const onResend = React.useRef(() => {}).current;
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
@@ -71,7 +77,7 @@ function Harness({ messages, tick }: { messages: JsonlNode[]; tick: number }) {
       <div data-tick={tick} />
       <ClaudeTranscript
         messages={messages}
-        viewMode="verbose"
+        viewMode={viewMode}
         accountType={undefined}
         onResend={onResend}
         waitingForPermission={false}
@@ -128,4 +134,23 @@ describe('ClaudeTranscript render cost', () => {
       count: 4,
     });
   });
+});
+
+describe('ClaudeTranscript render cost — a thought being typed', () => {
+  const messages = [prompt(1), prompt(2), prompt(3)];
+
+  // The live thought flushes every 100ms. It must re-render only the row
+  // that shows it — the components read the store themselves, as
+  // InflightAssistantBubble does — never the whole transcript.
+  for (const viewMode of ['verbose', 'modern'] as const) {
+    it(`does not re-render the transcript per thinking flush (${viewMode})`, () => {
+      render(<Harness messages={messages} tick={0} viewMode={viewMode} />);
+      renderProfiler.begin('thinking-flush');
+      act(() => { useClaudeSessionStore.getState().setInflightThinkingText('tab-1', 'one'); });
+      act(() => { useClaudeSessionStore.getState().setInflightThinkingText('tab-1', 'one two'); });
+      const report = renderProfiler.end();
+      expect(report?.renders.find((r) => r.name === 'ClaudeTranscript')).toBeUndefined();
+      act(() => { useClaudeSessionStore.getState().__resetForTests(); });
+    });
+  }
 });

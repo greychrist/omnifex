@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   appendInflightDelta,
+  appendInflightThinkingDelta,
   clearInflightBuffer,
+  clearInflightThinking,
   FLUSH_INTERVAL_MS,
   __resetCoalescerForTests,
 } from '../inflightCoalescer';
@@ -172,5 +174,36 @@ describe('inflightCoalescer', () => {
     expect(writes.length).toBeLessThanOrEqual(maxWrites);
     // No text is lost — the final write holds every delta.
     expect(writes[writes.length - 1]).toBe('x'.repeat(60));
+  });
+});
+
+describe('inflightCoalescer — thinking', () => {
+  const thought = (tabId: string) => useClaudeSessionStore.getState().selectTab(tabId).inflightThinking;
+
+  it('accumulates thinking deltas into their own slot, throttled like text', () => {
+    appendInflightThinkingDelta('t1', 'I rec');
+    appendInflightThinkingDelta('t1', 'all the 6-queens');
+    expect(thought('t1')).toBeNull();
+    settle();
+    expect(thought('t1')).toBe('I recall the 6-queens');
+    // The text slot is untouched.
+    expect(slotText('t1')).toBeUndefined();
+  });
+
+  it('starts over after the thought is cleared', () => {
+    appendInflightThinkingDelta('t1', 'first');
+    settle();
+    clearInflightThinking('t1');
+    expect(thought('t1')).toBeNull();
+    appendInflightThinkingDelta('t1', 'second');
+    settle();
+    expect(thought('t1')).toBe('second');
+  });
+
+  it('drops a buffered thought that was cleared before it flushed', () => {
+    appendInflightThinkingDelta('t1', 'gone');
+    clearInflightThinking('t1');
+    settle();
+    expect(thought('t1')).toBeNull();
   });
 });

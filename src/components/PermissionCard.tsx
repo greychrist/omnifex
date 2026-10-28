@@ -45,7 +45,7 @@ interface PermissionCardProps {
  * outside the map, a generic field-probe fallback preserves the
  * pre-typed behavior so unknown tools still surface a useful label.
  */
-function formatToolInput(toolName: string | undefined, input: Record<string, unknown>): string {
+export function formatToolInput(toolName: string | undefined, input: Record<string, unknown>): string {
   // Every branch runs its field through `toolInputString`. The typed map is a
   // compile-time contract only: Claude can emit a non-string `command` /
   // `file_path` / pattern (Claude Code 2.1.229 fixed its own crash on exactly

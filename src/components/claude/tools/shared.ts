@@ -60,7 +60,11 @@ export const extractResultContent = (result: any): string => {
       return result.content.text;
     }
     if (Array.isArray(result.content)) {
+      // Image blocks are drawn as images beneath the widget (StreamMessage,
+      // extractToolResultImages). Stringified, a screenshot's base64 became
+      // one unbreakable line WebKit spent seconds per layout measuring.
       return result.content
+        .filter((c: any) => !(c && typeof c === 'object' && c.type === 'image'))
         .map((c: any) => (typeof c === 'string' ? c : c.text || JSON.stringify(c)))
         .join('\n');
     }
