@@ -24,6 +24,9 @@ import type { MessageRenderingConfig } from './messageRenderingConfig';
 import { isMessageFullyHidden } from './compactGrouping';
 import { isMainPrompt } from './transcriptStepper';
 import { rowKeyOf } from './rowKey';
+import { commandEnvelopeKind, parseCommandEnvelope } from './commandEnvelope';
+import { formatTokens } from './contextPressure';
+import { shortDuration } from './modernSteps';
 
 export type ToolStatus = 'pending' | 'done' | 'error';
 
@@ -52,13 +55,29 @@ export type WorkEntry =
     };
 
 export type ModernItem =
-  | { kind: 'prompt'; key: string; node: JsonlNode; text: string }
+  | {
+      kind: 'prompt'; key: string; node: JsonlNode; text: string;
+      /** Pasted images, as data URLs. */
+      images?: PromptImage[];
+      /** A slash command's echo: `text` is the command line. */
+      command?: true;
+    }
   | { kind: 'text'; key: string; node: JsonlNode; text: string }
   | { kind: 'work'; key: string; entries: WorkEntry[]; nodes: JsonlNode[] }
   | { kind: 'question'; key: string; node: JsonlNode; input: Record<string, unknown>; resultNode?: JsonlNode }
   | { kind: 'plan'; key: string; node: JsonlNode; markdown: string; resultNode?: JsonlNode }
   | { kind: 'notice'; key: string; node: JsonlNode; tone: NoticeTone; text: string }
+  | {
+      kind: 'compaction'; key: string; node: JsonlNode;
+      /** "manual · 777k → 27k tokens · 1m 10s", from the boundary. */
+      detail: string;
+      /** The recap the CLI wrote after it. */
+      summary?: string;
+      summaryNode?: JsonlNode;
+    }
   | { kind: 'other'; key: string; node: JsonlNode };
+
+export interface PromptImage { src: string; mediaType: string }
 
 export type NoticeTone = 'stop' | 'error' | 'warn' | 'info';
 
@@ -94,14 +113,53 @@ function resultText(content: unknown): string {
 
 const CONVERSATION_TOOLS = new Set(['AskUserQuestion', 'ExitPlanMode']);
 
-/** A prompt the bubble can draw: plain text, no command envelope, no images. */
-function bubbleText(node: JsonlNode): string | null {
+/** A record's text blocks, joined. Ingress (normalizeMessage) makes
+ *  content an array. */
+function plainText(node: JsonlNode): string {
+  return contentOf(node).filter((b) => b.type === 'text').map((b) => String(b.text ?? '')).join('\n');
+}
+
+type PromptShape = Pick<Extract<ModernItem, { kind: 'prompt' }>, 'text' | 'images' | 'command'>;
+
+/**
+ * What the bubble draws for a user record: a typed prompt (text, pasted
+ * images), or a slash command's echo as its command line. Null for anything
+ * else, which Modern draws as Compact does.
+ */
+function promptOf(node: JsonlNode): PromptShape | null {
+  if (node.kind !== 'user') return null;
+  const text = plainText(node);
+  const isEcho = commandEnvelopeKind(text) === 'echo';
+  if (isEcho && (node.userKind === 'local-command' || isMainPrompt(node))) {
+    const env = parseCommandEnvelope(text);
+    if (!env) return null;
+    return { text: env.args ? `${env.name} ${env.args}` : env.name, command: true };
+  }
   if (!isMainPrompt(node)) return null;
   const blocks = contentOf(node);
-  if (blocks.some((b) => b.type !== 'text')) return null;
-  const text = blocks.map((b) => String(b.text ?? '')).join('\n');
+  const images: PromptImage[] = [];
+  for (const b of blocks) {
+    if (b.type === 'text') continue;
+    const source = b.source as { type?: unknown; media_type?: unknown; data?: unknown } | undefined;
+    if (b.type !== 'image' || source?.type !== 'base64') return null;
+    const mediaType = String(source.media_type ?? 'image/png');
+    images.push({ src: `data:${mediaType};base64,${String(source.data ?? '')}`, mediaType });
+  }
   if (/<command-(name|message)>|<local-command-/.test(text)) return null;
-  return text.trim() ? text : null;
+  if (!text.trim() && images.length === 0) return null;
+  return images.length > 0 ? { text, images } : { text };
+}
+
+/** The boundary's figures, as the classic card writes them, minus its title. */
+function compactionDetail(node: JsonlNode): string {
+  const meta = ((node as { raw?: unknown }).raw as { compactMetadata?: { trigger?: unknown; preTokens?: unknown; postTokens?: unknown; durationMs?: unknown } } | undefined)?.compactMetadata ?? {};
+  const parts: string[] = [];
+  if (typeof meta.trigger === 'string' && meta.trigger) parts.push(meta.trigger);
+  if (typeof meta.preTokens === 'number' && typeof meta.postTokens === 'number') {
+    parts.push(`${formatTokens(meta.preTokens)} → ${formatTokens(meta.postTokens)} tokens`);
+  }
+  if (typeof meta.durationMs === 'number') parts.push(shortDuration(meta.durationMs));
+  return parts.join(' · ');
 }
 
 /** A tool-result record whose every result belongs to a tool use we drew. */
@@ -248,10 +306,28 @@ export function buildModernItems(
       continue;
     }
 
-    const prompt = bubbleText(node);
+    // A compaction is one line: the boundary, with the recap folded in.
+    if (node.kind === 'system' && node.subtype === 'compact_boundary') {
+      closeWork();
+      items.push({ kind: 'compaction', key: `c-${nodeKey}`, node, detail: compactionDetail(node) });
+      continue;
+    }
+    if (node.kind === 'user' && node.userKind === 'compact-summary') {
+      closeWork();
+      const last = items[items.length - 1];
+      const summary = plainText(node);
+      if (last?.kind === 'compaction' && !last.summaryNode) {
+        items[items.length - 1] = { ...last, summary, summaryNode: node };
+      } else {
+        items.push({ kind: 'compaction', key: `c-${nodeKey}`, node, detail: '', summary, summaryNode: node });
+      }
+      continue;
+    }
+
+    const prompt = promptOf(node);
     if (prompt !== null) {
       closeWork();
-      items.push({ kind: 'prompt', key: `u-${nodeKey}`, node, text: prompt });
+      items.push({ kind: 'prompt', key: `u-${nodeKey}`, node, ...prompt });
       continue;
     }
 
@@ -282,6 +358,7 @@ function sameItem(a: ModernItem, b: ModernItem): boolean {
     case 'plan': return a.node === (b as typeof a).node && a.resultNode === (b as typeof a).resultNode;
     case 'prompt':
     case 'text': return a.node === (b as typeof a).node && a.text === (b as typeof a).text;
+    case 'compaction': return a.node === (b as typeof a).node && a.summaryNode === (b as typeof a).summaryNode;
     case 'other': return a.node === (b as typeof a).node;
   }
 }

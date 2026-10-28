@@ -9,6 +9,9 @@ import { TranscriptRowBoundary } from "@/components/claude/TranscriptRowBoundary
 import { HiddenEventsGroup } from "@/components/HiddenEventsGroup";
 import { TranscriptSkeleton } from "@/components/claude/TranscriptSkeleton";
 import { LiveActivity } from "@/components/transcript-modern/ChainOfThought";
+import { phaseLabel } from "@/lib/phaseLabel";
+
+const COMPACTING_LABEL = phaseLabel('compacting');
 import { buildModernItems, keepUnchangedItems, type ModernItem } from "@/lib/modernGrouping";
 import {
   ModernLiveAnswer,
@@ -281,6 +284,9 @@ function ClaudeTranscriptImpl({
   // The live run shows the turn's activity itself; otherwise it gets a line of
   // its own below the items.
   const liveRunShown = outstandingWork && lastModernItem?.kind === 'work';
+  // Compaction is the one phase worth naming: it is long, and nothing else
+  // moves while it runs. It shows even under a live run (auto-compact).
+  const compacting = currentActivity === COMPACTING_LABEL;
   const modernRowContext = useMemo<ModernRowContext>(
     () => ({ lookupsFor: stableLookupsFor, tabId, accountType, onResend }),
     [stableLookupsFor, tabId, accountType, onResend],
@@ -763,9 +769,9 @@ function ClaudeTranscriptImpl({
             : <InflightAssistantBubble tabId={tabId} />}
 
           {/* Modern: the running turn's activity when no live run shows it. */}
-          {viewMode === 'modern' && !rendering && outstandingWork && !hasInflightAssistant && !waitingForPermission && !liveRunShown && withTimeline(
+          {viewMode === 'modern' && !rendering && outstandingWork && !hasInflightAssistant && !waitingForPermission && (!liveRunShown || compacting) && withTimeline(
             undefined,
-            <LiveActivity tabId={tabId} />,
+            <LiveActivity tabId={tabId} phase={compacting ? currentActivity : null} />,
           )}
 
           {/* Loading indicator under the latest message — iMessage-style typing bubble.

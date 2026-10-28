@@ -12,6 +12,8 @@ import { CopyButton } from '@/components/ui/copy-button';
 import { RotateCcw } from 'lucide-react';
 import { extractResendPayload } from '@/lib/extractResendPayload';
 import { NoticeLine } from './NoticeLine';
+import { CompactionLine } from './CompactionLine';
+import { DownloadableImage } from '@/components/DownloadableImage';
 import { RawJsonPopover } from '@/components/StreamMessage/RawJsonPopover';
 import { useClaudeSessionStore } from '@/stores/claudeSessionStore';
 import { ChainOfThought } from './ChainOfThought';
@@ -47,7 +49,24 @@ export const ModernTranscriptItem = React.memo(function ModernTranscriptItem({
     case 'prompt':
       return (
         <Message from="user">
-          <UserBubble><p className="whitespace-pre-wrap break-words">{item.text}</p></UserBubble>
+          <UserBubble>
+            {item.images && (
+              <div className="mb-2 flex flex-wrap gap-2">
+                {item.images.map((img, i) => (
+                  <DownloadableImage
+                    key={i}
+                    src={img.src}
+                    alt="Pasted image"
+                    mediaType={img.mediaType}
+                    className="max-h-48 max-w-full rounded-xl object-contain"
+                  />
+                ))}
+              </div>
+            )}
+            {item.text.trim() && (
+              <p className={item.command ? 'whitespace-pre-wrap break-words font-mono' : 'whitespace-pre-wrap break-words'}>{item.text}</p>
+            )}
+          </UserBubble>
           <MessageActions from="user">
             {timeOf(item.node) && <span>{timeOf(item.node)}</span>}
             {ctx.onResend && <ResendButton node={item.node} onResend={ctx.onResend} />}
@@ -75,6 +94,8 @@ export const ModernTranscriptItem = React.memo(function ModernTranscriptItem({
       return <ModernPlan markdown={item.markdown} resultNode={item.resultNode} />;
     case 'notice':
       return <NoticeLine tone={item.tone} text={item.text} />;
+    case 'compaction':
+      return <CompactionLine detail={item.detail} summary={item.summary} />;
     case 'other':
       return (
         <StreamMessage

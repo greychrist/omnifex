@@ -197,7 +197,11 @@ function LiveThought({ tabId }: { tabId: string }) {
  * (Reasoning), or "Working" until there is something to show. Replaces the
  * classic typing dots in the Modern format.
  */
-export function LiveActivity({ tabId }: { tabId: string }) {
+export function LiveActivity({ tabId, phase = null }: {
+  tabId: string;
+  /** A phase the CLI announced ("Compacting context"), said instead of "Working". */
+  phase?: string | null;
+}) {
   const thought = useClaudeSessionStore((st) => st.tabs[tabId]?.inflightThinking ?? null);
   return (
     <Trace>
@@ -206,7 +210,7 @@ export function LiveActivity({ tabId }: { tabId: string }) {
       ) : (
         <TraceLine status="running">
           <TraceIcon><TraceStatusIcon status="running" /></TraceIcon>
-          <TraceTitle><Shimmer>Working</Shimmer></TraceTitle>
+          <TraceTitle><Shimmer>{phase ?? 'Working'}</Shimmer></TraceTitle>
         </TraceLine>
       )}
     </Trace>

@@ -98,7 +98,8 @@ export function describeToolStep(name: string, input: Record<string, unknown>, s
   }
 }
 
-function shortDuration(ms: number): string {
+/** "32s", "1m 10s". */
+export function shortDuration(ms: number): string {
   const s = Math.round(ms / 1000);
   return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`;
 }

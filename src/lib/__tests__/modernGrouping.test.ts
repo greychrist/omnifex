@@ -98,9 +98,9 @@ describe('buildModernItems', () => {
     expect(kinds(items)).toEqual(['prompt', 'other', 'text']);
   });
 
-  it('passes a slash-command prompt through, since only the command widget reads its envelope', () => {
+  it('draws a slash-command prompt as its command line, not the envelope', () => {
     const items = buildModernItems([prompt('<command-name>/usage</command-name>')], createDefaultConfig());
-    expect(kinds(items)).toEqual(['other']);
+    expect(items.map((i) => (i.kind === 'prompt' ? i.text : i.kind))).toEqual(['/usage']);
   });
 
   it('keeps item keys stable when records are appended', () => {
@@ -222,5 +222,68 @@ describe('buildModernItems — a question waiting on you', () => {
   it('treats a plan waiting for approval the same way', () => {
     const plan = toolUse('p1', 'ExitPlanMode', { plan: '# P' });
     expect(kinds(buildModernItems([prompt('go'), plan], createDefaultConfig()))).toEqual(['prompt']);
+  });
+});
+
+describe('buildModernItems — prompts that are not plain text', () => {
+  const userNode = (userKind: string, content: unknown, extra: Record<string, unknown> = {}) => ({
+    kind: 'user', userKind, sessionId: '', receivedAt: '',
+    raw: { type: 'user', message: { role: 'user', content }, ...extra },
+  } as unknown as JsonlNode);
+
+  it('draws a prompt with pasted images as a bubble carrying them', () => {
+    const items = buildModernItems([userNode('prompt', [
+      { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AAAA' } },
+      { type: 'text', text: 'look at this' },
+    ])], createDefaultConfig());
+    expect(kinds(items)).toEqual(['prompt']);
+    const p = items[0];
+    if (p.kind !== 'prompt') throw new Error('shape');
+    expect(p.text).toBe('look at this');
+    expect(p.images).toEqual([{ src: 'data:image/png;base64,AAAA', mediaType: 'image/png' }]);
+  });
+
+  it('draws a built-in slash command echo as a command bubble', () => {
+    const echo = userNode('local-command', [{ type: 'text', text: '<command-name>/compact</command-name>\n<command-message>compact</command-message>\n<command-args>keep the plan</command-args>' }]);
+    const items = buildModernItems([echo], createDefaultConfig());
+    expect(kinds(items)).toEqual(['prompt']);
+    const p = items[0];
+    if (p.kind !== 'prompt') throw new Error('shape');
+    expect(p.text).toBe('/compact keep the plan');
+    expect(p.command).toBe(true);
+  });
+
+  it('draws a skill command echo as a command bubble too', () => {
+    const echo = userNode('prompt', [{ type: 'text', text: '<command-message>review</command-message>\n<command-name>/review</command-name>' }]);
+    const p = buildModernItems([echo], createDefaultConfig())[0];
+    if (p?.kind !== 'prompt') throw new Error('shape');
+    expect(p.text).toBe('/review');
+    expect(p.command).toBe(true);
+  });
+});
+
+describe('buildModernItems — compaction', () => {
+  const boundary = {
+    kind: 'system', subtype: 'compact_boundary', sessionId: '', receivedAt: '',
+    raw: { type: 'system', subtype: 'compact_boundary', content: 'Conversation compacted', compactMetadata: { trigger: 'manual', preTokens: 777000, postTokens: 27000, durationMs: 70340 } },
+  } as unknown as JsonlNode;
+  const summary = {
+    kind: 'user', userKind: 'compact-summary', sessionId: '', receivedAt: '',
+    raw: { type: 'user', isCompactSummary: true, message: { role: 'user', content: [{ type: 'text', text: 'This session is being continued…' }] } },
+  } as unknown as JsonlNode;
+
+  it('folds the boundary and its summary into one compaction line', () => {
+    const items = buildModernItems([text('done'), boundary, summary], createDefaultConfig());
+    expect(kinds(items)).toEqual(['text', 'compaction']);
+    const c = items[1];
+    if (c.kind !== 'compaction') throw new Error('shape');
+    expect(c.detail).toBe('manual · 777k → 27k tokens · 1m 10s');
+    expect(c.summary).toBe('This session is being continued…');
+    expect(c.summaryNode).toBe(summary);
+  });
+
+  it('draws a summary with no boundary before it as its own compaction line', () => {
+    const items = buildModernItems([summary], createDefaultConfig());
+    expect(kinds(items)).toEqual(['compaction']);
   });
 });

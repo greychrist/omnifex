@@ -58,7 +58,7 @@ const messages = [
   assistant('a3', [{ type: 'text', text: 'All **green**.' }]),
 ];
 
-function renderModern(outstandingWork = false, rows: JsonlNode[] = messages, onResend: (text: string, images?: string[]) => void = () => {}, waitingForPermission = false) {
+function renderModern(outstandingWork = false, rows: JsonlNode[] = messages, onResend: (text: string, images?: string[]) => void = () => {}, waitingForPermission = false, currentActivity = 'Thinking') {
   return render(
     <MessageRenderingPreviewProvider config={createDefaultConfig()}>
       <TooltipProvider>
@@ -70,7 +70,7 @@ function renderModern(outstandingWork = false, rows: JsonlNode[] = messages, onR
           waitingForPermission={waitingForPermission}
           outstandingWork={outstandingWork}
           hasInflightAssistant={false}
-          currentActivity="Thinking"
+          currentActivity={currentActivity}
           totalTokens={0}
           contextLimit={200_000}
           error={null}
@@ -224,5 +224,49 @@ describe('ClaudeTranscript — Modern chat format', () => {
   it('shows no Working line while a question or permission waits on you', () => {
     renderModern(true, messages.slice(0, 1), () => {}, true);
     expect(screen.queryByText('Working', { selector: '.modern-shimmer' })).toBeNull();
+  });
+
+  it('says it is compacting while the CLI compacts, in the Modern style', () => {
+    const slash = {
+      kind: 'user', userKind: 'local-command', sessionId: 's', receivedAt: '',
+      raw: { type: 'user', uuid: 'c1', message: { role: 'user', content: [{ type: 'text', text: '<command-name>/compact</command-name>\n<command-message>compact</command-message>\n<command-args></command-args>' }] } },
+    } as unknown as JsonlNode;
+    const { container } = renderModern(true, [prompt, slash], () => {}, false, 'Compacting context');
+    expect(screen.getByText('Compacting context', { selector: '.modern-shimmer' })).toBeInTheDocument();
+    // The command is a bubble, not the classic Slash Command card.
+    expect(screen.getByText('/compact')).toBeInTheDocument();
+    expect(container.querySelectorAll('[data-stream-row]')).toHaveLength(0);
+  });
+
+  it('draws a compaction as one line that opens onto its recap', () => {
+    const boundary = {
+      kind: 'system', subtype: 'compact_boundary', sessionId: 's', receivedAt: '',
+      raw: { type: 'system', uuid: 'b1', subtype: 'compact_boundary', content: 'Conversation compacted', compactMetadata: { trigger: 'manual', preTokens: 777000, postTokens: 27000, durationMs: 70340 } },
+    } as unknown as JsonlNode;
+    const summary = {
+      kind: 'user', userKind: 'compact-summary', sessionId: 's', receivedAt: '',
+      raw: { type: 'user', uuid: 's1', isCompactSummary: true, message: { role: 'user', content: [{ type: 'text', text: 'Summary of the work so far' }] } },
+    } as unknown as JsonlNode;
+    const { container } = renderModern(false, [...messages, boundary, summary]);
+    const line = screen.getByRole('button', { name: /Compacted conversation/ });
+    expect(line).toHaveTextContent('manual · 777k → 27k tokens · 1m 10s');
+    expect(screen.queryByText('Summary of the work so far')).toBeNull();
+    fireEvent.click(line);
+    expect(screen.getByText('Summary of the work so far')).toBeInTheDocument();
+    expect(container.querySelectorAll('[data-stream-row]')).toHaveLength(0);
+  });
+
+  it('draws pasted images in the prompt bubble', () => {
+    const withImage = {
+      kind: 'user', userKind: 'prompt', sessionId: 's', receivedAt: '',
+      raw: { type: 'user', uuid: 'i1', message: { role: 'user', content: [
+        { type: 'text', text: 'What is this?' },
+        { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AAAA' } },
+      ] } },
+    } as unknown as JsonlNode;
+    const { container } = renderModern(false, [withImage]);
+    expect(screen.getByText('What is this?')).toBeInTheDocument();
+    expect(container.querySelector('img[src="data:image/png;base64,AAAA"]')).not.toBeNull();
+    expect(container.querySelectorAll('[data-stream-row]')).toHaveLength(0);
   });
 });
