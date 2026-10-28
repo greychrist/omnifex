@@ -23,11 +23,17 @@ const RAIL_BG: Record<ContextPressureLevel, string> = {
   critical: "bg-red-500",
 };
 
-const BAR_BG: Record<ContextPressureLevel, string> = {
-  none: "bg-emerald-500",
-  warn: "bg-amber-500",
-  critical: "bg-red-500",
+/** The size badge, in the rail's colour. Solid: it sits on top of the line
+ *  and must hide it. No border — the unlayered `* { border-color }` rule
+ *  outranks the utilities. */
+const BADGE: Record<ContextPressureLevel, string> = {
+  none: "bg-emerald-600 text-white",
+  warn: "bg-amber-500 text-black",
+  critical: "bg-red-600 text-white",
 };
+
+/** The annotations under it: solid too, quieter. */
+const NOTE = "rounded px-1 py-0.5 bg-muted font-mono text-[10px] leading-none tabular-nums";
 
 export interface ContextTimelineTickProps {
   /** Undefined for rows before the first usage reading. */
@@ -47,8 +53,10 @@ export interface ContextTimelineTickProps {
   isLast?: boolean;
 }
 
-/** Width of the gutter cell. Shared so the empty and drawn states agree. */
-const GUTTER = "relative w-16 shrink-0 self-stretch select-none min-h-9";
+/** Width of the gutter cell — the transcript's left margin, outside the chat
+ *  frame (see `data-transcript-frame` in ClaudeTranscript). Shared so the
+ *  empty and drawn states agree. */
+const GUTTER = "relative w-14 shrink-0 self-stretch select-none min-h-9";
 
 /**
  * Dashes for a compaction reset, drawn as a gradient rather than a dashed
@@ -61,8 +69,8 @@ const RESET_DASHES =
   "repeating-linear-gradient(to bottom, currentColor 0 4px, transparent 4px 8px)";
 
 /**
- * One row of the transcript's context rail: a continuous vertical line, plus a
- * proportional bar and readout wherever a real usage reading exists.
+ * One row of the transcript's context rail: a slim continuous vertical line,
+ * plus a size badge and readout wherever a real usage reading exists.
  *
  * Rendered as a stretched flex cell rather than an absolutely-positioned
  * overlay. The transcript is a plain `.map` of variable-height messages with no
@@ -79,7 +87,7 @@ export const ContextTimelineTick: React.FC<ContextTimelineTickProps> = ({
   // The cell keeps its width before the series starts. Returning null instead
   // un-indented the opening rows while every later row was pushed right by the
   // gutter, which read as the transcript jogging sideways partway down.
-  if (!point) return <div className={GUTTER} aria-hidden="true" />;
+  if (!point) return <div data-timeline-gutter className={GUTTER} aria-hidden="true" />;
 
   const { tokens, delta, prevTokens, isSample, isJump, isReset, fraction, level } = point;
 
@@ -91,11 +99,13 @@ export const ContextTimelineTick: React.FC<ContextTimelineTickProps> = ({
   const beforeAfter =
     prevTokens !== null ? `${formatTokens(prevTokens)} → ${formatTokens(tokens)}` : null;
 
-  const title = isReset
+  const base = isReset
     ? `Context ${formatTokens(tokens)} — reset by /compact${beforeAfter ? ` (${beforeAfter})` : ''}`
     : isSample && beforeAfter
       ? `Context ${formatTokens(tokens)} (${beforeAfter})`
       : `Context ${formatTokens(tokens)}`;
+  // The share of the window, which the bar under the number used to show.
+  const title = `${base} · ${Math.round(fraction * 100)}% of the window`;
 
   return (
     <div
@@ -104,6 +114,7 @@ export const ContextTimelineTick: React.FC<ContextTimelineTickProps> = ({
       // fraction of the height of a message — and without a floor the cell
       // collapses to the body's height and the next tick starts on top of this
       // one's numbers.
+      data-timeline-gutter
       className={GUTTER}
       title={title}
     >
@@ -113,7 +124,7 @@ export const ContextTimelineTick: React.FC<ContextTimelineTickProps> = ({
         data-timeline-rail
         data-timeline-reset={isReset ? "" : undefined}
         className={cn(
-          "absolute left-0 w-1",
+          "absolute left-1/2 w-0.5 -translate-x-1/2",
           // `bottom-4` cancels the body column's `pb-4` exactly, so the line
           // ends flush with the card's bottom edge; the rounded cap closes it
           // off rather than leaving a cut stem.
@@ -126,29 +137,20 @@ export const ContextTimelineTick: React.FC<ContextTimelineTickProps> = ({
       {isSample && (
         // In normal flow, NOT absolute. An absolute readout contributes no
         // height, so a short row let it print over the following tick.
-        <div data-timeline-readout className="ml-2 flex flex-col gap-0.5 pt-1">
-          {/* The one number worth reading mid-scroll, so it leads and is a step
-              up in size from the annotations. It stays smaller than body text:
-              the gutter is 4rem, and "compacted" at this size wraps. */}
+        // `relative` lifts it above the absolute rail, so the badges cover it.
+        <div data-timeline-readout className="relative flex flex-col items-center gap-0.5 pt-1">
+          {/* The one number worth reading mid-scroll, so it leads, in a badge
+              tinted by level. It stays smaller than body text: the gutter is
+              4rem, and "compacted" at this size wraps. */}
           <span
+            data-timeline-badge
             className={cn(
-              "font-mono text-xs leading-none",
-              isJump ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground",
+              "w-fit rounded-md px-1.5 py-0.5 font-mono text-xs leading-none tabular-nums",
+              BADGE[level],
             )}
           >
             {formatTokens(tokens)}
           </span>
-          <div className="h-1 w-full rounded-sm bg-muted/60 overflow-hidden">
-            <div
-              data-timeline-bar
-              // Level, not jump. The two are orthogonal — level is where the
-              // session sits, the ▲ label below is what the last step did —
-              // and colouring the bar by jump made a 20k step near the ceiling
-              // look calmer than a 60k step at the start.
-              className={cn("h-full rounded-sm", BAR_BG[level])}
-              style={{ width: `${fraction * 100}%` }}
-            />
-          </div>
           {/* Every turn's delta, not just the jumps — this is now the only
               inline home for context growth, since the banner that used to
               announce it is gone. Compact mode drops the sub-2k noise that
@@ -156,7 +158,7 @@ export const ContextTimelineTick: React.FC<ContextTimelineTickProps> = ({
           {showDelta && shownDelta !== null && (
             <span
               className={cn(
-                "font-mono text-[10px] leading-none tabular-nums",
+                NOTE,
                 isJump
                   ? "text-amber-600 dark:text-amber-400"
                   : "text-muted-foreground",
@@ -166,7 +168,7 @@ export const ContextTimelineTick: React.FC<ContextTimelineTickProps> = ({
             </span>
           )}
           {isReset && (
-            <span className="font-mono text-[10px] leading-none text-muted-foreground">
+            <span className={cn(NOTE, "text-muted-foreground")}>
               compacted
             </span>
           )}

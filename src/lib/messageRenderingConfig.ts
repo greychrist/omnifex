@@ -665,9 +665,14 @@ export const CARD_BORDER_RADIUS_MAX = 24;
 
 // ─── top-level config (v5) ──────────────────────────────────────────────────
 
+/** The chat formats a transcript can be drawn in (SessionViewToggle). */
+export type ViewMode = "compact" | "verbose" | "all" | "modern";
+const VIEW_MODES: readonly ViewMode[] = ["compact", "verbose", "all", "modern"];
+
 export interface MessageRenderingConfig {
   version: 5;
-  defaultViewMode: "compact" | "verbose";
+  /** The chat format a new session opens in. */
+  defaultViewMode: ViewMode;
   categories: Record<Category, CategoryStyle>;
   /** Per-kind user style patches — the third layer of resolveKind. */
   kinds: Record<string, Partial<KindStyle>>;
@@ -685,7 +690,8 @@ export interface MessageRenderingConfig {
 export function createDefaultConfig(): MessageRenderingConfig {
   return {
     version: 5,
-    defaultViewMode: "verbose",
+    // What sessions opened in before the setting was read.
+    defaultViewMode: "compact",
     categories: structuredClone(DEFAULT_CATEGORIES),
     kinds: {},
     cardBorderOpacity: DEFAULT_CARD_BORDER_OPACITY,
@@ -825,8 +831,8 @@ function mergeShared(
   saved: Record<string, unknown>,
   swatches: Record<string, string>,
 ): MessageRenderingConfig {
-  if (saved.defaultViewMode === "compact" || saved.defaultViewMode === "verbose") {
-    base.defaultViewMode = saved.defaultViewMode;
+  if (VIEW_MODES.includes(saved.defaultViewMode as ViewMode)) {
+    base.defaultViewMode = saved.defaultViewMode as ViewMode;
   }
 
   if (typeof saved.cardBorderOpacity === "number" && Number.isFinite(saved.cardBorderOpacity)) {

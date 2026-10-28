@@ -38,6 +38,7 @@ import { DEFAULT_CONTEXT_JUMP_TOKENS } from "@/lib/turnDelta";
 import { APP_FONT_CHOICES } from "@/lib/typefaceCatalog";
 import { TabPersistenceService } from "@/services/tabPersistence";
 import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
+import type { ViewMode } from "@/lib/messageRenderingConfig";
 import { TabIndicatorsEditor } from "./TabIndicatorsEditor";
 import { TabDensityControl } from "./TabDensityControl";
 import { TabMaxWidthControl } from "./TabMaxWidthControl";
@@ -68,6 +69,13 @@ function SettingsSection({ title, children }: { title: string; children: React.R
     </section>
   );
 }
+
+const CHAT_FORMATS: { value: ViewMode; label: string }[] = [
+  { value: "compact", label: "Compact" },
+  { value: "verbose", label: "Verbose" },
+  { value: "all", label: "All" },
+  { value: "modern", label: "Modern" },
+];
 
 /** Every control saves as it changes and reports through `track` (see saveStatus.tsx). */
 export const GeneralSettings: React.FC = () => {
@@ -282,6 +290,43 @@ export const GeneralSettings: React.FC = () => {
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+            </div>
+
+            {/* Default chat format. Stored in the message-rendering config,
+                which every session reads; a new session opens in it
+                (useSessionViewMode), an open one stays where it is. */}
+            <div className="flex items-center justify-between">
+              <div>
+                <Label>Default chat format</Label>
+                <p className="text-caption text-muted-foreground mt-1">
+                  The format a new session opens in. Each session can still switch its own.
+                </p>
+              </div>
+              <div
+                role="radiogroup"
+                aria-label="Default chat format"
+                className="flex items-center gap-1 p-1 bg-muted/30 rounded-lg"
+              >
+                {CHAT_FORMATS.map((f) => {
+                  const checked = config.defaultViewMode === f.value;
+                  return (
+                    <button
+                      key={f.value}
+                      type="button"
+                      role="radio"
+                      aria-checked={checked}
+                      onClick={() => { void track(setConfig({ ...config, defaultViewMode: f.value })); }}
+                      className={cn(
+                        "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all",
+                        checked ? "bg-background shadow-sm" : "hover:bg-background/50",
+                      )}
+                    >
+                      {checked && <Check className="h-3 w-3" />}
+                      {f.label}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           </SettingsSection>

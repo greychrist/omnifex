@@ -143,9 +143,9 @@ describe("createDefaultConfig", () => {
 
 describe("mergeConfig", () => {
   it("returns defaults for non-object input", () => {
-    expect(mergeConfig(null).defaultViewMode).toBe("verbose");
-    expect(mergeConfig("nope").defaultViewMode).toBe("verbose");
-    expect(mergeConfig(42).defaultViewMode).toBe("verbose");
+    expect(mergeConfig(null).defaultViewMode).toBe("compact");
+    expect(mergeConfig("nope").defaultViewMode).toBe("compact");
+    expect(mergeConfig(42).defaultViewMode).toBe("compact");
   });
 
   it("resets to defaults when saved version is not 5 (v4)", () => {
@@ -169,10 +169,14 @@ describe("mergeConfig", () => {
 
   it("applies valid view-mode override", () => {
     expect(mergeConfig({ version: 5, defaultViewMode: "compact" }).defaultViewMode).toBe("compact");
+    // Every chat format can be the default, not only the two the setting began with.
+    for (const mode of ["verbose", "all", "modern"] as const) {
+      expect(mergeConfig({ version: 5, defaultViewMode: mode }).defaultViewMode).toBe(mode);
+    }
   });
 
   it("ignores invalid view-mode values", () => {
-    expect(mergeConfig({ version: 5, defaultViewMode: "weird" }).defaultViewMode).toBe("verbose");
+    expect(mergeConfig({ version: 5, defaultViewMode: "weird" }).defaultViewMode).toBe("compact");
   });
 
   it("merges a valid kinds patch onto a v5 config", () => {
@@ -572,9 +576,9 @@ describe("parse/serialize round-trip", () => {
   });
 
   it("returns defaults for null/empty/invalid JSON", () => {
-    expect(parseConfig(null).defaultViewMode).toBe("verbose");
-    expect(parseConfig("").defaultViewMode).toBe("verbose");
-    expect(parseConfig("{not json").defaultViewMode).toBe("verbose");
+    expect(parseConfig(null).defaultViewMode).toBe("compact");
+    expect(parseConfig("").defaultViewMode).toBe("compact");
+    expect(parseConfig("{not json").defaultViewMode).toBe("compact");
   });
 
   it("returns defaults (v5 reset) for a serialized v4 config", () => {

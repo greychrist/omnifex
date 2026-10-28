@@ -1,33 +1,21 @@
 import React from "react";
-import { CARD_BORDER_RADIUS_MAX, type MessageRenderingConfig } from "@/lib/messageRenderingConfig";
-import { cn } from "@/lib/utils";
+import { CARD_BORDER_RADIUS_MAX } from "@/lib/messageRenderingConfig";
 import { EditorRow } from "./EditorRow";
 
-type ViewMode = MessageRenderingConfig["defaultViewMode"];
-
 interface AllCardsEditorProps {
-  defaultViewMode: ViewMode;
   cardBorderOpacity: number;
   cardBorderRadius: number;
-  onDefaultViewMode: (mode: ViewMode) => void;
   onCardBorderOpacity: (pct: number) => void;
   onCardBorderRadius: (px: number) => void;
 }
-
-const VIEW_MODES: { value: ViewMode; label: string }[] = [
-  { value: "verbose", label: "Verbose" },
-  { value: "compact", label: "Compact" },
-];
 
 /**
  * Appearance › Message kinds › All cards: what applies to every card rather
  * than one kind. Laid out like the kind editor beside it.
  */
 export const AllCardsEditor: React.FC<AllCardsEditorProps> = ({
-  defaultViewMode,
   cardBorderOpacity,
   cardBorderRadius,
-  onDefaultViewMode,
   onCardBorderOpacity,
   onCardBorderRadius,
 }) => (
@@ -38,34 +26,6 @@ export const AllCardsEditor: React.FC<AllCardsEditorProps> = ({
         Settings that apply to every message, whatever its kind.
       </p>
     </header>
-
-    <EditorRow name="Default view">
-      <div
-        role="radiogroup"
-        aria-label="Default view mode"
-        className="inline-flex shrink-0 gap-0.5 rounded-md border border-input p-0.5"
-      >
-        {VIEW_MODES.map((m) => {
-          const checked = defaultViewMode === m.value;
-          return (
-            <button
-              key={m.value}
-              type="button"
-              role="radio"
-              aria-checked={checked}
-              onClick={() => { onDefaultViewMode(m.value); }}
-              className={cn(
-                "rounded px-2 py-1 text-xs transition-colors",
-                checked ? "bg-primary/15 text-foreground" : "text-muted-foreground hover:bg-muted/40",
-              )}
-            >
-              {m.label}
-            </button>
-          );
-        })}
-      </div>
-      <span className="text-[11px] text-muted-foreground truncate">How a session opens.</span>
-    </EditorRow>
 
     <EditorRow name="Border opacity">
       <input

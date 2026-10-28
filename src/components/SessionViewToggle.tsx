@@ -1,12 +1,13 @@
 import React from 'react';
 import { cn } from '@/lib/utils';
+import type { ViewMode } from '@/lib/messageRenderingConfig';
 
 /**
  * `all` is Verbose plus every kind set to "Never" in Appearance settings.
  * `modern` is Compact's filtering drawn as a conversation: prompt bubbles,
  * plain prose, and each run of work folded into a Chain of Thought.
  */
-export type ViewMode = 'compact' | 'verbose' | 'all' | 'modern';
+export type { ViewMode };
 
 const MODES: { mode: ViewMode; label: string; title: string }[] = [
   { mode: 'compact', label: 'Compact', title: 'Fold verbose-only messages away' },

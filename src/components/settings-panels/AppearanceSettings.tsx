@@ -20,6 +20,7 @@ import {
   type Terminal,
   type HiddenEventsStyle,
   type Typography,
+  type ViewMode,
 } from "@/lib/messageRenderingConfig";
 import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
 import { MessageKindTree, type TreeSelection } from "./appearance/MessageKindTree";
@@ -56,6 +57,13 @@ const FIRST_SELECTION: TreeSelection = { type: "category", id: "user" };
 
 /** The tabs that exist, so a remembered one that no longer does is ignored. */
 const APPEARANCE_TABS: readonly string[] = ["kinds", "turns", "typography", "terminal"];
+
+
+/** The turn preview draws Compact and Verbose only. Modern filters as
+ *  Compact does, All shows what Verbose shows and more. */
+function previewModeOf(mode: ViewMode): "compact" | "verbose" {
+  return mode === "compact" || mode === "modern" ? "compact" : "verbose";
+}
 
 export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast }) => {
   const { config: committedConfig, setConfig: commitConfig } = useMessageRenderingConfig();
@@ -124,7 +132,7 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
   }, [pushToGlobal]);
 
   const [selected, setSelected] = useState<TreeSelection>(FIRST_SELECTION);
-  const [previewMode, setPreviewMode] = useState<"compact" | "verbose">(config.defaultViewMode);
+  const [previewMode, setPreviewMode] = useState<"compact" | "verbose">(previewModeOf(config.defaultViewMode));
   const [hasUserDefault, setHasUserDefault] = useState(false);
   // Surface every section behind tabs instead of a single long scroll.
   // Persisted across remounts via sessionStorage so a quick trip back to
@@ -154,7 +162,7 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
 
   // Keep the local preview toggle in sync when the persisted default mode changes.
   useEffect(() => {
-    setPreviewMode(config.defaultViewMode);
+    setPreviewMode(previewModeOf(config.defaultViewMode));
   }, [config.defaultViewMode]);
 
   const mutate = useCallback(
@@ -290,13 +298,6 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
     [mutate],
   );
 
-  const setDefaultViewMode = useCallback(
-    (mode: "compact" | "verbose") => {
-      mutate((prev) => ({ ...prev, defaultViewMode: mode }));
-    },
-    [mutate],
-  );
-
   const resetAll = useCallback(() => {
     if (!window.confirm("Reset all appearance settings to defaults? This cannot be undone.")) {
       return;
@@ -324,7 +325,7 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
         const text = await file.text();
         const imported = parseConfig(text);
         replaceConfig(imported);
-        setPreviewMode(imported.defaultViewMode);
+        setPreviewMode(previewModeOf(imported.defaultViewMode));
         setToast({ message: `Imported ${file.name}`, type: "success" });
       } catch {
         setToast({ message: "Failed to import config", type: "error" });
@@ -435,10 +436,8 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
                       title — so the all-card settings show their effect. */}
                   {sample(allCardsSampleStyle, "user", ALL_CARDS_PREVIEW_TEXT)}
                   <AllCardsEditor
-                    defaultViewMode={config.defaultViewMode}
                     cardBorderOpacity={config.cardBorderOpacity}
                     cardBorderRadius={config.cardBorderRadius}
-                    onDefaultViewMode={setDefaultViewMode}
                     onCardBorderOpacity={setCardBorderOpacity}
                     onCardBorderRadius={setCardBorderRadius}
                   />

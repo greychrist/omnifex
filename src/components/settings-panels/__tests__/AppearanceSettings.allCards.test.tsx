@@ -72,12 +72,10 @@ describe('AppearanceSettings — All cards', () => {
     await waitFor(() => { expect(savedConfigs().some((c) => c.cardBorderRadius === 4)).toBe(true); });
   });
 
-  it('sets the default view mode', async () => {
+  // It lives in General › Appearance now: a session setting, not card style.
+  it('leaves the default chat format to General settings', async () => {
     const editor = await openAllCards();
-    const group = within(editor).getByRole('radiogroup', { name: 'Default view mode' });
-    expect(within(group).getByRole('radio', { name: 'Verbose' })).toHaveAttribute('aria-checked', 'true');
-    fireEvent.click(within(group).getByRole('radio', { name: 'Compact' }));
-    await waitFor(() => { expect(savedConfigs().some((c) => c.defaultViewMode === 'compact')).toBe(true); });
+    expect(within(editor).queryByRole('radiogroup', { name: /default/i })).toBeNull();
   });
 
   // The "Show message kind label" debug toggle was read by nothing — the

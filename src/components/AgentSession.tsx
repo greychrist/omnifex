@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { useSessionViewMode } from '@/hooks/useSessionViewMode';
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Shield,
@@ -81,7 +82,7 @@ import { runStreamEffect, drainQueuedPrompt } from '@/lib/sessionStreamEffects';
 import { QueuedPromptsPanel } from '@/components/QueuedPromptsPanel';
 import { appendInflightDelta, appendInflightThinkingDelta, clearInflightThinking } from '@/lib/inflightCoalescer';
 import { maybeAutoGenerateSummaryOnLeave } from "@/lib/sessionSummaryGate";
-import { SessionViewToggle, type ViewMode } from "./SessionViewToggle";
+import { SessionViewToggle } from "./SessionViewToggle";
 // deriveConversationStatus import removed — derivation moved into useSessionLifecycle (Task 2).
 import { HeaderLabel } from "./HeaderLabel";
 import { AccountCard } from "./AccountCard";
@@ -1115,7 +1116,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
       : { total: 0, done: 0, inProgress: 0, pending: 0, running: false };
   }, [taskEntries]);
 
-  const [viewMode, setViewMode] = useState<ViewMode>('compact');
+  const [viewMode, setViewMode] = useSessionViewMode();
   // The live question and permission cards follow the chat format's look.
   const ActiveQuestionCard = viewMode === 'modern' ? ModernQuestionCard : AskUserQuestionCard;
   const ActivePermissionCard = viewMode === 'modern' ? ModernPermissionCard : PermissionCard;

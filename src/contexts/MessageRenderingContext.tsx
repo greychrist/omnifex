@@ -17,7 +17,7 @@ interface MessageRenderingContextValue {
   loaded: boolean;
 }
 
-const MessageRenderingContext = createContext<MessageRenderingContextValue | undefined>(undefined);
+export const MessageRenderingContext = createContext<MessageRenderingContextValue | undefined>(undefined);
 
 export const MessageRenderingProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [config, setConfigState] = useState<MessageRenderingConfig>(() => createDefaultConfig());

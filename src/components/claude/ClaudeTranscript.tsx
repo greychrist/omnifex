@@ -210,13 +210,13 @@ function ClaudeTranscriptImpl({
   const withTimeline = (node: JsonlNode | undefined, body: React.ReactNode) => {
     if (!timeline) return body;
     return (
-      <div className="flex gap-2">
+      <div className="flex">
         <ContextTimelineTick
           point={node ? timeline.get(node) : undefined}
           viewMode={viewMode}
           isLast={node !== undefined && node === lastRailNode}
         />
-        <div className="flex-1 min-w-0 pb-4">{body}</div>
+        <div className="flex-1 min-w-0 pb-4 pl-4">{body}</div>
       </div>
     );
   };
@@ -514,10 +514,29 @@ function ClaudeTranscriptImpl({
     }
   }, [isNearBottomRef, followPx]);
 
+  const liveRows = (
+    <>
+      {/* The thought being typed (classic formats; Modern draws its own in
+          the live run). Renders null when no thought is streaming. */}
+      {viewMode !== 'modern' && !rendering && <InflightThinking tabId={tabId} />}
+      {/* Streaming answer — renders null when no in-flight slot is set.
+          Modern streams it in its own style, so the finished answer does not
+          change look when its record lands. */}
+      {viewMode === 'modern'
+        ? <ModernLiveAnswer tabId={tabId} />
+        : <InflightAssistantBubble tabId={tabId} />}
+    </>
+  );
+
   return (
     <MessageRenderingOverrideProvider config={renderConfig}>
     <div
-      className="flex-1 min-h-0 px-10 py-2 bg-muted/30 relative"
+      className={cn(
+        "flex-1 min-h-0 py-2 bg-muted/30 relative",
+        // With the rail on, the left margin is the rail's: the scroller
+        // reaches into it (see data-transcript-frame below).
+        timeline ? "pr-10" : "px-10",
+      )}
       onWheel={markUserInput}
       onTouchStart={markUserInput}
       onTouchMove={markUserInput}
@@ -535,9 +554,10 @@ function ClaudeTranscriptImpl({
         onClose={() => { setFindOpen(false); setFindQuery(''); }}
       />
     )}
-    {/* Sits on the left, beside the gutter it controls — the scroll buttons on
-        the right are unrelated chrome. */}
-    <div className="absolute left-1 bottom-6 z-10">
+    {/* Top of the left gutter it controls, level with the frame's top edge
+        (the container's py-2) — the scroll buttons on the right are
+        unrelated chrome. */}
+    <div data-timeline-toggle-slot className="absolute left-1 top-2 z-10">
       <ContextTimelineToggle
         active={contextTimelineEnabled}
         onToggle={() => { logAndForget('claude-transcript:context-timeline-toggle', setContextTimelineEnabled(!contextTimelineEnabled)); }}
@@ -637,10 +657,26 @@ function ClaudeTranscriptImpl({
         </Button>
       </TooltipSimple>
     </SessionGutter>
+    <div className="relative h-full">
+    {/* The chat frame, drawn behind the scroller rather than being it. The
+        scroller spans the left margin too, so the context rail scrolls with
+        its rows while sitting outside the frame, in the gutter. Inset 1px so
+        rows scrolling past never paint over the frame's own edge. */}
+    <div
+      aria-hidden="true"
+      data-transcript-frame
+      className={cn(
+        "pointer-events-none absolute inset-y-0 right-0 rounded-lg border border-border/50 bg-background",
+        timeline ? "left-14" : "left-0",
+      )}
+    />
     <div
       ref={parentRef}
       data-transcript-scroll
-      className="h-full overflow-y-auto relative border border-border/50 rounded-lg bg-background"
+      className={cn(
+        "absolute inset-y-px right-px overflow-y-auto",
+        timeline ? "left-0" : "left-px",
+      )}
       onScroll={handleScroll}
       style={{
         contain: 'paint',
@@ -651,7 +687,10 @@ function ClaudeTranscriptImpl({
       <div
         ref={contentRef}
         className={cn(
-          "relative w-full px-4 pt-8 pb-4",
+          "relative w-full pt-8 pb-4",
+          // With the rail on, the gutter cell starts each row at the left
+          // edge and the row's body carries the inset.
+          timeline ? "pr-4" : "px-4",
           viewMode === 'modern' && "modern-format",
           !timeline && "space-y-4",
         )}
@@ -661,7 +700,9 @@ function ClaudeTranscriptImpl({
               than counted in an array so they follow whatever the filters and
               the view mode actually rendered. */}
           {rendering
-            ? <TranscriptSkeleton />
+            // In a row like any other: with the rail on, the row's gutter is
+            // what keeps it inside the chat frame.
+            ? withTimeline(undefined, <TranscriptSkeleton />)
             : viewMode === 'modern'
             ? modernItems.map((item, i) => {
                 const anchor = anchorNodeOf(item);
@@ -757,16 +798,14 @@ function ClaudeTranscriptImpl({
                 );
               })()}
 
-          {/* The thought being typed (classic formats; Modern draws its own
-              in the live run). Renders null when no thought is streaming. */}
-          {viewMode !== 'modern' && !rendering && <InflightThinking tabId={tabId} />}
-
-          {/* Streaming answer — renders null when no in-flight slot is set.
-              Modern streams it in its own style, so the finished answer does
-              not change look when its record lands. */}
-          {viewMode === 'modern'
-            ? <ModernLiveAnswer tabId={tabId} />
-            : <InflightAssistantBubble tabId={tabId} />}
+          {/* The live rows render nothing most of the time, so they are not
+              timeline rows (a row's spacing would leave a gap). With the rail
+              on they take its inset — gutter plus the row's own — so they stay
+              inside the chat frame. Unwrapped otherwise: an empty wrapper
+              would take a space-y gap of its own. */}
+          {timeline
+            ? <div data-live-inset className="pl-18">{liveRows}</div>
+            : liveRows}
 
           {/* Modern: the running turn's activity when no live run shows it. */}
           {viewMode === 'modern' && !rendering && outstandingWork && !hasInflightAssistant && !waitingForPermission && (!liveRunShown || compacting) && withTimeline(
@@ -839,6 +878,7 @@ function ClaudeTranscriptImpl({
             style={{ bottom: followPx, boxShadow: 'inset 0 0 0 1px currentColor' }}
           />
       </div>
+    </div>
     </div>
     </div>
     </MessageRenderingOverrideProvider>

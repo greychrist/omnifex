@@ -66,10 +66,10 @@ describe('ContextTimelineTick', () => {
     expect(screen.getByText(/compacted/i)).toBeInTheDocument();
   });
 
-  it('scales the bar with the window fraction', () => {
+  it('draws no proportional bar; the share of the window is in the tooltip', () => {
     const { container } = render(<ContextTimelineTick point={point({ fraction: 0.42 })} />);
-    const bar = container.querySelector('[data-timeline-bar]') as HTMLElement;
-    expect(bar).toHaveStyle({ width: '42%' });
+    expect(container.querySelector('[data-timeline-bar]')).toBeNull();
+    expect(screen.getByTitle(/42% of the window/)).toBeInTheDocument();
   });
 
   it('exposes before → after as a tooltip', () => {
@@ -185,10 +185,30 @@ describe('ContextTimelineTick — rail colour tracks pressure', () => {
     expect(rail(container)).toMatch(/red/);
   });
 
-  it('colours the bar to match the rail', () => {
+  it('sets the size in a badge coloured to match the rail', () => {
     const { container } = render(<ContextTimelineTick point={point({ level: 'critical' })} />);
-    const bar = container.querySelector('[data-timeline-bar]') as HTMLElement;
-    expect(bar.className).toMatch(/red/);
+    const badge = container.querySelector('[data-timeline-badge]') as HTMLElement;
+    expect(badge).toHaveTextContent('120k');
+    expect(badge.className).toMatch(/red/);
+    expect(badge.className).toMatch(/rounded/);
+  });
+
+  // The badges sit on top of the line, so they must hide it: no translucent
+  // fill the rail would show through.
+  it('fills the size badge solidly, so the line does not show through it', () => {
+    const { container } = render(<ContextTimelineTick point={point()} />);
+    const badge = container.querySelector('[data-timeline-badge]') as HTMLElement;
+    expect(badge.className).not.toMatch(/bg-[a-z]+-\d+\/\d+/);
+  });
+
+  it('centres the line in the gutter and the badges on it', () => {
+    const { container } = render(<ContextTimelineTick point={point()} />);
+    const rail = container.querySelector('[data-timeline-rail]') as HTMLElement;
+    const readout = container.querySelector('[data-timeline-readout]') as HTMLElement;
+    expect(rail.className).toMatch(/\bleft-1\/2\b/);
+    expect(rail.className).toMatch(/-translate-x-1\/2/);
+    expect(readout.className).toMatch(/\bitems-center\b/);
+    expect(readout.className).toMatch(/\brelative\b/);
   });
 
   // Level and jump are orthogonal: level is where you are, the delta label is
@@ -203,10 +223,13 @@ describe('ContextTimelineTick — rail colour tracks pressure', () => {
 });
 
 describe('ContextTimelineTick — the rail reads as one line', () => {
-  it('draws a rail thick enough to be a line rather than a hairline', () => {
+  // 4px read as clumsy (Greg, 2026-10-28); a 1px line antialiases away on
+  // half-pixel positions. 2px is the line.
+  it('draws a slim rail: thinner than 4px, thicker than a hairline', () => {
     const { container } = render(<ContextTimelineTick point={point()} />);
     const rail = container.querySelector('[data-timeline-rail]') as HTMLElement;
-    expect(rail.className).toMatch(/\bw-1\b/);
+    expect(rail.className).toMatch(/\bw-0\.5\b/);
+    expect(rail.className).not.toMatch(/\bw-1\b/);
     expect(rail.className).not.toMatch(/\bw-px\b/);
   });
 
@@ -239,33 +262,32 @@ describe('ContextTimelineTick — readout sizing', () => {
 });
 
 describe('ContextTimelineTick — readout order', () => {
-  // The size reads first, with the proportional bar beneath it. The jump and
-  // reset annotations stay under the bar: they qualify the number rather than
-  // competing with it.
+  // The size badge reads first. The jump and reset annotations sit under it:
+  // they qualify the number rather than competing with it.
   const orderOf = (container: HTMLElement) => {
     const readout = container.querySelector('[data-timeline-readout]') as HTMLElement;
     return Array.from(readout.children).map((c) =>
-      c.querySelector('[data-timeline-bar]') ? 'bar' : (c.textContent ?? '').trim(),
+      (c.textContent ?? '').trim(),
     );
   };
 
-  it('puts the size above the bar', () => {
+  it('puts the size first', () => {
     const { container } = render(<ContextTimelineTick point={point()} />);
-    expect(orderOf(container)).toEqual(['120k', 'bar', '+20k']);
+    expect(orderOf(container)).toEqual(['120k', '+20k']);
   });
 
-  it('keeps the jump delta below the bar', () => {
+  it('keeps the jump delta below the size', () => {
     const { container } = render(
       <ContextTimelineTick point={point({ isJump: true, delta: 325_000 })} />,
     );
-    expect(orderOf(container)).toEqual(['120k', 'bar', '+325k']);
+    expect(orderOf(container)).toEqual(['120k', '+325k']);
   });
 
-  it('keeps the compacted label below the bar', () => {
+  it('keeps the compacted label below the size', () => {
     const { container } = render(
       <ContextTimelineTick point={point({ isReset: true, delta: null })} />,
     );
-    expect(orderOf(container)).toEqual(['120k', 'bar', '+20k', 'compacted']);
+    expect(orderOf(container)).toEqual(['120k', '+20k', 'compacted']);
   });
 });
 

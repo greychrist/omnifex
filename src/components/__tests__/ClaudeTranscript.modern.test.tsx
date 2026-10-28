@@ -16,9 +16,10 @@ vi.mock('@/hooks', () => ({
 vi.mock('@/contexts/AutoScrollContext', () => ({
   useAutoScroll: () => ({ followPx: 200 }),
 }));
+const gauges = vi.hoisted(() => ({ timelineOn: false }));
 vi.mock('@/contexts/SessionGaugesContext', () => ({
   useSessionGauges: () => ({
-    contextTimelineEnabled: false,
+    contextTimelineEnabled: gauges.timelineOn,
     setContextTimelineEnabled: () => {},
     contextJump: { thresholdTokens: 50_000 },
     contextPressure: { enabled: true, mode: 'tokens', value: 250_000 },
@@ -35,7 +36,7 @@ import { ClaudeTranscript } from '@/components/claude/ClaudeTranscript';
 import { useClaudeSessionStore } from '@/stores/claudeSessionStore';
 import { TooltipProvider } from '@/components/ui/tooltip-modern';
 
-afterEach(() => { cleanup(); useClaudeSessionStore.getState().__resetForTests(); });
+afterEach(() => { cleanup(); useClaudeSessionStore.getState().__resetForTests(); gauges.timelineOn = false; });
 
 const prompt = {
   kind: 'user', userKind: 'prompt', sessionId: 's', receivedAt: '2026-10-28T10:00:00Z',
@@ -268,5 +269,45 @@ describe('ClaudeTranscript — Modern chat format', () => {
     expect(screen.getByText('What is this?')).toBeInTheDocument();
     expect(container.querySelector('img[src="data:image/png;base64,AAAA"]')).not.toBeNull();
     expect(container.querySelectorAll('[data-stream-row]')).toHaveLength(0);
+  });
+
+  // The rail lives in the transcript's left gutter, outside the chat frame:
+  // the frame is a backdrop that does not scroll, and the scroller spans the
+  // gutter too, so the rail still scrolls with its rows.
+  it('puts the context rail outside the chat frame, in the left gutter', () => {
+    gauges.timelineOn = true;
+    const { container } = renderModern();
+    const frame = container.querySelector('[data-transcript-frame]') as HTMLElement;
+    const scroller = container.querySelector('[data-transcript-scroll]') as HTMLElement;
+    expect(frame).not.toBeNull();
+    expect(frame.className).toMatch(/\bborder\b/);
+    expect(frame.className).toMatch(/\bleft-14\b/);
+    expect(scroller.className).not.toMatch(/\bborder\b/);
+    expect(scroller.querySelector('[data-timeline-gutter]')).not.toBeNull();
+  });
+
+  it('keeps the frame flush with the gutter when the rail is off', () => {
+    const { container } = renderModern();
+    const frame = container.querySelector('[data-transcript-frame]') as HTMLElement;
+    expect(frame.className).toMatch(/\bleft-0\b/);
+    expect(container.querySelector('[data-timeline-gutter]')).toBeNull();
+  });
+
+  // Live rows are not timeline rows (they render nothing most of the time),
+  // but with the rail on they still need its inset to stay inside the frame.
+  it('keeps the streaming answer inside the chat frame when the rail is on', () => {
+    gauges.timelineOn = true;
+    useClaudeSessionStore.getState().setInflightAssistantText('tab-1', 'u', 'Streaming along', null);
+    renderModern(true);
+    const live = screen.getByText('Streaming along').closest('[data-live-inset]') as HTMLElement;
+    expect(live).not.toBeNull();
+    expect(live.className).toMatch(/\bpl-18\b/);
+  });
+
+  it('puts the context timeline toggle at the top of the left gutter', () => {
+    renderModern();
+    const slot = screen.getByRole('button', { name: /context timeline/i }).closest('[data-timeline-toggle-slot]') as HTMLElement;
+    expect(slot.className).toMatch(/\btop-2\b/);
+    expect(slot.className).not.toMatch(/\bbottom-/);
   });
 });
