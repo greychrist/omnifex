@@ -2,21 +2,36 @@
  * A run of thinking and tool calls, drawn as shadcn's Trace chain of thought:
  * a header line with a status circle ("Worked in 5 steps" · 32s, or
  * "Working" with a spinner while live), opening onto one line per step, each
- * with its own status circle and a title whose verb follows its state.
+ * with an icon naming its action (a brain for a thought, a terminal for a
+ * command, a file for a read) and a title whose verb follows its state. As in
+ * Trace, status is the line's colour, shimmer and wording, never the icon.
  *
- * Collapsed once the run is finished and open while it is live. A tool step
- * opens onto the same tool widget the other formats draw, so folding loses
- * nothing.
+ * Collapsed once the run is finished and open while it is live. A step opens
+ * onto its result alone (a command's output, an edit's diff, the sources a
+ * web step used); a read opens onto nothing, its title says it all. Copy and
+ * the raw records sit beside every step on hover.
  */
 import * as React from 'react';
 import type { JsonlNode } from '@/types/jsonl';
 import type { RowLookups } from '@/lib/rowLookups';
 import type { WorkEntry } from '@/lib/modernGrouping';
-import { describeToolStep, reasoningTitle, thinkingTokensLabel, traceHeader, type StepState } from '@/lib/modernSteps';
+import {
+  describeToolStep, reasoningTitle, stepKind, thinkingTokensLabel, traceHeader, webSources,
+  type StepKind, type StepState,
+} from '@/lib/modernSteps';
 import { StreamMessage } from '@/components/StreamMessage';
+import { RawJsonPopover } from '@/components/StreamMessage/RawJsonPopover';
+import { CopyButton } from '@/components/ui/copy-button';
+import { DiffViewer } from '@/components/shared/DiffViewer';
+import { getLanguage } from '@/components/claude/tools/shared';
+import {
+  ArrowUpRightIcon, BotIcon, BrainIcon, FilePenIcon, FilePlusIcon, FileTextIcon, FolderSearchIcon,
+  GitBranchIcon, GitCommitHorizontalIcon, GlobeIcon, ListTodoIcon, MessageCircleQuestionIcon,
+  PlugIcon, SearchIcon, SparklesIcon, TerminalIcon, WrenchIcon, type LucideIcon,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useClaudeSessionStore } from '@/stores/claudeSessionStore';
-import { Shimmer } from './primitives';
+import { MessageResponse, Shimmer } from './primitives';
 import {
   Trace,
   TraceCollapsible,
@@ -130,7 +145,7 @@ export function ReasoningLine({
   const title = reasoningTitle({ running, ms });
   const line = (
     <TraceLine status={status}>
-      <TraceIcon><TraceStatusIcon status={status} /></TraceIcon>
+      <KindIcon kind="thought" />
       <TraceTitle>{running ? <Shimmer>{title}</Shimmer> : title}</TraceTitle>
       {tokens !== null && <TraceDescription>({thinkingTokensLabel(tokens)})</TraceDescription>}
     </TraceLine>
@@ -144,9 +159,39 @@ export function ReasoningLine({
   );
 }
 
+const KIND_ICONS: Record<StepKind | 'thought', LucideIcon> = {
+  thought: BrainIcon,
+  command: TerminalIcon,
+  commit: GitCommitHorizontalIcon,
+  branch: GitBranchIcon,
+  read: FileTextIcon,
+  edit: FilePenIcon,
+  create: FilePlusIcon,
+  search: SearchIcon,
+  explore: FolderSearchIcon,
+  web: GlobeIcon,
+  agent: BotIcon,
+  tasks: ListTodoIcon,
+  question: MessageCircleQuestionIcon,
+  skill: SparklesIcon,
+  mcp: PlugIcon,
+  tool: WrenchIcon,
+};
+
+function KindIcon({ kind }: { kind: StepKind | 'thought' }) {
+  const Icon = KIND_ICONS[kind];
+  return <TraceIcon data-step-kind={kind}><Icon /></TraceIcon>;
+}
+
+type ToolEntry = Extract<WorkEntry, { type: 'tool' }>;
+
 function Step({ entry, live, ctx }: { entry: WorkEntry; live: boolean; ctx: RowContext }) {
   if (entry.type === 'thinking') {
-    return <ReasoningLine text={entry.text} ms={entry.ms} tokens={entry.tokens} running={false} />;
+    return (
+      <StepRow raw={rawOf([entry.node])} copy={() => entry.text}>
+        <ReasoningLine text={entry.text} ms={entry.ms} tokens={entry.tokens} running={false} />
+      </StepRow>
+    );
   }
 
   // A tool with no result yet is running while the turn is; otherwise it
@@ -155,33 +200,157 @@ function Step({ entry, live, ctx }: { entry: WorkEntry; live: boolean; ctx: RowC
   const status: TraceStatus | undefined =
     entry.status === 'error' ? 'error' : entry.status === 'pending' ? (live ? 'running' : 'pending') : undefined;
   const text = describeToolStep(entry.name, entry.input, state);
+  // The model's own description of a command: the title says what ran.
+  const tooltip = entry.name === 'Bash' && typeof entry.input.description === 'string' ? entry.input.description : undefined;
+  const body = stepBody(entry, ctx);
+
+  const line = (
+    <TraceLine status={status}>
+      <KindIcon kind={stepKind(entry.name, entry.input)} />
+      <TraceTitle>{status === 'running' ? <Shimmer>{text.title}</Shimmer> : text.title}</TraceTitle>
+      {text.badges && (
+        <TraceDescription className={cn(text.codeBadges && 'font-mono text-xs')}>
+          {text.badges.join(' · ')}
+        </TraceDescription>
+      )}
+    </TraceLine>
+  );
 
   return (
-    <TraceCollapsible>
-      <TraceCollapsibleTrigger>
-        <TraceLine status={status}>
-          <TraceIcon><TraceStatusIcon status={status} /></TraceIcon>
-          <TraceTitle>{status === 'running' ? <Shimmer>{text.title}</Shimmer> : text.title}</TraceTitle>
-          {text.badges && (
-            <TraceDescription className={cn(text.codeBadges && 'font-mono text-xs')}>
-              {text.badges.join(' · ')}
-            </TraceDescription>
-          )}
-        </TraceLine>
-      </TraceCollapsibleTrigger>
-      <TraceCollapsibleContent>
-        <div className="mt-1 rounded-md border border-border/60 p-1">
-          <StreamMessage
-            message={entry.node}
-            lookups={ctx.lookupsFor(entry.node)}
-            tabId={ctx.tabId}
-            accountType={ctx.accountType}
-            onResend={ctx.onResend}
-            inExpandedGroup
-          />
+    <StepRow
+      raw={rawOf(entry.resultNode ? [entry.node, entry.resultNode] : [entry.node])}
+      copy={() => entry.resultText ?? copyInputOf(entry)}
+    >
+      {body ? (
+        <TraceCollapsible>
+          <TraceCollapsibleTrigger title={tooltip}>{line}</TraceCollapsibleTrigger>
+          <TraceCollapsibleContent>{body}</TraceCollapsibleContent>
+        </TraceCollapsible>
+      ) : (
+        <div title={tooltip} className="min-w-0">{line}</div>
+      )}
+    </StepRow>
+  );
+}
+
+/** A step, with copy and the raw records beside it on hover (always shown
+ *  where there is no hover, on the iPad). */
+function StepRow({ raw, copy, children }: { raw: () => string; copy: () => string; children: React.ReactNode }) {
+  return (
+    <div data-step className="group/step flex min-w-0 items-start gap-2">
+      <div className="min-w-0 flex-1">{children}</div>
+      <div className="flex shrink-0 items-center gap-0.5 text-muted-foreground opacity-0 transition-opacity group-hover/step:opacity-100 focus-within:opacity-100 [@media(hover:none)]:opacity-100">
+        <CopyButton getText={copy} className="h-6 w-6" />
+        <RawJsonPopover text={raw} />
+      </div>
+    </div>
+  );
+}
+
+/** The records as the CLI wrote them — a thunk, serialized only when opened. */
+function rawOf(nodes: JsonlNode[]): () => string {
+  return () => {
+    const raws = nodes.map((n) => (n as { raw?: unknown }).raw ?? n);
+    return JSON.stringify(raws.length === 1 ? raws[0] : raws, null, 2);
+  };
+}
+
+function copyInputOf(entry: ToolEntry): string {
+  const { command, file_path: filePath } = entry.input;
+  if (typeof command === 'string') return command;
+  if (typeof filePath === 'string') return filePath;
+  return JSON.stringify(entry.input, null, 2);
+}
+
+function str(v: unknown): string {
+  return typeof v === 'string' ? v : '';
+}
+
+/** What a step opens onto, or null when there is nothing to open. */
+function stepBody(entry: ToolEntry, ctx: RowContext): React.ReactNode {
+  const result = entry.resultText?.replace(/<\/?tool_use_error>/g, '').trim();
+  if (entry.status === 'error') {
+    return result ? <StepOutput text={result} tone="error" /> : null;
+  }
+  const { input } = entry;
+  switch (entry.name) {
+    case 'Read':
+      return null;
+    case 'Edit':
+      return <DiffViewer oldText={str(input.old_string)} newText={str(input.new_string)} language={getLanguage(str(input.file_path))} />;
+    case 'MultiEdit': {
+      const edits = Array.isArray(input.edits) ? (input.edits as { old_string?: unknown; new_string?: unknown }[]) : [];
+      const language = getLanguage(str(input.file_path));
+      return (
+        <div className="flex flex-col gap-2">
+          {edits.map((e, i) => <DiffViewer key={i} oldText={str(e.old_string)} newText={str(e.new_string)} language={language} />)}
         </div>
-      </TraceCollapsibleContent>
-    </TraceCollapsible>
+      );
+    }
+    case 'Write':
+      return str(input.content) ? <StepOutput text={str(input.content)} /> : null;
+    case 'WebFetch':
+    case 'WebSearch': {
+      const sources = webSources(entry.name, input, entry.resultText);
+      if (sources.length > 0) return <SourceList sources={sources} />;
+      break;
+    }
+    case 'Agent':
+    case 'Task':
+      return result ? <div className="text-foreground"><MessageResponse>{result}</MessageResponse></div> : null;
+  }
+  if (result) return <StepOutput text={result} />;
+  // A result with no text (an image, say): the classic widget still draws it.
+  if (entry.resultNode) {
+    return (
+      <StreamMessage
+        message={entry.node}
+        lookups={ctx.lookupsFor(entry.node)}
+        tabId={ctx.tabId}
+        accountType={ctx.accountType}
+        onResend={ctx.onResend}
+        inExpandedGroup
+      />
+    );
+  }
+  return null;
+}
+
+/** Trace's code block: a step's output in the code face, red when it failed. */
+function StepOutput({ text, tone = 'default' }: { text: string; tone?: 'default' | 'error' }) {
+  return (
+    <pre
+      data-step-output
+      data-tone={tone}
+      className={cn(
+        'max-h-72 overflow-auto rounded-xl px-3 py-2 font-mono text-xs leading-relaxed whitespace-pre-wrap break-words',
+        tone === 'error' ? 'border border-destructive/30 bg-destructive/10 text-destructive' : 'bg-muted text-foreground',
+      )}
+    >
+      {text}
+    </pre>
+  );
+}
+
+function SourceList({ sources }: { sources: { title: string; url: string }[] }) {
+  return (
+    <Trace className="gap-1">
+      {sources.map((s) => (
+        <a
+          key={s.url}
+          href={s.url}
+          onClick={(e) => {
+            e.preventDefault();
+            void window.electronAPI?.openExternal?.(s.url);
+          }}
+          className="flex w-fit max-w-full min-w-0 items-center gap-2 text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <TraceIcon><GlobeIcon /></TraceIcon>
+          <span className="truncate">{s.title}</span>
+          <ArrowUpRightIcon className="size-3.5 shrink-0" />
+        </a>
+      ))}
+    </Trace>
   );
 }
 

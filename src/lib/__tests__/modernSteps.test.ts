@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { describeToolStep, reasoningTitle, thinkingTokensLabel, traceHeader } from '../modernSteps';
+import { describeToolStep, reasoningTitle, stepKind, thinkingTokensLabel, traceHeader, webSources } from '../modernSteps';
 
 describe('describeToolStep — verbs follow the step, as in shadcn Trace', () => {
   it('reads a file: reading, read, failed to read', () => {
@@ -23,8 +23,8 @@ describe('describeToolStep — verbs follow the step, as in shadcn Trace', () =>
       .toEqual({ title: 'Read a web page', badges: ['example.com'] });
   });
 
-  it('keeps a command\'s own description, and falls back to the command', () => {
-    expect(describeToolStep('Bash', { command: 'npm test', description: 'Run the tests' }, 'done').title).toBe('Run the tests');
+  it('names the command that ran, as Trace does, not the model\'s description of it', () => {
+    expect(describeToolStep('Bash', { command: 'npm test', description: 'Run the tests' }, 'done').title).toBe('Ran npm test');
     expect(describeToolStep('Bash', { command: 'ls -la\nmore' }, 'done').title).toBe('Ran ls -la');
     expect(describeToolStep('Bash', { command: 'ls' }, 'error').title).toBe('Failed to run ls');
   });
@@ -73,5 +73,55 @@ describe('thinkingTokensLabel', () => {
     expect(thinkingTokensLabel(608)).toBe('~608 tokens');
     expect(thinkingTokensLabel(1200)).toBe('~1,200 tokens');
     expect(thinkingTokensLabel(1)).toBe('~1 token');
+  });
+});
+
+describe('stepKind — the icon names the action, not its status', () => {
+  it('maps each tool to its kind', () => {
+    expect(stepKind('Read', {})).toBe('read');
+    expect(stepKind('Edit', {})).toBe('edit');
+    expect(stepKind('MultiEdit', {})).toBe('edit');
+    expect(stepKind('NotebookEdit', {})).toBe('edit');
+    expect(stepKind('Write', {})).toBe('create');
+    expect(stepKind('Grep', {})).toBe('search');
+    expect(stepKind('Glob', {})).toBe('explore');
+    expect(stepKind('WebSearch', {})).toBe('web');
+    expect(stepKind('WebFetch', {})).toBe('web');
+    expect(stepKind('Agent', {})).toBe('agent');
+    expect(stepKind('Task', {})).toBe('agent');
+    expect(stepKind('TodoWrite', {})).toBe('tasks');
+    expect(stepKind('TaskCreate', {})).toBe('tasks');
+    expect(stepKind('AskUserQuestion', {})).toBe('question');
+    expect(stepKind('Skill', {})).toBe('skill');
+    expect(stepKind('mcp__omnifex__progress', {})).toBe('mcp');
+    expect(stepKind('Whatever', {})).toBe('tool');
+  });
+
+  it('tells commits and new branches apart from other commands', () => {
+    expect(stepKind('Bash', { command: 'npm test' })).toBe('command');
+    expect(stepKind('Bash', { command: 'git add -A && git commit -m "x"' })).toBe('commit');
+    expect(stepKind('Bash', { command: 'git checkout -b feat/x' })).toBe('branch');
+    expect(stepKind('Bash', { command: 'git switch -c feat/x' })).toBe('branch');
+    expect(stepKind('Bash', { command: 'git log --oneline' })).toBe('command');
+  });
+});
+
+describe('webSources', () => {
+  it('lists the page a fetch read', () => {
+    expect(webSources('WebFetch', { url: 'https://ui.shadcn.com/docs/x' }, 'anything'))
+      .toEqual([{ title: 'ui.shadcn.com', url: 'https://ui.shadcn.com/docs/x' }]);
+  });
+
+  it('lists the links a search returned, across sections', () => {
+    const text = 'Web search results for query: "pnpm"\n\nLinks: [{"title":"pnpm install","url":"https://pnpm.io/cli/install"}]\n\nLinks: [{"title":"CI","url":"https://pnpm.io/ci"}]\nsummary';
+    expect(webSources('WebSearch', { query: 'pnpm' }, text)).toEqual([
+      { title: 'pnpm install', url: 'https://pnpm.io/cli/install' },
+      { title: 'CI', url: 'https://pnpm.io/ci' },
+    ]);
+  });
+
+  it('is empty for unparseable results and other tools', () => {
+    expect(webSources('WebSearch', {}, 'Links: [not json]')).toEqual([]);
+    expect(webSources('Bash', { command: 'ls' }, 'x')).toEqual([]);
   });
 });

@@ -61,10 +61,8 @@ function step(title: string, badges: (string | undefined)[] = [], codeBadges = f
 export function describeToolStep(name: string, input: Record<string, unknown>, state: StepState): StepText {
   switch (name) {
     case 'Bash': {
-      // The model's own description is already a sentence; it can't be
-      // re-conjugated, so it stands as written.
-      const description = str(input.description);
-      if (description) return step(description);
+      // What ran, as Trace words it ("Ran pnpm --version"); the model's own
+      // description of the command is the line's tooltip.
       const command = (str(input.command) ?? '').split('\n')[0];
       return step(`${verb(RUN, state)} ${command || 'a command'}`);
     }
@@ -96,6 +94,63 @@ export function describeToolStep(name: string, input: Record<string, unknown>, s
       return mcp ? step(mcp[2], [mcp[1]]) : step(name);
     }
   }
+}
+
+/** What a step does, which picks its icon. Status is the line's colour and
+ *  title, never the icon — as in shadcn's Trace. */
+export type StepKind =
+  | 'command' | 'commit' | 'branch' | 'read' | 'edit' | 'create' | 'search' | 'explore'
+  | 'web' | 'agent' | 'tasks' | 'question' | 'skill' | 'mcp' | 'tool';
+
+export function stepKind(name: string, input: Record<string, unknown>): StepKind {
+  switch (name) {
+    case 'Bash': {
+      const command = str(input.command) ?? '';
+      if (/\bgit\s+commit\b/.test(command)) return 'commit';
+      if (/\bgit\s+(checkout\s+-b|switch\s+-c)\b/.test(command)) return 'branch';
+      return 'command';
+    }
+    case 'Read': return 'read';
+    case 'Edit': case 'MultiEdit': case 'NotebookEdit': return 'edit';
+    case 'Write': return 'create';
+    case 'Grep': return 'search';
+    case 'Glob': case 'LS': return 'explore';
+    case 'WebSearch': case 'WebFetch': return 'web';
+    case 'Agent': case 'Task': return 'agent';
+    case 'AskUserQuestion': return 'question';
+    case 'Skill': return 'skill';
+    default:
+      if (name === 'TodoWrite' || /^Task[A-Z]/.test(name)) return 'tasks';
+      return name.startsWith('mcp__') ? 'mcp' : 'tool';
+  }
+}
+
+export interface WebSource { title: string; url: string }
+
+/** The pages a web step used: the one a fetch read, or the links a search
+ *  returned (its result carries them as `Links: [{title,url}…]` sections). */
+export function webSources(name: string, input: Record<string, unknown>, resultText: string | undefined): WebSource[] {
+  if (name === 'WebFetch') {
+    const url = str(input.url);
+    return url ? [{ title: host(url) ?? url, url }] : [];
+  }
+  if (name !== 'WebSearch' || !resultText) return [];
+  const out: WebSource[] = [];
+  for (const part of resultText.split(/Links:\s*\[/).slice(1)) {
+    const end = part.indexOf(']');
+    if (end === -1) continue;
+    try {
+      const links: unknown = JSON.parse('[' + part.slice(0, end + 1));
+      if (!Array.isArray(links)) continue;
+      for (const l of links) {
+        const { title, url } = (l ?? {}) as { title?: unknown; url?: unknown };
+        if (typeof url === 'string') out.push({ title: typeof title === 'string' && title ? title : url, url });
+      }
+    } catch {
+      // Not the shape we know; the step shows no sources rather than garbage.
+    }
+  }
+  return out;
 }
 
 /** "32s", "1m 10s". */

@@ -95,22 +95,23 @@ describe('ClaudeTranscript — Modern chat format', () => {
     expect(container.querySelectorAll('[data-stream-row]')).toHaveLength(0);
   });
 
-  it('opens onto the steps, and a step onto the regular tool row', () => {
+  it('opens onto the steps, and a step onto its output alone', () => {
     const { container } = renderModern();
     fireEvent.click(screen.getByRole('button', { name: /Worked in 2 steps/ }));
     // A finished thought is shadcn's Reasoning line, closed until opened.
     expect(screen.queryByText('Check the regex first.')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: /^Thought/ }));
     expect(screen.getByText('Check the regex first.')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /Run the tests/ }));
-    expect(container.querySelectorAll('[data-stream-row="assistant"]')).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: /Ran npm test/ }));
+    expect(screen.getByText('ok', { selector: '[data-step-output]' })).toBeInTheDocument();
+    expect(container.querySelectorAll('[data-stream-row="assistant"]')).toHaveLength(0);
   });
 
   it('keeps the run open while the turn is still working on it', () => {
     // Mid-turn: the work is the last thing in the transcript, a tool running.
     renderModern(true, messages.slice(0, 3));
     expect(screen.getByText('Working', { selector: '.modern-shimmer' })).toBeInTheDocument();
-    expect(screen.getByText('Run the tests', { selector: '.modern-shimmer' })).toBeInTheDocument();
+    expect(screen.getByText('Running npm test', { selector: '.modern-shimmer' })).toBeInTheDocument();
   });
 
   it('types out the thought being had as Reasoning: Thinking, open', () => {
