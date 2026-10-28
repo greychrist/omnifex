@@ -5,6 +5,24 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.9] — 2026-10-28
+
+### Added
+
+- A fourth chat format, **Modern**, beside Compact, Verbose and All. Your prompts show as bubbles. Answers are plain prose in Geist. Each run of thinking and tool calls folds into one timeline ("Worked in 5 steps · 32s"), and each step opens onto its full tool output. Thoughts read "Thinking" while they run, then "Thought for 5s (~608 tokens)". Stops, notices and compactions are single lines. Question and permission cards and the composer take the Modern look too.
+- Thinking now types out live in every chat format.
+- A skeleton shows while a chat's history loads or while it switches format.
+- On Claude Code 2.1.312 or later, Cancel on a question tells Claude you dismissed it. A chat message sent while a question is open tells Claude you replied in chat, instead of being queued behind the card.
+
+### Changed
+
+- Reviewed against Claude Code 2.1.312.
+
+### Fixed
+
+- The usage popover shows what is contributing to your usage again on Claude Code 2.1.312, which reworded that section.
+- Switching to the Verbose format no longer freezes the window when the conversation includes an image Claude read.
+
 ## [0.5.8] — 2026-10-27
 
 ### Changed
