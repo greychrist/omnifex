@@ -5,6 +5,22 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.10] — 2026-10-28
+
+### Added
+
+- A Default chat format setting in Settings › General › Appearance: Compact, Verbose, All or Modern. A new session opens in it, and each session can still switch its own.
+- The Modern format shows a "Compacting context" line while Claude compacts.
+
+### Changed
+
+- The context timeline sits in the transcript's left margin, outside the chat window. It is drawn as a slim line, with each context size in a badge coloured by how close the session is to its budget. The proportional bar is gone; the share of the window is in the tooltip. The timeline's on/off button moved to the top of the margin.
+- In the Modern format, prompts with pasted images, slash commands and compactions are drawn in the Modern style instead of as classic cards. A compaction is one line that opens onto its summary.
+
+### Fixed
+
+- The loading skeleton, the live thought and the streaming answer no longer spill into the left margin while the context timeline is on.
+
 ## [0.5.9] — 2026-10-28
 
 ### Added
