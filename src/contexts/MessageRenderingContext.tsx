@@ -3,6 +3,7 @@ import { api } from "@/lib/api";
 import {
   MESSAGE_RENDERING_CONFIG_KEY,
   createDefaultConfig,
+  modernCssVars,
   parseConfig,
   serializeConfig,
   type MessageRenderingConfig,
@@ -84,6 +85,18 @@ export const MessageRenderingProvider: React.FC<{ children: React.ReactNode }> =
     const stack = resolveTypeface(config.terminal.typeface).cssFamily;
     document.documentElement.style.setProperty("--font-terminal", stack);
   }, [config.terminal.typeface]);
+
+  // Modern's font, answer size and prompt tint (Settings › Chats › Modern),
+  // read by the `.modern-format` rules in styles.css. Null leaves the
+  // stylesheet's own fallback.
+  const modern = config.modern;
+  useEffect(() => {
+    const root = document.documentElement.style;
+    for (const [name, value] of Object.entries(modernCssVars(modern))) {
+      if (value === null) root.removeProperty(name);
+      else root.setProperty(name, value);
+    }
+  }, [modern]);
 
   // Applies at once; the returned promise settles with the write, so the
   // Settings screen can report whether it landed.

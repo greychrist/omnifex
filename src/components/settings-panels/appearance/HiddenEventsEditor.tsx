@@ -120,7 +120,9 @@ export const HiddenEventsEditor: React.FC<HiddenEventsEditorProps> = ({ value, o
   );
 };
 
-const ColorField: React.FC<{
+/** A nullable colour: native picker plus hex field, with a reset to unset.
+ *  Shared with the Modern tab. */
+export const ColorField: React.FC<{
   name: string;
   /** What an unset value means here — the theme's look, or automatic text. */
   unsetLabel?: string;

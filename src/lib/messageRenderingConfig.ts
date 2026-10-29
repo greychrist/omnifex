@@ -177,6 +177,12 @@ export const ALLOWED_ICONS = [
   "GitPullRequest",
   "ShieldQuestion",
   "MessageCircleQuestion",
+  // Modern step icons (Settings › Chats › Modern)
+  "GitCommitHorizontal",
+  "FilePen",
+  "FolderSearch",
+  "ListTodo",
+  "Wrench",
   // Unicode fallbacks
   "ℹ",
   "✗",
@@ -663,6 +669,108 @@ export const DEFAULT_CARD_BORDER_OPACITY = 20;
 export const DEFAULT_CARD_BORDER_RADIUS = 12;
 export const CARD_BORDER_RADIUS_MAX = 24;
 
+// ─── Modern chat format ─────────────────────────────────────────────────────
+//
+// Settings › Chats › Modern. Modern draws its own way — bubbles, prose and the
+// work timeline — rather than through message kinds, so it has a block of its
+// own. Added after ship: the defaults-as-baseline merge covers older configs.
+
+/** A step in Modern's work timeline: a thought, or what a tool call did
+ *  (`stepKind` in modernSteps.ts names every tool's). */
+export const MODERN_STEP_KINDS = [
+  "thought", "command", "commit", "branch", "read", "edit", "create", "search",
+  "explore", "web", "agent", "tasks", "question", "skill", "mcp", "tool",
+] as const;
+export type ModernStepKind = (typeof MODERN_STEP_KINDS)[number];
+
+/** When a finished or running timeline is open. */
+export type TimelineOpen = "while-running" | "always" | "never";
+const TIMELINE_OPEN: readonly TimelineOpen[] = ["while-running", "always", "never"];
+
+/** Geist, Modern's own face, or Chats › Typography's content typeface. */
+export type ModernFont = "geist" | "content";
+
+/** Answer text sizes in px; the line height follows at ~1.43×. */
+export const MODERN_ANSWER_SIZES = [12, 13, 14, 15, 16, 18] as const;
+
+export interface ModernStyle {
+  stepIcons: Record<ModernStepKind, IconName>;
+  timelineOpen: TimelineOpen;
+  showThoughts: boolean;
+  font: ModernFont;
+  answerSize: number;
+  /** Hex, or null for the built-in blue. */
+  promptTint: string | null;
+  /** Hex, or null for the theme's destructive red. */
+  failedColor: string | null;
+}
+
+export const DEFAULT_MODERN: ModernStyle = {
+  stepIcons: {
+    thought: "Brain",
+    command: "Terminal",
+    commit: "GitCommitHorizontal",
+    branch: "GitBranch",
+    read: "FileText",
+    edit: "FilePen",
+    create: "FilePlus",
+    search: "Search",
+    explore: "FolderSearch",
+    web: "Globe",
+    agent: "Bot",
+    tasks: "ListTodo",
+    question: "MessageCircleQuestion",
+    skill: "Sparkles",
+    mcp: "Plug",
+    tool: "Wrench",
+  },
+  timelineOpen: "while-running",
+  showThoughts: true,
+  font: "geist",
+  answerSize: 14,
+  promptTint: null,
+  failedColor: null,
+};
+
+const GEIST_STACK = "'Geist', var(--app-font-stack, ui-sans-serif, system-ui, sans-serif)";
+
+/**
+ * The CSS variables styles.css reads for Modern. Null means "leave it to the
+ * stylesheet's fallback". Set on :root by MessageRenderingProvider, and inline
+ * on the settings sample so it follows the draft.
+ */
+export function modernCssVars(m: ModernStyle): Record<string, string | null> {
+  return {
+    "--modern-font": m.font === "content" ? "var(--chat-content-font)" : GEIST_STACK,
+    "--modern-answer-size": `${String(m.answerSize)}px`,
+    "--modern-answer-leading": `${String(Math.round(m.answerSize * 1.43))}px`,
+    "--modern-prompt-tint": m.promptTint,
+  };
+}
+
+function mergeModern(saved: Record<string, unknown>, base: ModernStyle): ModernStyle {
+  const stepIcons = { ...base.stepIcons };
+  if (isRecord(saved.stepIcons)) {
+    for (const k of MODERN_STEP_KINDS) {
+      const v = saved.stepIcons[k];
+      if (typeof v === "string" && (ALLOWED_ICONS as readonly string[]).includes(v)) stepIcons[k] = v as IconName;
+    }
+  }
+  return {
+    stepIcons,
+    timelineOpen: TIMELINE_OPEN.includes(saved.timelineOpen as TimelineOpen)
+      ? (saved.timelineOpen as TimelineOpen)
+      : base.timelineOpen,
+    showThoughts: typeof saved.showThoughts === "boolean" ? saved.showThoughts : base.showThoughts,
+    font: saved.font === "geist" || saved.font === "content" ? saved.font : base.font,
+    answerSize: (MODERN_ANSWER_SIZES as readonly unknown[]).includes(saved.answerSize)
+      ? (saved.answerSize as number)
+      : base.answerSize,
+    promptTint: isHexColor(saved.promptTint) ? saved.promptTint : base.promptTint,
+    failedColor: isHexColor(saved.failedColor) ? saved.failedColor : base.failedColor,
+  };
+}
+
 // ─── top-level config (v5) ──────────────────────────────────────────────────
 
 /** The chat formats a transcript can be drawn in (SessionViewToggle). */
@@ -685,6 +793,7 @@ export interface MessageRenderingConfig {
   tabs: TabStrip;
   hiddenEvents: HiddenEventsStyle;
   terminal: Terminal;
+  modern: ModernStyle;
 }
 
 export function createDefaultConfig(): MessageRenderingConfig {
@@ -701,6 +810,7 @@ export function createDefaultConfig(): MessageRenderingConfig {
     tabs: { ...DEFAULT_TAB_STRIP },
     hiddenEvents: { ...DEFAULT_HIDDEN_EVENTS },
     terminal: { ...DEFAULT_TERMINAL },
+    modern: { ...DEFAULT_MODERN, stepIcons: { ...DEFAULT_MODERN.stepIcons } },
   };
 }
 
@@ -896,6 +1006,8 @@ function mergeShared(
     // Unknown / wrong-typed fields fall through to the defaults already on
     // base.terminal from createDefaultConfig() above.
   }
+
+  if (isRecord(saved.modern)) base.modern = mergeModern(saved.modern, base.modern);
 
   return base;
 }

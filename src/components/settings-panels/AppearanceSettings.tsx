@@ -17,7 +17,7 @@ import {
   type KindStyle,
   type CategoryStyle,
   type CollapseRule,
-  type Terminal,
+  type ModernStyle,
   type HiddenEventsStyle,
   type Typography,
   type ViewMode,
@@ -35,7 +35,7 @@ import {
   previewTextForKindId,
 } from "./appearance/fixtures";
 import { TypographyEditor } from "./appearance/TypographyEditor";
-import { TerminalEditor } from "./appearance/TerminalEditor";
+import { ModernEditor } from "./appearance/ModernEditor";
 import type { SettingsPanelProps } from "./types";
 import { useSaveStatus } from "./saveStatus";
 import { cn } from "@/lib/utils";
@@ -56,7 +56,7 @@ type AppearanceSettingsProps = Pick<SettingsPanelProps, "setToast">;
 const FIRST_SELECTION: TreeSelection = { type: "category", id: "user" };
 
 /** The tabs that exist, so a remembered one that no longer does is ignored. */
-const APPEARANCE_TABS: readonly string[] = ["kinds", "turns", "typography", "terminal"];
+const APPEARANCE_TABS: readonly string[] = ["kinds", "turns", "modern", "typography"];
 
 
 /** The turn preview draws Compact and Verbose only. Modern filters as
@@ -187,9 +187,9 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
     [mutate],
   );
 
-  const setTerminal = useCallback(
-    (next: Terminal) => {
-      mutate((prev) => ({ ...prev, terminal: next }));
+  const setModern = useCallback(
+    (next: ModernStyle) => {
+      mutate((prev) => ({ ...prev, modern: next }));
     },
     [mutate],
   );
@@ -404,8 +404,8 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
         <TabsList>
           <TabsTrigger value="kinds">Message kinds</TabsTrigger>
           <TabsTrigger value="turns">Turn preview</TabsTrigger>
+          <TabsTrigger value="modern">Modern</TabsTrigger>
           <TabsTrigger value="typography">Typography</TabsTrigger>
-          <TabsTrigger value="terminal">Terminal</TabsTrigger>
         </TabsList>
 
         <TabsContent value="kinds" className="mt-4">
@@ -507,9 +507,9 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
           </Card>
         </TabsContent>
 
-        <TabsContent value="terminal" className="mt-4">
+        <TabsContent value="modern" className="mt-4">
           <Card className="p-6">
-            <TerminalEditor terminal={config.terminal} onChange={setTerminal} />
+            <ModernEditor config={config} onChange={setModern} />
           </Card>
         </TabsContent>
 

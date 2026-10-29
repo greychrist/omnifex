@@ -12,7 +12,10 @@ vi.mock('@/hooks', async (orig) => ({
   useTheme: () => ({ theme: 'gray', setTheme: () => {}, isLoading: false }),
 }));
 
+import type * as React from 'react';
 import { ChainOfThought } from '@/components/transcript-modern/ChainOfThought';
+import { MessageRenderingPreviewProvider } from '@/contexts/MessageRenderingContext';
+import { createDefaultConfig, type ModernStyle } from '@/lib/messageRenderingConfig';
 
 afterEach(() => { cleanup(); });
 
@@ -162,5 +165,54 @@ describe('Modern chain of thought — shadcn Trace steps', () => {
     const r = render(<ChainOfThought entries={entries} nodes={[]} live ctx={ctx} />);
     r.rerender(<ChainOfThought entries={entries} nodes={[]} live={false} ctx={ctx} />);
     expect(screen.getByRole('button', { name: /Worked in/ })).toHaveAttribute('aria-expanded', 'false');
+  });
+});
+
+
+function withModern(patch: Partial<ModernStyle>, ui: React.ReactElement) {
+  const config = createDefaultConfig();
+  config.modern = { ...config.modern, ...patch, stepIcons: { ...config.modern.stepIcons, ...patch.stepIcons } };
+  return render(<MessageRenderingPreviewProvider config={config}>{ui}</MessageRenderingPreviewProvider>);
+}
+
+describe('Modern chain of thought — Settings › Chats › Modern', () => {
+  it('draws each step with the icon chosen for its kind', () => {
+    withModern({ stepIcons: { command: 'Bot' } as ModernStyle['stepIcons'] },
+      <ChainOfThought entries={[tool('Bash', { command: 'npm test' }, 'ok')]} nodes={[]} live={false} ctx={ctx} />);
+    fireEvent.click(screen.getByRole('button', { name: /Worked in/ }));
+    const chip = screen.getByText(/^Ran npm test/).closest('[data-slot="trace-line"]')!.querySelector('[data-step-kind]')!;
+    expect(chip.querySelector('.lucide-bot')).not.toBeNull();
+  });
+
+  it('keeps a finished run open when set to always open', () => {
+    withModern({ timelineOpen: 'always' },
+      <ChainOfThought entries={[tool('Bash', { command: 'npm test' }, 'ok')]} nodes={[]} live={false} ctx={ctx} />);
+    expect(screen.getByText(/^Ran npm test/)).toBeInTheDocument();
+  });
+
+  it('keeps a running run folded when set to always folded', () => {
+    withModern({ timelineOpen: 'never' },
+      <ChainOfThought entries={[tool('Bash', { command: 'npm test' }, undefined, 'pending')]} nodes={[]} live ctx={ctx} />);
+    expect(screen.queryByText(/npm test/)).toBeNull();
+  });
+
+  it('leaves thoughts out when they are hidden', () => {
+    withModern({ showThoughts: false, timelineOpen: 'always' },
+      <ChainOfThought entries={[thought, tool('Bash', { command: 'npm test' }, 'ok')]} nodes={[]} live={false} ctx={ctx} />);
+    expect(screen.getByText(/^Ran npm test/)).toBeInTheDocument();
+    expect(screen.queryByText(/^Thought/)).toBeNull();
+  });
+
+  it('draws nothing for a run that only thought, when thoughts are hidden', () => {
+    const { container } = withModern({ showThoughts: false },
+      <ChainOfThought entries={[thought]} nodes={[]} live={false} ctx={ctx} />);
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it('paints failures in the chosen colour', () => {
+    const { container } = withModern({ failedColor: '#f97316' },
+      <ChainOfThought entries={[tool('Bash', { command: 'x' }, 'boom', 'error')]} nodes={[]} live={false} ctx={ctx} />);
+    const root = container.querySelector('[data-slot="trace"]') as HTMLElement;
+    expect(root.style.getPropertyValue('--color-destructive')).toBe('#f97316');
   });
 });

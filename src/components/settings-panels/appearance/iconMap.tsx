@@ -110,6 +110,12 @@ import {
   GitPullRequest,
   ShieldQuestion,
   MessageCircleQuestion,
+  // Modern step icons
+  GitCommitHorizontal,
+  FilePen,
+  FolderSearch,
+  ListTodo,
+  Wrench,
 } from "lucide-react";
 import type { IconName } from "@/lib/messageRenderingConfig";
 
@@ -212,6 +218,11 @@ const LUCIDE_MAP: Record<string, React.ComponentType<{ className?: string }>> = 
   GitPullRequest,
   ShieldQuestion,
   MessageCircleQuestion,
+  GitCommitHorizontal,
+  FilePen,
+  FolderSearch,
+  ListTodo,
+  Wrench,
 };
 
 export const IconRenderer: React.FC<{ name: IconName; className?: string }> = ({

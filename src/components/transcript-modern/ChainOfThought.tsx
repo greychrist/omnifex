@@ -6,7 +6,9 @@
  * command, a file for a read) and a title whose verb follows its state. As in
  * Trace, status is the line's colour, shimmer and wording, never the icon.
  *
- * Collapsed once the run is finished and open while it is live. A step opens
+ * Collapsed once the run is finished and open while it is live, unless
+ * Settings › Chats › Modern says otherwise — that tab also picks each step
+ * kind's icon, can leave thoughts out, and recolours failures. A step opens
  * onto its result alone (a command's output, an edit's diff, the sources a
  * web step used); a read opens onto nothing, its title says it all. Copy and
  * the raw records sit beside every step on hover.
@@ -24,11 +26,8 @@ import { RawJsonPopover } from '@/components/StreamMessage/RawJsonPopover';
 import { CopyButton } from '@/components/ui/copy-button';
 import { DiffViewer } from '@/components/shared/DiffViewer';
 import { getLanguage } from '@/components/claude/tools/shared';
-import {
-  ArrowUpRightIcon, BotIcon, BrainIcon, FilePenIcon, FilePlusIcon, FileTextIcon, FolderSearchIcon,
-  GitBranchIcon, GitCommitHorizontalIcon, GlobeIcon, ListTodoIcon, MessageCircleQuestionIcon,
-  PlugIcon, SearchIcon, SparklesIcon, TerminalIcon, WrenchIcon, type LucideIcon,
-} from 'lucide-react';
+import { ArrowUpRightIcon, GlobeIcon } from 'lucide-react';
+import { IconRenderer } from '@/components/settings-panels/appearance/iconMap';
 import { cn } from '@/lib/utils';
 import { accentStyleFor, cardRadiusStyle, swatchFor } from '@/lib/accentStyle';
 import { deriveSystemContextLabel } from '@/lib/blockKind';
@@ -74,22 +73,30 @@ export const ChainOfThought = React.memo(function ChainOfThought({
   live: boolean;
   ctx: RowContext;
 }) {
-  // Follows the run (open while live, closed once done) until the user
-  // chooses — by its header, or by clicking anything inside it — then keeps
-  // their choice.
+  const { modern } = useMessageRenderingConfig().config;
+  // Follows the run (open while live, closed once done, by default) until the
+  // user chooses — by its header, or by clicking anything inside it — then
+  // keeps their choice.
   const [chosen, setChosen] = React.useState<boolean | null>(null);
-  const open = chosen ?? live;
+  const open = chosen ?? (modern.timelineOpen === 'always' ? true : modern.timelineOpen === 'never' ? false : live);
+  // Settings › Chats › Modern › Failed step: the timeline's red, recoloured.
+  const failedStyle = modern.failedColor
+    ? ({ '--color-destructive': modern.failedColor } as React.CSSProperties)
+    : undefined;
+
+  const shown = modern.showThoughts ? entries : entries.filter((e) => e.type !== 'thinking');
+  // The thought being had right now, typed in as it streams. A recorded
+  // thought has already ended — its record lands when it does.
+  const thought = live && modern.showThoughts ? <LiveThought key="live-thought" tabId={ctx.tabId} /> : null;
+
+  if (shown.length === 0 && !thought) return null;
 
   // A run that only thought is shadcn's Reasoning on its own: no "Worked in"
   // header around it.
-  // The thought being had right now, typed in as it streams. A recorded
-  // thought has already ended — its record lands when it does.
-  const thought = live ? <LiveThought key="live-thought" tabId={ctx.tabId} /> : null;
-
-  if (entries.every((e) => e.type === 'thinking')) {
+  if (shown.every((e) => e.type === 'thinking')) {
     return (
-      <Trace>
-        {entries.map((e) => e.type === 'thinking' && (
+      <Trace style={failedStyle}>
+        {shown.map((e) => e.type === 'thinking' && (
           <ReasoningLine key={e.key} text={e.text} ms={e.ms} tokens={e.tokens} running={false} />
         ))}
         {thought}
@@ -97,16 +104,16 @@ export const ChainOfThought = React.memo(function ChainOfThought({
     );
   }
 
-  const failed = entries.filter((e) => e.type === 'tool' && e.status === 'error').length;
+  const failed = shown.filter((e) => e.type === 'tool' && e.status === 'error').length;
   const status: TraceStatus | undefined = live ? 'running' : failed > 0 ? 'error' : undefined;
   const header = traceHeader({
-    steps: entries.length,
+    steps: shown.length,
     failed,
     ms: spanMs(nodes),
   });
 
   return (
-    <Trace>
+    <Trace style={failedStyle}>
       <TraceCollapsible open={open} onOpenChange={setChosen}>
         <TraceCollapsibleTrigger>
           <TraceLine status={status}>
@@ -119,7 +126,7 @@ export const ChainOfThought = React.memo(function ChainOfThought({
             otherwise the run closes over that step the moment it finishes. */}
         <TraceCollapsibleContent onClickCapture={() => { if (chosen === null) setChosen(true); }}>
           <Trace>
-            {entries.map((entry) => <Step key={entry.key} entry={entry} live={live} ctx={ctx} />)}
+            {shown.map((entry) => <Step key={entry.key} entry={entry} live={live} ctx={ctx} />)}
             {thought}
           </Trace>
         </TraceCollapsibleContent>
@@ -167,27 +174,9 @@ export function ReasoningLine({
   );
 }
 
-const KIND_ICONS: Record<StepKind | 'thought', LucideIcon> = {
-  thought: BrainIcon,
-  command: TerminalIcon,
-  commit: GitCommitHorizontalIcon,
-  branch: GitBranchIcon,
-  read: FileTextIcon,
-  edit: FilePenIcon,
-  create: FilePlusIcon,
-  search: SearchIcon,
-  explore: FolderSearchIcon,
-  web: GlobeIcon,
-  agent: BotIcon,
-  tasks: ListTodoIcon,
-  question: MessageCircleQuestionIcon,
-  skill: SparklesIcon,
-  mcp: PlugIcon,
-  tool: WrenchIcon,
-};
-
 function KindIcon({ kind }: { kind: StepKind | 'thought' }) {
-  const Icon = KIND_ICONS[kind];
+  // Settings › Chats › Modern › Step icons.
+  const icon = useMessageRenderingConfig().config.modern.stepIcons[kind];
   // A chip like the classic card header's icon, as bright as an opened
   // thought. The negative margins cancel the padding and border, so the
   // chip keeps the 16px box the thought's left rule is centred under.
@@ -197,7 +186,7 @@ function KindIcon({ kind }: { kind: StepKind | 'thought' }) {
       data-step-kind={kind}
       className="modern-step-icon -m-[3px] size-[22px] rounded-md border bg-muted/40 text-foreground/85 in-data-[status=error]:bg-destructive/10 in-data-[status=error]:text-destructive"
     >
-      <Icon className="size-3" />
+      <IconRenderer name={icon} className="size-3" />
     </TraceIcon>
   );
 }
