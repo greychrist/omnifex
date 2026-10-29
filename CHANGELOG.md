@@ -5,6 +5,17 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.19] — 2026-10-29
+
+### Added
+- Settings › Chats › Modern: a live sample drawn by the Modern format, the work timeline's behaviour (open while running, always open, or always folded) and whether it shows thoughts, an icon for each kind of step, Geist or the Typography content font, answer text size, and the prompt-bubble and failed-step colours.
+
+### Fixed
+- Downloading an update shows its progress instead of jumping from 0% to finished.
+
+### Removed
+- Settings › Chats › Terminal. The terminal it styled went with the TUI mode; the Codex sign-in window keeps the font already saved.
+
 ## [0.5.18] — 2026-10-29
 
 ### Changed
