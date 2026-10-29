@@ -5,6 +5,12 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.17] — 2026-10-29
+
+### Fixed
+
+- The tab strip's scroll arrow no longer stays on screen after closing a tab brings the remaining tabs back inside the strip. The arrow took width from the strip itself, so tabs that would fit without it still measured as overflowing.
+
 ## [0.5.16] — 2026-10-29
 
 ### Fixed
