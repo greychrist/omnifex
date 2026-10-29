@@ -1,7 +1,7 @@
 {
   "name": "omnifex",
   "private": true,
-  "version": "0.5.15",
+  "version": "0.5.16",
   "productName": "OmniFex",
   "license": "AGPL-3.0",
   "scripts": {

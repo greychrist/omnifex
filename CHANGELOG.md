@@ -5,6 +5,13 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.16] — 2026-10-29
+
+### Fixed
+
+- Modern chat draws a slash command in the normal body font, name and arguments alike; it no longer flips to monospace when the CLI's record of the prompt replaces the echo.
+- Opening a step, thought or other expandable row near the bottom of the chat no longer auto-scrolls the transcript away from it. A row opened past the follow distance stops following, so new output doesn't pull you away while you read it.
+
 ## [0.5.15] — 2026-10-28
 
 ### Fixed
