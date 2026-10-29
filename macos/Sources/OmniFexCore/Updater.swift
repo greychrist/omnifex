@@ -97,4 +97,17 @@ public enum Updater {
         let percent = total > 0 ? Int((Double(bytes) / Double(total) * 100).rounded()) : 0
         return ["percent": percent, "bytesDownloaded": bytes, "totalBytes": total]
     }
+
+    /// URLSession reports every write — ~180 for one release zip. The page
+    /// shows a whole percent, so pass on the first write and each new percent.
+    public struct ProgressThrottle: Sendable {
+        private var lastPercent: Int?
+        public init() {}
+        public mutating func shouldEmit(bytes: Int64, total: Int64) -> Bool {
+            let percent = total > 0 ? Int((Double(bytes) / Double(total) * 100).rounded()) : 0
+            if percent == lastPercent { return false }
+            lastPercent = percent
+            return true
+        }
+    }
 }

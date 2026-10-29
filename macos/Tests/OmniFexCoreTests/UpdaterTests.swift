@@ -52,4 +52,23 @@ import Testing
         #expect(Updater.progress(bytes: 50, total: 200)["percent"] as? Int == 25)
         #expect(Updater.progress(bytes: 50, total: 0)["percent"] as? Int == 0)
     }
+
+    /// URLSession reports every write (~180 for one release zip); the page
+    /// needs one event per whole percent, plus the first and the last.
+    func emits(_ writes: [(Int64, Int64)]) -> [Bool] {
+        var t = Updater.ProgressThrottle()
+        return writes.map { t.shouldEmit(bytes: $0.0, total: $0.1) }
+    }
+
+    /// URLSession reports every write (~180 for one release zip); the page
+    /// needs one event per whole percent.
+    @Test func progressThrottleEmitsOncePerPercent() {
+        let writes: [(Int64, Int64)] = [(1, 1000), (4, 1000), (10, 1000), (14, 1000), (500, 1000), (1000, 1000), (1000, 1000)]
+        #expect(emits(writes) == [true, false, true, false, true, true, false])
+    }
+
+    /// No Content-Length: there is no percent to show, so only the first write emits.
+    @Test func progressThrottleWithUnknownTotal() {
+        #expect(emits([(100, 0), (5000, 0)]) == [true, false])
+    }
 }
