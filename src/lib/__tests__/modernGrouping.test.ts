@@ -262,7 +262,6 @@ describe('buildModernItems — prompts that are not plain text', () => {
     const p = items[0];
     if (p.kind !== 'prompt') throw new Error('shape');
     expect(p.text).toBe('/compact keep the plan');
-    expect(p.command).toBe(true);
   });
 
   it('draws a skill command echo as a command bubble too', () => {
@@ -270,7 +269,6 @@ describe('buildModernItems — prompts that are not plain text', () => {
     const p = buildModernItems([echo], createDefaultConfig())[0];
     if (p?.kind !== 'prompt') throw new Error('shape');
     expect(p.text).toBe('/review');
-    expect(p.command).toBe(true);
   });
 });
 

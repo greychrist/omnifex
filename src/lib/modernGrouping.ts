@@ -63,8 +63,6 @@ export type ModernItem =
       kind: 'prompt'; key: string; node: JsonlNode; text: string;
       /** Pasted images, as data URLs. */
       images?: PromptImage[];
-      /** A slash command's echo: `text` is the command line. */
-      command?: true;
     }
   | { kind: 'text'; key: string; node: JsonlNode; text: string }
   | { kind: 'work'; key: string; entries: WorkEntry[]; nodes: JsonlNode[] }
@@ -123,7 +121,7 @@ function plainText(node: JsonlNode): string {
   return contentOf(node).filter((b) => b.type === 'text').map((b) => String(b.text ?? '')).join('\n');
 }
 
-type PromptShape = Pick<Extract<ModernItem, { kind: 'prompt' }>, 'text' | 'images' | 'command'>;
+type PromptShape = Pick<Extract<ModernItem, { kind: 'prompt' }>, 'text' | 'images'>;
 
 /**
  * What the bubble draws for a user record: a typed prompt (text, pasted
@@ -140,7 +138,7 @@ function promptOf(node: JsonlNode): PromptShape | null {
   if (isEcho && (node.userKind === 'local-command' || isMainPrompt(node))) {
     const env = parseCommandEnvelope(text);
     if (!env) return null;
-    return { text: env.args ? `${env.name} ${env.args}` : env.name, command: true };
+    return { text: env.args ? `${env.name} ${env.args}` : env.name };
   }
   if (!isMainPrompt(node)) return null;
   const blocks = contentOf(node);
