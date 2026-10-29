@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import '@testing-library/jest-dom/vitest';
 import { render, cleanup, fireEvent } from '@testing-library/react';
 import type { JsonlNode } from '@/types/jsonl';
@@ -168,4 +168,66 @@ describe('ClaudeTranscript — auto-scroll follow marker', () => {
       now.mockRestore();
     }
   });
+
+  // Opening a step near the bottom grows the content; pinning to the bottom
+  // then would carry the row the user just opened out from under them.
+  describe('content resizes', () => {
+    let fire: () => void = () => {};
+    beforeEach(() => {
+      vi.stubGlobal('ResizeObserver', class {
+        constructor(cb: () => void) { fire = cb; }
+        observe() {}
+        disconnect() {}
+      });
+    });
+    afterEach(() => { vi.unstubAllGlobals(); });
+
+    function grow(scrollEl: HTMLElement, m: { scrollHeight: number; clientHeight: number; scrollTop: number }) {
+      Object.defineProperty(scrollEl, 'scrollHeight', { configurable: true, value: m.scrollHeight });
+      Object.defineProperty(scrollEl, 'clientHeight', { configurable: true, value: m.clientHeight });
+      scrollEl.scrollTop = m.scrollTop;
+      fire();
+    }
+
+    function withTrigger(ref = { current: true }) {
+      const utils = renderTranscript(ref);
+      const scrollEl = utils.container.querySelector<HTMLElement>('[data-transcript-scroll]')!;
+      const content = utils.container.querySelector<HTMLElement>('[data-transcript-scroll] > div')!;
+      const trigger = document.createElement('button');
+      trigger.setAttribute('aria-expanded', 'false');
+      content.appendChild(trigger);
+      return { scrollEl, trigger, ref };
+    }
+
+    it('follows new output to the bottom', () => {
+      const { scrollEl } = withTrigger();
+      grow(scrollEl, { scrollHeight: 2000, clientHeight: 500, scrollTop: 1300 });
+      expect(scrollEl.scrollTop).toBe(2000);
+    });
+
+    it('does not scroll when the user opens a row', () => {
+      const { scrollEl, trigger, ref } = withTrigger();
+      fireEvent.pointerDown(trigger);
+      fireEvent.pointerUp(window);
+      grow(scrollEl, { scrollHeight: 2000, clientHeight: 500, scrollTop: 1000 }); // opened row reaches 500 below
+      expect(scrollEl.scrollTop).toBe(1000);
+      expect(ref.current).toBe(false);
+    });
+
+    it('does not scroll when the user opens a row from the keyboard', () => {
+      const { scrollEl, trigger } = withTrigger();
+      fireEvent.keyDown(trigger, { key: 'Enter' });
+      grow(scrollEl, { scrollHeight: 2000, clientHeight: 500, scrollTop: 1000 });
+      expect(scrollEl.scrollTop).toBe(1000);
+    });
+
+    it('still follows after a press on something that is not an expander', () => {
+      const { scrollEl } = withTrigger();
+      fireEvent.pointerDown(scrollEl);
+      fireEvent.pointerUp(window);
+      grow(scrollEl, { scrollHeight: 2000, clientHeight: 500, scrollTop: 1300 });
+      expect(scrollEl.scrollTop).toBe(2000);
+    });
+  });
 });
+

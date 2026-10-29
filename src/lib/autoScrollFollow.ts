@@ -64,3 +64,29 @@ export function nextFollowing(opts: {
   if (isFollowing(opts.distanceFromBottom, opts.followPx)) return true;
   return opts.userScrolling ? false : opts.following;
 }
+
+/**
+ * What a change in the content's height does to the view. While following it
+ * pins to the bottom, and `mustSee` (a permission prompt) pins it regardless.
+ *
+ * A height change the user caused by opening or closing a row never scrolls:
+ * pinning would carry the row they just opened out from under them. It
+ * re-decides following as their own scroll would, so a row that now reaches
+ * past `followPx` stops following and later output cannot yank them away
+ * from it either.
+ */
+export function afterContentResize(opts: {
+  following: boolean;
+  distanceFromBottom: number;
+  followPx: number;
+  mustSee: boolean;
+  userToggled: boolean;
+}): { scroll: boolean; following: boolean } {
+  if (opts.userToggled) {
+    return {
+      scroll: false,
+      following: nextFollowing({ ...opts, userScrolling: true }),
+    };
+  }
+  return { scroll: opts.following || opts.mustSee, following: opts.following };
+}

@@ -37,7 +37,7 @@ import { useSessionGauges } from "@/contexts/SessionGaugesContext";
 import { buildContextTimeline } from "@/lib/contextTimeline";
 import { ContextTimelineTick } from "@/components/ContextTimelineTick";
 import { ContextTimelineToggle } from "@/components/ContextTimelineToggle";
-import { nextFollowing, USER_SCROLL_INTENT_MS } from "@/lib/autoScrollFollow";
+import { afterContentResize, nextFollowing, USER_SCROLL_INTENT_MS } from "@/lib/autoScrollFollow";
 import { stepTarget, isStepStop, isMainPrompt, STEP_MARGIN_PX, type StepDirection } from "@/lib/transcriptStepper";
 import { cn } from "@/lib/utils";
 import { logAndForget } from "@/lib/fireAndLog";
@@ -320,6 +320,21 @@ function ClaudeTranscriptImpl({
   // the chat looks "stuck" a few hundred pixels above the real bottom.
   const contentRef = useRef<HTMLDivElement>(null);
 
+  // The follow marker: a pale dot `followPx` above the end of the content.
+  // Following is `distanceFromBottom <= followPx`, so the dot is on screen
+  // exactly when the transcript should be following. Its `data-following`
+  // is written here, imperatively, because the decision lives in a ref and a
+  // re-render per scroll event would cost every mounted tab.
+  const followMarkerRef = useRef<HTMLDivElement>(null);
+  const setFollowing = useCallback((following: boolean) => {
+    isNearBottomRef.current = following;
+    if (followMarkerRef.current) {
+      followMarkerRef.current.dataset.following = String(following);
+    }
+  }, [isNearBottomRef]);
+  // When the user last pressed a row's expander (see markUserInput).
+  const lastToggleAtRef = useRef(Number.NEGATIVE_INFINITY);
+
   // Cmd/Ctrl+F → open the find bar. Esc inside the bar closes it (handled by
   // FindBar itself). Listener is scoped to window because focus may be on
   // the FloatingPromptInput when the user wants to find — we want the
@@ -351,7 +366,15 @@ function ClaudeTranscriptImpl({
     if (!contentEl || !scrollEl || typeof ResizeObserver === 'undefined') return;
 
     const observer = new ResizeObserver(() => {
-      if (isNearBottomRef.current || waitingForPermission) {
+      const { scroll, following } = afterContentResize({
+        following: isNearBottomRef.current,
+        distanceFromBottom: scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight,
+        followPx,
+        mustSee: waitingForPermission,
+        userToggled: performance.now() - lastToggleAtRef.current <= USER_SCROLL_INTENT_MS,
+      });
+      setFollowing(following);
+      if (scroll) {
         // Direct scrollTop assignment — cheaper than scrollIntoView and doesn't
         // fight the smooth-scroll animation the length-change effect may have
         // just kicked off in the same frame.
@@ -360,7 +383,7 @@ function ClaudeTranscriptImpl({
     });
     observer.observe(contentEl);
     return () => { observer.disconnect(); };
-  }, [waitingForPermission, isNearBottomRef]);
+  }, [waitingForPermission, isNearBottomRef, followPx, setFollowing]);
 
   /**
    * Where the last navigation button aimed, held until the smooth scroll has
@@ -465,12 +488,6 @@ function ClaudeTranscriptImpl({
     [displayableMessages],
   );
 
-  // The follow marker: a pale dot `followPx` above the end of the content.
-  // Following is `distanceFromBottom <= followPx`, so the dot is on screen
-  // exactly when the transcript should be following. Its `data-following`
-  // is written here, imperatively, because the decision lives in a ref and a
-  // re-render per scroll event would cost every mounted tab.
-  const followMarkerRef = useRef<HTMLDivElement>(null);
 
   // When the user last touched the transcript, and whether a pointer is held
   // (a scrollbar drag is one pointerdown and then however long the drag
@@ -479,15 +496,20 @@ function ClaudeTranscriptImpl({
   // step buttons count too; the prompt box sits outside it and does not.
   const lastUserInputAtRef = useRef(Number.NEGATIVE_INFINITY);
   const pointerHeldRef = useRef(false);
-  const markUserInput = useCallback(() => {
+  const markUserInput = useCallback((e: React.SyntheticEvent) => {
     lastUserInputAtRef.current = performance.now();
-  }, []);
-  const handlePointerDown = useCallback(() => {
-    markUserInput();
+    // A press on a row's expander: the height change it causes is the
+    // user's, and must not scroll (see afterContentResize).
+    if (e.target instanceof Element && e.target.closest('[aria-expanded]')) {
+      lastToggleAtRef.current = lastUserInputAtRef.current;
+    }
+  }, [lastToggleAtRef]);
+  const handlePointerDown = useCallback((e: React.PointerEvent) => {
+    markUserInput(e);
     pointerHeldRef.current = true;
     const release = () => {
       pointerHeldRef.current = false;
-      markUserInput();
+      lastUserInputAtRef.current = performance.now();
       window.removeEventListener('pointerup', release);
       window.removeEventListener('pointercancel', release);
     };
@@ -501,18 +523,15 @@ function ClaudeTranscriptImpl({
     const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
     // The distance is user-tunable in Settings → General (see
     // AutoScrollContext / autoScrollFollow).
-    isNearBottomRef.current = nextFollowing({
+    setFollowing(nextFollowing({
       following: isNearBottomRef.current,
       distanceFromBottom,
       followPx,
       userScrolling:
         pointerHeldRef.current ||
         performance.now() - lastUserInputAtRef.current <= USER_SCROLL_INTENT_MS,
-    });
-    if (followMarkerRef.current) {
-      followMarkerRef.current.dataset.following = String(isNearBottomRef.current);
-    }
-  }, [isNearBottomRef, followPx]);
+    }));
+  }, [isNearBottomRef, followPx, setFollowing]);
 
   const liveRows = (
     <>
