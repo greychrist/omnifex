@@ -17,7 +17,7 @@ import { DownloadableImage } from '@/components/DownloadableImage';
 import { RawJsonPopover } from '@/components/StreamMessage/RawJsonPopover';
 import { useClaudeSessionStore } from '@/stores/claudeSessionStore';
 import { ChainOfThought } from './ChainOfThought';
-import { AnsweredQuestion } from './ModernQuestion';
+import { AnsweredAskUserQuestionCard } from '@/components/AnsweredAskUserQuestionCard';
 import { ModernPlan } from './ModernPlan';
 import { Message, MessageActions, MessageResponse, UserBubble } from './primitives';
 
@@ -26,6 +26,15 @@ export interface ModernRowContext {
   tabId: string;
   accountType?: string;
   onResend?: (text: string, images?: string[]) => void;
+}
+
+/** The tool_result body, serialised as StreamMessage hands it to the classic card. */
+function resultContentOf(resultNode: JsonlNode | undefined): string | undefined {
+  const content = (resultNode as { raw?: { message?: { content?: unknown } } } | undefined)?.raw?.message?.content;
+  if (!Array.isArray(content)) return undefined;
+  const block = content.find((b) => (b as { type?: string }).type === 'tool_result') as { content?: unknown } | undefined;
+  const answer = block?.content;
+  return typeof answer === 'string' ? answer : answer != null ? JSON.stringify(answer) : undefined;
 }
 
 function timeOf(node: JsonlNode): string | null {
@@ -89,7 +98,12 @@ export const ModernTranscriptItem = React.memo(function ModernTranscriptItem({
     case 'work':
       return <ChainOfThought entries={item.entries} nodes={item.nodes} live={live} ctx={ctx} />;
     case 'question':
-      return <AnsweredQuestion input={item.input} resultNode={item.resultNode} />;
+      // The classic answered card, as Compact draws it: one row per question.
+      return (
+        <div className="mx-2 my-2">
+          <AnsweredAskUserQuestionCard input={item.input} resultContent={resultContentOf(item.resultNode)} message={item.node} />
+        </div>
+      );
     case 'plan':
       return <ModernPlan markdown={item.markdown} resultNode={item.resultNode} />;
     case 'notice':

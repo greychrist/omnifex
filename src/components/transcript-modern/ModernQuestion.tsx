@@ -1,18 +1,19 @@
 /**
  * AskUserQuestion in the Modern format — AI Elements' Questionnaire.
  *
- * `ModernQuestionCard` is the live card (answers go back through the same
- * `buildAskUserQuestionAnswer` the classic card uses); `AnsweredQuestion` is
- * the transcript's record of what was picked.
+ * The live card; answers go back through the same `buildAskUserQuestionAnswer`
+ * the classic card uses. Once answered, the transcript draws the classic
+ * `AnsweredAskUserQuestionCard` in both formats.
  */
 import * as React from 'react';
 import { Check, ChevronDown, ChevronUp, MessageCircleQuestion, Pencil } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import type { JsonlNode } from '@/types/jsonl';
+import { accentStyleFor, cardRadiusStyle, swatchFor } from '@/lib/accentStyle';
+import { useMessageRenderingConfig } from '@/contexts/MessageRenderingContext';
 import type { PermissionRequestPayload } from '@/lib/types/permissionRequest';
 import { buildAskUserQuestionAnswer, OTHER_VALUE } from '@/lib/askUserQuestionAnswer';
-import { parseAnswerPayload, parseQuestions, type QuestionShape } from '@/components/AnsweredAskUserQuestionCard';
+import { parseQuestions, type QuestionShape } from '@/components/AnsweredAskUserQuestionCard';
 
 function OptionRow({
   multi,
@@ -20,22 +21,19 @@ function OptionRow({
   label,
   description,
   onClick,
-  readOnly,
 }: {
   multi: boolean;
   on: boolean;
   label: string;
   description?: string;
-  onClick?: () => void;
-  readOnly?: boolean;
+  onClick: () => void;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      disabled={readOnly}
       className={cn(
-        'flex w-full items-start gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors disabled:cursor-default',
+        'flex w-full items-start gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors',
         on ? 'border-primary/60 bg-primary/5' : 'hover:bg-accent/50',
       )}
     >
@@ -70,37 +68,38 @@ function Shell({
   title,
   children,
   footer,
-  collapsible = false,
 }: {
   title: string;
   children: React.ReactNode;
-  footer?: React.ReactNode;
-  /** The live card folds to its header, as the classic card does, so the
-   *  chat behind a tall question can be read before answering. */
-  collapsible?: boolean;
+  footer: React.ReactNode;
 }) {
+  // Folds to its header, as the classic card does, so the chat behind a tall
+  // question can be read before answering.
   const [collapsed, setCollapsed] = React.useState(false);
+  // The classic card's per-kind accent (Settings → Chats) and inset margin, so
+  // a waiting question stands out from the chat.
+  const { config } = useMessageRenderingConfig();
+  const accentStyle = { ...accentStyleFor(config, 'permission.askUserQuestion'), ...cardRadiusStyle(config) };
+  const swatch = swatchFor(config, 'permission.askUserQuestion');
   return (
-    <div className="modern-format w-full overflow-hidden rounded-xl border bg-card shadow-sm">
+    <div className="modern-format mx-2 my-2 overflow-hidden rounded-xl border shadow-sm" style={accentStyle}>
       <div className={cn('flex items-center gap-2 px-4 py-3 text-sm', !collapsed && 'border-b')}>
-        <MessageCircleQuestion className="size-4 text-muted-foreground" />
+        <MessageCircleQuestion className="size-4 text-muted-foreground" style={swatch ? { color: swatch } : undefined} />
         <span className="flex-1 font-medium">{title}</span>
-        {collapsible && (
-          <button
-            type="button"
-            onClick={() => { setCollapsed((c) => !c); }}
-            aria-label={collapsed ? 'Expand question' : 'Collapse question'}
-            aria-expanded={!collapsed}
-            className="inline-flex size-6 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
-          >
-            {collapsed ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={() => { setCollapsed((c) => !c); }}
+          aria-label={collapsed ? 'Expand question' : 'Collapse question'}
+          aria-expanded={!collapsed}
+          className="inline-flex size-6 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+        >
+          {collapsed ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
+        </button>
       </div>
       {!collapsed && (
         <>
           <div className="max-h-[60vh] space-y-5 overflow-y-auto p-4">{children}</div>
-          {footer && <div className="flex items-center justify-between gap-2 border-t px-4 py-3">{footer}</div>}
+          <div className="flex items-center justify-between gap-2 border-t px-4 py-3">{footer}</div>
         </>
       )}
     </div>
@@ -152,7 +151,6 @@ export function ModernQuestionCard({
   return (
     <Shell
       title="Claude has a question"
-      collapsible
       footer={
         <>
           <Button variant="ghost" size="sm" className="h-8 text-muted-foreground" onClick={onCancel}>Dismiss</Button>
@@ -208,54 +206,6 @@ export function ModernQuestionCard({
           </div>
         </div>
       ))}
-    </Shell>
-  );
-}
-
-/** The structured answers the CLI keeps on the result record, if present. */
-function structuredAnswers(resultNode: JsonlNode | undefined): Record<string, string> | null {
-  const tur = (resultNode as { raw?: { toolUseResult?: { answers?: unknown } } } | undefined)?.raw?.toolUseResult;
-  const a = tur?.answers;
-  return a && typeof a === 'object' ? (a as Record<string, string>) : null;
-}
-
-function resultContent(resultNode: JsonlNode | undefined): unknown {
-  const content = (resultNode as { raw?: { message?: { content?: unknown } } } | undefined)?.raw?.message?.content;
-  if (!Array.isArray(content)) return undefined;
-  const block = content.find((b) => (b as { type?: string }).type === 'tool_result') as { content?: unknown } | undefined;
-  return block?.content;
-}
-
-export function AnsweredQuestion({ input, resultNode }: { input: Record<string, unknown>; resultNode?: JsonlNode }) {
-  const questions = React.useMemo(() => parseQuestions(input), [input]);
-  const answers = React.useMemo(
-    () => structuredAnswers(resultNode) ?? parseAnswerPayload(resultContent(resultNode), questions)?.answers ?? null,
-    [resultNode, questions],
-  );
-  return (
-    <Shell title={answers ? 'You answered' : 'Waiting for your answer'}>
-      {questions.map((q) => {
-        const answer = answers?.[q.question];
-        const picks = answer ? answer.split(', ') : [];
-        const known = new Set(q.options.map((o) => o.label));
-        const typed = picks.filter((p) => !known.has(p));
-        return (
-          <div key={q.question} className="space-y-3">
-            <QuestionHead q={q} />
-            <div className="grid gap-2">
-              {q.options.filter((o) => !answers || picks.includes(o.label)).map((o) => (
-                <OptionRow key={o.label} multi={q.multiSelect === true} on={picks.includes(o.label)} label={o.label} description={o.description} readOnly />
-              ))}
-              {typed.length > 0 && (
-                <OptionRow multi={false} on label={typed.join(', ')} description="Typed answer" readOnly />
-              )}
-              {answers && picks.length === 0 && answer !== undefined && (
-                <div className="text-sm text-muted-foreground">{answer || 'No answer'}</div>
-              )}
-            </div>
-          </div>
-        );
-      })}
     </Shell>
   );
 }

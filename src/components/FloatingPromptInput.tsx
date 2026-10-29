@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowUp,
@@ -76,10 +76,12 @@ function measureGrowFloor(el: HTMLTextAreaElement | null, value: string): number
   // Measure with the box free-height: stretched, scrollHeight reports the
   // stretched height and the input could never shrink back down.
   el.style.height = 'auto';
-  const scrollHeight = el.scrollHeight;
+  // scrollHeight stops at the padding edge; min-height is border-box. Without
+  // the border the box is 2px short of its text and scrolls it under the caret.
+  const needed = el.scrollHeight + (el.offsetHeight - el.clientHeight);
   // Hand the box back to `h-full`; the measurement is only its floor.
   el.style.height = '';
-  return Math.min(Math.max(scrollHeight, GROW_FLOOR_PX), GROW_CEILING_PX);
+  return Math.min(Math.max(needed, GROW_FLOOR_PX), GROW_CEILING_PX);
 }
 
 const FloatingPromptInputInner = (
@@ -208,13 +210,16 @@ const FloatingPromptInputInner = (
     [isExpanded, projectPath]
   );
 
-  // Update embedded images when prompt changes + auto-resize
+  // Update embedded images when prompt changes
   useEffect(() => {
-    const imagePaths = extractImagePaths(prompt, projectPath);
-    setEmbeddedImages(imagePaths);
+    setEmbeddedImages(extractImagePaths(prompt, projectPath));
+  }, [prompt, projectPath]);
 
+  // Auto-resize, once per change and before paint, so no frame shows the old
+  // height under the new text.
+  useLayoutEffect(() => {
     if (!isExpanded) setTextareaHeight(measureGrowFloor(textareaRef.current, prompt));
-  }, [prompt, projectPath, isExpanded]);
+  }, [prompt, isExpanded]);
 
   // Focus textarea when expand state changes
   useEffect(() => {
@@ -229,9 +234,6 @@ const FloatingPromptInputInner = (
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newValue = e.target.value;
     const newCursorPosition = e.target.selectionStart || 0;
-
-    // Auto-resize
-    if (!isExpanded) setTextareaHeight(measureGrowFloor(textareaRef.current, newValue));
 
     // Slash command detection (delegated to hook)
     slash.handleTextChangeForSlash(newValue, newCursorPosition, prompt);
@@ -352,7 +354,6 @@ const FloatingPromptInputInner = (
       setPrompt("");
       setEmbeddedImages([]);
       setPastedImages([]);
-      setTextareaHeight(48);
     }
   };
 
@@ -578,7 +579,7 @@ const FloatingPromptInputInner = (
                   }
                   disabled={disabled}
                   className={cn(
-                    "resize-none pr-20 pl-3 py-2.5 transition-all duration-150 h-full",
+                    "resize-none pr-20 pl-3 py-2.5 transition-colors duration-150 h-full",
                     modern && "rounded-2xl bg-background pl-4 py-3 shadow-sm focus-visible:ring-1",
                     dragActive && "border-primary",
                     textareaHeight >= GROW_CEILING_PX && "overflow-y-auto scrollbar-thin"

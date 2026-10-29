@@ -104,6 +104,57 @@ describe('FloatingPromptInput — chat bar layout', () => {
   });
 });
 
+function stubLayout(props: Record<string, number>): () => void {
+  const originals = Object.keys(props).map((k) => [k, Object.getOwnPropertyDescriptor(HTMLElement.prototype, k)] as const);
+  for (const [k, v] of Object.entries(props)) {
+    Object.defineProperty(HTMLElement.prototype, k, { configurable: true, get: () => v });
+  }
+  return () => {
+    for (const [k, d] of originals) {
+      if (d) Object.defineProperty(HTMLElement.prototype, k, d);
+      else delete (HTMLElement.prototype as unknown as Record<string, unknown>)[k];
+    }
+  };
+}
+
+describe('FloatingPromptInput — auto-grow', () => {
+  it('counts the border: a border-box min-height of bare scrollHeight clips the text by 2px', () => {
+    // scrollHeight excludes the border; min-height (border-box) includes it.
+    // Short by the border, the box scrolls its text to keep the caret in view.
+    const restore = stubLayout({ scrollHeight: 130, offsetHeight: 102, clientHeight: 100 });
+    try {
+      render(<FloatingPromptInput onSend={vi.fn()} />);
+      const textarea = screen.getByPlaceholderText(/Message Claude/) as HTMLTextAreaElement;
+      fireEvent.change(textarea, { target: { value: 'hello' } });
+      expect(textarea.style.minHeight).toBe('132px');
+    } finally {
+      restore();
+    }
+  });
+
+  it('does not animate its height: a transitioning min-height is shorter than the text it holds', () => {
+    // transition-all animated each new min-height over 150ms; meanwhile the
+    // overflow-hidden box scrolled the caret line up, then dropped back down.
+    render(<FloatingPromptInput onSend={vi.fn()} />);
+    const textarea = screen.getByPlaceholderText(/Message Claude/);
+    expect(textarea.className).not.toMatch(/transition-all/);
+  });
+
+  it('returns to the 72px floor after sending', () => {
+    const restore = stubLayout({ scrollHeight: 130 });
+    try {
+      render(<FloatingPromptInput onSend={vi.fn()} />);
+      const textarea = screen.getByPlaceholderText(/Message Claude/) as HTMLTextAreaElement;
+      fireEvent.change(textarea, { target: { value: 'hello' } });
+      fireEvent.keyDown(textarea, { key: 'Enter' });
+      expect(textarea.value).toBe('');
+      expect(textarea.style.minHeight).toBe('72px');
+    } finally {
+      restore();
+    }
+  });
+});
+
 describe('FloatingPromptInput — Modern variant', () => {
   it('rounds the field and the send button', () => {
     render(<FloatingPromptInput onSend={vi.fn()} variant="modern" />);

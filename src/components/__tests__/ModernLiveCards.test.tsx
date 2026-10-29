@@ -12,6 +12,8 @@ vi.mock('@/components/PermissionCard', async (orig) => {
 
 import { ModernQuestionCard } from '@/components/transcript-modern/ModernQuestion';
 import { ModernPermissionCard } from '@/components/transcript-modern/ModernPermissionCard';
+import { accentStyleFor } from '@/lib/accentStyle';
+import { createDefaultConfig } from '@/lib/messageRenderingConfig';
 
 afterEach(() => { cleanup(); });
 
@@ -46,6 +48,23 @@ describe('ModernQuestionCard', () => {
     render(<ModernQuestionCard request={ask} onSubmit={() => {}} onCancel={onCancel} />);
     fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
     expect(onCancel).toHaveBeenCalled();
+  });
+});
+
+describe('ModernQuestionCard — the classic card\'s look', () => {
+  it('takes the question accent colour and the inset margin', () => {
+    const { container } = render(<ModernQuestionCard request={ask} onSubmit={() => {}} onCancel={() => {}} />);
+    const card = container.firstElementChild as HTMLElement;
+    const accent = accentStyleFor(createDefaultConfig(), 'permission.askUserQuestion');
+    expect(accent?.backgroundColor).toBeTruthy();
+    // jsdom normalises hex to rgb(a), so compare through a styled probe.
+    const probe = document.createElement('div');
+    probe.style.backgroundColor = String(accent?.backgroundColor);
+    probe.style.borderColor = String(accent?.borderColor);
+    expect(card.style.backgroundColor).toBe(probe.style.backgroundColor);
+    expect(card.style.borderColor).toBe(probe.style.borderColor);
+    expect(card.className).toMatch(/\bmx-2\b/);
+    expect(card.className).toMatch(/\bmy-2\b/);
   });
 });
 
