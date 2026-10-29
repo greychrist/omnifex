@@ -530,6 +530,65 @@ describe('TabManager — revealing a clipped tab', () => {
       expect(screen.queryByTitle('Scroll tabs right')).toBeNull();
     });
 
+    // The arrows sit in the same row as the strip, so a mounted arrow narrows
+    // it. Tabs that fit once the arrow is gone still overflowed the strip the
+    // arrow had narrowed, and the arrow kept itself up after the last tab
+    // closed — scrolled to 0, pointing at nothing.
+    describe('measuring overflow without the arrows’ own width', () => {
+      function strip(container: HTMLElement) {
+        const el = container.querySelector<HTMLElement>('[data-testid="tab-strip-scroll"]')!;
+        el.scrollTo = vi.fn();
+        return el;
+      }
+      const size = (el: HTMLElement, scrollLeft: number, clientWidth: number, scrollWidth: number) => {
+        el.scrollLeft = scrollLeft;
+        Object.defineProperty(el, 'clientWidth', { configurable: true, value: clientWidth });
+        Object.defineProperty(el, 'scrollWidth', { configurable: true, value: scrollWidth });
+      };
+      const arrowWidth = (title: string, width: number) => {
+        screen.getByTitle(title).getBoundingClientRect = () => rect(0, width);
+      };
+
+      it('drops the right arrow when the tabs would fit without it', () => {
+        installState({ tabs, activeTabId: 'b' });
+        const { container } = render(<TabManager />);
+        const el = strip(container);
+        size(el, 0, 700, 900);
+        fireEvent.scroll(el);
+        arrowWidth('Scroll tabs right', 34);
+        // Last tab closed: 790px of tabs, 766px of strip beside a 34px arrow.
+        size(el, 0, 766, 790);
+        resize();
+        expect(screen.queryByTitle('Scroll tabs right')).toBeNull();
+      });
+
+      it('drops both arrows when the tabs would fit without either', () => {
+        installState({ tabs, activeTabId: 'b' });
+        const { container } = render(<TabManager />);
+        const el = strip(container);
+        size(el, 100, 600, 900);
+        fireEvent.scroll(el);
+        arrowWidth('Scroll tabs left', 34);
+        arrowWidth('Scroll tabs right', 34);
+        size(el, 10, 700, 760);
+        resize();
+        expect(screen.queryByTitle('Scroll tabs left')).toBeNull();
+        expect(screen.queryByTitle('Scroll tabs right')).toBeNull();
+      });
+
+      it('keeps the right arrow while the tabs overflow even without it', () => {
+        installState({ tabs, activeTabId: 'b' });
+        const { container } = render(<TabManager />);
+        const el = strip(container);
+        size(el, 0, 700, 900);
+        fireEvent.scroll(el);
+        arrowWidth('Scroll tabs right', 34);
+        size(el, 0, 766, 820);
+        resize();
+        expect(screen.queryByTitle('Scroll tabs right')).not.toBeNull();
+      });
+    });
+
     it('stops following once the user scrolls the strip themselves', () => {
       installState({ tabs, activeTabId: 'c' });
       const { container } = render(<TabManager />);

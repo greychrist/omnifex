@@ -359,6 +359,15 @@ interface TabManagerProps {
  */
 export const TAB_REVEAL_MARGIN_PX = 32;
 
+/** Width a mounted scroll arrow takes from the strip's row, margins included. */
+function footprint(el: HTMLElement | null): number {
+  if (!el) return 0;
+  const style = getComputedStyle(el);
+  return el.getBoundingClientRect().width
+    + (parseFloat(style.marginLeft) || 0)
+    + (parseFloat(style.marginRight) || 0);
+}
+
 export const TabManager: React.FC<TabManagerProps> = ({ className }) => {
   useRenderProfile('TabManager');
   const {
@@ -376,6 +385,8 @@ export const TabManager: React.FC<TabManagerProps> = ({ className }) => {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [showLeftScroll, setShowLeftScroll] = useState(false);
   const [showRightScroll, setShowRightScroll] = useState(false);
+  const leftScrollRef = useRef<HTMLButtonElement>(null);
+  const rightScrollRef = useRef<HTMLButtonElement>(null);
   const [draggedTabId, setDraggedTabId] = useState<string | null>(null);
   // Tab awaiting a "you're about to kill a running session" confirmation.
   const [pendingCloseId, setPendingCloseId] = useState<string | null>(null);
@@ -456,12 +467,21 @@ export const TabManager: React.FC<TabManagerProps> = ({ className }) => {
     };
   }, [tabs, activeTabId, createProjectsTab, closeTab, switchToTab]);
 
-  // Check scroll buttons visibility
+  // Check scroll buttons visibility. The arrows sit in the same row as the
+  // strip, so a mounted arrow narrows it: measured as-is, tabs that would fit
+  // once the arrow is gone still overflow, and the arrow keeps itself up. So
+  // the strip is first measured with the arrows' width given back.
   const checkScrollButtons = () => {
     const container = scrollContainerRef.current;
     if (!container) return;
 
     const { scrollLeft, scrollWidth, clientWidth } = container;
+    const reclaimable = footprint(leftScrollRef.current) + footprint(rightScrollRef.current);
+    if (clientWidth + reclaimable >= scrollWidth - 1) {
+      setShowLeftScroll(false);
+      setShowRightScroll(false);
+      return;
+    }
     setShowLeftScroll(scrollLeft > 0);
     setShowRightScroll(scrollLeft + clientWidth < scrollWidth - 1);
   };
@@ -630,6 +650,7 @@ export const TabManager: React.FC<TabManagerProps> = ({ className }) => {
       <AnimatePresence>
         {showLeftScroll && (
           <motion.button
+            ref={leftScrollRef}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -713,6 +734,7 @@ export const TabManager: React.FC<TabManagerProps> = ({ className }) => {
       <AnimatePresence>
         {showRightScroll && (
           <motion.button
+            ref={rightScrollRef}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
