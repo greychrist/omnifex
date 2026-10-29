@@ -5,6 +5,16 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.18] — 2026-10-29
+
+### Changed
+- Modern: the live question card takes the question accent colour and the classic card's inset margin.
+- Modern: answered questions are drawn as the classic compact answered card — one row per question, answer pills, timestamp footer.
+
+### Fixed
+- The chat input no longer jumps up and back while it grows past a few lines: its height no longer animates, and the measurement now includes the border.
+- Modern: an answer containing a comma (e.g. "Yes, add it (Recommended)") is shown as the picked option, not as a typed answer.
+
 ## [0.5.17] — 2026-10-29
 
 ### Fixed
