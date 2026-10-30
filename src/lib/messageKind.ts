@@ -104,6 +104,7 @@ const STREAM_BOOKKEEPING_SUBTYPES: ReadonlySet<string> = new Set([
   'ui_invalidate',
   'ui_focus',
   'ui_panes',
+  'ui_placed',
   'ui_scroll',
   'commands_changed',
   'permission_check_status',

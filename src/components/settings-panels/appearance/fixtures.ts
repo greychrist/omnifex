@@ -54,6 +54,7 @@ export const KIND_FIXTURES: Record<string, string> = {
   "system.ui_invalidate": "event: ui.render",
   "system.ui_focus": "token-weather · Button proceed",
   "system.ui_panes": "1 pane open: blast-radius",
+  "system.ui_placed": "1 row placed: blast-radius",
   "system.ui_scroll": "token-weather · row 12",
   "system.commands_changed": "42 commands",
   "system.permission_check_status": "Bash · checking",

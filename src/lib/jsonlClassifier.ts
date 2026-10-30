@@ -285,6 +285,7 @@ const SYSTEM_SUBTYPES: ReadonlySet<SystemSubtype> = new Set<SystemSubtype>([
   'ui_invalidate',
   'ui_focus',
   'ui_panes',
+  'ui_placed',
   'ui_scroll',
   'commands_changed',
   'permission_check_status',

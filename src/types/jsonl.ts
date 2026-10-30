@@ -229,6 +229,9 @@ export type SystemSubtype =
   | 'ui_invalidate'
   | 'ui_focus'
   | 'ui_panes'
+  // CLI >= 2.1.314: the rows mods placed with $.ui.place, `{rows}`, for a
+  // surface to draw via ui_render. Display only; OmniFex draws no mod UI.
+  | 'ui_placed'
   | 'ui_scroll'
   | 'commands_changed'
   // Stream-only (CLI >= 2.1.292): a tool call whose automatic permission

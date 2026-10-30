@@ -51,6 +51,99 @@ import { buildClaudeEnv } from './util/claude-env';
  *    the CLI's own error string: "summarized", "omitted" ("highlights" is
  *    refused). Records carry `thinking_duration_ms` too. Verified 2.1.312.
  *
+ * Last review: 2.1.312 -> 2.1.314 on 2026-10-30. Findings: none broken;
+ * one latent Unrecognized card (`ui_placed`), fixed the same day; idle
+ * compaction now reaches our sessions by default.
+ *
+ *  Changelog coverage: 2.1.314 (~120 entries). 2.1.313 has no changelog
+ *  entry and was never installed. Both ends of the diff installed.
+ *  Script: merge map (41), hook_event_name (33), control_* (4), SDK
+ *  requests (55), CLI flags (115), origin kinds (13), can_use_tool keys
+ *  (11) identical; installed-vs-OmniFex clean.
+ *  - Idle compaction, default ON for us. 2.1.312 gated the `one_hour`
+ *    idle path behind a remote flag; 2.1.314 sets `rollout:()=>"on"`, and
+ *    `idleCompaction` now "Defaults to true". The `sdk` query source arms
+ *    `summarize` (no REPL host), so in an OmniFex session using the 1h
+ *    cache, with >= 200K context (CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS,
+ *    floor 100K) and auto-compact on, the CLI writes a summary in the
+ *    background at ~90% of the cache TTL. If the cache has expired by the
+ *    next prompt, that turn swaps it in: ordinary compact_boundary
+ *    records, then a system notice "Compacted using a summary written while
+ *    you were away · turn off with "idleCompaction": false in
+ *    settings.json". No new subtype, and nothing is emitted while idle
+ *    (the precompute is silent), so turn state is unaffected. Not yet seen
+ *    in any transcript. OPEN: on the first real one, check the notice
+ *    renders, the context meter drops, and whether the background call's
+ *    spend shows up anywhere (it is a model call outside any turn).
+ *  - `subtype:` +2. `ui_placed` is `{type:"system", subtype:"ui_placed",
+ *    rows}`, pushed when a plugin calls the new `$.ui.place`. It has the
+ *    same `Yd()` gate as `ui_panes`/`ui_log`, both of which reach us. It
+ *    is absent from SYSTEM_SUBTYPES, so it would draw an orange
+ *    "Unrecognized record: system" card. No mod we run calls `$.ui.place`
+ *    (bundled omnifex-mod and ~/.claude-all-accounts grepped). FIXED the
+ *    same day with the ui_* pattern: SystemSubtype, SYSTEM_SUBTYPES,
+ *    STREAM_BOOKKEEPING_SUBTYPES, and a default-Never kind in
+ *    messageRenderingConfig. `placed` is the
+ *    in-memory `persist:false` row behind it, not a stdout frame.
+ *  - `type:` -1 `output_limit_note`: minifier noise. The attachment is
+ *    still written and still hidden (summariseContextAttachment -> null).
+ *  - `.describe()` +23 -9. `responseComparisonEnabled` (@internal, "two
+ *    answers ... which is better") is a settings key only; nothing in the
+ *    bundle reads it yet. `blockWritesOutsideWorkingDirectories`: a new
+ *    permissions key, possibly worth a toggle, not taken. Startup-failure
+ *    result `errors` wording; CLAUDE_CODE_STARTUP_FAILURE_RESULTS (host
+ *    opt-in for structured startup errors; we don't set it); MCP
+ *    `error_code` widened to needs-auth rows; one-tap Approve/Deny,
+ *    set_model `error_reason`/`model`, `/send-to-project` tool, CFC flag,
+ *    subagent park flag, Monitor wording. All inert: OmniFex reads none of
+ *    them.
+ *  - Object keys +491 -31: env names (CLAUDE_CODE_STREAM_EVENT_HOLD_MS /
+ *    _MAX_LINE_BYTES are an opt-in stdout line batcher that we don't set),
+ *    placed-row plumbing, send-to-project, cloud/runner internals. None on
+ *    user/assistant records, permission requests or the initialize reply.
+ *  - /usage: "What's contributing to your limits usage?" 1 -> 0 is the
+ *    embedded changelog copy going away. The UI string was reworded in
+ *    2.1.312, and the parser matches both. Other anchors count-identical.
+ *  - Auto-mode denial text (changelog: "messages name the command"): the
+ *    `Permission for this action was denied by the Claude Code auto mode
+ *    classifier. Reason: ` prefix and its builder are unchanged, so
+ *    permissionDenial.ts BLOCK_TEXT holds. No real 2.1.314 denial in
+ *    either account yet; confirm `[Category]` on the first one.
+ *  - `side_question` (standing list): unchanged.
+ *  - In our favour, nothing to do: prompts containing `<bash-stdout>` /
+ *    `<local-command-stdout>` are now acknowledged to a stream-json host
+ *    (prompt echo reconciliation); `claude -p` startup failure exits 1
+ *    with the error (summary-query.ts already treats non-zero as failure);
+ *    sessions whose first prompt failed now get titled, and skill-started
+ *    sessions get auto-titles; admin-capped effort lowers and retries
+ *    instead of failing every turn (our effort picker can show the higher
+ *    level); headless parent no longer keeps subagent tool results;
+ *    `--setting-sources` exclusion fix (we pass it); PreCompact hook
+ *    output capped at 10K chars (we install none).
+ *  - Inert: gateway groups/guardrail_trace/Vertex hang, Bedrock images,
+ *    Foundry fallback, tool_reference retry, TLS cross-signed roots, MCP
+ *    signed-out fallback and logout, credential lock, ultrareview/remote-
+ *    control trust, managed TLS/plugin/remote-settings fixes, usage-limit
+ *    auto-continue cap, Ultracode, broken-reply cleanup, git index lock,
+ *    markdown tables, /resume picker titles, /btw, SSH image paste, Monitor
+ *    Bash hooks and `if` matching, auto mode no-verdict reporting, beta
+ *    header retry, dotted model ids, Bash `which`, FORCE_HYPERLINK, git grep
+ *    C locale, skills/plugins .trash, CRLF diffs, /permissions Recently
+ *    blocked, vim/footer/agent panel/fullscreen TUI fixes, dataviz and
+ *    claude-api skill updates, all [VSCode], [Cloud sessions], [Remote
+ *    Control], [Claude Tag], self-hosted runner entries.
+ *
+ *  Prompt fixed in this pass: step 4 now covers new `system` subtypes. The
+ *  coverage half checks record `type`s only, which is how `ui_placed` got
+ *  past "installed vs OmniFex: clean". A scripted check was considered and
+ *  dropped: 38 binary `type:"system"` subtypes are outside
+ *  SYSTEM_SUBTYPES, and most are filtered upstream or never sent to a
+ *  host, so the check would only produce noise.
+ *
+ *  OPEN ITEMS (carry forward; re-check each review):
+ *   - Idle compaction: verify the first real occurrence (above).
+ *   - Auto-mode denial `[Category]`: confirm on the first 2.1.314 denial.
+ *
  * Last review: 2.1.311 -> 2.1.312 on 2026-10-27. Findings: one `/usage`
  * regression, fixed in the same change — the contributing header lost
  * "limits".
@@ -4822,7 +4915,7 @@ import { buildClaudeEnv } from './util/claude-env';
  * `~/.claude.json` fix (we read-modify-write that file, never replace it), and
  * the VSCode screen-reader work.
  */
-export const REVIEWED_CLI_VERSION = '2.1.312';
+export const REVIEWED_CLI_VERSION = '2.1.314';
 
 /**
  * app_settings key holding the user's explicit OmniFex-checkout override.

@@ -867,7 +867,7 @@ it('classifies system:permission_check_status as a known system subtype', () => 
 
 describe('mod frames from a headless session', () => {
   it.each([
-    'ui_log', 'ui_toast', 'ui_status', 'ui_invalidate', 'ui_focus', 'ui_panes', 'ui_scroll', 'commands_changed',
+    'ui_log', 'ui_toast', 'ui_status', 'ui_invalidate', 'ui_focus', 'ui_panes', 'ui_placed', 'ui_scroll', 'commands_changed',
   ])('classifies system:%s as a known system subtype', (subtype) => {
     const node = classifyJsonlLine({
       type: 'system',

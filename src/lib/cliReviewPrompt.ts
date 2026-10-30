@@ -126,6 +126,12 @@ grep, a file read or a transcript behind it.
      card, so a new context source disappears silently. They show up in the
      \`type:"…"\` diff; decide whether \`src/lib/contextLedger.ts\`
      (\`IN_SCOPE\`, \`summariseContextAttachment\`) should take them.
+   - **New \`system\` subtypes.** The coverage half checks record \`type\`s
+     only. A \`type:"system"\` frame whose subtype is missing from
+     \`src/lib/jsonlClassifier.ts\` (\`SYSTEM_SUBTYPES\`) draws an orange
+     "Unrecognized record: system" card when it reaches stdout. Every new
+     line in the \`subtype:"…"\` diff needs its emitter read: does it sit on a
+     \`type:"system"\` frame, and is it written to a stream-json host?
    - **New CLI → host control requests.** \`electron/services/agents/claude-cli-engine.ts\`
      answers unknown ones with an error, so they don't stall a session.
      But a new one may be a capability the CLI now expects a host to serve.
