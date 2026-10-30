@@ -10,24 +10,30 @@ import type { ViewMode } from "@/components/SessionViewToggle";
  *
  * Split into text and background maps because a compaction reset paints its
  * dashes from `currentColor`, which the `text-*` half supplies.
+ *
+ * Exactly the badge's colour, solid: a lighter, translucent line under a
+ * solid badge read as two different greens.
  */
 const RAIL_TEXT: Record<ContextPressureLevel, string> = {
-  none: "text-emerald-500",
+  none: "text-emerald-700",
   warn: "text-amber-500",
-  critical: "text-red-500",
+  critical: "text-red-600",
 };
 
 const RAIL_BG: Record<ContextPressureLevel, string> = {
-  none: "bg-emerald-500/60",
-  warn: "bg-amber-500/80",
-  critical: "bg-red-500",
+  none: "bg-emerald-700",
+  warn: "bg-amber-500",
+  critical: "bg-red-600",
 };
 
 /** The size badge, in the rail's colour. Solid: it sits on top of the line
  *  and must hide it. No border — the unlayered `* { border-color }` rule
- *  outranks the utilities. */
+ *  outranks the utilities.
+ *
+ *  Each pair clears WCAG AA (4.5:1) for its 12px text: emerald-700 5.4,
+ *  amber-500 on black 9.8, red-600 4.8. Emerald-600 was 3.7 and failed. */
 const BADGE: Record<ContextPressureLevel, string> = {
-  none: "bg-emerald-600 text-white",
+  none: "bg-emerald-700 text-white",
   warn: "bg-amber-500 text-black",
   critical: "bg-red-600 text-white",
 };
@@ -145,7 +151,7 @@ export const ContextTimelineTick: React.FC<ContextTimelineTickProps> = ({
           <span
             data-timeline-badge
             className={cn(
-              "w-fit rounded-md px-1.5 py-0.5 font-mono text-xs leading-none tabular-nums",
+              "w-fit rounded-sm px-1.5 py-0.5 font-mono text-xs leading-none tabular-nums",
               BADGE[level],
             )}
           >

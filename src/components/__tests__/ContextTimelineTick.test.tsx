@@ -185,12 +185,50 @@ describe('ContextTimelineTick — rail colour tracks pressure', () => {
     expect(rail(container)).toMatch(/red/);
   });
 
+  // The badge sits on the line; a lighter or translucent line beside a
+  // solid badge read as two different greens. Same colour, at every level,
+  // solid or dashed.
+  it.each(['none', 'warn', 'critical'] as const)(
+    'paints the %s rail in exactly the badge colour',
+    (level) => {
+      const colour = (cls: string, prefix: 'bg' | 'text') =>
+        cls.match(new RegExp(`\\b${prefix}-([a-z]+-\\d+(?:/\\d+)?)\\b`))?.[1];
+      const solid = render(<ContextTimelineTick point={point({ level })} />).container;
+      const badgeBg = colour(
+        (solid.querySelector('[data-timeline-badge]') as HTMLElement).className, 'bg',
+      );
+      expect(badgeBg).toBeDefined();
+      expect(colour(rail(solid), 'bg')).toBe(badgeBg);
+      cleanup();
+      const dashed = render(
+        <ContextTimelineTick point={point({ level, isReset: true, delta: null })} />,
+      ).container;
+      expect(colour(rail(dashed), 'text')).toBe(badgeBg);
+    },
+  );
+
   it('sets the size in a badge coloured to match the rail', () => {
     const { container } = render(<ContextTimelineTick point={point({ level: 'critical' })} />);
     const badge = container.querySelector('[data-timeline-badge]') as HTMLElement;
     expect(badge).toHaveTextContent('120k');
     expect(badge.className).toMatch(/red/);
     expect(badge.className).toMatch(/rounded/);
+  });
+
+  // White on emerald-600 is 3.67:1 — under WCAG AA's 4.5:1 for 12px text.
+  // emerald-700 is 5.37:1.
+  it('sets the under-budget badge at an AA contrast', () => {
+    const { container } = render(<ContextTimelineTick point={point({ level: 'none' })} />);
+    const badge = container.querySelector('[data-timeline-badge]') as HTMLElement;
+    expect(badge.className).toMatch(/\bbg-emerald-700\b/);
+    expect(badge.className).toMatch(/\btext-white\b/);
+  });
+
+  it('keeps the size badge squarer than a pill', () => {
+    const { container } = render(<ContextTimelineTick point={point()} />);
+    const badge = container.querySelector('[data-timeline-badge]') as HTMLElement;
+    expect(badge.className).toMatch(/\brounded-sm\b/);
+    expect(badge.className).not.toMatch(/\brounded-md\b/);
   });
 
   // The badges sit on top of the line, so they must hide it: no translucent
