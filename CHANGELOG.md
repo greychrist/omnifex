@@ -5,6 +5,17 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.20] — 2026-10-30
+
+### Fixed
+
+- The context timeline's rail now matches its size badge exactly, one solid colour per pressure level, and the badge text clears WCAG AA contrast (the green badge was 3.7:1).
+- A mod that places rows in the conversation (`$.ui.place`, Claude Code 2.1.314) no longer draws an "Unrecognized record" card; the frame is hidden bookkeeping, switchable from Appearance settings.
+
+### Changed
+
+- Reviewed Claude Code 2.1.313–2.1.314 against OmniFex; nothing broken. Idle compaction now runs in OmniFex sessions by default: a long conversation left idle past the one-hour prompt cache is compacted from a summary written while you were away (`"idleCompaction": false` in settings.json turns it off).
+
 ## [0.5.19] — 2026-10-29
 
 ### Added
