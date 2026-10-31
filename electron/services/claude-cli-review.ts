@@ -51,6 +51,76 @@ import { buildClaudeEnv } from './util/claude-env';
  *    the CLI's own error string: "summarized", "omitted" ("highlights" is
  *    refused). Records carry `thinking_duration_ms` too. Verified 2.1.312.
  *
+ * Last review: 2.1.314 -> 2.1.316 on 2026-10-31. Findings: none broken,
+ * nothing to change. One open item closed (auto-mode denial category).
+ *
+ *  Changelog coverage: 2.1.316 (~55 entries). 2.1.315 has no changelog
+ *  entry and was never installed. Both ends of the diff installed.
+ *  Script: merge map (41), `subtype:` (162), hook_event_name (33),
+ *  control_* (4), SDK requests (55), CLI flags (115), origin kinds (13),
+ *  can_use_tool keys (11) identical; /usage anchors count-identical;
+ *  installed-vs-OmniFex clean.
+ *  - `type:` +1 `look`: a regex-parser AST node (`{type:"look", item,
+ *    isNegative}`), not a record. Noise.
+ *  - `bashEditDiffEnabled` describe now says "Default: off, except in auto
+ *    and bypassPermissions modes". The resolver was already mode-gated in
+ *    2.1.314 (only the inner gate moved to a `bash_edit_diff` flag); the old
+ *    text was wrong, not the behaviour. bashToolResult.ts unaffected.
+ *  - `ultrathinkAvailable` on get_settings `applied` ("hosts should color
+ *    it only while this is true"). OmniFex neither colors `ultrathink` nor
+ *    calls get_settings (cli-control-catalog.ts: planned). Not taken.
+ *  - initialize reply gains pending elicitation requests (sibling of
+ *    pending_permission_requests), for clients joining a live session. The
+ *    daemon spawns every CLI it talks to, so initialize always precedes
+ *    any elicitation; the live control_request path (ElicitationDialog)
+ *    covers it. Inert.
+ *  - Bash toolUseResult gains @internal `stdoutHoldsOutputEnd`,
+ *    `memoryLimitNote`, `triggeredNote` (model-facing notes). BashWidget
+ *    renders content, not these. Inert.
+ *  - Other describe moves: send_now / api_error kinds / error_reason
+ *    wording, remote-transport timing stats, scheduled-trigger wording
+ *    ("routine" -> "scheduled task"), runner id, cloud-added MCP flag,
+ *    UserPromptSubmit `source` wording. All @internal or unread by us.
+ *  - Object keys +360 -16: env names (CLAUDE_CODE_DISABLE_ULTRATHINK,
+ *    _SUBAGENT_EFFORT, _SESSION_BEGAN_AS_COPY + `--session-began-as-copy`
+ *    server flag, _AUTO_MODE_FULL_CONTEXT, _MCP_SKIP_UNCHANGED_RELIST),
+ *    Bash meters, pooled budgets, timing internals. None on user/assistant
+ *    records, permission requests or the initialize reply beyond the above.
+ *  - Fast mode on Opus 4.8 deprecated (removed 2026-11-30). OmniFex sends
+ *    no fastMode (no fast UI); pricing.ts keeps the Opus 4.8 fast prices for
+ *    history. Inert.
+ *  - Opportunity, not taken: CLAUDE_CODE_SUBAGENT_EFFORT (subagent effort
+ *    independent of the session's). Would be a spawn env knob.
+ *  - In our favour, nothing to do: shell commands no longer orphaned when
+ *    the CLI exits by itself; sub-agents keep an inherited model on wake;
+ *    `claude -p` names why auto mode stopped a turn; compressed-response
+ *    hang fix.
+ *  - Inert: ultrathink kill-switch, gateway pooled budgets/layered
+ *    policy/Bedrock input tagging/model checks/auth login, cross-cert drop,
+ *    bash alias/SHELLOPTS/PowerShell hook fixes, Vertex/Bedrock family
+ *    fallback, `--restricted` uploads, invisible-char Enter (TUI),
+ *    managed autoMode.allow + `--settings` (we pass no --settings),
+ *    AUTO_MODE_SERVER behind proxies, plugin headersHelper env,
+ *    register_repo_root CLAUDE.md (we don't send it), Artifact rules,
+ *    `/model <id>` warning, push-to-talk hint, Grep/Glob timeout, plan
+ *    restore on resume, first-run text, Enterprise survey, /code-review
+ *    card, /diff refresh, no-GitHub-remote wording, SSL error text,
+ *    scheduled-task autoMode rule, server-managed settings approval, all
+ *    [VSCode], [Cloud sessions], [Claude Tag], [Code Review], self-hosted
+ *    runner and Windows entries.
+ *  - Open items from 2.1.314:
+ *     - Auto-mode denial `[Category]`: CLOSED. Real denials since 2.1.314
+ *       read "... auto mode classifier. Reason: [Self-Modification]. ...";
+ *       BLOCK_TEXT prefix holds.
+ *     - Idle compaction: still unseen. The only transcript hits for the
+ *       notice text are our own review conversations (user/assistant
+ *       records), not the system notice.
+ *
+ *  Prompt: no change needed; every pointer resolved.
+ *
+ *  OPEN ITEMS (carry forward; re-check each review):
+ *   - Idle compaction: verify the first real occurrence (2.1.314 block).
+ *
  * Last review: 2.1.312 -> 2.1.314 on 2026-10-30. Findings: none broken;
  * one latent Unrecognized card (`ui_placed`), fixed the same day; idle
  * compaction now reaches our sessions by default.
@@ -4915,7 +4985,7 @@ import { buildClaudeEnv } from './util/claude-env';
  * `~/.claude.json` fix (we read-modify-write that file, never replace it), and
  * the VSCode screen-reader work.
  */
-export const REVIEWED_CLI_VERSION = '2.1.314';
+export const REVIEWED_CLI_VERSION = '2.1.316';
 
 /**
  * app_settings key holding the user's explicit OmniFex-checkout override.
