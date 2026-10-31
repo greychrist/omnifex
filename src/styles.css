@@ -101,14 +101,54 @@ html {
 .modern-format .modern-answer > :last-child {
   margin-bottom: 0;
 }
-/* Your prompt in Modern: a faint blue tint over the theme's own muted
-   colour, a hairline blue border and a soft drop shadow, so it reads in
-   both the dark and light themes. */
+/* Modern's two cards — your prompt and the answer that ends a turn — are
+   made one way, each in its own colour: the theme's muted colour lifted, a
+   chroma in the card's hue, and a hairline border in the same hue. The
+   shadow, tinted the card's colour, is `.modern-card-shadow`, set per card
+   by Settings › Chats › Modern › Drop shadow.
+
+   Set from the muted colour, not mixed into it: a `color-mix` lifted
+   lightness and diluted chroma alike, so a chosen colour barely showed and
+   every hue read as the same grey. The lifts, chromas and the prompt's 245
+   hue reproduce the old 18% blue mix, which drifted toward the theme's own
+   240 (dark: 0.24 L, 0.039 C over 0.16 muted).
+
+   `--modern-*-hue` is the chosen colour read as a hue (modernCssVars),
+   `--modern-*-saturation` scales the chroma and `--modern-*-brightness` the
+   lift (down on the light theme, so there it darkens); unset, the prompt is blue and
+   the answer the chip's emerald (emerald-700, as ContextTimelineTick draws
+   the context rail). Rules, not utilities, for the `* { border-color }`
+   reset's sake. */
+.modern-format :is(.modern-prompt, .modern-final-card) {
+  --modern-card-lift: 0.08;
+  --modern-card-edge: 0.19;
+  background-color: oklch(from var(--color-muted) calc(l + var(--modern-card-lift) * var(--modern-card-brightness)) var(--modern-card-chroma) var(--modern-card-hue));
+  border: 1px solid oklch(from var(--color-border) calc(l + var(--modern-card-edge) * var(--modern-card-brightness)) calc(var(--modern-card-chroma) * 2) var(--modern-card-hue));
+}
+.theme-light .modern-format :is(.modern-prompt, .modern-final-card) {
+  --modern-card-lift: -0.06;
+  --modern-card-edge: -0.13;
+}
 .modern-format .modern-prompt {
-  /* `--modern-prompt-tint`: Settings › Chats › Modern › Prompt bubble. */
-  background-color: color-mix(in oklch, var(--color-muted) 82%, var(--modern-prompt-tint, oklch(0.62 0.17 255)));
-  border: 1px solid color-mix(in oklch, var(--color-border) 55%, var(--modern-prompt-tint, oklch(0.62 0.17 255)));
-  box-shadow: 0 1px 2px oklch(0 0 0 / 0.12), 0 2px 8px color-mix(in oklch, var(--modern-prompt-tint, oklch(0.45 0.15 255)) 12%, transparent);
+  --modern-card-hue: var(--modern-prompt-hue, 245);
+  --modern-card-chroma: calc(0.04 * var(--modern-prompt-saturation, 1));
+  --modern-card-brightness: var(--modern-prompt-brightness, 1);
+  --modern-card-glow: var(--modern-prompt-tint, oklch(0.45 0.15 255));
+}
+.modern-format .modern-final-card {
+  --modern-card-hue: var(--modern-final-hue, 165.612);
+  --modern-card-chroma: calc(0.04 * var(--modern-final-saturation, 1));
+  --modern-card-brightness: var(--modern-final-brightness, 1);
+  --modern-card-glow: var(--modern-final-tint, oklch(50.8% 0.118 165.612));
+}
+/* Settings › Chats › Modern › … color › Enabled, off: no fill and a
+   transparent border (kept, so the card does not shift by a pixel). */
+.modern-format :is(.modern-prompt, .modern-final-card).modern-card-plain {
+  background-color: transparent;
+  border-color: transparent;
+}
+.modern-format .modern-card-shadow {
+  box-shadow: 0 1px 2px oklch(0 0 0 / 0.12), 0 2px 8px color-mix(in oklch, var(--modern-card-glow) 12%, transparent);
 }
 /* A failed step's icon chip: red border to match its red icon and line.
    A rule, not a utility, because the `* { border-color }` reset above beats
@@ -116,7 +156,6 @@ html {
 [data-status="error"] .modern-step-icon {
   border-color: color-mix(in oklch, var(--color-destructive) 50%, transparent);
 }
-
 
 /* Plus Jakarta Sans */
 @font-face {

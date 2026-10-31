@@ -13,6 +13,7 @@ import { phaseLabel } from "@/lib/phaseLabel";
 
 const COMPACTING_LABEL = phaseLabel('compacting');
 import { buildModernItems, keepUnchangedItems, type ModernItem } from "@/lib/modernGrouping";
+import { keepUnchangedFooters, modernTurnFooters, type TurnFooter } from "@/lib/modernTurnFooter";
 import {
   ModernLiveAnswer,
   ModernTranscriptItem,
@@ -277,6 +278,14 @@ function ClaudeTranscriptImpl({
     prevModernItemsRef.current = next;
     return next;
   }, [viewMode, displayableMessages, renderConfig, messages]);
+  // The answer that ends each turn gets a Done line. Unchanged footers keep
+  // their object, so a new record re-renders only the answer whose line moved.
+  const prevFootersRef = useRef<Map<string, TurnFooter>>(new Map());
+  const turnFooters = useMemo(() => {
+    const next = keepUnchangedFooters(prevFootersRef.current, modernTurnFooters(modernItems, messages, outstandingWork));
+    prevFootersRef.current = next;
+    return next;
+  }, [modernItems, messages, outstandingWork]);
   const lookupsForRef = useRef(lookupsFor);
   lookupsForRef.current = lookupsFor;
   const stableLookupsFor = useCallback((node: JsonlNode) => lookupsForRef.current(node), []);
@@ -741,6 +750,7 @@ function ClaudeTranscriptImpl({
                           item={item}
                           live={outstandingWork && i === modernItems.length - 1}
                           ctx={modernRowContext}
+                          footer={turnFooters.get(item.key)}
                         />
                       </TranscriptRowBoundary>,
                     )}

@@ -95,6 +95,74 @@ describe('ClaudeTranscript — Modern chat format', () => {
     expect(container.querySelectorAll('[data-stream-row]')).toHaveLength(0);
   });
 
+  it('ends a finished turn with a green Done line under its answer', () => {
+    const { container } = renderModern();
+    const footer = container.querySelector('[data-turn-footer]') as HTMLElement;
+    expect(footer).toHaveTextContent('Done · 1s · 1 step');
+    expect(footer.querySelector('svg')?.getAttribute('class')).toMatch(/\btext-emerald-700\b/);
+    // Always shown, not part of the hover row.
+    expect(footer.className).not.toMatch(/opacity-0/);
+  });
+
+  it('heads the answer that ends the turn with an Answer chip in the context rail\'s green', () => {
+    const rows = [...messages.slice(0, 1), assistant('a0', [{ type: 'text', text: 'Looking first.' }]), ...messages.slice(1)];
+    const { container } = renderModern(false, rows);
+    const chips = container.querySelectorAll('[data-final-chip]');
+    expect(chips).toHaveLength(1);
+    const chip = chips[0] as HTMLElement;
+    expect(chip).toHaveTextContent('Answer');
+    // The context rail's own badge pair (ContextTimelineTick), so the two
+    // greens side by side are one green.
+    expect(chip.className).toMatch(/\bbg-emerald-700\b/);
+    expect(chip.className).toMatch(/\btext-white\b/);
+    // Above the answer, in the same message.
+    const answer = screen.getByText('green').closest('.modern-answer') as HTMLElement;
+    expect(chip.compareDocumentPosition(answer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByText('Looking first.').closest('.group')?.querySelector('[data-final-chip]')).toBeNull();
+  });
+
+  it('sets the answer that ends the turn in a tinted card under its chip, with its Done line', () => {
+    const rows = [...messages.slice(0, 1), assistant('a0', [{ type: 'text', text: 'Looking first.' }]), ...messages.slice(1)];
+    const { container } = renderModern(false, rows);
+    // Tint and border are `.modern-format .modern-final-card` in styles.css:
+    // the `* { border-color }` reset beats every border-colour utility.
+    const cards = container.querySelectorAll('.modern-final-card');
+    expect(cards).toHaveLength(1);
+    const card = cards[0];
+    // The chip heads the card from outside it, directly above.
+    const chip = container.querySelector('[data-final-chip]') as HTMLElement;
+    expect(card.contains(chip)).toBe(false);
+    expect(chip.nextElementSibling).toBe(card);
+    expect(card.contains(screen.getByText('green'))).toBe(true);
+    expect(card.querySelector('[data-turn-footer]')).not.toBeNull();
+    expect(screen.getByText('Looking first.').closest('.modern-final-card')).toBeNull();
+  });
+
+  it('gives the answer card the drop shadow by default', () => {
+    const { container } = renderModern();
+    expect(container.querySelector('.modern-final-card')).toHaveClass('modern-card-shadow');
+  });
+
+  it('keeps the answer card\'s color by default', () => {
+    const { container } = renderModern();
+    expect(container.querySelector('.modern-final-card')).not.toHaveClass('modern-card-plain');
+  });
+
+  it('draws no card while the turn is still running', () => {
+    const { container } = renderModern(true);
+    expect(container.querySelector('.modern-final-card')).toBeNull();
+  });
+
+  it('draws no Answer chip while the turn is still running', () => {
+    const { container } = renderModern(true);
+    expect(container.querySelector('[data-final-chip]')).toBeNull();
+  });
+
+  it('draws no Done line while the turn is still running', () => {
+    const { container } = renderModern(true);
+    expect(container.querySelector('[data-turn-footer]')).toBeNull();
+  });
+
   it('opens onto the steps, and a step onto its output alone', () => {
     const { container } = renderModern();
     fireEvent.click(screen.getByRole('button', { name: /Worked in 2 steps/ }));

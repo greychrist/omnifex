@@ -8,6 +8,7 @@
 // The settings screen reads and writes this config via
 // `api.saveSetting(MESSAGE_RENDERING_CONFIG_KEY, ...)`.
 
+import { hexChroma, hexHue, NEUTRAL_CHROMA } from "./colorHue";
 import { isTypefaceId, type Typeface } from "./typefaceCatalog";
 
 export const MESSAGE_RENDERING_CONFIG_KEY = "message_rendering_config";
@@ -704,7 +705,26 @@ export interface ModernStyle {
   promptTint: string | null;
   /** Hex, or null for the theme's destructive red. */
   failedColor: string | null;
+  /** Hex, or null for the built-in emerald. The answer card takes only its
+   *  hue; lightness and chroma stay the stylesheet's, so it stays muted. */
+  answerCardColor: string | null;
+  /** Each card's saturation as a percent of its built-in strength, 0–200. */
+  promptSaturation: number;
+  answerCardSaturation: number;
+  /** Each card's brightness: a percent of its built-in lift off the theme's
+   *  muted colour, 0–200 (darker on the light theme, where the lift is down). */
+  promptBrightness: number;
+  answerCardBrightness: number;
+  /** A soft drop shadow tinted the card's own colour. */
+  promptShadow: boolean;
+  answerCardShadow: boolean;
+  /** Off: the card has no fill or border, and the page shows through. */
+  promptColorEnabled: boolean;
+  answerCardColorEnabled: boolean;
 }
+
+/** Saturation and brightness top out at twice the built-in. */
+export const MODERN_PERCENT_MAX = 200;
 
 export const DEFAULT_MODERN: ModernStyle = {
   stepIcons: {
@@ -731,6 +751,15 @@ export const DEFAULT_MODERN: ModernStyle = {
   answerSize: 14,
   promptTint: null,
   failedColor: null,
+  answerCardColor: null,
+  promptSaturation: 100,
+  answerCardSaturation: 100,
+  promptBrightness: 100,
+  answerCardBrightness: 100,
+  promptShadow: true,
+  answerCardShadow: true,
+  promptColorEnabled: true,
+  answerCardColorEnabled: true,
 };
 
 const GEIST_STACK = "'Geist', var(--app-font-stack, ui-sans-serif, system-ui, sans-serif)";
@@ -745,8 +774,38 @@ export function modernCssVars(m: ModernStyle): Record<string, string | null> {
     "--modern-font": m.font === "content" ? "var(--chat-content-font)" : GEIST_STACK,
     "--modern-answer-size": `${String(m.answerSize)}px`,
     "--modern-answer-leading": `${String(Math.round(m.answerSize * 1.43))}px`,
+    // Each card: the colour tints its shadow, its hue sets fill and border.
     "--modern-prompt-tint": m.promptTint,
+    "--modern-prompt-hue": m.promptTint ? hueVar(m.promptTint) : null,
+    "--modern-prompt-saturation": cardSaturationVar(m.promptTint, m.promptSaturation),
+    "--modern-prompt-brightness": percentVar(m.promptBrightness),
+    "--modern-final-tint": m.answerCardColor,
+    "--modern-final-hue": m.answerCardColor ? hueVar(m.answerCardColor) : null,
+    "--modern-final-saturation": cardSaturationVar(m.answerCardColor, m.answerCardSaturation),
+    "--modern-final-brightness": percentVar(m.answerCardBrightness),
   };
+}
+
+function hueVar(hex: string): string | null {
+  const h = hexHue(hex);
+  return h === null ? null : h.toFixed(3);
+}
+
+/** 100% is the stylesheet's own strength, so it sets nothing. A white, grey
+ *  or black pick has no hue to show, so it draws untinted whatever the
+ *  slider says — taking its hue drew a brown card. */
+function cardSaturationVar(color: string | null, pct: number): string | null {
+  if (color && (hexChroma(color) ?? 1) < NEUTRAL_CHROMA) return "0";
+  return percentVar(pct);
+}
+
+/** 100% is the stylesheet's own lift, so it sets nothing. */
+function percentVar(pct: number): string | null {
+  return pct === 100 ? null : String(pct / 100);
+}
+
+function percentOf(v: unknown, base: number): number {
+  return typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= MODERN_PERCENT_MAX ? v : base;
 }
 
 function mergeModern(saved: Record<string, unknown>, base: ModernStyle): ModernStyle {
@@ -769,6 +828,15 @@ function mergeModern(saved: Record<string, unknown>, base: ModernStyle): ModernS
       : base.answerSize,
     promptTint: isHexColor(saved.promptTint) ? saved.promptTint : base.promptTint,
     failedColor: isHexColor(saved.failedColor) ? saved.failedColor : base.failedColor,
+    answerCardColor: isHexColor(saved.answerCardColor) ? saved.answerCardColor : base.answerCardColor,
+    promptSaturation: percentOf(saved.promptSaturation, base.promptSaturation),
+    answerCardSaturation: percentOf(saved.answerCardSaturation, base.answerCardSaturation),
+    promptBrightness: percentOf(saved.promptBrightness, base.promptBrightness),
+    answerCardBrightness: percentOf(saved.answerCardBrightness, base.answerCardBrightness),
+    promptShadow: typeof saved.promptShadow === "boolean" ? saved.promptShadow : base.promptShadow,
+    answerCardShadow: typeof saved.answerCardShadow === "boolean" ? saved.answerCardShadow : base.answerCardShadow,
+    promptColorEnabled: typeof saved.promptColorEnabled === "boolean" ? saved.promptColorEnabled : base.promptColorEnabled,
+    answerCardColorEnabled: typeof saved.answerCardColorEnabled === "boolean" ? saved.answerCardColorEnabled : base.answerCardColorEnabled,
   };
 }
 

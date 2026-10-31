@@ -23,7 +23,7 @@ export const HiddenEventsEditor: React.FC<HiddenEventsEditorProps> = ({ value, o
       <header>
         <h4 className="text-heading-4">Hidden events</h4>
         <p className="text-caption text-muted-foreground mt-1">
-          The bar compact mode folds hidden messages into. Leave a colour unset to keep
+          The bar compact mode folds hidden messages into. Leave a color unset to keep
           the theme's look; hex with alpha (<span className="font-mono">#rrggbbaa</span>) sets its strength.
         </p>
       </header>
@@ -128,7 +128,15 @@ export const ColorField: React.FC<{
   unsetLabel?: string;
   value: string | null;
   onChange: (next: string | null) => void;
-}> = ({ name, unsetLabel = "theme default", value, onChange }) => {
+  /** With both, an Enabled checkbox beside the title; off disables the
+   *  inputs (the caller decides what off draws). */
+  enabled?: boolean;
+  onEnabledChange?: (next: boolean) => void;
+  /** The visible title; `${name} color` unless a heading already says so. */
+  title?: string;
+}> = ({ name, unsetLabel = "theme default", value, onChange, enabled, onEnabledChange, title = `${name} color` }) => {
+  const hasToggle = enabled !== undefined && onEnabledChange !== undefined;
+  const off = hasToggle && !enabled;
   const lower = name.toLowerCase();
   // Local text so a half-typed hex is not bounced; only a valid one commits.
   const [text, setText] = useState(value ?? "");
@@ -137,16 +145,30 @@ export const ColorField: React.FC<{
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between gap-2">
-        <Label>{name} colour</Label>
+        <div className="flex items-center gap-2">
+          <Label>{title}</Label>
+          {hasToggle && (
+            <label className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={enabled}
+                onChange={(e) => { onEnabledChange(e.target.checked); }}
+                aria-label={`${name} color enabled`}
+                className="h-3 w-3 cursor-pointer accent-foreground"
+              />
+              Enabled
+            </label>
+          )}
+        </div>
         {value !== null ? (
           <button
             type="button"
             onClick={() => { onChange(null); }}
             className="inline-flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground underline underline-offset-2"
-            aria-label={`Reset ${lower} colour`}
+            aria-label={`Reset ${lower} color`}
           >
             <Undo2 className="h-3 w-3" />
-            {unsetLabel}
+            Reset to {unsetLabel}
           </button>
         ) : (
           <span className="text-[10px] text-muted-foreground/70 italic">{unsetLabel}</span>
@@ -163,7 +185,8 @@ export const ColorField: React.FC<{
             "bg-background p-1",
             "focus:outline-none focus:ring-1 focus:ring-ring",
           )}
-          aria-label={`${name} colour picker`}
+          aria-label={`${name} color picker`}
+          disabled={off}
         />
         <Input
           value={text}
@@ -174,7 +197,8 @@ export const ColorField: React.FC<{
             if (isHexColor(v)) onChange(v.toLowerCase());
           }}
           className="font-mono text-xs h-9 min-w-0 flex-1"
-          aria-label={`${name} colour hex`}
+          aria-label={`${name} color hex`}
+          disabled={off}
         />
       </div>
     </div>

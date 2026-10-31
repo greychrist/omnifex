@@ -40,11 +40,17 @@ export function Message({ from, children }: { from: 'user' | 'assistant'; childr
 export function UserBubble({ children }: { children: React.ReactNode }) {
   const { config } = useMessageRenderingConfig();
   return (
-    // Cornered like every card (All cards › Corner radius). Tint, border and
-    // shadow are `.modern-prompt` in styles.css — the unlayered
+    // Cornered like every card (All cards › Corner radius). Tint and border
+    // are `.modern-prompt` in styles.css, the shadow `.modern-card-shadow` — the unlayered
     // `* { border-color }` reset there beats any Tailwind border-color utility.
     <div
-      className="modern-prompt max-w-[80%] px-3 py-2.5 text-sm leading-relaxed break-words text-foreground"
+      className={cn(
+        'modern-prompt max-w-[80%] px-3 py-2.5 text-sm leading-relaxed break-words text-foreground',
+        // Color off takes the shadow with it, keeping its setting.
+        config.modern.promptColorEnabled
+          ? config.modern.promptShadow && 'modern-card-shadow'
+          : 'modern-card-plain',
+      )}
       style={cardRadiusStyle(config)}
     >
       {children}

@@ -215,4 +215,11 @@ describe('Modern chain of thought — Settings › Chats › Modern', () => {
     const root = container.querySelector('[data-slot="trace"]') as HTMLElement;
     expect(root.style.getPropertyValue('--color-destructive')).toBe('#f97316');
   });
+
+  it('leaves the theme red alone with no colour chosen', () => {
+    const { container } = withModern({},
+      <ChainOfThought entries={[tool('Bash', { command: 'x' }, 'boom', 'error')]} nodes={[]} live={false} ctx={ctx} />);
+    const root = container.querySelector('[data-slot="trace"]') as HTMLElement;
+    expect(root.style.getPropertyValue('--color-destructive')).toBe('');
+  });
 });

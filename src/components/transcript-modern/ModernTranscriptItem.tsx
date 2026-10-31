@@ -9,7 +9,7 @@ import type { RowLookups } from '@/lib/rowLookups';
 import type { ModernItem } from '@/lib/modernGrouping';
 import { StreamMessage } from '@/components/StreamMessage';
 import { CopyButton } from '@/components/ui/copy-button';
-import { RotateCcw } from 'lucide-react';
+import { CheckCircle2, RotateCcw } from 'lucide-react';
 import { extractResendPayload } from '@/lib/extractResendPayload';
 import { NoticeLine } from './NoticeLine';
 import { CompactionLine } from './CompactionLine';
@@ -20,6 +20,10 @@ import { ChainOfThought } from './ChainOfThought';
 import { AnsweredAskUserQuestionCard } from '@/components/AnsweredAskUserQuestionCard';
 import { ModernPlan } from './ModernPlan';
 import { Message, MessageActions, MessageResponse, UserBubble } from './primitives';
+import { turnFooterText, type TurnFooter } from '@/lib/modernTurnFooter';
+import { useMessageRenderingConfig } from '@/contexts/MessageRenderingContext';
+import { cardRadiusStyle } from '@/lib/accentStyle';
+import { cn } from '@/lib/utils';
 
 export interface ModernRowContext {
   lookupsFor: (node: JsonlNode) => RowLookups;
@@ -48,11 +52,14 @@ export const ModernTranscriptItem = React.memo(function ModernTranscriptItem({
   item,
   live,
   ctx,
+  footer,
 }: {
   item: ModernItem;
   /** The turn is still running and this is its last item. */
   live: boolean;
   ctx: ModernRowContext;
+  /** Set on the answer that ends a turn. */
+  footer?: TurnFooter;
 }) {
   switch (item.kind) {
     case 'prompt':
@@ -87,7 +94,15 @@ export const ModernTranscriptItem = React.memo(function ModernTranscriptItem({
     case 'text':
       return (
         <Message from="assistant">
-          <MessageResponse>{item.text}</MessageResponse>
+          {footer && <FinalChip />}
+          {footer ? (
+            <FinalAnswerCard>
+              <MessageResponse>{item.text}</MessageResponse>
+              <TurnFooterLine footer={footer} showCost={ctx.accountType !== 'max'} />
+            </FinalAnswerCard>
+          ) : (
+            <MessageResponse>{item.text}</MessageResponse>
+          )}
           <MessageActions from="assistant">
             <CopyButton getText={() => item.text} className="h-6 w-6" />
             <RawJsonPopover text={rawOf(item.node)} />
@@ -152,6 +167,44 @@ export function ModernLiveAnswer({ tabId }: { tabId: string }) {
     <Message from="assistant">
       <MessageResponse>{text}</MessageResponse>
     </Message>
+  );
+}
+
+/** The answer that ends a turn, in a card made as the prompt bubble is, in
+ *  its own colour. Cornered like every card; tint, border and shadow are
+ *  `.modern-final-card` and `.modern-card-shadow` in styles.css, since the
+ *  `* { border-color }` reset beats the utilities. */
+function FinalAnswerCard({ children }: { children: React.ReactNode }) {
+  const { config } = useMessageRenderingConfig();
+  return (
+    <div
+      className={cn('modern-final-card flex w-full flex-col items-start gap-2 p-3', config.modern.answerCardColorEnabled ? config.modern.answerCardShadow && 'modern-card-shadow' : 'modern-card-plain')}
+      style={cardRadiusStyle(config)}
+    >
+      {children}
+    </div>
+  );
+}
+
+/** Heads the answer that ends a turn. The context rail's badge pair
+ *  (ContextTimelineTick), so it is the same green as the rail beside it. */
+function FinalChip() {
+  return (
+    <span data-final-chip className="inline-flex items-center gap-1 rounded-full bg-emerald-700 px-2 py-0.5 text-[11px] font-medium leading-none text-white">
+      <CheckCircle2 className="size-3" />
+      Answer
+    </span>
+  );
+}
+
+/** The turn's "Done" line: always shown, unlike the hover row under it. Cost
+ *  is left out on Max, as Compact's completion band does. */
+function TurnFooterLine({ footer, showCost }: { footer: TurnFooter; showCost: boolean }) {
+  return (
+    <div data-turn-footer className="flex items-center gap-1.5 text-xs text-muted-foreground">
+      <CheckCircle2 className="size-3.5 text-emerald-700" />
+      <span>{turnFooterText(footer, showCost)}</span>
+    </div>
   );
 }
 

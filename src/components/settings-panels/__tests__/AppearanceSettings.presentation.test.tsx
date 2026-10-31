@@ -315,8 +315,8 @@ describe('AppearanceSettings — hidden events bar', () => {
     clickRow('Hidden events');
     const editor = screen.getByTestId('hidden-events-editor');
 
-    fireEvent.change(within(editor).getByLabelText('Background colour hex'), { target: { value: '#1e293b' } });
-    fireEvent.change(within(editor).getByLabelText('Border colour picker'), { target: { value: '#60a5fa' } });
+    fireEvent.change(within(editor).getByLabelText('Background color hex'), { target: { value: '#1e293b' } });
+    fireEvent.change(within(editor).getByLabelText('Border color picker'), { target: { value: '#60a5fa' } });
 
     await waitFor(() => {
       const cfg = saved.config as { hiddenEvents?: unknown } | null;
@@ -369,12 +369,12 @@ describe('AppearanceSettings — hidden events bar', () => {
     await screen.findAllByText('User');
     clickRow('Hidden events');
     const editor = screen.getByTestId('hidden-events-editor');
-    fireEvent.change(within(editor).getByLabelText('Border colour picker'), { target: { value: '#60a5fa' } });
+    fireEvent.change(within(editor).getByLabelText('Border color picker'), { target: { value: '#60a5fa' } });
     await waitFor(() => {
       expect((saved.config as { hiddenEvents?: { border: unknown } } | null)?.hiddenEvents?.border).toBe('#60a5fa');
     });
 
-    fireEvent.click(within(editor).getByRole('button', { name: /reset border colour/i }));
+    fireEvent.click(within(editor).getByRole('button', { name: /reset border color/i }));
     await waitFor(() => {
       expect((saved.config as { hiddenEvents?: { border: unknown } }).hiddenEvents?.border).toBeNull();
     });
@@ -385,8 +385,8 @@ describe('AppearanceSettings — hidden events bar', () => {
     await screen.findAllByText('User');
     clickRow('Hidden events');
     const editor = screen.getByTestId('hidden-events-editor');
-    fireEvent.change(within(editor).getByLabelText('Header text colour hex'), { target: { value: '#ffffff' } });
-    fireEvent.change(within(editor).getByLabelText('Detail text colour hex'), { target: { value: '#ffffffb3' } });
+    fireEvent.change(within(editor).getByLabelText('Header text color hex'), { target: { value: '#ffffff' } });
+    fireEvent.change(within(editor).getByLabelText('Detail text color hex'), { target: { value: '#ffffffb3' } });
     await waitFor(() => {
       const h = (saved.config as { hiddenEvents?: { headerText: unknown; detailText: unknown } } | null)?.hiddenEvents;
       expect(h?.headerText).toBe('#ffffff');

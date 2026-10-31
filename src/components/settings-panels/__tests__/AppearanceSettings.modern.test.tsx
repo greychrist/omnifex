@@ -64,6 +64,7 @@ describe('AppearanceSettings — Modern', () => {
     expect(sample).toHaveClass('modern-format');
     expect(sample.querySelector('.modern-prompt')).not.toBeNull();
     expect(sample.querySelector('[data-slot="trace"]')).not.toBeNull();
+    expect(sample.querySelector('[data-turn-footer]')).toHaveTextContent('Done · 4m 12s · 4 steps · $0.38');
   });
 
   it('saves the timeline setting', async () => {
@@ -90,7 +91,7 @@ describe('AppearanceSettings — Modern', () => {
   it('hands the live chats its font, answer size and tint through :root', async () => {
     const editor = await openModern();
     fireEvent.click(within(editor).getByRole('radio', { name: '16px' }));
-    fireEvent.change(within(editor).getByLabelText('Prompt bubble colour hex'), { target: { value: '#22c55e' } });
+    fireEvent.change(within(editor).getByLabelText('Prompt bubble color hex'), { target: { value: '#22c55e' } });
     const root = document.documentElement.style;
     await waitFor(() => {
       expect(root.getPropertyValue('--modern-answer-size')).toBe('16px');
@@ -100,11 +101,146 @@ describe('AppearanceSettings — Modern', () => {
 
   it('saves a prompt tint and a failed-step colour', async () => {
     const editor = await openModern();
-    fireEvent.change(within(editor).getByLabelText('Prompt bubble colour hex'), { target: { value: '#22c55e' } });
-    fireEvent.change(within(editor).getByLabelText('Failed step colour hex'), { target: { value: '#f97316' } });
+    fireEvent.change(within(editor).getByLabelText('Prompt bubble color hex'), { target: { value: '#22c55e' } });
+    fireEvent.change(within(editor).getByLabelText('Failed step color hex'), { target: { value: '#f97316' } });
     await waitFor(() => {
       expect(savedModern().some((m) => m.promptTint === '#22c55e' && m.failedColor === '#f97316')).toBe(true);
     });
+  });
+
+  it('saves the answer card colour beside the other two', async () => {
+    const editor = await openModern();
+    fireEvent.change(within(editor).getByLabelText('Answer card color hex'), { target: { value: '#0ea5e9' } });
+    await waitFor(() => { expect(savedModern().some((m) => m.answerCardColor === '#0ea5e9')).toBe(true); });
+  });
+
+  // A visible "Reset to …" link on each colour once it is changed, so the
+  // way back to the built-in look reads as an action, not a caption.
+  it('offers a reset to the built-in colour on each color once changed', async () => {
+    const editor = await openModern();
+    const fields: [string, string, string][] = [
+      ['Prompt bubble', 'built-in blue', 'promptTint'],
+      ['Failed step', 'theme red', 'failedColor'],
+      ['Answer card', 'built-in green', 'answerCardColor'],
+    ];
+    for (const [name, builtIn] of fields) {
+      expect(within(editor).queryByRole('button', { name: new RegExp(`reset ${name} color`, 'i') })).toBeNull();
+      expect(within(editor).getAllByText(builtIn).length).toBeGreaterThan(0);
+      fireEvent.change(within(editor).getByLabelText(`${name} color hex`), { target: { value: '#123456' } });
+    }
+    for (const [name, builtIn, key] of fields) {
+      const reset = await within(editor).findByRole('button', { name: new RegExp(`reset ${name} color`, 'i') });
+      expect(reset).toHaveTextContent(`Reset to ${builtIn}`);
+      fireEvent.click(reset);
+      await waitFor(() => { expect(savedModern().at(-1)?.[key]).toBeNull(); });
+    }
+  });
+
+  it('has a saturation and a brightness slider for each card, each with a reset once moved', async () => {
+    const editor = await openModern();
+    const sliders: [string, string, string][] = [
+      ['Prompt bubble', 'saturation', 'promptSaturation'],
+      ['Prompt bubble', 'brightness', 'promptBrightness'],
+      ['Answer card', 'saturation', 'answerCardSaturation'],
+      ['Answer card', 'brightness', 'answerCardBrightness'],
+    ];
+    for (const [name, what, key] of sliders) {
+      const slider = within(editor).getByRole('slider', { name: `${name} ${what}` });
+      expect(slider).toHaveValue('100');
+      expect(within(editor).queryByRole('button', { name: `Reset ${name.toLowerCase()} ${what}` })).toBeNull();
+      fireEvent.change(slider, { target: { value: '40' } });
+      await waitFor(() => { expect(savedModern().at(-1)?.[key]).toBe(40); });
+      const reset = await within(editor).findByRole('button', { name: `Reset ${name.toLowerCase()} ${what}` });
+      expect(reset).toHaveTextContent('Reset to 100%');
+      fireEvent.click(reset);
+      await waitFor(() => { expect(savedModern().at(-1)?.[key]).toBe(100); });
+    }
+    // The failed step is not a card: no sliders.
+    expect(within(editor).queryByRole('slider', { name: /failed step/i })).toBeNull();
+  });
+
+  // One "Colors" section, the three side by side, between Show thoughts and
+  // Step icons.
+  it('sets the three colors on one row under a Colors heading, after Show thoughts and before Step icons', async () => {
+    const editor = await openModern();
+    const section = within(editor).getByRole('region', { name: 'Colors' });
+    expect(within(section).getByText('Colors')).toBeInTheDocument();
+    const grid = within(section).getByTestId('modern-colors');
+    expect(grid.className).toMatch(/\bmd:grid-cols-3\b/);
+    expect(grid.children).toHaveLength(3);
+    // The two cards first, then the failed step.
+    const order = ['Prompt bubble', 'Answer card', 'Failed step'];
+    order.forEach((name, i) => {
+      expect(within(grid.children[i] as HTMLElement).getByLabelText(`${name} color hex`)).toBeInTheDocument();
+    });
+    const thoughts = within(editor).getByRole('switch', { name: 'Show thoughts' });
+    const icons = within(editor).getByRole('group', { name: 'Thought step icon' });
+    expect(thoughts.compareDocumentPosition(section) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(section.compareDocumentPosition(icons) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('has a drop shadow switch for the prompt bubble and the answer card, on by default', async () => {
+    const editor = await openModern();
+    for (const [name, key] of [['Prompt bubble', 'promptShadow'], ['Answer card', 'answerCardShadow']] as const) {
+      const sw = within(editor).getByRole('switch', { name: `${name} drop shadow` });
+      expect(sw).toHaveAttribute('aria-checked', 'true');
+      fireEvent.click(sw);
+      await waitFor(() => { expect(savedModern().at(-1)?.[key]).toBe(false); });
+    }
+    expect(within(editor).queryByRole('switch', { name: 'Failed step drop shadow' })).toBeNull();
+  });
+
+  // Titled by name alone under the Colors heading; "colour" nowhere.
+  it('titles each field by its name alone, and never spells it colour', async () => {
+    const editor = await openModern();
+    const section = within(editor).getByRole('region', { name: 'Colors' });
+    for (const name of ['Prompt bubble', 'Failed step', 'Answer card']) {
+      expect(within(section).getByText(name, { selector: 'label' })).toBeInTheDocument();
+      expect(within(section).queryByText(`${name} color`)).toBeNull();
+    }
+    expect(editor.textContent).not.toMatch(/colour/i);
+  });
+
+  it('has an Enabled checkbox beside the prompt and answer card color titles, on by default', async () => {
+    const editor = await openModern();
+    for (const [name, key] of [['Prompt bubble', 'promptColorEnabled'], ['Answer card', 'answerCardColorEnabled']] as const) {
+      const box = within(editor).getByRole('checkbox', { name: `${name} color enabled` });
+      expect(box).toBeChecked();
+      // Beside the title, in its row.
+      expect(box.closest('div')?.querySelector('label')?.textContent).toBe(name);
+      fireEvent.click(box);
+      await waitFor(() => { expect(savedModern().at(-1)?.[key]).toBe(false); });
+      // Off: the color and its strength cannot be set.
+      expect(within(editor).getByLabelText(`${name} color hex`)).toBeDisabled();
+      expect(within(editor).getByLabelText(`${name} color picker`)).toBeDisabled();
+      expect(within(editor).getByRole('slider', { name: `${name} saturation` })).toBeDisabled();
+      expect(within(editor).getByRole('slider', { name: `${name} brightness` })).toBeDisabled();
+      // And its drop shadow, which keeps its setting for when color returns.
+      const shadow = within(editor).getByRole('switch', { name: `${name} drop shadow` });
+      expect(shadow).toBeDisabled();
+      expect(shadow).toHaveAttribute('aria-checked', 'true');
+    }
+    expect(within(editor).queryByRole('checkbox', { name: 'Failed step color enabled' })).toBeNull();
+  });
+
+  // A rule between each pair of the four sections: Work timeline | Colors |
+  // Step icons | Text.
+  it('separates the Work timeline, Colors, Step icons and Text sections with a line', async () => {
+    const editor = await openModern();
+    const seps = within(editor).getAllByRole('separator');
+    expect(seps).toHaveLength(3);
+    const order = [
+      within(editor).getByRole('switch', { name: 'Show thoughts' }),
+      seps[0],
+      within(editor).getByRole('region', { name: 'Colors' }),
+      seps[1],
+      within(editor).getByRole('group', { name: 'Thought step icon' }),
+      seps[2],
+      within(editor).getByRole('radiogroup', { name: 'Font' }),
+    ];
+    for (let i = 1; i < order.length; i++) {
+      expect(order[i - 1].compareDocumentPosition(order[i]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
   });
 
   it('lists an icon for every kind of step', async () => {
