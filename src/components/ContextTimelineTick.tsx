@@ -13,6 +13,10 @@ import type { ViewMode } from "@/components/SessionViewToggle";
  *
  * Exactly the badge's colour, solid: a lighter, translucent line under a
  * solid badge read as two different greens.
+ *
+ * Under the budget draws no solid line at all: that is the normal case, so
+ * the rail only appears where context is getting expensive. A reset still
+ * dashes in green, from the `text-*` half.
  */
 const RAIL_TEXT: Record<ContextPressureLevel, string> = {
   none: "text-emerald-700",
@@ -20,8 +24,8 @@ const RAIL_TEXT: Record<ContextPressureLevel, string> = {
   critical: "text-red-600",
 };
 
-const RAIL_BG: Record<ContextPressureLevel, string> = {
-  none: "bg-emerald-700",
+const RAIL_BG: Record<ContextPressureLevel, string | null> = {
+  none: null,
   warn: "bg-amber-500",
   critical: "bg-red-600",
 };

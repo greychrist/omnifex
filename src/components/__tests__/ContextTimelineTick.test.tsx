@@ -141,9 +141,11 @@ describe('ContextTimelineTick — rail colour tracks pressure', () => {
   const rail = (container: HTMLElement) =>
     (container.querySelector('[data-timeline-rail]') as HTMLElement).className;
 
-  it('is green under the budget', () => {
+  // Under the budget is the normal case, so it draws no line: a rail only
+  // appears where context is getting expensive, and the eye goes straight to it.
+  it('draws no solid line under the budget', () => {
     const { container } = render(<ContextTimelineTick point={point({ level: 'none' })} />);
-    expect(rail(container)).toMatch(/emerald/);
+    expect(rail(container)).not.toMatch(/\bbg-/);
   });
 
   it('is amber approaching the budget', () => {
@@ -198,7 +200,8 @@ describe('ContextTimelineTick — rail colour tracks pressure', () => {
         (solid.querySelector('[data-timeline-badge]') as HTMLElement).className, 'bg',
       );
       expect(badgeBg).toBeDefined();
-      expect(colour(rail(solid), 'bg')).toBe(badgeBg);
+      // Under the budget the solid line is not drawn at all (see above).
+      if (level !== 'none') expect(colour(rail(solid), 'bg')).toBe(badgeBg);
       cleanup();
       const dashed = render(
         <ContextTimelineTick point={point({ level, isReset: true, delta: null })} />,
