@@ -17,7 +17,7 @@
  * modified index.
  *
  * Everything here is pure. Transcript reading and index querying live in
- * `scripts/brain-retrieval-eval.ts`, so this module can be tested without a
+ * `scripts/brain-eval.ts`, so this module can be tested without a
  * vault, a database, or a filesystem.
  */
 

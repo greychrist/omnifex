@@ -372,6 +372,7 @@ the prose in `SKILL.md` covers only the judgment calls.
 - `omnifex-release` — the release runbook; preflight is pre-injected, gatekeeper and publish checks are scripts
 - `session-trace` — one session UUID → daemon state, CLI transcript, `app_logs`; run before reading code for a stuck session
 - `multi-account-debugging` — project path → account resolution trace
+- `brain-eval` — is the Brain worth its cost: measure, judge, record, compare; runs stored in `<userData>/brain-evals/`, never the repo or /tmp
 - `version-aware-research` — when to confirm version-sensitive syntax before relying on memory
 
 ## Legacy Notes
