@@ -86,7 +86,7 @@ beforeEach(() => {
 afterEach(() => { cleanup(); });
 
 const accountButton = (): HTMLElement => screen.getByRole('button', { name: /^account/i });
-const usageButton = (): HTMLElement => screen.getByRole('button', { name: /usage/i });
+const usageButton = (): HTMLElement => screen.getByRole('button', { name: /^(usage|cost),/i });
 
 describe('AccountStatusItem', () => {
   describe('the readout', () => {
@@ -154,9 +154,12 @@ describe('AccountStatusItem', () => {
       expect(label?.className).toContain('opacity-70');
     });
 
-    it('labels the usage on a cost-based account too', () => {
+    // Dollars are a cost, not usage of a subscription's allowance.
+    it('labels a cost-based account\'s readout "cost"', () => {
       render(<AccountStatusItem {...base} hasCost />);
-      expect(usageButton().querySelector('[data-testid="usage-label"]')?.textContent).toBe('usage');
+      const button = usageButton();
+      expect(button.querySelector('[data-testid="usage-label"]')?.textContent).toBe('cost');
+      expect(button.getAttribute('aria-label')).toBe('cost, this session');
     });
 
     // Block-level for the same reason as the other popover readouts: an

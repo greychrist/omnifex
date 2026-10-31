@@ -117,9 +117,10 @@ export function AccountStatusItem({
 
 const USAGE_BUTTON = "flex items-center gap-1 rounded hover:bg-muted/60";
 
-/** "usage", as "account" labels the name beside it. */
-function UsageLabel(): React.JSX.Element {
-  return <span data-testid="usage-label" className="opacity-70">usage</span>;
+/** Names the readout, as "account" labels the name beside it: "usage" for a
+ *  subscription's allowance, "cost" for dollars billed per token. */
+function UsageLabel({ text }: { text: "usage" | "cost" }): React.JSX.Element {
+  return <span data-testid="usage-label" className="opacity-70">{text}</span>;
 }
 
 function pctOf(snapshot: RateLimitSnapshot | null): number | null {
@@ -172,7 +173,7 @@ function RateLimitReadout({
       // Wider than the icon-to-value gap, so each pair reads as one window.
       className={cn(USAGE_BUTTON, "gap-2")}
     >
-      <UsageLabel />
+      <UsageLabel text="usage" />
       <WindowPct snapshot={fiveHour} Icon={Clock} testId="account-item-usage" />
       <WindowPct snapshot={sevenDay} Icon={CalendarDays} testId="account-item-usage-week" />
     </button>
@@ -190,11 +191,11 @@ function CostReadout({
   return (
     <button
       type="button"
-      aria-label="usage, session cost"
+      aria-label="cost, this session"
       title={cost ? `Session cost: ${cost.estimated ? "~" : ""}${formatCost(cost.totalUsd)}` : "No session cost yet"}
       className={cn(USAGE_BUTTON, loading && "opacity-60")}
     >
-      <UsageLabel />
+      <UsageLabel text="cost" />
       <DollarSign className="h-3.5 w-3.5" />
       {/* The icon carries the $, as on the cost widget. */}
       <span data-testid="account-item-usage">
