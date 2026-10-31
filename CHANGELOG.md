@@ -5,6 +5,11 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.23] — 2026-10-31
+
+### Changed
+- The status bar's account readout is now labelled "cost" when it shows a dollar amount (per-token accounts) and "usage" when it shows subscription rate-limit percentages.
+
 ## [0.5.22] — 2026-10-31
 
 ### Changed
