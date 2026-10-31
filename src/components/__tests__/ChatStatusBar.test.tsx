@@ -361,18 +361,34 @@ describe('ChatStatusBar — session readout', () => {
 });
 
 describe('ChatStatusBar — account readout', () => {
-  // First: whose session this is, then what it is set to, then what it is doing.
-  it('seats the account readout ahead of the controls', () => {
+  // On the name's line, at its right end: whose session this is sits with
+  // which session it is, and the other readouts take the line below.
+  it('seats the account readout on the name\'s line, to the right', () => {
     render(
       <ChatStatusBar
         {...base}
+        title="Rate-limit spike"
         account={<span data-testid="account-readout" />}
         controls={<span data-testid="controls" />}
       />,
     );
-    const pairs = Array.from(screen.getByTestId('chat-status-items').children);
-    expect(pairs[0].contains(screen.getByTestId('account-readout'))).toBe(true);
-    expect(pairs[1].contains(screen.getByTestId('controls'))).toBe(true);
+    const head = screen.getByTestId('chat-status-head');
+    const slot = screen.getByTestId('chat-status-account');
+    expect(head.contains(screen.getByTestId('session-title'))).toBe(true);
+    expect(head.contains(slot)).toBe(true);
+    expect(slot.contains(screen.getByTestId('account-readout'))).toBe(true);
+    expect(slot.className).toContain('ml-auto');
+    // Not one of the readouts below.
+    const items = screen.getByTestId('chat-status-items');
+    expect(items.contains(screen.getByTestId('account-readout'))).toBe(false);
+    expect(items.children[0].contains(screen.getByTestId('controls'))).toBe(true);
+    expect(items.children[0].querySelector('[data-testid="status-divider"]')).toBeNull();
+  });
+
+  it('draws no readout line when the account is the only readout', () => {
+    render(<ChatStatusBar {...base} link={{ connection: null, delivering: false }} account={<span data-testid="account-readout" />} />);
+    expect(screen.getByTestId('chat-status-account')).toBeTruthy();
+    expect(screen.queryByTestId('chat-status-items')).toBeNull();
   });
 });
 
@@ -492,11 +508,15 @@ describe('ChatStatusBar — session name', () => {
   // jsdom cannot see alignment, so this asserts the two things it CAN see —
   // document order, and that the readouts carry the margin that pushes them
   // over. A visual check belongs in a packaged build.
-  it('puts the name first and groups the readouts to the right of it', () => {
+  it('gives the name a line of its own, the readouts grouped right on the next', () => {
     render(<ChatStatusBar {...named} activitySignal={signal({ status: 'idle', lastTurnMs: 3_000 })} />);
-    const title = screen.getByTestId('session-title');
+    const bar = screen.getByTestId('chat-status-bar');
+    const head = screen.getByTestId('chat-status-head');
     const items = screen.getByTestId('chat-status-items');
-    expect(title.compareDocumentPosition(items) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(bar.className).toContain('flex-col');
+    expect(head.contains(screen.getByTestId('session-title'))).toBe(true);
+    expect(head.contains(items)).toBe(false);
+    expect(head.compareDocumentPosition(items) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(items.className).toContain('ml-auto');
   });
 
@@ -569,12 +589,13 @@ describe('ChatStatusBar — session name', () => {
 describe('ChatStatusBar — wrapping', () => {
   const named = { ...base, title: 'Rate-limit spike', canRename: true, onRename: async () => true };
 
-  it('wraps onto another line instead of overflowing one', () => {
-    render(<ChatStatusBar {...named} activitySignal={signal({ status: 'idle', lastTurnMs: 3_000 })} />);
-    const bar = screen.getByTestId('chat-status-bar');
-    expect(bar.className).toContain('flex-wrap');
-    // A row gap, or wrapped lines sit flush against each other.
-    expect(bar.className).toMatch(/\bgap-y-/);
+  it('wraps the name\'s line instead of overflowing it, and spaces the lines', () => {
+    render(<ChatStatusBar {...named} account={<span />} activitySignal={signal({ status: 'idle', lastTurnMs: 3_000 })} />);
+    const head = screen.getByTestId('chat-status-head');
+    expect(head.className).toContain('flex-wrap');
+    expect(head.className).toMatch(/\bgap-y-/);
+    // A row gap between the two lines, or they sit flush against each other.
+    expect(screen.getByTestId('chat-status-bar').className).toMatch(/\bgap-y-/);
   });
 
   it('keeps the readouts wrapping among themselves, not just as one block', () => {

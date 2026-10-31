@@ -142,6 +142,23 @@ describe('AccountStatusItem', () => {
       expect(screen.queryByRole('img')).toBeNull();
     });
 
+    // Two readouts, not one: account, a hairline, then usage under its own label.
+    it('separates account and usage with a divider and labels the usage', () => {
+      const { container } = render(<AccountStatusItem {...base} fiveHourRateLimit={fiveHour(42)} />);
+      const divider = container.querySelector('[data-testid="account-usage-divider"]');
+      expect(divider).toBeTruthy();
+      expect(accountButton().compareDocumentPosition(divider!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(divider!.compareDocumentPosition(usageButton()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      const label = usageButton().querySelector('[data-testid="usage-label"]');
+      expect(label?.textContent).toBe('usage');
+      expect(label?.className).toContain('opacity-70');
+    });
+
+    it('labels the usage on a cost-based account too', () => {
+      render(<AccountStatusItem {...base} hasCost />);
+      expect(usageButton().querySelector('[data-testid="usage-label"]')?.textContent).toBe('usage');
+    });
+
     // Block-level for the same reason as the other popover readouts: an
     // inline-flex trigger opens a line box and sits ~1px high.
     it('makes both buttons block-level so they centre with the plain readouts', () => {

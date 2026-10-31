@@ -333,8 +333,8 @@ export interface ChatStatusBarProps {
    *  that open pickers — `SessionControlPickers`. Seated before the state
    *  readouts: what you can change, then what is happening. */
   controls?: React.ReactNode;
-  /** The account readout — `AccountStatusItem`. Seated first: whose session
-   *  this is, then what it is set to, then what it is doing. */
+  /** The account readout — `AccountStatusItem`. Seated on the name's line,
+   *  at its right end: whose session this is, beside which session it is. */
   account?: React.ReactNode;
   /** The session readout — `SessionStatusItem`. Seated last, after every
    *  other readout. */
@@ -418,10 +418,6 @@ export function ChatStatusBar({
   // screen. Every readout is conditional, so hard-coding separators into the
   // markup puts a stray hairline at either end of a half-empty bar.
   const items: React.JSX.Element[] = [];
-
-  if (account) {
-    items.push(<React.Fragment key="account">{account}</React.Fragment>);
-  }
 
   if (controls) {
     items.push(<React.Fragment key="controls">{controls}</React.Fragment>);
@@ -572,37 +568,48 @@ export function ChatStatusBar({
           // The row gap is half the column gap so a wrapped line reads as a
           // continuation of the same bar, not as a second bar under it.
           STATUS_BAR_SURFACE,
+          // Two lines, not one wrapping row: the name's, then the readouts'.
+          'flex-col flex-nowrap items-stretch',
         )}
       >
-        <SessionTitle
-          title={title}
-          canRename={canRename && !!onRename}
-          onRename={onRename ?? (() => false)}
-          onSuggest={canRename ? onSuggest : undefined}
-        />
-        {/* The readouts group right, so the bar reads name-then-state and the
-            name keeps a stable left edge as readouts come and go mid-turn.
-            `flex-wrap` here as well as on the bar: the group wraps to the
-            next line as a block when the name leaves it no room, and its own
-            readouts wrap among themselves when even a full line is too
-            narrow. */}
-        <div
-          data-testid="chat-status-items"
-          className="ml-auto flex flex-wrap items-center justify-end gap-x-2 gap-y-1"
-        >
-          {items.map((item, i) => (
-            // Divider and the readout it introduces travel as one flex item,
-            // so a wrap never strands a hairline at the end of a line with
-            // nothing after it.
-            // `flex-wrap` on the pair too: `controls` is a fragment of three
-            // pickers and two dividers, so this span is where they would
-            // otherwise be pinned to one line — the widest item on the bar.
-            <span key={item.key} className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
-              {i > 0 && <InlineDivider data-testid="status-divider" />}
-              {item}
-            </span>
-          ))}
+        {/* The name's line: the name alone at its left, the account and its
+            usage at its right. `flex-wrap` so a name too long to share the
+            line pushes the account under it instead of either being cut. */}
+        <div data-testid="chat-status-head" className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <SessionTitle
+            title={title}
+            canRename={canRename && !!onRename}
+            onRename={onRename ?? (() => false)}
+            onSuggest={canRename ? onSuggest : undefined}
+          />
+          {account && (
+            <div data-testid="chat-status-account" className="ml-auto flex items-center">
+              {account}
+            </div>
+          )}
         </div>
+        {/* Every other readout on the line below, grouped right under the
+            account. `flex-wrap` so its readouts wrap among themselves when
+            even a full line is too narrow. */}
+        {items.length > 0 && (
+          <div
+            data-testid="chat-status-items"
+            className="ml-auto flex flex-wrap items-center justify-end gap-x-2 gap-y-1"
+          >
+            {items.map((item, i) => (
+              // Divider and the readout it introduces travel as one flex item,
+              // so a wrap never strands a hairline at the end of a line with
+              // nothing after it.
+              // `flex-wrap` on the pair too: `controls` is a fragment of three
+              // pickers and two dividers, so this span is where they would
+              // otherwise be pinned to one line — the widest item on the bar.
+              <span key={item.key} className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
+                {i > 0 && <InlineDivider data-testid="status-divider" />}
+                {item}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

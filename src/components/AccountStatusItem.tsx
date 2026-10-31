@@ -5,6 +5,7 @@ import type { RateLimitSnapshot } from "@/lib/api";
 import { useAccounts } from "@/contexts/AccountsContext";
 import { useTheme } from "@/hooks";
 import { Popover } from "@/components/ui/popover";
+import { InlineDivider } from "@/components/ui/inline-divider";
 import { ICON_MAP } from "./IconPicker";
 import { accountShield, buildThemedColors, fallbackTextColor } from "./AccountBadge";
 import { useAccountDetailsPopover, type AccountDetailsInputs } from "./AccountDetails";
@@ -15,7 +16,7 @@ import type { AccountUsage } from "@/hooks/useAccountUsage";
 
 /**
  * The account widget as a status-bar readout:
- * `[icon] account Personal: max [shield] | [clock] 42% [calendar] 18%`.
+ * `[icon] account Personal: max [shield] | usage [clock] 42% [calendar] 18%`.
  *
  * Two buttons, two popovers, as the widget has: the name opens the account
  * details (`useAccountDetailsPopover`, the widget's own body) and the usage
@@ -93,6 +94,8 @@ export function AccountStatusItem({
         content={details.content}
       />
       {details.signInModal}
+      {/* Two readouts, divided as the bar divides its others. */}
+      <InlineDivider data-testid="account-usage-divider" />
       <UsageDetailPopover
         open={usageOpen}
         onOpenChange={setUsageOpen}
@@ -113,6 +116,11 @@ export function AccountStatusItem({
 }
 
 const USAGE_BUTTON = "flex items-center gap-1 rounded hover:bg-muted/60";
+
+/** "usage", as "account" labels the name beside it. */
+function UsageLabel(): React.JSX.Element {
+  return <span data-testid="usage-label" className="opacity-70">usage</span>;
+}
 
 function pctOf(snapshot: RateLimitSnapshot | null): number | null {
   return snapshot?.utilization == null ? null : Math.max(0, Math.min(100, snapshot.utilization));
@@ -164,6 +172,7 @@ function RateLimitReadout({
       // Wider than the icon-to-value gap, so each pair reads as one window.
       className={cn(USAGE_BUTTON, "gap-2")}
     >
+      <UsageLabel />
       <WindowPct snapshot={fiveHour} Icon={Clock} testId="account-item-usage" />
       <WindowPct snapshot={sevenDay} Icon={CalendarDays} testId="account-item-usage-week" />
     </button>
@@ -185,6 +194,7 @@ function CostReadout({
       title={cost ? `Session cost: ${cost.estimated ? "~" : ""}${formatCost(cost.totalUsd)}` : "No session cost yet"}
       className={cn(USAGE_BUTTON, loading && "opacity-60")}
     >
+      <UsageLabel />
       <DollarSign className="h-3.5 w-3.5" />
       {/* The icon carries the $, as on the cost widget. */}
       <span data-testid="account-item-usage">
