@@ -5,6 +5,21 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.21] — 2026-10-31
+
+### Added
+
+- Modern chats mark the answer that ends a turn: an Answer chip over a card holding the reply and a Done line with the turn's duration, step count and cost (cost hidden on Max accounts, as Compact does).
+- Settings › Chats › Modern has a Colors section: the prompt bubble and the answer card each take a color, saturation, brightness, drop shadow and an Enabled toggle, beside the failed-step color. Each has a reset to its built-in look.
+- `/brain-eval`, a repeatable measure → judge → record → compare check of whether the Brain is worth its cost, with runs kept in the app's data folder.
+
+### Changed
+
+- The session status bar gives the session name a line of its own, with the account and its usage (now labelled) beside it, divided; the other readouts sit on the line below.
+- A chosen prompt bubble color now shows as that color; it used to be mixed thinly into the theme grey and barely read. White, grey and black picks draw an untinted card.
+- The Modern settings tab separates its sections with rules, and its color fields spell it "color".
+- Reviewed Claude Code 2.1.314–2.1.316 against OmniFex; nothing broken, nothing to change.
+
 ## [0.5.20] — 2026-10-30
 
 ### Fixed
