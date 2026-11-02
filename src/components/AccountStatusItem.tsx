@@ -16,7 +16,8 @@ import type { AccountUsage } from "@/hooks/useAccountUsage";
 
 /**
  * The account widget as a status-bar readout:
- * `[icon] account Personal: max [shield] | usage [clock] 42% [calendar] 18%`.
+ * `[icon] account Personal: max [shield] | usage [clock] 42% [calendar] 18%`
+ * (the clock pair only on an account that still has a 5-hour window).
  *
  * Two buttons, two popovers, as the widget has: the name opens the account
  * details (`useAccountDetailsPopover`, the widget's own body) and the usage
@@ -153,7 +154,9 @@ function WindowPct({
 }
 
 /** The 5-hour and weekly windows — `/usage`'s current session and current
- *  week. One button: both open the same popover. */
+ *  week. One button: both open the same popover. An account with no 5-hour
+ *  window (Max, since 2026-10-31) shows the week alone; the week is always
+ *  drawn, as a dash until its first snapshot. */
 function RateLimitReadout({
   fiveHour,
   sevenDay,
@@ -165,16 +168,17 @@ function RateLimitReadout({
     const pct = pctOf(s);
     return `${label}: ${pct == null ? "no data yet" : `${pct.toFixed(1)}%`}`;
   };
+  const week = describe("Current week (7d)", sevenDay);
   return (
     <button
       type="button"
-      aria-label="usage, current session and week"
-      title={`${describe("Current session (5h)", fiveHour)}\n${describe("Current week (7d)", sevenDay)}`}
+      aria-label={fiveHour ? "usage, current session and week" : "usage, current week"}
+      title={fiveHour ? `${describe("Current session (5h)", fiveHour)}\n${week}` : week}
       // Wider than the icon-to-value gap, so each pair reads as one window.
       className={cn(USAGE_BUTTON, "gap-2")}
     >
       <UsageLabel text="usage" />
-      <WindowPct snapshot={fiveHour} Icon={Clock} testId="account-item-usage" />
+      {fiveHour && <WindowPct snapshot={fiveHour} Icon={Clock} testId="account-item-usage" />}
       <WindowPct snapshot={sevenDay} Icon={CalendarDays} testId="account-item-usage-week" />
     </button>
   );

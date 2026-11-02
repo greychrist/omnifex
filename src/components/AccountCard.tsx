@@ -121,13 +121,17 @@ export function AccountCard({
             </div>
           ) : (
             <div className="flex flex-col items-start gap-1">
-              <RateLimitWidget
-                snapshot={fiveHourRateLimit ?? null}
-                windowType="five_hour"
-                accountName={accountName}
-                onClick={() => { setUsagePopoverOpen((v) => !v); }}
-                hideLabel
-              />
+              {/* No 5-hour snapshot: the account has no such window (Max
+                  dropped it 2026-10-31), so draw the week alone. */}
+              {fiveHourRateLimit && (
+                <RateLimitWidget
+                  snapshot={fiveHourRateLimit}
+                  windowType="five_hour"
+                  accountName={accountName}
+                  onClick={() => { setUsagePopoverOpen((v) => !v); }}
+                  hideLabel
+                />
+              )}
               <RateLimitWidget
                 snapshot={sevenDayRateLimit ?? null}
                 windowType="seven_day"

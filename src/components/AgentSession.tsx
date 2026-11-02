@@ -33,6 +33,7 @@ import { useCodexAuthStatus } from "@/hooks/useCodexAuthStatus";
 import { ClaudeTranscript } from "@/components/claude/ClaudeTranscript";
 import { CodexTranscript } from "@/components/codex/CodexTranscript";
 import type { AgentMessage } from "@/lib/api";
+import { applyRateLimitUpdate, type RateLimitUpdate } from "@/lib/rateLimitSnapshots";
 import {
   FloatingPromptInput,
   type FloatingPromptInputRef,
@@ -2153,16 +2154,8 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     const unlisten = window.electronAPI.onEvent(
       'rate-limits:updated',
       (...args: unknown[]) => {
-        const payload = args[0] as
-          | { account_name?: string; snapshot?: RateLimitSnapshot }
-          | undefined;
-        if (!payload?.snapshot) return;
-        if (payload.account_name !== activeAccountName) return;
-        const next = payload.snapshot;
-        setRateLimitSnapshots((prev) => ({
-          ...prev,
-          [next.rate_limit_type]: next,
-        }));
+        const payload = args[0] as RateLimitUpdate | undefined;
+        setRateLimitSnapshots((prev) => applyRateLimitUpdate(prev, payload, activeAccountName));
       },
     );
     return () => {

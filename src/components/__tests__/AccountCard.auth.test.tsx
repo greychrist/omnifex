@@ -221,3 +221,22 @@ describe('AccountCard — session sign-in expired', () => {
     expect(announceMock).toHaveBeenCalledWith(CONFIG_DIR);
   });
 });
+
+describe('AccountCard — usage windows', () => {
+  const snap = (type: string) => ({
+    account_name: 'Work', rate_limit_type: type, status: 'allowed' as const,
+    utilization: 18, resets_at: null, observed_at: Date.now(),
+  });
+
+  it('draws both windows while the account has a 5-hour one', () => {
+    renderCard({ fiveHourRateLimit: snap('five_hour'), sevenDayRateLimit: snap('seven_day') });
+    expect(document.querySelector('svg.lucide-clock')).toBeTruthy();
+    expect(document.querySelector('svg.lucide-calendar-days')).toBeTruthy();
+  });
+
+  it('draws only the week when the account has no 5-hour window', () => {
+    renderCard({ fiveHourRateLimit: null, sevenDayRateLimit: snap('seven_day') });
+    expect(document.querySelector('svg.lucide-clock')).toBeNull();
+    expect(document.querySelector('svg.lucide-calendar-days')).toBeTruthy();
+  });
+});

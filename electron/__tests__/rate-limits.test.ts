@@ -312,6 +312,57 @@ describe('rate-limits service', () => {
     });
   });
 
+  // The CLI builds `unifiedWindows` from the API's per-window headers, so a
+  // window it leaves out is one the account no longer has — Max dropped the
+  // 5-hour window around 2026-10-31. Without pruning, the last five_hour row
+  // sat in the status bar forever.
+  describe('recordEvent — windows the account no longer has', () => {
+    const weekly = (unifiedWindows?: Record<string, unknown>): RateLimitInfo =>
+      ({ status: 'allowed', rateLimitType: 'seven_day', utilization: 7, resetsAt: 1_700_500_000, unifiedWindows });
+    const types = () => h.service.getSnapshots().map((s) => s.rate_limit_type);
+
+    beforeEach(() => {
+      h.service.recordEvent('/Users/test/.claude', fiveHourEvent({ utilization: 1 }));
+      h.emitted.length = 0;
+    });
+
+    it('drops the five_hour snapshot when unifiedWindows omits it', () => {
+      h.service.recordEvent('/Users/test/.claude', weekly({ seven_day: { utilization: 0.06, resetsAt: 1_700_500_000 } }));
+      expect(types()).toEqual(['seven_day']);
+    });
+
+    it('tells the renderer the window is gone', () => {
+      h.service.recordEvent('/Users/test/.claude', weekly({ seven_day: { utilization: 0.06, resetsAt: 1_700_500_000 } }));
+      expect(h.emitted).toContainEqual({
+        channel: 'rate-limits:updated',
+        payload: { account_name: 'Personal', removed: 'five_hour' },
+      });
+    });
+
+    it('keeps five_hour while unifiedWindows still carries it', () => {
+      h.service.recordEvent('/Users/test/.claude', weekly({
+        five_hour: { utilization: 0.01, resetsAt: 1_700_000_000 },
+        seven_day: { utilization: 0.06, resetsAt: 1_700_500_000 },
+      }));
+      expect(types()).toEqual(['five_hour', 'seven_day']);
+    });
+
+    // Older CLIs, and some events, carry no unifiedWindows at all: that is
+    // silence, not evidence.
+    it('keeps five_hour when the event has no unifiedWindows', () => {
+      h.service.recordEvent('/Users/test/.claude', weekly(undefined));
+      expect(types()).toEqual(['five_hour', 'seven_day']);
+      expect(h.emitted.some((e) => (e.payload as { removed?: string }).removed)).toBe(false);
+    });
+
+    it('leaves other accounts alone', () => {
+      const two = makeHarness({ accounts: [makeAccount(), makeAccount({ id: 2, name: 'Work', config_dir: '/Users/test/.claude-work' })] });
+      two.service.recordEvent('/Users/test/.claude-work', fiveHourEvent({ utilization: 5 }));
+      two.service.recordEvent('/Users/test/.claude', weekly({ seven_day: { utilization: 0.06, resetsAt: 1_700_500_000 } }));
+      expect(two.service.getSnapshotsByAccount('Work').map((s) => s.rate_limit_type)).toEqual(['five_hour']);
+    });
+  });
+
   describe('threshold detection — percent crossings', () => {
     it('fires 75% notification once when crossing upward', () => {
       h.service.recordEvent('/Users/test/.claude', fiveHourEvent({ utilization: 76 }));

@@ -231,9 +231,21 @@ describe('AccountStatusItem', () => {
       expect(screen.getByTestId('account-item-usage').classList.contains('animate-pulse')).toBe(true);
     });
 
-    it('shows a dash before the first rate-limit snapshot', () => {
-      render(<AccountStatusItem {...base} fiveHourRateLimit={null} />);
-      expect(screen.getByTestId('account-item-usage').textContent).toBe('—');
+    // Max dropped the 5-hour window; an account without one shows the week
+    // alone rather than a permanent dash.
+    it('shows only the week when the account has no 5-hour window', () => {
+      render(<AccountStatusItem {...base} fiveHourRateLimit={null} sevenDayRateLimit={sevenDay(18)} />);
+      expect(screen.queryByTestId('account-item-usage')).toBeNull();
+      expect(usageButton().querySelector('svg.lucide-clock')).toBeNull();
+      expect(screen.getByTestId('account-item-usage-week').textContent).toBe('18%');
+      expect(usageButton().getAttribute('aria-label')).toBe('usage, current week');
+      expect(usageButton().getAttribute('title')).not.toMatch(/5h/);
+    });
+
+    it('shows a dash for the week before the first rate-limit snapshot', () => {
+      render(<AccountStatusItem {...base} />);
+      expect(screen.queryByTestId('account-item-usage')).toBeNull();
+      expect(screen.getByTestId('account-item-usage-week').textContent).toBe('—');
     });
 
     it('shows the dollars spent on a cost-based account', () => {

@@ -31,6 +31,12 @@ export interface RateLimitInfo {
   utilization?: number;
   resetsAt?: number;
   surpassedThreshold?: number;
+  /**
+   * Every window the API reported on this response, keyed by type. The CLI
+   * builds it from the per-window `anthropic-ratelimit-unified-*` headers,
+   * so a window missing here is one the account does not have.
+   */
+  unifiedWindows?: Record<string, unknown>;
 }
 
 export interface RateLimitSnapshot {
@@ -435,6 +441,30 @@ export function createRateLimitsService(deps: RateLimitsDeps): RateLimitsService
   }
 
   // -------------------------------------------------------------------------
+  // Windows the account no longer has
+  // -------------------------------------------------------------------------
+
+  /**
+   * Max dropped the 5-hour window around 2026-10-31: the API stopped sending
+   * its headers, so the CLI's `unifiedWindows` stopped carrying it, and the
+   * last five_hour row stayed on screen for good. An event that lists its
+   * windows and leaves five_hour out is the evidence to drop it; an event
+   * with no `unifiedWindows` at all says nothing either way.
+   *
+   * Only five_hour: the weekly windows are always present on a subscription,
+   * and the per-model ones come from `/usage`, never from `unifiedWindows`.
+   */
+  function pruneAbsentWindows(accountName: string, info: RateLimitInfo): void {
+    const windows = info.unifiedWindows;
+    if (!windows || typeof windows !== 'object') return;
+    if ('five_hour' in windows) return;
+    const { changes } = db.raw
+      .prepare(`DELETE FROM rate_limit_snapshots WHERE account_name = ? AND rate_limit_type = 'five_hour'`)
+      .run(accountName);
+    if (changes > 0) sendToRenderer('rate-limits:updated', { account_name: accountName, removed: 'five_hour' });
+  }
+
+  // -------------------------------------------------------------------------
   // recordEvent — main entry point
   // -------------------------------------------------------------------------
 
@@ -456,6 +486,7 @@ export function createRateLimitsService(deps: RateLimitsDeps): RateLimitsService
 
     upsertSnapshot(accountName, info, info.rateLimitType, observedAt);
     checkThresholds(accountName, info, info.rateLimitType, observedAt);
+    pruneAbsentWindows(accountName, info);
 
     // Emit the persisted (sticky-merged) row, not the raw incoming event,
     // so the renderer sees the COALESCE'd utilization / resets_at.
