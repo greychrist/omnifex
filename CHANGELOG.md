@@ -5,6 +5,12 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.24] — 2026-11-02
+
+### Changed
+
+- The status bar and session header hide the 5-hour usage window for accounts that no longer have one (Max dropped it in late October 2026) and show the weekly window alone. The daemon drops the stale 5-hour reading as soon as the CLI's rate-limit event stops listing that window; if the window returns, it reappears on the next event.
+
 ## [0.5.23] — 2026-10-31
 
 ### Changed
