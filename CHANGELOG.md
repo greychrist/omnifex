@@ -5,6 +5,17 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.25] — 2026-11-02
+
+### Added
+- Drop any file onto the chat. A file dragged from Finder is @-mentioned by its real path, so Claude reads (and can edit) it where it lives; a dropped folder is mentioned the same way. A file with no path behind it — dragged from a browser, or on the iPad — is saved as a copy and the copy is mentioned. Copies are kept for 7 days.
+
+### Changed
+- Dropped SVGs are @-mentioned rather than inlined; only PNG, JPEG, GIF and WebP go in as inline images.
+
+### Fixed
+- A file dropped onto the chat no longer attaches to every open session — only the tab on screen takes it.
+
 ## [0.5.24] — 2026-11-02
 
 ### Changed
