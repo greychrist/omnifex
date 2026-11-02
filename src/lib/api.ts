@@ -2343,6 +2343,19 @@ export const api = {
   },
 
   /**
+   * The real paths of the files just dropped on the window, from the Mac app
+   * (WebKit gives the page none). Empty in the web client.
+   */
+  async dropPaths(): Promise<string[]> {
+    return apiCall("drop:paths", {});
+  },
+
+  /** Saves a copy of a dropped file that has no path; returns the copy's path. */
+  async saveDroppedFile(name: string, data: string): Promise<string> {
+    return apiCall("save_dropped_file", { name, data });
+  },
+
+  /**
    * Gets overall usage statistics
    * @returns Promise resolving to usage statistics
    */

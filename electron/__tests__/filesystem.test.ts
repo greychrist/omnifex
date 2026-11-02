@@ -231,3 +231,66 @@ describe('createFilesystemService — createDirectory', () => {
     await expect(svc.createDirectory('relative/dir')).rejects.toThrow(/absolute/);
   });
 });
+
+// A file dropped onto the chat with no path behind it (dragged from a browser,
+// a screenshot thumbnail, the iPad) is saved as a copy and the prompt names
+// the copy. Each drop gets its own folder so two `image.png`s never collide,
+// and the file keeps its own name so Claude sees what it was called.
+describe('createFilesystemService — saveDroppedFile', () => {
+  let tmp: string;
+
+  beforeEach(() => {
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'omnifex-fs-drop-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it('writes the bytes under the dropped dir, keeping the file name', async () => {
+    const svc = createFilesystemService({ droppedDir: tmp });
+    const saved = await svc.saveDroppedFile('notes.pdf', Buffer.from('hello').toString('base64'));
+    expect(path.basename(saved)).toBe('notes.pdf');
+    expect(saved.startsWith(fs.realpathSync(tmp) + path.sep)).toBe(true);
+    expect(fs.readFileSync(saved, 'utf8')).toBe('hello');
+  });
+
+  it('gives two drops of the same name separate files', async () => {
+    const svc = createFilesystemService({ droppedDir: tmp });
+    const a = await svc.saveDroppedFile('image.png', Buffer.from('a').toString('base64'));
+    const b = await svc.saveDroppedFile('image.png', Buffer.from('b').toString('base64'));
+    expect(a).not.toBe(b);
+    expect(fs.readFileSync(a, 'utf8')).toBe('a');
+    expect(fs.readFileSync(b, 'utf8')).toBe('b');
+  });
+
+  it('strips directory parts from the name so a drop cannot write elsewhere', async () => {
+    const svc = createFilesystemService({ droppedDir: tmp });
+    const saved = await svc.saveDroppedFile('../../evil.sh', Buffer.from('x').toString('base64'));
+    expect(path.basename(saved)).toBe('evil.sh');
+    expect(saved.startsWith(fs.realpathSync(tmp) + path.sep)).toBe(true);
+  });
+
+  it('refuses an empty or dot-only name', async () => {
+    const svc = createFilesystemService({ droppedDir: tmp });
+    await expect(svc.saveDroppedFile('', 'eA==')).rejects.toThrow(/name/);
+    await expect(svc.saveDroppedFile('..', 'eA==')).rejects.toThrow(/name/);
+  });
+
+  it('refuses a file over the size cap', async () => {
+    const svc = createFilesystemService({ droppedDir: tmp, maxDroppedBytes: 4 });
+    await expect(svc.saveDroppedFile('big.bin', Buffer.from('12345').toString('base64'))).rejects.toThrow(/too large/);
+  });
+
+  it('deletes earlier drops older than the retention window when saving', async () => {
+    let now = 1_000_000_000_000;
+    const svc = createFilesystemService({ droppedDir: tmp, droppedRetentionMs: 1000, now: () => now });
+    const old = await svc.saveDroppedFile('old.txt', Buffer.from('o').toString('base64'));
+    const oldTime = new Date(now);
+    fs.utimesSync(path.dirname(old), oldTime, oldTime);
+    now += 5000;
+    const fresh = await svc.saveDroppedFile('new.txt', Buffer.from('n').toString('base64'));
+    expect(fs.existsSync(old)).toBe(false);
+    expect(fs.existsSync(fresh)).toBe(true);
+  });
+});

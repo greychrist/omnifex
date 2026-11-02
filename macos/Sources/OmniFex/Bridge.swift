@@ -162,7 +162,8 @@ enum WebViewFactory {
         content.addUserScript(WKUserScript(source: Bridge.script, injectionTime: .atDocumentStart, forMainFrameOnly: true))
         config.userContentController = content
 
-        let webView = WKWebView(frame: frame, configuration: config)
+        let webView = DropAwareWebView(frame: frame, configuration: config)
+        webView.services = services
         let sourceId = services.register(webView)
         content.addScriptMessageHandler(BridgeMessageHandler(services: services, sourceId: sourceId), contentWorld: .page, name: Bridge.handlerName)
         webView.isInspectable = true
@@ -170,5 +171,22 @@ enum WebViewFactory {
         webView.underPageBackgroundColor = BrowserWindowController.background
         webView.setValue(false, forKey: "drawsBackground")
         return (webView, sourceId)
+    }
+}
+
+/// Stashes the file paths of a drop before WebKit hands it to the page,
+/// which gets each file's bytes but not where it lives. The page's drop
+/// handler takes them over `drop:paths` (see `DropStash`). Stashed before
+/// `super`, so they are there by the time the page's handler asks.
+final class DropAwareWebView: WKWebView {
+    weak var services: AppServices?
+
+    override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
+        let urls = sender.draggingPasteboard.readObjects(
+            forClasses: [NSURL.self],
+            options: [.urlReadingFileURLsOnly: true]
+        ) as? [URL] ?? []
+        services?.dropStash.put(urls.map(\.path), at: Date().timeIntervalSince1970)
+        return super.performDragOperation(sender)
     }
 }

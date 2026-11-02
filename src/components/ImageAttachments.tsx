@@ -1,5 +1,7 @@
 import React, { useEffect } from "react";
 import { fireAndLog } from "@/lib/fireAndLog";
+import { api } from "@/lib/api";
+import { planDrop } from "@/lib/fileDrop";
 
 // ── Image utilities ─────────────────────────────────────────────────────
 
@@ -130,22 +132,45 @@ function readFileAsDataUrl(file: File): Promise<string | null> {
   });
 }
 
+/** A File's bytes as base64, for `save_dropped_file`. Null if unreadable
+ *  (a folder dragged in from a browser has no bytes). */
+async function readFileAsBase64(file: File): Promise<string | null> {
+  const dataUrl = await readFileAsDataUrl(file);
+  if (!dataUrl) return null;
+  const comma = dataUrl.indexOf(',');
+  return comma >= 0 ? dataUrl.slice(comma + 1) : null;
+}
+
+interface FileDropZoneOptions {
+  /** Only the tab on screen takes a drop. Every tab is mounted at once and
+   *  each listens on the document, so without this one drop attached to
+   *  every open session. */
+  enabled: boolean;
+  /** An image Claude takes inline, as a data URL (same shape as a paste). */
+  onImage: (dataUrl: string) => void;
+  /** A path for the prompt to @-mention: the file itself, or its copy. */
+  onMention: (path: string) => void;
+}
+
 /**
- * useImageDropZone — sets up document-level drag-drop listeners for
- * dropped image files. Dropped images are converted to base64 data URLs
- * via FileReader and passed to `onImageDropped` (same shape as paste).
+ * useFileDropZone — document-level drag-drop for the chat. What each dropped
+ * file becomes is `planDrop`'s call (src/lib/fileDrop.ts): inline image, a
+ * mention of the real path the Mac app reports over `drop:paths`, or a
+ * mention of a copy the daemon saves when there is no path.
  *
- * We intentionally do NOT use `File.path` — Electron removed that property
- * in v32+ for security, so the old path-based approach silently dropped
- * every dragged image. Data URLs work for files dragged from Finder,
- * browsers, screenshot tools, Slack, etc.
+ * `File.path` is not an option: WebKit, like Electron since v32, never
+ * exposes where a dropped file lives — hence the native stash.
  */
-export function useImageDropZone(
-  onImageDropped: (dataUrl: string) => void,
+export function useFileDropZone(
+  { enabled, onImage, onMention }: FileDropZoneOptions,
 ): { dragActive: boolean; setDragActive: React.Dispatch<React.SetStateAction<boolean>> } {
   const [dragActive, setDragActive] = React.useState(false);
 
   useEffect(() => {
+    if (!enabled) {
+      setDragActive(false);
+      return;
+    }
     let lastDropTime = 0;
 
     const handleDragEnter = (e: DragEvent) => {
@@ -171,21 +196,29 @@ export function useImageDropZone(
       if (currentTime - lastDropTime < 200) return;
       lastDropTime = currentTime;
 
-      const files = Array.from(e.dataTransfer?.files ?? []).filter((f) =>
-        f.type.startsWith('image/') || isImageFile(f.name),
-      );
-      if (files.length === 0) return;
+      const files = Array.from(e.dataTransfer?.files ?? []);
+      // Asked even for zero files: a dropped folder can arrive as a path alone.
+      const nativePaths = await api.dropPaths().catch(() => [] as string[]);
+      if (files.length === 0 && nativePaths.length === 0) return;
 
-      for (const file of files) {
-        const dataUrl = await readFileAsDataUrl(file);
-        if (dataUrl) onImageDropped(dataUrl);
+      for (const action of planDrop(files, nativePaths)) {
+        if (action.kind === 'mention') {
+          onMention(action.path);
+        } else if (action.kind === 'image') {
+          const dataUrl = await readFileAsDataUrl(action.file);
+          if (dataUrl) onImage(dataUrl);
+        } else {
+          const data = await readFileAsBase64(action.file);
+          if (data === null) continue;
+          onMention(await api.saveDroppedFile(action.file.name, data));
+        }
       }
     };
 
     // handleDrop is async; wrap once via fireAndLog and pin the reference
     // so add/removeEventListener see the same fn (otherwise the
     // remove-pair never fires and the listener leaks).
-    const wrappedDrop = fireAndLog('image-attachments:drop', handleDrop);
+    const wrappedDrop = fireAndLog('file-drop:drop', handleDrop);
     document.addEventListener('dragenter', handleDragEnter);
     document.addEventListener('dragover', handleDragOver);
     document.addEventListener('dragleave', handleDragLeave);
@@ -197,7 +230,7 @@ export function useImageDropZone(
       document.removeEventListener('dragleave', handleDragLeave);
       document.removeEventListener('drop', wrappedDrop);
     };
-  }, [onImageDropped]);
+  }, [enabled, onImage, onMention]);
 
   return { dragActive, setDragActive };
 }

@@ -255,6 +255,7 @@ export interface Services {
     listDirectoryContents(directoryPath: string): Promise<unknown[]>;
     searchFiles(basePath: string, query: string): Promise<unknown[]>;
     createDirectory(directoryPath: string): Promise<string>;
+    saveDroppedFile(name: string, base64: string): Promise<string>;
   };
   oneShotTerminal?: {
     spawn(opts: {
@@ -1043,6 +1044,16 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
       if (!directoryPath) throw new Error('directoryPath is required');
       if (!filesystem) throw new Error('filesystem service unavailable');
       return filesystem.createDirectory(directoryPath);
+    }),
+    // A file dropped onto the chat with no path of its own: keep a copy and
+    // hand back where it went, for the prompt to @-mention.
+    save_dropped_file: wrapWith((p: Record<string, unknown>) => {
+      const name = p?.name as string;
+      const data = p?.data as string;
+      if (!name) throw new Error('name is required');
+      if (!data) throw new Error('data is required');
+      if (!filesystem) throw new Error('filesystem service unavailable');
+      return filesystem.saveDroppedFile(name, data);
     }),
     fs_exists: wrapWith((p: Record<string, unknown>) => {
       const filePath = (p?.path ?? p?.filePath ?? p?.file_path) as string;

@@ -162,6 +162,11 @@ enum NativeHandlers {
             return nil
         }
 
+        // MARK: drag and drop
+        r.register("drop:paths") { _, _ in
+            s.dropStash.take(now: Date().timeIntervalSince1970)
+        }
+
         // MARK: tab status
         r.register("tab_status_publish") { p, caller in
             guard let summary = BridgeParams.dict(p, "summary") else { throw BridgeError("tab_status_publish requires summary.tabId") }

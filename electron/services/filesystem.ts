@@ -17,13 +17,23 @@
  *     for one, and a retry after a cancelled account picker names the folder
  *     the first try made; both mean "open it". An existing file is refused,
  *     and missing parents are never created, so a mistyped path fails loudly.
+ *   - `saveDroppedFile(name, base64)` keeps a copy of a file dropped onto the
+ *     chat that has no path of its own (dragged from a browser, the iPad) and
+ *     returns where it went, for the prompt to `@`-mention. One folder per
+ *     drop so equal names never collide; drops past the retention window are
+ *     deleted on the next save rather than by a timer. The dir is the
+ *     tmpdir's realpath: the CLI matches permission rules on resolved paths,
+ *     and macOS's tmpdir is a `/var` symlink.
  *
  * All three throw a regular `Error` on malformed input — the IPC
  * wrap-and-repackage layer in `electron/ipc/handlers.ts` will surface
  * `error.message` to the renderer.
  */
 
+import { randomUUID } from 'node:crypto';
+import * as fs from 'node:fs';
 import * as fsPromises from 'node:fs/promises';
+import * as os from 'node:os';
 import * as path from 'node:path';
 
 export interface FileEntry {
@@ -38,6 +48,7 @@ export interface FilesystemService {
   listDirectoryContents(directoryPath: string): Promise<FileEntry[]>;
   searchFiles(basePath: string, query: string): Promise<FileEntry[]>;
   createDirectory(directoryPath: string): Promise<string>;
+  saveDroppedFile(name: string, base64: string): Promise<string>;
 }
 
 export interface FilesystemServiceOptions {
@@ -45,10 +56,21 @@ export interface FilesystemServiceOptions {
   maxResults?: number;
   /** Cap on directory-tree depth searched by `searchFiles`. */
   maxDepth?: number;
+  /** Where dropped-file copies go. Defaults to `<tmpdir realpath>/omnifex-dropped`. */
+  droppedDir?: string;
+  /** Largest dropped file accepted, in bytes. */
+  maxDroppedBytes?: number;
+  /** How long a dropped copy is kept. */
+  droppedRetentionMs?: number;
+  now?: () => number;
 }
 
 const DEFAULT_MAX_RESULTS = 200;
 const DEFAULT_MAX_DEPTH = 8;
+// The WebSocket frame cap is 100 MiB and base64 is 4/3 the size.
+const DEFAULT_MAX_DROPPED_BYTES = 50 * 1024 * 1024;
+// Long enough for a resumed session to still find what it was given.
+const DEFAULT_DROPPED_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
 function extensionOf(name: string): string | undefined {
   const idx = name.lastIndexOf('.');
@@ -75,6 +97,49 @@ export function createFilesystemService(
 ): FilesystemService {
   const maxResults = opts.maxResults ?? DEFAULT_MAX_RESULTS;
   const maxDepth = opts.maxDepth ?? DEFAULT_MAX_DEPTH;
+  const maxDroppedBytes = opts.maxDroppedBytes ?? DEFAULT_MAX_DROPPED_BYTES;
+  const droppedRetentionMs = opts.droppedRetentionMs ?? DEFAULT_DROPPED_RETENTION_MS;
+  const now = opts.now ?? Date.now;
+  const droppedRoot = (): string => {
+    const dir = opts.droppedDir ?? path.join(os.tmpdir(), 'omnifex-dropped');
+    fs.mkdirSync(dir, { recursive: true });
+    return fs.realpathSync(dir);
+  };
+
+  const sweepDropped = async (root: string): Promise<void> => {
+    const cutoff = now() - droppedRetentionMs;
+    let dirents: fs.Dirent[];
+    try {
+      dirents = await fsPromises.readdir(root, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const d of dirents) {
+      const full = path.join(root, d.name);
+      try {
+        const s = await fsPromises.stat(full);
+        if (s.mtimeMs < cutoff) await fsPromises.rm(full, { recursive: true, force: true });
+      } catch {
+        /* vanished or unreadable — the next sweep tries again */
+      }
+    }
+  };
+
+  const saveDroppedFile = async (name: string, base64: string): Promise<string> => {
+    const base = path.basename(name.replace(/\\/g, '/'));
+    if (!base || base === '.' || base === '..') throw new Error(`Invalid file name: ${name}`);
+    const bytes = Buffer.from(base64, 'base64');
+    if (bytes.length > maxDroppedBytes) {
+      throw new Error(`${base} is too large to attach (${bytes.length} bytes, limit ${maxDroppedBytes})`);
+    }
+    const root = droppedRoot();
+    await sweepDropped(root);
+    const dir = path.join(root, randomUUID());
+    await fsPromises.mkdir(dir);
+    const target = path.join(dir, base);
+    await fsPromises.writeFile(target, bytes);
+    return target;
+  };
 
   const listDirectoryContents = async (directoryPath: string): Promise<FileEntry[]> => {
     const stat = await fsPromises.stat(directoryPath);
@@ -172,5 +237,5 @@ export function createFilesystemService(
     return directoryPath;
   };
 
-  return { listDirectoryContents, searchFiles, createDirectory };
+  return { listDirectoryContents, searchFiles, createDirectory, saveDroppedFile };
 }

@@ -3300,6 +3300,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
               tabId={tabIdRef.current}
               defaultModel={selectedModel}
               supportedCommands={supportedCommands}
+              isActive={isActive}
               outputStyleToggle={
                 <div className="flex flex-col gap-0.5 w-full">
                   {/* Label above the toggle, not beside it: side by side, the

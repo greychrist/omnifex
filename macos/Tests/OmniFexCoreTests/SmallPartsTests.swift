@@ -50,7 +50,8 @@ import Testing
     @Test func everyNativeChannelIsKnown() {
         #expect(NativeChannels.invoke.contains("remote:url"))
         #expect(NativeChannels.invoke.contains("shell:listBrowsers"))
-        #expect(NativeChannels.invoke.count == 25)
+        #expect(NativeChannels.invoke.contains("drop:paths"))
+        #expect(NativeChannels.invoke.count == 26)
         #expect(NativeChannels.events.contains("session-inflight-count"))
     }
 

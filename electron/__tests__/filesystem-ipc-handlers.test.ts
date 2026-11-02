@@ -25,3 +25,22 @@ describe('create_directory handler', () => {
     await expect(getHandlerMap({}).create_directory(null, { directoryPath: '/a' })).rejects.toThrow(/unavailable/);
   });
 });
+
+describe('save_dropped_file handler', () => {
+  const filesystem = { saveDroppedFile: vi.fn(async (name: string) => `/drop/${name}`) };
+  const handlers = getHandlerMap({ filesystem } as never);
+
+  it('passes name and base64 data through and returns the saved path', async () => {
+    await expect(handlers.save_dropped_file(null, { name: 'a.pdf', data: 'eA==' })).resolves.toBe('/drop/a.pdf');
+    expect(filesystem.saveDroppedFile).toHaveBeenCalledWith('a.pdf', 'eA==');
+  });
+
+  it('rejects a call missing the name or the data', async () => {
+    await expect(handlers.save_dropped_file(null, { data: 'eA==' })).rejects.toThrow(/name is required/);
+    await expect(handlers.save_dropped_file(null, { name: 'a' })).rejects.toThrow(/data is required/);
+  });
+
+  it('rejects when the filesystem service is not wired', async () => {
+    await expect(getHandlerMap({}).save_dropped_file(null, { name: 'a', data: 'eA==' })).rejects.toThrow(/unavailable/);
+  });
+});

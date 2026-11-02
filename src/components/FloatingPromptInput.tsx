@@ -22,8 +22,9 @@ import {
   extractImagePaths,
   handleImagePaste,
   removeImageFromPrompt,
-  useImageDropZone,
+  useFileDropZone,
 } from "./ImageAttachments";
+import { appendMention } from "@/lib/fileDrop";
 import { useSlashCommandAutocomplete } from "@/hooks/useSlashCommandAutocomplete";
 import { RECALL_COMMAND_ID, STATUS_COMMAND_ID } from "@/lib/localSlashCommands";
 import { RecallDialog } from "./brain/RecallDialog";
@@ -52,6 +53,9 @@ interface FloatingPromptInputProps {
   tabId?: string;
   /** Pre-fetched built-in CLI slash commands (loaded during session init). */
   supportedCommands?: import("@/lib/api").SessionSlashCommand[];
+  /** Whether this session's tab is the one on screen. Only it takes a
+   *  dropped file. */
+  isActive?: boolean;
 }
 
 export interface FloatingPromptInputRef {
@@ -99,6 +103,7 @@ const FloatingPromptInputInner = (
     configDir,
     tabId,
     supportedCommands,
+    isActive = true,
   }: FloatingPromptInputProps,
   ref: React.Ref<FloatingPromptInputRef>,
 ) => {
@@ -176,12 +181,16 @@ const FloatingPromptInputInner = (
 
   const slash = useSlashCommandAutocomplete({ onLocalCommand: handleLocalCommand });
 
-  // -- Image drop zone hook --
-  // Dropped images flow through the same base64 state as pasted ones.
+  // -- File drop zone hook --
+  // Dropped images flow through the same base64 state as pasted ones; any
+  // other file becomes an @-mention of its path (or of a copy, if it has none).
   const handleImageDropped = React.useCallback((dataUrl: string) => {
     setPastedImages(prev => [...prev, dataUrl]);
   }, []);
-  const { dragActive } = useImageDropZone(handleImageDropped);
+  const handleFileDropped = React.useCallback((path: string) => {
+    setPrompt(prev => appendMention(prev, path));
+  }, []);
+  const { dragActive } = useFileDropZone({ enabled: isActive, onImage: handleImageDropped, onMention: handleFileDropped });
 
   // Expose addImage via ref
   React.useImperativeHandle(
@@ -406,7 +415,7 @@ const FloatingPromptInputInner = (
     });
   };
 
-  // Browser drag-and-drop passthrough (visual only; real handling in useImageDropZone)
+  // Browser drag-and-drop passthrough (visual only; real handling in useFileDropZone)
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();

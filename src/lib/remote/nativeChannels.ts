@@ -48,6 +48,9 @@ export const NATIVE_INVOKE_CHANNELS: readonly string[] = [
   'notify:show',
   /** The page is plain http, which WebKit gives no async clipboard. */
   'clipboard:write',
+  /** The paths behind the files just dropped on the window. WebKit gives the
+   *  page a dropped file's bytes but never its path. */
+  'drop:paths',
 ];
 
 /**

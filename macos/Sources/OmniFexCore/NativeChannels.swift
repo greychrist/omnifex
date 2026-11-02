@@ -35,6 +35,7 @@ public enum NativeChannels {
         "remote:restart",
         "notify:show",
         "clipboard:write",
+        "drop:paths",
     ]
 
     /// Events this app emits into pages.

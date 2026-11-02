@@ -94,6 +94,8 @@ const WEB_FALLBACKS: Record<string, unknown> = {
   // The daemon served this page, so the page has a version: the build it came
   // from. The popover compares it against the daemon's.
   'get_app_version': BUILD_VERSION,
+  // No app behind the page: a dropped file has no path, so it is copied.
+  'drop:paths': [],
 };
 
 /** The IPC layer's error encoding, which `apiAdapter.decodeApiError` reverses. */

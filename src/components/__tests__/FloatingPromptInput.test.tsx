@@ -1,13 +1,17 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, cleanup, fireEvent } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, act, waitFor } from '@testing-library/react';
 import { FloatingPromptInput } from '../FloatingPromptInput';
 
 vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>();
   return {
     ...actual,
-    api: { ...actual.api, listSupportedModels: vi.fn(async () => []) },
+    api: {
+      ...actual.api,
+      listSupportedModels: vi.fn(async () => []),
+      dropPaths: vi.fn(async () => ['/Users/g/My Docs/spec.pdf']),
+    },
   };
 });
 
@@ -167,5 +171,29 @@ describe('FloatingPromptInput — Modern variant', () => {
   it('keeps the classic look by default', () => {
     render(<FloatingPromptInput onSend={vi.fn()} />);
     expect(screen.getByPlaceholderText(/Message Claude/).className).not.toContain('rounded-2xl');
+  });
+});
+
+describe('FloatingPromptInput — dropping a file', () => {
+  const dropOnDocument = () => {
+    const e = new Event('drop', { bubbles: true, cancelable: true });
+    Object.defineProperty(e, 'dataTransfer', {
+      value: { files: [new File(['x'], 'spec.pdf', { type: 'application/pdf' })], types: ['Files'] },
+    });
+    act(() => { document.dispatchEvent(e); });
+  };
+
+  it('adds an @-mention of the real path to the prompt', async () => {
+    render(<FloatingPromptInput onSend={vi.fn()} />);
+    dropOnDocument();
+    const textarea = screen.getByPlaceholderText(/Message Claude/) as HTMLTextAreaElement;
+    await waitFor(() => expect(textarea.value).toBe('@"/Users/g/My Docs/spec.pdf" '));
+  });
+
+  it('leaves the prompt alone in a tab that is not showing', async () => {
+    render(<FloatingPromptInput onSend={vi.fn()} isActive={false} />);
+    dropOnDocument();
+    await new Promise((r) => setTimeout(r, 20));
+    expect((screen.getByPlaceholderText(/Message Claude/) as HTMLTextAreaElement).value).toBe('');
   });
 });

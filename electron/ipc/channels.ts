@@ -264,6 +264,7 @@ export const INVOKE_CHANNELS: readonly string[] = [
   'list_directory_contents',
   'search_files',
   'create_directory',
+  'save_dropped_file',
   'fs_exists',
 
   // Proxy
@@ -311,6 +312,7 @@ export const INVOKE_CHANNELS: readonly string[] = [
   'remote:restart',
   'notify:show',
   'clipboard:write',
+  'drop:paths',
   'dialog:open',
   'dialog:save',
   'shell:openExternal',

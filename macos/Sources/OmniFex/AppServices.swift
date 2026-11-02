@@ -27,6 +27,8 @@ final class AppServices {
     private var nextSourceId = 1
     /// A quit the user already agreed to, or one the installer drives.
     var quitAuthorized = false
+    /// Filled by `DropAwareWebView` just before the page sees a drop.
+    var dropStash = DropStash()
 
     /// What every web view may navigate to — and which frames may call the
     /// bridge. Read fresh: the daemon's address is known only after `ensure`.
