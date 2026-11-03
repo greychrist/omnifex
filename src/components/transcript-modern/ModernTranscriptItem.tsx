@@ -1,6 +1,7 @@
 /**
- * One Modern-format item. A shown record Modern does not model is drawn as
- * Compact draws it (StreamMessage); records Compact hides are left out
+ * One Modern-format item. A non-conversation record is a Trace line
+ * (RecordLine); only conversation content Modern does not model is drawn as
+ * Compact draws it (StreamMessage). Records Compact hides are left out
  * altogether — the Compact, Verbose and All formats still show them.
  */
 import * as React from 'react';
@@ -13,11 +14,14 @@ import { CheckCircle2, RotateCcw } from 'lucide-react';
 import { extractResendPayload } from '@/lib/extractResendPayload';
 import { NoticeLine } from './NoticeLine';
 import { CompactionLine } from './CompactionLine';
+import { RecapLine } from './RecapLine';
+import { InstructionsLine } from './InstructionsLine';
+import { RecordLine } from './RecordLine';
 import { DownloadableImage } from '@/components/DownloadableImage';
 import { RawJsonPopover } from '@/components/StreamMessage/RawJsonPopover';
 import { useClaudeSessionStore } from '@/stores/claudeSessionStore';
 import { ChainOfThought } from './ChainOfThought';
-import { AnsweredAskUserQuestionCard } from '@/components/AnsweredAskUserQuestionCard';
+import { QuestionLine } from './QuestionLine';
 import { ModernPlan } from './ModernPlan';
 import { Message, MessageActions, MessageResponse, UserBubble } from './primitives';
 import { turnFooterText, type TurnFooter } from '@/lib/modernTurnFooter';
@@ -113,18 +117,31 @@ export const ModernTranscriptItem = React.memo(function ModernTranscriptItem({
     case 'work':
       return <ChainOfThought entries={item.entries} nodes={item.nodes} live={live} ctx={ctx} />;
     case 'question':
-      // The classic answered card, as Compact draws it: one row per question.
-      return (
-        <div className="mx-2 my-2">
-          <AnsweredAskUserQuestionCard input={item.input} resultContent={resultContentOf(item.resultNode)} message={item.node} />
-        </div>
-      );
+      // A Trace line, as Modern's other record lines are, its icon in the
+      // question kind's accent.
+      return <QuestionLine input={item.input} resultContent={resultContentOf(item.resultNode)} />;
     case 'plan':
       return <ModernPlan markdown={item.markdown} resultNode={item.resultNode} />;
     case 'notice':
       return <NoticeLine tone={item.tone} text={item.text} />;
     case 'compaction':
       return <CompactionLine detail={item.detail} summary={item.summary} />;
+    case 'instructions':
+      return <InstructionsLine files={item.files} />;
+    case 'recap':
+      // In an answer's Message column with its hover row, so the room under
+      // it is an answer's, not a Trace line's.
+      return (
+        <Message from="assistant">
+          <RecapLine text={item.text} time={timeOf(item.node)} />
+          <MessageActions from="assistant">
+            <CopyButton getText={() => item.text} className="h-6 w-6" />
+            <RawJsonPopover text={rawOf(item.node)} />
+          </MessageActions>
+        </Message>
+      );
+    case 'line':
+      return <RecordLine line={item.line} />;
     case 'other':
       return (
         <StreamMessage
@@ -173,9 +190,14 @@ export function ModernLiveAnswer({ tabId }: { tabId: string }) {
 /** The answer that ends a turn, in a card made as the prompt bubble is, in
  *  its own colour. Cornered like every card; tint, border and shadow are
  *  `.modern-final-card` and `.modern-card-shadow` in styles.css, since the
- *  `* { border-color }` reset beats the utilities. */
+ *  `* { border-color }` reset beats the utilities. In line style
+ *  (Settings › Modern › Answer style) it is only a bar down the left edge,
+ *  `.modern-final-line`. */
 function FinalAnswerCard({ children }: { children: React.ReactNode }) {
   const { config } = useMessageRenderingConfig();
+  if (config.modern.answerStyle === 'line') {
+    return <div className={cn('modern-final-line flex w-full flex-col items-start gap-2 py-1 pl-4', !config.modern.answerCardColorEnabled && 'modern-card-plain')}>{children}</div>;
+  }
   return (
     <div
       className={cn('modern-final-card flex w-full flex-col items-start gap-2 p-3', config.modern.answerCardColorEnabled ? config.modern.answerCardShadow && 'modern-card-shadow' : 'modern-card-plain')}

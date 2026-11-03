@@ -222,6 +222,8 @@ export function classifyStandaloneKind(
     if (subtype === 'local_command') {
       return isRecapCommandRecord(msg.raw) ? 'system.away_summary' : 'system.local_command';
     }
+    // Lost writes on a full disk: an error, drawn in the API error kind.
+    if (subtype === 'session_writes_lost') return 'system.api_error';
     // What the Stop hooks did when a turn ended.
     if (subtype === 'stop_hook_summary') return 'system.stop_hook_summary';
     // Where a compaction cut the conversation.

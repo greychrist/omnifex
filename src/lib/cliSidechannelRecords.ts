@@ -58,6 +58,8 @@ export const CLI_SIDECHANNEL_RECORD_TYPES: ReadonlySet<string> = new Set([
   'artifact-autoreact-ledger',
   // The session's plugin "dev mods" folder (CLI >= 2.1.283).
   'dev-mods',
+  // The signed-in account + org that own the session (CLI >= 2.1.317).
+  'session-owner',
   // Structural bookkeeping — branch plumbing and file-history deltas.
   'file-history-delta',
   'continued-in',

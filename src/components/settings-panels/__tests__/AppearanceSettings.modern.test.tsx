@@ -179,6 +179,27 @@ describe('AppearanceSettings — Modern', () => {
     expect(section.compareDocumentPosition(icons) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
+  it('chooses which format\'s rules Modern shows records by, Compact by default', async () => {
+    const editor = await openModern();
+    const group = within(editor).getByRole('radiogroup', { name: 'Show records like' });
+    expect(within(group).getAllByRole('radio').map((r) => r.textContent)).toEqual(['Compact', 'Verbose', 'All']);
+    expect(within(group).getByRole('radio', { name: 'Compact' })).toHaveAttribute('aria-checked', 'true');
+    fireEvent.click(within(group).getByRole('radio', { name: 'Verbose' }));
+    await waitFor(() => { expect(savedModern().at(-1)?.recordRules).toBe('verbose'); });
+  });
+
+  it('switches the answer between a card and a bar on the left, card by default', async () => {
+    const editor = await openModern();
+    const group = within(editor).getByRole('radiogroup', { name: 'Answer style' });
+    expect(within(group).getByRole('radio', { name: 'Card' })).toHaveAttribute('aria-checked', 'true');
+    fireEvent.click(within(group).getByRole('radio', { name: 'Line' }));
+    await waitFor(() => { expect(savedModern().at(-1)?.answerStyle).toBe('line'); });
+    // A line has no fill or shadow: only its color still applies.
+    expect(within(editor).getByRole('switch', { name: 'Answer card drop shadow' })).toBeDisabled();
+    expect(within(editor).getByRole('slider', { name: 'Answer card saturation' })).toBeDisabled();
+    expect(within(editor).getByLabelText('Answer card color hex')).not.toBeDisabled();
+  });
+
   it('has a drop shadow switch for the prompt bubble and the answer card, on by default', async () => {
     const editor = await openModern();
     for (const [name, key] of [['Prompt bubble', 'promptShadow'], ['Answer card', 'answerCardShadow']] as const) {
@@ -225,17 +246,19 @@ describe('AppearanceSettings — Modern', () => {
 
   // A rule between each pair of the four sections: Work timeline | Colors |
   // Step icons | Text.
-  it('separates the Work timeline, Colors, Step icons and Text sections with a line', async () => {
+  it('separates the Records, Work timeline, Colors, Step icons and Text sections with a line', async () => {
     const editor = await openModern();
     const seps = within(editor).getAllByRole('separator');
-    expect(seps).toHaveLength(3);
+    expect(seps).toHaveLength(4);
     const order = [
-      within(editor).getByRole('switch', { name: 'Show thoughts' }),
+      within(editor).getByRole('radiogroup', { name: 'Show records like' }),
       seps[0],
-      within(editor).getByRole('region', { name: 'Colors' }),
+      within(editor).getByRole('switch', { name: 'Show thoughts' }),
       seps[1],
-      within(editor).getByRole('group', { name: 'Thought step icon' }),
+      within(editor).getByRole('region', { name: 'Colors' }),
       seps[2],
+      within(editor).getByRole('group', { name: 'Thought step icon' }),
+      seps[3],
       within(editor).getByRole('radiogroup', { name: 'Font' }),
     ];
     for (let i = 1; i < order.length; i++) {

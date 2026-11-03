@@ -147,6 +147,17 @@ html {
   background-color: transparent;
   border-color: transparent;
 }
+/* Settings › Chats › Modern › Answer style › Line: no card, a bar down the
+   answer's left edge in the answer color (unset: the Answer chip's own
+   bg-emerald-700, which is also the card's default hue and glow). A rule,
+   since the `* { border-color }` reset beats the utilities. Enabled off
+   leaves the bar in the theme's border color. */
+.modern-format .modern-final-line {
+  border-left: 2px solid var(--modern-final-tint, oklch(50.8% 0.118 165.612));
+}
+.modern-format .modern-final-line.modern-card-plain {
+  border-left-color: var(--color-border);
+}
 .modern-format .modern-card-shadow {
   box-shadow: 0 1px 2px oklch(0 0 0 / 0.12), 0 2px 8px color-mix(in oklch, var(--modern-card-glow) 12%, transparent);
 }

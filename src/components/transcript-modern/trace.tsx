@@ -13,7 +13,7 @@ import { ChevronRightIcon, CircleAlertIcon, CircleCheckIcon, CircleIcon, LoaderC
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { cn } from '@/lib/utils';
 
-export type TraceStatus = 'running' | 'error' | 'pending';
+export type TraceStatus = 'running' | 'error' | 'pending' | 'warn';
 
 export function Trace({ className, ...props }: React.ComponentProps<'div'>) {
   return <div data-slot="trace" className={cn('flex w-full min-w-0 flex-col gap-2', className)} {...props} />;
@@ -32,6 +32,8 @@ export function TraceLine({
         'flex w-fit max-w-full min-w-0 items-center gap-2 text-sm text-muted-foreground transition-colors',
         'in-[button]:cursor-pointer in-[button:hover]:text-foreground',
         'data-[status=error]:text-destructive data-[status=error]:in-[button:hover]:text-destructive data-[status=pending]:opacity-60',
+        // The context rail's warning amber (ContextTimelineTick, NoticeLine).
+        'data-[status=warn]:text-amber-500 data-[status=warn]:in-[button:hover]:text-amber-500',
         className,
       )}
       {...props}

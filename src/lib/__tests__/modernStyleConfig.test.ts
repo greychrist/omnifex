@@ -163,3 +163,50 @@ describe('Modern style config', () => {
     });
   });
 });
+
+describe('Modern answer style', () => {
+  it('is the card by default; a saved line is kept and junk is dropped', () => {
+    expect(createDefaultConfig().modern.answerStyle).toBe('card');
+    expect(mergeConfig({ version: 5, modern: { answerStyle: 'line' } }).modern.answerStyle).toBe('line');
+    expect(mergeConfig({ version: 5, modern: { answerStyle: 'banner' } }).modern.answerStyle).toBe('card');
+  });
+});
+
+describe('Modern answer line stylesheet', () => {
+  // The bar is the Answer chip's own green (bg-emerald-700) unless a color
+  // is set, and thin. The card's default hue and glow are that green too.
+  it('draws a 2px bar in the chip green by default', async () => {
+    const fs = await import('node:fs');
+    const css = fs.readFileSync(new URL('../../styles.css', import.meta.url), 'utf8');
+    const rule = /\.modern-format \.modern-final-line \{([^}]*)\}/.exec(css)?.[1] ?? '';
+    expect(rule).toMatch(/border-left:\s*2px solid var\(--modern-final-tint, oklch\(50\.8% 0\.118 165\.612\)\)/);
+    expect(css).toMatch(/--modern-final-hue, 165\.612\)/);
+    expect(css).toMatch(/--modern-card-glow: var\(--modern-final-tint, oklch\(50\.8% 0\.118 165\.612\)\)/);
+  });
+});
+
+describe('Modern record rules', () => {
+  it('follows Compact by default; a saved Verbose or All is kept, junk dropped', () => {
+    expect(createDefaultConfig().modern.recordRules).toBe('compact');
+    expect(mergeConfig({ version: 5, modern: { recordRules: 'verbose' } }).modern.recordRules).toBe('verbose');
+    expect(mergeConfig({ version: 5, modern: { recordRules: 'all' } }).modern.recordRules).toBe('all');
+    expect(mergeConfig({ version: 5, modern: { recordRules: 'modern' } }).modern.recordRules).toBe('compact');
+  });
+});
+
+describe('rulesViewMode', () => {
+  // The format whose display rules a transcript runs on: its own, except
+  // Modern, which borrows the one its Record rules setting names ('modern'
+  // standing for Compact's rules plus Modern's own repeat tidying).
+  it('maps Modern to its chosen rules and leaves every other format alone', async () => {
+    const { rulesViewMode } = await import('@/lib/messageRenderingConfig');
+    const cfg = createDefaultConfig();
+    expect(rulesViewMode('modern', cfg)).toBe('modern');
+    for (const r of ['verbose', 'all'] as const) {
+      expect(rulesViewMode('modern', { ...cfg, modern: { ...cfg.modern, recordRules: r } })).toBe(r);
+    }
+    for (const v of ['compact', 'verbose', 'all'] as const) {
+      expect(rulesViewMode(v, { ...cfg, modern: { ...cfg.modern, recordRules: 'all' } })).toBe(v);
+    }
+  });
+});

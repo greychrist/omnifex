@@ -32,7 +32,7 @@ import { collapseRepeats } from "@/lib/collapseRepeats";
 import { filterDisplayableMessages } from "@/lib/messageFilters";
 import { createRowLookupCache, rowLookups } from "@/lib/rowLookups";
 import { MessageRenderingOverrideProvider, useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
-import { revealNeverShown } from "@/lib/messageRenderingConfig";
+import { revealNeverShown, rulesViewMode } from "@/lib/messageRenderingConfig";
 import { useAutoScroll } from "@/contexts/AutoScrollContext";
 import { useSessionGauges } from "@/contexts/SessionGaugesContext";
 import { buildContextTimeline } from "@/lib/contextTimeline";
@@ -165,9 +165,12 @@ function ClaudeTranscriptImpl({
   }, [historyShown, messages.length]);
   const rendering = (messages.length > 0 && !historyShown) || viewMode !== liveViewMode;
   const { config: savedRenderConfig } = useMessageRenderingConfig();
-  // The "All" chat format renders through a copy of the config with every
-  // "Never" kind demoted to verbose-only; rows get it from context below.
-  const showAll = viewMode === 'all';
+  // The format whose rules decide what shows: Modern borrows Compact's,
+  // Verbose's or All's (Settings › Modern › Show records like).
+  const rulesMode = rulesViewMode(viewMode, savedRenderConfig);
+  // The "All" rules render through a copy of the config with every "Never"
+  // kind demoted to verbose-only; rows get it from context below.
+  const showAll = rulesMode === 'all';
   const renderConfig = useMemo(
     () => (showAll ? revealNeverShown(savedRenderConfig) : savedRenderConfig),
     [showAll, savedRenderConfig],
@@ -228,10 +231,10 @@ function ClaudeTranscriptImpl({
   // unfiltered list, so a hidden message still ends a run.
   const displayableMessages = useMemo(
     () => withoutNeverShown(
-      filterDisplayableMessages(collapseRepeats(messages, renderConfig)),
+      filterDisplayableMessages(collapseRepeats(messages, renderConfig, rulesMode)),
       renderConfig,
     ),
-    [messages, renderConfig],
+    [messages, renderConfig, rulesMode],
   );
   /**
    * The last row that will actually draw a rail — the tail of the transcript
@@ -273,7 +276,7 @@ function ClaudeTranscriptImpl({
   const prevModernItemsRef = useRef<ModernItem[]>([]);
   const modernItems = useMemo(() => {
     const next = viewMode === 'modern'
-      ? keepUnchangedItems(prevModernItemsRef.current, buildModernItems(displayableMessages, renderConfig, messages))
+      ? keepUnchangedItems(prevModernItemsRef.current, buildModernItems(displayableMessages, renderConfig, messages, renderConfig.modern.recordRules))
       : [];
     prevModernItemsRef.current = next;
     return next;

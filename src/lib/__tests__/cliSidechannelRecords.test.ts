@@ -15,6 +15,20 @@ describe('isCliSidechannelRecord', () => {
     ).toBe(true);
   });
 
+  // New in CLI 2.1.317: the signed-in account and org that own the session,
+  // `last-wins` in the merge map and re-stamped on every metadata re-append,
+  // so it lands in every session a signed-in CLI writes.
+  it('recognises session-owner', () => {
+    expect(
+      isCliSidechannelRecord({
+        type: 'session-owner',
+        accountUuid: 'd624eb4c-4173-418b-83e7-2ffed2f968a1',
+        organizationUuid: '1f464584-bab8-4dba-bb30-a9e806c9f39b',
+        sessionId: '39eddbbf-781f-4758-b58e-af2d408ea20f',
+      }),
+    ).toBe(true);
+  });
+
   // New in CLI 2.1.276: a latch recording whether memory was on or off at a
   // point in the conversation. `accumulate` in the CLI's merge map, so it is a
   // log, not a last-wins latch — several land per session once the user

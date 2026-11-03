@@ -7,6 +7,8 @@ import {
   MODERN_STEP_KINDS,
   modernCssVars,
   type MessageRenderingConfig,
+  type ModernAnswerStyle,
+  type ModernRecordRules,
   type ModernFont,
   type ModernStepKind,
   type ModernStyle,
@@ -47,6 +49,17 @@ const TIMELINE_OPTIONS: { value: TimelineOpen; label: string }[] = [
   { value: "while-running", label: "Open while running" },
   { value: "always", label: "Always open" },
   { value: "never", label: "Always folded" },
+];
+
+const RECORD_RULES_OPTIONS: { value: ModernRecordRules; label: string }[] = [
+  { value: "compact", label: "Compact" },
+  { value: "verbose", label: "Verbose" },
+  { value: "all", label: "All" },
+];
+
+const ANSWER_STYLE_OPTIONS: { value: ModernAnswerStyle; label: string }[] = [
+  { value: "card", label: "Card" },
+  { value: "line", label: "Line" },
 ];
 
 const FONT_OPTIONS: { value: ModernFont; label: string }[] = [
@@ -236,6 +249,21 @@ export const ModernEditor: React.FC<ModernEditorProps> = ({ config, onChange }) 
       <ModernSample config={config} />
 
       <section className="space-y-3">
+        <Label>Records</Label>
+        <p className="text-caption text-muted-foreground">
+          Which records Modern shows, by another format's rules: Compact shows kinds set to Always, Verbose adds Verbose-only kinds, All adds kinds set to Never. Your prompts, the work timeline and answers look the same under each.
+        </p>
+        <Segmented
+          label="Show records like"
+          value={m.recordRules}
+          options={RECORD_RULES_OPTIONS}
+          onChange={(v) => { patch({ recordRules: v }); }}
+        />
+      </section>
+
+      <SectionRule />
+
+      <section className="space-y-3">
         <Label>Work timeline</Label>
         <p className="text-caption text-muted-foreground">
           The folding run of thoughts and tool calls between your prompt and Claude's answer.
@@ -289,9 +317,17 @@ export const ModernEditor: React.FC<ModernEditorProps> = ({ config, onChange }) 
               enabled={m.answerCardColorEnabled}
               onEnabledChange={(v) => { patch({ answerCardColorEnabled: v }); }}
             />
-            <PercentField name="Answer card" label="Saturation" value={m.answerCardSaturation} disabled={!m.answerCardColorEnabled} onChange={(v) => { patch({ answerCardSaturation: v }); }} />
-            <PercentField name="Answer card" label="Brightness" value={m.answerCardBrightness} disabled={!m.answerCardColorEnabled} onChange={(v) => { patch({ answerCardBrightness: v }); }} />
-            <ShadowField name="Answer card" checked={m.answerCardShadow} disabled={!m.answerCardColorEnabled} onChange={(v) => { patch({ answerCardShadow: v }); }} />
+            {/* Line: a bar down the answer's left edge in this color. The
+                card's fill strength and shadow have nothing to act on. */}
+            <Segmented
+              label="Answer style"
+              value={m.answerStyle}
+              options={ANSWER_STYLE_OPTIONS}
+              onChange={(v) => { patch({ answerStyle: v }); }}
+            />
+            <PercentField name="Answer card" label="Saturation" value={m.answerCardSaturation} disabled={!m.answerCardColorEnabled || m.answerStyle === "line"} onChange={(v) => { patch({ answerCardSaturation: v }); }} />
+            <PercentField name="Answer card" label="Brightness" value={m.answerCardBrightness} disabled={!m.answerCardColorEnabled || m.answerStyle === "line"} onChange={(v) => { patch({ answerCardBrightness: v }); }} />
+            <ShadowField name="Answer card" checked={m.answerCardShadow} disabled={!m.answerCardColorEnabled || m.answerStyle === "line"} onChange={(v) => { patch({ answerCardShadow: v }); }} />
           </div>
           <div className="space-y-3">
             <ColorField

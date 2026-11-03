@@ -95,7 +95,7 @@ describe('buildModernItems', () => {
     cfg.kinds['system.stop_hook_summary'] = { visibility: 'always' };
     const hook = system('stop_hook_summary');
     const items = buildModernItems([prompt('go'), hook, text('ok')], cfg);
-    expect(kinds(items)).toEqual(['prompt', 'other', 'text']);
+    expect(kinds(items)).toEqual(['prompt', 'line', 'text']);
   });
 
   it('draws a slash-command prompt as its command line, not the envelope', () => {
@@ -338,5 +338,125 @@ describe('buildModernItems — injected user records', () => {
     if (entry.type !== 'tool') throw new Error('not tool');
     expect(entry.skillBody).toContain('# OmniFex Release');
     expect(work.nodes).toContain(body);
+  });
+});
+
+describe('buildModernItems — lost writes and recaps', () => {
+  it('draws session_writes_lost as an error notice', () => {
+    const lost = {
+      kind: 'system', subtype: 'session_writes_lost', sessionId: '', receivedAt: '',
+      raw: { type: 'system', subtype: 'session_writes_lost', error_code: 'EDQUOT', lost: ['global_config'] },
+    } as unknown as JsonlNode;
+    const items = buildModernItems([lost], createDefaultConfig());
+    expect(items.map((i) => i.kind === 'notice' ? i.tone : i.kind)).toEqual(['error']);
+    expect(items[0].kind === 'notice' && items[0].text).toMatch(/disk quota is used up/);
+  });
+
+  it('draws the away summary and /recap output as a recap, not as Compact draws them', () => {
+    const away = {
+      kind: 'system', subtype: 'away_summary', sessionId: '', receivedAt: '',
+      raw: { type: 'system', subtype: 'away_summary', content: 'We fixed the card.' },
+    } as unknown as JsonlNode;
+    const recap = {
+      kind: 'system', subtype: 'local_command', sessionId: '', receivedAt: '',
+      raw: { type: 'system', subtype: 'local_command', content: '<local-command-stdout>Tests pass.</local-command-stdout>', commandRun: { command: 'recap' } },
+    } as unknown as JsonlNode;
+    const other = {
+      kind: 'system', subtype: 'local_command', sessionId: '', receivedAt: '',
+      raw: { type: 'system', subtype: 'local_command', content: '<local-command-stdout>Total cost: $1</local-command-stdout>', commandRun: { command: 'cost' } },
+    } as unknown as JsonlNode;
+    const items = buildModernItems([away, recap, other], createDefaultConfig());
+    expect(items.map((i) => i.kind === 'recap' ? `recap:${i.text}` : i.kind)).toEqual([
+      'recap:We fixed the card.',
+      'recap:Tests pass.',
+      'line',
+    ]);
+  });
+});
+
+describe('buildModernItems — instructions and permission mode', () => {
+  it('draws an instructions attachment as one instructions item listing its files', () => {
+    const att = {
+      kind: 'attachment', sessionId: '', receivedAt: '2026-11-02T00:00:00.000Z',
+      raw: { type: 'attachment', attachment: { type: 'instructions', files: [
+        { path: '/Users/g/.claude-personal/CLAUDE.md', type: 'User', content: 'x' },
+        { path: '/Users/g/Repos/omnifex/CLAUDE.md', type: 'Project', content: 'y' },
+        { content: 'no path' },
+      ] } },
+    } as unknown as JsonlNode;
+    const items = buildModernItems([att], createDefaultConfig());
+    expect(items).toHaveLength(1);
+    const it0 = items[0];
+    expect(it0.kind).toBe('instructions');
+    expect(it0.kind === 'instructions' && it0.files).toEqual([
+      { path: '/Users/g/.claude-personal/CLAUDE.md', scope: 'User' },
+      { path: '/Users/g/Repos/omnifex/CLAUDE.md', scope: 'Project' },
+    ]);
+  });
+
+  it('draws a permission-mode change as a line naming the mode', () => {
+    const pm = (mode: string) => ({ kind: 'permission-mode', sessionId: '', raw: { type: 'permission-mode', permissionMode: mode } }) as unknown as JsonlNode;
+    const items = buildModernItems([pm('acceptEdits'), pm('auto'), pm('somethingNew')], createDefaultConfig());
+    expect(items.map((i) => i.kind === 'line' ? `${i.line.title}: ${i.line.detail}` : i.kind)).toEqual([
+      'Permission mode: Accept Edits',
+      'Permission mode: Auto',
+      'Permission mode: somethingNew',
+    ]);
+  });
+});
+
+describe('buildModernItems — live control changes', () => {
+  // The marker the app appends when you switch mode, effort or model in a
+  // running session (the persisted permission-mode line arrives only on resume).
+  const change = (control: string, value: string) => ({
+    kind: 'control-change', control, value, sessionId: 't', receivedAt: '2026-11-02T00:00:00.000Z',
+  }) as unknown as JsonlNode;
+
+  it('draws each as a line, worded as the persisted line is', () => {
+    const items = buildModernItems([
+      change('permission', 'acceptEdits'),
+      change('permission', 'auto'),
+      change('effort', 'xhigh'),
+      change('model', 'claude-opus-5-5'),
+    ], createDefaultConfig());
+    expect(items.map((i) => i.kind === 'line' ? `${i.line.title}: ${i.line.detail}` : i.kind)).toEqual([
+      'Permission mode: Accept Edits',
+      'Permission mode: Auto',
+      'Effort: Extra High',
+      'Model: claude-opus-5-5',
+    ]);
+  });
+});
+
+describe('buildModernItems — nothing borrows the Compact card but content', () => {
+  it('draws every shown non-conversation record as a line', () => {
+    const records = [
+      { kind: 'system', subtype: 'api_error', sessionId: '', receivedAt: 'x', raw: { type: 'system', subtype: 'api_error', content: 'Overloaded' } },
+      { kind: 'system', subtype: 'local_command', sessionId: '', receivedAt: 'x', raw: { type: 'system', subtype: 'local_command', content: '<local-command-stdout>Total cost: $1</local-command-stdout>', commandRun: { command: 'cost' } } },
+    ] as unknown as JsonlNode[];
+    // Shown, whatever their default visibility: this is about the form.
+    const cfg = createDefaultConfig();
+    for (const k of ['system.unknown', 'system.local_command']) cfg.kinds[k] = { visibility: 'always' };
+    expect(buildModernItems(records, cfg).map((i) => i.kind)).toEqual(['line', 'line']);
+  });
+});
+
+describe('buildModernItems — record rules', () => {
+  // nested_memory is verbose-only by default: Compact leaves it out.
+  const nested = {
+    kind: 'attachment', sessionId: '', receivedAt: '2026-11-03T00:00:00.000Z',
+    raw: { type: 'attachment', attachment: { type: 'nested_memory', path: '/r/src/CLAUDE.md', content: { path: '/r/src/CLAUDE.md' } } },
+  } as unknown as JsonlNode;
+
+  it('leaves a verbose-only record out under Compact rules (the default)', () => {
+    expect(buildModernItems([nested], createDefaultConfig())).toEqual([]);
+    expect(buildModernItems([nested], createDefaultConfig(), [nested], 'compact')).toEqual([]);
+  });
+
+  it('draws it as a Modern line under Verbose and All rules', () => {
+    for (const rules of ['verbose', 'all'] as const) {
+      const items = buildModernItems([nested], createDefaultConfig(), [nested], rules);
+      expect(items.map((i) => i.kind === 'line' ? i.line.title : i.kind)).toEqual(['Nested memory — src/CLAUDE.md']);
+    }
   });
 });

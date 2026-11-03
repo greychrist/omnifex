@@ -37,15 +37,65 @@ const resultNode = {
 const item = { kind: 'question', key: 'q-1', node, input, resultNode } as ModernItem;
 
 describe('Modern answered question', () => {
-  it('is drawn as the classic answered card', () => {
-    render(<ModernTranscriptItem item={item} live={false} ctx={ctx} />);
-    expect(screen.getByTestId('answered-ask-user-question-card')).toBeInTheDocument();
+  // Drawn as Modern's other record lines are (RecordLine, RecapLine): a Trace
+  // line over an open body under the left rule, not the classic card. The
+  // icon keeps the question kind's purple accent.
+  it('is a Trace line, not the classic answered card', () => {
+    const { container } = render(<ModernTranscriptItem item={item} live={false} ctx={ctx} />);
+    expect(screen.queryByTestId('answered-ask-user-question-card')).toBeNull();
+    expect(container.querySelector('[data-slot="trace"][data-question-line]')).not.toBeNull();
     expect(screen.getByText('2 questions answered')).toBeInTheDocument();
+  });
+
+  it('colours the icon in the question kind\'s purple accent', () => {
+    const { container } = render(<ModernTranscriptItem item={item} live={false} ctx={ctx} />);
+    const icon = container.querySelector('[data-slot="trace-icon"]') as HTMLElement;
+    expect(icon.style.color).toBe('rgb(99, 102, 241)');
+  });
+
+  // The title and the rule beside the answers wear the same purple. Inline,
+  // because the unlayered `* { border-color }` reset beats the utilities.
+  it('colours the title and the left rule in that purple too', () => {
+    const { container } = render(<ModernTranscriptItem item={item} live={false} ctx={ctx} />);
+    expect((screen.getByText('2 questions answered') as HTMLElement).style.color).toBe('rgb(99, 102, 241)');
+    const rule = container.querySelector('[data-question-body]') as HTMLElement;
+    expect(rule.style.borderLeftColor).toBe('rgb(99, 102, 241)');
+    // A hairline: a solid purple at 1px read heavier than the grey 1px rules.
+    expect(rule.style.borderLeftWidth).toBe('0.5px');
+    expect(rule.style.borderLeftStyle).toBe('solid');
+  });
+
+  it('lists each question with its answer, open under the rule', () => {
+    render(<ModernTranscriptItem item={item} live={false} ctx={ctx} />);
+    expect(screen.getByText('Add the review task?')).toBeInTheDocument();
+    expect(screen.getByText('Create the tickets now?')).toBeInTheDocument();
+    expect(screen.getByText('Show me first')).toBeInTheDocument();
+    expect(screen.getByText('Your task')).toBeInTheDocument();
+  });
+
+  it('says "Question answered" for one', () => {
+    const one = { ...item, input: { questions: [input.questions[1]] } } as ModernItem;
+    render(<ModernTranscriptItem item={one} live={false} ctx={ctx} />);
+    expect(screen.getByText('Question answered')).toBeInTheDocument();
   });
 
   it('shows an answer containing a comma as picked, not as a typed answer', () => {
     render(<ModernTranscriptItem item={item} live={false} ctx={ctx} />);
     expect(screen.getByText('Yes, add it (Recommended)')).toBeInTheDocument();
-    expect(screen.queryByText('Typed answer')).toBeNull();
+    expect(screen.queryByText(/^Other:/)).toBeNull();
+  });
+
+  it('marks a typed Other answer', () => {
+    const typed = {
+      ...item,
+      input: { questions: [input.questions[1]] },
+      resultNode: {
+        kind: 'user',
+        raw: { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'tu1',
+          content: 'Your questions have been answered: "Create the tickets now?"="Only RTR-15" notes: User selected Other: "Only RTR-15". You can now continue.' }] } },
+      },
+    } as unknown as ModernItem;
+    render(<ModernTranscriptItem item={typed} live={false} ctx={ctx} />);
+    expect(screen.getByText('Other: Only RTR-15')).toBeInTheDocument();
   });
 });

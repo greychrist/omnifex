@@ -270,6 +270,9 @@ const SYSTEM_SUBTYPES: ReadonlySet<SystemSubtype> = new Set<SystemSubtype>([
   'model_fallback',
   'model_refusal_fallback',
   'model_refusal_no_fallback',
+  // CLI >= 2.1.317: a full disk or quota lost transcript / ~/.claude.json
+  // writes. Stream-only, once, as the CLI exits.
+  'session_writes_lost',
   'model_consent_fallback',
   'error_during_execution',
   'background_tasks_changed',

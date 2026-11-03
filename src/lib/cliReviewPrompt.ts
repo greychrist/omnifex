@@ -88,9 +88,11 @@ grep, a file read or a transcript behind it.
      literal, \`subtype:"…"\`, \`hook_event_name\`, \`control_*\` envelopes, the
      SDK's control requests, CLI flags, \`origin.kind\` values, the
      \`can_use_tool\` payload keys, every object key, the stream-json schemas'
-     \`.describe()\` strings, and the \`/usage\` anchors;
-   - **installed vs OmniFex**: record types we would draw as
-     "Unrecognized record", hook events missing from \`HOOK_EVENTS\`, control
+     \`.describe()\` strings, the \`system\` subtypes, and the \`/usage\`
+     anchors;
+   - **installed vs OmniFex**: record types and \`system\` subtypes we
+     would draw as "Unrecognized record" (subtypes already judged not to
+     reach us sit in \`UNDRAWN_SYSTEM_SUBTYPES\` in the script), hook events missing from \`HOOK_EVENTS\`, control
      subtypes we send and flags we pass that the binary no longer has, and
      SDK requests we never use.
 
@@ -126,12 +128,17 @@ grep, a file read or a transcript behind it.
      card, so a new context source disappears silently. They show up in the
      \`type:"…"\` diff; decide whether \`src/lib/contextLedger.ts\`
      (\`IN_SCOPE\`, \`summariseContextAttachment\`) should take them.
-   - **New \`system\` subtypes.** The coverage half checks record \`type\`s
-     only. A \`type:"system"\` frame whose subtype is missing from
-     \`src/lib/jsonlClassifier.ts\` (\`SYSTEM_SUBTYPES\`) draws an orange
-     "Unrecognized record: system" card when it reaches stdout. Every new
-     line in the \`subtype:"…"\` diff needs its emitter read: does it sit on a
-     \`type:"system"\` frame, and is it written to a stream-json host?
+   - **New \`system\` subtypes.** The coverage half lists each one that
+     \`src/lib/jsonlClassifier.ts\` (\`SYSTEM_SUBTYPES\`) doesn't know. It
+     can't tell whether one reaches us. Read its emitter: if it is written
+     to a stream-json host, classify it and give it a render (it draws an
+     orange "Unrecognized record: system" card until then). If not, add it
+     to \`UNDRAWN_SYSTEM_SUBTYPES\` in \`scripts/cli-review-diff.ts\`, with
+     why.
+   - **New drawn records in the Modern format.** Anything the classifier
+     learns and \`src/lib/modernGrouping.ts\` (\`buildModernItems\`) doesn't
+     model becomes an \`other\` item, which Modern draws as a Compact card.
+     Decide whether it needs a Modern form (\`RecapLine\`, \`NoticeLine\`).
    - **New CLI → host control requests.** \`electron/services/agents/claude-cli-engine.ts\`
      answers unknown ones with an error, so they don't stall a session.
      But a new one may be a capability the CLI now expects a host to serve.

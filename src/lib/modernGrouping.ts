@@ -11,20 +11,32 @@
  *   own item and absorbs its result record.
  * - Notifications and the interrupt marker are `notice` lines; a stop shows
  *   once, whether as the live notification, the persisted marker, or both.
- * - Records Compact hides are left out — Modern has no hidden-events cards.
+ *   Lost writes on a full disk (`session_writes_lost`) are an error notice.
+ * - A recap — the CLI's away summary or `/recap`'s output — is a `recap`
+ *   item: prose under a Recap line, not the Compact card.
+ * - The instruction files the CLI loaded are one folded `instructions` line.
+ * - Every other non-conversation record — a mode, effort or model change, a
+ *   slash command's output, a system or attachment record, an unrecognized
+ *   one — is a `line` (modernLines.ts): a Trace line, as the recap is.
+ * - Records the chosen rules hide (Compact's unless Settings › Modern › Show
+ *   records like says Verbose or All) are left out — no hidden-events cards.
  *   The one it reads first: `thinking_tokens`, whose estimate goes on the
  *   thought it measured.
- * - Anything else is `other`, drawn as Compact draws a shown row.
+ * - Anything else — conversation content Modern does not model, such as an
+ *   assistant record of only server-tool or image blocks — is `other`,
+ *   drawn as Compact draws a shown row.
  *
  * Pure, one pass, and keyed by node identity (`rowKeyOf`), so appending a
  * record never re-keys the items before it.
  */
 import type { JsonlNode } from '@/types/jsonl';
-import type { MessageRenderingConfig } from './messageRenderingConfig';
+import type { MessageRenderingConfig, ModernRecordRules } from './messageRenderingConfig';
 import { isMessageFullyHidden } from './compactGrouping';
 import { isMainPrompt } from './transcriptStepper';
 import { rowKeyOf } from './rowKey';
-import { commandEnvelopeKind, parseCommandEnvelope } from './commandEnvelope';
+import { commandEnvelopeKind, isRecapCommandRecord, localCommandOutput, parseCommandEnvelope } from './commandEnvelope';
+import { sessionWritesLostText } from './sessionWritesLost';
+import { modernLineOf, type ModernLine } from './modernLines';
 import { originInjectedKind } from './messageKind';
 import { formatTokens } from './contextPressure';
 import { shortDuration } from './modernSteps';
@@ -77,9 +89,16 @@ export type ModernItem =
       summary?: string;
       summaryNode?: JsonlNode;
     }
+  | { kind: 'recap'; key: string; node: JsonlNode; text: string }
+  | { kind: 'instructions'; key: string; node: JsonlNode; files: InstructionFile[] }
+  | { kind: 'line'; key: string; node: JsonlNode; line: ModernLine }
   | { kind: 'other'; key: string; node: JsonlNode };
 
 export interface PromptImage { src: string; mediaType: string }
+
+/** One file an `instructions` attachment loaded; scope is the CLI's `type`
+ *  (User, Project, Local, …), null when absent. */
+export interface InstructionFile { path: string; scope: string | null }
 
 export type NoticeTone = 'stop' | 'error' | 'warn' | 'info';
 
@@ -88,6 +107,7 @@ const STOP_TEXT = 'Response interrupted';
 
 function noticeOf(node: JsonlNode): { tone: NoticeTone; text: string } | null {
   if (node.kind === 'user' && node.userKind === 'interrupt') return { tone: 'stop', text: STOP_TEXT };
+  if (node.kind === 'system' && node.subtype === 'session_writes_lost') return { tone: 'error', text: sessionWritesLostText(node.raw) };
   if (node.kind !== 'system' || node.subtype !== 'notification') return null;
   const raw = node.raw as { notification_type?: unknown; title?: unknown; body?: unknown };
   const type = String(raw.notification_type ?? '');
@@ -155,6 +175,29 @@ function promptOf(node: JsonlNode): PromptShape | null {
   return images.length > 0 ? { text, images } : { text };
 }
 
+/** A recap's prose: the away summary's `content`, or `/recap`'s output. */
+function recapOf(node: JsonlNode): string | null {
+  if (node.kind !== 'system') return null;
+  const content = (node.raw as { content?: unknown }).content;
+  if (typeof content !== 'string') return null;
+  if (node.subtype === 'away_summary') return content.trim() || null;
+  if (node.subtype === 'local_command' && isRecapCommandRecord(node.raw)) return localCommandOutput(content).trim() || null;
+  return null;
+}
+
+/** The files an `instructions` attachment loaded; null for any other record. */
+function instructionFilesOf(node: JsonlNode): InstructionFile[] | null {
+  if (node.kind !== 'attachment') return null;
+  const att = (node.raw as { attachment?: { type?: unknown; files?: unknown } }).attachment;
+  if (att?.type !== 'instructions' || !Array.isArray(att.files)) return null;
+  const files: InstructionFile[] = [];
+  for (const f of att.files as { path?: unknown; type?: unknown }[]) {
+    if (!f || typeof f.path !== 'string' || !f.path) continue;
+    files.push({ path: f.path, scope: typeof f.type === 'string' && f.type ? f.type : null });
+  }
+  return files.length > 0 ? files : null;
+}
+
 /** The boundary's figures, as the classic card writes them, minus its title. */
 function compactionDetail(node: JsonlNode): string {
   const meta = ((node as { raw?: unknown }).raw as { compactMetadata?: { trigger?: unknown; preTokens?: unknown; postTokens?: unknown; durationMs?: unknown } } | undefined)?.compactMetadata ?? {};
@@ -180,7 +223,12 @@ export function buildModernItems(
   /** The whole transcript, for pairing tools with results: the display
    *  filter drops tool-result rows, which other formats reach by lookup. */
   allMessages: JsonlNode[] = messages,
+  /** Which format's rules leave records out (Settings › Modern › Show
+   *  records like). Under Verbose and All nothing more is left out here: the
+   *  caller has already dropped Never kinds (All reveals them first). */
+  rules: ModernRecordRules = 'compact',
 ): ModernItem[] {
+  const hidden = (node: JsonlNode) => rules === 'compact' && isMessageFullyHidden(node, messages, config);
   // Every tool result, by the tool use it answers.
   const results = new Map<string, { node: JsonlNode; text: string; error: boolean }>();
   for (const node of allMessages) {
@@ -344,6 +392,20 @@ export function buildModernItems(
       continue;
     }
 
+    const files = instructionFilesOf(node);
+    if (files !== null && !hidden(node)) {
+      closeWork();
+      items.push({ kind: 'instructions', key: `i-${nodeKey}`, node, files });
+      continue;
+    }
+
+    const recap = recapOf(node);
+    if (recap !== null && !hidden(node)) {
+      closeWork();
+      items.push({ kind: 'recap', key: `r-${nodeKey}`, node, text: recap });
+      continue;
+    }
+
     const prompt = promptOf(node);
     if (prompt !== null) {
       closeWork();
@@ -351,10 +413,14 @@ export function buildModernItems(
       continue;
     }
 
-    // Hidden in Compact: left out. Anything else is drawn as Compact draws it.
-    if (isMessageFullyHidden(node, messages, config)) continue;
+    // Hidden under the chosen rules: left out. Anything else is a line, or
+    // drawn as Compact draws it.
+    if (hidden(node)) continue;
     closeWork();
-    items.push({ kind: 'other', key: `o-${nodeKey}`, node });
+    const line = modernLineOf(node, messages, config);
+    items.push(line
+      ? { kind: 'line', key: `l-${nodeKey}`, node, line }
+      : { kind: 'other', key: `o-${nodeKey}`, node });
   }
   return items;
 }
@@ -373,12 +439,15 @@ function sameItem(a: ModernItem, b: ModernItem): boolean {
   if (a.kind !== b.kind || a.key !== b.key) return false;
   switch (a.kind) {
     case 'work': return b.kind === 'work' && sameEntries(a.entries, b.entries);
-    case 'notice': return a.node === (b as typeof a).node && a.text === (b as typeof a).text;
+    case 'notice':
+    case 'recap': return a.node === (b as typeof a).node && a.text === (b as typeof a).text;
     case 'question':
     case 'plan': return a.node === (b as typeof a).node && a.resultNode === (b as typeof a).resultNode;
     case 'prompt':
     case 'text': return a.node === (b as typeof a).node && a.text === (b as typeof a).text;
     case 'compaction': return a.node === (b as typeof a).node && a.summaryNode === (b as typeof a).summaryNode;
+    case 'instructions':
+    case 'line': return a.node === (b as typeof a).node;
     case 'other': return a.node === (b as typeof a).node;
   }
 }

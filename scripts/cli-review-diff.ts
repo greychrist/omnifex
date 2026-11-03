@@ -76,6 +76,20 @@ export function extractMergeMap(text: string): string[] {
   return [];
 }
 
+/**
+ * Every `system` subtype the bundle declares: the stream-json zod schemas
+ * (`type:C("system"),subtype:C("x")`, the factory name minified) and the
+ * frames it builds inline (`{type:"system",subtype:"x"`). The plain
+ * `subtype:"…"` set mixes in result, control and attachment subtypes; this
+ * one is only what can reach `classifySystem`.
+ */
+export function extractSystemSubtypes(text: string): string[] {
+  return uniqueSorted([
+    ...text.matchAll(/type:[A-Za-z_$][\w$]*\("system"\),subtype:[A-Za-z_$][\w$]*\("([a-z_]+)"\)/g),
+    ...text.matchAll(/type:"system",subtype:"([a-z_]+)"/g),
+  ].map((m) => m[1]));
+}
+
 export const EXTRACTORS: Extractor[] = [
   { name: 'merge-strategy map', extract: extractMergeMap },
   // Every short `type:"…"` literal. Broad on purpose: attachment subtypes
@@ -83,6 +97,7 @@ export const EXTRACTORS: Extractor[] = [
   // reach the merge map, so this is where they show up.
   { name: 'type literals', extract: (t) => all(/\btype:"([a-z][a-z0-9_-]{2,40})"/g, t) },
   { name: 'subtype literals', extract: (t) => all(/\bsubtype:"([a-z][a-z0-9_]*)"/g, t) },
+  { name: 'system subtypes', extract: extractSystemSubtypes },
   { name: 'hook_event_name', extract: (t) => all(/hook_event_name:"([A-Za-z]+)"/g, t) },
   { name: 'control envelopes', extract: (t) => all(/type:"(control_[a-z_]+)"/g, t) },
   { name: 'SDK control requests', extract: (t) => all(/this\.request\(\{subtype:"([a-z_]+)"/g, t) },
@@ -133,6 +148,8 @@ export interface Inventory {
   cliFlagsPassed: string[];
   /** True when OmniFex would draw this record type as an "Unrecognized record" card. */
   isUnrecognizedRecord(type: string): boolean;
+  /** True when a `system` frame of this subtype would draw "Unrecognized record: system". */
+  isUnrecognizedSystemSubtype(subtype: string): boolean;
 }
 
 function walk(dir: string, out: string[] = []): string[] {
@@ -151,6 +168,40 @@ function walk(dir: string, out: string[] = []): string[] {
  * holds each to a branch in StreamMessage.tsx.
  */
 export const RENDERED_FROM_UNKNOWN = ['summary'];
+
+/**
+ * `system` subtypes the binary declares that OmniFex does not classify, each
+ * judged not to reach a local stream-json host as a drawn row. Without this
+ * baseline the check below lists ~35 names every review and gets skimmed;
+ * with it, only a subtype no review has judged shows up.
+ *
+ * Baselined at 2.1.317 from the binary, the transcripts (none of these is on
+ * disk under either account) and the absence of any reported "Unrecognized
+ * record: system" card. A judgment, not a proof: if one of these ever draws
+ * a card, move it into SYSTEM_SUBTYPES (src/lib/jsonlClassifier.ts) and give
+ * it a render. A classified subtype must not stay here; the test holds that.
+ */
+export const UNDRAWN_SYSTEM_SUBTYPES: Readonly<Record<string, string>> = {
+  // Background-task lifecycle: dropped by messageFilters before render.
+  task_started: 'filtered', task_updated: 'filtered', task_progress: 'filtered',
+  task_notification: 'filtered', task_summary: 'filtered',
+  // Opt-in SDK host events (session state, retries, attachments, memory,
+  // plugins), none of which a default stream-json spawn has been seen to send.
+  session_state_changed: 'sdk opt-in', api_retry: 'sdk opt-in', files_persisted: 'sdk opt-in',
+  file_attachments_missing: 'sdk opt-in', memory_recall: 'sdk opt-in', memory_saved: 'sdk opt-in',
+  plugin_install: 'sdk opt-in', local_command_output: 'sdk opt-in', post_turn_summary: 'sdk opt-in',
+  control_request_progress: 'sdk opt-in', permission_retry: 'sdk opt-in',
+  inherited_asks_settled: 'sdk opt-in', instruction_size_warning: 'sdk opt-in',
+  agents_killed: 'sdk opt-in', thinking: 'sdk opt-in', file_snapshot: 'sdk opt-in',
+  // Cloud sessions, Remote Control bridges, self-hosted runners and workers.
+  bridge_state: 'remote', bridge_status: 'remote', cloud_session_delta: 'remote',
+  cloud_session_status: 'remote', code_change_published: 'remote', mirror_error: 'remote',
+  peer_message_hold: 'remote', scheduled_task_fire: 'remote', tool_host_result: 'remote',
+  turn_handoff_available: 'remote', turn_preempted: 'remote', upgrade_relay_marker: 'remote',
+  vcs_state_changed: 'remote', worker_shutting_down: 'remote', checkpoint_done: 'remote',
+  rewind_stand_in: 'remote', turn_began_before_init: 'remote', turn_starting: 'remote',
+  placed: 'remote',
+};
 
 /** Flags only the Claude CLI takes — a file holding one of these spawns `claude`. */
 const CLAUDE_SPAWN_MARKERS = ["'--output-format'", "'--mcp-config'", "'--setting-sources'", "'--permission-prompt-tool'"];
@@ -185,6 +236,8 @@ export async function loadInventory(repoRoot: string): Promise<Inventory> {
       !CLI_SIDECHANNEL_RECORD_TYPES.has(type) &&
       !RENDERED_FROM_UNKNOWN.includes(type) &&
       classifyJsonlLine({ type, timestamp: '2026-01-01T00:00:00.000Z', sessionId: 'probe' })?.kind === 'unknown',
+    isUnrecognizedSystemSubtype: (subtype) =>
+      classifyJsonlLine({ type: 'system', subtype, timestamp: '2026-01-01T00:00:00.000Z', session_id: 'probe', uuid: 'probe' })?.kind === 'unknown',
   };
 }
 
@@ -197,6 +250,7 @@ export interface CoverageFinding {
 
 export function coverage(text: string, inv: Inventory): CoverageFinding[] {
   const hooks = all(/hook_event_name:"([A-Za-z]+)"/g, text);
+  const systemSubtypes = extractSystemSubtypes(text);
   const sdkRequests = all(/this\.request\(\{subtype:"([a-z_]+)"/g, text);
   return [
     {
@@ -210,6 +264,16 @@ export function coverage(text: string, inv: Inventory): CoverageFinding[] {
         .filter(([, strategy]) => strategy !== 'transcript')
         .map(([type]) => type)
         .filter((t) => inv.isUnrecognizedRecord(t)),
+    },
+    {
+      check: 'system subtypes OmniFex would draw as Unrecognized',
+      meaning: 'read the emitter: if a local stream-json host gets it, add it to SYSTEM_SUBTYPES (src/lib/jsonlClassifier.ts) with a render; if not, baseline it in UNDRAWN_SYSTEM_SUBTYPES with why',
+      items: systemSubtypes.filter((s) => !(s in UNDRAWN_SYSTEM_SUBTYPES) && inv.isUnrecognizedSystemSubtype(s)),
+    },
+    {
+      check: 'undrawn-subtype baseline entries the binary no longer has',
+      meaning: 'stale: drop them from UNDRAWN_SYSTEM_SUBTYPES',
+      items: Object.keys(UNDRAWN_SYSTEM_SUBTYPES).filter((s) => !systemSubtypes.includes(s)).sort(),
     },
     {
       check: 'hook events missing from HOOK_EVENTS',

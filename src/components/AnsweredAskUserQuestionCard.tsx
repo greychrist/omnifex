@@ -242,7 +242,7 @@ export function parseQuestions(input: unknown): QuestionShape[] {
  * stream record exposes the free-text answer. The regex stays loose enough
  * to tolerate quote-mark variations the user might paste.
  */
-function extractOtherText(note: string | undefined): string | null {
+export function extractOtherText(note: string | undefined): string | null {
   if (!note) return null;
   const m = /User selected Other:\s*["“”]?(.*?)["“”]?$/.exec(note);
   if (!m) return null;

@@ -176,6 +176,7 @@ export type SystemSubtype =
   | 'model_fallback'
   | 'model_refusal_fallback'
   | 'model_refusal_no_fallback'
+  | 'session_writes_lost'
   | 'model_consent_fallback'
   | 'error_during_execution'
   // Snapshot of the session's running background tasks, re-emitted whenever

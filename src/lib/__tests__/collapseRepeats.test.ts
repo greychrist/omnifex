@@ -133,3 +133,54 @@ describe('collapseRepeats — persistence', () => {
     expect(reloaded.kinds['system.thinking_tokens']).toEqual({ collapseRepeats: false });
   });
 });
+
+// ── re-stamped bookkeeping (Compact and Modern only) ───────────────────────
+// The CLI re-writes the current permission mode and custom title each time it
+// saves session metadata: one real rename showed three "Renamed to" rows, one
+// unchanged mode five "Permission mode: Auto" rows. Compact and Modern keep
+// the first and each real change; Verbose and All show every record.
+describe('collapseRepeats — permission-mode and custom-title re-stamps', () => {
+  const mode = (permissionMode: string): JsonlNode =>
+    ({ kind: 'permission-mode', sessionId: '', raw: { type: 'permission-mode', permissionMode } }) as unknown as JsonlNode;
+  const renamed = (customTitle: string): JsonlNode =>
+    ({ kind: 'custom-title', sessionId: '', raw: { type: 'custom-title', customTitle } }) as unknown as JsonlNode;
+  const modes = (nodes: JsonlNode[]) => nodes.filter((n) => n.kind === 'permission-mode').map((n) => (n.raw as { permissionMode: string }).permissionMode);
+  const titles = (nodes: JsonlNode[]) => nodes.filter((n) => n.kind === 'custom-title').map((n) => (n.raw as { customTitle: string }).customTitle);
+
+  const stream = [
+    mode('auto'), userText('a'), mode('auto'), assistantText('b'), mode('acceptEdits'), mode('acceptEdits'), mode('auto'),
+    renamed('Working on Jira App'), userText('c'), renamed('Working on Jira App'), renamed('Jira app v2'),
+  ];
+
+  it('keeps the first and each change in Compact and Modern, across other records', () => {
+    for (const viewMode of ['compact', 'modern'] as const) {
+      const out = collapseRepeats(stream, createDefaultConfig(), viewMode);
+      expect(modes(out)).toEqual(['auto', 'acceptEdits', 'auto']);
+      expect(titles(out)).toEqual(['Working on Jira App', 'Jira app v2']);
+      // Conversation is untouched.
+      expect(out.filter((n) => n.kind === 'user' || n.kind === 'assistant')).toHaveLength(3);
+    }
+  });
+
+  it('shows every record in Verbose and All', () => {
+    for (const viewMode of ['verbose', 'all'] as const) {
+      expect(collapseRepeats(stream, createDefaultConfig(), viewMode)).toBe(stream);
+    }
+  });
+
+  it('honours the kind\'s Repeats › Show all', () => {
+    const cfg = createDefaultConfig();
+    cfg.kinds = { ...cfg.kinds, 'permission-mode': { collapseRepeats: false } };
+    expect(modes(collapseRepeats(stream, cfg, 'compact'))).toEqual(['auto', 'auto', 'acceptEdits', 'acceptEdits', 'auto']);
+  });
+
+  it('declares the rule on both kinds, so Appearance offers the Repeats row', () => {
+    expect(KIND_REGISTRY['permission-mode'].collapse).toEqual({ mode: 'onChange', field: 'permissionMode', onlyIn: ['compact', 'modern'] });
+    expect(KIND_REGISTRY['custom-title'].collapse).toEqual({ mode: 'onChange', field: 'customTitle', onlyIn: ['compact', 'modern'] });
+  });
+
+  it('leaves the existing system rules on in every format', () => {
+    const burst = [thinkingTokens(10), thinkingTokens(20)];
+    expect(tokensOf(collapseRepeats(burst, createDefaultConfig(), 'all'))).toEqual([20]);
+  });
+});

@@ -6,9 +6,13 @@
 // value is derived across two kinds (a custom title outranks the AI one), so
 // that rule lives with the tab label's in sessionTitle.ts.
 //
-// Only `system` messages carry rules today, and a run is bounded by the first
-// non-system message. Other system messages do not end a run: `status` pings
-// interleave with `thinking_tokens` and must not split one burst in two.
+// A `latestInRun` run is bounded by the first non-system message. Other
+// system messages do not end a run: `status` pings interleave with
+// `thinking_tokens` and must not split one burst in two. `onChange` rules
+// compare across the whole transcript, so they also cover the CLI's
+// re-stamped bookkeeping records (`permission-mode`, `custom-title`), which
+// it writes again on every metadata save — those rules name the formats they
+// apply in (`onlyIn`), leaving Verbose and All the full record stream.
 //
 // `thinking_tokens` is the rule's origin: `estimated_tokens` is the burst's
 // running total, so the last ping states it and every earlier one is a
@@ -18,11 +22,13 @@
 
 import type { JsonlNode } from "@/types/jsonl";
 import { classifyStandaloneKind } from "./messageKind";
-import { KIND_REGISTRY, resolveKind, type MessageRenderingConfig } from "./messageRenderingConfig";
+import { KIND_REGISTRY, resolveKind, type MessageRenderingConfig, type ViewMode } from "./messageRenderingConfig";
 
 export function collapseRepeats(
   messages: JsonlNode[],
   config: MessageRenderingConfig,
+  /** The format drawing them; a rule with `onlyIn` skips the others. */
+  viewMode?: ViewMode,
 ): JsonlNode[] {
   const drop = new Set<number>();
   // latestInRun: kind id → index of the newest message in the open run.
@@ -31,15 +37,16 @@ export function collapseRepeats(
   const lastValue = new Map<string, string>();
 
   messages.forEach((msg, i) => {
-    if (msg.kind !== "system") {
-      pending.clear();
-      return;
-    }
+    const isSystem = msg.kind === "system";
+    if (!isSystem) pending.clear();
+    if (!isSystem && msg.kind !== "permission-mode" && msg.kind !== "custom-title") return;
     const id = classifyStandaloneKind(msg, messages);
     const rule = id ? KIND_REGISTRY[id]?.collapse : undefined;
     if (!id || !rule || resolveKind(config, id).collapseRepeats === false) return;
+    if (rule.mode === "onChange" && rule.onlyIn && !(viewMode && rule.onlyIn.includes(viewMode))) return;
 
     if (rule.mode === "latestInRun") {
+      if (!isSystem) return;
       const prev = pending.get(id);
       if (prev !== undefined) drop.add(prev);
       pending.set(id, i);

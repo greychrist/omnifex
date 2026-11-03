@@ -6,6 +6,8 @@ import {
   RotateCcw,
 } from "lucide-react";
 import { originInjectedKind } from "@/lib/messageKind";
+import { sessionWritesLostText } from "@/lib/sessionWritesLost";
+import { bookkeepingText, progressText, rateLimitText, streamEnvelopeText, systemRecordText } from "@/lib/recordText";
 import { commandEnvelopeKind, isRecapCommandRecord, localCommandOutput, parseCommandEnvelope } from "@/lib/commandEnvelope";
 import { parseTaskNotification } from "@/lib/taskNotification";
 import { classifyBlockKind, isBlockHiddenInCompact, isBlockNeverShown, isSystemContextText, deriveSystemContextLabel } from "@/lib/blockKind";
@@ -16,7 +18,6 @@ import { SubagentReturnedMarker } from "@/components/SubagentReturnedMarker";
 import { isSubagentDispatch } from "@/lib/subagentDispatch";
 import { extractResendPayload } from "@/lib/extractResendPayload";
 import { formatDurationMs } from "@/lib/duration";
-import { formatTokens } from "@/lib/contextPressure";
 import { DownloadableImage } from "@/components/DownloadableImage";
 import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
 import { swatchFor } from "@/lib/accentStyle";
@@ -27,7 +28,7 @@ import { getClaudeSyntaxTheme } from "@/lib/claudeSyntaxTheme";
 import { buildMarkdownComponents } from "@/lib/markdownComponents";
 import { useTheme } from "@/hooks";
 import { useRenderProfile } from "@/hooks/useRenderProfile";
-import type { CliResultRaw, JsonlNode, SystemRaw } from "@/types/jsonl";
+import type { JsonlNode } from "@/types/jsonl";
 import type { MessageContentBlock } from "@/types/claudeStream";
 import {
   asToolInput,
@@ -116,76 +117,6 @@ const ResendExtra: React.FC<{
 
 
 // ─── Feedback drafts ────────────────────────────────────────────────────────
-
-/**
- * Body line for a `system:feedback_draft_queued` card.
- *
- * The CLI's SendFeedback tool writes the draft to
- * `<CLAUDE_CONFIG_DIR>/feedback/drafts/` and sends only display fields over the
- * wire — there is no `content`/`body`/`message` field for the generic system
- * branch to pick up, and the model is told not to mention the draft in the
- * transcript. Without this the card would be the title alone, or nothing.
- */
-function feedbackDraftBody(raw: SystemRaw): string {
-  const head = [raw.draft_type, raw.title].filter(Boolean).join(' · ');
-  const preview = raw.details_preview?.trim();
-  return preview ? `${head}\n${preview}` : head;
-}
-
-/**
- * Body line for a mod's `system:ui_log` / `system:ui_toast`: the plugin's name
- * and its text, the way the REPL shows them under the plugin's name. `text`
- * is plain text by contract ("draw it as a text node, never as markup").
- */
-function modLineBody(raw: SystemRaw): string {
-  const { plugin, text } = raw as unknown as { plugin?: unknown; text?: unknown };
-  const body = typeof text === 'string' ? text : '';
-  return typeof plugin === 'string' && plugin ? `${plugin} · ${body}` : body;
-}
-
-/**
- * Body line for a `system:compact_boundary` marker: the CLI's own line, then
- * the trigger, the token drop and the time, from whichever metadata is there.
- */
-function compactBoundaryBody(raw: SystemRaw): string {
-  const meta = raw.compactMetadata ?? {};
-  const parts = [raw.content || 'Conversation compacted'];
-  if (meta.trigger) parts.push(meta.trigger);
-  if (typeof meta.preTokens === 'number' && typeof meta.postTokens === 'number') {
-    parts.push(`${formatTokens(meta.preTokens)} → ${formatTokens(meta.postTokens)} tokens`);
-  }
-  if (typeof meta.durationMs === 'number') parts.push(formatDurationMs(meta.durationMs));
-  return parts.join(' · ');
-}
-
-/** Body line for the stream's turn-end envelope: outcome, duration, model calls. */
-function cliResultBody(raw: CliResultRaw): string {
-  const parts: string[] = [];
-  if (raw.subtype) parts.push(raw.subtype);
-  if (typeof raw.duration_ms === 'number') parts.push(formatDurationMs(raw.duration_ms));
-  if (typeof raw.num_turns === 'number') parts.push(`${raw.num_turns} turn${raw.num_turns === 1 ? '' : 's'}`);
-  return parts.join(' · ');
-}
-
-/**
- * Body line for a `system:stop_hook_summary` card: each Stop hook by file name
- * and duration, then any errors and whether one blocked the turn from ending.
- * The record has no narrative field, so the generic branch would show nothing.
- */
-function stopHookSummaryBody(raw: SystemRaw): string {
-  const hooks = (raw.hookInfos ?? [])
-    .map((h) => {
-      const name = (h.command ?? '').split('/').pop() || 'hook';
-      return typeof h.durationMs === 'number' ? `${name} · ${h.durationMs}ms` : name;
-    })
-    .join(', ');
-  const errors = raw.hookErrors?.length ?? 0;
-  return [
-    hooks,
-    errors > 0 && `${errors} ${errors === 1 ? 'error' : 'errors'}`,
-    raw.preventedContinuation && (raw.stopReason ? `blocked stop: ${raw.stopReason}` : 'blocked stop'),
-  ].filter(Boolean).join(' · ');
-}
 
 // ─── Completion band ────────────────────────────────────────────────────────
 
@@ -323,32 +254,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, lookups
       message.kind === 'queue-operation' ||
       message.kind === 'file-history-snapshot'
     ) {
-      const body = (() => {
-        switch (message.kind) {
-          case 'permission-mode':
-            return `Permission → ${message.raw.permissionMode}`;
-          case 'last-prompt':
-            return 'Bookmarked prompt';
-          case 'ai-title':
-            return `Session titled "${message.raw.aiTitle}"`;
-          case 'custom-title':
-            return `Renamed to "${message.raw.customTitle}"`;
-          case 'queue-operation': {
-            const { operation, reason } = message.raw;
-            const wait = operation === 'dequeue' ? lookups.queueWaitMs : null;
-            // Under a second is the CLI picking the input up at once; only a
-            // real wait behind a running turn is worth a number.
-            const detail = reason
-              ? reason.replace(/_/g, ' ').replace(/\bmid turn\b/, 'mid-turn')
-              : wait !== null && wait >= 1000 ? `waited ${formatDurationMs(wait)}` : null;
-            return `Input queue: ${operation}${detail ? ` · ${detail}` : ''}`;
-          }
-          case 'file-history-snapshot':
-            return message.raw.messageId
-              ? `File snapshot (${message.raw.messageId})`
-              : 'File snapshot';
-        }
-      })();
+      const body = bookkeepingText(message, lookups.queueWaitMs);
       return (
         <MessageFrame streamKind={message.kind} message={message}>
           <span className="text-xs font-mono">{body}</span>
@@ -431,6 +337,16 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, lookups
         );
       }
 
+      // A full disk or quota lost transcript / ~/.claude.json writes (CLI
+      // >= 2.1.317). An error the user has to act on, so the error card.
+      if (message.subtype === 'session_writes_lost') {
+        return (
+          <MessageFrame streamKind="system.api_error" message={message}>
+            <span className="block text-sm whitespace-pre-wrap break-words">{sessionWritesLostText(sysRaw)}</span>
+          </MessageFrame>
+        );
+      }
+
       // Fallback for any other system subtype (compact_boundary, future CLI
       // subtypes, etc.). Route through MessageFrame so Appearance config takes
       // effect.
@@ -449,25 +365,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, lookups
       // stays on disk under <CLAUDE_CONFIG_DIR>/feedback/drafts/ and only the
       // card's display fields cross the wire. Body is `<type> · <title>` plus
       // the preview, so the card says what Claude filed without a round trip.
-      const estimatedTokens = (sysRaw as unknown as { estimated_tokens?: number }).estimated_tokens;
-      const text =
-        subtype === 'thinking_tokens'
-          ? (typeof estimatedTokens === 'number'
-              ? `Thought ~${estimatedTokens.toLocaleString()} tokens`
-              : '')
-          : subtype === 'feedback_draft_queued'
-          ? feedbackDraftBody(sysRaw)
-          : subtype === 'stop_hook_summary'
-          ? stopHookSummaryBody(sysRaw)
-          : subtype === 'compact_boundary'
-          ? compactBoundaryBody(sysRaw)
-          : subtype === 'ui_log' || subtype === 'ui_toast'
-          ? modLineBody(sysRaw)
-          : (sysRaw as unknown as { message?: unknown }).message
-            ?? (sysRaw as unknown as { content?: unknown }).content
-            ?? (sysRaw as unknown as { body?: unknown }).body
-            ?? sysRaw.title
-            ?? '';
+      const text = systemRecordText(sysRaw, subtype);
       const streamKind = lookups.standaloneKind ?? "system.informational";
       // away_summary is a user-facing recap, not diagnostics: prose body
       // (regular font, italic) with no inline subtype label — the card's
@@ -499,21 +397,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, lookups
       // no narrative field: the body is synthesized from `rate_limit_info`
       // (rateLimitType · status [· resets <time>] [· overage rejected]) and
       // degrades to empty when the info block is absent, never crashing.
-      const info = message.raw.rate_limit_info;
-      const segments: string[] = [];
-      if (info) {
-        const head = [info.rateLimitType, info.status].filter(Boolean).join(' · ');
-        if (head) segments.push(head);
-        if (typeof info.resetsAt === 'number') {
-          const time = new Date(info.resetsAt * 1000).toLocaleTimeString([], {
-            hour: 'numeric',
-            minute: '2-digit',
-          });
-          segments.push(`resets ${time}`);
-        }
-        if (info.overageStatus === 'rejected') segments.push('overage rejected');
-      }
-      const text = segments.join(' · ');
+      const text = rateLimitText(message.raw.rate_limit_info);
       const streamKind = lookups.standaloneKind ?? 'system.rate_limit';
       return (
         <MessageFrame streamKind={streamKind} message={message}>
@@ -531,17 +415,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, lookups
       // One generic line for every `data.type` variant: the variant, then its
       // scalar fields. No per-variant layout — the shape has never been seen
       // on disk, so this shows whatever arrives rather than guessing at it.
-      const data = message.raw.data;
-      const variant = typeof data?.type === 'string' ? data.type : null;
-      const fields = data
-        ? Object.entries(data)
-          .filter(([k, v]) => k !== 'type' && v !== null && ['string', 'number', 'boolean'].includes(typeof v))
-          .map(([k, v]) => {
-            const s = String(v);
-            return `${k}=${s.length > 80 ? `${s.slice(0, 79)}…` : s}`;
-          })
-          .join(' · ')
-        : '';
+      const { variant, fields } = progressText(message.raw.data);
       return (
         <MessageFrame streamKind={lookups.standaloneKind ?? 'system.progress'} message={message}>
           <span className="text-xs font-mono opacity-70">{variant ? `progress · ${variant}` : 'progress'}</span>
@@ -553,9 +427,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, lookups
     }
 
     if (message.kind === 'cli-stream-init' || message.kind === 'cli-stream-result') {
-      const text = message.kind === 'cli-stream-init'
-        ? [message.raw.model, message.raw.cwd].filter(Boolean).join(' · ')
-        : cliResultBody(message.raw);
+      const text = streamEnvelopeText(message);
       return (
         <MessageFrame streamKind={message.kind === 'cli-stream-init' ? 'system.init' : 'system.result'} message={message}>
           <span className="text-xs font-mono">{text}</span>

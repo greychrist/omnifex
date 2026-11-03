@@ -5,6 +5,8 @@ import * as path from 'node:path';
 import {
   EXTRACTORS,
   RENDERED_FROM_UNKNOWN,
+  UNDRAWN_SYSTEM_SUBTYPES,
+  extractSystemSubtypes,
   USAGE_ANCHORS,
   coverage,
   diffSets,
@@ -34,6 +36,7 @@ function fakeBundle(extra = ''): string {
     'z.option("--resume <id>");z.option("-p, --print");',
     'q.describe("A host wrapping keyboard input must stamp it");',
     'r={subtype:"init"};r={subtype:"success"};',
+    'w={type:"system",subtype:"compact_boundary"};',
     'u={origin:{kind:"human"}};u={origin:{kind:"sdk"}};',
     'c={type:"control_request",request:{subtype:"can_use_tool",tool_name:t,input:i,...s&&{permission_suggestions:s}}};',
     extra,
@@ -118,6 +121,20 @@ describe('RENDERED_FROM_UNKNOWN', () => {
   });
 });
 
+describe('extractSystemSubtypes', () => {
+  it('reads both the schema form and the emitted-object form', () => {
+    const t = 'a=u({type:C("system"),subtype:C("from_schema"),x:1});b={type:"system",subtype:"from_emit",y:2};c={type:"user",subtype:"not_system"}';
+    expect(extractSystemSubtypes(t)).toEqual(['from_emit', 'from_schema']);
+  });
+});
+
+describe('UNDRAWN_SYSTEM_SUBTYPES', () => {
+  it('holds only subtypes OmniFex does not classify (a classified one belongs in SYSTEM_SUBTYPES alone)', async () => {
+    const inv = await loadInventory(REPO);
+    for (const s of Object.keys(UNDRAWN_SYSTEM_SUBTYPES)) expect([s, inv.isUnrecognizedSystemSubtype(s)]).toEqual([s, true]);
+  });
+});
+
 describe('loadInventory (bound to the real code)', () => {
   it('finds what OmniFex sends and passes, wherever it is sent from', async () => {
     const inv = await loadInventory(REPO);
@@ -135,6 +152,9 @@ describe('loadInventory (bound to the real code)', () => {
     expect(inv.isUnrecognizedRecord('user')).toBe(false);
     expect(inv.isUnrecognizedRecord('summary')).toBe(false);
     expect(inv.isUnrecognizedRecord('brand-new-record')).toBe(true);
+    expect(inv.isUnrecognizedSystemSubtype('compact_boundary')).toBe(false);
+    expect(inv.isUnrecognizedSystemSubtype('init')).toBe(false);
+    expect(inv.isUnrecognizedSystemSubtype('brand_new_subtype')).toBe(true);
   });
 });
 
@@ -154,6 +174,15 @@ describe('coverage', () => {
     // `set_model` is catalogued; a request the catalog has never classified
     // is what a review must decide on.
     expect(findings['SDK control requests not in the catalog']).toEqual([]);
+    // A new system subtype is flagged; a baselined or classified one is not.
+    const sys = coverage(`${text}\ns={type:"system",subtype:"brand_new_subtype"};s={type:"system",subtype:"compact_boundary"};s={type:"system",subtype:"agents_killed"};`, inv);
+    expect(sys.find((f) => f.check === 'system subtypes OmniFex would draw as Unrecognized')?.items)
+      .toEqual(['brand_new_subtype']);
+    // A baseline entry the binary dropped is stale.
+    expect(sys.find((f) => f.check === 'undrawn-subtype baseline entries the binary no longer has')?.items)
+      .not.toContain('agents_killed');
+    expect(sys.find((f) => f.check === 'undrawn-subtype baseline entries the binary no longer has')?.items)
+      .toContain('api_retry');
     const withNew = coverage(`${text}\nthis.request({subtype:"brand_new_request"});`, inv);
     expect(withNew.find((f) => f.check === 'SDK control requests not in the catalog')?.items)
       .toEqual(['brand_new_request']);

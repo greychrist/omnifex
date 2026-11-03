@@ -258,7 +258,10 @@ export interface KindStyle {
  */
 export type CollapseRule =
   | { mode: "latestInRun" }
-  | { mode: "onChange"; field: string };
+  /** `onlyIn`: the formats the rule applies in; absent means every format.
+   *  Verbose and All are the raw record stream, so a rule that only tidies
+   *  re-stamped bookkeeping leaves them alone. */
+  | { mode: "onChange"; field: string; onlyIn?: ViewMode[] };
 
 export interface CategoryStyle extends KindStyle {
   label: string;
@@ -364,10 +367,10 @@ export const KIND_REGISTRY: Record<string, KindDef> = {
   "summary.compaction": { id: "summary.compaction", category: "system", label: "Conversation summary", description: "Compaction summary card.", default: { icon: "FileText", presentation: "card", widget: "SummaryWidget", visibility: "always", compactBoundaryLocked: true } },
   "unknown": { id: "unknown", category: "system", label: "Unknown", description: "Unclassifiable message — shows raw payload.", default: { presentation: "side-line", icon: "HelpCircle", accentColor: "#f97316", borderStyle: "dashed", headerLabel: "Unknown", visibility: "always", compactBoundaryLocked: true, showRawPayload: true } },
   // ── bookkeeping (real JSONL lines, previously dropped by the renderer) ──
-  "permission-mode": { id: "permission-mode", category: "system", label: "Permission mode", description: "Permission level changed mid-session.", default: { presentation: "side-line", icon: "ShieldCheck", accentColor: "#f59e0b", visibility: "always" } },
+  "permission-mode": { id: "permission-mode", category: "system", label: "Permission mode", description: "Permission level changed mid-session.", default: { presentation: "side-line", icon: "ShieldCheck", accentColor: "#f59e0b", visibility: "always" }, collapse: { mode: "onChange", field: "permissionMode", onlyIn: ["compact", "modern"] } },
   "last-prompt": { id: "last-prompt", category: "system", label: "Last-prompt bookmark", description: "Resume bookmark pointing at your most recent prompt.", default: { presentation: "side-line", icon: "Bookmark", accentColor: "#4b5563", visibility: "verbose" } },
   "ai-title": { id: "ai-title", category: "system", label: "Session title", description: "Auto-generated session title.", default: { presentation: "side-line", icon: "Tag", accentColor: "#4b5563", visibility: "verbose" } },
-  "custom-title": { id: "custom-title", category: "system", label: "Session renamed", description: "Session renamed — by the pencil in the status bar, /rename, or claude.ai.", default: { presentation: "side-line", icon: "Tag", accentColor: "#9ca3af", visibility: "verbose" } },
+  "custom-title": { id: "custom-title", category: "system", label: "Session renamed", description: "Session renamed — by the pencil in the status bar, /rename, or claude.ai.", default: { presentation: "side-line", icon: "Tag", accentColor: "#9ca3af", visibility: "verbose" }, collapse: { mode: "onChange", field: "customTitle", onlyIn: ["compact", "modern"] } },
   "queue-operation": { id: "queue-operation", category: "system", label: "Input queue", description: "The CLI's input queue: a prompt, task notification or agent message arriving (enqueue), a turn starting on it (dequeue, with the wait when there was one), or it being folded into the running turn (remove).", default: { presentation: "side-line", icon: "ListOrdered", accentColor: "#9ca3af", visibility: "verbose" } },
   "file-history-snapshot": { id: "file-history-snapshot", category: "system", label: "File snapshot", description: "CLI editor undo/redo snapshot.", default: { presentation: "side-line", icon: "Clock", accentColor: "#4b5563", visibility: "verbose" } },
   // ── session context sources (attachment channel) ──
@@ -721,7 +724,17 @@ export interface ModernStyle {
   /** Off: the card has no fill or border, and the page shows through. */
   promptColorEnabled: boolean;
   answerCardColorEnabled: boolean;
+  /** The answer that ends a turn: in the card, or with only a bar down its
+   *  left edge in the answer color (Compact's "Execution complete" look). */
+  answerStyle: ModernAnswerStyle;
+  /** Which chat format's rules decide the records Modern shows: Compact's
+   *  (Always kinds only), Verbose's (plus Verbose-only kinds) or All's (plus
+   *  kinds set to Never). Conversation is drawn the same under each. */
+  recordRules: ModernRecordRules;
 }
+
+export type ModernAnswerStyle = "card" | "line";
+export type ModernRecordRules = "compact" | "verbose" | "all";
 
 /** Saturation and brightness top out at twice the built-in. */
 export const MODERN_PERCENT_MAX = 200;
@@ -760,6 +773,8 @@ export const DEFAULT_MODERN: ModernStyle = {
   answerCardShadow: true,
   promptColorEnabled: true,
   answerCardColorEnabled: true,
+  answerStyle: "card",
+  recordRules: "compact",
 };
 
 const GEIST_STACK = "'Geist', var(--app-font-stack, ui-sans-serif, system-ui, sans-serif)";
@@ -837,6 +852,10 @@ function mergeModern(saved: Record<string, unknown>, base: ModernStyle): ModernS
     answerCardShadow: typeof saved.answerCardShadow === "boolean" ? saved.answerCardShadow : base.answerCardShadow,
     promptColorEnabled: typeof saved.promptColorEnabled === "boolean" ? saved.promptColorEnabled : base.promptColorEnabled,
     answerCardColorEnabled: typeof saved.answerCardColorEnabled === "boolean" ? saved.answerCardColorEnabled : base.answerCardColorEnabled,
+    answerStyle: saved.answerStyle === "card" || saved.answerStyle === "line" ? saved.answerStyle : base.answerStyle,
+    recordRules: saved.recordRules === "compact" || saved.recordRules === "verbose" || saved.recordRules === "all"
+      ? saved.recordRules
+      : base.recordRules,
   };
 }
 
@@ -845,6 +864,17 @@ function mergeModern(saved: Record<string, unknown>, base: ModernStyle): ModernS
 /** The chat formats a transcript can be drawn in (SessionViewToggle). */
 export type ViewMode = "compact" | "verbose" | "all" | "modern";
 const VIEW_MODES: readonly ViewMode[] = ["compact", "verbose", "all", "modern"];
+
+/**
+ * The format whose display rules a transcript runs on: its own, except
+ * Modern, which borrows the one Settings › Modern › Show records like names.
+ * `modern` itself stands for Compact's visibility plus the repeat tidying
+ * Compact and Modern share (CollapseRule.onlyIn).
+ */
+export function rulesViewMode(viewMode: ViewMode, config: MessageRenderingConfig): ViewMode {
+  if (viewMode !== "modern") return viewMode;
+  return config.modern.recordRules === "compact" ? "modern" : config.modern.recordRules;
+}
 
 export interface MessageRenderingConfig {
   version: 5;

@@ -51,6 +51,82 @@ import { buildClaudeEnv } from './util/claude-env';
  *    the CLI's own error string: "summarized", "omitted" ("highlights" is
  *    refused). Records carry `thinking_duration_ms` too. Verified 2.1.312.
  *
+ * Last review: 2.1.316 -> 2.1.317 on 2026-11-02. Findings: one bug, fixed
+ * the same day (`session-owner` Unrecognized card); one latent card, fixed
+ * the same day (`session_writes_lost`).
+ *
+ *  Changelog coverage: 2.1.317 (~85 entries). Both ends installed.
+ *  Script: hook_event_name (33), control_* (4), SDK requests (55), CLI
+ *  flags (115), origin kinds (13), can_use_tool keys (11) identical.
+ *  - `session-owner` (merge map +1, last-wins): `{type, accountUuid,
+ *    organizationUuid, sessionId}`, stamped on every metadata re-append of
+ *    a signed-in session. Already on disk in both accounts' transcripts, so
+ *    every 2.1.317 session drew "Unrecognized record: session-owner". BUG,
+ *    fixed: added to CLI_SIDECHANNEL_RECORD_TYPES. JSONL-only (not on
+ *    stdout), so stream-forward's JSONL_CARRIED_TYPES needs no entry.
+ *  - `subtype:` +1 `session_writes_lost`: `type:"system"` frame written to
+ *    stream-json stdout once, at exit, when ENOSPC/EDQUOT lost transcript or
+ *    ~/.claude.json writes (`{error_code, lost[], transcript_session_ids?}`).
+ *    Was not in SYSTEM_SUBTYPES (orange Unrecognized card). Fixed: classified,
+ *    kinded system.api_error, drawn as an error card (Compact) / error
+ *    notice (Modern) by sessionWritesLostText.
+ *  - `type:` +`widget_context_hint`: attachment for MCP App view states a
+ *    remote client sends; isMeta, never from us. Not for contextLedger.
+ *    -`file_unchanged`: the Read "unchanged since last Read" stub is gone
+ *    (changelog agrees). Nothing in OmniFex referenced it. Inert.
+ *  - /usage "What's contributing to your limits usage" 0 -> 1: the embedded
+ *    changelog quoting the old heading, not the UI. parser.ts accepts both.
+ *  - Describe moves worth naming: `blockReadsExemptPaths` /
+ *    `workingDirectoriesAsGiven` (host-only settings, read only from
+ *    --settings; we pass none; opportunity, not taken);
+ *    `ultrathink_typed` + effort flag on user messages (host-stamped; we
+ *    don't color ultrathink); turn-origin label "" now also means a person;
+ *    model-refused warning names for host wording; Backdrop UI component;
+ *    read_file utf-8 flag; managed-settings source codes; Cowork init
+ *    fields; Bash tail paths; request-phase timings. All @internal or unread.
+ *  - Object keys +631 -44: env names (DISABLE_NESTED_SESSION_ID, ENABLE_
+ *    WRAP_UP, PERSONAL_HOOKS_OFF, HOST_SHORT_TEMP_DIRS, OTLP timeouts...),
+ *    UI/ToolHost internals. None on user/assistant records, permission
+ *    requests or the initialize reply beyond the above. Noise.
+ *  - CLAUDE_CODE_DISABLE_NESTED_SESSION_ID / nested `claude -p` session id:
+ *    gated on CLAUDE_CODE_CHILD_SESSION + a remote session id, cloud/runner
+ *    only. summary-query.ts runs from the daemon, never inside a session.
+ *    Inert.
+ *  - "don't ask again" no longer offered on a mod's tool calls to SDK
+ *    hosts: OmniFex takes rules from permission_suggestions
+ *    (permissions.ts), so mod tools now get none. Matches CLI intent.
+ *  - `claude -p` exits 1 on lost writes: summary-query already treats a
+ *    nonzero exit as a failed run. In our favour.
+ *  - In our favour, nothing to do: SDK session titles no longer lost when
+ *    a message lands mid-generation; project effortLevel for pre-started
+ *    sessions; double SIGTERM to shell children; subagent effort now per
+ *    model (inert: we set session effort only).
+ *  - Inert: /schedule connector warning, email-to-network check, SDK hook
+ *    onFailure, OTel attrs/timeouts/proxy fixes, gateway cost API + IdP
+ *    groups, desktop managed-settings notice, auto-mode subagent notice +
+ *    gateway 403/422, auth status refresh, --from-pr paging, claude.ai
+ *    permission prompt path, /loop wakeups, Artifact tool, skill sync,
+ *    screen-reader, region-block error, compaction fixes, Bedrock env,
+ *    TLS issuer, PDF pages, prompt-caching env, Grep/Glob partial, resume
+ *    file-change dup, /remote-control text, agent teams, Ctrl+C, /feedback,
+ *    Foundry, /design-sync, resume hint flags, SendMessage, plugin
+ *    monitors exit, plugin-authoring share offer, all [VSCode], [Cloud
+ *    sessions], [Remote Control], [Claude Tag], Gateway, self-hosted runner
+ *    and Windows entries.
+ *  - Open items from 2.1.316:
+ *     - Idle compaction: still unseen.
+ *
+ *  Script + prompt changed: a `system subtypes` extractor and a coverage
+ *  check for subtypes the classifier doesn't know, ratcheted by
+ *  UNDRAWN_SYSTEM_SUBTYPES (36 baselined here as filtered / sdk opt-in /
+ *  remote; a judgment, none seen on disk or reported as a card). The prompt
+ *  also names the Modern fallback: a classified record Modern doesn't model
+ *  draws as a Compact card. Recap (away_summary, /recap) got its Modern
+ *  form (RecapLine) in the same change.
+ *
+ *  OPEN ITEMS (carry forward; re-check each review):
+ *   - Idle compaction: verify the first real occurrence (2.1.314 block).
+ *
  * Last review: 2.1.314 -> 2.1.316 on 2026-10-31. Findings: none broken,
  * nothing to change. One open item closed (auto-mode denial category).
  *
@@ -4985,7 +5061,7 @@ import { buildClaudeEnv } from './util/claude-env';
  * `~/.claude.json` fix (we read-modify-write that file, never replace it), and
  * the VSCode screen-reader work.
  */
-export const REVIEWED_CLI_VERSION = '2.1.316';
+export const REVIEWED_CLI_VERSION = '2.1.317';
 
 /**
  * app_settings key holding the user's explicit OmniFex-checkout override.
