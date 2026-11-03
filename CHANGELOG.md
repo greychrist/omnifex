@@ -5,6 +5,24 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.26] — 2026-11-03
+
+### Added
+- Modern: Settings › Modern › Records › Show records like — Compact, Verbose or All decides which records Modern shows.
+- Modern: Answer style — the answer that ends a turn as a card or as a thin bar down its left edge in the answer's green.
+- Modern: recaps (the away summary and `/recap`) draw as a Recap line over the prose, spaced like an answer, with Copy on hover.
+- Modern: loaded instruction files are one folded "Loaded instructions" line that opens onto each path and its scope.
+- Modern: permission-mode, effort and model changes, slash-command output, and system and attachment records draw as one-line Trace rows instead of Compact cards.
+- Modern: an unrecognized record is an amber warning line with its JSON folded under it.
+- An error card when Claude Code could not save the transcript or `~/.claude.json` because the disk or quota was full (CLI 2.1.317).
+
+### Changed
+- Modern: answered questions are a line with the question kind's purple icon, title and hairline rule, instead of the classic card.
+- Compact and Modern show a repeated permission-mode or rename record only when its value changes; Verbose and All still show every record. Each kind's Repeats setting can turn this off.
+
+### Fixed
+- Every session on CLI 2.1.317 drew an "Unrecognized record: session-owner" card.
+
 ## [0.5.25] — 2026-11-02
 
 ### Added
