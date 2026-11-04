@@ -5,6 +5,17 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.27] — 2026-11-04
+
+### Added
+- The account item in the chat status bar warns when a claude.ai sign-in ends within 10 days: amber, then red and pulsing for the last 2 days and once expired.
+- The account popover and Settings → Accounts show the date each Claude account's sign-in ends, read from `claude auth status`.
+
+### Changed
+- Reviewed Claude Code 2.1.318. The `repl-mode` transcript record (experimental Code Mode) is filed as CLI bookkeeping instead of drawing an "Unrecognized record" card.
+- The CLI review diff now also checks session records the CLI appends outside its merge-strategy map.
+- The account sign-in check now runs without blocking the daemon.
+
 ## [0.5.26] — 2026-11-03
 
 ### Added
