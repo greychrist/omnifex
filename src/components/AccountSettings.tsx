@@ -10,6 +10,8 @@ import {
 import { AccountBadge } from "@/components/AccountBadge";
 import { useAccounts } from "@/contexts/AccountsContext";
 import { useAccountVerdict } from "@/hooks/useAccountVerdict";
+import { useLoginExpiry } from "@/hooks/useLoginExpiry";
+import { formatLoginExpiryDate, loginExpiryColor } from "@/lib/loginExpiry";
 import { Trash2, Plus, Pencil, FolderOpen, ShieldCheck, ShieldAlert, ShieldQuestion } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { fireAndLog, logAndForget } from "@/lib/fireAndLog";
@@ -104,6 +106,8 @@ const AccountListRow: React.FC<{
   );
   const expected = account.expected_email;
   const detected = verdict?.detected ?? null;
+  // Codex keeps its own sign-in; `claude auth status` knows nothing of it.
+  const { state: expiry } = useLoginExpiry(account.engine === 'codex' ? null : account.config_dir);
 
   // Deliberately renders the PASSING case too. Showing nothing on success
   // would make "verified", "opted out", and "the check never ran" look
@@ -185,6 +189,20 @@ const AccountListRow: React.FC<{
             </>
           )}
         </button>
+      )}
+      {expiry && (
+        <span
+          data-testid="account-login-expiry"
+          className={cn(
+            "text-[10px] font-medium whitespace-nowrap",
+            expiry.level === "ok" ? "text-muted-foreground" : loginExpiryColor(expiry.level),
+          )}
+          title="When the stored claude.ai sign-in ends, per `claude auth status`. Re-authenticate from the account popover to extend it."
+        >
+          {expiry.level === "expired"
+            ? `Sign-in ended ${formatLoginExpiryDate(expiry.expiresAt)}`
+            : `Sign-in ends ${formatLoginExpiryDate(expiry.expiresAt)} (${expiry.relative})`}
+        </span>
       )}
       <span className="text-xs text-muted-foreground flex-1 truncate">
         {account.config_dir}

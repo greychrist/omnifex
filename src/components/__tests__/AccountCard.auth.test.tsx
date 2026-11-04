@@ -5,7 +5,11 @@ import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/re
 import type { SessionVerification } from '@/lib/accountVerification';
 
 const { apiMock, platformMock } = vi.hoisted(() => ({
-  apiMock: { claudeLogout: vi.fn() },
+  apiMock: {
+    claudeLogout: vi.fn(),
+    accountLoginExpiry: vi.fn(async () => null),
+    subscribeAccountIdentity: vi.fn(() => () => {}),
+  },
   platformMock: { platform: { isDesktop: true } },
 }));
 
@@ -35,7 +39,7 @@ vi.mock('../AccountBadge', () => ({
 }));
 
 const { announceMock } = vi.hoisted(() => ({ announceMock: vi.fn() }));
-vi.mock('@/lib/accountSignIn', () => ({ announceAccountSignedIn: announceMock }));
+vi.mock('@/lib/accountSignIn', () => ({ announceAccountSignedIn: announceMock, onAccountSignedIn: () => () => {} }));
 vi.mock('../claude-code-session/UsageDetailPopover', () => ({
   UsageDetailPopover: (props: { trigger: React.ReactNode }) => <div>{props.trigger}</div>,
 }));

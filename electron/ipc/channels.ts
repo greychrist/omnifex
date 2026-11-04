@@ -178,6 +178,9 @@ export const INVOKE_CHANNELS: readonly string[] = [
   // Full verdict for a config dir (account lookup + read + compare done in
   // main). The renderer never re-implements the comparison.
   'account_identity_verdict',
+  // When the stored claude.ai sign-in ends (`loginExpiresAt`, CLI >= 2.1.318).
+  // Spawns `claude auth status`, behind a 6h per-dir cache in the daemon.
+  'account_login_expiry',
 
   // Claude Binary
   'get_claude_binary_path',

@@ -10,8 +10,9 @@
 //   readOauthIdentity  — reads <configDir>/.claude.json. Instant, no spawn.
 //                        This is the HOT PATH: it runs on session start.
 //   probeAuthStatus    — spawns `claude auth status --json`. Authoritative
-//                        (~1s). Only ever runs behind an explicit user action
-//                        in Settings. Never on session start.
+//                        (~1s), async. Runs behind an explicit user action
+//                        in Settings, and behind login-expiry.ts's cache.
+//                        Never on session start.
 //
 // `oauthAccount` lingers in .claude.json after a logout, so the cheap read
 // detects the wrong-account case reliably but the logged-out case only
@@ -25,7 +26,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import type { LogEntry } from './logging';
 
 export interface OauthIdentity {
@@ -42,13 +43,18 @@ export interface AuthStatus {
   apiProvider: string | null;
   orgName: string | null;
   subscriptionType: string | null;
+  /**
+   * When the stored claude.ai sign-in ends (ISO), CLI >= 2.1.318. Null for
+   * API-key sign-ins, older CLIs, and logged-out dirs.
+   */
+  loginExpiresAt: string | null;
 }
 
 export interface ProbeDeps {
   /** Resolves the `claude` binary. Null when none can be found. */
   resolveBinary: () => string | null;
-  /** Injectable for tests. Defaults to execFileSync with a 10s timeout. */
-  exec?: (bin: string, args: string[], env: NodeJS.ProcessEnv) => string;
+  /** Injectable for tests. Defaults to an async execFile with a 10s timeout. */
+  exec?: (bin: string, args: string[], env: NodeJS.ProcessEnv) => string | Promise<string>;
 }
 
 const LOGGED_OUT: AuthStatus = {
@@ -58,6 +64,7 @@ const LOGGED_OUT: AuthStatus = {
   apiProvider: null,
   orgName: null,
   subscriptionType: null,
+  loginExpiresAt: null,
 };
 
 function str(v: unknown): string | null {
@@ -96,18 +103,23 @@ export function readOauthIdentity(configDir: string): OauthIdentity | null {
  * so this reports the identity for exactly the dir we pass. Costs a process
  * spawn — callers must keep it off hot paths.
  */
-export function probeAuthStatus(configDir: string, deps: ProbeDeps): AuthStatus {
+export async function probeAuthStatus(configDir: string, deps: ProbeDeps): Promise<AuthStatus> {
   const bin = deps.resolveBinary();
   if (!bin) return LOGGED_OUT;
 
   const run =
     deps.exec ??
-    ((b: string, args: string[], env: NodeJS.ProcessEnv): string =>
-      execFileSync(b, args, { encoding: 'utf8', timeout: 10_000, env }));
+    ((b: string, args: string[], env: NodeJS.ProcessEnv): Promise<string> =>
+      new Promise((resolve, reject) => {
+        execFile(b, args, { encoding: 'utf8', timeout: 10_000, env }, (err, stdout) => {
+          if (err) reject(err);
+          else resolve(stdout);
+        });
+      }));
 
   let out: string;
   try {
-    out = run(bin, ['auth', 'status', '--json'], {
+    out = await run(bin, ['auth', 'status', '--json'], {
       ...process.env,
       CLAUDE_CONFIG_DIR: configDir,
     });
@@ -131,6 +143,7 @@ export function probeAuthStatus(configDir: string, deps: ProbeDeps): AuthStatus 
     apiProvider: str(p.apiProvider),
     orgName: str(p.orgName),
     subscriptionType: str(p.subscriptionType),
+    loginExpiresAt: str(p.loginExpiresAt),
   };
 }
 

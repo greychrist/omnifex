@@ -21,6 +21,7 @@ const { apiMock } = vi.hoisted(() => ({
     getHomeDirectory: vi.fn(),
     accountIdentityVerdict: vi.fn(),
     subscribeAccountIdentity: vi.fn(),
+    accountLoginExpiry: vi.fn(),
   },
 }));
 
@@ -125,6 +126,27 @@ beforeEach(() => {
   apiMock.getHomeDirectory.mockReset().mockResolvedValue('/home/test');
   apiMock.accountIdentityVerdict.mockReset().mockResolvedValue(null);
   apiMock.subscribeAccountIdentity.mockReset().mockReturnValue(() => {});
+  apiMock.accountLoginExpiry.mockReset().mockResolvedValue(null);
+});
+
+describe('AccountSettings sign-in expiry', () => {
+  it('shows when each Claude account sign-in ends, and asks nothing of Codex', async () => {
+    apiMock.accountLoginExpiry.mockResolvedValue({ expiresAt: '2099-11-27T11:18:46.996Z', checkedAt: 'x' });
+    render(<AccountSettings />);
+    const cell = await screen.findByTestId('account-login-expiry');
+    expect(cell.textContent).toMatch(/Sign-in ends .*2099/);
+    expect(apiMock.accountLoginExpiry).toHaveBeenCalledWith('/home/test/.claude-personal', false);
+    expect(apiMock.accountLoginExpiry).not.toHaveBeenCalledWith('/home/test/.codex', expect.anything());
+  });
+
+  it('colours a sign-in that is about to end', async () => {
+    const soon = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000 + 60_000).toISOString();
+    apiMock.accountLoginExpiry.mockResolvedValue({ expiresAt: soon, checkedAt: 'x' });
+    render(<AccountSettings />);
+    const cell = await screen.findByTestId('account-login-expiry');
+    expect(cell.textContent).toMatch(/in 3 days/);
+    expect(cell.className).toContain('text-amber-500');
+  });
 });
 
 describe('AccountSettings', () => {
@@ -388,10 +410,13 @@ describe('AccountSettings', () => {
     // The watcher is what makes a logout/login done in a terminal self-correct
     // without the user hunting for a refresh.
     it('self-corrects when the identity changes on disk', async () => {
-      let push: ((v: unknown) => void) | null = null;
+      // Every subscriber hears the broadcast (the verdict and the sign-in
+      // expiry both listen), as the real event does.
+      const subscribers: Array<(v: unknown) => void> = [];
+      const push = (v: unknown) => { for (const cb of subscribers) cb(v); };
       apiMock.subscribeAccountIdentity.mockImplementation(
         (_dir: string, cb: (v: unknown) => void) => {
-          push = cb;
+          subscribers.push(cb);
           return () => {};
         },
       );
@@ -407,7 +432,7 @@ describe('AccountSettings', () => {
       await screen.findByText(/not signed in/i);
 
       // Main observed a real change on disk and pushed the new verdict.
-      push!({
+      push({
         status: 'verified',
         expected: 'work@example.com',
         detected: 'work@example.com',

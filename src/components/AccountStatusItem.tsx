@@ -1,5 +1,5 @@
 import * as React from "react";
-import { User, Clock, CalendarDays, DollarSign } from "lucide-react";
+import { User, Clock, CalendarDays, CalendarClock, DollarSign } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { RateLimitSnapshot } from "@/lib/api";
 import { useAccounts } from "@/contexts/AccountsContext";
@@ -13,6 +13,7 @@ import { rateLimitPctAlert, rateLimitPctColor } from "./claude-code-session/Rate
 import { formatCost } from "./claude-code-session/CostWidget";
 import { UsageDetailPopover } from "./claude-code-session/UsageDetailPopover";
 import type { AccountUsage } from "@/hooks/useAccountUsage";
+import { loginExpiryColor } from "@/lib/loginExpiry";
 
 /**
  * The account widget as a status-bar readout:
@@ -56,6 +57,11 @@ export function AccountStatusItem({
   const icon = getIcon(accountName);
   const Icon = (icon && ICON_MAP[icon]) || User;
   const shield = accountShield(verification?.status, sessionAuthFailure !== null);
+  // Marked only when near or past the end; the popover always has the date.
+  const expiry = details.loginExpiry?.alert ? details.loginExpiry : null;
+  const expiryLabel = expiry
+    ? expiry.level === "expired" ? "stored sign-in expired" : `sign-in ends ${expiry.relative}`
+    : null;
 
   return (
     <span className="flex items-center gap-1.5">
@@ -68,7 +74,7 @@ export function AccountStatusItem({
         trigger={
           <button
             type="button"
-            aria-label={`account ${accountName}${shield ? `, ${shield.label}` : ""}`}
+            aria-label={`account ${accountName}${shield ? `, ${shield.label}` : ""}${expiryLabel ? `, ${expiryLabel}` : ""}`}
             title="Click for account details"
             className={cn(
               "flex items-center gap-1 rounded hover:bg-muted/60",
@@ -87,6 +93,19 @@ export function AccountStatusItem({
                 role="img"
                 aria-label={shield.label}
                 className={cn("h-3.5 w-3.5", shield.className)}
+                strokeWidth={2.4}
+              />
+            )}
+            {expiry && expiryLabel && (
+              <CalendarClock
+                role="img"
+                aria-label={expiryLabel}
+                className={cn(
+                  "h-3.5 w-3.5",
+                  loginExpiryColor(expiry.level),
+                  // Red only pulses, as the bar's other readouts do.
+                  expiry.level !== "warning" && "animate-pulse",
+                )}
                 strokeWidth={2.4}
               />
             )}

@@ -112,11 +112,11 @@ describe('probeAuthStatus', () => {
     subscriptionType: 'max',
   });
 
-  it('parses the CLI JSON and passes CLAUDE_CONFIG_DIR through', () => {
+  it('parses the CLI JSON and passes CLAUDE_CONFIG_DIR through', async () => {
     let seenEnv: NodeJS.ProcessEnv | null = null;
     let seenArgs: string[] = [];
     let seenBin = '';
-    const status = probeAuthStatus('/tmp/.claude-personal', {
+    const status = await probeAuthStatus('/tmp/.claude-personal', {
       resolveBinary: () => '/usr/local/bin/claude',
       exec: (bin, args, env) => {
         seenBin = bin;
@@ -135,11 +135,21 @@ describe('probeAuthStatus', () => {
       apiProvider: 'firstParty',
       orgName: "gpchristie@gmail.com's Organization",
       subscriptionType: 'max',
+      loginExpiresAt: null,
     });
   });
 
-  it('reports logged out when the CLI says so', () => {
-    const status = probeAuthStatus('/tmp/x', {
+  // CLI >= 2.1.318 reports when a stored claude.ai sign-in ends.
+  it('reads loginExpiresAt', async () => {
+    const status = await probeAuthStatus('/tmp/x', {
+      resolveBinary: () => '/usr/local/bin/claude',
+      exec: () => JSON.stringify({ loggedIn: true, loginExpiresAt: '2026-11-27T11:18:46.996Z' }),
+    });
+    expect(status.loginExpiresAt).toBe('2026-11-27T11:18:46.996Z');
+  });
+
+  it('reports logged out when the CLI says so', async () => {
+    const status = await probeAuthStatus('/tmp/x', {
       resolveBinary: () => '/usr/local/bin/claude',
       exec: () => JSON.stringify({ loggedIn: false }),
     });
@@ -147,24 +157,24 @@ describe('probeAuthStatus', () => {
     expect(status.email).toBeNull();
   });
 
-  it('reports logged out rather than throwing on non-JSON stdout', () => {
-    const status = probeAuthStatus('/tmp/x', {
+  it('reports logged out rather than throwing on non-JSON stdout', async () => {
+    const status = await probeAuthStatus('/tmp/x', {
       resolveBinary: () => '/usr/local/bin/claude',
       exec: () => 'command not found',
     });
     expect(status.loggedIn).toBe(false);
   });
 
-  it('reports logged out when stdout parses to a non-object', () => {
-    const status = probeAuthStatus('/tmp/x', {
+  it('reports logged out when stdout parses to a non-object', async () => {
+    const status = await probeAuthStatus('/tmp/x', {
       resolveBinary: () => '/usr/local/bin/claude',
       exec: () => '42',
     });
     expect(status.loggedIn).toBe(false);
   });
 
-  it('reports logged out rather than throwing when the spawn fails', () => {
-    const status = probeAuthStatus('/tmp/x', {
+  it('reports logged out rather than throwing when the spawn fails', async () => {
+    const status = await probeAuthStatus('/tmp/x', {
       resolveBinary: () => '/usr/local/bin/claude',
       exec: () => {
         throw new Error('ENOENT');
@@ -173,8 +183,8 @@ describe('probeAuthStatus', () => {
     expect(status.loggedIn).toBe(false);
   });
 
-  it('reports logged out when no binary can be resolved', () => {
-    const status = probeAuthStatus('/tmp/x', { resolveBinary: () => null });
+  it('reports logged out when no binary can be resolved', async () => {
+    const status = await probeAuthStatus('/tmp/x', { resolveBinary: () => null });
     expect(status.loggedIn).toBe(false);
   });
 });

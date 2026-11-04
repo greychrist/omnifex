@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import * as React from 'react';
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
 import type { SessionVerification } from '@/lib/accountVerification';
 import type { RateLimitSnapshot, SessionCostSnapshot } from '@/lib/api';
 
@@ -20,7 +20,14 @@ vi.mock('@/contexts/AccountsContext', () => ({
   }),
 }));
 vi.mock('@/hooks', () => ({ useTheme: () => ({ theme: 'gray', setTheme: async () => {} }) }));
-vi.mock('@/lib/api', () => ({ api: { claudeLogout: vi.fn() } }));
+const { loginExpiry } = vi.hoisted(() => ({ loginExpiry: { value: null as string | null } }));
+vi.mock('@/lib/api', () => ({
+  api: {
+    claudeLogout: vi.fn(),
+    accountLoginExpiry: vi.fn(async () => ({ expiresAt: loginExpiry.value, checkedAt: 'x' })),
+    subscribeAccountIdentity: vi.fn(() => () => {}),
+  },
+}));
 vi.mock('@/lib/platform', () => ({ platform: { isDesktop: true } }));
 vi.mock('../ClaudeSignInModal', () => ({ ClaudeSignInModal: () => null }));
 vi.mock('../claude-code-session/UsageDetailPopover', () => ({
@@ -79,6 +86,7 @@ const base = {
 };
 
 beforeEach(() => {
+  loginExpiry.value = null;
   accountsRef.color = '#3b82f6';
   accountsRef.icon = null;
   accountsRef.type = 'max';
@@ -254,6 +262,44 @@ describe('AccountStatusItem', () => {
       expect(usageButton().querySelector('svg.lucide-dollar-sign')).toBeTruthy();
       expect(usageButton().querySelector('svg.lucide-clock')).toBeNull();
       expect(screen.queryByTestId('account-item-usage-week')).toBeNull();
+    });
+  });
+
+  // CLI >= 2.1.318 reports when the stored sign-in ends.
+  describe('sign-in expiry', () => {
+    const inDays = (d: number) => new Date(Date.now() + d * 24 * 60 * 60 * 1000 + 60_000).toISOString();
+
+    it('marks the account when the sign-in ends within ten days', async () => {
+      loginExpiry.value = inDays(4);
+      render(<AccountStatusItem {...base} />);
+      const mark = await screen.findByRole('img', { name: /sign-in ends in 4 days/i });
+      expect(mark.getAttribute('class')).toContain('text-amber-500');
+      expect(accountButton().getAttribute('aria-label')).toMatch(/sign-in ends in 4 days/i);
+    });
+
+    it('marks it red and pulsing in the last two days, and once expired', async () => {
+      loginExpiry.value = inDays(-1);
+      render(<AccountStatusItem {...base} />);
+      const mark = await screen.findByRole('img', { name: /sign-in expired/i });
+      expect(mark.getAttribute('class')).toContain('text-red-500');
+      expect(mark.getAttribute('class')).toContain('animate-pulse');
+    });
+
+    it('shows no mark when the end is far off, but the popover still gives the date', async () => {
+      loginExpiry.value = '2099-11-27T11:18:46.996Z';
+      render(<AccountStatusItem {...base} />);
+      fireEvent.click(accountButton());
+      expect(await screen.findByText('Sign-in ends')).toBeTruthy();
+      expect(screen.getByTestId('login-expiry-date').textContent).toMatch(/2099/);
+      expect(screen.queryByRole('img', { name: /sign-in ends/i })).toBeNull();
+    });
+
+    it('says nothing for a Codex account', async () => {
+      loginExpiry.value = inDays(1);
+      render(<AccountStatusItem {...base} agent="codex" />);
+      fireEvent.click(accountButton());
+      await waitFor(() => expect(screen.getByText('/Users/me/.claude-personal')).toBeTruthy());
+      expect(screen.queryByText('Sign-in ends')).toBeNull();
     });
   });
 

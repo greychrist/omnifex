@@ -300,8 +300,13 @@ export interface Services {
    */
   accountIdentity?: {
     read(configDir: string): import('../services/account-identity').OauthIdentity | null;
-    probe(configDir: string): import('../services/account-identity').AuthStatus;
+    probe(configDir: string): Promise<import('../services/account-identity').AuthStatus>;
     verdict(configDir: string): import('../services/account-identity').IdentityVerdict;
+    /** When the stored sign-in ends; cached, so cheap to call per surface. */
+    loginExpiry(
+      configDir: string,
+      opts?: { refresh?: boolean },
+    ): Promise<import('../services/login-expiry').LoginExpiry | null>;
   };
   /**
    * Enables the arbitrary-SQL admin channel (`storage_execute_sql`). Only the
@@ -727,6 +732,9 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     ),
     account_identity_verdict: wrapWith((p: Record<string, unknown>) =>
       accountIdentity?.verdict((p?.configDir ?? p?.config_dir) as string) ?? null,
+    ),
+    account_login_expiry: wrapWith((p: Record<string, unknown>) =>
+      accountIdentity?.loginExpiry((p?.configDir ?? p?.config_dir) as string, { refresh: p?.refresh === true }) ?? null,
     ),
 
     // ── Claude Binary ─────────────────────────────────────────────────────────

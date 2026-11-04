@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import { announceAccountSignedIn } from "@/lib/accountSignIn";
 import { ClaudeSignInModal } from "./ClaudeSignInModal";
+import { useLoginExpiry } from "@/hooks/useLoginExpiry";
+import { formatLoginExpiryDate, loginExpiryColor, type LoginExpiryState } from "@/lib/loginExpiry";
 
 /**
  * The account popover: identity, sign in / out, the CLI-reported account,
@@ -83,7 +85,12 @@ function AccountDetails({
   sdkAccount,
   canManageAuth,
   onSignIn,
-}: AccountDetailsInputs & { canManageAuth: boolean; onSignIn: () => void }): React.JSX.Element {
+  loginExpiry,
+}: AccountDetailsInputs & {
+  canManageAuth: boolean;
+  onSignIn: () => void;
+  loginExpiry: LoginExpiryState | null;
+}): React.JSX.Element {
   // Sign out is two clicks: it cuts off every session on this account, not
   // just this one.
   const [signOutArmed, setSignOutArmed] = React.useState(false);
@@ -234,6 +241,22 @@ function AccountDetails({
           )}
         </div>
       )}
+      {canManageAuth && loginExpiry && (
+        // Always the date, not only near the end: the warning on the bar is
+        // only worth trusting if the date is checkable here.
+        <div className="flex justify-between gap-2 text-xs">
+          <span className="text-foreground/50">
+            {loginExpiry.level === "expired" ? "Sign-in ended" : "Sign-in ends"}
+          </span>
+          <span
+            className={cn("font-mono truncate", loginExpiryColor(loginExpiry.level))}
+            title="When the stored claude.ai sign-in for this config dir ends, per `claude auth status`. Re-authenticate to extend it."
+          >
+            <span data-testid="login-expiry-date">{formatLoginExpiryDate(loginExpiry.expiresAt)}</span>
+            {loginExpiry.level !== "expired" && ` (${loginExpiry.relative})`}
+          </span>
+        </div>
+      )}
       {canManageAuth && (
         <div className="flex items-center gap-2">
           <Button
@@ -340,6 +363,8 @@ export interface AccountDetailsPopover {
   /** The sign-in dialog. Rendered beside the popover, not inside it: the
    *  popover closes as the dialog opens. */
   signInModal: React.ReactNode;
+  /** When the stored sign-in ends; null when unknown or Codex. */
+  loginExpiry: LoginExpiryState | null;
 }
 
 /** State and parts for one account popover and its sign-in dialog. */
@@ -351,13 +376,22 @@ export function useAccountDetailsPopover(inputs: AccountDetailsInputs): AccountD
   // Claude only — Codex signs in from Account Settings. Any client: the
   // daemon runs the sign-in, and the iPad finishes it by pasting a code.
   const canManageAuth = agent !== "codex";
+  const expiry = useLoginExpiry(canManageAuth ? configDir || null : null);
+  const { refresh: refreshExpiry } = expiry;
+  const recheck = React.useCallback(() => {
+    onRecheck?.();
+    refreshExpiry();
+  }, [onRecheck, refreshExpiry]);
 
   return {
     open,
     onOpenChange: setOpen,
+    loginExpiry: expiry.state,
     content: (
       <AccountDetails
         {...inputs}
+        onRecheck={recheck}
+        loginExpiry={expiry.state}
         canManageAuth={canManageAuth}
         onSignIn={() => {
           // Close the popover first: the dialog would otherwise count a

@@ -64,6 +64,7 @@ import {
   createAccountIdentityVerdict,
   watchOauthIdentity,
 } from '../services/account-identity';
+import { createLoginExpiryService } from '../services/login-expiry';
 import {
   createSessionsSummaryService,
   DEFAULT_SUMMARY_PROMPT,
@@ -455,6 +456,17 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
     accounts: accountsService,
     log: loggingService,
   });
+  const probeClaudeAuth = (configDir: string) =>
+    probeAuthStatus(configDir, { resolveBinary: () => claudeBinaryService.findBestBinary() });
+  const loginExpiryService = createLoginExpiryService({
+    // probeAuthStatus folds every failure into "logged out". Not signed in
+    // means no expiry worth caching, and other surfaces already say so.
+    probe: async (configDir) => {
+      const status = await probeClaudeAuth(configDir);
+      if (!status.loggedIn) throw new Error('not signed in');
+      return status;
+    },
+  });
 
   const sessionsService = createSessionsService(
     sendToRenderer,
@@ -602,6 +614,7 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
       sendToRenderer('codex-auth-status-changed', { configDir, status });
     },
     onIdentityChanged: (configDir) => {
+      loginExpiryService.invalidate(configDir);
       sendToRenderer('account-identity-changed', { configDir, verdict: accountIdentityVerdict(configDir) });
     },
   });
@@ -921,8 +934,9 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
     codexSessionWalker: { listSessions: () => codexSessionWalkerService.listSessions() },
     accountIdentity: {
       read: (configDir) => readOauthIdentity(configDir),
-      probe: (configDir) => probeAuthStatus(configDir, { resolveBinary: () => claudeBinaryService.findBestBinary() }),
+      probe: (configDir) => probeClaudeAuth(configDir),
       verdict: (configDir) => accountIdentityVerdict(configDir),
+      loginExpiry: (configDir, opts) => loginExpiryService.get(configDir, opts),
     },
   } satisfies Required<Services>) as Record<string, RpcHandler>;
   /* eslint-enable @typescript-eslint/no-explicit-any */

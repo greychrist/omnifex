@@ -1053,6 +1053,15 @@ export interface AccountAuthStatus {
   apiProvider: string | null;
   orgName: string | null;
   subscriptionType: string | null;
+  /** When the stored claude.ai sign-in ends (ISO), CLI >= 2.1.318. */
+  loginExpiresAt: string | null;
+}
+
+/** When a config dir's stored claude.ai sign-in ends, as the daemon last read it. */
+export interface LoginExpiry {
+  /** ISO; null when the CLI reports no end (API key, older CLI). */
+  expiresAt: string | null;
+  checkedAt: string;
 }
 
 /**
@@ -1993,6 +2002,14 @@ export const api = {
    */
   async accountIdentityVerdict(configDir: string): Promise<IdentityVerdict | null> {
     return apiCall("account_identity_verdict", { configDir });
+  },
+
+  /**
+   * When the stored sign-in for a config dir ends. The daemon caches the CLI's
+   * answer for hours; `refresh` asks again (after a sign-in). Null = unknown.
+   */
+  async accountLoginExpiry(configDir: string, refresh = false): Promise<LoginExpiry | null> {
+    return apiCall("account_login_expiry", refresh ? { configDir, refresh } : { configDir });
   },
 
   /**
