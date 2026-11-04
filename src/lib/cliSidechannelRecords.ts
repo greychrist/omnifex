@@ -60,6 +60,9 @@ export const CLI_SIDECHANNEL_RECORD_TYPES: ReadonlySet<string> = new Set([
   'dev-mods',
   // The signed-in account + org that own the session (CLI >= 2.1.317).
   'session-owner',
+  // Whether the session runs in experimental Code Mode (CLI >= 2.1.318).
+  // Re-appended with the metadata, but not in the merge map.
+  'repl-mode',
   // Structural bookkeeping — branch plumbing and file-history deltas.
   'file-history-delta',
   'continued-in',

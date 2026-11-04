@@ -90,7 +90,9 @@ grep, a file read or a transcript behind it.
      \`can_use_tool\` payload keys, every object key, the stream-json schemas'
      \`.describe()\` strings, the \`system\` subtypes, and the \`/usage\`
      anchors;
-   - **installed vs OmniFex**: record types and \`system\` subtypes we
+   - **installed vs OmniFex**: record types (the merge map's, plus every
+     \`{type, …, sessionId}\` record the CLI appends outside it) and
+     \`system\` subtypes we
      would draw as "Unrecognized record" (subtypes already judged not to
      reach us sit in \`UNDRAWN_SYSTEM_SUBTYPES\` in the script), hook events missing from \`HOOK_EVENTS\`, control
      subtypes we send and flags we pass that the binary no longer has, and

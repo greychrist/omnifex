@@ -29,6 +29,18 @@ describe('isCliSidechannelRecord', () => {
     ).toBe(true);
   });
 
+  // New in CLI 2.1.318: whether the session runs in (experimental) Code
+  // Mode, re-appended with the session metadata. Not in the merge map.
+  it('recognises repl-mode', () => {
+    expect(
+      isCliSidechannelRecord({
+        type: 'repl-mode',
+        replMode: true,
+        sessionId: '39eddbbf-781f-4758-b58e-af2d408ea20f',
+      }),
+    ).toBe(true);
+  });
+
   // New in CLI 2.1.276: a latch recording whether memory was on or off at a
   // point in the conversation. `accumulate` in the CLI's merge map, so it is a
   // log, not a last-wins latch — several land per session once the user

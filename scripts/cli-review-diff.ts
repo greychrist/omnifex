@@ -77,6 +77,17 @@ export function extractMergeMap(text: string): string[] {
 }
 
 /**
+ * Record types the CLI appends to a session file as `{type:"x",…,sessionId:…}`
+ * with no nested object in between. The merge map does not hold them all:
+ * 2.1.318's `repl-mode` is re-appended with the session metadata but has no
+ * merge strategy, so a coverage check fed only by the map never asked about
+ * it.
+ */
+export function extractSessionRecordTypes(text: string): string[] {
+  return all(/\{type:"([a-z][a-z0-9_-]*)",[^{}]{0,300}?\bsessionId:/g, text);
+}
+
+/**
  * Every `system` subtype the bundle declares: the stream-json zod schemas
  * (`type:C("system"),subtype:C("x")`, the factory name minified) and the
  * frames it builds inline (`{type:"system",subtype:"x"`). The plain
@@ -201,6 +212,9 @@ export const UNDRAWN_SYSTEM_SUBTYPES: Readonly<Record<string, string>> = {
   vcs_state_changed: 'remote', worker_shutting_down: 'remote', checkpoint_done: 'remote',
   rewind_stand_in: 'remote', turn_began_before_init: 'remote', turn_starting: 'remote',
   placed: 'remote',
+  // 2.1.318: written only to a self-hosted runner's CLAUDE_RUNNER_ACTIVITY_FD
+  // (RemoteIO), never to stdout; the runner drops it on read.
+  start_folder: 'remote',
 };
 
 /** Flags only the Claude CLI takes — a file holding one of these spawns `claude`. */
@@ -258,12 +272,15 @@ export function coverage(text: string, inv: Inventory): CoverageFinding[] {
       meaning: 'BUG once the CLI writes one (check transcripts): classify it in src/lib/jsonlClassifier.ts or list it in src/lib/cliSidechannelRecords.ts',
       // The four `transcript` types are the classifier's own cases; a probe
       // with no fields would misread `system` as unknown, so only the
-      // bookkeeping types are asked.
-      items: extractMergeMap(text)
-        .map((kv) => kv.split('='))
-        .filter(([, strategy]) => strategy !== 'transcript')
-        .map(([type]) => type)
-        .filter((t) => inv.isUnrecognizedRecord(t)),
+      // bookkeeping types are asked. Session-appended records outside the
+      // map are asked too.
+      items: uniqueSorted([
+        ...extractMergeMap(text)
+          .map((kv) => kv.split('='))
+          .filter(([, strategy]) => strategy !== 'transcript')
+          .map(([type]) => type),
+        ...extractSessionRecordTypes(text),
+      ]).filter((t) => inv.isUnrecognizedRecord(t)),
     },
     {
       check: 'system subtypes OmniFex would draw as Unrecognized',

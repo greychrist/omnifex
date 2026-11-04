@@ -51,6 +51,91 @@ import { buildClaudeEnv } from './util/claude-env';
  *    the CLI's own error string: "summarized", "omitted" ("highlights" is
  *    refused). Records carry `thinking_duration_ms` too. Verified 2.1.312.
  *
+ * Last review: 2.1.317 -> 2.1.318 on 2026-11-04. Findings: none broken
+ * today; one latent card fixed (`repl-mode`), one subtype baselined
+ * (`start_folder`), one script gap closed.
+ *
+ *  Changelog coverage: 2.1.318 (~85 entries). Both ends installed.
+ *  Script: merge map (42), hook_event_name (33), control_* (4), SDK
+ *  requests (55), CLI flags (115), origin kinds (13), can_use_tool keys
+ *  (11) identical.
+ *  - `type:` +`repl-mode`: `{type, replMode, typedEvents?, sessionId}`,
+ *    re-appended with the session metadata when experimental Code Mode
+ *    (CLAUDE_CODE_EXPERIMENTAL_CODE_MODE / the CodeModeOptIn dialog) is on.
+ *    NOT in the merge map, so the coverage half never asked about it; it
+ *    would have drawn "Unrecognized record: repl-mode". Not on disk in
+ *    either account yet. Fixed: CLI_SIDECHANNEL_RECORD_TYPES.
+ *    Script gap fixed: extractSessionRecordTypes (every `{type:"x",…,
+ *    sessionId:` literal) now feeds the record-type coverage check
+ *    alongside the merge map; it flags repl-mode without the fix.
+ *  - `system` +`start_folder` `{dev, ino}`: written only to a self-hosted
+ *    runner's CLAUDE_RUNNER_ACTIVITY_FD (RemoteIO), never stdout; the
+ *    runner drops it on read. Baselined in UNDRAWN_SYSTEM_SUBTYPES as
+ *    remote.
+ *  - `type:` +`message_pdf_reads` (attachment when a dropped PDF is read
+ *    into the message; meta, not a context source we ledger),
+ *    +`repl_mcp_needs_auth` (Code Mode attachment), +`repl_tool_call`
+ *    (tool_progress data; already typed in src/types/jsonl.ts),
+ *    +`local_script` (task-registry type for Code Mode scripts). Inert
+ *    until Code Mode; no real records on disk (hits were quoted text).
+ *  - `credential_expires_at` on every `result` (stream-json too) and
+ *    `loginExpiresAt` in `claude auth status`. TAKEN 2026-11-04:
+ *    login-expiry.ts caches `loginExpiresAt` per config dir (6h), channel
+ *    account_login_expiry; the status bar marks the account within 10 days,
+ *    the account popover and Settings show the date.
+ *  - Startup-failure results: org_config_required_unavailable,
+ *    org_config_refused and config_file_invalid now always write the
+ *    zeroed error_during_execution result (no opt-in). A corrupt
+ *    ~/.claude.json now fails the start instead of being reset. Handled:
+ *    events.ts surfaces errors[0].
+ *  - Describe moves: Stop `turn` uuids now also spare read-not-yet-queued
+ *    messages on -p; still_queued lists them (we read neither); peer
+ *    envelope body (Claude Desktop); Code Mode / REPL eval schemas;
+ *    cleanup retention; plugin suggestion allowlist; one-tap approve.
+ *    All inert or @internal.
+ *  - Object keys +873 -43: Code Mode / REPL internals, CPU telemetry,
+ *    model-copy-beside counters, env names (CONFIG_LOCK_WAIT_MS,
+ *    REPLY_GATE_POLICY, RESUME_CACHE_WARM...), orphan-answer restore
+ *    (`answerEventUuid`). None on user/assistant records, permission
+ *    requests or the initialize reply. Noise.
+ *  - "Record of your answer" to turn on session-written mods: no new
+ *    record type or merge-map entry; dev-mods is already a sidechannel
+ *    type. Inert.
+ *  - In our favour, nothing to do: --continue after malformed tool call
+ *    retries; macOS Bash memory stall; permission prompts answered by
+ *    stray keys (TUI); Stop cancels a message sent right after a model
+ *    change (headless); -p / SDK custom slash command failures now print;
+ *    API error under a mod's turn.step no longer reports success; deleted
+ *    transcript no longer re-created by an idle non-interactive exit;
+ *    idle compaction no longer swaps in a non-summary; restarted session
+ *    ordering fixes; NODE_EXTRA_CA_CERTS; -p stops rewriting
+ *    ~/.claude.json; network-home config saves; "Not logged in" after a
+ *    re-login elsewhere.
+ *  - Inert: mod `$.model.fork` effort and prompt.submit attachments
+ *    (omnifex-mod uses neither), auth status/-p stderr expiry warning,
+ *    mantle assume_role, mcp add/remove lock, plugin token refresh/
+ *    validate, stdio MCP probe pinning, allowedProviders, usage-credits
+ *    notice, version cleanup, /remote-control, /design revoke, approved
+ *    shell cwd after restart, connector unavailability, CLAUDE_ENV_FILE,
+ *    image size errors, workflows resume, PushNotification dup, background
+ *    shell runtime, setup-token, ~/.claude.json restore, MCP schema on
+ *    early call, /bin/bash git commits, admin usage request, IDE extension,
+ *    subagent model-switch/background shells/progress summaries,
+ *    deniedMcpServers, /permissions dialog, managed-agents onboard,
+ *    pre-2.1.286 thinking on resume, all Gateway, Self-hosted runner,
+ *    Remote Control, [VSCode], [Cloud sessions], [Claude Tag], [Code
+ *    Review] entries.
+ *  - /usage anchors unchanged.
+ *  - Open items from 2.1.317:
+ *     - Idle compaction: still unseen (recent transcripts searched for the
+ *       "Compacted using a summary written while" notice; hits were text).
+ *
+ *  Script + prompt changed: extractSessionRecordTypes feeds the record
+ *  coverage check; prompt step 3 says so.
+ *
+ *  OPEN ITEMS (carry forward; re-check each review):
+ *   - Idle compaction: verify the first real occurrence (2.1.314 block).
+ * *
  * Last review: 2.1.316 -> 2.1.317 on 2026-11-02. Findings: one bug, fixed
  * the same day (`session-owner` Unrecognized card); one latent card, fixed
  * the same day (`session_writes_lost`).
@@ -5061,7 +5146,7 @@ import { buildClaudeEnv } from './util/claude-env';
  * `~/.claude.json` fix (we read-modify-write that file, never replace it), and
  * the VSCode screen-reader work.
  */
-export const REVIEWED_CLI_VERSION = '2.1.317';
+export const REVIEWED_CLI_VERSION = '2.1.318';
 
 /**
  * app_settings key holding the user's explicit OmniFex-checkout override.

@@ -6,6 +6,7 @@ import {
   EXTRACTORS,
   RENDERED_FROM_UNKNOWN,
   UNDRAWN_SYSTEM_SUBTYPES,
+  extractSessionRecordTypes,
   extractSystemSubtypes,
   USAGE_ANCHORS,
   coverage,
@@ -121,6 +122,13 @@ describe('RENDERED_FROM_UNKNOWN', () => {
   });
 });
 
+describe('extractSessionRecordTypes', () => {
+  it('reads records appended with a sessionId, not every object that has one', () => {
+    const t = 'Y.push({type:"repl-mode",replMode:A,sessionId:o});E(_({type:"relocated",sessionId:o,relocatedCwd:h}));q={type:"x",a:{b:1},sessionId:z}';
+    expect(extractSessionRecordTypes(t)).toEqual(['relocated', 'repl-mode']);
+  });
+});
+
 describe('extractSystemSubtypes', () => {
   it('reads both the schema form and the emitted-object form', () => {
     const t = 'a=u({type:C("system"),subtype:C("from_schema"),x:1});b={type:"system",subtype:"from_emit",y:2};c={type:"user",subtype:"not_system"}';
@@ -183,6 +191,11 @@ describe('coverage', () => {
       .not.toContain('agents_killed');
     expect(sys.find((f) => f.check === 'undrawn-subtype baseline entries the binary no longer has')?.items)
       .toContain('api_retry');
+    // A session-metadata record appended with a sessionId but absent from
+    // the merge map (`repl-mode`, 2.1.318) must still be asked about.
+    const meta = coverage(`${text}\nY.push({type:"metadata-only",replMode:r,sessionId:y});Y.push({type:"atis-latch",sessionId:y});`, inv);
+    expect(meta.find((f) => f.check === 'record types OmniFex would draw as Unrecognized')?.items)
+      .toEqual(['brand-new-record', 'metadata-only']);
     const withNew = coverage(`${text}\nthis.request({subtype:"brand_new_request"});`, inv);
     expect(withNew.find((f) => f.check === 'SDK control requests not in the catalog')?.items)
       .toEqual(['brand_new_request']);
