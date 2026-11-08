@@ -3,7 +3,8 @@
  * record lines are (RecordLine, RecapLine): a Trace line — the question
  * kind's icon, title and left rule in its own accent (purple unless
  * restyled in Appearance), "Question answered" — over the questions and their answers, open under the
- * left rule. Parsing is the classic card's (AnsweredAskUserQuestionCard), so
+ * left rule. Each question is underlined in the muted colour; its answer is
+ * in the foreground colour, so the answer is what stands out. Parsing is the classic card's (AnsweredAskUserQuestionCard), so
  * the two formats read the CLI's drifting answer string the same way.
  */
 import * as React from 'react';
@@ -39,7 +40,7 @@ export function QuestionLine({ input, resultContent }: { input: unknown; resultC
             <div key={i} className="min-w-0">
               <div className="text-muted-foreground">
                 {q.header && <span className="mr-2 text-xs font-medium uppercase tracking-wide">{q.header}</span>}
-                <span>{q.question}</span>
+                <span className="underline underline-offset-2">{q.question}</span>
               </div>
               <div className="text-foreground">
                 {other ? `Other: ${other}` : answer ? answer : <span className="text-muted-foreground italic">No answer recorded</span>}

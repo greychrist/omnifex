@@ -65,6 +65,18 @@ describe('Modern answered question', () => {
     expect(rule.style.borderLeftStyle).toBe('solid');
   });
 
+  // Each question is in the muted text colour with its text underlined; the
+  // answer under it is in the foreground colour.
+  it('underlines each question in the muted colour, the answer in the foreground', () => {
+    render(<ModernTranscriptItem item={item} live={false} ctx={ctx} />);
+    const q = screen.getByText('Add the review task?');
+    expect(q).toHaveClass('underline');
+    expect(q.parentElement).toHaveClass('text-muted-foreground');
+    expect((q.parentElement as HTMLElement).style.color).toBe('');
+    expect(screen.getByText('Your task')).not.toHaveClass('underline');
+    expect(screen.getByText('Yes, add it (Recommended)')).toHaveClass('text-foreground');
+  });
+
   it('lists each question with its answer, open under the rule', () => {
     render(<ModernTranscriptItem item={item} live={false} ctx={ctx} />);
     expect(screen.getByText('Add the review task?')).toBeInTheDocument();
