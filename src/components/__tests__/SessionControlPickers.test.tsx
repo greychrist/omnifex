@@ -66,6 +66,27 @@ describe('SessionControlPickers — status-bar readouts that open pickers', () =
     }
   });
 
+  // The model's name wears the Cost Report's colour for it — its price tier
+  // and version — as the picker rows do; the glyph and the `model` label
+  // stay the bar's own colour, unlike the perms readout's whole-tint.
+  it('colours the model name by tier, leaving the glyph and label alone', async () => {
+    const { SHADES, screenChartMode } = await import('@/lib/costChartPalette');
+    const rgb = (h: string) => `rgb(${[1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16)).join(', ')})`;
+    const mode = screenChartMode();
+    const valueOf = () => within(item('model')).getByText(/Fable|Sonnet|Opus/) as HTMLElement;
+    setup({ model: 'fable' });
+    expect(valueOf().style.color).toBe(rgb(SHADES[mode].fable[0]));
+    expect((within(item('model')).getByRole('button') as HTMLElement).style.color).toBe('');
+    expect((within(item('model')).getByText('model') as HTMLElement).style.color).toBe('');
+    cleanup();
+    setup({ model: 'sonnet' });
+    expect(valueOf().style.color).toBe(rgb(SHADES[mode].sonnet[0]));
+    cleanup();
+    // On default, the model that actually answered is what is named — and coloured.
+    setup({ model: 'default', activeDefaultModel: 'claude-opus-5-5' });
+    expect(valueOf().style.color).toBe(rgb(SHADES[mode].opus[0]));
+  });
+
   it('gives the Codex readouts glyphs too', () => {
     setup({ engine: 'codex', model: 'gpt-5', effort: 'medium', permissionMode: 'default' });
     expect(item('model').querySelector('svg')).toBeTruthy();

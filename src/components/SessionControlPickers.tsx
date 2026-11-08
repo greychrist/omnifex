@@ -14,6 +14,7 @@ import {
   normalizePermissionMode,
 } from '@/components/ControlBar';
 import { ModelPickerDropdown } from '@/components/ModelPicker';
+import { modelOwnColor, screenChartMode } from '@/lib/costChartPalette';
 import { useModelCatalog, pickModelOption, reconcileLiveModelName, extraModelOptions } from '@/lib/modelCatalog';
 import { MODEL_OPTIONS, EFFORT_OPTIONS, PERMISSION_OPTIONS, type DropdownOption } from '@/lib/sessionDefaultOptions';
 
@@ -33,6 +34,7 @@ function StatusBarPicker({
   value,
   tone,
   trailing,
+  valueStyle,
   title,
   content,
 }: {
@@ -45,6 +47,8 @@ function StatusBarPicker({
   tone?: string;
   /** A second value sharing this readout — effort beside the model. */
   trailing?: React.ReactNode;
+  /** Inline colour for the value alone — the model name in its tier's. */
+  valueStyle?: React.CSSProperties;
   title: string;
   content: (close: () => void) => React.ReactNode;
 }): React.JSX.Element {
@@ -73,7 +77,7 @@ function StatusBarPicker({
           >
             <span aria-hidden="true" className="inline-flex">{icon}</span>
             <span className="opacity-70">{label}</span>
-            <span className="truncate max-w-[9rem]">{value}</span>
+            <span className="truncate max-w-[9rem]" style={valueStyle}>{value}</span>
             {trailing}
           </button>
         }
@@ -182,6 +186,11 @@ export function SessionControlPickers({
   // reconcileLiveModelName. The session card already reports what ran; this
   // keeps the readout beside it from saying something different.
   const modelName = reconcileLiveModelName(modelData, activeDefaultModel);
+  // The name's colour is the Cost Report's for the model it names: on
+  // default, the one that actually answered; else the pick, falling back
+  // to the row it resolved to (a concrete id the catalog lists by alias).
+  const modelColorId = model === 'default' ? (activeDefaultModel ?? modelData.resolvedId ?? model) : model;
+  const modelNameColor = modelOwnColor(modelColorId, screenChartMode()) ?? modelOwnColor(modelData.resolvedId ?? modelData.id, screenChartMode());
   const rawModel = raw.find((m) => m.value === model);
   const effortData = EFFORT_LEVELS.find((l) => l.id === effort);
   const effortName = effortData?.name ?? effort;
@@ -202,6 +211,7 @@ export function SessionControlPickers({
         icon={<Zap className="h-3.5 w-3.5" />}
         label="model"
         value={modelName}
+        valueStyle={modelNameColor ? { color: modelNameColor } : undefined}
         trailing={<span className={cn('opacity-80', effortData?.color)}>{effortName}</span>}
         title={`Model: ${modelName} · Effort: ${effortName}`}
         content={(close) => (
