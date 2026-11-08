@@ -74,6 +74,7 @@ export const MessageResponse = React.memo(function MessageResponse({ children }:
 export function MessageActions({ from, children }: { from: 'user' | 'assistant'; children: React.ReactNode }) {
   return (
     <div
+      data-message-actions
       className={cn(
         'flex h-6 items-center gap-1 text-xs text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100',
         from === 'user' && 'justify-end',

@@ -1,133 +1,194 @@
-import { resolvePricing, type ModelPricingInput } from './pricing';
+import { SHIPPED_PRICING, resolvePricing, type ModelPricingInput } from './pricing';
 
-// Cost Report chart palette — fixed model → colour, never assigned by rank.
+// Cost Report palette — colour follows the ENTITY, never its rank on screen.
 //
-// Hues are the dataviz categorical set, re-ordered to lead with red / blue /
-// green on request. The ORDER is the CVD-safety mechanism, not cosmetics: all
-// 40,320 orderings were enumerated against `scripts/validate_palette.js` in
-// both modes, and this is the best of the 10 that lead with those three hues
-// AND clear the ΔE >= 8 adjacent-pair gate outright (worst adjacent CVD 9.2
-// light / 9.4 dark — better margins than the palette's own default order).
+// A model's HUE is its price tier, in the order the effort picker uses for
+// its levels: blue (Haiku, cheapest), green (Sonnet), amber (Opus), purple
+// (Fable; Mythos is priced as Fable and sits with it). Its SHADE is its
+// version within the tier: the newest is the full colour and older ones step
+// lighter, so Opus 5.5 and Opus 5 — the two biggest segments of most bars —
+// stay apart in a stack and in the legend. Past the ramp the oldest share its
+// last shade; they are never in use together.
 //
-// Red and green are never adjacent. They are the classic protan/deutan
-// confusion pair, so blue has to sit between them; that is why the order is
-// red→blue→green and not blue→green→red, and it is not something eyeballing
-// would have caught.
+// The rank comes from the versions the pricing table names (shipped rows plus
+// the user's), never from which models are on screen. If filtering a model
+// out repainted the survivors, no two screenshots would be comparable and
+// every month-over-month reading would silently lie.
 //
-// Model→slot assignment is unchanged from `ai-cost-report.py`'s MODEL_SLOT (the
-// slots now live on the `SHIPPED_PRICING` rows in `pricing.ts`), so
-// the three models that dominate real spend (opus-4-8, opus-5, fable-5) take
-// the three leading hues. NOTE: the previous order was chosen to match the
-// Anthropic console's own model colours so the two read side by side. That
-// property is deliberately given up here.
-//
-// The invariant that still holds: colour follows the ENTITY, never its rank.
-// If filtering a model out repainted the survivors, no two screenshots would
-// be comparable and every month-over-month reading would silently lie.
+// This replaced a fixed eight-hue categorical palette with a per-row slot
+// (`colorSlot`, dropped in schema v31): the colours were CVD-ordered but told
+// nothing about the model, and Opus 5 was blue while Opus 5.5 was orange.
 
 export type ChartMode = 'light' | 'dark';
+export type Tier = 'haiku' | 'sonnet' | 'opus' | 'fable';
 
-export const CATEGORICAL_LIGHT = [
-  '#e34948', // 0 red
-  '#2a78d6', // 1 blue
-  '#008300', // 2 green
-  '#e87ba4', // 3 magenta
-  '#eda100', // 4 yellow
-  '#4a3aa7', // 5 violet
-  '#eb6834', // 6 orange
-  '#1baf7a', // 7 aqua
-] as const;
+/** Cheapest first. */
+export const TIER_ORDER: readonly Tier[] = ['haiku', 'sonnet', 'opus', 'fable'];
 
-/** The same eight hues stepped for the dark surface — a selected dark palette,
- *  not an automatic flip of the light one. */
-export const CATEGORICAL_DARK = [
-  '#e66767', // 0 red
-  '#3987e5', // 1 blue
-  '#008300', // 2 green
-  '#d55181', // 3 magenta
-  '#c98500', // 4 yellow
-  '#9085e9', // 5 violet
-  '#d95926', // 6 orange
-  '#199e70', // 7 aqua
-] as const;
+/** Family token in a model id or pricing pattern → tier. */
+const FAMILY_TIER: Record<string, Tier> = {
+  haiku: 'haiku',
+  sonnet: 'sonnet',
+  opus: 'opus',
+  fable: 'fable',
+  mythos: 'fable',
+};
 
-/** `<synthetic>` records are CLI bookkeeping and cost nothing. Giving them a
- *  series hue would imply they are spend worth comparing. */
-const NEUTRAL: Record<ChartMode, string> = { light: '#898781', dark: '#898781' };
+/** Shades newest → older, per surface. Tailwind's blue / green / amber /
+ *  purple: 600, 400, 300, 200 on light; 500, 300, 200, 100 on dark, where the
+ *  darker steps would sink into the plot. */
+export const SHADES: Record<ChartMode, Record<Tier, readonly string[]>> = {
+  light: {
+    haiku: ['#2563eb', '#60a5fa', '#93c5fd', '#bfdbfe'],
+    sonnet: ['#16a34a', '#4ade80', '#86efac', '#bbf7d0'],
+    opus: ['#d97706', '#fbbf24', '#fcd34d', '#fde68a'],
+    fable: ['#9333ea', '#c084fc', '#d8b4fe', '#e9d5ff'],
+  },
+  dark: {
+    haiku: ['#3b82f6', '#93c5fd', '#bfdbfe', '#dbeafe'],
+    sonnet: ['#22c55e', '#86efac', '#bbf7d0', '#dcfce7'],
+    opus: ['#f59e0b', '#fcd34d', '#fde68a', '#fef3c7'],
+    fable: ['#a855f7', '#d8b4fe', '#e9d5ff', '#f3e8ff'],
+  },
+};
+
+/** `<synthetic>` records are CLI bookkeeping and cost nothing; an unknown
+ *  family has no tier. Neither gets a tier hue, which would imply spend worth
+ *  comparing to the real ones. */
+export const NEUTRAL = '#898781';
+
+/** The price tier a model id, alias or pricing pattern belongs to, read off
+ *  its family token; null for an alias with no family ("default"), an
+ *  unknown family or `<synthetic>`. */
+export function tierOf(model: string): Tier | null {
+  for (const token of model.toLowerCase().split(/[^a-z]+/)) {
+    const tier = FAMILY_TIER[token];
+    if (tier) return tier;
+  }
+  return null;
+}
+
+/** The dotted version a label spells ("Opus 5.5" → [5, 5]), or null. */
+function labelVersion(label: string): number[] | null {
+  const match = /(\d+(?:\.\d+)*)/.exec(label);
+  return match ? match[1].split('.').map(Number) : null;
+}
+
+function compareVersions(a: number[], b: number[]): number {
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const diff = (a[i] ?? 0) - (b[i] ?? 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
+}
 
 /**
- * Display metadata for a model, resolved through the SAME table as its rates.
- *
- * There is no second model list here. A model's legend name and colour live on
- * its `SHIPPED_PRICING` row next to its price, and a user's `model_pricing`
- * row overrides both through one resolver — so naming a new model on the chart
- * is the same one row that prices it, not a parallel edit in a second file
- * that silently drifts.
- *
- * Fields resolve independently: a row that sets only a rate keeps the shipped
- * label, and a row that sets only a label keeps the shipped colour.
+ * Every version the pricing table names in a tier, newest first. User rows
+ * count alongside the shipped ones, so a model added in Settings ranks where
+ * its version puts it. Versions, not models: two labels that spell the same
+ * version (Fable 5, Mythos 5) share a rank.
  */
-function displayFor(
-  model: string,
-  userRows?: readonly ModelPricingInput[] | null,
-): { slot?: number; label?: string } {
-  // Colours must not shift with the row date being rendered, or a chart would
-  // repaint itself mid-axis. Display metadata always resolves at today.
-  const { row } = resolvePricing(model, new Date().toISOString().slice(0, 10), userRows);
-  return { slot: row.colorSlot, label: row.label };
-}
-
-/** Stable string hash, so an unmapped model keeps one colour across renders
- *  and across sessions rather than shifting with the result set. */
-function hashSlot(model: string): number {
-  let h = 0;
-  for (let i = 0; i < model.length; i += 1) {
-    h = (h * 31 + model.charCodeAt(i)) | 0;
+function tierVersions(tier: Tier, userRows?: readonly ModelPricingInput[] | null): number[][] {
+  const seen = new Map<string, number[]>();
+  for (const row of [...(userRows ?? []), ...SHIPPED_PRICING]) {
+    if (!row.label || tierOf(row.pattern) !== tier) continue;
+    const v = labelVersion(row.label);
+    if (v) seen.set(v.join('.'), v);
   }
-  return Math.abs(h) % CATEGORICAL_LIGHT.length;
+  return [...seen.values()].sort((a, b) => compareVersions(b, a));
 }
 
+/** Where a model sits in its tier: 0 for the newest version, or for a family
+ *  alias that names no version. */
+function rankOf(model: string, tier: Tier, userRows?: readonly ModelPricingInput[] | null): number {
+  const { row } = resolvePricing(model, today(), userRows);
+  const v = row.label ? labelVersion(row.label) : null;
+  if (!v) return 0;
+  const i = tierVersions(tier, userRows).findIndex((o) => compareVersions(o, v) === 0);
+  return i < 0 ? 0 : i;
+}
+
+/** Display metadata always resolves at today: a colour that shifted with the
+ *  row date being rendered would repaint a chart mid-axis. */
+function today(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function isSynthetic(model: string): boolean {
+  return (model || '').toLowerCase().includes('synthetic');
+}
+
+/**
+ * A model's own colour, or null when it has none to give: `<synthetic>`, an
+ * alias that names no family ("default"), an unknown family. For a single
+ * model shown on its own — Modern's model-change line — where a neutral
+ * would read as a colour choice.
+ */
+export function modelOwnColor(
+  model: string,
+  mode: ChartMode,
+  userRows?: readonly ModelPricingInput[] | null,
+): string | null {
+  // Checked before the table, so no row can promote bookkeeping to a tier.
+  if (isSynthetic(model)) return null;
+  const tier = tierOf(model);
+  if (!tier) return null;
+  const ramp = SHADES[mode][tier];
+  return ramp[Math.min(rankOf(model, tier, userRows), ramp.length - 1)];
+}
+
+/** The theme on screen, read off the root's class, for the surfaces that
+ *  colour a model outside the chart (picker rows, Modern's model line). */
+export function screenChartMode(): ChartMode {
+  return typeof document !== 'undefined' && document.documentElement.classList.contains('theme-light')
+    ? 'light'
+    : 'dark';
+}
+
+/** The chart's colour for a model: its own, or the neutral. */
 export function modelColor(
   model: string,
   mode: ChartMode,
   userRows?: readonly ModelPricingInput[] | null,
 ): string {
-  // Checked before the table, so no row can promote bookkeeping to a series
-  // hue and make `<synthetic>` read as spend worth comparing.
-  if ((model || '').toLowerCase().includes('synthetic')) return NEUTRAL[mode];
-  const slots = mode === 'dark' ? CATEGORICAL_DARK : CATEGORICAL_LIGHT;
-  const { slot } = displayFor(model, userRows);
-  return slots[slot ?? hashSlot(model)];
+  return modelOwnColor(model, mode, userRows) ?? NEUTRAL;
 }
 
 /**
- * Sort comparator putting models in fixed slot order, so the stack order,
- * the legend order and the table order all agree. Unmapped models sort last,
+ * Sort comparator putting models in tier order, cheapest first, and within a
+ * tier newest first — the order the shades step in — so the stack order, the
+ * legend order and the table order all agree. Models with no tier sort last,
  * alphabetically, which keeps the order total (a partial order would let two
  * renders of the same data disagree).
  */
-export function bySlot(
+export function byTier(
   userRows?: readonly ModelPricingInput[] | null,
 ): (a: string, b: string) => number {
+  const key = (m: string): [number, number] | null => {
+    if (isSynthetic(m)) return null;
+    const tier = tierOf(m);
+    return tier ? [TIER_ORDER.indexOf(tier), rankOf(m, tier, userRows)] : null;
+  };
   return (a, b) => {
-    const sa = displayFor(a, userRows).slot;
-    const sb = displayFor(b, userRows).slot;
-    if (sa != null && sb != null) return sa - sb || a.localeCompare(b);
-    if (sa != null) return -1;
-    if (sb != null) return 1;
+    const ka = key(a);
+    const kb = key(b);
+    if (ka && kb) return ka[0] - kb[0] || ka[1] - kb[1] || a.localeCompare(b);
+    if (ka) return -1;
+    if (kb) return 1;
     return a.localeCompare(b);
   };
 }
 
 /** Table-free comparator, for the callers that have no pricing table to hand. */
-export const compareModelsBySlot = bySlot();
+export const compareModels = byTier();
 
 /** Human label for a legend. Model ids carry a date suffix that makes a
  *  legend unreadable; an unrecognised id passes through rather than being
- *  guessed at. */
+ *  guessed at. A user row's label comes through the same resolver as its
+ *  rates, so naming a model on the chart is the one row that prices it. */
 export function modelLabel(
   model: string,
   userRows?: readonly ModelPricingInput[] | null,
 ): string {
-  return displayFor(model, userRows).label ?? model;
+  return resolvePricing(model, today(), userRows).row.label ?? model;
 }

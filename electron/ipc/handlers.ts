@@ -629,7 +629,6 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
       cacheWrite5mPerM: p?.cacheWrite5mPerM ?? p?.cache_write_5m_per_m,
       cacheWrite1hPerM: p?.cacheWrite1hPerM ?? p?.cache_write_1h_per_m,
       label: p?.label,
-      colorSlot: p?.colorSlot ?? p?.color_slot,
       contextWindow: p?.contextWindow ?? p?.context_window,
     }) ?? null),
     model_pricing_delete: wrapWith((p: Record<string, unknown>) => {

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Trash2, Plus, ChevronDown, ChevronRight } from 'lucide-react';
 import { api } from '@/lib/api';
 import { PRICING_FIELDS, type ModelPricingInput, type ModelPricingRow } from '@/lib/pricing';
-import { CATEGORICAL_LIGHT } from '@/lib/costChartPalette';
+import { modelColor } from '@/lib/costChartPalette';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useSaveStatus } from '@/components/settings-panels/saveStatus';
@@ -31,7 +31,6 @@ interface DraftRow {
   pattern: string;
   effectiveFrom: string;
   label: string;
-  colorSlot: string;
   contextWindow: string;
   rates: Partial<Record<RateField, string>>;
 }
@@ -40,7 +39,6 @@ const EMPTY_DRAFT: DraftRow = {
   pattern: '',
   effectiveFrom: '1970-01-01',
   label: '',
-  colorSlot: '',
   contextWindow: '',
   rates: {},
 };
@@ -98,8 +96,6 @@ export function ModelPricingEditor() {
       if (Number.isNaN(n)) { setError(`${field} is not a number`); return; }
       rates[field] = n;
     }
-    const slot = toNumber(draft.colorSlot);
-    if (slot !== undefined && Number.isNaN(slot)) { setError('Colour is not a number'); return; }
     const contextWindow = toNumber(draft.contextWindow);
     if (contextWindow !== undefined && Number.isNaN(contextWindow)) {
       setError('Context window is not a number');
@@ -113,7 +109,6 @@ export function ModelPricingEditor() {
       effectiveFrom: draft.effectiveFrom,
       ...rates,
       ...(draft.label.trim() ? { label: draft.label.trim() } : {}),
-      ...(slot !== undefined ? { colorSlot: slot } : {}),
       ...(contextWindow !== undefined ? { contextWindow } : {}),
     }));
     if (!saved) return;
@@ -181,16 +176,14 @@ export function ModelPricingEditor() {
                       ))}
                       <td className="p-2 text-right tabular-nums">{fmtWindow(r.contextWindow)}</td>
                       <td className="p-2">{r.label ?? '—'}</td>
+                      {/* Derived from the row's tier and version, not set
+                          per row: the Cost Report's own colour for it. */}
                       <td className="p-2">
-                        {r.colorSlot == null ? (
-                          '—'
-                        ) : (
-                          <span
-                            className="inline-block h-3 w-3 rounded-sm align-middle"
-                            style={{ background: CATEGORICAL_LIGHT[r.colorSlot] }}
-                            title={`Slot ${r.colorSlot}`}
-                          />
-                        )}
+                        <span
+                          className="inline-block h-3 w-3 rounded-sm align-middle"
+                          style={{ background: modelColor(`claude-${r.pattern}`, 'light') }}
+                          title={`Cost Report colour for ${r.pattern}`}
+                        />
                       </td>
                       <td className="p-2 text-right">
                         <button
@@ -242,13 +235,6 @@ export function ModelPricingEditor() {
                 aria-label="Chart label"
                 value={draft.label}
                 onChange={(e) => setDraft((d) => ({ ...d, label: e.target.value }))}
-              />
-              <Input
-                className="h-8 w-24 text-xs"
-                placeholder={`Colour 0-${CATEGORICAL_LIGHT.length - 1}`}
-                aria-label="Colour slot"
-                value={draft.colorSlot}
-                onChange={(e) => setDraft((d) => ({ ...d, colorSlot: e.target.value }))}
               />
               <Input
                 className="h-8 w-32 text-xs"

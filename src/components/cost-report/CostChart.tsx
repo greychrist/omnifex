@@ -13,7 +13,7 @@ import {
 } from 'recharts';
 import type { CostHistoryPeriodModel } from '@/lib/api';
 import {
-  bySlot,
+  byTier,
   modelColor,
   modelLabel,
   type ChartMode,
@@ -258,7 +258,7 @@ export function CostChartLegend(
 ) {
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-      {[...models].sort(bySlot(pricing)).map((m) => (
+      {[...models].sort(byTier(pricing)).map((m) => (
         <span key={m} className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
           <span
             className="h-2.5 w-2.5 rounded-sm"

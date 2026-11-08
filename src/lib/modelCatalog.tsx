@@ -81,7 +81,6 @@ export function extraModelOptions(existing: Model[]): Model[] {
       description: '',
       icon,
       shortName: (row.label[0] ?? '?').toUpperCase(),
-      color: 'text-primary',
     }];
   });
 }
@@ -159,7 +158,7 @@ export function toPickerModel(info: SessionModelInfo): Model {
     description,
     icon,
     shortName: (name[0] ?? '?').toUpperCase(),
-    color: 'text-primary',
+    ...(info.resolvedModel ? { resolvedId: info.resolvedModel } : {}),
   };
 }
 
@@ -169,10 +168,10 @@ export function toPickerModel(info: SessionModelInfo): Model {
  * the CLI accepts for `--model` / `set_model`.
  */
 export const FALLBACK_MODELS: Model[] = [
-  { id: 'default', name: 'Default (recommended)', description: "The CLI's recommended model", icon, shortName: 'D', color: 'text-primary' },
-  { id: 'claude-fable-5[1m]', name: 'Fable 5', description: 'Most capable for your hardest and longest-running tasks', icon, shortName: 'F', color: 'text-primary' },
-  { id: 'sonnet', name: 'Sonnet', description: 'Efficient for routine tasks', icon, shortName: 'S', color: 'text-primary' },
-  { id: 'haiku', name: 'Haiku', description: 'Fastest for quick answers', icon, shortName: 'H', color: 'text-primary' },
+  { id: 'default', name: 'Default (recommended)', description: "The CLI's recommended model", icon, shortName: 'D' },
+  { id: 'claude-fable-5[1m]', name: 'Fable 5', description: 'Most capable for your hardest and longest-running tasks', icon, shortName: 'F' },
+  { id: 'sonnet', name: 'Sonnet', description: 'Efficient for routine tasks', icon, shortName: 'S' },
+  { id: 'haiku', name: 'Haiku', description: 'Fastest for quick answers', icon, shortName: 'H' },
 ];
 
 /** Picker list for a raw catalog; falls back when the catalog is empty. */
@@ -218,9 +217,21 @@ function concreteTwin(id: string, models: Model[]): Model | undefined {
  * `activeDefaultModel` is the concrete id a live session reports (from
  * `get_context_usage` or the last assistant JSONL line) and beats the
  * settings-pin/catalog inference, since it is an observation rather than a
- * guess. When nothing identifies the model at all, the entry keeps the bare
- * "Account Default" label and every row is passed through untouched.
+ * guess — but only an observation of a session running ON default says what
+ * default is; callers gate it with liveDefaultEvidence. When nothing
+ * identifies the model at all, the entry keeps the bare "Account Default"
+ * label and every row is passed through untouched.
  */
+/**
+ * The live model as evidence of what "default" runs: only while the session
+ * IS on default. A session pinned to Fable runs Fable, and taking that as
+ * the account default put the mark on the pick instead of the default, and
+ * folded the pick's own row away so nothing was highlighted.
+ */
+export function liveDefaultEvidence(selectedModel: string, liveModel: string | null | undefined): string | null {
+  return selectedModel === 'default' && liveModel ? liveModel : null;
+}
+
 export function withAccountDefaultLabel(
   models: Model[],
   pinnedModel: string | null | undefined,
@@ -245,6 +256,12 @@ export function withAccountDefaultLabel(
   const merged: Model = {
     ...def,
     name: `${name} ${ACCOUNT_DEFAULT_MARK}`,
+    // The model this row stands for: the live one when observed, else the
+    // twin's concrete id (a resumed session's pick is the JSONL's concrete
+    // id, not the alias), else the twin's id, else the pin as written.
+    // ModelList highlights the row when that is the pick, and colours it as
+    // that model.
+    resolvedId: live ?? twin?.resolvedId ?? twin?.id ?? defaultId,
     // A model the account can't see has no row to borrow a description from,
     // and the recommended model's copy would be a lie there — name it instead.
     description: twin ? twin.description || def.description : name,
@@ -434,6 +451,9 @@ export function useModelCatalog(
   /** Concrete model id a live session reports; beats the settings pin when
    *  labeling the account-default row. */
   activeDefaultModel?: string | null,
+  /** Bump to re-read the settings.json pin — after `/model … and saved as
+   *  your default for new sessions` rewrote it. */
+  pinRefreshKey = 0,
 ): {
   models: Model[];
   raw: SessionModelInfo[];
@@ -488,7 +508,7 @@ export function useModelCatalog(
     return () => {
       cancelled = true;
     };
-  }, [configDir]);
+  }, [configDir, pinRefreshKey]);
 
   return {
     models: withAccountDefaultLabel(effectiveModels(raw), pinnedModel, raw, activeDefaultModel),

@@ -16,6 +16,7 @@ import { POPOVER_SECTION, POPOVER_OPTION_DETAIL, popoverOption } from "@/compone
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip-modern";
 import { motion } from "framer-motion";
 import type { SessionModelInfo } from "@/lib/api";
+import { ACCOUNT_DEFAULT_MARK } from "@/lib/modelCatalog";
 
 // ── Effort ──────────────────────────────────────────────────────────────
 
@@ -175,7 +176,7 @@ export function EffortPickerDropdown({ effort, onSelect, levels, bare = false }:
           onClick={() => { onSelect(level.id); }}
           className={popoverOption(effort === level.id)}
         >
-          <span className={cn("w-5 shrink-0 font-bold", level.color)}>
+          <span className={cn("w-9 shrink-0 font-bold", level.color)}>
             {level.shortName}
           </span>
           <div className="flex-1 min-w-0">
@@ -318,10 +319,14 @@ export function PermissionPickerDropdown({
   onPermissionModeChange,
   onOpenChange,
   onRestartInBypass,
+  defaultMode,
 }: {
   normalizedMode: string;
   onPermissionModeChange?: (mode: string) => void;
   onOpenChange: (open: boolean) => void;
+  /** The account's default permission mode (its session defaults), marked
+   *  as the model picker marks the account-default model. */
+  defaultMode?: string | null;
   /**
    * Set when the live session was NOT launched in Bypass. The CLI refuses a
    * mid-session switch to Bypass then (it is only available to a process
@@ -332,9 +337,17 @@ export function PermissionPickerDropdown({
 }) {
   return (
     <div className="w-72 flex flex-col gap-0.5">
-      <div className={cn(POPOVER_SECTION, "mb-1")}>Permissions</div>
+      <div className={cn(POPOVER_SECTION, "mb-1 flex items-baseline justify-between gap-2")}>
+        <span>Permissions</span>
+        {defaultMode && PERMISSION_MODES.some((m) => m.id === defaultMode) && (
+          <span className="normal-case tracking-normal">
+            {ACCOUNT_DEFAULT_MARK} account default
+          </span>
+        )}
+      </div>
       {PERMISSION_MODES.map((mode) => {
         const isActive = mode.id === normalizedMode;
+        const name = mode.id === defaultMode ? `${mode.name} ${ACCOUNT_DEFAULT_MARK}` : mode.name;
         if (mode.id === "bypassPermissions" && onRestartInBypass) {
           return (
             <div
@@ -347,7 +360,7 @@ export function PermissionPickerDropdown({
               </span>
               <div className="flex-1 min-w-0">
                 <div className={cn("font-medium opacity-50", mode.color)}>
-                  {mode.name}
+                  {name}
                 </div>
                 <div className={POPOVER_OPTION_DETAIL}>
                   Only available in a session started in Bypass.
@@ -381,7 +394,7 @@ export function PermissionPickerDropdown({
             </span>
             <div className="flex-1 min-w-0">
               <div className={cn("font-medium", mode.color)}>
-                {mode.name}
+                {name}
               </div>
               <div className={POPOVER_OPTION_DETAIL}>
                 {mode.description}

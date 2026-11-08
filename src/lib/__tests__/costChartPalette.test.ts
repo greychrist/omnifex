@@ -1,71 +1,162 @@
+// @vitest-environment jsdom
 import { describe, it, expect } from 'vitest';
 import {
-  CATEGORICAL_LIGHT,
-  CATEGORICAL_DARK,
+  SHADES,
+  TIER_ORDER,
+  NEUTRAL,
   modelColor,
+  modelOwnColor,
   modelLabel,
-  compareModelsBySlot,
-  bySlot,
+  tierOf,
+  compareModels,
+  byTier,
+  screenChartMode,
 } from '../costChartPalette';
 import { SHIPPED_PRICING, type ModelPricingInput } from '../pricing';
 
 /**
- * Colour follows the ENTITY, never its rank. If a filter that removes one
- * model repaints the survivors, the legend stops meaning the same thing
- * between two screenshots and every month-over-month comparison silently
- * lies. This is the property the tests exist to pin down.
+ * Colour follows the ENTITY, never its rank on screen. If a filter that
+ * removes one model repainted the survivors, the legend would stop meaning
+ * the same thing between two screenshots and every month-over-month
+ * comparison would silently lie.
+ *
+ * The hue is the model's price tier — blue (Haiku) is cheapest, then green
+ * (Sonnet), amber (Opus) and purple (Fable), the order the effort picker
+ * uses — and the shade is the version: the newest the full colour, older
+ * ones stepping lighter, so two versions of one family stay apart in a
+ * stacked bar.
  */
-describe('modelColor', () => {
-  it('gives a model the same colour regardless of what else is on screen', () => {
-    expect(modelColor('claude-opus-5', 'light')).toBe(modelColor('claude-opus-5', 'light'));
-    // opus-5 is slot 1 (orange) whether or not opus-4-8 (slot 0) is present.
-    expect(modelColor('claude-opus-5', 'light')).toBe(CATEGORICAL_LIGHT[1]);
-    expect(modelColor('claude-opus-4-8', 'light')).toBe(CATEGORICAL_LIGHT[0]);
+describe('tierOf', () => {
+  it('reads the price tier off the family in the id', () => {
+    expect(tierOf('claude-haiku-5-5')).toBe('haiku');
+    expect(tierOf('claude-sonnet-5-20260715')).toBe('sonnet');
+    expect(tierOf('claude-opus-5-5[1m]')).toBe('opus');
+    expect(tierOf('claude-fable-5-1')).toBe('fable');
+    // Mythos is priced as Fable and sits in its tier.
+    expect(tierOf('claude-mythos-5')).toBe('fable');
+    expect(tierOf('sonnet')).toBe('sonnet');
   });
 
-  it('matches dated and suffixed model ids to the same slot', () => {
+  it('has none for an alias or an unknown family', () => {
+    expect(tierOf('default')).toBeNull();
+    expect(tierOf('claude-brandnew-9')).toBeNull();
+    expect(tierOf('<synthetic>')).toBeNull();
+  });
+});
+
+describe('modelColor', () => {
+  it('paints each tier in its hue: blue, green, amber, purple from cheapest up', () => {
+    expect(TIER_ORDER).toEqual(['haiku', 'sonnet', 'opus', 'fable']);
+    expect(modelColor('claude-haiku-5-5', 'light')).toBe(SHADES.light.haiku[0]);
+    expect(modelColor('claude-sonnet-5-5', 'light')).toBe(SHADES.light.sonnet[0]);
+    expect(modelColor('claude-opus-5-5', 'light')).toBe(SHADES.light.opus[0]);
+    expect(modelColor('claude-fable-5-1', 'light')).toBe(SHADES.light.fable[0]);
+    expect(SHADES.light.haiku[0]).toBe('#2563eb');
+    expect(SHADES.light.sonnet[0]).toBe('#16a34a');
+    expect(SHADES.light.opus[0]).toBe('#d97706');
+    expect(SHADES.light.fable[0]).toBe('#9333ea');
+  });
+
+  it('steps older versions of a family to lighter shades of its hue', () => {
+    expect(modelColor('claude-opus-5', 'light')).toBe(SHADES.light.opus[1]);
+    expect(modelColor('claude-opus-4-8', 'light')).toBe(SHADES.light.opus[2]);
+    expect(modelColor('claude-opus-4-7', 'light')).toBe(SHADES.light.opus[3]);
+    // Past the ramp, the oldest share its last shade.
+    expect(modelColor('claude-opus-4-6', 'light')).toBe(SHADES.light.opus[3]);
+    expect(modelColor('claude-opus-4-5', 'light')).toBe(SHADES.light.opus[3]);
+    expect(modelColor('claude-sonnet-5', 'light')).toBe(SHADES.light.sonnet[1]);
+    expect(modelColor('claude-haiku-4-5', 'light')).toBe(SHADES.light.haiku[1]);
+    expect(modelColor('claude-fable-5', 'light')).toBe(SHADES.light.fable[1]);
+    // Mythos 5 ranks with Fable 5 in the purple tier.
+    expect(modelColor('claude-mythos-5', 'light')).toBe(SHADES.light.fable[1]);
+  });
+
+  it('gives a model the same colour regardless of what else is on screen', () => {
+    expect(modelColor('claude-opus-5', 'light')).toBe(modelColor('claude-opus-5', 'light'));
+  });
+
+  it('matches dated and suffixed model ids to the same shade', () => {
     const base = modelColor('claude-opus-5', 'light');
     expect(modelColor('claude-opus-5-20260715', 'light')).toBe(base);
     expect(modelColor('claude-opus-5[1m]', 'light')).toBe(base);
     expect(modelColor('claude-haiku-4-5-20251001', 'light')).toBe(modelColor('claude-haiku-4-5', 'light'));
   });
 
-  it('steps the same hue for the dark surface rather than flipping to another palette', () => {
-    expect(CATEGORICAL_DARK).toHaveLength(CATEGORICAL_LIGHT.length);
-    expect(modelColor('claude-opus-5', 'dark')).toBe(CATEGORICAL_DARK[1]);
+  it('uses a ramp stepped for the dark surface, not a flip of the light one', () => {
+    for (const tier of TIER_ORDER) {
+      expect(SHADES.dark[tier]).toHaveLength(SHADES.light[tier].length);
+      expect(new Set(SHADES.dark[tier]).size).toBe(SHADES.dark[tier].length);
+      expect(new Set(SHADES.light[tier]).size).toBe(SHADES.light[tier].length);
+    }
+    expect(modelColor('claude-opus-5-5', 'dark')).toBe(SHADES.dark.opus[0]);
+    expect(modelColor('claude-opus-5-5', 'dark')).not.toBe(modelColor('claude-opus-5-5', 'light'));
   });
 
-  it('is deterministic and in-range for an unmapped model', () => {
-    const a = modelColor('claude-brandnew-9', 'light');
-    expect(CATEGORICAL_LIGHT).toContain(a);
-    expect(modelColor('claude-brandnew-9', 'light')).toBe(a);
-    // Two different unknown models should not both land on the same slot if
-    // it can be helped — a stable hash, not a constant.
-    expect(new Set([
-      modelColor('claude-alpha-1', 'light'),
-      modelColor('claude-beta-2', 'light'),
-      modelColor('claude-gamma-3', 'light'),
-    ]).size).toBeGreaterThan(1);
+  it('gives a family alias the tier\'s newest shade', () => {
+    expect(modelColor('sonnet', 'light')).toBe(SHADES.light.sonnet[0]);
+    expect(modelColor('opus', 'dark')).toBe(SHADES.dark.opus[0]);
   });
 
-  it('paints <synthetic> in a neutral, not a series hue — it is bookkeeping, not spend', () => {
-    expect(CATEGORICAL_LIGHT).not.toContain(modelColor('<synthetic>', 'light'));
+  it('paints <synthetic> and an unknown family in the neutral — neither is spend in a tier', () => {
+    const all = TIER_ORDER.flatMap((t) => [...SHADES.light[t], ...SHADES.dark[t]]);
+    expect(modelColor('<synthetic>', 'light')).toBe(NEUTRAL);
+    expect(modelColor('claude-brandnew-9', 'light')).toBe(NEUTRAL);
+    expect(modelColor('default', 'dark')).toBe(NEUTRAL);
+    expect(all).not.toContain(NEUTRAL);
+  });
+
+  it('ranks a newer version a user row adds ahead of the shipped ones', () => {
+    const table: ModelPricingInput[] = [
+      { pattern: 'opus-6', effectiveFrom: '1970-01-01', inputPerM: 5, outputPerM: 25, label: 'Opus 6' },
+    ];
+    expect(modelColor('claude-opus-6', 'light', table)).toBe(SHADES.light.opus[0]);
+    expect(modelColor('claude-opus-5-5', 'light', table)).toBe(SHADES.light.opus[1]);
+    expect(modelColor('claude-opus-5', 'light', table)).toBe(SHADES.light.opus[2]);
+    // Without the row, Opus 5.5 is the newest again.
+    expect(modelColor('claude-opus-5-5', 'light')).toBe(SHADES.light.opus[0]);
+  });
+
+  it('cannot be promoted out of the neutral by a user row', () => {
+    const t: ModelPricingInput[] = [
+      { pattern: '<synthetic>', effectiveFrom: '1970-01-01', label: 'Opus 9' },
+    ];
+    expect(modelColor('<synthetic>', 'light', t)).toBe(NEUTRAL);
   });
 });
 
-describe('compareModelsBySlot', () => {
-  it('orders by fixed slot so the stack order matches the legend order', () => {
-    const models = ['claude-sonnet-5', 'claude-opus-4-8', 'claude-fable-5', 'claude-opus-5'];
-    expect([...models].sort(compareModelsBySlot)).toEqual([
-      'claude-opus-4-8', 'claude-opus-5', 'claude-fable-5', 'claude-sonnet-5',
+describe('modelOwnColor', () => {
+  // A single model shown on its own (Modern's model-change line) takes a
+  // colour only when it has a tier; an alias with no family or an unknown id
+  // gets none, rather than a neutral that would read as a colour choice.
+  it('is the tier shade for a model or family alias and null otherwise', () => {
+    expect(modelOwnColor('claude-opus-5-5', 'dark')).toBe(SHADES.dark.opus[0]);
+    expect(modelOwnColor('claude-opus-5-5[1m]', 'light')).toBe(SHADES.light.opus[0]);
+    expect(modelOwnColor('sonnet', 'dark')).toBe(SHADES.dark.sonnet[0]);
+    expect(modelOwnColor('default', 'dark')).toBeNull();
+    expect(modelOwnColor('totally-unknown', 'dark')).toBeNull();
+  });
+});
+
+describe('compareModels', () => {
+  it('orders by tier, cheapest first, then newest version first, so the stack matches the legend', () => {
+    const models = ['claude-fable-5', 'claude-opus-4-8', 'claude-sonnet-5', 'claude-opus-5', 'claude-haiku-5-5'];
+    expect([...models].sort(compareModels)).toEqual([
+      'claude-haiku-5-5', 'claude-sonnet-5', 'claude-opus-5', 'claude-opus-4-8', 'claude-fable-5',
     ]);
   });
 
-  it('puts unmapped models last, then alphabetical, so the order is total', () => {
-    const models = ['zeta-unknown', 'claude-opus-5', 'alpha-unknown'];
-    expect([...models].sort(compareModelsBySlot)).toEqual([
-      'claude-opus-5', 'alpha-unknown', 'zeta-unknown',
+  it('puts models with no tier last, then alphabetical, so the order is total', () => {
+    const models = ['zeta-unknown', 'claude-opus-5', 'alpha-unknown', '<synthetic>'];
+    expect([...models].sort(compareModels)).toEqual([
+      'claude-opus-5', '<synthetic>', 'alpha-unknown', 'zeta-unknown',
     ]);
+  });
+
+  it('follows a user row that adds a version', () => {
+    const table: ModelPricingInput[] = [
+      { pattern: 'opus-6', effectiveFrom: '1970-01-01', label: 'Opus 6' },
+    ];
+    expect(['claude-opus-5-5', 'claude-opus-6'].sort(byTier(table))).toEqual(['claude-opus-6', 'claude-opus-5-5']);
   });
 });
 
@@ -78,145 +169,33 @@ describe('modelLabel', () => {
   });
 
   it('passes an unrecognised id through rather than inventing a name', () => {
-    expect(modelLabel('<synthetic>')).toBe('<synthetic>');
-    expect(modelLabel('some-other-thing')).toBe('some-other-thing');
-  });
-});
-
-/**
- * The slot ORDER is the CVD-safety mechanism, not cosmetics. These pin the
- * properties that a well-meaning "let's make it prettier" edit would silently
- * break — the tests above only assert slot indices, which survive any recolour.
- *
- * Re-validate with the dataviz skill's own tool before changing a hex:
- *   node scripts/validate_palette.js "<comma-separated>" --mode light|dark
- */
-describe('palette safety properties', () => {
-  const RED = 0;
-  const GREEN = 2;
-
-  it('leads with red, blue, green as requested', () => {
-    expect(CATEGORICAL_LIGHT.slice(0, 3)).toEqual(['#e34948', '#2a78d6', '#008300']);
-    expect(CATEGORICAL_DARK.slice(0, 3)).toEqual(['#e66767', '#3987e5', '#008300']);
-  });
-
-  // Red and green are the classic protan/deutan confusion pair. Adjacent slots
-  // touch as stacked segments, so they must never neighbour each other — blue
-  // sits between them deliberately.
-  it('never places red and green in adjacent slots', () => {
-    expect(Math.abs(RED - GREEN)).toBeGreaterThan(1);
-  });
-
-  it('has eight distinct hues in each mode, and the same count in both', () => {
-    expect(CATEGORICAL_LIGHT).toHaveLength(8);
-    expect(CATEGORICAL_DARK).toHaveLength(8);
-    expect(new Set(CATEGORICAL_LIGHT).size).toBe(8);
-    expect(new Set(CATEGORICAL_DARK).size).toBe(8);
-  });
-
-  it('every model slot indexes a real palette entry', () => {
-    for (const model of [
-      'claude-opus-5', 'claude-opus-4-8', 'claude-opus-4-7', 'claude-fable-5',
-      'claude-mythos-5', 'claude-sonnet-5', 'claude-sonnet-4-6', 'claude-haiku-4-5',
-    ]) {
-      expect(CATEGORICAL_LIGHT).toContain(modelColor(model, 'light'));
-      expect(CATEGORICAL_DARK).toContain(modelColor(model, 'dark'));
-    }
-  });
-
-  // The models that carry essentially all of the real spend should be the ones
-  // wearing the leading hues; that is the point of the chosen assignment.
-  it('gives the three dominant models the three leading hues', () => {
-    expect(modelColor('claude-opus-4-8', 'dark')).toBe(CATEGORICAL_DARK[0]); // red
-    expect(modelColor('claude-opus-5', 'dark')).toBe(CATEGORICAL_DARK[1]);   // blue
-    expect(modelColor('claude-fable-5', 'dark')).toBe(CATEGORICAL_DARK[2]);  // green
-  });
-});
-
-describe('Fable 5.1 vs Fable 5', () => {
-  // `fable-5` is a substring of `claude-fable-5-1`, so before this was fixed
-  // both models matched the same MODEL_SLOT row: two separate Cost Report
-  // series, both painted green and both labelled "Fable 5" — indistinguishable
-  // in the legend, the table and the model filter.
-  it('labels Fable 5.1 distinctly from Fable 5', () => {
-    expect(modelLabel('claude-fable-5-1')).toBe('Fable 5.1');
-    expect(modelLabel('claude-fable-5')).toBe('Fable 5');
-  });
-
-  it('gives Fable 5.1 its own colour so the two series are tellable apart', () => {
-    expect(modelColor('claude-fable-5-1', 'light')).not.toBe(modelColor('claude-fable-5', 'light'));
-    expect(modelColor('claude-fable-5-1', 'dark')).not.toBe(modelColor('claude-fable-5', 'dark'));
-  });
-
-  it('orders them adjacently and totally', () => {
-    const sorted = ['claude-fable-5', 'claude-fable-5-1'].sort(compareModelsBySlot);
-    expect(sorted).toHaveLength(2);
-    expect(compareModelsBySlot('claude-fable-5-1', 'claude-fable-5')).not.toBe(0);
-  });
-});
-
-/**
- * The Cost Report must be able to name and colour a model that shipped after
- * this build. Display metadata rides the same override table as the rates, so
- * adding a model is one row in Settings > Pricing, not a release.
- */
-describe('display metadata from the pricing table', () => {
-  const table: ModelPricingInput[] = [
-    { pattern: 'brandnew-9', effectiveFrom: '1970-01-01', label: 'Brand New 9', colorSlot: 5 },
-  ];
-
-  it('labels a model the shipped table has never heard of', () => {
-    expect(modelLabel('claude-brandnew-9', table)).toBe('Brand New 9');
-    // Without the table it degrades to the raw id, as before.
     expect(modelLabel('claude-brandnew-9')).toBe('claude-brandnew-9');
+    expect(modelLabel('<synthetic>')).toBe('<synthetic>');
   });
 
-  it('colours it from the requested slot rather than the stable hash', () => {
-    expect(modelColor('claude-brandnew-9', 'light', table)).toBe(CATEGORICAL_LIGHT[5]);
-    expect(modelColor('claude-brandnew-9', 'dark', table)).toBe(CATEGORICAL_DARK[5]);
-  });
-
-  it('lets a row relabel a model the shipped table already knows', () => {
-    const relabel: ModelPricingInput[] = [
-      { pattern: 'opus-5', effectiveFrom: '1970-01-01', label: 'Opus 5 (prod)' },
+  it('takes a user row\'s label through the same resolver as its rates', () => {
+    const table: ModelPricingInput[] = [
+      { pattern: 'brandnew-9', effectiveFrom: '1970-01-01', label: 'Brand New 9' },
     ];
-    expect(modelLabel('claude-opus-5', relabel)).toBe('Opus 5 (prod)');
-    // A row that sets no label leaves the shipped one alone.
-    const rateOnly: ModelPricingInput[] = [
-      { pattern: 'opus-5', effectiveFrom: '1970-01-01', inputPerM: 4 },
-    ];
-    expect(modelLabel('claude-opus-5', rateOnly)).toBe('Opus 5');
+    expect(modelLabel('claude-brandnew-9', table)).toBe('Brand New 9');
   });
 
-  it('prefers the longest matching pattern, as the rate layer does', () => {
-    const both: ModelPricingInput[] = [
-      { pattern: 'fable', effectiveFrom: '1970-01-01', label: 'Any Fable' },
-      { pattern: 'fable-5-1', effectiveFrom: '1970-01-01', label: 'Fable 5.1 (pinned)' },
-    ];
-    expect(modelLabel('claude-fable-5-1', both)).toBe('Fable 5.1 (pinned)');
-    expect(modelLabel('claude-fable-5', both)).toBe('Any Fable');
-  });
-
-  it('sorts by the overridden slot so legend, stack and table still agree', () => {
-    const sorted = ['claude-brandnew-9', 'claude-opus-4-8'].sort(bySlot(table));
-    // opus-4-8 is slot 0, brandnew-9 is slot 5.
-    expect(sorted[0]).toBe('claude-opus-4-8');
-  });
-
-  it('keeps <synthetic> neutral even if a row tries to colour it', () => {
-    const t: ModelPricingInput[] = [
-      { pattern: '<synthetic>', effectiveFrom: '1970-01-01', colorSlot: 0 },
-    ];
-    expect(CATEGORICAL_LIGHT).not.toContain(modelColor('<synthetic>', 'light', t));
-  });
-
-  it('every shipped colorSlot is a real index into the palette', () => {
-    // The shipped rows are the only slots not validated on the way in.
+  it('every shipped label names a version its tier can rank', () => {
     for (const row of SHIPPED_PRICING) {
-      if (row.colorSlot == null) continue;
-      expect(Number.isInteger(row.colorSlot)).toBe(true);
-      expect(row.colorSlot).toBeGreaterThanOrEqual(0);
-      expect(row.colorSlot).toBeLessThan(CATEGORICAL_LIGHT.length);
+      if (!row.label) continue;
+      expect(tierOf(`claude-${row.pattern}`)).not.toBeNull();
+      expect(row.label).toMatch(/\d/);
     }
+  });
+});
+
+describe('screenChartMode', () => {
+  // The theme on screen, read off the root's class — what every surface that
+  // colours a model outside the chart (picker rows, Modern lines) uses.
+  it('is light under .theme-light and dark otherwise', () => {
+    document.documentElement.classList.remove('theme-light');
+    expect(screenChartMode()).toBe('dark');
+    document.documentElement.classList.add('theme-light');
+    try { expect(screenChartMode()).toBe('light'); } finally { document.documentElement.classList.remove('theme-light'); }
   });
 });

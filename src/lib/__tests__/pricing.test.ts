@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { modelColor } from '../costChartPalette';
 import { resolveRates, resolvePricing, computeMessageCost, totalInputTokens, resolveContextWindow } from '../pricing';
 
 const MTOK = 1_000_000;
@@ -166,7 +167,7 @@ describe('resolvePricing — Sonnet 5.5', () => {
   it('labels claude-sonnet-5-5 as Sonnet 5.5, in its own colour', () => {
     const { row } = resolvePricing('claude-sonnet-5-5', '2026-09-28');
     expect(row.label).toBe('Sonnet 5.5');
-    expect(row.colorSlot).not.toBe(resolvePricing('claude-sonnet-5', '2026-09-28').row.colorSlot);
+    expect(modelColor('claude-sonnet-5-5', 'light')).not.toBe(modelColor('claude-sonnet-5', 'light'));
   });
 
   it('prices it at $2/$10 with $0.20 cache reads until 2.1.296 halved them', () => {
@@ -197,7 +198,7 @@ describe('resolveRates — Haiku 5.5', () => {
   it('labels it Haiku 5.5 in its own colour with a 1M window', () => {
     const { row } = resolvePricing('claude-haiku-5-5', '2026-10-07');
     expect(row.label).toBe('Haiku 5.5');
-    expect(row.colorSlot).not.toBe(resolvePricing('claude-haiku-4-5', '2026-10-07').row.colorSlot);
+    expect(modelColor('claude-haiku-5-5', 'light')).not.toBe(modelColor('claude-haiku-4-5', 'light'));
     expect(resolveContextWindow('claude-haiku-5-5')).toBe(1_000_000);
     expect(resolveContextWindow('claude-haiku-4-5')).toBe(200_000);
   });

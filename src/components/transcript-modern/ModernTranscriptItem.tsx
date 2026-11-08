@@ -45,11 +45,26 @@ function resultContentOf(resultNode: JsonlNode | undefined): string | undefined 
   return typeof answer === 'string' ? answer : answer != null ? JSON.stringify(answer) : undefined;
 }
 
-function timeOf(node: JsonlNode): string | null {
+function dateOf(node: JsonlNode): Date | null {
   const at = (node as { receivedAt?: string | null }).receivedAt;
   if (!at) return null;
   const d = new Date(at);
-  return Number.isNaN(d.getTime()) ? null : d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' });
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/** Date and time for the hover row: "3-4-2026 3:04:05 PM" — the date
+ *  M-D-YYYY, unpadded, the time in the locale's own form. */
+function stampOf(node: JsonlNode): string | null {
+  const d = dateOf(node);
+  if (!d) return null;
+  const date = `${String(d.getMonth() + 1)}-${String(d.getDate())}-${String(d.getFullYear())}`;
+  return `${date} ${d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' })}`;
+}
+
+/** First in a hover row, before Copy and the rest. */
+function Stamp({ node }: { node: JsonlNode }) {
+  const stamp = stampOf(node);
+  return stamp ? <span data-message-stamp className="mr-1">{stamp}</span> : null;
 }
 
 export const ModernTranscriptItem = React.memo(function ModernTranscriptItem({
@@ -88,7 +103,7 @@ export const ModernTranscriptItem = React.memo(function ModernTranscriptItem({
             )}
           </UserBubble>
           <MessageActions from="user">
-            {timeOf(item.node) && <span>{timeOf(item.node)}</span>}
+            <Stamp node={item.node} />
             {ctx.onResend && <ResendButton node={item.node} onResend={ctx.onResend} />}
             <CopyButton getText={() => item.text} className="h-6 w-6" />
             <RawJsonPopover text={rawOf(item.node)} />
@@ -108,9 +123,9 @@ export const ModernTranscriptItem = React.memo(function ModernTranscriptItem({
             <MessageResponse>{item.text}</MessageResponse>
           )}
           <MessageActions from="assistant">
+            <Stamp node={item.node} />
             <CopyButton getText={() => item.text} className="h-6 w-6" />
             <RawJsonPopover text={rawOf(item.node)} />
-            {timeOf(item.node) && <span>{timeOf(item.node)}</span>}
           </MessageActions>
         </Message>
       );
@@ -133,8 +148,9 @@ export const ModernTranscriptItem = React.memo(function ModernTranscriptItem({
       // it is an answer's, not a Trace line's.
       return (
         <Message from="assistant">
-          <RecapLine text={item.text} time={timeOf(item.node)} />
+          <RecapLine text={item.text} />
           <MessageActions from="assistant">
+            <Stamp node={item.node} />
             <CopyButton getText={() => item.text} className="h-6 w-6" />
             <RawJsonPopover text={rawOf(item.node)} />
           </MessageActions>

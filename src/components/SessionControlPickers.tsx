@@ -100,6 +100,10 @@ export interface SessionControlPickersProps {
   /** Set when the live session was not launched in Bypass, which the CLI
    *  then refuses mid-session: the menu offers this restart instead. */
   onRestartInBypass?: () => void;
+  /** The account's default permission mode, marked in the perms menu. */
+  defaultPermissionMode?: string | null;
+  /** Bump to re-read the account's model pin (useModelCatalog). */
+  catalogRefreshKey?: number;
   /** Tool calls waiting on their automatic permission check. While any are,
    *  the perms readout says `checking` and pulses instead of naming the mode. */
   checkingPermissions?: number;
@@ -151,9 +155,11 @@ export function SessionControlPickers({
   configDir,
   activeDefaultModel,
   onRestartInBypass,
+  defaultPermissionMode,
+  catalogRefreshKey,
   checkingPermissions = 0,
 }: SessionControlPickersProps): React.JSX.Element {
-  const { models, raw } = useModelCatalog(engine === 'claude' ? configDir : undefined, activeDefaultModel);
+  const { models, raw } = useModelCatalog(engine === 'claude' ? configDir : undefined, activeDefaultModel, catalogRefreshKey);
 
   if (engine !== 'claude') {
     const labelOf = (opts: DropdownOption[], id: string) => opts.find((o) => o.id === id)?.label ?? id;
@@ -229,6 +235,7 @@ export function SessionControlPickers({
             onPermissionModeChange={setPermissionMode}
             onOpenChange={(next) => { if (!next) close(); }}
             onRestartInBypass={onRestartInBypass}
+            defaultMode={defaultPermissionMode}
           />
         )}
       />

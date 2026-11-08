@@ -41,4 +41,19 @@ describe('Modern recap', () => {
     // No spacing of its own on top of that.
     expect(container.querySelector('[data-recap-body]')).not.toHaveClass('mb-3');
   });
+
+  // Its date and time lead the hover row, as an answer's do; the title is
+  // "Recap" alone.
+  it('stamps the date and time in its hover row, not beside its title', () => {
+    const d = new Date(2026, 2, 4, 15, 4, 5);
+    const timed = { ...node, receivedAt: d.toISOString() } as unknown as JsonlNode;
+    const item = { kind: 'recap', key: 'r', node: timed, text: 'Done.' } as ModernItem;
+    const { container } = render(<ModernTranscriptItem item={item} live={false} ctx={ctx} />);
+    const time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' });
+    const row = container.querySelector('[data-message-actions]') as HTMLElement;
+    expect(row.firstElementChild).toHaveAttribute('data-message-stamp');
+    expect(row.firstElementChild).toHaveTextContent(`3-4-2026 ${time}`);
+    const line = container.querySelector('[data-recap] [data-slot="trace-line"]') as HTMLElement;
+    expect(line.textContent).toBe('Recap');
+  });
 });

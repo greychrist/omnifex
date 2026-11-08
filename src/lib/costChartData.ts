@@ -5,7 +5,7 @@
 // would be, so it lives here where it can be tested directly.
 
 import type { CostHistoryPeriodModel } from '@/lib/api';
-import { compareModelsBySlot } from '@/lib/costChartPalette';
+import { compareModels } from '@/lib/costChartPalette';
 
 /** One period's bucket: the period label plus one numeric key per model. */
 export type StackedBucket = { period: string } & Record<string, string | number>;
@@ -25,7 +25,7 @@ export function toStackedSeries(rows: CostHistoryPeriodModel[]): {
 } {
   if (rows.length === 0) return { data: [], models: [] };
 
-  const models = [...new Set(rows.map((r) => r.model))].sort(compareModelsBySlot);
+  const models = [...new Set(rows.map((r) => r.model))].sort(compareModels);
   const byPeriod = new Map<string, StackedBucket>();
 
   for (const r of rows) {

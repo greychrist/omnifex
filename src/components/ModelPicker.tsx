@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Popover, FIELD_TRIGGER } from "@/components/ui/popover";
 import { ACCOUNT_DEFAULT_MARK, splitLatestModels } from "@/lib/modelCatalog";
+import { modelOwnColor, screenChartMode } from "@/lib/costChartPalette";
 import { EFFORT_LEVELS, EffortPickerDropdown, type EffortLevel } from "@/components/ControlBar";
 import { POPOVER_SECTION, POPOVER_OPTION_DETAIL, POPOVER_RULE, popoverOption } from "@/components/ui/popover-list";
 
@@ -13,7 +14,30 @@ export interface Model {
   description: string;
   icon: React.ReactNode;
   shortName: string;
-  color: string;
+  /** The concrete model this row stands for when `id` is not one: the CLI's
+   *  mapping of an alias (`opus[1m]` → `claude-opus-5-5[1m]`), or the model
+   *  behind the merged account-default row. Highlights that row when the
+   *  pick is this model, and gives it that model's colour. */
+  resolvedId?: string;
+}
+
+/** `[1m]` is a context opt-in on a request, not another model. */
+function bareModelId(id: string): string {
+  return id.replace(/\[1m\]$/, '');
+}
+
+/** Whether `selected` is this row: its id, or the model it stands for. */
+function isRowSelected(model: Model, selected: string): boolean {
+  const pick = bareModelId(selected);
+  return pick === bareModelId(model.id) || (model.resolvedId !== undefined && pick === bareModelId(model.resolvedId));
+}
+
+/** The Cost Report's colour for the row's model — its price tier, its
+ *  version's shade — so a model looks the same here as in the chart and on
+ *  a Modern model-change line. None for a row with no tier ("default"). */
+function modelIconStyle(model: Model): React.CSSProperties | undefined {
+  const color = modelOwnColor(model.resolvedId ?? model.id, screenChartMode());
+  return color ? { color } : undefined;
 }
 
 // The model list is dynamic — sourced from the CLI catalog via
@@ -89,7 +113,7 @@ export function ModelPickerDropdown({
           <button
             key={model.id}
             onClick={() => { onSelect(model.id); }}
-            className={popoverOption(selectedModel === model.id)}
+            className={popoverOption(isRowSelected(model, selectedModel))}
           >
             <span className="font-medium">{model.name}</span>
           </button>
@@ -170,9 +194,9 @@ function ModelList({
         <button
           key={model.id}
           onClick={() => { onSelect(model.id); }}
-          className={popoverOption(selectedModel === model.id)}
+          className={popoverOption(isRowSelected(model, selectedModel))}
         >
-          <span className={cn("mt-px shrink-0", model.color)}>
+          <span className="mt-px shrink-0" style={modelIconStyle(model)}>
             {model.icon}
           </span>
           <div className="flex-1 min-w-0">
@@ -234,7 +258,7 @@ export function FormModelPicker({
           className="justify-between font-normal w-full min-w-0 h-9 px-3 gap-2"
         >
           <span className="flex items-center min-w-0 gap-2">
-            <span className={cn("shrink-0", selectedModelData.color)}>
+            <span className="shrink-0" style={modelIconStyle(selectedModelData)}>
               {selectedModelData.icon}
             </span>
             <span className="truncate text-xs font-semibold">

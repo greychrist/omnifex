@@ -79,10 +79,9 @@ export interface ModelPricingInput {
   cacheReadPerM?: number;
   cacheWrite5mPerM?: number;
   cacheWrite1hPerM?: number;
-  /** Cost Report legend label. */
+  /** Cost Report legend label. Its version ("Opus 5.5") also ranks the
+   *  model's shade within its tier (costChartPalette.ts). */
   label?: string;
-  /** Index into the Cost Report palette; omitted keeps the stable hash. */
-  colorSlot?: number;
   /** The model's native context window in tokens, WITHOUT a `[1m]` opt-in —
    *  what the context gauge sizes against before the live CLI reports one.
    *  Read off the CLI's own model table (`context.window`), not inferred. */
@@ -161,11 +160,11 @@ export const SHIPPED_PRICING: ModelPricingInput[] = [
   // disagree with the next one. Slot 7 is shared with Mythos 5, which is
   // Glasswing-only — the two will not appear on one chart, and the slot is
   // editable per-row in Settings > Pricing if they ever do.
-  { pattern: 'fable-5-1', effectiveFrom: '2024-01-01', inputPerM: 10, outputPerM: 50, cacheReadPerM: 0.25, label: 'Fable 5.1', colorSlot: 7 },
-  { pattern: 'fable-5', effectiveFrom: '2024-01-01', label: 'Fable 5', colorSlot: 2 },
+  { pattern: 'fable-5-1', effectiveFrom: '2024-01-01', inputPerM: 10, outputPerM: 50, cacheReadPerM: 0.25, label: 'Fable 5.1' },
+  { pattern: 'fable-5', effectiveFrom: '2024-01-01', label: 'Fable 5' },
   { pattern: 'fable', effectiveFrom: '2024-01-01', inputPerM: 10, outputPerM: 50, contextWindow: 1_000_000 },
 
-  { pattern: 'mythos-5', effectiveFrom: '2024-01-01', label: 'Mythos 5', colorSlot: 7 },
+  { pattern: 'mythos-5', effectiveFrom: '2024-01-01', label: 'Mythos 5' },
   { pattern: 'mythos', effectiveFrom: '2024-01-01', inputPerM: 10, outputPerM: 50, contextWindow: 1_000_000 },
 
   // Fast-mode rates are set only on the models that actually have one (Opus
@@ -178,12 +177,12 @@ export const SHIPPED_PRICING: ModelPricingInput[] = [
   // `cacheReadPerM` has no fast variant, so fast turns price reads at $0.20.
   // Slot 6 is shared with the legacy Opus 4.5-4.7 rows, which are unlikely to
   // share a chart with it.
-  { pattern: 'opus-5-5', effectiveFrom: '2024-01-01', inputPerM: 4, outputPerM: 20, cacheReadPerM: 0.2, fastInputPerM: 8, fastOutputPerM: 40, label: 'Opus 5.5', colorSlot: 6, contextWindow: 1_000_000 },
-  { pattern: 'opus-5', effectiveFrom: '2024-01-01', inputPerM: 5, outputPerM: 25, fastInputPerM: 10, fastOutputPerM: 50, label: 'Opus 5', colorSlot: 1, contextWindow: 1_000_000 },
-  { pattern: 'opus-4-8', effectiveFrom: '2024-01-01', inputPerM: 5, outputPerM: 25, fastInputPerM: 10, fastOutputPerM: 50, label: 'Opus 4.8', colorSlot: 0, contextWindow: 1_000_000 },
-  { pattern: 'opus-4-7', effectiveFrom: '2024-01-01', inputPerM: 5, outputPerM: 25, label: 'Opus 4.7', colorSlot: 6, contextWindow: 1_000_000 },
-  { pattern: 'opus-4-6', effectiveFrom: '2024-01-01', inputPerM: 5, outputPerM: 25, label: 'Opus 4.6', colorSlot: 6 },
-  { pattern: 'opus-4-5', effectiveFrom: '2024-01-01', inputPerM: 5, outputPerM: 25, label: 'Opus 4.5', colorSlot: 6 },
+  { pattern: 'opus-5-5', effectiveFrom: '2024-01-01', inputPerM: 4, outputPerM: 20, cacheReadPerM: 0.2, fastInputPerM: 8, fastOutputPerM: 40, label: 'Opus 5.5', contextWindow: 1_000_000 },
+  { pattern: 'opus-5', effectiveFrom: '2024-01-01', inputPerM: 5, outputPerM: 25, fastInputPerM: 10, fastOutputPerM: 50, label: 'Opus 5', contextWindow: 1_000_000 },
+  { pattern: 'opus-4-8', effectiveFrom: '2024-01-01', inputPerM: 5, outputPerM: 25, fastInputPerM: 10, fastOutputPerM: 50, label: 'Opus 4.8', contextWindow: 1_000_000 },
+  { pattern: 'opus-4-7', effectiveFrom: '2024-01-01', inputPerM: 5, outputPerM: 25, label: 'Opus 4.7', contextWindow: 1_000_000 },
+  { pattern: 'opus-4-6', effectiveFrom: '2024-01-01', inputPerM: 5, outputPerM: 25, label: 'Opus 4.6' },
+  { pattern: 'opus-4-5', effectiveFrom: '2024-01-01', inputPerM: 5, outputPerM: 25, label: 'Opus 4.5' },
   // LEGACY catch-all, priced for Opus 3. Every modern Opus needs its own row:
   // `claude-opus-5` matched none of the `opus-4-x` patterns once and fell
   // through to 15/75, inflating its cost 3x.
@@ -196,11 +195,11 @@ export const SHIPPED_PRICING: ModelPricingInput[] = [
   // per-request tier, so those turns are understated. Slot 2 is shared with
   // Fable 5, superseded by 5.1; Haiku 4.5's yellow would collide, since
   // a month that crosses the alias switch charts both.
-  { pattern: 'haiku-5-5', effectiveFrom: '2024-01-01', inputPerM: 0.1, outputPerM: 0.5, label: 'Haiku 5.5', colorSlot: 2, contextWindow: 1_000_000 },
-  { pattern: 'haiku-4-5', effectiveFrom: '2024-01-01', inputPerM: 1, outputPerM: 5, label: 'Haiku 4.5', colorSlot: 4 },
+  { pattern: 'haiku-5-5', effectiveFrom: '2024-01-01', inputPerM: 0.1, outputPerM: 0.5, label: 'Haiku 5.5', contextWindow: 1_000_000 },
+  { pattern: 'haiku-4-5', effectiveFrom: '2024-01-01', inputPerM: 1, outputPerM: 5, label: 'Haiku 4.5' },
   { pattern: 'haiku', effectiveFrom: '2024-01-01', inputPerM: 0.25, outputPerM: 1.25, contextWindow: 200_000 },
 
-  { pattern: 'sonnet-4-6', effectiveFrom: '2024-01-01', label: 'Sonnet 4.6', colorSlot: 5 },
+  { pattern: 'sonnet-4-6', effectiveFrom: '2024-01-01', label: 'Sonnet 4.6' },
   // Sonnet 5 is cheaper than every Sonnet before it. The $2/$10 launched as
   // introductory pricing "through 2026-08-31"; that became the standard price
   // and the scheduled rise to $3/$15 was cancelled, so there is one period,
@@ -213,9 +212,9 @@ export const SHIPPED_PRICING: ModelPricingInput[] = [
   // (0.05x input), writes unchanged. Applied from the review date, not
   // retroactively — the dated row restates label and slot because only one
   // row per pattern is in force.
-  { pattern: 'sonnet-5-5', effectiveFrom: '2024-01-01', label: 'Sonnet 5.5', colorSlot: 5 },
-  { pattern: 'sonnet-5-5', effectiveFrom: '2026-10-09', cacheReadPerM: 0.1, label: 'Sonnet 5.5', colorSlot: 5 },
-  { pattern: 'sonnet-5', effectiveFrom: '2024-01-01', inputPerM: 2, outputPerM: 10, label: 'Sonnet 5', colorSlot: 3, contextWindow: 1_000_000 },
+  { pattern: 'sonnet-5-5', effectiveFrom: '2024-01-01', label: 'Sonnet 5.5' },
+  { pattern: 'sonnet-5-5', effectiveFrom: '2026-10-09', cacheReadPerM: 0.1, label: 'Sonnet 5.5' },
+  { pattern: 'sonnet-5', effectiveFrom: '2024-01-01', inputPerM: 2, outputPerM: 10, label: 'Sonnet 5', contextWindow: 1_000_000 },
   { pattern: 'sonnet', effectiveFrom: '2024-01-01', inputPerM: 3, outputPerM: 15, contextWindow: 200_000 },
 ];
 
@@ -365,7 +364,6 @@ export function resolvePricing(
 
   for (const r of ordered) {
     if (out.label == null && r.label != null) out.label = r.label;
-    if (out.colorSlot == null && r.colorSlot != null) out.colorSlot = r.colorSlot;
     if (out.contextWindow == null && r.contextWindow != null) out.contextWindow = r.contextWindow;
   }
 

@@ -212,6 +212,7 @@ const MODEL_PRICING_DDL = `
     cache_write_5m_per_m REAL,
     cache_write_1h_per_m REAL,
     label TEXT,
+    -- Dropped by v31; here because v25 creates the table from this DDL.
     color_slot INTEGER,
     -- Native context window in tokens (v26). Display metadata, not a rate.
     context_window INTEGER,
@@ -961,7 +962,9 @@ export const migrations: Migration[] = [
           r.cacheWrite5mPerM ?? null,
           r.cacheWrite1hPerM ?? null,
           r.label ?? null,
-          r.colorSlot ?? null,
+          // color_slot: v31 drops the column; nothing an old blob said about
+          // it survives, so it is written empty here rather than carried.
+          null,
         );
       }
 
@@ -1065,6 +1068,24 @@ export const migrations: Migration[] = [
         .get();
       if (!hasTable) return;
       db.prepare("DELETE FROM session_cost_daily WHERE session_id LIKE 'brain-spend-%'").run();
+    },
+  },
+  {
+    version: 31,
+    description:
+      'Drop model_pricing.color_slot. The Cost Report colours a model by its '
+      + 'price tier and version (costChartPalette.ts), so a per-row palette '
+      + 'index has nothing left to drive; no user row ever set one. The '
+      + 'column stays in MODEL_PRICING_DDL, which v25 runs as the schema of '
+      + 'its own day, and goes here.',
+    up: (db) => {
+      const cols = db.pragma('table_info(model_pricing)') as { name: string }[];
+      if (cols.some((c) => c.name === 'color_slot')) {
+        // SQLite ≥ 3.35 supports ALTER TABLE DROP COLUMN (v8 relies on the
+        // same). A failure rolls the transaction back, leaving the
+        // schema_version row unwritten so a future run can retry.
+        db.exec('ALTER TABLE model_pricing DROP COLUMN color_slot');
+      }
     },
   },
 ];

@@ -5,7 +5,6 @@ import {
   type ModelPricingInput,
   type ModelPricingRow,
 } from '../../src/lib/pricing';
-import { CATEGORICAL_LIGHT } from '../../src/lib/costChartPalette';
 
 export type { ModelPricingInput, ModelPricingRow } from '../../src/lib/pricing';
 
@@ -41,9 +40,6 @@ export type { ModelPricingInput, ModelPricingRow } from '../../src/lib/pricing';
  * silently re-prices all of history at the new rate.
  */
 
-/** The palette's own width — not a second copy of the number. */
-const MAX_COLOR_SLOT = CATEGORICAL_LIGHT.length - 1;
-
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 export interface ModelPricingService {
@@ -64,7 +60,6 @@ type RawRow = {
   pattern: string;
   effective_from: string;
   label: string | null;
-  color_slot: number | null;
   context_window: number | null;
   updated_at: string;
 } & Record<string, number | string | null>;
@@ -81,7 +76,6 @@ function toRow(r: RawRow): ModelPricingRow {
     if (typeof v === 'number') out[field] = v;
   }
   if (r.label !== null) out.label = r.label;
-  if (r.color_slot !== null) out.colorSlot = r.color_slot;
   if (r.context_window != null) out.contextWindow = r.context_window;
   return out;
 }
@@ -122,17 +116,6 @@ function validate(input: ModelPricingInput): ModelPricingInput {
     }
   }
 
-  if (input.colorSlot != null) {
-    const slot = input.colorSlot;
-    if (!Number.isInteger(slot) || slot < 0 || slot > MAX_COLOR_SLOT) {
-      throw new Error(
-        `model pricing: colorSlot must be an integer 0-${MAX_COLOR_SLOT}, got ${String(slot)}`,
-      );
-    }
-    clean.colorSlot = slot;
-    states = true;
-  }
-
   if (input.contextWindow != null) {
     const w = input.contextWindow;
     if (!Number.isInteger(w) || w <= 0) {
@@ -154,9 +137,9 @@ function validate(input: ModelPricingInput): ModelPricingInput {
 // list that falls one column behind the schema does not fail — it silently
 // stops persisting that rate.
 const RATE_COLUMNS = PRICING_FIELDS.map((f) => f.column);
-const INSERT_COLUMNS = ['pattern', 'effective_from', ...RATE_COLUMNS, 'label', 'color_slot', 'context_window'];
-const INSERT_PARAMS = ['@pattern', '@effectiveFrom', ...PRICING_FIELDS.map((f) => `@${f.row}`), '@label', '@colorSlot', '@contextWindow'];
-const UPDATE_ASSIGNMENTS = [...RATE_COLUMNS, 'label', 'color_slot', 'context_window']
+const INSERT_COLUMNS = ['pattern', 'effective_from', ...RATE_COLUMNS, 'label', 'context_window'];
+const INSERT_PARAMS = ['@pattern', '@effectiveFrom', ...PRICING_FIELDS.map((f) => `@${f.row}`), '@label', '@contextWindow'];
+const UPDATE_ASSIGNMENTS = [...RATE_COLUMNS, 'label', 'context_window']
   .map((c) => `${c} = excluded.${c}`)
   .join(', ');
 
@@ -182,7 +165,6 @@ export function createModelPricingService(db: Database): ModelPricingService {
       pattern: v.pattern,
       effectiveFrom: v.effectiveFrom,
       label: v.label ?? null,
-      colorSlot: v.colorSlot ?? null,
       contextWindow: v.contextWindow ?? null,
     };
     for (const { row: field } of PRICING_FIELDS) params[field] = v[field] ?? null;

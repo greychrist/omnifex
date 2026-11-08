@@ -39,7 +39,7 @@ import {
   type FloatingPromptInputRef,
   type EffortLevel,
 } from "./FloatingPromptInput";
-import { modelPickerLabel, effectiveModels } from "@/lib/modelCatalog";
+import { modelPickerLabel, effectiveModels, liveDefaultEvidence } from '@/lib/modelCatalog';
 import { sessionControlSummary } from "@/lib/sessionControlSummary";
 import { SessionControlPickers } from "@/components/SessionControlPickers";
 import { PERMISSION_MODES } from "@/components/ControlBar";
@@ -61,7 +61,8 @@ import type { JsonlNode } from "@/types/jsonl";
 import { normalizeJsonlNode } from "@/lib/normalizeMessage";
 import { classifyJsonlLine } from '@/lib/jsonlClassifier';
 import { permissionCheckFrame } from '@/lib/permissionChecks';
-import { lastPermissionMode, lastAssistantModel, usageLimitWait } from '@/lib/sessionDerivedState';
+import { lastPermissionMode, lastAssistantModel, lastSessionModel, usageLimitWait } from '@/lib/sessionDerivedState';
+import { useSlashModelSync } from '@/hooks/useSlashModelSync';
 import { useSessionAuthExpiry } from '@/hooks/useSessionAuthExpiry';
 import { useRemoteResync } from "@/hooks/useRemoteResync";
 import { firstPromptText } from '@/lib/sessionTitle';
@@ -628,6 +629,14 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     () => contextUsage?.model || lastAssistantModel(messages),
     [contextUsage, messages],
   );
+
+  // A `/model` typed into the composer switches the CLI, not selectedModel;
+  // follow the CLI's answer so the readout, the picker and a restart agree
+  // with it. A save as the account default also moves the settings.json pin
+  // the picker's `*` reads, so the catalog re-reads it.
+  const [catalogRefreshKey, setCatalogRefreshKey] = useState(0);
+  const bumpCatalogRefresh = useCallback(() => { setCatalogRefreshKey((k) => k + 1); }, []);
+  useSlashModelSync({ messages, onModel: setSelectedModel, onSavedAsDefault: bumpCatalogRefresh });
 
   // Apply per-account session defaults once when the account first resolves,
   // but only for new sessions (not when resuming or launched with explicit
@@ -1368,12 +1377,13 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
         ?? accountResolutionRef.current?.account.session_defaults?.permissionMode;
       if (resumedMode) setPermissionMode(resumedMode);
 
-      // Restore the model the session actually ran (same resume fidelity as
-      // the permission mode above). Without this, selectedModel keeps its
+      // Restore the model the session is on (same resume fidelity as the
+      // permission mode above): the last turn's, or a later `/model` the CLI
+      // answered with no turn after it. Without this, selectedModel keeps its
       // hardcoded mount seed — the header summary names the wrong model and
       // a relaunch would even spawn with it. Concrete CLI ids are an accepted
       // selectedModel state.
-      const resumedModel = lastAssistantModel(nodes);
+      const resumedModel = lastSessionModel(nodes);
       if (resumedModel) setSelectedModel(resumedModel);
 
       // Scroll to bottom after loading history
@@ -2732,7 +2742,11 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
         <SessionControlPickers
           engine={agent}
           configDir={accountResolution?.account.config_dir}
-          activeDefaultModel={liveDefaultModel}
+          // What runs says what "default" is only while the session is on
+          // default; pinned to Fable, it runs Fable and that is no default.
+          activeDefaultModel={liveDefaultEvidence(selectedModel, liveDefaultModel)}
+          defaultPermissionMode={accountResolution?.account.session_defaults?.permissionMode ?? null}
+          catalogRefreshKey={catalogRefreshKey}
           model={selectedModel}
           setModel={(newModel) => {
             // Updates selectedModel AND, if a session is running, pushes
@@ -3213,7 +3227,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
               >
                 <QueuedPromptsPanel
                   prompts={queuedPrompts}
-                  modelLabel={(model) => modelPickerLabel(model, supportedModels, accountDefaultModel, liveDefaultModel)}
+                  modelLabel={(model) => modelPickerLabel(model, supportedModels, accountDefaultModel, liveDefaultEvidence(selectedModel, liveDefaultModel))}
                   onRemove={(id) => { setQueuedPrompts(prev => prev.filter(p => p.id !== id)); }}
                   onSave={saveQueuedPromptEdit}
                   onEditingChange={handleQueuedPromptEditing}

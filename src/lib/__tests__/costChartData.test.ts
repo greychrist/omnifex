@@ -25,7 +25,8 @@ describe('toStackedSeries', () => {
       row('2026-08-01', 'claude-sonnet-5', 2),
       row('2026-08-02', 'claude-opus-5', 7),
     ]);
-    expect(models).toEqual(['claude-opus-5', 'claude-sonnet-5']);
+    // Tier order: Sonnet (green) stacks under Opus (amber).
+    expect(models).toEqual(['claude-sonnet-5', 'claude-opus-5']);
     expect(data).toEqual([
       { period: '2026-08-01', 'claude-opus-5': 10, 'claude-sonnet-5': 2 },
       { period: '2026-08-02', 'claude-opus-5': 7, 'claude-sonnet-5': 0 },
@@ -43,13 +44,13 @@ describe('toStackedSeries', () => {
     expect(data[1]['claude-opus-5']).toBe(0);
   });
 
-  it('orders models by fixed slot, so stack order matches the legend', () => {
+  it('orders models by tier then version, so stack order matches the legend', () => {
     const { models } = toStackedSeries([
       row('2026-08-01', 'claude-sonnet-5', 1),
       row('2026-08-01', 'claude-opus-4-8', 1),
       row('2026-08-01', 'claude-opus-5', 1),
     ]);
-    expect(models).toEqual(['claude-opus-4-8', 'claude-opus-5', 'claude-sonnet-5']);
+    expect(models).toEqual(['claude-sonnet-5', 'claude-opus-5', 'claude-opus-4-8']);
   });
 
   it('orders periods chronologically regardless of input order', () => {

@@ -6,7 +6,7 @@ import { ACCOUNT_DEFAULT_MARK } from '@/lib/modelCatalog';
 
 vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>();
-  return { ...actual, api: { ...actual.api, listSupportedModels: vi.fn(async () => []) } };
+  return { ...actual, api: { ...actual.api, listSupportedModels: vi.fn(async () => []), getClaudeSettings: vi.fn(async () => ({})) } };
 });
 
 afterEach(() => { cleanup(); });
@@ -99,6 +99,28 @@ describe('SessionControlPickers — status-bar readouts that open pickers', () =
     fireEvent.click(within(item('perms')).getByRole('button'));
     fireEvent.click(screen.getByText('Plan'));
     expect(setPermissionMode).toHaveBeenCalledWith('plan');
+  });
+
+  it('marks the account\'s default permission mode in the menu', () => {
+    setup({ permissionMode: 'plan', defaultPermissionMode: 'acceptEdits' });
+    fireEvent.click(within(item('perms')).getByRole('button'));
+    expect(screen.getByText('Accept Edits *')).toBeTruthy();
+    expect(screen.getByText('* account default')).toBeTruthy();
+  });
+
+  // `/model … and saved as your default` rewrote the account's settings.json
+  // pin; the picker re-reads it when told, so the `*` moves.
+  it('re-reads the account\'s model pin when the catalog refresh key changes', async () => {
+    const { api } = await import('@/lib/api');
+    vi.mocked(api.getClaudeSettings).mockClear();
+    const { rerender } = render(
+      <SessionControlPickers engine="claude" configDir="/cfg" catalogRefreshKey={0} model="sonnet" setModel={vi.fn()} effort="high" setEffort={vi.fn()} permissionMode="default" setPermissionMode={vi.fn()} />,
+    );
+    await waitFor(() => { expect(vi.mocked(api.getClaudeSettings)).toHaveBeenCalledTimes(1); });
+    rerender(
+      <SessionControlPickers engine="claude" configDir="/cfg" catalogRefreshKey={1} model="sonnet" setModel={vi.fn()} effort="high" setEffort={vi.fn()} permissionMode="default" setPermissionMode={vi.fn()} />,
+    );
+    await waitFor(() => { expect(vi.mocked(api.getClaudeSettings)).toHaveBeenCalledTimes(2); });
   });
 
   it('opens the model menu on click and pushes the pick through', () => {

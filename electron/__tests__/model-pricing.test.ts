@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createDatabase, runMigrations, type Database } from '../services/database';
 import { createModelPricingService } from '../services/model-pricing';
 import { resolveRates, PRICING_FIELDS, SHIPPED_PRICING } from '../../src/lib/pricing';
-import { modelLabel, modelColor } from '../../src/lib/costChartPalette';
+import { modelLabel, modelColor, NEUTRAL } from '../../src/lib/costChartPalette';
 
 const MTOK = 1_000_000;
 const perM = (rate: number) => Math.round(rate * MTOK * 1e6) / 1e6;
@@ -96,7 +96,6 @@ describe('createModelPricingService', () => {
       inputPerM: 7,
       outputPerM: 35,
       label: 'Brand New 9',
-      colorSlot: 5,
     });
 
     const o = svc.toOverrides();
@@ -105,7 +104,9 @@ describe('createModelPricingService', () => {
     expect(perM(rates.output)).toBe(35);
     expect(estimated).toBe(false);
     expect(modelLabel('claude-brandnew-9', o)).toBe('Brand New 9');
-    expect(modelColor('claude-brandnew-9', 'light', o)).toBe('#4a3aa7');
+    // A family the palette has no tier for draws in the neutral — a user row
+    // names a price and a label, not a colour.
+    expect(modelColor('claude-brandnew-9', 'light', o)).toBe(NEUTRAL);
   });
 
   it('lets one field be corrected without restating the rest', () => {
@@ -145,10 +146,9 @@ describe('createModelPricingService', () => {
     expect(perM(resolveRates('claude-opus-5', svc.toOverrides()).rates.input)).toBe(5);
   });
 
-  it('rejects a row with no pattern and a colorSlot outside the palette', () => {
+  it('rejects a row with no pattern or a bad date', () => {
     const svc = createModelPricingService(db);
     expect(() => svc.upsert({ pattern: '  ', effectiveFrom: '1970-01-01', inputPerM: 1 })).toThrow();
-    expect(() => svc.upsert({ pattern: 'x', effectiveFrom: '1970-01-01', colorSlot: 8 })).toThrow();
     expect(() => svc.upsert({ pattern: 'x', effectiveFrom: 'not-a-date', inputPerM: 1 })).toThrow();
   });
 

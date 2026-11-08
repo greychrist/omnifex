@@ -24,6 +24,27 @@ describe('modernLineOf — what Modern draws instead of a Compact card', () => {
     expect(line(cc('model', 'claude-opus-5-5'))).toMatchObject({ title: 'Model', detail: 'claude-opus-5-5' });
   });
 
+  // A change line wears the new value's colour, as an answered question wears
+  // its purple: the picker's for a permission mode or effort level, the Cost
+  // Report's for a model.
+  it('colours a mode, effort or model change by its new value', () => {
+    const cc = (control: string, value: string) => ({ kind: 'control-change', control, value, sessionId: '', receivedAt: '' });
+    expect(line(cc('permission', 'plan'))?.accent).toEqual({ kind: 'css', color: 'var(--color-teal-600)' });
+    expect(line(cc('permission', 'bypassPermissions'))?.accent).toEqual({ kind: 'css', color: 'var(--color-red-600)' });
+    expect(line(cc('effort', 'high'))?.accent).toEqual({ kind: 'css', color: 'var(--color-yellow-600)' });
+    expect(line(cc('effort', 'max'))?.accent).toEqual({ kind: 'css', color: 'var(--color-red-600)' });
+    expect(line(cc('model', 'claude-opus-5-5'))?.accent).toEqual({ kind: 'model', model: 'claude-opus-5-5' });
+    expect(line({ kind: 'permission-mode', sessionId: '', raw: { type: 'permission-mode', permissionMode: 'acceptEdits' } })?.accent)
+      .toEqual({ kind: 'css', color: 'var(--color-purple-600)' });
+  });
+
+  it('leaves an unknown value and every other record uncoloured', () => {
+    const cc = (control: string, value: string) => ({ kind: 'control-change', control, value, sessionId: '', receivedAt: '' });
+    expect(line(cc('permission', 'someNewMode'))?.accent).toBeUndefined();
+    expect(line(cc('effort', 'ultra'))?.accent).toBeUndefined();
+    expect(line(sys('informational', { content: 'hi' }))?.accent).toBeUndefined();
+  });
+
   it('draws a slash command\'s output in mono under its command name, open', () => {
     const l = line(sys('local_command', { content: '<local-command-stdout>Total cost: $1.20</local-command-stdout>', commandRun: { command: 'cost' } }));
     expect(l).toMatchObject({ title: '/cost', body: 'Total cost: $1.20', mono: true, fold: false });

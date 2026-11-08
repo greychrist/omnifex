@@ -19,6 +19,7 @@ import {
   ACCOUNT_DEFAULT_MARK,
   useModelCatalog,
   modelPickerLabel,
+  liveDefaultEvidence,
 } from '../modelCatalog';
 import type { Model } from '@/components/ModelPicker';
 import type { SessionModelInfo } from '@/lib/api';
@@ -79,7 +80,6 @@ describe('toPickerModel', () => {
     expect(m.description).toBe('Most capable');
     expect(m.shortName).toBe('F');
     expect(m.icon).toBeTruthy();
-    expect(m.color).toBe('text-primary');
   });
 
   it('falls back to the value when displayName is missing', () => {
@@ -151,7 +151,7 @@ describe('modelFamily', () => {
 
 describe('pickModelOption', () => {
   const mk = (id: string, name = id): Model => ({
-    id, name, description: '', icon: null, shortName: name[0]?.toUpperCase() ?? '?', color: 'text-primary',
+    id, name, description: '', icon: null, shortName: name[0]?.toUpperCase() ?? '?',
   });
   const models = [mk('default', 'Default'), mk('sonnet', 'Sonnet'), mk('opus', 'Opus'), mk('haiku', 'Haiku')];
 
@@ -277,8 +277,8 @@ describe('resolveActualModelName', () => {
     // A catalog whose only "fable" mention is inside the Account Default
     // label must not echo that label back as the model name.
     const models: Model[] = [
-      { id: 'default', name: 'Account Default (Fable 5)', description: '', icon: null, shortName: 'D', color: 'text-primary' },
-      { id: 'sonnet', name: 'Sonnet', description: '', icon: null, shortName: 'S', color: 'text-primary' },
+      { id: 'default', name: 'Account Default (Fable 5)', description: '', icon: null, shortName: 'D' },
+      { id: 'sonnet', name: 'Sonnet', description: '', icon: null, shortName: 'S' },
     ];
     expect(resolveActualModelName('claude-fable-5', models, null)).toBe('Fable 5');
   });
@@ -344,9 +344,9 @@ describe('recommendedDefaultModel', () => {
 
 describe('withAccountDefaultLabel', () => {
   const models: Model[] = [
-    { id: 'default', name: 'Default (recommended)', description: 'Opus 4.8 with 1M context', icon: null, shortName: 'D', color: 'text-primary' },
-    { id: 'opus[1m]', name: 'Opus', description: 'Opus 4.8 with 1M context', icon: null, shortName: 'O', color: 'text-primary' },
-    { id: 'sonnet', name: 'Sonnet', description: 'Sonnet 4.6', icon: null, shortName: 'S', color: 'text-primary' },
+    { id: 'default', name: 'Default (recommended)', description: 'Opus 4.8 with 1M context', icon: null, shortName: 'D' },
+    { id: 'opus[1m]', name: 'Opus', description: 'Opus 4.8 with 1M context', icon: null, shortName: 'O' },
+    { id: 'sonnet', name: 'Sonnet', description: 'Sonnet 4.6', icon: null, shortName: 'S' },
   ];
 
   it('renames the default entry to "Account Default" when nothing identifies the model', () => {
@@ -563,7 +563,7 @@ describe('extraModelOptions', () => {
 
   it('drops the ones already on the catalog list, by name', () => {
     const existing: Model[] = [
-      { id: 'opus[1m]', name: 'Opus 5.5', description: '', icon: null, shortName: 'O', color: '' },
+      { id: 'opus[1m]', name: 'Opus 5.5', description: '', icon: null, shortName: 'O' },
     ];
     expect(extraModelOptions(existing).map((m) => m.name)).not.toContain('Opus 5.5');
     // A different Opus is still a distinct pick — that is the whole point.
@@ -572,7 +572,7 @@ describe('extraModelOptions', () => {
 });
 
 describe('splitLatestModels', () => {
-  const m = (id: string, name: string): Model => ({ id, name, description: '', icon: null, shortName: name[0], color: '' });
+  const m = (id: string, name: string): Model => ({ id, name, description: '', icon: null, shortName: name[0] });
   // The personal account's real 2.1.280 catalog, after withAccountDefaultLabel
   // folded `opus` into the default row.
   const CATALOG = [
@@ -648,5 +648,61 @@ describe('modelPickerLabel', () => {
   it('falls back to FALLBACK_MODELS without a catalog, then to the raw id', () => {
     expect(modelPickerLabel('sonnet', null, null)).toBe('Sonnet');
     expect(modelPickerLabel('mystery-model', CATALOG, null)).toBe('mystery-model');
+  });
+});
+
+describe('liveDefaultEvidence', () => {
+  // What a live session runs says what "default" means only while the
+  // session IS on default. A session pinned to Fable runs Fable, and taking
+  // that as the account default put the mark on the pick, not the default.
+  it('passes the live model through only while the session runs on default', () => {
+    expect(liveDefaultEvidence('default', 'claude-fable-5-1')).toBe('claude-fable-5-1');
+    expect(liveDefaultEvidence('claude-fable-5-1[1m]', 'claude-fable-5-1')).toBeNull();
+    expect(liveDefaultEvidence('sonnet', 'claude-sonnet-5-5')).toBeNull();
+    expect(liveDefaultEvidence('default', null)).toBeNull();
+    expect(liveDefaultEvidence('default', undefined)).toBeNull();
+  });
+});
+
+describe('withAccountDefaultLabel — resolvedId', () => {
+  const models: Model[] = [
+    { id: 'default', name: 'Default (recommended)', description: 'Opus 4.8 with 1M context', icon: null, shortName: 'D' },
+    { id: 'opus[1m]', name: 'Opus', description: 'Opus 4.8 with 1M context', icon: null, shortName: 'O' },
+    { id: 'sonnet', name: 'Sonnet', description: 'Sonnet 4.6', icon: null, shortName: 'S' },
+  ];
+
+  // The merged row keeps the id `default` (picking it means "omit --model"),
+  // so it also names the concrete model it stands for: that is how the
+  // picker highlights it when that model is the pick, and colours it.
+  it('names the model the merged default row stands for', () => {
+    expect(withAccountDefaultLabel(models, 'sonnet')[0]).toMatchObject({ id: 'default', resolvedId: 'sonnet' });
+    expect(withAccountDefaultLabel(models, 'claude-fable-5[1m]')[0]).toMatchObject({ id: 'default', resolvedId: 'claude-fable-5[1m]' });
+    expect(withAccountDefaultLabel(models, null)[0].resolvedId).toBeUndefined();
+  });
+
+  it('prefers the live model over the twin row\'s alias id', () => {
+    const out = withAccountDefaultLabel(models, 'sonnet', CATALOG, 'claude-opus-4-8');
+    expect(out[0]).toMatchObject({ id: 'default', resolvedId: 'claude-opus-4-8' });
+  });
+
+  // A resumed session's selectedModel is the concrete id the JSONL stamps
+  // (`claude-opus-5-5`), while the twin row is the alias `opus`; the row's
+  // own resolvedId is what the pick will equal.
+  it('takes the twin\'s concrete id when it has one, so a resumed pick matches', () => {
+    const withResolved: Model[] = [
+      models[0],
+      { ...models[1], id: 'opus', resolvedId: 'claude-opus-5-5' },
+      models[2],
+    ];
+    expect(withAccountDefaultLabel(withResolved, 'opus[1m]')[0]).toMatchObject({ id: 'default', resolvedId: 'claude-opus-5-5' });
+  });
+});
+
+describe('toPickerModel — resolvedId', () => {
+  it('carries the concrete id the CLI maps an alias to', () => {
+    const m = toPickerModel({ value: 'opus[1m]', resolvedModel: 'claude-opus-5-5[1m]', displayName: 'Opus', description: 'Opus 5.5 · Best for everyday, complex tasks' });
+    expect(m.resolvedId).toBe('claude-opus-5-5[1m]');
+    expect(m).not.toHaveProperty('color');
+    expect(toPickerModel({ value: 'claude-haiku-5-5', displayName: 'Haiku 5.5', description: '' }).resolvedId).toBeUndefined();
   });
 });

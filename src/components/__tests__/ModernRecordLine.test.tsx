@@ -29,6 +29,36 @@ describe('Modern record line', () => {
     expect(container.querySelector('[data-frame-variant]')).toBeNull();
   });
 
+  // Coloured as an answered question is: the icon and the title in the
+  // accent, the detail left muted.
+  it('draws the icon and title in the line\'s accent', () => {
+    const { container } = draw({ icon: 'Zap', title: 'Effort', detail: 'High', accent: { kind: 'css', color: 'rgb(202, 138, 4)' } });
+    expect((container.querySelector('[data-slot="trace-icon"]') as HTMLElement).style.color).toBe('rgb(202, 138, 4)');
+    expect((screen.getByText('Effort') as HTMLElement).style.color).toBe('rgb(202, 138, 4)');
+    expect((screen.getByText('High') as HTMLElement).style.color).toBe('');
+  });
+
+  it('resolves a model accent to its Cost Report colour for the theme', async () => {
+    const { SHADES } = await import('@/lib/costChartPalette');
+    const hexToRgb = (h: string) => `rgb(${[1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16)).join(', ')})`;
+    const model = { icon: 'Cpu', title: 'Model', detail: 'claude-opus-5-5', accent: { kind: 'model', model: 'claude-opus-5-5' } } as ModernLine;
+    draw(model);
+    expect((screen.getByText('Model') as HTMLElement).style.color).toBe(hexToRgb(SHADES.dark.opus[0]));
+    cleanup();
+    document.documentElement.classList.add('theme-light');
+    try {
+      draw(model);
+      expect((screen.getByText('Model') as HTMLElement).style.color).toBe(hexToRgb(SHADES.light.opus[0]));
+    } finally {
+      document.documentElement.classList.remove('theme-light');
+    }
+  });
+
+  it('leaves a model with no colour of its own uncoloured', () => {
+    draw({ icon: 'Cpu', title: 'Model', detail: 'default', accent: { kind: 'model', model: 'default' } });
+    expect((screen.getByText('Model') as HTMLElement).style.color).toBe('');
+  });
+
   it('shows an open body under the rule, in mono when asked', () => {
     draw({ icon: 'Terminal', title: '/cost', body: 'Total cost: $1.20', mono: true, fold: false });
     expect(screen.getByText('Total cost: $1.20').closest('.font-mono')).not.toBeNull();

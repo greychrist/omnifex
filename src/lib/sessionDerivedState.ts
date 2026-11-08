@@ -134,6 +134,72 @@ export function lastAssistantModel(messages: JsonlNode[]): string | null {
   return null;
 }
 
+/**
+ * The CLI's answer to a typed `/model`, as it lands in the transcript: the
+ * local-command stdout envelope on a `user` record (string or text blocks)
+ * or a `system/local_command` record — "Set model to `fable
+ * (claude-fable-5-1)`", "Kept model as `…`", with " and saved as your default
+ * for new sessions" when the CLI also rewrote the account's settings.json
+ * pin. The concrete id in the parentheses is the model; a token with none is
+ * taken as written. Null for anything else, the command echo included.
+ *
+ * OmniFex never saw these, so a switch typed into the composer left the
+ * readout, the picker and a restart on the model OmniFex had picked itself
+ * (2026-11-08: `/model fable`, restart, back on Opus).
+ */
+export function slashModelResult(node: JsonlNode): { model: string; savedAsDefault: boolean } | null {
+  const text = localCommandText(node);
+  if (text === null) return null;
+  const m = /^\s*(?:Set model to|Kept model as) `([^`]+)`(.*)$/s.exec(text);
+  if (!m) return null;
+  const token = m[1].trim();
+  const concrete = /\(([^()]+)\)\s*$/.exec(token)?.[1].trim();
+  return {
+    model: concrete && concrete.length > 0 ? concrete : token,
+    savedAsDefault: m[2].includes('and saved as your default for new sessions'),
+  };
+}
+
+/** The stdout inside a local-command envelope, from either record the CLI
+ *  writes it on; null when the node is not one. */
+function localCommandText(node: JsonlNode): string | null {
+  let content: unknown;
+  if (node.kind === 'user') content = (node.raw as { message?: { content?: unknown } }).message?.content;
+  else if (node.kind === 'system' && node.subtype === 'local_command') content = (node.raw as { content?: unknown }).content;
+  else return null;
+  const text = typeof content === 'string'
+    ? content
+    : Array.isArray(content)
+      ? content.map((b) => {
+        const block = b as { type?: unknown; text?: unknown } | null;
+        return block?.type === 'text' && typeof block.text === 'string' ? block.text : '';
+      }).join('')
+      : null;
+  if (text === null) return null;
+  const out = /<local-command-stdout>([\s\S]*?)<\/local-command-stdout>/.exec(text);
+  return out ? out[1] : null;
+}
+
+/**
+ * The model the session is on at its end, for a resumed tab: the later of
+ * the last main-chain turn's model and the last `/model` result. A switch
+ * with no turn after it counts — otherwise a restart respawned with the last
+ * turn's model and quietly undid the switch.
+ */
+export function lastSessionModel(messages: JsonlNode[]): string | null {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const node = messages[i];
+    if (node.kind === 'assistant' && isMainAssistant(node)) {
+      const model = (node.raw as { message?: { model?: unknown } }).message?.model;
+      if (typeof model === 'string' && model.length > 0 && model !== '<synthetic>') return model;
+      continue;
+    }
+    const slash = slashModelResult(node);
+    if (slash) return slash.model;
+  }
+  return null;
+}
+
 // The permission mode in effect at the end of the session, for restoring a
 // resumed tab to where it left off. Walks messages[] from the end and returns
 // the first `permissionMode` it finds on either a dedicated `permission-mode`

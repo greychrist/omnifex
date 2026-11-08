@@ -20,6 +20,11 @@ import { bookkeepingText, progressText, rateLimitText, streamEnvelopeText, syste
 import { summariseContextAttachment } from './contextLedger';
 import { commandEnvelopeKind, localCommandOutput } from './commandEnvelope';
 import { EFFORT_OPTIONS, PERMISSION_OPTIONS } from './sessionDefaultOptions';
+import { EFFORT_LEVELS, PERMISSION_MODES } from '@/components/ControlBar';
+
+/** The colour a change line wears: a CSS colour, or a model whose Cost
+ *  Report colour depends on the theme (resolved where the line is drawn). */
+export type LineAccent = { kind: 'css'; color: string } | { kind: 'model'; model: string };
 
 export interface ModernLine {
   icon: IconName;
@@ -35,6 +40,9 @@ export interface ModernLine {
   /** error: a failure, in the error red. warn: an unrecognized record, in the
    *  amber the context rail turns near its limit (amber-500). */
   tone?: 'error' | 'warn';
+  /** The icon and title in this colour, as an answered question wears its
+   *  purple: a permission-mode, effort or model change, in the new value's. */
+  accent?: LineAccent;
 }
 
 /** Past this, a text goes under the line instead of beside it. */
@@ -46,6 +54,25 @@ const OPEN_LINES_MAX = 15;
 export function permissionModeLabel(mode: string): string {
   if (mode === 'auto') return 'Auto';
   return PERMISSION_OPTIONS.claude.find((o) => o.id === mode)?.label ?? mode;
+}
+
+/** The picker's Tailwind text colour (`text-teal-600`) as the CSS variable
+ *  Tailwind defines for it, so a line can wear it inline. */
+function cssAccent(textClass: string | undefined): LineAccent | undefined {
+  const name = textClass?.match(/^text-(.+)$/)?.[1];
+  return name ? { kind: 'css', color: `var(--color-${name})` } : undefined;
+}
+
+function permissionAccent(mode: string): LineAccent | undefined {
+  return cssAccent(PERMISSION_MODES.find((m) => m.id === mode)?.color);
+}
+
+function effortAccent(value: string): LineAccent | undefined {
+  return cssAccent(EFFORT_LEVELS.find((l) => l.id === value)?.color);
+}
+
+function withAccent(line: ModernLine, accent: LineAccent | undefined): ModernLine {
+  return accent ? { ...line, accent } : line;
 }
 
 function effortLabel(value: string): string {
@@ -87,14 +114,14 @@ export function modernLineOf(
 
   switch (node.kind) {
     case 'control-change':
-      if (node.control === 'permission') return { icon, title: 'Permission mode', detail: permissionModeLabel(node.value) };
-      if (node.control === 'effort') return { icon, title: 'Effort', detail: effortLabel(node.value) };
-      return { icon, title: 'Model', detail: node.value };
+      if (node.control === 'permission') return withAccent({ icon, title: 'Permission mode', detail: permissionModeLabel(node.value) }, permissionAccent(node.value));
+      if (node.control === 'effort') return withAccent({ icon, title: 'Effort', detail: effortLabel(node.value) }, effortAccent(node.value));
+      return { icon, title: 'Model', detail: node.value, accent: { kind: 'model', model: node.value } };
 
     case 'permission-mode': {
       const mode = node.raw.permissionMode;
       return typeof mode === 'string' && mode
-        ? { icon, title: 'Permission mode', detail: permissionModeLabel(mode) }
+        ? withAccent({ icon, title: 'Permission mode', detail: permissionModeLabel(mode) }, permissionAccent(mode))
         : { icon, title: 'Permission mode' };
     }
 

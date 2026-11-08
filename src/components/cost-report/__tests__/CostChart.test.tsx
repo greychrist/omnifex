@@ -217,10 +217,10 @@ describe('CostChartLegend', () => {
     expect(container.querySelectorAll('span[aria-hidden]')).toHaveLength(2);
   });
 
-  it('orders the legend by fixed slot, matching the stack order', () => {
+  it('orders the legend by tier then version, matching the stack order', () => {
     const { container } = render(
-      <CostChartLegend models={['claude-sonnet-5', 'claude-opus-4-8']} mode="dark" />,
+      <CostChartLegend models={['claude-opus-4-8', 'claude-sonnet-5', 'claude-opus-5']} mode="dark" />,
     );
-    expect(container.textContent).toBe('Opus 4.8Sonnet 5');
+    expect(container.textContent).toBe('Sonnet 5Opus 5Opus 4.8');
   });
 });

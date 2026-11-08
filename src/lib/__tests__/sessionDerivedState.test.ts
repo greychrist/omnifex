@@ -8,6 +8,8 @@ import {
   sessionStartedAt,
   lastPermissionMode,
   lastAssistantModel,
+  lastSessionModel,
+  slashModelResult,
   usageLimitWait,
   sessionAuthFailure,
 } from '../sessionDerivedState';
@@ -555,5 +557,70 @@ describe('sessionAuthFailure', () => {
 
   it('returns null for an empty transcript', () => {
     expect(sessionAuthFailure([])).toBeNull();
+  });
+});
+
+// The CLI's answer to a typed `/model`, as it lands in the transcript: a
+// `user` record whose content is the local-command stdout envelope (string
+// or text blocks), or a `system/local_command` record. OmniFex never saw
+// these, so a switch typed into the composer left the readout, the picker
+// and a restart on the model OmniFex had picked itself.
+describe('slashModelResult', () => {
+  const userOut = (text: string, content: 'string' | 'blocks' = 'string'): JsonlNode => ({
+    kind: 'user', userKind: 'prompt', sessionId: 's1', receivedAt: 't',
+    raw: { type: 'user', uuid: 'u-' + text.length, message: { role: 'user', content: content === 'string' ? text : [{ type: 'text', text }] } } as never,
+  });
+  const sysOut = (text: string): JsonlNode => ({
+    kind: 'system', subtype: 'local_command', sessionId: 's1', receivedAt: 't',
+    raw: { type: 'system', subtype: 'local_command', content: text } as never,
+  });
+
+  it('reads the concrete id out of "Set model to `alias (id)`"', () => {
+    expect(slashModelResult(userOut('<local-command-stdout>Set model to `fable (claude-fable-5-1)`</local-command-stdout>')))
+      .toEqual({ model: 'claude-fable-5-1', savedAsDefault: false });
+    expect(slashModelResult(userOut('<local-command-stdout>Set model to `opus[1m] (claude-opus-5-5[1m])`</local-command-stdout>', 'blocks')))
+      .toEqual({ model: 'claude-opus-5-5[1m]', savedAsDefault: false });
+    expect(slashModelResult(sysOut('<local-command-stdout>Set model to `sonnet (claude-sonnet-5-5)`</local-command-stdout>')))
+      .toEqual({ model: 'claude-sonnet-5-5', savedAsDefault: false });
+  });
+
+  it('takes the token itself when the CLI names no concrete id', () => {
+    expect(slashModelResult(userOut('<local-command-stdout>Set model to `claude-opus-4-8`</local-command-stdout>')))
+      .toEqual({ model: 'claude-opus-4-8', savedAsDefault: false });
+  });
+
+  it('reads "Kept model as" the same way, and notes a save as the default', () => {
+    expect(slashModelResult(userOut('<local-command-stdout>Kept model as `fable (claude-fable-5-1)`</local-command-stdout>')))
+      .toEqual({ model: 'claude-fable-5-1', savedAsDefault: false });
+    expect(slashModelResult(userOut('<local-command-stdout>Set model to `fable (claude-fable-5-1)` and saved as your default for new sessions</local-command-stdout>')))
+      .toEqual({ model: 'claude-fable-5-1', savedAsDefault: true });
+  });
+
+  it('is null for the command echo, other commands and ordinary prompts', () => {
+    expect(slashModelResult(userOut('<command-name>/model</command-name>\n<command-message>model</command-message>\n<command-args>fable</command-args>'))).toBeNull();
+    expect(slashModelResult(userOut('<local-command-stdout>Your game looks choppy</local-command-stdout>'))).toBeNull();
+    expect(slashModelResult(userOut('Set model to `fable (claude-fable-5-1)` please'))).toBeNull();
+    expect(slashModelResult(userPrompt('t'))).toBeNull();
+  });
+});
+
+describe('lastSessionModel', () => {
+  function assistantWithModel(timestamp: string, model: string): JsonlNode {
+    const node = assistantWithStop(timestamp, 'end_turn');
+    (node as { raw: { message: { model?: string } } }).raw.message.model = model;
+    return node;
+  }
+  const slash = (model: string, alias = 'fable'): JsonlNode => ({
+    kind: 'user', userKind: 'prompt', sessionId: 's1', receivedAt: 't',
+    raw: { type: 'user', uuid: 'u-' + model, message: { role: 'user', content: `<local-command-stdout>Set model to \`${alias} (${model})\`</local-command-stdout>` } } as never,
+  });
+
+  // The model the session is on at its end: a `/model` with no turn after
+  // it counts, so a restart keeps the switch instead of the last turn's model.
+  it('is the later of the last turn\'s model and the last /model result', () => {
+    expect(lastSessionModel([assistantWithModel('t1', 'claude-opus-5-5'), slash('claude-fable-5-1')])).toBe('claude-fable-5-1');
+    expect(lastSessionModel([slash('claude-fable-5-1'), assistantWithModel('t2', 'claude-opus-5-5')])).toBe('claude-opus-5-5');
+    expect(lastSessionModel([assistantWithModel('t1', 'claude-opus-5-5')])).toBe('claude-opus-5-5');
+    expect(lastSessionModel([userPrompt('t')])).toBeNull();
   });
 });
