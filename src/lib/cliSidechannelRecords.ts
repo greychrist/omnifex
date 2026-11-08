@@ -66,6 +66,9 @@ export const CLI_SIDECHANNEL_RECORD_TYPES: ReadonlySet<string> = new Set([
   // Structural bookkeeping — branch plumbing and file-history deltas.
   'file-history-delta',
   'continued-in',
+  // A checksum (`sum`) vouching for the transcript head a resume loaded
+  // (CLI >= 2.1.319, `boundary-cleared`).
+  'resume-head-vouch',
   'content-replacement',
   'fork-context-ref',
   'frame-link',

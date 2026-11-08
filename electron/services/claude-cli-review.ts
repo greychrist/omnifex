@@ -51,6 +51,74 @@ import { buildClaudeEnv } from './util/claude-env';
  *    the CLI's own error string: "summarized", "omitted" ("highlights" is
  *    refused). Records carry `thinking_duration_ms` too. Verified 2.1.312.
  *
+ * Last review: 2.1.318 -> 2.1.319 on 2026-11-07. Findings: none broken
+ * today; one latent card fixed (`resume-head-vouch`).
+ *
+ *  Changelog coverage: 2.1.319 (~150 entries). Both ends installed.
+ *  Script: subtype (164), system subtypes (78), hook_event_name (33),
+ *  control_* (4), SDK requests (55), CLI flags (115), can_use_tool keys
+ *  (11) identical; /usage anchors unchanged.
+ *  - Merge map +`resume-head-vouch=boundary-cleared`: `{type, sessionId,
+ *    sum}` appended to the transcript (onlyIfExists) vouching for the head
+ *    a resume/tail-load read; filtered out on hydrate. Would have drawn
+ *    "Unrecognized record: resume-head-vouch". Not on disk in either
+ *    account yet. Fixed: CLI_SIDECHANNEL_RECORD_TYPES (+test).
+ *  - `type:` +`claude_app_notice`: attachment "The user's latest message
+ *    came from the Claude iOS app", Remote Control bridge only, behind
+ *    tengu_rosy_llama. Not a context source we ledger; inert.
+ *    +`mcp-server-connector-blocked`: plugin-loader warning (/plugin
+ *    errors list). Inert.
+ *  - `origin.kind` +`voice-call`: host-stamped on local stdin only
+ *    (isSynthetic, shouldQuery false); OmniFex never sends it, and
+ *    originInjectedKind would let it fall to the content rules. Inert.
+ *  - Describe moves: disk-full writes-lost result now "exits with status
+ *    0" (sessionWritesLost.ts already renders it); prompt-suggestion pause
+ *    + "is anybody watching" stream-hold flag (only with
+ *    CLAUDE_CODE_STREAM_EVENT_HOLD_MS); RESUME_INTERRUPTED_TURN plan-mode
+ *    notice; re-send cost vs 5-hour limit (@internal, behind the TUI's
+ *    "Resume this conversation?" price — NOT TAKEN, internal); connector
+ *    id, voice-call, file attachments, SSH command hosts, skill-improvement
+ *    edits, denyInsteadOfPrompting text. All inert or @internal.
+ *  - Object keys +730 -213: env names (DISABLE_FEATURE_FLAGS,
+ *    TRANSCRIPT_TAIL_LOAD, NORMALIZE_PREFIX_CACHE, GATEWAY_LOG_FORMAT...),
+ *    CPU telemetry, app-bundle plist keys, runner/gateway internals. None
+ *    on user/assistant records, permission requests or the initialize
+ *    reply. Noise.
+ *  - `permissions.denyInsteadOfPrompting`: a user who sets it gets
+ *    denials instead of OmniFex permission cards (CLI-side, by design).
+ *    Nothing to do; worth knowing when "it never asked" is reported.
+ *  - `/rename` "new name may not last" is TUI text; rename_session reply
+ *    shape unchanged. Inert.
+ *  - In our favour, nothing to do: auto mode wrongly refused after a
+ *    back-to-back model change + auto request (our set_model then
+ *    set_permission_mode); text dropped from informational SDK messages;
+ *    disk-full error surfaced to SDK hosts; leading-whitespace slash
+ *    commands now run; 401 refresh storm across sessions; Bash
+ *    quoted-word deny/ask, sed and env-prefix permission bypasses;
+ *    `timeout DURATION` read-only prompts; `/context` grid no longer sent
+ *    to Claude; MCP older-handshake connects; settings edits ignored
+ *    right after a CLI write; subagent hand-back marker; lost background
+ *    agent reports.
+ *  - Inert: auto mode server/gateway env, MCP tasks + their env vars,
+ *    /claude-api latency-optimize, DISABLE_FEATURE_FLAGS, gateway /usage
+ *    spend, `ant auth login` billing warnings, /tasks earlier row, /loop
+ *    keepalive change, PostToolUse after interrupt, `-p` auto-mode exit 1
+ *    (summary-query runs no auto mode), NFS listing, /diff HEAD, /rewind,
+ *    NotebookEdit, Write refusal, background Bash output, Monitor, plugin
+ *    deps/update, model-name suggestion, /model "More models" (TUI),
+ *    config-file legacy-name warning, `which` flags, nested skills under
+ *    sandbox, --add-dir marketplaces, Chrome tools, artifacts, OTel, all
+ *    Gateway, Self-hosted runner, Remote Control, [VSCode], [Cloud
+ *    sessions], [Code Review], [Claude Tag] entries.
+ *  - Open items from 2.1.318:
+ *     - Idle compaction: still unseen (notice-text hits in three omnifex
+ *       transcripts are quoted text, no system/compact record).
+ *
+ *  Script + prompt: unchanged; the coverage half caught resume-head-vouch.
+ *
+ *  OPEN ITEMS (carry forward; re-check each review):
+ *   - Idle compaction: verify the first real occurrence (2.1.314 block).
+ * *
  * Last review: 2.1.317 -> 2.1.318 on 2026-11-04. Findings: none broken
  * today; one latent card fixed (`repl-mode`), one subtype baselined
  * (`start_folder`), one script gap closed.
@@ -5146,7 +5214,7 @@ import { buildClaudeEnv } from './util/claude-env';
  * `~/.claude.json` fix (we read-modify-write that file, never replace it), and
  * the VSCode screen-reader work.
  */
-export const REVIEWED_CLI_VERSION = '2.1.318';
+export const REVIEWED_CLI_VERSION = '2.1.319';
 
 /**
  * app_settings key holding the user's explicit OmniFex-checkout override.

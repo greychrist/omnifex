@@ -41,6 +41,18 @@ describe('isCliSidechannelRecord', () => {
     ).toBe(true);
   });
 
+  // New in CLI 2.1.319: a checksum vouching for the transcript head a
+  // resume loaded (`boundary-cleared` in the merge map).
+  it('recognises resume-head-vouch', () => {
+    expect(
+      isCliSidechannelRecord({
+        type: 'resume-head-vouch',
+        sessionId: '39eddbbf-781f-4758-b58e-af2d408ea20f',
+        sum: 'a1b2c3',
+      }),
+    ).toBe(true);
+  });
+
   // New in CLI 2.1.276: a latch recording whether memory was on or off at a
   // point in the conversation. `accumulate` in the CLI's merge map, so it is a
   // log, not a last-wins latch — several land per session once the user
