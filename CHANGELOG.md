@@ -5,6 +5,22 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.30] — 2026-11-08
+
+### Added
+- A `/model` typed into the composer is now tracked: the status bar, the model picker and a restart follow the CLI's answer, a switch with no turn after it survives a restart, and a `/model … saved as your default` moves the account-default mark.
+- Modern: permission-mode, effort and model change lines are drawn in the new value's colour — the picker's for a mode or effort level, the Cost Report's for a model.
+- The permissions menu marks the account's default mode, as the model menu marks the account-default model.
+
+### Changed
+- Cost Report colours follow the model's price tier — Haiku blue, Sonnet green, Opus amber, Fable purple, the effort picker's order — with the newest version the full colour and older ones lighter. The legend, the stack and the by-model table order by tier, then version. The model picker's rows wear the same colours.
+- The model menu's account-default mark stays on the real default; the model you picked is highlighted instead, including when it is the default.
+- Modern: the hover row under a prompt, answer or recap leads with the date and time (M-D-YYYY), before Copy; the recap's title no longer carries the time.
+- The effort menu's short names (Auto, Med, Max) no longer run into the level's name.
+
+### Removed
+- Settings › Pricing no longer has a per-row colour slot; a model's colour is derived from its tier and version. `model_pricing.color_slot` is dropped by migration v31.
+
 ## [0.5.29] — 2026-11-08
 
 ### Changed
