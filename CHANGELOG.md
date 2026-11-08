@@ -5,6 +5,11 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.31] — 2026-11-08
+
+### Changed
+- The model name in the session status bar is drawn in the model's Cost Report colour — its price tier and version — matching the picker rows and Modern's model-change lines. The glyph and the `model` label keep the bar's colour.
+
 ## [0.5.30] — 2026-11-08
 
 ### Added
