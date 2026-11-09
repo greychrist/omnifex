@@ -106,6 +106,8 @@ const STREAM_BOOKKEEPING_SUBTYPES: ReadonlySet<string> = new Set([
   'ui_panes',
   'ui_placed',
   'ui_scroll',
+  'ui_notify',
+  'ui_notify_cancel',
   'commands_changed',
   'permission_check_status',
 ]);

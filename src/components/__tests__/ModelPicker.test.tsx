@@ -167,7 +167,7 @@ describe("ModelPickerDropdown — the selected row and the tier colours", () => 
     render(<ModelPickerDropdown models={CATALOG} selectedModel="mystery" onSelect={() => {}} />);
     const mode = screenChartMode();
     expect(iconOf("Opus 5.5 *").style.color).toBe(hexToRgb(SHADES[mode].opus[0]));
-    expect(iconOf("Fable 5.1").style.color).toBe(hexToRgb(SHADES[mode].fable[0]));
+    expect(iconOf("Fable 5.1").style.color).toBe(hexToRgb(SHADES[mode].fable[1]));
     expect(iconOf("Haiku 5.5").style.color).toBe(hexToRgb(SHADES[mode].haiku[0]));
     expect(iconOf("Mystery").style.color).toBe("");
   });

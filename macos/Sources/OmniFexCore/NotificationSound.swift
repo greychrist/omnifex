@@ -49,3 +49,23 @@ public enum BannerSubtitle {
         return isError ? "Task Failed" : "Task Complete"
     }
 }
+
+/// When to raise a banner. Mods' notifications (`$.ui.notify`, CLI 2.1.321)
+/// may name a later moment, which the notification centre books — so it
+/// fires with the session, or OmniFex itself, out of reach. A booked one
+/// ignores focus: whether the user is looking is unknowable until it fires.
+public enum NotificationDelivery: Equatable, Sendable {
+    case soundOnly
+    case bannerNow
+    case scheduled(seconds: Double)
+
+    public static let maxDelaySeconds: Double = 7 * 86_400
+
+    public static func plan(deliverAtMs: Double?, nowMs: Double, windowFocused: Bool) -> NotificationDelivery {
+        if let deliverAtMs {
+            let seconds = (deliverAtMs - nowMs) / 1000
+            if seconds >= 1 { return .scheduled(seconds: min(seconds, maxDelaySeconds)) }
+        }
+        return windowFocused ? .soundOnly : .bannerNow
+    }
+}

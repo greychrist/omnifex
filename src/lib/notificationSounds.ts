@@ -65,6 +65,17 @@ export function normalizeNotificationSoundId(
   return isNotificationSoundId(value) ? value : fallback;
 }
 
+/**
+ * Mods' OS notifications (`$.ui.notify`, CLI 2.1.321). On unless this is
+ * 'false'; the daemon reads it per notification, so turning it off quiets
+ * sessions already running. See electron/services/sessions/mod-notifications.ts.
+ */
+export const MOD_NOTIFICATIONS_SETTING_KEY = 'mod_notifications_enabled';
+
+export function modNotificationsEnabled(value: string | null | undefined): boolean {
+  return value !== 'false';
+}
+
 export const NOTIFICATION_SOUND_SETTING_KEYS = {
   success: 'notification_sound_success',
   error: 'notification_sound_error',

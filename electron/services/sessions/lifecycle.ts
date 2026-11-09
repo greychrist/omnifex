@@ -48,6 +48,7 @@ import { randomUUID } from 'node:crypto';
 import { setStatus, setTurn } from './status';
 import { IDLE_TURN } from './types';
 import { createAutoRecap, type AutoRecapPolicy } from './auto-recap';
+import { dispatchModNotificationRemoval } from './notifications';
 
 
 /**
@@ -144,6 +145,12 @@ export function createSessionsService(
    * `createBundledModPluginDirs` (electron/services/bundled-mod.ts).
    */
   pluginDirs: (() => string[]) | null = null,
+  /**
+   * Whether mods' `$.ui.notify` notifications are raised; read per
+   * notification. The daemon wires it to the `mod_notifications_enabled`
+   * setting; unset, they are on.
+   */
+  modNotificationsEnabled: (() => boolean) | null = null,
 ): SessionsService {
   const sessions = new Map<string, SessionHandle>();
   const safePluginDirs = (): string[] => {
@@ -186,6 +193,7 @@ export function createSessionsService(
     modelCatalogSink,
     accountMismatchSink,
     cliUsageSink,
+    modNotificationsEnabled,
   };
 
   // -------------------------------------------------------------------------
@@ -455,7 +463,16 @@ export function createSessionsService(
     const handle = deliverMessage(tabId, prompt);
     if (!handle) return;
     autoRecap?.noteUserSend(tabId);
+    personReturned(handle);
     maybeAutoTitle(tabId, handle, prompt);
+  }
+
+  /**
+   * The user wrote to the session: a mod's delayed notification sent with
+   * `until_back` must not fire now. User sends only — never the auto-recap.
+   */
+  function personReturned(handle: SessionHandle): void {
+    if (handle.modNotices) dispatchModNotificationRemoval(handle.modNotices.back(), sendToRenderer);
   }
 
   /**
@@ -497,6 +514,7 @@ export function createSessionsService(
     replyToOpenQuestion(tabId);
 
     autoRecap?.noteUserSend(tabId);
+    personReturned(handle);
     setTurn(handle, 'running', tabId, sendToRenderer);
     void handle.engine.sendStructured(content).catch((err: unknown) => {
       console.error(`[sessions] engine.sendStructured failed for tab ${tabId}:`, err);

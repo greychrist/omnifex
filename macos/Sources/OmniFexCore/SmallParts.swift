@@ -93,6 +93,10 @@ public enum BridgeParams {
         ((params as? [String: Any])?[key] as? Bool) ?? false
     }
 
+    public static func strings(_ params: Any?, _ key: String) -> [String] {
+        ((params as? [String: Any])?[key] as? [Any])?.compactMap { $0 as? String } ?? []
+    }
+
     public static func dict(_ params: Any?, _ key: String? = nil) -> [String: Any]? {
         guard let d = params as? [String: Any] else { return nil }
         guard let key else { return d }

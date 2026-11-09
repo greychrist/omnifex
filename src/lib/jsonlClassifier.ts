@@ -290,6 +290,10 @@ const SYSTEM_SUBTYPES: ReadonlySet<SystemSubtype> = new Set<SystemSubtype>([
   'ui_panes',
   'ui_placed',
   'ui_scroll',
+  // CLI 2.1.321: a mod's $.ui.notify / cancelNotify, sent because OmniFex
+  // spawns as a notifications host. The daemon raises the OS banner.
+  'ui_notify',
+  'ui_notify_cancel',
   'commands_changed',
   'permission_check_status',
 ]);

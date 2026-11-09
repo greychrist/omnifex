@@ -36,6 +36,9 @@ export interface RateLimitInfo {
  *   backgrounds agent spawns by default this can land minutes after the
  *   turn that launched it, long after the `result` notification — so it is
  *   the only chance to tell the user their agent is done.
+ * - `modNotify` / `modNotifyCancel`: a mod's `$.ui.notify` /
+ *   `$.ui.cancelNotify` (CLI 2.1.321; sent because the engine spawns with
+ *   CLAUDE_CODE_NOTIFICATIONS_HOST). See ./mod-notifications.ts.
  * - `turn`: anything else mid-turn (assistant text, tool_use, tool_result,
  *   non-hook system events, etc.).
  */
@@ -54,6 +57,8 @@ export type RuntimeEvent =
       summary: string;
       durationMs: number | null;
     }
+  | { kind: 'modNotify' }
+  | { kind: 'modNotifyCancel' }
   | { kind: 'turn' };
 
 const HOOK_LIFECYCLE_SUBTYPES: ReadonlySet<string> = new Set([
@@ -140,6 +145,9 @@ export function classifyRuntimeEvent(raw: unknown): RuntimeEvent {
       durationMs: typeof usage?.duration_ms === 'number' ? usage.duration_ms : null,
     };
   }
+
+  if (m.type === 'system' && m.subtype === 'ui_notify') return { kind: 'modNotify' };
+  if (m.type === 'system' && m.subtype === 'ui_notify_cancel') return { kind: 'modNotifyCancel' };
 
   if (m.type === 'stream_event') {
     return { kind: 'streamEvent' };

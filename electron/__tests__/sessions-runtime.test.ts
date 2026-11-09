@@ -679,3 +679,96 @@ describe('runtime.listenToMessages — JSONL tail as transcript source', () => {
     expect(sent('agent-output:tab-1')).toHaveLength(0);
   });
 });
+
+/**
+ * A mod's `$.ui.notify` reaches the host as `system/ui_notify` (CLI 2.1.321,
+ * CLAUDE_CODE_NOTIFICATIONS_HOST). The daemon turns it into the same
+ * `claude-notification` every client already raises, carrying an id the
+ * notification centre replaces by and the time to raise it at; a cancel
+ * becomes `claude-notification-remove`.
+ */
+describe('runtime.listenToMessages — mod notifications', () => {
+  function start() {
+    const engine = makeFakeEngine();
+    const handle = makeHandle(engine);
+    const sendToRenderer = vi.fn();
+    void listenToMessages('tab-1', handle, {
+      sendToRenderer,
+      rateLimitHook: null,
+      sessions: new Map<string, SessionHandle>([['tab-1', handle]]),
+    });
+    return { engine, handle, sendToRenderer };
+  }
+  const notify = {
+    type: 'system', subtype: 'ui_notify', plugin: 'reminder', source: 'reminder@inline',
+    title: 'Stand up', text: 'Stretch', key: 'k', rewritten: false, uuid: 'u1', session_id: 'sess-1',
+  };
+
+  it('raises ui_notify as a claude-notification for its tab, marked as a mod’s', () => {
+    const { engine, sendToRenderer } = start();
+    engine._emitMessage(notify);
+    expect(sendToRenderer).toHaveBeenCalledWith('claude-notification', {
+      tab_id: 'tab-1',
+      title: 'Stand up',
+      subtitle: 'From mod “reminder”',
+      body: 'Stretch',
+      is_error: false,
+      id: 'mod:sess-1:reminder@inline:k',
+      origin: 'mod',
+    });
+  });
+
+  it('carries deliver_at for a delayed one', () => {
+    const { engine, sendToRenderer } = start();
+    engine._emitMessage({ ...notify, delay_ms: 60_000 });
+    const payload = sendToRenderer.mock.calls.find((c) => c[0] === 'claude-notification')?.[1];
+    expect(payload.deliver_at).toBeGreaterThan(Date.now() + 50_000);
+  });
+
+  it('turns ui_notify_cancel into claude-notification-remove', () => {
+    const { engine, sendToRenderer } = start();
+    engine._emitMessage({ type: 'system', subtype: 'ui_notify_cancel', plugin: 'reminder', source: 'reminder@inline', key: 'k', uuid: 'u2', session_id: 'sess-1' });
+    expect(sendToRenderer).toHaveBeenCalledWith('claude-notification-remove', { ids: ['mod:sess-1:reminder@inline:k'] });
+  });
+
+  // Settings › Notifications › "Notifications from mods". Read per frame, so
+  // turning it off quiets sessions already running.
+  it('raises nothing while mod notifications are turned off, and resumes when back on', () => {
+    const engine = makeFakeEngine();
+    const handle = makeHandle(engine);
+    const sendToRenderer = vi.fn();
+    let enabled = false;
+    void listenToMessages('tab-1', handle, {
+      sendToRenderer,
+      rateLimitHook: null,
+      sessions: new Map<string, SessionHandle>([['tab-1', handle]]),
+      modNotificationsEnabled: () => enabled,
+    });
+    const shown = () => sendToRenderer.mock.calls.filter((c) => c[0] === 'claude-notification').length;
+    engine._emitMessage(notify);
+    expect(shown()).toBe(0);
+    enabled = true;
+    engine._emitMessage(notify);
+    expect(shown()).toBe(1);
+  });
+
+  it('still takes a notification back while turned off', () => {
+    const engine = makeFakeEngine();
+    const handle = makeHandle(engine);
+    const sendToRenderer = vi.fn();
+    void listenToMessages('tab-1', handle, {
+      sendToRenderer,
+      rateLimitHook: null,
+      sessions: new Map<string, SessionHandle>([['tab-1', handle]]),
+      modNotificationsEnabled: () => false,
+    });
+    engine._emitMessage({ type: 'system', subtype: 'ui_notify_cancel', plugin: 'reminder', source: 'reminder@inline', key: 'k', uuid: 'u2', session_id: 'sess-1' });
+    expect(sendToRenderer).toHaveBeenCalledWith('claude-notification-remove', { ids: ['mod:sess-1:reminder@inline:k'] });
+  });
+
+  it('keeps the tracker on the handle, where a user send can withdraw until_back notices', () => {
+    const { engine, handle } = start();
+    engine._emitMessage({ ...notify, delay_ms: 60_000, until_back: true });
+    expect(handle.modNotices?.back()).toEqual(['mod:sess-1:reminder@inline:k']);
+  });
+});

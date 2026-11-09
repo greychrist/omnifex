@@ -160,6 +160,29 @@ describe('resolveRates — Fable 5.1', () => {
   });
 });
 
+describe('resolveRates — Fable 5.2', () => {
+  // Fable 5.2 (2.1.321) is cheaper than Fable 5/5.1: $8/$40 with $0.20/MTok
+  // reads. Without its own row `claude-fable-5-2` substring-matches `fable-5`
+  // and prices at $10/$50 with $1.00 reads — 5x on the dominant token class.
+  it('prices claude-fable-5-2 at $8/$40 with $0.20 cache reads, not as Fable 5', () => {
+    const { rates, estimated } = resolveRates('claude-fable-5-2');
+    expect(perM(rates.input)).toBe(8);
+    expect(perM(rates.output)).toBe(40);
+    expect(perM(rates.cacheRead)).toBe(0.2);
+    expect(perM(rates.cacheWrite5m)).toBe(10);
+    expect(estimated).toBe(false);
+  });
+
+  it('matches the [1m] suffix and a dated id', () => {
+    expect(perM(resolveRates('claude-fable-5-2[1m]').rates.input)).toBe(8);
+    expect(perM(resolveRates('claude-fable-5-2-20261101').rates.cacheRead)).toBe(0.2);
+  });
+
+  it('labels it Fable 5.2', () => {
+    expect(resolvePricing('claude-fable-5-2', '2026-11-09').row.label).toBe('Fable 5.2');
+  });
+});
+
 describe('resolvePricing — Sonnet 5.5', () => {
   // Sonnet 5.5 (2.1.284) launched at Sonnet 5's $2/$10 with $0.20 reads, so
   // the `sonnet-5` substring prices it correctly — but also labelled it

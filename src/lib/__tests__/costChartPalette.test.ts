@@ -50,7 +50,7 @@ describe('modelColor', () => {
     expect(modelColor('claude-haiku-5-5', 'light')).toBe(SHADES.light.haiku[0]);
     expect(modelColor('claude-sonnet-5-5', 'light')).toBe(SHADES.light.sonnet[0]);
     expect(modelColor('claude-opus-5-5', 'light')).toBe(SHADES.light.opus[0]);
-    expect(modelColor('claude-fable-5-1', 'light')).toBe(SHADES.light.fable[0]);
+    expect(modelColor('claude-fable-5-2', 'light')).toBe(SHADES.light.fable[0]);
     expect(SHADES.light.haiku[0]).toBe('#2563eb');
     expect(SHADES.light.sonnet[0]).toBe('#16a34a');
     expect(SHADES.light.opus[0]).toBe('#d97706');
@@ -66,9 +66,10 @@ describe('modelColor', () => {
     expect(modelColor('claude-opus-4-5', 'light')).toBe(SHADES.light.opus[3]);
     expect(modelColor('claude-sonnet-5', 'light')).toBe(SHADES.light.sonnet[1]);
     expect(modelColor('claude-haiku-4-5', 'light')).toBe(SHADES.light.haiku[1]);
-    expect(modelColor('claude-fable-5', 'light')).toBe(SHADES.light.fable[1]);
+    expect(modelColor('claude-fable-5-1', 'light')).toBe(SHADES.light.fable[1]);
+    expect(modelColor('claude-fable-5', 'light')).toBe(SHADES.light.fable[2]);
     // Mythos 5 ranks with Fable 5 in the purple tier.
-    expect(modelColor('claude-mythos-5', 'light')).toBe(SHADES.light.fable[1]);
+    expect(modelColor('claude-mythos-5', 'light')).toBe(SHADES.light.fable[2]);
   });
 
   it('gives a model the same colour regardless of what else is on screen', () => {

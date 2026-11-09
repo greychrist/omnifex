@@ -46,6 +46,8 @@ export const NATIVE_INVOKE_CHANNELS: readonly string[] = [
   'remote:restart',
   /** OS notification on behalf of a daemon-side event. */
   'notify:show',
+  /** Take OS notifications back by id, shown or still booked (mods' `$.ui.notify`). */
+  'notify:remove',
   /** The page is plain http, which WebKit gives no async clipboard. */
   'clipboard:write',
   /** The paths behind the files just dropped on the window. WebKit gives the

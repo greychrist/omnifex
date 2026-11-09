@@ -56,6 +56,8 @@ export const KIND_FIXTURES: Record<string, string> = {
   "system.ui_panes": "1 pane open: blast-radius",
   "system.ui_placed": "1 row placed: blast-radius",
   "system.ui_scroll": "token-weather · row 12",
+  "system.ui_notify": "reminder · Stand up: time to stretch",
+  "system.ui_notify_cancel": "reminder · withdrew stand-up",
   "system.commands_changed": "42 commands",
   "system.permission_check_status": "Bash · checking",
   "system.ui_log": "replay-theater · 3 edits recorded",

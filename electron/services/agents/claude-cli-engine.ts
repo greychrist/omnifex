@@ -421,7 +421,11 @@ export function createClaudeCliEngine(
     try {
       child = spawn(factory.claudeBinaryPath, args, {
         cwd: p.projectPath,
-        env: buildClaudeEnv(p.configDir),
+        // CLAUDE_CODE_NOTIFICATIONS_HOST (2.1.321): OmniFex raises mods'
+        // `$.ui.notify` notifications, so the CLI sends them as
+        // `system/ui_notify` instead of telling the mod "no_surface".
+        // Interactive sessions only: buildClaudeEnv also feeds `claude -p`.
+        env: { ...buildClaudeEnv(p.configDir), CLAUDE_CODE_NOTIFICATIONS_HOST: '1' },
       }) as ChildProcessWithoutNullStreams;
     } catch (err) {
       throw err;

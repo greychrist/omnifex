@@ -47,6 +47,8 @@ const SUBTYPES = [
   'ui_placed',
   'ui_scroll',
   'ui_status',
+  'ui_notify',
+  'ui_notify_cancel',
   'commands_changed',
   'permission_check_status',
   'away_summary',
@@ -70,6 +72,10 @@ const BOOKKEEPING = [
   'ui_placed',
   'ui_scroll',
   'ui_status',
+  // CLI 2.1.321: a mod's OS notification and its withdrawal. The daemon
+  // raises the banner (sessions/mod-notifications.ts); the row says nothing.
+  'ui_notify',
+  'ui_notify_cancel',
   'commands_changed',
   // CLI 2.1.292: a slow automatic permission check, `checking` then `done`.
   'permission_check_status',

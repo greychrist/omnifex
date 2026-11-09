@@ -160,6 +160,10 @@ export const SHIPPED_PRICING: ModelPricingInput[] = [
   // disagree with the next one. Slot 7 is shared with Mythos 5, which is
   // Glasswing-only — the two will not appear on one chart, and the slot is
   // editable per-row in Settings > Pricing if they ever do.
+  // Fable 5.2 (CLI 2.1.321, now the default `fable`) is cheaper again:
+  // $8/$40 with $0.20/MTok reads (0.025x input). Without its own row it
+  // matched `fable-5` and priced at $10/$50 with $1.00 reads.
+  { pattern: 'fable-5-2', effectiveFrom: '2024-01-01', inputPerM: 8, outputPerM: 40, cacheReadPerM: 0.2, label: 'Fable 5.2' },
   { pattern: 'fable-5-1', effectiveFrom: '2024-01-01', inputPerM: 10, outputPerM: 50, cacheReadPerM: 0.25, label: 'Fable 5.1' },
   { pattern: 'fable-5', effectiveFrom: '2024-01-01', label: 'Fable 5' },
   { pattern: 'fable', effectiveFrom: '2024-01-01', inputPerM: 10, outputPerM: 50, contextWindow: 1_000_000 },

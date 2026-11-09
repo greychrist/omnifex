@@ -116,6 +116,7 @@ import {
 import { getHandlerMap } from '../ipc/handlers';
 import { INVOKE_CHANNELS } from '../ipc/channels';
 import { classifyJsonlLine } from '../../src/lib/jsonlClassifier';
+import { MOD_NOTIFICATIONS_SETTING_KEY, modNotificationsEnabled } from '../../src/lib/notificationSounds';
 
 import { detectTailscaleIp, extraListenHosts, type NetworkInterfaces, type ServerConfig } from './config';
 import { createTailnetWatch } from './tailnet-watch';
@@ -530,6 +531,7 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
       bundleDir: __dirname,
       stateDir: config.stateDir,
     }),
+    () => modNotificationsEnabled(db.getSetting(MOD_NOTIFICATIONS_SETTING_KEY)),
   );
   sessionsRef = sessionsService;
 

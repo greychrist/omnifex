@@ -224,6 +224,30 @@ describe('electronAPI shim', () => {
       expect(native.invoke).toHaveBeenCalledWith('notify:show', { title: 'OmniFex — x', body: 'Run ls?', isError: false, tabId: 'tab-A', subtitle: 'Permission Request:' });
     });
 
+    // A mod's `$.ui.notify` (CLI 2.1.321): the id lets the notification
+    // centre replace it by key; deliverAt books a delayed one.
+    it('carries a mod notification\'s id and delivery time into the native banner', async () => {
+      await started();
+      f.push({ type: 'event', sessionId: 'sid-1', seq: 3, kind: 'notification', channel: 'claude-notification', payload: { tab_id: 'sid-1', title: 'Stand up', body: 'Stretch', is_error: false, subtitle: 'From mod “r”', id: 'mod:s:r@x:k', deliver_at: 1_900_000_000_000, origin: 'mod' } });
+      expect(native.invoke).toHaveBeenCalledWith('notify:show', { title: 'Stand up', body: 'Stretch', isError: false, tabId: 'tab-A', subtitle: 'From mod “r”', id: 'mod:s:r@x:k', deliverAt: 1_900_000_000_000 });
+    });
+
+    it('takes mod notifications back through notify:remove', () => {
+      shim();
+      f.push({ type: 'channel', channel: 'claude-notification-remove', payload: { ids: ['mod:s:r@x:k'] } });
+      expect(native.invoke).toHaveBeenCalledWith('notify:remove', { ids: ['mod:s:r@x:k'] });
+    });
+
+    // The web has no notification centre to book one with: a delayed notice
+    // can only be dropped there, never raised early.
+    it('on the web, raises an immediate mod notification and drops a delayed one', async () => {
+      const webNotify = vi.fn();
+      createElectronApiShim({ client: f.client, native: null, storage, webNotify });
+      f.push({ type: 'channel', channel: 'claude-notification', payload: { title: 'Now', body: 'a', is_error: false, id: 'x' } });
+      f.push({ type: 'channel', channel: 'claude-notification', payload: { title: 'Later', body: 'b', is_error: false, id: 'y', deliver_at: Date.now() + 60_000 } });
+      expect(webNotify.mock.calls).toEqual([['Now', 'a']]);
+    });
+
     it('re-emits a tab-scoped channel that rides the notification kind, and raises no banner for it', async () => {
       const api = await started();
       const cost: unknown[] = [];

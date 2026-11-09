@@ -51,7 +51,8 @@ import Testing
         #expect(NativeChannels.invoke.contains("remote:url"))
         #expect(NativeChannels.invoke.contains("shell:listBrowsers"))
         #expect(NativeChannels.invoke.contains("drop:paths"))
-        #expect(NativeChannels.invoke.count == 26)
+        #expect(NativeChannels.invoke.contains("notify:remove"))
+        #expect(NativeChannels.invoke.count == 27)
         #expect(NativeChannels.events.contains("session-inflight-count"))
     }
 

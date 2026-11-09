@@ -138,8 +138,14 @@ enum NativeHandlers {
                 body: BridgeParams.string(p, "body") ?? "",
                 isError: BridgeParams.bool(p, "isError"),
                 tabId: BridgeParams.string(p, "tabId"),
-                windowFocused: s.anyWindowFocused
+                windowFocused: s.anyWindowFocused,
+                id: BridgeParams.string(p, "id"),
+                deliverAtMs: BridgeParams.double(p, "deliverAt")
             )
+            return nil
+        }
+        r.register("notify:remove") { p, _ in
+            s.notifier.remove(ids: BridgeParams.strings(p, "ids"))
             return nil
         }
 

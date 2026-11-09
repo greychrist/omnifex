@@ -51,6 +51,92 @@ import { buildClaudeEnv } from './util/claude-env';
  *    the CLI's own error string: "summarized", "omitted" ("highlights" is
  *    refused). Records carry `thinking_duration_ms` too. Verified 2.1.312.
  *
+ * Last review: 2.1.319 -> 2.1.321 on 2026-11-09. Findings: one cost bug,
+ * fixed the same day (Fable 5.2 priced as Fable 5); one opportunity taken
+ * the same day (mods' `ui_notify` notifications).
+ *
+ *  Changelog coverage: 2.1.321 (~120 entries); 2.1.320 has no entry. Both
+ *  ends installed. Script: merge map (43), hook_event_name (33), control_*
+ *  (4), SDK requests (55), origin kinds (14), can_use_tool keys (11)
+ *  identical; /usage anchors unchanged; record coverage clean.
+ *  - Claude Fable 5.2 (`claude-fable-5-2`), now the default `fable`:
+ *    $8/$40, $0.20 cache reads. No row of its own, so it substring-matched
+ *    `fable-5` and priced at $10/$50 with $1.00 reads (5x on reads). One
+ *    5.2 transcript already on disk. Fixed: SHIPPED_PRICING row (+tests);
+ *    cost-chart shades step 5.1/5/Mythos 5 one lighter. Stored
+ *    session_cost_daily rows re-price on the Cost Report's Rescan. Picker
+ *    is the live initialize catalog, so 5.2 appears unaided;
+ *    FALLBACK_MODELS (discovery-failed only) still lists Fable 5, left.
+ *    "Saved Fable 5.1 picks move to `fable`" is CLI-side settings
+ *    migration; an explicit --model claude-fable-5-1 from OmniFex still
+ *    works.
+ *  - `system` +`ui_notify` / +`ui_notify_cancel`: a mod's `$.ui.notify` /
+ *    `cancelNotify` (text, title, key, delay_ms / at up to 7 days,
+ *    cancel-on-return, plugin + source). Emitted only when the host sets
+ *    CLAUDE_CODE_NOTIFICATIONS_HOST and the transport is local; without it
+ *    a mod gets "no_surface". TAKEN 2026-11-09: claude-cli-engine.ts sets
+ *    the env (interactive spawns only); sessions/mod-notifications.ts maps
+ *    frames to `claude-notification` with a derived id
+ *    (`mod:<session>:<source>:<key>`) and `deliver_at`; cancels and a user
+ *    send (until_back) become `claude-notification-remove` → native
+ *    `notify:remove`. The Mac app books delayed ones with
+ *    UNTimeIntervalNotificationTrigger (fire after quit; default chime, not
+ *    the configured sound). Rows classified, default Never. Web drops
+ *    delayed ones. "Returns" = a user send, not tab focus. Settings ›
+ *    Notifications › "Notifications from mods" (`mod_notifications_enabled`,
+ *    on unless 'false') gates new ones per frame; cancels always pass.
+ *  - `type:` +`connector_file_progress` (a `progress` data type; classifier
+ *    takes every progress record as `progress`), +`permission_error` (API
+ *    error type string, 403 model check), -`set-up`. Inert.
+ *  - CLI flags +`--discard`: `claude plugin restore-set-aside` only. Inert.
+ *  - Initialize reply +`other_hook_ask_outranks_host`, +`auth_conflict
+ *    {token_source, api_key_source}` (@internal). OmniFex registers no
+ *    PreToolUse hook of its own over the pipe; auth_conflict is the TUI's
+ *    "both token and key" warning, worth a status-bar note one day. Inert.
+ *  - Describe moves, all @internal or inert: thinking_duration_ms now also
+ *    ends at an interrupt (display only); cache_read part of
+ *    first_request_input_tokens; tool-list build count on result;
+ *    background-command turn window; per-task Stop (`perTaskStopAffordance`
+ *    / turn-only Stop; OmniFex's Stop unchanged); voice-call notes;
+ *    plugin-hook chain flag; MCP per-tool deny; Theme instance; queued
+ *    command fate; set-aside marketplace data; inner-Read image note;
+ *    cancel_queued exception.
+ *  - Object keys +479 -92: env names (NOTIFICATIONS_HOST, HOST_OWNED_
+ *    CONFIG_DIR, BRIDGE_*, TOOL_PICTURE_SERVERS...), bash-parser renames,
+ *    gateway/runner internals. None on user/assistant records or
+ *    permission requests. Noise.
+ *  - AskUserQuestion in -p/SDK denies a host answer setting `afkTimeoutMs`:
+ *    OmniFex never sets it (grep). Inert.
+ *  - Mods' own `$.tool.call` / `$.mcp.call` raise no permission prompt;
+ *    session-written mods auto-on in auto/bypass, off in dontAsk; headless
+ *    reloads `.claude/skills` mods on change. omnifex-mod unaffected.
+ *  - In our favour, nothing to do: Bash/cp/mv permission fixes, fast mode
+ *    falls back to standard speed, OOM while reading transcript (-p/SDK
+ *    hang), project skills lost after worktree entry in SDK sessions, TLS
+ *    EPROTO mid-reply, git status at start, PreToolUse ask/defer ordering,
+ *    background agent report batching in headless auto mode, background
+ *    output truncated past 1,000 chars, context estimate overcount.
+ *  - Inert: remote-control --settings, MCP OAuth redirect, mcp login
+ *    warning, NotebookEdit/Edit on network paths, /config auto default,
+ *    FileChanged (Windows), --plugin-dir builtin, plugin updates per
+ *    worktree, pkill in cloud, Chrome/computer use, hook output files,
+ *    /desktop, WebFetch empty model, screen reader, MCP null sign-in,
+ *    /model "More models", Max/Ultra wording, dataviz skill, managed
+ *    extraKnownMarketplaces, layered policy, nested skills under plugins,
+ *    OTel num_hooks, account email check, Artifact tool, workflows stop,
+ *    all Gateway, Self-hosted runner, Remote Control, Cloud, [VSCode]
+ *    entries.
+ *  - Open items from 2.1.319:
+ *     - Idle compaction: still unseen.
+ *
+ *  Script + prompt: unchanged — the coverage half flagged ui_notify, and
+ *  the classifier now knows it.
+ *
+ *  OPEN ITEMS (carry forward; re-check each review):
+ *   - Idle compaction: verify the first real occurrence (2.1.314 block).
+ *   - ui_notify: unverified against a real mod; first `$.ui.notify` seen in
+ *     a transcript or reported banner closes it.
+ * *
  * Last review: 2.1.318 -> 2.1.319 on 2026-11-07. Findings: none broken
  * today; one latent card fixed (`resume-head-vouch`).
  *
@@ -5214,7 +5300,7 @@ import { buildClaudeEnv } from './util/claude-env';
  * `~/.claude.json` fix (we read-modify-write that file, never replace it), and
  * the VSCode screen-reader work.
  */
-export const REVIEWED_CLI_VERSION = '2.1.319';
+export const REVIEWED_CLI_VERSION = '2.1.321';
 
 /**
  * app_settings key holding the user's explicit OmniFex-checkout override.

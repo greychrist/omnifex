@@ -36,6 +36,16 @@ export interface StorageLike {
   setItem(key: string, value: string): void;
 }
 
+/** A `claude-notification` payload as the daemon sends it. */
+interface NotificationPayload {
+  title?: string;
+  body?: string;
+  is_error?: boolean;
+  subtitle?: string;
+  id?: string;
+  deliver_at?: number;
+}
+
 export interface ShimOptions {
   client: ProtocolClient;
   /** The native app's bridge on the Mac; null on the web. */
@@ -226,10 +236,24 @@ export function createElectronApiShim(opts: ShimOptions): ShimHandle {
     for (const tab of tabs) emit(`${prefix}:${tab}`, ...args);
   }
 
-  function notifyNative(title: string, body: string, isError: boolean, tabId: string | null, subtitle?: string): void {
+  /**
+   * `id` and `deliver_at` come only on a mod's notification (CLI 2.1.321):
+   * the id lets the notification centre replace or take it back, deliverAt
+   * books it for later. The web cannot book one, so it drops a delayed
+   * notice rather than raise it early.
+   */
+  function notifyNative(p: NotificationPayload, tabId: string | null): void {
+    const title = p.title ?? 'OmniFex';
+    const body = p.body ?? '';
+    const deliverAt = typeof p.deliver_at === 'number' ? p.deliver_at : null;
     if (native) {
-      void native.invoke('notify:show', { title, body, isError, tabId, ...(subtitle ? { subtitle } : {}) }).catch(() => {});
-    } else {
+      void native.invoke('notify:show', {
+        title, body, isError: !!p.is_error, tabId,
+        ...(p.subtitle ? { subtitle: p.subtitle } : {}),
+        ...(typeof p.id === 'string' ? { id: p.id } : {}),
+        ...(deliverAt !== null ? { deliverAt } : {}),
+      }).catch(() => {});
+    } else if (deliverAt === null || deliverAt <= Date.now()) {
       opts.webNotify?.(title, body);
     }
   }
@@ -250,10 +274,10 @@ export function createElectronApiShim(opts: ShimOptions): ShimHandle {
           emitForSession(m.sessionId, prefix, m.payload);
         } else if (m.kind === 'notification' && prefix === 'claude-notification') {
           const tabs = sessionToTabs.get(m.sessionId);
-          const p = (m.payload ?? {}) as { title?: string; body?: string; is_error?: boolean; subtitle?: string };
+          const p = (m.payload ?? {}) as NotificationPayload;
           for (const tab of tabs ?? []) {
             emit('claude-notification', { ...(m.payload as Record<string, unknown>), tab_id: tab });
-            notifyNative(p.title ?? 'OmniFex', p.body ?? '', !!p.is_error, tab, p.subtitle);
+            notifyNative(p, tab);
           }
         } else {
           // `notification` is two things on the wire: the OS-notification
@@ -296,8 +320,13 @@ export function createElectronApiShim(opts: ShimOptions): ShimHandle {
         // A notification that belongs to no session (a rate-limit threshold)
         // is broadcast rather than routed; it still deserves the banner.
         if (m.channel === 'claude-notification') {
-          const p = (m.payload ?? {}) as { title?: string; body?: string; is_error?: boolean; subtitle?: string };
-          notifyNative(p.title ?? 'OmniFex', p.body ?? '', !!p.is_error, null, p.subtitle);
+          notifyNative((m.payload ?? {}) as NotificationPayload, null);
+        }
+        // A mod's notification taken back, shown or still booked. Ids are
+        // global, so it is broadcast rather than routed to a tab.
+        if (m.channel === 'claude-notification-remove' && native) {
+          const ids = (m.payload as { ids?: unknown } | null)?.ids;
+          if (Array.isArray(ids)) void native.invoke('notify:remove', { ids }).catch(() => {});
         }
         return;
       case 'project.changed':

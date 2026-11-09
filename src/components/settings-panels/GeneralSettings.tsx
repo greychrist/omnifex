@@ -47,6 +47,8 @@ import { fireAndLog, logAndForget } from "@/lib/fireAndLog";
 import {
   NOTIFICATION_SOUND_CHOICES,
   NOTIFICATION_SOUND_SETTING_KEYS,
+  MOD_NOTIFICATIONS_SETTING_KEY,
+  modNotificationsEnabled,
   DEFAULT_SUCCESS_SOUND,
   DEFAULT_ERROR_SOUND,
   normalizeNotificationSoundId,
@@ -162,6 +164,7 @@ export const GeneralSettings: React.FC = () => {
   const [startupIntroEnabled, setStartupIntroEnabled] = useState(true);
   const [successSound, setSuccessSound] = useState<NotificationSoundId>(DEFAULT_SUCCESS_SOUND);
   const [errorSound, setErrorSound] = useState<NotificationSoundId>(DEFAULT_ERROR_SOUND);
+  const [modNotifications, setModNotifications] = useState(true);
 
   useEffect(() => {
     setTabPersistenceEnabled(TabPersistenceService.isEnabled());
@@ -175,6 +178,7 @@ export const GeneralSettings: React.FC = () => {
       setSuccessSound(normalizeNotificationSoundId(successRaw, DEFAULT_SUCCESS_SOUND));
       const errorRaw = await api.getSetting(NOTIFICATION_SOUND_SETTING_KEYS.error);
       setErrorSound(normalizeNotificationSoundId(errorRaw, DEFAULT_ERROR_SOUND));
+      setModNotifications(modNotificationsEnabled(await api.getSetting(MOD_NOTIFICATIONS_SETTING_KEY)));
       savedCliReviewRepoDir.current = (await api.getSetting(CLI_REVIEW_REPO_DIR_SETTING_KEY)) ?? '';
       setCliReviewRepoDir(savedCliReviewRepoDir.current);
       setCliAutoUpdate((await api.getSetting(CLI_AUTO_UPDATE_SETTING_KEY)) === 'true');
@@ -554,6 +558,26 @@ export const GeneralSettings: React.FC = () => {
                   </Button>
                 </div>
               </div>
+            </div>
+
+            {/* Mods' `$.ui.notify` banners. Read by the daemon per
+                notification, so it applies to running sessions at once. */}
+            <div className="flex items-center justify-between">
+              <div className="space-y-1">
+                <Label htmlFor="mod-notifications">Notifications from mods</Label>
+                <p className="text-caption text-muted-foreground">
+                  Let mods raise macOS notifications. Turning this off drops new
+                  ones; ones already scheduled still fire.
+                </p>
+              </div>
+              <Switch
+                id="mod-notifications"
+                checked={modNotifications}
+                onCheckedChange={(checked) => {
+                  setModNotifications(checked);
+                  void track(api.saveSetting(MOD_NOTIFICATIONS_SETTING_KEY, checked ? 'true' : 'false'));
+                }}
+              />
             </div>
           </SettingsSection>
 

@@ -18,7 +18,13 @@ import type {
 } from './types';
 import type { AgentMessage } from '../agents/types';
 import { classifyRuntimeEvent } from './events';
-import { dispatchAgentNotification, dispatchResultNotification } from './notifications';
+import {
+  dispatchAgentNotification,
+  dispatchModNotification,
+  dispatchModNotificationRemoval,
+  dispatchResultNotification,
+} from './notifications';
+import { createModNoticeTracker } from './mod-notifications';
 import { createBackgroundTaskTracker } from './background-tasks';
 import { createJsonlTail, isClosureCarrier, type JsonlTailHandle } from './jsonl-tail';
 import { shouldForwardStreamMessage } from './stream-forward';
@@ -72,6 +78,13 @@ export interface RuntimeDeps {
    * `createCliProcessUsageStore(db).record`. See sessions/cli-usage.ts.
    */
   cliUsageSink?: CliUsageSink | null;
+  /**
+   * Whether mods' `$.ui.notify` notifications are raised (Settings ›
+   * Notifications). Asked per frame, so a change reaches running sessions.
+   * Unset means on. Cancels pass regardless, so turning it off never
+   * strands a booked notification that its mod tries to take back.
+   */
+  modNotificationsEnabled?: (() => boolean) | null;
 }
 
 interface JsonlTailState {
@@ -259,6 +272,18 @@ export function listenToMessages(
           }
           break;
         }
+        case 'modNotify': {
+          if (deps.modNotificationsEnabled && !deps.modNotificationsEnabled()) break;
+          const notice = (handle.modNotices ??= createModNoticeTracker()).notify(message);
+          if (notice) dispatchModNotification(tabId, notice, sendToRenderer);
+          break;
+        }
+        case 'modNotifyCancel':
+          dispatchModNotificationRemoval(
+            (handle.modNotices ??= createModNoticeTracker()).cancel(message),
+            sendToRenderer,
+          );
+          break;
         case 'result':
           // status flip after notification dispatch below
           if (deps.cliUsageSink) recordResultUsage(handle, message, deps.cliUsageSink);

@@ -61,13 +61,14 @@ describe('claude binary wiring in the composition root', () => {
 
     // Positional, so the order is the contract: resolveClaudeBinary, the
     // CLI-usage recorder (the spend no transcript records), the auto-recap
-    // policy, then the bundled mod's plugin dirs. Both roots must pass each —
+    // policy, the bundled mod's plugin dirs, then the mod-notifications gate
+    // (Settings › Notifications). Both roots must pass each —
     // the parameters are optional, so a root that forgot one would compile
     // and silently stop counting that spend, never recap an idle session, or
-    // start every session without step progress.
-    it(`${root} hands findBestBinary, the CLI-usage recorder, the auto-recap policy, then the bundled mod to createSessionsService last`, () => {
+    // start every session without step progress, or ignore the setting.
+    it(`${root} hands findBestBinary, the CLI-usage recorder, the auto-recap policy, the bundled mod, then the mod-notifications gate to createSessionsService last`, () => {
       expect(callText(src, 'createSessionsService')).toMatch(
-        new RegExp(`${FIND_BEST.source},\\s*(//[^\\n]*\\s*)*createCliProcessUsageStore\\(db\\)\\.record,\\s*\\(\\) => readAutoRecapPolicy\\(\\(key\\) => db\\.getSetting\\(key\\)\\),\\s*(//[^\\n]*\\s*)*createBundledModPluginDirs\\(\\{[^}]*\\}\\),?\\s*\\)$`),
+        new RegExp(`${FIND_BEST.source},\\s*(//[^\\n]*\\s*)*createCliProcessUsageStore\\(db\\)\\.record,\\s*\\(\\) => readAutoRecapPolicy\\(\\(key\\) => db\\.getSetting\\(key\\)\\),\\s*(//[^\\n]*\\s*)*createBundledModPluginDirs\\(\\{[^}]*\\}\\),\\s*\\(\\) => modNotificationsEnabled\\(db\\.getSetting\\(MOD_NOTIFICATIONS_SETTING_KEY\\)\\),?\\s*\\)$`),
       );
     });
   }

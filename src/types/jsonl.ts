@@ -234,6 +234,12 @@ export type SystemSubtype =
   // surface to draw via ui_render. Display only; OmniFex draws no mod UI.
   | 'ui_placed'
   | 'ui_scroll'
+  // Stream-only (CLI >= 2.1.321, only to a CLAUDE_CODE_NOTIFICATIONS_HOST):
+  // a mod's OS notification `{plugin, source, title, text, key?, delay_ms?,
+  // at?, until_back?, rewritten}` and its withdrawal `{plugin, source,
+  // key?}`. The daemon raises the banner; the rows default to Never.
+  | 'ui_notify'
+  | 'ui_notify_cancel'
   | 'commands_changed'
   // Stream-only (CLI >= 2.1.292): a tool call whose automatic permission
   // check (auto mode's classifier) has waited ~4 s says `checking`, then

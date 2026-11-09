@@ -4,6 +4,7 @@
 import type { LoggingService } from '../logging';
 import type { AgentElicitationRequest, AgentEngine, AgentKind, ElicitationAction, InitData } from '../agents/types';
 import type { SideChatStore } from './side-chat';
+import type { ModNoticeTracker } from './mod-notifications';
 import type { SideChat, SideChatAskResult } from '../../../src/lib/sideChat';
 import type { TaskOutputTail } from '../../../src/lib/backgroundShells';
 
@@ -481,6 +482,12 @@ export interface SessionHandle {
   activityObserver?: () => void;
   /** Background tasks started and not yet finished, set by the message listener. */
   openBackgroundTasks?: () => number;
+  /**
+   * Mods' notifications still waiting to fire, made by the message listener
+   * on the first `ui_notify`. On the handle, not the listener, so a restart
+   * keeps it and a user send can withdraw `until_back` ones.
+   */
+  modNotices?: ModNoticeTracker;
   permissionResolver: ((decision: PermissionDecision) => void) | null;
   /** Queue of permission requests waiting for user response */
   permissionQueue: PendingPermission[];

@@ -9,6 +9,7 @@
 import path from 'node:path';
 import type { SendToRenderer } from './types';
 import type { RuntimeEvent } from './events';
+import type { ModNotice } from './mod-notifications';
 
 export interface DispatchArgs {
   tabId: string;
@@ -79,4 +80,28 @@ export function dispatchAgentNotification(args: DispatchAgentArgs): void {
     body,
     is_error: isError,
   });
+}
+
+/**
+ * A mod's notification (`system/ui_notify`), on the channel every client
+ * already raises. `id` lets the notification centre replace or take it back;
+ * `deliver_at` asks it to hold the banner until then. `origin: 'mod'` keeps
+ * it from marking the tab as having an unread result.
+ */
+export function dispatchModNotification(tabId: string, notice: ModNotice, sendToRenderer: SendToRenderer): void {
+  sendToRenderer('claude-notification', {
+    tab_id: tabId,
+    title: notice.title,
+    subtitle: notice.subtitle,
+    body: notice.body,
+    is_error: false,
+    id: notice.id,
+    origin: 'mod',
+    ...(notice.deliverAt !== null ? { deliver_at: notice.deliverAt } : {}),
+  });
+}
+
+/** Take back mods' notifications, shown or still waiting. Ids are global. */
+export function dispatchModNotificationRemoval(ids: string[], sendToRenderer: SendToRenderer): void {
+  if (ids.length > 0) sendToRenderer('claude-notification-remove', { ids });
 }

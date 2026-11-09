@@ -72,6 +72,18 @@ describe('ClaudeCliEngine', () => {
     expect(opts.env.CLAUDE_CONFIG_DIR).toBe('/home/user/.claude');
   });
 
+  // CLI 2.1.321: a mod's `$.ui.notify` reaches the host as `system/ui_notify`
+  // only when the host says it raises notifications; otherwise the mod hears
+  // "no_surface". The daemon raises them (sessions/mod-notifications.ts).
+  it('declares itself a notifications host', async () => {
+    const fake = makeFakeChild();
+    mockedSpawn.mockReturnValue(fake as never);
+    const engine = createClaudeCliEngine({ tabId: 't', claudeBinaryPath: '/bin/claude' });
+    await engine.start(baseParams);
+    const opts = mockedSpawn.mock.calls[0][2] as { env: Record<string, string> };
+    expect(opts.env.CLAUDE_CODE_NOTIFICATIONS_HOST).toBe('1');
+  });
+
   it('enables --forward-subagent-text so subagent narration reaches the stream', async () => {
     // CLI ≥2.1.211: forwards subagent text/thinking as assistant envelopes
     // tagged with parent_tool_use_id. subagent rows render them live.

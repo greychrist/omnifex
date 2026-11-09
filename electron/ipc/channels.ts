@@ -314,6 +314,7 @@ export const INVOKE_CHANNELS: readonly string[] = [
   'remote:url',
   'remote:restart',
   'notify:show',
+  'notify:remove',
   'clipboard:write',
   'drop:paths',
   'dialog:open',

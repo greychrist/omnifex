@@ -37,6 +37,7 @@ vi.mock('@/components/ClaudeVersionSelector', () => ({
 
 import { api, CLI_AUTO_UPDATE_SETTING_KEY } from '@/lib/api';
 import { GeneralSettings } from '../GeneralSettings';
+import { MOD_NOTIFICATIONS_SETTING_KEY } from '@/lib/notificationSounds';
 import { SaveStatusProvider, SaveStatusBanner } from '../saveStatus';
 import { ThemeProvider } from '@/contexts/ThemeContext';
 import { AppFontProvider } from '@/contexts/AppFontContext';
@@ -110,6 +111,25 @@ describe('GeneralSettings saving', () => {
       expect(api.saveSetting).toHaveBeenCalledWith(CLI_AUTO_UPDATE_SETTING_KEY, 'true');
     });
     await waitFor(() => { expect(status().textContent).toMatch(/Couldn.t save: database is locked/); });
+  });
+
+  // Mods' `$.ui.notify` banners: on unless turned off, saved as 'false'.
+  it('turns notifications from mods off and back on', async () => {
+    await renderGeneral();
+    const toggle = screen.getByRole('switch', { name: /Notifications from mods/ });
+    expect(toggle.getAttribute('aria-checked')).toBe('true');
+    fireEvent.click(toggle);
+    await waitFor(() => { expect(api.saveSetting).toHaveBeenCalledWith(MOD_NOTIFICATIONS_SETTING_KEY, 'false'); });
+    fireEvent.click(toggle);
+    await waitFor(() => { expect(api.saveSetting).toHaveBeenCalledWith(MOD_NOTIFICATIONS_SETTING_KEY, 'true'); });
+  });
+
+  it('shows notifications from mods as off when saved off', async () => {
+    vi.mocked(api.getSetting).mockImplementation(async (k: string) => (k === MOD_NOTIFICATIONS_SETTING_KEY ? 'false' : null));
+    await renderGeneral();
+    await waitFor(() => {
+      expect(screen.getByRole('switch', { name: /Notifications from mods/ }).getAttribute('aria-checked')).toBe('false');
+    });
   });
 
   it('reports a context-setter failure too, which used to be swallowed', async () => {

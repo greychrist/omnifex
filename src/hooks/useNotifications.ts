@@ -5,6 +5,8 @@ interface NotificationPayload {
   title: string;
   body: string;
   is_error: boolean;
+  /** 'mod' for a mod's `$.ui.notify`, which is no result waiting in the tab. */
+  origin?: string;
 }
 
 /**
@@ -33,9 +35,9 @@ export function useNotifications(
     const unlistenNotification = window.electronAPI.onEvent(
       "claude-notification",
       (payload: any) => {
-        const { tab_id } = payload as NotificationPayload;
+        const { tab_id, origin } = payload as NotificationPayload;
         // Mark non-active tabs with unread badge
-        if (tab_id !== activeTabIdRef.current) {
+        if (origin !== 'mod' && tab_id !== activeTabIdRef.current) {
           updateTabRef.current(tab_id, { hasUnreadResult: true });
         }
       }

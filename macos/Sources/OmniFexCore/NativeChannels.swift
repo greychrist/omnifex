@@ -34,6 +34,7 @@ public enum NativeChannels {
         "remote:url",
         "remote:restart",
         "notify:show",
+        "notify:remove",
         "clipboard:write",
         "drop:paths",
     ]

@@ -41,3 +41,36 @@ import Testing
         #expect(BannerSubtitle.text(explicit: "", isError: true) == "Task Failed")
     }
 }
+
+/// When to raise a banner. A mod's `$.ui.notify` (CLI 2.1.321) may ask for
+/// later: the notification centre books it, so it fires after OmniFex quits.
+@Suite struct NotificationDeliveryTests {
+    let now = 1_800_000_000_000.0
+
+    @Test func immediateWhileLookingIsJustTheSound() {
+        #expect(NotificationDelivery.plan(deliverAtMs: nil, nowMs: now, windowFocused: true) == .soundOnly)
+    }
+    @Test func immediateWhileAwayIsABanner() {
+        #expect(NotificationDelivery.plan(deliverAtMs: nil, nowMs: now, windowFocused: false) == .bannerNow)
+    }
+    @Test func laterIsBookedWhateverHasFocus() {
+        #expect(NotificationDelivery.plan(deliverAtMs: now + 90_000, nowMs: now, windowFocused: true) == .scheduled(seconds: 90))
+        #expect(NotificationDelivery.plan(deliverAtMs: now + 90_000, nowMs: now, windowFocused: false) == .scheduled(seconds: 90))
+    }
+    @Test func aMomentAlreadyPastIsNow() {
+        #expect(NotificationDelivery.plan(deliverAtMs: now - 5, nowMs: now, windowFocused: false) == .bannerNow)
+        // Under a second ahead is not worth a booking.
+        #expect(NotificationDelivery.plan(deliverAtMs: now + 500, nowMs: now, windowFocused: true) == .soundOnly)
+    }
+    @Test func neverBooksBeyondSevenDays() {
+        #expect(NotificationDelivery.plan(deliverAtMs: now + 30 * 86_400_000, nowMs: now, windowFocused: false) == .scheduled(seconds: 7 * 86_400))
+    }
+}
+
+@Suite struct BridgeParamsStringsTests {
+    @Test func readsOnlyStrings() {
+        #expect(BridgeParams.strings(["ids": ["a", 1, "b"]], "ids") == ["a", "b"])
+        #expect(BridgeParams.strings(["ids": "a"], "ids") == [])
+        #expect(BridgeParams.strings(nil, "ids") == [])
+    }
+}
