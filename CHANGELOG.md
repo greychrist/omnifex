@@ -5,6 +5,18 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.32] — 2026-11-09
+
+### Added
+- Mods can raise macOS notifications (`$.ui.notify`, Claude Code 2.1.321+): shown under the mod's name, replaced by key, and a delayed one is booked with the notification centre so it fires even after OmniFex quits. A mod's cancel, or your next message for "unless I'm back" notices, takes it back.
+- Settings › Notifications › "Notifications from mods" turns them off, including in sessions already running.
+
+### Fixed
+- Claude Fable 5.2 is priced at its own $8/$40 per Mtok with $0.20 cache reads; it was costed as Fable 5 ($10/$50, $1.00 reads). Press Rescan in the Cost Report to re-price spend already recorded. Fable 5.2 takes the top Fable shade in charts and pickers, so older Fable models step one shade lighter.
+
+### Changed
+- Reviewed Claude Code 2.1.320–2.1.321 against OmniFex.
+
 ## [0.5.31] — 2026-11-08
 
 ### Changed
