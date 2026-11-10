@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { renderHook, waitFor, cleanup } from '@testing-library/react';
+import { renderHook, waitFor, cleanup, act } from '@testing-library/react';
 import {
   toPickerModel,
   FALLBACK_MODELS,
@@ -31,6 +31,7 @@ vi.mock('@/lib/api', async (importOriginal) => {
     api: {
       ...actual.api,
       listSupportedModels: vi.fn(),
+      refreshSupportedModels: vi.fn(),
       getClaudeSettings: vi.fn(),
     },
   };
@@ -38,6 +39,7 @@ vi.mock('@/lib/api', async (importOriginal) => {
 
 import { api } from '@/lib/api';
 const mockedList = vi.mocked(api.listSupportedModels);
+const mockedRefresh = vi.mocked(api.refreshSupportedModels);
 const mockedSettings = vi.mocked(api.getClaudeSettings);
 
 beforeEach(() => {
@@ -50,6 +52,7 @@ afterEach(() => {
   cleanup();
   mockedList.mockReset();
   mockedSettings.mockReset();
+  mockedRefresh.mockReset();
 });
 
 const RAW: SessionModelInfo[] = [
@@ -171,6 +174,40 @@ describe('pickModelOption', () => {
 });
 
 describe('useModelCatalog', () => {
+  it('refresh() re-reads the catalog live and swaps it in', async () => {
+    mockedList.mockResolvedValue(RAW);
+    const NEWER: SessionModelInfo[] = [...RAW, { value: 'fable', displayName: 'Fable 5.2', description: 'New' }];
+    let resolveRefresh!: (v: SessionModelInfo[]) => void;
+    mockedRefresh.mockReturnValue(new Promise((r) => { resolveRefresh = r; }));
+    const { result } = renderHook(() => useModelCatalog('/Users/g/.claude-work'));
+    await waitFor(() => { expect(result.current.raw).toEqual(RAW); });
+
+    act(() => { result.current.refresh(); });
+    expect(result.current.refreshing).toBe(true);
+    expect(mockedRefresh).toHaveBeenCalledWith('/Users/g/.claude-work');
+
+    await act(async () => { resolveRefresh(NEWER); });
+    expect(result.current.refreshing).toBe(false);
+    expect(result.current.raw).toEqual(NEWER);
+  });
+
+  it('a failed refresh keeps the catalog it had', async () => {
+    mockedList.mockResolvedValue(RAW);
+    mockedRefresh.mockRejectedValue(new Error('ipc down'));
+    const { result } = renderHook(() => useModelCatalog('/Users/g/.claude-work'));
+    await waitFor(() => { expect(result.current.raw).toEqual(RAW); });
+
+    await act(async () => { result.current.refresh(); });
+    expect(result.current.refreshing).toBe(false);
+    expect(result.current.raw).toEqual(RAW);
+  });
+
+  it('refresh() is a no-op without a configDir', () => {
+    const { result } = renderHook(() => useModelCatalog(undefined));
+    act(() => { result.current.refresh(); });
+    expect(mockedRefresh).not.toHaveBeenCalled();
+  });
+
   it('is inert without a configDir (fallback models, no fetch)', () => {
     const { result } = renderHook(() => useModelCatalog(undefined));
     // Same fallback set, but the "default" entry is relabeled "Account Default".

@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Popover, FIELD_TRIGGER } from "@/components/ui/popover";
@@ -63,6 +63,10 @@ interface ModelPickerDropdownProps {
    *  older versions (splitLatestModels): they are the escape hatch, not the
    *  normal choice. */
   extras?: Model[];
+  /** Re-read the account's catalog from the CLI (useModelCatalog.refresh).
+   *  Omitted → no Refresh row. */
+  onRefresh?: () => void;
+  refreshing?: boolean;
 }
 
 /**
@@ -82,6 +86,8 @@ export function ModelPickerDropdown({
   onEffortSelect,
   effortLevels,
   extras,
+  onRefresh,
+  refreshing,
 }: ModelPickerDropdownProps) {
   const [panel, setPanel] = useState<Panel>('models');
   const showEffort = effort !== undefined && onEffortSelect !== undefined;
@@ -130,6 +136,8 @@ export function ModelPickerDropdown({
       effortName={showEffort ? (EFFORT_LEVELS.find((l) => l.id === effort)?.name ?? effort) : null}
       onOpenEffort={showEffort ? () => { setPanel('effort'); } : null}
       onOpenMore={showMore ? () => { setPanel('more'); } : null}
+      onRefresh={onRefresh ?? null}
+      refreshing={refreshing ?? false}
     />
   );
 }
@@ -169,6 +177,8 @@ function ModelList({
   effortName,
   onOpenEffort,
   onOpenMore,
+  onRefresh,
+  refreshing,
 }: {
   models: Model[];
   selectedModel: string;
@@ -176,6 +186,8 @@ function ModelList({
   effortName: string | null;
   onOpenEffort: (() => void) | null;
   onOpenMore: (() => void) | null;
+  onRefresh: (() => void) | null;
+  refreshing: boolean;
 }) {
   // The account-default model is marked in place rather than listed twice, so
   // the header carries the key for the mark (see withAccountDefaultLabel).
@@ -207,9 +219,22 @@ function ModelList({
           </div>
         </button>
       ))}
-      {(onOpenEffort || onOpenMore) && <div className={cn(POPOVER_RULE, "my-1")} />}
+      {(onOpenEffort || onOpenMore || onRefresh) && <div className={cn(POPOVER_RULE, "my-1")} />}
       {onOpenEffort && <PanelLink label="Effort" value={effortName} onClick={onOpenEffort} />}
       {onOpenMore && <PanelLink label="More models" onClick={onOpenMore} />}
+      {onRefresh && (
+        // The catalog is cached per account and only refetched on a CLI
+        // update or after a day; a model granted in between needs this.
+        <button
+          type="button"
+          onClick={onRefresh}
+          disabled={refreshing}
+          className={cn(popoverOption(false), "items-center gap-2 text-muted-foreground disabled:opacity-60")}
+        >
+          <RefreshCw className={cn("h-3 w-3", refreshing && "animate-spin")} />
+          <span>{refreshing ? "Refreshing models…" : "Refresh models"}</span>
+        </button>
+      )}
     </div>
   );
 }
@@ -227,6 +252,8 @@ interface FormModelPickerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   disabled?: boolean;
+  onRefresh?: () => void;
+  refreshing?: boolean;
 }
 
 /** Full-name trigger that fills its container. Used by NewSessionForm and
@@ -239,6 +266,8 @@ export function FormModelPicker({
   open,
   onOpenChange,
   disabled,
+  onRefresh,
+  refreshing,
 }: FormModelPickerProps) {
   // Apply the pick AND close the dropdown, matching EffortPicker /
   // PermissionPicker (ControlBar handleSelect). Without the close, selecting a
@@ -273,6 +302,8 @@ export function FormModelPicker({
           models={models}
           selectedModel={selectedModel}
           onSelect={handleSelect}
+          onRefresh={onRefresh}
+          refreshing={refreshing}
         />
       }
       open={open}

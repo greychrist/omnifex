@@ -18,9 +18,9 @@
 // the current binary and reports the current catalog.
 
 import os from 'node:os';
-import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { discoverClaudeBinary } from './claude-binary';
+import { createCliVersionProbe } from './cli-version-probe';
 import { createClaudeCliEngine } from './agents/claude-cli-engine';
 import type { Database } from './database';
 
@@ -52,7 +52,7 @@ export interface CommandsCatalogServiceOptions {
   nowFn?: () => number;
   /**
    * Injectable CLI-version probe for tests. Default runs `claude --version`
-   * on the resolved binary once and caches it for the service lifetime.
+   * on the resolved binary, re-run whenever the binary on disk changes.
    * `null` means "undeterminable" — cached rows then match any version.
    */
   cliVersionFn?: () => string | null;
@@ -84,23 +84,7 @@ export function createCommandsCatalogService(
   const now = opts.nowFn ?? Date.now;
   const resolveClaudeBinary = opts.resolveClaudeBinary ?? discoverClaudeBinary;
 
-  let cachedVersion: string | null | undefined;
-  function cliVersion(): string | null {
-    if (opts.cliVersionFn) return opts.cliVersionFn();
-    if (cachedVersion !== undefined) return cachedVersion;
-    const binaryPath = resolveClaudeBinary();
-    if (!binaryPath) {
-      cachedVersion = null;
-      return cachedVersion;
-    }
-    try {
-      const out = execFileSync(binaryPath, ['--version'], { encoding: 'utf8', timeout: 5000 });
-      cachedVersion = out.trim() || null;
-    } catch {
-      cachedVersion = null;
-    }
-    return cachedVersion;
-  }
+  const cliVersion = opts.cliVersionFn ?? createCliVersionProbe({ resolveBinary: resolveClaudeBinary });
 
   async function listSupported(configDir: string): Promise<CommandInfo[]> {
     const binaryPath = resolveClaudeBinary();

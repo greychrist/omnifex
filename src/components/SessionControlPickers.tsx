@@ -163,7 +163,7 @@ export function SessionControlPickers({
   catalogRefreshKey,
   checkingPermissions = 0,
 }: SessionControlPickersProps): React.JSX.Element {
-  const { models, raw } = useModelCatalog(engine === 'claude' ? configDir : undefined, activeDefaultModel, catalogRefreshKey);
+  const { models, raw, refresh, refreshing } = useModelCatalog(engine === 'claude' ? configDir : undefined, activeDefaultModel, catalogRefreshKey);
 
   if (engine !== 'claude') {
     const labelOf = (opts: DropdownOption[], id: string) => opts.find((o) => o.id === id)?.label ?? id;
@@ -223,6 +223,8 @@ export function SessionControlPickers({
             effortLevels={catalogEffortLevels(rawModel)}
             onEffortSelect={(level) => { setEffort(level); }}
             extras={extraModelOptions(models)}
+            onRefresh={refresh}
+            refreshing={refreshing}
           />
         )}
       />

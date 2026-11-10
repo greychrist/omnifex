@@ -211,6 +211,8 @@ export interface Services {
   permissionsIO?: PermissionsIOService;
   models?: {
     listSupported(configDir: string): unknown;
+    /** Live fetch now, bypassing the cache — the model picker's Refresh. */
+    refresh(configDir: string): unknown;
   };
   commands?: {
     listSupported(configDir: string): unknown;
@@ -638,6 +640,12 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
 
     // ── Standalone model list (no active session required) ─────────────────
     list_supported_models: wrapWith((p: Record<string, unknown>) => models?.listSupported((p?.configDir ?? p?.config_dir) as string) ?? []),
+    refresh_supported_models: wrapWith((p: Record<string, unknown>) => {
+      const configDir = (p?.configDir ?? p?.config_dir) as string;
+      if (!configDir) throw new Error('configDir is required');
+      if (!models) throw new Error('models service unavailable');
+      return models.refresh(configDir);
+    }),
     list_supported_commands: wrapWith((p: Record<string, unknown>) => commands?.listSupported((p?.configDir ?? p?.config_dir) as string) ?? []),
 
     // ── Session Permissions ────────────────────────────────────────────────

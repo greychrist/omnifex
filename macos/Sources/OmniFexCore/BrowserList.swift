@@ -15,10 +15,20 @@ public enum BrowserList {
         }
     }
 
+    /// Parallels registers every Windows-VM app shim (`com.parallels.winapp.*`,
+    /// so a second "Google Chrome") and Parallels Desktop itself as https
+    /// handlers. None of them is a browser on this Mac.
+    static func isParallels(_ bundleId: String) -> Bool {
+        bundleId.hasPrefix("com.parallels.")
+    }
+
     public static func entries(_ raw: [Entry], excluding ownBundleId: String?) -> [Entry] {
         var seen = Set<String>()
         return raw
-            .filter { !$0.bundleId.isEmpty && $0.bundleId != ownBundleId && seen.insert($0.bundleId).inserted }
+            .filter {
+                !$0.bundleId.isEmpty && $0.bundleId != ownBundleId && !isParallels($0.bundleId)
+                    && seen.insert($0.bundleId).inserted
+            }
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 

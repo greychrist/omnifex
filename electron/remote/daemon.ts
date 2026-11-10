@@ -894,7 +894,10 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
       saveSettings: (data: any) => proxyService.saveSettings(data),
     },
     permissionsIO: permissionsIOService,
-    models: { listSupported: (configDir) => modelsService.getCatalog(configDir) },
+    models: {
+      listSupported: (configDir) => modelsService.getCatalog(configDir),
+      refresh: (configDir) => modelsService.refreshCatalog(configDir),
+    },
     commands: { listSupported: (configDir) => commandsCatalogService.getCatalog(configDir) },
     gitWatcher: {
       listWorktrees: (projectPath) => listWorktrees(projectPath),

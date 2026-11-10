@@ -176,3 +176,33 @@ describe("ModelPickerDropdown — the selected row and the tier colours", () => 
 function hexToRgb(h: string): string {
   return `rgb(${[1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16)).join(", ")})`;
 }
+
+describe("ModelPickerDropdown — refresh", () => {
+  it("offers no Refresh row unless the caller can refresh", () => {
+    render(<ModelPickerDropdown models={MODELS} selectedModel="opus" onSelect={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: /refresh models/i })).toBeNull();
+  });
+
+  it("Refresh models calls onRefresh and keeps the dropdown open", () => {
+    const onRefresh = vi.fn();
+    const onSelect = vi.fn();
+    render(<ModelPickerDropdown models={MODELS} selectedModel="opus" onSelect={onSelect} onRefresh={onRefresh} />);
+    fireEvent.click(screen.getByRole("button", { name: /refresh models/i }));
+    expect(onRefresh).toHaveBeenCalledTimes(1);
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("while refreshing the row is disabled and says so", () => {
+    render(<ModelPickerDropdown models={MODELS} selectedModel="opus" onSelect={vi.fn()} onRefresh={vi.fn()} refreshing />);
+    const row = screen.getByRole("button", { name: /refreshing models/i });
+    expect((row as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("FormModelPicker forwards refresh to its dropdown without closing it", () => {
+    const onRefresh = vi.fn();
+    const { onOpenChange } = renderPicker({ onRefresh });
+    fireEvent.click(screen.getByRole("button", { name: /refresh models/i }));
+    expect(onRefresh).toHaveBeenCalledTimes(1);
+    expect(onOpenChange).not.toHaveBeenCalled();
+  });
+});

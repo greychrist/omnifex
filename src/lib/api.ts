@@ -2082,6 +2082,14 @@ export const api = {
   },
 
   /**
+   * Re-read the account's model catalog from the CLI now, bypassing the
+   * cache — for a model that became available since the last fetch.
+   */
+  async refreshSupportedModels(configDir: string): Promise<SessionModelInfo[]> {
+    return apiCall("refresh_supported_models", { configDir });
+  },
+
+  /**
    * Get the CLI's slash-command catalog for a given account without relying on
    * a live session's frozen init snapshot. Served from the SQLite-persisted
    * catalog (refreshed when the CLI version changes) with a live ephemeral

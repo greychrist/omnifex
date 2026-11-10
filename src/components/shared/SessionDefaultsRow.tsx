@@ -96,7 +96,7 @@ export function SessionDefaultsRow({
   const [modelOpen, setModelOpen] = useState(false);
   const [effortOpen, setEffortOpen] = useState(false);
   const [permsOpen, setPermsOpen] = useState(false);
-  const { models, raw: modelCatalogRaw } = useModelCatalog(
+  const { models, raw: modelCatalogRaw, refresh: refreshModels, refreshing: refreshingModels } = useModelCatalog(
     engine === 'claude' ? configDir : undefined,
   );
 
@@ -122,6 +122,8 @@ export function SessionDefaultsRow({
             onSelect={setModel}
             open={modelOpen}
             onOpenChange={setModelOpen}
+            onRefresh={refreshModels}
+            refreshing={refreshingModels}
           />
         ))}
         {wrap('Effort', (

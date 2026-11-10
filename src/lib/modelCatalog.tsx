@@ -5,7 +5,7 @@
 // `api.listSupportedModels` (SQLite-cached in main). `FALLBACK_MODELS` is
 // the hardcoded last resort when no catalog is available at all.
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Zap } from 'lucide-react';
 import { api, type SessionModelInfo } from '@/lib/api';
 import { SHIPPED_PRICING } from '@/lib/pricing';
@@ -458,9 +458,36 @@ export function useModelCatalog(
   models: Model[];
   raw: SessionModelInfo[];
   loading: boolean;
+  /** Re-read the catalog from the CLI now, past the daemon's cache — for a
+   *  model that became available since the last fetch. */
+  refresh: () => void;
+  refreshing: boolean;
 } {
   const [raw, setRaw] = useState<SessionModelInfo[]>([]);
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  // Only the latest refresh may land: one answered after the account changed
+  // (or overtaken by a newer click) must not overwrite the catalog shown.
+  const refreshToken = useRef(0);
+  useEffect(() => {
+    refreshToken.current += 1;
+    setRefreshing(false);
+  }, [configDir]);
+
+  const refresh = useCallback(() => {
+    if (!configDir) return;
+    const token = ++refreshToken.current;
+    setRefreshing(true);
+    api
+      .refreshSupportedModels(configDir)
+      .then((models) => {
+        if (token === refreshToken.current && models && models.length > 0) setRaw(models);
+      })
+      .catch(() => { /* keep the catalog we had */ })
+      .finally(() => {
+        if (token === refreshToken.current) setRefreshing(false);
+      });
+  }, [configDir]);
   const [pinnedModel, setPinnedModel] = useState<string | null>(null);
 
   useEffect(() => {
@@ -514,5 +541,7 @@ export function useModelCatalog(
     models: withAccountDefaultLabel(effectiveModels(raw), pinnedModel, raw, activeDefaultModel),
     raw,
     loading,
+    refresh,
+    refreshing,
   };
 }

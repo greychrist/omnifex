@@ -334,7 +334,40 @@ describe('modelsService.getCatalog (SQLite-persisted)', () => {
     expect(catalogRow()).toBeUndefined();
   });
 
-  it('default version probe runs `claude --version` once and caches it', async () => {
+  it('refreshCatalog: live-fetches even when a fresh, version-matched row exists', async () => {
+    const seeder = createModelsService(db, { cliVersionFn: () => '2.1.170' });
+    seeder.upsertCatalog(CONFIG, SEEDED);
+
+    mockedCreate.mockReturnValue(makeFakeEngine({ models: FRESH }));
+    const service = createModelsService(db, { cliVersionFn: () => '2.1.170' });
+
+    expect(await service.refreshCatalog(CONFIG)).toEqual(FRESH);
+    expect(mockedCreate).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(catalogRow()!.catalog_json)).toEqual(FRESH);
+  });
+
+  it('refreshCatalog: a failed live fetch keeps and returns the existing row', async () => {
+    const seeder = createModelsService(db, { cliVersionFn: () => '2.1.170' });
+    seeder.upsertCatalog(CONFIG, SEEDED);
+
+    mockedCreate.mockReturnValue(makeFakeEngine({ startReject: new Error('spawn failed') }));
+    const service = createModelsService(db, { cliVersionFn: () => '2.1.170' });
+
+    expect(await service.refreshCatalog(CONFIG)).toEqual(SEEDED);
+    expect(JSON.parse(catalogRow()!.catalog_json)).toEqual(SEEDED);
+  });
+
+  it('refreshCatalog joins a fetch already in flight instead of answering empty', async () => {
+    mockedCreate.mockReturnValue(makeFakeEngine({ models: FRESH, delayMs: 20 }));
+    const service = createModelsService(db, { cliVersionFn: () => '2.1.170' });
+
+    const [a, b] = await Promise.all([service.getCatalog(CONFIG), service.refreshCatalog(CONFIG)]);
+    expect(a).toEqual(FRESH);
+    expect(b).toEqual(FRESH);
+    expect(mockedCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it('default version probe runs `claude --version` on the resolved binary', async () => {
     const { execFileSync } = await import('node:child_process');
     vi.mocked(execFileSync).mockReset().mockReturnValue('2.1.170 (Claude Code)\n');
     // No cliVersionFn — real probe path. The binary is pinned so the only
@@ -345,7 +378,9 @@ describe('modelsService.getCatalog (SQLite-persisted)', () => {
     service.upsertCatalog('/other/config', SEEDED);
 
     expect(catalogRow()!.cli_version).toBe('2.1.170 (Claude Code)');
-    expect(vi.mocked(execFileSync)).toHaveBeenCalledTimes(1); // cached after first probe
+    // Re-probe rules (only when the binary on disk changes) live in
+    // cli-version-probe.test.ts.
+    expect(vi.mocked(execFileSync)).toHaveBeenCalledWith('/usr/local/bin/claude', ['--version'], expect.anything());
   });
 
   it('failed version probe degrades to null: cached rows match any version', async () => {

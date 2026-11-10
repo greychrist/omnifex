@@ -13,9 +13,9 @@
 // in-session case.
 
 import os from 'node:os';
-import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { discoverClaudeBinary } from './claude-binary';
+import { createCliVersionProbe } from './cli-version-probe';
 import { createClaudeCliEngine } from './agents/claude-cli-engine';
 import type { Database } from './database';
 
@@ -34,6 +34,9 @@ export interface ModelsService {
   listSupported(configDir: string): Promise<ModelInfo[]>;
   /** Cached catalog: persisted row when valid, live fetch otherwise. */
   getCatalog(configDir: string): Promise<ModelInfo[]>;
+  /** Live fetch now, bypassing the cache (the picker's Refresh). Falls back
+   *  to the persisted row when the fetch fails. */
+  refreshCatalog(configDir: string): Promise<ModelInfo[]>;
   /** Persist a catalog (live-session write-through and internal refresh). */
   upsertCatalog(configDir: string, models: ModelInfo[]): void;
 }
@@ -47,7 +50,7 @@ export interface ModelsServiceOptions {
   nowFn?: () => number;
   /**
    * Injectable CLI-version probe for tests. Default runs `claude --version`
-   * on the resolved binary once and caches it for the service lifetime.
+   * on the resolved binary, re-run whenever the binary on disk changes.
    * `null` means "undeterminable" — cached rows then match any version.
    */
   cliVersionFn?: () => string | null;
@@ -76,23 +79,7 @@ export function createModelsService(db: Database, opts: ModelsServiceOptions = {
   const now = opts.nowFn ?? Date.now;
   const resolveClaudeBinary = opts.resolveClaudeBinary ?? discoverClaudeBinary;
 
-  let cachedVersion: string | null | undefined;
-  function cliVersion(): string | null {
-    if (opts.cliVersionFn) return opts.cliVersionFn();
-    if (cachedVersion !== undefined) return cachedVersion;
-    const binaryPath = resolveClaudeBinary();
-    if (!binaryPath) {
-      cachedVersion = null;
-      return cachedVersion;
-    }
-    try {
-      const out = execFileSync(binaryPath, ['--version'], { encoding: 'utf8', timeout: 5000 });
-      cachedVersion = out.trim() || null;
-    } catch {
-      cachedVersion = null;
-    }
-    return cachedVersion;
-  }
+  const cliVersion = opts.cliVersionFn ?? createCliVersionProbe({ resolveBinary: resolveClaudeBinary });
 
   async function listSupported(configDir: string): Promise<ModelInfo[]> {
     const binaryPath = resolveClaudeBinary();
@@ -155,26 +142,40 @@ export function createModelsService(db: Database, opts: ModelsServiceOptions = {
 
   // One in-flight refresh per config dir — getCatalog may fire refreshes in
   // the background, and overlapping ephemeral engine spawns for the same
-  // account are pure waste.
-  const refreshing = new Set<string>();
-  async function refresh(configDir: string): Promise<ModelInfo[]> {
-    if (refreshing.has(configDir)) return [];
-    refreshing.add(configDir);
-    try {
-      const models = await listSupported(configDir);
-      if (models.length > 0) upsertCatalog(configDir, models);
-      return models;
-    } finally {
-      refreshing.delete(configDir);
-    }
+  // account are pure waste. A second caller joins the fetch in flight.
+  const inFlight = new Map<string, Promise<ModelInfo[]>>();
+  function refresh(configDir: string): Promise<ModelInfo[]> {
+    const pending = inFlight.get(configDir);
+    if (pending) return pending;
+    const p = (async () => {
+      try {
+        const models = await listSupported(configDir);
+        if (models.length > 0) upsertCatalog(configDir, models);
+        return models;
+      } finally {
+        inFlight.delete(configDir);
+      }
+    })();
+    inFlight.set(configDir, p);
+    return p;
+  }
+
+  function readRow(configDir: string): { cli_version: string; catalog_json: string; fetched_at: string } | undefined {
+    return db.raw
+      .prepare('SELECT cli_version, catalog_json, fetched_at FROM model_catalog WHERE config_dir = ?')
+      .get(configDir) as { cli_version: string; catalog_json: string; fetched_at: string } | undefined;
+  }
+
+  /** The user asked: fetch live regardless of the row's age or version. */
+  async function refreshCatalog(configDir: string): Promise<ModelInfo[]> {
+    const fresh = await refresh(configDir);
+    if (fresh.length > 0) return fresh;
+    const row = readRow(configDir);
+    return (row ? safeParse(row.catalog_json) : null) ?? [];
   }
 
   async function getCatalog(configDir: string): Promise<ModelInfo[]> {
-    const row = db.raw
-      .prepare('SELECT cli_version, catalog_json, fetched_at FROM model_catalog WHERE config_dir = ?')
-      .get(configDir) as
-      | { cli_version: string; catalog_json: string; fetched_at: string }
-      | undefined;
+    const row = readRow(configDir);
     const ver = cliVersion();
     const rowModels = row ? safeParse(row.catalog_json) : null;
 
@@ -195,5 +196,5 @@ export function createModelsService(db: Database, opts: ModelsServiceOptions = {
     return rowModels ?? [];
   }
 
-  return { listSupported, getCatalog, upsertCatalog };
+  return { listSupported, getCatalog, refreshCatalog, upsertCatalog };
 }
