@@ -5,6 +5,18 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.33] — 2026-11-10
+
+### Added
+- **Refresh models** at the foot of the model picker — in the session status bar and in an account's default-model picker — re-reads the account's model list from Claude Code now, for a model your account gained since the list was last read.
+
+### Fixed
+- An account's model and slash-command lists are read again as soon as Claude Code updates. The installed version used to be checked once per daemon, so a Claude Code that updated itself in the background kept the old lists until the next day or a daemon restart.
+- The Sign-in browser list no longer shows Parallels' Windows apps (a second "Google Chrome") or Parallels Desktop.
+
+### Changed
+- Reviewed Claude Code 2.1.322 against OmniFex. The CLI-review row for a release already checked reads "checked and verified" with a green check.
+
 ## [0.5.32] — 2026-11-09
 
 ### Added
