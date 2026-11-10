@@ -51,6 +51,33 @@ import { buildClaudeEnv } from './util/claude-env';
  *    the CLI's own error string: "summarized", "omitted" ("highlights" is
  *    refused). Records carry `thinking_duration_ms` too. Verified 2.1.312.
  *
+ * Last review: 2.1.321 -> 2.1.322 on 2026-11-10. Findings: none broken,
+ * nothing to change.
+ *
+ *  Changelog coverage: 2.1.322 (1 entry). Both ends installed. Script:
+ *  every set identical (merge map 43, type 860, subtype 166, system 80,
+ *  hook_event_name 33, control_* 4, SDK requests 55, flags 116, origin
+ *  kinds 14, can_use_tool keys 11, object keys 51132); /usage anchors
+ *  unchanged; record coverage clean.
+ *  - Fast mode on Vertex (global/us/eu), falling back to standard speed if
+ *    Vertex refuses. The one describe move is its note: the `fastMode`
+ *    settings key is ignored on Vertex ("use /fast each session"). OmniFex
+ *    has no fast UI and sends no fastMode (grep); `apiProvider: 'vertex'`
+ *    in api.ts is a type only. A fallback turn carries `usage.speed`, which
+ *    pricing.ts (`resolveRates`) already keys on, so it bills standard.
+ *    Already handled / inert.
+ *
+ *  - Open items from 2.1.321, re-checked in both accounts' projects/:
+ *     - Idle compaction: no `system` record carries the notice text.
+ *     - ui_notify: zero transcripts contain a `ui_notify` frame.
+ *
+ *  Script + prompt: unchanged — nothing in the range exercised a gap.
+ *
+ *  OPEN ITEMS (carry forward; re-check each review):
+ *   - Idle compaction: verify the first real occurrence (2.1.314 block).
+ *   - ui_notify: unverified against a real mod; first `$.ui.notify` seen in
+ *     a transcript or reported banner closes it.
+ * *
  * Last review: 2.1.319 -> 2.1.321 on 2026-11-09. Findings: one cost bug,
  * fixed the same day (Fable 5.2 priced as Fable 5); one opportunity taken
  * the same day (mods' `ui_notify` notifications).
@@ -5300,7 +5327,7 @@ import { buildClaudeEnv } from './util/claude-env';
  * `~/.claude.json` fix (we read-modify-write that file, never replace it), and
  * the VSCode screen-reader work.
  */
-export const REVIEWED_CLI_VERSION = '2.1.321';
+export const REVIEWED_CLI_VERSION = '2.1.322';
 
 /**
  * app_settings key holding the user's explicit OmniFex-checkout override.

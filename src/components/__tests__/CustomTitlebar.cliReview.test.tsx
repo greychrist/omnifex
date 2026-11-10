@@ -525,8 +525,10 @@ describe('CustomTitlebar — marking a CLI release as checked', () => {
     await renderSettled();
 
     await waitFor(() => { expect(pendingRelease()).not.toBeNull(); });
-    expect(pendingRelease()!.textContent).toMatch(/2\.1\.290 checked/);
-    expect(pendingRelease()!.textContent).toMatch(/this build.*2\.1\.289/);
+    expect(pendingRelease()!.textContent).toBe('2.1.290 checked and verified');
+    const check = pendingRelease()!.querySelector('[data-cli-review-checked-icon]');
+    expect(check).not.toBeNull();
+    expect(check!.getAttribute('class')).toMatch(/text-emerald-500/);
     expect(dot()).toBeNull();
   });
 

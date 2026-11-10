@@ -805,9 +805,15 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
                   && cliReview.checked_version !== cliReview.reviewed_version && (
                   <div
                     data-cli-review-pending-release
-                    className="rounded-md bg-muted/60 px-2 py-1.5 text-[12px] text-muted-foreground"
+                    className="flex items-start gap-1.5 rounded-md bg-muted/60 px-2 py-1.5 text-[12px] text-muted-foreground"
                   >
-                    {`${cliReview.checked_version} checked · this build was checked against ${cliReview.reviewed_version}`}
+                    <CheckCircle
+                      size={13}
+                      aria-hidden
+                      data-cli-review-checked-icon
+                      className="mt-[2px] shrink-0 text-emerald-500"
+                    />
+                    <span>{`${cliReview.checked_version} checked and verified`}</span>
                   </div>
                 )}
               </div>
