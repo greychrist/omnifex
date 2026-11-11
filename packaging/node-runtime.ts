@@ -10,7 +10,7 @@
  * SHASUMS256.txt before it goes anywhere near the bundle.
  */
 
-export const BUNDLED_NODE_VERSION = '26.12.1';
+export const BUNDLED_NODE_VERSION = '26.13.1';
 
 export interface NodeDist {
   tarball: string;

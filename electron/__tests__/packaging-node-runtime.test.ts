@@ -4,11 +4,12 @@ import { BUNDLED_NODE_VERSION, assertSameNodeAbi, expectedSha256, nodeDist } fro
 
 describe('bundled node runtime', () => {
   it('is a patched 26.x', () => {
-    // 26.12.1 carries the 2026-10-21 security release (Brotli RCE and nine
-    // others). Anything older than that in the 26 line must not ship.
+    // 26.13.1 carries the 2026-11-11 security release (16 CVEs: HTTP/2, TLS,
+    // https.Agent, proxy-credential leak), on top of 2026-10-21's Brotli RCE.
+    // Anything older than that in the 26 line must not ship.
     const [major, minor, patch] = BUNDLED_NODE_VERSION.split('.').map(Number);
     expect(major).toBe(26);
-    expect(minor * 1000 + patch).toBeGreaterThanOrEqual(12 * 1000 + 1);
+    expect(minor * 1000 + patch).toBeGreaterThanOrEqual(13 * 1000 + 1);
   });
 
   it('names the official darwin-arm64 tarball and its checksum list', () => {
