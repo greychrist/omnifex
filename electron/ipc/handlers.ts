@@ -16,6 +16,7 @@ import { gitBinary } from '../services/git-binary';
 import type { WatchHolder } from '../services/git-watcher';
 import { createBrainHandlers, type BrainMcpHandlerDeps } from './brain-handlers';
 import type { BrainService } from '../services/brain/registry';
+import { claimCliUpdateNotice } from '../services/cli-update-notice';
 
 // Services parameter type — each property is optional so we can add services
 // one task at a time without breaking the registration call.
@@ -750,6 +751,8 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     list_claude_installations: wrap(() => claudeBinary?.listInstallations() ?? null),
     claude_cli_review_status: wrap(() => claudeBinary?.reviewStatus() ?? null),
     claude_cli_update: wrap(() => claudeBinary?.runUpdate() ?? null),
+    claude_cli_claim_update_notice: wrapWith((p: Record<string, unknown>) =>
+      database ? claimCliUpdateNotice(database, String(p?.version ?? '')) : false),
 
     // ── MCP ───────────────────────────────────────────────────────────────────
     mcp_add: wrapWith((p: Record<string, unknown>) => { assertOwnedConfigDir(p?.configDir ?? p?.config_dir); return mcp?.add(p) ?? null; }),

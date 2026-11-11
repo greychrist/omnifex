@@ -32,6 +32,7 @@ const updateClaudeCli = vi.fn<() => Promise<CliUpdateResult>>();
 const checkForUpdate = vi.fn<() => Promise<unknown>>();
 
 vi.mock('@/lib/api', () => ({
+  CLI_RELEASE_NOTICE_ID_PREFIX: 'claude-cli-update:',
   api: {
     getAppVersion: () => Promise.resolve('0.4.152'),
     checkForUpdate: () => checkForUpdate(),
@@ -39,6 +40,8 @@ vi.mock('@/lib/api', () => ({
     updateClaudeCli: () => updateClaudeCli(),
     onSessionInFlightCount: () => () => {},
     onUpdateProgress: () => () => {},
+    notifyClaudeCliRelease: () => Promise.resolve(false),
+    onNotificationClicked: () => () => {},
     onInstallStatus: () => () => {},
     brainActiveRun: () => Promise.resolve(null),
     onBrainRunProgress: () => () => {},

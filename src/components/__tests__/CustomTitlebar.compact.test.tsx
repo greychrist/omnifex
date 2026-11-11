@@ -23,6 +23,7 @@ vi.mock('framer-motion', () => ({
 }));
 
 vi.mock('@/lib/api', () => ({
+  CLI_RELEASE_NOTICE_ID_PREFIX: 'claude-cli-update:',
   api: {
     getAppVersion: () => Promise.resolve('0.4.158'),
     checkForUpdate: () => Promise.resolve(null),
@@ -30,6 +31,8 @@ vi.mock('@/lib/api', () => ({
     updateClaudeCli: () => Promise.resolve({}),
     onSessionInFlightCount: () => () => {},
     onUpdateProgress: () => () => {},
+    notifyClaudeCliRelease: () => Promise.resolve(false),
+    onNotificationClicked: () => () => {},
     onInstallStatus: () => () => {},
     brainActiveRun: () => Promise.resolve(null),
     onBrainRunProgress: () => () => {},

@@ -35,6 +35,7 @@ const saveSetting = vi.fn<(key: string, value: string) => Promise<void>>();
 const checkForUpdate = vi.fn<() => Promise<unknown>>();
 
 vi.mock('@/lib/api', () => ({
+  CLI_RELEASE_NOTICE_ID_PREFIX: 'claude-cli-update:',
   CLI_CHECKED_VERSION_SETTING_KEY: 'claude_cli_checked_version',
   api: {
     getAppVersion: () => Promise.resolve('0.4.109'),
@@ -43,6 +44,8 @@ vi.mock('@/lib/api', () => ({
     saveSetting: (key: string, value: string) => saveSetting(key, value),
     onSessionInFlightCount: () => () => {},
     onUpdateProgress: () => () => {},
+    notifyClaudeCliRelease: () => Promise.resolve(false),
+    onNotificationClicked: () => () => {},
     onInstallStatus: () => () => {},
     // The titlebar hosts the Brain run indicator. Nothing indexing is the
     // right default here — these tests are about the changelog watermark.
@@ -79,9 +82,7 @@ const openUpdates = () => { fireEvent.click(updatesButton()); };
  *
  * BOTH waits have to clear MIN_CHECK_SPIN_MS (700), because there are two
  * checks to outlast: the one on mount and the one opening the popover now
- * triggers. While either is in flight the dot is suppressed and the
- * `Check for update` button is disabled, so a shorter wait here silently
- * changes what half these tests are asserting against.
+ * triggers.
  */
 async function renderSettled() {
   const result = render(<CustomTitlebar />);
@@ -91,7 +92,14 @@ async function renderSettled() {
   return result;
 }
 
-const dot = () => document.querySelector('[data-updates-indicator]');
+/** The unreviewed-release icon on the Updates button. */
+const unreviewedIcon = () => document.querySelector('[data-updates-unreviewed]');
+/** Whether the Updates icon is showing the green "upgrade waiting" state. */
+const upgradeLit = () => {
+  const icon = document.querySelector('[data-updates-icon]');
+  return !!icon && icon.getAttribute('data-upgrade') === 'true'
+    && (icon.getAttribute('class') ?? '').includes('text-emerald-500');
+};
 const seen = (text: string | RegExp) => screen.queryAllByText(text).length;
 
 describe('CustomTitlebar — Claude Code changelog watermark', () => {
@@ -107,7 +115,9 @@ describe('CustomTitlebar — Claude Code changelog watermark', () => {
     });
     await renderSettled();
 
-    await waitFor(() => { expect(dot()).not.toBeNull(); });
+    await waitFor(() => { expect(unreviewedIcon()).not.toBeNull(); });
+    // Drift is work to do, not an upgrade: the icon is not green.
+    expect(upgradeLit()).toBe(false);
     // The popover explains *which* watermark we're behind, so the badge
     // isn't a mystery dot.
     expect(seen(/ahead of the 2\.1\.222 changelog/)).toBeGreaterThan(0);
@@ -127,7 +137,8 @@ describe('CustomTitlebar — Claude Code changelog watermark', () => {
     await renderSettled();
 
     await waitFor(() => { expect(seen('2.1.222')).toBeGreaterThan(0); });
-    expect(dot()).toBeNull();
+    expect(unreviewedIcon()).toBeNull();
+    expect(upgradeLit()).toBe(false);
     expect(seen(/ahead of the/)).toBe(0);
   });
 
@@ -146,7 +157,7 @@ describe('CustomTitlebar — Claude Code changelog watermark', () => {
     await renderSettled();
 
     await waitFor(() => { expect(seen('not found')).toBeGreaterThan(0); });
-    expect(dot()).toBeNull();
+    expect(unreviewedIcon()).toBeNull();
   });
 
   /**
@@ -228,7 +239,8 @@ describe('CustomTitlebar — Claude Code changelog watermark', () => {
     await renderSettled();
 
     await waitFor(() => { expect(seen(/2\.1\.246 available/)).toBeGreaterThan(0); });
-    expect(dot()).not.toBeNull();
+    expect(upgradeLit()).toBe(true);
+    expect(unreviewedIcon()).toBeNull();
     // Badged, but not as drift — we have reviewed the version being run.
     expect(seen(/ahead of the/)).toBe(0);
   });
@@ -237,7 +249,8 @@ describe('CustomTitlebar — Claude Code changelog watermark', () => {
     getClaudeCliReviewStatus.mockResolvedValue(null);
     await renderSettled();
 
-    expect(dot()).toBeNull();
+    expect(upgradeLit()).toBe(false);
+    expect(unreviewedIcon()).toBeNull();
     expect(seen('Claude Code')).toBe(0);
     // The app row still renders — a CLI probe failure must not take the
     // rest of the popover down with it.
@@ -334,9 +347,6 @@ describe('CustomTitlebar — Updates disclosure', () => {
     repo_dir: null,
   };
 
-  const checkButton = () =>
-    document.querySelector<HTMLButtonElement>('[data-updates-check]');
-
   /**
    * Opening the panel IS the request, so it checks every time it opens — no
    * freshness window. A 60s window was tried and was wrong: the launch check
@@ -406,56 +416,40 @@ describe('CustomTitlebar — Updates disclosure', () => {
     expect(checkForUpdate.mock.calls.length).toBe(1);
   });
 
-  it('checks both the app and the CLI from the button inside the popover', async () => {
+  it('has no separate Check button: opening the popover is the check', async () => {
     getClaudeCliReviewStatus.mockResolvedValue(clean);
     await renderSettled();
-
-    await waitFor(() => { expect(checkButton()).not.toBeNull(); });
-    const beforeApp = checkForUpdate.mock.calls.length;
-    const beforeCli = getClaudeCliReviewStatus.mock.calls.length;
-
-    fireEvent.click(checkButton()!);
-    await vi.advanceTimersByTimeAsync(1000);
-
-    expect(checkForUpdate.mock.calls.length).toBe(beforeApp + 1);
-    expect(getClaudeCliReviewStatus.mock.calls.length).toBe(beforeCli + 1);
-  });
-
-  it('keeps the popover open across a check so the answer lands where you are looking', async () => {
-    getClaudeCliReviewStatus.mockResolvedValue(clean);
-    await renderSettled();
-
-    await waitFor(() => { expect(checkButton()).not.toBeNull(); });
-    fireEvent.click(checkButton()!);
-    await vi.advanceTimersByTimeAsync(1000);
-
-    expect(seen('Claude Code')).toBeGreaterThan(0);
-    expect(checkButton()).not.toBeNull();
+    await waitFor(() => { expect(seen('Claude Code')).toBeGreaterThan(0); });
+    expect(document.querySelector('[data-updates-check]')).toBeNull();
+    expect(seen('Check for update')).toBe(0);
   });
 
   it('badges independently for a drifted watermark and for a published upgrade', async () => {
-    // Each signal alone is enough; the dot is undifferentiated on purpose and
-    // the popover rows are what say which one fired.
+    // Two different signals: drift gets its own icon, an upgrade turns the
+    // Updates icon green. Neither implies the other.
     getClaudeCliReviewStatus.mockResolvedValue({
       ...clean, unreviewed: true, reviewed_version: '2.1.241', checked_version: '2.1.241',
     });
     await renderSettled();
-    await waitFor(() => { expect(dot()).not.toBeNull(); });
+    await waitFor(() => { expect(unreviewedIcon()).not.toBeNull(); });
+    expect(upgradeLit()).toBe(false);
 
     cleanup();
     getClaudeCliReviewStatus.mockResolvedValue({
       ...clean, latest_version: '2.1.250', upgrade_available: true,
     });
     await renderSettled();
-    await waitFor(() => { expect(dot()).not.toBeNull(); });
+    await waitFor(() => { expect(upgradeLit()).toBe(true); });
+    expect(unreviewedIcon()).toBeNull();
   });
 
-  it('shows no dot when nothing is waiting', async () => {
+  it('shows neither signal when nothing is waiting', async () => {
     getClaudeCliReviewStatus.mockResolvedValue(clean);
     await renderSettled();
 
     await waitFor(() => { expect(seen('Claude Code')).toBeGreaterThan(0); });
-    expect(dot()).toBeNull();
+    expect(upgradeLit()).toBe(false);
+    expect(unreviewedIcon()).toBeNull();
   });
 });
 
@@ -505,7 +499,7 @@ describe('CustomTitlebar — marking a CLI release as checked', () => {
     await waitFor(() => {
       expect(getClaudeCliReviewStatus.mock.calls.length).toBeGreaterThan(before);
     });
-    await waitFor(() => { expect(dot()).toBeNull(); });
+    await waitFor(() => { expect(unreviewedIcon()).toBeNull(); });
     expect(markButton()).toBeNull();
   });
 
@@ -529,7 +523,7 @@ describe('CustomTitlebar — marking a CLI release as checked', () => {
     const check = pendingRelease()!.querySelector('[data-cli-review-checked-icon]');
     expect(check).not.toBeNull();
     expect(check!.getAttribute('class')).toMatch(/text-emerald-500/);
-    expect(dot()).toBeNull();
+    expect(unreviewedIcon()).toBeNull();
   });
 
   it('says nothing extra when the build carries the checked release', async () => {

@@ -49,11 +49,11 @@ final class AppServices {
         assert(missing.isEmpty, "native channels without a handler: \(missing)")
         if !missing.isEmpty { NSLog("[omnifex] native channels without a handler: %@", missing.joined(separator: ", ")) }
 
-        notifier.onClick = { [weak self] tabId in
+        notifier.onClick = { [weak self] tabId, id in
             guard let self else { return }
             NSApp.activate()
             self.controllers.first?.window?.makeKeyAndOrderFront(nil)
-            self.broadcast("notification-clicked", ["tabId": tabId as Any? ?? NSNull()])
+            self.broadcast("notification-clicked", ["tabId": tabId as Any? ?? NSNull(), "id": id as Any? ?? NSNull()])
         }
         power = PowerMonitor { [weak self] awake in self?.broadcast("system-power-state", ["awake": awake]) }
 

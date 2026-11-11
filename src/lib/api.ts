@@ -1,4 +1,5 @@
 import { apiCall } from './apiAdapter';
+import { platform } from './platform';
 import type { ModInspection } from "./mods";
 import type { HooksConfiguration } from '@/types/hooks';
 import type { SideChat, SideChatAskResult } from '@/lib/sideChat';
@@ -449,6 +450,8 @@ export const CLI_REVIEW_REPO_DIR_SETTING_KEY = 'cli_review_repo_dir';
 /** app_settings key for the newest CLI release marked as checked. Mirrors
  *  `CLI_CHECKED_VERSION_SETTING_KEY` in
  *  `electron/services/claude-cli-review.ts`. */
+/** Notification id prefix for a new Claude Code release; the click handler matches on it. */
+export const CLI_RELEASE_NOTICE_ID_PREFIX = 'claude-cli-update:';
 export const CLI_CHECKED_VERSION_SETTING_KEY = 'claude_cli_checked_version';
 
 /**
@@ -2722,6 +2725,23 @@ export const api = {
     return await apiCall<CliUpdateResult>("claude_cli_update");
   },
 
+  /**
+   * Announce a newly published Claude Code release, once per version across
+   * every window, client and relaunch. Only a Mac host claims: a web client
+   * cannot show the notification, and claiming there would spend it — so a
+   * release first seen on the iPad is still announced when the Mac app opens.
+   */
+  async notifyClaudeCliRelease(version: string): Promise<boolean> {
+    if (!platform.isDesktop) return false;
+    const won = await apiCall<boolean>("claude_cli_claim_update_notice", { version });
+    if (!won) return false;
+    return await platform.showNotification({
+      id: `${CLI_RELEASE_NOTICE_ID_PREFIX}${version}`,
+      title: `Claude Code ${version} is available`,
+      body: 'Open Updates to install it.',
+    });
+  },
+
   // ── Git ──────────────────────────────────────────────────────────────────
 
   /**
@@ -3551,6 +3571,11 @@ export const api = {
     }) => void,
   ): () => void {
     return window.electronAPI.onEvent('updater:install-status', cb as any);
+  },
+
+  /** A click on an OS notification: `id` is the one it was raised with. */
+  onNotificationClicked(cb: (data: { tabId?: string | null; id?: string | null }) => void): () => void {
+    return window.electronAPI.onEvent('notification-clicked', cb as any);
   },
 
   onUpdateProgress(callback: (data: { percent: number; bytesDownloaded: number; totalBytes: number }) => void): () => void {

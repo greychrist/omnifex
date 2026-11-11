@@ -70,3 +70,17 @@ describe('createPlatform().listBrowsers', () => {
     await expect(createPlatform(null).listBrowsers()).resolves.toEqual([]);
   });
 });
+
+describe('createPlatform().showNotification', () => {
+  it('raises an OS notification through the Mac app', async () => {
+    const { bridge, invoke } = fakeBridge();
+    await expect(
+      createPlatform(bridge).showNotification({ title: 'T', body: 'B', id: 'x:1' }),
+    ).resolves.toBe(true);
+    expect(invoke).toHaveBeenCalledWith('notify:show', { title: 'T', body: 'B', id: 'x:1', isError: false, tabId: null });
+  });
+
+  it('reports false on a web client, which has no notification centre to reach', async () => {
+    await expect(createPlatform(null).showNotification({ title: 'T', body: 'B', id: 'x:1' })).resolves.toBe(false);
+  });
+});

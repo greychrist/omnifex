@@ -62,6 +62,11 @@ export interface Platform {
   openPath(path: string, cwd?: string): Promise<void>;
   revealInFinder(path: string): Promise<void>;
 
+  /** An OS notification not tied to a tab. False when there is no
+   *  notification centre to reach (a web client); a click comes back as
+   *  `notification-clicked` carrying `id`. */
+  showNotification(n: { title: string; body: string; id: string }): Promise<boolean>;
+
   getAppVersion(): Promise<string>;
   window: { minimize(): void; maximize(): void; close(): void };
 }
@@ -79,6 +84,7 @@ export function createPlatform(bridge: NativeBridge | null): Platform {
       listBrowsers: async () => [],
       openPath: () => unsupported('Opening a file'),
       revealInFinder: () => unsupported('Reveal in Finder'),
+      showNotification: async () => false,
       getAppVersion: async () => 'web',
       window: { minimize() {}, maximize() {}, close() {} },
     };
@@ -102,6 +108,8 @@ export function createPlatform(bridge: NativeBridge | null): Platform {
     },
     openPath: (path, cwd) => bridge.invoke('open_path', cwd ? { path, cwd } : { path }).then(() => undefined),
     revealInFinder: (path) => bridge.invoke('reveal_path_in_finder', { path }).then(() => undefined),
+    showNotification: (n) =>
+      bridge.invoke('notify:show', { ...n, isError: false, tabId: null }).then(() => true),
     getAppVersion: () => bridge.invoke('get_app_version') as Promise<string>,
     window: {
       minimize: () => { void bridge.invoke('window:minimize'); },

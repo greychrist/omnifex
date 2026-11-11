@@ -195,6 +195,8 @@ export const INVOKE_CHANNELS: readonly string[] = [
   // self-updates only from inside its Ink REPL, which OmniFex's headless
   // sessions never render, so this is the only way an OmniFex-only user moves.
   'claude_cli_update',
+  // One-per-version gate for the "new Claude Code release" notification.
+  'claude_cli_claim_update_notice',
 
   // MCP
   'mcp_add',

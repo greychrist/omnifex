@@ -7,7 +7,9 @@ import OmniFexCore
 /// `notify:show`.
 @MainActor
 final class Notifier: NSObject, UNUserNotificationCenterDelegate {
-    var onClick: ((String?) -> Void)?
+    /// `(tabId, id)` of the clicked notification; `id` is the caller's own
+    /// (a mod's, or `claude-cli-update:<version>`), nil when it gave none.
+    var onClick: ((String?, String?) -> Void)?
     private let paths: AppPaths
     private var unread = 0
     private var authorizationRequested = false
@@ -47,7 +49,10 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         content.title = title
         content.subtitle = BannerSubtitle.text(explicit: subtitle, isError: isError)
         content.body = body
-        if let tabId { content.userInfo = ["tabId": tabId] }
+        var info: [String: String] = [:]
+        if let tabId { info["tabId"] = tabId }
+        if let id { info["id"] = id }
+        content.userInfo = info
         let identifier = id ?? UUID().uuidString
         if case .scheduled(let seconds) = plan {
             // Fires while OmniFex may not be running, so the sound cannot be
@@ -100,8 +105,10 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     }
 
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
-        let tabId = response.notification.request.content.userInfo["tabId"] as? String
-        await MainActor.run { self.onClick?(tabId) }
+        let info = response.notification.request.content.userInfo
+        let tabId = info["tabId"] as? String
+        let id = info["id"] as? String
+        await MainActor.run { self.onClick?(tabId, id) }
     }
 }
 
