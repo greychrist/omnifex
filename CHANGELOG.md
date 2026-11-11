@@ -5,6 +5,25 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.34] — 2026-11-11
+
+### Added
+- Background update check every hour while OmniFex is open, for both OmniFex and Claude Code.
+- A macOS notification when a new Claude Code release is published, once per version. If OmniFex is closed when the release lands, it arrives the next time the app opens. Clicking it opens the Updates popover.
+- An icon on the Updates button when the installed Claude Code hasn't been reviewed yet.
+
+### Changed
+- The Updates icon turns green when an OmniFex or Claude Code update is available. This replaces the amber dot.
+- OmniFex updates download on their own. Installing is one button inside the Updates popover, which also holds the "Waiting for sessions / Install anyway / Cancel" step.
+- Bundled Node.js is now 26.13.1, which includes the November 11, 2026 Node.js security release (16 CVEs across HTTP/2, TLS, `https.Agent` and proxy configuration).
+
+### Fixed
+- A background check or reopening the popover no longer discards an OmniFex update that has already been downloaded.
+
+### Removed
+- The separate update pill in the titlebar.
+- The "Check for update" button. Opening the popover runs the check.
+
 ## [0.5.33] — 2026-11-10
 
 ### Added
