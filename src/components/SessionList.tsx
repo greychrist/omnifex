@@ -883,13 +883,29 @@ export const SessionList: React.FC<SessionListProps> = ({
                           </button>
                         )}
                         <div className="min-w-0 flex-1">
-                          {sessionTitle || summary ? (
-                            <div className="font-medium text-foreground truncate">
-                              {sessionTitle ?? summary?.headline}
-                            </div>
-                          ) : (
-                            <div className="italic text-muted-foreground/70">No name</div>
-                          )}
+                          {/* The name launches, like the dates. Only the
+                              name line — the headline and bullets beneath
+                              stay plain text so they can be selected, and
+                              the chevron keeps expand/collapse. Accessible
+                              name is the visible text, not "Launch
+                              session", so screen readers hear the name. */}
+                          <TooltipSimple content="Launch session">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleLaunch(session);
+                              }}
+                              className={cn(
+                                "block w-full min-w-0 truncate text-left hover:underline focus-visible:underline focus:outline-none",
+                                sessionTitle || summary
+                                  ? "font-medium text-foreground"
+                                  : "italic text-muted-foreground/70 hover:text-foreground",
+                              )}
+                            >
+                              {sessionTitle ?? summary?.headline ?? 'No name'}
+                            </button>
+                          </TooltipSimple>
                           {summary && (
                             <>
                               {/* Only a titled row needs the headline on its

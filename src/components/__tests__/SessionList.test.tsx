@@ -654,6 +654,39 @@ describe('SessionList — click semantics', () => {
     );
   });
 
+  it('fires onSessionClick when the user clicks the session name', async () => {
+    const onSessionClick = vi.fn();
+    render(
+      <SessionList
+        sessions={[sessionFixture]}
+        projectPath="/x"
+        onSessionClick={onSessionClick}
+      />,
+    );
+    // The name is the summary headline here (no title on the fixture).
+    // Its accessible name is the visible text, so it does not join the
+    // "Launch session" buttons the other tests pick between.
+    fireEvent.click(await screen.findByRole('button', { name: 'Summary headline here.' }));
+    expect(onSessionClick).toHaveBeenCalledTimes(1);
+    expect(onSessionClick).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'sess-1' }),
+    );
+  });
+
+  it('fires onSessionClick when an untitled, unsummarised row\'s "No name" is clicked', async () => {
+    const onSessionClick = vi.fn();
+    vi.mocked(api.summaryGet).mockResolvedValue(null);
+    render(
+      <SessionList
+        sessions={[sessionFixture]}
+        projectPath="/x"
+        onSessionClick={onSessionClick}
+      />,
+    );
+    fireEvent.click(await screen.findByRole('button', { name: 'No name' }));
+    expect(onSessionClick).toHaveBeenCalledTimes(1);
+  });
+
   it('fires onSessionClick when the user clicks the rightmost launch icon (actions cluster)', async () => {
     const onSessionClick = vi.fn();
     render(
