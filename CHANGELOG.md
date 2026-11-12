@@ -5,6 +5,12 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.35] — 2026-11-12
+
+### Fixed
+
+- The tab strip's right scroll arrow no longer stays up after a new tab's session starts. The tab widens when its session name arrives, and the strip now notices: it re-checks the arrows and scrolls the tab fully into view instead of leaving its end under the fade.
+
 ## [0.5.34] — 2026-11-11
 
 ### Added
