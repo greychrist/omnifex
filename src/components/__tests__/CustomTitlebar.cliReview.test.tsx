@@ -416,12 +416,35 @@ describe('CustomTitlebar — Updates disclosure', () => {
     expect(checkForUpdate.mock.calls.length).toBe(1);
   });
 
-  it('has no separate Check button: opening the popover is the check', async () => {
+  // Opening the popover checks, but a popover left open goes stale: the
+  // refresh icon by the title checks both again without closing it.
+  it('re-checks both from the refresh icon by the title, popover still open', async () => {
     getClaudeCliReviewStatus.mockResolvedValue(clean);
     await renderSettled();
-    await waitFor(() => { expect(seen('Claude Code')).toBeGreaterThan(0); });
-    expect(document.querySelector('[data-updates-check]')).toBeNull();
-    expect(seen('Check for update')).toBe(0);
+    const refresh = document.querySelector<HTMLButtonElement>('[data-updates-refresh]');
+    expect(refresh).not.toBeNull();
+    const cli = getClaudeCliReviewStatus.mock.calls.length;
+    const app = checkForUpdate.mock.calls.length;
+    fireEvent.click(refresh!);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(getClaudeCliReviewStatus.mock.calls.length).toBe(cli + 1);
+    expect(checkForUpdate.mock.calls.length).toBe(app + 1);
+    expect(seen('Claude Code')).toBeGreaterThan(0);
+  });
+
+  it('spins and stands down while a check is already running', async () => {
+    getClaudeCliReviewStatus.mockResolvedValue(clean);
+    await renderSettled();
+    // Re-queried each time: the popover re-renders its content.
+    const refresh = () => document.querySelector<HTMLButtonElement>('[data-updates-refresh]')!;
+    fireEvent.click(refresh());
+    expect(refresh().disabled).toBe(true);
+    expect(refresh().querySelector('svg')?.getAttribute('class')).toMatch(/animate-spin/);
+    const cli = getClaudeCliReviewStatus.mock.calls.length;
+    fireEvent.click(refresh());
+    expect(getClaudeCliReviewStatus.mock.calls.length).toBe(cli);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(refresh().disabled).toBe(false);
   });
 
   it('badges independently for a drifted watermark and for a published upgrade', async () => {

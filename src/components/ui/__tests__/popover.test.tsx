@@ -238,3 +238,15 @@ describe("Popover side and align variants", () => {
     expect(foundClass).toBe(true);
   });
 });
+
+// The app titlebar is `relative z-[200]` and 60px tall, so a popover dropping
+// from one of its buttons starts inside it. At z 100 the titlebar painted over
+// the popover's top ~7px — the Updates header looked off-centre for it.
+describe("Popover stacking", () => {
+  it("paints above the app titlebar (z-[200])", () => {
+    render(<Popover trigger={<button>open</button>} content={<div>body</div>} />);
+    fireEvent.click(screen.getByText("open"));
+    const layer = document.querySelector<HTMLElement>("[data-omnifex-popover]")!;
+    expect(Number(layer.style.zIndex)).toBeGreaterThan(200);
+  });
+});

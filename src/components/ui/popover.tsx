@@ -232,7 +232,11 @@ export const Popover: React.FC<PopoverProps> = ({
         left: coords?.left ?? -9999,
         // Hide until first measurement to avoid a one-frame flash at -9999.
         visibility: coords ? "visible" : "hidden",
-        zIndex: 100,
+        // Above the app titlebar (`relative z-[200]`, 60px tall): a popover
+        // dropping from one of its buttons starts inside it, and at 100 the
+        // titlebar painted over the popover's top edge. Tooltips sit above
+        // this (z-[310]) so one inside a popover still shows.
+        zIndex: 300,
         // A modal Radix Dialog sets `body { pointer-events: none }` and only
         // re-enables its own layer. This content portals to body and isn't a
         // Radix layer, so it would inherit `none` and swallow every click —

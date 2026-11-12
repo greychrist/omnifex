@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { Settings, CircleFadingArrowUp, Loader2, CheckCircle, AlertCircle, HardDrive, Brain, DollarSign, ScanSearch } from 'lucide-react';
+import { Settings, CircleFadingArrowUp, Loader2, RefreshCw, CheckCircle, AlertCircle, HardDrive, Brain, DollarSign, ScanSearch } from 'lucide-react';
 import {
   TooltipProvider,
 } from '@/components/ui/tooltip-modern';
@@ -670,9 +670,21 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
             <>
               <div className="px-3.5 py-2.5 border-b border-border/50 flex items-center justify-between">
                 <span className="text-base font-semibold">Updates</span>
-                {isCheckingAnything && (
-                  <Loader2 size={14} className="animate-spin text-muted-foreground" />
-                )}
+                {/* Opening the popover checks; this re-checks both without
+                    closing it. Doubles as the spinner, and stands down while
+                    any check is running, as opening does. h-6 is the title's
+                    own line box (text-base = 24px), so both centre alike. */}
+                <button
+                  type="button"
+                  data-updates-refresh
+                  title="Check again"
+                  aria-label="Check for updates again"
+                  onClick={checkEverything}
+                  disabled={isCheckingAnything}
+                  className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-accent-foreground disabled:cursor-default disabled:hover:bg-transparent app-no-drag"
+                >
+                  <RefreshCw size={14} className={cn(isCheckingAnything && 'animate-spin')} />
+                </button>
               </div>
               <div className="px-3.5 py-2.5 space-y-2 text-[13px]">
                 <div data-app-update-row className="flex items-center justify-between gap-3">
