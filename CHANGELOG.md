@@ -5,6 +5,16 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.36] — 2026-11-12
+
+### Changed
+
+- The Updates button pulses while something is waiting. A new OmniFex or Claude Code release pulses the arrow and the button's border green until the update is installed, not just until you look. An unreviewed Claude Code pulses its amber marker and the border in amber; when both apply, the border stays green.
+
+### Added
+
+- Dev builds get Simulate checkboxes at the foot of the Updates popover — Claude Code update, OmniFex update, Claude Code not yet reviewed — to show each state on demand. They change the display only; nothing they show can install or update anything, and release builds never show them.
+
 ## [0.5.35] — 2026-11-12
 
 ### Fixed
