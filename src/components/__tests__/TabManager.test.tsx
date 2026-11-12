@@ -482,12 +482,31 @@ describe('TabManager — revealing a clipped tab', () => {
   // button's width and the tab's × stays clipped until a second click.
   describe('when the strip resizes after a reveal', () => {
     let resize: () => void = () => {};
+    let observed: Element[] = [];
     beforeEach(() => {
+      observed = [];
       vi.stubGlobal('ResizeObserver', class {
         constructor(cb: () => void) { resize = () => act(() => { cb(); }); }
-        observe() {}
+        observe(el: Element) { observed.push(el); }
         disconnect() {}
       });
+    });
+
+    // A tab widens on its own — the CLI's session title lands in a store, not
+    // in `tabs` — so the strip keeps its width, no scroll fires, and only the
+    // tabs' row changes size. The strip sat short of its end with the right
+    // arrow up and the new tab's tail under the fade.
+    it('re-reveals the active tab when the tabs themselves grow', () => {
+      installState({ tabs, activeTabId: 'c' });
+      const { container } = render(<TabManager />);
+      const scrollTo = layout(container, { c: [450, 600] });
+      fireEvent.click(screen.getByText('C'));
+      const row = container.querySelector('[data-testid="tab-strip-content"]');
+      expect(row).not.toBeNull();
+      expect(observed).toContain(row);
+      scrollTo.mockClear();
+      resize();
+      expect(scrollTo).toHaveBeenCalled();
     });
     afterEach(() => { vi.unstubAllGlobals(); });
 

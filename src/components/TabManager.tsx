@@ -606,6 +606,10 @@ export const TabManager: React.FC<TabManagerProps> = ({ className }) => {
   // The same width change can land the strip at its end without a scroll
   // event, so the arrows are re-checked here too — otherwise the right one
   // stayed up after the first reveal, pointing at nothing.
+  // The tabs' row is observed as well: a tab widens on its own when its
+  // session title arrives (a store, not `tabs`), the strip keeps its width,
+  // and nothing else notices — the right arrow stayed up and the new tab's
+  // tail sat under the fade.
   const followActiveRef = useRef(false);
   const activeTabIdRef = useRef(activeTabId);
   activeTabIdRef.current = activeTabId;
@@ -620,6 +624,8 @@ export const TabManager: React.FC<TabManagerProps> = ({ className }) => {
       if (followActiveRef.current && id) revealTabRef.current(id);
     });
     observer.observe(container);
+    const row = container.firstElementChild;
+    if (row) observer.observe(row);
     const stopFollowing = () => { followActiveRef.current = false; };
     container.addEventListener('wheel', stopFollowing, { passive: true });
     return () => {
@@ -691,7 +697,7 @@ export const TabManager: React.FC<TabManagerProps> = ({ className }) => {
               tab overflowed it by a pixel top and bottom and the scroll
               container clipped the result. Padding instead, so the strip grows
               with whatever the tab is. */}
-          <div className="flex items-center gap-1 pl-2 pr-1 py-1">
+          <div data-testid="tab-strip-content" className="flex items-center gap-1 pl-2 pr-1 py-1">
             {/* The dragged tab used to blank for a frame on each crossing. It
                 was not framer-motion and not StrictMode — both were blamed and
                 both were wrong. `onReorder` fires per crossing, and nothing in
