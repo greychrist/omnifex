@@ -140,7 +140,7 @@ Grab the latest macOS arm64 build from the [Releases page](https://github.com/gr
 
 The build is signed with a Developer ID and notarized, so it opens on first launch without a Gatekeeper prompt.
 
-Once installed, OmniFex checks `releases/latest` on launch and hourly after that, downloads a new version in the background, and installs it in place when you click Install in the Updates popover — waiting for running sessions to finish first, unless you tell it not to.
+Once installed, OmniFex checks `releases/latest` on launch, hourly after that, and whenever you open the Updates popover or hit its refresh button, downloads a new version in the background, and installs it in place when you click Install in the Updates popover — waiting for running sessions to finish first, unless you tell it not to.
 
 ### Prerequisites
 

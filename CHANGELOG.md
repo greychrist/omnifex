@@ -5,6 +5,16 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.37] — 2026-11-12
+
+### Added
+
+- A refresh button by the Updates popover's title checks OmniFex and Claude Code again without closing the popover. It spins while a check runs.
+
+### Fixed
+
+- Popovers that drop from the titlebar — Updates, Sessions — are no longer clipped at the top. The titlebar painted over their first few pixels; popovers now sit above it, and tooltips above popovers.
+
 ## [0.5.36] — 2026-11-12
 
 ### Changed
