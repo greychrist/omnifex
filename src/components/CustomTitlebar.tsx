@@ -30,6 +30,64 @@ function autoDownloadEnabled(): boolean {
   return !import.meta.env.DEV;
 }
 
+/** Dev-only "Simulate" boxes in the Updates popover. A dev build can't reach
+ *  either update for real — it never downloads a release, its version already
+ *  matches the latest, and the installed CLI is usually current — so these fake
+ *  each state the Updates button can show. Display only: while a box is ticked
+ *  the action it would unlock (install, `claude update`, mark checked, launch
+ *  the review) is a no-op, and the release notification never sees the fake. */
+export const UPDATE_SIMULATION_STORAGE_KEY = 'omnifex.dev.simulateUpdates';
+const SIMULATED_VERSION = '9.9.9';
+/** The Updates button's pulsing border, in the colour of what is waiting:
+ *  emerald for an upgrade, amber for an unreviewed Claude Code (the colour of
+ *  its icon). At the group border's own 60% (`border-border/60`) — at full
+ *  strength the same 1px read as visibly thicker than the grey it lies over. */
+const RING_COLORS = {
+  emerald: 'color-mix(in oklch, var(--color-emerald-500) 60%, transparent)',
+  amber: 'color-mix(in oklch, var(--color-amber-500) 60%, transparent)',
+} as const;
+interface UpdateSimulation { cli: boolean; app: boolean; unreviewed: boolean }
+const NO_SIMULATION: UpdateSimulation = { cli: false, app: false, unreviewed: false };
+const SIMULATION_BOXES = [
+  ['cli', 'Claude Code update'],
+  ['app', 'OmniFex update'],
+  ['unreviewed', 'Claude Code not yet reviewed'],
+] as const;
+
+/** Read per call, like `autoDownloadEnabled`, so a test can stub it. */
+function simulationEnabled(): boolean {
+  return import.meta.env.DEV;
+}
+
+/** Persisted so a hot reload doesn't drop it; ignored outside dev. */
+function readSimulation(): UpdateSimulation {
+  if (!simulationEnabled()) return NO_SIMULATION;
+  try {
+    const v = JSON.parse(localStorage.getItem(UPDATE_SIMULATION_STORAGE_KEY) ?? 'null') as Partial<UpdateSimulation> | null;
+    return { cli: v?.cli === true, app: v?.app === true, unreviewed: v?.unreviewed === true };
+  } catch {
+    return NO_SIMULATION;
+  }
+}
+
+function simulateCliReview(real: CliReviewStatus | null, sim: UpdateSimulation): CliReviewStatus | null {
+  if (!sim.cli && !sim.unreviewed) return real;
+  const base: CliReviewStatus = real ?? {
+    installed_version: null,
+    reviewed_version: '—',
+    checked_version: '—',
+    unreviewed: false,
+    latest_version: null,
+    upgrade_available: false,
+    repo_dir: null,
+  };
+  return {
+    ...base,
+    ...(sim.cli ? { upgrade_available: true, latest_version: SIMULATED_VERSION } : {}),
+    ...(sim.unreviewed ? { unreviewed: true } : {}),
+  };
+}
+
 /** What the drift warning hands its host when clicked. */
 export interface CliReviewLaunchRequest {
   /** OmniFex checkout to run the review in (`CliReviewStatus.repo_dir`). */
@@ -176,6 +234,14 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
   // give us: main compares the installed binary against the release whose
   // changelog this build was reviewed against.
   const [cliReview, setCliReview] = useState<CliReviewStatus | null>(null);
+  const [simulation, setSimulation] = useState<UpdateSimulation>(readSimulation);
+  const toggleSimulation = (key: keyof UpdateSimulation) => {
+    setSimulation((prev) => {
+      const next = { ...prev, [key]: !prev[key] };
+      try { localStorage.setItem(UPDATE_SIMULATION_STORAGE_KEY, JSON.stringify(next)); } catch { /* best effort */ }
+      return next;
+    });
+  };
   const [updatesOpen, setUpdatesOpen] = useState(false);
   const checkCliReview = useCallback(async () => {
     setCliReview(await api.getClaudeCliReviewStatus());
@@ -185,9 +251,10 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
   // watermark only moves with a release; this setting is what lets a review
   // that changed nothing clear the unreviewed icon. Main floors it at the built-in value.
   const markCliReleaseChecked = useCallback(async (version: string) => {
+    if (simulation.unreviewed) { console.log('[simulate] mark checked skipped'); return; }
     await api.saveSetting(CLI_CHECKED_VERSION_SETTING_KEY, version);
     await checkCliReview();
-  }, [checkCliReview]);
+  }, [checkCliReview, simulation.unreviewed]);
 
   // --- Forced CLI update ---
   // The CLI's self-updater is a component of its Ink REPL, so it only ever
@@ -202,6 +269,7 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
   const [cliUpdate, setCliUpdate] = useState<CliUpdateState>({ status: 'idle' });
 
   const runCliUpdate = useCallback(async () => {
+    if (simulation.cli) { console.log('[simulate] claude update skipped'); return; }
     setCliUpdate({ status: 'running' });
     try {
       const result = await api.updateClaudeCli();
@@ -233,7 +301,7 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
         message: (err as Error)?.message || 'Update failed.',
       });
     }
-  }, [checkCliReview]);
+  }, [checkCliReview, simulation.cli]);
 
   // One-click refresh for the upgrade-check button. Checks both the app
   // release and the CLI watermark — one button, one answer.
@@ -371,6 +439,7 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
 
   // The OmniFex row's one button: what it does depends on where the update is.
   const handleUpdateClick = async () => {
+    if (simulation.app) { console.log('[simulate] OmniFex install skipped'); return; }
     console.log(`[updater] handleUpdateClick status=${updateState.status} active=${activeSessions}`);
     if (updateState.status === 'available' || (updateState.status === 'error' && updateState.failed === 'download')) {
       const { version, downloadUrl, assetName, releaseUrl } = updateState;
@@ -518,16 +587,26 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
 
           {(() => {
             const isCheckingAnything = checkingHold;
+            const shownUpdate: UpdateState = simulation.app
+              ? { status: 'ready', filePath: '', version: SIMULATED_VERSION }
+              : updateState;
+            const shownCli = simulateCliReview(cliReview, simulation);
             /* Two signals, deliberately different in kind. Green on the icon:
                an upgrade is waiting, for either OmniFex or Claude Code — one
                colour for both, the rows inside say which. A second icon: the
                installed Claude Code has not been reviewed, which is work to
                do rather than an upgrade to take. An unknown registry answer
-               (`latest_version` null) is neither. */
+               (`latest_version` null) is neither. The green icon also pulses,
+               for as long as the upgrade is waiting: opening the popover does
+               not stop it, taking the upgrade does. */
             const hasUpgrade =
-              updateState.status !== 'idle' ||
-              (!!cliReview?.upgrade_available && !!cliReview.latest_version);
-            const unreviewed = !!cliReview?.unreviewed;
+              shownUpdate.status !== 'idle' ||
+              (!!shownCli?.upgrade_available && !!shownCli.latest_version);
+            const unreviewed = !!shownCli?.unreviewed;
+            // One border, one colour: an upgrade outranks a review, being
+            // the thing to act on first.
+            const ringTone: keyof typeof RING_COLORS | null =
+              hasUpgrade ? 'emerald' : unreviewed ? 'amber' : null;
             return (
           <Popover
             open={updatesOpen}
@@ -543,27 +622,46 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
                 data-updates-trigger
                 whileTap={{ scale: 0.97 }}
                 transition={{ duration: 0.15 }}
-                title={unreviewed && cliReview?.installed_version
-                  ? `Updates — Claude Code ${cliReview.installed_version} not yet reviewed`
+                title={unreviewed && shownCli?.installed_version
+                  ? `Updates — Claude Code ${shownCli.installed_version} not yet reviewed`
                   : 'Updates'}
                 className={cn(
-                  'inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium transition-colors app-no-drag',
+                  'relative inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium transition-colors app-no-drag',
                   'hover:bg-accent hover:text-accent-foreground',
                 )}
               >
+                {/* The border pulses — with the green icon, or for an
+                    unreviewed Claude Code in amber. An overlay of its own
+                    rather than a border on the button: pulsing the button
+                    would fade its label too, and a real border would shift
+                    the layout. Rounded on the right only — it is the group's
+                    last button. Inline, not `ring-*`: styles.css forces
+                    `box-shadow: none !important` on every ring utility.
+                    `-inset-px` lays it over the group's own 1px border (and
+                    the divider on its left) instead of just inside it, where
+                    the two read as one 2px band. */}
+                {ringTone && (
+                  <span
+                    aria-hidden
+                    data-updates-ring
+                    data-tone={ringTone}
+                    className="pointer-events-none absolute -inset-px rounded-r-md animate-pulse"
+                    style={{ boxShadow: `inset 0 0 0 1px ${RING_COLORS[ringTone]}` }}
+                  />
+                )}
                 <CircleFadingArrowUp
                   size={16}
                   data-updates-icon
                   data-upgrade={hasUpgrade ? 'true' : undefined}
-                  className={cn(isCheckingAnything && 'animate-spin', hasUpgrade && 'text-emerald-500')}
+                  className={cn(isCheckingAnything && 'animate-spin', hasUpgrade && 'text-emerald-500 animate-pulse')}
                 />
                 <span className={TITLEBAR_LABEL}>Updates</span>
                 {unreviewed && (
                   <ScanSearch
                     size={14}
-                    aria-label={`Claude Code ${cliReview?.installed_version ?? ''} not yet reviewed`}
+                    aria-label={`Claude Code ${shownCli?.installed_version ?? ''} not yet reviewed`}
                     data-updates-unreviewed
-                    className="text-amber-500"
+                    className="text-amber-500 animate-pulse"
                   />
                 )}
               </motion.button>
@@ -581,21 +679,21 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
                   <span className="text-muted-foreground">App</span>
                   {/* One text node, for the same reason as the Claude Code row. */}
                   <span className="font-medium">
-                    {updateState.status === 'idle'
+                    {shownUpdate.status === 'idle'
                       ? `OmniFex ${appVersion || '—'}`
-                      : `OmniFex ${appVersion || '—'} → ${updateState.version} ${
-                        updateState.status === 'available' ? 'available'
-                          : updateState.status === 'downloading' ? `downloading ${Math.round(updateState.percent)}%`
-                          : updateState.status === 'installing' ? 'installing'
-                          : updateState.status === 'error' ? (updateState.failed === 'download' ? 'download failed' : 'install failed')
+                      : `OmniFex ${appVersion || '—'} → ${shownUpdate.version} ${
+                        shownUpdate.status === 'available' ? 'available'
+                          : shownUpdate.status === 'downloading' ? `downloading ${Math.round(shownUpdate.percent)}%`
+                          : shownUpdate.status === 'installing' ? 'installing'
+                          : shownUpdate.status === 'error' ? (shownUpdate.failed === 'download' ? 'download failed' : 'install failed')
                           : 'ready'
                       }`}
                   </span>
                 </div>
-                {updateState.status === 'waiting' ? (
+                {shownUpdate.status === 'waiting' ? (
                   <div data-app-update-waiting className="flex items-center gap-1.5 rounded-md bg-amber-500/10 px-2 py-1.5 text-[12px] text-amber-500">
                     <Loader2 size={13} className="animate-spin shrink-0" />
-                    <span className="flex-1">Waiting for {updateState.activeSessions} session{updateState.activeSessions === 1 ? '' : 's'}…</span>
+                    <span className="flex-1">Waiting for {shownUpdate.activeSessions} session{shownUpdate.activeSessions === 1 ? '' : 's'}…</span>
                     <button
                       type="button"
                       onClick={fireAndLog('custom-titlebar:click', handleInstallAnyway)}
@@ -611,32 +709,32 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
                       Cancel
                     </button>
                   </div>
-                ) : updateState.status !== 'idle' && updateState.status !== 'downloading' && (
+                ) : shownUpdate.status !== 'idle' && shownUpdate.status !== 'downloading' && (
                   <button
                     type="button"
-                    data-app-update-install={updateState.status === 'ready' || (updateState.status === 'error' && updateState.failed === 'install') ? '' : undefined}
-                    data-app-update-retry={updateState.status === 'error' && updateState.failed === 'download' ? '' : undefined}
+                    data-app-update-install={shownUpdate.status === 'ready' || (shownUpdate.status === 'error' && shownUpdate.failed === 'install') ? '' : undefined}
+                    data-app-update-retry={shownUpdate.status === 'error' && shownUpdate.failed === 'download' ? '' : undefined}
                     onClick={fireAndLog('custom-titlebar:click', handleUpdateClick)}
-                    disabled={updateState.status === 'installing'}
+                    disabled={shownUpdate.status === 'installing'}
                     className={cn(
                       'flex w-full items-center justify-center gap-1.5 rounded-md px-2 py-1.5',
                       'text-[12px] font-medium transition-colors app-no-drag',
-                      updateState.status === 'error'
+                      shownUpdate.status === 'error'
                         ? 'bg-red-500/10 text-red-400 hover:bg-red-500/20'
                         : 'bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20',
                       'disabled:opacity-60 disabled:cursor-not-allowed',
                     )}
                   >
-                    {updateState.status === 'installing' ? (
+                    {shownUpdate.status === 'installing' ? (
                       <><Loader2 size={13} className="animate-spin" /><span>Installing…</span></>
-                    ) : updateState.status === 'available' ? (
-                      <span>Download {updateState.version}</span>
-                    ) : updateState.status === 'error' && updateState.failed === 'download' ? (
+                    ) : shownUpdate.status === 'available' ? (
+                      <span>Download {shownUpdate.version}</span>
+                    ) : shownUpdate.status === 'error' && shownUpdate.failed === 'download' ? (
                       <span>Retry download</span>
                     ) : activeSessions > 0 ? (
-                      <span>{`Install ${updateState.version} — stops ${activeSessions} active session${activeSessions === 1 ? '' : 's'}`}</span>
+                      <span>{`Install ${shownUpdate.version} — stops ${activeSessions} active session${activeSessions === 1 ? '' : 's'}`}</span>
                     ) : (
-                      <span>Install {updateState.version} →</span>
+                      <span>Install {shownUpdate.version} →</span>
                     )}
                   </button>
                 )}
@@ -652,7 +750,7 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
                     releases pile up. Absent when the registry couldn't be
                     reached — an unknown answer shows nothing rather than
                     implying "up to date". */}
-                {cliReview && (
+                {shownCli && (
                   <div className="flex items-center justify-between gap-3">
                     <span className="text-muted-foreground">Claude Code</span>
                     {/* One text node, not a nest of styled spans: split across
@@ -660,9 +758,9 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
                         anything walking direct text children, including the
                         tests and a screen reader. */}
                     <span className="font-medium">
-                      {cliReview.upgrade_available && cliReview.latest_version
-                        ? `${cliReview.installed_version ?? 'not found'} → ${cliReview.latest_version} available`
-                        : (cliReview.installed_version ?? 'not found')}
+                      {shownCli.upgrade_available && shownCli.latest_version
+                        ? `${shownCli.installed_version ?? 'not found'} → ${shownCli.latest_version} available`
+                        : (shownCli.installed_version ?? 'not found')}
                     </span>
                   </div>
                 )}
@@ -670,7 +768,7 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
                     `upgrade_available` so an unreachable registry — which
                     reports "unknown", never "up to date" — can't offer an
                     upgrade to a target we don't know. */}
-                {cliReview?.upgrade_available && cliReview.latest_version && (
+                {shownCli?.upgrade_available && shownCli.latest_version && (
                   <button
                     type="button"
                     data-cli-update-run
@@ -689,7 +787,7 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
                         <span>Updating…</span>
                       </>
                     ) : (
-                      <span>Update to {cliReview.latest_version} →</span>
+                      <span>Update to {shownCli.latest_version} →</span>
                     )}
                   </button>
                 )}
@@ -720,15 +818,15 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
                     range that drifted. Only a button when we have somewhere to
                     launch and a host willing to launch it — a dead click
                     target is worse than plain text. */}
-                {cliReview?.unreviewed && (() => {
-                  const repoDir = cliReview.repo_dir;
-                  const installedVersion = cliReview.installed_version;
+                {shownCli?.unreviewed && (() => {
+                  const repoDir = shownCli.repo_dir;
+                  const installedVersion = shownCli.installed_version;
                   const canLaunch = !!repoDir && !!onCliReviewClick && !!installedVersion;
                   const body = (
                     <>
                       <AlertCircle size={13} className="mt-px shrink-0" />
                       <span className="text-left">
-                        Claude Code is ahead of the {cliReview.checked_version} changelog
+                        Claude Code is ahead of the {shownCli.checked_version} changelog
                         OmniFex was last checked against — there may be new CLI behaviour
                         to support.
                         {canLaunch ? (
@@ -749,9 +847,10 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
                       type="button"
                       data-cli-review-launch
                       onClick={() => {
+                        if (simulation.unreviewed) { console.log('[simulate] review launch skipped'); return; }
                         onCliReviewClick({
                           repoDir,
-                          reviewedVersion: cliReview.checked_version,
+                          reviewedVersion: shownCli.checked_version,
                           installedVersion,
                         });
                       }}
@@ -765,8 +864,8 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
                 })()}
                 {/* Separate from the launch button above, which can't nest
                     another button. The user's word that the review is read. */}
-                {cliReview?.unreviewed && cliReview.installed_version && (() => {
-                  const version = cliReview.installed_version;
+                {shownCli?.unreviewed && shownCli.installed_version && (() => {
+                  const version = shownCli.installed_version;
                   return (
                     <button
                       type="button"
@@ -785,8 +884,8 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
                 {/* Checked but not shipped: no build carries a review of this
                     release yet. `checked_version` is floored at
                     `reviewed_version`, so inequality means "ahead". */}
-                {cliReview && !cliReview.unreviewed
-                  && cliReview.checked_version !== cliReview.reviewed_version && (
+                {shownCli && !shownCli.unreviewed
+                  && shownCli.checked_version !== shownCli.reviewed_version && (
                   <div
                     data-cli-review-pending-release
                     className="flex items-start gap-1.5 rounded-md bg-muted/60 px-2 py-1.5 text-[12px] text-muted-foreground"
@@ -797,7 +896,22 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
                       data-cli-review-checked-icon
                       className="mt-[2px] shrink-0 text-emerald-500"
                     />
-                    <span>{`${cliReview.checked_version} checked and verified`}</span>
+                    <span>{`${shownCli.checked_version} checked and verified`}</span>
+                  </div>
+                )}
+                {simulationEnabled() && (
+                  <div data-update-simulation className="mt-1 space-y-1 border-t border-border/50 pt-2 text-[12px] text-muted-foreground">
+                    <div className="text-[11px] font-medium uppercase tracking-wide">Dev · simulate</div>
+                    {SIMULATION_BOXES.map(([key, label]) => (
+                      <label key={key} className="flex cursor-pointer items-center gap-2 app-no-drag">
+                        <input
+                          type="checkbox"
+                          checked={simulation[key]}
+                          onChange={() => { toggleSimulation(key); }}
+                        />
+                        {label}
+                      </label>
+                    ))}
                   </div>
                 )}
               </div>
