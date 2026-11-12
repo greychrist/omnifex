@@ -5,6 +5,11 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.38] — 2026-11-12
+
+### Changed
+- In a project's session list, clicking a session's name launches it, as the dates already did. The summary chevron still only expands and collapses, and the headline and summary text beneath stay plain text so they can be selected.
+
 ## [0.5.37] — 2026-11-12
 
 ### Added
