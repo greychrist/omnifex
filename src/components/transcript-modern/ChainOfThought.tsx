@@ -156,9 +156,10 @@ export function ReasoningLine({
   const [chosen, setChosen] = React.useState<boolean | null>(null);
   const status: TraceStatus | undefined = running ? 'running' : undefined;
   const title = reasoningTitle({ running, ms });
+  const color = useStepColor('thought');
   const line = (
     <TraceLine status={status}>
-      <KindIcon kind="thought" />
+      <KindIcon kind="thought" color={color} />
       <TraceTitle>{running ? <Shimmer>{title}</Shimmer> : title}</TraceTitle>
       {tokens !== null && <TraceDescription>({thinkingTokensLabel(tokens)})</TraceDescription>}
     </TraceLine>
@@ -169,12 +170,26 @@ export function ReasoningLine({
       <TraceCollapsibleTrigger>{line}</TraceCollapsibleTrigger>
       {/* Brighter than the muted step chrome around it, so the reasoning
           itself stands out from the titles and commands. */}
-      <TraceCollapsibleContent className="whitespace-pre-wrap text-foreground/85">{text}</TraceCollapsibleContent>
+      <TraceCollapsibleContent ruleColor={color} className="whitespace-pre-wrap text-foreground/85">{text}</TraceCollapsibleContent>
     </TraceCollapsible>
   );
 }
 
-function KindIcon({ kind }: { kind: StepKind | 'thought' }) {
+/** Settings › Chats › Modern › Step icons: the colour chosen for a kind, or
+ *  undefined for the built-in gray. */
+function useStepColor(kind: StepKind | 'thought'): string | undefined {
+  return useMessageRenderingConfig().config.modern.stepColors[kind] ?? undefined;
+}
+
+/** A #rrggbb at half strength, for the chip's border (as a failed step's);
+ *  any other hex form is used as given. */
+function halfStrength(hex: string): string {
+  return /^#[0-9a-f]{6}$/i.test(hex) ? `${hex}80` : hex;
+}
+
+/** `color` tints the glyph and the chip's border; a failed step passes none,
+ *  so its red holds. */
+function KindIcon({ kind, color }: { kind: StepKind | 'thought'; color?: string }) {
   // Settings › Chats › Modern › Step icons.
   const icon = useMessageRenderingConfig().config.modern.stepIcons[kind];
   // A chip like the classic card header's icon, as bright as an opened
@@ -184,6 +199,8 @@ function KindIcon({ kind }: { kind: StepKind | 'thought' }) {
   return (
     <TraceIcon
       data-step-kind={kind}
+      // Inline: the `* { border-color }` reset beats border-colour utilities.
+      style={color ? { color, borderColor: halfStrength(color) } : undefined}
       className="modern-step-icon -m-[3px] size-[22px] rounded-md border bg-muted/40 text-foreground/85 in-data-[status=error]:bg-destructive/10 in-data-[status=error]:text-destructive"
     >
       <IconRenderer name={icon} className="size-3" />
@@ -201,7 +218,10 @@ function Step({ entry, live, ctx }: { entry: WorkEntry; live: boolean; ctx: RowC
       </StepRow>
     );
   }
+  return <ToolStep entry={entry} live={live} ctx={ctx} />;
+}
 
+function ToolStep({ entry, live, ctx }: { entry: ToolEntry; live: boolean; ctx: RowContext }) {
   // A tool with no result yet is running while the turn is; otherwise it
   // never got one (an interrupted turn) and waits, dimmed.
   const state: StepState = entry.status === 'error' ? 'error' : entry.status === 'pending' ? 'running' : 'done';
@@ -211,10 +231,14 @@ function Step({ entry, live, ctx }: { entry: WorkEntry; live: boolean; ctx: RowC
   // The model's own description of a command: the title says what ran.
   const tooltip = entry.name === 'Bash' && typeof entry.input.description === 'string' ? entry.input.description : undefined;
   const body = stepBody(entry, ctx);
+  const kind = stepKind(entry.name, entry.input);
+  const kindColor = useStepColor(kind);
+  // A failure keeps its red: the kind's colour would hide it.
+  const color = status === 'error' ? undefined : kindColor;
 
   const line = (
     <TraceLine status={status}>
-      <KindIcon kind={stepKind(entry.name, entry.input)} />
+      <KindIcon kind={kind} color={color} />
       <TraceTitle>{status === 'running' ? <Shimmer>{text.title}</Shimmer> : text.title}</TraceTitle>
       {text.badges && (
         <TraceDescription className={cn(text.codeBadges && 'font-mono text-xs')}>
@@ -232,7 +256,7 @@ function Step({ entry, live, ctx }: { entry: WorkEntry; live: boolean; ctx: RowC
       {body ? (
         <TraceCollapsible>
           <TraceCollapsibleTrigger title={tooltip}>{line}</TraceCollapsibleTrigger>
-          <TraceCollapsibleContent>{body}</TraceCollapsibleContent>
+          <TraceCollapsibleContent ruleColor={color}>{body}</TraceCollapsibleContent>
         </TraceCollapsible>
       ) : (
         <div title={tooltip} className="min-w-0">{line}</div>

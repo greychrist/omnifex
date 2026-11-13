@@ -163,6 +163,43 @@ function ShadowField({ name, checked, disabled = false, onChange }: { name: stri
   );
 }
 
+/** A section's title: a size up from the rows' own labels, so it reads as
+ *  the heading over them rather than one more row. */
+function SectionHeading({ id, children }: { id?: string; children: React.ReactNode }) {
+  return <h4 id={id} className="text-body font-semibold">{children}</h4>;
+}
+
+/** A step kind's colour: a swatch, and a reset back to the built-in gray
+ *  once one is set. The native picker takes only #rrggbb. */
+function StepColorField({ label, value, onChange }: { label: string; value: string | null; onChange: (next: string | null) => void }) {
+  return (
+    <>
+      <input
+        type="color"
+        aria-label={`${label} color`}
+        title={value ?? "Built-in gray"}
+        value={value && /^#[0-9a-f]{6}$/i.test(value) ? value : "#888888"}
+        onChange={(e) => { onChange(e.target.value.toLowerCase()); }}
+        className={cn(
+          "h-8 w-9 cursor-pointer rounded-md border border-border bg-background p-1",
+          value === null && "opacity-50",
+        )}
+      />
+      {value !== null ? (
+        <button
+          type="button"
+          onClick={() => { onChange(null); }}
+          aria-label={`Reset ${label} color`}
+          title="Reset to gray"
+          className="text-muted-foreground hover:text-foreground"
+        >
+          <Undo2 className="h-3.5 w-3.5" />
+        </button>
+      ) : <span />}
+    </>
+  );
+}
+
 /** The line between two sections. `bg-border`, not a border: the unlayered
  *  `* { border-color }` reset in styles.css beats border-colour utilities. */
 function SectionRule() {
@@ -236,6 +273,9 @@ export const ModernEditor: React.FC<ModernEditorProps> = ({ config, onChange }) 
   const setIcon = (kind: ModernStepKind, icon: ModernStyle["stepIcons"][ModernStepKind]) => {
     onChange({ ...m, stepIcons: { ...m.stepIcons, [kind]: icon } });
   };
+  const setColor = (kind: ModernStepKind, color: string | null) => {
+    onChange({ ...m, stepColors: { ...m.stepColors, [kind]: color } });
+  };
 
   return (
     <div data-testid="modern-editor" className="space-y-6">
@@ -249,7 +289,7 @@ export const ModernEditor: React.FC<ModernEditorProps> = ({ config, onChange }) 
       <ModernSample config={config} />
 
       <section className="space-y-3">
-        <Label>Records</Label>
+        <SectionHeading>Records</SectionHeading>
         <p className="text-caption text-muted-foreground">
           Which records Modern shows, by another format's rules: Compact shows kinds set to Always, Verbose adds Verbose-only kinds, All adds kinds set to Never. Your prompts, the work timeline and answers look the same under each.
         </p>
@@ -264,7 +304,7 @@ export const ModernEditor: React.FC<ModernEditorProps> = ({ config, onChange }) 
       <SectionRule />
 
       <section className="space-y-3">
-        <Label>Work timeline</Label>
+        <SectionHeading>Work timeline</SectionHeading>
         <p className="text-caption text-muted-foreground">
           The folding run of thoughts and tool calls between your prompt and Claude's answer.
         </p>
@@ -288,7 +328,7 @@ export const ModernEditor: React.FC<ModernEditorProps> = ({ config, onChange }) 
       <SectionRule />
 
       <section role="region" aria-labelledby="modern-colors-heading" className="space-y-3">
-        <Label id="modern-colors-heading">Colors</Label>
+        <SectionHeading id="modern-colors-heading">Colors</SectionHeading>
         <p className="text-caption text-muted-foreground">
           Your prompt, the answer that ends a turn, and a failed step in the work timeline.
         </p>
@@ -344,7 +384,10 @@ export const ModernEditor: React.FC<ModernEditorProps> = ({ config, onChange }) 
       <SectionRule />
 
       <section className="space-y-3">
-        <Label>Step icons</Label>
+        <SectionHeading>Step icons</SectionHeading>
+        <p className="text-caption text-muted-foreground">
+          The icon and color of each step in the work timeline. A color tints the step's icon and the line beside it when opened; a failed step stays red.
+        </p>
         <div className="grid grid-cols-1 gap-x-6 gap-y-2 md:grid-cols-2">
           {MODERN_STEP_KINDS.map((kind) => {
             const changed = m.stepIcons[kind] !== DEFAULT_MODERN.stepIcons[kind];
@@ -353,7 +396,7 @@ export const ModernEditor: React.FC<ModernEditorProps> = ({ config, onChange }) 
                 key={kind}
                 role="group"
                 aria-label={`${STEP_LABELS[kind].label} step icon`}
-                className="grid grid-cols-[minmax(0,1fr)_10rem_1.25rem] items-center gap-2"
+                className="grid grid-cols-[minmax(0,1fr)_10rem_1.25rem_2.25rem_1.25rem] items-center gap-2"
               >
                 <div className="min-w-0">
                   <div className="text-sm">{STEP_LABELS[kind].label}</div>
@@ -370,6 +413,7 @@ export const ModernEditor: React.FC<ModernEditorProps> = ({ config, onChange }) 
                     <Undo2 className="h-3.5 w-3.5" />
                   </button>
                 ) : <span />}
+                <StepColorField label={STEP_LABELS[kind].label} value={m.stepColors[kind]} onChange={(v) => { setColor(kind, v); }} />
               </div>
             );
           })}
@@ -379,7 +423,7 @@ export const ModernEditor: React.FC<ModernEditorProps> = ({ config, onChange }) 
       <SectionRule />
 
       <section className="space-y-3">
-        <Label>Text</Label>
+        <SectionHeading>Text</SectionHeading>
         <div className="flex flex-wrap items-center gap-6">
           <div className="space-y-1">
             <div className="text-caption text-muted-foreground">Font</div>

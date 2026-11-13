@@ -100,11 +100,17 @@ export function TraceCollapsibleTrigger({
 export function TraceCollapsibleContent({
   className,
   children,
+  ruleColor,
   ...props
-}: React.ComponentProps<typeof CollapsibleContent>) {
+}: React.ComponentProps<typeof CollapsibleContent> & {
+  /** The left rule's colour; the theme border when absent. Inline, because
+   *  the unlayered `* { border-color }` reset beats border-colour utilities. */
+  ruleColor?: string;
+}) {
   return (
     <CollapsibleContent data-slot="trace-collapsible-content" className="min-w-0 overflow-hidden" {...props}>
       <div
+        style={ruleColor ? { borderLeftColor: ruleColor } : undefined}
         className={cn(
           'mt-2 mb-1 ml-[7px] min-w-0 border-l border-border pr-1 pl-4 text-sm leading-relaxed break-words text-muted-foreground',
           className,

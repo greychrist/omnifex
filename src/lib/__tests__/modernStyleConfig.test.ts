@@ -30,6 +30,22 @@ describe('Modern style config', () => {
     expect(m.stepIcons.thought).toBe('Brain');
     expect(m.stepIcons.command).toBe('Terminal');
     expect(m.stepIcons.tool).toBe('Wrench');
+    // No colour: every step draws in the built-in gray.
+    expect(Object.values(m.stepColors).every((c) => c === null)).toBe(true);
+    expect(Object.keys(m.stepColors).sort()).toEqual([...Object.keys(m.stepIcons)].sort());
+  });
+
+  it('keeps a saved step colour that is a hex and drops anything else', () => {
+    const cfg = mergeConfig({ version: 5, modern: { stepColors: { read: '#22c55e', edit: 'teal', bogus: '#000000' } } });
+    expect(cfg.modern.stepColors.read).toBe('#22c55e');
+    expect(cfg.modern.stepColors.edit).toBeNull();
+    expect(cfg.modern.stepColors).not.toHaveProperty('bogus');
+  });
+
+  it('returns independent step colour maps', () => {
+    const a = createDefaultConfig();
+    a.modern.stepColors.read = '#22c55e';
+    expect(createDefaultConfig().modern.stepColors.read).toBeNull();
   });
 
   it('returns independent copies', () => {

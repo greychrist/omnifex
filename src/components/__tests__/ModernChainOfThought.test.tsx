@@ -171,7 +171,12 @@ describe('Modern chain of thought — shadcn Trace steps', () => {
 
 function withModern(patch: Partial<ModernStyle>, ui: React.ReactElement) {
   const config = createDefaultConfig();
-  config.modern = { ...config.modern, ...patch, stepIcons: { ...config.modern.stepIcons, ...patch.stepIcons } };
+  config.modern = {
+    ...config.modern,
+    ...patch,
+    stepIcons: { ...config.modern.stepIcons, ...patch.stepIcons },
+    stepColors: { ...config.modern.stepColors, ...patch.stepColors },
+  };
   return render(<MessageRenderingPreviewProvider config={config}>{ui}</MessageRenderingPreviewProvider>);
 }
 
@@ -221,5 +226,38 @@ describe('Modern chain of thought — Settings › Chats › Modern', () => {
       <ChainOfThought entries={[tool('Bash', { command: 'x' }, 'boom', 'error')]} nodes={[]} live={false} ctx={ctx} />);
     const root = container.querySelector('[data-slot="trace"]') as HTMLElement;
     expect(root.style.getPropertyValue('--color-destructive')).toBe('');
+  });
+
+  it('colours a step kind\'s icon chip and the rule beside its opened body', () => {
+    withModern({ timelineOpen: 'always', stepColors: { command: '#22c55e' } as ModernStyle['stepColors'] },
+      <ChainOfThought entries={[tool('Bash', { command: 'npm test' }, 'ok'), tool('Grep', { pattern: 'x' }, 'hit')]} nodes={[]} live={false} ctx={ctx} />);
+    const chip = screen.getByText(/^Ran npm test/).closest('[data-slot="trace-line"]')!.querySelector<HTMLElement>('[data-step-kind]')!;
+    expect(chip.style.color).toBe('rgb(34, 197, 94)');
+    expect(chip.style.borderColor).not.toBe('');
+    fireEvent.click(screen.getByRole('button', { name: /Ran npm test/ }));
+    const rule = screen.getByText('ok').closest<HTMLElement>('[data-slot="trace-collapsible-content"] > div')!;
+    expect(rule.style.borderLeftColor).toBe('rgb(34, 197, 94)');
+    // Another kind keeps the gray.
+    const other = document.querySelector<HTMLElement>('[data-step-kind="search"]')!;
+    expect(other.style.color).toBe('');
+  });
+
+  it('colours a thought and the rule beside it', () => {
+    withModern({ timelineOpen: 'always', stepColors: { thought: '#0ea5e9' } as ModernStyle['stepColors'] },
+      <ChainOfThought entries={[thought]} nodes={[]} live={false} ctx={ctx} />);
+    expect(document.querySelector<HTMLElement>('[data-step-kind="thought"]')!.style.color).toBe('rgb(14, 165, 233)');
+    fireEvent.click(screen.getByRole('button', { name: /^Thought/ }));
+    const rule = screen.getByText('hmm').closest<HTMLElement>('[data-slot="trace-collapsible-content"] > div')!;
+    expect(rule.style.borderLeftColor).toBe('rgb(14, 165, 233)');
+  });
+
+  it('keeps a failed step red whatever its kind\'s colour', () => {
+    withModern({ timelineOpen: 'always', stepColors: { command: '#22c55e' } as ModernStyle['stepColors'] },
+      <ChainOfThought entries={[tool('Bash', { command: 'x' }, 'boom', 'error')]} nodes={[]} live={false} ctx={ctx} />);
+    const chip = document.querySelector<HTMLElement>('[data-step-kind="command"]')!;
+    expect(chip.style.color).toBe('');
+    fireEvent.click(screen.getByRole('button', { name: /Failed to run x/ }));
+    const rule = screen.getByText('boom').closest<HTMLElement>('[data-slot="trace-collapsible-content"] > div')!;
+    expect(rule.style.borderLeftColor).toBe('');
   });
 });

@@ -702,6 +702,9 @@ export const MODERN_ANSWER_SIZES = [12, 13, 14, 15, 16, 18] as const;
 
 export interface ModernStyle {
   stepIcons: Record<ModernStepKind, IconName>;
+  /** Hex per step kind for its icon chip and the rule beside its opened
+   *  body, or null for the built-in gray. A failed step stays red. */
+  stepColors: Record<ModernStepKind, string | null>;
   timelineOpen: TimelineOpen;
   showThoughts: boolean;
   font: ModernFont;
@@ -760,6 +763,7 @@ export const DEFAULT_MODERN: ModernStyle = {
     mcp: "Plug",
     tool: "Wrench",
   },
+  stepColors: Object.fromEntries(MODERN_STEP_KINDS.map((k) => [k, null])) as Record<ModernStepKind, string | null>,
   timelineOpen: "while-running",
   showThoughts: true,
   font: "geist",
@@ -833,8 +837,16 @@ function mergeModern(saved: Record<string, unknown>, base: ModernStyle): ModernS
       if (typeof v === "string" && (ALLOWED_ICONS as readonly string[]).includes(v)) stepIcons[k] = v as IconName;
     }
   }
+  const stepColors = { ...base.stepColors };
+  if (isRecord(saved.stepColors)) {
+    for (const k of MODERN_STEP_KINDS) {
+      const v = saved.stepColors[k];
+      if (isHexColor(v)) stepColors[k] = v;
+    }
+  }
   return {
     stepIcons,
+    stepColors,
     timelineOpen: TIMELINE_OPEN.includes(saved.timelineOpen as TimelineOpen)
       ? (saved.timelineOpen as TimelineOpen)
       : base.timelineOpen,
@@ -911,7 +923,7 @@ export function createDefaultConfig(): MessageRenderingConfig {
     tabs: { ...DEFAULT_TAB_STRIP },
     hiddenEvents: { ...DEFAULT_HIDDEN_EVENTS },
     terminal: { ...DEFAULT_TERMINAL },
-    modern: { ...DEFAULT_MODERN, stepIcons: { ...DEFAULT_MODERN.stepIcons } },
+    modern: { ...DEFAULT_MODERN, stepIcons: { ...DEFAULT_MODERN.stepIcons }, stepColors: { ...DEFAULT_MODERN.stepColors } },
   };
 }
 

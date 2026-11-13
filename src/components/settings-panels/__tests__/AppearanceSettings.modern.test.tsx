@@ -272,4 +272,26 @@ describe('AppearanceSettings — Modern', () => {
       expect(within(editor).getByRole('group', { name: `${label} step icon` })).toBeInTheDocument();
     }
   });
+
+  it('sets a colour for a step kind, and resets it to the built-in gray', async () => {
+    const editor = await openModern();
+    const row = within(editor).getByRole('group', { name: 'Edit step icon' });
+    expect(within(row).queryByRole('button', { name: 'Reset Edit color' })).toBeNull();
+    fireEvent.change(within(row).getByLabelText('Edit color'), { target: { value: '#22c55e' } });
+    await waitFor(() => {
+      expect((savedModern().at(-1)?.stepColors as Record<string, unknown> | undefined)?.edit).toBe('#22c55e');
+    });
+    fireEvent.click(within(row).getByRole('button', { name: 'Reset Edit color' }));
+    await waitFor(() => {
+      expect((savedModern().at(-1)?.stepColors as Record<string, unknown> | undefined)?.edit).toBeNull();
+    });
+  });
+
+  it('heads Step icons with a heading and a caption, larger than the row labels', async () => {
+    const editor = await openModern();
+    const heading = within(editor).getByRole('heading', { name: 'Step icons' });
+    expect(heading).not.toHaveClass('text-sm');
+    expect(heading.nextElementSibling?.tagName).toBe('P');
+  });
 });
+
