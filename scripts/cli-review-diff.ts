@@ -215,6 +215,11 @@ export const UNDRAWN_SYSTEM_SUBTYPES: Readonly<Record<string, string>> = {
   // 2.1.318: written only to a self-hosted runner's CLAUDE_RUNNER_ACTIVITY_FD
   // (RemoteIO), never to stdout; the runner drops it on read.
   start_folder: 'remote',
+  // 2.1.323: the stored form of a user message or queued command whose
+  // `origin.kind` is `voice-call` — what a host (Claude Desktop) hands over
+  // from a voice call. Transcoded back to user/attachment on read; stdout
+  // carries the user form. OmniFex never stamps that origin.
+  voice_call_talk: 'host-only',
 };
 
 /** Flags only the Claude CLI takes — a file holding one of these spawns `claude`. */

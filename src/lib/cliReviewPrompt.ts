@@ -144,6 +144,12 @@ grep, a file read or a transcript behind it.
    - **New CLI → host control requests.** \`electron/services/agents/claude-cli-engine.ts\`
      answers unknown ones with an error, so they don't stall a session.
      But a new one may be a capability the CLI now expects a host to serve.
+   - **Stdout-only fields with host obligations.** Main-session turns render
+     from the JSONL tail, not stdout (\`electron/services/sessions/stream-forward.ts\`,
+     \`JSONL_CARRIED_TYPES\`), so a wrapper field the CLI adds only to the
+     stream-json frame (the assistant frame's \`supersedes\`: "remove the named
+     messages") never reaches the renderer. When a describe string asks the
+     host to act on such a field, check whether the JSONL says the same thing.
 
 5. **Map each entry and each real diff line to our surfaces.** Read the
    local code before saying something is or isn't affected. These are

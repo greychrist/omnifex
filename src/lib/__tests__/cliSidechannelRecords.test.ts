@@ -116,6 +116,25 @@ describe('isCliSidechannelRecord', () => {
     ).toBe(true);
   });
 
+  // New in CLI 2.1.323, behind `tengu_pewter_grebe` + `allow_data_flow`:
+  // data-flow provenance per tool call (`accumulate`) and the sessions this
+  // one was derived from (`last-wins`). The CLI strips all three on hydrate;
+  // none is a turn.
+  it('recognises the 2.1.323 data-flow records', () => {
+    expect(
+      isCliSidechannelRecord({ type: 'data-flow-records', v: 1, sessionId: 's', records: [] }),
+    ).toBe(true);
+    expect(isCliSidechannelRecord({ type: 'data-flow-incomplete', v: 1, sessionId: 's' })).toBe(true);
+    expect(
+      isCliSidechannelRecord({
+        type: 'derived-from',
+        v: 1,
+        sessionId: 's',
+        sessions: [{ type: 'claude_code_session', id: 'x', via: 'fork' }],
+      }),
+    ).toBe(true);
+  });
+
   it('never claims one of the four transcript types', () => {
     for (const type of ['user', 'assistant', 'system', 'attachment']) {
       expect(isCliSidechannelRecord({ type })).toBe(false);

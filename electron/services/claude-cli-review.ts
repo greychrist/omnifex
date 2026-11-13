@@ -50,7 +50,112 @@ import { buildClaudeEnv } from './util/claude-env';
  *    thought's text, which the Modern format types out. Accepted values per
  *    the CLI's own error string: "summarized", "omitted" ("highlights" is
  *    refused). Records carry `thinking_duration_ms` too. Verified 2.1.312.
+ *  - `CLAUDE_CODE_ARTIFACT=1` in the spawn env (claude-cli-engine.ts). The
+ *    CLI's Artifact gate returns `sdk_default_off` for an sdk-cli /
+ *    sdk-ts / sdk-py session unless it is set; with it, init lists
+ *    `Artifact`, `ArtifactComments`, `ArtifactData` (26 -> 29 tools on the
+ *    Personal account). The rest of the gate is account-side: first-party
+ *    provider, plan + org policy `allow_cobalt_plinth`, `tengu_cobalt_plinth`,
+ *    `enableArtifact`. Verified 2.1.323. The same opt-in makes the CLI
+ *    build its own `claude-artifacts` MCP server (`source: dynamic`, claude.ai
+ *    `/api/artifacts/mcp`); once it connects the CLI HIDES the built-in
+ *    `Artifact` tool (`artifact_mcp_swap`, `builtInArtifactHiddenForMcp`) and
+ *    its ~41 tools stand in (create_from_type, list_types, publish_version,
+ *    read_comments, db_*...). So a session with `mcp__claude-artifacts__*`
+ *    and no `Artifact` is working, not broken. Neither present = re-read
+ *    the gate.
  *
+ * Last review: 2.1.322 -> 2.1.323 on 2026-11-12. Findings: none broken;
+ * two latent "Unrecognized record" cards fixed the same day; one latent
+ * renderer gap left open (`supersedes`).
+ *
+ *  Changelog coverage: 2.1.323 (~295 entries). Both ends installed. Script:
+ *  hook_event_name (33), control_* (4), SDK requests (55), origin kinds
+ *  (14), can_use_tool keys (11) identical.
+ *  - Merge map +`data-flow-records` / +`data-flow-incomplete` (accumulate),
+ *    +`derived-from` (last-wins): per-tool-call data-flow provenance and the
+ *    sessions this one derives from. Written only behind
+ *    `tengu_pewter_grebe` + `allow_data_flow` (kge()); zero in both
+ *    accounts' projects/. The CLI strips them on hydrate. FIXED: listed in
+ *    CLI_SIDECHANNEL_RECORD_TYPES (+test) before the flag flips.
+ *  - `system` +`voice_call_talk`: the stored form of a user message /
+ *    queued_command with `origin.kind:"voice-call"` (a host's voice call),
+ *    transcoded back on read; stdout carries the user form. OmniFex never
+ *    stamps that origin; zero in transcripts. Baselined in
+ *    UNDRAWN_SYSTEM_SUBTYPES ('host-only').
+ *  - OPEN: assistant frame `supersedes` ("Remove the named messages when
+ *    this one arrives") now also covers a response whose tool call could
+ *    not be parsed (behind `tengu_calm_waffle`), not just refusal
+ *    fallback. Stdout-only wrapper field; OmniFex renders main-session
+ *    turns from the JSONL tail and honours `supersedes` nowhere (grep).
+ *    If the discarded response stays in the JSONL, OmniFex shows it next
+ *    to the retry (the [VSCode] entry fixing exactly that). Zero
+ *    `"supersedesUuids":[` in either account. Not fixed: unverified
+ *    whether JSONL keeps the discarded row or the stamp.
+ *  - `type:` -`seven_day_opus`: rate-limits.ts names it explicitly and
+ *    handles any `seven_day_*`; the label just goes unused. Inert.
+ *    +`tool_results_cut`, +`linked_plugin_tools_note`, the `engine-range-*`
+ *    / `autoupdate-blocked-by-engine-range` / `version-list-not-enabled` /
+ *    `plugin-agent-setting-deprecated` plugin diagnostics, data-flow
+ *    source kinds (`anthropic`, `claude_ai_connector`, `mcp_server`,
+ *    `client_configured`...). Inert.
+ *  - CLI flags -`--registry` (plugin marketplace add). We never pass it.
+ *  - /usage "What's contributing to your limits usage" 1 -> 0: embedded
+ *    changelog copy again (see 2.1.314); parser.ts matches both headings,
+ *    "What's contributing to your usage?" still 3. Contributing-table
+ *    fixes (per-subagent %, "ran N hours") change row text, not headers.
+ *  - Object keys +6659 -218: almost all the bundled TypeScript compiler
+ *    (`claude plugin validate` type-checks hooks modules) plus data-flow /
+ *    Read-offset / ui-render internals. Nothing new on user/assistant
+ *    records, permission requests or the initialize reply that we read.
+ *  - Describe moves, @internal or inert: byte-offset reads (offset, etag,
+ *    lossy, total_bytes) on the host file-read request; text_not_typed;
+ *    turn-origin label; cwd fallback; host credential ask now on gateway
+ *    403; ui.render Theme/Backdrop/Progress; managed settings in
+ *    initialize; blockWrites/ReadsOutsideWorkingDirectories reporting;
+ *    init.plugin_errors gains managed-settings plugins (we don't read it);
+ *    nextStep recap/ask/actions tool schema; observers list; subagent
+ *    status line deprecated.
+ *  - Changelog, in our favour, nothing to do: /compact twice summarizing
+ *    an unanswered message; resume joining an old interrupted message;
+ *    `--permission-mode auto` / defaultMode auto now starts Manual when auto
+ *    is unavailable (we send auto via set_permission_mode, which already
+ *    rolls back refusals); subagent transcripts kept beside the session
+ *    after a WorktreeCreate-hook worktree; Stop during UserPromptSubmit hook
+ *    no longer an error in SDK sessions; null MCP tools entry; all the
+ *    Bash/sandbox/permission-rule fixes (no rule syntax changed).
+ *  - Hook heartbeat every 30s in -p/SDK: reuses existing frames (no new
+ *    type/subtype literal); stream_event ping already passes events.ts.
+ *  - Unknown model id now assumed 1M (was 200K): contextLimit.ts prefers
+ *    the live CLI maxTokens; its 200K floor applies only before live data.
+ *  - Inert: Code Mode (repl-mode already listed), plugin.json
+ *    engines["claude-code"], plugin validate additions, usage-credits menu,
+ *    CLAUDE_CODE_RESUME_HINT_COMMAND (TUI exit hint),
+ *    CLAUDE_CODE_DISABLE_AGENT_PROGRESS_SUMMARIES (opportunity to cut
+ *    subagent summary spend, not taken), Perforce notice, auth/profile
+ *    fixes, OTel, Windows, Chrome, Artifact, MCP UI, all Remote Control,
+ *    Cloud, Self-hosted runner, [VSCode], web, Claude Tag, Code Review.
+ *  - Open items from 2.1.322, re-checked in both accounts' projects/:
+ *     - Idle compaction: still unseen.
+ *     - ui_notify: still zero `ui_notify` frames.
+ *
+ *  Script + prompt: script baselines voice_call_talk; prompt step 4 gains
+ *  "stdout-only fields with host obligations" (the `supersedes` gap was
+ *  invisible to every check).
+ *
+ *  OPEN ITEMS (carry forward; re-check each review):
+ *   - Idle compaction: verify the first real occurrence (2.1.314 block).
+ *   - ui_notify: unverified against a real mod; first `$.ui.notify` seen in
+ *     a transcript or reported banner closes it.
+ *   - `supersedes`: first `"supersedesUuids":[` in a transcript decides
+ *     whether the renderer must drop the named rows.
+ *
+ *  Re-verified 2026-11-13: diff rerun (exit 0, coverage half all "none"),
+ *  changelog still 294 entries for 2.1.323, review tests pass. Every
+ *  ui_notify / idle_compact / voice_call_talk hit in personal projects/ is
+ *  review-session prose, not a record; work projects/ has none. Zero
+ *  supersedes / data-flow-records / derived-from in either account.
+ * *
  * Last review: 2.1.321 -> 2.1.322 on 2026-11-10. Findings: none broken,
  * nothing to change.
  *
@@ -5327,7 +5432,7 @@ import { buildClaudeEnv } from './util/claude-env';
  * `~/.claude.json` fix (we read-modify-write that file, never replace it), and
  * the VSCode screen-reader work.
  */
-export const REVIEWED_CLI_VERSION = '2.1.322';
+export const REVIEWED_CLI_VERSION = '2.1.323';
 
 /**
  * app_settings key holding the user's explicit OmniFex-checkout override.

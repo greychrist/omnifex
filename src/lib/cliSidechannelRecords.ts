@@ -70,6 +70,12 @@ export const CLI_SIDECHANNEL_RECORD_TYPES: ReadonlySet<string> = new Set([
   // (CLI >= 2.1.319, `boundary-cleared`).
   'resume-head-vouch',
   'content-replacement',
+  // Data-flow provenance per tool call, and the sessions this one was derived
+  // from (CLI >= 2.1.323, behind `tengu_pewter_grebe` + `allow_data_flow`).
+  // The CLI strips all three when it hydrates a transcript.
+  'data-flow-records',
+  'data-flow-incomplete',
+  'derived-from',
   'fork-context-ref',
   'frame-link',
   // Request replay (CLI >= 2.1.282 behind `tengu_elegant_meadow`; on by
