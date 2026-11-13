@@ -5,6 +5,23 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.39] — 2026-11-13
+
+### Added
+- Claude Design in OmniFex: sessions now get Claude Code's Artifact tools, so Claude can make designs, slides and other artifacts on claude.ai from any session (on accounts whose plan and organization allow Artifacts).
+- A Design step in the Modern timeline: a Claude Design run folds into one Palette-icon step named for what was made, with an "Open in Claude" button that opens the page in the browser chosen for the session's account. Inside, each call shows the icon of the kind it resembles (read, explore, create, publish, comments).
+- Step colors: Settings › Chats › Modern › Step icons can now color each step kind's icon and the line beside an opened step, with a reset back to gray. Design has its own row.
+
+### Changed
+- The transcript's right-hand stepper joins previous/next message and previous/next prompt into two button groups, both using chevrons; top and bottom stay on their own.
+- The Step icons section heading is larger, with a caption and room above the rows; the other Modern section headings match.
+- Loading tools names the tools it loaded, without their `mcp__` prefixes.
+
+### Fixed
+- In the Modern format, a step whose result has no text (tools loaded, an image) opened onto the classic tool card; it now opens onto a Modern body.
+- Opened thoughts no longer leave a gap of two blank lines beneath their text.
+- Three new Claude Code 2.1.323 transcript records (data-flow provenance) no longer risk drawing as "Unrecognized record" cards.
+
 ## [0.5.38] — 2026-11-12
 
 ### Changed
