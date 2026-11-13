@@ -261,6 +261,33 @@ describe('stepper button icons', () => {
     }
   });
 
+  it('points both step pairs with the same chevrons', () => {
+    const { getByLabelText } = renderTranscript([prompt(), assistant()]);
+    for (const [label, dir] of [
+      ['Previous message', 'up'], ['Next message', 'down'],
+      ['Previous prompt', 'up'], ['Next prompt', 'down'],
+    ] as const) {
+      const icons = iconNames(getByLabelText(label) as HTMLElement).join(' ');
+      expect(icons).toContain(`lucide-chevron-${dir}`);
+      expect(icons).not.toContain('lucide-arrow');
+    }
+  });
+
+  it('joins each step pair into one group and leaves the jump-to-end buttons on their own', () => {
+    const { getByRole, getByLabelText } = renderTranscript([prompt(), assistant()]);
+    const messages = getByRole('group', { name: 'Step by message' });
+    const prompts = getByRole('group', { name: 'Step by prompt' });
+    expect(messages).toContainElement(getByLabelText('Previous message'));
+    expect(messages).toContainElement(getByLabelText('Next message'));
+    expect(prompts).toContainElement(getByLabelText('Previous prompt'));
+    expect(prompts).toContainElement(getByLabelText('Next prompt'));
+    for (const label of ['Scroll to top', 'Scroll to bottom']) {
+      expect(getByLabelText(label).closest('[role="group"]')).toBeNull();
+    }
+    // Groups replace the hairline separators between the pairs.
+    expect(document.querySelectorAll('[data-testid="gutter-bottom"] > [aria-hidden="true"]')).toHaveLength(0);
+  });
+
   it('leaves the jump-to-end buttons as a single glyph', () => {
     // These two aren't about a subject — they go to an end of the transcript,
     // so a subject icon would be noise.

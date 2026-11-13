@@ -1,9 +1,9 @@
 import React, { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { ArrowDown, ArrowUp, ChevronDown, ChevronUp, ChevronsDown, ChevronsUp, MessageSquare, User } from "lucide-react";
+import { ChevronDown, ChevronUp, ChevronsDown, ChevronsUp, MessageSquare, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TooltipSimple } from "@/components/ui/tooltip-modern";
-import { SessionGutter, GUTTER_BUTTON, InspectorGutterButton, type InspectorGutterButtonProps } from "@/components/SessionGutter";
+import { SessionGutter, GUTTER_BUTTON, GUTTER_GROUP_BUTTON, GutterButtonGroup, InspectorGutterButton, type InspectorGutterButtonProps } from "@/components/SessionGutter";
 import { StreamMessage } from "@/components/StreamMessage";
 import { TranscriptRowBoundary } from "@/components/claude/TranscriptRowBoundary";
 import { HiddenEventsGroup } from "@/components/HiddenEventsGroup";
@@ -618,64 +618,66 @@ function ClaudeTranscriptImpl({
           <ChevronsUp className="h-3.5 w-3.5" />
         </Button>
       </TooltipSimple>
-      <TooltipSimple content="Previous message" side="left">
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={stepPrev}
-          aria-label="Previous message"
-          className={GUTTER_BUTTON}
-        >
-          <StepIcon subject={MessageSquare} direction={ChevronUp} />
-        </Button>
-      </TooltipSimple>
-      <TooltipSimple content="Next message" side="left">
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={stepNext}
-          aria-label="Next message"
-          className={GUTTER_BUTTON}
-        >
-          <StepIcon subject={MessageSquare} direction={ChevronDown} />
-        </Button>
-      </TooltipSimple>
-      {/* Separates the two step pairs. Without it the column reads as five
-          interchangeable arrows and you have to hover to find the one you
-          want. */}
-      <div className="mx-auto my-0.5 h-px w-4 bg-border/60" aria-hidden="true" />
-      {/* Wrapped in spans: a disabled Button swallows the pointer events the
-          tooltip trigger needs, so the tooltip would vanish exactly when the
-          reason for the disabled state is worth explaining. */}
-      <TooltipSimple content="Previous prompt" side="left">
-        <span>
+      {/* Each step pair is one joined control, so the column reads as top,
+          two pairs, bottom — no separators needed between them. Both pairs
+          point with the same chevrons; the subject glyph says which is which. */}
+      <GutterButtonGroup label="Step by message">
+        <TooltipSimple content="Previous message" side="left">
           <Button
             variant="ghost"
             size="icon"
-            onClick={promptPrev}
-            aria-label="Previous prompt"
-            disabled={!hasPrompt}
-            className={GUTTER_BUTTON}
+            onClick={stepPrev}
+            aria-label="Previous message"
+            className={GUTTER_GROUP_BUTTON}
           >
-            <StepIcon subject={User} direction={ArrowUp} />
+            <StepIcon subject={MessageSquare} direction={ChevronUp} />
           </Button>
-        </span>
-      </TooltipSimple>
-      <TooltipSimple content="Next prompt" side="left">
-        <span>
+        </TooltipSimple>
+        <TooltipSimple content="Next message" side="left">
           <Button
             variant="ghost"
             size="icon"
-            onClick={promptNext}
-            aria-label="Next prompt"
-            disabled={!hasPrompt}
-            className={GUTTER_BUTTON}
+            onClick={stepNext}
+            aria-label="Next message"
+            className={GUTTER_GROUP_BUTTON}
           >
-            <StepIcon subject={User} direction={ArrowDown} />
+            <StepIcon subject={MessageSquare} direction={ChevronDown} />
           </Button>
-        </span>
-      </TooltipSimple>
-      <div className="mx-auto my-0.5 h-px w-4 bg-border/60" aria-hidden="true" />
+        </TooltipSimple>
+      </GutterButtonGroup>
+      <GutterButtonGroup label="Step by prompt">
+        {/* Wrapped in spans: a disabled Button swallows the pointer events the
+            tooltip trigger needs, so the tooltip would vanish exactly when the
+            reason for the disabled state is worth explaining. */}
+        <TooltipSimple content="Previous prompt" side="left">
+          <span>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={promptPrev}
+              aria-label="Previous prompt"
+              disabled={!hasPrompt}
+              className={GUTTER_GROUP_BUTTON}
+            >
+              <StepIcon subject={User} direction={ChevronUp} />
+            </Button>
+          </span>
+        </TooltipSimple>
+        <TooltipSimple content="Next prompt" side="left">
+          <span>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={promptNext}
+              aria-label="Next prompt"
+              disabled={!hasPrompt}
+              className={GUTTER_GROUP_BUTTON}
+            >
+              <StepIcon subject={User} direction={ChevronDown} />
+            </Button>
+          </span>
+        </TooltipSimple>
+      </GutterButtonGroup>
       <TooltipSimple content="Scroll to bottom" side="left">
         <Button
           variant="ghost"

@@ -13,6 +13,33 @@ export const GUTTER_BUTTON =
   'h-8 w-8 hover:bg-accent/50 transition-colors bg-background/80 backdrop-blur-sm border border-border/50';
 
 /**
+ * Chrome for a button inside a GutterButtonGroup: the group draws the border,
+ * background and corners, so the button keeps only its size and hover.
+ */
+export const GUTTER_GROUP_BUTTON = 'h-8 w-8 rounded-none hover:bg-accent/50 transition-colors';
+
+/**
+ * A run of rail buttons joined into one capsule — a pair that steps the same
+ * thing both ways, so it reads as one control rather than two near-identical
+ * buttons. One border round the outside and a hairline between the halves
+ * (`divide-y`: its colour comes from the global border-color reset, like
+ * every other border here). Each direct child is a button, or the span a
+ * disabled button sits in for its tooltip; spans are made blocks so the
+ * hairline draws.
+ */
+export function GutterButtonGroup({ label, children }: { label: string; children: React.ReactNode }): React.JSX.Element {
+  return (
+    <div
+      role="group"
+      aria-label={label}
+      className="flex flex-col divide-y overflow-hidden rounded-md border border-border/50 bg-background/80 backdrop-blur-sm [&>span]:flex"
+    >
+      {children}
+    </div>
+  );
+}
+
+/**
  * The right-hand rail: a full-height column with two ends.
  *
  * `children` sit at the bottom, where the scroll and stepper controls belong
