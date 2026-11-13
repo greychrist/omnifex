@@ -425,7 +425,18 @@ export function createClaudeCliEngine(
         // `$.ui.notify` notifications, so the CLI sends them as
         // `system/ui_notify` instead of telling the mod "no_surface".
         // Interactive sessions only: buildClaudeEnv also feeds `claude -p`.
-        env: { ...buildClaudeEnv(p.configDir), CLAUDE_CODE_NOTIFICATIONS_HOST: '1' },
+        //
+        // CLAUDE_CODE_ARTIFACT (2.1.323): the Artifact tool — Claude Design
+        // in Claude Code — is off by default for an `sdk-cli` session, which
+        // is what the CLI calls itself under stream-json. '1' opts in; the
+        // account still has to pass the CLI's own gates (Anthropic sign-in,
+        // plan, org policy). Before the spread, so an inherited value wins:
+        // `=0` there, or `enableArtifact: false` in settings, turns it off.
+        env: {
+          CLAUDE_CODE_ARTIFACT: '1',
+          ...buildClaudeEnv(p.configDir),
+          CLAUDE_CODE_NOTIFICATIONS_HOST: '1',
+        },
       }) as ChildProcessWithoutNullStreams;
     } catch (err) {
       throw err;

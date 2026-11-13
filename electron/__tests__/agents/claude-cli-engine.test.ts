@@ -6,8 +6,11 @@ import { createClaudeCliEngine } from '../../services/agents/claude-cli-engine';
 import type { AgentEngineExit, AgentMessage } from '../../services/agents/types';
 
 vi.mock('node:child_process', () => ({ spawn: vi.fn() }));
+// The real buildClaudeEnv spreads process.env; the stand-in spreads this, so
+// a test can say what the parent shell carried.
+const inheritedEnv: Record<string, string> = {};
 vi.mock('../../services/util/claude-env', () => ({
-  buildClaudeEnv: (configDir: string) => ({ CLAUDE_CONFIG_DIR: configDir }),
+  buildClaudeEnv: (configDir: string) => ({ ...inheritedEnv, CLAUDE_CONFIG_DIR: configDir }),
 }));
 
 const mockedSpawn = vi.mocked(spawn);
@@ -82,6 +85,33 @@ describe('ClaudeCliEngine', () => {
     await engine.start(baseParams);
     const opts = mockedSpawn.mock.calls[0][2] as { env: Record<string, string> };
     expect(opts.env.CLAUDE_CODE_NOTIFICATIONS_HOST).toBe('1');
+  });
+
+  // CLI 2.1.323: the Artifact tool (Claude Design in Claude Code) is off by
+  // default for an `sdk-cli` session unless the host sets CLAUDE_CODE_ARTIFACT.
+  // Verified live: 26 tools without it, 29 (Artifact, ArtifactComments,
+  // ArtifactData) with it.
+  it('opts sessions into the Artifact tool', async () => {
+    const fake = makeFakeChild();
+    mockedSpawn.mockReturnValue(fake as never);
+    const engine = createClaudeCliEngine({ tabId: 't', claudeBinaryPath: '/bin/claude' });
+    await engine.start(baseParams);
+    const opts = mockedSpawn.mock.calls[0][2] as { env: Record<string, string> };
+    expect(opts.env.CLAUDE_CODE_ARTIFACT).toBe('1');
+  });
+
+  it('leaves an inherited CLAUDE_CODE_ARTIFACT alone, so =0 still turns it off', async () => {
+    inheritedEnv.CLAUDE_CODE_ARTIFACT = '0';
+    try {
+      const fake = makeFakeChild();
+      mockedSpawn.mockReturnValue(fake as never);
+      const engine = createClaudeCliEngine({ tabId: 't', claudeBinaryPath: '/bin/claude' });
+      await engine.start(baseParams);
+      const opts = mockedSpawn.mock.calls[0][2] as { env: Record<string, string> };
+      expect(opts.env.CLAUDE_CODE_ARTIFACT).toBe('0');
+    } finally {
+      delete inheritedEnv.CLAUDE_CODE_ARTIFACT;
+    }
   });
 
   it('enables --forward-subagent-text so subagent narration reaches the stream', async () => {
