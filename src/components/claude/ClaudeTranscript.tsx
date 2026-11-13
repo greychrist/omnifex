@@ -69,6 +69,8 @@ export interface ClaudeTranscriptProps extends InspectorGutterButtonProps {
   viewMode: ViewMode;
   /** Resolved account type, used by StreamMessage for account-specific UI. */
   accountType: string | undefined;
+  /** The session's account config dir, for links that open in its browser. */
+  configDir?: string | null;
   /** Stable resend callback (memoized in the shell). */
   onResend: (text: string, images: string[] | undefined) => void;
   /** Called when a URL is detected inside a rendered message. */
@@ -134,6 +136,7 @@ function ClaudeTranscriptImpl({
   messages,
   viewMode: liveViewMode,
   accountType,
+  configDir,
   onResend,
   waitingForPermission,
   outstandingWork,
@@ -300,8 +303,8 @@ function ClaudeTranscriptImpl({
   // moves while it runs. It shows even under a live run (auto-compact).
   const compacting = currentActivity === COMPACTING_LABEL;
   const modernRowContext = useMemo<ModernRowContext>(
-    () => ({ lookupsFor: stableLookupsFor, tabId, accountType, onResend }),
-    [stableLookupsFor, tabId, accountType, onResend],
+    () => ({ lookupsFor: stableLookupsFor, tabId, configDir, accountType, onResend }),
+    [stableLookupsFor, tabId, configDir, accountType, onResend],
   );
 
   const parentRef = useRef<HTMLDivElement>(null);

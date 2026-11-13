@@ -12,6 +12,9 @@ vi.mock('@/hooks', async (orig) => ({
   useTheme: () => ({ theme: 'gray', setTheme: () => {}, isLoading: false }),
 }));
 
+const openSignInLink = vi.fn(async () => {});
+vi.mock('@/lib/signInBrowser', () => ({ openSignInLink: (...a: unknown[]) => openSignInLink(...(a as [])) }));
+
 import type * as React from 'react';
 import { ChainOfThought } from '@/components/transcript-modern/ChainOfThought';
 import { MessageRenderingPreviewProvider } from '@/contexts/MessageRenderingContext';
@@ -109,6 +112,15 @@ describe('Modern chain of thought — shadcn Trace steps', () => {
       expect(within(s as HTMLElement).getByRole('button', { name: /Copy/ })).toBeInTheDocument();
       expect(within(s as HTMLElement).getByRole('button', { name: /raw JSON/i })).toBeInTheDocument();
     });
+  });
+
+  it('drops the blank lines a thought ends with, so it has no gap under it', () => {
+    const trailing: WorkEntry = { ...thought, key: 'tt', text: 'I will grep for it.\n\n' } as WorkEntry;
+    // A run that only thought has no "Worked in" header around it.
+    render(<ChainOfThought entries={[trailing]} nodes={[]} live={false} ctx={ctx} />);
+    fireEvent.click(screen.getByRole('button', { name: /^Thought/ }));
+    const body = screen.getByText(/I will grep for it\./);
+    expect(body.textContent).toBe('I will grep for it.');
   });
 
   it('sets an opened thought brighter than the muted step chrome', () => {
@@ -261,3 +273,109 @@ describe('Modern chain of thought — Settings › Chats › Modern', () => {
     expect(rule.style.borderLeftColor).toBe('');
   });
 });
+
+const resultWith = (id: string, content: unknown[]) =>
+  ({ kind: 'user', raw: { uuid: id, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content }] } } }) as unknown as JsonlNode;
+
+describe('Modern chain of thought — results with no text', () => {
+  it('opens a tool load onto the tools it loaded, not the classic card', () => {
+    const entry = {
+      type: 'tool', key: 'ts', node: node('ts'), id: 'ts', name: 'ToolSearch',
+      input: { query: 'select:mcp__claude-artifacts__guide,Read' }, status: 'done', resultText: '',
+      resultNode: resultWith('ts', [{ type: 'tool_reference', tool_name: 'mcp__claude-artifacts__guide' }, { type: 'tool_reference', tool_name: 'Read' }]),
+    } as WorkEntry;
+    open([entry]);
+    const trigger = screen.getByRole('button', { name: /Loaded tools/ });
+    expect(trigger).toHaveTextContent('guide, Read');
+    expect(trigger).not.toHaveTextContent('mcp__');
+    fireEvent.click(trigger);
+    expect(screen.queryByText('Tool Call')).toBeNull();
+    expect(document.querySelector('[data-stub-message]')).toBeNull();
+    expect(screen.getByText('claude-artifacts · guide')).toBeInTheDocument();
+  });
+
+  it('draws an image result as the image, in the Modern body', () => {
+    const entry = {
+      type: 'tool', key: 'sh', node: node('sh'), id: 'sh', name: 'mcp__shots__screenshot',
+      input: {}, status: 'done', resultText: '',
+      resultNode: resultWith('sh', [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AAAA' } }]),
+    } as WorkEntry;
+    open([entry]);
+    fireEvent.click(screen.getByRole('button', { name: /screenshot/ }));
+    const img = document.querySelector('[data-step-image]') as HTMLImageElement;
+    expect(img.src).toBe('data:image/png;base64,AAAA');
+    expect(screen.queryByText('Tool Call')).toBeNull();
+  });
+});
+
+describe('Modern chain of thought — a Claude Design run', () => {
+  const A = (t: string) => `mcp__claude-artifacts__${t}`;
+  const published = '<artifact-content-authored-by-others/>\n{"slug":"s","title":"Habit Tracker Today","url":"https://claude.ai/artifact/9aQk"}';
+
+  function designRun(pending = false) {
+    return [
+      tool(A('guide'), { topic: 'design' }, '# Design'),
+      tool(A('create_from_type'), { title: 'Habit Tracker Today' }, '{"slug":"s"}'),
+      tool('Write', { file_path: '/private/tmp/x/scratchpad/habit/Main.dc.html', content: '<html>' }, 'ok'),
+      pending
+        ? tool(A('publish_files'), {}, undefined, 'pending')
+        : tool(A('publish_files'), {}, published),
+    ];
+  }
+
+  it('folds the run into one Design step with the palette icon and a link to the page', () => {
+    open(designRun());
+    const steps = document.querySelectorAll('[data-step]');
+    expect(steps).toHaveLength(1);
+    const chip = screen.getByText(/^Designed Habit Tracker Today/).closest('[data-slot="trace-line"]')!.querySelector('[data-step-kind]')!;
+    expect(chip).toHaveAttribute('data-step-kind', 'design');
+    expect(chip.querySelector('.lucide-palette')).not.toBeNull();
+    const link = screen.getByRole('link', { name: /Open in Claude/ });
+    expect(link).toHaveAttribute('href', 'https://claude.ai/artifact/9aQk');
+    // The inner steps wait behind the fold.
+    expect(screen.queryByText(/Read the design guide/)).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /Designed Habit Tracker Today/ }));
+    expect(screen.getByText(/Read the design guide/)).toBeInTheDocument();
+    expect(screen.getByText(/^Wrote Main\.dc\.html/)).toBeInTheDocument();
+  });
+
+  it('says Designing while the run is live, with no link yet', () => {
+    render(<ChainOfThought entries={designRun(true)} nodes={[]} live ctx={ctx} />);
+    expect(screen.getByText(/^Designing Habit Tracker Today/)).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Open in Claude/ })).toBeNull();
+  });
+
+  it('says Worked on when the run ended without publishing', () => {
+    open([tool(A('create_from_type'), { title: 'Habit Tracker Today' }, '{"slug":"s"}'), tool(A('guide'), { topic: 'design' }, '# D')]);
+    expect(screen.getByText(/^Worked on Habit Tracker Today/)).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Open in Claude/ })).toBeNull();
+  });
+
+  it('opens the page in the browser chosen for the session\'s account', () => {
+    render(<ChainOfThought entries={designRun()} nodes={[]} live={false} ctx={{ ...ctx, configDir: '/Users/me/.claude-work' }} />);
+    fireEvent.click(screen.getByRole('button', { name: /Worked in/ }));
+    fireEvent.click(screen.getByRole('link', { name: /Open in Claude/ }));
+    expect(openSignInLink).toHaveBeenCalledWith('https://claude.ai/artifact/9aQk', '/Users/me/.claude-work');
+  });
+
+  it('puts the link on the title line, after the name and before the step count', () => {
+    open(designRun());
+    const title = screen.getByText(/^Designed Habit Tracker Today/);
+    const link = screen.getByRole('link', { name: /Open in Claude/ });
+    const count = screen.getByText('4 steps');
+    const row = link.closest('[data-design-line]');
+    expect(row).not.toBeNull();
+    expect(row).toContainElement(title);
+    expect(row).toContainElement(count);
+    expect(title.compareDocumentPosition(link) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(link.compareDocumentPosition(count) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // The link is never inside a button.
+    expect(link.closest('button')).toBeNull();
+    // Drawn as a small outlined button, so it does not read as more title.
+    expect(link).toHaveClass('rounded-md', 'border', 'text-xs');
+    // The step count opens the fold too.
+    fireEvent.click(count);
+    expect(screen.getByText(/Read the design guide/)).toBeInTheDocument();
+  });
+});
+

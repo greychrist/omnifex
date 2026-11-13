@@ -78,8 +78,12 @@ export const TraceCollapsible = Collapsible;
 export function TraceCollapsibleTrigger({
   className,
   children,
+  chevron = true,
   ...props
-}: React.ComponentProps<typeof CollapsibleTrigger>) {
+}: React.ComponentProps<typeof CollapsibleTrigger> & {
+  /** Off for a trigger that shares its line with another, which draws it. */
+  chevron?: boolean;
+}) {
   return (
     <CollapsibleTrigger
       data-slot="trace-collapsible-trigger"
@@ -90,9 +94,11 @@ export function TraceCollapsibleTrigger({
       {...props}
     >
       {children}
-      <TraceIcon className="transition-transform group-aria-expanded/trace-trigger:rotate-90">
-        <ChevronRightIcon />
-      </TraceIcon>
+      {chevron && (
+        <TraceIcon className="transition-transform group-aria-expanded/trace-trigger:rotate-90">
+          <ChevronRightIcon />
+        </TraceIcon>
+      )}
     </CollapsibleTrigger>
   );
 }

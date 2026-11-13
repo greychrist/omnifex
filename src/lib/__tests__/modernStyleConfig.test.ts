@@ -30,6 +30,7 @@ describe('Modern style config', () => {
     expect(m.stepIcons.thought).toBe('Brain');
     expect(m.stepIcons.command).toBe('Terminal');
     expect(m.stepIcons.tool).toBe('Wrench');
+    expect(m.stepIcons.design).toBe('Palette');
     // No colour: every step draws in the built-in gray.
     expect(Object.values(m.stepColors).every((c) => c === null)).toBe(true);
     expect(Object.keys(m.stepColors).sort()).toEqual([...Object.keys(m.stepIcons)].sort());

@@ -2480,6 +2480,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
         messages={messages}
         viewMode={viewMode}
         accountType={accountResolution?.account.subscription_label}
+        configDir={accountResolution?.account.config_dir ?? null}
         onResend={onResendStable}
         waitingForPermission={waitingForPermission}
         outstandingWork={outstandingWork}

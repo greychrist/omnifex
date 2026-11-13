@@ -32,6 +32,9 @@ import { cn } from '@/lib/utils';
 export interface ModernRowContext {
   lookupsFor: (node: JsonlNode) => RowLookups;
   tabId: string;
+  /** The session's account config dir: links to its private pages open in
+   *  the browser chosen for that account. */
+  configDir?: string | null;
   accountType?: string;
   onResend?: (text: string, images?: string[]) => void;
 }

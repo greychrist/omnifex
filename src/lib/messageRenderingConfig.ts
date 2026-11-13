@@ -686,7 +686,7 @@ export const CARD_BORDER_RADIUS_MAX = 24;
  *  (`stepKind` in modernSteps.ts names every tool's). */
 export const MODERN_STEP_KINDS = [
   "thought", "command", "commit", "branch", "read", "edit", "create", "search",
-  "explore", "web", "agent", "tasks", "question", "skill", "mcp", "tool",
+  "explore", "web", "agent", "tasks", "question", "skill", "design", "mcp", "tool",
 ] as const;
 export type ModernStepKind = (typeof MODERN_STEP_KINDS)[number];
 
@@ -760,6 +760,7 @@ export const DEFAULT_MODERN: ModernStyle = {
     tasks: "ListTodo",
     question: "MessageCircleQuestion",
     skill: "Sparkles",
+    design: "Palette",
     mcp: "Plug",
     tool: "Wrench",
   },

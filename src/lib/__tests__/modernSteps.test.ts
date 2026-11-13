@@ -43,6 +43,33 @@ describe('describeToolStep — verbs follow the step, as in shadcn Trace', () =>
   });
 });
 
+describe('describeToolStep — Claude Design and tool loading', () => {
+  it('names the tools a ToolSearch select loaded, without the mcp prefixes', () => {
+    expect(describeToolStep('ToolSearch', { query: 'select:mcp__claude-artifacts__list_types,mcp__claude-artifacts__guide,Read' }, 'done'))
+      .toEqual({ title: 'Loaded tools', badges: ['list_types, guide, Read'] });
+  });
+
+  it('keeps a keyword search as typed', () => {
+    expect(describeToolStep('ToolSearch', { query: 'slack send' }, 'done')).toEqual({ title: 'Loaded tools', badges: ['slack send'] });
+  });
+
+  it('words the Claude Design calls', () => {
+    expect(describeToolStep('mcp__claude-artifacts__guide', { topic: 'design' }, 'done').title).toBe('Read the design guide');
+    expect(describeToolStep('mcp__claude-artifacts__list_types', {}, 'done').title).toBe('Listed artifact types');
+    expect(describeToolStep('mcp__claude-artifacts__create_from_type', { title: 'Habit Tracker Today' }, 'running').title)
+      .toBe('Creating Habit Tracker Today');
+    expect(describeToolStep('mcp__claude-artifacts__publish_files', {}, 'done').title).toBe('Published');
+    expect(describeToolStep('mcp__claude-artifacts__publish_version', {}, 'error').title).toBe('Failed to publish');
+    expect(describeToolStep('mcp__claude-artifacts__list_artifacts', {}, 'done').title).toBe('Listed artifacts');
+    expect(describeToolStep('mcp__claude-artifacts__list_files', {}, 'running').title).toBe('Listing files');
+    expect(describeToolStep('mcp__claude-artifacts__read_file', { path: 'project/canvas.json' }, 'done').title).toBe('Read canvas.json');
+    expect(describeToolStep('mcp__claude-artifacts__read_comments', {}, 'done').title).toBe('Read comments');
+    expect(describeToolStep('mcp__claude-artifacts__reply_comment', {}, 'done').title).toBe('Replied to a comment');
+    expect(describeToolStep('mcp__claude-artifacts__resolve_comment', {}, 'error').title).toBe('Failed to resolve a comment');
+    expect(describeToolStep('mcp__claude-artifacts__db_query', {}, 'done').title).toBe('db query');
+  });
+});
+
 describe('traceHeader', () => {
   it('counts the steps and gives the time as a description', () => {
     expect(traceHeader({ steps: 5, failed: 0, ms: 32_400 })).toEqual({ title: 'Worked in 5 steps', description: '32s' });
@@ -95,6 +122,21 @@ describe('stepKind — the icon names the action, not its status', () => {
     expect(stepKind('Skill', {})).toBe('skill');
     expect(stepKind('mcp__omnifex__progress', {})).toBe('mcp');
     expect(stepKind('Whatever', {})).toBe('tool');
+  });
+
+  it('gives each Claude Design call the kind it resembles', () => {
+    const A = (t: string) => `mcp__claude-artifacts__${t}`;
+    const kinds: [string, string][] = [
+      [A('guide'), 'read'], [A('describe_type'), 'read'], [A('read_artifact'), 'read'], [A('read_file'), 'read'],
+      [A('list_types'), 'explore'], [A('list_artifacts'), 'explore'], [A('list_files'), 'explore'], [A('list_assets'), 'explore'],
+      [A('create_from_type'), 'create'],
+      [A('publish_files'), 'design'], [A('publish_version'), 'design'], [A('edit_version'), 'design'],
+      [A('read_comments'), 'question'], [A('reply_comment'), 'question'], [A('reply_shared_comment'), 'question'], [A('resolve_comment'), 'question'],
+      [A('db_query'), 'mcp'], [A('watch'), 'mcp'],
+      ['Artifact', 'design'], ['ArtifactComments', 'question'], ['ArtifactData', 'mcp'],
+    ];
+    for (const [name, kind] of kinds) expect(stepKind(name, {}), name).toBe(kind);
+    expect(stepKind('mcp__other__publish_version', {})).toBe('mcp');
   });
 
   it('tells commits and new branches apart from other commands', () => {

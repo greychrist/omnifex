@@ -41,6 +41,7 @@ const STEP_LABELS: Record<ModernStepKind, { label: string; hint: string }> = {
   tasks: { label: "Tasks", hint: "TodoWrite, Task tools" },
   question: { label: "Question", hint: "AskUserQuestion" },
   skill: { label: "Skill", hint: "Skill" },
+  design: { label: "Design", hint: "Claude Design (Artifacts)" },
   mcp: { label: "MCP tool", hint: "mcp__*" },
   tool: { label: "Other tool", hint: "anything else" },
 };

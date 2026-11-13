@@ -268,7 +268,7 @@ describe('AppearanceSettings — Modern', () => {
 
   it('lists an icon for every kind of step', async () => {
     const editor = await openModern();
-    for (const label of ['Thought', 'Command', 'Commit', 'Read', 'Edit', 'Web', 'Agent', 'MCP tool', 'Other tool']) {
+    for (const label of ['Thought', 'Command', 'Commit', 'Read', 'Edit', 'Web', 'Agent', 'Design', 'MCP tool', 'Other tool']) {
       expect(within(editor).getByRole('group', { name: `${label} step icon` })).toBeInTheDocument();
     }
   });
