@@ -5,6 +5,12 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.41] — 2026-11-14
+
+### Changed
+
+- Modern format: a step kind given a custom colour in Appearance now colours the step's title as well as its icon and rule, as an answered question does — thoughts, tool steps and design runs alike. A running step shimmers in that colour rather than gray. Failed steps stay red.
+
 ## [0.5.40] — 2026-11-14
 
 ### Fixed
