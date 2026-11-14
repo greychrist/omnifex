@@ -3,7 +3,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import * as React from 'react';
 import { render, cleanup, screen, fireEvent } from '@testing-library/react';
 import { TooltipProvider } from '@/components/ui/tooltip-modern';
-import { SessionGutter, InspectorGutterButton } from '@/components/SessionGutter';
+import { SessionGutter, InspectorGutterButton, GUTTER_BUTTON, GUTTER_GROUP_BUTTON } from '@/components/SessionGutter';
 
 const withTooltips = (ui: React.ReactNode) => render(<TooltipProvider>{ui}</TooltipProvider>);
 
@@ -84,5 +84,22 @@ describe('SessionGutter', () => {
     expect(rail(container).className).toContain('pointer-events-none');
     expect(screen.getByTestId('gutter-top').className).toContain('pointer-events-auto');
     expect(screen.getByTestId('gutter-bottom').className).toContain('pointer-events-auto');
+  });
+});
+
+// Tailwind width token → px (w-8 = 32px, w-[30px] = 30px).
+function widthPx(classes: string): number {
+  const m = classes.split(/\s+/).find((c) => /^w-(\d+|\[\d+px\])$/.test(c));
+  if (!m) throw new Error(`no width class in "${classes}"`);
+  const arb = /^w-\[(\d+)px\]$/.exec(m);
+  return arb ? Number(arb[1]) : Number(m.slice(2)) * 4;
+}
+
+describe('gutter button widths', () => {
+  it('a standalone rail button is as wide as a button group', () => {
+    // A standalone button's border is inside its width (border-box); the
+    // group draws a 1px border OUTSIDE its buttons, so a grouped button must
+    // be 2px narrower for the column to line up.
+    expect(widthPx(GUTTER_GROUP_BUTTON) + 2).toBe(widthPx(GUTTER_BUTTON));
   });
 });

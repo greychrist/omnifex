@@ -14,9 +14,12 @@ export const GUTTER_BUTTON =
 
 /**
  * Chrome for a button inside a GutterButtonGroup: the group draws the border,
- * background and corners, so the button keeps only its size and hover.
+ * background and corners, so the button keeps only its size and hover. It is
+ * 2px narrower than GUTTER_BUTTON because the group's 1px border sits outside
+ * its buttons, while a standalone button's sits inside its own width — at
+ * w-8 the groups stood 2px wider than the scroll-to-top/bottom buttons.
  */
-export const GUTTER_GROUP_BUTTON = 'h-8 w-8 rounded-none hover:bg-accent/50 transition-colors';
+export const GUTTER_GROUP_BUTTON = 'h-8 w-[30px] rounded-none hover:bg-accent/50 transition-colors';
 
 /**
  * A run of rail buttons joined into one capsule — a pair that steps the same
