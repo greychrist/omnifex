@@ -5,6 +5,17 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.40] — 2026-11-14
+
+### Fixed
+
+- Permission cards for Bash commands no longer offer a made-up "Always allow" rule when Claude Code offers none. For compound commands OmniFex used to suggest a rule built from the first word (e.g. `Bash(f=$(grep:*)`) that matched nothing and granted too much; those cards now offer Allow once or Deny, and say why.
+- The scroll-to-top and scroll-to-bottom buttons in the transcript's right-hand rail are now the same width as the step-by-message and step-by-prompt buttons.
+
+### Changed
+
+- Reviewed Claude Code 2.1.324–2.1.325 against OmniFex; no breaking changes found.
+
 ## [0.5.39] — 2026-11-13
 
 ### Added
