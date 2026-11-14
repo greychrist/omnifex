@@ -164,7 +164,7 @@ export function ReasoningLine({
   const line = (
     <TraceLine status={status}>
       <KindIcon kind="thought" color={color} />
-      <TraceTitle>{running ? <Shimmer>{title}</Shimmer> : title}</TraceTitle>
+      <TraceTitle style={titleStyle(color)}>{running ? <Shimmer>{title}</Shimmer> : title}</TraceTitle>
       {tokens !== null && <TraceDescription>({thinkingTokensLabel(tokens)})</TraceDescription>}
     </TraceLine>
   );
@@ -182,10 +182,16 @@ export function ReasoningLine({
   );
 }
 
-/** Settings › Chats › Modern › Step icons: the colour chosen for a kind, or
+/** Settings › Chats › Modern › Step icons: the colour chosen for a kind — its
+ *  icon chip, title and opened rule take it, as an answered question does — or
  *  undefined for the built-in gray. */
 function useStepColor(kind: StepKind | 'thought'): string | undefined {
   return useMessageRenderingConfig().config.modern.stepColors[kind] ?? undefined;
+}
+
+/** A step title in its kind's colour, shimmering in it while it runs. */
+function titleStyle(color: string | undefined): React.CSSProperties | undefined {
+  return color ? ({ color, '--modern-shimmer-color': color } as React.CSSProperties) : undefined;
 }
 
 /** A #rrggbb at half strength, for the chip's border (as a failed step's);
@@ -246,7 +252,7 @@ function ToolStep({ entry, live }: { entry: ToolEntry; live: boolean }) {
   const line = (
     <TraceLine status={status}>
       <KindIcon kind={kind} color={color} />
-      <TraceTitle>{status === 'running' ? <Shimmer>{text.title}</Shimmer> : text.title}</TraceTitle>
+      <TraceTitle style={titleStyle(color)}>{status === 'running' ? <Shimmer>{text.title}</Shimmer> : text.title}</TraceTitle>
       {text.badges && (
         <TraceDescription className={cn(text.codeBadges && 'font-mono text-xs')}>
           {text.badges.join(' · ')}
@@ -300,7 +306,7 @@ function DesignStep({ run, live, configDir }: { run: DesignRun; live: boolean; c
           <TraceCollapsibleTrigger chevron={false} className="min-w-0">
             <TraceLine status={status}>
               <KindIcon kind="design" color={color} />
-              <TraceTitle>{running ? <Shimmer>{title}</Shimmer> : title}</TraceTitle>
+              <TraceTitle style={titleStyle(color)}>{running ? <Shimmer>{title}</Shimmer> : title}</TraceTitle>
             </TraceLine>
           </TraceCollapsibleTrigger>
           {summary.url && <DesignLink url={summary.url} configDir={configDir} />}

@@ -246,18 +246,25 @@ describe('Modern chain of thought — Settings › Chats › Modern', () => {
     const chip = screen.getByText(/^Ran npm test/).closest('[data-slot="trace-line"]')!.querySelector<HTMLElement>('[data-step-kind]')!;
     expect(chip.style.color).toBe('rgb(34, 197, 94)');
     expect(chip.style.borderColor).not.toBe('');
+    // The title takes the colour too, as the answered question's does.
+    expect(screen.getByText(/^Ran npm test/).closest<HTMLElement>('[data-slot="trace-title"]')!.style.color).toBe('rgb(34, 197, 94)');
     fireEvent.click(screen.getByRole('button', { name: /Ran npm test/ }));
     const rule = screen.getByText('ok').closest<HTMLElement>('[data-slot="trace-collapsible-content"] > div')!;
     expect(rule.style.borderLeftColor).toBe('rgb(34, 197, 94)');
     // Another kind keeps the gray.
     const other = document.querySelector<HTMLElement>('[data-step-kind="search"]')!;
     expect(other.style.color).toBe('');
+    expect(other.closest('[data-slot="trace-line"]')!.querySelector<HTMLElement>('[data-slot="trace-title"]')!.style.color).toBe('');
   });
 
   it('colours a thought and the rule beside it', () => {
     withModern({ timelineOpen: 'always', stepColors: { thought: '#0ea5e9' } as ModernStyle['stepColors'] },
       <ChainOfThought entries={[thought]} nodes={[]} live={false} ctx={ctx} />);
     expect(document.querySelector<HTMLElement>('[data-step-kind="thought"]')!.style.color).toBe('rgb(14, 165, 233)');
+    const title = document.querySelector<HTMLElement>('[data-slot="trace-title"]')!;
+    expect(title.style.color).toBe('rgb(14, 165, 233)');
+    // A running title shimmers in the colour, not the gray.
+    expect(title.style.getPropertyValue('--modern-shimmer-color')).toBe('#0ea5e9');
     fireEvent.click(screen.getByRole('button', { name: /^Thought/ }));
     const rule = screen.getByText('hmm').closest<HTMLElement>('[data-slot="trace-collapsible-content"] > div')!;
     expect(rule.style.borderLeftColor).toBe('rgb(14, 165, 233)');
@@ -268,6 +275,7 @@ describe('Modern chain of thought — Settings › Chats › Modern', () => {
       <ChainOfThought entries={[tool('Bash', { command: 'x' }, 'boom', 'error')]} nodes={[]} live={false} ctx={ctx} />);
     const chip = document.querySelector<HTMLElement>('[data-step-kind="command"]')!;
     expect(chip.style.color).toBe('');
+    expect(chip.closest('[data-slot="trace-line"]')!.querySelector<HTMLElement>('[data-slot="trace-title"]')!.style.color).toBe('');
     fireEvent.click(screen.getByRole('button', { name: /Failed to run x/ }));
     const rule = screen.getByText('boom').closest<HTMLElement>('[data-slot="trace-collapsible-content"] > div')!;
     expect(rule.style.borderLeftColor).toBe('');
