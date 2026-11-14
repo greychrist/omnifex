@@ -166,7 +166,11 @@ grep, a file read or a transcript behind it.
    - **Session lifecycle and turn state**: \`docs/session-lifecycle.md\`,
      \`electron/services/sessions/stream-forward.ts\`
    - **Permission rules**: \`docs/permission-syntax.md\`, plus the official
-     permissions docs
+     permissions docs. \`electron/services/sessions/permissions.ts\`
+     (\`buildDefaultRule\`, \`withDefaultRuleSuggestion\`) invents a rule
+     whenever the CLI's \`permission_suggestions\` carry none, so a change in
+     what the CLI chooses to suggest moves the card's "Always allow" with no
+     diff signal. Changelog only.
    - **Hooks**: \`src/types/hooks.ts\` (\`HOOK_EVENTS\`), \`src/components/HooksEditor.tsx\`
    - **\`/usage\` scraping**: \`electron/services/usage-runner.ts\`,
      \`electron/services/usage-runner/parser.ts\`

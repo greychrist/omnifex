@@ -65,6 +65,86 @@ import { buildClaudeEnv } from './util/claude-env';
  *    and no `Artifact` is working, not broken. Neither present = re-read
  *    the gate.
  *
+ * Last review: 2.1.323 -> 2.1.325 on 2026-11-13. Findings: none broken;
+ * one latent permission-card gap (Bash "Always allow" fallback), fixed the
+ * same day.
+ *
+ *  Changelog coverage: 2.1.325 (139 entries); 2.1.324 has no entry. Both
+ *  ends installed. Script exit 0. Merge map (46), subtype (167), system
+ *  (81), hook_event_name (33), SDK requests (55), origin kinds (14),
+ *  can_use_tool keys (11) identical; /usage anchors unchanged; coverage
+ *  half all "none".
+ *  - NOISE: type +confirm/+control_closed/+foregrounded/+log_defect/+read(_requested,_answered,_failed)/
+ *    +write_answered/+write_failed/+subject_changed/+wake/+woke are the
+ *    reducer of the new privacy/training-consent settings screen ("/login
+ *    asks permission to change your privacy settings"). `control_closed`
+ *    therefore shows as a new "control envelope" — the script's
+ *    `type:"control_*"` regex can't tell a reducer event from a stdio
+ *    envelope; it is not on the wire. +redraw is ui_render's act. -eval
+ *    inert. Flags +--path (git config safe-flag list) / +--trusted-folder
+ *    (count 0 as a quoted flag) are not CLI flags we pass.
+ *  - GAP (b), FIXED: "Always allow" in SDK hosts now offers a rule
+ *    only when saving it would allow that command again. permissions.ts
+ *    `withDefaultRuleSuggestion` + `buildDefaultRule` insert
+ *    `Bash(<first word>:*)` whenever the CLI's suggestions carry no rules,
+ *    so for asks the CLI now deliberately leaves rule-less (compound
+ *    commands, the new compound-command asks) OmniFex offers a rule the CLI
+ *    judged useless — and broader (e.g. `cd:*`). The CLI signals this by
+ *    omission, not `suppress_always_allow_rule` (describe unchanged).
+ *    Confirmed in app_logs `permission.request`: 2026-11-08 compound
+ *    commands got `Bash(f=$(grep:*)`. Fixed: buildDefaultRule invents no
+ *    Bash rule; a Bash ask with no CLI rule and no folder grant goes to the
+ *    card as suppress_always_allow_rule (allow once / deny), so the card
+ *    doesn't fall back to a bare `Bash`. Card copy names both reasons.
+ *  - (a) applyFlagSettings: one invalid value no longer wipes earlier
+ *    calls' flag settings; the call is refused with an error. Our two
+ *    callers (queries.ts setEffort / applyPermissions) already catch;
+ *    applyPermissions surfaces a warn notification. In our favour: an
+ *    invalid rule in the permissions push used to drop the effort level.
+ *  - (c) not taken: reload_plugins `refuse_if_busy` (queries.ts getPlugins
+ *    reloads unconditionally on an explicit refresh); `api_error_type` on
+ *    assistant/result errors (system.api_error card could key on it);
+ *    `hook_no_verdict` on the existing warning frame (renders `content`
+ *    as before). Zero occurrences of either in both accounts.
+ *  - Describe moves, inert: settings/permission answers `withheld` (cloud
+ *    connections only); startup_failure_reason config_file_invalid +
+ *    backup fields; pluginDigests deprecated; managed-plugin hook order;
+ *    recap/ask "key that cannot be masked"; voice-call text, MCP status
+ *    reasons, remote-tool envelope, Theme image pieces, Windows sandbox
+ *    backend, skill-save schema, archived flag, capabilities list.
+ *  - Object keys +579 -59: consent screen, sandbox, artifact wake, MCP
+ *    tasks internals. Nothing new on user/assistant records, permission
+ *    requests or the initialize reply we read.
+ *  - Changelog, in our favour / inert: resumed sessions no longer losing
+ *    recent turns after an unclean exit; subagent model fixes; gateway
+ *    context-length compaction; `$.model.complete`/`classify` now counted
+ *    in cost (omnifex-mod uses neither, grep); sandboxed Bash follows the
+ *    normal permission flow by default (more asks reach our card, no code
+ *    change); read-only git outside trusted repos asks; scheduled tasks
+ *    ask before skills with allowed-tools; all permission-rule fixes (no
+ *    syntax change; relative `Read(./.env)` now also covers added dirs);
+ *    Artifact permission fixes; MCP task/elicitation fixes; plugin .mcpb
+ *    unpack location; CLAUDE_CODE_MAX_CONTEXT_TOKENS for unknown claude-*
+ *    ids; auth/login/Console, Windows, Linux bwrap, Remote Control, cloud,
+ *    self-hosted runner, VS Code, /stats, /insights, /voice, OTel.
+ *  - Open items from 2.1.323, re-checked in both accounts' projects/:
+ *     - Idle compaction: 5 personal hits, all review-session prose
+ *       (assistant/user text), no record. Still unseen.
+ *     - ui_notify: zero frames.
+ *     - supersedes: zero `"supersedesUuids":[`.
+ *
+ *  Script + prompt: prompt's Permission rules pointer now names
+ *  `buildDefaultRule` / `withDefaultRuleSuggestion` — a change in what the
+ *  CLI suggests has no diff signal. Script unchanged (control_closed false
+ *  positive recorded above, not worth a narrower regex).
+ *
+ *  OPEN ITEMS (carry forward; re-check each review):
+ *   - Idle compaction: verify the first real occurrence (2.1.314 block).
+ *   - ui_notify: unverified against a real mod; first `$.ui.notify` seen in
+ *     a transcript or reported banner closes it.
+ *   - `supersedes`: first `"supersedesUuids":[` in a transcript decides
+ *     whether the renderer must drop the named rows.
+ * *
  * Last review: 2.1.322 -> 2.1.323 on 2026-11-12. Findings: none broken;
  * two latent "Unrecognized record" cards fixed the same day; one latent
  * renderer gap left open (`supersedes`).
@@ -5432,7 +5512,7 @@ import { buildClaudeEnv } from './util/claude-env';
  * `~/.claude.json` fix (we read-modify-write that file, never replace it), and
  * the VSCode screen-reader work.
  */
-export const REVIEWED_CLI_VERSION = '2.1.323';
+export const REVIEWED_CLI_VERSION = '2.1.325';
 
 /**
  * app_settings key holding the user's explicit OmniFex-checkout override.

@@ -79,7 +79,7 @@ function ClaudeToolConfirmation({ request, onAllow, onDeny }: Props) {
 
       {suppressAlwaysAllowRule ? (
         <p data-testid="permission-no-standing-rule" className="rounded-lg bg-amber-500/5 px-3 py-2 text-xs text-amber-500">
-          Claude Code won&apos;t let this one be saved as a rule — approving it would grant more than this request covers.
+          Claude Code offers no rule for this one — a saved rule would grant more than this request covers, or wouldn&apos;t allow it again.
         </p>
       ) : (
         <div className="space-y-2 rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground">

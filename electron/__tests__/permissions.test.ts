@@ -119,11 +119,8 @@ describe('buildDefaultRule', () => {
     expect(buildDefaultRule('Write', {}, PROJ)).toEqual({ toolName: 'Write' });
   });
 
-  it('builds a Bash prefix rule from the command', () => {
-    expect(buildDefaultRule('Bash', { command: 'npm run build' }, PROJ)).toEqual({
-      toolName: 'Bash',
-      ruleContent: 'npm:*',
-    });
+  it('invents no Bash rule — the CLI is the only judge of one that re-allows', () => {
+    expect(buildDefaultRule('Bash', { command: 'npm run build' }, PROJ)).toBeNull();
   });
 
   it('builds a WebFetch domain rule', () => {

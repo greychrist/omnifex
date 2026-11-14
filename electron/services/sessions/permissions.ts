@@ -268,8 +268,12 @@ export function augmentPermissionsWithSession(
  * and it must come out in the form file permission checks actually match:
  * `Edit(path)`, never `Write(path)` / `MultiEdit(path)` / `NotebookEdit(path)`.
  *
- * Bash is the opposite case — the CLI does supply a rule there (plus
- * `addDirectories`), so `withDefaultRuleSuggestion` leaves its work alone.
+ * Bash is the opposite case: the CLI is the only judge of a Bash rule that
+ * would allow the command again (compound commands are checked per
+ * subcommand), and since 2.1.325 it sends no `addRules` at all when none
+ * would. So this invents nothing for Bash — the handler withholds the
+ * standing row instead. The old `Bash(<first word>:*)` fallback offered
+ * dead, over-broad rules like `Bash(f=$(grep:*)`.
  *
  * Pure function; `projectPath` decides the path form (see `src/lib/rulePaths.ts`).
  */
@@ -279,11 +283,7 @@ export function buildDefaultRule(
   projectPath: string,
   opts: { folder?: boolean } = {},
 ): ParsedRule | null {
-  if (toolName === 'Bash' && typeof toolInput.command === 'string') {
-    const cmd = (toolInput.command).trim();
-    const base = cmd.split(/[\s;|&]/)[0];
-    return { toolName, ruleContent: base ? `${base}:*` : cmd };
-  }
+  if (toolName === 'Bash') return null;
   if (
     toolName === 'Write' ||
     toolName === 'Edit' ||
@@ -335,17 +335,20 @@ export function buildDefaultRule(
  *
  * Pure function, returns a new array; never mutates input.
  */
-export function withDefaultRuleSuggestion(
-  suggestions: any[] | undefined,
-  defaultRule: ParsedRule | null,
-): any[] | undefined {
-  const alreadyHasRules = suggestions?.some(
+function hasRuleSuggestion(suggestions: any[] | undefined): boolean {
+  return !!suggestions?.some(
     (s: any) =>
       s?.type === 'addRules' &&
       Array.isArray(s.rules) &&
       s.rules.some((r: any) => r && typeof r.toolName === 'string' && r.toolName.trim()),
   );
-  if (alreadyHasRules || !defaultRule) return suggestions;
+}
+
+export function withDefaultRuleSuggestion(
+  suggestions: any[] | undefined,
+  defaultRule: ParsedRule | null,
+): any[] | undefined {
+  if (hasRuleSuggestion(suggestions) || !defaultRule) return suggestions;
   return [
     {
       type: 'addRules',
@@ -558,8 +561,8 @@ export function createPermissionRequestHandler(
     // bare whole-tool allow, exactly the grant the flag exists to prevent.
     // The CLI's own suggestions ride along untouched — the card ignores them
     // when suppressed, and discarding them would lose its real recommendation.
-    const suppressAlwaysAllowRule = rawPayload.suppress_always_allow_rule === true;
-    const suggestions = suppressAlwaysAllowRule
+    const cliSuppressed = rawPayload.suppress_always_allow_rule === true;
+    const suggestions = cliSuppressed
       ? rawPayload.permission_suggestions
       : withDefaultRuleSuggestion(
           rawPayload.permission_suggestions,
@@ -567,7 +570,14 @@ export function createPermissionRequestHandler(
             folder: rawPayload.decision_reason_type === 'workingDir',
           }),
         );
-    const directoryGrant = suppressAlwaysAllowRule ? null : directoryGrantFor(rawPayload);
+    const directoryGrant = cliSuppressed ? null : directoryGrantFor(rawPayload);
+    // A Bash ask the CLI sent no rule for (2.1.325: none would allow the
+    // command again) and that isn't a folder grant has nothing to save, so
+    // the card gets the same "allow once" form the CLI's veto produces —
+    // otherwise it would fall back to a bare whole-tool `Bash` rule.
+    const noBashRule =
+      toolName === 'Bash' && !directoryGrant && !hasRuleSuggestion(suggestions);
+    const suppressAlwaysAllowRule = cliSuppressed || noBashRule;
 
     const payload = {
       type: 'permission_request',

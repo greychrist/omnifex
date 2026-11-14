@@ -203,17 +203,18 @@ export function PermissionCard({ request, onAllow, onDeny }: PermissionCardProps
           )}
         </div>
 
-        {/* The CLI vetoed any standing grant for this ask — a rule saved
-            here would cover more than what is being approved. Say so rather
-            than silently dropping the controls. */}
+        {/* No standing grant for this ask: the CLI vetoed one (it would
+            cover more than what is being approved), or offered no Bash rule
+            because none would allow the command again. Say so rather than
+            silently dropping the controls. */}
         {suppressAlwaysAllowRule && (
           <p
             data-testid="permission-no-standing-rule"
             className="rounded-md border border-amber-500/30 bg-amber-500/5 px-2 py-1.5 text-[11px] text-amber-500"
           >
-            Claude Code won&apos;t let this one be saved as a rule — approving
-            it would grant more than this request covers. Allow it once, or
-            deny.
+            Claude Code offers no rule for this one — a saved rule would
+            grant more than this request covers, or wouldn&apos;t allow it
+            again. Allow it once, or deny.
           </p>
         )}
 

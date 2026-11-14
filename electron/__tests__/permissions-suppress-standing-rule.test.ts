@@ -152,3 +152,81 @@ describe('suppress_always_allow_rule', () => {
     expect(hasRuleSuggestion(payload.permission_suggestions)).toBe(true);
   });
 });
+
+// CLI 2.1.325: "Always allow" in SDK hosts offers a rule only when saving it
+// would allow that command again. For a Bash ask it signals that by sending
+// no `addRules` suggestion at all — not by `suppress_always_allow_rule`. The
+// fallback OmniFex used to invent there (`Bash(<first word>:*)`) was both
+// dead and broad: app_logs on 2026-11-08 show `Bash(f=$(grep:*)` offered for
+// a compound command.
+describe('Bash ask with no rule from the CLI', () => {
+  it('offers no invented rule and withholds the standing row', () => {
+    const { fn, sendToRenderer } = handlerHarness();
+    fn(
+      req({
+        tool_name: 'Bash',
+        input: { command: 'f=$(grep -l x *.jsonl); echo "$f"' },
+        tool_use_id: 'tu-b1',
+      }),
+    );
+    const payload = rendererPayload(sendToRenderer);
+    expect(hasRuleSuggestion(payload.permission_suggestions)).toBe(false);
+    expect(payload.suppress_always_allow_rule).toBe(true);
+  });
+
+  it("keeps the CLI's non-rule suggestions", () => {
+    const { fn, sendToRenderer } = handlerHarness();
+    const setMode = { type: 'setMode', mode: 'acceptEdits', destination: 'session' };
+    fn(
+      req({
+        tool_name: 'Bash',
+        input: { command: 'cd a && make' },
+        tool_use_id: 'tu-b2',
+        permission_suggestions: [setMode],
+      }),
+    );
+    expect(rendererPayload(sendToRenderer).permission_suggestions).toEqual([setMode]);
+  });
+
+  it("passes the CLI's own Bash rule through untouched", () => {
+    const { fn, sendToRenderer } = handlerHarness();
+    const cliRule = {
+      type: 'addRules',
+      rules: [{ toolName: 'Bash', ruleContent: 'npm run build:*' }],
+      behavior: 'allow',
+      destination: 'localSettings',
+    };
+    fn(
+      req({
+        tool_name: 'Bash',
+        input: { command: 'npm run build' },
+        tool_use_id: 'tu-b3',
+        permission_suggestions: [cliRule],
+      }),
+    );
+    const payload = rendererPayload(sendToRenderer);
+    expect(payload.permission_suggestions).toEqual([cliRule]);
+    expect(payload.suppress_always_allow_rule).toBeUndefined();
+  });
+
+  it('still offers the folder grant for a Bash ask outside the working directories', () => {
+    const { fn, sendToRenderer } = handlerHarness();
+    fn(
+      req({
+        tool_name: 'Bash',
+        input: { command: 'touch /tmp/x/y' },
+        tool_use_id: 'tu-b4',
+        blocked_path: '/tmp/x/y',
+        permission_suggestions: [
+          { type: 'addDirectories', directories: ['/tmp/x'], destination: 'session' },
+        ],
+      }),
+    );
+    const payload = rendererPayload(sendToRenderer) as {
+      suppress_always_allow_rule?: boolean;
+      directory_grant?: string[];
+    };
+    expect(payload.directory_grant).toEqual(['/tmp/x']);
+    expect(payload.suppress_always_allow_rule).toBeUndefined();
+  });
+});
