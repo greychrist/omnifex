@@ -573,11 +573,12 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
   });
   sessionsSummaryServiceRef = sessionsSummaryService;
 
-  const sessionGitWatcher = createSessionGitWatcher({ sendToRenderer });
   const branchColorsService = createBranchColorsService(db, { sendToRenderer });
   const projectReposService = createProjectReposService({ db, discover: discoverRepos });
+  const sessionGitWatcher = createSessionGitWatcher({ sendToRenderer, repos: projectReposService });
   projectReposService.onChange((projectPath) => {
     sendToRenderer('project-repos-changed', { projectPath });
+    void sessionGitWatcher.reconfigure(projectPath);
   });
   const limaService = createLimaService();
   const filesystemService = createFilesystemService();

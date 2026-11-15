@@ -127,11 +127,11 @@ describe('git-watcher service', () => {
       const { watchId, snapshot } = await svc.start(repo);
       try {
         expect(watchId).toMatch(/^[0-9a-f-]{36}$/);
-        expect(snapshot.project.branch).toBe('main');
-        expect(snapshot.project.error).toBeNull();
-        expect(snapshot.worktrees).toHaveLength(1);
-        expect(snapshot.worktrees[0].branch).toBe('feat-a');
-        expect(snapshot.worktrees[0].error).toBeNull();
+        expect(snapshot.repos[0].root.branch).toBe('main');
+        expect(snapshot.repos[0].root.error).toBeNull();
+        expect(snapshot.repos[0].worktrees).toHaveLength(1);
+        expect(snapshot.repos[0].worktrees[0].branch).toBe('feat-a');
+        expect(snapshot.repos[0].worktrees[0].error).toBeNull();
       } finally {
         svc.stop(watchId);
       }
@@ -153,7 +153,7 @@ describe('git-watcher service', () => {
           sendToRenderer.mock.calls.find(
             ([channel, payload]) =>
               channel === `session-git-changed:${watchId}` &&
-              (payload as { worktrees: { branch: string }[] }).worktrees.some(
+              (payload as { repos: { worktrees: { branch: string }[] }[] }).repos[0].worktrees.some(
                 (w) => w.branch === 'feat-new',
               ),
           ),
@@ -176,7 +176,7 @@ describe('git-watcher service', () => {
       const svc = makeService({ pollIntervalMs: 200 });
       const { watchId, snapshot } = await svc.start(repo);
       try {
-        expect(snapshot.worktrees).toHaveLength(1);
+        expect(snapshot.repos[0].worktrees).toHaveLength(1);
 
         sendToRenderer.mockClear();
         execSync(`git worktree remove "${wt}"`, { cwd: repo, stdio: 'pipe' });
@@ -185,7 +185,7 @@ describe('git-watcher service', () => {
           sendToRenderer.mock.calls.find(
             ([channel, payload]) =>
               channel === `session-git-changed:${watchId}` &&
-              (payload as { worktrees: unknown[] }).worktrees.length === 0,
+              (payload as { repos: { worktrees: unknown[] }[] }).repos[0].worktrees.length === 0,
           ),
         );
         expect(call).toBeDefined();
@@ -212,7 +212,7 @@ describe('git-watcher service', () => {
         const call = await waitFor(() =>
           sendToRenderer.mock.calls.find(([channel, payload]) => {
             if (channel !== `session-git-changed:${watchId}`) return false;
-            const peer = (payload as { worktrees: { branch: string; untracked: number }[] }).worktrees.find(
+            const peer = (payload as { repos: { worktrees: { branch: string; untracked: number }[] }[] }).repos[0].worktrees.find(
               (w) => w.branch === 'feat-dirty',
             );
             return !!peer && peer.untracked === 1;
@@ -239,9 +239,9 @@ describe('git-watcher service', () => {
       const svc = makeService({ pollIntervalMs: 5000 });
       const { watchId, snapshot } = await svc.start(repo);
       try {
-        expect(snapshot.project.error).toBeNull();
-        expect(snapshot.worktrees).toHaveLength(1);
-        expect(snapshot.worktrees[0].error).toEqual(expect.any(String));
+        expect(snapshot.repos[0].root.error).toBeNull();
+        expect(snapshot.repos[0].worktrees).toHaveLength(1);
+        expect(snapshot.repos[0].worktrees[0].error).toEqual(expect.any(String));
       } finally {
         svc.stop(watchId);
       }
@@ -269,7 +269,7 @@ describe('git-watcher service', () => {
         // fresh enumeration.
         const fresh = await svc.reconnect(watchId);
         expect(fresh).not.toBeNull();
-        expect(fresh!.worktrees.some((w) => w.branch === 'feat-late')).toBe(true);
+        expect(fresh!.repos[0].worktrees.some((w) => w.branch === 'feat-late')).toBe(true);
       } finally {
         svc.stop(watchId);
       }
@@ -291,6 +291,85 @@ describe('git-watcher service', () => {
         ([channel]) => channel === `session-git-changed:${watchId}`,
       );
       expect(hits.length).toBe(0);
+    });
+
+    describe('a project of several repos', () => {
+      function makeParent(): { root: string; a: string; b: string } {
+        const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'gc-sgw-multi-')));
+        tempDirs.push(root);
+        const a = makeTempRepo();
+        const b = makeTempRepo();
+        tempDirs.push(a, b);
+        fs.renameSync(a, path.join(root, 'a'));
+        fs.renameSync(b, path.join(root, 'b'));
+        return { root, a: path.join(root, 'a'), b: path.join(root, 'b') };
+      }
+
+      function makeMulti(watched: () => { path: string; name: string }[], found = async () => 0) {
+        return createSessionGitWatcher({
+          sendToRenderer,
+          pollIntervalMs: 5000,
+          readTimeoutMs: 4000,
+          repos: { watchedRepos: watched, foundCount: found },
+        });
+      }
+
+      it('a non-repo project with nothing watched reports only what was found', async () => {
+        const { root } = makeParent();
+        const svc = makeMulti(() => [], async () => 2);
+        const { watchId, snapshot } = await svc.start(root);
+        expect(snapshot).toEqual({ repos: [], foundCount: 2 });
+        svc.stop(watchId);
+      });
+
+      it('reports each watched repo by name with its own counts', async () => {
+        const { root, a, b } = makeParent();
+        fs.writeFileSync(path.join(b, 'new.txt'), 'x');
+        const svc = makeMulti(() => [{ path: a, name: 'a' }, { path: b, name: 'b' }]);
+        const { watchId, snapshot } = await svc.start(root);
+        try {
+          expect(snapshot.repos.map((r) => r.name)).toEqual(['a', 'b']);
+          expect(snapshot.repos[0].root).toMatchObject({ path: a, branch: 'main', untracked: 0 });
+          expect(snapshot.repos[1].root).toMatchObject({ path: b, branch: 'main', untracked: 1 });
+        } finally {
+          svc.stop(watchId);
+        }
+      });
+
+      it('reconfigure() adds and drops repos on live watches of that project', async () => {
+        const { root, a, b } = makeParent();
+        let watched = [{ path: a, name: 'a' }];
+        const svc = makeMulti(() => watched);
+        const { watchId } = await svc.start(root);
+        try {
+          watched = [{ path: a, name: 'a' }, { path: b, name: 'b' }];
+          sendToRenderer.mockClear();
+          await svc.reconfigure(root);
+          const added = sendToRenderer.mock.calls.filter(([c]) => c === `session-git-changed:${watchId}`).at(-1)?.[1] as { repos: { name: string }[] };
+          expect(added.repos.map((r) => r.name)).toEqual(['a', 'b']);
+
+          watched = [{ path: b, name: 'b' }];
+          await svc.reconfigure(root);
+          const dropped = sendToRenderer.mock.calls.filter(([c]) => c === `session-git-changed:${watchId}`).at(-1)?.[1] as { repos: { name: string }[] };
+          expect(dropped.repos.map((r) => r.name)).toEqual(['b']);
+        } finally {
+          svc.stop(watchId);
+        }
+      });
+
+      it('reconfigure() leaves watches of other projects alone', async () => {
+        const { root, a } = makeParent();
+        const other = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'gc-sgw-other-')));
+        tempDirs.push(other);
+        const svc = makeMulti(() => [{ path: a, name: 'a' }]);
+        const mine = await svc.start(root);
+        const theirs = await svc.start(other);
+        sendToRenderer.mockClear();
+        await svc.reconfigure(root);
+        expect(sendToRenderer.mock.calls.some(([c]) => c === `session-git-changed:${theirs.watchId}`)).toBe(false);
+        svc.stop(mine.watchId);
+        svc.stop(theirs.watchId);
+      });
     });
   });
 

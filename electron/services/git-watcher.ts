@@ -233,8 +233,12 @@ function resolveCommondir(projectPath: string, gitdir: string): Promise<string> 
 // SessionGitWatcher — the branch/changes badges for every session tab.
 //
 // Each `start()` returns a watch id, and every snapshot for it arrives on
-// `session-git-changed:<watchId>` as {project, worktrees[]}. Behind the ids,
-// ONE reader per repository (keyed by the realpath of its commondir, so every
+// `session-git-changed:<watchId>` as {repos[], foundCount}: one entry per repo
+// the project watches (its own folder, when a repo, plus the sub-repos the
+// user turned on — `SessionGitRepoSource`), each with its worktrees. A watch
+// subscribes to the reader of every repo it shows, and `reconfigure()`
+// re-subscribes a project's live watches when its choices change. Behind the
+// ids, ONE reader per repository (keyed by the realpath of its commondir, so every
 // worktree of a repo and every symlinked path to it share it) runs git once
 // per path per refresh and fans the result out to every watch on it.
 //
@@ -265,10 +269,26 @@ export interface PathSnapshot {
   error: string | null;
 }
 
-export interface SessionGitSnapshot {
-  project: PathSnapshot;
+export interface RepoSnapshot {
+  /** Relative to the project folder; '' for the project folder itself. */
+  name: string;
+  /** The repo's own checkout. */
+  root: PathSnapshot;
   /** Sibling worktrees, sorted by path. */
   worktrees: PathSnapshot[];
+}
+
+export interface SessionGitSnapshot {
+  /** The project folder's repo first (when it is one), then watched sub-repos. */
+  repos: RepoSnapshot[];
+  /** Repos discovered in the project and not watched. */
+  foundCount: number;
+}
+
+/** Which repos a project's sessions watch — `ProjectReposService` in the daemon. */
+export interface SessionGitRepoSource {
+  watchedRepos(projectPath: string): { path: string; name: string }[];
+  foundCount(projectPath: string): Promise<number>;
 }
 
 /**
@@ -289,12 +309,16 @@ export interface SessionGitWatcherService {
    * client that never calls this keeps today's behaviour.
    */
   setVisible(watchId: string, visible: boolean, holder?: WatchHolder): void;
+  /** Re-read which repos `projectPath` watches and re-subscribe its live watches. */
+  reconfigure(projectPath: string): Promise<void>;
   disposeAll(): void;
 }
 
 export interface SessionGitWatcherDeps extends GitWatcherDeps {
   /** Per-`git status` timeout in ms. Defaults to 5000. */
   readTimeoutMs?: number;
+  /** Defaults to: the project folder alone, when it is a repo; nothing found. */
+  repos?: SessionGitRepoSource;
 }
 
 /** A status read covers known paths; a full one re-lists worktrees first. */
@@ -303,15 +327,30 @@ type RefreshKind = 'status' | 'full';
 const mergeKind = (a: RefreshKind | null, b: RefreshKind | null): RefreshKind | null =>
   a === 'full' || b === 'full' ? 'full' : a ?? b;
 
-interface Subscriber {
-  watchId: string;
-  /** As the caller gave it — echoed back as `project.path`. */
+/** One session's watch: a subscriber on the reader of each repo it shows. */
+interface Watch {
+  id: string;
   projectPath: string;
   projectReal: string;
   visible: boolean;
   holder: WatchHolder | null;
+  /** Real repo paths, in display order. */
+  order: string[];
+  subs: Map<string, Subscriber>;
+  foundCount: number;
   /** Last snapshot sent to this watch, to skip no-op emits. */
   last: SessionGitSnapshot;
+}
+
+/** A watch's interest in one repo, registered on that repo's reader. */
+interface Subscriber {
+  id: string;
+  watch: Watch;
+  reader: RepoReader;
+  name: string;
+  /** Echoed back as `root.path`: the caller's project path for the project's own repo. */
+  repoPath: string;
+  repoReal: string;
 }
 
 interface RepoReader {
@@ -370,11 +409,20 @@ function pathSnapshotEqual(a: PathSnapshot, b: PathSnapshot): boolean {
   );
 }
 
+function pathListEqual(a: PathSnapshot[], b: PathSnapshot[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (!pathSnapshotEqual(a[i], b[i])) return false;
+  }
+  return true;
+}
+
 function snapshotEqual(a: SessionGitSnapshot, b: SessionGitSnapshot): boolean {
-  if (!pathSnapshotEqual(a.project, b.project)) return false;
-  if (a.worktrees.length !== b.worktrees.length) return false;
-  for (let i = 0; i < a.worktrees.length; i++) {
-    if (!pathSnapshotEqual(a.worktrees[i], b.worktrees[i])) return false;
+  if (a.foundCount !== b.foundCount || a.repos.length !== b.repos.length) return false;
+  for (let i = 0; i < a.repos.length; i++) {
+    const x = a.repos[i];
+    const y = b.repos[i];
+    if (x.name !== y.name || !pathSnapshotEqual(x.root, y.root) || !pathListEqual(x.worktrees, y.worktrees)) return false;
   }
   return true;
 }
@@ -393,32 +441,58 @@ const SESSION_REFRESH_DEBOUNCE_MS = 80;
 
 export function createSessionGitWatcher(deps: SessionGitWatcherDeps): SessionGitWatcherService {
   const readers = new Map<string, RepoReader>();
-  const readerByWatch = new Map<string, RepoReader>();
+  const watches = new Map<string, Watch>();
   const pollIntervalMs = deps.pollIntervalMs ?? DEFAULT_POLL_MS;
   const readTimeoutMs = deps.readTimeoutMs ?? 5000;
+  const repoSource: SessionGitRepoSource = deps.repos ?? {
+    watchedRepos: (p) => {
+      const real = realpathOr(p);
+      return resolveGitdir(real) ? [{ path: real, name: '' }] : [];
+    },
+    foundCount: async () => 0,
+  };
 
   const anyVisible = (r: RepoReader): boolean => {
-    for (const s of r.subscribers.values()) if (s.visible) return true;
+    for (const s of r.subscribers.values()) if (s.watch.visible) return true;
     return false;
   };
 
-  function snapshotFor(r: RepoReader, sub: Subscriber): SessionGitSnapshot {
-    const own = r.readings.get(sub.projectReal) ?? emptyReading(sub.projectReal);
+  function repoSnapshot(sub: Subscriber): RepoSnapshot {
+    const r = sub.reader;
+    const own = r.readings.get(sub.repoReal) ?? emptyReading(sub.repoReal);
     return {
-      project: { ...own, path: sub.projectPath },
+      name: sub.name,
+      root: { ...own, path: sub.repoPath },
       worktrees: r.worktreePaths
-        .filter((p) => p !== sub.projectReal)
+        .filter((p) => p !== sub.repoReal)
         .map((p) => r.readings.get(p) ?? { ...emptyReading(p), branch: r.branchHints.get(p) ?? null })
         .sort((a, b) => a.path.localeCompare(b.path)),
     };
   }
 
+  function snapshotFor(w: Watch): SessionGitSnapshot {
+    const repos: RepoSnapshot[] = [];
+    for (const real of w.order) {
+      const sub = w.subs.get(real);
+      if (sub) repos.push(repoSnapshot(sub));
+    }
+    return { repos, foundCount: w.foundCount };
+  }
+
+  function emitWatch(w: Watch): void {
+    if (watches.get(w.id) !== w) return;
+    const snap = snapshotFor(w);
+    if (snapshotEqual(w.last, snap)) return;
+    w.last = snap;
+    deps.sendToRenderer(`session-git-changed:${w.id}`, snap);
+  }
+
   function emitAll(r: RepoReader): void {
+    const seen = new Set<Watch>();
     for (const sub of r.subscribers.values()) {
-      const snap = snapshotFor(r, sub);
-      if (snapshotEqual(sub.last, snap)) continue;
-      sub.last = snap;
-      deps.sendToRenderer(`session-git-changed:${sub.watchId}`, snap);
+      if (seen.has(sub.watch)) continue;
+      seen.add(sub.watch);
+      emitWatch(sub.watch);
     }
   }
 
@@ -493,7 +567,7 @@ export function createSessionGitWatcher(deps: SessionGitWatcherDeps): SessionGit
       }
       const paths = Array.from(new Set([
         ...r.worktreePaths,
-        ...Array.from(r.subscribers.values(), (s) => s.projectReal),
+        ...Array.from(r.subscribers.values(), (s) => s.repoReal),
       ]));
       const results = await Promise.all(paths.map((p) =>
         readPathSnapshot(p, r.gitdirs.get(p) ?? resolveGitdir(p), r.branchHints.get(p) ?? null, readTimeoutMs),
@@ -526,17 +600,20 @@ export function createSessionGitWatcher(deps: SessionGitWatcherDeps): SessionGit
   }
 
   /** Make `holder` the connection this watch lives and dies with. */
-  function claim(sub: Subscriber, holder: WatchHolder | undefined): void {
-    if (!holder || sub.holder === holder) return;
-    sub.holder = holder;
+  function claim(w: Watch, holder: WatchHolder | undefined): void {
+    if (!holder || w.holder === holder) return;
+    w.holder = holder;
     holder.onClose(() => {
-      if (sub.holder !== holder) return;
-      sub.holder = null;
-      const r = readerByWatch.get(sub.watchId);
-      if (!r || !sub.visible) return;
-      sub.visible = false;
-      syncPolling(r);
+      if (w.holder !== holder) return;
+      w.holder = null;
+      if (!w.visible || watches.get(w.id) !== w) return;
+      w.visible = false;
+      for (const r of readersOf(w)) syncPolling(r);
     });
+  }
+
+  function readersOf(w: Watch): RepoReader[] {
+    return Array.from(new Set(Array.from(w.subs.values(), (s) => s.reader)));
   }
 
   function dispose(r: RepoReader): void {
@@ -552,16 +629,16 @@ export function createSessionGitWatcher(deps: SessionGitWatcherDeps): SessionGit
     readers.delete(r.key);
   }
 
-  async function readerFor(projectReal: string): Promise<{ r: RepoReader; created: boolean }> {
-    const gitdir = resolveGitdir(projectReal);
-    const commondir = gitdir ? realpathOr(await resolveCommondir(projectReal, gitdir)) : null;
-    const key = commondir ? `git:${commondir}` : `path:${projectReal}`;
+  async function readerFor(repoReal: string): Promise<{ r: RepoReader; created: boolean }> {
+    const gitdir = resolveGitdir(repoReal);
+    const commondir = gitdir ? realpathOr(await resolveCommondir(repoReal, gitdir)) : null;
+    const key = commondir ? `git:${commondir}` : `path:${repoReal}`;
     const existing = readers.get(key);
     if (existing) return { r: existing, created: false };
 
     const r: RepoReader = {
       key,
-      anchor: projectReal,
+      anchor: repoReal,
       commondir,
       worktreePaths: [],
       branchHints: new Map(),
@@ -596,89 +673,141 @@ export function createSessionGitWatcher(deps: SessionGitWatcherDeps): SessionGit
     return { r, created: true };
   }
 
+  /** Subscribe `w` to the reader of one repo, reading it now if its readings are stale. */
+  async function attach(w: Watch, repo: { path: string; name: string }): Promise<void> {
+    const repoReal = realpathOr(repo.path);
+    const { r, created } = await readerFor(repoReal);
+    const wasVisible = anyVisible(r);
+    const sub: Subscriber = {
+      id: `${w.id}\0${repoReal}`,
+      watch: w,
+      reader: r,
+      name: repo.name,
+      // The project's own repo echoes the caller's path, as it always has.
+      repoPath: repo.name === '' ? w.projectPath : repoReal,
+      repoReal,
+    };
+    r.subscribers.set(sub.id, sub);
+    w.subs.set(repoReal, sub);
+    await r.seeded;
+    // Read now if this path was never read (a worktree not yet re-listed),
+    // or if the reader sat unwatched — its readings are as old as the last
+    // time anyone looked, and working-tree edits never woke it. A reader
+    // created just now was seeded a moment ago; joining a watched one costs
+    // nothing.
+    if (!r.readings.has(repoReal) || (!created && !wasVisible)) {
+      const kind = mergeKind(r.pending, 'status') ?? 'status';
+      r.pending = null;
+      await refresh(r, kind);
+    }
+    syncPolling(r);
+  }
+
+  function detach(sub: Subscriber): void {
+    const r = sub.reader;
+    r.subscribers.delete(sub.id);
+    sub.watch.subs.delete(sub.repoReal);
+    if (r.subscribers.size === 0) dispose(r);
+    else syncPolling(r);
+  }
+
+  /** Bring `w`'s subscriptions in line with what its project watches now. */
+  async function sync(w: Watch): Promise<void> {
+    const wanted = repoSource.watchedRepos(w.projectPath)
+      .map((repo) => ({ ...repo, real: realpathOr(repo.path) }));
+    const wantedReal = new Set(wanted.map((x) => x.real));
+    for (const sub of Array.from(w.subs.values())) {
+      if (!wantedReal.has(sub.repoReal)) detach(sub);
+    }
+    w.order = wanted.map((x) => x.real);
+    const [, found] = await Promise.all([
+      Promise.all(wanted.filter((x) => !w.subs.has(x.real)).map((x) => attach(w, x))),
+      repoSource.foundCount(w.projectPath).catch(() => 0),
+    ]);
+    w.foundCount = found;
+  }
+
   return {
     async start(projectPath, holder) {
-      const watchId = crypto.randomUUID();
-      const projectReal = realpathOr(projectPath);
-      const { r, created } = await readerFor(projectReal);
-      const wasVisible = anyVisible(r);
-      const sub: Subscriber = {
-        watchId,
+      const w: Watch = {
+        id: crypto.randomUUID(),
         projectPath,
-        projectReal,
+        projectReal: realpathOr(projectPath),
         visible: true,
         holder: null,
-        last: { project: emptyReading(projectPath), worktrees: [] },
+        order: [],
+        subs: new Map(),
+        foundCount: 0,
+        last: { repos: [], foundCount: 0 },
       };
-      claim(sub, holder);
-      r.subscribers.set(watchId, sub);
-      readerByWatch.set(watchId, r);
-      await r.seeded;
-      // Read now if this path was never read (a worktree not yet re-listed),
-      // or if the reader sat unwatched — its readings are as old as the last
-      // time anyone looked, and working-tree edits never woke it. A reader
-      // created just now was seeded a moment ago; joining a watched one costs
-      // nothing.
-      if (!r.readings.has(projectReal) || (!created && !wasVisible)) {
-        const kind = mergeKind(r.pending, 'status') ?? 'status';
-        r.pending = null;
-        await refresh(r, kind);
-      }
-      syncPolling(r);
-      sub.last = snapshotFor(r, sub);
-      return { watchId, snapshot: sub.last };
+      claim(w, holder);
+      watches.set(w.id, w);
+      await sync(w);
+      w.last = snapshotFor(w);
+      return { watchId: w.id, snapshot: w.last };
     },
 
     async reconnect(watchId, holder) {
-      const r = readerByWatch.get(watchId);
-      const sub = r?.subscribers.get(watchId);
-      if (!r || !sub) return null;
-      claim(sub, holder);
-      await r.seeded;
-      // Tear down the per-path and worktrees/ watchers; the full refresh
-      // re-creates them from a freshly listed set.
-      for (const w of r.gitdirWatchers.values()) {
-        try { w.close(); } catch { /* best effort */ }
-      }
-      r.gitdirWatchers.clear();
-      r.gitdirs.clear();
-      if (r.worktreesDirWatcher) {
-        try { r.worktreesDirWatcher.close(); } catch { /* best effort */ }
-        r.worktreesDirWatcher = null;
-      }
-      await refresh(r, 'full');
-      return snapshotFor(r, sub);
+      const w = watches.get(watchId);
+      if (!w) return null;
+      claim(w, holder);
+      await Promise.all(readersOf(w).map(async (r) => {
+        await r.seeded;
+        // Tear down the per-path and worktrees/ watchers; the full refresh
+        // re-creates them from a freshly listed set.
+        for (const fw of r.gitdirWatchers.values()) {
+          try { fw.close(); } catch { /* best effort */ }
+        }
+        r.gitdirWatchers.clear();
+        r.gitdirs.clear();
+        if (r.worktreesDirWatcher) {
+          try { r.worktreesDirWatcher.close(); } catch { /* best effort */ }
+          r.worktreesDirWatcher = null;
+        }
+        await refresh(r, 'full');
+      }));
+      return snapshotFor(w);
     },
 
     setVisible(watchId, visible, holder) {
-      const r = readerByWatch.get(watchId);
-      const sub = r?.subscribers.get(watchId);
-      if (!r || !sub) return;
-      claim(sub, holder);
-      if (sub.visible === visible) return;
-      const wasVisible = anyVisible(r);
-      sub.visible = visible;
-      syncPolling(r);
-      if (!wasVisible && visible) {
-        // Back in view: one read now, covering whatever was deferred.
-        const kind = mergeKind(r.pending, 'status') ?? 'status';
-        r.pending = null;
-        void refresh(r, kind);
+      const w = watches.get(watchId);
+      if (!w) return;
+      claim(w, holder);
+      if (w.visible === visible) return;
+      const rs = readersOf(w);
+      const was = new Map(rs.map((r) => [r, anyVisible(r)]));
+      w.visible = visible;
+      for (const r of rs) {
+        syncPolling(r);
+        if (!was.get(r) && visible) {
+          // Back in view: one read now, covering whatever was deferred.
+          const kind = mergeKind(r.pending, 'status') ?? 'status';
+          r.pending = null;
+          void refresh(r, kind);
+        }
       }
     },
 
+    async reconfigure(projectPath) {
+      const real = realpathOr(projectPath);
+      await Promise.all(Array.from(watches.values())
+        .filter((w) => w.projectReal === real)
+        .map(async (w) => {
+          await sync(w);
+          emitWatch(w);
+        }));
+    },
+
     stop(watchId) {
-      const r = readerByWatch.get(watchId);
-      readerByWatch.delete(watchId);
-      if (!r) return;
-      r.subscribers.delete(watchId);
-      if (r.subscribers.size === 0) dispose(r);
-      else syncPolling(r);
+      const w = watches.get(watchId);
+      if (!w) return;
+      watches.delete(watchId);
+      for (const sub of Array.from(w.subs.values())) detach(sub);
     },
 
     disposeAll() {
       for (const r of Array.from(readers.values())) dispose(r);
-      readerByWatch.clear();
+      watches.clear();
     },
   };
 }

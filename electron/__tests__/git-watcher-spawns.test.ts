@@ -12,12 +12,16 @@ import path from 'node:path';
 
 const gitCalls = vi.hoisted(() => [] as string[][]);
 const gitFiles = vi.hoisted(() => [] as string[]);
+const gitCwds = vi.hoisted(() => [] as string[]);
 vi.mock('node:child_process', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:child_process')>();
   return {
     ...actual,
     execFile: ((file: string, args: string[], ...rest: unknown[]) => {
-      if (file === 'git' || file.endsWith('/git')) { gitCalls.push(args); gitFiles.push(file); }
+      if (file === 'git' || file.endsWith('/git')) {
+        gitCalls.push(args); gitFiles.push(file);
+        gitCwds.push(String((rest[0] as { cwd?: string } | undefined)?.cwd ?? ''));
+      }
       return (actual.execFile as (...a: unknown[]) => unknown)(file, args, ...rest);
     }) as typeof actual.execFile,
   };
@@ -57,6 +61,7 @@ describe('git watcher — process churn', () => {
   beforeEach(() => {
     gitCalls.length = 0;
     gitFiles.length = 0;
+    gitCwds.length = 0;
     send = vi.fn<(channel: string, ...args: unknown[]) => void>();
     // Only the poll interval is faked: ticks fire when the test says so.
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
@@ -104,8 +109,8 @@ describe('git watcher — process churn', () => {
     const w = createSessionGitWatcher({ sendToRenderer: send, pollIntervalMs: INTERVAL });
     const main = await w.start(repo);
     const feature = await w.start(wt);
-    expect(main.snapshot.worktrees.map((p) => p.path)).toEqual([wt]);
-    expect(feature.snapshot.worktrees.map((p) => p.path)).toEqual([repo]);
+    expect(main.snapshot.repos[0].worktrees.map((p) => p.path)).toEqual([wt]);
+    expect(feature.snapshot.repos[0].worktrees.map((p) => p.path)).toEqual([repo]);
     await settle();
     gitCalls.length = 0;
 
@@ -124,6 +129,47 @@ describe('git watcher — process churn', () => {
     await tick(3);
     expect(listCalls()).toBe(0);
     expect(statusCalls()).toBe(3);
+    w.disposeAll();
+  });
+
+  it('two projects watching the same sub-repo share its reader', async () => {
+    const repo = makeTempRepo(); dirs.push(repo);
+    const p1 = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'gc-p1-'))); dirs.push(p1);
+    const p2 = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'gc-p2-'))); dirs.push(p2);
+    const w = createSessionGitWatcher({
+      sendToRenderer: send,
+      pollIntervalMs: INTERVAL,
+      repos: { watchedRepos: () => [{ path: repo, name: 'r' }], foundCount: async () => 0 },
+    });
+    await w.start(p1);
+    await w.start(p2);
+    await settle();
+    gitCalls.length = 0;
+    await tick(2);
+    expect(statusCalls()).toBe(2);
+    w.disposeAll();
+  });
+
+  it('a repo dropped by reconfigure() is no longer polled', async () => {
+    const a = makeTempRepo(); dirs.push(a);
+    const b = makeTempRepo(); dirs.push(b);
+    const proj = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'gc-proj-'))); dirs.push(proj);
+    let watched = [{ path: a, name: 'a' }, { path: b, name: 'b' }];
+    const w = createSessionGitWatcher({
+      sendToRenderer: send,
+      pollIntervalMs: INTERVAL,
+      repos: { watchedRepos: () => watched, foundCount: async () => 0 },
+    });
+    await w.start(proj);
+    await settle();
+    watched = [{ path: a, name: 'a' }];
+    await w.reconfigure(proj);
+    await settle();
+    gitCalls.length = 0;
+    gitCwds.length = 0;
+    await tick(2);
+    const statusCwds = gitCwds.filter((_, i) => gitCalls[i].includes('status'));
+    expect(statusCwds).toEqual([a, a]);
     w.disposeAll();
   });
 
@@ -164,8 +210,8 @@ describe('git watcher — process churn', () => {
     w.setVisible(b.watchId, true);
     await settle();
     expect(statusCalls()).toBe(1);
-    const last = send.mock.calls.filter((c) => c[0] === `session-git-changed:${b.watchId}`).at(-1)?.[1] as { project: { changed: number } };
-    expect(last.project.changed).toBe(1);
+    const last = send.mock.calls.filter((c) => c[0] === `session-git-changed:${b.watchId}`).at(-1)?.[1] as { repos: { root: { changed: number } }[] };
+    expect(last.repos[0].root.changed).toBe(1);
     w.disposeAll();
   });
 
@@ -192,7 +238,7 @@ describe('git watcher — process churn', () => {
     gitCalls.length = 0;
     const b = await w.start(repo);
     expect(statusCalls()).toBe(1);
-    expect(b.snapshot.project.untracked).toBe(1);
+    expect(b.snapshot.repos[0].root.untracked).toBe(1);
     w.disposeAll();
   });
 
