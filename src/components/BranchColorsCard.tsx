@@ -46,7 +46,7 @@ export const BranchColorsCard: React.FC<BranchColorsCardProps> = ({
   const save = async () => {
     if (!editing?.branch) return;
     await api.upsertBranchColor({
-      projectPath,
+      repoPath: projectPath,
       branchName: editing.branch,
       color: editing.color,
     });

@@ -78,6 +78,8 @@ import { toElicitationAction } from '../services/sessions/elicitations';
 import { createPermissionsIOService } from '../services/permissions-io';
 import { createSessionGitWatcher, listWorktrees } from '../services/git-watcher';
 import { createBranchColorsService } from '../services/branch-colors';
+import { createProjectReposService } from '../services/project-repos';
+import { discoverRepos } from '../services/git-repos';
 import { listBranches as listGitBranches } from '../services/git-branches';
 import { listChangedFiles as listGitChangedFiles, readFileDiff as readGitFileDiff } from '../services/git-diff';
 import { createLimaService } from '../services/lima';
@@ -572,7 +574,11 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
   sessionsSummaryServiceRef = sessionsSummaryService;
 
   const sessionGitWatcher = createSessionGitWatcher({ sendToRenderer });
-  const branchColorsService = createBranchColorsService(db);
+  const branchColorsService = createBranchColorsService(db, { sendToRenderer });
+  const projectReposService = createProjectReposService({ db, discover: discoverRepos });
+  projectReposService.onChange((projectPath) => {
+    sendToRenderer('project-repos-changed', { projectPath });
+  });
   const limaService = createLimaService();
   const filesystemService = createFilesystemService();
   const codexSessionWalkerService = createCodexSessionWalker({
@@ -907,6 +913,7 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
       setSessionVisible: (watchId, visible, holder) => { sessionGitWatcher.setVisible(watchId, visible, holder); },
     },
     branchColors: branchColorsService,
+    projectRepos: projectReposService,
     gitBranches: { list: listGitBranches },
     gitDiff: {
       listChangedFiles: listGitChangedFiles,

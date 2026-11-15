@@ -245,6 +245,10 @@ export const INVOKE_CHANNELS: readonly string[] = [
   'branch_colors_list',
   'branch_colors_upsert',
   'branch_colors_delete',
+  'get_project_repos',
+  'set_project_repo_watched',
+  'set_project_repo_scan_depth',
+  'remove_project_repo',
 
   // Git
   'get_git_branch',

@@ -1,8 +1,14 @@
 import type { Database } from './database';
+import { repoIdentity } from './git-repos';
 
+/**
+ * Branch colour pins, per repo. A repo is keyed by its main checkout
+ * (`repoIdentity`), so the same repo shows the same colours whether it is
+ * opened directly, through a linked worktree, or inside another project.
+ */
 export interface BranchColor {
   id: number;
-  project_path: string;
+  repo_path: string;
   branch_name: string;
   color: string;
   sort_order: number;
@@ -10,62 +16,65 @@ export interface BranchColor {
 }
 
 export interface BranchColorUpsert {
-  project_path: string;
+  /** Any checkout of the repo; normalised to its main checkout. */
+  repo_path: string;
   branch_name: string;
   color: string;
 }
 
 export interface BranchColorsService {
-  listForProject(projectPath: string): BranchColor[];
+  listForRepo(repoPath: string): BranchColor[];
   upsert(input: BranchColorUpsert): BranchColor;
   delete(id: number): boolean;
 }
 
-export function createBranchColorsService(db: Database): BranchColorsService {
+export interface BranchColorsDeps {
+  /** Announces `branch-colors-changed` `{ repoPath }` after every write. */
+  sendToRenderer?: (channel: string, ...args: unknown[]) => void;
+}
+
+const COLUMNS = 'id, repo_path, branch_name, color, sort_order, created_at';
+
+export function createBranchColorsService(db: Database, deps: BranchColorsDeps = {}): BranchColorsService {
   const raw = db.raw;
+  const key = (p: string): string => repoIdentity(p) ?? p;
+  const announce = (repoPath: string): void => {
+    deps.sendToRenderer?.('branch-colors-changed', { repoPath });
+  };
 
   const listStmt = raw.prepare(
-    `SELECT id, project_path, branch_name, color, sort_order, created_at
-       FROM branch_colors
-      WHERE project_path = ?
-      ORDER BY sort_order ASC, id ASC`,
+    `SELECT ${COLUMNS} FROM branch_colors WHERE repo_path = ? ORDER BY sort_order ASC, id ASC`,
   );
-
+  const nextOrderStmt = raw.prepare(
+    `SELECT COALESCE(MAX(sort_order), -1) + 1 AS next FROM branch_colors WHERE repo_path = ?`,
+  );
   const upsertStmt = raw.prepare(
-    `INSERT INTO branch_colors (project_path, branch_name, color, sort_order, created_at)
+    `INSERT INTO branch_colors (repo_path, branch_name, color, sort_order, created_at)
      VALUES (?, ?, ?, ?, ?)
-     ON CONFLICT(project_path, branch_name)
+     ON CONFLICT(repo_path, branch_name)
      DO UPDATE SET color = excluded.color
-     RETURNING id, project_path, branch_name, color, sort_order, created_at`,
+     RETURNING ${COLUMNS}`,
   );
-
-  const deleteStmt = raw.prepare(`DELETE FROM branch_colors WHERE id = ?`);
+  const deleteStmt = raw.prepare(`DELETE FROM branch_colors WHERE id = ? RETURNING repo_path`);
 
   return {
-    listForProject(projectPath: string): BranchColor[] {
-      return listStmt.all(projectPath) as BranchColor[];
+    listForRepo(repoPath) {
+      return listStmt.all(key(repoPath)) as BranchColor[];
     },
 
-    upsert(input: BranchColorUpsert): BranchColor {
-      const now = Date.now();
-      const nextOrderRow = raw
-        .prepare(
-          `SELECT COALESCE(MAX(sort_order), -1) + 1 AS next FROM branch_colors WHERE project_path = ?`,
-        )
-        .get(input.project_path) as { next: number };
-      const row = upsertStmt.get(
-        input.project_path,
-        input.branch_name,
-        input.color,
-        nextOrderRow.next,
-        now,
-      ) as BranchColor;
+    upsert(input) {
+      const repoPath = key(input.repo_path);
+      const { next } = nextOrderStmt.get(repoPath) as { next: number };
+      const row = upsertStmt.get(repoPath, input.branch_name, input.color, next, Date.now()) as BranchColor;
+      announce(repoPath);
       return row;
     },
 
-    delete(id: number): boolean {
-      const info = deleteStmt.run(id);
-      return info.changes > 0;
+    delete(id) {
+      const row = deleteStmt.get(id) as { repo_path: string } | undefined;
+      if (!row) return false;
+      announce(row.repo_path);
+      return true;
     },
   };
 }

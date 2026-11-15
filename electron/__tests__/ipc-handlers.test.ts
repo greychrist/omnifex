@@ -1146,41 +1146,41 @@ describe('logging handlers', () => {
 describe('branch colors handlers', () => {
   function makeBranchColors() {
     return {
-      listForProject: vi.fn().mockReturnValue([{ branch_name: 'main', color: '#fff' }]),
+      listForRepo: vi.fn().mockReturnValue([{ branch_name: 'main', color: '#fff' }]),
       upsert: vi.fn().mockReturnValue({ id: 1 }),
       delete: vi.fn().mockReturnValue(true),
     };
   }
 
-  it('branch_colors_list forwards camelCase projectPath', async () => {
+  it('branch_colors_list forwards camelCase repoPath', async () => {
     const branchColors = makeBranchColors();
     const handlers = getHandlerMap({ branchColors: branchColors });
-    await invoke(handlers, 'branch_colors_list', { projectPath: '/p' });
-    expect(branchColors.listForProject).toHaveBeenCalledWith('/p');
+    await invoke(handlers, 'branch_colors_list', { repoPath: '/p' });
+    expect(branchColors.listForRepo).toHaveBeenCalledWith('/p');
   });
 
-  it('branch_colors_list also accepts snake_case project_path', async () => {
+  it('branch_colors_list also accepts snake_case repo_path', async () => {
     const branchColors = makeBranchColors();
     const handlers = getHandlerMap({ branchColors: branchColors });
-    await invoke(handlers, 'branch_colors_list', { project_path: '/p2' });
-    expect(branchColors.listForProject).toHaveBeenCalledWith('/p2');
+    await invoke(handlers, 'branch_colors_list', { repo_path: '/p2' });
+    expect(branchColors.listForRepo).toHaveBeenCalledWith('/p2');
   });
 
   it('branch_colors_list returns [] when service is missing', async () => {
     const handlers = getHandlerMap({});
-    await expect(invoke(handlers, 'branch_colors_list', { projectPath: '/p' })).resolves.toEqual([]);
+    await expect(invoke(handlers, 'branch_colors_list', { repoPath: '/p' })).resolves.toEqual([]);
   });
 
   it('branch_colors_upsert builds the upsert payload from camelCase keys', async () => {
     const branchColors = makeBranchColors();
     const handlers = getHandlerMap({ branchColors: branchColors });
     await invoke(handlers, 'branch_colors_upsert', {
-      projectPath: '/p',
+      repoPath: '/p',
       branchName: 'feat',
       color: '#abc',
     });
     expect(branchColors.upsert).toHaveBeenCalledWith({
-      project_path: '/p',
+      repo_path: '/p',
       branch_name: 'feat',
       color: '#abc',
     });
@@ -1190,12 +1190,12 @@ describe('branch colors handlers', () => {
     const branchColors = makeBranchColors();
     const handlers = getHandlerMap({ branchColors: branchColors });
     await invoke(handlers, 'branch_colors_upsert', {
-      project_path: '/p',
+      repo_path: '/p',
       branch_name: 'feat',
       color: '#abc',
     });
     expect(branchColors.upsert).toHaveBeenCalledWith({
-      project_path: '/p',
+      repo_path: '/p',
       branch_name: 'feat',
       color: '#abc',
     });
@@ -1539,6 +1539,55 @@ describe('ipc handlers — conversationStatus removed from IPC contract (Task 3)
     expect(result).toHaveProperty('sessionId', 'sess-2');
     expect(result).toHaveProperty('sessionStatus', 'started');
     expect(result).not.toHaveProperty('conversationStatus');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Project repos handlers
+// ---------------------------------------------------------------------------
+
+describe('project repos handlers', () => {
+  function makeProjectRepos() {
+    return {
+      get: vi.fn().mockResolvedValue({ scanDepth: 1, repos: [] }),
+      setWatched: vi.fn(),
+      setScanDepth: vi.fn(),
+      remove: vi.fn(),
+    };
+  }
+
+  it('get_project_repos accepts camelCase and snake_case', async () => {
+    const projectRepos = makeProjectRepos();
+    const handlers = getHandlerMap({ projectRepos });
+    await invoke(handlers, 'get_project_repos', { projectPath: '/p' });
+    await invoke(handlers, 'get_project_repos', { project_path: '/q' });
+    expect(projectRepos.get.mock.calls).toEqual([['/p'], ['/q']]);
+  });
+
+  it('set_project_repo_watched forwards project, repo and flag', async () => {
+    const projectRepos = makeProjectRepos();
+    const handlers = getHandlerMap({ projectRepos });
+    await invoke(handlers, 'set_project_repo_watched', { projectPath: '/p', repoPath: '/p/a', watched: true });
+    await invoke(handlers, 'set_project_repo_watched', { project_path: '/p', repo_path: '/p/b', watched: false });
+    expect(projectRepos.setWatched.mock.calls).toEqual([['/p', '/p/a', true], ['/p', '/p/b', false]]);
+  });
+
+  it('set_project_repo_scan_depth forwards the depth', async () => {
+    const projectRepos = makeProjectRepos();
+    const handlers = getHandlerMap({ projectRepos });
+    await invoke(handlers, 'set_project_repo_scan_depth', { project_path: '/p', depth: 3 });
+    expect(projectRepos.setScanDepth).toHaveBeenCalledWith('/p', 3);
+  });
+
+  it('remove_project_repo forwards project and repo', async () => {
+    const projectRepos = makeProjectRepos();
+    const handlers = getHandlerMap({ projectRepos });
+    await invoke(handlers, 'remove_project_repo', { projectPath: '/p', repoPath: '/p/a' });
+    expect(projectRepos.remove).toHaveBeenCalledWith('/p', '/p/a');
+  });
+
+  it('get_project_repos returns null when the service is missing', async () => {
+    await expect(invoke(getHandlerMap({}), 'get_project_repos', { projectPath: '/p' })).resolves.toBeNull();
   });
 });
 

@@ -205,9 +205,27 @@ export type UsageRunResult =
 
 export type ValidateCliPathResult = { ok: true } | { ok: false; error: string };
 
+export interface ProjectRepo {
+  path: string;
+  /** Relative to the project folder. */
+  name: string;
+  watched: boolean;
+  /** Saved as watched but no longer a repo on disk. */
+  missing: boolean;
+}
+
+export interface ProjectRepos {
+  scanDepth: number;
+  rootIsRepo: boolean;
+  rootPath: string;
+  repos: ProjectRepo[];
+  truncated: boolean;
+}
+
 export interface BranchColor {
   id: number;
-  project_path: string;
+  /** The repo's main checkout. */
+  repo_path: string;
   branch_name: string;
   color: string;
   sort_order: number;
@@ -3621,15 +3639,41 @@ export const api = {
     );
   },
 
-  // ── Branch Colors ─────────────────────────────────────────────
-  async listBranchColors(projectPath: string): Promise<BranchColor[]> {
-    return apiCall<BranchColor[]>('branch_colors_list', { projectPath });
+  // ── Branch Colors (per repo) ─────────────────────────────────
+  /** Pins for a repo; any checkout path of it works. */
+  async listBranchColors(repoPath: string): Promise<BranchColor[]> {
+    return apiCall<BranchColor[]>('branch_colors_list', { repoPath });
   },
-  async upsertBranchColor(input: { projectPath: string; branchName: string; color: string }): Promise<BranchColor> {
+  async upsertBranchColor(input: { repoPath: string; branchName: string; color: string }): Promise<BranchColor> {
     return apiCall<BranchColor>('branch_colors_upsert', input);
   },
   async deleteBranchColor(id: number): Promise<boolean> {
     return apiCall<boolean>('branch_colors_delete', { id });
+  },
+  /** Fires with the repo's main checkout whenever its pins change. */
+  onBranchColorsChanged(cb: (repoPath: string) => void): () => void {
+    return window.electronAPI.onEvent('branch-colors-changed', (data: any) => {
+      if (typeof data?.repoPath === 'string') cb(data.repoPath);
+    });
+  },
+
+  // ── Project repos ──────────────────────────────────────────────
+  async getProjectRepos(projectPath: string): Promise<ProjectRepos | null> {
+    return apiCall<ProjectRepos | null>('get_project_repos', { projectPath });
+  },
+  async setProjectRepoWatched(projectPath: string, repoPath: string, watched: boolean): Promise<void> {
+    await apiCall('set_project_repo_watched', { projectPath, repoPath, watched });
+  },
+  async setProjectRepoScanDepth(projectPath: string, depth: number): Promise<void> {
+    await apiCall('set_project_repo_scan_depth', { projectPath, depth });
+  },
+  async removeProjectRepo(projectPath: string, repoPath: string): Promise<void> {
+    await apiCall('remove_project_repo', { projectPath, repoPath });
+  },
+  onProjectReposChanged(cb: (projectPath: string) => void): () => void {
+    return window.electronAPI.onEvent('project-repos-changed', (data: any) => {
+      if (typeof data?.projectPath === 'string') cb(data.projectPath);
+    });
   },
   async listGitBranches(projectPath: string): Promise<string[]> {
     return apiCall<string[]>('git_list_branches', { projectPath });

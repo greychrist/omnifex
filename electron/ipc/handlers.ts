@@ -230,9 +230,15 @@ export interface Services {
     setSessionVisible(watchId: string, visible: boolean, holder: WatchHolder | undefined): void;
   };
   branchColors?: {
-    listForProject(projectPath: string): unknown;
-    upsert(input: { project_path: string; branch_name: string; color: string }): unknown;
+    listForRepo(repoPath: string): unknown;
+    upsert(input: { repo_path: string; branch_name: string; color: string }): unknown;
     delete(id: number): unknown;
+  };
+  projectRepos?: {
+    get(projectPath: string): Promise<unknown>;
+    setWatched(projectPath: string, repoPath: string, watched: boolean): void;
+    setScanDepth(projectPath: string, depth: number): void;
+    remove(projectPath: string, repoPath: string): void;
   };
   gitBranches?: {
     list(projectPath: string): Promise<string[]>;
@@ -419,7 +425,7 @@ function costFilters(p: Record<string, unknown> | undefined): Record<string, unk
  * renderer gets a defined (but empty) response rather than a blocked channel.
  */
 export function getHandlerMap(services: Services = {}): Record<string, HandlerFn> {
-  const { brain, brainMcp, accounts, claude, sessions, cost, modelPricing, usage, rateLimits, usageRunner, claudeBinary, mcp, slashCommands, sessionsSummary, logging, database, proxy, permissionsIO, models, commands, gitWatcher, branchColors, gitBranches, gitDiff, lima, filesystem, oneShotTerminal, codexAuth, claudeAuth, codexSessionWalker, accountIdentity, allowRawSql } = services;
+  const { brain, brainMcp, accounts, claude, sessions, cost, modelPricing, usage, rateLimits, usageRunner, claudeBinary, mcp, slashCommands, sessionsSummary, logging, database, proxy, permissionsIO, models, commands, gitWatcher, branchColors, projectRepos, gitBranches, gitDiff, lima, filesystem, oneShotTerminal, codexAuth, claudeAuth, codexSessionWalker, accountIdentity, allowRawSql } = services;
 
   // Positive account-ownership guard for config-editing channels. A non-empty
   // configDir supplied by the renderer must belong to a known account, so a
@@ -958,11 +964,11 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
 
     // ── Branch Colors ─────────────────────────────────────────────────────────
     branch_colors_list: wrapWith((p: Record<string, unknown>) =>
-      branchColors?.listForProject((p?.projectPath ?? p?.project_path) as string) ?? [],
+      branchColors?.listForRepo((p?.repoPath ?? p?.repo_path) as string) ?? [],
     ),
     branch_colors_upsert: wrapWith((p: Record<string, unknown>) =>
       branchColors?.upsert({
-        project_path: (p?.projectPath ?? p?.project_path) as string,
+        repo_path: (p?.repoPath ?? p?.repo_path) as string,
         branch_name: (p?.branchName ?? p?.branch_name) as string,
         color: p?.color as string,
       }) ?? null,
@@ -970,6 +976,30 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     branch_colors_delete: wrapWith((p: Record<string, unknown>) =>
       branchColors?.delete(p?.id as number) ?? false,
     ),
+
+    // ── Project repos (which git repos a project's sessions watch) ───────────
+    get_project_repos: wrapWith(async (p: Record<string, unknown>) =>
+      (await projectRepos?.get((p?.projectPath ?? p?.project_path) as string)) ?? null,
+    ),
+    set_project_repo_watched: wrapWith((p: Record<string, unknown>) => {
+      projectRepos?.setWatched(
+        (p?.projectPath ?? p?.project_path) as string,
+        (p?.repoPath ?? p?.repo_path) as string,
+        p?.watched === true,
+      );
+      return null;
+    }),
+    set_project_repo_scan_depth: wrapWith((p: Record<string, unknown>) => {
+      projectRepos?.setScanDepth((p?.projectPath ?? p?.project_path) as string, Number(p?.depth));
+      return null;
+    }),
+    remove_project_repo: wrapWith((p: Record<string, unknown>) => {
+      projectRepos?.remove(
+        (p?.projectPath ?? p?.project_path) as string,
+        (p?.repoPath ?? p?.repo_path) as string,
+      );
+      return null;
+    }),
 
     // ── Git Branches ──────────────────────────────────────────────────────────
     git_list_branches: wrapWith((p: Record<string, unknown>) =>
