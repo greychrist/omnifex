@@ -2,21 +2,22 @@ import * as React from 'react';
 import { FolderGit2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { InlineDivider } from '@/components/ui/inline-divider';
+import { ButtonGroup } from '@/components/ui/button-group';
 import { STATUS_BAR_SURFACE } from '@/components/ChatStatusBar';
 import { resolveBranchColors } from '@/lib/branchColors';
 import type { RepoSnapshot, SessionGitSnapshot } from '@/lib/api';
 import { GitBranchBadge } from './GitBranchBadge';
 
 /**
- * The git widget as a second status bar, always present:
+ * The git widget as a second status bar, always present. Each watched repo is
+ * one capsule — its name, then a segment per checkout (main first, then each
+ * worktree) with that checkout's branch and changes:
  *
- *   branch [main ●3]  ⎇ +2 found              the project folder is the only repo shown
- *   repos (2) [api·main ●3] [web·feat ●1]  ⎇   several repos
- *   ⎇ 2 repos found                           nothing watched yet
+ *   [backend │ dev ●3 │ test/wt-be-1 │ test/wt-be-2 ●1 +2]  [frontend │ dev │ …]  [📁│⟳]
  *
- * One chip per watched repo; its worktrees live in the chip's popover. The
- * repos button opens the dialog where the user picks which repos to watch.
- * Same surface and 10px type as the chat status bar it sits under.
+ * Repo names lose the prefix they share; a capsule wraps as a unit. A
+ * segment's popover has the path and View changes; a repo's name opens the
+ * repos dialog. Same surface and 10px type as the chat status bar above it.
  */
 
 export interface BranchStatusBarProps {
@@ -31,8 +32,6 @@ export interface BranchStatusBarProps {
   className?: string;
 }
 
-const LABEL = 'opacity-70 text-muted-foreground';
-const ROW = 'flex flex-wrap items-center gap-1';
 
 function basename(p: string): string {
   const parts = p.split('/').filter(Boolean);
@@ -44,56 +43,93 @@ function reposButtonText(shown: number, found: number): string | null {
   return found > 0 ? `+${found} found` : null;
 }
 
-function RepoChip({ repo, label, pins, onViewChanges }: {
+/**
+ * Display names with the prefix every repo shares removed, cut back to a
+ * separator so `encompass-platform-backend` / `-frontend` become `backend` /
+ * `frontend`. A lone repo, or a cut that would empty a name, keeps the full names.
+ */
+export function shortRepoNames(names: string[]): string[] {
+  if (names.length < 2) return names;
+  let prefix = names[0];
+  for (const n of names.slice(1)) {
+    let k = 0;
+    while (k < prefix.length && k < n.length && prefix[k] === n[k]) k++;
+    prefix = prefix.slice(0, k);
+  }
+  const cut = Math.max(...['-', '_', '/', '.', ' '].map((c) => prefix.lastIndexOf(c))) + 1;
+  if (cut <= 0) return names;
+  const short = names.map((n) => n.slice(cut));
+  return short.some((n) => n === '') ? names : short;
+}
+
+function RepoCapsule({ repo, fullName, shortName, pins, onViewChanges, onOpenRepos }: {
   repo: RepoSnapshot;
-  /** `repo·` prefix; undefined for a lone project repo. */
-  label: string | undefined;
+  fullName: string;
+  shortName: string;
   pins: Record<string, string>;
   onViewChanges: BranchStatusBarProps['onViewChanges'];
+  onOpenRepos: () => void;
 }) {
-  const name = repo.root.branch ?? '(detached)';
+  const label = (b: string | null) => b ?? '(detached)';
   const colors = resolveBranchColors({
     pins,
     mainFolderBranch: repo.root.branch,
-    branches: [name, ...repo.worktrees.map((wt) => wt.branch ?? '(detached)')],
+    branches: [label(repo.root.branch), ...repo.worktrees.map((wt) => label(wt.branch))],
   });
+  const checkouts = [repo.root, ...repo.worktrees];
   return (
-    <span title={repo.root.path}>
-      <GitBranchBadge
-        size="bar"
-        name={name}
-        repoName={label}
-        changed={repo.root.changed}
-        untracked={repo.root.untracked}
-        color={colors.colors[name] ?? null}
-        isTrunk={colors.trunkBlack.has(name)}
-        path={repo.root.path}
-        error={repo.root.error}
-        onViewChanges={() => { onViewChanges(repo.root.path, label); }}
-        worktrees={repo.worktrees}
-        onViewWorktreeChanges={(path, wtLabel) => { onViewChanges(path, wtLabel); }}
-      />
-    </span>
+    <ButtonGroup label={fullName} className="shrink-0">
+      <button
+        type="button"
+        onClick={onOpenRepos}
+        title={`${fullName}\n${repo.root.path}`}
+        className="flex items-center px-1.5 text-[10px] text-muted-foreground hover:bg-accent hover:text-foreground focus:outline-none focus-visible:bg-accent"
+      >
+        {shortName}
+      </button>
+      {checkouts.map((c, i) => {
+        const name = label(c.branch);
+        const isMain = i === 0;
+        return (
+          <GitBranchBadge
+            key={c.path}
+            size="bar"
+            segment
+            className={isMain ? 'font-semibold' : undefined}
+            name={name}
+            changed={c.changed}
+            untracked={c.untracked}
+            color={colors.colors[name] ?? null}
+            isTrunk={colors.trunkBlack.has(name)}
+            path={c.path}
+            error={c.error}
+            onViewChanges={() => { onViewChanges(c.path, isMain ? (repo.name || undefined) : name); }}
+          />
+        );
+      })}
+    </ButtonGroup>
   );
 }
 
 export const BranchStatusBar = React.forwardRef<HTMLDivElement, BranchStatusBarProps>(
   function BranchStatusBar({ snapshot, pins, onViewChanges, onOpenRepos, watch, className }, ref) {
     const { repos, foundCount } = snapshot;
-    const lone = repos.length === 1 && repos[0].name === '';
     const items: React.JSX.Element[] = [];
+    const fullNames = repos.map((r) => r.name || basename(r.root.path));
+    const shortNames = shortRepoNames(fullNames);
 
     if (repos.length > 0) {
       items.push(
-        <span key="repos" className={ROW}>
-          <span className={LABEL}>{lone ? 'branch' : `repos (${repos.length})`}</span>
-          {repos.map((repo) => (
-            <RepoChip
+        <span key="repos" className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+          {repos.map((repo, i) => (
+            <RepoCapsule
               key={repo.root.path}
               repo={repo}
-              label={lone ? undefined : repo.name || basename(repo.root.path)}
+              fullName={fullNames[i]}
+              shortName={shortNames[i]}
               pins={pins[repo.root.path] ?? {}}
               onViewChanges={onViewChanges}
+              onOpenRepos={onOpenRepos}
             />
           ))}
         </span>,
@@ -101,23 +137,23 @@ export const BranchStatusBar = React.forwardRef<HTMLDivElement, BranchStatusBarP
     }
 
     const text = reposButtonText(repos.length, foundCount);
+    // The repos button and the watch glyph act on the same thing — this
+    // project's git — so they sit together as one control.
     items.push(
-      <button
-        key="manage"
-        type="button"
-        onClick={onOpenRepos}
-        aria-label={text ?? 'Manage repos'}
-        title="Repos in this project"
-        className="flex items-center gap-1 rounded px-1 py-0.5 text-[10px] text-muted-foreground hover:bg-accent hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      >
-        <FolderGit2 className="h-3 w-3" />
-        {text}
-      </button>,
+      <ButtonGroup key="git" label="Git">
+        <button
+          type="button"
+          onClick={onOpenRepos}
+          aria-label={text ?? 'Manage repos'}
+          title="Repos in this project"
+          className="flex h-5 items-center gap-1 px-1 text-[10px] text-muted-foreground hover:bg-accent hover:text-foreground focus:outline-none focus-visible:bg-accent"
+        >
+          <FolderGit2 className="h-3 w-3" />
+          {text}
+        </button>
+        {watch}
+      </ButtonGroup>,
     );
-
-    if (watch) {
-      items.push(<React.Fragment key="watch">{watch}</React.Fragment>);
-    }
 
     return (
       <div ref={ref} data-testid="branch-status-bar" className={cn(STATUS_BAR_SURFACE, className)}>

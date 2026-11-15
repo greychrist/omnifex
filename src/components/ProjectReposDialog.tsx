@@ -17,6 +17,10 @@ import { fireAndLog } from '@/lib/fireAndLog';
 
 const DEPTHS = [1, 2, 3, 4, 5];
 
+function tildeHome(p: string): string {
+  return p.replace(/^\/Users\/[^/]+/, '~');
+}
+
 function basename(p: string): string {
   const parts = p.split('/').filter(Boolean);
   return parts[parts.length - 1] ?? p;
@@ -63,14 +67,20 @@ const RepoRow: React.FC<RowProps> = ({ name, path, watched, locked, missing, onW
           aria-expanded={expanded}
           disabled={missing}
           onClick={() => { setExpanded((v) => !v); }}
-          className="flex min-w-0 flex-1 items-center gap-1.5 text-left disabled:opacity-60"
+          className="flex min-w-0 flex-1 items-start gap-1.5 text-left disabled:opacity-60 [&>svg]:mt-0.5"
         >
           {expanded ? <ChevronDown className="h-3.5 w-3.5 shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0" />}
           <FolderGit2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-          <span className="font-mono text-xs truncate">{name}</span>
-          {locked && <span className="text-[10px] text-muted-foreground">project folder</span>}
-          {missing && <span className="text-[10px] text-rose-400">missing</span>}
-          <span className="ml-1 truncate text-[10px] text-muted-foreground/70">{path}</span>
+          {/* Name, then path on its own line — both wrap rather than truncate,
+              since repo names alone can outrun the dialog. */}
+          <span data-repo-row-text className="flex min-w-0 flex-1 flex-col">
+            <span className="flex flex-wrap items-baseline gap-x-1.5">
+              <span className="font-mono text-xs break-all">{name}</span>
+              {locked && <span className="text-[10px] text-muted-foreground">project folder</span>}
+              {missing && <span className="text-[10px] text-rose-400">missing</span>}
+            </span>
+            <span className="text-[10px] text-muted-foreground/70 break-all" title={path}>{tildeHome(path)}</span>
+          </span>
         </button>
         {missing && onRemove ? (
           <Button

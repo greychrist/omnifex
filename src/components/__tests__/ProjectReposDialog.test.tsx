@@ -78,4 +78,24 @@ describe('ProjectReposDialog', () => {
     open();
     expect(await screen.findByText(/showing the first 50 repos/i)).toBeTruthy();
   });
+
+  it('puts the path on its own line under the full, untruncated name', async () => {
+    open();
+    const name = await screen.findByText('api');
+    expect(name.className).not.toContain('truncate');
+    const path = screen.getByText('/p/api');
+    expect(path.className).not.toContain('truncate');
+    // Separate lines: the path is not inside the name's line.
+    expect(name.parentElement!.contains(path)).toBe(false);
+    expect(name.closest('[data-repo-row-text]')!.contains(path)).toBe(true);
+  });
+
+  it('shortens the home folder in the path to ~', async () => {
+    api.getProjectRepos.mockResolvedValue({
+      ...repos,
+      repos: [{ path: '/Users/someone/Repos/x', name: 'x', watched: false, missing: false }],
+    });
+    open();
+    expect(await screen.findByText('~/Repos/x')).toBeTruthy();
+  });
 });

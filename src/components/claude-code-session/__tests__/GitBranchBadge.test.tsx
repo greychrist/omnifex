@@ -66,35 +66,20 @@ describe('GitBranchBadge — bar size', () => {
   });
 });
 
-describe('GitBranchBadge — repos and worktrees', () => {
-  it('prefixes the branch with the repo name', () => {
-    render(<GitBranchBadge {...base} repoName="api" />);
-    expect(screen.getByRole('button').textContent).toMatch(/^api·main/);
+describe('GitBranchBadge — as a segment of a button group', () => {
+  it('drops its own corners and border so the group draws them', () => {
+    render(<GitBranchBadge {...base} color="#ff0000" isTrunk={false} segment />);
+    const b = screen.getByRole('button');
+    expect(b.className).not.toMatch(/(^|\s)rounded(\s|$)/);
+    expect(b.className).not.toMatch(/(^|\s)border(\s|$)/);
+    expect(b.getAttribute('style') ?? '').not.toContain('border-color');
   });
 
-  it('lists worktrees in the popover, each with its own View changes', () => {
-    const onViewWorktreeChanges = vi.fn();
-    render(
-      <GitBranchBadge
-        {...base}
-        changed={0}
-        untracked={0}
-        worktrees={[
-          { path: '/wt/a', branch: 'feat/a', changed: 1, untracked: 0, error: null },
-          { path: '/wt/b', branch: null, changed: 0, untracked: 0, error: null },
-        ]}
-        onViewWorktreeChanges={onViewWorktreeChanges}
-      />,
-    );
-    openPopover();
-    expect(screen.getByText('Worktrees (2)')).toBeTruthy();
-    expect(screen.getByText('feat/a')).toBeTruthy();
-    expect(screen.getByText('(detached)')).toBeTruthy();
-    // Only the dirty worktree offers a diff; the clean repo itself offers none.
-    const buttons = screen.getAllByRole('button', { name: /view changes/i });
-    expect(buttons).toHaveLength(1);
-    fireEvent.click(buttons[0]);
-    expect(onViewWorktreeChanges).toHaveBeenCalledWith('/wt/a', 'feat/a');
+  it('cuts a long branch name short on the chip, keeping it whole in the tooltip', () => {
+    render(<GitBranchBadge {...base} name="feature/JIRA-1234-a-really-long-branch-name" />);
+    const label = screen.getByText('feature/JIRA-1234-a-really-long-branch-name', { selector: 'button span' });
+    expect(label.className).toContain('truncate');
+    expect(label.className).toContain('max-w-[24ch]');
+    expect(screen.getByRole('button').getAttribute('title')).toContain('feature/JIRA-1234-a-really-long-branch-name');
   });
 });
-

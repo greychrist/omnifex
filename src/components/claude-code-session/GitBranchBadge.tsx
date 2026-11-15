@@ -25,20 +25,10 @@ export interface GitBranchBadgeProps {
   /** `bar` sets the chip in a status bar: the bar's 10px type, and
    *  block-level so it centres with the bar's readouts. */
   size?: 'header' | 'bar';
-  /** Shown before the branch as `repo·branch` when a project shows several repos. */
-  repoName?: string;
-  /** This repo's other worktrees, listed in the popover. */
-  worktrees?: GitBranchBadgeWorktree[];
-  /** Open the diff viewer on one of `worktrees`, by path and display label. */
-  onViewWorktreeChanges?: (path: string, label: string) => void;
-}
-
-export interface GitBranchBadgeWorktree {
-  path: string;
-  branch: string | null;
-  changed: number;
-  untracked: number;
-  error: string | null;
+  /** A segment of a `ButtonGroup`: the group draws the corners and border. */
+  segment?: boolean;
+  /** Extra classes for the chip, e.g. the heavier weight of a main checkout. */
+  className?: string;
 }
 
 // WCAG relative luminance — used only to detect TRUE near-black picks where
@@ -69,9 +59,8 @@ export const GitBranchBadge: React.FC<GitBranchBadgeProps> = ({
   error,
   onViewChanges,
   size = 'header',
-  repoName,
-  worktrees = [],
-  onViewWorktreeChanges,
+  segment = false,
+  className,
 }) => {
   const textSize = size === 'bar' ? 'text-[10px]' : 'text-[11px]';
   // An inline-flex trigger inside the Popover's block wrapper opens a line
@@ -88,14 +77,16 @@ export const GitBranchBadge: React.FC<GitBranchBadgeProps> = ({
 
   const inlineStyle = useColor
     ? nearBlack
-      ? { backgroundColor: '#ffffff26', color: '#ffffff', borderColor: `${color}cc` }
-      : { backgroundColor: `${color}33`, color: color, borderColor: `${color}4d` }
+      ? { backgroundColor: '#ffffff26', color: '#ffffff', ...(segment ? {} : { borderColor: `${color}cc` }) }
+      : { backgroundColor: `${color}33`, color: color, ...(segment ? {} : { borderColor: `${color}4d` }) }
     : undefined;
+  // A segment's corners and border belong to its group.
+  const frame = segment ? '' : 'rounded border';
 
   const badgeContent = (
     <>
       <GitBranch className="w-3.5 h-3.5" />
-      {repoName ? `${repoName}·${name}` : name}
+      <span className="truncate max-w-[24ch]">{name}</span>
       {(changed > 0 || untracked > 0) && (
         <span aria-hidden className="h-3 w-px bg-current opacity-40 mx-0.5" />
       )}
@@ -120,9 +111,11 @@ export const GitBranchBadge: React.FC<GitBranchBadgeProps> = ({
     return (
       <span
         className={cn(
-          'inline-flex items-center gap-1 px-2 py-0.5 rounded border font-mono font-medium',
+          'inline-flex items-center gap-1 px-2 py-0.5 font-mono font-medium',
+          frame,
           textSize,
           isTrunk && 'bg-black text-white border-black',
+          className,
         )}
         style={inlineStyle}
         title={titleParts.join(' · ')}
@@ -144,10 +137,12 @@ export const GitBranchBadge: React.FC<GitBranchBadgeProps> = ({
           type="button"
           className={cn(
             display,
-            'items-center gap-1 px-2 py-0.5 rounded border font-mono font-medium cursor-pointer',
+            'items-center gap-1 px-2 py-0.5 font-mono font-medium cursor-pointer',
+            frame,
             textSize,
             'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
             isTrunk && 'bg-black text-white border-black',
+            className,
           )}
           style={inlineStyle}
           title={titleParts.join(' · ')}
@@ -216,49 +211,6 @@ export const GitBranchBadge: React.FC<GitBranchBadgeProps> = ({
               </button>
             )}
           </div>
-
-          {worktrees.length > 0 && (
-            <div>
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
-                Worktrees ({worktrees.length})
-              </div>
-              <div className="flex flex-col gap-1.5">
-                {worktrees.map((wt) => {
-                  const label = wt.branch ?? '(detached)';
-                  const dirty = wt.changed > 0 || wt.untracked > 0;
-                  return (
-                    <div key={wt.path} className="flex items-center gap-2 text-xs" title={wt.path}>
-                      <GitBranch className="w-3 h-3 shrink-0 text-muted-foreground" />
-                      <span className="font-mono truncate">{label}</span>
-                      {wt.changed > 0 && (
-                        <span className={cn("inline-flex items-center gap-0.5", GIT_CHANGED_STYLE.className)}>
-                          <GIT_CHANGED_STYLE.Icon className="w-3 h-3" />
-                          {wt.changed}
-                        </span>
-                      )}
-                      {wt.untracked > 0 && (
-                        <span className={cn("inline-flex items-center gap-0.5", GIT_UNTRACKED_STYLE.className)}>
-                          <GIT_UNTRACKED_STYLE.Icon className="w-3 h-3" />
-                          {wt.untracked}
-                        </span>
-                      )}
-                      {wt.error && <span className="text-rose-400 truncate">{wt.error}</span>}
-                      {onViewWorktreeChanges && dirty && (
-                        <button
-                          type="button"
-                          onClick={() => { setOpen(false); onViewWorktreeChanges(wt.path, label); }}
-                          className="ml-auto flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] text-foreground/90 hover:bg-accent"
-                        >
-                          <GitCompare className="w-3 h-3" />
-                          View changes
-                        </button>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
 
           {error && (
             <div>
