@@ -121,7 +121,7 @@ The Brain is a per-account **memory vault** distilled from those transcripts.
 - Every prompt OmniFex sends on your behalf — session summary, post-compaction directive, CLI drift review — ships as a documented default with an **override you can edit in settings**, no rebuild required.
 
 ### Git awareness
-- Show the current branch per project, list **git worktrees**, and assign **per-project branch colors**.
+- A git bar in every session shows each repo the project watches as one capsule — the repo, its main checkout and each **git worktree**, every one with its branch and uncommitted changes. A project folder that holds several repos lists the ones it found, and you pick which to watch, once, for every session of that project. **Branch colors** belong to the repo, so they match wherever it is opened.
 - A lightweight watcher refreshes the branch badge as your working tree changes — one reader per repository however many tabs are open on it, and none at all while the tab is off screen, the window hidden or closed, or the screen locked.
 
 ### Appearance & the rest

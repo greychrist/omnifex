@@ -5,6 +5,27 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.42] — 2026-11-15
+
+### Added
+
+- Multi-repo git bar: a project folder that contains several git repos now gets a git bar too. OmniFex finds the repos inside it (one level deep by default, adjustable per project), and a repos dialog — opened from the bar or from the project screen — lets you choose which ones the project's sessions watch. The choice is saved per project and reaches every open session of it at once. A newly found repo is never watched until you turn it on; the bar shows how many more were found.
+- Each watched repo is one capsule on the bar: its name (the prefix your repos share dropped), its main checkout, then each worktree, every segment with its branch colour and uncommitted changes. Click a segment for its path and View changes.
+
+### Changed
+
+- Branch colours now belong to the repo rather than the project, so a repo shows the same colours in every project and session that includes it, worktrees included. Existing colours carry over.
+- The project screen's Branch Colors card is now "Repos & branch colours", opening the same dialog, where each repo's colours are edited.
+- The repos button and the git refresh button on the bar sit together as one button group.
+
+### Removed
+
+- The toolbar's "Working tree changes" button. View changes now lives on each repo and worktree segment.
+
+### Fixed
+
+- Progress reports no longer appear as empty steps in the Modern transcript; the status bar and agent bars already show them live.
+
 ## [0.5.41] — 2026-11-14
 
 ### Changed
