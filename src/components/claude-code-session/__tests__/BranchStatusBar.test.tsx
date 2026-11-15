@@ -37,47 +37,91 @@ const encompass: SessionGitSnapshot = {
 };
 
 describe('BranchStatusBar', () => {
-  it('gives each repo a bar of its own, in the chat status bar\'s frame and type', () => {
-    bar(encompass);
-    const bars = screen.getAllByTestId('repo-bar');
-    expect(bars).toHaveLength(2);
-    for (const el of bars) {
-      expect(el.className).toContain('text-[10px]');
-      expect(el.className).toContain('font-mono');
-      expect(el.className).toContain('rounded-md');
+  it('puts everything in one container, the chat status bar\'s own', () => {
+    bar(encompass, { watch: <button type="button" data-testid="watch" /> });
+    const box = screen.getByTestId('branch-status-bar');
+    expect(box.className).toContain('rounded-md');
+    expect(box.className).toContain('text-[10px]');
+    expect(box.className).toContain('font-mono');
+    for (const name of ['encompass-platform-backend', 'encompass-platform-frontend', 'Git']) {
+      expect(box.contains(screen.getByRole('group', { name }))).toBe(true);
     }
-    expect(bars[0].contains(screen.getByRole('group', { name: 'encompass-platform-backend' }))).toBe(true);
-    expect(bars[1].contains(screen.getByRole('group', { name: 'encompass-platform-frontend' }))).toBe(true);
+    expect(box.contains(screen.getByTestId('watch'))).toBe(true);
+    expect(screen.queryAllByTestId('repo-bar')).toHaveLength(0);
   });
 
-  it('labels the whole row "git", muted like the chat bar\'s labels, outside the bars', () => {
+  // Full width like the chat bar above it, so the pair can sit at the right
+  // edge; at least 16px clear of the table when the two would meet.
+  it('right-aligns the repos/refresh pair, clear of the table', () => {
     bar(encompass);
-    const row = screen.getByTestId('branch-status-bar');
-    const label = row.firstElementChild as HTMLElement;
-    expect(label.textContent).toBe('git');
-    expect(label.className).toContain('opacity-70');
-    expect(label.className).toContain('text-[10px]');
+    expect(screen.getByTestId('branch-status-bar').className.split(' ')).toContain('w-full');
+    // A wrapper carries both: `ml-auto` and a margin floor would be one
+    // property, so the floor is padding.
+    const slot = screen.getByRole('group', { name: 'Git' }).parentElement!;
+    expect(slot.className.split(' ')).toContain('ml-auto');
+    expect(slot.className.split(' ')).toContain('pl-4');
+  });
+
+  it('lays repos out as a table: a column for the name, then one per checkout', () => {
+    bar(encompass);
+    const table = screen.getByTestId('repo-rows');
+    // backend has the most checkouts (main + 2 worktrees).
+    expect(table.style.gridTemplateColumns).toBe('auto repeat(3, auto)');
+    // Every row fills every column; frontend's missing worktree is an empty cell.
+    const cells = table.querySelectorAll('[data-cell]');
+    expect(cells).toHaveLength(8);
+    const fe = screen.getByRole('group', { name: 'encompass-platform-frontend' });
+    const feCells = fe.querySelectorAll('[data-cell]');
+    expect(feCells[3].textContent).toBe('');
+  });
+
+  it('divides a repo\'s name and each of its checkouts', () => {
+    bar(encompass);
+    const be = screen.getByRole('group', { name: 'encompass-platform-backend' });
+    // name | dev | wt-be-1 | wt-be-2
+    expect(within(be).getAllByTestId('status-divider')).toHaveLength(3);
+  });
+
+  it('heads the row with a git-pull-request icon and "repos", like a status readout', () => {
+    bar(encompass);
+    const label = screen.getByTestId('branch-status-bar').firstElementChild as HTMLElement;
+    expect(label.textContent).toBe('repos');
+    expect(label.querySelector('svg')!.getAttribute('class')).toContain('lucide-git-pull-request');
+    expect(label.querySelector('svg')!.getAttribute('class')).toContain('h-3.5');
+    const text = Array.from(label.querySelectorAll('span')).find((el) => el.textContent === 'repos')!;
+    expect(text.className).toContain('opacity-70');
+    // A color of its own, as each readout above has.
+    expect(label.className.split(' ')).toContain('text-purple-400');
     expect(label.closest('[data-testid="repo-bar"]')).toBeNull();
   });
 
-  it('labels the row even when no repo is watched', () => {
+  // The repos/refresh pair is the tallest thing on a one-line bar; top-aligned,
+  // the label and the lone row sat high beside it.
+  it('centers a one-repo bar vertically, and top-aligns a taller one', () => {
+    bar({ repos: [repo('', '/p/omnifex', 'main')], foundCount: 0 });
+    expect(screen.getByTestId('branch-status-bar').className.split(' ')).toContain('items-center');
+    cleanup();
     bar({ repos: [], foundCount: 2 });
-    expect(screen.getByTestId('branch-status-bar').firstElementChild!.textContent).toBe('git');
-  });
-
-  it('lays the bars side by side, wrapping when they do not fit', () => {
+    expect(screen.getByTestId('branch-status-bar').className.split(' ')).toContain('items-center');
+    cleanup();
     bar(encompass);
-    const row = screen.getByTestId('branch-status-bar');
-    expect(row.className).toContain('flex-wrap');
-    expect(row.className).not.toContain('rounded-md');
+    const cls = screen.getByTestId('branch-status-bar').className.split(' ');
+    expect(cls).toContain('items-start');
+    expect(cls).not.toContain('items-center');
   });
 
-  it('puts the repos/refresh pair in a small bar of its own', () => {
-    bar(encompass, { watch: <button type="button" data-testid="watch" /> });
-    const gitBar = screen.getByTestId('git-bar');
-    expect(gitBar.className).toContain('rounded-md');
-    expect(gitBar.contains(screen.getByRole('group', { name: 'Git' }))).toBe(true);
-    expect(gitBar.contains(screen.getByTestId('watch'))).toBe(true);
+  it('rules the label off from the repo table with a divider the table\'s full height', () => {
+    bar(encompass);
+    const box = screen.getByTestId('branch-status-bar');
+    const rule = box.children[1] as HTMLElement;
+    expect(rule.getAttribute('data-testid')).toBe('label-divider');
+    expect(rule.className).toContain('self-stretch');
+    expect(box.children[2]).toBe(screen.getByTestId('repo-rows'));
+  });
+
+  it('heads the row even when no repo is watched', () => {
+    bar({ repos: [], foundCount: 2 });
+    expect(screen.getByTestId('branch-status-bar').firstElementChild!.textContent).toBe('repos');
   });
 
   it('draws each repo as one capsule: its name, its main checkout, then each worktree', () => {
@@ -92,15 +136,15 @@ describe('BranchStatusBar', () => {
   });
 
 
-  it('draws every checkout as a badge of its own, with a gap between them', () => {
-    bar(encompass);
+  it('draws every checkout as colored text, like a status readout, not a badge', () => {
+    bar(encompass, { pins: { '/e/encompass-platform-backend': { 'test/wt-be-1': '#ff0000' } } });
     const be = screen.getByRole('group', { name: 'encompass-platform-backend' });
-    expect(be.className).toMatch(/(^|\s)gap-1(\s|$)/);
-    expect(be.className).not.toContain('[&>*+*]:border-l');
-    for (const chip of within(be).getAllByRole('button').slice(1)) {
-      expect(chip.className.split(' ')).toContain('rounded');
-      expect(chip.className.split(' ')).toContain('border');
+    const chips = within(be).getAllByRole('button').slice(1);
+    for (const chip of chips) {
+      expect(chip.className).not.toMatch(/(^|\s)border(\s|$)/);
+      expect(chip.getAttribute('style') ?? '').not.toContain('background');
     }
+    expect(chips[1].getAttribute('style')).toContain('rgb(255, 0, 0)');
   });
 
   // Like the chat bar's readouts (the model one): an icon in the bar's text

@@ -29,6 +29,9 @@ export interface GitBranchBadgeProps {
   className?: string;
   /** The chip's icon: a branch unless told otherwise (a worktree's folder). */
   icon?: LucideIcon;
+  /** `chip` (default): tinted, bordered. `text`: no chip, the branch color on
+   *  the text alone — the status bar's readout style. */
+  variant?: 'chip' | 'text';
 }
 
 // WCAG relative luminance — used only to detect TRUE near-black picks where
@@ -61,7 +64,9 @@ export const GitBranchBadge: React.FC<GitBranchBadgeProps> = ({
   size = 'header',
   className,
   icon: Icon = GitBranch,
+  variant = 'chip',
 }) => {
+  const asText = variant === 'text';
   const textSize = size === 'bar' ? 'text-[10px]' : 'text-[11px]';
   // An inline-flex trigger inside the Popover's block wrapper opens a line
   // box and sits ~1px high among a bar's readouts.
@@ -75,19 +80,18 @@ export const GitBranchBadge: React.FC<GitBranchBadgeProps> = ({
   const useColor = !isTrunk && color != null;
   const nearBlack = useColor && isNearBlack(color);
 
-  const inlineStyle = useColor
+  // As text, a trunk takes the bar's own text color (a black chip has no
+  // text-only equivalent that shows in dark mode), and nothing is filled.
+  const inlineStyle = asText
+    ? (useColor ? { color: nearBlack ? undefined : color } : undefined)
+    : useColor
     ? nearBlack
       ? { backgroundColor: '#ffffff26', color: '#ffffff', borderColor: `${color}cc` }
       : { backgroundColor: `${color}33`, color: color, borderColor: `${color}4d` }
     : undefined;
 
-  const badgeContent = (
+  const counts = (
     <>
-      <Icon className="w-3.5 h-3.5 shrink-0" />
-      <span className="truncate max-w-[24ch]">{name}</span>
-      {(changed > 0 || untracked > 0) && (
-        <span aria-hidden className="h-3 w-px bg-current opacity-40 mx-0.5" />
-      )}
       {changed > 0 && (
         <span className={cn("inline-flex items-center gap-0.5", GIT_CHANGED_STYLE.className)}>
           <GIT_CHANGED_STYLE.Icon className="w-3 h-3" />
@@ -103,6 +107,28 @@ export const GitBranchBadge: React.FC<GitBranchBadgeProps> = ({
     </>
   );
 
+  const badgeContent = (
+    <>
+      <Icon className="w-3.5 h-3.5 shrink-0" />
+      <span className="truncate max-w-[24ch]">{name}</span>
+      {/* A chip rules its counts off from the name; as text the counts sit
+          right beside it, so they read as that checkout's. */}
+      {!asText && (changed > 0 || untracked > 0) && (
+        <span aria-hidden className="h-3 w-px bg-current opacity-40 mx-0.5" />
+      )}
+      {asText ? (
+        // As text, the counts share one small outlined badge so they read as
+        // this checkout's rather than floating between columns. The border
+        // color needs `!` to beat the global `* { border-color }` reset.
+        (changed > 0 || untracked > 0) && (
+          <span data-testid="change-counts" className="inline-flex items-center gap-1 rounded-sm border border-foreground/25! bg-foreground/10 px-1 font-normal">
+            {counts}
+          </span>
+        )
+      ) : counts}
+    </>
+  );
+
   // No path means we have no extra detail to show — render a plain span like
   // before so the badge stays non-interactive in fallback callers.
   if (!path) {
@@ -110,9 +136,9 @@ export const GitBranchBadge: React.FC<GitBranchBadgeProps> = ({
       <span
         className={cn(
           'inline-flex items-center gap-1 px-2 py-0.5 font-mono font-medium',
-          'rounded border',
+          !asText && 'rounded border',
           textSize,
-          isTrunk && 'bg-black text-white border-black',
+          !asText && isTrunk && 'bg-black text-white border-black',
           className,
         )}
         style={inlineStyle}
@@ -135,11 +161,12 @@ export const GitBranchBadge: React.FC<GitBranchBadgeProps> = ({
           type="button"
           className={cn(
             display,
-            'items-center gap-1 px-2 py-0.5 font-mono font-medium cursor-pointer',
-            'rounded border',
+            'items-center gap-1 font-mono font-medium cursor-pointer',
+            asText
+              ? 'rounded-sm px-0.5 hover:bg-foreground/10 focus:outline-none focus-visible:bg-foreground/10'
+              : 'rounded border px-2 py-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
             textSize,
-            'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-            isTrunk && 'bg-black text-white border-black',
+            !asText && isTrunk && 'bg-black text-white border-black',
             className,
           )}
           style={inlineStyle}
@@ -178,7 +205,7 @@ export const GitBranchBadge: React.FC<GitBranchBadgeProps> = ({
 
           <div>
             <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
-              Working tree
+              Changes
             </div>
             {changed === 0 && untracked === 0 && !error ? (
               <div className="text-xs text-muted-foreground italic">Clean</div>

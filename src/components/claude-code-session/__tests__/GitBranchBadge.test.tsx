@@ -95,3 +95,65 @@ describe('GitBranchBadge — icon', () => {
     expect(svg.getAttribute('class')).not.toContain('text-white');
   });
 });
+
+describe('GitBranchBadge — text variant', () => {
+  it('drops the chip: no border or fill, the branch color on the text alone', () => {
+    render(<GitBranchBadge {...base} color="#ff0000" isTrunk={false} variant="text" />);
+    const b = screen.getByRole('button');
+    expect(b.className).not.toMatch(/(^|\s)(border|rounded)(\s|$)/);
+    const style = b.getAttribute('style') ?? '';
+    expect(style).toContain('rgb(255, 0, 0)');
+    expect(style).not.toContain('background');
+    expect(style).not.toContain('border');
+  });
+
+  it('sets the counts right after the name, with no rule between them', () => {
+    render(<GitBranchBadge {...base} variant="text" />);
+    const b = screen.getByRole('button');
+    expect(b.querySelector('.w-px')).toBeNull();
+  });
+
+  it('holds both counts in one small badge', () => {
+    render(<GitBranchBadge {...base} variant="text" />);
+    const badge = screen.getByTestId('change-counts');
+    expect(badge.className).toContain('rounded-sm');
+    expect(badge.className).toMatch(/(^|\s)bg-/);
+    expect(badge.textContent).toBe('21');
+  });
+
+  // The color carries `!`: the global \`* { border-color }\` reset outranks
+  // layered border-color utilities.
+  it('outlines the count badge', () => {
+    render(<GitBranchBadge {...base} variant="text" />);
+    const cls = screen.getByTestId('change-counts').className.split(' ');
+    expect(cls).toContain('border');
+    expect(cls.some((c) => /^border-foreground\/\d+!$/.test(c))).toBe(true);
+  });
+
+  it('shows no count badge for a clean checkout', () => {
+    render(<GitBranchBadge {...base} changed={0} untracked={0} variant="text" />);
+    expect(screen.queryByTestId('change-counts')).toBeNull();
+  });
+
+  it('keeps the rule between name and counts on a chip', () => {
+    render(<GitBranchBadge {...base} />);
+    expect(screen.getByRole('button').querySelector('.w-px')).not.toBeNull();
+  });
+
+  it('draws a trunk branch in the bar\'s own text color rather than a black chip', () => {
+    render(<GitBranchBadge {...base} variant="text" />);
+    const b = screen.getByRole('button');
+    expect(b.className).not.toContain('bg-black');
+    expect(b.getAttribute('style') ?? '').toBe('');
+  });
+});
+
+describe('GitBranchBadge — popover', () => {
+  it('heads the counts "Changes"', () => {
+    render(<GitBranchBadge {...base} />);
+    openPopover();
+    expect(screen.getByText('Changes')).toBeTruthy();
+    expect(screen.queryByText(/working tree/i)).toBeNull();
+  });
+});
+
