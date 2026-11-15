@@ -55,6 +55,29 @@ describe('buildModernItems', () => {
     expect(work.nodes).toEqual([th, bash, bashRes, read, readRes]);
   });
 
+  it('leaves out progress reports and their results: the status bar and agent bars show them', () => {
+    const p = prompt('fix it');
+    const progress = toolUse('pr1', 'mcp__omnifex__progress', { done: 0, total: 3 });
+    const progressRes = toolResult('pr1', 'Progress recorded.');
+    const bash = toolUse('t1', 'Bash', { command: 'ls' });
+    const bashRes = toolResult('t1');
+    const items = buildModernItems([p, progress, progressRes, bash, bashRes], createDefaultConfig());
+
+    expect(kinds(items)).toEqual(['prompt', 'work']);
+    const work = items[1];
+    if (work.kind !== 'work') throw new Error('not work');
+    expect(work.entries.map((e) => e.type === 'tool' && e.name)).toEqual(['Bash']);
+    expect(work.nodes).toEqual([bash, bashRes]);
+  });
+
+  it('draws nothing for a turn whose only work is a progress report', () => {
+    const items = buildModernItems(
+      [prompt('go'), toolUse('pr1', 'mcp__omnifex__progress', { done: 3, total: 3 }), toolResult('pr1', 'Progress recorded.'), text('Done.')],
+      createDefaultConfig(),
+    );
+    expect(kinds(items)).toEqual(['prompt', 'text']);
+  });
+
   it('pulls AskUserQuestion and ExitPlanMode out of the work, absorbing their results', () => {
     const ask = toolUse('q1', 'AskUserQuestion', { questions: [] });
     const askRes = toolResult('q1', 'The user answered');

@@ -40,6 +40,7 @@ import { modernLineOf, type ModernLine } from './modernLines';
 import { originInjectedKind } from './messageKind';
 import { formatTokens } from './contextPressure';
 import { shortDuration } from './modernSteps';
+import { PROGRESS_TOOL } from './stepProgress';
 
 export type ToolStatus = 'pending' | 'done' | 'error';
 
@@ -310,6 +311,10 @@ export function buildModernItems(
             closeWork();
             items.push({ kind: 'text', key: `t-${key}`, node, text });
           } else if (b.type === 'tool_use' && typeof b.name === 'string') {
+            // A progress report says how far along the work is, never what it
+            // is; the status bar and agent bars show it live. Its result is
+            // claimed above, so neither is drawn.
+            if (b.name === PROGRESS_TOOL) return;
             const id = String(b.id ?? '');
             const input = (b.input && typeof b.input === 'object' ? b.input : {}) as Record<string, unknown>;
             const res = results.get(id);

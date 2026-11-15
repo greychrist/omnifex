@@ -60,20 +60,20 @@ describe('foldDesignRuns', () => {
   });
 
   it('reaches back past bookkeeping for the set-up, but does not start on it', () => {
-    const progress0 = tool('mcp__omnifex__progress', { done: 0, total: 3 });
+    const todo0 = tool('TodoWrite', { todos: [] });
     const write = tool('Write', { file_path: `${SCRATCH}/Main.dc.html`, content: '<html>' });
-    const progress1 = tool('mcp__omnifex__progress', { done: 1, total: 3 });
+    const todo1 = tool('TaskUpdate', { taskId: '1', status: 'completed' });
     const publish = tool(A('publish_files'));
-    const out = foldDesignRuns([progress0, write, progress1, publish]);
+    const out = foldDesignRuns([todo0, write, todo1, publish]);
     expect(out).toHaveLength(2);
-    expect(out[0]).toBe(progress0);
-    expect(out[1].type === 'design' && out[1].entries).toEqual([write, progress1, publish]);
+    expect(out[0]).toBe(todo0);
+    expect(out[1].type === 'design' && out[1].entries).toEqual([write, todo1, publish]);
   });
 
-  it('is not broken by progress or todo bookkeeping', () => {
+  it('is not broken by todo bookkeeping', () => {
     const out = foldDesignRuns([
       tool(A('create_from_type'), { title: 'X' }),
-      tool('mcp__omnifex__progress', { done: 1, total: 2 }),
+      tool('TaskUpdate', { taskId: '1', status: 'completed' }),
       tool('TodoWrite', { todos: [] }),
       tool(A('publish_files')),
     ]);

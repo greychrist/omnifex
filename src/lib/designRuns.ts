@@ -38,10 +38,11 @@ function touchesScratchpad(e: ToolEntry): boolean {
   return /\/scratchpad\//.test(str(e.input.file_path) || str(e.input.command));
 }
 
-/** Progress and todo bookkeeping: says how far along the work is, never
- *  what it is, so it neither starts nor ends a run. */
+/** Todo bookkeeping: says how far along the work is, never what it is, so
+ *  it neither starts nor ends a run. (Progress reports never reach here —
+ *  modernGrouping leaves them out.) */
 function isBookkeeping(e: ToolEntry): boolean {
-  return e.name === 'mcp__omnifex__progress' || e.name === 'TodoWrite' || /^Task[A-Z]/.test(e.name);
+  return e.name === 'TodoWrite' || /^Task[A-Z]/.test(e.name);
 }
 
 /** What may sit between two design calls and still belong to the run. */
