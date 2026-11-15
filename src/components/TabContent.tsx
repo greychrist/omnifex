@@ -16,7 +16,7 @@ import { Button } from '@/components/ui/button';
 import { NewSessionForm } from '@/components/NewSessionForm';
 import type { EffortLevel } from '@/components/FloatingPromptInput';
 import { useClaudeSessionStore } from '@/stores/claudeSessionStore';
-import { BranchColorsCard } from '@/components/BranchColorsCard';
+import { ProjectReposCard } from '@/components/ProjectReposDialog';
 import { CodexSignInModal } from '@/components/codex/CodexSignInModal';
 import { useCodexAuthStatus } from '@/hooks/useCodexAuthStatus';
 import { fireAndLog, logAndForget } from "@/lib/fireAndLog";
@@ -87,8 +87,6 @@ const TabPanelImpl: React.FC<TabPanelProps> = ({ tab, isActive }) => {
   // resolvePair[agent] so flipping the AgentPicker swaps which account shows.
   const [projectResolvePair, setProjectResolvePair] = React.useState<ResolvePair>({ claude: null, codex: null });
 
-  const [projectBranches, setProjectBranches] = React.useState<string[]>([]);
-  const [projectMainBranch, setProjectMainBranch] = React.useState<string | null>(null);
 
   // Codex auth state — drives the banner + submit-button gate on the
   // Codex agent path. Scoped to the Codex slot's configDir so the watcher
@@ -96,22 +94,6 @@ const TabPanelImpl: React.FC<TabPanelProps> = ({ tab, isActive }) => {
   // Codex account routes to this project.
   const codexAuthStatus = useCodexAuthStatus(projectResolvePair.codex?.account.config_dir ?? null);
   const [showCodexSignIn, setShowCodexSignIn] = React.useState(false);
-
-  React.useEffect(() => {
-    if (!selectedProject?.path) {
-      setProjectBranches([]);
-      setProjectMainBranch(null);
-      return;
-    }
-    let cancelled = false;
-    api.listGitBranches(selectedProject.path).then((branches) => {
-      if (cancelled) return;
-      setProjectBranches(branches);
-      const candidates = ['main', 'master', 'develop'];
-      setProjectMainBranch(branches.find((b) => candidates.includes(b)) ?? branches[0] ?? null);
-    }).catch(() => {});
-    return () => { cancelled = true; };
-  }, [selectedProject?.path]);
 
   // Load projects when tab becomes active and is of type 'projects'
   useEffect(() => {
@@ -493,7 +475,7 @@ const TabPanelImpl: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                       </div>
                     </div>
 
-                    {/* New-session form + Branch Colors share the top row,
+                    {/* New-session form + Repos & branch colours share the top row,
                         session list (with errors/loading) flows full-width
                         below. The list region is `flex-1 min-h-0` so the
                         SessionList table fills the remaining viewport
@@ -521,11 +503,7 @@ const TabPanelImpl: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                         </div>
                         {selectedProject && (
                           <div className="lg:col-span-1">
-                            <BranchColorsCard
-                              projectPath={selectedProject.path}
-                              availableBranches={projectBranches}
-                              mainFolderBranch={projectMainBranch}
-                            />
+                            <ProjectReposCard projectPath={selectedProject.path} />
                           </div>
                         )}
                       </div>

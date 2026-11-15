@@ -65,3 +65,36 @@ describe('GitBranchBadge — bar size', () => {
     expect(screen.getByRole('button', { name: /main/i }).className).toContain('text-[11px]');
   });
 });
+
+describe('GitBranchBadge — repos and worktrees', () => {
+  it('prefixes the branch with the repo name', () => {
+    render(<GitBranchBadge {...base} repoName="api" />);
+    expect(screen.getByRole('button').textContent).toMatch(/^api·main/);
+  });
+
+  it('lists worktrees in the popover, each with its own View changes', () => {
+    const onViewWorktreeChanges = vi.fn();
+    render(
+      <GitBranchBadge
+        {...base}
+        changed={0}
+        untracked={0}
+        worktrees={[
+          { path: '/wt/a', branch: 'feat/a', changed: 1, untracked: 0, error: null },
+          { path: '/wt/b', branch: null, changed: 0, untracked: 0, error: null },
+        ]}
+        onViewWorktreeChanges={onViewWorktreeChanges}
+      />,
+    );
+    openPopover();
+    expect(screen.getByText('Worktrees (2)')).toBeTruthy();
+    expect(screen.getByText('feat/a')).toBeTruthy();
+    expect(screen.getByText('(detached)')).toBeTruthy();
+    // Only the dirty worktree offers a diff; the clean repo itself offers none.
+    const buttons = screen.getAllByRole('button', { name: /view changes/i });
+    expect(buttons).toHaveLength(1);
+    fireEvent.click(buttons[0]);
+    expect(onViewWorktreeChanges).toHaveBeenCalledWith('/wt/a', 'feat/a');
+  });
+});
+

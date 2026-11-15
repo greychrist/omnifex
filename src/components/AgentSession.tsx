@@ -5,7 +5,6 @@ import {
   Shield,
   ArrowLeft,
   Layers,
-  GitCompare,
   MessageCircleQuestion,
 } from "lucide-react";
 import { SessionInspectorPanel } from "@/components/SessionInspectorPanel";
@@ -93,6 +92,8 @@ import { SessionStatusItem } from "@/components/SessionStatusItem";
 import { AccountStatusItem } from "@/components/AccountStatusItem";
 import { NewSessionButton } from "@/components/NewSessionButton";
 import { BranchStatusBar } from "@/components/claude-code-session/BranchStatusBar";
+import { useRepoBranchPins } from "@/hooks/useRepoBranchPins";
+import { ProjectReposDialog } from "@/components/ProjectReposDialog";
 import { useAccountUsage } from "@/hooks/useAccountUsage";
 import { ChatStatusBar } from "./ChatStatusBar";
 import { SessionHeaderResizeHandle } from "./SessionHeaderResizeHandle";
@@ -107,10 +108,7 @@ import { useSessionMcpStatus } from "@/hooks/useSessionMcpStatus";
 import { latestInitMcpCount, modStatusLines, splitPlugins } from "@/lib/sessionLoadout";
 import { foldContextLedger } from "@/lib/contextLedger";
 import { useDaemonLink } from "@/hooks/useDaemonLink";
-import { GitBranchBadge } from "./claude-code-session/GitBranchBadge";
 import { GitWatchStatusIcon } from "./claude-code-session/GitWatchStatusIcon";
-import { resolveBranchColors } from '@/lib/branchColors';
-import type { BranchColor } from '@/lib/api';
 import { deriveSubagents, applySubagentMeta, createSubagentColorAllocator, notificationStatsByToolUse, forwardedByAgentId, countActiveSubagents, type SubagentMetaInput } from '@/lib/subagentStreams';
 import { latestMainProgress, latestSubagentProgress, withStepProgress } from '@/lib/stepProgress';
 import { getTaskList, summarizeTaskList } from "@/lib/taskList";
@@ -479,7 +477,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   // resolves; stays null when the project isn't a git repo.
   const [sessionGit, setSessionGit] = useState<import('@/lib/api').SessionGitSnapshot | null>(null);
   const [gitWatchId, setGitWatchId] = useState<string | null>(null);
-  const [branchPins, setBranchPins] = useState<Record<string, string>>({});
+  const [reposDialogOpen, setReposDialogOpen] = useState(false);
 
   // Resizable header — null = natural sizing (default), number = user pick.
   // True for the duration of a header drag. Drives the lit grip and the
@@ -506,7 +504,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   // layout.
   const backColRef = useRef<HTMLDivElement>(null);
   const [headerMinHeight, setHeaderMinHeight] = useState(MIN_HEADER_HEIGHT);
-  const hasBranchCard = !!sessionGit?.project?.branch;
+  const hasBranchCard = sessionGit !== null;
   useEffect(() => {
     const els = [branchColRef.current, backColRef.current].filter(
       (el): el is HTMLDivElement => el !== null,
@@ -566,21 +564,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     setHeaderHeight(null);
     window.localStorage.removeItem(HEADER_HEIGHT_KEY);
   }, []);
-
-  React.useEffect(() => {
-    if (!projectPath) {
-      setBranchPins({});
-      return;
-    }
-    let cancelled = false;
-    api.listBranchColors(projectPath).then((rows: BranchColor[]) => {
-      if (cancelled) return;
-      const map: Record<string, string> = {};
-      for (const r of rows) map[r.branch_name] = r.color;
-      setBranchPins(map);
-    }).catch(() => {});
-    return () => { cancelled = true; };
-  }, [projectPath]);
 
   // Resolve account explanation for SessionHeader. Skip when the chat tab was
   // opened with an explicit account override from the project landing page —
@@ -700,44 +683,35 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   // Poll git only while someone can see this tab's badges.
   useGitWatchVisibility(gitWatchId, isActive);
 
-  // Project status + sibling worktrees derived from the unified snapshot.
-  // `gitStatus` keeps the existing renderer ergonomics for the project badge;
-  // `worktreeList` mirrors the snapshot's `worktrees[]` for the list below.
-  const gitStatus = sessionGit?.project ?? null;
-  // Wrap in useMemo so the `?? []` fallback doesn't create a new array
-  // identity on each render — that ripples into the gitWatchErrors useMemo
-  // below and triggers unnecessary recompute on every parent re-render.
-  const worktreeList = useMemo(() => sessionGit?.worktrees ?? [], [sessionGit?.worktrees]);
+  // Every repo the project watches, from the unified snapshot. `gitStatus` is
+  // the project folder's own repo (null when the folder is not one) — what
+  // the tab summary reports.
+  const gitRepos = useMemo(() => sessionGit?.repos ?? [], [sessionGit?.repos]);
+  const gitStatus = gitRepos.find((r) => r.name === '')?.root ?? null;
+  const branchPins = useRepoBranchPins(gitRepos.map((r) => r.root.path));
   // The diff overlay is pull-only; this is how it learns the tree moved. The
   // watcher's counts are the cheapest honest signal that something changed on
   // disk, so a bump here re-reads the file list without the overlay polling.
   // Counted from whichever checkout the overlay is showing.
-  const diffReading = (diffTarget?.label !== undefined
-    ? worktreeList.find((wt) => wt.path === diffTarget.path)
-    : null) ?? gitStatus;
+  const diffReading = diffTarget
+    ? gitRepos.flatMap((r) => [r.root, ...r.worktrees]).find((p) => p.path === diffTarget.path) ?? null
+    : null;
   const gitRefreshToken = (diffReading?.changed ?? 0) * 1000 + (diffReading?.untracked ?? 0);
-  // Aggregate per-path errors for the single header status icon. The icon is
+  // Aggregate per-path errors for the single git status icon. The icon is
   // green when this list is empty and red when any path is errored; the
   // tooltip lists the offending labels so the user can see *which* row is
   // wedged without needing per-row icons.
   const gitWatchErrors = useMemo(() => {
     const out: { label: string; error: string }[] = [];
-    if (gitStatus?.error) out.push({ label: gitStatus.branch ?? 'project', error: gitStatus.error });
-    for (const wt of worktreeList) {
-      if (wt.error) out.push({ label: wt.branch ?? wt.path, error: wt.error });
+    for (const repo of gitRepos) {
+      const prefix = repo.name ? `${repo.name}·` : '';
+      if (repo.root.error) out.push({ label: `${prefix}${repo.root.branch ?? 'project'}`, error: repo.root.error });
+      for (const wt of repo.worktrees) {
+        if (wt.error) out.push({ label: `${prefix}${wt.branch ?? wt.path}`, error: wt.error });
+      }
     }
     return out;
-  }, [gitStatus, worktreeList]);
-
-  const allBranchesForResolver: string[] = [
-    ...(gitStatus?.branch ? [gitStatus.branch] : []),
-    ...worktreeList.map((wt) => wt.branch ?? '(detached)'),
-  ];
-  const branchColorResolution = resolveBranchColors({
-    pins: branchPins,
-    mainFolderBranch: gitStatus?.branch ?? null,
-    branches: allBranchesForResolver,
-  });
+  }, [gitRepos]);
 
   // Add collapsed state for queued prompts
 
@@ -2808,71 +2782,20 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     />
   );
 
-  const branchBlock = gitStatus?.branch ? (
-    <div
-      className={cn(
-        "flex items-start gap-3 rounded-md border-0 bg-background/40 px-2 py-1 shadow-[0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_30%,transparent),2px_2px_4px_rgb(0_0_0/0.08)]",
-        headerHeight != null && "self-stretch min-h-0",
-      )}
-    >
-      <div ref={branchColRef} className="flex flex-col items-start gap-0.5">
-        <HeaderLabel>branch</HeaderLabel>
-        <GitBranchBadge
-          name={gitStatus.branch}
-          changed={gitStatus.changed}
-          untracked={gitStatus.untracked}
-          color={branchColorResolution.colors[gitStatus.branch] ?? null}
-          isTrunk={branchColorResolution.trunkBlack.has(gitStatus.branch)}
-          path={projectPath}
-          error={gitStatus.error}
-          onViewChanges={() => { if (projectPath) setDiffTarget({ path: projectPath }); }}
+  const gitBar = sessionGit ? (
+    <BranchStatusBar
+      snapshot={sessionGit}
+      pins={branchPins}
+      onViewChanges={(path, label) => { setDiffTarget(label === undefined ? { path } : { path, label }); }}
+      onOpenRepos={() => { setReposDialogOpen(true); }}
+      watch={gitWatchId ? (
+        <GitWatchStatusIcon
+          errors={gitWatchErrors}
+          onReconnect={() => api.reconnectSessionGitWatch(gitWatchId)}
+          snapshotKey={sessionGit}
         />
-      </div>
-      {worktreeList.length > 0 && (
-        <div
-          className={cn(
-            "flex flex-col items-start gap-0.5",
-            headerHeight != null && "self-stretch min-h-0",
-          )}
-        >
-          <HeaderLabel>worktrees ({worktreeList.length})</HeaderLabel>
-          <div
-            className={cn(
-              "flex flex-col items-start gap-1 overflow-y-auto pr-1 scrollbar-thin",
-              headerHeight != null ? "flex-1 min-h-0" : "max-h-[5.25rem]",
-            )}
-          >
-            {worktreeList.map((wt) => {
-              const branchName = wt.branch ?? '(detached)';
-              return (
-                <div key={wt.path} title={wt.path}>
-                  <GitBranchBadge
-                    name={branchName}
-                    changed={wt.changed}
-                    untracked={wt.untracked}
-                    color={branchColorResolution.colors[branchName] ?? null}
-                    isTrunk={branchColorResolution.trunkBlack.has(branchName)}
-                    path={wt.path}
-                    error={wt.error}
-                    onViewChanges={() => { setDiffTarget({ path: wt.path, label: branchName }); }}
-                  />
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-      {gitWatchId && (
-        <div className="flex flex-col items-start gap-0.5">
-          <HeaderLabel>&nbsp;</HeaderLabel>
-          <GitWatchStatusIcon
-            errors={gitWatchErrors}
-            onReconnect={() => api.reconnectSessionGitWatch(gitWatchId)}
-            snapshotKey={sessionGit}
-          />
-        </div>
-      )}
-    </div>
+      ) : undefined}
+    />
   ) : null;
 
   return (
@@ -2957,39 +2880,12 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
               />
               </div>
             )}
-            {SHOW_HEADER_WIDGETS ? branchBlock : (
+            {SHOW_HEADER_WIDGETS ? <div ref={branchColRef}>{gitBar}</div> : (
               // Top-aligned: the bar is the row's first line, the branch under it.
               // Measured as a whole for the header's minimum height: both bars.
               <div ref={branchColRef} className="flex min-w-0 flex-1 flex-col items-start gap-1.5">
                 <div className="w-full">{renderStatusBar(true)}</div>
-                {gitStatus?.branch && (
-                  <BranchStatusBar
-                    branch={{
-                      name: gitStatus.branch,
-                      changed: gitStatus.changed,
-                      untracked: gitStatus.untracked,
-                      path: projectPath,
-                      error: gitStatus.error,
-                      onViewChanges: () => { setDiffTarget({ path: projectPath }); },
-                    }}
-                    worktrees={worktreeList}
-                    onViewWorktreeChanges={(path) => {
-                      const wt = worktreeList.find((w) => w.path === path);
-                      setDiffTarget({ path, label: wt?.branch ?? '(detached)' });
-                    }}
-                    colorFor={(name) => ({
-                      color: branchColorResolution.colors[name] ?? null,
-                      isTrunk: branchColorResolution.trunkBlack.has(name),
-                    })}
-                    watch={gitWatchId ? (
-                      <GitWatchStatusIcon
-                        errors={gitWatchErrors}
-                        onReconnect={() => api.reconnectSessionGitWatch(gitWatchId)}
-                        snapshotKey={sessionGit}
-                      />
-                    ) : undefined}
-                  />
-                )}
+                {gitBar}
               </div>
             )}
             {/* mode and output-style controls have moved to the chat bar (see FloatingPromptInput below). */}
@@ -3182,6 +3078,9 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
               a side panel: a split before/after pane plus a file tree has no
               useful reading width at 384px. The header and composer stay
               visible, so the session is still reachable behind it. */}
+          {projectPath && (
+            <ProjectReposDialog projectPath={projectPath} open={reposDialogOpen} onOpenChange={setReposDialogOpen} />
+          )}
           {diffTarget && (
             <GitDiffOverlay
               key={diffTarget.path}
@@ -3376,24 +3275,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
                         )}
                       >
                         <Shield className={cn("h-3.5 w-3.5", sidePanel === 'permissions' && "text-primary")} />
-                      </Button>
-                    </motion.div>
-                  </TooltipSimple>
-                  <TooltipSimple content="Working tree changes" side="top">
-                    <motion.div
-                      whileTap={{ scale: 0.97 }}
-                      transition={{ duration: 0.15 }}
-                    >
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => { setDiffTarget(diffTarget || !projectPath ? null : { path: projectPath }); }}
-                        className={cn(
-                          "h-8 w-8 text-muted-foreground hover:text-foreground shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_30%,transparent)]",
-                          diffTarget ? "bg-accent" : "bg-background",
-                        )}
-                      >
-                        <GitCompare className={cn("h-3.5 w-3.5", diffTarget && "text-primary")} />
                       </Button>
                     </motion.div>
                   </TooltipSimple>

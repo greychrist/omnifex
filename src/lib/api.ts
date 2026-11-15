@@ -337,14 +337,24 @@ export interface PathSnapshot {
   error: string | null;
 }
 
-/**
- * Combined per-tab git snapshot — the project and all sibling worktrees in a
- * single payload, emitted on `session-git-changed:<watchId>`.
- */
-export interface SessionGitSnapshot {
-  project: PathSnapshot;
+/** One watched repo: its own checkout and its sibling worktrees. */
+export interface RepoSnapshot {
+  /** Relative to the project folder; '' for the project folder itself. */
+  name: string;
+  root: PathSnapshot;
   /** Sibling worktrees, sorted by path. */
   worktrees: PathSnapshot[];
+}
+
+/**
+ * Combined per-tab git snapshot — every repo the project watches, with its
+ * worktrees, in a single payload emitted on `session-git-changed:<watchId>`.
+ */
+export interface SessionGitSnapshot {
+  /** The project folder's repo first (when it is one), then watched sub-repos. */
+  repos: RepoSnapshot[];
+  /** Repos discovered in the project and not watched. */
+  foundCount: number;
 }
 
 /** Defensive normalizer for a path snapshot crossing the IPC boundary. */
@@ -2827,11 +2837,16 @@ export const api = {
       `session-git-changed:${watchId}`,
       (data: any) => {
         if (!data || typeof data !== 'object') return;
-        const project = normalizePathSnapshot(data.project, '');
-        const worktrees = Array.isArray(data.worktrees)
-          ? data.worktrees.map((w: any) => normalizePathSnapshot(w, ''))
+        const repos: RepoSnapshot[] = Array.isArray(data.repos)
+          ? data.repos.map((r: any) => ({
+              name: typeof r?.name === 'string' ? r.name : '',
+              root: normalizePathSnapshot(r?.root, ''),
+              worktrees: Array.isArray(r?.worktrees)
+                ? r.worktrees.map((w: any) => normalizePathSnapshot(w, ''))
+                : [],
+            }))
           : [];
-        callback({ project, worktrees });
+        callback({ repos, foundCount: typeof data.foundCount === 'number' ? data.foundCount : 0 });
       },
     );
   },

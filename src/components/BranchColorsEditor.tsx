@@ -1,5 +1,4 @@
 import * as React from 'react';
-import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ColorSwatchGrid, SWATCHES } from '@/components/ui/ColorSwatchGrid';
@@ -9,25 +8,35 @@ import { Pencil, Plus, Trash2, Check, X } from 'lucide-react';
 import { api, type BranchColor } from '@/lib/api';
 import { fireAndLog } from "@/lib/fireAndLog";
 
-interface BranchColorsCardProps {
-  projectPath: string;
-  /** Used to populate the branch dropdown in add/edit mode. */
-  availableBranches: string[];
-  /** Current main-folder branch, used for the chip preview only. */
-  mainFolderBranch: string | null;
+/**
+ * Branch colour pins for one repo. Pins belong to the repo (its main
+ * checkout), so they show the same in every project and session that
+ * includes it.
+ */
+interface BranchColorsEditorProps {
+  /** Any checkout of the repo. */
+  repoPath: string;
 }
 
-export const BranchColorsCard: React.FC<BranchColorsCardProps> = ({
-  projectPath,
-  availableBranches,
-  mainFolderBranch,
-}) => {
+const TRUNK_CANDIDATES = ['main', 'master', 'develop'];
+
+export const BranchColorsEditor: React.FC<BranchColorsEditorProps> = ({ repoPath }) => {
+  const [availableBranches, setAvailableBranches] = React.useState<string[]>([]);
+  React.useEffect(() => {
+    let cancelled = false;
+    api.listGitBranches(repoPath).then((branches) => {
+      if (!cancelled) setAvailableBranches(branches);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [repoPath]);
+  // Chip preview only: the trunk-ish branch takes the main-folder colour.
+  const mainFolderBranch = availableBranches.find((b) => TRUNK_CANDIDATES.includes(b)) ?? availableBranches[0] ?? null;
   const [rows, setRows] = React.useState<BranchColor[]>([]);
   const [editing, setEditing] = React.useState<{ id: number | null; branch: string; color: string } | null>(null);
 
   const refresh = React.useCallback(async () => {
-    setRows(await api.listBranchColors(projectPath));
-  }, [projectPath]);
+    setRows(await api.listBranchColors(repoPath));
+  }, [repoPath]);
 
   React.useEffect(() => { void refresh(); }, [refresh]);
 
@@ -46,7 +55,7 @@ export const BranchColorsCard: React.FC<BranchColorsCardProps> = ({
   const save = async () => {
     if (!editing?.branch) return;
     await api.upsertBranchColor({
-      repoPath: projectPath,
+      repoPath,
       branchName: editing.branch,
       color: editing.color,
     });
@@ -69,9 +78,9 @@ export const BranchColorsCard: React.FC<BranchColorsCardProps> = ({
   });
 
   return (
-    <Card className="p-4 h-full">
-      <div className="flex items-center justify-between mb-3">
-        <h2 className="text-sm font-semibold">Branch Colors</h2>
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="text-xs font-medium text-muted-foreground">Branch colours</h3>
         {!editing && (
           <Button size="sm" variant="outline" onClick={startAdd} className="h-7 px-2 gap-1 text-xs">
             <Plus className="h-3.5 w-3.5" /> Add
@@ -94,7 +103,7 @@ export const BranchColorsCard: React.FC<BranchColorsCardProps> = ({
                 setEditing={setEditing}
                 availableBranches={availableBranches}
                 takenBranches={new Set(rows.filter((r) => r.id !== row.id).map((r) => r.branch_name))}
-                onSave={fireAndLog('branch-colors-card:save', save)}
+                onSave={fireAndLog('branch-colors-editor:save', save)}
                 onCancel={cancel}
               />
             );
@@ -112,7 +121,7 @@ export const BranchColorsCard: React.FC<BranchColorsCardProps> = ({
               <Button size="sm" variant="ghost" onClick={() => { startEdit(row); }} className="h-7 w-7 p-0">
                 <Pencil className="h-3.5 w-3.5" />
               </Button>
-              <Button size="sm" variant="ghost" onClick={fireAndLog('branch-colors-card:click', () => remove(row.id))} className="h-7 w-7 p-0">
+              <Button size="sm" variant="ghost" onClick={fireAndLog('branch-colors-editor:click', () => remove(row.id))} className="h-7 w-7 p-0">
                 <Trash2 className="h-3.5 w-3.5" />
               </Button>
             </div>
@@ -125,12 +134,12 @@ export const BranchColorsCard: React.FC<BranchColorsCardProps> = ({
             setEditing={setEditing}
             availableBranches={availableBranches}
             takenBranches={new Set(rows.map((r) => r.branch_name))}
-            onSave={fireAndLog('branch-colors-card:save', save)}
+            onSave={fireAndLog('branch-colors-editor:save', save)}
             onCancel={cancel}
           />
         )}
       </div>
-    </Card>
+    </div>
   );
 };
 
