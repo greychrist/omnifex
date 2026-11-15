@@ -340,6 +340,8 @@ interface Watch {
   foundCount: number;
   /** Last snapshot sent to this watch, to skip no-op emits. */
   last: SessionGitSnapshot;
+  /** Syncs run one at a time: a quick on/off must not interleave. */
+  syncing: Promise<void>;
 }
 
 /** A watch's interest in one repo, registered on that repo's reader. */
@@ -384,6 +386,11 @@ async function readPathSnapshot(
   branchHint: string | null,
   timeoutMs: number,
 ): Promise<PathSnapshot> {
+  // A watched repo deleted on disk: say so, rather than spawning git into a
+  // missing cwd and reporting that as "spawn git ENOENT".
+  if (!fs.existsSync(p)) {
+    return { path: p, branch: branchHint, changed: 0, untracked: 0, error: 'Folder no longer exists' };
+  }
   try {
     const branch = readBranch(gitdir);
     const { changed, untracked, error } = await readStatusCounts(p, gitdir, timeoutMs);
@@ -677,6 +684,12 @@ export function createSessionGitWatcher(deps: SessionGitWatcherDeps): SessionGit
   async function attach(w: Watch, repo: { path: string; name: string }): Promise<void> {
     const repoReal = realpathOr(repo.path);
     const { r, created } = await readerFor(repoReal);
+    // The watch may have stopped, or dropped this repo, while the reader was
+    // being found. Registering now would leave it polling with no way to stop.
+    if (watches.get(w.id) !== w || !w.order.includes(repoReal) || w.subs.has(repoReal)) {
+      if (r.subscribers.size === 0) dispose(r);
+      return;
+    }
     const wasVisible = anyVisible(r);
     const sub: Subscriber = {
       id: `${w.id}\0${repoReal}`,
@@ -711,8 +724,14 @@ export function createSessionGitWatcher(deps: SessionGitWatcherDeps): SessionGit
     else syncPolling(r);
   }
 
-  /** Bring `w`'s subscriptions in line with what its project watches now. */
-  async function sync(w: Watch): Promise<void> {
+  /** Bring `w`'s subscriptions in line with what its project watches now, one sync at a time. */
+  function sync(w: Watch): Promise<void> {
+    w.syncing = w.syncing.then(() => syncNow(w), () => syncNow(w));
+    return w.syncing;
+  }
+
+  async function syncNow(w: Watch): Promise<void> {
+    if (watches.get(w.id) !== w) return;
     const wanted = repoSource.watchedRepos(w.projectPath)
       .map((repo) => ({ ...repo, real: realpathOr(repo.path) }));
     const wantedReal = new Set(wanted.map((x) => x.real));
@@ -739,6 +758,7 @@ export function createSessionGitWatcher(deps: SessionGitWatcherDeps): SessionGit
         subs: new Map(),
         foundCount: 0,
         last: { repos: [], foundCount: 0 },
+        syncing: Promise.resolve(),
       };
       claim(w, holder);
       watches.set(w.id, w);

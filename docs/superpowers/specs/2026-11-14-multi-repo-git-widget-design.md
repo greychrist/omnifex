@@ -88,14 +88,13 @@ New migration:
   common git dir), so a linked worktree resolves to the same identity as its
   main checkout. *(Claude's call — follows "colours follow the repo".)* The project root, when a repo, is implicit
   and has no row.
-- `branch_colors.project_path` renamed to `repo_path` (SQLite
-  `ALTER TABLE … RENAME COLUMN`; unique index follows). No data rewrite:
-  every existing row was written for a project whose path is its repo path.
-  The migration rewrites rows whose path is a linked worktree to the main
-  checkout's identity path (resolved from the `.git` file → `commondir`, pure
-  filesystem, no git spawn); on a `(repo_path, branch_name)` clash the main
-  checkout's row wins. Rows for paths that are not repos become orphaned and
-  harmless. *(Claude's call.)*
+- Branch colours move to a new `repo_branch_colors(repo_path, branch_name, …)`
+  table, copied from `branch_colors` by the migration. Rows keyed by a linked
+  worktree fold into the main checkout's identity path (resolved from the
+  `.git` file → `commondir`, pure filesystem); on a clash the main checkout's
+  row wins. `branch_colors` is left untouched: an older installed daemon
+  shares the database with a dev build and reads it at start-up. A later
+  migration drops it. *(Claude's call, after review.)*
 
 Paths are stored realpath-normalised, matching the watcher.
 

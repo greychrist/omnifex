@@ -493,7 +493,7 @@ describe('database migration v6', () => {
     const cols = db.raw.pragma('table_info(branch_colors)') as { name: string; type: string }[];
     const names = new Set(cols.map((c) => c.name));
     expect(names.has('id')).toBe(true);
-    expect(names.has('repo_path')).toBe(true);
+    expect(names.has('project_path')).toBe(true);
     expect(names.has('branch_name')).toBe(true);
     expect(names.has('color')).toBe(true);
     expect(names.has('sort_order')).toBe(true);
@@ -501,14 +501,14 @@ describe('database migration v6', () => {
     db.close();
   });
 
-  it('enforces unique (repo_path, branch_name)', () => {
+  it('enforces unique (project_path, branch_name)', () => {
     const db = createDatabase(':memory:');
     db.raw.prepare(
-      "INSERT INTO branch_colors (repo_path, branch_name, color, sort_order, created_at) VALUES (?, ?, ?, ?, ?)"
+      "INSERT INTO branch_colors (project_path, branch_name, color, sort_order, created_at) VALUES (?, ?, ?, ?, ?)"
     ).run('/p', 'develop', '#3b82f6', 0, Date.now());
     expect(() =>
       db.raw.prepare(
-        "INSERT INTO branch_colors (repo_path, branch_name, color, sort_order, created_at) VALUES (?, ?, ?, ?, ?)"
+        "INSERT INTO branch_colors (project_path, branch_name, color, sort_order, created_at) VALUES (?, ?, ?, ?, ?)"
       ).run('/p', 'develop', '#84cc16', 0, Date.now())
     ).toThrow(/UNIQUE constraint/);
     db.close();

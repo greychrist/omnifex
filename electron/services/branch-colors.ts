@@ -43,19 +43,19 @@ export function createBranchColorsService(db: Database, deps: BranchColorsDeps =
   };
 
   const listStmt = raw.prepare(
-    `SELECT ${COLUMNS} FROM branch_colors WHERE repo_path = ? ORDER BY sort_order ASC, id ASC`,
+    `SELECT ${COLUMNS} FROM repo_branch_colors WHERE repo_path = ? ORDER BY sort_order ASC, id ASC`,
   );
   const nextOrderStmt = raw.prepare(
-    `SELECT COALESCE(MAX(sort_order), -1) + 1 AS next FROM branch_colors WHERE repo_path = ?`,
+    `SELECT COALESCE(MAX(sort_order), -1) + 1 AS next FROM repo_branch_colors WHERE repo_path = ?`,
   );
   const upsertStmt = raw.prepare(
-    `INSERT INTO branch_colors (repo_path, branch_name, color, sort_order, created_at)
+    `INSERT INTO repo_branch_colors (repo_path, branch_name, color, sort_order, created_at)
      VALUES (?, ?, ?, ?, ?)
      ON CONFLICT(repo_path, branch_name)
      DO UPDATE SET color = excluded.color
      RETURNING ${COLUMNS}`,
   );
-  const deleteStmt = raw.prepare(`DELETE FROM branch_colors WHERE id = ? RETURNING repo_path`);
+  const deleteStmt = raw.prepare(`DELETE FROM repo_branch_colors WHERE id = ? RETURNING repo_path`);
 
   return {
     listForRepo(repoPath) {

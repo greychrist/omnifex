@@ -1092,11 +1092,13 @@ export const migrations: Migration[] = [
   {
     version: 32,
     description:
-      'Multi-repo git widget: per-project scan depth and watched sub-repos; '
-      + 'branch colours keyed by repo (its main checkout) instead of project. '
-      + 'Every existing row was written for a project whose path is its repo, '
-      + 'so the rename needs no rewrite except rows keyed by a linked worktree, '
-      + 'which fold into the main checkout (the main checkout wins a clash).',
+      'Multi-repo git widget: per-project scan depth and watched sub-repos, '
+      + 'and branch colours keyed by repo (its main checkout) in a new '
+      + 'repo_branch_colors table. Additive on purpose: an older installed '
+      + 'daemon shares this database with a dev build and prepares '
+      + '`branch_colors.project_path` at start-up, so that table stays as it '
+      + 'is until a later migration drops it. Rows keyed by a linked worktree '
+      + 'fold into the main checkout; the main checkout wins a clash.',
     up: (db) => {
       db.exec(`
         CREATE TABLE IF NOT EXISTS project_git_settings (
@@ -1109,26 +1111,34 @@ export const migrations: Migration[] = [
           watched INTEGER NOT NULL,
           PRIMARY KEY (project_path, repo_path)
         );
+        CREATE TABLE IF NOT EXISTS repo_branch_colors (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          repo_path TEXT NOT NULL,
+          branch_name TEXT NOT NULL,
+          color TEXT NOT NULL,
+          sort_order INTEGER NOT NULL DEFAULT 0,
+          created_at INTEGER NOT NULL,
+          UNIQUE(repo_path, branch_name)
+        );
+        CREATE INDEX IF NOT EXISTS idx_repo_branch_colors_repo ON repo_branch_colors(repo_path);
       `);
       const cols = db.pragma('table_info(branch_colors)') as { name: string }[];
-      if (cols.length === 0) return; // no v6 table (minimal test fixtures)
-      if (cols.some((c) => c.name === 'project_path')) {
-        db.exec(`
-          DROP INDEX IF EXISTS idx_branch_colors_project;
-          ALTER TABLE branch_colors RENAME COLUMN project_path TO repo_path;
-        `);
-      }
-      db.exec('CREATE INDEX IF NOT EXISTS idx_branch_colors_repo ON branch_colors(repo_path)');
-      const paths = db.prepare('SELECT DISTINCT repo_path AS p FROM branch_colors').all() as { p: string }[];
-      const move = db.prepare('UPDATE OR IGNORE branch_colors SET repo_path = ? WHERE repo_path = ?');
-      const drop = db.prepare('DELETE FROM branch_colors WHERE repo_path = ?');
-      // UPDATE OR IGNORE: on a clash the main checkout's existing row stays.
-      for (const { p } of paths) {
-        const id = repoIdentity(p);
-        if (!id || id === p) continue;
-        move.run(id, p);
-        drop.run(p);
-      }
+      if (!cols.some((c) => c.name === 'project_path')) return; // no v6 table (minimal test fixtures)
+      const rows = db.prepare(
+        'SELECT project_path, branch_name, color, sort_order, created_at FROM branch_colors ORDER BY id',
+      ).all() as { project_path: string; branch_name: string; color: string; sort_order: number; created_at: number }[];
+      const keyed = rows.map((r) => {
+        const id = repoIdentity(r.project_path);
+        return { ...r, repo_path: id ?? r.project_path, direct: !id || id === r.project_path };
+      });
+      // Rows already keyed by the main checkout first, so INSERT OR IGNORE
+      // lets them win over a worktree's row for the same branch.
+      keyed.sort((a, b) => Number(b.direct) - Number(a.direct));
+      const ins = db.prepare(
+        `INSERT OR IGNORE INTO repo_branch_colors (repo_path, branch_name, color, sort_order, created_at)
+         VALUES (?, ?, ?, ?, ?)`,
+      );
+      for (const r of keyed) ins.run(r.repo_path, r.branch_name, r.color, r.sort_order, r.created_at);
     },
   },
 ];

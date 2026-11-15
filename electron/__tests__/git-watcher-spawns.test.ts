@@ -173,6 +173,70 @@ describe('git watcher — process churn', () => {
     w.disposeAll();
   });
 
+  it('a tab closed while a repo is being added leaves nothing polling', async () => {
+    const x = makeTempRepo(); dirs.push(x);
+    const proj = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'gc-proj-'))); dirs.push(proj);
+    let watched: { path: string; name: string }[] = [];
+    const w = createSessionGitWatcher({
+      sendToRenderer: send,
+      pollIntervalMs: INTERVAL,
+      repos: { watchedRepos: () => watched, foundCount: async () => 0 },
+    });
+    const { watchId } = await w.start(proj);
+    watched = [{ path: x, name: 'x' }];
+    const pending = w.reconfigure(proj);
+    w.stop(watchId);
+    await pending;
+    await settle();
+    gitCalls.length = 0;
+    await tick(2);
+    expect(statusCalls()).toBe(0);
+    w.disposeAll();
+  });
+
+  it('a repo turned on then straight off is not left polling', async () => {
+    const x = makeTempRepo(); dirs.push(x);
+    const proj = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'gc-proj-'))); dirs.push(proj);
+    let watched: { path: string; name: string }[] = [];
+    const w = createSessionGitWatcher({
+      sendToRenderer: send,
+      pollIntervalMs: INTERVAL,
+      repos: { watchedRepos: () => watched, foundCount: async () => 0 },
+    });
+    await w.start(proj);
+    watched = [{ path: x, name: 'x' }];
+    const on = w.reconfigure(proj);
+    watched = [];
+    const off = w.reconfigure(proj);
+    await Promise.all([on, off]);
+    await settle();
+    gitCalls.length = 0;
+    await tick(2);
+    expect(statusCalls()).toBe(0);
+    w.disposeAll();
+  });
+
+  it('a watched repo deleted on disk is not run against, and says so', async () => {
+    const x = makeTempRepo(); dirs.push(x);
+    const proj = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'gc-proj-'))); dirs.push(proj);
+    const w = createSessionGitWatcher({
+      sendToRenderer: send,
+      pollIntervalMs: INTERVAL,
+      repos: { watchedRepos: () => [{ path: x, name: 'x' }], foundCount: async () => 0 },
+    });
+    const { watchId } = await w.start(proj);
+    await settle();
+    fs.rmSync(x, { recursive: true, force: true });
+    gitCalls.length = 0;
+    gitCwds.length = 0;
+    send.mockClear();
+    await tick(2);
+    expect(gitCwds.filter((c) => c === x)).toEqual([]);
+    const last = send.mock.calls.filter((c) => c[0] === `session-git-changed:${watchId}`).at(-1)?.[1] as { repos: { root: { error: string | null } }[] };
+    expect(last.repos[0].root.error).toMatch(/no longer exists/);
+    w.disposeAll();
+  });
+
   it('stop() is reference-counted: the reader lives until the last watch stops', async () => {
     const repo = makeTempRepo(); dirs.push(repo);
     const w = createSessionGitWatcher({ sendToRenderer: send, pollIntervalMs: INTERVAL });
