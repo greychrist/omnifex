@@ -5,6 +5,27 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.43] — 2026-11-15
+
+### Added
+
+- Repo aliases: give a repo a short name in the repos dialog and the git bar shows it in place of the folder name. An alias belongs to the repo, so it is the same in every project and worktree.
+- Every status-bar label is now followed by a colon (`model:`, `turn:`, `cache:` …), and the git bar's cells are labelled `name:`, `branch:` and `worktree:` to match.
+
+### Changed
+
+- The git bar is now one status-bar container laid out as a table: a purple `repos:` label, then a row per watched repo with a column for its main checkout and one per worktree. Branches are colored text like the readouts above, each with its changes in a small outlined badge, and the repos/refresh buttons sit at the right.
+- Worktrees show a folder-git icon, repo names a folder icon, and the repos button a folder-cog.
+- Repo names are shown in full (or by alias) rather than with their shared prefix trimmed.
+- Change counts are easier to read in light mode.
+- The branch popover's "Working tree" heading now reads "Changes".
+- Icons updated to the current Lucide set.
+- OmniFex's text now uses American spelling throughout ("color").
+
+### Removed
+
+- The "github" choice in the account icon picker (Lucide no longer ships brand logos).
+
 ## [0.5.42] — 2026-11-15
 
 ### Added
