@@ -17,7 +17,7 @@ export const TAB_INDICATOR_SIZE_CLASS: Record<TabIndicatorSize, string> = {
 };
 
 /**
- * A tab-indicator colour as CSS. Colours are hex — the config converts a saved
+ * A tab-indicator color as CSS. Colors are hex — the config converts a saved
  * palette name on load — so anything else falls back to neutral grey.
  */
 export function resolveIndicatorColor(color: string): string {

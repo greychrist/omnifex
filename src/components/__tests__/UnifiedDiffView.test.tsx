@@ -41,15 +41,15 @@ describe('UnifiedDiffView', () => {
     expect(gutters).toEqual(['10', '10', '11', '', '', '11', '', '12']);
   });
 
-  // Colour is the third signal, never the only one: the sign column carries a
-  // glyph so add/remove survives a screenshot or a colourblind reader.
+  // Color is the third signal, never the only one: the sign column carries a
+  // glyph so add/remove survives a screenshot or a colorblind reader.
   it('marks every changed line with a sign, not just a tint', () => {
     const { container } = view(DIFF);
     const signs = [...container.querySelectorAll('[data-diff-line] .w-4')].map((e) => e.textContent?.trim());
     expect(signs).toEqual(['', '-', '+', '+']);
   });
 
-  it('tints the row rather than recolouring the code', () => {
+  it('tints the row rather than recoloring the code', () => {
     const { container } = view(DIFF);
     const added = container.querySelector('.bg-green-500\\/8');
     expect(added).toBeTruthy();

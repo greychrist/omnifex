@@ -2,7 +2,7 @@
  * Map a file path to a Prism language id for the diff viewer.
  *
  * Deliberately a lookup table rather than content sniffing: the diff viewer
- * already knows the path, and a wrong guess only costs colour. `text` is the
+ * already knows the path, and a wrong guess only costs color. `text` is the
  * fallback — Prism accepts it and renders the line unhighlighted, which is
  * what an unknown file type should look like.
  */

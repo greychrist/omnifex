@@ -59,7 +59,7 @@ describe('deriveBackgroundShells', () => {
 });
 
 describe('plainTaskOutput', () => {
-  it('strips colour and cursor escape sequences', () => {
+  it('strips color and cursor escape sequences', () => {
     expect(plainTaskOutput('\u001b[32mok\u001b[0m done\u001b[2K\u001b[1G')).toBe('ok done');
   });
 

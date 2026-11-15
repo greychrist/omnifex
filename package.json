@@ -48,7 +48,7 @@
     "diff": "^9.0.0",
     "framer-motion": "^13.1.0",
     "js-yaml": "^4.3.2",
-    "lucide-react": "^0.468.0",
+    "lucide-react": "^1.73.0",
     "mermaid": "^12.1.0",
     "node-pty": "1.2.0-beta.13",
     "react": "^19.2.8",

@@ -204,7 +204,7 @@ describe('parseLegacyPricingOverrides — row shape', () => {
 
 /**
  * A genuinely new model must need no release: one row has to carry everything
- * — rates, fast-mode rates, legend name and colour.
+ * — rates, fast-mode rates, legend name and color.
  */
 describe('a user row covers a whole new model', () => {
   it('carries fast-mode rates so a fast-capable new model needs no rebuild', () => {

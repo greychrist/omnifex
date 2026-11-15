@@ -29,7 +29,7 @@ const ACCOUNT_ICON = 13;
 const ICON_Y_NUDGE = -2;
 
 interface AccountTabGlyphProps {
-  /** Account name — resolves colour/icon when they aren't passed, and titles the glyph. */
+  /** Account name — resolves color/icon when they aren't passed, and titles the glyph. */
   name: string;
   color?: string | null;
   icon?: string | null;
@@ -42,13 +42,13 @@ interface AccountTabGlyphProps {
  * The chat tab's type icon and its account chip, collapsed into one mark.
  *
  * Before this, a chat tab carried a plain 15px `MessageSquare` on the left and
- * a separate 18px coloured account square on the right — two glyphs, one of
+ * a separate 18px colored account square on the right — two glyphs, one of
  * which said "this is a chat" on a strip where nearly everything is a chat.
- * Here the bubble itself takes the account's colour and holds the account's
+ * Here the bubble itself takes the account's color and holds the account's
  * icon, so one mark answers "whose session is this?" and keeps the chat
  * silhouette that made the tab type readable.
  *
- * Colours come from the same `buildThemedColors` mix the badge uses, so the
+ * Colors come from the same `buildThemedColors` mix the badge uses, so the
  * two stay identical across the light/gray themes.
  */
 export const AccountTabGlyph: React.FC<AccountTabGlyphProps> = ({
@@ -64,9 +64,9 @@ export const AccountTabGlyph: React.FC<AccountTabGlyphProps> = ({
   const resolvedIcon = icon ?? getIcon(name);
   const IconComponent = (resolvedIcon && ICON_MAP[resolvedIcon]) || User;
 
-  // No account colour configured: fall back to a neutral mix off the inherited
-  // text colour rather than the badge's hashed Tailwind palette — those are
-  // class strings, and an SVG fill needs a real colour value.
+  // No account color configured: fall back to a neutral mix off the inherited
+  // text color rather than the badge's hashed Tailwind palette — those are
+  // class strings, and an SVG fill needs a real color value.
   const colors = color
     ? buildThemedColors(color, theme)
     : {

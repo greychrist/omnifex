@@ -66,10 +66,10 @@ describe('SessionControlPickers — status-bar readouts that open pickers', () =
     }
   });
 
-  // The model's name wears the Cost Report's colour for it — its price tier
+  // The model's name wears the Cost Report's color for it — its price tier
   // and version — as the picker rows do; the glyph and the `model` label
-  // stay the bar's own colour, unlike the perms readout's whole-tint.
-  it('colours the model name by tier, leaving the glyph and label alone', async () => {
+  // stay the bar's own color, unlike the perms readout's whole-tint.
+  it('colors the model name by tier, leaving the glyph and label alone', async () => {
     const { SHADES, screenChartMode } = await import('@/lib/costChartPalette');
     const rgb = (h: string) => `rgb(${[1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16)).join(', ')})`;
     const mode = screenChartMode();
@@ -82,7 +82,7 @@ describe('SessionControlPickers — status-bar readouts that open pickers', () =
     setup({ model: 'sonnet' });
     expect(valueOf().style.color).toBe(rgb(SHADES[mode].sonnet[0]));
     cleanup();
-    // On default, the model that actually answered is what is named — and coloured.
+    // On default, the model that actually answered is what is named — and colored.
     setup({ model: 'default', activeDefaultModel: 'claude-opus-5-5' });
     expect(valueOf().style.color).toBe(rgb(SHADES[mode].opus[0]));
   });

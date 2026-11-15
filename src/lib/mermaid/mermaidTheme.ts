@@ -8,9 +8,9 @@ import type { ThemeMode } from '@/contexts/ThemeContext';
  * The stock themes were what made diagrams read as rudimentary — `default`
  * draws lavender boxes in a yellow subgraph, `dark` flat grey slabs — and
  * neither knew anything about the surface they sit on. `base` is the one
- * theme whose colours come entirely from `themeVariables`.
+ * theme whose colors come entirely from `themeVariables`.
  *
- * Hex, not oklch: mermaid derives shades with its own colour maths, which does
+ * Hex, not oklch: mermaid derives shades with its own color maths, which does
  * not parse oklch. Each value is the styles.css token named beside it,
  * converted. A diagram sits in a `bg-card` box, so a node is the next surface
  * up (`secondary`) with the theme's `border`, the way the app draws a card

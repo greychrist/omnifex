@@ -246,7 +246,7 @@ describe('AppearanceSettings — edits are debounced before the global commit', 
     // Drop the first-load reset write so we count only edit-driven commits.
     saveSetting.mockClear();
 
-    const picker = screen.getByLabelText('Accent colour picker');
+    const picker = screen.getByLabelText('Accent color picker');
 
     // Simulate an OS color-picker drag: many onChange events in quick
     // succession, like the native <input type="color"> streams.
@@ -364,7 +364,7 @@ describe('AppearanceSettings — hidden events bar', () => {
     });
   });
 
-  it('puts a colour back to the theme default', async () => {
+  it('puts a color back to the theme default', async () => {
     renderWithProvider();
     await screen.findAllByText('User');
     clickRow('Hidden events');
@@ -380,7 +380,7 @@ describe('AppearanceSettings — hidden events bar', () => {
     });
   });
 
-  it('persists header and detail text colours', async () => {
+  it('persists header and detail text colors', async () => {
     renderWithProvider();
     await screen.findAllByText('User');
     clickRow('Hidden events');

@@ -81,7 +81,7 @@ function toRow(r: RawRow): ModelPricingRow {
 }
 
 /**
- * Reject rather than coerce. A silently-clamped colour slot paints two models
+ * Reject rather than coerce. A silently-clamped color slot paints two models
  * the same hue, and a silently-dropped bad date applies a rate from the wrong
  * day — both are wrong answers that look like right ones, which is the whole
  * failure mode a cost report cannot afford.

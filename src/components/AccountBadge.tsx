@@ -24,8 +24,8 @@ function getFallbackColor(name: string): string {
   return FALLBACK_COLORS[Math.abs(hash) % FALLBACK_COLORS.length];
 }
 
-/** The text colour alone from an uncoloured account's fallback cluster —
- *  for a readout that wears the account's colour without its chip. */
+/** The text color alone from an uncolored account's fallback cluster —
+ *  for a readout that wears the account's color without its chip. */
 export function fallbackTextColor(name: string): string {
   return getFallbackColor(name).split(" ").find((c) => c.startsWith("text-")) ?? "";
 }
@@ -45,7 +45,7 @@ export interface AccountShield {
  *
  * `unverified` and `null` deliberately give no shield: with no expected email
  * configured there is nothing to attest, and a green shield there would be a
- * claim we haven't earned. Colours are hard-coded rather than themed:
+ * claim we haven't earned. Colors are hard-coded rather than themed:
  * green/red must not be mixed toward the account tint, or a red alert on an
  * amber account stops reading as an alert.
  */

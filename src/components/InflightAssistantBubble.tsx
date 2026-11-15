@@ -34,7 +34,7 @@ const REMARK_PLUGINS = [remarkGfm];
  *
  * It is a regular message of kind `assistant.text.live` ("Live reply", a
  * dashed amber card by default), rendered through MessageFrame so every
- * Appearance setting applies — presentation, alignment, colour, header. The text may or may not become the
+ * Appearance setting applies — presentation, alignment, color, header. The text may or may not become the
  * turn's final answer — that is only known once the finished message lands
  * — so it looks provisional rather than borrowing a finished message's card.
  */

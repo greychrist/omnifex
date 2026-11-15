@@ -162,7 +162,7 @@ export function ModelPricingEditor() {
                     ))}
                     <th className="p-2 text-right font-medium">Context</th>
                     <th className="p-2 text-left font-medium">Label</th>
-                    <th className="p-2 text-left font-medium">Colour</th>
+                    <th className="p-2 text-left font-medium">Color</th>
                     <th className="p-2" />
                   </tr>
                 </thead>
@@ -177,12 +177,12 @@ export function ModelPricingEditor() {
                       <td className="p-2 text-right tabular-nums">{fmtWindow(r.contextWindow)}</td>
                       <td className="p-2">{r.label ?? '—'}</td>
                       {/* Derived from the row's tier and version, not set
-                          per row: the Cost Report's own colour for it. */}
+                          per row: the Cost Report's own color for it. */}
                       <td className="p-2">
                         <span
                           className="inline-block h-3 w-3 rounded-sm align-middle"
                           style={{ background: modelColor(`claude-${r.pattern}`, 'light') }}
-                          title={`Cost Report colour for ${r.pattern}`}
+                          title={`Cost Report color for ${r.pattern}`}
                         />
                       </td>
                       <td className="p-2 text-right">

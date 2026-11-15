@@ -1074,7 +1074,7 @@ export const migrations: Migration[] = [
   {
     version: 31,
     description:
-      'Drop model_pricing.color_slot. The Cost Report colours a model by its '
+      'Drop model_pricing.color_slot. The Cost Report colors a model by its '
       + 'price tier and version (costChartPalette.ts), so a per-row palette '
       + 'index has nothing left to drive; no user row ever set one. The '
       + 'column stays in MODEL_PRICING_DDL, which v25 runs as the schema of '
@@ -1093,7 +1093,7 @@ export const migrations: Migration[] = [
     version: 32,
     description:
       'Multi-repo git widget: per-project scan depth and watched sub-repos, '
-      + 'and branch colours keyed by repo (its main checkout) in a new '
+      + 'and branch colors keyed by repo (its main checkout) in a new '
       + 'repo_branch_colors table. Additive on purpose: an older installed '
       + 'daemon shares this database with a dev build and prepares '
       + '`branch_colors.project_path` at start-up, so that table stays as it '
@@ -1139,6 +1139,20 @@ export const migrations: Migration[] = [
          VALUES (?, ?, ?, ?, ?)`,
       );
       for (const r of keyed) ins.run(r.repo_path, r.branch_name, r.color, r.sort_order, r.created_at);
+    },
+  },
+  {
+    version: 33,
+    description:
+      'Repo aliases: a short display name per repo (its main checkout), shown '
+      + 'on the git bar in place of the folder name.',
+    up: (db) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS repo_aliases (
+          repo_path TEXT PRIMARY KEY,
+          alias TEXT NOT NULL
+        );
+      `);
     },
   },
 ];

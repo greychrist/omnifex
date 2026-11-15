@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { hexChroma, hexHue } from '../colorHue';
 
 describe('hexHue', () => {
-  it('reads the OKLCH hue of a hex colour', () => {
+  it('reads the OKLCH hue of a hex color', () => {
     // sRGB green is oklch(86.6% 0.295 142.5).
     expect(hexHue('#00ff00')).toBeCloseTo(142.5, 0);
     // sRGB red is oklch(62.8% 0.258 29.23).
@@ -10,7 +10,7 @@ describe('hexHue', () => {
     expect(hexHue('#0000ff')).toBeCloseTo(264.1, 0);
   });
 
-  it('reads the short and alpha forms by their colour alone', () => {
+  it('reads the short and alpha forms by their color alone', () => {
     expect(hexHue('#f00')).toBeCloseTo(hexHue('#ff0000')!, 5);
     expect(hexHue('#ff000080')).toBeCloseTo(hexHue('#ff0000')!, 5);
   });
@@ -23,7 +23,7 @@ describe('hexHue', () => {
     }
   });
 
-  it('is null for anything that is not a hex colour', () => {
+  it('is null for anything that is not a hex color', () => {
     expect(hexHue('red')).toBeNull();
     expect(hexHue('#12345')).toBeNull();
   });
@@ -34,12 +34,12 @@ describe('hexChroma', () => {
     for (const hex of ['#ffffff', '#808080', '#000000', '#fff']) expect(hexChroma(hex)!).toBeLessThan(0.001);
   });
 
-  it('reads a real colour\'s chroma', () => {
+  it('reads a real color\'s chroma', () => {
     // sRGB red is oklch(62.8% 0.258 29.23).
     expect(hexChroma('#ff0000')).toBeCloseTo(0.258, 2);
   });
 
-  it('is null for anything that is not a hex colour', () => {
+  it('is null for anything that is not a hex color', () => {
     expect(hexChroma('white')).toBeNull();
   });
 });

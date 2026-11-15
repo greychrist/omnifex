@@ -207,7 +207,7 @@ export function ModernLiveAnswer({ tabId }: { tabId: string }) {
 }
 
 /** The answer that ends a turn, in a card made as the prompt bubble is, in
- *  its own colour. Cornered like every card; tint, border and shadow are
+ *  its own color. Cornered like every card; tint, border and shadow are
  *  `.modern-final-card` and `.modern-card-shadow` in styles.css, since the
  *  `* { border-color }` reset beats the utilities. In line style
  *  (Settings › Modern › Answer style) it is only a bar down the left edge,

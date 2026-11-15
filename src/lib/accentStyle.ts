@@ -28,7 +28,7 @@ export function swatchFor(
 /**
  * Inline border and background for a card, overriding Tailwind classes (the
  * unlayered `* { border-color }` rule in styles.css outranks every
- * border-colour utility). The border takes the configured opacity; the
+ * border-color utility). The border takes the configured opacity; the
  * background is a fixed ~8% (`14`) tint.
  */
 export function accentStyleFor(
@@ -52,7 +52,7 @@ export function cardRadiusStyle(config: MessageRenderingConfig): React.CSSProper
   return { borderRadius: `${String(config.cardBorderRadius)}px` };
 }
 
-/** Automatic text colours for the hidden-events bar — slate-50 and slate-900. */
+/** Automatic text colors for the hidden-events bar — slate-50 and slate-900. */
 export const LIGHT_TEXT = "#f8fafc";
 export const DARK_TEXT = "#0f172a";
 
@@ -63,9 +63,9 @@ export interface HiddenEventsColors {
 }
 
 /**
- * Inline colours for the compact-mode hidden-events bar. Undefined means
+ * Inline colors for the compact-mode hidden-events bar. Undefined means
  * "leave the theme's class alone". Inline because the unlayered
- * `* { border-color }` rule in styles.css outranks every Tailwind border-colour
+ * `* { border-color }` rule in styles.css outranks every Tailwind border-color
  * utility.
  *
  * Text left unset is automatic: once a background is set, whichever of
@@ -95,10 +95,10 @@ export function hiddenEventsColors(
 }
 
 /**
- * The card border at its opacity. A configured colour keeps its hue and has its
- * own alpha (if any) scaled; with none configured the theme's border colour is
+ * The card border at its opacity. A configured color keeps its hue and has its
+ * own alpha (if any) scaled; with none configured the theme's border color is
  * faded instead. Undefined — leave the theme's class alone — at 100% with no
- * colour.
+ * color.
  */
 function hiddenEventsBorder(border: string | null, opacityPct: number): string | undefined {
   if (border === null) {
@@ -113,10 +113,10 @@ function hiddenEventsBorder(border: string | null, opacityPct: number): string |
 }
 
 /**
- * The theme's background as a hex, for compositing a translucent bar colour.
+ * The theme's background as a hex, for compositing a translucent bar color.
  * Approximates `--color-background` per theme (oklch 0.18 gray / 0.98 light);
  * precision only matters for translucent backgrounds near the midpoint, and
- * the explicit text colours cover those.
+ * the explicit text colors cover those.
  */
 export function currentThemeBackdrop(): string {
   const light =

@@ -2,8 +2,8 @@ import type { Database } from './database';
 import { repoIdentity } from './git-repos';
 
 /**
- * Branch colour pins, per repo. A repo is keyed by its main checkout
- * (`repoIdentity`), so the same repo shows the same colours whether it is
+ * Branch color pins, per repo. A repo is keyed by its main checkout
+ * (`repoIdentity`), so the same repo shows the same colors whether it is
  * opened directly, through a linked worktree, or inside another project.
  */
 export interface BranchColor {

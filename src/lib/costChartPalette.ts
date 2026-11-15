@@ -1,11 +1,11 @@
 import { SHIPPED_PRICING, resolvePricing, type ModelPricingInput } from './pricing';
 
-// Cost Report palette — colour follows the ENTITY, never its rank on screen.
+// Cost Report palette — color follows the ENTITY, never its rank on screen.
 //
 // A model's HUE is its price tier, in the order the effort picker uses for
 // its levels: blue (Haiku, cheapest), green (Sonnet), amber (Opus), purple
 // (Fable; Mythos is priced as Fable and sits with it). Its SHADE is its
-// version within the tier: the newest is the full colour and older ones step
+// version within the tier: the newest is the full color and older ones step
 // lighter, so Opus 5.5 and Opus 5 — the two biggest segments of most bars —
 // stay apart in a stack and in the legend. Past the ramp the oldest share its
 // last shade; they are never in use together.
@@ -16,7 +16,7 @@ import { SHIPPED_PRICING, resolvePricing, type ModelPricingInput } from './prici
 // every month-over-month reading would silently lie.
 //
 // This replaced a fixed eight-hue categorical palette with a per-row slot
-// (`colorSlot`, dropped in schema v31): the colours were CVD-ordered but told
+// (`colorSlot`, dropped in schema v31): the colors were CVD-ordered but told
 // nothing about the model, and Opus 5 was blue while Opus 5.5 was orange.
 
 export type ChartMode = 'light' | 'dark';
@@ -108,7 +108,7 @@ function rankOf(model: string, tier: Tier, userRows?: readonly ModelPricingInput
   return i < 0 ? 0 : i;
 }
 
-/** Display metadata always resolves at today: a colour that shifted with the
+/** Display metadata always resolves at today: a color that shifted with the
  *  row date being rendered would repaint a chart mid-axis. */
 function today(): string {
   return new Date().toISOString().slice(0, 10);
@@ -119,10 +119,10 @@ function isSynthetic(model: string): boolean {
 }
 
 /**
- * A model's own colour, or null when it has none to give: `<synthetic>`, an
+ * A model's own color, or null when it has none to give: `<synthetic>`, an
  * alias that names no family ("default"), an unknown family. For a single
  * model shown on its own — Modern's model-change line — where a neutral
- * would read as a colour choice.
+ * would read as a color choice.
  */
 export function modelOwnColor(
   model: string,
@@ -138,14 +138,14 @@ export function modelOwnColor(
 }
 
 /** The theme on screen, read off the root's class, for the surfaces that
- *  colour a model outside the chart (picker rows, Modern's model line). */
+ *  color a model outside the chart (picker rows, Modern's model line). */
 export function screenChartMode(): ChartMode {
   return typeof document !== 'undefined' && document.documentElement.classList.contains('theme-light')
     ? 'light'
     : 'dark';
 }
 
-/** The chart's colour for a model: its own, or the neutral. */
+/** The chart's color for a model: its own, or the neutral. */
 export function modelColor(
   model: string,
   mode: ChartMode,

@@ -9,11 +9,11 @@ import type { DiffFile, DiffLine, ParsedDiff } from "@/lib/unifiedDiff";
  * success-green block got wrong:
  *
  *  - **The tint is on the row, not the text.** Code keeps `foreground`, so a
- *    diff stays readable as code; colour means "this line changed" rather
+ *    diff stays readable as code; color means "this line changed" rather
  *    than "this command exited 0".
- *  - **The sign column is the only saturated colour**, and it carries a glyph.
- *    Position and shape say add/remove before colour does, so the scan
- *    survives a screenshot, a colourblind reader, or a monochrome print.
+ *  - **The sign column is the only saturated color**, and it carries a glyph.
+ *    Position and shape say add/remove before color does, so the scan
+ *    survives a screenshot, a colorblind reader, or a monochrome print.
  *  - **Line numbers come from the hunk header**, which is the one thing a
  *    wall of stdout cannot give you.
  *
@@ -21,11 +21,11 @@ import type { DiffFile, DiffLine, ParsedDiff } from "@/lib/unifiedDiff";
  * near-black at 20% is invisible on a dark background and wrong on a light
  * one, and these two themes share one component. Rails are inset box-shadows
  * because `* { border-color }` in styles.css overrides every Tailwind
- * border-colour utility app-wide.
+ * border-color utility app-wide.
  *
  * There is no syntax highlighting here on purpose. The transcript is
  * unvirtualised, and a Prism pass per line is the render storm CLAUDE.md
- * warns about; the diff's own colours are the information anyway.
+ * warns about; the diff's own colors are the information anyway.
  */
 
 // Dim enough to stay behind the code, legible enough to be worth reading —

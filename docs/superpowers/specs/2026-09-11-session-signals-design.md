@@ -74,7 +74,7 @@ this. Every signal here comes from the renderer's own message stream.
 | Was | Is | Anchor |
 |---|---|---|
 | "this prompt added 325k" banner | `event` `context.delta`, one per turn | session |
-| context-pressure banner, amber half | `state` `context.level` → meter colour | session |
+| context-pressure banner, amber half | `state` `context.level` → meter color | session |
 | context-pressure banner, red half | `action` `context.boundary` → attention slot | session |
 | thinking bar | `state` `session.activity` → activity pill | session |
 | usage-limit banner | `state` `session.activity` (`usage-limit`) → activity pill | session |
@@ -91,7 +91,7 @@ different **kinds**. "Getting full" is a value, so it tints the meter in place.
 and **only at `critical`**.
 
 Routing `warn` to the slot as well would put an item there that says nothing the
-meter's colour has not already said — which is how the stack grew the first time.
+meter's color has not already said — which is how the stack grew the first time.
 
 ## UI
 
@@ -109,9 +109,9 @@ resumed transcript. The token count moved to the pill's tooltip.
 
 ### The meter reads the budget, not the window
 
-`SessionCard` used to colour at `pct > 80 / > 50` of the **window**. The budget
+`SessionCard` used to color at `pct > 80 / > 50` of the **window**. The budget
 is a different scale — 250k on a 1M window is critical at 25% full — so the meter
-was green while the banner was red. It now takes its colour from
+was green while the banner was red. It now takes its color from
 `context.level`, and draws a tick where the budget sits so "compact at 25%" is
 visible rather than implied.
 
@@ -120,7 +120,7 @@ visible rather than implied.
 `ContextTimelineTick` already stamped cumulative context per sample and labelled
 jumps. It now labels **every** turn's delta, reconstructs the drop across a
 compaction from `prevTokens` (`delta` stays null there, or `isJump` and the level
-colouring would start treating a reset as a step), and offers `before → after` on
+coloring would start treating a reset as a step), and offers `before → after` on
 hover. Compact output mode hides deltas under 2k; Verbose shows all of them.
 
 `context_timeline_enabled` **flipped to on by default**. It shipped off as an

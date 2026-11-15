@@ -22,8 +22,8 @@ import { commandEnvelopeKind, localCommandOutput } from './commandEnvelope';
 import { EFFORT_OPTIONS, PERMISSION_OPTIONS } from './sessionDefaultOptions';
 import { EFFORT_LEVELS, PERMISSION_MODES } from '@/components/ControlBar';
 
-/** The colour a change line wears: a CSS colour, or a model whose Cost
- *  Report colour depends on the theme (resolved where the line is drawn). */
+/** The color a change line wears: a CSS color, or a model whose Cost
+ *  Report color depends on the theme (resolved where the line is drawn). */
 export type LineAccent = { kind: 'css'; color: string } | { kind: 'model'; model: string };
 
 export interface ModernLine {
@@ -40,7 +40,7 @@ export interface ModernLine {
   /** error: a failure, in the error red. warn: an unrecognized record, in the
    *  amber the context rail turns near its limit (amber-500). */
   tone?: 'error' | 'warn';
-  /** The icon and title in this colour, as an answered question wears its
+  /** The icon and title in this color, as an answered question wears its
    *  purple: a permission-mode, effort or model change, in the new value's. */
   accent?: LineAccent;
 }
@@ -56,7 +56,7 @@ export function permissionModeLabel(mode: string): string {
   return PERMISSION_OPTIONS.claude.find((o) => o.id === mode)?.label ?? mode;
 }
 
-/** The picker's Tailwind text colour (`text-teal-600`) as the CSS variable
+/** The picker's Tailwind text color (`text-teal-600`) as the CSS variable
  *  Tailwind defines for it, so a line can wear it inline. */
 function cssAccent(textClass: string | undefined): LineAccent | undefined {
   const name = textClass?.match(/^text-(.+)$/)?.[1];
@@ -100,7 +100,7 @@ function commandOutputLine(icon: IconName, title: string, output: string): Moder
   return { icon, title, body, mono: true, fold: body.split('\n').length > OPEN_LINES_MAX };
 }
 
-/** System subtypes that report a failure: drawn in the error colour. */
+/** System subtypes that report a failure: drawn in the error color. */
 const ERROR_SUBTYPES = new Set(['api_error', 'error_during_execution', 'permission_denied']);
 
 export function modernLineOf(

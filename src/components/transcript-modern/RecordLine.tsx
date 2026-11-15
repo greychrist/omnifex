@@ -3,7 +3,7 @@
  * line — the kind's icon, a title, a short detail — with any longer text set
  * off by the left rule a recap uses, open or folded. What Modern draws where
  * it used to borrow the Compact card. A permission-mode, effort or model
- * change wears its new value's colour on the icon and title, as an answered
+ * change wears its new value's color on the icon and title, as an answered
  * question (QuestionLine) wears its purple.
  */
 import * as React from 'react';
@@ -27,8 +27,8 @@ function Body({ line }: { line: ModernLine }) {
     : <p className="whitespace-pre-wrap break-words">{line.body}</p>;
 }
 
-/** The accent as a CSS colour. A model's is its Cost Report colour for the
- *  theme on screen; one with no colour of its own leaves the line plain. */
+/** The accent as a CSS color. A model's is its Cost Report color for the
+ *  theme on screen; one with no color of its own leaves the line plain. */
 function accentColor(accent: LineAccent | undefined): string | undefined {
   if (!accent) return undefined;
   if (accent.kind === 'css') return accent.color;

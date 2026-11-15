@@ -24,10 +24,10 @@ describe('modernLineOf — what Modern draws instead of a Compact card', () => {
     expect(line(cc('model', 'claude-opus-5-5'))).toMatchObject({ title: 'Model', detail: 'claude-opus-5-5' });
   });
 
-  // A change line wears the new value's colour, as an answered question wears
+  // A change line wears the new value's color, as an answered question wears
   // its purple: the picker's for a permission mode or effort level, the Cost
   // Report's for a model.
-  it('colours a mode, effort or model change by its new value', () => {
+  it('colors a mode, effort or model change by its new value', () => {
     const cc = (control: string, value: string) => ({ kind: 'control-change', control, value, sessionId: '', receivedAt: '' });
     expect(line(cc('permission', 'plan'))?.accent).toEqual({ kind: 'css', color: 'var(--color-teal-600)' });
     expect(line(cc('permission', 'bypassPermissions'))?.accent).toEqual({ kind: 'css', color: 'var(--color-red-600)' });
@@ -38,7 +38,7 @@ describe('modernLineOf — what Modern draws instead of a Compact card', () => {
       .toEqual({ kind: 'css', color: 'var(--color-purple-600)' });
   });
 
-  it('leaves an unknown value and every other record uncoloured', () => {
+  it('leaves an unknown value and every other record uncolored', () => {
     const cc = (control: string, value: string) => ({ kind: 'control-change', control, value, sessionId: '', receivedAt: '' });
     expect(line(cc('permission', 'someNewMode'))?.accent).toBeUndefined();
     expect(line(cc('effort', 'ultra'))?.accent).toBeUndefined();

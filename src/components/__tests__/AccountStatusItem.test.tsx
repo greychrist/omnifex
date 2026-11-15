@@ -112,14 +112,14 @@ describe('AccountStatusItem', () => {
       expect(screen.getByTestId('account-item-name').textContent).toBe('Personal');
     });
 
-    // The account's own colour carries the icon, label and name, as it does on
+    // The account's own color carries the icon, label and name, as it does on
     // the badge — that is what makes it recognisable at a glance.
-    it('wears the account colour', () => {
+    it('wears the account color', () => {
       render(<AccountStatusItem {...base} />);
       expect(accountButton().style.color).toBe('rgb(59, 130, 246)');
     });
 
-    it('falls back to a name-hashed colour class when the account has none', () => {
+    it('falls back to a name-hashed color class when the account has none', () => {
       accountsRef.color = null;
       render(<AccountStatusItem {...base} />);
       expect(accountButton().className).toMatch(/\btext-\w+-400\b/);
@@ -200,7 +200,7 @@ describe('AccountStatusItem', () => {
       }
     });
 
-    it('colours the weekly percentage by its own level', () => {
+    it('colors the weekly percentage by its own level', () => {
       render(<AccountStatusItem {...base} fiveHourRateLimit={fiveHour(10)} sevenDayRateLimit={sevenDay(95)} />);
       expect(screen.getByTestId('account-item-usage').className).toContain('text-foreground');
       expect(screen.getByTestId('account-item-usage-week').className).toContain('text-red-400');
@@ -216,7 +216,7 @@ describe('AccountStatusItem', () => {
       [60, 'text-yellow-400'],
       [80, 'text-orange-400'],
       [95, 'text-red-400'],
-    ] as const)('colours %s%% like the rate-limit widget does', (pct, cls) => {
+    ] as const)('colors %s%% like the rate-limit widget does', (pct, cls) => {
       render(<AccountStatusItem {...base} fiveHourRateLimit={fiveHour(pct)} />);
       expect(screen.getByTestId('account-item-usage').className).toContain(cls);
     });

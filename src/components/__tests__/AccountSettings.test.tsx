@@ -139,7 +139,7 @@ describe('AccountSettings sign-in expiry', () => {
     expect(apiMock.accountLoginExpiry).not.toHaveBeenCalledWith('/home/test/.codex', expect.anything());
   });
 
-  it('colours a sign-in that is about to end', async () => {
+  it('colors a sign-in that is about to end', async () => {
     const soon = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000 + 60_000).toISOString();
     apiMock.accountLoginExpiry.mockResolvedValue({ expiresAt: soon, checkedAt: 'x' });
     render(<AccountSettings />);

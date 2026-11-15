@@ -230,7 +230,7 @@ describe('turnDeltaSeries — compact summaries are not prompts', () => {
 
 describe('turnDeltaSeries — the jump threshold', () => {
   // The threshold no longer gates whether anything is reported; it decides
-  // whether a row is coloured as a jump. DEFAULT_CONTEXT_JUMP_TOKENS is still
+  // whether a row is colored as a jump. DEFAULT_CONTEXT_JUMP_TOKENS is still
   // the number, and still 50k.
   it('defaults to 50k', () => {
     expect(DEFAULT_CONTEXT_JUMP_TOKENS).toBe(50_000);

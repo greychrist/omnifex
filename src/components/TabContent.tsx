@@ -475,7 +475,7 @@ const TabPanelImpl: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                       </div>
                     </div>
 
-                    {/* New-session form + Repos & branch colours share the top row,
+                    {/* New-session form + Repos & branch colors share the top row,
                         session list (with errors/loading) flows full-width
                         below. The list region is `flex-1 min-h-0` so the
                         SessionList table fills the remaining viewport

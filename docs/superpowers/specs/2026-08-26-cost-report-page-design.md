@@ -286,7 +286,7 @@ KPI tiles (total, requests, active days, $/request), then:
 - **Top sessions**, reusing `sessions()`.
 - **Unpriced-models banner** when `unpriced()` is non-empty.
 
-Model → colour is **fixed per model** via a lookup keyed on model id, never assigned by rank, so
+Model → color is **fixed per model** via a lookup keyed on model id, never assigned by rank, so
 the legend means the same thing across months.
 
 The hues are the dataviz categorical set re-ordered to lead with **red → blue → green** (Greg's
@@ -300,7 +300,7 @@ them. That is why the order is red→blue→green rather than blue→green→red
 
 Model→slot assignment is unchanged, which puts opus-4-8 / opus-5 / fable-5 — 96.8% of lifetime
 spend — on the three leading hues. **Given up deliberately:** the previous order matched the
-Anthropic console's own model colours so the two could be read side by side.
+Anthropic console's own model colors so the two could be read side by side.
 
 ### 5.2a Remembering the filters
 

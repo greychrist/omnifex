@@ -12,6 +12,9 @@ const api = vi.hoisted(() => ({
   listGitBranches: vi.fn(async () => ['main']),
   upsertBranchColor: vi.fn(),
   deleteBranchColor: vi.fn(),
+  listRepoAliases: vi.fn(async (): Promise<Record<string, string>> => ({ '/p/api': 'backend' })),
+  setRepoAlias: vi.fn(async () => {}),
+  onRepoAliasesChanged: vi.fn(() => () => {}),
 }));
 vi.mock('@/lib/api', () => ({ api }));
 
@@ -67,9 +70,9 @@ describe('ProjectReposDialog', () => {
     await waitFor(() => { expect(api.removeProjectRepo).toHaveBeenCalledWith('/p', '/p/gone'); });
   });
 
-  it('shows a repo\'s branch colours when expanded', async () => {
+  it('shows a repo\'s branch colors when expanded', async () => {
     open();
-    fireEvent.click(await screen.findByRole('button', { name: /branch colours for api/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /branch colors for api/i }));
     await waitFor(() => { expect(api.listBranchColors).toHaveBeenCalledWith('/p/api'); });
   });
 
@@ -97,5 +100,33 @@ describe('ProjectReposDialog', () => {
     });
     open();
     expect(await screen.findByText('~/Repos/x')).toBeTruthy();
+  });
+
+  it('shows each repo\'s alias in its own field, the folder name as placeholder', async () => {
+    open();
+    const field = await screen.findByRole('textbox', { name: /alias for api/i });
+    await waitFor(() => { expect((field as HTMLInputElement).value).toBe('backend'); });
+    const web = screen.getByRole('textbox', { name: /alias for web/i }) as HTMLInputElement;
+    expect(web.value).toBe('');
+    expect(web.placeholder).toBe('web');
+  });
+
+  it('saves an alias when the field loses focus', async () => {
+    open();
+    const web = await screen.findByRole('textbox', { name: /alias for web/i });
+    fireEvent.change(web, { target: { value: 'site' } });
+    fireEvent.blur(web);
+    await waitFor(() => { expect(api.setRepoAlias).toHaveBeenCalledWith('/p/web', 'site'); });
+  });
+
+  it('saves on Enter and does not save an unchanged alias', async () => {
+    open();
+    const field = await screen.findByRole('textbox', { name: /alias for api/i });
+    await waitFor(() => { expect((field as HTMLInputElement).value).toBe('backend'); });
+    fireEvent.blur(field);
+    expect(api.setRepoAlias).not.toHaveBeenCalled();
+    fireEvent.change(field, { target: { value: '' } });
+    fireEvent.keyDown(field, { key: 'Enter' });
+    await waitFor(() => { expect(api.setRepoAlias).toHaveBeenCalledWith('/p/api', ''); });
   });
 });

@@ -270,7 +270,7 @@ const TabItem: React.FC<TabItemProps> = ({ tab, isActive, onClose, onClick, isDr
       onDragEnd={() => setDraggedTabId?.(null)}
     >
       {/* Type icon. On a chat tab with a known account this is the merged
-          glyph — the bubble carries the account's colour and icon, and the
+          glyph — the bubble carries the account's color and icon, and the
           separate chip below is dropped. Every other tab type keeps the plain
           icon: there is no chat bubble to merge an account into. */}
       <div className="flex-shrink-0">
@@ -303,7 +303,7 @@ const TabItem: React.FC<TabItemProps> = ({ tab, isActive, onClose, onClick, isDr
       </span>
 
       {/* Account chip — only on non-chat tabs. On a chat tab the glyph above
-          already carries the account's colour and icon. */}
+          already carries the account's color and icon. */}
       {accountName && tab.type !== 'chat' && (
         <AccountBadge
           name={accountName}

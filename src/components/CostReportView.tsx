@@ -190,7 +190,7 @@ export function CostReportView({ printMode, initialFilters, onSettled }: CostRep
   const [filters, setFilters] = useState<CostFilterState>(() => initialFilters ?? loadFilterState());
   const [facets, setFacets] = useState<CostFacets | null>(null);
   // The model_pricing delta layer. Loaded once: it drives legend names and
-  // series colours, so a model released after this build reads as its
+  // series colors, so a model released after this build reads as its
   // configured name rather than a raw id on a hashed hue.
   const [pricing, setPricing] = useState<readonly ModelPricingInput[] | undefined>(undefined);
   const [data, setData] = useState<ReportData | null>(null);

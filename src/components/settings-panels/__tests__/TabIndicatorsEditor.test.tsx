@@ -32,12 +32,12 @@ describe("TabIndicatorsEditor", () => {
     }
   });
 
-  it("renders an icon picker and colour input per state", () => {
+  it("renders an icon picker and color input per state", () => {
     renderEditor();
-    // One icon-picker trigger (aria-label "Icon") + one colour input per state:
+    // One icon-picker trigger (aria-label "Icon") + one color input per state:
     // error, permission, question, complete, cacheExpiring.
     expect(screen.getAllByLabelText("Icon").length).toBe(5);
-    expect(screen.getAllByLabelText("Colour").length).toBe(5);
+    expect(screen.getAllByLabelText("Color").length).toBe(5);
   });
 
   it("toggles the shared bordered chip", () => {
@@ -48,9 +48,9 @@ describe("TabIndicatorsEditor", () => {
     );
   });
 
-  it("writes a per-state colour without touching other states", () => {
+  it("writes a per-state color without touching other states", () => {
     const { onChange } = renderEditor();
-    const errorColor = screen.getAllByLabelText("Colour")[0];
+    const errorColor = screen.getAllByLabelText("Color")[0];
     fireEvent.input(errorColor, { target: { value: "#123456" } });
     expect(onChange).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -71,7 +71,7 @@ describe("TabIndicatorsEditor", () => {
 
   // "MessageCircleQuestion" is the shipped default for the question state and
   // is wider than the picker's column, so a fresh install shows the overflow:
-  // the name pushed the chevron out of the button and over the colour input
+  // the name pushed the chevron out of the button and over the color input
   // sitting beside it.
   //
   // jsdom has no layout engine, so this asserts the layout contract that makes

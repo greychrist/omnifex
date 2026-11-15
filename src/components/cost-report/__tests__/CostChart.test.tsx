@@ -126,7 +126,7 @@ describe('CostChart', () => {
     expect(gridline?.getAttribute('stroke')).toContain('black');
   });
 
-  it('paints each model in its fixed slot colour, not by series order', () => {
+  it('paints each model in its fixed slot color, not by series order', () => {
     const { container } = renderChart(<CostChart rows={ROWS} mode="dark" />);
     const fills = new Set(
       [...container.querySelectorAll('path[fill]')].map((p) => p.getAttribute('fill')),
@@ -178,7 +178,7 @@ describe('CostChart', () => {
     expect(Number(surface?.getAttribute('width'))).toBeGreaterThan(0);
     expect(Number(surface?.getAttribute('height'))).toBeGreaterThan(0);
     // Derived from the card token: three themes ship three different card
-    // colours, and a fixed hex is visibly wrong in two of them.
+    // colors, and a fixed hex is visibly wrong in two of them.
     expect(surface?.getAttribute('fill')).toContain('var(--color-card)');
   });
 
@@ -188,9 +188,9 @@ describe('CostChart', () => {
     expect(surface?.getAttribute('fill')).toBe('var(--color-background)');
   });
 
-  // The seam is a gap cut in the bar, so it has to be the colour of whatever
+  // The seam is a gap cut in the bar, so it has to be the color of whatever
   // is behind the bar — now the plot surface, not the card.
-  it('separates stacked segments with a seam in the plot surface colour', () => {
+  it('separates stacked segments with a seam in the plot surface color', () => {
     for (const mode of ['dark', 'light'] as const) {
       const { container } = renderChart(<CostChart rows={ROWS} mode={mode} />);
       const surface = container.querySelector('rect[data-testid="plot-surface"]');
@@ -206,7 +206,7 @@ describe('CostChart', () => {
 describe('CostChartLegend', () => {
   afterEach(cleanup);
 
-  // Identity must never be colour-alone: every band is named, and the names
+  // Identity must never be color-alone: every band is named, and the names
   // are the human labels rather than raw dated model ids.
   it('names every series with its label and swatch', () => {
     const { container } = render(

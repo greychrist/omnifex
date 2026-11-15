@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { resolveIndicatorColor, TAB_INDICATOR_PX } from "../tabIndicatorStyle";
 
-// Indicator colours are hex since the palette was retired; a saved palette
+// Indicator colors are hex since the palette was retired; a saved palette
 // name is converted on config load, so the resolver only guards junk.
 describe("resolveIndicatorColor", () => {
   it("passes hex colors through unchanged", () => {

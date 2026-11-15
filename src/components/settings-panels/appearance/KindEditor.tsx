@@ -342,8 +342,8 @@ export const KindEditor: React.FC<KindEditorProps> = ({
         </Row>
       )}
 
-      <Row name="Colour and icon" label="Colour, icon" hint={rowHint(["accentColor", "icon"])}>
-        {/* Native colour picker — clicking opens the OS picker. The hex value
+      <Row name="Color and icon" label="Color, icon" hint={rowHint(["accentColor", "icon"])}>
+        {/* Native color picker — clicking opens the OS picker. The hex value
             is what gets written; the border and background tints are derived
             from it by `accentStyleFor`. */}
         <input
@@ -356,7 +356,7 @@ export const KindEditor: React.FC<KindEditorProps> = ({
             "bg-background p-1",
             "focus:outline-none focus:ring-1 focus:ring-ring",
           )}
-          aria-label="Accent colour picker"
+          aria-label="Accent color picker"
         />
         <Input
           value={accentHex}
@@ -369,7 +369,7 @@ export const KindEditor: React.FC<KindEditorProps> = ({
             }
           }}
           className="font-mono text-xs h-9 w-24 shrink-0"
-          aria-label="Accent colour hex"
+          aria-label="Accent color hex"
         />
         <div className="min-w-0 flex-1">
           <IconPicker value={style.icon} onChange={(v) => { onChange({ icon: v }); }} />

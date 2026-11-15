@@ -395,13 +395,13 @@ export const ProjectList: React.FC<ProjectListProps> = ({
                         // (the row's own border-b proves it), and the collapse
                         // algorithm resolves on width, so 3px beats the next
                         // row's 1px and survives.
-                        // The colour needs `!` and `color-mix`, for two
+                        // The color needs `!` and `color-mix`, for two
                         // reasons worth knowing: styles.css sets
                         // `* { border-color: var(--color-border) }` OUTSIDE
                         // any @layer, and unlayered rules beat layered ones
                         // regardless of specificity — so every Tailwind
-                        // border-colour utility is overridden app-wide.
-                        // And Tailwind bakes `border-*` colours to a hex at
+                        // border-color utility is overridden app-wide.
+                        // And Tailwind bakes `border-*` colors to a hex at
                         // build time, which wouldn't follow the theme;
                         // `var()` inside color-mix resolves at runtime.
                         isPinBoundary &&

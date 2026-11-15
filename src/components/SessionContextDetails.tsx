@@ -71,12 +71,12 @@ function DisclosureToggle({
 }
 
 /**
- * Colour by proximity to the compaction boundary.
+ * Color by proximity to the compaction boundary.
  *
  * Read from `context.level`, which resolves the user's configured budget —
  * never from a hardcoded percentage of the window. The two are not the same
  * scale: a 250k budget on a 1M window is critical at 25% full, and a meter
- * colouring by window percentage would still be showing green there while the
+ * coloring by window percentage would still be showing green there while the
  * attention slot asked the user to compact.
  */
 export const METER_FILL: Record<ContextPressureLevel, string> = {

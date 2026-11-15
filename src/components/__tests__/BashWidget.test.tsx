@@ -89,7 +89,7 @@ describe('BashWidget — bash edit diff', () => {
 
 // A `git diff` arrives as ordinary stdout: no structured payload, no Edit
 // tool, just text. It used to render as one flat block of success-green —
-// where the colour meant "exit 0" and nothing marked the changed lines.
+// where the color meant "exit 0" and nothing marked the changed lines.
 describe('BashWidget — diff output', () => {
   const DIFF = `diff --git a/src/lib/api.ts b/src/lib/api.ts
 --- a/src/lib/api.ts

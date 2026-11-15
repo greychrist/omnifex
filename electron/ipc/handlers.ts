@@ -234,6 +234,10 @@ export interface Services {
     upsert(input: { repo_path: string; branch_name: string; color: string }): unknown;
     delete(id: number): unknown;
   };
+  repoAliases?: {
+    list(repoPaths: string[]): Record<string, string>;
+    set(repoPath: string, alias: string): void;
+  };
   projectRepos?: {
     get(projectPath: string): Promise<unknown>;
     setWatched(projectPath: string, repoPath: string, watched: boolean): void;
@@ -425,7 +429,7 @@ function costFilters(p: Record<string, unknown> | undefined): Record<string, unk
  * renderer gets a defined (but empty) response rather than a blocked channel.
  */
 export function getHandlerMap(services: Services = {}): Record<string, HandlerFn> {
-  const { brain, brainMcp, accounts, claude, sessions, cost, modelPricing, usage, rateLimits, usageRunner, claudeBinary, mcp, slashCommands, sessionsSummary, logging, database, proxy, permissionsIO, models, commands, gitWatcher, branchColors, projectRepos, gitBranches, gitDiff, lima, filesystem, oneShotTerminal, codexAuth, claudeAuth, codexSessionWalker, accountIdentity, allowRawSql } = services;
+  const { brain, brainMcp, accounts, claude, sessions, cost, modelPricing, usage, rateLimits, usageRunner, claudeBinary, mcp, slashCommands, sessionsSummary, logging, database, proxy, permissionsIO, models, commands, gitWatcher, branchColors, projectRepos, repoAliases, gitBranches, gitDiff, lima, filesystem, oneShotTerminal, codexAuth, claudeAuth, codexSessionWalker, accountIdentity, allowRawSql } = services;
 
   // Positive account-ownership guard for config-editing channels. A non-empty
   // configDir supplied by the renderer must belong to a known account, so a
@@ -622,7 +626,7 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
 
     // ── Model pricing (user-editable rate + display table) ─────────────────
     // Writes are validated in the service and THROW on bad input rather than
-    // coercing: a clamped colour slot or a dropped bad date is a wrong number
+    // coercing: a clamped color slot or a dropped bad date is a wrong number
     // that looks like a right one, which is the one thing a cost report cannot
     // afford. `wrapWith` surfaces the message to the editor.
     model_pricing_list: wrapWith(() => modelPricing?.list() ?? []),
@@ -976,6 +980,16 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     branch_colors_delete: wrapWith((p: Record<string, unknown>) =>
       branchColors?.delete(p?.id as number) ?? false,
     ),
+
+    // ── Repo aliases (short display names, per repo) ─────────────────────────
+    repo_aliases_list: wrapWith((p: Record<string, unknown>) => {
+      const paths = (p?.repoPaths ?? p?.repo_paths) as unknown;
+      return repoAliases?.list(Array.isArray(paths) ? paths.filter((x): x is string => typeof x === 'string') : []) ?? {};
+    }),
+    repo_alias_set: wrapWith((p: Record<string, unknown>) => {
+      repoAliases?.set((p?.repoPath ?? p?.repo_path) as string, typeof p?.alias === 'string' ? p.alias : '');
+      return null;
+    }),
 
     // ── Project repos (which git repos a project's sessions watch) ───────────
     get_project_repos: wrapWith(async (p: Record<string, unknown>) =>

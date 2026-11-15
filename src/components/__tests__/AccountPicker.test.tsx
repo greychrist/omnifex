@@ -23,7 +23,7 @@ describe('AccountPicker — single mode', () => {
   it('renders the selected account as its badge, not as plain text', () => {
     render(<AccountPicker accounts={NAMES} value="Work" onChange={vi.fn()} />);
     const trigger = screen.getByRole('combobox');
-    // The badge carries the account's own colour and subscription label —
+    // The badge carries the account's own color and subscription label —
     // the thing that distinguishes it from a bare <select>.
     expect(within(trigger).getByText('Work')).toBeTruthy();
     expect(within(trigger).getByText(': Enterprise')).toBeTruthy();

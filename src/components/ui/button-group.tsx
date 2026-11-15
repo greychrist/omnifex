@@ -5,8 +5,8 @@ import { cn } from '@/lib/utils';
  * Buttons joined into one horizontal capsule: one border round the outside
  * and a divider between neighbours (each later child's left border).
  *
- * The divider colour carries `!`: the unlayered global `* { border-color }`
- * reset in styles.css outranks every layered border-colour utility, so
+ * The divider color carries `!`: the unlayered global `* { border-color }`
+ * reset in styles.css outranks every layered border-color utility, so
  * without it the dividers fall back to the faint default. The outer border is
  * left at that default on purpose — it frames, the dividers separate.
  *

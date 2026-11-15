@@ -83,9 +83,9 @@ The tab system is small and explicit. Four edits:
 account filter, `groupBy`, a refresh that calls `rescan`. Read it before writing anything.
 
 **Charts: `recharts` ^3.8.1 is already a dependency.** The Python version's chart rules carry
-over and matter — model→colour must be **fixed per model**, not assigned by rank, so the legend
+over and matter — model→color must be **fixed per model**, not assigned by rank, so the legend
 means the same thing across months, and the palette deliberately matches the Anthropic console's
-so the two can be read side by side. Do not recolour by rank.
+so the two can be read side by side. Do not recolor by rank.
 
 ---
 

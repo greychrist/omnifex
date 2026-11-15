@@ -205,9 +205,9 @@
 } 
 
 /* Modern chat format: AI Elements' Shimmer. Muted text with a band of the
-   background colour sweeping across it; --modern-shimmer-spread (set per
+   background color sweeping across it; --modern-shimmer-spread (set per
    element from the text length) is the band's half-width; --modern-shimmer-color
-   (a step kind's colour, set on its title) replaces the muted gray. */
+   (a step kind's color, set on its title) replaces the muted gray. */
 @keyframes modern-shimmer {
   from { background-position: 100% center, 0 0; }
   to { background-position: 0% center, 0 0; }

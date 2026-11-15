@@ -131,7 +131,7 @@ describe('Modern chain of thought — shadcn Trace steps', () => {
     expect(body.className).toMatch(/text-foreground/);
   });
 
-  it('opens a Skill step onto the skill body, in the skill card colours and corner radius', () => {
+  it('opens a Skill step onto the skill body, in the skill card colors and corner radius', () => {
     const skill = { ...tool('Skill', { skill: 'omnifex-release' }, 'Launching skill: omnifex-release'), skillBody: 'Base directory for this skill: /x\n\n# OmniFex Release\n\nShip it.' } as WorkEntry;
     open([skill]);
     fireEvent.click(screen.getByRole('button', { name: /Used omnifex-release/ }));
@@ -157,7 +157,7 @@ describe('Modern chain of thought — shadcn Trace steps', () => {
     const icon = document.querySelector('[data-step-kind]')!;
     expect(icon.closest('[data-status="error"]')).not.toBeNull();
     expect(icon.className).toMatch(/in-data-\[status=error\]:text-destructive/);
-    // Its border is red via `.modern-step-icon` in styles.css: border-colour
+    // Its border is red via `.modern-step-icon` in styles.css: border-color
     // utilities lose to the unlayered `* { border-color }` reset.
     expect(icon).toHaveClass('modern-step-icon');
   });
@@ -226,27 +226,27 @@ describe('Modern chain of thought — Settings › Chats › Modern', () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it('paints failures in the chosen colour', () => {
+  it('paints failures in the chosen color', () => {
     const { container } = withModern({ failedColor: '#f97316' },
       <ChainOfThought entries={[tool('Bash', { command: 'x' }, 'boom', 'error')]} nodes={[]} live={false} ctx={ctx} />);
     const root = container.querySelector('[data-slot="trace"]') as HTMLElement;
     expect(root.style.getPropertyValue('--color-destructive')).toBe('#f97316');
   });
 
-  it('leaves the theme red alone with no colour chosen', () => {
+  it('leaves the theme red alone with no color chosen', () => {
     const { container } = withModern({},
       <ChainOfThought entries={[tool('Bash', { command: 'x' }, 'boom', 'error')]} nodes={[]} live={false} ctx={ctx} />);
     const root = container.querySelector('[data-slot="trace"]') as HTMLElement;
     expect(root.style.getPropertyValue('--color-destructive')).toBe('');
   });
 
-  it('colours a step kind\'s icon chip and the rule beside its opened body', () => {
+  it('colors a step kind\'s icon chip and the rule beside its opened body', () => {
     withModern({ timelineOpen: 'always', stepColors: { command: '#22c55e' } as ModernStyle['stepColors'] },
       <ChainOfThought entries={[tool('Bash', { command: 'npm test' }, 'ok'), tool('Grep', { pattern: 'x' }, 'hit')]} nodes={[]} live={false} ctx={ctx} />);
     const chip = screen.getByText(/^Ran npm test/).closest('[data-slot="trace-line"]')!.querySelector<HTMLElement>('[data-step-kind]')!;
     expect(chip.style.color).toBe('rgb(34, 197, 94)');
     expect(chip.style.borderColor).not.toBe('');
-    // The title takes the colour too, as the answered question's does.
+    // The title takes the color too, as the answered question's does.
     expect(screen.getByText(/^Ran npm test/).closest<HTMLElement>('[data-slot="trace-title"]')!.style.color).toBe('rgb(34, 197, 94)');
     fireEvent.click(screen.getByRole('button', { name: /Ran npm test/ }));
     const rule = screen.getByText('ok').closest<HTMLElement>('[data-slot="trace-collapsible-content"] > div')!;
@@ -257,20 +257,20 @@ describe('Modern chain of thought — Settings › Chats › Modern', () => {
     expect(other.closest('[data-slot="trace-line"]')!.querySelector<HTMLElement>('[data-slot="trace-title"]')!.style.color).toBe('');
   });
 
-  it('colours a thought and the rule beside it', () => {
+  it('colors a thought and the rule beside it', () => {
     withModern({ timelineOpen: 'always', stepColors: { thought: '#0ea5e9' } as ModernStyle['stepColors'] },
       <ChainOfThought entries={[thought]} nodes={[]} live={false} ctx={ctx} />);
     expect(document.querySelector<HTMLElement>('[data-step-kind="thought"]')!.style.color).toBe('rgb(14, 165, 233)');
     const title = document.querySelector<HTMLElement>('[data-slot="trace-title"]')!;
     expect(title.style.color).toBe('rgb(14, 165, 233)');
-    // A running title shimmers in the colour, not the gray.
+    // A running title shimmers in the color, not the gray.
     expect(title.style.getPropertyValue('--modern-shimmer-color')).toBe('#0ea5e9');
     fireEvent.click(screen.getByRole('button', { name: /^Thought/ }));
     const rule = screen.getByText('hmm').closest<HTMLElement>('[data-slot="trace-collapsible-content"] > div')!;
     expect(rule.style.borderLeftColor).toBe('rgb(14, 165, 233)');
   });
 
-  it('keeps a failed step red whatever its kind\'s colour', () => {
+  it('keeps a failed step red whatever its kind\'s color', () => {
     withModern({ timelineOpen: 'always', stepColors: { command: '#22c55e' } as ModernStyle['stepColors'] },
       <ChainOfThought entries={[tool('Bash', { command: 'x' }, 'boom', 'error')]} nodes={[]} live={false} ctx={ctx} />);
     const chip = document.querySelector<HTMLElement>('[data-step-kind="command"]')!;

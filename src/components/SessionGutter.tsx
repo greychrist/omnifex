@@ -25,7 +25,7 @@ export const GUTTER_GROUP_BUTTON = 'h-8 w-[30px] rounded-none hover:bg-accent/50
  * A run of rail buttons joined into one capsule — a pair that steps the same
  * thing both ways, so it reads as one control rather than two near-identical
  * buttons. One border round the outside and a hairline between the halves
- * (`divide-y`: its colour comes from the global border-color reset, like
+ * (`divide-y`: its color comes from the global border-color reset, like
  * every other border here). Each direct child is a button, or the span a
  * disabled button sits in for its tooltip; spans are made blocks so the
  * hairline draws.

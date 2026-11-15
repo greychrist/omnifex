@@ -740,8 +740,8 @@ describe('TabManager — keyboard-shortcut window events', () => {
 });
 
 // A chat tab used to carry two marks: a plain MessageSquare saying "this is a
-// chat" on a strip where nearly everything is a chat, plus a coloured account
-// square. They are now one glyph — a bubble in the account's colour holding
+// chat" on a strip where nearly everything is a chat, plus a colored account
+// square. They are now one glyph — a bubble in the account's color holding
 // the account's icon.
 describe('account glyph merges into the chat tab icon', () => {
   it('renders the merged glyph and drops the separate chip on a chat tab', () => {

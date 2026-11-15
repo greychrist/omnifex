@@ -13,8 +13,8 @@ import { cn } from '@/lib/utils';
  * tracks the text it is separating instead of the chrome around it, so it
  * stays visible in both themes.
  *
- * Inside a coloured pill pass `bg-current opacity-30` so the rule takes the
- * pill's own text colour — a foreground-based rule is mixed for the chat
+ * Inside a colored pill pass `bg-current opacity-30` so the rule takes the
+ * pill's own text color — a foreground-based rule is mixed for the chat
  * surface and fights a tinted background.
  */
 export function InlineDivider({

@@ -135,9 +135,9 @@ describe('ContextTimelineTick — readout cannot overrun the next row', () => {
   });
 });
 
-// The rail's colour is the at-a-glance signal: scrolling a long session, the
+// The rail's color is the at-a-glance signal: scrolling a long session, the
 // eye should find where it went red without reading a single number.
-describe('ContextTimelineTick — rail colour tracks pressure', () => {
+describe('ContextTimelineTick — rail color tracks pressure', () => {
   const rail = (container: HTMLElement) =>
     (container.querySelector('[data-timeline-rail]') as HTMLElement).className;
 
@@ -159,8 +159,8 @@ describe('ContextTimelineTick — rail colour tracks pressure', () => {
   });
 
   // Carried-forward rows draw only the rail, and they hold the previous
-  // reading — so they must hold its colour or the line reads as striped.
-  it('colours a carried-forward row the same as the sample it carries', () => {
+  // reading — so they must hold its color or the line reads as striped.
+  it('colors a carried-forward row the same as the sample it carries', () => {
     const { container } = render(
       <ContextTimelineTick point={point({ isSample: false, delta: null, level: 'critical' })} />,
     );
@@ -174,13 +174,13 @@ describe('ContextTimelineTick — rail colour tracks pressure', () => {
     const el = container.querySelector('[data-timeline-rail]') as HTMLElement;
     expect(el).toHaveAttribute('data-timeline-reset');
     // Dashes come from a repeating gradient, not a border: an unlayered
-    // `* { border-color }` in styles.css outranks border-colour utilities,
-    // so a bordered rail could not carry the level colour.
+    // `* { border-color }` in styles.css outranks border-color utilities,
+    // so a bordered rail could not carry the level color.
     expect(el.style.backgroundImage).toMatch(/repeating-linear-gradient/);
     expect(rail(container)).toMatch(/emerald/);
   });
 
-  it('colours a dashed reset rail by its level too', () => {
+  it('colors a dashed reset rail by its level too', () => {
     const { container } = render(
       <ContextTimelineTick point={point({ isReset: true, delta: null, level: 'critical' })} />,
     );
@@ -188,29 +188,29 @@ describe('ContextTimelineTick — rail colour tracks pressure', () => {
   });
 
   // The badge sits on the line; a lighter or translucent line beside a
-  // solid badge read as two different greens. Same colour, at every level,
+  // solid badge read as two different greens. Same color, at every level,
   // solid or dashed.
   it.each(['none', 'warn', 'critical'] as const)(
-    'paints the %s rail in exactly the badge colour',
+    'paints the %s rail in exactly the badge color',
     (level) => {
-      const colour = (cls: string, prefix: 'bg' | 'text') =>
+      const color = (cls: string, prefix: 'bg' | 'text') =>
         cls.match(new RegExp(`\\b${prefix}-([a-z]+-\\d+(?:/\\d+)?)\\b`))?.[1];
       const solid = render(<ContextTimelineTick point={point({ level })} />).container;
-      const badgeBg = colour(
+      const badgeBg = color(
         (solid.querySelector('[data-timeline-badge]') as HTMLElement).className, 'bg',
       );
       expect(badgeBg).toBeDefined();
       // Under the budget the solid line is not drawn at all (see above).
-      if (level !== 'none') expect(colour(rail(solid), 'bg')).toBe(badgeBg);
+      if (level !== 'none') expect(color(rail(solid), 'bg')).toBe(badgeBg);
       cleanup();
       const dashed = render(
         <ContextTimelineTick point={point({ level, isReset: true, delta: null })} />,
       ).container;
-      expect(colour(rail(dashed), 'text')).toBe(badgeBg);
+      expect(color(rail(dashed), 'text')).toBe(badgeBg);
     },
   );
 
-  it('sets the size in a badge coloured to match the rail', () => {
+  it('sets the size in a badge colored to match the rail', () => {
     const { container } = render(<ContextTimelineTick point={point({ level: 'critical' })} />);
     const badge = container.querySelector('[data-timeline-badge]') as HTMLElement;
     expect(badge).toHaveTextContent('120k');
@@ -254,7 +254,7 @@ describe('ContextTimelineTick — rail colour tracks pressure', () => {
 
   // Level and jump are orthogonal: level is where you are, the delta label is
   // what the last step did. A jump under budget must not fake a red rail.
-  it('does not let a jump override the level colour', () => {
+  it('does not let a jump override the level color', () => {
     const { container } = render(
       <ContextTimelineTick point={point({ isJump: true, delta: 325_000, level: 'none' })} />,
     );

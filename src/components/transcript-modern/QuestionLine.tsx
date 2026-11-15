@@ -3,8 +3,8 @@
  * record lines are (RecordLine, RecapLine): a Trace line — the question
  * kind's icon, title and left rule in its own accent (purple unless
  * restyled in Appearance), "Question answered" — over the questions and their answers, open under the
- * left rule. Each question is underlined in the muted colour; its answer is
- * in the foreground colour, so the answer is what stands out. Parsing is the classic card's (AnsweredAskUserQuestionCard), so
+ * left rule. Each question is underlined in the muted color; its answer is
+ * in the foreground color, so the answer is what stands out. Parsing is the classic card's (AnsweredAskUserQuestionCard), so
  * the two formats read the CLI's drifting answer string the same way.
  */
 import * as React from 'react';

@@ -21,13 +21,13 @@ chosen to watch — chosen once per project, shared by every session in it.
 - It discovers sub-repos up to a per-project scan depth (default 1) and shows
   how many were found but are not watched.
 - One dialog lists discovered repos; per repo the user can toggle watching and
-  edit that repo's branch colours. Scan depth is set in the same dialog.
+  edit that repo's branch colors. Scan depth is set in the same dialog.
 - Watch selections are saved per project; every open session in that project
   picks up a change live, and future sessions start with it.
 - The same dialog opens from the session's git widget and from the project
   screen, replacing `BranchColorsCard` there.
-- Branch colours belong to the **repo**, not the project: the same repo shows
-  the same colours whether opened directly or inside any project.
+- Branch colors belong to the **repo**, not the project: the same repo shows
+  the same colors whether opened directly or inside any project.
 
 ## Non-goals
 
@@ -49,7 +49,7 @@ chosen to watch — chosen once per project, shared by every session in it.
 
 ## Decisions (Greg's)
 
-- Colours follow the repo everywhere.
+- Colors follow the repo everywhere.
 - Scan depth default 1 (direct children only).
 - If the project folder is itself a repo, it is always watched; sub-repos are
   extras in the same dialog.
@@ -86,9 +86,9 @@ New migration:
   — only repos the user has touched get a row. `repo_path` is the repo's
   **identity path**: the realpath of its main checkout (the parent of the
   common git dir), so a linked worktree resolves to the same identity as its
-  main checkout. *(Claude's call — follows "colours follow the repo".)* The project root, when a repo, is implicit
+  main checkout. *(Claude's call — follows "colors follow the repo".)* The project root, when a repo, is implicit
   and has no row.
-- Branch colours move to a new `repo_branch_colors(repo_path, branch_name, …)`
+- Branch colors move to a new `repo_branch_colors(repo_path, branch_name, …)`
   table, copied from `branch_colors` by the migration. Rows keyed by a linked
   worktree fold into the main checkout's identity path (resolved from the
   `.git` file → `commondir`, pure filesystem); on a clash the main checkout's
@@ -166,16 +166,16 @@ All consumers of the old `{ project, worktrees }` shape are migrated in the
 same change (`AgentSession.tsx`, `BranchStatusBar`, the header branch block,
 `git-diff.ts` references, tests). No dual-shape compatibility.
 
-### Branch colours
+### Branch colors
 
 - `branch-colors.ts` API renames `project_path` → `repo_path`
   (`listForRepo`, upsert by `repo_path`).
-- Colour edits broadcast `branch-colors-changed:<repoPath>`; every open
+- Color edits broadcast `branch-colors-changed:<repoPath>`; every open
   session showing that repo re-fetches its pins, so an edit made in the
   dialog shows at once everywhere. *(Claude's call.)*
 - `resolveBranchColors` is called **per repo** with that repo's pins and that
   repo's root branch as `mainFolderBranch`. Two repos both on `feat/x` may get
-  different colours; that is correct.
+  different colors; that is correct.
 
 ### Widget (bar layout B)
 
@@ -204,20 +204,20 @@ branch [main ●3]  ⎇ +2 found            ← project root is a repo, sub-repo
 ### Repos dialog
 
 One component, `ProjectReposDialog({ projectPath })`, opened from the widget
-and from the project screen (a "Repos & branch colours" card replacing
+and from the project screen (a "Repos & branch colors" card replacing
 `BranchColorsCard` in `TabContent.tsx`).
 
 - Header: scan depth selector (1–5), Rescan button, truncated warning.
 - One row per discovered repo (root first): name, path, current branch,
   watch toggle (root's is on and disabled).
-- Expanding a row shows that repo's branch-colour editor — the existing
+- Expanding a row shows that repo's branch-color editor — the existing
   `BranchColorsCard` body, re-pointed at `repo_path`.
 
 ### IPC
 
 New invoke channels (daemon-owned, network-reachable — fine for the iPad):
 `get_project_repos`, `set_project_repo_watched`, `set_project_repo_scan_depth`.
-Branch-colour channels keep their names, take `repoPath` (accept
+Branch-color channels keep their names, take `repoPath` (accept
 `repo_path`). Add to `INVOKE_CHANNELS`; covered by `ipc-channel-contract.test.ts`.
 
 ## Testing
@@ -227,7 +227,7 @@ Branch-colour channels keep their names, take `repoPath` (accept
 - Migration: column rename preserves rows; re-run safe.
 - Session git watcher: multi-repo snapshot, shared reader across two
   projects, live re-subscribe on change, `foundCount`, non-repo project.
-- Renderer: `BranchStatusBar` states above; dialog toggles and colour edits.
+- Renderer: `BranchStatusBar` states above; dialog toggles and color edits.
 
 ## Left to the builder
 

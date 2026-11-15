@@ -559,7 +559,7 @@ export function ChatStatusBar({
           // styles.css declares an unlayered
           // `* { border-color: var(--color-border) }` that outranks every
           // Tailwind border-color utility, so a real border cannot carry this
-          // colour — it would come back at full `--color-border` strength.
+          // color — it would come back at full `--color-border` strength.
           // Wraps rather than compressing: three pickers, the daemon glyph,
           // the turn clock, the thinking burst, the agents and shells counts
           // and the cache countdown do not

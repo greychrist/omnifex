@@ -255,7 +255,7 @@ describe('SubagentRow purpose and brief', () => {
     const { container } = render(<SubagentRow sub={makeSub({ toolUseId: 'a', status: 'running' })} />);
     const row = container.querySelector('[data-subagent-row]')!;
     expect(row.className).toContain('border-b');
-    // A bare colour utility loses to the unlayered `* { border-color }` rule
+    // A bare color utility loses to the unlayered `* { border-color }` rule
     // in styles.css; only the important arbitrary property reaches the screen.
     expect(row.className).toContain('[border-bottom-color:');
   });

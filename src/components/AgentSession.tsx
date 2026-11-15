@@ -93,6 +93,7 @@ import { AccountStatusItem } from "@/components/AccountStatusItem";
 import { NewSessionButton } from "@/components/NewSessionButton";
 import { BranchStatusBar } from "@/components/claude-code-session/BranchStatusBar";
 import { useRepoBranchPins } from "@/hooks/useRepoBranchPins";
+import { useRepoAliases } from "@/hooks/useRepoAliases";
 import { ProjectReposDialog } from "@/components/ProjectReposDialog";
 import { useAccountUsage } from "@/hooks/useAccountUsage";
 import { ChatStatusBar } from "./ChatStatusBar";
@@ -689,6 +690,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   const gitRepos = useMemo(() => sessionGit?.repos ?? [], [sessionGit?.repos]);
   const gitStatus = gitRepos.find((r) => r.name === '')?.root ?? null;
   const branchPins = useRepoBranchPins(gitRepos.map((r) => r.root.path));
+  const repoAliases = useRepoAliases(gitRepos.map((r) => r.root.path));
   // The diff overlay is pull-only; this is how it learns the tree moved. The
   // watcher's counts are the cheapest honest signal that something changed on
   // disk, so a bump here re-reads the file list without the overlay polling.
@@ -2786,6 +2788,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     <BranchStatusBar
       snapshot={sessionGit}
       pins={branchPins}
+      aliases={repoAliases}
       onViewChanges={(path, label) => { setDiffTarget(label === undefined ? { path } : { path, label }); }}
       onOpenRepos={() => { setReposDialogOpen(true); }}
       watch={gitWatchId ? (
@@ -2819,7 +2822,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
           // Tailwind border-color class app-wide — which is also why the
           // `border-border/30` above has never actually rendered at 30%. An
           // inline style is more specific than that `*` rule, so it is the one
-          // way to colour this edge. The glow underneath it is a shadow for
+          // way to color this edge. The glow underneath it is a shadow for
           // the same reason.
           style={headerResizing ? {
             borderBottomColor: 'var(--color-ring)',

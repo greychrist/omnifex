@@ -168,9 +168,9 @@ TDD, in this order:
 Verification gate (renderer-only): `npm run check`, `npm run build`, `npm test`,
 then `npm run rebuild:electron`.
 
-## Addendum — rail colour (2026-07-30)
+## Addendum — rail color (2026-07-30)
 
-The rail is coloured by proximity to the budget rather than drawn in a neutral
+The rail is colored by proximity to the budget rather than drawn in a neutral
 grey: green below, amber approaching, red at or past. That is the whole point
 of a rail you scroll past — the eye finds where a session got expensive without
 reading a single number.
@@ -185,12 +185,12 @@ Two deliberate differences from the banner:
 - **The banner's `enabled` flag is ignored.** The rail has its own toggle
   (`context_timeline_enabled`); honouring both would paint a uniformly green
   history for anyone who switched the banner off.
-- **The bar is coloured by level, not by jump.** Level and jump are orthogonal
+- **The bar is colored by level, not by jump.** Level and jump are orthogonal
   — level is where the session sits, the `▲ +Nk` label is what the last step
-  did. Colouring the bar by jump made a 20k step near the ceiling look calmer
+  did. Coloring the bar by jump made a 20k step near the ceiling look calmer
   than a 60k step at the start. The jump keeps its amber label.
 
-`isReset` rows draw the rail as a dashed border, and border colour cannot be
+`isReset` rows draw the rail as a dashed border, and border color cannot be
 set with a utility class here: `styles.css` declares an unlayered
 `* { border-color: var(--color-border) }` that outranks every Tailwind
 border-color utility (see the `border-color-utilities-are-dead` note). The

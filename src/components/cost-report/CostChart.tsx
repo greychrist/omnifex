@@ -33,12 +33,12 @@ interface CostChartProps {
   rows: CostHistoryPeriodModel[];
   mode: ChartMode;
   /** The `model_pricing` delta layer, so a model released after this build
-   *  gets its configured legend name and colour instead of a raw id and a
+   *  gets its configured legend name and color instead of a raw id and a
    *  hashed hue. Undefined means "use what shipped". */
   pricing?: readonly ModelPricingInput[];
 }
 
-/** Segment separation is a gap in the surface colour, not a border drawn round
+/** Segment separation is a gap in the surface color, not a border drawn round
  *  the mark. 1px each side reads as the 2px gap the method asks for. */
 const SEAM = 1;
 
@@ -47,7 +47,7 @@ const SEAM = 1;
  * an inset panel rather than as ink floating on the panel behind it.
  *
  * Derived from the theme tokens rather than fixed hex: the app ships three
- * themes whose card colours differ by a lot (0.14, 0.23 and 0.96 lightness),
+ * themes whose card colors differ by a lot (0.14, 0.23 and 0.96 lightness),
  * and a hex tuned to one of them is visibly wrong in the other two.
  */
 const PLOT_SURFACE: Record<ChartMode, string> = {
@@ -84,7 +84,7 @@ const RULE: Record<ChartMode, string> = {
  * Bars rather than an area: this is part-to-whole across discrete periods, and
  * an area implies the spend interpolates between days, which it does not.
  *
- * Model → colour comes from the fixed slot map, never from series order, so
+ * Model → color comes from the fixed slot map, never from series order, so
  * filtering a model out does not repaint the survivors and two months' charts
  * stay comparable. Series are sorted by slot too, so stack order and legend
  * order agree.
@@ -251,7 +251,7 @@ function StackedSegment({ models, ...p }: SegmentProps & { models: string[] }) {
   return <path d={d} fill={p.fill} stroke={p.stroke} strokeWidth={p.strokeWidth} />;
 }
 
-/** Legend for the chart — identity is never colour-alone, so every segment is
+/** Legend for the chart — identity is never color-alone, so every segment is
  *  also named here and in the by-model table below it. */
 export function CostChartLegend(
   { models, mode, pricing }: { models: string[]; mode: ChartMode; pricing?: readonly ModelPricingInput[] },

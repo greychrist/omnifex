@@ -21,7 +21,7 @@ describe('renderMermaid', () => {
         startOnLoad: false,
         securityLevel: 'strict',
         htmlLabels: false,
-        // `base` is the only mermaid theme whose colours come entirely from
+        // `base` is the only mermaid theme whose colors come entirely from
         // themeVariables; the stock ones (default/dark) were what read as
         // rudimentary — lavender boxes and a yellow subgraph.
         theme: 'base',

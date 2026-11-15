@@ -8,7 +8,7 @@
 // ── One shape, one table, one resolution ──────────────────────────────────
 //
 // Everything about a model — what its tokens cost, what the Cost Report calls
-// it, what colour it gets — is ONE row type (`ModelPricingInput`) appearing in
+// it, what color it gets — is ONE row type (`ModelPricingInput`) appearing in
 // exactly two places:
 //
 //   1. `SHIPPED_PRICING` below — what this build knows.
@@ -155,7 +155,7 @@ export const SHIPPED_PRICING: ModelPricingInput[] = [
   // overstates real Fable 5.1 spend 4x, on the token class that dominates
   // volume in long sessions.
   //
-  // It takes slot 7 rather than Fable 5's green. Colour follows the ENTITY:
+  // It takes slot 7 rather than Fable 5's green. Color follows the ENTITY:
   // repainting Fable 5 would make every existing Cost Report screenshot
   // disagree with the next one. Slot 7 is shared with Mythos 5, which is
   // Glasswing-only — the two will not appear on one chart, and the slot is

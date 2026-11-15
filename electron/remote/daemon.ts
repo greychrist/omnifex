@@ -79,6 +79,7 @@ import { createPermissionsIOService } from '../services/permissions-io';
 import { createSessionGitWatcher, listWorktrees } from '../services/git-watcher';
 import { createBranchColorsService } from '../services/branch-colors';
 import { createProjectReposService } from '../services/project-repos';
+import { createRepoAliasesService } from '../services/repo-aliases';
 import { discoverRepos } from '../services/git-repos';
 import { listBranches as listGitBranches } from '../services/git-branches';
 import { listChangedFiles as listGitChangedFiles, readFileDiff as readGitFileDiff } from '../services/git-diff';
@@ -575,6 +576,7 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
 
   const branchColorsService = createBranchColorsService(db, { sendToRenderer });
   const projectReposService = createProjectReposService({ db, discover: discoverRepos });
+  const repoAliasesService = createRepoAliasesService(db, { sendToRenderer });
   const sessionGitWatcher = createSessionGitWatcher({ sendToRenderer, repos: projectReposService });
   projectReposService.onChange((projectPath) => {
     sendToRenderer('project-repos-changed', { projectPath });
@@ -915,6 +917,7 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
     },
     branchColors: branchColorsService,
     projectRepos: projectReposService,
+    repoAliases: repoAliasesService,
     gitBranches: { list: listGitBranches },
     gitDiff: {
       listChangedFiles: listGitChangedFiles,

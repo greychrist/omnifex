@@ -40,8 +40,8 @@ interface SessionCardProps {
   controlsSummary?: string | null;
   /** `session.activity` state signal — drives the usage-limit pill. */
   activitySignal?: SessionSignal;
-  /** `context.level` state signal — drives the meter's colour and the
-   *  compact-at readout. Falls back to an uncoloured meter when absent. */
+  /** `context.level` state signal — drives the meter's color and the
+   *  compact-at readout. Falls back to an uncolored meter when absent. */
   contextLevelSignal?: SessionSignal;
   /** A pending `action` anchored here, mirrored as a card atop the popover. */
   pendingAction?: SessionSignal | null;
@@ -190,7 +190,7 @@ export function SessionCard({
                     style={{ width: `${pct}%` }}
                   />
                   {/* Where /compact becomes the ask. Without it the meter shows
-                      a bar filling toward 100% of the WINDOW, while the colour
+                      a bar filling toward 100% of the WINDOW, while the color
                       and the attention slot answer to the budget instead —
                       which reads as the meter contradicting itself. */}
                   {budgetPct > 0 && budgetPct < 100 && (

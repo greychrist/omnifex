@@ -118,7 +118,7 @@ export function useSaveStatus(): { track: TrackSave } {
 }
 
 // Solid fills rather than tinted borders: the unlayered `* { border-color }`
-// reset in styles.css overrides every Tailwind border-colour utility.
+// reset in styles.css overrides every Tailwind border-color utility.
 const TONE: Record<SaveState["kind"], string> = {
   idle: "",
   saving: "bg-card text-muted-foreground ring-1 ring-border",

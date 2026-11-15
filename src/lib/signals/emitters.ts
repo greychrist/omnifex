@@ -192,7 +192,7 @@ function contextDeltaEvents(input: SignalInput): SessionSignal[] {
 }
 
 /**
- * Where context sits against the budget — the meter's colour, as a state.
+ * Where context sits against the budget — the meter's color, as a state.
  *
  * This is the `warn` half of what the old banner did. The banner escalated in
  * two steps (amber at 80% of budget, red at 100%) because a banner was the only
@@ -201,7 +201,7 @@ function contextDeltaEvents(input: SignalInput): SessionSignal[] {
  * a call to action, so it goes to the attention slot — and only at `critical`.
  * Nothing is lost, both halves are just anchored to the thing they describe.
  *
- * Emitted even at level `none` so the meter always has a colour to read, and
+ * Emitted even at level `none` so the meter always has a color to read, and
  * always the one the boundary action agrees with.
  */
 function contextLevelSignal(input: SignalInput): SessionSignal {
@@ -262,7 +262,7 @@ function boundaryAction(input: SignalInput): SessionSignal[] {
   });
   // Only `critical` is a call to action. `warn` is a value, and it is already
   // reported by `context.level` — routing it here too would put an item in the
-  // attention slot that says nothing the meter's colour has not already said.
+  // attention slot that says nothing the meter's color has not already said.
   if (pressure.level !== 'critical') return [];
 
   const actions: SignalAction[] = [

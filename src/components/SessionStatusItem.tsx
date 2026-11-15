@@ -20,8 +20,8 @@ import {
  * cannot disagree. Lives alongside the widget for now, so the two can be
  * compared before one of them goes.
  *
- * The state word is coloured text, not a badge: the sessions popover's
- * `Working` / `Ready` vocabulary and colours, at the bar's weight.
+ * The state word is colored text, not a badge: the sessions popover's
+ * `Working` / `Ready` vocabulary and colors, at the bar's weight.
  */
 
 type SessionState = "starting" | "closed" | "permission" | "question" | "working" | "ready";

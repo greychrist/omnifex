@@ -12,9 +12,9 @@ import { THEME_SURFACES } from './mermaidTheme';
  *    flowcharts the tags become one. Other diagram types have no markdown
  *    strings; the tags are dropped so they are at least not printed.
  *
- * 2. Colours. `classDef` / `style` colours override any theme — pastel fills
- *    with navy text on a dark card. The colour-coding is worth keeping, so each
- *    colour is snapped to the nearest of OmniFex's accent hues and redrawn the
+ * 2. Colors. `classDef` / `style` colors override any theme — pastel fills
+ *    with navy text on a dark card. The color-coding is worth keeping, so each
+ *    color is snapped to the nearest of OmniFex's accent hues and redrawn the
  *    way the app draws a tinted chip: a faint fill of the hue, a stronger 1px
  *    border of it, the theme's own text. Greys go back to the theme.
  */
@@ -53,7 +53,7 @@ function rewriteLabels(source: string): string {
   });
 }
 
-// ── colours ─────────────────────────────────────────────────────────────────
+// ── colors ─────────────────────────────────────────────────────────────────
 
 const NAMED: Record<string, string> = {
   red: '#ff0000', orange: '#ffa500', yellow: '#ffff00', gold: '#ffd700', green: '#008000',
@@ -114,7 +114,7 @@ const ACCENTS: Array<Accent & { hue: number }> = Object.entries(ACCENT_500).map(
   };
 });
 
-/** The OmniFex accent nearest `color`, or null for greys and unparseable colours. */
+/** The OmniFex accent nearest `color`, or null for greys and unparseable colors. */
 export function accentFor(color: string): Accent | null {
   const rgb = parseColor(color);
   if (!rgb) return null;
@@ -129,7 +129,7 @@ export function accentFor(color: string): Accent | null {
   return best;
 }
 
-const COLOUR_KEYS = new Set(['fill', 'stroke', 'color', 'stroke-width']);
+const COLOR_KEYS = new Set(['fill', 'stroke', 'color', 'stroke-width']);
 
 function rewriteStyleLine(line: string, theme: ThemeMode): string {
   const m = /^(\s*(?:classDef|style)\s+\S+\s+)(.+?);?\s*$/.exec(line);
@@ -143,17 +143,17 @@ function rewriteStyleLine(line: string, theme: ThemeMode): string {
   const props = segments as Array<{ key: string; value: string; raw: string }>;
   const get = (k: string) => props.find((p) => p.key === k)?.value ?? '';
   const accent = accentFor(get('fill')) ?? accentFor(get('stroke'));
-  const kept = props.filter((p) => !COLOUR_KEYS.has(p.key)).map((p) => p.raw);
-  const colours = accent
+  const kept = props.filter((p) => !COLOR_KEYS.has(p.key)).map((p) => p.raw);
+  const colors = accent
     ? [`fill:${accent.fill[theme]}`, `stroke:${accent.stroke[theme]}`, 'stroke-width:1px', `color:${accent.text[theme]}`]
     : [];
   // A classDef with no properties is a parse error, and dropping the line
   // would orphan its `class` statements; 1px is the theme's own border.
-  const all = [...colours, ...kept];
+  const all = [...colors, ...kept];
   return `${m[1]}${all.length ? all.join(',') : 'stroke-width:1px'}`;
 }
 
-function rewriteColours(source: string, theme: ThemeMode): string {
+function rewriteColors(source: string, theme: ThemeMode): string {
   return source
     .split('\n')
     .map((line) => rewriteStyleLine(line, theme))
@@ -162,5 +162,5 @@ function rewriteColours(source: string, theme: ThemeMode): string {
 
 /** `source` as it should be drawn under `theme`. */
 export function prepareSource(source: string, theme: ThemeMode): string {
-  return rewriteColours(rewriteLabels(source), theme);
+  return rewriteColors(rewriteLabels(source), theme);
 }

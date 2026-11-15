@@ -31,7 +31,7 @@ function v31Db(): BetterSqlite3.Database {
 }
 
 describe('migration v32 — repos', () => {
-  it('copies colours into repo_branch_colors, folding worktree rows into the main checkout', () => {
+  it('copies colors into repo_branch_colors, folding worktree rows into the main checkout', () => {
     const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'gc-v32-')));
     dirs.push(root);
     const repo = path.join(root, 'r');

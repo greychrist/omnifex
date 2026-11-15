@@ -4,11 +4,11 @@
  * "Working" with a spinner while live), opening onto one line per step, each
  * with an icon naming its action (a brain for a thought, a terminal for a
  * command, a file for a read) and a title whose verb follows its state. As in
- * Trace, status is the line's colour, shimmer and wording, never the icon.
+ * Trace, status is the line's color, shimmer and wording, never the icon.
  *
  * Collapsed once the run is finished and open while it is live, unless
  * Settings › Chats › Modern says otherwise — that tab also picks each step
- * kind's icon, can leave thoughts out, and recolours failures. A step opens
+ * kind's icon, can leave thoughts out, and recolors failures. A step opens
  * onto its result alone (a command's output, an edit's diff, the sources a
  * web step used); a read opens onto nothing, its title says it all. Copy and
  * the raw records sit beside every step on hover.
@@ -80,7 +80,7 @@ export const ChainOfThought = React.memo(function ChainOfThought({
   // keeps their choice.
   const [chosen, setChosen] = React.useState<boolean | null>(null);
   const open = chosen ?? (modern.timelineOpen === 'always' ? true : modern.timelineOpen === 'never' ? false : live);
-  // Settings › Chats › Modern › Failed step: the timeline's red, recoloured.
+  // Settings › Chats › Modern › Failed step: the timeline's red, recolored.
   const failedStyle = modern.failedColor
     ? ({ '--color-destructive': modern.failedColor } as React.CSSProperties)
     : undefined;
@@ -182,14 +182,14 @@ export function ReasoningLine({
   );
 }
 
-/** Settings › Chats › Modern › Step icons: the colour chosen for a kind — its
+/** Settings › Chats › Modern › Step icons: the color chosen for a kind — its
  *  icon chip, title and opened rule take it, as an answered question does — or
  *  undefined for the built-in gray. */
 function useStepColor(kind: StepKind | 'thought'): string | undefined {
   return useMessageRenderingConfig().config.modern.stepColors[kind] ?? undefined;
 }
 
-/** A step title in its kind's colour, shimmering in it while it runs. */
+/** A step title in its kind's color, shimmering in it while it runs. */
 function titleStyle(color: string | undefined): React.CSSProperties | undefined {
   return color ? ({ color, '--modern-shimmer-color': color } as React.CSSProperties) : undefined;
 }
@@ -212,7 +212,7 @@ function KindIcon({ kind, color }: { kind: StepKind | 'thought'; color?: string 
   return (
     <TraceIcon
       data-step-kind={kind}
-      // Inline: the `* { border-color }` reset beats border-colour utilities.
+      // Inline: the `* { border-color }` reset beats border-color utilities.
       style={color ? { color, borderColor: halfStrength(color) } : undefined}
       className="modern-step-icon -m-[3px] size-[22px] rounded-md border bg-muted/40 text-foreground/85 in-data-[status=error]:bg-destructive/10 in-data-[status=error]:text-destructive"
     >
@@ -246,7 +246,7 @@ function ToolStep({ entry, live }: { entry: ToolEntry; live: boolean }) {
   const body = stepBody(entry);
   const kind = stepKind(entry.name, entry.input);
   const kindColor = useStepColor(kind);
-  // A failure keeps its red: the kind's colour would hide it.
+  // A failure keeps its red: the kind's color would hide it.
   const color = status === 'error' ? undefined : kindColor;
 
   const line = (
@@ -341,7 +341,7 @@ function DesignLink({ url, configDir }: { url: string; configDir?: string | null
         void openSignInLink(url, configDir);
       }}
       // A small outlined button, so it reads as a control beside the title
-      // rather than more of it. The border takes the theme colour from the
+      // rather than more of it. The border takes the theme color from the
       // global border reset, as every border here does.
       className="flex h-6 shrink-0 items-center gap-1 rounded-md border bg-muted/40 px-2 text-xs font-medium text-foreground/85 transition-colors hover:bg-accent hover:text-foreground"
     >
@@ -467,7 +467,7 @@ function inputBody(input: Record<string, unknown>): React.ReactNode {
   return Object.keys(input).length > 0 ? <StepOutput text={JSON.stringify(input, null, 2)} /> : null;
 }
 
-/** A skill's SKILL.md, in the colours and corner radius of the classic
+/** A skill's SKILL.md, in the colors and corner radius of the classic
  *  skill card it replaces (Appearance › Skill injection, All cards). */
 function SkillBody({ text }: { text: string }) {
   const { config } = useMessageRenderingConfig();

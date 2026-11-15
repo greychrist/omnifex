@@ -249,6 +249,8 @@ export const INVOKE_CHANNELS: readonly string[] = [
   'set_project_repo_watched',
   'set_project_repo_scan_depth',
   'remove_project_repo',
+  'repo_aliases_list',
+  'repo_alias_set',
 
   // Git
   'get_git_branch',

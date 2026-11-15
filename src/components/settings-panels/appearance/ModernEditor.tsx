@@ -102,7 +102,7 @@ function Segmented<T extends string | number>({
 }
 
 /** A card's saturation or brightness, as a percent of its built-in — the
- *  colour's hue stays put. A reset back to 100% once it is moved. */
+ *  color's hue stays put. A reset back to 100% once it is moved. */
 function PercentField({ name, label, value, disabled = false, onChange }: {
   name: string;
   /** "Saturation" or "Brightness". */
@@ -152,8 +152,8 @@ function PercentField({ name, label, value, disabled = false, onChange }: {
 
 const BUILT_IN_PERCENT = 100;
 
-/** A soft drop shadow under the card, tinted its own colour. Disabled while
- *  the card's colour is off — it would shadow an invisible card. */
+/** A soft drop shadow under the card, tinted its own color. Disabled while
+ *  the card's color is off — it would shadow an invisible card. */
 function ShadowField({ name, checked, disabled = false, onChange }: { name: string; checked: boolean; disabled?: boolean; onChange: (next: boolean) => void }) {
   const id = `modern-shadow-${name.toLowerCase().replace(/\s+/g, "-")}`;
   return (
@@ -170,7 +170,7 @@ function SectionHeading({ id, children }: { id?: string; children: React.ReactNo
   return <h4 id={id} className="text-body font-semibold">{children}</h4>;
 }
 
-/** A step kind's colour: a swatch, and a reset back to the built-in gray
+/** A step kind's color: a swatch, and a reset back to the built-in gray
  *  once one is set. The native picker takes only #rrggbb. */
 function StepColorField({ label, value, onChange }: { label: string; value: string | null; onChange: (next: string | null) => void }) {
   return (
@@ -202,7 +202,7 @@ function StepColorField({ label, value, onChange }: { label: string; value: stri
 }
 
 /** The line between two sections. `bg-border`, not a border: the unlayered
- *  `* { border-color }` reset in styles.css beats border-colour utilities. */
+ *  `* { border-color }` reset in styles.css beats border-color utilities. */
 function SectionRule() {
   return <div role="separator" className="h-px w-full bg-border" />;
 }

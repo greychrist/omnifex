@@ -259,7 +259,7 @@ export function withAccountDefaultLabel(
     // The model this row stands for: the live one when observed, else the
     // twin's concrete id (a resumed session's pick is the JSONL's concrete
     // id, not the alias), else the twin's id, else the pin as written.
-    // ModelList highlights the row when that is the pick, and colours it as
+    // ModelList highlights the row when that is the pick, and colors it as
     // that model.
     resolvedId: live ?? twin?.resolvedId ?? twin?.id ?? defaultId,
     // A model the account can't see has no row to borrow a description from,

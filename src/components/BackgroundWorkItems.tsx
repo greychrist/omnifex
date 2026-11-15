@@ -41,7 +41,7 @@ export interface BackgroundWork {
 interface ReadoutProps {
   noun: string;
   icon: React.ReactNode;
-  colour: string;
+  color: string;
   running: number;
   total: number;
   onClearDone?: () => void;
@@ -59,7 +59,7 @@ interface ReadoutProps {
 function BackgroundReadout({
   noun,
   icon,
-  colour,
+  color,
   running,
   total,
   onClearDone,
@@ -81,7 +81,7 @@ function BackgroundReadout({
           title={live ? `${running} of ${total} ${noun} running` : `${total} ${noun} finished`}
           className={cn(
             'flex items-center gap-1 rounded hover:bg-muted/60',
-            colour,
+            color,
             live && 'animate-pulse',
           )}
         >
@@ -141,7 +141,7 @@ export function AgentsStatusItem({
     <BackgroundReadout
       noun="agents"
       icon={<Bot className="h-3.5 w-3.5" />}
-      colour="text-sky-400"
+      color="text-sky-400"
       running={subagents.filter((s) => s.status === 'running').length}
       total={subagents.length}
       onClearDone={onDismissAllCompleted}
@@ -179,7 +179,7 @@ export function ShellsStatusItem({
     <BackgroundReadout
       noun="shells"
       icon={<SquareTerminal className="h-3.5 w-3.5" />}
-      colour="text-amber-400"
+      color="text-amber-400"
       running={shells.filter((s) => s.status === 'running').length}
       total={shells.length}
       onClearDone={onDismissAllEnded}

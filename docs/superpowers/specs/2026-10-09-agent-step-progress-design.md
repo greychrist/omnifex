@@ -80,7 +80,7 @@ for OmniFex:
    - `Subagent` gains `stepProgress?: StepProgress`, set in `AgentSession`
      alongside the other live merges (`applySubagentMeta` stays as is).
    - `SubagentRow`: while running with progress, the bar is determinate —
-     width `done/total` in the agent's colour — and a step line reads
+     width `done/total` in the agent's color — and a step line reads
      `4/6 · Read session-cost.ts`. Without progress it keeps the
      indeterminate sweep. Done/failed/abandoned bars are unchanged.
 

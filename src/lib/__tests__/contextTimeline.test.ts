@@ -163,7 +163,7 @@ describe('buildContextTimeline — fraction', () => {
   });
 });
 
-// The rail is coloured green/amber/red by where each row sits against the
+// The rail is colored green/amber/red by where each row sits against the
 // budget. Levels come from contextPressure so the rail and the banner cannot
 // disagree about where amber starts.
 describe('buildContextTimeline — pressure level', () => {
@@ -185,7 +185,7 @@ describe('buildContextTimeline — pressure level', () => {
   });
 
   // Carried-forward rows hold the previous reading, so they must hold its
-  // colour too — otherwise the rail flickers back to green between samples.
+  // color too — otherwise the rail flickers back to green between samples.
   it('carries the level forward on rows with no reading', () => {
     const a = assistant(250_000);
     const p = prompt();
@@ -194,7 +194,7 @@ describe('buildContextTimeline — pressure level', () => {
     expect(t.get(p)?.level).toBe('critical');
   });
 
-  // A compaction is the one place the colour should visibly fall back.
+  // A compaction is the one place the color should visibly fall back.
   it('drops the level after a compaction resets the window', () => {
     const before = assistant(250_000);
     const after = assistant(20_000);
@@ -215,7 +215,7 @@ describe('buildContextTimeline — previous reading', () => {
 
   it('carries it across a compaction, where `delta` is deliberately null', () => {
     // The rail needs to print "−420k" on the reset row, but `delta` stays null
-    // there so `isJump` and the level colouring keep their meaning.
+    // there so `isJump` and the level coloring keep their meaning.
     const messages = [assistant(500_000), compactBoundary(), assistant(80_000)];
     const points = buildContextTimeline(messages, opts);
 

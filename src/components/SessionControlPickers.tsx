@@ -47,7 +47,7 @@ function StatusBarPicker({
   tone?: string;
   /** A second value sharing this readout — effort beside the model. */
   trailing?: React.ReactNode;
-  /** Inline colour for the value alone — the model name in its tier's. */
+  /** Inline color for the value alone — the model name in its tier's. */
   valueStyle?: React.CSSProperties;
   title: string;
   content: (close: () => void) => React.ReactNode;
@@ -186,7 +186,7 @@ export function SessionControlPickers({
   // reconcileLiveModelName. The session card already reports what ran; this
   // keeps the readout beside it from saying something different.
   const modelName = reconcileLiveModelName(modelData, activeDefaultModel);
-  // The name's colour is the Cost Report's for the model it names: on
+  // The name's color is the Cost Report's for the model it names: on
   // default, the one that actually answered; else the pick, falling back
   // to the row it resolved to (a concrete id the catalog lists by alias).
   const modelColorId = model === 'default' ? (activeDefaultModel ?? modelData.resolvedId ?? model) : model;

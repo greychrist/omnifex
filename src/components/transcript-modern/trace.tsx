@@ -109,8 +109,8 @@ export function TraceCollapsibleContent({
   ruleColor,
   ...props
 }: React.ComponentProps<typeof CollapsibleContent> & {
-  /** The left rule's colour; the theme border when absent. Inline, because
-   *  the unlayered `* { border-color }` reset beats border-colour utilities. */
+  /** The left rule's color; the theme border when absent. Inline, because
+   *  the unlayered `* { border-color }` reset beats border-color utilities. */
   ruleColor?: string;
 }) {
   return (

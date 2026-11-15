@@ -415,7 +415,7 @@ export function deriveSubagents(
     model: s.model,
   });
 
-  // Owners first, so a nested row can read its owner's colour — and so a
+  // Owners first, so a nested row can read its owner's color — and so a
   // nested row never consumes a palette slot of its own (it shares its
   // owner's, exactly like the rows applySubagentMeta synthesises).
   const rows = new Map<string, Subagent>();

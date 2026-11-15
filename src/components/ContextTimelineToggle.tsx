@@ -17,7 +17,7 @@ export interface ContextTimelineToggleProps {
  * a control on the far side of the message column from its own effect reads as
  * unrelated chrome.
  *
- * The active state is carried by a filled background, not by icon colour alone:
+ * The active state is carried by a filled background, not by icon color alone:
  * a tinted glyph against a translucent button is close to invisible at 14px,
  * which is exactly the "is it on?" problem this control has to answer.
  */

@@ -15,7 +15,7 @@ export const MESSAGE_RENDERING_CONFIG_KEY = "message_rendering_config";
 
 // ─── legacy palette names ──────────────────────────────────────────────────
 //
-// Every colour is a hex. There used to be a named palette (Appearance ›
+// Every color is a hex. There used to be a named palette (Appearance ›
 // Palette) that kinds, categories and tab indicators referred to by name; it
 // was retired 2026-10-08, when nothing referenced it but four categories and
 // the built-in defaults. Saved configs and exported files still carry those
@@ -57,7 +57,7 @@ function legacySwatches(savedPalette: unknown): Record<string, string> {
   return out;
 }
 
-/** A saved colour as a hex: kept when it is one, converted when it is a legacy
+/** A saved color as a hex: kept when it is one, converted when it is a legacy
  *  palette name, undefined otherwise. */
 function savedColor(v: unknown, swatches: Record<string, string>): string | undefined {
   if (isHexColor(v)) return v;
@@ -310,7 +310,7 @@ export const KIND_REGISTRY: Record<string, KindDef> = {
   "user.image": { id: "user.image", category: "user", label: "Image", description: "A pasted or attached image.", default: { icon: "Image", alignment: "left" } },
   // The CLI writes the /compact summary as a `user` record, so without its own
   // kind it renders as something you typed — a wall of recap text wearing your
-  // colour. Left-aligned and collapsible because it is long by construction
+  // color. Left-aligned and collapsible because it is long by construction
   // and is reference material, not conversation. Visible in compact view: it
   // marks where the earlier history stops existing, which is exactly the thing
   // you are looking for when scanning a long session.
@@ -527,7 +527,7 @@ export type TabIndicatorSize = "sm" | "md" | "lg";
 export interface TabIndicatorStyle {
   /** Icon name from ALLOWED_ICONS (rendered via IconRenderer). */
   icon: IconName;
-  /** Hex colour. */
+  /** Hex color. */
   color: string;
 }
 
@@ -640,10 +640,10 @@ export const DEFAULT_TAB_STRIP: TabStrip = {
 //
 // The compact-mode "N Hidden Events" expander. It is not a message kind — it
 // wraps a run of them — so it has no KindStyle and no accent. It takes a
-// background and a border independently instead, because the one-colour
+// background and a border independently instead, because the one-color
 // accent tints both at fixed low alphas and the bar blended in. Each is a hex
 // (alpha allowed) or null for the theme's own look — except the two text
-// colours, where null means "automatic": readable against the background.
+// colors, where null means "automatic": readable against the background.
 
 export interface HiddenEventsStyle {
   background: string | null;
@@ -652,7 +652,7 @@ export interface HiddenEventsStyle {
   headerText: string | null;
   /** The summary after it, and the chevron. */
   detailText: string | null;
-  /** Opacity, 0–100, of the card's border — the colour above, or the theme's
+  /** Opacity, 0–100, of the card's border — the color above, or the theme's
    *  border when none is set. 100 leaves it as is. */
   borderOpacity: number;
   /** Corner radius of the card, in px (0–24). */
@@ -720,10 +720,10 @@ export interface ModernStyle {
   promptSaturation: number;
   answerCardSaturation: number;
   /** Each card's brightness: a percent of its built-in lift off the theme's
-   *  muted colour, 0–200 (darker on the light theme, where the lift is down). */
+   *  muted color, 0–200 (darker on the light theme, where the lift is down). */
   promptBrightness: number;
   answerCardBrightness: number;
-  /** A soft drop shadow tinted the card's own colour. */
+  /** A soft drop shadow tinted the card's own color. */
   promptShadow: boolean;
   answerCardShadow: boolean;
   /** Off: the card has no fill or border, and the page shows through. */
@@ -796,7 +796,7 @@ export function modernCssVars(m: ModernStyle): Record<string, string | null> {
     "--modern-font": m.font === "content" ? "var(--chat-content-font)" : GEIST_STACK,
     "--modern-answer-size": `${String(m.answerSize)}px`,
     "--modern-answer-leading": `${String(Math.round(m.answerSize * 1.43))}px`,
-    // Each card: the colour tints its shadow, its hue sets fill and border.
+    // Each card: the color tints its shadow, its hue sets fill and border.
     "--modern-prompt-tint": m.promptTint,
     "--modern-prompt-hue": m.promptTint ? hueVar(m.promptTint) : null,
     "--modern-prompt-saturation": cardSaturationVar(m.promptTint, m.promptSaturation),
@@ -898,7 +898,7 @@ export interface MessageRenderingConfig {
   categories: Record<Category, CategoryStyle>;
   /** Per-kind user style patches — the third layer of resolveKind. */
   kinds: Record<string, Partial<KindStyle>>;
-  /** Opacity, 0–100, of every accent-coloured card border. */
+  /** Opacity, 0–100, of every accent-colored card border. */
   cardBorderOpacity: number;
   /** Corner radius of every card, in px (0–24). */
   cardBorderRadius: number;
@@ -933,14 +933,14 @@ export function createDefaultConfig(): MessageRenderingConfig {
 // Merge strategy: the default config is always the baseline; user patches are
 // applied on top. On a version mismatch the saved config is discarded and
 // defaults are returned (full reset). Unknown kind IDs in saved data are
-// silently dropped. Legacy palette colour names are converted to hex.
+// silently dropped. Legacy palette color names are converted to hex.
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
 /**
- * True when v looks like a CSS hex colour: #rgb, #rrggbb, or the
+ * True when v looks like a CSS hex color: #rgb, #rrggbb, or the
  * 8-digit RGBA variant #rrggbbaa. Permissive enough to accept what an
  * <input type="color"> emits (always 7-char #rrggbb) plus typed-in
  * shorthands and alpha variants. The accent helpers in accentStyle.ts

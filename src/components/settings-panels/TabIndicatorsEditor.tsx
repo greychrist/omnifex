@@ -40,7 +40,7 @@ const SIZES: { value: TabIndicatorSize; label: string }[] = [
   { value: "lg", label: "Large" },
 ];
 
-/** Native colour input (writes hex), mirroring the kind editor's accent-colour
+/** Native color input (writes hex), mirroring the kind editor's accent-color
  *  control. */
 const ColorControl: React.FC<{
   value: string;
@@ -52,14 +52,14 @@ const ColorControl: React.FC<{
       type="color"
       value={hex}
       onChange={(e) => { onChange(e.target.value); }}
-      aria-label="Colour"
+      aria-label="Color"
       className="h-8 w-9 cursor-pointer rounded-md border border-border bg-background p-1 focus:outline-none focus:ring-1 focus:ring-ring"
     />
   );
 };
 
 /**
- * Editor for the per-tab status glyphs (TabManager). Icon + colour are
+ * Editor for the per-tab status glyphs (TabManager). Icon + color are
  * per-state; size, bordered chip, and background opacity are shared chrome.
  * Lives in the General settings tab.
  */
@@ -76,7 +76,7 @@ export const TabIndicatorsEditor: React.FC<TabIndicatorsEditorProps> = ({
       <div>
         <h3 className="text-heading-4">Tab status indicators</h3>
         <p className="text-caption text-muted-foreground mt-1">
-          The little glyph in each tab. Pick the icon and colour per state; size,
+          The little glyph in each tab. Pick the icon and color per state; size,
           border, and background opacity apply to all of them. They always flash.
         </p>
       </div>

@@ -23,9 +23,9 @@ function renderTree(files: GitChangedFile[], selected: string | null = null) {
 
 describe('DiffFileTree', () => {
   // The branch widget counts files as "changed" or "untracked"; the tree must
-  // wear the same colour for the same bucket, or the two read as opposites.
+  // wear the same color for the same bucket, or the two read as opposites.
   describe('status glyphs match the branch widget', () => {
-    it('colours an untracked file like the widget\'s untracked count', () => {
+    it('colors an untracked file like the widget\'s untracked count', () => {
       renderTree([f('new.txt', { status: 'untracked' })]);
       const glyph = screen.getByLabelText('untracked');
       expect(glyph.className).toContain(GIT_UNTRACKED_STYLE.className);
@@ -33,7 +33,7 @@ describe('DiffFileTree', () => {
     });
 
     it.each(['modified', 'added', 'deleted', 'renamed'] as const)(
-      'colours a %s file like the widget\'s changed count',
+      'colors a %s file like the widget\'s changed count',
       (status) => {
         renderTree([f('x.ts', { status })]);
         const glyph = screen.getByLabelText(status);

@@ -125,7 +125,7 @@ describe('ClaudeTranscript — Modern chat format', () => {
     const rows = [...messages.slice(0, 1), assistant('a0', [{ type: 'text', text: 'Looking first.' }]), ...messages.slice(1)];
     const { container } = renderModern(false, rows);
     // Tint and border are `.modern-format .modern-final-card` in styles.css:
-    // the `* { border-color }` reset beats every border-colour utility.
+    // the `* { border-color }` reset beats every border-color utility.
     const cards = container.querySelectorAll('.modern-final-card');
     expect(cards).toHaveLength(1);
     const card = cards[0];

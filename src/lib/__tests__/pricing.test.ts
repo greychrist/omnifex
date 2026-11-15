@@ -187,7 +187,7 @@ describe('resolvePricing — Sonnet 5.5', () => {
   // Sonnet 5.5 (2.1.284) launched at Sonnet 5's $2/$10 with $0.20 reads, so
   // the `sonnet-5` substring prices it correctly — but also labelled it
   // "Sonnet 5", folding both into one Cost Report series.
-  it('labels claude-sonnet-5-5 as Sonnet 5.5, in its own colour', () => {
+  it('labels claude-sonnet-5-5 as Sonnet 5.5, in its own color', () => {
     const { row } = resolvePricing('claude-sonnet-5-5', '2026-09-28');
     expect(row.label).toBe('Sonnet 5.5');
     expect(modelColor('claude-sonnet-5-5', 'light')).not.toBe(modelColor('claude-sonnet-5', 'light'));
@@ -218,7 +218,7 @@ describe('resolveRates — Haiku 5.5', () => {
     expect(estimated).toBe(false);
   });
 
-  it('labels it Haiku 5.5 in its own colour with a 1M window', () => {
+  it('labels it Haiku 5.5 in its own color with a 1M window', () => {
     const { row } = resolvePricing('claude-haiku-5-5', '2026-10-07');
     expect(row.label).toBe('Haiku 5.5');
     expect(modelColor('claude-haiku-5-5', 'light')).not.toBe(modelColor('claude-haiku-4-5', 'light'));

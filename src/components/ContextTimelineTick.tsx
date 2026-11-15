@@ -11,7 +11,7 @@ import type { ViewMode } from "@/components/SessionViewToggle";
  * Split into text and background maps because a compaction reset paints its
  * dashes from `currentColor`, which the `text-*` half supplies.
  *
- * Exactly the badge's colour, solid: a lighter, translucent line under a
+ * Exactly the badge's color, solid: a lighter, translucent line under a
  * solid badge read as two different greens.
  *
  * Under the budget draws no solid line at all: that is the normal case, so
@@ -30,7 +30,7 @@ const RAIL_BG: Record<ContextPressureLevel, string | null> = {
   critical: "bg-red-600",
 };
 
-/** The size badge, in the rail's colour. Solid: it sits on top of the line
+/** The size badge, in the rail's color. Solid: it sits on top of the line
  *  and must hide it. No border — the unlayered `* { border-color }` rule
  *  outranks the utilities.
  *
@@ -70,7 +70,7 @@ const GUTTER = "relative w-14 shrink-0 self-stretch select-none min-h-9";
 
 /**
  * Dashes for a compaction reset, drawn as a gradient rather than a dashed
- * border. A border cannot carry the level colour here: styles.css declares an
+ * border. A border cannot carry the level color here: styles.css declares an
  * unlayered `* { border-color: var(--color-border) }` that outranks every
  * Tailwind border-color utility, and a 4px dashed border would also need a
  * zero-width box to line up with the solid rail.

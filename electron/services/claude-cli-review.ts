@@ -2080,7 +2080,7 @@ import { buildClaudeEnv } from './util/claude-env';
  * in agent view, background job status, commit attribution reminder,
  * ctrl+enter send-now, background-agent replies, WebFetch artifact reads,
  * permission prompt styling, Ctrl+G, slash suggestion matching, output
- * style / theme pickers, `/hooks` layout, gray prompt colour, `--bare`
+ * style / theme pickers, `/hooks` layout, gray prompt color, `--bare`
  * (we never pass it), npm plugin sources, `/exit` worktree removal,
  * `claude-api` skill, `/ultrareview` link, Windows, VSCode, Claude Tag.
  *
@@ -4865,7 +4865,7 @@ import { buildClaudeEnv } from './util/claude-env';
  *     substring of `claude-fable-5-1`, so both matched one MODEL_SLOT row:
  *     two series, both green, both labelled "Fable 5", indistinguishable in
  *     the legend, the table and the model filter. Fable 5.1 took slot 7;
- *     Fable 5 KEPT green, because colour follows the entity and repainting it
+ *     Fable 5 KEPT green, because color follows the entity and repainting it
  *     would break every existing screenshot's comparability.
  *
  *  3. docs/permission-syntax.md was stale in two places, and this range is

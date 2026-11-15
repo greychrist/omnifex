@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createDatabase, runMigrations, type Database } from '../services/database';
 
 /**
- * v31 drops model_pricing.color_slot. The Cost Report's colour is derived
+ * v31 drops model_pricing.color_slot. The Cost Report's color is derived
  * from a model's price tier and version (costChartPalette.ts), so a per-row
  * palette index has nothing left to drive. No user row ever set one.
  */

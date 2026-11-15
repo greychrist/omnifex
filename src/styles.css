@@ -102,18 +102,18 @@ html {
   margin-bottom: 0;
 }
 /* Modern's two cards — your prompt and the answer that ends a turn — are
-   made one way, each in its own colour: the theme's muted colour lifted, a
+   made one way, each in its own color: the theme's muted color lifted, a
    chroma in the card's hue, and a hairline border in the same hue. The
-   shadow, tinted the card's colour, is `.modern-card-shadow`, set per card
+   shadow, tinted the card's color, is `.modern-card-shadow`, set per card
    by Settings › Chats › Modern › Drop shadow.
 
-   Set from the muted colour, not mixed into it: a `color-mix` lifted
-   lightness and diluted chroma alike, so a chosen colour barely showed and
+   Set from the muted color, not mixed into it: a `color-mix` lifted
+   lightness and diluted chroma alike, so a chosen color barely showed and
    every hue read as the same grey. The lifts, chromas and the prompt's 245
    hue reproduce the old 18% blue mix, which drifted toward the theme's own
    240 (dark: 0.24 L, 0.039 C over 0.16 muted).
 
-   `--modern-*-hue` is the chosen colour read as a hue (modernCssVars),
+   `--modern-*-hue` is the chosen color read as a hue (modernCssVars),
    `--modern-*-saturation` scales the chroma and `--modern-*-brightness` the
    lift (down on the light theme, so there it darkens); unset, the prompt is blue and
    the answer the chip's emerald (emerald-700, as ContextTimelineTick draws
@@ -163,7 +163,7 @@ html {
 }
 /* A failed step's icon chip: red border to match its red icon and line.
    A rule, not a utility, because the `* { border-color }` reset above beats
-   every Tailwind border-colour utility. */
+   every Tailwind border-color utility. */
 [data-status="error"] .modern-step-icon {
   border-color: color-mix(in oklch, var(--color-destructive) 50%, transparent);
 }
@@ -309,6 +309,10 @@ html {
   --color-muted-foreground: oklch(0.65 0.01 240);
   --color-accent: oklch(0.18 0.01 240);
   --color-accent-foreground: oklch(0.95 0.01 240);
+  /* Git change counts (changed / untracked) on the branch chips: Tailwind's
+     emerald-400 / amber-300, darkened to 700 under .theme-light. */
+  --color-git-changed: oklch(0.765 0.177 163.223);
+  --color-git-untracked: oklch(0.879 0.169 91.605);
   --color-destructive: oklch(0.6 0.2 25);
   --color-destructive-foreground: oklch(0.98 0.01 240);
   --color-border: oklch(0.20 0.01 240);
@@ -392,6 +396,8 @@ html {
   --color-muted-foreground: oklch(0.45 0.01 240);
   --color-accent: oklch(0.94 0.01 240);
   --color-accent-foreground: oklch(0.12 0.01 240);
+  --color-git-changed: oklch(0.508 0.118 165.612);
+  --color-git-untracked: oklch(0.555 0.163 48.998);
   --color-destructive: oklch(0.6 0.2 25);
   --color-destructive-foreground: oklch(0.98 0.01 240);
   --color-border: oklch(0.90 0.01 240);

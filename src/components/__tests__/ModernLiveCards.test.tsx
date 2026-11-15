@@ -52,7 +52,7 @@ describe('ModernQuestionCard', () => {
 });
 
 describe('ModernQuestionCard — the classic card\'s look', () => {
-  it('takes the question accent colour and the inset margin', () => {
+  it('takes the question accent color and the inset margin', () => {
     const { container } = render(<ModernQuestionCard request={ask} onSubmit={() => {}} onCancel={() => {}} />);
     const card = container.firstElementChild as HTMLElement;
     const accent = accentStyleFor(createDefaultConfig(), 'permission.askUserQuestion');

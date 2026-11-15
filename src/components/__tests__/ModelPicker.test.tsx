@@ -127,7 +127,7 @@ describe("ModelPickerDropdown — effort and more-models panels", () => {
   });
 });
 
-describe("ModelPickerDropdown — the selected row and the tier colours", () => {
+describe("ModelPickerDropdown — the selected row and the tier colors", () => {
   const CATALOG: Model[] = [
     { id: "default", name: "Opus 5.5 *", description: "Everyday", icon: <span data-icon />, shortName: "O", resolvedId: "claude-opus-5-5[1m]" },
     { id: "claude-fable-5-1[1m]", name: "Fable 5.1", description: "Toughest", icon: <span data-icon />, shortName: "F" },
@@ -159,11 +159,11 @@ describe("ModelPickerDropdown — the selected row and the tier colours", () => 
     expect(isHighlighted("Opus 5.5 *")).toBe(true);
   });
 
-  // The icon wears the Cost Report's colour for the model — its price tier,
+  // The icon wears the Cost Report's color for the model — its price tier,
   // its version's shade — so a model looks the same here, in the chart and
-  // on a Modern model-change line. The merged default row takes the colour
+  // on a Modern model-change line. The merged default row takes the color
   // of the model it stands for.
-  it("colours each row's icon by tier, the default row by the model it stands for", () => {
+  it("colors each row's icon by tier, the default row by the model it stands for", () => {
     render(<ModelPickerDropdown models={CATALOG} selectedModel="mystery" onSelect={() => {}} />);
     const mode = screenChartMode();
     expect(iconOf("Opus 5.5 *").style.color).toBe(hexToRgb(SHADES[mode].opus[0]));

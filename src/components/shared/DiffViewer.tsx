@@ -14,7 +14,7 @@ import { useTheme } from "@/hooks";
  * from each part, and each part is syntax-highlighted via Prism using
  * `language`.
  *
- * Colours match `UnifiedDiffView`, which renders a diff that arrived as text
+ * Colors match `UnifiedDiffView`, which renders a diff that arrived as text
  * — the two are one system seen from two sides, and a reader should not have
  * to learn each. The tints used to be `bg-green-950/20`: a near-black at 20%,
  * invisible on the dark theme and wrong on the light one, with the only real

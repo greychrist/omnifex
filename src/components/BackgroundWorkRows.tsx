@@ -28,7 +28,7 @@ import { formatCost } from '@/components/claude-code-session/CostWidget';
 import { plainTaskOutput, type BackgroundShell, type TaskOutputTail } from '@/lib/backgroundShells';
 
 // 16-slot palette — one distinct hue per slot so concurrent subagents never
-// share a colour until all 16 are live simultaneously (extremely rare).
+// share a color until all 16 are live simultaneously (extremely rare).
 // The allocator in subagentStreams guarantees ordered assignment so slot 0
 // always goes to the first dispatched subagent, slot 1 to the second, etc.
 const PALETTE: { border: string; bg: string; dot: string; text: string }[] = [
@@ -228,7 +228,7 @@ export const SubagentRow: React.FC<SubagentRowProps> = ({ sub, onDismiss, costs,
   const agentLabel = sub.agentType ?? 'Agent';
 
   // A nested subagent (dispatched by another subagent, not by the main
-  // session) is indented under its parent. It shares the parent's colour, so
+  // session) is indented under its parent. It shares the parent's color, so
   // the indent is what distinguishes it from a sibling.
   const nested = !!sub.parentToolUseId;
   const running = sub.status === 'running';
@@ -254,9 +254,9 @@ export const SubagentRow: React.FC<SubagentRowProps> = ({ sub, onDismiss, costs,
       data-nested={nested ? 'true' : undefined}
       className={cn(
         'border-l-2 transition-opacity',
-        // Row divider. The colour has to be an important arbitrary property:
+        // Row divider. The color has to be an important arbitrary property:
         // styles.css's unlayered `* { border-color }` beats every plain
-        // Tailwind border-colour utility.
+        // Tailwind border-color utility.
         'border-b last:border-b-0 [border-bottom-color:color-mix(in_oklch,var(--color-muted-foreground)_30%,transparent)]!',
         color.border,
         color.bg,

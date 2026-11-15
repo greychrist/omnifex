@@ -55,7 +55,7 @@ export function deriveBackgroundShells(messages: JsonlNode[]): BackgroundShell[]
   return [...seen.values()];
 }
 
-// CSI (colour, cursor, erase) and OSC (title, hyperlink) sequences.
+// CSI (color, cursor, erase) and OSC (title, hyperlink) sequences.
 // eslint-disable-next-line no-control-regex
 const ANSI_RE = /\u001b\[[0-?]*[ -/]*[@-~]|\u001b\][^\u0007\u001b]*(?:\u0007|\u001b\\)|\u001b[@-Z\\-_]/g;
 

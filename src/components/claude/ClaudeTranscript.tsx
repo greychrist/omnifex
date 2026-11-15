@@ -911,7 +911,7 @@ function ClaudeTranscriptImpl({
             data-following="true"
             className="pointer-events-none absolute right-0.5 h-1.5 w-1.5 translate-y-1/2 rounded-full text-muted-foreground/40 bg-current data-[following=false]:bg-transparent"
             // Outline via currentColor: styles.css overrides every
-            // border-colour utility and strips the ring classes.
+            // border-color utility and strips the ring classes.
             style={{ bottom: followPx, boxShadow: 'inset 0 0 0 1px currentColor' }}
           />
       </div>

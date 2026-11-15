@@ -38,8 +38,8 @@ function autoDownloadEnabled(): boolean {
  *  the review) is a no-op, and the release notification never sees the fake. */
 export const UPDATE_SIMULATION_STORAGE_KEY = 'omnifex.dev.simulateUpdates';
 const SIMULATED_VERSION = '9.9.9';
-/** The Updates button's pulsing border, in the colour of what is waiting:
- *  emerald for an upgrade, amber for an unreviewed Claude Code (the colour of
+/** The Updates button's pulsing border, in the color of what is waiting:
+ *  emerald for an upgrade, amber for an unreviewed Claude Code (the color of
  *  its icon). At the group border's own 60% (`border-border/60`) — at full
  *  strength the same 1px read as visibly thicker than the grey it lies over. */
 const RING_COLORS = {
@@ -593,7 +593,7 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
             const shownCli = simulateCliReview(cliReview, simulation);
             /* Two signals, deliberately different in kind. Green on the icon:
                an upgrade is waiting, for either OmniFex or Claude Code — one
-               colour for both, the rows inside say which. A second icon: the
+               color for both, the rows inside say which. A second icon: the
                installed Claude Code has not been reviewed, which is work to
                do rather than an upgrade to take. An unknown registry answer
                (`latest_version` null) is neither. The green icon also pulses,
@@ -603,7 +603,7 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
               shownUpdate.status !== 'idle' ||
               (!!shownCli?.upgrade_available && !!shownCli.latest_version);
             const unreviewed = !!shownCli?.unreviewed;
-            // One border, one colour: an upgrade outranks a review, being
+            // One border, one color: an upgrade outranks a review, being
             // the thing to act on first.
             const ringTone: keyof typeof RING_COLORS | null =
               hasUpgrade ? 'emerald' : unreviewed ? 'amber' : null;

@@ -44,7 +44,6 @@ import {
   Cpu,
   Database,
   GitBranch,
-  Github,
   Globe,
   HardDrive,
   Laptop,
@@ -194,8 +193,6 @@ const ICON_CATEGORIES = {
     { name: "cpu", icon: Cpu },
     { name: "database", icon: Database },
     { name: "git-branch", icon: GitBranch },
-        // eslint-disable-next-line @typescript-eslint/no-deprecated -- lucide brand-icon deprecation policy; we are not migrating off lucide for one icon.
-    { name: "github", icon: Github },
     { name: "globe", icon: Globe },
     { name: "hard-drive", icon: HardDrive },
     { name: "laptop", icon: Laptop },

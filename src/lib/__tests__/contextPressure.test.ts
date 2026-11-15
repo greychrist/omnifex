@@ -216,7 +216,7 @@ describe('selectContextTokens', () => {
 
 // The timeline rail needs the same thresholds the banner uses, but not the
 // banner's gates: the rail has its own toggle, and a session that is not
-// "live" still has a history worth colouring. Sharing this helper is what
+// "live" still has a history worth coloring. Sharing this helper is what
 // stops the rail and the banner from disagreeing about where amber starts.
 describe('contextPressureLevel', () => {
   const LIMIT = 1_000_000;

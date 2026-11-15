@@ -49,7 +49,7 @@ function formatResetTail(resetsAt: number | null, nowMs: number): string {
   return `${days}d ${hrs}h`;
 }
 
-/** The percentage's colour by severity; a rejected window is red whatever it reads. */
+/** The percentage's color by severity; a rejected window is red whatever it reads. */
 export function rateLimitPctColor(pct: number | null, rejected: boolean): string {
   if (rejected) return 'text-red-500';
   if (pct == null) return 'text-foreground';

@@ -710,7 +710,7 @@ describe('withAccountDefaultLabel — resolvedId', () => {
 
   // The merged row keeps the id `default` (picking it means "omit --model"),
   // so it also names the concrete model it stands for: that is how the
-  // picker highlights it when that model is the pick, and colours it.
+  // picker highlights it when that model is the pick, and colors it.
   it('names the model the merged default row stands for', () => {
     expect(withAccountDefaultLabel(models, 'sonnet')[0]).toMatchObject({ id: 'default', resolvedId: 'sonnet' });
     expect(withAccountDefaultLabel(models, 'claude-fable-5[1m]')[0]).toMatchObject({ id: 'default', resolvedId: 'claude-fable-5[1m]' });

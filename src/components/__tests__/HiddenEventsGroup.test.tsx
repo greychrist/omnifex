@@ -72,14 +72,14 @@ describe('HiddenEventsGroup — corner radius', () => {
   });
 });
 
-describe('HiddenEventsGroup — configurable colours', () => {
+describe('HiddenEventsGroup — configurable colors', () => {
   it('paints the background on the header and the border around the whole card', () => {
     const bar = renderBar({ background: '#1e293b', border: '#60a5fa' });
     expect(bar).toHaveStyle({ backgroundColor: '#1e293b' });
     expect(cardOf(bar)).toHaveStyle({ borderColor: '#60a5fa' });
   });
 
-  it('carries no inline colour when none is configured', () => {
+  it('carries no inline color when none is configured', () => {
     const bar = renderBar({});
     expect(bar.style.backgroundColor).toBe('');
     expect(cardOf(bar)!.style.borderColor).toBe('');
@@ -91,7 +91,7 @@ describe('HiddenEventsGroup — configurable colours', () => {
     expect(screen.getByText(/1 Hidden Event:/)).toHaveStyle({ color: DARK_TEXT });
   });
 
-  it('uses configured header and detail text colours', () => {
+  it('uses configured header and detail text colors', () => {
     renderBar({ headerText: '#ff0000', detailText: '#00ff00' });
     expect(screen.getByText(/1 Hidden Event:/)).toHaveStyle({ color: '#ff0000' });
     expect(screen.getByText(/1 Hidden Event:/).nextElementSibling).toHaveStyle({ color: '#00ff00' });

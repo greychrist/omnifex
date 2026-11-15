@@ -118,7 +118,7 @@ export function resolveBudgetTokens(
  * Where a token count sits against the configured budget — thresholds only,
  * with none of the banner's gating.
  *
- * Split out because the transcript's context rail colours every row by the
+ * Split out because the transcript's context rail colors every row by the
  * same three levels but answers to a different switch (`context_timeline_
  * enabled`) and has no notion of a live session — it is a history. Sharing
  * this function is what makes "amber" mean one thing across the app; the rail

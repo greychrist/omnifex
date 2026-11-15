@@ -29,7 +29,7 @@ describe('Modern record line', () => {
     expect(container.querySelector('[data-frame-variant]')).toBeNull();
   });
 
-  // Coloured as an answered question is: the icon and the title in the
+  // Colored as an answered question is: the icon and the title in the
   // accent, the detail left muted.
   it('draws the icon and title in the line\'s accent', () => {
     const { container } = draw({ icon: 'Zap', title: 'Effort', detail: 'High', accent: { kind: 'css', color: 'rgb(202, 138, 4)' } });
@@ -38,7 +38,7 @@ describe('Modern record line', () => {
     expect((screen.getByText('High') as HTMLElement).style.color).toBe('');
   });
 
-  it('resolves a model accent to its Cost Report colour for the theme', async () => {
+  it('resolves a model accent to its Cost Report color for the theme', async () => {
     const { SHADES } = await import('@/lib/costChartPalette');
     const hexToRgb = (h: string) => `rgb(${[1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16)).join(', ')})`;
     const model = { icon: 'Cpu', title: 'Model', detail: 'claude-opus-5-5', accent: { kind: 'model', model: 'claude-opus-5-5' } } as ModernLine;
@@ -54,7 +54,7 @@ describe('Modern record line', () => {
     }
   });
 
-  it('leaves a model with no colour of its own uncoloured', () => {
+  it('leaves a model with no color of its own uncolored', () => {
     draw({ icon: 'Cpu', title: 'Model', detail: 'default', accent: { kind: 'model', model: 'default' } });
     expect((screen.getByText('Model') as HTMLElement).style.color).toBe('');
   });
@@ -78,7 +78,7 @@ describe('Modern record line', () => {
     expect(head?.className).toContain('data-[status=warn]:text-amber-500');
   });
 
-  it('draws an error line in the error colour', () => {
+  it('draws an error line in the error color', () => {
     const { container } = draw({ icon: 'AlertTriangle', title: 'API error', detail: 'Overloaded', tone: 'error' });
     expect(container.querySelector('[data-slot="trace-line"][data-status="error"]')).not.toBeNull();
   });

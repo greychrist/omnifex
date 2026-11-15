@@ -19,7 +19,7 @@ const base = {
 afterEach(() => { cleanup(); });
 
 describe('LinkGlyph', () => {
-  // A coloured wifi icon on its own says "something about the network"; which
+  // A colored wifi icon on its own says "something about the network"; which
   // something is the whole point.
   it('says in words which state it is in', () => {
     const cases = [
@@ -194,7 +194,7 @@ describe('ChatStatusBar', () => {
     expect(turn.querySelector('.lucide-clock')).toBeTruthy();
   });
 
-  it('colours the turn readout apart from the daemon glyph', () => {
+  it('colors the turn readout apart from the daemon glyph', () => {
     // Both sat on emerald-400, so the bar read as one green run of text.
     render(
       <ChatStatusBar
@@ -531,7 +531,7 @@ describe('ChatStatusBar — session name', () => {
   // why `border-0` sits beside it — the same shape the account, branch and
   // session widgets use. jsdom cannot see any of it, so only the decisions are
   // pinned, not the tuning.
-  it('floats on its own surface inside a header-coloured frame', () => {
+  it('floats on its own surface inside a header-colored frame', () => {
     render(<ChatStatusBar {...named} activitySignal={signal({ status: 'idle' })} />);
     const bar = screen.getByTestId('chat-status-bar');
     expect(bar.className).toContain('bg-background/60');

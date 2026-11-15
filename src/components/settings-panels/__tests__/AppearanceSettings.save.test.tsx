@@ -42,7 +42,7 @@ async function renderChats() {
 }
 
 const editAccent = () => {
-  fireEvent.change(screen.getByLabelText('Accent colour picker'), { target: { value: '#123456' } });
+  fireEvent.change(screen.getByLabelText('Accent color picker'), { target: { value: '#123456' } });
 };
 
 describe('AppearanceSettings saving', () => {

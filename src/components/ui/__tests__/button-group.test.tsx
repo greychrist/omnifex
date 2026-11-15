@@ -27,8 +27,8 @@ describe('ButtonGroup', () => {
   });
 
   // The divider is each later child's left border, so the group must not
-  // strip children's borders, and its colour must beat the global
-  // \`* { border-color }\` reset, which outranks layered colour utilities.
+  // strip children's borders, and its color must beat the global
+  // \`* { border-color }\` reset, which outranks layered color utilities.
   it('draws a visible divider between neighbours', () => {
     render(<ButtonGroup label="Things"><button type="button">a</button><button type="button">b</button></ButtonGroup>);
     const cls = screen.getByRole('group').className;

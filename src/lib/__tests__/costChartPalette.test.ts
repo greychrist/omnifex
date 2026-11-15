@@ -15,14 +15,14 @@ import {
 import { SHIPPED_PRICING, type ModelPricingInput } from '../pricing';
 
 /**
- * Colour follows the ENTITY, never its rank on screen. If a filter that
+ * Color follows the ENTITY, never its rank on screen. If a filter that
  * removes one model repainted the survivors, the legend would stop meaning
  * the same thing between two screenshots and every month-over-month
  * comparison would silently lie.
  *
  * The hue is the model's price tier — blue (Haiku) is cheapest, then green
  * (Sonnet), amber (Opus) and purple (Fable), the order the effort picker
- * uses — and the shade is the version: the newest the full colour, older
+ * uses — and the shade is the version: the newest the full color, older
  * ones stepping lighter, so two versions of one family stay apart in a
  * stacked bar.
  */
@@ -72,7 +72,7 @@ describe('modelColor', () => {
     expect(modelColor('claude-mythos-5', 'light')).toBe(SHADES.light.fable[2]);
   });
 
-  it('gives a model the same colour regardless of what else is on screen', () => {
+  it('gives a model the same color regardless of what else is on screen', () => {
     expect(modelColor('claude-opus-5', 'light')).toBe(modelColor('claude-opus-5', 'light'));
   });
 
@@ -127,8 +127,8 @@ describe('modelColor', () => {
 
 describe('modelOwnColor', () => {
   // A single model shown on its own (Modern's model-change line) takes a
-  // colour only when it has a tier; an alias with no family or an unknown id
-  // gets none, rather than a neutral that would read as a colour choice.
+  // color only when it has a tier; an alias with no family or an unknown id
+  // gets none, rather than a neutral that would read as a color choice.
   it('is the tier shade for a model or family alias and null otherwise', () => {
     expect(modelOwnColor('claude-opus-5-5', 'dark')).toBe(SHADES.dark.opus[0]);
     expect(modelOwnColor('claude-opus-5-5[1m]', 'light')).toBe(SHADES.light.opus[0]);
@@ -192,7 +192,7 @@ describe('modelLabel', () => {
 
 describe('screenChartMode', () => {
   // The theme on screen, read off the root's class — what every surface that
-  // colours a model outside the chart (picker rows, Modern lines) uses.
+  // colors a model outside the chart (picker rows, Modern lines) uses.
   it('is light under .theme-light and dark otherwise', () => {
     document.documentElement.classList.remove('theme-light');
     expect(screenChartMode()).toBe('dark');

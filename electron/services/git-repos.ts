@@ -2,7 +2,7 @@
  * Finding the git repositories inside a project folder, and naming each one.
  *
  * A repo's *identity* is its main checkout: every linked worktree of a repo
- * resolves to the same path, so per-repo settings (branch colours, watch
+ * resolves to the same path, so per-repo settings (branch colors, watch
  * selections) follow the repo rather than whichever checkout opened it.
  *
  * Pure filesystem — no `git` spawn. Discovery runs when a session's git watch

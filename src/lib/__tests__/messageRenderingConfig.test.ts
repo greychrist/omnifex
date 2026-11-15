@@ -250,10 +250,10 @@ describe("mergeConfig", () => {
     expect(resolveKind(cfg, "user.prompt").borderStyle).toBe("solid");
   });
 
-  // The palette is retired: every colour is a hex. Saved configs (and exported
-  // files) still name palette colours, so they are converted on load — through
+  // The palette is retired: every color is a hex. Saved configs (and exported
+  // files) still name palette colors, so they are converted on load — through
   // the saved palette's own swatch when it had one, so a retinted name keeps
-  // the colour the user saw.
+  // the color the user saw.
   it("migrates saved palette names to hex, through the saved palette's swatch", () => {
     const cfg = mergeConfig({
       version: 5,
@@ -270,7 +270,7 @@ describe("mergeConfig", () => {
     expect("palette" in cfg).toBe(false);
   });
 
-  it("ships every default colour as a hex, never a palette name", () => {
+  it("ships every default color as a hex, never a palette name", () => {
     const hex = /^#[0-9a-f]{6}$/i;
     for (const c of CATEGORIES) expect(DEFAULT_CATEGORIES[c].accentColor).toMatch(hex);
     for (const def of Object.values(KIND_REGISTRY)) {
@@ -313,16 +313,16 @@ describe("mergeConfig", () => {
     expect(mergeConfig({ version: 5, tabs: { maxWidth: "wide" } }).tabs.maxWidth).toBe(DEFAULT_TAB_STRIP.maxWidth);
   });
 
-  it("defaults the hidden-events bar to the theme's own colours", () => {
+  it("defaults the hidden-events bar to the theme's own colors", () => {
     expect(createDefaultConfig().hiddenEvents).toEqual({ background: null, border: null, headerText: null, detailText: null, borderOpacity: 100, borderRadius: 8 });
   });
 
-  it("keeps saved hidden-events colours, alpha hex included", () => {
+  it("keeps saved hidden-events colors, alpha hex included", () => {
     const cfg = mergeConfig({ version: 5, hiddenEvents: { background: "#1e293b", border: "#60a5fa80", headerText: "#fff", detailText: "#ffffffb3" } });
     expect(cfg.hiddenEvents).toEqual({ background: "#1e293b", border: "#60a5fa80", headerText: "#fff", detailText: "#ffffffb3", borderOpacity: 100, borderRadius: 8 });
   });
 
-  it("drops a hidden-events colour that is not a hex, keeping the other", () => {
+  it("drops a hidden-events color that is not a hex, keeping the other", () => {
     const cfg = mergeConfig({ version: 5, hiddenEvents: { background: "blue", border: "#60a5fa", headerText: 3 } });
     expect(cfg.hiddenEvents).toEqual({ background: null, border: "#60a5fa", headerText: null, detailText: null, borderOpacity: 100, borderRadius: 8 });
   });

@@ -9,7 +9,7 @@ import { api, type BranchColor } from '@/lib/api';
 import { fireAndLog } from "@/lib/fireAndLog";
 
 /**
- * Branch colour pins for one repo. Pins belong to the repo (its main
+ * Branch color pins for one repo. Pins belong to the repo (its main
  * checkout), so they show the same in every project and session that
  * includes it.
  */
@@ -29,7 +29,7 @@ export const BranchColorsEditor: React.FC<BranchColorsEditorProps> = ({ repoPath
     }).catch(() => {});
     return () => { cancelled = true; };
   }, [repoPath]);
-  // Chip preview only: the trunk-ish branch takes the main-folder colour.
+  // Chip preview only: the trunk-ish branch takes the main-folder color.
   const mainFolderBranch = availableBranches.find((b) => TRUNK_CANDIDATES.includes(b)) ?? availableBranches[0] ?? null;
   const [rows, setRows] = React.useState<BranchColor[]>([]);
   const [editing, setEditing] = React.useState<{ id: number | null; branch: string; color: string } | null>(null);
@@ -80,7 +80,7 @@ export const BranchColorsEditor: React.FC<BranchColorsEditorProps> = ({ repoPath
   return (
     <div>
       <div className="flex items-center justify-between mb-2">
-        <h3 className="text-xs font-medium text-muted-foreground">Branch colours</h3>
+        <h3 className="text-xs font-medium text-muted-foreground">Branch colors</h3>
         {!editing && (
           <Button size="sm" variant="outline" onClick={startAdd} className="h-7 px-2 gap-1 text-xs">
             <Plus className="h-3.5 w-3.5" /> Add

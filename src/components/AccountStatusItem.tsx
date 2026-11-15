@@ -25,7 +25,7 @@ import { loginExpiryColor } from "@/lib/loginExpiry";
  * opens `UsageDetailPopover`. Lives alongside the widget for now, so the two
  * can be compared before one of them goes.
  *
- * The icon, label and name wear the account's colour, as the badge does —
+ * The icon, label and name wear the account's color, as the badge does —
  * text only, not its chip, at the bar's weight.
  */
 
@@ -147,7 +147,7 @@ function pctOf(snapshot: RateLimitSnapshot | null): number | null {
   return snapshot?.utilization == null ? null : Math.max(0, Math.min(100, snapshot.utilization));
 }
 
-/** One window's icon and percentage, coloured by its own severity. */
+/** One window's icon and percentage, colored by its own severity. */
 function WindowPct({
   snapshot,
   Icon,

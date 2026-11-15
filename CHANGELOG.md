@@ -10,12 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Multi-repo git bar: a project folder that contains several git repos now gets a git bar too. OmniFex finds the repos inside it (one level deep by default, adjustable per project), and a repos dialog — opened from the bar or from the project screen — lets you choose which ones the project's sessions watch. The choice is saved per project and reaches every open session of it at once. A newly found repo is never watched until you turn it on; the bar shows how many more were found.
-- Each watched repo is one capsule on the bar: its name (the prefix your repos share dropped), its main checkout, then each worktree, every segment with its branch colour and uncommitted changes. Click a segment for its path and View changes.
+- Each watched repo is one capsule on the bar: its name (the prefix your repos share dropped), its main checkout, then each worktree, every segment with its branch color and uncommitted changes. Click a segment for its path and View changes.
 
 ### Changed
 
-- Branch colours now belong to the repo rather than the project, so a repo shows the same colours in every project and session that includes it, worktrees included. Existing colours carry over.
-- The project screen's Branch Colors card is now "Repos & branch colours", opening the same dialog, where each repo's colours are edited.
+- Branch colors now belong to the repo rather than the project, so a repo shows the same colors in every project and session that includes it, worktrees included. Existing colors carry over.
+- The project screen's Branch Colors card is now "Repos & branch colors", opening the same dialog, where each repo's colors are edited.
 - The repos button and the git refresh button on the bar sit together as one button group.
 
 ### Removed
@@ -30,7 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Modern format: a step kind given a custom colour in Appearance now colours the step's title as well as its icon and rule, as an answered question does — thoughts, tool steps and design runs alike. A running step shimmers in that colour rather than gray. Failed steps stay red.
+- Modern format: a step kind given a custom color in Appearance now colors the step's title as well as its icon and rule, as an answered question does — thoughts, tool steps and design runs alike. A running step shimmers in that color rather than gray. Failed steps stay red.
 
 ## [0.5.40] — 2026-11-14
 
@@ -137,23 +137,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.5.31] — 2026-11-08
 
 ### Changed
-- The model name in the session status bar is drawn in the model's Cost Report colour — its price tier and version — matching the picker rows and Modern's model-change lines. The glyph and the `model` label keep the bar's colour.
+- The model name in the session status bar is drawn in the model's Cost Report color — its price tier and version — matching the picker rows and Modern's model-change lines. The glyph and the `model` label keep the bar's color.
 
 ## [0.5.30] — 2026-11-08
 
 ### Added
 - A `/model` typed into the composer is now tracked: the status bar, the model picker and a restart follow the CLI's answer, a switch with no turn after it survives a restart, and a `/model … saved as your default` moves the account-default mark.
-- Modern: permission-mode, effort and model change lines are drawn in the new value's colour — the picker's for a mode or effort level, the Cost Report's for a model.
+- Modern: permission-mode, effort and model change lines are drawn in the new value's color — the picker's for a mode or effort level, the Cost Report's for a model.
 - The permissions menu marks the account's default mode, as the model menu marks the account-default model.
 
 ### Changed
-- Cost Report colours follow the model's price tier — Haiku blue, Sonnet green, Opus amber, Fable purple, the effort picker's order — with the newest version the full colour and older ones lighter. The legend, the stack and the by-model table order by tier, then version. The model picker's rows wear the same colours.
+- Cost Report colors follow the model's price tier — Haiku blue, Sonnet green, Opus amber, Fable purple, the effort picker's order — with the newest version the full color and older ones lighter. The legend, the stack and the by-model table order by tier, then version. The model picker's rows wear the same colors.
 - The model menu's account-default mark stays on the real default; the model you picked is highlighted instead, including when it is the default.
 - Modern: the hover row under a prompt, answer or recap leads with the date and time (M-D-YYYY), before Copy; the recap's title no longer carries the time.
 - The effort menu's short names (Auto, Med, Max) no longer run into the level's name.
 
 ### Removed
-- Settings › Pricing no longer has a per-row colour slot; a model's colour is derived from its tier and version. `model_pricing.color_slot` is dropped by migration v31.
+- Settings › Pricing no longer has a per-row color slot; a model's color is derived from its tier and version. `model_pricing.color_slot` is dropped by migration v31.
 
 ## [0.5.29] — 2026-11-08
 
@@ -240,7 +240,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- The context timeline's rail now matches its size badge exactly, one solid colour per pressure level, and the badge text clears WCAG AA contrast (the green badge was 3.7:1).
+- The context timeline's rail now matches its size badge exactly, one solid color per pressure level, and the badge text clears WCAG AA contrast (the green badge was 3.7:1).
 - A mod that places rows in the conversation (`$.ui.place`, Claude Code 2.1.314) no longer draws an "Unrecognized record" card; the frame is hidden bookkeeping, switchable from Appearance settings.
 
 ### Changed
@@ -250,7 +250,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.5.19] — 2026-10-29
 
 ### Added
-- Settings › Chats › Modern: a live sample drawn by the Modern format, the work timeline's behaviour (open while running, always open, or always folded) and whether it shows thoughts, an icon for each kind of step, Geist or the Typography content font, answer text size, and the prompt-bubble and failed-step colours.
+- Settings › Chats › Modern: a live sample drawn by the Modern format, the work timeline's behaviour (open while running, always open, or always folded) and whether it shows thoughts, an icon for each kind of step, Geist or the Typography content font, answer text size, and the prompt-bubble and failed-step colors.
 
 ### Fixed
 - Downloading an update shows its progress instead of jumping from 0% to finished.
@@ -261,7 +261,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.5.18] — 2026-10-29
 
 ### Changed
-- Modern: the live question card takes the question accent colour and the classic card's inset margin.
+- Modern: the live question card takes the question accent color and the classic card's inset margin.
 - Modern: answered questions are drawn as the classic compact answered card — one row per question, answer pills, timestamp footer.
 
 ### Fixed
@@ -296,7 +296,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Modern chat: your prompt is drawn in a blue-tinted bubble with a subtle border and drop shadow, cornered like every other card (All cards › Corner radius).
 - Modern chat: an opened thought's text is brighter than the step titles around it, so the reasoning stands out.
-- Modern chat: a skill's instructions open inside its "Used <skill>" step, in the skill card's colours, instead of a separate classic skill card beneath it.
+- Modern chat: a skill's instructions open inside its "Used <skill>" step, in the skill card's colors, instead of a separate classic skill card beneath it.
 
 ## [0.5.12] — 2026-10-28
 
@@ -324,7 +324,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- The context timeline sits in the transcript's left margin, outside the chat window. It is drawn as a slim line, with each context size in a badge coloured by how close the session is to its budget. The proportional bar is gone; the share of the window is in the tooltip. The timeline's on/off button moved to the top of the margin.
+- The context timeline sits in the transcript's left margin, outside the chat window. It is drawn as a slim line, with each context size in a badge colored by how close the session is to its budget. The proportional bar is gone; the share of the window is in the tooltip. The timeline's on/off button moved to the top of the margin.
 - In the Modern format, prompts with pasted images, slash commands and compactions are drawn in the Modern style instead of as classic cards. A compaction is one line that opens onto its summary.
 
 ### Fixed
@@ -410,7 +410,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Daemon connectivity moved from the title bar to the session status bar. Clicking the `daemon` readout opens the daemon details — version, address, clients, sessions, uptime, Refresh and Restart — and now also says whether this session's events are arriving.
 - The model, effort and permission pickers on the status bar match the other status-bar popovers: compact rows and small-caps section labels, without the double padding.
 - Diagrams are drawn in OmniFex's own palette: rounded cards with 1px borders and soft shadows, muted lines, and amber notes, in both the gray and light themes. Sequence diagrams show their participants once, at the top.
-- Colours a diagram sets for itself are mapped onto OmniFex's accent colours, as a tinted card with a coloured border, instead of pastel blocks with dark text.
+- Colors a diagram sets for itself are mapped onto OmniFex's accent colors, as a tinted card with a colored border, instead of pastel blocks with dark text.
 
 ### Fixed
 
@@ -606,13 +606,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A `Hook progress` message kind, so a hook's mid-run output is no longer an unrecognised row.
 
 ### Changed
-- Card borders are subtler by default (20% of the accent colour, was ~33%).
+- Card borders are subtler by default (20% of the accent color, was ~33%).
 - The kind editor is laid out as compact label-and-control rows with one inherit/revert marker per row, roughly halving its height.
 - The expanded Hidden Events card body sits just above the chat background instead of a shade darker.
 - Hook rows are hidden by default through their message kinds; switch them on from Message kinds.
 
 ### Removed
-- The Global tab (its settings moved to All cards) and the Palette tab — every colour is now a hex value; saved palette names convert on load with the same colour.
+- The Global tab (its settings moved to All cards) and the Palette tab — every color is now a hex value; saved palette names convert on load with the same color.
 - The live-overlay "Hide …" filters (three did nothing, the fourth duplicated the hook kinds) and the "Show message kind label" option, which did nothing — the kind label always shows.
 
 ## [0.4.228] — 2026-10-08
@@ -642,7 +642,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **Diff viewer file colours match the branch widget.** The file tree had the two colours swapped (modified amber, untracked green). Changed files are now green with the pencil-file icon and untracked files amber with the plus-file icon, from one shared style used by the branch widget, the tab status popover and the diff tree. Added, deleted and renamed files keep distinct icons in the changed colour.
+- **Diff viewer file colors match the branch widget.** The file tree had the two colors swapped (modified amber, untracked green). Changed files are now green with the pencil-file icon and untracked files amber with the plus-file icon, from one shared style used by the branch widget, the tab status popover and the diff tree. Added, deleted and renamed files keep distinct icons in the changed color.
 
 ## [0.4.226] — 2026-10-06
 
@@ -789,7 +789,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.4.213] — 2026-10-04
 
 ### Changed
-- Hidden Events groups are now a single card: the "N Hidden Events" bar is its header and the expanded events sit inside its body, inset on both sides, instead of hanging off a white side rail. A configured background colours the header; a configured border outlines the whole card.
+- Hidden Events groups are now a single card: the "N Hidden Events" bar is its header and the expanded events sit inside its body, inset on both sides, instead of hanging off a white side rail. A configured background colors the header; a configured border outlines the whole card.
 - Collapsible cards (Context and similar) now match it: the up/down chevron sits at the right edge of the header, with the copy/view buttons just before it.
 
 ### Fixed
@@ -815,7 +815,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.4.211] — 2026-10-02
 
 ### Added
-- Status bar `account` readout, first in the bar: the account's colour, a shield, and its 5-hour / 7-day usage (or the session's cost). A `session` readout closes the bar with the session's state and context size. Each opens the same popover as its header card.
+- Status bar `account` readout, first in the bar: the account's color, a shield, and its 5-hour / 7-day usage (or the session's cost). A `session` readout closes the bar with the session's state and context size. Each opens the same popover as its header card.
 - New session button in the session header, beside the back button.
 - "Restart in Bypass" in the permission picker. Claude Code refuses to switch into bypassPermissions mid-session unless the session was launched in it; the picker now says so and offers the restart.
 - The working-tree diff viewer's file list and old/new split are resizable.
@@ -842,7 +842,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.4.209] — 2026-10-01
 
 ### Added
-- Background shells and Monitors now appear in the subagent bar beside subagents, under a "Background:" header. Opening a row shows the tail of the command's output — read from Claude Code's `get_task_output` (CLI 2.1.287+), refreshed every 2 seconds while the command runs, as plain text with colour codes stripped. Nothing is read while a row is closed. Ended shells stay listed until cleared, like finished subagents.
+- Background shells and Monitors now appear in the subagent bar beside subagents, under a "Background:" header. Opening a row shows the tail of the command's output — read from Claude Code's `get_task_output` (CLI 2.1.287+), refreshed every 2 seconds while the command runs, as plain text with color codes stripped. Nothing is read while a row is closed. Ended shells stay listed until cleared, like finished subagents.
 
 ### Changed
 - Reviewed Claude Code 2.1.287 against OmniFex: no regressions.
@@ -941,8 +941,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.4.199] — 2026-09-28
 
 ### Added
-- The compact-mode "Hidden Events" bar can be restyled under Appearance → Message kinds → Hidden events: background, border, header text and detail text colours, each a hex with optional alpha.
-- Hidden-events text left unset turns light or dark automatically to stay readable on the background you pick, judged against the current theme for translucent colours.
+- The compact-mode "Hidden Events" bar can be restyled under Appearance → Message kinds → Hidden events: background, border, header text and detail text colors, each a hex with optional alpha.
+- Hidden-events text left unset turns light or dark automatically to stay readable on the background you pick, judged against the current theme for translucent colors.
 - An Expand all / Collapse all link above the Appearance message-kind tree.
 
 ### Changed
@@ -1202,13 +1202,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- A chat tab's icon now carries the account it runs under. It used to be a generic speech bubble announcing that a chat tab was a chat tab — on a strip where nearly everything is a chat — with the account shown separately as a small coloured square further along the tab. The bubble now takes the account's own colour and holds the account's own mark, and the separate square is gone. One glyph answers the question actually worth asking at a glance, and each tab gets a little narrower. Tabs that are not chat sessions keep the plain icon and the account square, since there is no bubble there to fold an account into.
+- A chat tab's icon now carries the account it runs under. It used to be a generic speech bubble announcing that a chat tab was a chat tab — on a strip where nearly everything is a chat — with the account shown separately as a small colored square further along the tab. The bubble now takes the account's own color and holds the account's own mark, and the separate square is gone. One glyph answers the question actually worth asking at a glance, and each tab gets a little narrower. Tabs that are not chat sessions keep the plain icon and the account square, since there is no bubble there to fold an account into.
 - Claude Code changelog review watermark moved to 2.1.274. Single release in range and no drift in anything OmniFex reads: the record-type map is byte-identical, hook events and control envelopes are unchanged, and every `/usage` anchor still matches. The one real change is on Claude Code's side — assigning a shell variable that can influence what a command executes (`IFS`, `BASH_ENV`, and now `BASH_SOURCE_PATH`) makes it ask permission instead of allowing the command outright, so a Bash rule you have allowed may start prompting on commands that set one.
 
 ### Fixed
 
 - Pressing Stop left the session looking like it was still working. The marker Claude Code writes when you interrupt a turn is an ordinary user message as far as the transcript is concerned, so OmniFex read it as a prompt still waiting on an answer and held the turn open — the spinner kept going, and the tab kept claiming work was in flight, until something else moved. An interrupt now ends the turn, which is what it is.
-- A long icon name in the tab status indicator settings ran out of its box and over the colour swatch beside it. The default icon for the "Question waiting" state is long enough to do this on a fresh install, so the row has been wrong for everyone since the picker shipped. Names are now cut to fit. The same picker is used for message kind icons, which had the same problem.
+- A long icon name in the tab status indicator settings ran out of its box and over the color swatch beside it. The default icon for the "Question waiting" state is long enough to do this on a fresh install, so the row has been wrong for everyone since the picker shipped. Names are now cut to fit. The same picker is used for message kind icons, which had the same problem.
 
 ## [0.4.175] — 2026-09-16
 
@@ -1332,7 +1332,7 @@ Installers are signed with a Developer ID certificate and notarized by Apple.
 
 ### Changed
 
-- Diffs look the same everywhere in the app. The Edit, MultiEdit and Codex patch views share one renderer and one set of colours with the new one, and the colours are legible on both the light and the dark theme — the previous tints were nearly invisible on either.
+- Diffs look the same everywhere in the app. The Edit, MultiEdit and Codex patch views share one renderer and one set of colors with the new one, and the colors are legible on both the light and the dark theme — the previous tints were nearly invisible on either.
 - The model picker no longer lists the account's default model twice. It used to show "Account Default (Fable 5)" above a plain "Fable 5"; now that model's own row carries an asterisk, and the key for it sits in the dropdown header. The session controls in the context popover have their captions back, above each picker rather than beside it.
 - Running OmniFex from source now uses its own background service on its own port, separate from the installed app's. Starting a development build can no longer interrupt the sessions running in the app you actually work in, and the service it starts shuts down with it.
 
@@ -1387,7 +1387,7 @@ Installers are signed with a Developer ID certificate and notarized by Apple.
 
 ### Changed
 
-- The context popover's doughnut chart is now a slim stacked bar in the same colours. The chart took up most of the popover's height to show one number per category — which the list underneath it already gave you, more precisely. The list is unchanged and the popover is a good deal shorter.
+- The context popover's doughnut chart is now a slim stacked bar in the same colors. The chart took up most of the popover's height to show one number per category — which the list underneath it already gave you, more precisely. The list is unchanged and the popover is a good deal shorter.
 - The context meter now announces itself properly to screen readers. Its label was the two numbers it displays, read aloud as "120.0k 12%" with nothing saying what they measured.
 
 Installers are signed with a Developer ID certificate and notarized by Apple.
@@ -1396,9 +1396,9 @@ Installers are signed with a Developer ID certificate and notarized by Apple.
 
 ### Changed
 
-- The stack of coloured bars above a session is gone. The app had grown five of them — a wrong-account warning, a context-is-filling-up warning, a "this prompt added 325k" notice, a cache-timing notice, a skipped-MCP-servers notice — plus a thinking bar and a usage-limit bar at the other end. Each arrived for a good reason; together they were a wall of amber that nothing could be read out of, where "you should compact now" looked no more urgent than "cache timing changed". Every one of those notices now appears on the thing it is actually about: context news lands on the context meter, MCP news on the MCP button, account news on the account card, each with a small unread count. Only something you can act on still takes space, and only one at a time, in a single row above the message box.
+- The stack of colored bars above a session is gone. The app had grown five of them — a wrong-account warning, a context-is-filling-up warning, a "this prompt added 325k" notice, a cache-timing notice, a skipped-MCP-servers notice — plus a thinking bar and a usage-limit bar at the other end. Each arrived for a good reason; together they were a wall of amber that nothing could be read out of, where "you should compact now" looked no more urgent than "cache timing changed". Every one of those notices now appears on the thing it is actually about: context news lands on the context meter, MCP news on the MCP button, account news on the account card, each with a small unread count. Only something you can act on still takes space, and only one at a time, in a single row above the message box.
 - Clicking the context meter now opens a log of what each turn did to your context — the change, where it started and ended, and when — newest first, with compactions called out. Turns that added a lot are highlighted. Anything waiting on you appears at the top of the same popover, so dismissing it from the row above the message box never loses it.
-- The context meter changes colour by how close you are to your configured budget rather than to the raw window size. Those are not the same thing: with the default 250k budget on a million-token session the meter used to sit reassuringly green while the app was telling you to compact. It also marks where that budget falls, so "compact at 25%" is visible rather than implied.
+- The context meter changes color by how close you are to your configured budget rather than to the raw window size. Those are not the same thing: with the default 250k budget on a million-token session the meter used to sit reassuringly green while the app was telling you to compact. It also marks where that budget falls, so "compact at 25%" is visible rather than implied.
 - The session header now carries a second small pill showing what the session is doing — `thinking 12s`, or how long until a usage limit resets — underneath the existing one showing whether it is connected. The thinking bar that used to sit above the transcript is gone; its token count moved to the pill's tooltip.
 - The context rail in the transcript margin is now on by default, and labels every turn's change rather than only the large ones. It was previously an opt-in view, which was fine while a banner reported context growth to everyone else — with the banner gone, leaving it off would have quietly removed that information for anyone who had never turned it on. Compact output mode hides changes under 2k; Verbose shows them all.
 - When the app asks you to compact, you can now raise the trigger by 20k for that session alone instead of changing the setting for every session. Pressing it again buys another 20k, and the prompt returns on its own once you cross the new line.
@@ -1513,12 +1513,12 @@ Installers are signed with a Developer ID certificate and notarized by Apple.
 
 ### Added
 
-- Model pricing is now editable in Settings instead of compiled into the app. A model Anthropic releases after your build — or a price that changes on one you already have — can be priced correctly without waiting for a new OmniFex. A row states only what differs, so correcting a single wrong rate is one field, not a restated model, and rates, the Cost Report legend name and the chart colour all live on that one row.
+- Model pricing is now editable in Settings instead of compiled into the app. A model Anthropic releases after your build — or a price that changes on one you already have — can be priced correctly without waiting for a new OmniFex. A row states only what differs, so correcting a single wrong rate is one field, not a restated model, and rates, the Cost Report legend name and the chart color all live on that one row.
 
 ### Fixed
 
 - Fable 5.1 cache reads were billed four times over. It reads at $0.25 per million tokens, the first Claude model that does not follow the standard cache formula, and OmniFex had no way to express that. Cache reads dominate token volume in long sessions, so Fable 5.1 spend was materially overstated in the session cost widget, per-message costs, and the Cost Report.
-- Fable 5.1 and Fable 5 were indistinguishable on the Cost Report — two separate series, both green, both labelled "Fable 5", in the legend, the model table and the model filter. Fable 5 keeps its colour, so existing screenshots stay comparable.
+- Fable 5.1 and Fable 5 were indistinguishable on the Cost Report — two separate series, both green, both labelled "Fable 5", in the legend, the model table and the model filter. Fable 5 keeps its color, so existing screenshots stay comparable.
 - Permission-rule documentation was wrong in two places about how deny rules reach Bash. Input redirections (`cmd < secrets.env`) are permission-checked as of Claude Code 2.1.257, and the list of commands whose file arguments are checked grew from 21 to 40. The docs now also say what is still *not* covered, because a 40-command list reads like a boundary and is not one.
 
 ### Changed
@@ -1628,7 +1628,7 @@ The Cost Report's spend chart becomes readable at a glance.
 
 - Every bar carries an axis label. Ticks are month/day (`8/6`) instead of `2026-08-06`, which is what let them all fit; past 31 bars they thin evenly rather than colliding. The tooltip still shows the full date.
 - The "heaviest days" sentence above the chart uses the same month/day form as the axis, so you no longer translate between two date formats to find the day being named.
-- The plot surface, gridlines, axis line and week rules derive from the theme tokens instead of fixed hex. The app ships three themes whose card colours differ by a lot, and one hardcoded value was visibly wrong in the other two.
+- The plot surface, gridlines, axis line and week rules derive from the theme tokens instead of fixed hex. The app ships three themes whose card colors differ by a lot, and one hardcoded value was visibly wrong in the other two.
 - Bar caps scale with the bar's own width (30%, ceilinged at 6px). A single constant cannot look like a cap on both a 3-bar week and a 31-bar month.
 
 ### Fixed
@@ -2727,11 +2727,11 @@ Installers remain **unsigned**.
 
 - **`/compact` summaries render as their own message kind** (`user.compactSummary`)
   instead of as something you typed. The CLI writes the post-compaction recap as
-  a `user` record, so it arrived wearing your colour and offering a Resend button
+  a `user` record, so it arrived wearing your color and offering a Resend button
   that would have re-sent the entire recap. The new kind is collapsible, teal,
   labelled "Compacted", and configurable in Settings → Chats like every other
   kind.
-- **The context rail is coloured by proximity to the budget** — green, amber,
+- **The context rail is colored by proximity to the budget** — green, amber,
   red — so a long session can be scanned for where it got expensive without
   reading a number. Thresholds come from the same function the context-pressure
   banner uses, so the two cannot disagree about where amber starts. The banner's
@@ -2908,7 +2908,7 @@ right-click → Open to get past it.
 - **Tool-result images are now styled like every other message.** They render
   as a framed card with a title, icon, and footer chip instead of an
   un-framed block, and they have their own entry in Appearance settings
-  (`Tool result image`) so colour, icon, label, and compact-mode visibility can
+  (`Tool result image`) so color, icon, label, and compact-mode visibility can
   be set independently of ordinary tool output. They stay visible in compact
   mode by default — a returned screenshot is usually the point of the call,
   not plumbing.
@@ -3608,7 +3608,7 @@ Installers remain **unsigned**.
 ### Changed
 
 - **Appearance preview now renders through the real transcript renderer** (card / side-line / collapsible + header), so the Sample is identical to how messages actually appear in a session.
-- Appearance editor: accent colour and icon picker share one row, and the card leading icon is slightly smaller, to reclaim vertical space.
+- Appearance editor: accent color and icon picker share one row, and the card leading icon is slightly smaller, to reclaim vertical space.
 - Internal: SDK-era language purged from session plumbing.
 
 ### Fixed
@@ -3820,7 +3820,7 @@ Installers remain **unsigned**.
 - **Terminal section in Appearance settings** (`b770acd`, `a4eacc1`). New Terminal tab in Settings → Chats with three controls: font (mono-only TypefacePicker), font size (10–20 px, clamped to [8, 32] on merge), and cursor style (Block / Underline / Bar). Changes apply live — `TerminalView` updates `term.options.fontSize` / `term.options.cursorStyle` in place via a settings-driven effect, so adjusting either doesn't drop scrollback.
 - **Floating message box injects into TUI** (`b770acd`). In Terminal mode the bottom prompt writes `<prompt>\r` to the PTY via `api.tuiWrite`, identical to typing into xterm and pressing Enter. Empty prompts no-op; images dropped silently (CLI stdin doesn't accept them).
 - **Scroll-to-top / scroll-to-bottom buttons on the TUI** (`b770acd`). `TerminalView` is now a `forwardRef` exposing a `TerminalViewHandle` (`scrollToTop`, `scrollToBottom`) that the wrapping card's buttons drive.
-- **`Tabs` line variant** (`b770acd`). New `variant: 'pill' | 'line'` prop on the `Tabs` primitive. Line variant: no list-level border, only the active trigger gets a foreground-coloured underline, label and underline share colour. Used by the new tabbed Appearance page.
+- **`Tabs` line variant** (`b770acd`). New `variant: 'pill' | 'line'` prop on the `Tabs` primitive. Line variant: no list-level border, only the active trigger gets a foreground-colored underline, label and underline share color. Used by the new tabbed Appearance page.
 
 ### Changed
 
@@ -4448,7 +4448,7 @@ Installers remain **unsigned**.
 
 ## [0.4.26] — 2026-05-12
 
-A new first-order chat-feed card for answered `AskUserQuestion` interactions, plus a per-kind colour picker in Appearance settings. The answered card pulls a resolved Q+A out of the assistant bubble it used to nest inside and renders it as its own response — header label, accent colour, icon, icon chrome, and timestamp footer all driven by the standard `MessageCard` shell so every Appearance edit for `tool.askUserQuestion.answered` takes effect end-to-end. Accent colour gates that customisation: the per-kind palette dropdown is replaced with a free-form HTML5 colour picker plus a hex text field, and the KindEditor's row order now matches the cards' visual hierarchy (hide-in-compact → header + accent → icon → icon chrome).
+A new first-order chat-feed card for answered `AskUserQuestion` interactions, plus a per-kind color picker in Appearance settings. The answered card pulls a resolved Q+A out of the assistant bubble it used to nest inside and renders it as its own response — header label, accent color, icon, icon chrome, and timestamp footer all driven by the standard `MessageCard` shell so every Appearance edit for `tool.askUserQuestion.answered` takes effect end-to-end. Accent color gates that customisation: the per-kind palette dropdown is replaced with a free-form HTML5 color picker plus a hex text field, and the KindEditor's row order now matches the cards' visual hierarchy (hide-in-compact → header + accent → icon → icon chrome).
 
 Installers remain **unsigned**.
 
@@ -4456,7 +4456,7 @@ Installers remain **unsigned**.
 
 - **Answered-AskUserQuestion card (`tool.askUserQuestion.answered`).** Renders as its own first-order chat-feed message once the user has answered an `AskUserQuestion` prompt — anchored where the assistant bubble would be (~95% width, left-aligned), with one row per question (header label · question text · italic answer). The data round-trips from `tool_use.input.questions` + the matching `tool_result.content`. Companion kind `tool.askUserQuestion.answered.result` marks the otherwise-redundant user-side tool_result message and hides it from scrollback.
 - **Wire-format parser for the SDK's synthesised answer string.** The renderer doesn't see `JSON.stringify(updatedInput)`; the SDK rewrites the tool result into a human-readable sentence (`User has answered your questions: "Q1"="A1", "Q2"="A2, A3" user notes: User selected Other: "<typed>". You can now continue …`). Parser anchors on each question's literal text and recovers per-question annotations by matching Other-text against the answer value. Verified against live session `d6ac42ec-47c0-47ef-8b4b-81fda02fa2f5` and pinned as a regression test.
-- **Free-form accent colour picker per kind.** `KindEditor` now exposes an HTML5 `<input type="color">` plus a hex text field for the `accentColor` slot. `MessageKindConfig.accentColor` widened from `PaletteName` to `string`; `mergeConfig` accepts `#rgb`, `#rrggbb`, or `#rrggbbaa` in addition to the legacy palette-name path. New `isHexColor()` helper. New `src/lib/__tests__/accentStyle.test.ts` covering palette resolution, hex synthesis, alpha derivation, and round-trips.
+- **Free-form accent color picker per kind.** `KindEditor` now exposes an HTML5 `<input type="color">` plus a hex text field for the `accentColor` slot. `MessageKindConfig.accentColor` widened from `PaletteName` to `string`; `mergeConfig` accepts `#rgb`, `#rrggbb`, or `#rrggbbaa` in addition to the legacy palette-name path. New `isHexColor()` helper. New `src/lib/__tests__/accentStyle.test.ts` covering palette resolution, hex synthesis, alpha derivation, and round-trips.
 - **Enter-to-submit in `AskUserQuestion`'s "Other" input.** Pressing Enter inside the Other text field fires the same handler as the Send button, gated on the same `isComplete` predicate as the button's disabled state. Shift / Cmd / Ctrl / Alt + Enter are no-ops.
 
 ### Changed
@@ -4464,7 +4464,7 @@ Installers remain **unsigned**.
 - **`AnsweredAskUserQuestionCard` uses the shared `MessageCard` shell.** Two earlier passes reassembled the same chrome (Card + icon column + KindHeader + timestamp footer + `pb-9` padding) by hand, which is why a configured `iconSize` / `iconBordered` / `headerLabel` didn't take effect and the card sat shorter than every other one. The card now wraps its body in `<MessageCard kindId message headerFallbackLabel>` and reads zero config directly — accent, icon, header label, icon chrome, and footer all flow from the kind's config.
 - **`KindEditor` row order: hide-in-compact → header label + accent (paired row) → icon → icon chrome.** The previous order put the header label last and the accent in a tall dropdown next to "Hide in compact mode." Pairing header label and accent in a single grid row matches what the user sees first in scrollback.
 - **`AskUserQuestion` chevron now matches `TodoBar` / `SubagentBar` convention.** Expanded → `ChevronDown`, collapsed → `ChevronUp` (was inverted).
-- **Answered card visual polish (small iterations).** Removed the `→` column (three-column grid: header · question · answer), dropped the rounded gray pill behind question headers (uppercase + foreground-coloured label instead), italicised all answers, deduped Other answers so the typed text appears only once as `You typed: "…"`, dropped `font-medium` on the answer cell, and put the answer in an opaque `bg-background` pill so the card's translucent accent doesn't bleed through long-wrapping answers.
+- **Answered card visual polish (small iterations).** Removed the `→` column (three-column grid: header · question · answer), dropped the rounded gray pill behind question headers (uppercase + foreground-colored label instead), italicised all answers, deduped Other answers so the typed text appears only once as `You typed: "…"`, dropped `font-medium` on the answer cell, and put the answer in an opaque `bg-background` pill so the card's translucent accent doesn't bleed through long-wrapping answers.
 
 ### Fixed
 
@@ -4473,7 +4473,7 @@ Installers remain **unsigned**.
 
 ### Removed
 
-- **Per-kind palette dropdown.** Replaced by the colour picker described above. The 21-name palette stays in the data model for backwards compatibility and the (rarely used) "retint every kind that shares a name" workflow; existing saved configs that reference palette names still resolve through `config.palette`.
+- **Per-kind palette dropdown.** Replaced by the color picker described above. The 21-name palette stays in the data model for backwards compatibility and the (rarely used) "retint every kind that shares a name" workflow; existing saved configs that reference palette names still resolve through `config.palette`.
 
 ## [0.4.25] — 2026-05-11
 
@@ -5251,7 +5251,7 @@ Feature release: hover-reveal image download button on user message images, rese
 - **Image download button** (`90b7636`). Hovering any image in a user message card reveals a `Download` icon overlay. Click saves the file as `image-<timestamp>.<ext>`. Works for both base64-embedded images (pasted) and `greychrist-file://` references.
 - **Resend button on user prompt cards** (`90b7636`). A `RotateCcw` icon appears at the rightmost position of the hover-action row on user message cards. Click re-submits the full message — text and images — using the currently selected model. Suppressed on tool-result-only cards and subagent-generated prompt cards.
 - **Per-account usage scrape logging** (`90b7636`). `collectEntries` now logs an `info`-level event for each account scan with entry count and full detail array. Cleans up three leftover `console.log` calls in `getStatsByAccount`.
-- **LogTab source filter additions** (`90b7636`). `usage`, `usage-runner`, `updater`, and `rate-limits` sources added to the filter dropdown with distinct badge colours.
+- **LogTab source filter additions** (`90b7636`). `usage`, `usage-runner`, `updater`, and `rate-limits` sources added to the filter dropdown with distinct badge colors.
 
 ### Fixed
 

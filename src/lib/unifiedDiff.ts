@@ -2,7 +2,7 @@
  * Unified diff → structure, so a diff can be rendered as a diff.
  *
  * A `git diff` that arrives as Bash stdout used to render as one flat block
- * of success-green text: the colour said "this command exited 0", which is
+ * of success-green text: the color said "this command exited 0", which is
  * the least interesting fact about it, and nothing said which lines changed.
  * The dedicated `DiffViewer` never saw it, because that only ever gets `Edit`
  * and `apply_patch` payloads, which come as old/new strings rather than as a

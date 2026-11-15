@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
  * Regression: live prompt cards (PermissionCard, AskUserQuestionCard) must
- * paint their per-kind accent colour, not the category-muted gray that the
+ * paint their per-kind accent color, not the category-muted gray that the
  * system category base would supply if the unified `accentStyleFor` helper is
  * bypassed.
  *

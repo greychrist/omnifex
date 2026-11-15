@@ -6,11 +6,12 @@ import { Card } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { BranchColorsEditor } from '@/components/BranchColorsEditor';
 import { api, type ProjectRepos } from '@/lib/api';
+import { useRepoAliases } from '@/hooks/useRepoAliases';
 import { fireAndLog } from '@/lib/fireAndLog';
 
 /**
  * The repos in a project and which of them its sessions watch, plus each
- * repo's branch colours. Opened from a session's git bar and from the
+ * repo's branch colors. Opened from a session's git bar and from the
  * project screen; choices are saved per project and reach every open session
  * of it live.
  */
@@ -46,9 +47,37 @@ function useProjectRepos(projectPath: string, enabled: boolean) {
   return { data, loading, reload };
 }
 
+/**
+ * A repo's display alias. Saved on blur or Enter, and only when it changed;
+ * blank clears it, and the bar falls back to the folder name.
+ */
+const AliasField: React.FC<{ name: string; path: string; alias: string }> = ({ name, path, alias }) => {
+  const [value, setValue] = React.useState(alias);
+  React.useEffect(() => { setValue(alias); }, [alias]);
+  const save = () => {
+    if (value.trim() === alias) return;
+    void api.setRepoAlias(path, value);
+  };
+  return (
+    <input
+      type="text"
+      aria-label={`Alias for ${name}`}
+      title="Alias — shown on the git bar in place of the folder name"
+      placeholder={name}
+      value={value}
+      onChange={(e) => { setValue(e.target.value); }}
+      onBlur={save}
+      onKeyDown={(e) => { if (e.key === 'Enter') save(); }}
+      className="h-7 w-32 shrink-0 rounded border border-border bg-background px-1.5 font-mono text-xs placeholder:text-muted-foreground/50"
+    />
+  );
+};
+
 interface RowProps {
   name: string;
   path: string;
+  /** The repo's saved alias, '' for none. */
+  alias: string;
   watched: boolean;
   locked?: boolean;
   missing?: boolean;
@@ -56,14 +85,14 @@ interface RowProps {
   onRemove?: () => void;
 }
 
-const RepoRow: React.FC<RowProps> = ({ name, path, watched, locked, missing, onWatch, onRemove }) => {
+const RepoRow: React.FC<RowProps> = ({ name, path, alias, watched, locked, missing, onWatch, onRemove }) => {
   const [expanded, setExpanded] = React.useState(false);
   return (
     <div className="rounded border border-border/50">
       <div className="flex items-center gap-2 px-2 py-1.5">
         <button
           type="button"
-          aria-label={`Branch colours for ${name}`}
+          aria-label={`Branch colors for ${name}`}
           aria-expanded={expanded}
           disabled={missing}
           onClick={() => { setExpanded((v) => !v); }}
@@ -82,6 +111,7 @@ const RepoRow: React.FC<RowProps> = ({ name, path, watched, locked, missing, onW
             <span className="text-[10px] text-muted-foreground/70 break-all" title={path}>{tildeHome(path)}</span>
           </span>
         </button>
+        {!missing && <AliasField name={name} path={path} alias={alias} />}
         {missing && onRemove ? (
           <Button
             size="sm"
@@ -118,6 +148,9 @@ export interface ProjectReposDialogProps {
 
 export const ProjectReposDialog: React.FC<ProjectReposDialogProps> = ({ projectPath, open, onOpenChange }) => {
   const { data, loading, reload } = useProjectRepos(projectPath, open);
+  const aliases = useRepoAliases(
+    data ? [...(data.rootIsRepo ? [data.rootPath] : []), ...data.repos.map((r) => r.path)] : [],
+  );
 
   const setDepth = async (depth: number) => {
     await api.setProjectRepoScanDepth(projectPath, depth);
@@ -138,7 +171,7 @@ export const ProjectReposDialog: React.FC<ProjectReposDialogProps> = ({ projectP
         <DialogHeader>
           <DialogTitle>Repos in this project</DialogTitle>
           <DialogDescription>
-            Turn on the repos this project&apos;s sessions should show. Branch colours belong to each repo.
+            Turn on the repos this project&apos;s sessions should show. Aliases and branch colors belong to each repo.
           </DialogDescription>
         </DialogHeader>
 
@@ -172,13 +205,14 @@ export const ProjectReposDialog: React.FC<ProjectReposDialogProps> = ({ projectP
 
         <div className="max-h-[60vh] space-y-1.5 overflow-y-auto">
           {data?.rootIsRepo && (
-            <RepoRow name={basename(data.rootPath)} path={data.rootPath} watched locked />
+            <RepoRow name={basename(data.rootPath)} path={data.rootPath} alias={aliases[data.rootPath] ?? ''} watched locked />
           )}
           {data?.repos.map((repo) => (
             <RepoRow
               key={repo.path}
               name={repo.name}
               path={repo.path}
+              alias={aliases[repo.path] ?? ''}
               watched={repo.watched}
               missing={repo.missing}
               onWatch={fireAndLog('project-repos:watch', (v: boolean) => setWatched(repo.path, v))}
@@ -204,7 +238,7 @@ export const ProjectReposCard: React.FC<{ projectPath: string }> = ({ projectPat
   const found = data?.repos.filter((r) => !r.watched).length ?? 0;
   return (
     <Card className="flex h-full flex-col gap-2 p-4">
-      <h2 className="text-sm font-semibold">Repos &amp; branch colours</h2>
+      <h2 className="text-sm font-semibold">Repos &amp; branch colors</h2>
       <p className="text-xs text-muted-foreground">
         {data
           ? `${watched} watched${found > 0 ? ` · ${found} more found` : ''}`

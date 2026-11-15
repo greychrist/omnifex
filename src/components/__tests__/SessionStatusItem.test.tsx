@@ -36,12 +36,12 @@ describe('SessionStatusItem', () => {
       expect(screen.getByTestId('session-item-context').textContent).toBe('157.1k (16%)');
     });
 
-    // Icon and label wear what the `model` readout's do: no colour of their
+    // Icon and label wear what the `model` readout's do: no color of their
     // own, inheriting the bar's, with the label at 70% like every label.
     it.each([
       ['with context', base],
       ['before any context', { ...base, totalTokens: 0 }],
-    ] as const)('leaves the icon and label the bar colour, like the model readout (%s)', (_, props) => {
+    ] as const)('leaves the icon and label the bar color, like the model readout (%s)', (_, props) => {
       render(<SessionStatusItem {...props} />);
       const label = screen.getByText('session');
       expect(label.className).toBe('opacity-70');
@@ -74,7 +74,7 @@ describe('SessionStatusItem', () => {
       ['none', 'text-foreground'],
       ['warn', 'text-amber-500'],
       ['critical', 'text-red-500'],
-    ] as const)('colours the context by its %s level', (l, cls) => {
+    ] as const)('colors the context by its %s level', (l, cls) => {
       render(<SessionStatusItem {...base} contextLevelSignal={level(l)} />);
       expect(screen.getByTestId('session-item-context').className).toContain(cls);
     });
@@ -90,7 +90,7 @@ describe('SessionStatusItem', () => {
       expect(screen.getByTestId('session-item-context').classList.contains('animate-pulse')).toBe(pulses);
     });
 
-    it('says ready, as coloured text rather than a badge', () => {
+    it('says ready, as colored text rather than a badge', () => {
       render(<SessionStatusItem {...base} />);
       const s = screen.getByTestId('session-item-status');
       expect(s.textContent).toBe('ready');

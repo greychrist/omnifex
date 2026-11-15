@@ -36,7 +36,7 @@ const TRIGGER_CLASS = 'h-7 w-auto gap-1.5 pl-1 text-xs [&>svg]:size-3';
  * "All accounts" chip. Matches `AccountBadge size="sm"` in shape — `text-xs`,
  * 15px icon, `px-2 py-0.5`, rounded border — but uses theme-neutral muted
  * tokens, since "All" is not an account and must not borrow any account's
- * colour stack.
+ * color stack.
  */
 export const AllAccountsBadge: React.FC = () => (
   <span className="inline-flex items-center gap-1 whitespace-nowrap rounded border border-border bg-muted/40 px-2 py-0.5 text-xs font-medium text-muted-foreground">

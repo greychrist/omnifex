@@ -9,7 +9,7 @@
 //
 // Built on `Card` rather than a hand-rolled `border bg-…` div for a specific
 // reason: `styles.css` has an unlayered `* { border-color: var(--color-border) }`
-// that beats every Tailwind border-colour utility, so `border-border/60` on a
+// that beats every Tailwind border-color utility, so `border-border/60` on a
 // plain div silently renders at full strength. `Card` sets `borderColor` and
 // `backgroundColor` as inline styles, which do win, and its `--color-card`
 // surface is a real step off `--color-background` in all three themes.

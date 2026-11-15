@@ -105,7 +105,7 @@ describe('createModelPricingService', () => {
     expect(estimated).toBe(false);
     expect(modelLabel('claude-brandnew-9', o)).toBe('Brand New 9');
     // A family the palette has no tier for draws in the neutral — a user row
-    // names a price and a label, not a colour.
+    // names a price and a label, not a color.
     expect(modelColor('claude-brandnew-9', 'light', o)).toBe(NEUTRAL);
   });
 

@@ -149,7 +149,7 @@ describe('deriveSessionSignals — context delta events', () => {
     expect(byKey(signals, 'context.delta').map((d) => d.messageUuid)).toEqual(['p1', 'p2']);
   });
 
-  it('flags a delta over the threshold so the row can be coloured', () => {
+  it('flags a delta over the threshold so the row can be colored', () => {
     const signals = deriveSessionSignals(input({ messages }));
     const deltas = byKey(signals, 'context.delta');
 

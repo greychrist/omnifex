@@ -51,7 +51,7 @@ export function loginExpiryState(
   return { level, relative, alert: level !== "ok", expiresAt: new Date(end) };
 }
 
-/** Text colour per level; `ok` reads as ordinary text. */
+/** Text color per level; `ok` reads as ordinary text. */
 export function loginExpiryColor(level: LoginExpiryLevel): string {
   return level === "ok" ? "text-foreground/90"
     : level === "warning" ? "text-amber-500"

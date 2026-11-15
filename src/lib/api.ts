@@ -3672,6 +3672,19 @@ export const api = {
     });
   },
 
+  // ── Repo aliases (per repo) ────────────────────────────────────
+  /** Aliases for the repos asked for, keyed by those paths; repos without one are absent. */
+  async listRepoAliases(repoPaths: string[]): Promise<Record<string, string>> {
+    return (await apiCall<Record<string, string>>('repo_aliases_list', { repoPaths })) ?? {};
+  },
+  /** Set a repo's alias; blank clears it. */
+  async setRepoAlias(repoPath: string, alias: string): Promise<void> {
+    await apiCall('repo_alias_set', { repoPath, alias });
+  },
+  onRepoAliasesChanged(cb: () => void): () => void {
+    return window.electronAPI.onEvent('repo-aliases-changed', () => { cb(); });
+  },
+
   // ── Project repos ──────────────────────────────────────────────
   async getProjectRepos(projectPath: string): Promise<ProjectRepos | null> {
     return apiCall<ProjectRepos | null>('get_project_repos', { projectPath });

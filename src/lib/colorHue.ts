@@ -1,5 +1,5 @@
 /**
- * OKLCH hue and chroma of a hex colour — what Modern's prompt bubble and
+ * OKLCH hue and chroma of a hex color — what Modern's prompt bubble and
  * answer card take from Settings › Chats › Modern. Each card keeps its own
  * lightness (styles.css), so only the hue is read, plus the chroma to tell
  * whether there is a hue at all: white, greys and black have none, and the
@@ -37,5 +37,5 @@ export function hexChroma(hex: string): number | null {
   return lab ? Math.hypot(lab.a, lab.b) : null;
 }
 
-/** Below this a colour reads as white, grey or black — no hue to take. */
+/** Below this a color reads as white, grey or black — no hue to take. */
 export const NEUTRAL_CHROMA = 0.015;

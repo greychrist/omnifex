@@ -47,7 +47,7 @@ describe('Modern answered question', () => {
     expect(screen.getByText('2 questions answered')).toBeInTheDocument();
   });
 
-  it('colours the icon in the question kind\'s purple accent', () => {
+  it('colors the icon in the question kind\'s purple accent', () => {
     const { container } = render(<ModernTranscriptItem item={item} live={false} ctx={ctx} />);
     const icon = container.querySelector('[data-slot="trace-icon"]') as HTMLElement;
     expect(icon.style.color).toBe('rgb(99, 102, 241)');
@@ -55,7 +55,7 @@ describe('Modern answered question', () => {
 
   // The title and the rule beside the answers wear the same purple. Inline,
   // because the unlayered `* { border-color }` reset beats the utilities.
-  it('colours the title and the left rule in that purple too', () => {
+  it('colors the title and the left rule in that purple too', () => {
     const { container } = render(<ModernTranscriptItem item={item} live={false} ctx={ctx} />);
     expect((screen.getByText('2 questions answered') as HTMLElement).style.color).toBe('rgb(99, 102, 241)');
     const rule = container.querySelector('[data-question-body]') as HTMLElement;
@@ -65,9 +65,9 @@ describe('Modern answered question', () => {
     expect(rule.style.borderLeftStyle).toBe('solid');
   });
 
-  // Each question is in the muted text colour with its text underlined; the
-  // answer under it is in the foreground colour.
-  it('underlines each question in the muted colour, the answer in the foreground', () => {
+  // Each question is in the muted text color with its text underlined; the
+  // answer under it is in the foreground color.
+  it('underlines each question in the muted color, the answer in the foreground', () => {
     render(<ModernTranscriptItem item={item} live={false} ctx={ctx} />);
     const q = screen.getByText('Add the review task?');
     expect(q).toHaveClass('underline');

@@ -54,7 +54,7 @@ expanded area already shows in full):
 
 `model · effort · N tools        ctx 4% · 38k  ≈$0.05  0:26`
 
-then a thin state bar: a sweep in the row's palette colour while running, full
+then a thin state bar: a sweep in the row's palette color while running, full
 green when done, red when failed. It first filled to context %, which on a
 1M-window model sat at 2–3% for the whole run and read as a stuck progress bar
 (revised 2026-10-08). Rows with no transcript (background shell tasks) show

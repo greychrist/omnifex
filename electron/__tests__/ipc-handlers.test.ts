@@ -1591,3 +1591,33 @@ describe('project repos handlers', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Repo alias handlers
+// ---------------------------------------------------------------------------
+
+describe('repo alias handlers', () => {
+  function makeAliases() {
+    return { list: vi.fn().mockReturnValue({ '/r': 'backend' }), set: vi.fn() };
+  }
+
+  it('repo_aliases_list forwards repo paths in either casing', async () => {
+    const repoAliases = makeAliases();
+    const handlers = getHandlerMap({ repoAliases });
+    await expect(invoke(handlers, 'repo_aliases_list', { repoPaths: ['/r'] })).resolves.toEqual({ '/r': 'backend' });
+    await invoke(handlers, 'repo_aliases_list', { repo_paths: ['/s'] });
+    expect(repoAliases.list.mock.calls).toEqual([[['/r']], [['/s']]]);
+  });
+
+  it('repo_alias_set forwards the repo and alias, blank when missing', async () => {
+    const repoAliases = makeAliases();
+    const handlers = getHandlerMap({ repoAliases });
+    await invoke(handlers, 'repo_alias_set', { repoPath: '/r', alias: 'backend' });
+    await invoke(handlers, 'repo_alias_set', { repo_path: '/r' });
+    expect(repoAliases.set.mock.calls).toEqual([['/r', 'backend'], ['/r', '']]);
+  });
+
+  it('repo_aliases_list returns {} when the service is missing', async () => {
+    await expect(invoke(getHandlerMap({}), 'repo_aliases_list', { repoPaths: ['/r'] })).resolves.toEqual({});
+  });
+});
+

@@ -1542,7 +1542,7 @@ describe('forwarded subagent text (--forward-subagent-text)', () => {
     const owner = subs.find((s) => s.toolUseId === TOOL_USE_ID);
     const owned = subs.find((s) => s.toolUseId === TOOL_USE_ID_2);
     expect(owned?.parentToolUseId).toBe(TOOL_USE_ID);
-    // Nested rows share the owner's colour — the indent is what tells them
+    // Nested rows share the owner's color — the indent is what tells them
     // apart from a sibling (see BackgroundWorkRows).
     expect(owned?.colorIndex).toBe(owner?.colorIndex);
     // ...and render directly beneath their owner.

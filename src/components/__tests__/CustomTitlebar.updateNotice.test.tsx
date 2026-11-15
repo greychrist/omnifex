@@ -200,7 +200,7 @@ describe('CustomTitlebar — Updates button border', () => {
     expect(document.querySelector('[data-updates-unreviewed]')?.getAttribute('class')).toMatch(/animate-pulse/);
   });
 
-  // One border, one colour: the upgrade is the thing to act on first.
+  // One border, one color: the upgrade is the thing to act on first.
   it('stays green when an upgrade is also waiting', async () => {
     getClaudeCliReviewStatus.mockResolvedValue(
       status({ installed_version: '2.1.323', unreviewed: true, latest_version: '2.1.324', upgrade_available: true }),

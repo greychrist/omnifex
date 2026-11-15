@@ -10,7 +10,7 @@ import { Bot } from "lucide-react";
  *
  * It lives in its own module because two surfaces render it — the tab strip and
  * the session widget's status bar. As a local const in TabManager the second
- * copy would have been hand-typed, and the colour, the pulse and the
+ * copy would have been hand-typed, and the color, the pulse and the
  * hide-the-numeral-at-one rule would have drifted apart inside a release.
  */
 export const AgentCountGlyph: React.FC<{ count: number }> = ({ count }) => {

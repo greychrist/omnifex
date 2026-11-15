@@ -1243,7 +1243,7 @@ comment on the new module:
 /**
  * Lives in its own module because two surfaces render it — the tab strip and
  * the session widget's status bar. When it was a local const in TabManager the
- * second copy would have been hand-typed, and the colour, the pulse and the
+ * second copy would have been hand-typed, and the color, the pulse and the
  * hide-the-numeral-at-one rule would have drifted apart within a release.
  */
 ```

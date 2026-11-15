@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { GitBranch, Folder, GitCompare } from 'lucide-react';
+import { GitBranch, Folder, GitCompare, type LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { GIT_CHANGED_STYLE, GIT_UNTRACKED_STYLE } from '@/lib/gitStatusStyle';
 import { Popover } from '@/components/ui/popover';
@@ -20,15 +20,15 @@ export interface GitBranchBadgeProps {
    *  popover so the user can see why a row went red without leaving it. */
   error?: string | null;
   /** Open the working-tree diff viewer. Omitted where there is nowhere to
-   *  open it — the branch-colour preview in settings, for instance. */
+   *  open it — the branch-color preview in settings, for instance. */
   onViewChanges?: () => void;
   /** `bar` sets the chip in a status bar: the bar's 10px type, and
    *  block-level so it centres with the bar's readouts. */
   size?: 'header' | 'bar';
-  /** A segment of a `ButtonGroup`: the group draws the corners and border. */
-  segment?: boolean;
   /** Extra classes for the chip, e.g. the heavier weight of a main checkout. */
   className?: string;
+  /** The chip's icon: a branch unless told otherwise (a worktree's folder). */
+  icon?: LucideIcon;
 }
 
 // WCAG relative luminance — used only to detect TRUE near-black picks where
@@ -59,8 +59,8 @@ export const GitBranchBadge: React.FC<GitBranchBadgeProps> = ({
   error,
   onViewChanges,
   size = 'header',
-  segment = false,
   className,
+  icon: Icon = GitBranch,
 }) => {
   const textSize = size === 'bar' ? 'text-[10px]' : 'text-[11px]';
   // An inline-flex trigger inside the Popover's block wrapper opens a line
@@ -77,15 +77,13 @@ export const GitBranchBadge: React.FC<GitBranchBadgeProps> = ({
 
   const inlineStyle = useColor
     ? nearBlack
-      ? { backgroundColor: '#ffffff26', color: '#ffffff', ...(segment ? {} : { borderColor: `${color}cc` }) }
-      : { backgroundColor: `${color}33`, color: color, ...(segment ? {} : { borderColor: `${color}4d` }) }
+      ? { backgroundColor: '#ffffff26', color: '#ffffff', borderColor: `${color}cc` }
+      : { backgroundColor: `${color}33`, color: color, borderColor: `${color}4d` }
     : undefined;
-  // A segment's corners and border belong to its group.
-  const frame = segment ? '' : 'rounded border';
 
   const badgeContent = (
     <>
-      <GitBranch className="w-3.5 h-3.5" />
+      <Icon className="w-3.5 h-3.5 shrink-0" />
       <span className="truncate max-w-[24ch]">{name}</span>
       {(changed > 0 || untracked > 0) && (
         <span aria-hidden className="h-3 w-px bg-current opacity-40 mx-0.5" />
@@ -112,7 +110,7 @@ export const GitBranchBadge: React.FC<GitBranchBadgeProps> = ({
       <span
         className={cn(
           'inline-flex items-center gap-1 px-2 py-0.5 font-mono font-medium',
-          frame,
+          'rounded border',
           textSize,
           isTrunk && 'bg-black text-white border-black',
           className,
@@ -138,7 +136,7 @@ export const GitBranchBadge: React.FC<GitBranchBadgeProps> = ({
           className={cn(
             display,
             'items-center gap-1 px-2 py-0.5 font-mono font-medium cursor-pointer',
-            frame,
+            'rounded border',
             textSize,
             'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
             isTrunk && 'bg-black text-white border-black',

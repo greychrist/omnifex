@@ -78,14 +78,14 @@ describe("hiddenEventsColors", () => {
     expect(hiddenEventsColors(unset, DARK)).toEqual({ bar: undefined, header: undefined, detail: undefined });
   });
 
-  it("puts bar colours on the bar, only the ones configured", () => {
+  it("puts bar colors on the bar, only the ones configured", () => {
     expect(hiddenEventsColors({ ...unset, border: "#60a5fa" }, DARK).bar).toEqual({ borderColor: "#60a5fa" });
     expect(hiddenEventsColors({ ...unset, background: "#1e293b", border: "#60a5fa" }, DARK).bar)
       .toEqual({ backgroundColor: "#1e293b", borderColor: "#60a5fa" });
   });
 
-  // Border opacity scales the border colour's own alpha; on the theme's border
-  // (no colour set) it fades the theme colour instead. 100% changes nothing.
+  // Border opacity scales the border color's own alpha; on the theme's border
+  // (no color set) it fades the theme color instead. 100% changes nothing.
   it("applies border opacity to a configured border, multiplying any alpha it carries", () => {
     expect(hiddenEventsColors({ ...unset, border: "#3f6578", borderOpacity: 50 }, DARK).bar)
       .toEqual({ borderColor: "#3f657880" });
@@ -96,7 +96,7 @@ describe("hiddenEventsColors", () => {
       .toEqual({ borderColor: "#aabbcc33" });
   });
 
-  it("fades the theme border when no border colour is set", () => {
+  it("fades the theme border when no border color is set", () => {
     expect(hiddenEventsColors({ ...unset, borderOpacity: 40 }, DARK).bar)
       .toEqual({ borderColor: "color-mix(in oklch, var(--color-border) 40%, transparent)" });
   });
@@ -117,7 +117,7 @@ describe("hiddenEventsColors", () => {
     expect(hiddenEventsColors({ ...unset, background: "#fde68a" }, DARK).detail).toBe(`${DARK_TEXT}b3`);
   });
 
-  it("lets an explicit text colour win, each independently", () => {
+  it("lets an explicit text color win, each independently", () => {
     const c = hiddenEventsColors({ ...unset, background: "#fde68a", headerText: "#ff0000" }, DARK);
     expect(c.header).toBe("#ff0000");
     expect(c.detail).toBe(`${DARK_TEXT}b3`);

@@ -36,7 +36,7 @@ export interface ContextTimelinePoint {
    * The previous sample's total, carried even where `delta` is null.
    *
    * The rail needs to print the drop on a compaction row ("−420k"), but `delta`
-   * has to stay null there or `isJump` and the level colouring would start
+   * has to stay null there or `isJump` and the level coloring would start
    * treating a reset as a step. Two fields, two meanings.
    */
   prevTokens: number | null;

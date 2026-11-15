@@ -159,7 +159,7 @@ const TabsTrigger = React.forwardRef<
         )}
         style={{
           // Both states render a 2px bottom border so heights match — only
-          // the colour differs, and only the active tab's colour is visible.
+          // the color differs, and only the active tab's color is visible.
           borderBottom: isSelected
             ? "2px solid var(--color-foreground)"
             : "2px solid transparent",

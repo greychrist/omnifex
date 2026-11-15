@@ -24,7 +24,7 @@ a conversation for a PM (Modern) and as a full audit trail for a dev
 | Clock | Segment | Do | Point at |
 |---|---|---|---|
 | 0:00 | Intro (90s) | Two lines, no slides (see Script) | The app, already open, no tabs running |
-| 1:30 | Launch (2 min) | Open six tabs (see Tab plan), fire each command | Account-coloured tab glyphs; Modern trace building live; Sessions popover |
+| 1:30 | Launch (2 min) | Open six tabs (see Tab plan), fire each command | Account-colored tab glyphs; Modern trace building live; Sessions popover |
 | 3:30 | Execs (5.5 min) | Talk while tabs run | Cost Report; Test Account Resolution; Brain stats |
 | 9:00 | Support (6 min) | Follow the pings into finished tabs | `/mac-health`, `/jira-review`, `/timesheet` in Modern; flip one to Verbose |
 | 15:00 | Devs (9 min) | Change the labels, before/after, resolve both | Verbose steps; context rail; status bar; permission cards; two localhost ports; Jira |
@@ -66,7 +66,7 @@ Cmd+T opens a tab with the project list → "Launch". Typing `/` opens the
   work-process skills (support), one Mac log check on my personal account
   (support + exec).
 - Stay on tab 5 (`/mac-health`) for ~20 seconds, in **Modern**:
-  - The skill folds into its own step, in the skill's card colours.
+  - The skill folds into its own step, in the skill's card colors.
   - "Thinking" streams live, then settles to "Thought for 5s".
   - Work folds into one line — "Worked in 5 steps · 32s" — with a status
     chip per step.
@@ -86,7 +86,7 @@ Cmd+T opens a tab with the project list → "Launch". Typing `/` opens the
 2. **Account isolation** (Settings → Accounts).
    - "Path Rules": `~/Repos/personal/` → Personal, work repos → Work.
    - **Test Account Resolution**: paste `<pi-repo>`, then a personal repo —
-     two different accounts. Point back at the tab glyphs: tab 5's colour
+     two different accounts. Point back at the tab glyphs: tab 5's color
      differs from the rest.
 3. **Brain** (title bar → Brain).
    - "Notes in vault", "Cost of one recall", "Spent indexing".
@@ -116,7 +116,7 @@ Cmd+T opens a tab with the project list → "Launch". Typing `/` opens the
      normally hidden.
    - Open one Modern step: "Ran <command>", the result, hover → copy / raw JSON.
    - "A PM reads the answer; a dev audits every step. Same session, one click."
-   - Optional (cut first): Settings → Chats → Message kinds — recolour one
+   - Optional (cut first): Settings → Chats → Message kinds — recolor one
      kind live.
 
 ### 15:00 Devs — skills that run the process
@@ -221,7 +221,7 @@ skill asking when it's unsure is the design, not a failure.
 
 ## Cut order if running long
 
-1. Settings → Chats recolour (already optional).
+1. Settings → Chats recolor (already optional).
 2. Four lenses → Modern ↔ Verbose only.
 3. Brain → one stat ("Cost of one recall").
 4. Tab 6 spare.

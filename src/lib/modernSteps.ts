@@ -154,7 +154,7 @@ export function describeToolStep(name: string, input: Record<string, unknown>, s
   }
 }
 
-/** What a step does, which picks its icon. Status is the line's colour and
+/** What a step does, which picks its icon. Status is the line's color and
  *  title, never the icon — as in shadcn's Trace. */
 export type StepKind =
   | 'command' | 'commit' | 'branch' | 'read' | 'edit' | 'create' | 'search' | 'explore'
@@ -197,7 +197,7 @@ export function stepKind(name: string, input: Record<string, unknown>): StepKind
 
 /**
  * The kind a Claude Design call resembles, so inside a folded Design run the
- * calls are told apart by the icons (and colours) already set for those
+ * calls are told apart by the icons (and colors) already set for those
  * kinds. The palette marks only the run itself and the publishes — where the
  * design ships.
  */

@@ -33,12 +33,12 @@ describe('prepareSource — HTML in labels', () => {
   });
 });
 
-describe('prepareSource — colours', () => {
-  // Claude's classDef/style colours override any theme: pastel fills with
-  // navy text on a dark card. They are kept as colour-coding but redrawn in
+describe('prepareSource — colors', () => {
+  // Claude's classDef/style colors override any theme: pastel fills with
+  // navy text on a dark card. They are kept as color-coding but redrawn in
   // OmniFex's own accent grammar — tinted fill, stronger tinted 1px border,
-  // the theme's text colour.
-  it('maps a classDef colour onto the nearest OmniFex accent, tinted', () => {
+  // the theme's text color.
+  it('maps a classDef color onto the nearest OmniFex accent, tinted', () => {
     const out = prepareSource('flowchart TD\n  classDef epic fill:#cfe0ff,stroke:#5577cc,stroke-width:2px,color:#112244', 'gray');
     const line = out.split('\n')[1];
     const blue = accentFor('#cfe0ff')!;
@@ -52,7 +52,7 @@ describe('prepareSource — colours', () => {
     expect(out.split('\n')[1]).toBe(`  style A fill:${green.fill.light},stroke:${green.stroke.light},stroke-width:1px,color:${green.text.light}`);
   });
 
-  it('drops greys and unreadable colours back to the theme, keeping other properties', () => {
+  it('drops greys and unreadable colors back to the theme, keeping other properties', () => {
     const out = prepareSource('flowchart TD\n  classDef sub fill:#f7f7f7,stroke:#999,color:#000,stroke-dasharray: 5 5;', 'gray');
     expect(out.split('\n')[1]).toBe('  classDef sub stroke-dasharray: 5 5');
   });

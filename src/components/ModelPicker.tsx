@@ -17,7 +17,7 @@ export interface Model {
   /** The concrete model this row stands for when `id` is not one: the CLI's
    *  mapping of an alias (`opus[1m]` → `claude-opus-5-5[1m]`), or the model
    *  behind the merged account-default row. Highlights that row when the
-   *  pick is this model, and gives it that model's colour. */
+   *  pick is this model, and gives it that model's color. */
   resolvedId?: string;
 }
 
@@ -32,7 +32,7 @@ function isRowSelected(model: Model, selected: string): boolean {
   return pick === bareModelId(model.id) || (model.resolvedId !== undefined && pick === bareModelId(model.resolvedId));
 }
 
-/** The Cost Report's colour for the row's model — its price tier, its
+/** The Cost Report's color for the row's model — its price tier, its
  *  version's shade — so a model looks the same here as in the chart and on
  *  a Modern model-change line. None for a row with no tier ("default"). */
 function modelIconStyle(model: Model): React.CSSProperties | undefined {
