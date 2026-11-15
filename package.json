@@ -96,7 +96,7 @@
     "@types/web-push": "^3.6.4",
     "@vitejs/plugin-react": "^4.3.4",
     "@vitest/coverage-v8": "^4.1.11",
-    "eslint": "^9.39.4",
+    "eslint": "^10.13.0",
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^7.1.1",
     "globals": "^17.6.0",
