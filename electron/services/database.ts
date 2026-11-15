@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { parseLegacyPricingOverrides } from '../../src/lib/pricing';
+import { repoIdentity } from './git-repos';
 
 /**
  * Wrap the cryptic `NODE_MODULE_VERSION` error that better-sqlite3 throws when
@@ -1085,6 +1086,48 @@ export const migrations: Migration[] = [
         // same). A failure rolls the transaction back, leaving the
         // schema_version row unwritten so a future run can retry.
         db.exec('ALTER TABLE model_pricing DROP COLUMN color_slot');
+      }
+    },
+  },
+  {
+    version: 32,
+    description:
+      'Multi-repo git widget: per-project scan depth and watched sub-repos; '
+      + 'branch colours keyed by repo (its main checkout) instead of project. '
+      + 'Every existing row was written for a project whose path is its repo, '
+      + 'so the rename needs no rewrite except rows keyed by a linked worktree, '
+      + 'which fold into the main checkout (the main checkout wins a clash).',
+    up: (db) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS project_git_settings (
+          project_path TEXT PRIMARY KEY,
+          scan_depth INTEGER NOT NULL DEFAULT 1
+        );
+        CREATE TABLE IF NOT EXISTS project_git_repos (
+          project_path TEXT NOT NULL,
+          repo_path TEXT NOT NULL,
+          watched INTEGER NOT NULL,
+          PRIMARY KEY (project_path, repo_path)
+        );
+      `);
+      const cols = db.pragma('table_info(branch_colors)') as { name: string }[];
+      if (cols.length === 0) return; // no v6 table (minimal test fixtures)
+      if (cols.some((c) => c.name === 'project_path')) {
+        db.exec(`
+          DROP INDEX IF EXISTS idx_branch_colors_project;
+          ALTER TABLE branch_colors RENAME COLUMN project_path TO repo_path;
+        `);
+      }
+      db.exec('CREATE INDEX IF NOT EXISTS idx_branch_colors_repo ON branch_colors(repo_path)');
+      const paths = db.prepare('SELECT DISTINCT repo_path AS p FROM branch_colors').all() as { p: string }[];
+      const move = db.prepare('UPDATE OR IGNORE branch_colors SET repo_path = ? WHERE repo_path = ?');
+      const drop = db.prepare('DELETE FROM branch_colors WHERE repo_path = ?');
+      // UPDATE OR IGNORE: on a clash the main checkout's existing row stays.
+      for (const { p } of paths) {
+        const id = repoIdentity(p);
+        if (!id || id === p) continue;
+        move.run(id, p);
+        drop.run(p);
       }
     },
   },
