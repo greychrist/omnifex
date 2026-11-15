@@ -248,7 +248,7 @@ describe('ChatStatusBar', () => {
         cacheTtlMs={5 * 60_000}
       />,
     );
-    expect(screen.getByText(/cache .* left \(5m\)/)).toBeTruthy();
+    expect(screen.getByTestId('cache-timer').textContent).toMatch(/^cache.* left \(5m\)$/);
   });
 });
 

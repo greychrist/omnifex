@@ -44,7 +44,9 @@ describe('SessionStatusItem', () => {
     ] as const)('leaves the icon and label the bar color, like the model readout (%s)', (_, props) => {
       render(<SessionStatusItem {...props} />);
       const label = screen.getByText('session');
-      expect(label.className).toBe('opacity-70');
+      // Muted like every readout label, and no color of its own.
+      expect(label.className.split(' ')).toContain('opacity-70');
+      expect(label.className).not.toMatch(/(^|\s)text-/);
       let el: HTMLElement | null = label.parentElement;
       while (el && el !== document.body) {
         expect(el.className).not.toMatch(/\btext-muted-foreground\b/);

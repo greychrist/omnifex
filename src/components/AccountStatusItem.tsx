@@ -1,4 +1,5 @@
 import * as React from "react";
+import { ReadoutLabel } from '@/components/ui/readout-label';
 import { User, Clock, CalendarDays, CalendarClock, DollarSign } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { RateLimitSnapshot } from "@/lib/api";
@@ -83,7 +84,7 @@ export function AccountStatusItem({
             style={color ? { color: buildThemedColors(color, theme).color } : undefined}
           >
             <Icon className="h-3.5 w-3.5" />
-            <span className="opacity-70">account</span>
+            <ReadoutLabel>account</ReadoutLabel>
             <span data-testid="account-item-name">
               {accountName}
               {type && `: ${type}`}
@@ -140,7 +141,7 @@ const USAGE_BUTTON = "flex items-center gap-1 rounded hover:bg-muted/60";
 /** Names the readout, as "account" labels the name beside it: "usage" for a
  *  subscription's allowance, "cost" for dollars billed per token. */
 function UsageLabel({ text }: { text: "usage" | "cost" }): React.JSX.Element {
-  return <span data-testid="usage-label" className="opacity-70">{text}</span>;
+  return <ReadoutLabel data-testid="usage-label">{text}</ReadoutLabel>;
 }
 
 function pctOf(snapshot: RateLimitSnapshot | null): number | null {

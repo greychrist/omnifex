@@ -1,4 +1,5 @@
 import * as React from "react";
+import { ReadoutLabel } from '@/components/ui/readout-label';
 import { DatabaseZap } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -64,12 +65,12 @@ export const CacheTimerRow: React.FC<CacheTimerRowProps> = ({
   let text: string;
   let tone: string;
   if (level === 'expired') {
-    text = `cache expired (${ttlLabel})`;
+    text = `expired (${ttlLabel})`;
     tone = 'text-muted-foreground';
   } else {
     // TTL named inline, not just in the tooltip, so a 1h → 5m drop stays
     // legible after the one-off change notice has cleared.
-    text = `cache ${formatRemaining(remainingMs)} left (${ttlLabel})`;
+    text = `${formatRemaining(remainingMs)} left (${ttlLabel})`;
     tone =
       level === 'critical'
         ? 'text-red-500'
@@ -84,13 +85,15 @@ export const CacheTimerRow: React.FC<CacheTimerRowProps> = ({
 
   return (
     <span
+      data-testid="cache-timer"
       title={title}
       className={cn("inline-flex items-center gap-1 px-2 text-[10px] font-mono truncate", tone, className)}
     >
       {/* A cache that is counting down to a rewrite: the database is the
           thing, the bolt is that it is live and expiring. */}
       <DatabaseZap className="h-3.5 w-3.5 shrink-0" aria-hidden />
-      {text}
+      <ReadoutLabel>cache</ReadoutLabel>
+      <span>{text}</span>
     </span>
   );
 };

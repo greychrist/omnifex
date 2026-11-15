@@ -128,10 +128,10 @@ describe('BranchStatusBar', () => {
     bar(encompass);
     const be = screen.getByRole('group', { name: 'encompass-platform-backend' });
     const segments = within(be).getAllByRole('button').map((b) => b.textContent);
-    expect(segments[0]).toBe('encompass-platform-backend');
-    expect(segments[1]).toMatch(/^dev3$/);
-    expect(segments[2]).toBe('test/wt-be-1');
-    expect(segments[3]).toMatch(/^test\/wt-be-212$/);
+    expect(segments[0]).toBe('nameencompass-platform-backend');
+    expect(segments[1]).toMatch(/^branchdev3$/);
+    expect(segments[2]).toBe('worktreetest/wt-be-1');
+    expect(segments[3]).toMatch(/^worktreetest\/wt-be-212$/);
     expect(within(screen.getByRole('group', { name: 'encompass-platform-frontend' })).getAllByRole('button')).toHaveLength(3);
   });
 
@@ -156,10 +156,21 @@ describe('BranchStatusBar', () => {
     expect(icon.getAttribute('class')).toMatch(/(^|\s)lucide-folder-git(\s|$)/);
     expect(icon.getAttribute('class')).toContain('h-3.5');
     expect(icon.getAttribute('class')).not.toMatch(/opacity|text-muted/);
-    const label = name.querySelector('span')!;
-    expect(label.textContent).toBe('encompass-platform-backend');
-    expect(label.className).toContain('opacity-70');
     expect(name.className).not.toContain('text-muted-foreground');
+  });
+
+  // Like the readouts above: a muted `label:`, then the value at full strength.
+  it('labels each cell like a status readout: name, branch, worktree', () => {
+    bar(encompass);
+    const be = within(screen.getByRole('group', { name: 'encompass-platform-backend' })).getAllByRole('button');
+    const labelOf = (el: HTMLElement) => Array.from(el.querySelectorAll('span')).find((x) => x.className.includes("after:content-[':']"))!;
+    expect(labelOf(be[0]).textContent).toBe('name');
+    expect(labelOf(be[1]).textContent).toBe('branch');
+    expect(labelOf(be[2]).textContent).toBe('worktree');
+    expect(labelOf(be[3]).textContent).toBe('worktree');
+    // The repo name is the value now, not a dimmed label.
+    const value = Array.from(be[0].querySelectorAll('span')).find((x) => x.textContent === 'encompass-platform-backend')!;
+    expect(value.className).not.toContain('opacity-70');
   });
 
   it('shows a repo\'s alias in place of its name, the full name in the tooltip', () => {

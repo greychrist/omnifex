@@ -10,6 +10,7 @@
  * transcript; that strip is gone.
  */
 import React from 'react';
+import { ReadoutLabel } from '@/components/ui/readout-label';
 import { Bot, SquareTerminal } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Popover } from '@/components/ui/popover';
@@ -86,7 +87,7 @@ function BackgroundReadout({
           )}
         >
           {icon}
-          <span className="opacity-70">{noun}</span>
+          <ReadoutLabel>{noun}</ReadoutLabel>
           <span>{live ? (showProgress ? `${done}/${total}` : `${running} running`) : `${done} done`}</span>
         </button>
       }

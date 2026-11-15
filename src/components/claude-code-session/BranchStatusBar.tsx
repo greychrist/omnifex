@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { ReadoutLabel } from '@/components/ui/readout-label';
 import { FolderCog, FolderGit, FolderGit2, GitBranch, GitPullRequest } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ButtonGroup } from '@/components/ui/button-group';
@@ -74,12 +75,12 @@ function RepoCapsule({ repo, fullName, displayName, columns, pins, onViewChanges
           type="button"
           onClick={onOpenRepos}
           title={`${fullName}\n${repo.root.path}`}
-          // Styled like the chat bar's readouts (the model one): icon in the
-          // bar's text color, name in the muted label style.
+          // A readout like the chat bar's: icon, muted `name:` label, value.
           className="flex items-center gap-1 rounded-sm px-0.5 text-[10px] hover:bg-foreground/10 focus:outline-none focus-visible:bg-foreground/10"
         >
           <FolderGit aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
-          <span className="opacity-70">{displayName}</span>
+          <ReadoutLabel aria-hidden="true">name</ReadoutLabel>
+          <span>{displayName}</span>
         </button>
       </span>
       {checkouts.map((c, i) => {
@@ -94,6 +95,7 @@ function RepoCapsule({ repo, fullName, displayName, columns, pins, onViewChanges
               className={isMain ? 'font-semibold' : undefined}
               // A worktree is another folder with its own checkout; the icon says so.
               icon={isMain ? GitBranch : FolderGit2}
+              label={isMain ? 'branch' : 'worktree'}
               name={name}
               changed={c.changed}
               untracked={c.untracked}
@@ -138,7 +140,7 @@ export const BranchStatusBar = React.forwardRef<HTMLDivElement, BranchStatusBarP
             label, in a color of its own as each readout above has. */}
         <span className="flex shrink-0 items-center gap-1 text-purple-400">
           <GitPullRequest aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
-          <span className="opacity-70">repos</span>
+          <ReadoutLabel>repos</ReadoutLabel>
         </span>
         {repos.length > 0 && (
           // Full height, so it rules the label off from every row of the table.

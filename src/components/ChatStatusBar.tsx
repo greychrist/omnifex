@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { ReadoutLabel } from '@/components/ui/readout-label';
 import type { StepProgress } from '@/lib/stepProgress';
 import { Clock, Brain, Wifi, WifiLow, WifiOff, Pencil, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -69,7 +70,7 @@ export function LinkGlyph({ connection, delivering }: LinkState): React.JSX.Elem
         )}
       >
         <WifiOff className="h-3.5 w-3.5" />
-        <span className="opacity-70">daemon</span>
+        <ReadoutLabel>daemon</ReadoutLabel>
         <span>{reconnecting ? 'reconnecting' : 'offline'}</span>
       </span>
     );
@@ -86,7 +87,7 @@ export function LinkGlyph({ connection, delivering }: LinkState): React.JSX.Elem
         className="inline-flex items-center gap-1 text-amber-500"
       >
         <WifiLow className="h-3.5 w-3.5" />
-        <span className="opacity-70">daemon</span>
+        <ReadoutLabel>daemon</ReadoutLabel>
         <span>no events</span>
       </span>
     );
@@ -99,7 +100,7 @@ export function LinkGlyph({ connection, delivering }: LinkState): React.JSX.Elem
       className="inline-flex items-center gap-1 text-emerald-400"
     >
       <Wifi className="h-3.5 w-3.5" />
-      <span className="opacity-70">daemon</span>
+      <ReadoutLabel>daemon</ReadoutLabel>
       <span>live</span>
     </span>
   );
@@ -203,7 +204,7 @@ function SessionTitle({
         // of it only crowded the left edge.
         className="inline-flex items-center gap-1 text-muted-foreground"
       >
-        <span className="opacity-70">name</span>
+        <ReadoutLabel>name</ReadoutLabel>
         <span
           className={cn(
             // `break-words`, not `truncate`: the bar wraps now, so the name
@@ -443,7 +444,7 @@ export function ChatStatusBar({
         )}
       >
         <Clock className="h-3.5 w-3.5" />
-        <span className="opacity-70">turn</span>
+        <ReadoutLabel>turn</ReadoutLabel>
         <span>{formatToolElapsed(elapsedMs / 1000)}</span>
         {running && mainProgress && <span className="opacity-70">·</span>}
         {running && mainProgress && (
@@ -476,7 +477,7 @@ export function ChatStatusBar({
         )}
       >
         <Brain className="h-3.5 w-3.5" />
-        <span className="opacity-70">{thinkingLive ? 'thinking' : 'thought'}</span>
+        <ReadoutLabel>{thinkingLive ? 'thinking' : 'thought'}</ReadoutLabel>
         <span>{formatThinkingTokens(thinkingTokens)} tokens</span>
       </span>,
     );
@@ -512,7 +513,7 @@ export function ChatStatusBar({
   }
 
   if (showCache) {
-    // Already labelled by its own copy ("cache 3m left (1h)").
+    // Labels itself: "cache: 3m left (1h)".
     items.push(
       <CacheTimerRow
         key="cache"

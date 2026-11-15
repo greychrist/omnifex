@@ -3,6 +3,7 @@ import { GitBranch, Folder, GitCompare, type LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { GIT_CHANGED_STYLE, GIT_UNTRACKED_STYLE } from '@/lib/gitStatusStyle';
 import { Popover } from '@/components/ui/popover';
+import { ReadoutLabel } from '@/components/ui/readout-label';
 
 export interface GitBranchBadgeProps {
   name: string;
@@ -32,6 +33,9 @@ export interface GitBranchBadgeProps {
   /** `chip` (default): tinted, bordered. `text`: no chip, the branch color on
    *  the text alone — the status bar's readout style. */
   variant?: 'chip' | 'text';
+  /** A readout label before the name (`branch`, `worktree`). Hidden from
+   *  assistive tech: the name and the title already say what it is. */
+  label?: string;
 }
 
 // WCAG relative luminance — used only to detect TRUE near-black picks where
@@ -65,6 +69,7 @@ export const GitBranchBadge: React.FC<GitBranchBadgeProps> = ({
   className,
   icon: Icon = GitBranch,
   variant = 'chip',
+  label,
 }) => {
   const asText = variant === 'text';
   const textSize = size === 'bar' ? 'text-[10px]' : 'text-[11px]';
@@ -110,6 +115,7 @@ export const GitBranchBadge: React.FC<GitBranchBadgeProps> = ({
   const badgeContent = (
     <>
       <Icon className="w-3.5 h-3.5 shrink-0" />
+      {label && <ReadoutLabel aria-hidden="true">{label}</ReadoutLabel>}
       <span className="truncate max-w-[24ch]">{name}</span>
       {/* A chip rules its counts off from the name; as text the counts sit
           right beside it, so they read as that checkout's. */}

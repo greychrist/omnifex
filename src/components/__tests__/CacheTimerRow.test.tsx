@@ -38,6 +38,13 @@ describe('CacheTimerRow', () => {
     expect(container).toBeEmptyDOMElement();
   });
 
+  it('labels itself "cache" with the shared readout label', () => {
+    renderRow();
+    const label = screen.getByText('cache');
+    expect(label.className).toContain("after:content-[':']");
+    expect(screen.getByTestId('cache-timer').contains(label)).toBe(true);
+  });
+
   it('renders nothing without an anchor', () => {
     const { container } = renderRow({ anchorMs: null });
     expect(container).toBeEmptyDOMElement();
@@ -45,7 +52,7 @@ describe('CacheTimerRow', () => {
 
   it('counts down in muted type while fresh', () => {
     renderRow();
-    const row = screen.getByText(/cache/);
+    const row = screen.getByTestId('cache-timer');
     expect(row.textContent).toContain('5:00');
     expect(row.className).toContain('text-muted-foreground');
   });
@@ -53,13 +60,13 @@ describe('CacheTimerRow', () => {
   it('ticks once a second', () => {
     renderRow({ ttlMs: CACHE_TTL_5M_MS });
     advance(61_000);
-    expect(screen.getByText(/cache/).textContent).toContain('3:59');
+    expect(screen.getByTestId('cache-timer').textContent).toContain('3:59');
   });
 
   it('turns amber at 80% elapsed', () => {
     renderRow();
     advance(240_000); // 4:00 of a 5m TTL
-    const row = screen.getByText(/cache/);
+    const row = screen.getByTestId('cache-timer');
     expect(row.textContent).toContain('1:00');
     expect(row.className).toContain('amber');
   });
@@ -67,7 +74,7 @@ describe('CacheTimerRow', () => {
   it('turns red at 90% elapsed', () => {
     renderRow();
     advance(270_000); // 4:30
-    const row = screen.getByText(/cache/);
+    const row = screen.getByTestId('cache-timer');
     expect(row.className).toContain('red');
     expect(row.className).not.toContain('amber');
   });
@@ -77,7 +84,7 @@ describe('CacheTimerRow', () => {
   it('goes neutral and says expired at 100%', () => {
     renderRow();
     advance(300_000);
-    const row = screen.getByText(/cache/);
+    const row = screen.getByTestId('cache-timer');
     expect(row.textContent).toContain('expired');
     expect(row.className).toContain('text-muted-foreground');
     expect(row.className).not.toContain('red');
@@ -88,7 +95,7 @@ describe('CacheTimerRow', () => {
     advance(300_000);
     const clearSpy = vi.spyOn(globalThis, 'clearInterval');
     advance(60_000);
-    expect(screen.getByText(/cache/).textContent).toContain('expired');
+    expect(screen.getByTestId('cache-timer').textContent).toContain('expired');
     clearSpy.mockRestore();
   });
 
@@ -98,30 +105,30 @@ describe('CacheTimerRow', () => {
   it('restarts the countdown when a new assistant message moves the anchor', () => {
     const { rerender } = renderRow();
     advance(300_000);
-    expect(screen.getByText(/cache/).textContent).toContain('expired');
+    expect(screen.getByTestId('cache-timer').textContent).toContain('expired');
 
     rerender(<CacheTimerRow anchorMs={Date.now()} ttlMs={CACHE_TTL_5M_MS} />);
-    expect(screen.getByText(/cache/).textContent).toContain('5:00');
+    expect(screen.getByTestId('cache-timer').textContent).toContain('5:00');
     advance(61_000);
-    expect(screen.getByText(/cache/).textContent).toContain('3:59');
+    expect(screen.getByTestId('cache-timer').textContent).toContain('3:59');
   });
 
   // The TTL is visible in the row itself, not just the tooltip, so a 1h → 5m
   // drop is legible even if the change notice was missed.
   it('names the TTL inline', () => {
     renderRow({ ttlMs: CACHE_TTL_5M_MS });
-    expect(screen.getByText(/cache/).textContent).toContain('5m');
+    expect(screen.getByTestId('cache-timer').textContent).toContain('5m');
   });
 
   it('names a 1h TTL inline', () => {
     renderRow({ ttlMs: CACHE_TTL_1H_MS });
-    expect(screen.getByText(/cache/).textContent).toContain('1h');
+    expect(screen.getByTestId('cache-timer').textContent).toContain('1h');
   });
 
   it('handles a 1h TTL', () => {
     renderRow({ ttlMs: CACHE_TTL_1H_MS });
-    expect(screen.getByText(/cache/).textContent).toContain('60m');
+    expect(screen.getByTestId('cache-timer').textContent).toContain('60m');
     advance(48 * 60_000);
-    expect(screen.getByText(/cache/).className).toContain('amber');
+    expect(screen.getByTestId('cache-timer').className).toContain('amber');
   });
 });

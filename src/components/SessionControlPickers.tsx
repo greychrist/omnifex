@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { ReadoutLabel } from '@/components/ui/readout-label';
 import { useState } from 'react';
 import { Gauge, ShieldCheck, Zap } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -76,7 +77,7 @@ function StatusBarPicker({
             )}
           >
             <span aria-hidden="true" className="inline-flex">{icon}</span>
-            <span className="opacity-70">{label}</span>
+            <ReadoutLabel>{label}</ReadoutLabel>
             <span className="truncate max-w-[9rem]" style={valueStyle}>{value}</span>
             {trailing}
           </button>

@@ -1,4 +1,5 @@
 import * as React from "react";
+import { ReadoutLabel } from '@/components/ui/readout-label';
 import { cn } from "@/lib/utils";
 import { Atom } from "lucide-react";
 import { Popover } from "@/components/ui/popover";
@@ -82,7 +83,7 @@ export function SessionStatusItem({
   const label = (
     <>
       <Atom className="h-3.5 w-3.5" />
-      <span className="opacity-70">session</span>
+      <ReadoutLabel>session</ReadoutLabel>
       <span data-testid="session-item-status" className={STATE_COLOR[state]}>
         {state}
       </span>
