@@ -50,16 +50,21 @@ describe('BranchStatusBar', () => {
     expect(screen.queryAllByTestId('repo-bar')).toHaveLength(0);
   });
 
-  // Full width like the chat bar above it, so the pair can sit at the right
-  // edge; at least 16px clear of the table when the two would meet.
-  it('right-aligns the repos/refresh pair, clear of the table', () => {
+  // Only as wide as its contents; the repos/refresh pair ends it, set off from
+  // the table by a little space and a rule.
+  it('sizes to its contents, the repos/refresh pair ruled off at the end', () => {
     bar(encompass);
-    expect(screen.getByTestId('branch-status-bar').className.split(' ')).toContain('w-full');
-    // A wrapper carries both: `ml-auto` and a margin floor would be one
-    // property, so the floor is padding.
+    const cls = screen.getByTestId('branch-status-bar').className.split(' ');
+    expect(cls).not.toContain('w-full');
+    expect(cls).toContain('w-fit');
+    expect(cls).toContain('max-w-full');
     const slot = screen.getByRole('group', { name: 'Git' }).parentElement!;
-    expect(slot.className.split(' ')).toContain('ml-auto');
-    expect(slot.className.split(' ')).toContain('pl-4');
+    expect(slot.className.split(' ')).not.toContain('ml-auto');
+    // Full height, like the rule after the label, so it spans every repo row.
+    const rule = screen.getByTestId('git-divider');
+    expect(rule.parentElement).toBe(screen.getByTestId('branch-status-bar'));
+    expect(rule.nextElementSibling).toBe(slot);
+    expect(rule.className.split(' ')).toEqual(expect.arrayContaining(['self-stretch', 'h-auto', 'ml-2']));
   });
 
   it('lays repos out as a table: a column for the name, then one per checkout', () => {

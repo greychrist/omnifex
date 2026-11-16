@@ -134,7 +134,8 @@ export const BranchStatusBar = React.forwardRef<HTMLDivElement, BranchStatusBarP
         // One line: centered, since the repos/refresh pair is taller than the
         // text beside it. Several: top-aligned, so the label and the pair sit
         // on the first repo's line.
-        className={cn(STATUS_BAR_SURFACE, 'w-full flex-nowrap', repos.length > 1 ? 'items-start' : 'items-center', className)}
+        // Only as wide as its contents, never wider than the column.
+        className={cn(STATUS_BAR_SURFACE, 'w-fit max-w-full flex-nowrap', repos.length > 1 ? 'items-start' : 'items-center', className)}
       >
         {/* The row's name, styled as a status readout: icon, then a quiet
             label, in a color of its own as each readout above has. */}
@@ -170,9 +171,10 @@ export const BranchStatusBar = React.forwardRef<HTMLDivElement, BranchStatusBarP
         )}
         {/* The repos button and the watch glyph act on the same thing — this
             project's git — so they sit together as one control. */}
-        {/* Right-aligned (`ml-auto`), and at least 16px clear of the table
-            when the bar is too narrow for the two to sit apart. */}
-        <span className="ml-auto flex shrink-0 pl-4">
+        {/* At the end, set off from the table by a little space and a rule —
+            full height, like the label's, so it spans every repo row. */}
+        <InlineDivider data-testid="git-divider" className="ml-2 h-auto self-stretch" />
+        <span className="flex shrink-0">
           <ButtonGroup label="Git">
             <button
               type="button"
