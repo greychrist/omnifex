@@ -5,6 +5,12 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.44] — 2026-11-16
+
+### Changed
+
+- The repos bar in the session header is only as wide as its contents instead of stretching across the window; the repos and refresh buttons follow the table, set off by a full-height rule like the one after the `repos` label.
+
 ## [0.5.43] — 2026-11-15
 
 ### Added
