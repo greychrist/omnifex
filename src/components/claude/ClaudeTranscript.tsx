@@ -1,4 +1,4 @@
-import React, { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { ChevronDown, ChevronUp, ChevronsDown, ChevronsUp, MessageSquare, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -43,6 +43,7 @@ import { stepTarget, isStepStop, isMainPrompt, STEP_MARGIN_PX, type StepDirectio
 import { cn } from "@/lib/utils";
 import { logAndForget } from "@/lib/fireAndLog";
 import { rowKeyOf } from "@/lib/rowKey";
+import { earlierStart, windowStart } from "@/lib/transcriptWindow";
 import type { JsonlNode } from "@/types/jsonl";
 import type { ViewMode } from "@/components/SessionViewToggle";
 
@@ -109,6 +110,9 @@ export interface ClaudeTranscriptProps extends InspectorGutterButtonProps {
    */
   jumpTo?: { uuid: string; nonce: number } | null;
 }
+
+/** How close to the top a reader scrolling back gets before the next window loads. */
+const LOAD_EARLIER_PX = 800;
 
 /** How long a jumped-to row stays highlighted. */
 const JUMP_HIGHLIGHT_MS = 1600;
@@ -258,11 +262,6 @@ function ClaudeTranscriptImpl({
     return undefined;
   }, [timeline, displayableMessages]);
 
-  // The transcript is not virtualised, so every render walks this whole list.
-  // Recorded as a bulk count: in verbose mode it is exactly the rows rendered,
-  // in compact mode an upper bound (grouping folds some rows together).
-  renderProfiler.recordRenders('TranscriptRow(displayable)', displayableMessages.length);
-
   // What each row needs from the rest of the transcript, as an object that
   // keeps its identity while the answers do — which is what lets a row's memo
   // hold when a record is appended. See `rowLookups` for the freeze this fixes.
@@ -292,6 +291,13 @@ function ClaudeTranscriptImpl({
     prevFootersRef.current = next;
     return next;
   }, [modernItems, messages, outstandingWork]);
+  const compactItems = useMemo(
+    () => (viewMode === 'compact' ? buildCompactItems(displayableMessages, renderConfig) : []),
+    [viewMode, displayableMessages, renderConfig],
+  );
+  const rowCount = viewMode === 'modern'
+    ? modernItems.length
+    : viewMode === 'compact' ? compactItems.length : displayableMessages.length;
   const lookupsForRef = useRef(lookupsFor);
   lookupsForRef.current = lookupsFor;
   const stableLookupsFor = useCallback((node: JsonlNode) => lookupsForRef.current(node), []);
@@ -315,6 +321,35 @@ function ClaudeTranscriptImpl({
   // useFindInChat.ts + docs/superpowers/specs/2026-05-11-find-in-chat-design.md.
   const [findOpen, setFindOpen] = useState(false);
   const [findQuery, setFindQuery] = useState('');
+
+  // The tail window (see transcriptWindow.ts): only the newest rows mount.
+  // A pin is a row index in one format; another format's rows are other rows,
+  // so a pin made in it reads as no pin.
+  const [pin, setPin] = useState<{ mode: ViewMode; start: number } | null>(null);
+  const pinned = pin?.mode === viewMode ? pin.start : null;
+  // A jump's target row, so the window can reach back to it.
+  const jumpUuid = jumpTo?.uuid;
+  const jumpNonce = jumpTo?.nonce;
+  const jumpRow = useMemo(() => {
+    if (!jumpUuid) return -1;
+    if (viewMode === 'modern') return modernItems.findIndex((item) => messageUuidOf(firstNodeOf(item)) === jumpUuid);
+    if (viewMode === 'compact') {
+      return compactItems.findIndex((item) => item.kind === 'single' && messageUuidOf(item.message) === jumpUuid);
+    }
+    return displayableMessages.findIndex((message) => messageUuidOf(message) === jumpUuid);
+  }, [jumpUuid, viewMode, modernItems, compactItems, displayableMessages]);
+  // Find walks the DOM, so it sees the whole transcript only if all of it is
+  // mounted while the bar is open.
+  const start = findOpen
+    ? 0
+    : Math.min(windowStart(rowCount, pinned), jumpRow >= 0 ? jumpRow : rowCount);
+  const startRef = useRef(start);
+  startRef.current = start;
+  const pinRef = useRef(pinned);
+  pinRef.current = pinned;
+  // Every render walks the mounted rows. Recorded as a bulk count: the rows
+  // in the window, whichever format grouped them.
+  renderProfiler.recordRenders('TranscriptRow(displayable)', rowCount - start);
 
   // Auto-scroll to bottom when new messages arrive, but only if already near the bottom.
   // Always scroll when waiting for permission so the user sees the latest context.
@@ -422,9 +457,39 @@ function ClaudeTranscriptImpl({
     }, 400);
   }, []);
 
+  // Set when rows are about to mount above the window; read once they have.
+  // `toTop` scrolls to the very first row; `fromBottom` holds the reader's
+  // place, which otherwise slides down by the height of what was added.
+  const pendingPrependRef = useRef<{ toTop: boolean; fromBottom: number } | null>(null);
+  const growWindow = useCallback((nextStart: number, toTop: boolean) => {
+    const el = parentRef.current;
+    pendingPrependRef.current = { toTop, fromBottom: el ? el.scrollHeight - el.scrollTop : 0 };
+    setPin({ mode: viewMode, start: nextStart });
+  }, [viewMode]);
+  useLayoutEffect(() => {
+    const pending = pendingPrependRef.current;
+    const el = parentRef.current;
+    if (!pending || !el) return;
+    pendingPrependRef.current = null;
+    // Both are set, not animated. WebKit anchors scrolling: as rows mount
+    // above the view it moves scrollTop to keep the visible rows still, which
+    // cancelled a smooth scroll to the top and left the reader at the bottom.
+    // A set after layout lands where it says.
+    el.scrollTop = pending.toTop ? 0 : el.scrollHeight - pending.fromBottom;
+  }, [start]);
+  const showEarlier = useCallback(() => {
+    growWindow(earlierStart(startRef.current), false);
+  }, [growWindow]);
+
   const scrollToTop = useCallback(() => {
-    scrollToPosition(0);
-  }, [scrollToPosition]);
+    // Stop following first: from the bottom, mounting every row grows the
+    // content, and a following transcript pins itself to the new bottom.
+    setFollowing(false);
+    if (startRef.current > 0) growWindow(0, true);
+    else scrollToPosition(0);
+  }, [growWindow, scrollToPosition, setFollowing]);
+
+  const hasEarlier = start > 0;
 
   const scrollToBottom = useCallback(() => {
     const el = parentRef.current;
@@ -473,8 +538,6 @@ function ClaudeTranscriptImpl({
   // A jump from outside (the session popover's Recent events). The highlight
   // is a DOM attribute rather than state: setting state here would re-render
   // every row of an unvirtualised transcript to light up one of them.
-  const jumpUuid = jumpTo?.uuid;
-  const jumpNonce = jumpTo?.nonce;
   useEffect(() => {
     if (!jumpUuid) return;
     const scrollEl = parentRef.current;
@@ -491,7 +554,9 @@ function ClaudeTranscriptImpl({
       window.clearTimeout(timer);
       row.removeAttribute("data-jump-target");
     };
-  }, [jumpUuid, jumpNonce, isNearBottomRef, scrollToPosition]);
+    // `start`: a target outside the window is found once the window has
+    // reached back to it.
+  }, [jumpUuid, jumpNonce, isNearBottomRef, scrollToPosition, start]);
 
   const stepPrev = useCallback(() => { step('prev', '[data-transcript-step]'); }, [step]);
   const stepNext = useCallback(() => { step('next', '[data-transcript-step]'); }, [step]);
@@ -538,15 +603,25 @@ function ClaudeTranscriptImpl({
     const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
     // The distance is user-tunable in Settings → General (see
     // AutoScrollContext / autoScrollFollow).
-    setFollowing(nextFollowing({
+    const following = nextFollowing({
       following: isNearBottomRef.current,
       distanceFromBottom,
       followPx,
       userScrolling:
         pointerHeldRef.current ||
         performance.now() - lastUserInputAtRef.current <= USER_SCROLL_INTENT_MS,
-    }));
-  }, [isNearBottomRef, followPx, setFollowing]);
+    });
+    setFollowing(following);
+    // Reading back: hold the window's top so streamed records do not unmount
+    // the rows on screen. Back at the tail: let go, and the rows above drop
+    // back to one window (the resize keeps the view at the bottom).
+    if (!following && pinRef.current === null) setPin({ mode: viewMode, start: startRef.current });
+    else if (following && pinRef.current !== null) setPin(null);
+    // Nearing the top while reading back brings the next window in before
+    // the reader reaches the edge. Never while following: a short view is
+    // near its top and its bottom at once.
+    if (!following && startRef.current > 0 && el.scrollTop < LOAD_EARLIER_PX) showEarlier();
+  }, [isNearBottomRef, followPx, setFollowing, viewMode, showEarlier]);
 
   const liveRows = (
     <>
@@ -735,12 +810,26 @@ function ClaudeTranscriptImpl({
               last-prompt buttons measure. Marked on the row wrapper rather
               than counted in an array so they follow whatever the filters and
               the view mode actually rendered. */}
+          {hasEarlier && !rendering && withTimeline(
+            undefined,
+            <div className="flex justify-center">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={showEarlier}
+                className="h-7 text-xs text-muted-foreground"
+              >
+                Show earlier · {start} more
+              </Button>
+            </div>,
+          )}
           {rendering
             // In a row like any other: with the rail on, the row's gutter is
             // what keeps it inside the chat frame.
             ? withTimeline(undefined, <TranscriptSkeleton />)
             : viewMode === 'modern'
-            ? modernItems.map((item, i) => {
+            ? modernItems.slice(start).map((item, j) => {
+                const i = start + j;
                 const anchor = anchorNodeOf(item);
                 const first = firstNodeOf(item);
                 return (
@@ -766,7 +855,7 @@ function ClaudeTranscriptImpl({
                 );
               })
             : viewMode !== 'compact'
-            ? displayableMessages.map((message) => (
+            ? displayableMessages.slice(start).map((message) => (
                 <div
                   key={rowKeyOf(message)}
                   className={ROW_CLASS}
@@ -789,8 +878,7 @@ function ClaudeTranscriptImpl({
                 </div>
               ))
             : (() => {
-                const items = buildCompactItems(displayableMessages, renderConfig);
-                return items.map((item) =>
+                return compactItems.slice(start).map((item) =>
                   item.kind === 'single' ? (
                     <div
                       key={item.key}
