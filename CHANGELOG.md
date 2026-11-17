@@ -5,6 +5,22 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.46] — 2026-11-17
+
+### Changed
+- The daemon no longer freezes every live session while it reads transcripts. Session lists, cost tracking, the Brain, history loads, summaries and version checks now read files asynchronously, and only the parts that changed.
+- Opening a project's sessions page is instant: the page appears at once with placeholder rows, and session titles and dates are cached on disk, so even the first visit after a restart is fast.
+- The live cost readout reads only what each turn appends instead of re-reading the whole transcript every second.
+- Cost history no longer re-reads every transcript after each restart; it picks up only sessions that changed.
+- The Brain Sources pane opens much faster on repeat visits and no longer stalls other sessions.
+- The Projects list shows the last-loaded list immediately and refreshes behind it.
+- Back buttons share one look across the chat, sessions page, project settings and file picker.
+
+### Fixed
+- The permission picker could show "Accept edits" on a reopened session that was actually running in Auto (seen on sessions whose only prompt was a slash command). It now shows the mode the session is really in.
+- A permission mode changed mid-session is kept when the session resumes, instead of reverting to the mode it was launched in.
+- Back from a session now returns to that project's sessions list, not the Projects list.
+
 ## [0.5.45] — 2026-11-17
 
 ### Added
