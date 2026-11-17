@@ -263,27 +263,6 @@ describe('remote session bridge', () => {
     expect(bridge.state('s1')).toMatchObject({ turn: { status: 'idle', since: null } });
   });
 
-  it('reports every state it publishes, so the daemon can keep a durable trail', () => {
-    // Events are memory-only; this is what session-trace reads afterwards.
-    const reported: SessionScopedPush[] = [];
-    const traced = createSessionBridge({
-      log,
-      classify: classifyJsonlLine,
-      publish: () => {},
-      broadcast: () => {},
-      onState: (push) => { reported.push(push); },
-    });
-    openSession(log, 's1');
-    traced.sendToRenderer('session-status:s1', { sessionStatus: 'started' });
-    traced.sendToRenderer('session-turn:s1', { status: 'running', since: '2026-09-20T00:00:00.000Z' });
-    traced.sendToRenderer('agent-output:s1', { type: 'assistant', message: { role: 'assistant', content: [] } });
-
-    expect(reported.map((p) => p.type === 'session.state' && [p.sessionStatus, p.turn.status, p.seq])).toEqual([
-      ['started', 'idle', 1],
-      ['started', 'running', 2],
-    ]);
-  });
-
   it('stamps every event with the legacy channel prefix it came from', () => {
     openSession(log, 's1');
     bridge.sendToRenderer('elicitation-request:s1', { id: 'e1', message: 'Pick one' });

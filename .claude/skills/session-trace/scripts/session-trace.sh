@@ -1,10 +1,10 @@
 #!/bin/bash
 # Gather everything OmniFex knows about one session, from disk, read-only.
 #   bash session-trace.sh <session-uuid-or-prefix>
-# Sources: ~/.omnifex{,-dev}/sessions/<id>.meta.json (daemon), the daemon's
-# session-state trail in app_logs, <configDir>/projects/<project>/<id>.jsonl
-# (the CLI transcript), and /healthz on the daemon ports. The daemon keeps
-# events in memory only; app_logs is its one durable record of state changes.
+# Sources: ~/.omnifex{,-dev}/sessions/<id>.meta.json (daemon), app_logs,
+# <configDir>/projects/<project>/<id>.jsonl (the CLI transcript), and /healthz
+# on the daemon ports. The daemon keeps events in memory only and does not log
+# state transitions.
 set -uo pipefail
 Q=${1:-}
 [ -n "$Q" ] || { echo "usage: session-trace.sh <session-uuid-or-prefix>" >&2; exit 2; }
@@ -60,10 +60,8 @@ PY
 done
 
 if [ -f "$DB" ] && command -v sqlite3 >/dev/null; then
-  section "daemon session.state trail (last 8, newest first)"
-  sqlite3 -separator ' | ' "$DB" "select substr(timestamp,1,19), message from app_logs where category='session-state' and message like 'session $Q%' order by id desc limit 8"
   section "other app_logs mentioning $Q (last 10)"
-  sqlite3 -separator ' | ' "$DB" "select substr(timestamp,1,19), level, source, substr(message,1,140) from app_logs where (message like '%$Q%' or metadata like '%$Q%') and coalesce(category,'') <> 'session-state' order by id desc limit 10"
+  sqlite3 -separator ' | ' "$DB" "select substr(timestamp,1,19), level, source, substr(message,1,140) from app_logs where (message like '%$Q%' or metadata like '%$Q%') order by id desc limit 10"
   section "app_logs error/warn, last 10 overall"
   sqlite3 -separator ' | ' "$DB" "select substr(timestamp,1,19), level, source, substr(message,1,140) from app_logs where level in ('error','warn') order by id desc limit 10"
 fi
@@ -75,4 +73,14 @@ for port in 47700 47701; do
   if [ -z "$addr" ]; then echo "  :$port nothing listening"; continue; fi
   hostport=${addr#* }
   h=$(curl -s -m 2 "http://$hostport/healthz" 2>/dev/null) && echo "  $addr → $h" || echo "  $addr listening but /healthz not answering"
+  # Live state, straight from the daemon: transitions are not logged anywhere.
+  curl -s -m 2 "http://$hostport/api/sessions" 2>/dev/null | Q="$Q" python3 -c '
+import json, os, sys
+q = os.environ["Q"]
+try: rows = json.load(sys.stdin)
+except Exception: sys.exit()
+for r in rows:
+    if r.get("sessionId", "").startswith(q):
+        print("  live:", {k: r.get(k) for k in ("sessionStatus", "inFlight", "pendingPermissions", "lastSeq", "updatedAt")})
+'
 done

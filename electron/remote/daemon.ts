@@ -126,7 +126,6 @@ import { createTailnetWatch } from './tailnet-watch';
 import { createAccountWatchers } from './account-watchers';
 import { createSessionLog } from './session-log';
 import { createSessionBridge } from './bridge';
-import type { SessionScopedPush } from '../../src/protocol';
 import { createProjectRegistry } from './projects';
 import { buildRpcAllowlist } from './rpc-allowlist';
 import { createRemoteHandlers, type RpcHandler } from './handlers';
@@ -327,14 +326,9 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
   // Closed for the dev daemon, absent for the real one: see dev-instance.ts.
   const periodicGate = periodicWorkGate(process.env);
 
-  // Set once the logging service exists, below. Events are memory-only, so
-  // state transitions go to app_logs: the trail session-trace reads.
-  let traceState: ((push: Extract<SessionScopedPush, { type: 'session.state' }>) => void) | null = null;
-
   const bridge = createSessionBridge({
     log: sessionLog,
     classify: classifyJsonlLine,
-    onState: (push) => traceState?.(push),
     publish: (push) => {
       server.pushToSession(push.sessionId, push);
       if (!pushService) return;
@@ -415,16 +409,6 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
   });
 
   const loggingService = createLoggingService(db, createLoggingOptions({ db, sendToRenderer }));
-  traceState = (push) => {
-    loggingService.writeBatch([{
-      timestamp: new Date().toISOString(),
-      level: 'info',
-      source: 'backend',
-      category: 'session-state',
-      message: `session ${push.sessionId} ${push.sessionStatus} turn=${push.turn.status}`,
-      metadata: JSON.stringify({ sessionId: push.sessionId, seq: push.seq, sessionStatus: push.sessionStatus, turn: push.turn, ...(push.error !== undefined && { error: push.error }) }),
-    }]);
-  };
 
   // No display: OS notifications are the clients' job. A session's own
   // notifications ride its events; this is for the rest (a rate-limit

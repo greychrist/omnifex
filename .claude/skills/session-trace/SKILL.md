@@ -18,10 +18,10 @@ A prefix of the UUID is enough. It reads, in order:
 | Source | What it tells you |
 |---|---|
 | `~/.omnifex{,-dev}/sessions/<id>.meta.json` | project, config dir (= account), model, permission mode, resume |
-| `app_logs` rows with `category='session-state'` | the daemon's own `sessionStatus` + `turn` transitions — the authoritative in-flight state (events themselves are memory-only) |
 | `<configDir>/projects/<project>/<id>.jsonl` | what the CLI wrote: last records, `stop_reason`, open `tool_use` without a result |
 | `app_logs` in `greychrist.db` | main/daemon errors around the session (there is no log file) |
 | `/healthz` on 47700 (installed) / 47701 (dev) | whether a daemon is even up |
+| `/api/sessions` on the same ports | the daemon's live `sessionStatus` + `inFlight` — the authoritative in-flight state. Transitions are not logged, so a session the daemon no longer holds has no state history |
 
 ## Reading it
 
@@ -40,5 +40,5 @@ A prefix of the UUID is enough. It reads, in order:
 - **`configDir` differs from where the transcript lives** → account mis-route.
 
 Then, and only then, open the code path the evidence points at. Quote the
-`session.state` row and the last CLI records in the report so the diagnosis is
+live `/api/sessions` row and the last CLI records in the report so the diagnosis is
 checkable.

@@ -29,12 +29,6 @@ export interface SessionBridgeDeps {
   publish: (push: SessionScopedPush) => void;
   /** Deliver an app-wide message to every client. */
   broadcast: (message: Extract<ServerMessage, { type: 'channel' }>) => void;
-  /**
-   * Every `session.state` push, after it is stamped. Events are memory-only,
-   * so this is the daemon's one durable record of a session's status and turn
-   * transitions — the trail `session-trace` reads from `app_logs`.
-   */
-  onState?: (push: Extract<SessionScopedPush, { type: 'session.state' }>) => void;
 }
 
 export interface SessionControlState {
@@ -111,7 +105,6 @@ export function createSessionBridge(deps: SessionBridgeDeps): SessionBridge {
       ...(s.error !== undefined && { error: s.error }),
     });
     deps.publish(push);
-    if (push.type === 'session.state') deps.onState?.(push);
   }
 
   function emitEvent(

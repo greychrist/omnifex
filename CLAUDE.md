@@ -96,8 +96,9 @@ before changing any of it.
   ring cannot serve, or one across a daemon restart (`welcome.bootId`
   changed), gets `resync` and the tab reloads from the CLI's JSONL. The CLI's
   transcript is the history — never add an events file back. State
-  transitions go to `app_logs` (`category='session-state'`) for
-  `session-trace`.
+  transitions are not logged (they were, to `app_logs`, until 2026-11-17:
+  two rows per turn drowned every other log line); a live session's state
+  comes from `/api/sessions`.
 - **Protocol** — `src/protocol/` (types), `electron/remote/server.ts` (transport),
   `electron/remote/handlers.ts` (methods). The protocol's `sessionId` IS the
   sessions service's `tabId`; that equivalence is the whole trick.
