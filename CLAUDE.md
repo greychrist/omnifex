@@ -374,6 +374,7 @@ the prose in `SKILL.md` covers only the judgment calls.
 - `multi-account-debugging` — project path → account resolution trace
 - `brain-eval` — is the Brain worth its cost: measure, judge, record, compare; runs stored in `<userData>/brain-evals/`, never the repo or /tmp
 - `version-aware-research` — when to confirm version-sensitive syntax before relying on memory
+- `which-model` — pins `model: fable` and reports from the transcript which model the skill's turn actually ran on (the self-report can't be trusted)
 
 ## Legacy Notes
 
