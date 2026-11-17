@@ -234,6 +234,10 @@ export const UNDRAWN_SYSTEM_SUBTYPES: Readonly<Record<string, string>> = {
   // behind a new message will not run. Needs the input-only `keeps_request_id`
   // on a user message, which OmniFex never sends.
   late_allow_not_run: 'remote',
+  // 2.1.327: sent (stdout) only when an initialize hook matcher sets
+  // `replacedByFrame: 'shell_cwd'` on a PostToolUse SDK callback. OmniFex
+  // registers no hook callbacks in initialize.
+  shell_cwd: 'host opt-in',
 };
 
 /** Flags only the Claude CLI takes — a file holding one of these spawns `claude`. */

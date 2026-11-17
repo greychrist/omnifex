@@ -66,6 +66,99 @@ import { probeBinaryVersion } from './util/exec-text';
  *    and no `Artifact` is working, not broken. Neither present = re-read
  *    the gate.
  *
+ * Last review: 2.1.326 -> 2.1.327 on 2026-11-17. Findings: none broken,
+ * no bugs, no opportunities taken. One script baseline (`shell_cwd`).
+ *
+ *  Changelog coverage: 2.1.327 (~200 entries, mostly terminal UI, cloud,
+ *  Windows, VS Code). Both ends installed. Script exit 0. Merge map (46),
+ *  hook_event_name (33), control envelopes (5), SDK requests (55), CLI
+ *  flags (117), origin kinds (14), can_use_tool keys (11) identical;
+ *  /usage anchors unchanged (`Estimated cost:` 2 -> 2).
+ *  - `system` +`shell_cwd` (the only coverage line): emitted on stdout
+ *    only when an initialize PostToolUse hook matcher carries
+ *    `replacedByFrame: 'shell_cwd'` (`sendsShellCwd`), standing in for SDK
+ *    callbacks that only read the shell's cwd. OmniFex registers no hook
+ *    callbacks in initialize (grep). Zero in both accounts. Baselined
+ *    'host opt-in' in UNDRAWN_SYSTEM_SUBTYPES.
+ *  - Attachment +`agent_ask_notice` ({lines, open}): model-facing list of
+ *    subagents waiting >= 30 s on a permission prompt ("Tell the user which
+ *    agents are waiting"), gated `tengu_clever_pelican`. Context the model
+ *    reads, not a source we account for; draws as nothing, which is right
+ *    (the card itself is what the user answers). Not taken into
+ *    contextLedger. Zero in both accounts.
+ *  - Type literal +`nested_call_upstream`: self-hosted runner nested model
+ *    access error. -mcp-tool-detail/-mcp-tools/-server-tool(s)/-property:
+ *    /mcp UI screen names (the /mcp page relayout). Inert.
+ *  - Control request schemas +3, all host -> CLI offers, none taken:
+ *    `reload_connectors` (re-read claude.ai connectors, "only for the
+ *    program that started this process, after something a person did";
+ *    OmniFex has no claude.ai connector UI), `update_cloud_session` and
+ *    `comparison_fork` (cloud / claude-code-server only).
+ *  - Describe moves, all @internal or out of reach: cloud-session list /
+ *    get / update fields (`spawn_user_message` "say who it is from",
+ *    `message` "a fixed sentence of the CLI's own", waiting_connectors,
+ *    runner_wait); task_started `prompt` now absent on resumed runs (we take
+ *    the brief from the Agent tool input, subagentEvents.ts, never from
+ *    task_started); handback_report `toolUseId` (we render no handback);
+ *    Bash result `viewedImagePaths` and sandbox-relied flag (not drawn);
+ *    initialize `settings` / `disallowedTools` via --initialize-fields
+ *    (we pass neither); auto-compact window raise (Desktop flag settings);
+ *    rewind_conversation restore_if_usage_limited reword; get_session
+ *    messages `agent_id`; managed-plugin tier wording; SDK agent
+ *    mcpServers deprecation; ListAgents cursor.
+ *  - Object keys +644 -462: cloud sessions, runner, env-var names
+ *    (CLAUDE_CODE_DISABLE_SHELL_HEAD_START & co.), hook-text kinds. Nothing
+ *    new on user/assistant records, permission requests or the initialize
+ *    reply we read.
+ *  - Changelog, more asks reach our card (no code change; the decider
+ *    forwards them): ExitWorktree asks before removing a worktree with
+ *    possible unsaved work; a subagent resumed by a sibling follows the
+ *    session's permission settings; "what counts as inside a working
+ *    directory" narrowed + some symlinks refused; PowerShell (n/a macOS).
+ *    No rule-syntax change, docs/permission-syntax.md unaffected.
+ *  - Changelog, in our favor: /statusline no longer writes ~/.claude when
+ *    CLAUDE_CONFIG_DIR is set; https_proxy bare host:port no longer
+ *    refuses to start without a TTY (us); `claude -p` no longer hangs on a
+ *    stalled model-settings fetch (summary-query); headless resume losing
+ *    messages re-sent with the same UUID; compaction after a max-tokens
+ *    cut losing a tool call; artifact refused after an SDK host approved
+ *    it; background agent reported running while waiting 30 s on a
+ *    permission prompt "in the SDK" (= agent_ask_notice); remote MCP
+ *    retried for a day.
+ *  - Changelog, heads-up: auto mode's billed-classifier fallback "is
+ *    removed in an upcoming release; each action it would have checked
+ *    will be asked about or denied" — more cards / denials in Auto when the
+ *    classifier is unavailable. First-Bash "shell head start" now runs
+ *    shell rc files before approval (CLAUDE_CODE_DISABLE_SHELL_HEAD_START=1
+ *    opts out); not something we set.
+ *  - Changelog, inert: --agents lost on plugin reload (we pass no
+ *    --agents); --disallowedTools parentheses (we pass only `*`);
+ *    `claude mcp add/remove` .mcp.json key loss (mcp.ts writes the file
+ *    itself); mod $.model.complete usage-limit hang (omnifex-mod uses
+ *    neither); attributionProject setting; /tui classic; /status broken-
+ *    file list; /config, /export, /rewind, /plugin, /mcp, /hooks UI; cloud,
+ *    self-hosted runner, Remote Control, Code Mode, Windows, VS Code and
+ *    every terminal-rendering fix.
+ *  - Open items re-checked in both accounts' projects/ (files since
+ *    2026-11-10): supersedesUuids 0, plugin_note 0, ui_notify 0, idle-
+ *    compaction system notice 0.
+ *
+ *  Script + prompt: `shell_cwd` baseline; prompt unchanged, every pointer
+ *  resolved.
+ *
+ *  OPEN ITEMS (carry forward; re-check each review):
+ *   - Fullscreen /usage order: capture a subscriber render with windows
+ *     before `Session`; bound windowBlock at the Session header if so.
+ *   - plugin_note: shape taken from the bundle; check the first real one
+ *     against contextLedger's reading (plugin, rowUuid, content[]).
+ *   - Idle compaction: verify the first real occurrence (2.1.314 block).
+ *   - ui_notify: unverified against a real mod; first `$.ui.notify` seen in
+ *     a transcript or reported banner closes it.
+ *   - `supersedes`: first `"supersedesUuids":[` in a transcript decides
+ *     whether the renderer must drop the named rows.
+ *   - Auto-mode classifier fallback removal: when it lands, check how its
+ *     asks / denials reach the card (2.1.327 heads-up).
+ * *
  * Last review: 2.1.325 -> 2.1.326 on 2026-11-16. Findings: one break
  * (/usage session cost label) and one latent permission gap (bypass asks),
  * both fixed the same day; two opportunities taken (prompt_draft_activity,
@@ -5622,7 +5715,7 @@ import { probeBinaryVersion } from './util/exec-text';
  * `~/.claude.json` fix (we read-modify-write that file, never replace it), and
  * the VSCode screen-reader work.
  */
-export const REVIEWED_CLI_VERSION = '2.1.326';
+export const REVIEWED_CLI_VERSION = '2.1.327';
 
 /**
  * app_settings key holding the user's explicit OmniFex-checkout override.
