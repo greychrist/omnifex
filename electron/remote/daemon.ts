@@ -399,7 +399,7 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
 
   const claudeCliReviewService = createClaudeCliReviewService({
     cliVersionFn: () => probeCliVersion(claudeBinaryService.findBestBinary()),
-    latestVersionFn: fetchLatestCliVersion,
+    latestVersionFn: () => fetchLatestCliVersion(claudeBinaryService.findBestBinary()),
     repoDirOverrideFn: () => db.getSetting(CLI_REVIEW_REPO_DIR_SETTING_KEY),
     checkedVersionFn: () => db.getSetting(CLI_CHECKED_VERSION_SETTING_KEY),
     repoCandidatesFn: async () => (await claudeService.listProjects()).map((p) => p.path),

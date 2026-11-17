@@ -151,49 +151,91 @@ describe('fetchLatestCliVersion', () => {
     vi.unstubAllGlobals();
   });
 
+  const NATIVE = '/Users/me/.local/share/claude/versions/2.1.326';
+  const NPM = '/opt/homebrew/lib/node_modules/@anthropic-ai/claude-code/cli.js';
   const ok = (body: unknown) => ({ ok: true, json: async () => body });
+  const text = (body: string) => ({ ok: true, text: async () => body });
+  const urlOf = (call: number) => String(fetchMock.mock.calls[call][0]);
 
-  it('reads the `latest` dist-tag', async () => {
-    fetchMock.mockResolvedValue(ok({ latest: '2.1.266', stable: '2.1.231' }));
-    await expect(fetchLatestCliVersion()).resolves.toBe('2.1.266');
+  describe('native install', () => {
+    // `claude update` on a native install reads the channel the official
+    // install.sh reads, and npm runs ahead of it: 2.1.327 was on npm hours
+    // before this channel, so the popover offered an update that `claude
+    // update` answered with "up to date".
+    it('reads the native release channel, not npm', async () => {
+      fetchMock.mockResolvedValue(text('2.1.327\n'));
+      await expect(fetchLatestCliVersion(NATIVE)).resolves.toBe('2.1.327');
+      expect(urlOf(0)).toBe('https://downloads.claude.ai/claude-code-releases/latest');
+    });
+
+    // An unknown install location is not evidence of npm, and native is the
+    // installer Anthropic ships today.
+    it('treats an unknown or missing binary path as native', async () => {
+      fetchMock.mockResolvedValue(text('2.1.327'));
+      await fetchLatestCliVersion(null);
+      await fetchLatestCliVersion('/usr/local/bin/claude');
+      expect(urlOf(0)).toContain('downloads.claude.ai');
+      expect(urlOf(1)).toContain('downloads.claude.ai');
+    });
+
+    // A captive portal or proxy answers 200 with HTML.
+    it('reports null when the body is not a version', async () => {
+      fetchMock.mockResolvedValue(text('<html>login</html>'));
+      await expect(fetchLatestCliVersion(NATIVE)).resolves.toBeNull();
+    });
+
+    it('reports null on a non-OK response', async () => {
+      fetchMock.mockResolvedValue({ ok: false, text: async () => '2.1.327' });
+      await expect(fetchLatestCliVersion(NATIVE)).resolves.toBeNull();
+    });
   });
 
-  // `latest`, not `stable` — they disagree, and the native installer's
-  // self-update tracks `latest`. Reporting `stable` would tell a user they
-  // were current while their own binary had moved past it.
-  it('prefers `latest` over `stable` when they disagree', async () => {
-    fetchMock.mockResolvedValue(ok({ stable: '2.1.231', latest: '2.1.266' }));
-    await expect(fetchLatestCliVersion()).resolves.toBe('2.1.266');
+  describe('npm install', () => {
+    it('reads the `latest` dist-tag', async () => {
+      fetchMock.mockResolvedValue(ok({ latest: '2.1.266', stable: '2.1.231' }));
+      await expect(fetchLatestCliVersion(NPM)).resolves.toBe('2.1.266');
+      expect(urlOf(0)).toContain('registry.npmjs.org');
+    });
+
+    it('reports null on a non-OK response', async () => {
+      fetchMock.mockResolvedValue({ ok: false, json: async () => ({ latest: '2.1.266' }) });
+      await expect(fetchLatestCliVersion(NPM)).resolves.toBeNull();
+    });
+
+    // A proxy serving an HTML error page parses to an object with no `latest`.
+    it('reports null when the payload carries no string `latest`', async () => {
+      fetchMock.mockResolvedValue(ok({ latest: 42 }));
+      await expect(fetchLatestCliVersion(NPM)).resolves.toBeNull();
+    });
   });
 
-  it('reports null on a non-OK response', async () => {
-    fetchMock.mockResolvedValue({ ok: false, json: async () => ({ latest: '2.1.266' }) });
-    await expect(fetchLatestCliVersion()).resolves.toBeNull();
-  });
-
-  // A proxy serving an HTML error page parses to an object with no `latest`.
-  it('reports null when the payload carries no string `latest`', async () => {
-    fetchMock.mockResolvedValue(ok({ latest: 42 }));
-    await expect(fetchLatestCliVersion()).resolves.toBeNull();
-  });
-
-  it('reports null when the registry is unreachable', async () => {
+  it('reports null when the source is unreachable', async () => {
     fetchMock.mockRejectedValue(new Error('ENOTFOUND'));
-    await expect(fetchLatestCliVersion()).resolves.toBeNull();
+    await expect(fetchLatestCliVersion(NATIVE)).resolves.toBeNull();
+    await expect(fetchLatestCliVersion(NPM)).resolves.toBeNull();
   });
 
   // In-flight de-duplication, and only that: the promise is released in a
   // `finally`, so the NEXT check really re-fetches. A time-based cache would
   // make a button labelled "Check for Upgrade" lie.
   it('shares one request between concurrent callers, then re-fetches', async () => {
-    fetchMock.mockResolvedValue(ok({ latest: '2.1.266' }));
-    const [a, b] = await Promise.all([fetchLatestCliVersion(), fetchLatestCliVersion()]);
+    fetchMock.mockResolvedValue(text('2.1.266'));
+    const [a, b] = await Promise.all([fetchLatestCliVersion(NATIVE), fetchLatestCliVersion(NATIVE)]);
     expect(a).toBe('2.1.266');
     expect(b).toBe('2.1.266');
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
-    await fetchLatestCliVersion();
+    await fetchLatestCliVersion(NATIVE);
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  // Sharing is per source: an npm caller must not receive the native answer.
+  it('does not share a request across sources', async () => {
+    fetchMock.mockImplementation(async (url: string) =>
+      url.includes('npmjs') ? ok({ latest: '2.1.327' }) : text('2.1.326'));
+    const [native, npm] = await Promise.all([fetchLatestCliVersion(NATIVE), fetchLatestCliVersion(NPM)]);
+    expect(native).toBe('2.1.326');
+    expect(npm).toBe('2.1.327');
   });
 });
 

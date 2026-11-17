@@ -5824,54 +5824,87 @@ function dirExists(dir: string): boolean {
 }
 
 /**
- * npm dist-tags for the CLI. 56 bytes on the wire, versus the full packument
- * a `/latest` fetch would pull.
+ * The release channel `claude update` reads on a native install — the same
+ * `latest` file the official install.sh (claude.ai/install.sh) fetches.
  *
- * `latest`, not `stable`: the dist-tags carry both and they disagree (stable
- * sat at 2.1.231 while latest was 2.1.246), and it is `latest` that the native
- * installer's self-update tracks — verified by watching a real upgrade land on
- * 2.1.246. Reporting `stable` would tell users they were current while their
- * own binary moved past it.
+ * This, not npm, is what decides whether `claude update` has anything to
+ * install. npm publishes first: 2.1.327 was the npm `latest` for hours while
+ * this file still said 2.1.326, so a popover reading npm offered an update the
+ * CLI answered with "up to date".
+ */
+const NATIVE_LATEST_URL = 'https://downloads.claude.ai/claude-code-releases/latest';
+
+/**
+ * npm dist-tags for the CLI, for npm installs only. 56 bytes on the wire,
+ * versus the full packument a `/latest` fetch would pull. `latest`, not
+ * `stable`: the two disagree, and `npm i -g` without a tag installs `latest`.
  */
 const NPM_DIST_TAGS_URL =
   'https://registry.npmjs.org/-/package/@anthropic-ai%2Fclaude-code/dist-tags';
 
-/** Concurrent callers share one request; see `fetchLatestCliVersion`. */
-let inFlightLatest: Promise<string | null> | null = null;
+/**
+ * Whether the binary was installed from npm. Only a path inside `node_modules`
+ * counts; anything else — the native `~/.local/share/claude/versions/…`, an
+ * unknown location, no binary at all — reads the native channel, the installer
+ * Anthropic ships.
+ */
+function isNpmInstall(binaryPath: string | null): boolean {
+  return binaryPath !== null && binaryPath.split(path.sep).includes('node_modules');
+}
+
+const VERSION_RE = /^\d+\.\d+\.\d+(?:-[\w.]+)?$/;
+
+/** Concurrent callers share one request per source; see `fetchLatestCliVersion`. */
+const inFlightLatest = new Map<string, Promise<string | null>>();
+
+async function readLatest(url: string, npm: boolean): Promise<string | null> {
+  const res = await fetch(url, {
+    signal: AbortSignal.timeout(5000),
+    headers: { accept: npm ? 'application/json' : 'text/plain' },
+  });
+  if (!res.ok) return null;
+  if (npm) {
+    const tags = (await res.json()) as { latest?: unknown };
+    return typeof tags.latest === 'string' ? tags.latest : null;
+  }
+  // Plain text, one version. A captive portal answers 200 with HTML.
+  const body = (await res.text()).trim();
+  return VERSION_RE.test(body) ? body : null;
+}
 
 /**
- * Newest published Claude Code release, or null for any failure at all.
+ * Newest Claude Code release that `binaryPath`'s own updater can install, or
+ * null for any failure at all.
  *
  * Deliberately uncached beyond in-flight de-duplication. The button this feeds
  * says "Check for Upgrade", and a time-based cache would make it lie — the
  * whole reason this exists is that the popover looked like a steady state
- * while three releases had shipped. 56 bytes per check is not worth a stale
- * answer.
+ * while three releases had shipped.
  *
  * Known limit: this is Node's `fetch`, which ignores system proxy settings, so
  * a user behind a corporate proxy gets null and the row falls back to showing
- * only the installed version. That degrades to the old behaviour rather than
+ * only the installed version. That degrades to the old behavior rather than
  * to a wrong answer.
  */
-export function fetchLatestCliVersion(): Promise<string | null> {
-  inFlightLatest ??= (async () => {
-    try {
-      const res = await fetch(NPM_DIST_TAGS_URL, {
-        signal: AbortSignal.timeout(5000),
-        headers: { accept: 'application/json' },
-      });
-      if (!res.ok) return null;
-      const tags = (await res.json()) as { latest?: unknown };
-      return typeof tags.latest === 'string' ? tags.latest : null;
-    } catch {
-      // Offline, DNS failure, timeout, proxy interception serving HTML — all
-      // "undeterminable", and none of them may disturb the rest of the popover.
-      return null;
-    } finally {
-      inFlightLatest = null;
-    }
-  })();
-  return inFlightLatest;
+export function fetchLatestCliVersion(binaryPath: string | null): Promise<string | null> {
+  const npm = isNpmInstall(binaryPath);
+  const url = npm ? NPM_DIST_TAGS_URL : NATIVE_LATEST_URL;
+  let pending = inFlightLatest.get(url);
+  if (!pending) {
+    pending = (async () => {
+      try {
+        return await readLatest(url, npm);
+      } catch {
+        // Offline, DNS failure, timeout, proxy interception — all
+        // "undeterminable", and none of them may disturb the rest of the popover.
+        return null;
+      } finally {
+        inFlightLatest.delete(url);
+      }
+    })();
+    inFlightLatest.set(url, pending);
+  }
+  return pending;
 }
 
 export interface ClaudeCliReviewDeps {
@@ -5883,8 +5916,8 @@ export interface ClaudeCliReviewDeps {
    */
   cliVersionFn: () => string | null | Promise<string | null>;
   /**
-   * Returns the newest Claude Code version published to npm, or null when the
-   * registry is unreachable. Optional: with no lookup wired the popover simply
+   * Returns the newest Claude Code version the installed binary's updater can
+   * install (see `fetchLatestCliVersion`), or null when that is unknowable. Optional: with no lookup wired the popover simply
    * reports the installed version, exactly as it did before.
    */
   latestVersionFn?: () => Promise<string | null>;
