@@ -5,6 +5,14 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.47] — 2026-11-17
+
+### Changed
+- Long sessions no longer slow the whole window. Each tab draws only its newest 150 rows; earlier ones load as you scroll up to them, with your place held, and a "Show earlier" row at the top loads them on a click. While you read back, streamed output never unmounts what you are looking at, and the tab drops back to its newest rows once you return to the bottom. Find, scroll to top and jumps to an older event bring in the whole history. On a 61 MB session this took the window's renderer from 1.27 GB to 0.72 GB idle, and from climbing past 3.8 GB while streaming to holding near 1.2 GB, with streaming CPU roughly halved — which is what was making typing lag.
+
+### Added
+- `which-model` repo skill: pins a skill to Fable and reports, from the CLI's own transcript, which model the skill's turn actually ran on, since the model's self-report cannot be trusted when a skill is launched through the Skill tool.
+
 ## [0.5.46] — 2026-11-17
 
 ### Changed
