@@ -5,6 +5,18 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.45] — 2026-11-17
+
+### Added
+- The prompt box tells Claude Code when you start typing (Claude Code 2.1.326+), so it can get the next request ready between turns. It sends at most once every 10 seconds per tab and never sends what you type.
+- The context panel and the transcript now show notes that a mod's hooks add to Claude's context ("Plugin notes"), so a context source a plugin adds is no longer invisible.
+
+### Changed
+- In Bypass mode, every permission question Claude Code asks now reaches the permission card. Claude Code 2.1.326 started asking about more calls in Bypass, and OmniFex used to approve every one that wasn't marked as a safety check, with nobody looking. Codex approvals are unchanged.
+
+### Fixed
+- The `/usage` session cost read $0 and logged a drift warning on every refresh after Claude Code 2.1.326 renamed "Total cost:" to "Estimated cost:". Both labels are read now.
+
 ## [0.5.44] — 2026-11-16
 
 ### Changed
