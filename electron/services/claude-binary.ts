@@ -1,9 +1,9 @@
-import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { Database } from './database';
 import { findOnPath } from './util/path-lookup';
+import { probeBinaryVersion } from './util/exec-text';
 
 // ---------------------------------------------------------------------------
 // Public interfaces
@@ -18,29 +18,13 @@ export interface ClaudeInstallation {
 export interface ClaudeBinaryService {
   getPath(): string | null;
   setPath(binaryPath: string): void;
-  listInstallations(): ClaudeInstallation[];
+  listInstallations(): Promise<ClaudeInstallation[]>;
   findBestBinary(): string | null;
 }
 
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
-
-const EXEC_OPTIONS = {
-  timeout: 5000,
-  encoding: 'utf-8' as const,
-  stdio: ['pipe', 'pipe', 'pipe'] as ['pipe', 'pipe', 'pipe'],
-};
-
-/** Run `binary --version` and return trimmed output, or null on any failure. */
-function getVersion(binaryPath: string): string | null {
-  try {
-    const output = execFileSync(binaryPath, ['--version'], EXEC_OPTIONS);
-    return typeof output === 'string' ? output.trim() : null;
-  } catch {
-    return null;
-  }
-}
 
 /** `claude` on PATH, found in-process rather than by shelling out to `which`. */
 function tryWhich(): string | null {
@@ -218,14 +202,14 @@ export function createClaudeBinaryService(db: Database): ClaudeBinaryService {
     db.saveSetting(SETTING_KEY, binaryPath);
   }
 
-  function listInstallations(): ClaudeInstallation[] {
+  async function listInstallations(): Promise<ClaudeInstallation[]> {
     const seen = new Set<string>();
-    const installations: ClaudeInstallation[] = [];
+    const found: { path: string; source: string }[] = [];
 
     function add(p: string, source: string): void {
       if (seen.has(p)) return;
       seen.add(p);
-      installations.push({ path: p, source, version: getVersion(p) });
+      found.push({ path: p, source });
     }
 
     const whichResult = tryWhich();
@@ -246,7 +230,11 @@ export function createClaudeBinaryService(db: Database): ClaudeBinaryService {
       add(custom, 'custom');
     }
 
-    return installations;
+    // One `--version` per installation, all at once: each can take up to its
+    // 5 s timeout, and they used to run serially and synchronously.
+    return Promise.all(
+      found.map(async ({ path: p, source }) => ({ path: p, source, version: await probeBinaryVersion(p) })),
+    );
   }
 
   function findBestBinary(): string | null {

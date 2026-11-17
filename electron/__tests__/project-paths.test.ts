@@ -2,7 +2,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync, utimesSync } from 'node:
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { decodeProjectId, recoverProjectPath, encodeProjectId } from '../services/project-paths';
+import { decodeProjectId, recoverProjectPath, recoverProjectPathAsync, encodeProjectId } from '../services/project-paths';
 
 /**
  * The encoding Claude Code applies to a cwd is lossy, so the only honest way
@@ -73,6 +73,51 @@ describe('recoverProjectPath', () => {
   it('falls back rather than throwing when the directory is gone', () => {
     expect(recoverProjectPath(join(root, 'missing'), '-Users-dev-x')).toBe('/Users/dev/x');
   });
+});
+
+// Same contract, without blocking the daemon: the sessions page runs it over
+// every project folder in the account on each visit.
+describe('recoverProjectPathAsync', () => {
+  it('reads the cwd, preferring the newest transcript', async () => {
+    const dir = project('-Users-dev-Repos-greychrist');
+    session(dir, 'old.jsonl', [{ type: 'user', cwd: '/Users/dev/Repos/greychrist' }], 1_000);
+    session(dir, 'new.jsonl', [{ type: 'user', cwd: '/Users/dev/Repos/omnifex' }], 2_000);
+    expect(await recoverProjectPathAsync(dir, '-Users-dev-Repos-greychrist')).toBe('/Users/dev/Repos/omnifex');
+  });
+
+  it('falls back to the naive decode when no transcript carries a cwd, or the folder is gone', async () => {
+    const dir = project('-Users-dev-Repos-thing');
+    session(dir, 'a.jsonl', [{ type: 'summary' }]);
+    expect(await recoverProjectPathAsync(dir, '-Users-dev-Repos-thing')).toBe('/Users/dev/Repos/thing');
+    expect(await recoverProjectPathAsync(join(root, 'missing'), '-Users-dev-x')).toBe('/Users/dev/x');
+  });
+});
+
+// Only the head of a transcript is read, in chunks — a line longer than one
+// chunk (the CLI's prompt snapshot runs to tens of KB) must not hide the cwd.
+describe('recoverProjectPath — head read', () => {
+  for (const [name, recover] of [
+    ['sync', (d: string, id: string) => Promise.resolve(recoverProjectPath(d, id))],
+    ['async', recoverProjectPathAsync],
+  ] as const) {
+    it(`finds a cwd after a line longer than one read chunk (${name})`, async () => {
+      const dir = project('-Users-dev-Repos-big');
+      session(dir, 'a.jsonl', [
+        { type: 'attachment', blob: 'x'.repeat(200_000) },
+        { type: 'user', cwd: '/Users/dev/Repos/big' },
+      ]);
+      expect(await recover(dir, '-Users-dev-Repos-big')).toBe('/Users/dev/Repos/big');
+    });
+
+    it(`stops after the first 50 lines (${name})`, async () => {
+      const dir = project('-Users-dev-Repos-late');
+      session(dir, 'a.jsonl', [
+        ...Array.from({ length: 60 }, () => ({ type: 'summary' })),
+        { type: 'user', cwd: '/Users/dev/Repos/late-cwd' },
+      ]);
+      expect(await recover(dir, '-Users-dev-Repos-late')).toBe('/Users/dev/Repos/late');
+    });
+  }
 });
 
 describe('encodeProjectId', () => {

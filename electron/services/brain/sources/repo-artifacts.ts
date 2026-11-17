@@ -12,7 +12,7 @@
  * files that would dominate the corpus while restating sessions already
  * indexed.
  */
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { promises as fsp } from 'node:fs';
 import { join, relative } from 'node:path';
 import type { AccountsService } from '../../accounts';
 import type { AdmitVerdict, BrainSource, DistilledItem, SourceItem } from './types';
@@ -34,9 +34,9 @@ const MAX_DEPTH = 3;
 /** Bytes of a transcript read while looking for a `cwd`. */
 const CWD_SCAN_BYTES = 256 * 1024;
 
-function listDirSafe(path: string): { name: string; isDirectory: boolean }[] {
+async function listDirSafe(path: string): Promise<{ name: string; isDirectory: boolean }[]> {
   try {
-    return readdirSync(path, { withFileTypes: true }).map((e) => ({
+    return (await fsp.readdir(path, { withFileTypes: true })).map((e) => ({
       name: e.name,
       isDirectory: e.isDirectory(),
     }));
@@ -54,17 +54,16 @@ function listDirSafe(path: string): { name: string; isDirectory: boolean }[] {
  * `/Users/dev/Repos/wombeats/ios`, a path that does not exist. A transcript's
  * own `cwd` is the only authority on where its session ran.
  */
-export function repoPathFromTranscripts(
+export async function repoPathFromTranscripts(
   projectDir: string,
-  readChunk: (path: string) => string = (path) =>
-    readFileSync(path, 'utf8').slice(0, CWD_SCAN_BYTES),
-): string | null {
-  for (const entry of listDirSafe(projectDir)) {
+  readChunk: (path: string) => Promise<string> = readHead,
+): Promise<string | null> {
+  for (const entry of await listDirSafe(projectDir)) {
     if (entry.isDirectory || !entry.name.endsWith('.jsonl')) continue;
 
     let chunk: string;
     try {
-      chunk = readChunk(join(projectDir, entry.name));
+      chunk = await readChunk(join(projectDir, entry.name));
     } catch {
       continue;
     }
@@ -83,12 +82,35 @@ export function repoPathFromTranscripts(
   return null;
 }
 
-function findArtifacts(root: string, dir: string, depth: number, out: string[]): void {
-  for (const entry of listDirSafe(dir)) {
+/**
+ * The first `CWD_SCAN_BYTES` of a transcript, read through the thread pool.
+ *
+ * Bounded at the read, not after it: this used to `readFileSync` the whole
+ * file and slice 256 KB off the front — tens of MB per long session, on the
+ * daemon's event loop, for every project on every sweep.
+ */
+async function readHead(path: string): Promise<string> {
+  const handle = await fsp.open(path, 'r');
+  try {
+    const buf = Buffer.alloc(CWD_SCAN_BYTES);
+    let read = 0;
+    while (read < CWD_SCAN_BYTES) {
+      const { bytesRead } = await handle.read(buf, read, CWD_SCAN_BYTES - read, read);
+      if (bytesRead === 0) break;
+      read += bytesRead;
+    }
+    return buf.subarray(0, read).toString('utf8');
+  } finally {
+    await handle.close();
+  }
+}
+
+async function findArtifacts(root: string, dir: string, depth: number, out: string[]): Promise<void> {
+  for (const entry of await listDirSafe(dir)) {
     const full = join(dir, entry.name);
     if (entry.isDirectory) {
       if (depth >= MAX_DEPTH || SKIP_DIRS.has(entry.name) || entry.name.startsWith('.')) continue;
-      findArtifacts(root, full, depth + 1, out);
+      await findArtifacts(root, full, depth + 1, out);
       continue;
     }
     if (ARTIFACT_NAMES.has(entry.name)) out.push(relative(root, full));
@@ -105,17 +127,17 @@ export function createRepoArtifactSource(deps: { accounts: AccountsService }): B
   return {
     id: REPO_SOURCE_ID,
 
-    discover(): Promise<SourceItem[]> {
+    async discover(): Promise<SourceItem[]> {
       const items: SourceItem[] = [];
       const seenRepos = new Set<string>();
 
       for (const account of deps.accounts.listAccounts()) {
         const projectsDir = join(account.config_dir, 'projects');
 
-        for (const project of listDirSafe(projectsDir)) {
+        for (const project of await listDirSafe(projectsDir)) {
           if (!project.isDirectory) continue;
 
-          const repoPath = repoPathFromTranscripts(join(projectsDir, project.name));
+          const repoPath = await repoPathFromTranscripts(join(projectsDir, project.name));
           // No cwd in any transcript means no known path. Skipped, never guessed.
           if (!repoPath || seenRepos.has(repoPath)) continue;
           seenRepos.add(repoPath);
@@ -128,13 +150,13 @@ export function createRepoArtifactSource(deps: { accounts: AccountsService }): B
           if (!owner) continue;
 
           const files: string[] = [];
-          findArtifacts(repoPath, repoPath, 0, files);
+          await findArtifacts(repoPath, repoPath, 0, files);
 
           for (const file of files) {
             const path = join(repoPath, file);
             let stat;
             try {
-              stat = statSync(path);
+              stat = await fsp.stat(path);
             } catch {
               continue;
             }
@@ -154,13 +176,13 @@ export function createRepoArtifactSource(deps: { accounts: AccountsService }): B
           }
         }
       }
-      return Promise.resolve(items);
+      return items;
     },
 
-    admit(item: SourceItem): AdmitVerdict {
+    async admit(item: SourceItem): Promise<AdmitVerdict> {
       let contents: string;
       try {
-        contents = readFileSync(item.path, 'utf8');
+        contents = await fsp.readFile(item.path, 'utf8');
       } catch {
         return { admitted: false, reason: 'instruction file could not be read' };
       }
@@ -168,9 +190,9 @@ export function createRepoArtifactSource(deps: { accounts: AccountsService }): B
       return { admitted: true, reason: 'agent instruction file' };
     },
 
-    distill(item: SourceItem): Promise<DistilledItem> {
+    async distill(item: SourceItem): Promise<DistilledItem> {
       const { repoPath, file } = splitKey(item.itemKey);
-      const contents = readFileSync(item.path, 'utf8');
+      const contents = await fsp.readFile(item.path, 'utf8');
       const truncated = Buffer.byteLength(contents, 'utf8') > MAX_PROSE_BYTES;
       // Head-first, unlike a transcript's oldest-first tail: an instruction
       // file's opening sections state what the project IS, so dropping the end
@@ -179,11 +201,11 @@ export function createRepoArtifactSource(deps: { accounts: AccountsService }): B
         ? `${contents.slice(0, MAX_PROSE_BYTES)}\n\n${TRUNCATION_MARKER}`
         : contents;
 
-      return Promise.resolve({
+      return {
         prose,
         truncated,
         metadata: { kind: 'artifact', repoPath, file },
-      });
+      };
     },
   };
 }

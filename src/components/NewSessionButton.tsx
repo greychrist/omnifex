@@ -2,6 +2,8 @@ import * as React from "react";
 import { RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TooltipSimple } from "@/components/ui/tooltip-modern";
+import { ICON_BUTTON_CHROME } from "@/lib/surfaceStyles";
+import { cn } from "@/lib/utils";
 
 /**
  * Close this session and open a new one — the session widget's button, moved
@@ -32,7 +34,7 @@ export function NewSessionButton({
           disabled={disabled}
           aria-label="New session"
           // The back button's chrome and size; the two sit side by side.
-          className="h-7 w-7 p-0 rounded-sm border-0 shadow-[0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_30%,transparent),2px_2px_4px_rgb(0_0_0/0.08)]"
+          className={cn("h-7 w-7", ICON_BUTTON_CHROME)}
         >
           <RotateCcw className="h-4 w-4" />
         </Button>

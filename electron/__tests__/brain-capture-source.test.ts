@@ -85,14 +85,14 @@ describe('capture source', () => {
     writeCapture(a, 'cap-1');
     const src = source();
     const [item] = await src.discover();
-    expect(src.admit(item)).toEqual({ admitted: true, reason: expect.any(String) });
+    expect((await src.admit(item))).toEqual({ admitted: true, reason: expect.any(String) });
   });
 
   it('skips an empty capture with a reason', async () => {
     writeCapture(a, 'cap-1', { text: '   ' });
     const src = source();
     const [item] = await src.discover();
-    expect(src.admit(item)).toEqual({ admitted: false, reason: expect.stringContaining('empty') });
+    expect((await src.admit(item))).toEqual({ admitted: false, reason: expect.stringContaining('empty') });
   });
 
   it('skips an unparseable capture rather than throwing', async () => {
@@ -100,7 +100,7 @@ describe('capture source', () => {
     writeFileSync(join(a, '.omnifex', 'capture', 'bad.json'), '{not json', 'utf8');
     const src = source();
     const [item] = await src.discover();
-    expect(src.admit(item).admitted).toBe(false);
+    expect((await src.admit(item)).admitted).toBe(false);
   });
 
   it('distils the captured text verbatim with capture metadata', async () => {

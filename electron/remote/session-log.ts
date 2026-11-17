@@ -74,6 +74,12 @@ export interface SessionLog {
   replay(sessionId: string, fromSeq: number): SessionScopedPush[] | null;
   meta(sessionId: string): SessionMeta | null;
   updateMeta(sessionId: string, patch: Partial<Omit<SessionMeta, 'sessionId'>>): SessionMeta;
+  /**
+   * Merge into the persisted start options — how a mid-session switch (the
+   * permission mode) survives a resume, which respawns from these. A session
+   * the log does not know is ignored: the switch already happened live.
+   */
+  updateOptions(sessionId: string, patch: Record<string, unknown>): void;
   /** Every session with a meta file on disk, open or not. */
   list(): SessionMeta[];
   /** Delete the session's meta and forget it. */
@@ -94,6 +100,14 @@ export function createSessionLog(opts: { root: string; ringSize?: number }): Ses
   const open = new Map<string, OpenSession>();
 
   const metaPath = (id: string) => join(opts.root, `${id}.meta.json`);
+  /**
+   * Every persisted meta, by session id — built from disk on the first
+   * `list()`, then kept current by `writeMeta` and `remove`, the only paths
+   * that touch the files. `/healthz` lists twice per 5s poll and the
+   * permission-timeout poll once a second; re-reading 400+ files each time
+   * blocked the event loop every live session streams on.
+   */
+  let index: Map<string, SessionMeta> | null = null;
 
   function readMeta(id: string): SessionMeta | null {
     try {
@@ -106,6 +120,24 @@ export function createSessionLog(opts: { root: string; ringSize?: number }): Ses
   function writeMeta(meta: SessionMeta): void {
     mkdirSync(opts.root, { recursive: true });
     writeFileSync(metaPath(meta.sessionId), `${JSON.stringify(meta, null, 2)}\n`, 'utf8');
+    index?.set(meta.sessionId, meta);
+  }
+
+  function buildIndex(): Map<string, SessionMeta> {
+    const built = new Map<string, SessionMeta>();
+    let names: string[];
+    try {
+      names = readdirSync(opts.root);
+    } catch {
+      return built;
+    }
+    for (const name of names) {
+      if (!name.endsWith('.meta.json')) continue;
+      const id = name.slice(0, -'.meta.json'.length);
+      const meta = readMeta(id);
+      if (meta) built.set(id, meta);
+    }
+    return built;
   }
 
   function require(id: string): OpenSession {
@@ -157,7 +189,7 @@ export function createSessionLog(opts: { root: string; ringSize?: number }): Ses
     },
 
     meta(id) {
-      return open.get(id)?.meta ?? readMeta(id);
+      return open.get(id)?.meta ?? index?.get(id) ?? readMeta(id);
     },
 
     updateMeta(id, patch) {
@@ -170,24 +202,23 @@ export function createSessionLog(opts: { root: string; ringSize?: number }): Ses
       return next;
     },
 
+    updateOptions(id, patch) {
+      const current = open.get(id)?.meta ?? readMeta(id);
+      if (!current) return;
+      const next: SessionMeta = { ...current, options: { ...current.options, ...patch }, updatedAt: new Date().toISOString() };
+      const s = open.get(id);
+      if (s) s.meta = next;
+      writeMeta(next);
+    },
+
     list() {
-      let names: string[];
-      try {
-        names = readdirSync(opts.root);
-      } catch {
-        return [];
-      }
-      const out: SessionMeta[] = [];
-      for (const name of names) {
-        if (!name.endsWith('.meta.json')) continue;
-        const meta = readMeta(name.slice(0, -'.meta.json'.length));
-        if (meta) out.push(meta);
-      }
-      return out;
+      index ??= buildIndex();
+      return [...index.values()];
     },
 
     remove(id) {
       open.delete(id);
+      index?.delete(id);
       rmSync(metaPath(id), { force: true });
     },
 

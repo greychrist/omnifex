@@ -395,6 +395,26 @@ describe('sessions-summary generateSummary (real)', () => {
     expect(sidecar?.headline).toBe('Tested it.');
   });
 
+  // The whole transcript is read here, and transcripts reach tens of MB:
+  // sync, that froze every live session's stream for the duration.
+  it('reads the transcript without sync fs calls', async () => {
+    const spies = (['readFileSync', 'statSync'] as const).map((m) => vi.spyOn(fs, m));
+    try {
+      const svc = createSessionsSummaryService({
+        jsonlPathFor: () => jsonlPath,
+        resolveAccount: () => ({ name: 'A', configDir, summaryModel: 'claude-haiku-4-5' }),
+        runQuery: async () => '<headline>H.</headline><paragraph>P.</paragraph>',
+        getPromptTemplate: () => 'PROMPT',
+      });
+      expect((await svc.generateSummary('abc', projectPath, null)).status).toBe('generated');
+      for (const spy of spies) {
+        expect(spy.mock.calls.filter(([p]) => p === jsonlPath)).toEqual([]);
+      }
+    } finally {
+      for (const spy of spies) spy.mockRestore();
+    }
+  });
+
   // Note: global "enabled" / "auto-on-close" toggles are NOT gated inside
   // generateSummary anymore. Each caller (lifecycle hook in main.ts, or
   // the manual `summary_generate` IPC handler) decides which mix of
@@ -729,8 +749,9 @@ describe('sessions-summary generateSummary (real)', () => {
     expect(svc.getGeneratingSessionUuids()).toEqual([]);
 
     const generatePromise = svc.generateSummary('abc', projectPath, null);
-    // Yield so the inner runQuery is reached.
-    await new Promise((r) => setImmediate(r));
+    // Wait for the inner runQuery: the transcript stat and read before it
+    // are async, so it is reached after a few loop turns, not one.
+    await vi.waitFor(() => expect(runQuery).toHaveBeenCalled());
 
     expect(svc.getGeneratingSessionUuids()).toEqual(['abc']);
 

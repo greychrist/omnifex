@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import path from 'node:path';
 import { createSessionCostService } from '../services/cost/session-cost';
-import type { CostFs } from '../services/cost/cost-history';
+import type { CostFs } from '../services/cost/transcript-usage';
+import { rangeReader } from './fixtures/cost/range-reader';
 import type { SessionCostDailyRow } from '../services/cost/session-cost-core';
 
 const CFG = '/cfg';
@@ -24,7 +25,7 @@ function makeWorld(initial: string) {
   const dirs: Record<string, Array<{ name: string; isDirectory: boolean }>> = { [SUBAGENTS_DIR]: [] };
   const stat = (p: string) => (p in files ? { mtimeMs: files[p].length, size: files[p].length } : null);
   const fakeFs: CostFs = {
-    readFile: (p) => files[p] ?? null,
+    readRange: rangeReader((p) => files[p] ?? null),
     listDir: (p) => dirs[p] ?? [],
     stat,
   };
@@ -34,7 +35,7 @@ function makeWorld(initial: string) {
 describe('session-cost watcher', () => {
   afterEach(() => { vi.useRealTimers(); });
 
-  it('get() computes a snapshot and upserts history', () => {
+  it('get() computes a snapshot and upserts history', async () => {
     const world = makeWorld(assistantLine('r1', 1000));
     const upserts: Array<{ sessionId: string; rows: SessionCostDailyRow[] }> = [];
     const svc = createSessionCostService({
@@ -44,13 +45,13 @@ describe('session-cost watcher', () => {
       fs: world.fakeFs,
       stat: world.stat,
     });
-    const snap = svc.get(args);
+    const snap = await svc.get(args);
     expect(snap.totalUsd).toBeCloseTo(1000 * (25 / 1_000_000), 10);
     expect(upserts).toHaveLength(1);
     expect(upserts[0].sessionId).toBe('sess1');
   });
 
-  it('watch() emits on change and stops after unwatch', () => {
+  it('watch() emits on change and stops after unwatch', async () => {
     vi.useFakeTimers();
     const world = makeWorld(assistantLine('r1', 1000));
     const emitted: Array<{ channel: string; payload: unknown }> = [];
@@ -62,12 +63,12 @@ describe('session-cost watcher', () => {
       stat: world.stat,
       pollMs: 1000,
     });
-    svc.watch(args);
-    vi.advanceTimersByTime(1100);
+    await svc.watch(args);
+    await vi.advanceTimersByTimeAsync(1100);
     expect(emitted).toHaveLength(0); // no change yet
 
     world.files[SESSION_FILE] += '\n' + assistantLine('r2', 2000);
-    vi.advanceTimersByTime(1100);
+    await vi.advanceTimersByTimeAsync(1100);
     expect(emitted).toHaveLength(1);
     expect(emitted[0].channel).toBe('session-cost:sess1');
     const payload = emitted[0].payload as { totalUsd: number };
@@ -75,11 +76,11 @@ describe('session-cost watcher', () => {
 
     svc.unwatch('sess1');
     world.files[SESSION_FILE] += '\n' + assistantLine('r3', 1);
-    vi.advanceTimersByTime(2200);
+    await vi.advanceTimersByTimeAsync(2200);
     expect(emitted).toHaveLength(1);
   });
 
-  it('missing session file yields a zero snapshot without throwing', () => {
+  it('missing session file yields a zero snapshot without throwing', async () => {
     const world = makeWorld('');
     delete world.files[SESSION_FILE];
     const svc = createSessionCostService({
@@ -89,10 +90,10 @@ describe('session-cost watcher', () => {
       fs: world.fakeFs,
       stat: world.stat,
     });
-    expect(svc.get(args).totalUsd).toBe(0);
+    expect((await svc.get(args)).totalUsd).toBe(0);
   });
 
-  it('stopAll() clears every active watcher', () => {
+  it('stopAll() clears every active watcher', async () => {
     vi.useFakeTimers();
     const world = makeWorld(assistantLine('r1', 1000));
     const args2 = { ...args, sessionId: 'sess2' };
@@ -107,17 +108,17 @@ describe('session-cost watcher', () => {
       stat: world.stat,
       pollMs: 1000,
     });
-    svc.watch(args);
-    svc.watch(args2);
+    await svc.watch(args);
+    await svc.watch(args2);
     svc.stopAll();
 
     world.files[SESSION_FILE] += '\n' + assistantLine('r2', 2000);
     world.files[SESSION_FILE_2] += '\n' + assistantLine('r2', 2000);
-    vi.advanceTimersByTime(5000);
+    await vi.advanceTimersByTimeAsync(5000);
     expect(emitted).toHaveLength(0);
   });
 
-  it('get() logs a warning and still returns a snapshot when costHistory.replaceSession throws', () => {
+  it('get() logs a warning and still returns a snapshot when costHistory.replaceSession throws', async () => {
     const world = makeWorld(assistantLine('r1', 1000));
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const svc = createSessionCostService({
@@ -132,17 +133,14 @@ describe('session-cost watcher', () => {
       stat: world.stat,
     });
 
-    let snap: { totalUsd: number } | undefined;
-    expect(() => {
-      snap = svc.get(args);
-    }).not.toThrow();
-    expect(snap!.totalUsd).toBeCloseTo(1000 * (25 / 1_000_000), 10);
+    const snap = await svc.get(args);
+    expect(snap.totalUsd).toBeCloseTo(1000 * (25 / 1_000_000), 10);
     expect(warnSpy).toHaveBeenCalledWith('[session-cost] history upsert failed:', expect.any(Error));
 
     warnSpy.mockRestore();
   });
 
-  it('includes subagent transcript costs and emits when a subagent file changes', () => {
+  it('includes subagent transcript costs and emits when a subagent file changes', async () => {
     vi.useFakeTimers();
     const world = makeWorld(assistantLine('r1', 1000));
     const AGENT_FILE = path.join(SUBAGENTS_DIR, 'agent-x.jsonl');
@@ -158,21 +156,21 @@ describe('session-cost watcher', () => {
       pollMs: 1000,
     });
 
-    const snap = svc.get(args);
+    const snap = await svc.get(args);
     expect(snap.totalUsd).toBeCloseTo(1500 * (25 / 1_000_000), 10);
 
-    svc.watch(args);
-    vi.advanceTimersByTime(1100);
+    await svc.watch(args);
+    await vi.advanceTimersByTimeAsync(1100);
     expect(emitted).toHaveLength(0);
 
     world.files[AGENT_FILE] += '\n' + assistantLine('a2', 1000);
-    vi.advanceTimersByTime(1100);
+    await vi.advanceTimersByTimeAsync(1100);
     expect(emitted).toHaveLength(1);
     const payload = emitted[0].payload as { totalUsd: number };
     expect(payload.totalUsd).toBeCloseTo(2500 * (25 / 1_000_000), 10);
   });
 
-  it('a non-agent .jsonl appearing in the subagents dir must not trigger an emission', () => {
+  it('a non-agent .jsonl appearing in the subagents dir must not trigger an emission', async () => {
     vi.useFakeTimers();
     const world = makeWorld(assistantLine('r1', 1000));
     const emitted: Array<{ channel: string; payload: unknown }> = [];
@@ -184,8 +182,8 @@ describe('session-cost watcher', () => {
       stat: world.stat,
       pollMs: 1000,
     });
-    svc.watch(args);
-    vi.advanceTimersByTime(1100);
+    await svc.watch(args);
+    await vi.advanceTimersByTimeAsync(1100);
     expect(emitted).toHaveLength(0);
 
     // A non-agent-* file lands in the subagents dir (e.g. a stray/renamed
@@ -194,29 +192,29 @@ describe('session-cost watcher', () => {
     const STRAY_FILE = path.join(SUBAGENTS_DIR, 'notes.jsonl');
     world.files[STRAY_FILE] = assistantLine('stray', 9999);
     world.dirs[SUBAGENTS_DIR] = [{ name: 'notes.jsonl', isDirectory: false }];
-    vi.advanceTimersByTime(1100);
+    await vi.advanceTimersByTimeAsync(1100);
     expect(emitted).toHaveLength(0);
   });
 
-  it('captures the baseline signature before compute() so a write racing the initial read is still detected', () => {
+  it('captures the baseline signature before compute() so a write racing the initial read is still detected', async () => {
     vi.useFakeTimers();
     const world = makeWorld(assistantLine('r1', 1000));
     // Simulate a concurrent write landing exactly between signature capture
-    // and the initial compute()'s readFile: the very first readFile call
+    // and the initial compute()'s read: the very first read call
     // appends new content to the file it just "read" (as if a real writer
     // hit the disk mid-read). If watch() captured signature() AFTER
     // compute(), that baseline would already reflect the concurrent write
     // and the change would never be seen as a diff.
     let readCount = 0;
     const racingFs: CostFs = {
-      readFile: (p) => {
-        const content = world.fakeFs.readFile(p);
+      readRange: rangeReader((p) => {
+        const content = world.files[p] ?? null;
         readCount += 1;
         if (readCount === 1 && p === SESSION_FILE) {
           world.files[SESSION_FILE] += '\n' + assistantLine('r2', 2000);
         }
         return content;
-      },
+      }),
       listDir: (p) => world.fakeFs.listDir(p),
       stat: (p) => world.fakeFs.stat(p),
     };
@@ -229,14 +227,14 @@ describe('session-cost watcher', () => {
       stat: world.stat,
       pollMs: 1000,
     });
-    svc.watch(args);
-    vi.advanceTimersByTime(1100);
+    await svc.watch(args);
+    await vi.advanceTimersByTimeAsync(1100);
     expect(emitted).toHaveLength(1);
     const payload = emitted[0].payload as { totalUsd: number };
     expect(payload.totalUsd).toBeCloseTo(3000 * (25 / 1_000_000), 10);
   });
 
-  it("unwatch() on a session that was never watched is a no-op", () => {
+  it("unwatch() on a session that was never watched is a no-op", async () => {
     const world = makeWorld(assistantLine('r1', 1000));
     const svc = createSessionCostService({
       sendToRenderer: () => {},
@@ -265,7 +263,7 @@ describe('session-cost watcher', () => {
       return world;
     }
 
-    it('get() finds the transcript under the sibling encoded dir and returns the real cost, not zero', () => {
+    it('get() finds the transcript under the sibling encoded dir and returns the real cost, not zero', async () => {
       const world = makeWorktreeWorld();
       const svc = createSessionCostService({
         sendToRenderer: () => {},
@@ -274,11 +272,11 @@ describe('session-cost watcher', () => {
         fs: world.fakeFs,
         stat: world.stat,
       });
-      const snap = svc.get(args);
+      const snap = await svc.get(args);
       expect(snap.totalUsd).toBeCloseTo(1000 * (25 / 1_000_000), 10);
     });
 
-    it('watch() resolves the same alternate dir for signature() and compute(), and emits on a change to the alt file', () => {
+    it('watch() resolves the same alternate dir for signature() and compute(), and emits on a change to the alt file', async () => {
       vi.useFakeTimers();
       const world = makeWorktreeWorld();
       const emitted: Array<{ channel: string; payload: unknown }> = [];
@@ -290,25 +288,25 @@ describe('session-cost watcher', () => {
         stat: world.stat,
         pollMs: 1000,
       });
-      const initial = svc.watch(args);
+      const initial = await svc.watch(args);
       expect(initial.totalUsd).toBeCloseTo(1000 * (25 / 1_000_000), 10);
 
-      vi.advanceTimersByTime(1100);
+      await vi.advanceTimersByTimeAsync(1100);
       expect(emitted).toHaveLength(0); // no change yet
 
       world.files[ALT_SESSION_FILE] += '\n' + assistantLine('r2', 2000);
-      vi.advanceTimersByTime(1100);
+      await vi.advanceTimersByTimeAsync(1100);
       expect(emitted).toHaveLength(1);
       const payload = emitted[0].payload as { totalUsd: number };
       expect(payload.totalUsd).toBeCloseTo(3000 * (25 / 1_000_000), 10);
     });
 
-    it('caches the resolved alt dir so later polls do not rescan projects/ for the same session', () => {
+    it('caches the resolved alt dir so later polls do not rescan projects/ for the same session', async () => {
       vi.useFakeTimers();
       const world = makeWorktreeWorld();
       let projectsDirScans = 0;
       const countingFs: CostFs = {
-        readFile: (p) => world.fakeFs.readFile(p),
+        readRange: (p, start, end) => world.fakeFs.readRange(p, start, end),
         listDir: (p) => {
           if (p === PROJECTS_DIR) projectsDirScans += 1;
           return world.fakeFs.listDir(p);
@@ -325,18 +323,18 @@ describe('session-cost watcher', () => {
         pollMs: 1000,
       });
 
-      svc.watch(args);
+      await svc.watch(args);
       expect(projectsDirScans).toBe(1);
 
       world.files[ALT_SESSION_FILE] += '\n' + assistantLine('r2', 2000);
-      vi.advanceTimersByTime(1100);
+      await vi.advanceTimersByTimeAsync(1100);
       expect(emitted).toHaveLength(1);
       expect(projectsDirScans).toBe(1); // still cached, no rescan on the poll tick
     });
 
     // EnterWorktree moves a live session's transcript from the primary dir to
     // the worktree's. The cached dir then names a file that no longer exists.
-    it('follows a transcript the CLI moves into the worktree dir mid-session', () => {
+    it('follows a transcript the CLI moves into the worktree dir mid-session', async () => {
       vi.useFakeTimers();
       const world = makeWorld(assistantLine('r1', 1000));
       world.dirs[PROJECTS_DIR] = [
@@ -352,11 +350,11 @@ describe('session-cost watcher', () => {
         stat: world.stat,
         pollMs: 1000,
       });
-      svc.watch(args);
+      await svc.watch(args);
 
       world.files[ALT_SESSION_FILE] = world.files[SESSION_FILE] + '\n' + assistantLine('r2', 2000);
       delete world.files[SESSION_FILE];
-      vi.advanceTimersByTime(1100);
+      await vi.advanceTimersByTimeAsync(1100);
 
       const last = emitted.at(-1)?.payload as { totalUsd: number } | undefined;
       expect(last?.totalUsd).toBeCloseTo(3000 * (25 / 1_000_000), 10);

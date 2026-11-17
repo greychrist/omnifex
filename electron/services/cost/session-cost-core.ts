@@ -11,21 +11,21 @@ import {
   splitCacheWriteTokens,
   type ModelPricingInput,
 } from '../../../src/lib/pricing';
-import { extractSessionUsage, type ExtractedUsageRow } from './usage-extract';
+import { extractSessionUsage, type ExtractedUsageRow, type SubagentUsage } from './usage-extract';
 
 export interface SessionCostSnapshot {
   totalUsd: number;
   estimated: boolean;
   breakdown: { inputUsd: number; outputUsd: number; cacheReadUsd: number; cacheWriteUsd: number };
   subagentUsd: number;
-  byModel: Array<{
+  byModel: {
     model: string;
     usd: number;
     inputTokens: number;
     outputTokens: number;
     cacheReadTokens: number;
     cacheWriteTokens: number;
-  }>;
+  }[];
   tokens: { input: number; output: number; cacheRead: number; cacheWrite: number };
   /** `subagentUsd` split per agent, keyed by the agent id in its transcript's
    *  name (`agent-<id>.jsonl`). Feeds the per-row stats in the `agents`
@@ -93,10 +93,27 @@ export interface ComputeSessionCostArgs {
   overrides?: readonly ModelPricingInput[] | undefined;
 }
 
-export function computeSessionCost(args: ComputeSessionCostArgs): {
+export type SessionCostMeta = Omit<ComputeSessionCostArgs, 'sessionContent' | 'subagentFiles'>;
+
+export interface SessionCost {
   snapshot: SessionCostSnapshot;
   dailyRows: SessionCostDailyRow[];
-} {
+}
+
+export function computeSessionCost(args: ComputeSessionCostArgs): SessionCost {
+  return priceSessionUsage(extractSessionUsage(args.sessionContent, args.subagentFiles), args);
+}
+
+/**
+ * Price a session's already-extracted usage (`extractSessionUsage`, or the
+ * same rows an incremental reader folded). The pricing half of
+ * `computeSessionCost`, split out so the live watcher re-prices without
+ * re-reading.
+ */
+export function priceSessionUsage(
+  usage: { main: ExtractedUsageRow[]; subagents: readonly SubagentUsage[] },
+  args: SessionCostMeta,
+): SessionCost {
   const snapshot: SessionCostSnapshot = {
     totalUsd: 0,
     estimated: false,
@@ -204,7 +221,6 @@ export function computeSessionCost(args: ComputeSessionCostArgs): {
     }
   };
 
-  const usage = extractSessionUsage(args.sessionContent, args.subagentFiles);
   ingest(usage.main, null);
   for (const sub of usage.subagents) {
     const agent = (snapshot.bySubagent[sub.agentId] ??= { usd: 0, estimated: false, contextTokens: 0, model: 'unknown' });

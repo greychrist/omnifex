@@ -32,6 +32,7 @@ import { AUTO_ON_CLOSE_SETTING_KEY, ENABLED_SETTING_KEY } from './services/sessi
 import { createSummarySweep, type SummarySweepDeps } from './services/summary-sweep';
 import type { AccountLike as CostAccountLike, CostHistoryService } from './services/cost/cost-history';
 
+const TEN_SECONDS = 10_000;
 const THIRTY_SECONDS = 30_000;
 const ONE_HOUR = 60 * 60 * 1000;
 const FIVE_MINUTES = 5 * 60 * 1000;
@@ -71,6 +72,11 @@ export interface PeriodicWorkDeps {
     warn(message: string, meta?: Record<string, unknown>): void;
   };
   /**
+   * Fill the sessions page's persisted metadata cache. Run once, shortly
+   * after start. Optional so callers without a Claude service can omit it.
+   */
+  warmSessionMetadata?: () => Promise<{ files: number }>;
+  /**
    * Whether this process owns the work right now. Omitted means "always" —
    * that is the daemon. Evaluated on every tick.
    */
@@ -103,30 +109,47 @@ export function startPeriodicWork(deps: PeriodicWorkDeps): () => void {
     }
   };
 
+  // Read every transcript into the sessions page's persisted metadata cache,
+  // once. With the cache in SQLite this only reads what changed while the
+  // daemon was down, so even a project's first visit after a restart is
+  // instant. Ten seconds in, ahead of the heavier cost backfill at thirty.
+  const warm = deps.warmSessionMetadata;
+  if (warm) {
+    timers.push(
+      setTimeout(() => {
+        if (!owned()) return;
+        const started = Date.now();
+        warm()
+          .then((r) => { log.info('session metadata warm-up', { files: r.files, ms: Date.now() - started }); })
+          .catch((err: unknown) => { log.warn('session metadata warm-up failed', { error: String(err) }); });
+      }, TEN_SECONDS),
+    );
+  }
+
   // Backfill from surviving transcripts shortly after startup, then sweep
   // hourly to catch sessions run outside OmniFex (terminal claude-work).
   timers.push(
     setTimeout(() => {
       if (!owned()) return;
-      try {
-        settleScratch();
-        const r = costHistory.backfill(listAccounts());
-        log.info('cost-history startup backfill', { sessionsScanned: r.sessionsScanned });
-      } catch (err) {
-        log.warn('cost-history startup backfill failed', { error: String(err) });
-      }
+      settleScratch();
+      // Inside the promise chain so a synchronous throw (listAccounts) is
+      // logged like a rejected sweep, not left uncaught in a timer.
+      Promise.resolve()
+        .then(() => costHistory.backfill(listAccounts()))
+        .then((r) => { log.info('cost-history startup backfill', { sessionsScanned: r.sessionsScanned }); })
+        .catch((err: unknown) => { log.warn('cost-history startup backfill failed', { error: String(err) }); });
     }, THIRTY_SECONDS),
   );
 
   timers.push(
     setInterval(() => {
       if (!owned()) return;
-      try {
-        settleScratch();
-        costHistory.backfill(listAccounts());
-      } catch (err) {
-        log.warn('cost-history sweep failed', { error: String(err) });
-      }
+      settleScratch();
+      // Overlapping sweeps share one run (cost-history), so an hourly tick
+      // landing on a cold first sweep does not start a second.
+      Promise.resolve()
+        .then(() => costHistory.backfill(listAccounts()))
+        .catch((err: unknown) => { log.warn('cost-history sweep failed', { error: String(err) }); });
     }, ONE_HOUR),
   );
 

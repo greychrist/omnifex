@@ -108,6 +108,23 @@ describe('createClaudeCliReviewService', () => {
     expect((await service.getStatus()).unreviewed).toBe(true);
   });
 
+  // The daemon's probe is an async spawn: a sync one on every status check
+  // froze every live session's stream for up to its 5s timeout.
+  it('awaits an async probe', async () => {
+    const service = createClaudeCliReviewService({
+      cliVersionFn: async () => '99.0.0 (Claude Code)',
+    });
+    expect(await service.getStatus()).toMatchObject({ installed_version: '99.0.0', unreviewed: true });
+    expect((await service.runUpdate()).from).toBe('99.0.0');
+  });
+
+  it('survives an async probe that rejects', async () => {
+    const service = createClaudeCliReviewService({
+      cliVersionFn: () => Promise.reject(new Error('spawn ENOENT')),
+    });
+    expect(await service.getStatus()).toMatchObject({ installed_version: null, unreviewed: false });
+  });
+
   it('survives a probe that throws', async () => {
     const service = createClaudeCliReviewService({
       cliVersionFn: () => {

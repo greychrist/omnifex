@@ -47,6 +47,7 @@ import type { Curator } from './curation';
 import { computeVaultStats, type VaultStats } from './stats';
 import { isExcludedProject, parseDecisions, type ProjectDecisions } from './exclusions';
 import type { AccountsService } from '../accounts';
+import { mapLimit } from '../util/map-limit';
 import type { ParsedNote } from './types';
 
 /**
@@ -743,6 +744,13 @@ export interface BrainServiceOptions {
   /** Injectable eviction probe; see offloaded.ts. Defaults to the real one. */
   countOffloaded?: (root: string) => Promise<number | null>;
 }
+
+/**
+ * Items checked at once while listing sources. Each check may read a file
+ * through libuv's thread pool (four workers by default); a few in flight keeps
+ * the pane quick without queueing every other fs call in the daemon behind it.
+ */
+const LIST_CONCURRENCY = 4;
 
 export function createBrainService(
   db: Database,
@@ -1455,16 +1463,21 @@ export function createBrainService(
       const live = liveSessions();
       const summaries: SourceSummary[] = [];
       for (const source of sources) {
-        for (const item of await source.discover()) {
-          // The filter that makes this account-scoped. An item belonging to
-          // another account is not merely uninteresting here — surfacing it
-          // would put one account's project names in another's UI.
-          if (item.accountId !== accountId) continue;
-          const isExcluded = isExcludedProject(item.label, decisions);
-          if (isExcluded && opts.includeExcluded !== true) continue;
-          const verdict = source.admit(item);
+        // The filter that makes this account-scoped. An item belonging to
+        // another account is not merely uninteresting here — surfacing it
+        // would put one account's project names in another's UI.
+        const listed = (await source.discover()).filter(
+          (item) =>
+            item.accountId === accountId &&
+            (opts.includeExcluded === true || !isExcludedProject(item.label, decisions)),
+        );
+        // Bounded fan-out: the verdict and change check read files through the
+        // thread pool, and an unbounded Promise.all over every transcript the
+        // account owns would starve every other fs call the daemon makes.
+        const rows = await mapLimit(listed, LIST_CONCURRENCY, async (item): Promise<SourceSummary> => {
+          const verdict = await source.admit(item);
           const prior = sourceState.get(accountId, item.sourceId, item.itemKey);
-          summaries.push({
+          return {
             accountId,
             sourceId: item.sourceId,
             itemKey: item.itemKey,
@@ -1476,15 +1489,16 @@ export function createBrainService(
             admitted: verdict.admitted,
             reason: verdict.reason,
             status: prior?.status ?? null,
-            changed: sourceState.hasChanged(item),
-            excluded: isExcluded,
+            changed: await sourceState.hasChanged(item),
+            excluded: isExcludedProject(item.label, decisions),
             costUsd: prior?.cost?.costUsd ?? null,
             inputTokens: prior?.cost?.inputTokens ?? null,
             outputTokens: prior?.cost?.outputTokens ?? null,
             cacheReadTokens: prior?.cost?.cacheReadTokens ?? null,
             cacheCreationTokens: prior?.cost?.cacheCreationTokens ?? null,
-          });
-        }
+          };
+        });
+        summaries.push(...rows);
       }
       // Newest first: the session a user wants to check is almost always the
       // one they just finished.
@@ -1496,7 +1510,7 @@ export function createBrainService(
       requireAccountId(accountId);
       const found = await findItem(accountId, itemKey);
       if (!found) return null;
-      const verdict = found.source.admit(found.item);
+      const verdict = await found.source.admit(found.item);
 
       if (found.source.translate) {
         const translated = await found.source.translate(found.item);
@@ -1585,7 +1599,7 @@ export function createBrainService(
       // into churn and every re-index into a git commit. `force` keeps a
       // deliberate redo available for when the prompt or the model improves.
       const prior = sourceState.get(accountId, item.sourceId, item.itemKey);
-      if (!runOpts.force && prior?.status === 'indexed' && !sourceState.hasChanged(item)) {
+      if (!runOpts.force && prior?.status === 'indexed' && !(await sourceState.hasChanged(item))) {
         return {
           itemKey,
           notesWritten: [],
@@ -1603,9 +1617,9 @@ export function createBrainService(
       // an explicit press used to record a skip and write nothing, which left
       // the row exactly as actionable as before and read as a broken button.
       // The sweep never sets this, so "142 sessions" stays 142 refusals.
-      const verdict = source.admit(item);
+      const verdict = await source.admit(item);
       if (!verdict.admitted && !runOpts.force) {
-        sourceState.record(item, { status: 'skipped', error: verdict.reason });
+        await sourceState.record(item, { status: 'skipped', error: verdict.reason });
         return { itemKey, notesWritten: [], skipped: true, reason: verdict.reason };
       }
 
@@ -1637,10 +1651,10 @@ export function createBrainService(
         const summary = failures.length > 0 ? failures.join('; ') : undefined;
         if (written.length > 0) commitAndRecord(handle, `Index ${item.sourceId}:${item.itemKey}`);
         if (written.length === 0 && failures.length > 0) {
-          sourceState.record(item, { status: 'failed', error: summary });
+          await sourceState.record(item, { status: 'failed', error: summary });
           return { itemKey, notesWritten: [], skipped: true, reason: summary ?? 'no notes written' };
         }
-        sourceState.record(item, { status: 'indexed', error: summary });
+        await sourceState.record(item, { status: 'indexed', error: summary });
         return {
           itemKey,
           notesWritten: written,
@@ -1663,7 +1677,7 @@ export function createBrainService(
         // No silent fallback to another account's config dir — that would push
         // this account's content through the wrong subscription (spec §4).
         const reason = 'no account for this item';
-        sourceState.record(item, { status: 'blocked', error: reason });
+        await sourceState.record(item, { status: 'blocked', error: reason });
         return { itemKey, notesWritten: [], skipped: true, reason };
       }
 
@@ -1683,7 +1697,7 @@ export function createBrainService(
         // A failed extraction is a recorded status, never an exception into
         // whatever called this. A failed item must not block anything (spec §8).
         const reason = (err as Error).message;
-        sourceState.record(item, { status: 'failed', error: reason });
+        await sourceState.record(item, { status: 'failed', error: reason });
         return { itemKey, notesWritten: [], skipped: true, reason };
       }
 
@@ -1759,7 +1773,7 @@ export function createBrainService(
       // Nothing usable at all is reported as skipped, so the Sources pane does
       // not claim a successful run that produced no note.
       if (notesWritten.length === 0 && entityErrors.length > 0) {
-        sourceState.record(item, { status: 'failed', error: errorSummary, run: extraction.run });
+        await sourceState.record(item, { status: 'failed', error: errorSummary, run: extraction.run });
         return { itemKey, notesWritten, skipped: true, reason: errorSummary ?? 'no notes written' };
       }
 
@@ -1767,7 +1781,7 @@ export function createBrainService(
       // re-running would spend another token to arrive at the same place.
       // The run is recorded with the outcome, not separately: money is spent
       // whether or not the entities it produced turned into notes.
-      sourceState.record(item, { status: 'indexed', error: errorSummary, run: extraction.run });
+      await sourceState.record(item, { status: 'indexed', error: errorSummary, run: extraction.run });
 
       const reason =
         entityErrors.length > 0
@@ -2034,9 +2048,9 @@ export function createBrainService(
             item.itemKey.startsWith(`${encoded}/`) || item.itemKey.startsWith(`${projectPath}:`);
           if (!belongs) continue;
           if (isExcludedItem(accountId, item)) continue;
-          if (!source.admit(item).admitted) continue;
+          if (!(await source.admit(item)).admitted) continue;
           const prior = sourceState.get(accountId, item.sourceId, item.itemKey);
-          if (prior?.status === 'indexed' && !sourceState.hasChanged(item)) continue;
+          if (prior?.status === 'indexed' && !(await sourceState.hasChanged(item))) continue;
           enqueueItem(accountId, item.sourceId, item.itemKey);
           queued += 1;
         }
@@ -2053,6 +2067,13 @@ export function createBrainService(
         for (const item of await source.discover()) {
           if (item.accountId !== accountId) continue;
           if (isExcludedItem(accountId, item)) continue;
+          // Mid-conversation: `indexSource` would refuse it at claim time
+          // anyway, and on a five-minute timer that refusal is pure churn.
+          // Costs nothing if it goes idle before the next tick picks it up.
+          // First, ahead of the change check: a live transcript is the one
+          // whose mtime always moved, so checking it first hashed the very
+          // session the user is streaming, in full, every tick.
+          if (isLiveItem(item, live, at)) continue;
           const prior = sourceState.get(accountId, item.sourceId, item.itemKey);
           // The sweep's horizon. Absent for the Backfill button, which is the
           // deliberate "everything" action and must stay one.
@@ -2066,7 +2087,7 @@ export function createBrainService(
           // horizon's stated job is the first tick after the opt-in — not
           // enqueuing every transcript ever written — and an item that was
           // already admitted and paid for once is not that case.
-          const knownAndChanged = prior !== null && sourceState.hasChanged(item);
+          const knownAndChanged = prior !== null && (await sourceState.hasChanged(item));
           if (
             !knownAndChanged &&
             opts.sinceMs !== undefined &&
@@ -2074,10 +2095,6 @@ export function createBrainService(
           ) {
             continue;
           }
-          // Mid-conversation: `indexSource` would refuse it at claim time
-          // anyway, and on a five-minute timer that refusal is pure churn.
-          // Costs nothing if it goes idle before the next tick picks it up.
-          if (isLiveItem(item, live, at)) continue;
           // Already done and unmoved: `indexSource` would short-circuit
           // anyway, but keeping it out of the queue is what makes re-running
           // backfill after a partial run cost only what is left.
@@ -2089,7 +2106,7 @@ export function createBrainService(
           // ahead of the mtime and change checks would re-read the user's
           // entire history every five minutes. Reordering is safe because
           // `admit()` is side-effect-free.
-          if (!source.admit(item).admitted) continue;
+          if (!(await source.admit(item)).admitted) continue;
           enqueueItem(accountId, item.sourceId, item.itemKey);
           queued += 1;
         }

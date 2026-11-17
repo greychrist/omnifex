@@ -23,6 +23,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Account } from './accounts';
+import { mapLimit } from './util/map-limit';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -58,26 +59,75 @@ export interface CreateCodexSessionWalkerDeps {
  * Walk `rootDir` recursively and yield absolute paths of every `*.jsonl`
  * file found. Tolerates a missing root (returns nothing) and tolerates
  * per-directory `readdir` failures (skips the offending subtree without
- * throwing). Sync — the directory tree is tiny in practice and we want a
- * single deterministic ordering before sorting by mtime.
+ * throwing). Async: it runs on the daemon's one event loop, and Codex keeps
+ * one directory per day of history. Order is depth-first readdir order,
+ * deterministic before the mtime sort.
  */
-function collectJsonlFiles(rootDir: string): string[] {
-  const out: string[] = [];
+async function collectJsonlFiles(rootDir: string): Promise<string[]> {
   let entries: fs.Dirent[];
   try {
-    entries = fs.readdirSync(rootDir, { withFileTypes: true });
+    entries = await fs.promises.readdir(rootDir, { withFileTypes: true });
   } catch {
-    return out;
+    return [];
   }
+  const out: string[] = [];
   for (const ent of entries) {
     const full = path.join(rootDir, ent.name);
     if (ent.isDirectory()) {
-      out.push(...collectJsonlFiles(full));
+      out.push(...(await collectJsonlFiles(full)));
     } else if (ent.isFile() && ent.name.endsWith('.jsonl')) {
       out.push(full);
     }
   }
   return out;
+}
+
+/** Read size for the first-line scan. */
+const HEAD_CHUNK = 64 * 1024;
+/**
+ * Longest first line read. `session_meta` carries the base instructions, so it
+ * runs to tens of KB — but a rollout whose first line is past this is not one
+ * the walker can use, and reading on would be reading the whole file again.
+ */
+const MAX_FIRST_LINE = 4 * 1024 * 1024;
+/** Concurrent rollout reads; see util/map-limit.ts for why it is bounded. */
+const FS_CONCURRENCY = 8;
+
+/**
+ * The rollout's first line, read a chunk at a time until its newline — not
+ * the whole file, which grows to many MB. Null when unreadable or when the
+ * line is longer than `MAX_FIRST_LINE`.
+ */
+async function readFirstLine(filePath: string): Promise<string | null> {
+  let handle: fs.promises.FileHandle;
+  try {
+    handle = await fs.promises.open(filePath, 'r');
+  } catch {
+    return null;
+  }
+  try {
+    const chunks: Buffer[] = [];
+    let total = 0;
+    for (;;) {
+      const buf = Buffer.alloc(HEAD_CHUNK);
+      const { bytesRead } = await handle.read(buf, 0, HEAD_CHUNK, total);
+      if (bytesRead === 0) break;
+      const chunk = buf.subarray(0, bytesRead);
+      const nl = chunk.indexOf(0x0a);
+      if (nl !== -1) {
+        chunks.push(chunk.subarray(0, nl));
+        break;
+      }
+      chunks.push(chunk);
+      total += bytesRead;
+      if (total >= MAX_FIRST_LINE) return null;
+    }
+    return Buffer.concat(chunks).toString('utf8');
+  } catch {
+    return null;
+  } finally {
+    await handle.close();
+  }
 }
 
 /**
@@ -116,16 +166,10 @@ function conversationIdFromFilename(filePath: string): string {
  * file, unreadable file, malformed first line, missing payload — so the
  * caller can still surface the row with filename-derived defaults.
  */
-function readFirstRecordMeta(
+async function readFirstRecordMeta(
   filePath: string,
-): { conversationId: string | null; projectPath: string | null } {
-  let content: string;
-  try {
-    content = fs.readFileSync(filePath, 'utf8');
-  } catch {
-    return { conversationId: null, projectPath: null };
-  }
-  const firstLine = content.split('\n', 1)[0]?.trim();
+): Promise<{ conversationId: string | null; projectPath: string | null }> {
+  const firstLine = (await readFirstLine(filePath))?.trim();
   if (!firstLine) return { conversationId: null, projectPath: null };
 
   let parsed: unknown;
@@ -172,35 +216,32 @@ function readFirstRecordMeta(
  * Scan a single Codex `sessions` directory and return its rollouts (untagged).
  * Missing dir → [] (Codex hasn't run for that account, or it was cleaned up).
  */
-function scanCodexSessionsDir(sessionsDir: string): Omit<CodexSessionEntry, 'accountId'>[] {
-  if (!fs.existsSync(sessionsDir)) return [];
-
-  const files = collectJsonlFiles(sessionsDir);
-  const entries: Omit<CodexSessionEntry, 'accountId'>[] = [];
-
-  for (const file of files) {
+async function scanCodexSessionsDir(sessionsDir: string): Promise<Omit<CodexSessionEntry, 'accountId'>[]> {
+  // A missing dir reads as an empty listing.
+  const files = await collectJsonlFiles(sessionsDir);
+  const entries = await mapLimit(files, FS_CONCURRENCY, async (file) => {
     let stat: fs.Stats;
     try {
-      stat = fs.statSync(file);
+      stat = await fs.promises.stat(file);
     } catch {
       // File vanished between readdir and stat — race with deletion
       // (logout, user housekeeping). Skip silently.
-      continue;
+      return null;
     }
 
-    const fromFile = readFirstRecordMeta(file);
+    const fromFile = await readFirstRecordMeta(file);
     const conversationId =
       fromFile.conversationId ?? conversationIdFromFilename(file);
 
-    entries.push({
+    return {
       conversationId,
       projectPath: fromFile.projectPath,
       lastActivity: stat.mtime.toISOString(),
       jsonlPath: file,
-    });
-  }
+    };
+  });
 
-  return entries;
+  return entries.filter((e): e is Omit<CodexSessionEntry, 'accountId'> => e !== null);
 }
 
 export function createCodexSessionWalker(
@@ -211,7 +252,7 @@ export function createCodexSessionWalker(
       const all: CodexSessionEntry[] = [];
       for (const acct of deps.listCodexAccounts()) {
         const sessionsDir = path.join(acct.config_dir, 'sessions');
-        for (const entry of scanCodexSessionsDir(sessionsDir)) {
+        for (const entry of await scanCodexSessionsDir(sessionsDir)) {
           all.push({ ...entry, accountId: acct.id });
         }
       }

@@ -74,16 +74,49 @@ function asString(value: unknown): string | null {
   return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
+/** One line of a transcript, or null for a line that holds no row. */
+function parseLine(line: string): Row | null {
+  if (!line.trim() || isRequestReplayLine(line)) return null;
+  try {
+    return asRecord(JSON.parse(line) as unknown);
+  } catch {
+    // A truncated final line is normal for a session still being written.
+    return null;
+  }
+}
+
 /** Parse leniently: a malformed line is skipped, never thrown. */
 function parseRows(jsonl: string): Row[] {
   const rows: Row[] = [];
   for (const line of jsonl.split('\n')) {
-    if (!line.trim() || isRequestReplayLine(line)) continue;
-    try {
-      const row = asRecord(JSON.parse(line) as unknown);
-      if (row) rows.push(row);
-    } catch {
-      // A truncated final line is normal for a session still being written.
+    const row = parseLine(line);
+    if (row) rows.push(row);
+  }
+  return rows;
+}
+
+/**
+ * `parseRows`, handing the event loop back every `sliceMs`.
+ *
+ * The daemon streams every live session from one event loop, and parsing a
+ * long transcript is seconds of CPU — on the sweep's timer or the Sources
+ * pane's request, that is seconds of every session frozen mid-stream. Walking
+ * by `indexOf` rather than `split` also skips building one array of every line
+ * of a 100 MB string up front.
+ */
+async function parseRowsAsync(jsonl: string, sliceMs: number): Promise<Row[]> {
+  const rows: Row[] = [];
+  let start = 0;
+  let sliceStart = performance.now();
+  while (start <= jsonl.length) {
+    let end = jsonl.indexOf('\n', start);
+    if (end === -1) end = jsonl.length;
+    const row = parseLine(jsonl.slice(start, end));
+    if (row) rows.push(row);
+    start = end + 1;
+    if (performance.now() - sliceStart >= sliceMs) {
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      sliceStart = performance.now();
     }
   }
   return rows;
@@ -338,7 +371,23 @@ function truncateWithPromptPriority(chunks: Chunk[]): { prose: string; truncated
  * with its filename should not get to rename itself.
  */
 export function distillTranscript(jsonl: string, sessionId: string): DistilledSession {
-  const rows = parseRows(jsonl);
+  return distillRows(parseRows(jsonl), sessionId);
+}
+
+/**
+ * `distillTranscript` for the daemon: the same result, with the parse — the
+ * part that scales with the transcript — sliced so it never holds the event
+ * loop for more than `sliceMs` at a time.
+ */
+export async function distillTranscriptAsync(
+  jsonl: string,
+  sessionId: string,
+  opts: { sliceMs?: number } = {},
+): Promise<DistilledSession> {
+  return distillRows(await parseRowsAsync(jsonl, opts.sliceMs ?? 10), sessionId);
+}
+
+function distillRows(rows: Row[], sessionId: string): DistilledSession {
   const chunks: Chunk[] = [];
 
   for (const row of rows) {

@@ -8,7 +8,6 @@ import { SlashCommandsManager } from '@/components/SlashCommandsManager';
 import { api } from '@/lib/api';
 import { 
   AlertTriangle, 
-  ArrowLeft, 
   Settings,
   FolderOpen,
   GitBranch,
@@ -16,6 +15,7 @@ import {
   Command
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { BackButton } from "@/components/ui/back-button";
 import { Card } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
@@ -85,10 +85,7 @@ export const ProjectSettings: React.FC<ProjectSettingsProps> = ({
       <div className="border-b px-6 py-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <Button variant="ghost" size="sm" onClick={onBack}>
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Back
-            </Button>
+            <BackButton label="Back" size="md" onClick={onBack} />
             <div className="flex items-center gap-2">
               <Settings className="h-5 w-5 text-muted-foreground" />
               <h2 className="text-xl font-semibold">Project Settings</h2>

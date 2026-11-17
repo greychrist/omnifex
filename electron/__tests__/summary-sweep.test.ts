@@ -130,3 +130,27 @@ describe('summary sweep', () => {
     expect(await sweep.tick()).toBe(0);
   });
 });
+
+// Every five minutes this walks every project dir of every account. Sync, it
+// held the daemon's one event loop — and every live session's stream — for
+// the whole walk.
+describe('summary sweep I/O', () => {
+  it('walks, stats and reads without sync fs calls', async () => {
+    writeSession({ uuid: U1, ageMs: 30 * MIN });
+    writeSession({ uuid: U2, ageMs: 40 * MIN, sidecarSize: 'match' });
+    writeSession({ uuid: U3, dir: '-Users-me-other', ageMs: 50 * MIN, sidecarSize: 1 });
+    const spies = (['readdirSync', 'statSync', 'readFileSync', 'openSync', 'existsSync'] as const).map((m) =>
+      vi.spyOn(fs, m),
+    );
+    try {
+      const h = harness({ maxPerTick: 5 });
+      expect(await h.sweep.tick()).toBe(2);
+      expect(h.generateSummary.mock.calls.map((c) => c[0])).toEqual([U1, U3]);
+      for (const spy of spies) {
+        expect(spy.mock.calls.filter(([p]) => typeof p === 'string' && p.startsWith(root))).toEqual([]);
+      }
+    } finally {
+      for (const spy of spies) spy.mockRestore();
+    }
+  });
+});

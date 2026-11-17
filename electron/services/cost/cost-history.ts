@@ -7,13 +7,22 @@
 // outside OmniFex — so monthly totals can reconcile against Anthropic's
 // console.
 
-import fs from 'node:fs';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import type { Database } from '../database';
 import { createModelPricingService } from '../model-pricing';
-import type { ModelPricingInput } from '../../../src/lib/pricing';
-import { computeSessionCost, type SessionCostDailyRow, type SubagentFile } from './session-cost-core';
-import { extractSessionUsage } from './usage-extract';
+import { SHIPPED_PRICING, type ModelPricingInput } from '../../../src/lib/pricing';
+import { mapLimit } from '../util/map-limit';
+import { computeSessionCost, priceSessionUsage, type SessionCostDailyRow } from './session-cost-core';
+import { claimSessionUsage } from './usage-extract';
+import {
+  advanceFileUsage,
+  collectSubagentFiles,
+  nodeCostFs,
+  subagentId,
+  type CostFs,
+  type FileStat,
+} from './transcript-usage';
 import { createCliProcessUsageStore, type CliProcessUsage } from './cli-process-usage';
 import { computeUnloggedRows, UNLOGGED_SESSION_PREFIX } from './unlogged-spend';
 import {
@@ -21,106 +30,6 @@ import {
   isSummaryScratchProject,
   type RecordInternalSpend,
 } from '../sessions/internal-spend';
-
-export interface CostFs {
-  readFile(p: string): string | null;
-  listDir(p: string): Array<{ name: string; isDirectory: boolean }>;
-  stat(p: string): { mtimeMs: number; size: number } | null;
-}
-
-export const nodeCostFs: CostFs = {
-  readFile(p: string): string | null {
-    try {
-      return fs.readFileSync(p, 'utf8');
-    } catch {
-      return null;
-    }
-  },
-  listDir(p: string): Array<{ name: string; isDirectory: boolean }> {
-    try {
-      return fs
-        .readdirSync(p, { withFileTypes: true })
-        .map((e) => ({ name: e.name, isDirectory: e.isDirectory() }));
-    } catch {
-      return [];
-    }
-  },
-  stat(p: string): { mtimeMs: number; size: number } | null {
-    try {
-      const s = fs.statSync(p);
-      return { mtimeMs: s.mtimeMs, size: s.size };
-    } catch {
-      return null;
-    }
-  },
-};
-
-/** Depth cap for the subagents walk. Workflow agents sit at
- *  `subagents/workflows/<wf-id>/agent-*.jsonl` — depth 3 — so 6 leaves room
- *  for another nesting level upstream without letting a symlink loop spin. */
-const MAX_SUBAGENT_DEPTH = 6;
-
-/**
- * Every subagent transcript for one session, at any depth under `subagents/`.
- *
- * The CLI writes plain Task subagents flat (`subagents/agent-<id>.jsonl`) but
- * Workflow subagents one directory deeper
- * (`subagents/workflows/wf_<id>/agent-<id>.jsonl`). A non-recursive listing
- * sees only the first kind and silently drops the rest — for 2026-08 on
- * ~/.claude-work that was 16 files and $37.41 of real spend. See
- * docs/superpowers/specs/2026-08-26-cost-report-page-design.md §1.1.
- *
- * Returns absolute paths, sorted, so callers get a stable order for both
- * change-detection signatures and cost aggregation.
- */
-export function collectSubagentFiles(fsDeps: CostFs, subagentsDir: string): string[] {
-  const found: string[] = [];
-  const walk = (dir: string, depth: number): void => {
-    if (depth > MAX_SUBAGENT_DEPTH) return;
-    for (const entry of fsDeps.listDir(dir)) {
-      const full = path.join(dir, entry.name);
-      if (entry.isDirectory) {
-        walk(full, depth + 1);
-      } else if (entry.name.startsWith('agent-') && entry.name.endsWith('.jsonl')) {
-        found.push(full);
-      }
-    }
-  };
-  walk(subagentsDir, 0);
-  return found.sort();
-}
-
-/**
- * Every subagent transcript under `subagentsDir` with the agent id its file
- * name carries (`agent-<id>.jsonl`). Unreadable files are skipped.
- */
-export function readSubagentFiles(fsDeps: CostFs, subagentsDir: string): SubagentFile[] {
-  const files: SubagentFile[] = [];
-  for (const full of collectSubagentFiles(fsDeps, subagentsDir)) {
-    const content = fsDeps.readFile(full);
-    if (content === null) continue;
-    files.push({ agentId: path.basename(full).slice('agent-'.length, -'.jsonl'.length), content });
-  }
-  return files;
-}
-
-/**
- * Change-detection fragment for a session's subagent transcripts: each file's
- * path-relative name plus size and mtime.
- *
- * Keyed on the path relative to `subagentsDir`, not the basename — two
- * workflows can each hold an `agent-<id>.jsonl`, and a basename-keyed
- * signature would let a newly-created nested file hide behind an unchanged
- * flat one of the same name.
- */
-function subagentSignature(fsDeps: CostFs, subagentsDir: string): string {
-  return collectSubagentFiles(fsDeps, subagentsDir)
-    .map((full) => {
-      const s = fsDeps.stat(full);
-      return `${path.relative(subagentsDir, full)}:${s?.size ?? 0}:${s?.mtimeMs ?? 0}`;
-    })
-    .join(',');
-}
 
 /** Multi-valued fields OR their values together; an empty array means "no
  *  filter", not "match nothing" — a filter bar that empties the table the
@@ -296,7 +205,9 @@ export interface CostHistoryService {
   subagentSplit(filters: CostHistoryFilters): SubagentSplitRow[];
   unpriced(filters: CostHistoryFilters): UnpricedModel[];
   facets(filters: CostHistoryFilters): CostFacets;
-  backfill(accounts: AccountLike[]): { sessionsScanned: number };
+  /** Re-price every session whose transcripts (or pricing) changed since its
+   *  last scan. Overlapping calls share one sweep. */
+  backfill(accounts: AccountLike[]): Promise<{ sessionsScanned: number }>;
   /**
    * Price one of OmniFex's own CLI runs, from its transcript, under the
    * activity's label. Replaces any rows already held for the session id, so a
@@ -362,30 +273,49 @@ const PERIOD_EXPR: Record<'day' | 'week' | 'month', string> = {
   month: 'substr(date, 1, 7)',
 };
 
-/** Recover the real project path from `cwd` on early JSONL lines; the dir
- *  name's `/`→`-` encoding is lossy. Mirrors usage.ts's recovery approach. */
-function recoverProjectPath(content: string, dirName: string): string {
-  const lines = content.split('\n', 50);
-  for (const line of lines) {
-    const t = line.trim();
-    if (!t) continue;
-    try {
-      const parsed = JSON.parse(t) as { cwd?: unknown };
-      if (typeof parsed.cwd === 'string' && parsed.cwd.startsWith('/')) return parsed.cwd;
-    } catch {
-      continue;
-    }
-  }
-  return dirName.replace(/-/g, '/');
+/** Bump when what a scan extracts or how it prices changes in code: every
+ *  persisted signature then goes stale and the next sweep re-reads everything. */
+const COST_SCAN_VERSION = 1;
+
+/** Sessions scanned at once. Each read is chunked and every chunk yields, so
+ *  this bounds memory and thread-pool share, not event-loop time. */
+const SCAN_CONCURRENCY = 2;
+
+/**
+ * Everything other than the transcripts that decides a session's rows: the
+ * scan code's version, the shipped rates and the user's pricing rows. Part of
+ * every persisted signature, so a release with new rates, or an edited pricing
+ * row, re-prices history on the next sweep — which a daemon restart used to do
+ * by forgetting every signature.
+ */
+function pricingKey(overrides: readonly ModelPricingInput[] | undefined): string {
+  return createHash('sha256')
+    .update(JSON.stringify([COST_SCAN_VERSION, SHIPPED_PRICING, overrides ?? null]))
+    .digest('hex')
+    .slice(0, 16);
 }
 
-/** Change-detection signature for a session's on-disk JSONLs: main file
- *  `size:mtimeMs` plus every subagent transcript at any depth. Mirrors
- *  session-cost.ts's live-watcher signature() so the two stay consistent
- *  about what counts as "the same session content". */
-function sessionFileSignature(fsDeps: CostFs, mainPath: string, subagentsDir: string): string {
-  const main = fsDeps.stat(mainPath);
-  return `${main?.size ?? 0}:${main?.mtimeMs ?? 0}|${subagentSignature(fsDeps, subagentsDir)}`;
+/** A session's on-disk transcripts as one sweep saw them. */
+interface SessionFiles {
+  main: FileStat | null;
+  subagents: { file: string; stat: FileStat | null }[];
+  /** Main file `size:mtimeMs` plus every subagent transcript at any depth,
+   *  keyed on its path relative to `subagents/`, not its basename — two
+   *  workflows can each hold an `agent-<id>.jsonl`, and a basename-keyed
+   *  signature would let a new nested file hide behind an unchanged flat one. */
+  signature: string;
+}
+
+async function statSessionFiles(fsDeps: CostFs, mainPath: string, subagentsDir: string): Promise<SessionFiles> {
+  const main = await fsDeps.stat(mainPath);
+  const subagents: SessionFiles['subagents'] = [];
+  for (const file of await collectSubagentFiles(fsDeps, subagentsDir)) {
+    subagents.push({ file, stat: await fsDeps.stat(file) });
+  }
+  const subs = subagents
+    .map(({ file, stat }) => `${path.relative(subagentsDir, file)}:${stat?.size ?? 0}:${stat?.mtimeMs ?? 0}`)
+    .join(',');
+  return { main, subagents, signature: `${main?.size ?? 0}:${main?.mtimeMs ?? 0}|${subs}` };
 }
 
 /** What changes when the CLI reports a new figure for any of the session's processes. */
@@ -394,12 +324,24 @@ function cliUsageSignature(processes: readonly CliProcessUsage[]): string {
 }
 
 export function createCostHistoryService(db: Database, fsDeps: CostFs = nodeCostFs): CostHistoryService {
-  // Per-service in-memory cache: session file path -> last-scanned signature.
-  // Lets the hourly backfill sweep skip sessions whose JSONLs haven't
-  // changed since the last pass, instead of re-reading and rewriting every
-  // row for every surviving session on every run (unbounded growth under
-  // 365-day retention otherwise).
-  const scannedSignatures = new Map<string, string>();
+  // Session file path -> the signature it was last scanned at, in SQLite
+  // (`cost_scan_signatures`, migration 35) so it outlives the daemon. Lets a
+  // sweep skip sessions whose transcripts have not changed: kept in memory
+  // only, every restart re-read and re-parsed every transcript of every
+  // account — ~1.9 GB, in one synchronous call that froze every session.
+  const selectSignature = db.raw.prepare('SELECT signature FROM cost_scan_signatures WHERE file_path = ?');
+  const upsertSignature = db.raw.prepare(`
+    INSERT INTO cost_scan_signatures (file_path, signature) VALUES (?, ?)
+    ON CONFLICT(file_path) DO UPDATE SET signature = excluded.signature
+  `);
+  // Prefix match by substr, not LIKE: `_` and `%` are legal in folder names.
+  const selectSignaturesUnder = db.raw.prepare(
+    'SELECT file_path FROM cost_scan_signatures WHERE substr(file_path, 1, length(@prefix)) = @prefix',
+  );
+  const deleteSignature = db.raw.prepare('DELETE FROM cost_scan_signatures WHERE file_path = ?');
+  const pruneSignatures = db.raw.transaction((paths: string[]) => {
+    for (const p of paths) deleteSignature.run(p);
+  });
   const insertStmt = db.raw.prepare(`
     INSERT INTO session_cost_daily (
       session_id, date, model, account_name, config_dir, project_path,
@@ -561,7 +503,7 @@ export function createCostHistoryService(db: Database, fsDeps: CostFs = nodeCost
         FROM session_cost_daily ${sql}
         GROUP BY is_subagent ORDER BY is_subagent
       `)
-      .all(...params) as Array<Omit<SubagentSplitRow, 'usd_per_request'>>;
+      .all(...params) as Omit<SubagentSplitRow, 'usd_per_request'>[];
     return rows.map((r) => ({
       ...r,
       usd_per_request: r.request_count > 0 ? r.cost_usd / r.request_count : 0,
@@ -599,7 +541,7 @@ export function createCostHistoryService(db: Database, fsDeps: CostFs = nodeCost
     const distinct = (name: string, where: { sql: string; params: unknown[] }): string[] =>
       (db.raw
         .prepare(`SELECT DISTINCT ${name} AS v FROM session_cost_daily ${where.sql} ORDER BY v`)
-        .all(...where.params) as Array<{ v: string | null }>)
+        .all(...where.params) as { v: string | null }[])
         .map((r) => r.v)
         .filter((v): v is string => v !== null && v !== '');
 
@@ -633,70 +575,149 @@ export function createCostHistoryService(db: Database, fsDeps: CostFs = nodeCost
       .all(...params) as CostSessionRow[];
   }
 
-  function backfill(accounts: AccountLike[]): { sessionsScanned: number } {
+  interface SessionItem {
+    account: AccountLike;
+    dirName: string;
+    sessionId: string;
+    mainPath: string;
+    subagentsDir: string;
+  }
+
+  /** Read one session's transcripts and replace its rows. False when its main
+   *  transcript could not be read (vanished mid-sweep): nothing written. */
+  async function scanSession(
+    item: SessionItem,
+    files: SessionFiles,
+    processes: readonly CliProcessUsage[],
+    overrides: readonly ModelPricingInput[] | undefined,
+  ): Promise<boolean> {
+    const { account, sessionId } = item;
+    if (!files.main) return false;
+    const main = await advanceFileUsage(fsDeps, item.mainPath, files.main);
+    if (!main) return false;
+    const subagents = [];
+    for (const { file, stat } of files.subagents) {
+      if (!stat) continue;
+      const sub = await advanceFileUsage(fsDeps, file, stat);
+      if (sub) subagents.push({ agentId: subagentId(file), rows: [...sub.state.fold.rows.values()] });
+    }
+    const usage = claimSessionUsage([...main.state.fold.rows.values()], subagents);
+    // The real project path, from `cwd` on an early line; the dir name's
+    // `/`→`-` encoding is lossy. Mirrors usage.ts's recovery approach.
+    const projectPath = main.state.fold.cwd ?? item.dirName.replace(/-/g, '/');
+    const meta = { sessionId, accountName: account.name, configDir: account.config_dir, projectPath, overrides };
+    replaceSession(sessionId, priceSessionUsage(usage, meta).dailyRows);
+    if (processes.length > 0) {
+      const { rows, skipped } = computeUnloggedRows({
+        sessionId,
+        accountName: account.name,
+        configDir: account.config_dir,
+        projectPath,
+        processes,
+        transcript: [...usage.main, ...usage.subagents.flatMap((sub) => sub.rows)],
+        overrides,
+      });
+      for (const skip of skipped) {
+        console.warn(`[cost-history] unlogged CLI spend not priced for session ${sessionId}, process ${skip.processId}: ${skip.reason}`);
+      }
+      replaceSession(`${UNLOGGED_SESSION_PREFIX}${sessionId}`, rows);
+    }
+    return true;
+  }
+
+  async function sweep(accounts: AccountLike[]): Promise<{ sessionsScanned: number }> {
     const overrides = createModelPricingService(db).toOverrides();
+    const pricing = pricingKey(overrides);
     // The CLI's own per-process totals, read once per sweep. A new figure
     // (a side question after the last turn) changes nothing on disk, so it
     // joins the file signature below — otherwise the session would be skipped
     // as unchanged and the spend would wait for its next transcript write.
     const cliUsage = createCliProcessUsageStore(db).listBySession();
-    let sessionsScanned = 0;
+
+    const items: SessionItem[] = [];
     for (const account of accounts) {
       const projectsDir = path.join(account.config_dir, 'projects');
-      for (const projectEntry of fsDeps.listDir(projectsDir)) {
+      for (const projectEntry of await fsDeps.listDir(projectsDir)) {
         if (!projectEntry.isDirectory) continue;
         // OmniFex's own runs are priced by recordInternal under their
         // activity's label. Priced here they would land under the scratch path.
         if (isSummaryScratchProject(projectEntry.name)) continue;
         const projectDir = path.join(projectsDir, projectEntry.name);
-        const entries = fsDeps.listDir(projectDir);
-        for (const entry of entries) {
+        for (const entry of await fsDeps.listDir(projectDir)) {
           if (entry.isDirectory || !entry.name.endsWith('.jsonl')) continue;
           const sessionId = entry.name.slice(0, -'.jsonl'.length);
-          const mainPath = path.join(projectDir, entry.name);
-          const subagentsDir = path.join(projectDir, sessionId, 'subagents');
-
-          const processes = cliUsage.get(sessionId) ?? [];
-          const signature = `${sessionFileSignature(fsDeps, mainPath, subagentsDir)}|${cliUsageSignature(processes)}`;
-          if (scannedSignatures.get(mainPath) === signature) continue; // unchanged, skip entirely
-
-          const sessionContent = fsDeps.readFile(mainPath);
-          if (sessionContent === null) continue;
-          const subagentFiles = readSubagentFiles(fsDeps, subagentsDir);
-          const projectPath = recoverProjectPath(sessionContent, projectEntry.name);
-          const { dailyRows } = computeSessionCost({
-            sessionContent,
-            subagentFiles,
+          items.push({
+            account,
+            dirName: projectEntry.name,
             sessionId,
-            accountName: account.name,
-            configDir: account.config_dir,
-            projectPath,
-            overrides,
+            mainPath: path.join(projectDir, entry.name),
+            subagentsDir: path.join(projectDir, sessionId, 'subagents'),
           });
-          replaceSession(sessionId, dailyRows);
-          if (processes.length > 0) {
-            const usage = extractSessionUsage(sessionContent, subagentFiles);
-            const { rows, skipped } = computeUnloggedRows({
-              sessionId,
-              accountName: account.name,
-              configDir: account.config_dir,
-              projectPath,
-              processes,
-              transcript: [...usage.main, ...usage.subagents.flatMap((sub) => sub.rows)],
-              overrides,
-            });
-            for (const skip of skipped) {
-              console.warn(`[cost-history] unlogged CLI spend not priced for session ${sessionId}, process ${skip.processId}: ${skip.reason}`);
-            }
-            replaceSession(`${UNLOGGED_SESSION_PREFIX}${sessionId}`, rows);
-          }
-          scannedSignatures.set(mainPath, signature);
-          sessionsScanned += 1;
         }
       }
     }
 
-    return { sessionsScanned };
+    // replaceSession keys on the session id, and EnterWorktree can leave one
+    // id's transcripts in two project dirs: the last one scanned wins. Scan
+    // each id's files in listing order within one task, so that stays the
+    // later dir however the concurrent reads interleave.
+    const byId = new Map<string, SessionItem[]>();
+    for (const item of items) {
+      const group = byId.get(item.sessionId);
+      if (group) group.push(item);
+      else byId.set(item.sessionId, [item]);
+    }
+
+    // A group is re-read whole when any member changed, so the later dir
+    // wins even when only the earlier one was written to.
+    const scanGroup = async (group: SessionItem[]): Promise<number> => {
+      const processes = cliUsage.get(group[0].sessionId) ?? [];
+      const looked = [];
+      for (const item of group) {
+        const files = await statSessionFiles(fsDeps, item.mainPath, item.subagentsDir);
+        const signature = `${pricing}|${files.signature}|${cliUsageSignature(processes)}`;
+        const stored = selectSignature.get(item.mainPath) as { signature: string } | undefined;
+        looked.push({ item, files, signature, unchanged: stored?.signature === signature });
+      }
+      if (looked.every((l) => l.unchanged)) return 0; // unchanged, skip entirely
+      let n = 0;
+      for (const { item, files, signature } of looked) {
+        if (!(await scanSession(item, files, processes, overrides))) continue;
+        upsertSignature.run(item.mainPath, signature);
+        n += 1;
+      }
+      return n;
+    };
+    const scanned = await mapLimit([...byId.values()], SCAN_CONCURRENCY, async (group) => {
+      try {
+        return await scanGroup(group);
+      } catch (err) {
+        // One bad transcript must not cost the rest of the sweep; it is
+        // tried again next sweep, its signature unrecorded.
+        console.warn(`[cost-history] scan failed for session ${group[0].sessionId}:`, err);
+        return 0;
+      }
+    });
+
+    // Forget transcripts the CLI has pruned, so the table tracks what exists.
+    const seen = new Set(items.map((i) => i.mainPath));
+    for (const account of accounts) {
+      const prefix = path.join(account.config_dir, 'projects') + path.sep;
+      const gone = (selectSignaturesUnder.all({ prefix }) as { file_path: string }[])
+        .map((r) => r.file_path)
+        .filter((p) => !seen.has(p));
+      if (gone.length > 0) pruneSignatures(gone);
+    }
+
+    return { sessionsScanned: scanned.reduce((n, x) => n + x, 0) };
+  }
+
+  // One sweep at a time: the hourly tick, the startup pass and a manual rescan
+  // can all land while a cold first sweep is still reading.
+  let running: Promise<{ sessionsScanned: number }> | null = null;
+  function backfill(accounts: AccountLike[]): Promise<{ sessionsScanned: number }> {
+    running ??= sweep(accounts).finally(() => { running = null; });
+    return running;
   }
 
   const recordInternal: RecordInternalSpend = ({ sessionId, content, kind, accountName, configDir }) => {

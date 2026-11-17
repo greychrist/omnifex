@@ -1155,6 +1155,44 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 34,
+    description:
+      'Session metadata cache: per transcript, the titles and first/last '
+      + 'timestamps the sessions page shows, with the size, mtime and byte '
+      + 'offset they were read at — so a daemon restart re-reads only the '
+      + 'transcripts that changed. Derived and disposable.',
+    up: (db) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS session_metadata_cache (
+          file_path TEXT PRIMARY KEY,
+          size INTEGER NOT NULL,
+          mtime_ms REAL NOT NULL,
+          read_offset INTEGER NOT NULL,
+          ai_title TEXT,
+          custom_title TEXT,
+          first_timestamp TEXT,
+          last_timestamp TEXT
+        );
+      `);
+    },
+  },
+  {
+    version: 35,
+    description:
+      'Cost scan signatures: per transcript, the signature (pricing, file '
+      + 'sizes and mtimes, CLI usage figures) the cost backfill last priced '
+      + 'it at — so a daemon restart re-reads only the transcripts that '
+      + 'changed. Derived and disposable.',
+    up: (db) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS cost_scan_signatures (
+          file_path TEXT PRIMARY KEY,
+          signature TEXT NOT NULL
+        );
+      `);
+    },
+  },
 ];
 
 /**

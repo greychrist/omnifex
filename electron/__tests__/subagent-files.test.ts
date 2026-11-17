@@ -1,11 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import path from 'node:path';
 import { createDatabase, type Database } from '../services/database';
-import {
-  createCostHistoryService,
-  collectSubagentFiles,
-  type CostFs,
-} from '../services/cost/cost-history';
+import { createCostHistoryService } from '../services/cost/cost-history';
+import { collectSubagentFiles, type CostFs } from '../services/cost/transcript-usage';
+import { rangeReader } from './fixtures/cost/range-reader';
 import type { SessionCostDailyRow } from '../services/cost/session-cost-core';
 
 /**
@@ -58,7 +56,7 @@ function world() {
     ],
   };
   const fakeFs: CostFs = {
-    readFile: (p) => files[p] ?? null,
+    readRange: rangeReader((p) => files[p] ?? null),
     listDir: (p) => dirs[p] ?? [],
     stat: (p) => (p in files ? { mtimeMs: files[p].length, size: files[p].length } : null),
   };
@@ -70,9 +68,9 @@ describe('subagent transcript discovery', () => {
   beforeEach(() => { db = createDatabase(':memory:'); });
   afterEach(() => { db.close(); });
 
-  it('collectSubagentFiles finds agent-*.jsonl at any depth under subagents/', () => {
+  it('collectSubagentFiles finds agent-*.jsonl at any depth under subagents/', async () => {
     const { fakeFs } = world();
-    expect(collectSubagentFiles(fakeFs, SUBAGENTS).sort()).toEqual(
+    expect((await collectSubagentFiles(fakeFs, SUBAGENTS)).sort()).toEqual(
       [
         path.join(SUBAGENTS, 'agent-flat.jsonl'),
         path.join(WF_DIR, 'agent-wf1.jsonl'),
@@ -81,10 +79,10 @@ describe('subagent transcript discovery', () => {
     );
   });
 
-  it('backfill costs nested workflow subagents, not just the flat ones', () => {
+  it('backfill costs nested workflow subagents, not just the flat ones', async () => {
     const { fakeFs } = world();
     const svc = createCostHistoryService(db, fakeFs);
-    svc.backfill([{ name: 'Work', config_dir: CFG }]);
+    await svc.backfill([{ name: 'Work', config_dir: CFG }]);
 
     const rows = db.raw
       .prepare('SELECT * FROM session_cost_daily')
@@ -94,27 +92,27 @@ describe('subagent transcript discovery', () => {
     expect(output).toBe(15_000);
   });
 
-  it('a new nested workflow file invalidates the change-detection signature', () => {
+  it('a new nested workflow file invalidates the change-detection signature', async () => {
     const { files, dirs, fakeFs } = world();
     const svc = createCostHistoryService(db, fakeFs);
-    expect(svc.backfill([{ name: 'Work', config_dir: CFG }]).sessionsScanned).toBe(1);
-    expect(svc.backfill([{ name: 'Work', config_dir: CFG }]).sessionsScanned).toBe(0);
+    expect((await svc.backfill([{ name: 'Work', config_dir: CFG }])).sessionsScanned).toBe(1);
+    expect((await svc.backfill([{ name: 'Work', config_dir: CFG }])).sessionsScanned).toBe(0);
 
     // A workflow spawns another agent: same main file, same flat subagent,
     // one more file two levels down.
     files[path.join(WF_DIR, 'agent-wf3.jsonl')] = assistantLine('m-wf3', 'claude-opus-4-8', 16_000);
     dirs[WF_DIR].push({ name: 'agent-wf3.jsonl', isDirectory: false });
 
-    expect(svc.backfill([{ name: 'Work', config_dir: CFG }]).sessionsScanned).toBe(1);
+    expect((await svc.backfill([{ name: 'Work', config_dir: CFG }])).sessionsScanned).toBe(1);
     const output = (db.raw.prepare('SELECT * FROM session_cost_daily').all() as SessionCostDailyRow[])
       .reduce((n, r) => n + r.output_tokens, 0);
     expect(output).toBe(31_000);
   });
 
-  it('ignores non-agent files and does not recurse forever on empty dirs', () => {
+  it('ignores non-agent files and does not recurse forever on empty dirs', async () => {
     const { dirs, fakeFs } = world();
     dirs[WF_DIR].push({ name: 'notes.md', isDirectory: false });
     dirs[WF_DIR].push({ name: 'empty', isDirectory: true });
-    expect(collectSubagentFiles(fakeFs, SUBAGENTS)).toHaveLength(3);
+    expect(await collectSubagentFiles(fakeFs, SUBAGENTS)).toHaveLength(3);
   });
 });

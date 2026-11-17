@@ -1,7 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import path from 'node:path';
 import { createDatabase, type Database } from '../services/database';
-import { createCostHistoryService, type CostFs } from '../services/cost/cost-history';
+import { createCostHistoryService } from '../services/cost/cost-history';
+import type { CostFs } from '../services/cost/transcript-usage';
+import { rangeReader } from './fixtures/cost/range-reader';
 import type { SessionCostDailyRow } from '../services/cost/session-cost-core';
 import { createCliProcessUsageStore } from '../services/cost/cli-process-usage';
 
@@ -35,14 +37,14 @@ describe('cost-history', () => {
   beforeEach(() => { db = createDatabase(':memory:'); });
   afterEach(() => { db.close(); });
 
-  it('migration creates session_cost_daily', () => {
+  it('migration creates session_cost_daily', async () => {
     const tables = db.raw
       .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='session_cost_daily'")
       .all();
     expect(tables).toHaveLength(1);
   });
 
-  it('replaceSession is idempotent and removes stale rows', () => {
+  it('replaceSession is idempotent and removes stale rows', async () => {
     const svc = createCostHistoryService(db);
     svc.replaceSession('s1', [row({ date: '2026-07-16' }), row({ date: '2026-07-17' })]);
     svc.replaceSession('s1', [row({ date: '2026-07-17', cost_usd: 2.0 })]);
@@ -51,7 +53,7 @@ describe('cost-history', () => {
     expect(all[0].cost_usd).toBeCloseTo(2.0, 10);
   });
 
-  it('aggregate groups by day/month and applies filters', () => {
+  it('aggregate groups by day/month and applies filters', async () => {
     const svc = createCostHistoryService(db);
     svc.replaceSession('s1', [row({ date: '2026-06-30', cost_usd: 1 })]);
     svc.replaceSession('s2', [
@@ -67,7 +69,7 @@ describe('cost-history', () => {
     expect(filtered[0].period).toBe('2026-07-01');
   });
 
-  it('sessions rolls up per session ordered by cost', () => {
+  it('sessions rolls up per session ordered by cost', async () => {
     const svc = createCostHistoryService(db);
     svc.replaceSession('cheap', [row({ session_id: 'cheap', cost_usd: 1 })]);
     svc.replaceSession('spendy', [
@@ -81,7 +83,7 @@ describe('cost-history', () => {
     expect(sessions[0].last_date).toBe('2026-07-17');
   });
 
-  it('backfill walks config dirs incl. subagents and upserts', () => {
+  it('backfill walks config dirs incl. subagents and upserts', async () => {
     const CFG = '/cfg';
     const PROJ_DIR = path.join(CFG, 'projects', '-Users-me-proj');
     const sessionLine = JSON.stringify({
@@ -109,12 +111,12 @@ describe('cost-history', () => {
       stats[p] = { mtimeMs: content.length, size: content.length };
     }
     const fakeFs: CostFs = {
-      readFile: (p) => files[p] ?? null,
+      readRange: rangeReader((p) => files[p] ?? null),
       listDir: (p) => dirs[p] ?? [],
       stat: (p) => stats[p] ?? null,
     };
     const svc = createCostHistoryService(db, fakeFs);
-    const result = svc.backfill([{ name: 'Work', config_dir: CFG }]);
+    const result = await svc.backfill([{ name: 'Work', config_dir: CFG }]);
     expect(result.sessionsScanned).toBe(1);
     const rows = db.raw.prepare('SELECT * FROM session_cost_daily ORDER BY model').all() as SessionCostDailyRow[];
     expect(rows).toHaveLength(2);
@@ -123,7 +125,7 @@ describe('cost-history', () => {
     expect(rows[1].session_id).toBe('sessA');
   });
 
-  it('backfill skips unchanged sessions on a repeat sweep, and rescans only sessions whose files changed', () => {
+  it('backfill skips unchanged sessions on a repeat sweep, and rescans only sessions whose files changed', async () => {
     const CFG = '/cfg';
     const PROJ_DIR = path.join(CFG, 'projects', '-Users-me-proj');
     const sessionLineA = JSON.stringify({
@@ -151,22 +153,22 @@ describe('cost-history', () => {
     };
     let readCount = 0;
     const fakeFs: CostFs = {
-      readFile: (p) => {
+      readRange: rangeReader((p) => {
         if (p in files) readCount += 1;
         return files[p] ?? null;
-      },
+      }),
       listDir: (p) => dirs[p] ?? [],
       stat: (p) => (p in files ? { mtimeMs: files[p].length, size: files[p].length } : null),
     };
     const svc = createCostHistoryService(db, fakeFs);
 
-    const first = svc.backfill([{ name: 'Work', config_dir: CFG }]);
+    const first = await svc.backfill([{ name: 'Work', config_dir: CFG }]);
     expect(first.sessionsScanned).toBe(2);
     expect(readCount).toBe(2);
 
     // Second sweep over an unchanged world: no content reads, nothing scanned.
     readCount = 0;
-    const second = svc.backfill([{ name: 'Work', config_dir: CFG }]);
+    const second = await svc.backfill([{ name: 'Work', config_dir: CFG }]);
     expect(second.sessionsScanned).toBe(0);
     expect(readCount).toBe(0);
 
@@ -174,12 +176,12 @@ describe('cost-history', () => {
     // should rescan just that one session.
     files[SESSION_A] = sessionLineA + '\n' + sessionLineA;
     readCount = 0;
-    const third = svc.backfill([{ name: 'Work', config_dir: CFG }]);
+    const third = await svc.backfill([{ name: 'Work', config_dir: CFG }]);
     expect(third.sessionsScanned).toBe(1);
     expect(readCount).toBe(1);
   });
 
-  it("aggregate groups by week ('%Y-W%W' bucket)", () => {
+  it("aggregate groups by week ('%Y-W%W' bucket)", async () => {
     const svc = createCostHistoryService(db);
     // 2026-07-13 (Mon) and 2026-07-15 (Wed) fall in the same %Y-W%W bucket.
     svc.replaceSession('s1', [row({ session_id: 's1', date: '2026-07-13', cost_usd: 1 })]);
@@ -207,7 +209,7 @@ describe('cost-history', () => {
     const world = () => {
       const files: Record<string, string> = { [SESSION]: line };
       const fakeFs: CostFs = {
-        readFile: (p) => files[p] ?? null,
+        readRange: rangeReader((p) => files[p] ?? null),
         listDir: (p) => ({
           [path.join(CFG, 'projects')]: [{ name: '-Users-me-proj', isDirectory: true }],
           [PROJ_DIR]: [{ name: 'sessA.jsonl', isDirectory: false }],
@@ -228,28 +230,28 @@ describe('cost-history', () => {
       .prepare("SELECT * FROM session_cost_daily WHERE session_id = 'cli-unlogged-sessA'")
       .all() as (SessionCostDailyRow & { internal_kind: string })[];
 
-    it('backfill writes the unlogged remainder under the session\'s project and account', () => {
+    it('backfill writes the unlogged remainder under the session\'s project and account', async () => {
       record(160, '2026-09-25T11:00:00.000Z');
-      createCostHistoryService(db, world()).backfill([{ name: 'Work', config_dir: CFG }]);
+      await createCostHistoryService(db, world()).backfill([{ name: 'Work', config_dir: CFG }]);
       expect(unlogged()).toEqual([expect.objectContaining({
         output_tokens: 60, project_path: '/Users/me/proj', account_name: 'Work',
         config_dir: CFG, internal_kind: 'cli-unlogged', model: 'claude-opus-5-5',
       })]);
     });
 
-    it('a newer CLI figure rescans the session even when its transcript did not change', () => {
+    it('a newer CLI figure rescans the session even when its transcript did not change', async () => {
       record(160, '2026-09-25T11:00:00.000Z');
       const svc = createCostHistoryService(db, world());
-      svc.backfill([{ name: 'Work', config_dir: CFG }]);
+      await svc.backfill([{ name: 'Work', config_dir: CFG }]);
       record(260, '2026-09-25T11:05:00.000Z'); // a side question after the last turn
-      expect(svc.backfill([{ name: 'Work', config_dir: CFG }]).sessionsScanned).toBe(1);
+      expect((await svc.backfill([{ name: 'Work', config_dir: CFG }])).sessionsScanned).toBe(1);
       expect(unlogged()[0].output_tokens).toBe(160);
     });
 
-    it('reports unlogged spend as part of its session, not as a session of its own', () => {
+    it('reports unlogged spend as part of its session, not as a session of its own', async () => {
       record(160, '2026-09-25T11:00:00.000Z');
       const svc = createCostHistoryService(db, world());
-      svc.backfill([{ name: 'Work', config_dir: CFG }]);
+      await svc.backfill([{ name: 'Work', config_dir: CFG }]);
       const sessions = svc.sessions({});
       expect(sessions.map((s) => s.session_id)).toEqual(['sessA']);
       expect(svc.totals({}).session_count).toBe(1);

@@ -2,16 +2,18 @@
 // CLAUDE.md files, hooks config, and version checking.
 // This is a Node.js/Electron port of the Rust commands/claude.rs.
 
-import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { Database } from './database';
 import type { AccountsService } from './accounts';
 import { createProjectPinsService } from './project-pins';
-import { decodeProjectId, encodeProjectId, recoverProjectPath } from './project-paths';
+import { decodeProjectId, encodeProjectId, recoverProjectPath, recoverProjectPathAsync } from './project-paths';
 import { buildClaudeEnv } from './util/claude-env';
 import { isRequestReplayLine } from './util/request-replay';
+import { createSessionMetadataCache, createSqliteSessionMetadataStore, type SessionMetadata } from './session-metadata-cache';
+import { mapLimit } from './util/map-limit';
+import { execFileText, probeBinaryVersion } from './util/exec-text';
 import { findOnPath } from './util/path-lookup';
 import { isSummaryScratchProject } from './sessions/internal-spend';
 
@@ -126,6 +128,12 @@ export interface ClaudeService {
   setProjectPinned(args: { projectPath: string; pinned: boolean }): void;
   createProject(projectPath: string): Project;
   getProjectSessions(projectId: string, projectPath?: string): Promise<Session[]>;
+  /**
+   * Read every transcript in every account into the sessions page's persisted
+   * metadata cache, two files at a time. Run once after daemon start (see
+   * periodic-work.ts); afterwards only changed transcripts cost anything.
+   */
+  warmSessionMetadata(): Promise<{ files: number }>;
 
   loadSessionHistory(
     sessionId: string,
@@ -199,23 +207,58 @@ export interface ClaudeService {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-/** Parse all valid JSON lines from a file, skipping malformed lines. */
-function readJsonlFile(filePath: string): unknown[] {
-  try {
-    const content = fs.readFileSync(filePath, 'utf-8');
-    const results: unknown[] = [];
-    for (const line of content.split('\n')) {
-      const trimmed = line.trim();
-      if (!trimmed || isRequestReplayLine(trimmed)) continue;
-      try {
-        results.push(JSON.parse(trimmed));
-      } catch {
-        // skip malformed lines — never throw
-      }
+/**
+ * Parse all valid JSON lines from a file, skipping malformed lines and
+ * request-replay records. Never throws: an unreadable file is [].
+ *
+ * Streamed a chunk at a time rather than read whole: transcripts reach tens of
+ * MB and this runs on every tab open, on the one event loop that serves every
+ * live session. Each chunk is parsed synchronously, and the loop gets a turn
+ * between chunks.
+ */
+async function readJsonlFile(filePath: string): Promise<unknown[]> {
+  const results: unknown[] = [];
+  const take = (line: string): void => {
+    const trimmed = line.trim();
+    if (!trimmed || isRequestReplayLine(trimmed)) return;
+    try {
+      results.push(JSON.parse(trimmed));
+    } catch {
+      // skip malformed lines — never throw
     }
+  };
+  try {
+    // utf8 encoding on the stream carries a character split across a chunk
+    // edge over to the next chunk, so no line is decoded from half a byte run.
+    const stream = fs.createReadStream(filePath, { encoding: 'utf8', highWaterMark: 256 * 1024 });
+    // The unterminated tail of the previous chunk(s), joined once a newline
+    // arrives — so a multi-MB line is not re-concatenated per chunk.
+    let partial: string[] = [];
+    for await (const chunk of stream as AsyncIterable<string>) {
+      let start = 0;
+      let nl: number;
+      while ((nl = chunk.indexOf('\n', start)) !== -1) {
+        partial.push(chunk.slice(start, nl));
+        take(partial.join(''));
+        partial = [];
+        start = nl + 1;
+      }
+      if (start < chunk.length) partial.push(chunk.slice(start));
+    }
+    if (partial.length) take(partial.join(''));
     return results;
   } catch {
     return [];
+  }
+}
+
+/** existsSync, through the thread pool. */
+async function pathExists(p: string): Promise<boolean> {
+  try {
+    await fs.promises.access(p);
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -278,34 +321,24 @@ function findProjectConfigDir(
  *
  * Usually returns exactly one dir; the multi-dir case is the leftover.
  */
-function findProjectDirsForPath(projectsDir: string, projectPath: string): string[] {
+async function findProjectDirsForPath(projectsDir: string, projectPath: string): Promise<string[]> {
   let entries: fs.Dirent[];
   try {
-    entries = fs.readdirSync(projectsDir, { withFileTypes: true });
+    entries = await fs.promises.readdir(projectsDir, { withFileTypes: true });
   } catch {
     return [];
   }
-  const matches: string[] = [];
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
-    const dir = path.join(projectsDir, entry.name);
-    if (recoverProjectPath(dir, entry.name) === projectPath) matches.push(entry.name);
-  }
-  return matches;
+  // Every project folder in the account is checked, so off the event loop.
+  const dirs = entries.filter((e) => e.isDirectory()).map((e) => e.name);
+  const recovered = await Promise.all(
+    dirs.map((name) => recoverProjectPathAsync(path.join(projectsDir, name), name)),
+  );
+  return dirs.filter((_, i) => recovered[i] === projectPath);
 }
 
 // encodeProjectId moved to ./project-id so accounts.ts can share it without
 // importing this module (which already depends on accounts.ts).
 
-/**
- * Walk a JSONL session file once and pull out:
- *  - the first user-text message (skipping meta / command-tag noise),
- *  - the ISO timestamp of the first JSONL entry that has a `timestamp` field,
- *  - the ISO timestamp of the last JSONL entry that has a `timestamp` field.
- *
- * Returning all three from one pass lets `getProjectSessions` build the row's
- * "first activity – last activity" range without extra reads.
- */
 /**
  * Last time Claude actually *worked* in a session file, as opposed to the last
  * time the inode was written.
@@ -342,65 +375,10 @@ function activityTimeFor(filePath: string, stat: fs.Stats): number {
   return stat.mtimeMs;
 }
 
-function extractSessionMetadata(filePath: string): {
-  aiTitle?: string;
-  customTitle?: string;
-  firstTimestamp?: string;
-  lastTimestamp?: string;
-} {
-  const entries = readJsonlFile(filePath);
-  let aiTitle: string | undefined;
-  let customTitle: string | undefined;
-  let firstTimestamp: string | undefined;
-  let lastTimestamp: string | undefined;
-
-  for (const entry of entries) {
-    if (typeof entry !== 'object' || entry === null) continue;
-    const obj = entry as Record<string, unknown>;
-
-    // Track first/last timestamps across every entry that carries one,
-    // regardless of type — assistant turns, tool results, and meta entries
-    // all bracket the session's wall-clock activity.
-    const ts = obj.timestamp;
-    if (typeof ts === 'string') {
-      if (!firstTimestamp) firstTimestamp = ts;
-      lastTimestamp = ts;
-    }
-
-    // The CLI names the session itself and rewrites the record every turn.
-    // Last one wins: the value is stable in practice (one distinct title per
-    // session across every transcript checked), but the CLI is free to revise
-    // it and the final word is the one it settled on.
-    if (obj.type === 'ai-title') {
-      const title = obj.aiTitle;
-      if (typeof title === 'string' && title.trim()) aiTitle = title.trim();
-      continue;
-    }
-
-    // A rename. Kept SEPARATE from the generated title rather than collapsed
-    // here: the CLI goes on rewriting `ai-title` after a rename, so the two
-    // are resolved by precedence (pickSessionTitle), never by which record
-    // came last.
-    if (obj.type === 'custom-title') {
-      const title = obj.customTitle;
-      if (typeof title === 'string' && title.trim()) customTitle = title.trim();
-      continue;
-    }
-  }
-
-  return { aiTitle, customTitle, firstTimestamp, lastTimestamp };
-}
-
 /** `claude` on PATH, what `which claude` answered — without the shell. */
 function claudeOnPath(): string | null {
   return findOnPath(process.platform === 'win32' ? 'claude.exe' : 'claude', process.env.PATH);
 }
-
-const EXEC_OPTIONS = {
-  timeout: 5000,
-  encoding: 'utf-8' as const,
-  stdio: ['pipe', 'pipe', 'pipe'] as ['pipe', 'pipe', 'pipe'],
-};
 
 // ---------------------------------------------------------------------------
 // Factory
@@ -410,6 +388,10 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
   // Pin state is stamped onto each Project by listProjects. Constructed here
   // rather than injected so the service's existing two-arg shape holds.
   const pins = createProjectPinsService(db);
+  // Per-transcript metadata for the sessions page, read incrementally — see
+  // session-metadata-cache.ts.
+  // Backed by SQLite, so a daemon restart re-reads only what changed.
+  const sessionMetadata = createSessionMetadataCache(createSqliteSessionMetadataStore(db));
 
   // -------------------------------------------------------------------------
   // getHomeDirectory
@@ -628,6 +610,43 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
   // getProjectSessions
   // -------------------------------------------------------------------------
 
+  async function warmSessionMetadata(): Promise<{ files: number }> {
+    let files = 0;
+    for (const account of accounts.listAccounts()) {
+      const projectsDir = path.join(account.config_dir, 'projects');
+      let projects: fs.Dirent[];
+      try {
+        projects = await fs.promises.readdir(projectsDir, { withFileTypes: true });
+      } catch {
+        continue;
+      }
+      for (const project of projects) {
+        if (!project.isDirectory() || isSummaryScratchProject(project.name)) continue;
+        const projectDir = path.join(projectsDir, project.name);
+        let names: string[];
+        try {
+          names = (await fs.promises.readdir(projectDir, { withFileTypes: true }))
+            .filter((e) => e.isFile() && e.name.endsWith('.jsonl'))
+            .map((e) => e.name);
+        } catch {
+          continue;
+        }
+        // Two at a time: background work, so it leaves the thread pool to
+        // whatever a user is waiting on.
+        await mapLimit(names, 2, async (name) => {
+          const filePath = path.join(projectDir, name);
+          try {
+            await sessionMetadata.get(filePath, await fs.promises.stat(filePath));
+            files += 1;
+          } catch {
+            // Gone or unreadable — the sessions page will retry on its own.
+          }
+        });
+      }
+    }
+    return { files };
+  }
+
   async function getProjectSessions(
     projectId: string,
     projectPath?: string,
@@ -647,8 +666,8 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
     // them here too. Reading only `projectId` would list 19 sessions and then
     // fail to produce the ones living in the non-primary dir.
     const resolvedPath =
-      projectPath ?? recoverProjectPath(path.join(projectsDir, projectId), projectId);
-    const dirNames = findProjectDirsForPath(projectsDir, resolvedPath);
+      projectPath ?? (await recoverProjectPathAsync(path.join(projectsDir, projectId), projectId));
+    const dirNames = await findProjectDirsForPath(projectsDir, resolvedPath);
     // Nothing resolved (e.g. a fresh project dir with no JSONL yet) — fall
     // back to exactly the id we were asked for.
     const projectDirs = dirNames.length > 0 ? dirNames : [projectId];
@@ -657,39 +676,36 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
 
     for (const dirName of projectDirs) {
       const projectDir = path.join(projectsDir, dirName);
-      // Account exists but no on-disk sessions yet — legitimate empty state.
-      if (!fs.existsSync(projectDir)) continue;
-
       let entries: fs.Dirent[];
       try {
-        entries = fs.readdirSync(projectDir, { withFileTypes: true });
+        entries = await fs.promises.readdir(projectDir, { withFileTypes: true });
       } catch {
+        // Missing (account exists, no sessions yet — a legitimate empty
+        // state) or unreadable.
         continue;
       }
 
-      for (const entry of entries) {
-        if (!entry.isFile() || !entry.name.endsWith('.jsonl')) continue;
-        const sessionId = entry.name.replace(/\.jsonl$/, '');
-        const filePath = path.join(projectDir, entry.name);
-
+      const files = entries.filter((e) => e.isFile() && e.name.endsWith('.jsonl')).map((e) => e.name);
+      // Off the event loop: a cold project is hundreds of MB, and reading it
+      // inline froze every live session's streaming until it finished.
+      const rows = await mapLimit(files, 8, async (name): Promise<Session> => {
+        const filePath = path.join(projectDir, name);
         let createdAt = Date.now();
         let mtimeFallback: string | undefined;
         let fileSize: number | undefined;
-
+        let metadata: SessionMetadata = {};
         try {
-          const stat = fs.statSync(filePath);
+          const stat = await fs.promises.stat(filePath);
           createdAt = stat.birthtimeMs;
           mtimeFallback = new Date(stat.mtimeMs).toISOString();
           fileSize = stat.size;
+          metadata = await sessionMetadata.get(filePath, stat);
         } catch {
           // ignore
         }
-
-        const { aiTitle, customTitle, firstTimestamp, lastTimestamp } =
-          extractSessionMetadata(filePath);
-
-        sessions.push({
-          id: sessionId,
+        const { aiTitle, customTitle, firstTimestamp, lastTimestamp } = metadata;
+        return {
+          id: name.replace(/\.jsonl$/, ''),
           // The row's primary id, even for sessions read out of a secondary
           // dir — loadSessionHistory resolves the real dir by searching.
           project_id: projectId,
@@ -701,8 +717,11 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
           last_timestamp: lastTimestamp ?? mtimeFallback,
           message_timestamp: lastTimestamp ?? mtimeFallback,
           file_size_bytes: fileSize,
-        });
-      }
+        };
+      });
+      sessions.push(...rows);
+      // Deleted transcripts leave the cache with the folder listing.
+      sessionMetadata.prune(projectDir, new Set(files.map((name) => path.join(projectDir, name))));
     }
 
     // Dedup by session id. The CLI can write the same session into more than
@@ -771,18 +790,18 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
 
     const projectsDir = path.join(configDir, 'projects');
     const filePath = path.join(projectsDir, projectId, `${sessionId}.jsonl`);
-    if (fs.existsSync(filePath)) return readJsonlFile(filePath);
+    if (await pathExists(filePath)) return readJsonlFile(filePath);
 
     // Not under the primary dir. A merged row lists sessions from every
     // encoded dir resolving to the same folder (see findProjectDirsForPath),
     // and they all carry the primary's project_id — so look in the siblings
     // before giving up, or those conversations would open empty.
     const resolvedPath =
-      projectPath ?? recoverProjectPath(path.join(projectsDir, projectId), projectId);
-    for (const dirName of findProjectDirsForPath(projectsDir, resolvedPath)) {
+      projectPath ?? (await recoverProjectPathAsync(path.join(projectsDir, projectId), projectId));
+    for (const dirName of await findProjectDirsForPath(projectsDir, resolvedPath)) {
       if (dirName === projectId) continue;
       const sibling = path.join(projectsDir, dirName, `${sessionId}.jsonl`);
-      if (fs.existsSync(sibling)) return readJsonlFile(sibling);
+      if (await pathExists(sibling)) return readJsonlFile(sibling);
     }
 
     return [];
@@ -793,29 +812,25 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
   // -------------------------------------------------------------------------
 
   async function loadAgentSessionHistory(sessionId: string): Promise<unknown[]> {
-    // Search all config dirs for any project dir containing this session file
+    // Search all config dirs for any project dir containing this session file.
+    // Async with bounded fan-out: this spans every project dir in every
+    // account, and existsSync across all of them blocked the event loop.
     for (const dir of getConfigDirs(accounts)) {
       const projectsDir = path.join(dir, 'projects');
-      if (!fs.existsSync(projectsDir)) continue;
 
       let projectEntries: fs.Dirent[];
       try {
-        projectEntries = fs.readdirSync(projectsDir, { withFileTypes: true });
+        projectEntries = await fs.promises.readdir(projectsDir, { withFileTypes: true });
       } catch {
-        continue;
+        continue; // missing or unreadable projects dir
       }
 
-      for (const projectEntry of projectEntries) {
-        if (!projectEntry.isDirectory()) continue;
-        const candidate = path.join(
-          projectsDir,
-          projectEntry.name,
-          `${sessionId}.jsonl`,
-        );
-        if (fs.existsSync(candidate)) {
-          return readJsonlFile(candidate);
-        }
-      }
+      const candidates = projectEntries
+        .filter((e) => e.isDirectory())
+        .map((e) => path.join(projectsDir, e.name, `${sessionId}.jsonl`));
+      const present = await mapLimit(candidates, 16, pathExists);
+      const hit = candidates.find((_, i) => present[i]);
+      if (hit) return readJsonlFile(hit);
     }
 
     return [];
@@ -915,11 +930,11 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
     const projectDir = path.join(projectsDir, projectId);
     // Resolve the path (and so the sibling dirs) BEFORE deleting anything —
     // recoverProjectPath reads the JSONLs inside these dirs.
-    const resolvedPath = recoverProjectPath(projectDir, projectId);
+    const resolvedPath = await recoverProjectPathAsync(projectDir, projectId);
     // Delete every dir that resolves to this folder, not just the primary:
     // the row represents the merged project, so leaving a sibling behind
     // would resurrect it as a duplicate row on the next listing.
-    const dirNames = findProjectDirsForPath(projectsDir, resolvedPath);
+    const dirNames = await findProjectDirsForPath(projectsDir, resolvedPath);
     const targets = dirNames.length > 0 ? dirNames : [projectId];
 
     // Drop the pin first, while the path is still resolvable. Otherwise a
@@ -1007,15 +1022,8 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
       return { installed: false, version: null, path: null };
     }
 
-    try {
-      const versionOutput = execFileSync(binaryPath, ['--version'], EXEC_OPTIONS);
-      const version =
-        typeof versionOutput === 'string' ? versionOutput.trim() : null;
-      return { installed: true, version, path: binaryPath };
-    } catch {
-      // binary found but --version failed (unusual)
-      return { installed: true, version: null, path: binaryPath };
-    }
+    // null when the binary was found but --version failed (unusual).
+    return { installed: true, version: await probeBinaryVersion(binaryPath), path: binaryPath };
   }
 
 
@@ -1169,10 +1177,10 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
     }
 
     try {
-      const output = execFileSync(
+      const output = await execFileText(
         binary,
         ['-p', '/usage', '--output-format', 'json'],
-        { timeout: 15000, encoding: 'utf-8', env, stdio: ['pipe', 'pipe', 'pipe'] },
+        { timeout: 15000, env },
       );
       const parsed = JSON.parse(output.trim());
       return parsed.result ?? 'No usage data returned';
@@ -1193,6 +1201,7 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
     setProjectPinned,
     createProject,
     getProjectSessions,
+    warmSessionMetadata,
     loadSessionHistory,
     loadAgentSessionHistory,
     deleteSession,

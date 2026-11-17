@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createDatabase, type Database } from '../services/database';
 import { createAccountsService, type AccountsService } from '../services/accounts';
 import { createClaudeService, type ClaudeService } from '../services/claude';
@@ -552,6 +552,47 @@ describe('claude service', () => {
       const result = await service.loadSessionHistory('s', projectId, projectPath);
       expect((result as Array<{ type: string }>).map((r) => r.type)).toEqual(['user', 'assistant']);
     });
+
+    // Transcripts reach tens of MB and this runs on every tab open. A
+    // readFileSync + split + parse of the whole file froze every live
+    // session's stream for the duration; it now streams in chunks.
+    it('streams a multi-chunk transcript without a sync read, keeping order and filtering', async () => {
+      const configDir = path.join(tmpDir, '.claude-big');
+      const projectPath = path.join(tmpDir, 'big-project');
+      const projectId = projectPath.replace(/\//g, '-');
+      const projectDir = path.join(configDir, 'projects', projectId);
+      fs.mkdirSync(projectDir, { recursive: true });
+      const pad = 'é'.repeat(3000); // multibyte, so chunk edges split characters
+      const expected: unknown[] = [];
+      const lines: string[] = [];
+      for (let i = 0; i < 2000; i++) {
+        const rec = { type: 'assistant', i, pad };
+        expected.push(rec);
+        lines.push(JSON.stringify(rec));
+        if (i % 97 === 0) lines.push('{not json');
+        if (i % 89 === 0) lines.push('   ');
+        if (i % 83 === 0) lines.push(JSON.stringify({ type: 'api-request', params: {} }));
+      }
+      // CRLF on one line and no trailing newline on the last.
+      lines.push(`${JSON.stringify({ type: 'user', last: true })}\r`);
+      expected.push({ type: 'user', last: true });
+      const file = path.join(projectDir, 'big.jsonl');
+      fs.writeFileSync(file, lines.join('\n'));
+      const account = accounts.createAccount({ name: 'Big', configDir });
+      accounts.addPathRule(account.id, tmpDir);
+
+      const readSync = vi.spyOn(fs, 'readFileSync');
+      const exists = vi.spyOn(fs, 'existsSync');
+      try {
+        const result = await service.loadSessionHistory('big', projectId, projectPath);
+        expect(result).toEqual(expected);
+        expect(readSync.mock.calls.some(([p]) => p === file)).toBe(false);
+        expect(exists.mock.calls.some(([p]) => p === file)).toBe(false);
+      } finally {
+        readSync.mockRestore();
+        exists.mockRestore();
+      }
+    });
   });
 
 
@@ -781,6 +822,25 @@ describe('claude service', () => {
   // -------------------------------------------------------------------------
   // getProjectSessions
   // -------------------------------------------------------------------------
+
+  describe('warmSessionMetadata', () => {
+    // Fills the persisted cache for every transcript in every account, so the
+    // sessions page's first visit after a restart reads nothing it already has.
+    it('reads every transcript once into the persisted cache', async () => {
+      const configDir = path.join(tmpDir, '.claude-warm');
+      for (const [proj, sess] of [['-a-one', 's1'], ['-a-one', 's2'], ['-b-two', 's3']]) {
+        const dir = path.join(configDir, 'projects', proj);
+        fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(path.join(dir, `${sess}.jsonl`), JSON.stringify({ type: 'ai-title', aiTitle: sess }) + '\n');
+      }
+      accounts.createAccount({ name: 'Warm', configDir });
+
+      const result = await service.warmSessionMetadata();
+      expect(result.files).toBe(3);
+      const rows = db.raw.prepare('SELECT ai_title FROM session_metadata_cache ORDER BY ai_title').all() as { ai_title: string }[];
+      expect(rows.map((r) => r.ai_title)).toEqual(['s1', 's2', 's3']);
+    });
+  });
 
   describe('getProjectSessions', () => {
     it('throws NoAccountError when no projectPath is provided (cannot resolve)', async () => {
@@ -1347,6 +1407,25 @@ describe('claude service', () => {
 
       const history = await service.loadAgentSessionHistory(sessionId);
       expect(history).toHaveLength(2);
+    });
+
+    // The search touches every project dir in every account: sync, that was
+    // hundreds of existsSync calls on the daemon's one event loop.
+    it('searches without sync fs calls', async () => {
+      const configDir = path.join(tmpDir, '.claude-agent-async');
+      for (const p of ['a-proj', 'b-proj', 'c-proj']) fs.mkdirSync(path.join(configDir, 'projects', p), { recursive: true });
+      fs.writeFileSync(path.join(configDir, 'projects', 'c-proj', 'agent-x.jsonl'), JSON.stringify({ type: 'system' }));
+      accounts.createAccount({ name: 'AgentAsync', configDir });
+
+      const spies = (['existsSync', 'readdirSync', 'readFileSync', 'statSync'] as const).map((m) => vi.spyOn(fs, m));
+      try {
+        expect(await service.loadAgentSessionHistory('agent-x')).toEqual([{ type: 'system' }]);
+        for (const spy of spies) {
+          expect(spy.mock.calls.filter(([p]) => String(p).startsWith(configDir))).toEqual([]);
+        }
+      } finally {
+        for (const spy of spies) spy.mockRestore();
+      }
     });
   });
 

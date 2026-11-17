@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, readFileSync, readdirSync, existsSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync, readdirSync, existsSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -105,6 +105,34 @@ describe('remote session log', () => {
     expect(fresh.list().map((m) => m.sessionId).sort()).toEqual(['s1', 's2']);
   });
 
+  // /healthz calls list() twice per 5s poll, and the permission-timeout poll
+  // once a second: reading 400+ meta files from disk each time blocked the
+  // event loop. The log owns every write, so it answers from memory once the
+  // index is built.
+  it('answers list() from memory after the first scan', () => {
+    log.open(META);
+    expect(log.list().map((m) => m.sessionId)).toEqual(['s1']);
+    // Written behind the log's back: a rescan would pick it up.
+    writeFileSync(join(root, 'stray.meta.json'), JSON.stringify({ ...META, sessionId: 'stray' }));
+    expect(log.list().map((m) => m.sessionId)).toEqual(['s1']);
+  });
+
+  it('keeps the list current through every write it owns', () => {
+    log.open(META);
+    log.list();
+    log.open({ ...META, sessionId: 's2' });
+    log.updateMeta('s1', { title: 'renamed' });
+    log.updateOptions('s2', { permissionMode: 'plan' });
+    const byId = new Map(log.list().map((m) => [m.sessionId, m]));
+    expect([...byId.keys()].sort()).toEqual(['s1', 's2']);
+    expect(byId.get('s1')?.title).toBe('renamed');
+    expect(byId.get('s2')?.options).toEqual({ permissionMode: 'plan' });
+    log.remove('s1');
+    expect(log.list().map((m) => m.sessionId)).toEqual(['s2']);
+    // And the disk agrees: a fresh log sees the same set.
+    expect(createSessionLog({ root }).list()).toEqual(log.list());
+  });
+
   it('updates meta in place and stamps updatedAt', () => {
     log.open(META);
     log.updateMeta('s1', { title: 'renamed' });
@@ -112,6 +140,20 @@ describe('remote session log', () => {
     expect(meta?.title).toBe('renamed');
     expect(meta?.updatedAt).not.toBe(META.updatedAt);
     expect(JSON.parse(readFileSync(join(root, 's1.meta.json'), 'utf8')).title).toBe('renamed');
+  });
+
+  // A mid-session switch (permission mode) must survive a resume: resume
+  // spawns from these options, never from the client's picker.
+  it('merges a patch into the persisted options', () => {
+    log.open({ ...META, options: { model: 'opus', permissionMode: 'auto' } });
+    log.updateOptions('s1', { permissionMode: 'plan' });
+    expect(log.meta('s1')?.options).toEqual({ model: 'opus', permissionMode: 'plan' });
+    expect(JSON.parse(readFileSync(join(root, 's1.meta.json'), 'utf8')).options.permissionMode).toBe('plan');
+  });
+
+  it('ignores an options patch for a session it does not know', () => {
+    expect(() => { log.updateOptions('nope', { permissionMode: 'plan' }); }).not.toThrow();
+    expect(log.meta('nope')).toBeNull();
   });
 
   it('removes a session\'s meta', () => {

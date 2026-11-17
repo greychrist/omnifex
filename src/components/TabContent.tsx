@@ -3,7 +3,6 @@ import { useRenderProfile } from '@/hooks/useRenderProfile';
 import { motion } from 'framer-motion';
 import { useTabState } from '@/hooks/useTabState';
 import { Tab } from '@/contexts/TabContext';
-import { ArrowLeft } from 'lucide-react';
 import { Spinner } from '@/components/ui/spinner';
 import { api, type AgentKind, type Project, type ResolvePair, type Session } from '@/lib/api';
 import { ProjectList } from '@/components/ProjectList';
@@ -12,7 +11,7 @@ import { SessionList } from '@/components/SessionList';
 import { AccountPickerDialog } from '@/components/AccountPickerDialog';
 import { OpenSessionByIdDialog } from '@/components/OpenSessionByIdDialog';
 import { AccountBadge } from '@/components/AccountBadge';
-import { Button } from '@/components/ui/button';
+import { BackButton } from "@/components/ui/back-button";
 import { NewSessionForm } from '@/components/NewSessionForm';
 import type { EffortLevel } from '@/components/FloatingPromptInput';
 import { useClaudeSessionStore } from '@/stores/claudeSessionStore';
@@ -23,6 +22,8 @@ import { fireAndLog, logAndForget } from "@/lib/fireAndLog";
 import { slotToResolution, type FormAccountResolution } from "@/lib/accountResolution";
 import { promptForNewProjectFolder } from "@/lib/newProject";
 import { platform } from "@/lib/platform";
+import { getCachedProjects, setCachedProjects } from "@/lib/projectsCache";
+import { Skeleton } from "@/components/ui/skeleton";
 
 // Lazy load heavy components
 const AgentSession = lazy(() => import('@/components/AgentSession').then(m => ({ default: m.AgentSession })));
@@ -46,9 +47,12 @@ const TabPanelImpl: React.FC<TabPanelProps> = ({ tab, isActive }) => {
   // single tab click re-render all N panels, or only the two that changed?
   useRenderProfile('TabPanel');
   const { updateTab } = useTabState();
-  const [projects, setProjects] = React.useState<Project[]>([]);
-  // Until the first `listProjects` answers, an empty list means "unknown",
-  // not "none" — the list shows a skeleton rather than its empty state.
+  // Seeded from the last list any projects tab fetched, so the page draws at
+  // once and the refresh below lands behind it.
+  const [projects, setProjects] = React.useState<Project[]>(() => getCachedProjects() ?? []);
+  // Until this panel's first `listProjects` answers, an empty list means
+  // "unknown", not "none" — the list shows a skeleton rather than its empty
+  // state (a seeded list is shown as-is while it refreshes).
   const [projectsLoaded, setProjectsLoaded] = React.useState(false);
   const [selectedProject, setSelectedProject] = React.useState<Project | null>(null);
   // Project whose settings (CLAUDE.md, hooks) are open. Kept separate from
@@ -56,7 +60,11 @@ const TabPanelImpl: React.FC<TabPanelProps> = ({ tab, isActive }) => {
   // they're sibling destinations from the same row, not nested ones.
   const [settingsProject, setSettingsProject] = React.useState<Project | null>(null);
   const [sessions, setSessions] = React.useState<Session[]>([]);
-  const [loading, setLoading] = React.useState(false);
+  // The sessions page opens before its list arrives; skeleton rows stand in.
+  const [sessionsLoading, setSessionsLoading] = React.useState(false);
+  // The project whose sessions the latest click asked for. A slow answer for
+  // a project the user has since left is dropped instead of drawn.
+  const sessionsRequestRef = React.useRef<string | null>(null);
   
   const [error, setError] = React.useState<string | null>(null);
   const [showAccountPicker, setShowAccountPicker] = React.useState(false);
@@ -104,15 +112,14 @@ const TabPanelImpl: React.FC<TabPanelProps> = ({ tab, isActive }) => {
   
   const loadProjects = async () => {
     try {
-      setLoading(true);
       setError(null);
       const projectList = await api.listProjects();
+      setCachedProjects(projectList);
       setProjects(projectList);
     } catch (err) {
       console.error("Failed to load projects:", err);
       setError("Failed to load projects. Please ensure ~/.claude directory exists.");
     } finally {
-      setLoading(false);
       setProjectsLoaded(true);
     }
   };
@@ -136,12 +143,20 @@ const TabPanelImpl: React.FC<TabPanelProps> = ({ tab, isActive }) => {
   };
 
   const handleProjectClick = async (project: Project) => {
+    // The page opens now; the session list fills in when it arrives.
+    sessionsRequestRef.current = project.id;
+    setError(null);
+    setSessions([]);
+    setSessionsLoading(true);
+    setSelectedProject(project);
+    const projectName = project.path.split('/').pop() || 'Project';
+    // "<ProjectName>: Sessions" with the List icon, so the strip reflects that
+    // the projects tab is showing a session list. Both reset on Back.
+    updateTab(tab.id, { title: `${projectName}: Sessions`, icon: 'list' });
     try {
-      setLoading(true);
-      setError(null);
       const sessionList = await api.getProjectSessions(project.id, project.path);
+      if (sessionsRequestRef.current !== project.id) return;
       setSessions(sessionList);
-      setSelectedProject(project);
 
       // Resolve per-engine routing for the form's account cell, the tab
       // badge, and the form's agent picker. project.account_name is a fast
@@ -179,17 +194,13 @@ const TabPanelImpl: React.FC<TabPanelProps> = ({ tab, isActive }) => {
         setProjectAccountResolution(null);
       });
 
-      // Update tab title to "<ProjectName>: Sessions" and flip the
-      // tab icon from Folder → List so the strip reflects that the
-      // projects tab is now showing a session list, not the project
-      // browser. Both reset on the back button below.
-      const projectName = project.path.split('/').pop() || 'Project';
-      updateTab(tab.id, {
-        title: `${projectName}: Sessions`,
-        icon: 'list',
-      });
     } catch (err) {
+      if (sessionsRequestRef.current !== project.id) return;
       console.error("Failed to load sessions:", err, "project:", JSON.stringify(project));
+      // Back to the list: the page has nothing to show for this project.
+      sessionsRequestRef.current = null;
+      setSelectedProject(null);
+      updateTab(tab.id, { title: 'Projects', icon: undefined });
       // NO_ACCOUNT_FOR_PROJECT: structured signal that no path rule / project
       // override binds this folder to a Claude account. Surface the actionable
       // message verbatim — no silent fallback to a "default" account.
@@ -205,9 +216,22 @@ const TabPanelImpl: React.FC<TabPanelProps> = ({ tab, isActive }) => {
         setError(`Failed to load sessions: ${msg}`);
       }
     } finally {
-      setLoading(false);
+      if (sessionsRequestRef.current === project.id || sessionsRequestRef.current === null) setSessionsLoading(false);
     }
   };
+
+  // A chat tab that backed out names its project; open that project's
+  // sessions page instead of the list. Waits for a list that contains it —
+  // the seeded one usually does — and gives up quietly once this panel's own
+  // fresh list arrives without it.
+  useEffect(() => {
+    const path = tab.returnToProjectPath;
+    if (!isActive || tab.type !== 'projects' || !path) return;
+    const match = projects.find((p) => p.path === path);
+    if (!match && !projectsLoaded) return;
+    updateTab(tab.id, { returnToProjectPath: undefined });
+    if (match) logAndForget('tab-content:return-to-project', handleProjectClick(match));
+  }, [isActive, tab.type, tab.returnToProjectPath, projects, projectsLoaded]); // eslint-disable-line react-hooks/exhaustive-deps -- handleProjectClick/updateTab are read fresh each run
 
   // Shared tail of Open Project and New Project: route the folder to an
   // account (or ask), register it, and land on its sessions page.
@@ -441,30 +465,23 @@ const TabPanelImpl: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                     <div className="mb-6 flex-none">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
-                          <motion.div
-                            whileTap={{ scale: 0.97 }}
-                            transition={{ duration: 0.15 }}
-                          >
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => {
-                                setSelectedProject(null);
-                                setSessions([]);
-                                // Restore tab title to "Projects" and
-                                // clear the per-tab icon override so the
-                                // type default (Folder) wins again.
-                                updateTab(tab.id, {
-                                  title: 'Projects',
-                                  icon: undefined,
-                                });
-                              }}
-                              className="h-8 w-8 -ml-2"
-                              title="Back to Projects"
-                            >
-                              <ArrowLeft className="h-4 w-4" />
-                            </Button>
-                          </motion.div>
+                          <BackButton
+                            label="Back to Projects"
+                            size="md"
+                            onClick={() => {
+                              sessionsRequestRef.current = null;
+                              setSelectedProject(null);
+                              setSessions([]);
+                              setSessionsLoading(false);
+                              // Restore tab title to "Projects" and
+                              // clear the per-tab icon override so the
+                              // type default (Folder) wins again.
+                              updateTab(tab.id, {
+                                title: 'Projects',
+                                icon: undefined,
+                              });
+                            }}
+                          />
                           <div>
                             <h1 className="text-3xl font-bold tracking-tight flex items-center gap-3">
                               {selectedProject.path.split('/').pop()}
@@ -493,7 +510,7 @@ const TabPanelImpl: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                             setPermissionMode={setFormPermissionMode}
                             agent={formAgent}
                             setAgent={handleFormAgentChange}
-                            agentPickerDisabled={loading}
+                            agentPickerDisabled={sessionsLoading}
                             onStart={handleStartNewSession}
                             onChangeAccount={() => { setShowChangeAccountDialog(true); }}
                             onChooseAccount={() => { setShowChangeAccountDialog(true); }}
@@ -521,15 +538,21 @@ const TabPanelImpl: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                           </motion.div>
                         )}
 
-                        {/* Loading state */}
-                        {loading && (
-                          <div className="flex items-center justify-center py-8 flex-none">
-                            <Spinner className="size-6 text-muted-foreground" />
+                        {/* Skeleton rows until the list arrives */}
+                        {sessionsLoading && (
+                          <div className="flex flex-col gap-3 py-4 flex-none" data-testid="sessions-loading" aria-busy="true">
+                            {Array.from({ length: 6 }, (_, i) => (
+                              <div key={i} className="flex items-center gap-3">
+                                <Skeleton className="h-8 flex-1" />
+                                <Skeleton className="h-4 w-20" />
+                                <Skeleton className="h-4 w-24" />
+                              </div>
+                            ))}
                           </div>
                         )}
 
                         {/* Session List */}
-                        {!loading && (
+                        {!sessionsLoading && (
                           <SessionList
                             sessions={sessions}
                             projectPath={selectedProject.path}
@@ -907,9 +930,12 @@ export const TabContent: React.FC = () => {
     // handleClaudeSessionSelected — except in reverse. The user ends up
     // on the session list for the same project, preserving their
     // navigation flow instead of having to close and reopen the tab.
-    const handleBackToProject = () => {
+    const handleBackToProject = (event: Event) => {
       const currentTab = tabs.find((t) => t.id === activeTabId);
       if (currentTab?.type === 'chat') {
+        const detail = (event as CustomEvent<{ projectPath?: string } | null>).detail;
+        const projectPath: string | undefined =
+          detail?.projectPath || currentTab.initialProjectPath || currentTab.sessionData?.project_path || undefined;
         // Backing out CLOSES the session: tear down the live main-process
         // handle and clear the per-tab store slice so nothing stays bound to
         // this (reused) tab id. Otherwise opening a *different* session into
@@ -925,6 +951,8 @@ export const TabContent: React.FC = () => {
           sessionId: undefined,
           sessionData: undefined,
           initialProjectPath: undefined,
+          // The projects panel opens this project's sessions page from it.
+          returnToProjectPath: projectPath,
         });
       }
     };

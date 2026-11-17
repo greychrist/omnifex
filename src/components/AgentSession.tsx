@@ -3,12 +3,12 @@ import { useSessionViewMode } from '@/hooks/useSessionViewMode';
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Shield,
-  ArrowLeft,
   Layers,
   MessageCircleQuestion,
 } from "lucide-react";
 import { SessionInspectorPanel } from "@/components/SessionInspectorPanel";
 import { Button } from "@/components/ui/button";
+import { BackButton } from "@/components/ui/back-button";
 import { api, type Session, type RateLimitSnapshot, type Account, type ResolvePair, type AccountMismatch } from "@/lib/api";
 import { AttentionSlot } from "@/components/AttentionSlot";
 import { SignalBadge } from "@/components/signals/SignalBadge";
@@ -392,6 +392,10 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   // Default is acceptEdits per user preference — safer than bypass,
   // smoother than ask-every-time.
   const [permissionMode, setPermissionMode] = useState<string>(initialSessionConfig?.permissionMode ?? "acceptEdits");
+  // The mode the daemon's live session reported (useSessionLifecycle's
+  // onLivePermissionMode). Once known it outranks every guess below — a
+  // history load that lands after it must not put the picker back on one.
+  const livePermissionModeRef = useRef<string | null>(null);
   // Effort level — maps to the CLI's `--effort`. 'auto' sends none, leaving
   // the model's own default; see EffortLevel in ControlBar.
   const [effort, setEffort] = useState<EffortLevel>(initialSessionConfig?.effort ?? 'high');
@@ -1345,11 +1349,13 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
       streamCtxRef.current.setMessages(withoutRepeatedRecords(nodes));
 
       // Restore the permission mode the session was last in (resume fidelity).
-      // Priority: last mode recorded in the JSONL → account default → leave the
-      // hardcoded initial fallback (acceptEdits). setPermissionMode is a stable
+      // Priority: the live session's reported mode → last mode recorded in the
+      // JSONL → account default → leave the hardcoded initial fallback
+      // (acceptEdits). setPermissionMode is a stable
       // setter so it's safe to call here without a dependency.
       const resumedMode =
-        lastPermissionMode(nodes)
+        livePermissionModeRef.current
+        ?? lastPermissionMode(nodes)
         ?? accountResolutionRef.current?.account.session_defaults?.permissionMode;
       if (resumedMode) setPermissionMode(resumedMode);
 
@@ -1748,6 +1754,10 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
       streamCtxRef.current.setExtractedSessionInfo({ sessionId, projectId });
       SessionPersistenceService.saveSession(sessionId, projectId, projectPath, 0);
     }, [projectPath]),
+    onLivePermissionMode: useCallback((mode: string) => {
+      livePermissionModeRef.current = mode;
+      setPermissionMode(mode);
+    }, []),
     // Transcript-derived inputs for the conversation rollup.
     tasks: taskEntries,
     subagents,
@@ -1941,7 +1951,12 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
       hasLiveSession: !!persistentSessionRef.current,
       previous: permissionModeRef.current,
       api,
-      setPermissionMode,
+      // A live switch (or its rollback) is the session's mode now, so it
+      // replaces the last daemon report.
+      setPermissionMode: (m) => {
+        if (livePermissionModeRef.current !== null) livePermissionModeRef.current = m;
+        setPermissionMode(m);
+      },
       appendMessage,
       onError: (err) => {
         console.error('[sessions] sessionSetPermissionMode failed:', err);
@@ -2508,7 +2523,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
       // skips the IPC when either is off, swallowing rejections.
       void maybeAutoGenerateSummaryOnLeave(claudeSessionId, projectPath, configDir);
     }
-    window.dispatchEvent(new CustomEvent('back-to-project'));
+    window.dispatchEvent(new CustomEvent('back-to-project', { detail: { projectPath } }));
   };
 
 
@@ -2835,19 +2850,13 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
             style={headerHeight != null ? { height: Math.max(headerHeight, headerMinHeight) } : undefined}
           >
             <div ref={backColRef} className="flex gap-1">
-              <TooltipSimple content="Back to Project page" side="bottom">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={handleBackToProject}
-                  // Bar-sized beside New session in the trial layout; the
-                  // full 48px square beside the widgets.
-                  className={cn(SHOW_HEADER_WIDGETS ? "h-12 w-12" : "h-7 w-7", "p-0 rounded-sm border-0 shadow-[0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_30%,transparent),2px_2px_4px_rgb(0_0_0/0.08)]")}
-                  aria-label="Back to Project page"
-                >
-                  <ArrowLeft className={SHOW_HEADER_WIDGETS ? "h-6 w-6" : "h-4 w-4"} />
-                </Button>
-              </TooltipSimple>
+              {/* Bar-sized beside New session in the trial layout; the
+                  full 48px square beside the widgets. */}
+              <BackButton
+                label="Back to Project page"
+                onClick={handleBackToProject}
+                size={SHOW_HEADER_WIDGETS ? "lg" : "sm"}
+              />
               {!SHOW_HEADER_WIDGETS && (
                 <NewSessionButton
                   onClick={confirmAndClear}

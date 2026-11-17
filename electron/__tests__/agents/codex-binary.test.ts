@@ -21,22 +21,22 @@ describe('codex binary service', () => {
     db.close();
   });
 
-  it('getPath returns null when no custom path configured', () => {
+  it('getPath returns null when no custom path configured', async () => {
     expect(service.getPath()).toBeNull();
   });
 
-  it('setPath stores and getPath retrieves (round-trip through settings)', () => {
+  it('setPath stores and getPath retrieves (round-trip through settings)', async () => {
     service.setPath('/usr/local/bin/codex');
     expect(service.getPath()).toBe('/usr/local/bin/codex');
   });
 
-  it('listInstallations returns an array', () => {
-    const installations = service.listInstallations();
+  it('listInstallations returns an array', async () => {
+    const installations = await service.listInstallations();
     expect(Array.isArray(installations)).toBe(true);
   });
 
-  it('each installation has path and source fields', () => {
-    const installations = service.listInstallations();
+  it('each installation has path and source fields', async () => {
+    const installations = await service.listInstallations();
     for (const inst of installations) {
       expect(inst).toHaveProperty('path');
       expect(inst).toHaveProperty('source');
@@ -45,18 +45,18 @@ describe('codex binary service', () => {
     }
   });
 
-  it('findBestBinary returns string or null', () => {
+  it('findBestBinary returns string or null', async () => {
     const best = service.findBestBinary();
     expect(best === null || typeof best === 'string').toBe(true);
   });
 
-  it('findBestBinary does NOT return a nonexistent custom path', () => {
+  it('findBestBinary does NOT return a nonexistent custom path', async () => {
     service.setPath('/nonexistent/path/codex');
     const best = service.findBestBinary();
     expect(best).not.toBe('/nonexistent/path/codex');
   });
 
-  it('findBestBinary returns custom path when it exists on disk', () => {
+  it('findBestBinary returns custom path when it exists on disk', async () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-bin-'));
     const fakeBin = path.join(tmpDir, 'codex');
     fs.writeFileSync(fakeBin, '#!/bin/sh\nexit 0\n');
@@ -69,14 +69,14 @@ describe('codex binary service', () => {
     }
   });
 
-  it('listInstallations includes a custom configured path tagged "custom"', () => {
+  it('listInstallations includes a custom configured path tagged "custom"', async () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-bin-'));
     const fakeBin = path.join(tmpDir, 'codex');
     fs.writeFileSync(fakeBin, '#!/bin/sh\nexit 0\n');
     fs.chmodSync(fakeBin, 0o755);
     try {
       service.setPath(fakeBin);
-      const installations = service.listInstallations();
+      const installations = await service.listInstallations();
       const custom = installations.find((i) => i.source === 'custom');
       // Either it shows up as 'custom', or it was already discovered by another source
       // (in which case the dedup branch in listInstallations short-circuits).

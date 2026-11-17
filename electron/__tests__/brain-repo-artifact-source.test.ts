@@ -30,38 +30,38 @@ describe('repoPathFromTranscripts', () => {
     rmSync(tmp, { recursive: true, force: true });
   });
 
-  it('reads the real path from a transcript rather than the directory name', () => {
+  it('reads the real path from a transcript rather than the directory name', async () => {
     // The encoded name is LOSSY: this one decodes naively to
     // /Users/dev/Repos/wombeats/ios, which does not exist. The real repo is
     // /Users/dev/Repos/wombeats-ios, and only the transcript knows that.
     const project = '-Users-dev-Repos-wombeats-ios';
     writeTranscript(tmp, project, 'sess-a', '/Users/dev/Repos/wombeats-ios');
 
-    expect(repoPathFromTranscripts(join(tmp, 'projects', project))).toBe(
+    expect(await repoPathFromTranscripts(join(tmp, 'projects', project))).toBe(
       '/Users/dev/Repos/wombeats-ios',
     );
   });
 
-  it('skips rows that carry no cwd', () => {
+  it('skips rows that carry no cwd', async () => {
     writeTranscript(tmp, '-p', 'sess-a', '/Users/dev/repo');
-    expect(repoPathFromTranscripts(join(tmp, 'projects', '-p'))).toBe('/Users/dev/repo');
+    expect(await repoPathFromTranscripts(join(tmp, 'projects', '-p'))).toBe('/Users/dev/repo');
   });
 
-  it('returns null when no transcript carries a cwd', () => {
+  it('returns null when no transcript carries a cwd', async () => {
     writeTranscript(tmp, '-p', 'sess-a', null);
-    expect(repoPathFromTranscripts(join(tmp, 'projects', '-p'))).toBeNull();
+    expect(await repoPathFromTranscripts(join(tmp, 'projects', '-p'))).toBeNull();
   });
 
-  it('returns null for a directory with no transcripts', () => {
+  it('returns null for a directory with no transcripts', async () => {
     mkdirSync(join(tmp, 'projects', '-empty'), { recursive: true });
-    expect(repoPathFromTranscripts(join(tmp, 'projects', '-empty'))).toBeNull();
+    expect(await repoPathFromTranscripts(join(tmp, 'projects', '-empty'))).toBeNull();
   });
 
-  it('returns null for a directory that does not exist', () => {
-    expect(repoPathFromTranscripts(join(tmp, 'projects', '-absent'))).toBeNull();
+  it('returns null for a directory that does not exist', async () => {
+    expect(await repoPathFromTranscripts(join(tmp, 'projects', '-absent'))).toBeNull();
   });
 
-  it('survives a truncated final line from the bounded read', () => {
+  it('survives a truncated final line from the bounded read', async () => {
     const dir = join(tmp, 'projects', '-p');
     mkdirSync(dir, { recursive: true });
     writeFileSync(
@@ -69,7 +69,7 @@ describe('repoPathFromTranscripts', () => {
       `${JSON.stringify({ type: 'user', cwd: '/Users/dev/repo' })}\n{"type":"user","cwd":"/trun`,
       'utf8',
     );
-    expect(repoPathFromTranscripts(dir)).toBe('/Users/dev/repo');
+    expect(await repoPathFromTranscripts(dir)).toBe('/Users/dev/repo');
   });
 });
 
@@ -163,7 +163,7 @@ describe('repo artifact source', () => {
     writeFileSync(join(repo, 'CLAUDE.md'), '   \n', 'utf8');
     const source = createRepoArtifactSource({ accounts: accountsWith(1) });
     const [item] = await source.discover();
-    expect(source.admit(item).admitted).toBe(false);
+    expect((await source.admit(item)).admitted).toBe(false);
   });
 
   it('distills the file with artifact metadata', async () => {

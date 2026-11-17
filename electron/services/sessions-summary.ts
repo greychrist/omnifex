@@ -87,6 +87,21 @@ export function readSidecar(sidecarPath: string): SessionSummary | null {
   } catch {
     return null;
   }
+  return parseSidecar(raw);
+}
+
+/** `readSidecar` through the thread pool, for paths that walk many sessions. */
+export async function readSidecarAsync(sidecarPath: string): Promise<SessionSummary | null> {
+  let raw: string;
+  try {
+    raw = await fs.promises.readFile(sidecarPath, 'utf-8');
+  } catch {
+    return null;
+  }
+  return parseSidecar(raw);
+}
+
+function parseSidecar(raw: string): SessionSummary | null {
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
@@ -462,7 +477,7 @@ export function createSessionsSummaryService(
     }
     let stat: fs.Stats;
     try {
-      stat = fs.statSync(jsonlPath);
+      stat = await fs.promises.stat(jsonlPath);
     } catch {
       console.warn(`[sessions-summary] JSONL missing: ${jsonlPath}; skipping.`);
       return { status: 'skipped', reason: 'jsonl-missing' };
@@ -475,7 +490,7 @@ export function createSessionsSummaryService(
     // invalidates the cache so prompt edits in the UI land on the next
     // refresh click without any manual cache-busting.
     const sidecarPath = sidecarPathFor(jsonlPath);
-    const cached = readSidecar(sidecarPath);
+    const cached = await readSidecarAsync(sidecarPath);
     const promptTemplate = deps.getPromptTemplate();
     const currentPromptHash = promptHash(promptTemplate);
     if (
@@ -485,9 +500,11 @@ export function createSessionsSummaryService(
       return { status: 'unchanged', summary: cached };
     }
 
+    // Async: transcripts reach tens of MB, and a sync read froze every live
+    // session's stream on the daemon's one event loop.
     let jsonlContent: string;
     try {
-      jsonlContent = fs.readFileSync(jsonlPath, 'utf-8');
+      jsonlContent = await fs.promises.readFile(jsonlPath, 'utf-8');
     } catch {
       console.warn(`[sessions-summary] JSONL unreadable: ${jsonlPath}; skipping.`);
       return { status: 'skipped', reason: 'jsonl-unreadable' };

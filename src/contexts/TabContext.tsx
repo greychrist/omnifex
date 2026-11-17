@@ -23,6 +23,12 @@ export interface Tab {
   claudeFileId?: string; // for claude-file tabs
   initialProjectPath?: string; // for chat tabs
   /**
+   * Set when a chat tab backs out to the projects view: the project whose
+   * sessions page the projects tab should open. Consumed (cleared) as soon as
+   * the panel opens it, so it never outlives the hand-off.
+   */
+  returnToProjectPath?: string;
+  /**
    * First prompt to send once this tab's auto-started session is up. Set by
    * launchers that mean "open a session AND do this" — currently the Updates
    * popover's changelog-drift warning. AgentSession sends it after

@@ -82,6 +82,7 @@ interface HarnessOverrides {
   initialPersistent?: boolean;
   handleJsonlLine?: ReturnType<typeof vi.fn>;
   onSessionInit?: ReturnType<typeof vi.fn>;
+  onLivePermissionMode?: ReturnType<typeof vi.fn>;
 }
 
 function harness(overrides: HarnessOverrides = {}) {
@@ -109,6 +110,7 @@ function harness(overrides: HarnessOverrides = {}) {
             : updater;
         }) as any,
         onSessionInit: (overrides.onSessionInit ?? vi.fn()) as any,
+        onLivePermissionMode: (overrides.onLivePermissionMode ?? vi.fn()) as any,
         tasks: overrides.tasks ?? [],
         subagents: overrides.subagents ?? [],
       }),
@@ -737,5 +739,48 @@ describe('useSessionLifecycle — StrictMode-safe', () => {
     });
     await act(async () => { await new Promise((r) => setTimeout(r, 10)); });
     expect(api.stopSession).not.toHaveBeenCalled();
+  });
+});
+
+describe('useSessionLifecycle — live permission mode', () => {
+  // A resume spawns from the daemon's persisted options, not the picker. A
+  // transcript whose only prompt was a slash command carries no
+  // permissionMode, so the picker fell back to its hardcoded acceptEdits
+  // while the CLI ran in auto (session 347d496a, 2026-11-16).
+  it('adopts the daemon\'s live mode after a start', async () => {
+    (api.startSession as any).mockResolvedValueOnce(undefined);
+    (api.sessionGetHealth as any).mockResolvedValueOnce({
+      alive: true, sessionId: 'u1', sessionStatus: 'started', turn: { status: 'idle', since: null },
+      launchPermissionMode: 'auto', permissionMode: 'auto',
+    });
+    const onLivePermissionMode = vi.fn();
+    const { result } = renderHook(harness({ onLivePermissionMode }));
+    await act(async () => { await result.current.lifecycle.startPersistentSession('u1'); });
+    await act(async () => { await Promise.resolve(); });
+    expect(onLivePermissionMode).toHaveBeenCalledWith('auto');
+    expect(result.current.lifecycle.launchPermissionMode).toBe('auto');
+  });
+
+  it('adopts the daemon\'s live mode on rebind', async () => {
+    (api.sessionRebind as any).mockResolvedValueOnce(true);
+    (api.sessionGetHealth as any).mockResolvedValueOnce({
+      alive: true, sessionId: 'u1', sessionStatus: 'started', turn: { status: 'idle', since: null },
+      launchPermissionMode: 'default', permissionMode: 'plan',
+    });
+    const onLivePermissionMode = vi.fn();
+    const { result } = renderHook(harness({ onLivePermissionMode }));
+    await act(async () => { await result.current.lifecycle.rebindPersistentSession(); });
+    await act(async () => { await Promise.resolve(); });
+    expect(onLivePermissionMode).toHaveBeenCalledWith('plan');
+  });
+
+  it('leaves the picker alone when the daemon does not report a mode', async () => {
+    (api.startSession as any).mockResolvedValueOnce(undefined);
+    (api.sessionGetHealth as any).mockResolvedValueOnce({ alive: false, sessionId: null, sessionStatus: 'stopped' });
+    const onLivePermissionMode = vi.fn();
+    const { result } = renderHook(harness({ onLivePermissionMode }));
+    await act(async () => { await result.current.lifecycle.startPersistentSession(); });
+    await act(async () => { await Promise.resolve(); });
+    expect(onLivePermissionMode).not.toHaveBeenCalled();
   });
 });

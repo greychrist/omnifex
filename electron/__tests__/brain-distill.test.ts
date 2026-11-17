@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { distillTranscript, isPromptRow, DISTILL_MAX_CHARS } from '../services/brain/distill';
+import { distillTranscript, distillTranscriptAsync, isPromptRow, DISTILL_MAX_CHARS } from '../services/brain/distill';
 
 const FIXTURES = join(__dirname, 'fixtures', 'brain');
 const normal = readFileSync(join(FIXTURES, 'session-normal.jsonl'), 'utf-8');
@@ -361,5 +361,37 @@ describe('isPromptRow', () => {
     // Keying on it could only ever have dropped a real prompt emitted by some
     // future writer that sets isReplay for its own reasons.
     expect(isPromptRow(prompt({ isReplay: false }))).toBe(isPromptRow(prompt()));
+  });
+});
+
+describe('distillTranscriptAsync', () => {
+  it('produces exactly what the synchronous distiller does', async () => {
+    expect(await distillTranscriptAsync(normal, 'sess-normal')).toEqual(
+      distillTranscript(normal, 'sess-normal'),
+    );
+  });
+
+  it('matches on a transcript with a malformed line and no trailing newline', async () => {
+    const jsonl = `${normal}\n{"type":"user",broken\n${normal.split('\n')[0]}`;
+    expect(await distillTranscriptAsync(jsonl, 's')).toEqual(distillTranscript(jsonl, 's'));
+  });
+
+  /**
+   * Parsing a 100 MB transcript is seconds of CPU on the daemon's one event
+   * loop. The async form has to give that loop back while it works.
+   */
+  it('yields to the event loop while parsing a large transcript', async () => {
+    const big = Array.from({ length: 40 }, () => normal).join('\n').repeat(20);
+    let ticks = 0;
+    let running = true;
+    const spin = (): void => {
+      if (!running) return;
+      ticks += 1;
+      setImmediate(spin);
+    };
+    setImmediate(spin);
+    await distillTranscriptAsync(big, 'big', { sliceMs: 1 });
+    running = false;
+    expect(ticks).toBeGreaterThan(1);
   });
 });

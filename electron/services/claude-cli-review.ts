@@ -1,7 +1,8 @@
-import { execFile, execFileSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { buildClaudeEnv } from './util/claude-env';
+import { probeBinaryVersion } from './util/exec-text';
 
 /**
  * Claude Code changelog watermark.
@@ -5737,18 +5738,11 @@ export interface ClaudeCliReviewService {
  * OmniFex code path actually spawns. No shell, so a path with spaces needs no
  * quoting and a shell alias can never intercept it.
  */
-export function probeCliVersion(binaryPath: string | null): string | null {
+export async function probeCliVersion(binaryPath: string | null): Promise<string | null> {
   if (!binaryPath) return null;
-  try {
-    const out = execFileSync(binaryPath, ['--version'], {
-      encoding: 'utf8',
-      timeout: 5000,
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
-    return out.trim() || null;
-  } catch {
-    return null;
-  }
+  // Async: getStatus runs this on every titlebar mount and hourly, and the
+  // sync spawn it used to be froze every live session for up to 5s.
+  return (await probeBinaryVersion(binaryPath)) || null;
 }
 
 /**
@@ -5884,9 +5878,10 @@ export interface ClaudeCliReviewDeps {
   /**
    * Returns the raw `claude --version` output (e.g. "2.1.222 (Claude Code)"),
    * or null when the binary can't be located. Injected so tests never shell
-   * out, and so the caller owns binary resolution.
+   * out, and so the caller owns binary resolution. The daemon's is an async
+   * spawn; a sync one here blocks every live session while it runs.
    */
-  cliVersionFn: () => string | null;
+  cliVersionFn: () => string | null | Promise<string | null>;
   /**
    * Returns the newest Claude Code version published to npm, or null when the
    * registry is unreachable. Optional: with no lookup wired the popover simply
@@ -5990,9 +5985,9 @@ export function createClaudeCliReviewService(
    * OmniFex is running — including via `runUpdate()` below — and a value cached
    * at construction would stay stale until the next app restart.
    */
-  function probeInstalled(): string | null {
+  async function probeInstalled(): Promise<string | null> {
     try {
-      return parseCliVersion(deps.cliVersionFn());
+      return parseCliVersion(await deps.cliVersionFn());
     } catch {
       // Binary missing, exec blocked, timeout — all "undeterminable".
       return null;
@@ -6014,7 +6009,7 @@ export function createClaudeCliReviewService(
   }
 
   async function getStatus(): Promise<CliReviewStatus> {
-    const installed = probeInstalled();
+    const installed = await probeInstalled();
     const checked = resolveChecked();
 
     // Network, so it fails soft and independently: a dead registry must not
@@ -6044,7 +6039,7 @@ export function createClaudeCliReviewService(
   }
 
   async function runUpdate(): Promise<CliUpdateResult> {
-    const from = probeInstalled();
+    const from = await probeInstalled();
     const accounts = deps.claudeAccountsFn?.() ?? [];
     const results: CliAccountUpdateResult[] = [];
 
@@ -6083,7 +6078,7 @@ export function createClaudeCliReviewService(
     // Re-probe rather than parse the CLI's stdout: the binary was swapped
     // underneath us, and the wording of "up to date" / "installed X" is exactly
     // the kind of surface that drifts release to release.
-    const to = probeInstalled();
+    const to = await probeInstalled();
     return {
       from,
       to,

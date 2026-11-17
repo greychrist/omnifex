@@ -689,10 +689,11 @@ export function createSessionsService(
     sessionStatus: SessionStatus;
     turn: TurnState;
     launchPermissionMode: string | null;
+    permissionMode: string | null;
   } {
     const handle = sessions.get(tabId);
     if (!handle) {
-      return { alive: false, sessionId: null, sessionStatus: 'stopped', turn: IDLE_TURN, launchPermissionMode: null };
+      return { alive: false, sessionId: null, sessionStatus: 'stopped', turn: IDLE_TURN, launchPermissionMode: null, permissionMode: null };
     }
     return {
       alive: true,
@@ -702,6 +703,11 @@ export function createSessionsService(
       // Decides whether Bypass is reachable mid-session (queries.ts), so a
       // renderer that reloaded and did not start this session can still tell.
       launchPermissionMode: handle.startParams.permissionMode ?? null,
+      // The mode the decider enforces now (mid-session switches included).
+      // A resume spawns from the daemon's persisted options, never the
+      // renderer's picker, so the picker reads this back instead of guessing
+      // from the transcript.
+      permissionMode: handle.permissionMode || null,
     };
   }
 

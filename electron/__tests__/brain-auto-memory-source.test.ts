@@ -233,7 +233,7 @@ describe('auto-memory source', () => {
     writeMemory(personal, '-repo-a', 'bad.md', 'no frontmatter here\n');
 
     const items = await source.discover();
-    const verdicts = Object.fromEntries(items.map((i) => [i.itemKey, source.admit(i)]));
+    const verdicts = Object.fromEntries(await Promise.all(items.map(async (i) => [i.itemKey, await source.admit(i)])));
     expect(verdicts['-repo-a/good.md'].admitted).toBe(true);
     expect(verdicts['-repo-a/bad.md'].admitted).toBe(false);
     expect(verdicts['-repo-a/bad.md'].reason).toMatch(/frontmatter|unreadable/i);

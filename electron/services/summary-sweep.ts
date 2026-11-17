@@ -16,12 +16,15 @@
  *
  * The cheap predicates run first: one `readdir` per project and one `stat` per
  * transcript, then a sidecar read only for files inside the time window.
- * Nothing reads a transcript until it is chosen.
+ * Nothing reads a transcript until it is chosen. All of it is async with
+ * bounded fan-out: the walk spans every project of every account, and a sync
+ * walk held the daemon's one event loop — every live stream — until it ended.
  */
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { readSidecar, sidecarPathFor } from './sessions-summary';
+import { readSidecarAsync, sidecarPathFor } from './sessions-summary';
+import { mapLimit } from './util/map-limit';
 import { isSummaryScratchProject } from './sessions/internal-spend';
 
 const MINUTE = 60_000;
@@ -34,6 +37,8 @@ const DEFAULT_LOOKBACK_MS = 14 * DAY;
 const DEFAULT_MAX_PER_TICK = 2;
 /** How much of a transcript's head to scan for the `cwd` it ran in. */
 const CWD_PROBE_BYTES = 64 * 1024;
+/** Concurrent fs calls per stage; see util/map-limit.ts for why it is bounded. */
+const FS_CONCURRENCY = 8;
 const UUID_JSONL = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.jsonl$/i;
 
 interface SummaryLike {
@@ -74,21 +79,21 @@ interface Candidate {
   mtimeMs: number;
 }
 
-function listDir(dir: string): fs.Dirent[] {
+async function listDir(dir: string): Promise<fs.Dirent[]> {
   try {
-    return fs.readdirSync(dir, { withFileTypes: true });
+    return await fs.promises.readdir(dir, { withFileTypes: true });
   } catch {
     return [];
   }
 }
 
 /** The `cwd` recorded on the transcript's first record that carries one. */
-function readCwd(file: string): string | null {
-  let fd: number | null = null;
+async function readCwd(file: string): Promise<string | null> {
+  let handle: fs.promises.FileHandle | null = null;
   try {
-    fd = fs.openSync(file, 'r');
+    handle = await fs.promises.open(file, 'r');
     const buf = Buffer.alloc(CWD_PROBE_BYTES);
-    const n = fs.readSync(fd, buf, 0, buf.length, 0);
+    const { bytesRead: n } = await handle.read(buf, 0, buf.length, 0);
     for (const line of buf.subarray(0, n).toString('utf8').split('\n')) {
       if (!line.includes('"cwd"')) continue;
       try {
@@ -102,7 +107,7 @@ function readCwd(file: string): string | null {
   } catch {
     return null;
   } finally {
-    if (fd !== null) fs.closeSync(fd);
+    await handle?.close();
   }
 }
 
@@ -117,34 +122,41 @@ export function createSummarySweep(deps: SummarySweepDeps): SummarySweep {
   // transcript growing is the only thing that makes another attempt worth it.
   const attempted = new Map<string, number>();
 
-  function candidates(): Candidate[] {
+  async function candidates(): Promise<Candidate[]> {
     const t = now();
     const active = new Set(deps.activeSessionIds());
-    const out: Candidate[] = [];
+    const projectDirs: { configDir: string; projectDir: string }[] = [];
     for (const configDir of deps.listConfigDirs()) {
       const projectsDir = path.join(configDir, 'projects');
-      for (const project of listDir(projectsDir)) {
+      for (const project of await listDir(projectsDir)) {
         if (!project.isDirectory() || isSummaryScratchProject(project.name)) continue;
-        const projectDir = path.join(projectsDir, project.name);
-        for (const entry of listDir(projectDir)) {
-          if (!entry.isFile() || !UUID_JSONL.test(entry.name)) continue;
-          const uuid = entry.name.slice(0, -'.jsonl'.length);
-          if (active.has(uuid)) continue;
-          const file = path.join(projectDir, entry.name);
-          let stat: fs.Stats;
-          try {
-            stat = fs.statSync(file);
-          } catch {
-            continue;
-          }
-          const age = t - stat.mtimeMs;
-          if (age < idleMs || age > lookbackMs) continue;
-          if (attempted.get(file) === stat.size) continue;
-          if (readSidecar(sidecarPathFor(file))?.jsonlSize === stat.size) continue;
-          out.push({ uuid, file, configDir, size: stat.size, mtimeMs: stat.mtimeMs });
-        }
+        projectDirs.push({ configDir, projectDir: path.join(projectsDir, project.name) });
       }
     }
+    const listings = await mapLimit(projectDirs, FS_CONCURRENCY, async ({ configDir, projectDir }) => {
+      const files: { uuid: string; file: string; configDir: string }[] = [];
+      for (const entry of await listDir(projectDir)) {
+        if (!entry.isFile() || !UUID_JSONL.test(entry.name)) continue;
+        const uuid = entry.name.slice(0, -'.jsonl'.length);
+        if (active.has(uuid)) continue;
+        files.push({ uuid, file: path.join(projectDir, entry.name), configDir });
+      }
+      return files;
+    });
+    const checked = await mapLimit(listings.flat(), FS_CONCURRENCY, async ({ uuid, file, configDir }) => {
+      let stat: fs.Stats;
+      try {
+        stat = await fs.promises.stat(file);
+      } catch {
+        return null;
+      }
+      const age = t - stat.mtimeMs;
+      if (age < idleMs || age > lookbackMs) return null;
+      if (attempted.get(file) === stat.size) return null;
+      if ((await readSidecarAsync(sidecarPathFor(file)))?.jsonlSize === stat.size) return null;
+      return { uuid, file, configDir, size: stat.size, mtimeMs: stat.mtimeMs };
+    });
+    const out = checked.filter((c): c is Candidate => c !== null);
     // Newest first: the session the user just walked away from is the one they
     // are most likely to look for on the project page.
     return out.sort((a, b) => b.mtimeMs - a.mtimeMs);
@@ -154,9 +166,9 @@ export function createSummarySweep(deps: SummarySweepDeps): SummarySweep {
     const summary = deps.summary();
     if (!summary) return 0;
     let done = 0;
-    for (const c of candidates()) {
+    for (const c of await candidates()) {
       if (done >= maxPerTick) break;
-      const projectPath = readCwd(c.file);
+      const projectPath = await readCwd(c.file);
       attempted.set(c.file, c.size);
       if (!projectPath) continue;
       done++;

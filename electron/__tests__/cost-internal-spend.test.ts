@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createDatabase, type Database } from '../services/database';
-import { createCostHistoryService, type CostFs } from '../services/cost/cost-history';
+import { createCostHistoryService } from '../services/cost/cost-history';
+import type { CostFs } from '../services/cost/transcript-usage';
+import { rangeReader } from './fixtures/cost/range-reader';
 
 /**
  * OmniFex's own CLI runs (summaries, Brain) are priced the moment they finish
@@ -43,7 +45,7 @@ function fakeFs(files: Record<string, string>): CostFs {
   };
   return {
     listDir: (dir) => dirsOf(dir),
-    readFile: (p) => files[p] ?? null,
+    readRange: rangeReader((p) => files[p] ?? null),
     stat: (p) => (files[p] === undefined ? null : { size: files[p].length, mtimeMs: 1 }),
   };
 }
@@ -60,7 +62,7 @@ describe('internal spend in the cost table', () => {
       .all() as Array<Record<string, unknown>>;
   }
 
-  it('prices an internal run and says which activity paid for it', () => {
+  it('prices an internal run and says which activity paid for it', async () => {
     const svc = createCostHistoryService(db, fakeFs({}));
     svc.recordInternal({
       sessionId: 'abc', content: transcript('abc', '2026-08-26'),
@@ -80,7 +82,7 @@ describe('internal spend in the cost table', () => {
   // The 2,500 transcripts stranded between June and October were already
   // priced under the scratch path. Recording them replaces those rows by
   // session id; it must not add a second copy.
-  it('replaces rows an earlier pass wrote under the scratch path', () => {
+  it('replaces rows an earlier pass wrote under the scratch path', async () => {
     const scratch = '/cfg/work/projects/-private-var-folders-x-T-omnifex-summary-scratch';
     const svc = createCostHistoryService(db, fakeFs({}));
     svc.replaceSession('abc', [{
@@ -105,21 +107,21 @@ describe('internal spend in the cost table', () => {
   // The runner prices and deletes its own transcript. If the sweep priced it
   // too while it existed, it would land under the scratch path — the
   // mislabelling this replaces.
-  it('never prices the scratch dir in the projects walk', () => {
+  it('never prices the scratch dir in the projects walk', async () => {
     const svc = createCostHistoryService(db, fakeFs({
       '/cfg/work/projects/-private-var-folders-x-T-omnifex-summary-scratch/abc.jsonl': transcript('abc', '2026-08-26'),
       '/cfg/work/projects/-Users-me-repo/real.jsonl': transcript('real', '2026-08-26'),
     }));
-    svc.backfill([{ name: 'Work', config_dir: '/cfg/work' }]);
+    await svc.backfill([{ name: 'Work', config_dir: '/cfg/work' }]);
 
     expect(rows().map((r) => r.session_id)).toEqual(['real']);
   });
 
-  it('leaves internal_kind NULL on an ordinary session row', () => {
+  it('leaves internal_kind NULL on an ordinary session row', async () => {
     const svc = createCostHistoryService(db, fakeFs({
       '/cfg/work/projects/-Users-me-repo/real.jsonl': transcript('real', '2026-08-26'),
     }));
-    svc.backfill([{ name: 'Work', config_dir: '/cfg/work' }]);
+    await svc.backfill([{ name: 'Work', config_dir: '/cfg/work' }]);
     expect(rows()[0].internal_kind).toBeNull();
   });
 });

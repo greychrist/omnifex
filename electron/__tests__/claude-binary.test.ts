@@ -23,27 +23,27 @@ describe('claude binary service', () => {
     db.close();
   });
 
-  it('getPath returns null when no custom path configured', () => {
+  it('getPath returns null when no custom path configured', async () => {
     expect(service.getPath()).toBeNull();
   });
 
-  it('setPath stores and getPath retrieves', () => {
+  it('setPath stores and getPath retrieves', async () => {
     service.setPath('/usr/local/bin/claude');
     expect(service.getPath()).toBe('/usr/local/bin/claude');
   });
 
-  // listInstallations execSyncs `--version` on every real binary it discovers
+  // listInstallations spawns `--version` on every real binary it discovers
   // (which/nvm/standard paths + one per installed VS Code extension copy —
   // observed 9 on a machine with 8 accumulated extension versions). Each probe
-  // is fast alone, but under full-suite CPU contention the serial spawns can
-  // blow the default 5s budget, so these two get explicit headroom.
-  it('listInstallations returns an array', { timeout: 20_000 }, () => {
-    const installations = service.listInstallations();
+  // is fast alone, but under full-suite CPU contention the spawns can blow the
+  // default 5s budget, so these two get explicit headroom.
+  it('listInstallations returns an array', { timeout: 20_000 }, async () => {
+    const installations = await service.listInstallations();
     expect(Array.isArray(installations)).toBe(true);
   });
 
-  it('each installation has path and source fields', { timeout: 20_000 }, () => {
-    const installations = service.listInstallations();
+  it('each installation has path and source fields', { timeout: 20_000 }, async () => {
+    const installations = await service.listInstallations();
     for (const inst of installations) {
       expect(inst).toHaveProperty('path');
       expect(inst).toHaveProperty('source');
@@ -51,12 +51,12 @@ describe('claude binary service', () => {
     }
   });
 
-  it('findBestBinary returns string or null', () => {
+  it('findBestBinary returns string or null', async () => {
     const best = service.findBestBinary();
     expect(best === null || typeof best === 'string').toBe(true);
   });
 
-  it('findBestBinary prefers custom configured path', () => {
+  it('findBestBinary prefers custom configured path', async () => {
     // Can't reliably test with a real path, but verify logic:
     // If a custom path is set but doesn't exist, falls through to other methods
     service.setPath('/nonexistent/path/claude');
@@ -65,7 +65,7 @@ describe('claude binary service', () => {
     expect(best).not.toBe('/nonexistent/path/claude');
   });
 
-  it('findBestBinary returns custom path when it exists on disk', () => {
+  it('findBestBinary returns custom path when it exists on disk', async () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-bin-'));
     const fakeBin = path.join(tmpDir, 'claude');
     fs.writeFileSync(fakeBin, '#!/bin/sh\nexit 0\n');
@@ -78,7 +78,7 @@ describe('claude binary service', () => {
     }
   });
 
-  it('discoverClaudeBinary ignores the saved path — only findBestBinary honours it', () => {
+  it('discoverClaudeBinary ignores the saved path — only findBestBinary honours it', async () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-bin-'));
     const fakeBin = path.join(tmpDir, 'claude');
     fs.writeFileSync(fakeBin, '#!/bin/sh\nexit 0\n');
@@ -92,14 +92,14 @@ describe('claude binary service', () => {
     }
   });
 
-  it('listInstallations includes a custom configured path tagged "custom"', () => {
+  it('listInstallations includes a custom configured path tagged "custom"', async () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-bin-'));
     const fakeBin = path.join(tmpDir, 'claude');
     fs.writeFileSync(fakeBin, '#!/bin/sh\nexit 0\n');
     fs.chmodSync(fakeBin, 0o755);
     try {
       service.setPath(fakeBin);
-      const installations = service.listInstallations();
+      const installations = await service.listInstallations();
       const custom = installations.find((i) => i.source === 'custom');
       // Either it shows up as 'custom', or it was already discovered by another source
       // (in which case the dedup branch in listInstallations short-circuits).
@@ -141,7 +141,7 @@ describe('findBundledSdkBinary', () => {
     return file;
   }
 
-  it('returns null when no candidate exists', () => {
+  it('returns null when no candidate exists', async () => {
     const result = findBundledSdkBinary({
       platform: 'darwin',
       arch: 'arm64',
@@ -150,7 +150,7 @@ describe('findBundledSdkBinary', () => {
     expect(result).toBeNull();
   });
 
-  it('finds darwin arm64 binary', () => {
+  it('finds darwin arm64 binary', async () => {
     const expected = placeBinary(tmpRoot, '@anthropic-ai/claude-agent-sdk-darwin-arm64');
     const result = findBundledSdkBinary({
       platform: 'darwin',
@@ -160,7 +160,7 @@ describe('findBundledSdkBinary', () => {
     expect(result).toBe(expected);
   });
 
-  it('appends .exe on win32', () => {
+  it('appends .exe on win32', async () => {
     const expected = placeBinary(tmpRoot, '@anthropic-ai/claude-agent-sdk-win32-x64', '.exe');
     const result = findBundledSdkBinary({
       platform: 'win32',
@@ -170,7 +170,7 @@ describe('findBundledSdkBinary', () => {
     expect(result).toBe(expected);
   });
 
-  it('prefers musl variant on linux when present', () => {
+  it('prefers musl variant on linux when present', async () => {
     const expected = placeBinary(tmpRoot, '@anthropic-ai/claude-agent-sdk-linux-x64-musl');
     placeBinary(tmpRoot, '@anthropic-ai/claude-agent-sdk-linux-x64');
     const result = findBundledSdkBinary({
@@ -181,7 +181,7 @@ describe('findBundledSdkBinary', () => {
     expect(result).toBe(expected);
   });
 
-  it('falls back to non-musl linux variant when musl missing', () => {
+  it('falls back to non-musl linux variant when musl missing', async () => {
     const expected = placeBinary(tmpRoot, '@anthropic-ai/claude-agent-sdk-linux-x64');
     const result = findBundledSdkBinary({
       platform: 'linux',
@@ -191,7 +191,7 @@ describe('findBundledSdkBinary', () => {
     expect(result).toBe(expected);
   });
 
-  it('checks roots in order, returning first hit', () => {
+  it('checks roots in order, returning first hit', async () => {
     const root1 = fs.mkdtempSync(path.join(os.tmpdir(), 'sdk-root1-'));
     const root2 = fs.mkdtempSync(path.join(os.tmpdir(), 'sdk-root2-'));
     try {

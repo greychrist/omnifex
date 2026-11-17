@@ -41,7 +41,7 @@ function harness(over: Partial<PeriodicWorkDeps> = {}) {
       reclaimFreePages: vi.fn(),
     },
     listAccounts: vi.fn(() => [acct(1), acct(2)]),
-    costHistory: { backfill: vi.fn(() => ({ sessionsScanned: 3 })), recordInternal: vi.fn() },
+    costHistory: { backfill: vi.fn(async () => ({ sessionsScanned: 3 })), recordInternal: vi.fn() },
     brain: () => brain,
     summary: () => ({ generateSummary: vi.fn(async () => ({ status: 'generated' })) }),
     activeSessionIds: () => ['live-1'],
@@ -69,6 +69,23 @@ describe('startPeriodicWork', () => {
 
     await vi.advanceTimersByTimeAsync(HOUR);
     expect(deps.costHistory.backfill).toHaveBeenCalledTimes(2);
+    stop();
+  });
+
+  // The backfill is async (it reads through the thread pool and yields per
+  // session): its result and its failure both arrive after the timer returns.
+  it('logs the async startup backfill result, and a rejected sweep as a warning', async () => {
+    const backfill = vi.fn()
+      .mockResolvedValueOnce({ sessionsScanned: 7 })
+      .mockRejectedValueOnce(new Error('EMFILE'));
+    const { deps } = harness({ costHistory: { backfill, recordInternal: vi.fn() } });
+    const stop = startPeriodicWork(deps);
+
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(deps.log.info).toHaveBeenCalledWith('cost-history startup backfill', { sessionsScanned: 7 });
+
+    await vi.advanceTimersByTimeAsync(HOUR);
+    expect(deps.log.warn).toHaveBeenCalledWith('cost-history sweep failed', { error: 'Error: EMFILE' });
     stop();
   });
 
@@ -238,6 +255,40 @@ describe('startPeriodicWork', () => {
     expect(deps.log.warn).toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(HOUR);
     expect(deps.db.reclaimFreePages).toHaveBeenCalledTimes(2);
+    stop();
+  });
+
+  // The sessions page's metadata cache is filled once, shortly after start, so
+  // even a project's first visit after a restart reads only what changed.
+  it('warms the session metadata cache once, ten seconds after start', async () => {
+    const warmSessionMetadata = vi.fn(async () => ({ files: 5 }));
+    const { deps } = harness({ warmSessionMetadata });
+    const stop = startPeriodicWork(deps);
+    await vi.advanceTimersByTimeAsync(9_999);
+    expect(warmSessionMetadata).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(warmSessionMetadata).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(HOUR);
+    expect(warmSessionMetadata).toHaveBeenCalledOnce();
+    stop();
+  });
+
+  // The dev daemon shares the database, so the real one's warm-up serves it.
+  it('does not warm the cache when another process owns periodic work', async () => {
+    const warmSessionMetadata = vi.fn(async () => ({ files: 0 }));
+    const { deps } = harness({ warmSessionMetadata, enabled: () => false });
+    const stop = startPeriodicWork(deps);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(warmSessionMetadata).not.toHaveBeenCalled();
+    stop();
+  });
+
+  it('logs rather than throws when the warm-up fails', async () => {
+    const warmSessionMetadata = vi.fn(async () => { throw new Error('disk gone'); });
+    const { deps } = harness({ warmSessionMetadata });
+    const stop = startPeriodicWork(deps);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(deps.log.warn).toHaveBeenCalledWith('session metadata warm-up failed', { error: 'Error: disk gone' });
     stop();
   });
 });

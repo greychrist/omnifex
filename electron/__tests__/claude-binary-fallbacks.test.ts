@@ -2,16 +2,34 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { createDatabase } from '../services/database';
 import { createClaudeBinaryService } from '../services/claude-binary';
 
 vi.mock('node:child_process', async () => {
   const actual = await vi.importActual<typeof import('node:child_process')>('node:child_process');
-  return { ...actual, execFileSync: vi.fn() };
+  return { ...actual, execFile: vi.fn() };
 });
 
-const execFileSyncMock = execFileSync as unknown as ReturnType<typeof vi.fn>;
+const execFileMock = execFile as unknown as ReturnType<typeof vi.fn>;
+
+/**
+ * Answer the async `execFile` the version probe makes with what `run`
+ * returns, or fail it with what `run` throws.
+ */
+function answerExec(run: (file: string, args: string[]) => string): void {
+  execFileMock.mockImplementation((file: string, args: string[], _opts: unknown, cb: (e: Error | null, out: string, err: string) => void) => {
+    let out = '';
+    let error: Error | null = null;
+    try {
+      out = run(file, args);
+    } catch (e) {
+      error = e as Error;
+    }
+    process.nextTick(() => cb(error, out, ''));
+    return { stdin: { end() {} } };
+  });
+}
 
 describe('claude-binary findBestBinary fallback chain', () => {
   let tmpHome: string;
@@ -30,7 +48,7 @@ describe('claude-binary findBestBinary fallback chain', () => {
     originalPath = process.env.PATH;
     process.env.PATH = path.join(tmpHome, 'empty-path');
     homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(tmpHome);
-    execFileSyncMock.mockReset();
+    execFileMock.mockReset();
   });
 
   afterEach(() => {
@@ -42,9 +60,9 @@ describe('claude-binary findBestBinary fallback chain', () => {
     fs.rmSync(tmpHome, { recursive: true, force: true });
   });
 
-  it('falls back to NVM installation when which fails and custom is unset', () => {
+  it('falls back to NVM installation when which fails and custom is unset', async () => {
     // tryWhich -> throws (simulates `which` not found)
-    execFileSyncMock.mockImplementation((file: string, args: string[] = []) => {
+    answerExec((file: string, args: string[] = []) => {
       const cmd = [file, ...args].join(' ');
       if (cmd.includes('which') || cmd.includes('where')) {
         throw new Error('not found');
@@ -68,8 +86,8 @@ describe('claude-binary findBestBinary fallback chain', () => {
     }
   });
 
-  it('uses NVM_BIN env var to find binary directly', () => {
-    execFileSyncMock.mockImplementation((file: string, args: string[] = []) => {
+  it('uses NVM_BIN env var to find binary directly', async () => {
+    answerExec((file: string, args: string[] = []) => {
       const cmd = [file, ...args].join(' ');
       if (cmd.includes('which') || cmd.includes('where')) throw new Error('nf');
       return '1.0';
@@ -84,7 +102,7 @@ describe('claude-binary findBestBinary fallback chain', () => {
     const db = createDatabase(':memory:');
     try {
       const service = createClaudeBinaryService(db);
-      const installations = service.listInstallations();
+      const installations = await service.listInstallations();
       expect(installations.some((i) => i.path === candidate && i.source === 'nvm')).toBe(true);
     } finally {
       db.close();
@@ -92,8 +110,8 @@ describe('claude-binary findBestBinary fallback chain', () => {
     }
   });
 
-  it('falls back to standard install path (~/.local/bin/claude)', () => {
-    execFileSyncMock.mockImplementation((file: string, args: string[] = []) => {
+  it('falls back to standard install path (~/.local/bin/claude)', async () => {
+    answerExec((file: string, args: string[] = []) => {
       const cmd = [file, ...args].join(' ');
       if (cmd.includes('which') || cmd.includes('where')) throw new Error('nf');
       return '1.0';
@@ -112,15 +130,15 @@ describe('claude-binary findBestBinary fallback chain', () => {
       const result = service.findBestBinary();
       expect(typeof result === 'string' || result === null).toBe(true);
       // installations should include our standard candidate
-      const installations = service.listInstallations();
+      const installations = await service.listInstallations();
       expect(installations.some((i) => i.path === standardClaude)).toBe(true);
     } finally {
       db.close();
     }
   });
 
-  it('discovers VS Code extension-bundled claude', () => {
-    execFileSyncMock.mockImplementation((file: string, args: string[] = []) => {
+  it('discovers VS Code extension-bundled claude', async () => {
+    answerExec((file: string, args: string[] = []) => {
       const cmd = [file, ...args].join(' ');
       if (cmd.includes('which') || cmd.includes('where')) throw new Error('nf');
       return '1.0';
@@ -134,37 +152,37 @@ describe('claude-binary findBestBinary fallback chain', () => {
     const db = createDatabase(':memory:');
     try {
       const service = createClaudeBinaryService(db);
-      const installations = service.listInstallations();
+      const installations = await service.listInstallations();
       expect(installations.some((i) => i.path === extClaude)).toBe(true);
     } finally {
       db.close();
     }
   });
 
-  it('tryWhich success path returns the discovered path with source "which"', () => {
+  it('tryWhich success path returns the discovered path with source "which"', async () => {
     const homebrewBin = path.join(tmpHome, 'fake-bin', 'claude');
     fs.mkdirSync(path.dirname(homebrewBin), { recursive: true });
     fs.writeFileSync(homebrewBin, '', { mode: 0o755 });
     process.env.PATH = path.dirname(homebrewBin);
-    execFileSyncMock.mockReturnValue('1.0');
+    answerExec(() => '1.0');
 
     const db = createDatabase(':memory:');
     try {
       const service = createClaudeBinaryService(db);
       expect(service.findBestBinary()).toBe(homebrewBin);
-      const installations = service.listInstallations();
+      const installations = await service.listInstallations();
       expect(installations.some((i) => i.source === 'which' && i.path === homebrewBin)).toBe(true);
     } finally {
       db.close();
     }
   });
 
-  it('listInstallations records version when getVersion succeeds', () => {
+  it('listInstallations records version when getVersion succeeds', async () => {
     const fakeBin = path.join(tmpHome, '.local', 'bin', 'claude');
     fs.mkdirSync(path.dirname(fakeBin), { recursive: true });
     fs.writeFileSync(fakeBin, '');
 
-    execFileSyncMock.mockImplementation((file: string, args: string[] = []) => {
+    answerExec((file: string, args: string[] = []) => {
       const cmd = [file, ...args].join(' ');
       if (cmd.includes('which') || cmd.includes('where')) throw new Error('nf');
       if (cmd.includes('--version')) return '0.42.0\n';
@@ -174,7 +192,7 @@ describe('claude-binary findBestBinary fallback chain', () => {
     const db = createDatabase(':memory:');
     try {
       const service = createClaudeBinaryService(db);
-      const installations = service.listInstallations();
+      const installations = await service.listInstallations();
       const found = installations.find((i) => i.path === fakeBin);
       expect(found?.version).toBe('0.42.0');
     } finally {
@@ -182,19 +200,19 @@ describe('claude-binary findBestBinary fallback chain', () => {
     }
   });
 
-  it('listInstallations records null version when --version throws', () => {
+  it('listInstallations records null version when --version throws', async () => {
     const fakeBin = path.join(tmpHome, '.local', 'bin', 'claude');
     fs.mkdirSync(path.dirname(fakeBin), { recursive: true });
     fs.writeFileSync(fakeBin, '');
 
-    execFileSyncMock.mockImplementation(() => {
+    answerExec(() => {
       throw new Error('nope');
     });
 
     const db = createDatabase(':memory:');
     try {
       const service = createClaudeBinaryService(db);
-      const installations = service.listInstallations();
+      const installations = await service.listInstallations();
       const found = installations.find((i) => i.path === fakeBin);
       expect(found?.version).toBeNull();
     } finally {

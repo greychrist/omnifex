@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { createReadStream } from 'node:fs';
 import type { Database } from '../../database';
 import { pathsOf, type SourceItem } from './types';
 
@@ -58,9 +58,11 @@ export interface SourceStateStore {
   get(accountId: number, sourceId: string, itemKey: string): SourceState | null;
   list(accountId: number, sourceId: string): SourceState[];
   /** Upsert. Stamps mtime and a fresh content hash from the item's file. */
-  record(item: SourceItem, opts: RecordOptions): void;
+  record(item: SourceItem, opts: RecordOptions): Promise<void>;
   /** Rowboat's hybrid: mtime first, sha256 only when mtime disagrees. */
-  hasChanged(item: SourceItem): boolean;
+  hasChanged(item: SourceItem): Promise<boolean>;
+  /** Bytes read to hash so far — what the tests measure. */
+  bytesHashed(): number;
 }
 
 interface Row {
@@ -109,28 +111,44 @@ function toState(row: Row): SourceState {
 }
 
 /**
- * sha256 of the file's bytes, or null when it cannot be read.
- *
- * Null is treated as "changed" by every caller. A file that vanished between
- * discovery and hashing is exactly the case where re-examining it is correct.
- */
-/**
- * One hash over every file behind an item, in order.
+ * One sha256 over every file behind an item, in order, or null when any of
+ * them cannot be read.
  *
  * Not just `item.path`: a session resumed in another cwd spans several files
  * (see `SourceItem.paths`), and hashing only the newest would miss an edit to
  * an earlier half — the note would stay built from content that had changed
- * underneath it. Any unreadable file makes the whole hash null, which reads as
- * "cannot tell", and `hasChanged` treats that as changed.
+ * underneath it. Null reads as "cannot tell", and every caller treats that as
+ * changed: a file that vanished between discovery and hashing is exactly the
+ * case where re-examining it is correct.
+ *
+ * Streamed, never `readFileSync`: transcripts run to hundreds of MB, and this
+ * runs in the daemon whose one event loop streams every live session. A
+ * stream reads through the thread pool and hands the loop back between
+ * chunks.
  */
-function hashItem(item: Pick<SourceItem, 'path' | 'paths'>): string | null {
+async function hashFiles(paths: string[], onBytes: (n: number) => void): Promise<string | null> {
+  const h = createHash('sha256');
   try {
-    const h = createHash('sha256');
-    for (const p of pathsOf(item)) h.update(readFileSync(p));
+    for (const p of paths) {
+      for await (const chunk of createReadStream(p)) {
+        const buf = chunk as Buffer;
+        h.update(buf);
+        onBytes(buf.length);
+      }
+    }
     return h.digest('hex');
   } catch {
     return null;
   }
+}
+
+/**
+ * What identifies an item's bytes without reading them: its files, their
+ * total size and the newest mtime — the same evidence `hasChanged`'s fast path
+ * already trusts. A hash is reused only while all three hold.
+ */
+function fingerprint(item: SourceItem): string {
+  return `${pathsOf(item).join('\0')}\0${String(item.size)}\0${String(item.mtimeMs)}`;
 }
 
 /**
@@ -145,6 +163,30 @@ function hashItem(item: Pick<SourceItem, 'path' | 'paths'>): string | null {
  */
 export function createSourceStateStore(db: Database): SourceStateStore {
   const raw = db.raw;
+  let totalHashed = 0;
+  /**
+   * Hashes already computed, per item, with the fingerprint they were taken
+   * at. In memory only: it is an optimization over a value the table already
+   * persists, and the Sources pane asks about the same moved-but-unedited
+   * transcript on every open — without this, each open re-reads it in full.
+   */
+  const hashes = new Map<string, { fingerprint: string; hash: Promise<string | null> }>();
+
+  function hashItem(item: SourceItem): Promise<string | null> {
+    const key = `${String(item.accountId)}\0${item.sourceId}\0${item.itemKey}`;
+    const fp = fingerprint(item);
+    const known = hashes.get(key);
+    if (known?.fingerprint === fp) return known.hash;
+    const hash = hashFiles(pathsOf(item), (n) => {
+      totalHashed += n;
+    });
+    hashes.set(key, { fingerprint: fp, hash });
+    // An unreadable file is not an answer worth keeping: try again next time.
+    void hash.then((h) => {
+      if (h === null && hashes.get(key)?.hash === hash) hashes.delete(key);
+    });
+    return hash;
+  }
 
   function get(accountId: number, sourceId: string, itemKey: string): SourceState | null {
     const row = raw
@@ -164,7 +206,8 @@ export function createSourceStateStore(db: Database): SourceStateStore {
     return rows.map(toState);
   }
 
-  function record(item: SourceItem, opts: RecordOptions): void {
+  async function record(item: SourceItem, opts: RecordOptions): Promise<void> {
+    const hash = await hashItem(item);
     // A run that spent nothing (a gate rejection, a translating source) leaves
     // the previous figures alone rather than nulling them: what an item cost to
     // index is still true after a later run declined to index it again.
@@ -193,7 +236,7 @@ export function createSourceStateStore(db: Database): SourceStateStore {
         item.sourceId,
         item.itemKey,
         Math.floor(item.mtimeMs),
-        hashItem(item),
+        hash,
         new Date().toISOString(),
         opts.status,
         opts.error ?? null,
@@ -205,7 +248,7 @@ export function createSourceStateStore(db: Database): SourceStateStore {
       );
   }
 
-  function hasChanged(item: SourceItem): boolean {
+  async function hasChanged(item: SourceItem): Promise<boolean> {
     const prior = get(item.accountId, item.sourceId, item.itemKey);
     if (!prior) return true;
     // Fast path: an untouched mtime means untouched bytes on every filesystem
@@ -215,10 +258,10 @@ export function createSourceStateStore(db: Database): SourceStateStore {
     // Slow path. mtime moving does NOT imply the content moved — a restore, a
     // branch switch, or a `touch` all rewrite timestamps over identical bytes,
     // and treating those as edits would re-index an entire vault for nothing.
-    const current = hashItem(item);
+    const current = await hashItem(item);
     if (current === null || prior.hash === null) return true;
     return current !== prior.hash;
   }
 
-  return { get, list, record, hasChanged };
+  return { get, list, record, hasChanged, bytesHashed: () => totalHashed };
 }

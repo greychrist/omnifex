@@ -45,65 +45,166 @@ export function decodeProjectId(projectId: string): string {
  * indefinitely after a rename. Newest mtime always wins, so a single new
  * session under the new name is enough to flip the displayed path.
  *
- * Cost: stat each JSONL (cheap — already directory-cached), then one
- * short `readFileSync` of the newest JSONL plus a per-line JSON.parse
- * until `cwd` is found. We scan at most ~50 lines per project; for the
- * typical Recent-Projects list of ~20 entries this stays well under
- * 50ms of cold-cache IO.
+ * Cost: stat each JSONL, then read the newest one's head in 64 KB chunks
+ * until `cwd` turns up or 50 lines have gone by — usually one chunk. It used
+ * to `readFileSync` the whole transcript (tens of MB for a long session) to
+ * look at those 50 lines.
  */
 export function recoverProjectPath(projectDir: string, projectId: string): string {
   const fallback = decodeProjectId(projectId);
-
   let entries: fs.Dirent[];
   try {
     entries = fs.readdirSync(projectDir, { withFileTypes: true });
   } catch {
     return fallback;
   }
-
-  const jsonlFiles: { name: string; mtimeMs: number }[] = [];
-  for (const e of entries) {
-    if (!e.isFile() || !e.name.endsWith('.jsonl')) continue;
+  const files = jsonlNames(entries).map((name) => {
     let mtimeMs = 0;
     try {
-      mtimeMs = fs.statSync(path.join(projectDir, e.name)).mtimeMs;
+      mtimeMs = fs.statSync(path.join(projectDir, name)).mtimeMs;
     } catch {
       // Stat failure → treat as oldest so a readable file still wins.
     }
-    jsonlFiles.push({ name: e.name, mtimeMs });
-  }
-  // Newest first — see the rename rationale above.
-  jsonlFiles.sort((a, b) => b.mtimeMs - a.mtimeMs);
-
-  for (const { name } of jsonlFiles) {
-    let content: string;
+    return { name, mtimeMs };
+  });
+  for (const { name } of newestFirst(files)) {
+    let fd: number;
     try {
-      content = fs.readFileSync(path.join(projectDir, name), 'utf8');
+      fd = fs.openSync(path.join(projectDir, name), 'r');
     } catch {
       continue;
     }
-
-    const lines = content.split('\n');
-    // Cap to keep cold-cache cost bounded on very long sessions; `cwd`
-    // appears on essentially every user/assistant entry so the first
-    // handful suffices in practice.
-    const cap = Math.min(lines.length, 50);
-    for (let i = 0; i < cap; i++) {
-      const line = lines[i].trim();
-      if (!line) continue;
-      try {
-        const obj = JSON.parse(line) as Record<string, unknown>;
-        const cwd = obj.cwd;
-        if (typeof cwd === 'string' && cwd.startsWith('/')) {
-          return cwd;
+    try {
+      const scan = createHeadScan();
+      const buf = Buffer.alloc(HEAD_CHUNK);
+      let pos = 0;
+      for (;;) {
+        const n = fs.readSync(fd, buf, 0, HEAD_CHUNK, pos);
+        const done = n === 0;
+        pos += n;
+        const cwd = scan.push(buf.subarray(0, n), done);
+        if (cwd !== undefined) {
+          if (cwd) return cwd;
+          break;
         }
-      } catch {
-        // Corrupt line — keep trying.
       }
+    } catch {
+      // Unreadable — try the next transcript.
+    } finally {
+      fs.closeSync(fd);
     }
   }
-
   return fallback;
+}
+
+/**
+ * `recoverProjectPath` without blocking the event loop: the same answer,
+ * read through the thread pool. The sessions page runs it across every
+ * project folder in the account on each visit.
+ */
+export async function recoverProjectPathAsync(projectDir: string, projectId: string): Promise<string> {
+  const fallback = decodeProjectId(projectId);
+  let entries: fs.Dirent[];
+  try {
+    entries = await fs.promises.readdir(projectDir, { withFileTypes: true });
+  } catch {
+    return fallback;
+  }
+  const files = await Promise.all(jsonlNames(entries).map(async (name) => {
+    let mtimeMs = 0;
+    try {
+      mtimeMs = (await fs.promises.stat(path.join(projectDir, name))).mtimeMs;
+    } catch {
+      // Stat failure → treat as oldest so a readable file still wins.
+    }
+    return { name, mtimeMs };
+  }));
+  for (const { name } of newestFirst(files)) {
+    let handle: fs.promises.FileHandle;
+    try {
+      handle = await fs.promises.open(path.join(projectDir, name), 'r');
+    } catch {
+      continue;
+    }
+    try {
+      const scan = createHeadScan();
+      const buf = Buffer.alloc(HEAD_CHUNK);
+      let pos = 0;
+      for (;;) {
+        const { bytesRead: n } = await handle.read(buf, 0, HEAD_CHUNK, pos);
+        const done = n === 0;
+        pos += n;
+        const cwd = scan.push(buf.subarray(0, n), done);
+        if (cwd !== undefined) {
+          if (cwd) return cwd;
+          break;
+        }
+      }
+    } catch {
+      // Unreadable — try the next transcript.
+    } finally {
+      await handle.close();
+    }
+  }
+  return fallback;
+}
+
+/** Read size for the head scan. Most transcripts answer in the first chunk. */
+const HEAD_CHUNK = 64 * 1024;
+/**
+ * Lines scanned per transcript. `cwd` appears on essentially every user /
+ * assistant entry, so the first handful suffices; the cap bounds the cost
+ * of a transcript that has none.
+ */
+const HEAD_LINES = 50;
+
+function jsonlNames(entries: fs.Dirent[]): string[] {
+  return entries.filter((e) => e.isFile() && e.name.endsWith('.jsonl')).map((e) => e.name);
+}
+
+/** Newest first — see the rename rationale above. */
+function newestFirst<T extends { mtimeMs: number }>(files: T[]): T[] {
+  return [...files].sort((a, b) => b.mtimeMs - a.mtimeMs);
+}
+
+/**
+ * Feeds a transcript's head through line by line, a chunk at a time, so only
+ * as much of the file is read as the first `HEAD_LINES` lines span — not the
+ * whole file, which the old `readFileSync` read to look at 50 lines of it.
+ * `push` answers the cwd once found, `''` once this transcript has none to
+ * give (line cap or end of file), and `undefined` to ask for more.
+ */
+function createHeadScan(): { push(chunk: Buffer, done: boolean): string | undefined } {
+  let pending = Buffer.alloc(0);
+  let lines = 0;
+  const check = (raw: Buffer): string | undefined => {
+    lines += 1;
+    const line = raw.toString('utf8').trim();
+    if (!line) return undefined;
+    try {
+      const cwd = (JSON.parse(line) as Record<string, unknown>).cwd;
+      if (typeof cwd === 'string' && cwd.startsWith('/')) return cwd;
+    } catch {
+      // Corrupt line — keep trying.
+    }
+    return undefined;
+  };
+  return {
+    push(chunk, done) {
+      pending = pending.length ? Buffer.concat([pending, chunk]) : chunk;
+      let nl: number;
+      while ((nl = pending.indexOf(0x0a)) !== -1) {
+        const cwd = check(pending.subarray(0, nl));
+        pending = pending.subarray(nl + 1);
+        if (cwd) return cwd;
+        if (lines >= HEAD_LINES) return '';
+      }
+      if (done) return (pending.length ? check(pending) : undefined) ?? '';
+      // Copy so the caller can reuse its read buffer.
+      pending = Buffer.from(pending);
+      return undefined;
+    },
+  };
 }
 
 /**

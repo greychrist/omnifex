@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -177,6 +177,31 @@ describe('createCodexSessionWalker', () => {
     const bad = list.find((e: CodexSessionEntry) => e.conversationId === badId);
     expect(good?.projectPath).toBe('/p/ok');
     expect(bad?.projectPath).toBeNull();
+  });
+
+  // Only the first record matters, but rollouts grow to many MB: reading
+  // each whole (and synchronously) blocked the daemon's event loop for the
+  // sum of every rollout on disk.
+  it('reads only the head of each rollout, asynchronously', async () => {
+    const id = '019cb5ad-0c36-7d80-b43f-559e40646c80';
+    // A session_meta line longer than one read chunk, then a large tail.
+    const meta = { type: 'session_meta', payload: { id, cwd: '/p/long', instructions: 'x'.repeat(200_000) } };
+    const tail = Array.from({ length: 50 }, (_, i) => ({ type: 'response_item', i, pad: 'y'.repeat(100_000) }));
+    writeRollout(sess(`2026/04/01/rollout-${id}.jsonl`), [meta, ...tail], '2026-04-01T00:00:00.000Z');
+
+    const spies = (['readFileSync', 'readdirSync', 'statSync', 'existsSync', 'openSync'] as const).map((m) => vi.spyOn(fs, m));
+    const readFile = vi.spyOn(fs.promises, 'readFile');
+    try {
+      const [entry] = await walker.listSessions();
+      expect(entry).toMatchObject({ conversationId: id, projectPath: '/p/long' });
+      for (const spy of spies) {
+        expect(spy.mock.calls.filter(([p]) => typeof p === 'string' && p.startsWith(tmp.dir))).toEqual([]);
+      }
+      expect(readFile).not.toHaveBeenCalled();
+    } finally {
+      for (const spy of spies) spy.mockRestore();
+      readFile.mockRestore();
+    }
   });
 
   it('exposes the absolute jsonlPath and ISO lastActivity on each entry', async () => {

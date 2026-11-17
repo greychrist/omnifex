@@ -54,6 +54,14 @@ interface UseSessionLifecycleArgs {
    */
   onSessionInit: (sessionId: string) => void;
   /**
+   * Called with the mode the daemon's session is actually in, once a start
+   * or rebind has a live process to ask. The picker follows it: a resume
+   * spawns from the daemon's persisted options, never the picker, and the
+   * transcript does not always record a mode (a slash-command-only session
+   * has none), so the picker's own guess can be wrong.
+   */
+  onLivePermissionMode?: (mode: string) => void;
+  /**
    * Active task list. Only `.status` is read — pass `TaskListEntry[]` or
    * any `{ status: string }[]` compatible slice. Used by
    * `sessionDerivedState.hasOpenTasks` to detect in-flight tasks.
@@ -130,6 +138,7 @@ export function useSessionLifecycle({
   handleJsonlLine,
   setMessages,
   onSessionInit,
+  onLivePermissionMode,
   tasks,
   subagents,
 }: UseSessionLifecycleArgs): UseSessionLifecycleReturn {
@@ -290,8 +299,7 @@ export function useSessionLifecycle({
       // Re-seed claudeSessionId on rebind — the renderer just reloaded and
       // may have lost it. The main process still holds the pinned id.
       if (health.sessionId) onSessionInit(health.sessionId);
-      // Absent from a daemon older than the field: leave it unknown.
-      if (health.launchPermissionMode !== undefined) setLaunchPermissionMode(health.launchPermissionMode);
+      adoptLiveModes(health);
     }).catch((err: unknown) => {
       console.warn('[rebindPersistentSession] sessionGetHealth failed:', err);
     });
@@ -329,6 +337,13 @@ export function useSessionLifecycle({
       });
     });
   }, [tabId]); // eslint-disable-line react-hooks/exhaustive-deps -- rebind is read through a ref; the rest are stable refs/setters
+
+  /** Seed the launch mode and the picker from the daemon's live handle. */
+  const adoptLiveModes = (health: { launchPermissionMode?: string | null; permissionMode?: string | null }) => {
+    // Absent from a daemon older than the field: leave it unknown.
+    if (health.launchPermissionMode !== undefined) setLaunchPermissionMode(health.launchPermissionMode);
+    if (typeof health.permissionMode === 'string' && health.permissionMode) onLivePermissionMode?.(health.permissionMode);
+  };
 
   const startPersistentSession = async (resumeId?: string, options?: { permissionMode?: string }) => {
     if (persistentSessionRef.current) return; // Already running
@@ -396,6 +411,13 @@ export function useSessionLifecycle({
         manualAccountOverride,
         agent,
       );
+      // A resume spawns under the daemon's persisted mode, not `mode`; read
+      // back what the process actually runs in. Best-effort.
+      api.sessionGetHealth(tabId).then((health) => {
+        if (isMountedRef.current && health.alive) adoptLiveModes(health);
+      }).catch((err: unknown) => {
+        console.warn('[startPersistentSession] sessionGetHealth failed:', err);
+      });
       // No state flips here. Main process owns lifecycle status and emits
       // `session-status:<tabId>` events; ClaudeCodeSession subscribes.
       // sessionId arrives via `session-init:<tabId>` the moment the

@@ -165,7 +165,7 @@ describe('session transcript source', () => {
     it('admits a session with two prompts and assistant prose', async () => {
       writeSession(personalCfg, '-Users-dev-Repos-omnifex', 'sess-a', GOOD);
       const [item] = await source.discover();
-      const verdict = source.admit(item);
+      const verdict = (await source.admit(item));
       expect(verdict.admitted).toBe(true);
       expect(verdict.reason).toBeTruthy();
     });
@@ -173,7 +173,7 @@ describe('session transcript source', () => {
     it('skips a session with fewer than two prompts', async () => {
       writeSession(personalCfg, '-Users-dev-Repos-omnifex', 'sess-a', ONE_PROMPT);
       const [item] = await source.discover();
-      const verdict = source.admit(item);
+      const verdict = (await source.admit(item));
       expect(verdict.admitted).toBe(false);
       // The reason is what the Sources pane shows, so it has to name the rule
       // that fired rather than just say "skipped".
@@ -183,8 +183,8 @@ describe('session transcript source', () => {
     it('skips a session with no assistant prose', async () => {
       writeSession(personalCfg, '-Users-dev-Repos-omnifex', 'sess-a', NO_PROSE);
       const [item] = await source.discover();
-      expect(source.admit(item).admitted).toBe(false);
-      expect(source.admit(item).reason).toContain('prose');
+      expect((await source.admit(item)).admitted).toBe(false);
+      expect((await source.admit(item)).reason).toContain('prose');
     });
 
     it('skips a session that terminated on a startup error', async () => {
@@ -194,7 +194,7 @@ describe('session transcript source', () => {
       );
       writeSession(personalCfg, '-Users-dev-Repos-omnifex', 'sess-err', fixture);
       const [item] = await source.discover();
-      const verdict = source.admit(item);
+      const verdict = (await source.admit(item));
       expect(verdict.admitted).toBe(false);
       expect(verdict.reason).toContain('error');
     });
@@ -205,8 +205,8 @@ describe('session transcript source', () => {
       rmSync(item.path);
       // The Brain is auxiliary: a vanished file is a skip with a reason, never
       // an exception into whatever is draining the queue.
-      expect(() => source.admit(item)).not.toThrow();
-      expect(source.admit(item).admitted).toBe(false);
+      await expect(Promise.resolve(source.admit(item))).resolves.toBeDefined();
+      expect((await source.admit(item)).admitted).toBe(false);
     });
   });
 
@@ -289,7 +289,7 @@ describe('session transcript source', () => {
       const [before] = await brain.listSources(personalId);
       expect(before.status).toBeNull();
 
-      createSourceStateStore(db).record(
+      await createSourceStateStore(db).record(
         {
           sourceId: 'session',
           itemKey: 'sess-a',
@@ -946,7 +946,7 @@ describe('session transcript source — one session, many files', () => {
     write(MAIN, 'sess-split', [PROMPT('only ask there', 2), PROSE('answer two', 2)].join('\n'), LATER);
 
     const [item] = await source.discover();
-    expect(source.admit(item).admitted).toBe(true);
+    expect((await source.admit(item)).admitted).toBe(true);
   });
 });
 
@@ -997,8 +997,8 @@ describe('session transcript source — change detection across files', () => {
     const store = createSourceStateStore(db);
 
     const [before] = await source.discover();
-    store.record(before, { status: 'indexed' });
-    expect(store.hasChanged(before)).toBe(false);
+    await store.record(before, { status: 'indexed' });
+    expect(await store.hasChanged(before)).toBe(false);
 
     // Change the OLDER half's content, and touch the newest file without
     // changing it — which is what a live session does to its own transcript.
@@ -1015,6 +1015,6 @@ describe('session transcript source — change detection across files', () => {
     const [after] = await source.discover();
     // The newest file is still the primary — only its timestamp moved.
     expect(after.path).toBe(newest);
-    expect(store.hasChanged(after)).toBe(true);
+    expect(await store.hasChanged(after)).toBe(true);
   });
 });

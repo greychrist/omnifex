@@ -13,6 +13,7 @@ import type { Database } from '../services/database';
 import type { PermissionsIOService } from '../services/permissions-io';
 import { validateCliPath } from '../services/cli-path-validator';
 import { gitBinary } from '../services/git-binary';
+import { execFileText } from '../services/util/exec-text';
 import type { WatchHolder } from '../services/git-watcher';
 import { createBrainHandlers, type BrainMcpHandlerDeps } from './brain-handlers';
 import type { BrainService } from '../services/brain/registry';
@@ -84,6 +85,7 @@ export interface Services {
       sessionStatus: string;
       turn: { status: 'idle' | 'running'; since: string | null };
       launchPermissionMode?: string | null;
+      permissionMode?: string | null;
     };
     // Wave 2 — Query-method passthroughs
     setModel(sessionId: string, model?: string): unknown;
@@ -553,7 +555,7 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     // ── Sessions ──────────────────────────────────────────────────────────────
     session_respond_elicitation: wrapWith((p: Record<string, unknown>) => sessions?.respondElicitation((p?.tabId ?? p?.tab_id) as string, (p?.action) as string, p?.content as Record<string, unknown> | undefined, (p?.requestId ?? p?.request_id) as string | undefined) ?? null),
     session_get_info: wrapWith((p: Record<string, unknown>) => sessions?.getInfo((p?.tabId ?? p?.session_id) as string) ?? null),
-    session_get_health: wrapWith((p: Record<string, unknown>) => sessions?.getHealth((p?.tabId ?? p?.session_id) as string) ?? { alive: false, sessionId: null, sessionStatus: 'stopped', turn: { status: 'idle', since: null }, launchPermissionMode: null }),
+    session_get_health: wrapWith((p: Record<string, unknown>) => sessions?.getHealth((p?.tabId ?? p?.session_id) as string) ?? { alive: false, sessionId: null, sessionStatus: 'stopped', turn: { status: 'idle', since: null }, launchPermissionMode: null, permissionMode: null }),
     // Wave 2 — Query-method passthroughs
     session_set_model: wrapWith((p: Record<string, unknown>) => sessions?.setModel((p?.tabId ?? p?.session_id) as string, p?.model as string | undefined) ?? null),
     session_set_title: wrapWith((p: Record<string, unknown>) => sessions?.setTitle((p?.tabId ?? p?.session_id) as string, (p?.title ?? '') as string) ?? null),
@@ -929,9 +931,10 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
       const projectPath = (p?.projectPath ?? p?.project_path) as string;
       if (!projectPath) return null;
       try {
-        // eslint-disable-next-line @typescript-eslint/no-require-imports -- intentional lazy load; eager import slows IPC startup.
-        const { execFileSync } = require('node:child_process') as typeof import('node:child_process');
-        return execFileSync(gitBinary(), ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: projectPath, encoding: 'utf8' }).trim();
+        // Async with a timeout: a sync spawn here froze every session's
+        // stream, and with no timeout a wedged git (a stale index.lock, a
+        // network mount) froze it indefinitely.
+        return (await execFileText(gitBinary(), ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: projectPath, timeout: 5000 })).trim();
       } catch { return null; }
     }),
 

@@ -96,6 +96,15 @@ describe('sessions — the turn axis', () => {
     expect(sessions.getHealth('nope')).toMatchObject({ alive: false, launchPermissionMode: null });
   });
 
+  // A resume spawns from the daemon's persisted options, not the picker; the
+  // renderer reads the live mode back so its picker cannot show another one.
+  it('reports the permission mode the session is in now', () => {
+    const { sessions } = setup();
+    sessions.start({ tabId: 't1', projectPath, configDir: tmpConfig, model: 'opus', permissionMode: 'auto' });
+    expect(sessions.getHealth('t1')).toMatchObject({ permissionMode: 'auto' });
+    expect(sessions.getHealth('nope')).toMatchObject({ alive: false, permissionMode: null });
+  });
+
   it('closes on the CLI result row — the only turn-closer while the process lives', () => {
     const { sessions, turnEvents } = setup();
     sessions.start({ tabId: 't1', projectPath, configDir: tmpConfig, model: 'opus', permissionMode: 'default' });

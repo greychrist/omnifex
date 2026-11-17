@@ -183,7 +183,13 @@ export interface BrainSource {
    * asserting ownership rather than deriving it.
    */
   discover(): Promise<SourceItem[]>;
-  admit(item: SourceItem): AdmitVerdict;
+  /**
+   * The deterministic gate. A source whose gate reads a large file (a
+   * transcript) answers asynchronously, so the read never runs on the
+   * daemon's event loop; one that only looks at a few bytes may answer
+   * directly. Callers always `await` it.
+   */
+  admit(item: SourceItem): AdmitVerdict | Promise<AdmitVerdict>;
   /** Bounded prose for the model. Absent on a source that translates instead. */
   distill?(item: SourceItem): Promise<DistilledItem>;
   /**

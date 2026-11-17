@@ -687,6 +687,7 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
     brain: () => brainRef,
     summary: () => sessionsSummaryServiceRef,
     activeSessionIds: () => sessionsService.listActiveSessionIds(),
+    warmSessionMetadata: () => claudeService.warmSessionMetadata(),
     log,
   });
 
@@ -808,7 +809,12 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
       closeSideChat: (id) => { sessionsService.closeSideChat(id); },
       getSideChat: (id) => sessionsService.getSideChat(id),
       suggestTitle: (id, description) => sessionsService.suggestTitle(id, description),
-      setPermissionMode: (id, mode) => sessionsService.setPermissionMode(id, mode as any),
+      // Persisted once the CLI accepts it, so a resume respawns in the mode
+      // the session was left in rather than the one it was launched with.
+      setPermissionMode: async (id, mode) => {
+        await sessionsService.setPermissionMode(id, mode as any);
+        sessionLog.updateOptions(id, { permissionMode: mode });
+      },
       setEffort: (id, level) => sessionsService.setEffort(id, level as any),
       applyPermissions: (id, permissions) => sessionsService.applyPermissions(id, permissions as any),
       getAccountInfo: (id) => sessionsService.getAccountInfo(id),

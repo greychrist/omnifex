@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
+import { BackButton } from "@/components/ui/back-button";
 import { api } from "@/lib/api";
 import { 
   X, 
   Folder, 
   File, 
-  ArrowLeft,
   FileCode,
   FileText,
   FileImage,
@@ -374,15 +374,12 @@ export const FilePicker: React.FC<FilePickerProps> = ({
       <div className="border-b border-border p-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="icon"
+            <BackButton
+              label="Up one folder"
+              size="md"
               onClick={navigateBack}
               disabled={!canGoBack}
-              className="h-8 w-8"
-            >
-              <ArrowLeft className="h-4 w-4" />
-            </Button>
+            />
             <span className="text-sm font-mono text-muted-foreground truncate max-w-[300px]">
               {relativePath}
             </span>

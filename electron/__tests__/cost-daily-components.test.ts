@@ -4,7 +4,9 @@ import os from 'node:os';
 import path from 'node:path';
 import Database_ from 'better-sqlite3';
 import { createDatabase, type Database } from '../services/database';
-import { createCostHistoryService, type CostFs } from '../services/cost/cost-history';
+import { createCostHistoryService } from '../services/cost/cost-history';
+import type { CostFs } from '../services/cost/transcript-usage';
+import { rangeReader } from './fixtures/cost/range-reader';
 import { computeSessionCost, type SessionCostDailyRow } from '../services/cost/session-cost-core';
 
 /**
@@ -49,7 +51,7 @@ describe('session_cost_daily component + subagent columns', () => {
   beforeEach(() => { db = createDatabase(':memory:'); });
   afterEach(() => { db.close(); });
 
-  it('has the new columns and is_subagent in the primary key', () => {
+  it('has the new columns and is_subagent in the primary key', async () => {
     const cols = (db.raw.prepare('PRAGMA table_info(session_cost_daily)').all() as Array<{ name: string; pk: number }>);
     const names = cols.map((c) => c.name);
     for (const c of ['is_subagent', 'request_count', 'input_usd', 'output_usd', 'cache_read_usd', 'cache_write_usd']) {
@@ -59,13 +61,13 @@ describe('session_cost_daily component + subagent columns', () => {
     expect(pk).toEqual(['session_id', 'date', 'model', 'is_subagent']);
   });
 
-  it('keeps the date and account indexes after the table rebuild', () => {
+  it('keeps the date and account indexes after the table rebuild', async () => {
     const idx = (db.raw.prepare("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='session_cost_daily'").all() as Array<{ name: string }>).map((r) => r.name);
     expect(idx).toContain('idx_session_cost_daily_date');
     expect(idx).toContain('idx_session_cost_daily_account');
   });
 
-  it('splits main-loop and subagent spend into separate rows for the same day+model', () => {
+  it('splits main-loop and subagent spend into separate rows for the same day+model', async () => {
     const files: Record<string, string> = {
       [path.join(PROJ_DIR, 'sessA.jsonl')]: line('m-main', { output: 1000 }),
       [path.join(SUBAGENTS, 'agent-a.jsonl')]: line('m-sub', { output: 4000 }),
@@ -76,11 +78,11 @@ describe('session_cost_daily component + subagent columns', () => {
       [SUBAGENTS]: [{ name: 'agent-a.jsonl', isDirectory: false }],
     };
     const fakeFs: CostFs = {
-      readFile: (p) => files[p] ?? null,
+      readRange: rangeReader((p) => files[p] ?? null),
       listDir: (p) => dirs[p] ?? [],
       stat: (p) => (p in files ? { mtimeMs: files[p].length, size: files[p].length } : null),
     };
-    createCostHistoryService(db, fakeFs).backfill([{ name: 'Work', config_dir: CFG }]);
+    await createCostHistoryService(db, fakeFs).backfill([{ name: 'Work', config_dir: CFG }]);
 
     const rows = db.raw
       .prepare('SELECT * FROM session_cost_daily ORDER BY is_subagent')
@@ -96,7 +98,7 @@ describe('session_cost_daily component + subagent columns', () => {
     expect(rows[0].model).toBe(rows[1].model);
   });
 
-  it('counts requests per row', () => {
+  it('counts requests per row', async () => {
     const { dailyRows } = computeSessionCost({
       sessionContent: [line('m1', { output: 10 }), line('m2', { output: 20 }), line('m3', { output: 30 })].join('\n'),
       subagentFiles: [{ agentId: 'a1', content: [line('s1', { output: 1 }), line('s2', { output: 2 })].join('\n') }],
@@ -108,7 +110,7 @@ describe('session_cost_daily component + subagent columns', () => {
     expect(sub.request_count).toBe(2);
   });
 
-  it('persists the component split, and the parts sum to cost_usd', () => {
+  it('persists the component split, and the parts sum to cost_usd', async () => {
     const { dailyRows, snapshot } = computeSessionCost({
       sessionContent: line('m1', { input: 5_000, output: 20_000, cacheRead: 900_000, cw5m: 30_000, cw1h: 10_000 }),
       subagentFiles: [],
@@ -124,7 +126,7 @@ describe('session_cost_daily component + subagent columns', () => {
     expect(r.cache_write_usd).toBeCloseTo(snapshot.breakdown.cacheWriteUsd, 10);
   });
 
-  it('component costs are stored, not recomputed — a later rate change cannot desync them', () => {
+  it('component costs are stored, not recomputed — a later rate change cannot desync them', async () => {
     // The point of persisting the split: if the page recomputed it from tokens
     // at current rates, the parts would stop summing to the stored whole the
     // moment a price changed, and would disagree silently.
@@ -142,7 +144,7 @@ describe('session_cost_daily component + subagent columns', () => {
     expect(row.request_count).toBe(4);
   });
 
-  it('backfilling twice produces identical rows', () => {
+  it('backfilling twice produces identical rows', async () => {
     const files: Record<string, string> = {
       [path.join(PROJ_DIR, 'sessA.jsonl')]: line('m-main', { output: 1000, cacheRead: 5000 }),
       [path.join(SUBAGENTS, 'agent-a.jsonl')]: line('m-sub', { output: 4000 }),
@@ -153,16 +155,16 @@ describe('session_cost_daily component + subagent columns', () => {
       [SUBAGENTS]: [{ name: 'agent-a.jsonl', isDirectory: false }],
     };
     const fakeFs: CostFs = {
-      readFile: (p) => files[p] ?? null,
+      readRange: rangeReader((p) => files[p] ?? null),
       listDir: (p) => dirs[p] ?? [],
       stat: (p) => (p in files ? { mtimeMs: files[p].length, size: files[p].length } : null),
     };
     const snap = () => JSON.stringify(
       db.raw.prepare('SELECT session_id,date,model,is_subagent,request_count,input_tokens,output_tokens,cost_usd,input_usd,output_usd,cache_read_usd,cache_write_usd FROM session_cost_daily ORDER BY session_id,date,model,is_subagent').all(),
     );
-    createCostHistoryService(db, fakeFs).backfill([{ name: 'Work', config_dir: CFG }]);
+    await createCostHistoryService(db, fakeFs).backfill([{ name: 'Work', config_dir: CFG }]);
     const first = snap();
-    createCostHistoryService(db, fakeFs).backfill([{ name: 'Work', config_dir: CFG }]);
+    await createCostHistoryService(db, fakeFs).backfill([{ name: 'Work', config_dir: CFG }]);
     expect(snap()).toBe(first);
   });
 });
@@ -200,7 +202,7 @@ describe('migration 22 rebuild', () => {
   });
   afterEach(() => { fs.rmSync(dir, { recursive: true, force: true }); });
 
-  it('preserves pre-migration rows, totals and indexes', () => {
+  it('preserves pre-migration rows, totals and indexes', async () => {
     const db = createDatabase(file);
     const rows = db.raw
       .prepare('SELECT * FROM session_cost_daily ORDER BY session_id')
@@ -232,7 +234,7 @@ describe('migration 22 rebuild', () => {
     db.close();
   });
 
-  it('is idempotent — reopening an already-migrated database is a no-op', () => {
+  it('is idempotent — reopening an already-migrated database is a no-op', async () => {
     createDatabase(file).close();
     const db = createDatabase(file);
     expect(db.raw.prepare('SELECT COUNT(*) n FROM session_cost_daily').get()).toEqual({ n: 2 });
