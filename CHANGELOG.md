@@ -5,6 +5,15 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.48] — 2026-11-17
+
+### Fixed
+- The Updates popover no longer offers a Claude Code version that `claude update` says is already current. Native installs now check the same release channel the CLI's own updater reads (npm publishes hours earlier); npm installs still check npm.
+- The app log is no longer flooded with two rows per session turn, which made up roughly 85% of it and buried every other line.
+
+### Changed
+- Reviewed Claude Code 2.1.327 against OmniFex: nothing broken, no changes needed.
+
 ## [0.5.47] — 2026-11-17
 
 ### Changed
