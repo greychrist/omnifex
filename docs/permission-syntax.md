@@ -328,8 +328,15 @@ reported Bypass as applied.
 
 The decider's bypass auto-allow used to allow the `safetyCheck` asks too,
 answering "yes" in the human's place to the one question the CLI insists on
-asking. It now lets every `safetyCheck` reach the card (`isSafetyCheck`).
-`dontAsk` still denies them without prompting.
+asking. It then let every `safetyCheck` reach the card and allowed the rest.
+
+CLI 2.1.326 "changed some tool calls in bypass permissions mode to ask for
+approval", and not every new ask is typed `safetyCheck` (a command holding
+more text than the deny-rule check reads is `other`). Since Bypass is always a
+Bypass launch, every Claude ask that reaches the decider is one the CLI
+insists on, so the decider now prompts for all of them under Bypass, whatever
+`decision_reason_type` says. Codex approvals still auto-allow. `dontAsk`
+still denies without prompting.
 
 The `$PWD` row is the CLI's gap, not ours: nothing reaches the decider, so
 there is nothing for OmniFex to stop.

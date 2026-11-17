@@ -440,6 +440,30 @@ export function createQueryPassthroughs(
     }
   }
 
+  /** Tabs whose CLI refused `prompt_draft_activity` (older than 2.1.326). */
+  const draftActivityRefused = new Set<string>();
+
+  /**
+   * Tell the CLI the person is typing a prompt in OmniFex's composer
+   * (`prompt_draft_activity`, 2.1.326, @internal). It carries no text;
+   * between turns the CLI may use the time to get the next request ready,
+   * during a turn it does nothing. A hint: never throws, writes app_logs only
+   * for a refusal, and stops going to a tab whose CLI refused it.
+   */
+  async function promptDraftActivity(tabId: string): Promise<void> {
+    const handle = liveEngine(tabId);
+    if (!handle || handle.agent !== 'claude' || draftActivityRefused.has(tabId)) return;
+    try {
+      await handle.engine.sendControlRequest('prompt_draft_activity', {});
+    } catch (err) {
+      draftActivityRefused.add(tabId);
+      logControl('prompt_draft_activity', tabId, {
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
   /**
    * Move one running foreground task — a Bash call or a subagent, named by
    * the tool_use that started it — to the background (`background_tasks`,
@@ -704,6 +728,7 @@ export function createQueryPassthroughs(
     getContextUsage,
     getTaskOutput,
     stopTask,
+    promptDraftActivity,
     backgroundTask,
     getCliStatus,
     getSupportedCommands,

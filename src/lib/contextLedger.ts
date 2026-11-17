@@ -24,7 +24,8 @@ export type ContextEntryKind =
   | 'agent'
   | 'skills'
   | 'deferred-tool'
-  | 'project-doc';
+  | 'project-doc'
+  | 'plugin-note';
 
 /** Scopes the CLI is known to emit. `AutoMem` is the auto-memory MEMORY.md.
  *  Deliberately open: an earlier closed allow-list of the first four silently
@@ -84,7 +85,22 @@ const IN_SCOPE = new Set([
   // claude.ai project documents read into the session for the user (CLI
   // 2.1.310). Not seen in a transcript yet; shape from the CLI's schema.
   'project_doc_reads',
+  // A mod's note to the model (CLI 2.1.326), sent as "Note from the <plugin>
+  // plugin, not from the user". Not seen in a transcript yet; shape from the
+  // CLI's bundle: {plugin?, rowUuid, content[], heldContent?, sentAs?}.
+  'plugin_note',
 ]);
+
+/** A plugin note's text, or null while it is held (content [] and only
+ *  heldContent: it has not reached the model yet). */
+function pluginNoteText(att: Record<string, unknown>): string | null {
+  const lines = strArray(att.content);
+  return lines.length === 0 ? null : lines.join('\n');
+}
+
+function pluginNoteSource(att: Record<string, unknown>): string {
+  return str(att.plugin) ?? 'a plugin';
+}
 
 /** One `project_doc_reads` entry's doc, or null when it is not well formed. */
 function projectDocOf(v: unknown): { path: string; content?: string } | null {
@@ -119,6 +135,7 @@ function scopeOf(v: unknown): ContextScope | undefined {
  *   delta     `*_delta`                            added / removed / readded
  *   additive  `nested_memory`                      append once, stays live
  *   per-doc   `project_doc_reads`                  a changed doc replaces itself
+ *   per-note  `plugin_note`                        one entry per rowUuid, stays live
  */
 export function foldContextLedger(records: readonly JsonlNode[]): ContextLedger {
   const entries: LedgerEntry[] = [];
@@ -135,9 +152,9 @@ export function foldContextLedger(records: readonly JsonlNode[]): ContextLedger 
     kind: ContextEntryKind,
     label: string,
     at: string,
-    extra?: { scope?: ContextScope; content?: string },
+    extra?: { scope?: ContextScope; content?: string; id?: string },
   ) => {
-    const id = `${kind}:${label}`;
+    const id = extra?.id ?? `${kind}:${label}`;
     if (liveIdx.has(id)) return; // already live — not a new arrival
     const entry: LedgerEntry = { id, kind, label, at, live: true };
     if (extra?.scope !== undefined) entry.scope = extra.scope;
@@ -250,6 +267,17 @@ export function foldContextLedger(records: readonly JsonlNode[]): ContextLedger 
         break;
       }
 
+      case 'plugin_note': {
+        // Additive, one entry per note. Keyed by rowUuid, not label: one
+        // plugin can leave several notes, and a restored copy repeats its
+        // rowUuid, which `open` then treats as already live.
+        const content = pluginNoteText(att);
+        if (content === null) break;
+        const row = str(att.rowUuid) ?? content;
+        open('plugin-note', pluginNoteSource(att), at, { content, id: `plugin-note:${row}` });
+        break;
+      }
+
       case 'skill_listing': {
         const content = str(att.content);
         if (content === undefined) break;
@@ -321,6 +349,9 @@ export function summariseContextAttachment(
       return delta('Deferred tools',
         strArray(attachment.addedNames).length + strArray(attachment.readdedNames).length,
         strArray(attachment.removedNames).length);
+
+    case 'plugin_note':
+      return pluginNoteText(attachment) === null ? null : `Plugin note — ${pluginNoteSource(attachment)}`;
 
     case 'project_doc_reads': {
       const n = (Array.isArray(attachment.reads) ? attachment.reads : []).map(projectDocOf).filter(Boolean).length;

@@ -60,6 +60,8 @@ export const CLI_CONTROL_REQUESTS: Readonly<Record<string, CliControlEntry>> = {
     params: '{tool_use_id?}',
     note: 'Ctrl+B: move a running foreground Bash or subagent to the background; without tool_use_id, all of them.',
   },
+  // @internal, not an SDK method (2.1.326): the composer's typing hint.
+  prompt_draft_activity: { status: 'wired', note: 'Composer typing hint (src/lib/promptDraftActivity.ts).' },
   cancel_async_message: { status: 'planned', params: '{message_uuid}', note: 'Withdraw a queued prompt before the CLI takes it.' },
 
   // ── MCP ──

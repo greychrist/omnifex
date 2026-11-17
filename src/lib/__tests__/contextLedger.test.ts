@@ -177,6 +177,36 @@ describe('foldContextLedger', () => {
     });
   });
 
+  // CLI 2.1.326: a mod's hooks append a note to the model's context, sent as
+  // "Note from the <plugin> plugin, not from the user". Shape from the
+  // bundle (not yet seen in a transcript): {plugin?, rowUuid, content[],
+  // heldContent?, sentAs?}. A held note (content [] + heldContent) has not
+  // reached the model yet; a restored copy repeats its rowUuid.
+  describe('plugin_note', () => {
+    it('adds one entry per note, labelled by plugin, with the note as content', () => {
+      const ledger = foldContextLedger([
+        att('plugin_note', { plugin: 'post-compact', rowUuid: 'r1', content: ['Re-read the plan.', 'Then continue.'] }, T1),
+        att('plugin_note', { plugin: 'post-compact', rowUuid: 'r2', content: ['Second note'] }, T2),
+        att('plugin_note', { rowUuid: 'r3', content: ['anon'] }, T3),
+      ]);
+      expect(ledger.entries.map((e) => [e.kind, e.label, e.content, e.live])).toEqual([
+        ['plugin-note', 'post-compact', 'Re-read the plan.\nThen continue.', true],
+        ['plugin-note', 'post-compact', 'Second note', true],
+        ['plugin-note', 'a plugin', 'anon', true],
+      ]);
+      expect(ledger.tracked).toBe(true);
+    });
+
+    it('skips a held note and does not repeat a restored copy', () => {
+      const ledger = foldContextLedger([
+        att('plugin_note', { plugin: 'p', rowUuid: 'r1', content: [], heldContent: ['waiting'] }, T1),
+        att('plugin_note', { plugin: 'p', rowUuid: 'r1', content: ['waiting'] }, T2),
+        att('plugin_note', { plugin: 'p', rowUuid: 'r1', content: ['waiting'], isRestored: true }, T3),
+      ]);
+      expect(ledger.entries.map((e) => [e.label, e.at])).toEqual([['p', T2]]);
+    });
+  });
+
   describe('delta rule — mcp_instructions_delta', () => {
     it('adds a server and attaches its instruction block', () => {
       const ledger = foldContextLedger([
@@ -359,6 +389,12 @@ describe('summariseContextAttachment', () => {
 
   const sum = (type: string, body: Record<string, unknown>) =>
     summariseContextAttachment({ type, ...body });
+
+  it('names the plugin a note came from, and skips a held one', () => {
+    expect(sum('plugin_note', { plugin: 'post-compact', rowUuid: 'r', content: ['x'] })).toBe('Plugin note — post-compact');
+    expect(sum('plugin_note', { rowUuid: 'r', content: ['x'] })).toBe('Plugin note — a plugin');
+    expect(sum('plugin_note', { plugin: 'p', rowUuid: 'r', content: [], heldContent: ['x'] })).toBeNull();
+  });
 
   it('returns null for out-of-scope bookkeeping', () => {
     expect(sum('total_tokens_reminder', { content: 'x' })).toBeNull();

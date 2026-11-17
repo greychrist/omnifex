@@ -45,15 +45,30 @@ function handlerFor(mode: string) {
 }
 
 describe('permission-mode decider (auto allow/deny vs prompt)', () => {
-  it('bypassPermissions: auto-allows any tool, never enqueues', () => {
-    const { fn, handle, respondPermission } = handlerFor('bypassPermissions');
-    fn(req('Bash', { command: 'rm -rf build' }));
-    expect(respondPermission).toHaveBeenCalledWith('req-Bash', 'allow', expect.anything());
-    expect(handle.permissionQueue).toHaveLength(0);
+  // OmniFex's Bypass is always a Bypass launch (queries.ts setPermissionMode
+  // refuses it otherwise), and a CLI in bypassPermissions only asks about what
+  // it refuses to bypass. 2.1.326 began asking about more calls in bypass, not
+  // all of them typed `safetyCheck` (a command too long for the deny-rule
+  // check is `other`). Every Claude ask in Bypass therefore reaches the card.
+  it('bypassPermissions: prompts for any ask the CLI sends, whatever its reason type', () => {
+    for (const decision_reason_type of [undefined, 'other', 'rule', 'hook', 'classifier']) {
+      const { fn, handle, respondPermission } = handlerFor('bypassPermissions');
+      fn({
+        ...req('Bash', { command: 'rm -rf build' }),
+        payload: {
+          tool_name: 'Bash',
+          input: { command: 'rm -rf build' },
+          tool_use_id: 'tu-Bash',
+          ...(decision_reason_type ? { decision_reason_type } : {}),
+        },
+      });
+      expect(respondPermission).not.toHaveBeenCalled();
+      expect(handle.permissionQueue).toHaveLength(1);
+    }
   });
 
   // Bypass mode passes --permission-mode bypassPermissions, so what the CLI
-  // still sends is what it refuses to bypass: its safety checks. The decider
+  // still sends is what it refuses to bypass, its safety checks among them. The decider
   // answers in the human's place, so auto-allowing those removed the CLI's
   // last safety net with nobody looking. Payload verbatim from CLI 2.1.281,
   // bypassPermissions, `rm -rf "$(pwd)"`.

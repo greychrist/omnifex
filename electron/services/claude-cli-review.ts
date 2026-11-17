@@ -65,6 +65,115 @@ import { buildClaudeEnv } from './util/claude-env';
  *    and no `Artifact` is working, not broken. Neither present = re-read
  *    the gate.
  *
+ * Last review: 2.1.325 -> 2.1.326 on 2026-11-16. Findings: one break
+ * (/usage session cost label) and one latent permission gap (bypass asks),
+ * both fixed the same day; two opportunities taken (prompt_draft_activity,
+ * plugin_note).
+ *
+ *  Changelog coverage: 2.1.326 (~365 entries, almost all terminal UI).
+ *  Both ends installed. Script exit 0. Merge map (46), hook_event_name
+ *  (33), control envelopes (5), SDK requests (55), CLI flags (117), origin
+ *  kinds (14), can_use_tool keys (11) identical; coverage half clean
+ *  after the baseline below.
+ *  - BREAK (b), FIXED: /usage session block renamed `Total cost:` ->
+ *    `Estimated cost:` (same render fn as /cost; anchor 2 -> 0, no
+ *    changelog entry). parser.ts read $0 and collectUsageDriftWarnings
+ *    would warn on every scrape. Both labels now read (older CLI on another
+ *    config dir); USAGE_ANCHORS gains `Estimated cost:`. Not yet seen in
+ *    app_logs: 2.1.326 landed 22:57 the same day.
+ *  - `system` +`late_allow_not_run`: a cloud (CCR) worker's report that a
+ *    late Allow on a card kept up behind a new message won't run. Needs
+ *    the input-only `keeps_request_id` on a user message, which OmniFex
+ *    never sends (grep). Zero in both accounts. Baselined 'remote' in
+ *    UNDRAWN_SYSTEM_SUBTYPES. Its stored twin `late-allow-ended` goes to
+ *    the worker's retirement store, not the session JSONL.
+ *  - Attachment types +`plugin_note` ("Note from the X plugin, not from
+ *    the user", a mod's hooks appending a note to the model's context),
+ *    +`prompt_as_file` (an over-long prompt saved to a file),
+ *    +`whole_texts_withdrawn` (@-mentioned whole text withdrawn after an
+ *    API size refusal). Zero of each in both accounts; our mods append no
+ *    notes. (c) TAKEN: plugin_note is in contextLedger IN_SCOPE as kind
+ *    `plugin-note` (one entry per rowUuid; a held note, content [] +
+ *    heldContent, is skipped), so it gets a "Plugin notes" panel group and
+ *    the inline "Plugin note — <plugin>" marker in Compact and Modern. The
+ *    other two still draw as nothing.
+ *  - SCRIPT GAP, FIXED: `SDK control requests` sees only the SDK's
+ *    public `this.request(...)`, so two new @internal host -> CLI requests
+ *    passed unseen. New `control request schemas` extractor (every
+ *    `u({subtype:T("x")` schema, both directions): +2 exactly:
+ *     - `prompt_draft_activity` ("the person is typing in the host's
+ *       composer"; CLI may prepare the next request between turns).
+ *       (c) TAKEN: FloatingPromptInput pings it on typing, throttled to one
+ *       per 10 s per tab (src/lib/promptDraftActivity.ts) ->
+ *       `session_prompt_draft_activity` -> queries.ts promptDraftActivity.
+ *       Probed: 2.1.326 answers an empty success, 2.1.325 answers
+ *       `unsupported_request`, after which that tab stops sending. The
+ *       catalog lists it `wired`; the script's "no longer offers" check now
+ *       reads the schema set too, since no SDK method sends it.
+ *     - `set_message_waiting` (host holds a message until the turn ends;
+ *       Claude Desktop Code sessions only). Inert.
+ *  - LATENT (b), FIXED: "Changed some tool calls in bypass permissions mode
+ *    to ask for approval". OmniFex bypass implies a bypass launch (the
+ *    2.1.287 gate), so every ask that reaches the decider is one the CLI
+ *    insists on, yet permissions.ts `autoDecisionForMode` allows all but
+ *    `decision_reason_type: 'safetyCheck'`. 2.1.326 adds safetyCheck sites
+ *    (hard links, `claudeSettingsFile`) and `other` ones ("holds more text
+ *    than the permission check reads"); any `other`/`rule`/`hook` ask in
+ *    bypass is overridden with nobody looking. Zero bypass
+ *    permission.request rows since 2.1.326. Fixed: under Bypass every Claude
+ *    ask reaches the card whatever its reason type; Codex approvals still
+ *    auto-allow (docs/permission-syntax.md updated).
+ *  - `/usage` changelog: "plan limit bars before session cost for
+ *    subscribers" in fullscreen. Work has `tui: "fullscreen"` but is an
+ *    enterprise render with no windows; Personal is classic. Latent: if a
+ *    window precedes `Session`, windowBlock runs into the Session block
+ *    (it ends only at the next window or contributing). Unverified; no
+ *    fullscreen subscriber render captured.
+ *  - Type literals, inert: hooks-module-not-running / manifest-field-
+ *    ignored / plugin-subagent-status-line-deprecated (plugin diagnostics),
+ *    program-status-viewers (agent-view IPC), search_retry (WebSearch
+ *    progress), mcpb, unavailable.
+ *  - Object keys +1474 -186: agent view, artifact live watch, cloud
+ *    worker, memory-check timing, thinking titles, plugin manifest notes.
+ *    Nothing new on user/assistant records, permission requests or the
+ *    initialize reply we read (turnDelivery / sentAsUuid / thinkingTitles
+ *    are request-builder internals).
+ *  - Describe moves, @internal or inert: PreToolUse `whenUnanswered`;
+ *    hook `origin` (desktop only) + backgrounded hook; mcp tools policy
+ *    `always_deny` sparing mods; initialize `mcpServers` under
+ *    --await-initialize (we pass --mcp-config; not needed); `onPersonsMachine`;
+ *    cancel_async_message `message_uuid` (catalog: planned, never sent);
+ *    task_notification `summary` (filtered); goal tool fields;
+ *    startup_failure_reason list; Theme/Shader/AgentRow ui.render; files
+ *    missing reasons; enableArtifact wording.
+ *  - Changelog, inert or in our favor: resumed sessions losing turns
+ *    after a crash / low memory; `claude -p` retry output (summary-query
+ *    captures stdout, unchanged); --allowedTools rule-shape warning (ours
+ *    are full `mcp__omnifex-brain__*` names); mod Box overflowX / Text
+ *    maxLines (OmniFex draws no mod ui.render trees); hook `decision:block`
+ *    holding more; malformed plugin.json fields now load; plan-mode
+ *    compaction model; sandbox, Code Mode, PowerShell, Remote Control,
+ *    cloud, self-hosted runner, VS Code, /login, /plugin, /rewind,
+ *    fullscreen and every terminal-rendering fix.
+ *  - Open items re-checked in both accounts' projects/: idle compaction
+ *    (6 personal hits, all review prose), ui_notify (0), supersedes (0).
+ *
+ *  Script + prompt: new `control request schemas` extractor (+test);
+ *  `Estimated cost:` anchor; late_allow_not_run baseline. Prompt step 3
+ *  names the schema set, step 4's control-request bullet says new host ->
+ *  CLI ones are offers to weigh.
+ *
+ *  OPEN ITEMS (carry forward; re-check each review):
+ * *   - Fullscreen /usage order: capture a subscriber render with windows
+ *     before `Session`; bound windowBlock at the Session header if so.
+ *   - plugin_note: shape taken from the bundle; check the first real one
+ *     against contextLedger's reading (plugin, rowUuid, content[]).
+ *   - Idle compaction: verify the first real occurrence (2.1.314 block).
+ *   - ui_notify: unverified against a real mod; first `$.ui.notify` seen in
+ *     a transcript or reported banner closes it.
+ *   - `supersedes`: first `"supersedesUuids":[` in a transcript decides
+ *     whether the renderer must drop the named rows.
+ * *
  * Last review: 2.1.323 -> 2.1.325 on 2026-11-13. Findings: none broken;
  * one latent permission-card gap (Bash "Always allow" fallback), fixed the
  * same day.
@@ -5512,7 +5621,7 @@ import { buildClaudeEnv } from './util/claude-env';
  * `~/.claude.json` fix (we read-modify-write that file, never replace it), and
  * the VSCode screen-reader work.
  */
-export const REVIEWED_CLI_VERSION = '2.1.325';
+export const REVIEWED_CLI_VERSION = '2.1.326';
 
 /**
  * app_settings key holding the user's explicit OmniFex-checkout override.

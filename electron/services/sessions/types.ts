@@ -364,6 +364,8 @@ export interface SessionsService {
   getTaskOutput(tabId: string, taskId: string): Promise<TaskOutputTail | null>;
   /** Stop one background task (`stop_task`). Rejects with the CLI's message. */
   stopTask(tabId: string, taskId: string): Promise<void>;
+  /** The person is typing in the composer (`prompt_draft_activity`). Never rejects. */
+  promptDraftActivity(tabId: string): Promise<void>;
   /** Move a running foreground Bash call or subagent to the background (`background_tasks`).
    *  False when the CLI found no foreground task for that tool_use. */
   backgroundTask(tabId: string, toolUseId: string): Promise<boolean>;

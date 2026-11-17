@@ -2076,6 +2076,12 @@ export const api = {
     return apiCall("session_get_task_output", { tabId, taskId });
   },
 
+  /** The person is typing a prompt for this session (CLI 2.1.326+ may get
+   *  the next request ready). A hint: resolves whatever the CLI says. */
+  async sessionPromptDraftActivity(tabId: string): Promise<void> {
+    return apiCall("session_prompt_draft_activity", { tabId });
+  },
+
   /** Stop one background task. Rejects with the CLI's message. */
   async sessionStopTask(tabId: string, taskId: string): Promise<void> {
     return apiCall("session_stop_task", { tabId, taskId });

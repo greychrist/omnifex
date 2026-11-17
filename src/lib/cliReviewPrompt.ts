@@ -86,7 +86,8 @@ grep, a file read or a transcript behind it.
    other location). It reports:
    - **version to version**: the merge-strategy map, every \`type:"…"\`
      literal, \`subtype:"…"\`, \`hook_event_name\`, \`control_*\` envelopes, the
-     SDK's control requests, CLI flags, \`origin.kind\` values, the
+     SDK's control requests, every control-request schema (both
+     directions, \`@internal\` ones too), CLI flags, \`origin.kind\` values, the
      \`can_use_tool\` payload keys, every object key, the stream-json schemas'
      \`.describe()\` strings, the \`system\` subtypes, and the \`/usage\`
      anchors;
@@ -144,6 +145,8 @@ grep, a file read or a transcript behind it.
    - **New CLI → host control requests.** \`electron/services/agents/claude-cli-engine.ts\`
      answers unknown ones with an error, so they don't stall a session.
      But a new one may be a capability the CLI now expects a host to serve.
+     New host → CLI ones (\`control request schemas\`, minus the SDK's set)
+     are offers: a hint the CLI can act on if a host sends it.
    - **Stdout-only fields with host obligations.** Main-session turns render
      from the JSONL tail, not stdout (\`electron/services/sessions/stream-forward.ts\`,
      \`JSONL_CARRIED_TYPES\`), so a wrapper field the CLI adds only to the

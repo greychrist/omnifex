@@ -44,6 +44,17 @@ describe('collectUsageDriftWarnings', () => {
     expect(warns).toHaveLength(1);
   });
 
+  it("reads 2.1.326's `Estimated cost:` label as the session cost, with no drift warning", () => {
+    // 2.1.326 renamed the session block's "Total cost:" to "Estimated cost:".
+    // Older CLIs, still possible on another account's config dir, print the
+    // original wording, so both are read.
+    const renamed = HEALTHY.replace('Total cost: $0.0000', 'Estimated cost: $12.3456');
+    const parsed = parseUsageOutput(renamed);
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) expect(parsed.data.session.cost_usd).toBeCloseTo(12.3456);
+    expect(collectUsageDriftWarnings(renamed)).toEqual([]);
+  });
+
   it('flags a window header present but "% used" phrasing drifted', () => {
     const drifted = HEALTHY.replace('17% used', '17% consumed');
     const warns = collectUsageDriftWarnings(drifted);

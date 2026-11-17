@@ -532,6 +532,41 @@ describe('stopTask', () => {
   });
 });
 
+// 2.1.326: the person is typing in the host's composer. The CLI may use the
+// time between turns to get the next request ready. A hint, so it never
+// throws, never writes app_logs (it is sent every ~10 s while typing), and
+// stops going to a CLI that refused it once (older than 2.1.326).
+describe('promptDraftActivity', () => {
+  it('sends prompt_draft_activity with no body', async () => {
+    const { engine, calls } = createEngine({ control: () => undefined });
+    const { q, rows } = setup({ engine });
+    await q.promptDraftActivity('tab1');
+    expect(calls).toEqual([{ subtype: 'prompt_draft_activity', payload: {} }]);
+    expect(rows).toEqual([]);
+  });
+
+  it('resolves with no live engine', async () => {
+    await expect(setup({ registered: false }).q.promptDraftActivity('tab1')).resolves.toBeUndefined();
+  });
+
+  it('stops sending to a CLI that refused it, logging the refusal once', async () => {
+    const { engine, calls } = createEngine({ control: () => { throw new Error('Unsupported control request subtype: prompt_draft_activity'); } });
+    const { q, rows } = setup({ engine });
+    await expect(q.promptDraftActivity('tab1')).resolves.toBeUndefined();
+    await q.promptDraftActivity('tab1');
+    expect(calls).toHaveLength(1);
+    expect(rows).toHaveLength(1);
+  });
+
+  it('skips a Codex session', async () => {
+    const { engine, calls } = createEngine({ control: () => undefined });
+    const { q, sessions } = setup({ engine });
+    (sessions.get('tab1') as unknown as { agent: string }).agent = 'codex';
+    await q.promptDraftActivity('tab1');
+    expect(calls).toEqual([]);
+  });
+});
+
 describe('backgroundTask', () => {
   it('sends background_tasks for one tool_use and reports whether it moved', async () => {
     const { engine, calls } = createEngine({ control: () => ({ backgrounded: true }) });

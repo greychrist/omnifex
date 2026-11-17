@@ -39,8 +39,14 @@ const FILE_EDIT_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
  * switching the bottom-bar dropdown to acceptEdits / dontAsk appeared to do
  * nothing: the label changed but the decider prompted identically.)
  *
- *  - `bypassPermissions` → allow everything except the CLI's own safety
- *                          checks, which prompt (see `isSafetyCheck`)
+ *  - `bypassPermissions` → Claude: prompt for every ask. OmniFex's Bypass is
+ *                          always a Bypass launch (queries.ts refuses it
+ *                          otherwise), so the CLI only asks about what it
+ *                          refuses to bypass: safety checks and, since
+ *                          2.1.326, more (some typed `other`). Answering
+ *                          those ourselves overrode the CLI with nobody
+ *                          looking. Codex: allow (its approvals carry no
+ *                          such signal).
  *  - `acceptEdits`       → allow file-edit tools the CLI did not escalate;
  *                          prompt for the rest (see `isEscalatedEdit`)
  *  - `dontAsk`           → deny everything that reached the prompt tool
@@ -53,10 +59,11 @@ function autoDecisionForMode(
   mode: string,
   toolName: string,
   payload: { blocked_path?: string; decision_reason_type?: string } = {},
+  agent: 'claude' | 'codex' = 'claude',
 ): 'allow' | 'deny' | null {
   switch (mode) {
     case 'bypassPermissions':
-      return isSafetyCheck(payload) ? null : 'allow';
+      return agent === 'codex' ? 'allow' : null;
     case 'acceptEdits':
       return FILE_EDIT_TOOLS.has(toolName) && !isEscalatedEdit(payload) ? 'allow' : null;
     case 'dontAsk':
@@ -75,9 +82,7 @@ function autoDecisionForMode(
  *     target: command substitution output'`, `classifier_approvable: false`
  *   - a write escaping the tree through a symlink (2.1.280): the same type,
  *     plus `blocked_path`
- * The dropdown's bypass is still honoured for everything else: switching to
- * it mid-session relies on this decider, since the CLI refuses a
- * set_permission_mode to bypass it was not launched with.
+ * acceptEdits reads it through `isEscalatedEdit`.
  */
 function isSafetyCheck(payload: { decision_reason_type?: string }): boolean {
   return payload.decision_reason_type === 'safetyCheck';
@@ -417,7 +422,7 @@ export function createPermissionRequestHandler(
     // here and falls through to the prompt. Only the tool-name-agnostic modes
     // (bypassPermissions → allow, dontAsk → deny) auto-decide. Pass the kind as
     // the "tool name" so acceptEdits correctly returns null (no match).
-    const autoDecision = autoDecisionForMode(permissionMode, `codex.${req.kind}`);
+    const autoDecision = autoDecisionForMode(permissionMode, `codex.${req.kind}`, {}, 'codex');
     if (autoDecision) {
       logEntry({
         level: 'info',

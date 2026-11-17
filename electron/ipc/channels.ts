@@ -108,6 +108,7 @@ export const INVOKE_CHANNELS: readonly string[] = [
   'session_context_usage',
   'session_get_task_output',
   'session_stop_task',
+  'session_prompt_draft_activity',
   'session_background_task',
   'session_cli_status',
   'session_supported_commands',

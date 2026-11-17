@@ -11,11 +11,30 @@ vi.mock('@/lib/api', async (importOriginal) => {
       ...actual.api,
       listSupportedModels: vi.fn(async () => []),
       dropPaths: vi.fn(async () => ['/Users/g/My Docs/spec.pdf']),
+      sessionPromptDraftActivity: vi.fn(async () => undefined),
     },
   };
 });
 
 afterEach(() => { cleanup(); });
+
+// CLI 2.1.326 `prompt_draft_activity`: typing in a session's composer tells
+// the CLI, throttled per tab (src/lib/promptDraftActivity.ts).
+describe('FloatingPromptInput — typing hint', () => {
+  it("pings the session's CLI when the person types, and not without a tab", async () => {
+    const { api } = await import('@/lib/api');
+    const ping = vi.mocked(api.sessionPromptDraftActivity);
+    ping.mockClear();
+    render(<FloatingPromptInput onSend={vi.fn()} tabId="tab-typing-hint" />);
+    fireEvent.change(screen.getByPlaceholderText(/Message Claude/), { target: { value: 'h' } });
+    expect(ping).toHaveBeenCalledWith('tab-typing-hint');
+    cleanup();
+    ping.mockClear();
+    render(<FloatingPromptInput onSend={vi.fn()} />);
+    fireEvent.change(screen.getByPlaceholderText(/Message Claude/), { target: { value: 'h' } });
+    expect(ping).not.toHaveBeenCalled();
+  });
+});
 
 describe('FloatingPromptInput — chat bar layout', () => {
   it('hosts no model/effort/permission pickers (they live in the session popover)', () => {

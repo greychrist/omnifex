@@ -34,6 +34,9 @@ function fakeBundle(extra = ''): string {
     'x={hook_event_name:"PreToolUse"};x={hook_event_name:"Stop"};',
     'y={type:"control_request"};y={type:"control_response"};',
     'this.request({subtype:"interrupt"});this.request({subtype:"set_model"});',
+    // Control-request schemas, the SDK's public methods and @internal ones
+    // alike (2.1.326's prompt_draft_activity never went through this.request).
+    'P=m(()=>u({subtype:T("prompt_draft_activity")}));Q=m(()=>Z({subtype:Y("interrupt")}));',
     'z.option("--resume <id>");z.option("-p, --print");',
     'q.describe("A host wrapping keyboard input must stamp it");',
     'r={subtype:"init"};r={subtype:"success"};',
@@ -72,6 +75,7 @@ describe('EXTRACTORS', () => {
     expect(extractor('hook_event_name').extract(t)).toEqual(['PreToolUse', 'Stop']);
     expect(extractor('control envelopes').extract(t)).toEqual(['control_request', 'control_response']);
     expect(extractor('SDK control requests').extract(t)).toEqual(['interrupt', 'set_model']);
+    expect(extractor('control request schemas').extract(t)).toEqual(['interrupt', 'prompt_draft_activity']);
     expect(extractor('CLI flags').extract(t)).toEqual(['--print', '--resume']);
     expect(extractor('.describe() strings').extract(t)).toEqual([
       'A host wrapping keyboard input must stamp it',
@@ -196,6 +200,9 @@ describe('coverage', () => {
     const meta = coverage(`${text}\nY.push({type:"metadata-only",replMode:r,sessionId:y});Y.push({type:"atis-latch",sessionId:y});`, inv);
     expect(meta.find((f) => f.check === 'record types OmniFex would draw as Unrecognized')?.items)
       .toEqual(['brand-new-record', 'metadata-only']);
+    // A catalogued request the CLI offers only as an @internal schema
+    // (prompt_draft_activity, 2.1.326) is still offered.
+    expect(findings['catalog entries the SDK no longer offers']).not.toContain('prompt_draft_activity');
     const withNew = coverage(`${text}\nthis.request({subtype:"brand_new_request"});`, inv);
     expect(withNew.find((f) => f.check === 'SDK control requests not in the catalog')?.items)
       .toEqual(['brand_new_request']);

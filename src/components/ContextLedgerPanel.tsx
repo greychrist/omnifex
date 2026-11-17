@@ -2,7 +2,7 @@ import * as React from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
-  FileText, FolderTree, Server, Bot, Sparkles, Wrench, BookOpen,
+  FileText, FolderTree, Server, Bot, Sparkles, Wrench, BookOpen, StickyNote,
 } from 'lucide-react';
 import { useTheme } from '@/hooks';
 import { getClaudeSyntaxTheme } from '@/lib/claudeSyntaxTheme';
@@ -41,6 +41,7 @@ const GROUPS: readonly GroupDef[] = [
   { kind: 'skills', label: 'Skills', icon: Sparkles, openByDefault: false },
   { kind: 'deferred-tool', label: 'Deferred tools', icon: Wrench, openByDefault: false },
   { kind: 'project-doc', label: 'Project docs', icon: BookOpen, openByDefault: true },
+  { kind: 'plugin-note', label: 'Plugin notes', icon: StickyNote, openByDefault: true },
 ];
 
 // ─── rows ───────────────────────────────────────────────────────────────────

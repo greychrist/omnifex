@@ -28,6 +28,7 @@ import { appendMention } from "@/lib/fileDrop";
 import { useSlashCommandAutocomplete } from "@/hooks/useSlashCommandAutocomplete";
 import { RECALL_COMMAND_ID, STATUS_COMMAND_ID } from "@/lib/localSlashCommands";
 import { RecallDialog } from "./brain/RecallDialog";
+import { pingPromptDraftActivity } from "@/lib/promptDraftActivity";
 import { CliStatusDialog } from "./CliStatusDialog";
 import { useOptionalAccounts } from "@/contexts/AccountsContext";
 
@@ -243,6 +244,7 @@ const FloatingPromptInputInner = (
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newValue = e.target.value;
     const newCursorPosition = e.target.selectionStart || 0;
+    if (tabId && newValue.length > 0) pingPromptDraftActivity(tabId);
 
     // Slash command detection (delegated to hook)
     slash.handleTextChangeForSlash(newValue, newCursorPosition, prompt);

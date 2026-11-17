@@ -100,6 +100,7 @@ export interface Services {
     getContextUsage(sessionId: string): unknown;
     getTaskOutput(sessionId: string, taskId: string): unknown;
     stopTask(sessionId: string, taskId: string): unknown;
+    promptDraftActivity(sessionId: string): unknown;
     backgroundTask(sessionId: string, toolUseId: string): unknown;
     getCliStatus(sessionId: string): unknown;
     getSupportedCommands(sessionId: string): unknown;
@@ -565,6 +566,7 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     session_account_info: wrapWith((p: Record<string, unknown>) => sessions?.getAccountInfo((p?.tabId ?? p?.session_id) as string) ?? null),
     session_context_usage: wrapWith((p: Record<string, unknown>) => sessions?.getContextUsage((p?.tabId ?? p?.session_id) as string) ?? null),
     session_get_task_output: wrapWith((p: Record<string, unknown>) => sessions?.getTaskOutput((p?.tabId ?? p?.session_id) as string, (p?.taskId ?? p?.task_id) as string) ?? null),
+    session_prompt_draft_activity: wrapWith((p: Record<string, unknown>) => sessions?.promptDraftActivity((p?.tabId ?? p?.session_id) as string) ?? null),
     session_stop_task: wrapWith((p: Record<string, unknown>) => sessions?.stopTask((p?.tabId ?? p?.session_id) as string, (p?.taskId ?? p?.task_id) as string) ?? null),
     session_background_task: wrapWith((p: Record<string, unknown>) => sessions?.backgroundTask((p?.tabId ?? p?.session_id) as string, (p?.toolUseId ?? p?.tool_use_id) as string) ?? null),
     session_cli_status: wrapWith((p: Record<string, unknown>) => sessions?.getCliStatus((p?.tabId ?? p?.session_id) as string) ?? null),

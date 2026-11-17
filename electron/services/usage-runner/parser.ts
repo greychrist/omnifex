@@ -264,7 +264,9 @@ export function isUsageOutputComplete(input: string): boolean {
 // changed" independently of "the value is genuinely 0". Keep this list in
 // sync with the value-capturing regexes in `parseSessionBlock`.
 const SESSION_FIELD_LABELS: { label: string; re: RegExp }[] = [
-  { label: 'Total cost:', re: /Total cost:/ },
+  // 2.1.326 renamed it "Estimated cost:"; older CLIs, still possible on
+  // another account's config dir, print "Total cost:".
+  { label: 'Total cost:', re: /(?:Total cost|Estimated cost):/ },
   { label: 'Total duration (API):', re: /Total duration \(API\):/ },
   { label: 'Total duration (wall):', re: /Total duration \(wall\):/ },
   { label: 'Total code changes:', re: /Total code changes:/ },
@@ -404,7 +406,7 @@ function parseSessionBlock(text: string): UsageData['session'] {
     SECTION_HEADERS.contributing,
   ) ?? '';
 
-  const cost = /Total cost:\s*\$([\d.]+)/.exec(block)?.[1];
+  const cost = /(?:Total cost|Estimated cost):\s*\$([\d.]+)/.exec(block)?.[1];
   const apiD = /Total duration \(API\):\s*([\d.]+)\s*s/.exec(block)?.[1];
   const wallD = /Total duration \(wall\):\s*([\d.]+)\s*s/.exec(block)?.[1];
   const codeChange = /Total code changes:\s*([\d,]+)\s*lines added,\s*([\d,]+)\s*lines removed/.exec(block);

@@ -101,6 +101,11 @@ export function extractSystemSubtypes(text: string): string[] {
   ].map((m) => m[1]));
 }
 
+/** Every control-request zod schema (`u({subtype:T("x")`), both directions. */
+export function extractControlRequestSchemas(text: string): string[] {
+  return all(/[A-Za-z_$][\w$]*\(\{subtype:[A-Za-z_$][\w$]*\("([a-z_]+)"\)/g, text);
+}
+
 export const EXTRACTORS: Extractor[] = [
   { name: 'merge-strategy map', extract: extractMergeMap },
   // Every short `type:"…"` literal. Broad on purpose: attachment subtypes
@@ -112,6 +117,10 @@ export const EXTRACTORS: Extractor[] = [
   { name: 'hook_event_name', extract: (t) => all(/hook_event_name:"([A-Za-z]+)"/g, t) },
   { name: 'control envelopes', extract: (t) => all(/type:"(control_[a-z_]+)"/g, t) },
   { name: 'SDK control requests', extract: (t) => all(/this\.request\(\{subtype:"([a-z_]+)"/g, t) },
+  // Every control-request zod schema, both directions, @internal ones too.
+  // `SDK control requests` sees only the SDK's public methods, so 2.1.326's
+  // host -> CLI `prompt_draft_activity` / `set_message_waiting` passed it.
+  { name: 'control request schemas', extract: (t) => extractControlRequestSchemas(t) },
   { name: 'CLI flags', extract: (t) => all(/(?:\.option|Option)\("(?:-[a-zA-Z], )?(--[a-zA-Z][a-zA-Z-]*)/g, t) },
   // Allowed `origin.kind` values on user records. 2.1.277 began treating an
   // absent origin as non-human and stopped naming those sessions; our fix
@@ -143,6 +152,7 @@ export const USAGE_ANCHORS = [
   "What's contributing to your usage",
   "What's contributing to your limits usage",
   'Total cost:',
+  'Estimated cost:',
 ];
 
 export function diffSets(from: string[], to: string[]): { added: string[]; removed: string[] } {
@@ -220,6 +230,10 @@ export const UNDRAWN_SYSTEM_SUBTYPES: Readonly<Record<string, string>> = {
   // from a voice call. Transcoded back to user/attachment on read; stdout
   // carries the user form. OmniFex never stamps that origin.
   voice_call_talk: 'host-only',
+  // 2.1.326: a cloud (CCR) worker's report that a late Allow on a card kept up
+  // behind a new message will not run. Needs the input-only `keeps_request_id`
+  // on a user message, which OmniFex never sends.
+  late_allow_not_run: 'remote',
 };
 
 /** Flags only the Claude CLI takes — a file holding one of these spawns `claude`. */
@@ -271,6 +285,9 @@ export function coverage(text: string, inv: Inventory): CoverageFinding[] {
   const hooks = all(/hook_event_name:"([A-Za-z]+)"/g, text);
   const systemSubtypes = extractSystemSubtypes(text);
   const sdkRequests = all(/this\.request\(\{subtype:"([a-z_]+)"/g, text);
+  // What the CLI accepts, SDK method or not: a catalogued @internal request
+  // (prompt_draft_activity) is offered though no SDK method sends it.
+  const offered = new Set([...sdkRequests, ...extractControlRequestSchemas(text)]);
   return [
     {
       check: 'record types OmniFex would draw as Unrecognized',
@@ -325,7 +342,7 @@ export function coverage(text: string, inv: Inventory): CoverageFinding[] {
     {
       check: 'catalog entries the SDK no longer offers',
       meaning: 'removed or renamed upstream: drop or update the entry',
-      items: [...inv.catalogued].filter((s) => s !== 'initialize' && !sdkRequests.includes(s)).sort(),
+      items: [...inv.catalogued].filter((s) => s !== 'initialize' && !offered.has(s)).sort(),
     },
   ];
 }
