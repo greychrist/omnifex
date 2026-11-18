@@ -120,8 +120,9 @@ final class AppServices {
     /// The gate for every quit path; false only when the user cancels.
     /// "Quit anyway" latches `quitAuthorized` so the rest of the same quit
     /// (each window closing, then terminate) does not ask again.
-    func mayQuit(over window: NSWindow?) -> Bool {
-        switch QuitPolicy.decide(workingCount: tabStatus.workingTabIds().count, authorized: quitAuthorized) {
+    func mayQuit(over window: NSWindow?, daemonInFlight: Int?) -> Bool {
+        let working = QuitPolicy.workingCount(local: tabStatus.workingTabIds().count, daemon: daemonInFlight)
+        switch QuitPolicy.decide(workingCount: working, authorized: quitAuthorized) {
         case .allow:
             return true
         case .confirm(let prompt):
@@ -148,9 +149,11 @@ final class AppServices {
 
     func willTerminate() {
         inFlightTimer?.invalidate()
-        // The dev daemon exists for this run only; the real one outliving the
-        // app is the whole point of the split and is never touched here.
-        if paths.isDev { daemon.stopSync(timeout: 2) }
+        // The daemon lives and dies with the app: quitting ends it and every
+        // session under it, so a permission granted to OmniFex applies on the
+        // next launch. Waits out the stop command's own 5s, so Quit & Reopen
+        // never adopts a daemon still closing.
+        daemon.stopSync(timeout: DaemonCLI.quitStopTimeout)
     }
 }
 

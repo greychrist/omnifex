@@ -13,26 +13,21 @@ import { join } from 'node:path';
 import { loadServerConfig } from './remote/config';
 import {
   HELP,
-  installCommand,
   isProcessAlive,
-  launchdAllowed,
   lifecycleEnv,
   parseCliArgs,
   readPid,
   removePidFile,
   statusCommand,
   stopCommand,
-  uninstallCommand,
   writePidFile,
 } from './remote/cli';
 import { createDaemonControl } from './remote/daemon-control';
 import { createRemoteLauncher, probeDaemonHealth } from './remote/launcher';
 import { startDaemon } from './remote/daemon';
 import type { RemoteServerLogger } from './remote/server';
-import { createDevIdleWatch, isDevDaemon } from './remote/dev-instance';
+import { createIdleWatch, IDLE_CHECK_MS } from './remote/idle-watch';
 
-/** How often the dev daemon asks whether anyone still needs it. */
-const DEV_IDLE_CHECK_MS = 5_000;
 
 function readVersion(): string {
   // Beside the bundle in a packaged app (app.asar/package.json) and two
@@ -62,7 +57,7 @@ function readBuildStamp(): string | undefined {
   }
 }
 
-/** One line per event, JSON-ish, to stdout — launchd sends it to the log file. */
+/** One line per event, JSON-ish, to stdout — `ensure` points it at the log file. */
 function createLogger(level: 'debug' | 'info'): RemoteServerLogger {
   const line = (lvl: string, message: string, meta?: Record<string, unknown>) => {
     const out = `${new Date().toISOString()} ${lvl.padEnd(5)} ${message}${meta ? ' ' + JSON.stringify(meta) : ''}\n`;
@@ -103,11 +98,6 @@ async function main(argv: string[]): Promise<number> {
     const control = createDaemonControl({
       invocation: { execPath: process.execPath, script: __filename },
       env,
-      allowLaunchd: launchdAllowed(env, { dev }),
-      // The dev daemon belongs to the dev app: same process group (the app
-      // runs this CLI inside its own group), so Ctrl-C in its terminal
-      // reaches it, and the app stops it on quit.
-      detached: !dev,
       log,
     });
     const flag = (name: string) => {
@@ -155,12 +145,6 @@ async function main(argv: string[]): Promise<number> {
       return 0;
     }
 
-    case 'install':
-      return installCommand({ execPath: process.execPath, script: __filename }, out);
-
-    case 'uninstall':
-      return uninstallCommand(out);
-
     case 'start': {
       const log = createLogger(process.env.OMNIFEX_LOG_LEVEL === 'debug' || args.flags.debug === true ? 'debug' : 'info');
       process.on('uncaughtException', (err) => log.error('uncaught exception', { error: err.stack ?? String(err) }));
@@ -178,32 +162,29 @@ async function main(argv: string[]): Promise<number> {
           .close()
           .catch((err: unknown) => log.error('close failed', { error: String(err) }))
           .finally(() => {
-            removePidFile(config);
+            removePidFile(config, process.pid);
             process.exit(0);
           });
       };
       process.on('SIGTERM', () => shutdown('SIGTERM'));
       process.on('SIGINT', () => shutdown('SIGINT'));
 
-      // A dev daemon belongs to the `npm start` that spawned it. That app
-      // SIGTERMs it on quit and shares a process group with it, so Ctrl-C
-      // reaches it too — this is the backstop for the app being killed
-      // outright, so a stale dev daemon never sits on the port running an
-      // hour-old build. See remote/dev-instance.ts.
-      if (isDevDaemon(process.env)) {
-        const startedAt = Date.now();
-        const idle = createDevIdleWatch({
-          clients: () => daemon.status().clients,
-          inFlight: () => daemon.status().inFlight,
-          everConnected: () => daemon.status().everConnected,
-          startedAt,
-        });
-        const timer = setInterval(() => {
-          if (idle.check(Date.now())) shutdown('idle');
-        }, DEV_IDLE_CHECK_MS);
-        timer.unref?.();
-      }
-      // Foreground forever; launchd owns the lifecycle.
+      // Every daemon belongs to the app that spawned it. The app stops it on
+      // quit; this is the backstop for the app being killed outright or
+      // crashing, so a leftover never holds the port, an old build, or the
+      // permissions macOS granted before it started. See remote/idle-watch.ts.
+      const startedAt = Date.now();
+      const idle = createIdleWatch({
+        clients: () => daemon.status().clients,
+        inFlight: () => daemon.status().inFlight,
+        everConnected: () => daemon.status().everConnected,
+        startedAt,
+      });
+      const timer = setInterval(() => {
+        if (idle.check(Date.now())) shutdown('idle');
+      }, IDLE_CHECK_MS);
+      timer.unref?.();
+      // Foreground until the app stops it or the idle watch fires.
       return new Promise<number>(() => {});
     }
   }

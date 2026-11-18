@@ -12,8 +12,8 @@
  *   OMNIFEX_DAEMON_SCRIPT   .vite/build/omnifex-server.js
  *
  * The app runs `ensure --dev`, so the daemon is the dev instance:
- * `~/.omnifex-dev`, port 47701, never the installed app's daemon or its
- * LaunchAgent (see electron/remote/dev-instance.ts). Quitting the app stops
+ * `~/.omnifex-dev`, port 47701, never the installed app's daemon (see
+ * electron/remote/dev-instance.ts). Quitting the app stops
  * it; Ctrl-C here reaches the whole process group.
  *
  * `--bundle-only` builds the dev app and exits without launching anything.

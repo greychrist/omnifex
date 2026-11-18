@@ -1,88 +1,80 @@
 /**
- * Stopping and starting the daemon, launchd-aware. Driven by the
- * `ensure` / `restart` / `stop` CLI commands the macOS app runs.
+ * Stopping and starting the daemon. Driven by the `ensure` / `restart` /
+ * `stop` CLI commands the macOS app runs.
  *
- * Two ways a daemon can be running:
+ * A daemon is the app's: `ensure` spawns it non-detached, and the app runs
+ * `ensure` inside its own process group, so the daemon lands there too. The
+ * app stops it on quit, and the idle watch (`idle-watch.ts`) is the backstop
+ * for an app that died without quitting. Stopping is SIGTERM via the pid file.
  *
- *  - detached, spawned by a previous app launch: SIGTERM via the pid file,
- *    then spawn a fresh one from *this* bundle.
- *  - as the `com.omnifex.server` LaunchAgent (`omnifex-server install`): the
- *    plist pins the script path of whichever build ran `install`, and
- *    KeepAlive would resurrect that old build seconds after a SIGTERM. So the
- *    job is booted out (stops it, KeepAlive off), and starting means
- *    re-installing the plist for this bundle's script and bootstrapping it —
- *    the agent follows the app across upgrades without anyone re-running
- *    `install`.
+ * There used to be a second kind — detached, or held by a `com.omnifex.server`
+ * LaunchAgent with KeepAlive — that outlived the app. It kept sessions alive
+ * across quits, and with them the permissions macOS granted before they
+ * started, so a new grant never applied. See
+ * docs/superpowers/specs/2026-11-18-daemon-dies-with-app-design.md.
  *
  * Every side effect is injected so the branching is unit-testable.
  */
 import { spawn as spawnChild } from 'node:child_process';
 import { closeSync, existsSync, mkdirSync, openSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { homedir } from 'node:os';
+import { dirname, join } from 'node:path';
 
-import { installCommand, isProcessAlive, readPid } from './cli';
+import { isProcessAlive, readPid } from './cli';
 import type { ServerConfig } from './config';
-import { defaultLogPath, launchAgentPath, launchctlCommands, type DaemonInvocation } from './launchd';
+
+export interface DaemonInvocation {
+  /** The node binary — `Contents/MacOS/omnifexd` in the app. */
+  execPath: string;
+  /** The built `omnifex-server.js`. */
+  script: string;
+}
+
+export function defaultLogPath(home: string = homedir()): string {
+  return join(home, 'Library', 'Logs', 'omnifex-server.log');
+}
 
 export interface DaemonControlDeps {
   /** This bundle's node binary and built daemon script. */
   invocation: DaemonInvocation;
   home?: string;
-  uid?: number;
   env?: Record<string, string | undefined>;
   exists?: (path: string) => boolean;
-  run?: (argv: string[]) => void;
   readPid?: (config: ServerConfig) => number | null;
   isAlive?: (pid: number) => boolean;
   kill?: (pid: number, signal: NodeJS.Signals) => void;
-  /**
-   * Whether this process may drive the `com.omnifex.server` LaunchAgent.
-   * False for the dev instance: that plist is the INSTALLED app's, pinned to
-   * whichever build ran `install`, and re-pointing it at a working tree would
-   * hand the user's daemon to `~/Repos` — with KeepAlive holding it there
-   * after `npm start` exits. A dev daemon is always the detached kind.
-   */
-  allowLaunchd?: boolean;
   /** Start the script with stdio appended to `logPath`; the pid, or null. */
-  spawnDetached?: (
+  spawnDaemon?: (
     invocation: DaemonInvocation,
     logPath: string,
     env: Record<string, string | undefined>,
-    opts: { detached: boolean },
   ) => number | null;
-  /**
-   * Whether the daemon gets its own process group and outlives this app.
-   * True everywhere but the dev instance, whose daemon belongs to one
-   * `npm start`: in the app's group, Ctrl-C in that terminal reaches it too.
-   */
-  detached?: boolean;
   log?: (message: string, meta?: Record<string, unknown>) => void;
 }
 
 export interface DaemonControl {
-  managedByLaunchd(): boolean;
   /** Ask the running daemon to exit. False when nothing could be signalled. */
   stop(config: ServerConfig): Promise<boolean>;
   /** Start the daemon from this bundle. False when it could not be started. */
   spawn(config: ServerConfig): boolean;
 }
 
-function defaultSpawnDetached(
+function defaultSpawnDaemon(
   invocation: DaemonInvocation,
   logPath: string,
   env: Record<string, string | undefined>,
-  opts: { detached: boolean },
 ): number | null {
   mkdirSync(dirname(logPath), { recursive: true });
   const fd = openSync(logPath, 'a');
   try {
     const child = spawnChild(invocation.execPath, [invocation.script, 'start'], {
-      detached: opts.detached,
+      // In the caller's process group: the daemon belongs to the app.
+      detached: false,
       stdio: ['ignore', fd, fd],
       env,
     });
-    // Unref either way: whether the daemon shares this process group is about
-    // signals, not about holding the parent's event loop open.
+    // Sharing the group is about signals, not about holding this short-lived
+    // CLI's event loop open until the daemon exits.
     child.unref();
     return child.pid ?? null;
   } finally {
@@ -92,53 +84,25 @@ function defaultSpawnDetached(
 
 export function createDaemonControl(deps: DaemonControlDeps): DaemonControl {
   const exists = deps.exists ?? existsSync;
-  const run = deps.run ?? ((argv: string[]) => {
-    // Lazy so tests never touch launchctl.
-    const { execFileSync } = require('node:child_process') as typeof import('node:child_process');
-    execFileSync(argv[0], argv.slice(1), { stdio: 'ignore' });
-  });
   const getPid = deps.readPid ?? readPid;
   const isAlive = deps.isAlive ?? isProcessAlive;
   const kill = deps.kill ?? ((pid, signal) => { process.kill(pid, signal); });
-  const spawnDetached = deps.spawnDetached ?? defaultSpawnDetached;
+  const spawnDaemon = deps.spawnDaemon ?? defaultSpawnDaemon;
   const env = deps.env ?? process.env;
-  const uid = deps.uid ?? process.getuid?.() ?? 501;
   const log = deps.log ?? (() => {});
-  const plistPath = launchAgentPath(undefined, deps.home);
-
-  const allowLaunchd = deps.allowLaunchd ?? true;
-  const detached = deps.detached ?? true;
-
-  function managedByLaunchd(): boolean {
-    return allowLaunchd && exists(plistPath);
-  }
 
   return {
-    managedByLaunchd,
-
     async stop(config) {
-      let issued = false;
-      if (managedByLaunchd()) {
-        const [bootout] = launchctlCommands(plistPath, uid).uninstall;
-        try {
-          run(bootout);
-          issued = true;
-          log('booted out the launchd job');
-        } catch (err) {
-          log('launchctl bootout failed', { error: String(err) });
-        }
-      }
       const pid = getPid(config);
-      if (pid && isAlive(pid)) {
-        try {
-          kill(pid, 'SIGTERM');
-          issued = true;
-          log('sent SIGTERM to the daemon', { pid });
-        } catch (err) {
-          log('SIGTERM failed', { pid, error: String(err) });
-        }
+      if (!pid || !isAlive(pid)) return false;
+      try {
+        kill(pid, 'SIGTERM');
+        log('sent SIGTERM to the daemon', { pid });
+        return true;
+      } catch (err) {
+        log('SIGTERM failed', { pid, error: String(err) });
+        return false;
       }
-      return issued;
     },
 
     spawn() {
@@ -146,19 +110,9 @@ export function createDaemonControl(deps: DaemonControlDeps): DaemonControl {
         log('daemon script missing', { script: deps.invocation.script });
         return false;
       }
-      if (managedByLaunchd()) {
-        try {
-          installCommand(deps.invocation, (s) => log(s), { run, uid, env, home: deps.home });
-          log('re-installed the launchd job for this build', { script: deps.invocation.script });
-          return true;
-        } catch (err) {
-          log('launchd re-install failed', { error: String(err) });
-          return false;
-        }
-      }
       const logPath = defaultLogPath(deps.home);
       try {
-        const pid = spawnDetached(deps.invocation, logPath, env, { detached });
+        const pid = spawnDaemon(deps.invocation, logPath, env);
         if (pid == null) {
           log('spawn returned no pid');
           return false;

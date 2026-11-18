@@ -115,10 +115,19 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, WKNav
     }
 
     /// Closing the last window is a quit, so it asks the question ⌘Q asks —
-    /// here, while there is still a window to go back to on Cancel.
+    /// here, while there is still a window to go back to on Cancel. The answer
+    /// needs the daemon's turn count (the iPad's too), so the close is held,
+    /// and redone once the gate allows it; `quitAuthorized` lets the redo and
+    /// the terminate that follows through without asking again.
     func windowShouldClose(_ sender: NSWindow) -> Bool {
-        guard services.controllers.count == 1 else { return true }
-        return services.mayQuit(over: sender)
+        guard services.controllers.count == 1, !services.quitAuthorized else { return true }
+        Task { @MainActor [services] in
+            let remote = await services.daemon.remoteInFlight()
+            guard services.mayQuit(over: sender, daemonInFlight: remote) else { return }
+            services.quitAuthorized = true
+            sender.close()
+        }
+        return false
     }
 
     func windowWillClose(_ notification: Notification) {

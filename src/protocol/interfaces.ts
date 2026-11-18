@@ -2,7 +2,7 @@
  * The two sides of the protocol, as interfaces only.
  *
  * No transport lives here on purpose. `ws`, reconnect/backoff, HTTP routes and
- * the launchd wrapper are Phase 2 concerns; keeping them out means the
+ * process lifecycle are Phase 2 concerns; keeping them out means the
  * renderer can be typed against `ProtocolClient` before a socket exists, and a
  * test double is an object literal rather than a fake server.
  */

@@ -1,14 +1,16 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { createDaemonControl } from '../remote/daemon-control';
-import { launchAgentPath } from '../remote/launchd';
 import type { ServerConfig } from '../remote/config';
 
 const CONFIG = { host: '127.0.0.1', port: 47700, stateDir: '/tmp/x' } as ServerConfig;
-const INVOCATION = { execPath: '/Applications/OmniFex.app/Contents/MacOS/omnifex', script: '/Applications/OmniFex.app/Contents/Resources/app.asar/.vite/build/omnifex-server.js' };
+// Paths that do not exist anywhere. A test whose fake spawner is not wired
+// in falls through to the real one; with the installed app's paths here that
+// once launched three real daemons against the user's database (2026-11-18).
+const INVOCATION = { execPath: '/nonexistent/omnifex-test/omnifexd', script: '/nonexistent/omnifex-test/omnifex-server.js' };
 
 let home: string;
 beforeEach(() => {
@@ -18,38 +20,27 @@ afterEach(() => {
   rmSync(home, { recursive: true, force: true });
 });
 
-function make(opts: { plist?: boolean; pid?: number | null; alive?: boolean; scriptExists?: boolean; spawnPid?: number | null; allowLaunchd?: boolean; detached?: boolean } = {}) {
-  const plistPath = launchAgentPath(undefined, home);
-  if (opts.plist) {
-    mkdirSync(join(home, 'Library', 'LaunchAgents'), { recursive: true });
-    writeFileSync(plistPath, '<plist>old build</plist>');
-  }
-  const run = vi.fn();
+function make(opts: { pid?: number | null; alive?: boolean; scriptExists?: boolean; spawnPid?: number | null } = {}) {
   const kill = vi.fn();
-  const spawnDetached = vi.fn((_inv, _log, _env, _opts) => opts.spawnPid === undefined ? 4242 : opts.spawnPid);
+  const spawnDaemon = vi.fn((..._args: unknown[]) => opts.spawnPid === undefined ? 4242 : opts.spawnPid);
   const control = createDaemonControl({
     invocation: INVOCATION,
     home,
-    uid: 501,
     env: { PATH: '/opt/bin' },
-    exists: (p) => (p === INVOCATION.script ? (opts.scriptExists ?? true) : p === plistPath ? !!opts.plist : false),
-    run,
+    exists: (p) => (p === INVOCATION.script ? (opts.scriptExists ?? true) : false),
     readPid: () => opts.pid ?? null,
     isAlive: () => opts.alive ?? false,
     kill,
-    spawnDetached,
-    ...(opts.allowLaunchd === undefined ? {} : { allowLaunchd: opts.allowLaunchd }),
-    ...(opts.detached === undefined ? {} : { detached: opts.detached }),
+    spawnDaemon,
   });
-  return { control, run, kill, spawnDetached, plistPath };
+  return { control, kill, spawnDaemon };
 }
 
-describe('daemon control (detached daemon, no LaunchAgent)', () => {
+describe('daemon control', () => {
   it('stop SIGTERMs the pid on file when it is alive', async () => {
-    const { control, kill, run } = make({ pid: 777, alive: true });
+    const { control, kill } = make({ pid: 777, alive: true });
     expect(await control.stop(CONFIG)).toBe(true);
     expect(kill).toHaveBeenCalledWith(777, 'SIGTERM');
-    expect(run).not.toHaveBeenCalled();
   });
 
   it('stop reports false when there is nothing to signal', async () => {
@@ -57,75 +48,29 @@ describe('daemon control (detached daemon, no LaunchAgent)', () => {
     expect(await make({ pid: 777, alive: false }).control.stop(CONFIG)).toBe(false);
   });
 
-  it('spawn starts the script detached, logging to ~/Library/Logs', () => {
-    const { control, spawnDetached, run } = make();
+  // Every daemon belongs to the app that started it: in the app's process
+  // group, stopped on quit, the idle watch as backstop. There is no detached
+  // kind left to ask for. See
+  // docs/superpowers/specs/2026-11-18-daemon-dies-with-app-design.md.
+  it('spawns the daemon in the caller\'s process group, logging to ~/Library/Logs', () => {
+    const { control, spawnDaemon } = make();
     expect(control.spawn(CONFIG)).toBe(true);
-    expect(spawnDetached).toHaveBeenCalledWith(INVOCATION, join(home, 'Library', 'Logs', 'omnifex-server.log'), { PATH: '/opt/bin' }, { detached: true });
-    expect(run).not.toHaveBeenCalled();
+    expect(spawnDaemon).toHaveBeenCalledTimes(1);
+    const [inv, logPath, env, ...rest] = spawnDaemon.mock.calls[0];
+    expect(inv).toEqual(INVOCATION);
+    expect(logPath).toBe(join(home, 'Library', 'Logs', 'omnifex-server.log'));
+    expect(env).toEqual({ PATH: '/opt/bin' });
+    expect(rest).toEqual([]); // no detached option left to pass
   });
 
-  // The dev daemon is the exception, and the whole point of it: it belongs to
-  // one `npm start`. Sharing the app's process group is what makes Ctrl-C in
-  // that terminal reach it, on top of the SIGTERM the app sends on quit.
-  it('spawns in the caller\'s process group when asked not to detach', () => {
-    const { control, spawnDetached } = make({ detached: false });
-    control.spawn(CONFIG);
-    expect(spawnDetached.mock.calls[0][3]).toEqual({ detached: false });
+  // A KeepAlive job would respawn the daemon the app had just stopped.
+  it('never writes a LaunchAgent', () => {
+    make().control.spawn(CONFIG);
+    expect(existsSync(join(home, 'Library', 'LaunchAgents'))).toBe(false);
   });
 
   it('spawn is false when the script is missing or the child has no pid', () => {
     expect(make({ scriptExists: false }).control.spawn(CONFIG)).toBe(false);
     expect(make({ spawnPid: null }).control.spawn(CONFIG)).toBe(false);
-  });
-});
-
-describe('daemon control (LaunchAgent installed)', () => {
-  it('stop boots the job out so KeepAlive cannot resurrect the old build, and still signals the pid', async () => {
-    const { control, run, kill } = make({ plist: true, pid: 777, alive: true });
-    expect(await control.stop(CONFIG)).toBe(true);
-    expect(run).toHaveBeenCalledWith(['/bin/launchctl', 'bootout', 'gui/501/com.omnifex.server']);
-    expect(kill).toHaveBeenCalledWith(777, 'SIGTERM');
-  });
-
-  it('stop still counts as issued when bootout fails but the pid was signalled', async () => {
-    const { control, run } = make({ plist: true, pid: 777, alive: true });
-    run.mockImplementationOnce(() => { throw new Error('no such job'); });
-    expect(await control.stop(CONFIG)).toBe(true);
-  });
-
-  it('spawn rewrites the plist for this build and bootstraps it instead of spawning detached', () => {
-    const { control, run, spawnDetached, plistPath } = make({ plist: true });
-    expect(control.spawn(CONFIG)).toBe(true);
-    expect(spawnDetached).not.toHaveBeenCalled();
-    const plist = readFileSync(plistPath, 'utf8');
-    expect(plist).toContain(INVOCATION.script);
-    expect(plist).toContain(INVOCATION.execPath);
-    expect(plist).toContain('/opt/bin');
-    expect(run).toHaveBeenCalledWith(['/bin/launchctl', 'bootstrap', 'gui/501', plistPath]);
-  });
-
-  // The LaunchAgent is the INSTALLED app's: one label, one plist, pinned to
-  // whichever build ran `install`. A dev build that re-pointed it at
-  // `~/Repos/.../omnifex-server.js` would hand the user's daemon to a working
-  // tree — and KeepAlive would keep it there after `npm start` exits.
-  it('never touches launchd when the caller disallows it (the dev instance)', () => {
-    const { control, run, spawnDetached } = make({ plist: true, allowLaunchd: false, pid: 777, alive: true });
-    expect(control.managedByLaunchd()).toBe(false);
-    expect(control.spawn(CONFIG)).toBe(true);
-    expect(spawnDetached).toHaveBeenCalledTimes(1);
-    expect(run).not.toHaveBeenCalled();
-  });
-
-  it('stops a disallowed-launchd daemon by pid alone, never by bootout', async () => {
-    const { control, run, kill } = make({ plist: true, allowLaunchd: false, pid: 777, alive: true });
-    expect(await control.stop(CONFIG)).toBe(true);
-    expect(kill).toHaveBeenCalledWith(777, 'SIGTERM');
-    expect(run).not.toHaveBeenCalled();
-  });
-
-  it('spawn is false when launchctl refuses the new plist', () => {
-    const { control, run } = make({ plist: true });
-    run.mockImplementation((argv: string[]) => { if (argv[1] === 'bootstrap') throw new Error('Input/output error'); });
-    expect(control.spawn(CONFIG)).toBe(false);
   });
 });

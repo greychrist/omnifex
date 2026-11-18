@@ -3,15 +3,14 @@
  * make it so. Run by `omnifex-server ensure|restart`, which the macOS app
  * calls at launch and from the Daemon popover's Restart button.
  *
- * The daemon is spawned DETACHED and unref'd. That is the entire point of the
- * split — quit the app mid-turn, the CLI keeps running, reopen and catch up
- * — so the daemon must outlive the window that started it. launchd is the
- * proper owner (`omnifex-server install`); this is the fallback for a machine
- * where nobody has run that yet.
+ * The daemon is the app's: spawned into the app's process group, stopped
+ * when the app quits, and gone on its own (the idle watch) when the app dies
+ * without quitting. See daemon-control.ts.
  *
- * Because it outlives the app, it also outlives an *upgrade*: install a new
- * OmniFex, launch it, and the daemon answering on the port is still the old
- * build. Nothing in the protocol would catch that (same protocol version,
+ * It can still meet an older build: one left behind by a crash, inside its
+ * idle window, or one a previous release spawned detached before daemons
+ * belonged to the app. Launch a new OmniFex and the daemon answering on the
+ * port may be that old build. Nothing in the protocol would catch that (same protocol version,
  * different code). So the app that launches wins: a daemon reporting another
  * version is replaced — at once when it has no turn in flight, otherwise the
  * app attaches to it for now (`outdated: true`) and asks again until it is

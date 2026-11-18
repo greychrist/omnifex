@@ -18,49 +18,48 @@ address is you.
 | State | `~/.omnifex/sessions/`, `~/.omnifex/projects.json`, `~/.omnifex/server.pid` | Per-session event log + meta; project registry. |
 | Database | `~/Library/Application Support/OmniFex/greychrist.db` | Shared with the dev daemon when one runs (WAL + busy timeout). |
 | Web client | `dist-web/` (`npm run build:web`) | Served at `/` to the Mac app's window and to browsers alike. Packaged in `Contents/Resources/dist-web`. |
-| Logs | `~/Library/Logs/omnifex-server.log` | launchd's stdout/stderr. |
+| Logs | `~/Library/Logs/omnifex-server.log` | The daemon's stdout/stderr. |
 
-## Install as a LaunchAgent
+## Lifetime: the daemon is the app's
 
-From a login shell (so `PATH` — where `claude` lives — is captured):
+The Mac app starts the daemon at launch — `omnifexd omnifex-server.js ensure`
+— inside its own process group, and stops it when it quits (`stop`, waiting up
+to 6 s for it to exit). Quitting OmniFex, closing its last window, or "Quit &
+Reopen" therefore ends every session; the "Quit anyway?" prompt asks first
+when a turn is running, and tabs reload from the CLI's transcript on the next
+launch. If the app dies without quitting (crash, force-quit), the daemon's idle
+watch stops it 30 s after the last client disconnects — once any running turn
+has finished — or 2 min after start if no client ever connected.
 
-```sh
-npm run build:daemon          # .vite/build/omnifex-server.js + brain-mcp.js
-npm run build:web             # dist-web/
-./scripts/omnifex-server install
-./scripts/omnifex-server status
-```
+It used to be detached, or a `com.omnifex.server` LaunchAgent with KeepAlive,
+so it outlived the app. That kept sessions running across quits but also kept
+the permissions macOS had granted before the daemon started: a new Screen
+Recording grant to OmniFex never reached the sessions until the daemon was
+killed by hand. See `docs/superpowers/specs/2026-11-18-daemon-dies-with-app-design.md`.
 
-`install` writes `~/Library/LaunchAgents/com.omnifex.server.plist` with
-`RunAtLoad`, `KeepAlive`, the captured `PATH`, and loads it. The daemon also
-re-derives `PATH` from your login shell on every start (`fixPath`), and refuses
-to start if `claude` cannot be found.
+The consequence for the iPad: it reaches the daemon only while the Mac app is
+open.
 
-Other commands: `start` (foreground), `stop`, `status --json`, `ensure`,
-`restart`, `uninstall`, `config`.
+The daemon re-derives `PATH` from your login shell on every start (`fixPath`)
+and refuses to start if `claude` cannot be found.
 
-The Mac app starts the daemon itself if none is running — `omnifexd
-omnifex-server.js ensure` — detached, so it survives quitting the app. There
-is no in-process alternative: the app is a client of the daemon, like the
-iPad.
+Commands: `start` (foreground), `stop`, `status --json`, `ensure`, `restart`,
+`config`.
 
 ## Upgrades
 
-Nothing to do. The daemon outlives the app, so after installing a new
-OmniFex the old daemon is still the one answering on the port. On launch the
-app compares the daemon's version (`/healthz`) with its own and, when they
-differ, replaces it: immediately if no turn is in flight, otherwise it uses
-the old one for now and checks back every 30 seconds until it is idle. When
-the LaunchAgent is installed, the plist is rewritten to point at the new
-bundle and reloaded, so `install` never has to be run again. Sessions that
-were open show as stopped after the swap; sending the next message resumes
-them.
+On launch the app compares the answering daemon's version (`/healthz`) with
+its own and, when they differ, replaces it: immediately if no turn is in
+flight, otherwise it uses the old one for now and checks back every 30 seconds
+until it is idle. Normally the daemon died with the previous app, so this
+only meets a crash leftover or a daemon from a release that still spawned it
+detached.
 
-The in-app updater is daemon-aware too: its "wait for idle" gate also
-counts turns running in the daemon (a session open only on the iPad, say),
-and it stops the daemon just before quitting for the swap so nothing keeps
-running from the bundle being replaced. The relaunched app starts a fresh
-daemon from the new bundle.
+The in-app updater is daemon-aware: its "wait for idle" gate also counts
+turns running in the daemon (a session open only on the iPad, say), and it
+stops the daemon just before quitting for the swap so nothing keeps running
+from the bundle being replaced. The relaunched app starts a fresh daemon from
+the new bundle.
 
 ## Dev builds get their own daemon
 
@@ -73,8 +72,8 @@ holds every live CLI process the user has open, so launching a dev build both
 replaced it (same version, different bundle stamp → "another build; replacing
 it") and, once that was fixed, still drove those real sessions from a build
 under test. A dev build now also refuses to retire a daemon that does not
-report its own script path in `/healthz`, and never touches the LaunchAgent —
-that plist is the installed app's.
+report its own script path in `/healthz`, and its quit runs `stop --dev`,
+which can only reach `~/.omnifex-dev`'s pid file.
 
 What is deliberately NOT separate is the database: the dev app sees the real
 accounts, projects and history. That is why the dev daemon passes an `enabled`

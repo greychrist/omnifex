@@ -17,7 +17,7 @@ nonisolated enum Spawn {
     /// Run to completion and capture both streams, killing it at `timeout`.
     ///
     /// `posix_spawn` rather than `Process`, because `Process` always makes the
-    /// child a new group's leader and `group: .callers` must not: a dev daemon
+    /// child a new group's leader and `group: .callers` must not: the daemon
     /// `ensure` starts inherits `ensure`'s group, and has to share the app's.
     /// See `LauncherProcessGroup`.
     ///
