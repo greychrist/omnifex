@@ -5,6 +5,21 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.49] — 2026-11-18
+
+### Changed
+- The OmniFex background service now lives and dies with the app. Quitting OmniFex, closing its last window, or "Quit & Reopen" stops the service and every session under it, so a permission granted to OmniFex (Screen Recording, say) reaches your sessions on the next launch instead of waiting for the service to be killed by hand. If the app crashes or is force-quit, the service exits on its own shortly after. The iPad reaches your sessions only while the Mac app is open.
+- The "sessions are still working" quit prompt now says quitting stops them, and counts turns running on the iPad as well as in this window.
+- The context-size line in the transcript gutter is now a 1px line beside the size badges rather than a 2px line struck through them, and each `+12k`-style delta sits above the size it produced, between the two readings it spans.
+- The delta and "compacted" notes in the gutter are easier to read: brighter text, a lighter background and a thin edge.
+
+### Removed
+- The `com.omnifex.server` LaunchAgent and the `omnifex-server install` / `uninstall` commands. A service kept alive by launchd would restart the one the app had just stopped.
+
+### Fixed
+- A background service left behind after a crash no longer stays alive forever because a session was waiting on a permission prompt nobody could answer.
+- Shutting down no longer waits up to 30 seconds on a connection that has gone quiet, such as a sleeping iPad.
+
 ## [0.5.48] — 2026-11-17
 
 ### Fixed
