@@ -144,13 +144,26 @@ describe('startPeriodicWork', () => {
     stop();
   });
 
-  it('reclaims free pages hourly', async () => {
+  // The daemon dies with the app now (2026-11-18), so most runs are shorter
+  // than an hour: an hourly-only reclaim would never fire, and the freelist
+  // growth that took greychrist.db to 2.15 GB would come back.
+  it('reclaims free pages 30s after start, then hourly', async () => {
     const { deps } = harness();
     const stop = startPeriodicWork(deps);
-    await vi.advanceTimersByTimeAsync(HOUR);
+    await vi.advanceTimersByTimeAsync(29_000);
+    expect(deps.db.reclaimFreePages).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1_000);
     expect(deps.db.reclaimFreePages).toHaveBeenCalledTimes(1);
-    await vi.advanceTimersByTimeAsync(HOUR);
+    await vi.advanceTimersByTimeAsync(HOUR - 30_000);
     expect(deps.db.reclaimFreePages).toHaveBeenCalledTimes(2);
+    stop();
+  });
+
+  it('does not reclaim at start in a process that does not own periodic work', async () => {
+    const { deps } = harness();
+    const stop = startPeriodicWork({ ...deps, enabled: () => false });
+    await vi.advanceTimersByTimeAsync(HOUR);
+    expect(deps.db.reclaimFreePages).not.toHaveBeenCalled();
     stop();
   });
 
@@ -213,16 +226,17 @@ describe('startPeriodicWork', () => {
     const { deps } = harness({ enabled: () => !daemonInUse });
     const stop = startPeriodicWork(deps);
 
+    // The startup pass at 30s, then the first hourly tick.
     await vi.advanceTimersByTimeAsync(HOUR);
-    expect(deps.db.reclaimFreePages).toHaveBeenCalledTimes(1);
+    expect(deps.db.reclaimFreePages).toHaveBeenCalledTimes(2);
 
     daemonInUse = true;
     await vi.advanceTimersByTimeAsync(HOUR * 3);
-    expect(deps.db.reclaimFreePages).toHaveBeenCalledTimes(1);
+    expect(deps.db.reclaimFreePages).toHaveBeenCalledTimes(2);
 
     daemonInUse = false;
     await vi.advanceTimersByTimeAsync(HOUR);
-    expect(deps.db.reclaimFreePages).toHaveBeenCalledTimes(2);
+    expect(deps.db.reclaimFreePages).toHaveBeenCalledTimes(3);
     stop();
   });
 
@@ -251,10 +265,12 @@ describe('startPeriodicWork', () => {
     const { deps } = harness();
     vi.mocked(deps.db.reclaimFreePages).mockImplementationOnce(() => { throw new Error('locked'); });
     const stop = startPeriodicWork(deps);
+    // The startup pass throws; the hourly tick still runs, and the next.
     await vi.advanceTimersByTimeAsync(HOUR);
     expect(deps.log.warn).toHaveBeenCalled();
-    await vi.advanceTimersByTimeAsync(HOUR);
     expect(deps.db.reclaimFreePages).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(HOUR);
+    expect(deps.db.reclaimFreePages).toHaveBeenCalledTimes(3);
     stop();
   });
 

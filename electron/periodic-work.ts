@@ -161,18 +161,19 @@ export function startPeriodicWork(deps: PeriodicWorkDeps): () => void {
   //
   // Cheap by construction: `reclaimFreePages` returns immediately when the
   // freelist is empty (the steady state), and when it isn't, it moves free
-  // pages only and never rewrites live data. Hourly rather than on every
-  // delete so it never lands on a write path.
-  timers.push(
-    setInterval(() => {
-      if (!owned()) return;
-      try {
-        db.reclaimFreePages();
-      } catch (err) {
-        log.warn('free-page reclaim failed', { error: String(err) });
-      }
-    }, ONE_HOUR),
-  );
+  // pages only and never rewrites live data. Not on every delete, so it never
+  // lands on a write path. Once shortly after start as well as hourly: the
+  // daemon dies with the app, so most runs never reach the first hour.
+  const reclaim = (): void => {
+    if (!owned()) return;
+    try {
+      db.reclaimFreePages();
+    } catch (err) {
+      log.warn('free-page reclaim failed', { error: String(err) });
+    }
+  };
+  timers.push(setTimeout(reclaim, THIRTY_SECONDS));
+  timers.push(setInterval(reclaim, ONE_HOUR));
 
   // Periodic discovery, then drain.
   //
