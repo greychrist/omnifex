@@ -154,7 +154,7 @@ export interface RunningDaemon {
 }
 
 /**
- * launchd and Finder both start processes with a minimal PATH. Re-derive it
+ * A GUI-launched process gets a minimal PATH. Re-derive it
  * from the login shell so `claude` (nvm, homebrew, ~/.local/bin) resolves.
  */
 export function fixPath(log: RemoteServerLogger): void {

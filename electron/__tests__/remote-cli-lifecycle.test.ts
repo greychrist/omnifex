@@ -1,8 +1,6 @@
-import { homedir } from 'node:os';
-import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
-import { launchdAllowed, lifecycleEnv, parseCliArgs, stopCommand } from '../remote/cli';
+import { HELP, lifecycleEnv, parseCliArgs, stopCommand } from '../remote/cli';
 import type { ServerConfig } from '../remote/config';
 import { DEV_DAEMON_ENV, DEV_PORT } from '../remote/dev-instance';
 
@@ -32,22 +30,12 @@ describe('cli lifecycle commands', () => {
     });
   });
 
-  // The LaunchAgent is the installed app's, pinned to one bundle with
-  // KeepAlive. A throwaway state dir (a smoke run of a packaged build) or the
-  // dev instance re-pointing it would hand the user's real daemon to a test.
-  describe('launchdAllowed', () => {
-    it('is the real instance only: default state dir, not dev', () => {
-      expect(launchdAllowed({}, { dev: false })).toBe(true);
-      expect(launchdAllowed({ OMNIFEX_STATE_DIR: join(homedir(), '.omnifex') }, { dev: false })).toBe(true);
-    });
-
-    it('is never the dev instance', () => {
-      expect(launchdAllowed({}, { dev: true })).toBe(false);
-    });
-
-    it('is never a throwaway state dir', () => {
-      expect(launchdAllowed({ OMNIFEX_STATE_DIR: '/tmp/smoke' }, { dev: false })).toBe(false);
-    });
+  // A KeepAlive job would respawn the daemon the app had just stopped, so the
+  // LaunchAgent and its commands are gone. Typed from habit, they are unknown.
+  it('no longer knows install or uninstall', () => {
+    expect(parseCliArgs(['install'])).toEqual({ command: 'help', flags: {}, unknown: 'install' });
+    expect(parseCliArgs(['uninstall'])).toEqual({ command: 'help', flags: {}, unknown: 'uninstall' });
+    expect(HELP).not.toMatch(/LaunchAgent|launchd|install/);
   });
 
   describe('stopCommand', () => {

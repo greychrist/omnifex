@@ -13,16 +13,13 @@ import { join } from 'node:path';
 import { loadServerConfig } from './remote/config';
 import {
   HELP,
-  installCommand,
   isProcessAlive,
-  launchdAllowed,
   lifecycleEnv,
   parseCliArgs,
   readPid,
   removePidFile,
   statusCommand,
   stopCommand,
-  uninstallCommand,
   writePidFile,
 } from './remote/cli';
 import { createDaemonControl } from './remote/daemon-control';
@@ -60,7 +57,7 @@ function readBuildStamp(): string | undefined {
   }
 }
 
-/** One line per event, JSON-ish, to stdout — launchd sends it to the log file. */
+/** One line per event, JSON-ish, to stdout — `ensure` points it at the log file. */
 function createLogger(level: 'debug' | 'info'): RemoteServerLogger {
   const line = (lvl: string, message: string, meta?: Record<string, unknown>) => {
     const out = `${new Date().toISOString()} ${lvl.padEnd(5)} ${message}${meta ? ' ' + JSON.stringify(meta) : ''}\n`;
@@ -101,11 +98,6 @@ async function main(argv: string[]): Promise<number> {
     const control = createDaemonControl({
       invocation: { execPath: process.execPath, script: __filename },
       env,
-      allowLaunchd: launchdAllowed(env, { dev }),
-      // The dev daemon belongs to the dev app: same process group (the app
-      // runs this CLI inside its own group), so Ctrl-C in its terminal
-      // reaches it, and the app stops it on quit.
-      detached: !dev,
       log,
     });
     const flag = (name: string) => {
@@ -152,12 +144,6 @@ async function main(argv: string[]): Promise<number> {
       out(JSON.stringify(result));
       return 0;
     }
-
-    case 'install':
-      return installCommand({ execPath: process.execPath, script: __filename }, out);
-
-    case 'uninstall':
-      return uninstallCommand(out);
 
     case 'start': {
       const log = createLogger(process.env.OMNIFEX_LOG_LEVEL === 'debug' || args.flags.debug === true ? 'debug' : 'info');

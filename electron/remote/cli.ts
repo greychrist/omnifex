@@ -1,28 +1,20 @@
 /**
- * `omnifex-server <start|stop|status|ensure|restart|install|uninstall|config|help>`
+ * `omnifex-server <start|stop|status|ensure|restart|config|help>`
  * — argument parsing and the subcommands that do not need the daemon itself.
  *
  * Kept apart from the process entry (`electron/omnifex-server.ts`) so the
- * parsing and the launchd plumbing can be unit-tested without spawning
+ * parsing and the lifecycle commands can be unit-tested without spawning
  * anything.
  */
-import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { get as httpGet } from 'node:http';
 import { homedir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { join } from 'node:path';
 
-import { defaultStateDir, type ServerConfig } from './config';
+import type { ServerConfig } from './config';
 import { devInstanceEnv, type Env } from './dev-instance';
-import {
-  buildLaunchAgentPlist,
-  launchAgentPath,
-  launchAgentSpecFor,
-  launchctlCommands,
-  type DaemonInvocation,
-} from './launchd';
 
-export type CliCommand = 'start' | 'stop' | 'status' | 'ensure' | 'restart' | 'install' | 'uninstall' | 'config' | 'help';
+export type CliCommand = 'start' | 'stop' | 'status' | 'ensure' | 'restart' | 'config' | 'help';
 
 export interface CliArgs {
   command: CliCommand;
@@ -30,7 +22,7 @@ export interface CliArgs {
   unknown?: string;
 }
 
-const COMMANDS: readonly CliCommand[] = ['start', 'stop', 'status', 'ensure', 'restart', 'install', 'uninstall', 'config', 'help'];
+const COMMANDS: readonly CliCommand[] = ['start', 'stop', 'status', 'ensure', 'restart', 'config', 'help'];
 
 export function parseCliArgs(argv: string[]): CliArgs {
   const [first, ...rest] = argv;
@@ -54,22 +46,19 @@ export function parseCliArgs(argv: string[]): CliArgs {
 
 export const HELP = `omnifex-server — the OmniFex Remote daemon
 
-  start        run the daemon in the foreground (what launchd runs)
-  stop         stop the running daemon (launchd bootout when it owns it, then
-               SIGTERM via ~/.omnifex/server.pid)
+  start        run the daemon in the foreground (what ensure spawns)
+  stop         stop the running daemon (SIGTERM via ~/.omnifex/server.pid)
   status       ping /healthz and print the result (--json for raw)
   ensure       make sure THIS build's daemon is running; prints one JSON line
                {"url": ws-url|null, "outdated": bool}. What the app runs at
                launch. --app-version <v>, --app-build <stamp>
   restart      stop whatever answers on the port and start this build's;
                same output as ensure
-  install      write ~/Library/LaunchAgents/com.omnifex.server.plist and load it
-  uninstall    unload and remove the LaunchAgent
   config       print the resolved configuration
   help         this
 
   --dev        (ensure, restart, stop) act on the dev instance:
-               ~/.omnifex-dev, port 47701, never the LaunchAgent
+               ~/.omnifex-dev, port 47701
 
 Config: ~/.omnifex/server.json  { host, port, webRoot, ringSize, permissionTimeoutMs, rpcAllow, rpcDeny }
 Env:    OMNIFEX_STATE_DIR (default ~/.omnifex),
@@ -85,19 +74,6 @@ export function lifecycleEnv(env: Env, opts: { dev: boolean }, home: string = ho
   return opts.dev ? { ...env, ...devInstanceEnv(env, home) } : env;
 }
 
-/**
- * Whether a lifecycle command may drive the `com.omnifex.server` LaunchAgent.
- *
- * Only the real instance may: the plist pins one bundle's script with
- * KeepAlive, so the dev instance re-pointing it hands the user's daemon to a
- * working tree, and a smoke run of a packaged build under a throwaway
- * `OMNIFEX_STATE_DIR` would hand it to a build under test.
- */
-export function launchdAllowed(env: Env, opts: { dev: boolean }): boolean {
-  if (opts.dev) return false;
-  return resolve(defaultStateDir(env)) === resolve(join(homedir(), '.omnifex'));
-}
-
 export interface StopCommandDeps {
   readPid(config: ServerConfig): number | null;
   isAlive(pid: number): boolean;
@@ -107,10 +83,9 @@ export interface StopCommandDeps {
 }
 
 /**
- * `stop`: stop the daemon the way `daemon-control` does — `launchctl bootout`
- * first when the LaunchAgent owns it, or KeepAlive resurrects the old build
- * seconds later — then wait for the pid to go. The app's updater runs this
- * right before it swaps the bundle the daemon is running from.
+ * `stop`: signal the daemon the way `daemon-control` does, then wait for the
+ * pid to go. The app runs this on quit, and its updater right before it swaps
+ * the bundle the daemon is running from.
  */
 export async function stopCommand(
   config: ServerConfig,
@@ -201,54 +176,4 @@ export async function statusCommand(config: ServerConfig, json: boolean, out: (s
     if (pid) out(`  pid file says ${pid}${isProcessAlive(pid) ? ' (alive)' : ' (dead)'}`);
     return 1;
   }
-}
-
-export interface LaunchctlRunner {
-  (argv: string[]): void;
-}
-
-const defaultLaunchctl: LaunchctlRunner = (argv) => {
-  execFileSync(argv[0], argv.slice(1), { stdio: 'inherit' });
-};
-
-/** `install`: write the plist and (re)load it. */
-export function installCommand(
-  invocation: DaemonInvocation,
-  out: (s: string) => void,
-  deps: { run?: LaunchctlRunner; uid?: number; env?: Record<string, string | undefined>; home?: string } = {},
-): number {
-  const run = deps.run ?? defaultLaunchctl;
-  const spec = launchAgentSpecFor(invocation, deps.env ?? process.env, deps.home);
-  const plistPath = launchAgentPath(spec.label, deps.home);
-  mkdirSync(dirname(plistPath), { recursive: true });
-  mkdirSync(dirname(spec.stdoutPath), { recursive: true });
-  writeFileSync(plistPath, buildLaunchAgentPlist(spec), 'utf8');
-  const cmds = launchctlCommands(plistPath, deps.uid ?? process.getuid?.() ?? 501, spec.label);
-  try {
-    run(cmds.install[0]);
-  } catch {
-    // Not loaded yet — bootout of an absent job fails, which is the normal
-    // first-install case.
-  }
-  run(cmds.install[1]);
-  out(`installed ${plistPath}`);
-  out(`logs: ${spec.stdoutPath}`);
-  return 0;
-}
-
-export function uninstallCommand(
-  out: (s: string) => void,
-  deps: { run?: LaunchctlRunner; uid?: number; home?: string } = {},
-): number {
-  const run = deps.run ?? defaultLaunchctl;
-  const plistPath = launchAgentPath(undefined, deps.home);
-  const cmds = launchctlCommands(plistPath, deps.uid ?? process.getuid?.() ?? 501);
-  try {
-    run(cmds.uninstall[0]);
-  } catch {
-    // Already unloaded.
-  }
-  if (existsSync(plistPath)) rmSync(plistPath);
-  out(`removed ${plistPath}`);
-  return 0;
 }

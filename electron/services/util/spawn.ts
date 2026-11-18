@@ -36,7 +36,7 @@ function isExecutable(p: string): boolean {
 /**
  * The absolute path `name` would run as, or null. Searches `pathEnv`, which
  * defaults to `process.env.PATH` — by the time anything spawns, main and the
- * daemon have both replaced launchd's minimal PATH with the login shell's.
+ * daemon have both replaced a GUI launch's minimal PATH with the login shell's.
  */
 export function resolveCommand(name: string, pathEnv: string | undefined = process.env.PATH): string | null {
   if (path.isAbsolute(name)) return name;
