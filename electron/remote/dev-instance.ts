@@ -27,18 +27,6 @@ export const DEV_PORT = 47701;
 export const DEV_DAEMON_ENV = 'OMNIFEX_DEV_DAEMON';
 
 /**
- * Whether this process should run as the dev instance. The installed app
- * never does — it is the product, and it owns the real port. `npm start` can
- * opt out with `OMNIFEX_DEV_INSTANCE=0` to drive the real daemon on purpose
- * (debugging a live session, reproducing something against real state).
- */
-export function shouldUseDevInstance(opts: { packaged: boolean; env: Env }): boolean {
-  if (opts.packaged) return false;
-  if (opts.env.OMNIFEX_DEV_INSTANCE === '0') return false;
-  return true;
-}
-
-/**
  * The dev instance as an environment overlay, resolved against `env` but
  * never written into it.
  *
@@ -49,8 +37,7 @@ export function shouldUseDevInstance(opts: { packaged: boolean; env: Env }): boo
  * terminal inside a dev session failed remote-config's "the file overrides
  * the port" case against a port the test never set. Worse, launching the
  * PACKAGED app from a dev session pointed the real product at the dev daemon:
- * `shouldUseDevInstance` correctly says no for a packaged build, but
- * `loadServerConfig()` reads the environment regardless.
+ * `loadServerConfig()` reads the environment regardless of which app runs.
  *
  * So the overlay is returned and handed to the two places that want it —
  * `loadServerConfig()` in main, and the environment `daemon-control` gives

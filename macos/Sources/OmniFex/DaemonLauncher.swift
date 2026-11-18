@@ -79,13 +79,9 @@ final class DaemonLauncher {
         }
     }
 
-    /// Before an update swaps the bundle, so the daemon is not running from
-    /// files the helper is about to delete.
-    func stop(timeout: TimeInterval) async {
-        _ = try? await Spawn.output(paths.node, [paths.daemonScript] + DaemonCLI.stopArgs(paths), timeout: timeout, group: DaemonCLI.group)
-    }
-
-    /// `applicationWillTerminate` cannot await.
+    /// On quit — every quit, including the updater's: the helper that swaps
+    /// the bundle waits for this process to exit, and this waits for the
+    /// daemon to. `applicationWillTerminate` cannot await.
     func stopSync(timeout: TimeInterval) {
         Spawn.runAndWait(paths.node, [paths.daemonScript] + DaemonCLI.stopArgs(paths), timeout: timeout)
     }

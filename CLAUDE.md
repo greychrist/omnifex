@@ -155,7 +155,7 @@ before changing any of it.
   only reaches `~/.omnifex-dev`'s pid file. The
   database stays shared, which is why the dev daemon passes a closed gate to
   `startPeriodicWork` and to the close-time Brain drain: two sweepers on one
-  `brain_spend` pay twice. `OMNIFEX_DEV_INSTANCE=0` opts out.
+  `brain_spend` pay twice.
 - **Smoke-test a packaged build on throwaway state.** A packaged build is
   smoke-tested with `OMNIFEX_STATE_DIR` /
   `OMNIFEX_USER_DATA_DIR` / `OMNIFEX_PORT` pointed somewhere throwaway, and

@@ -23,7 +23,7 @@ address is you.
 ## Lifetime: the daemon is the app's
 
 The Mac app starts the daemon at launch — `omnifexd omnifex-server.js ensure`
-— inside its own process group, and stops it when it quits (`stop`, waiting up
+— inside the app's process group, and stops it when it quits (`stop`, waiting up
 to 6 s for it to exit). Quitting OmniFex, closing its last window, or "Quit &
 Reopen" therefore ends every session; the "Quit anyway?" prompt asks first
 when a turn is running, and tabs reload from the CLI's transcript on the next
@@ -83,18 +83,15 @@ extracting, and `brain_spend` is append-only, so it gets billed twice.
 Maintenance belongs to the installed pair; it simply waits until that app runs.
 
 ```sh
-OMNIFEX_DEV_INSTANCE=0 npm start   # share the real daemon on purpose
 curl http://<tailscale-ip>:47701/healthz
 ```
 
-The dev daemon is also **temporary**, which the real one deliberately is not.
-It is spawned in the app's process group (so Ctrl-C in the `npm start`
-terminal reaches it), SIGTERMed on quit, and it runs a dead-man's switch: no
-client attached, no turn running, 30 seconds → it shuts itself down. That last
-one is the backstop for the app being killed outright, and it also collects a
-daemon whose app never connected at all (2 minutes). So every `npm start` gets
-a fresh daemon built from the current tree — no Restart needed for daemon-side
-changes, and nothing left listening on 47701 afterwards.
+Like every daemon, the dev one belongs to its app (see Lifetime above): in the
+app's process group, so Ctrl-C in the `npm start` terminal reaches it too,
+stopped on quit, and collected by the idle watch if the app is killed
+outright. So every `npm start` gets a fresh daemon built from the current tree
+— no Restart needed for daemon-side changes, and nothing left listening on
+47701 afterwards.
 
 The one thing it will not do is kill a turn: a disconnected client with a
 running CLI is an app being reloaded, so the clock starts when the turn ends.

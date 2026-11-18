@@ -7,24 +7,9 @@ import {
   devInstanceEnv,
   isDevDaemon,
   periodicWorkGate,
-  shouldUseDevInstance,
 } from '../remote/dev-instance';
 
 const HOME = '/Users/greg';
-
-describe('shouldUseDevInstance', () => {
-  it('is on for a dev build', () => {
-    expect(shouldUseDevInstance({ packaged: false, env: {} })).toBe(true);
-  });
-
-  it('is off for the installed app — it is the product and owns the real port', () => {
-    expect(shouldUseDevInstance({ packaged: true, env: {} })).toBe(false);
-  });
-
-  it('can be opted out of, to drive the real daemon on purpose', () => {
-    expect(shouldUseDevInstance({ packaged: false, env: { OMNIFEX_DEV_INSTANCE: '0' } })).toBe(false);
-  });
-});
 
 describe('devInstanceEnv', () => {
   it('describes the instance: its own state dir, port and marker', () => {

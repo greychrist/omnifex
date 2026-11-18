@@ -74,10 +74,9 @@ final class UpdateController: NSObject {
                 emit: { services.broadcast("updater:install-status", $0) },
                 sleep: { try? await Task.sleep(nanoseconds: $0) }
             )
-            // Before the helper exists: it waits for this process to exit and
-            // then deletes the bundle the daemon is running from. The new app
-            // starts a fresh daemon; sessions resume on their next message.
-            await services.daemon.stop(timeout: 5)
+            // The helper waits for this process to exit, then deletes the
+            // bundle. Quitting stops the daemon first (`willTerminate`), so
+            // nothing is still running from it; the new app starts a fresh one.
             let script = try HelperScript.build(parentPid: getpid(), targetAppPath: target, stagedAppPath: staged)
             let helper = (NSTemporaryDirectory() as NSString).appendingPathComponent("omnifex-installer-\(Int(Date().timeIntervalSince1970 * 1000)).sh")
             try script.write(toFile: helper, atomically: true, encoding: .utf8)
