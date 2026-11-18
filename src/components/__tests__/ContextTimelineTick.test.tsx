@@ -310,8 +310,11 @@ describe('ContextTimelineTick — readout sizing', () => {
 });
 
 describe('ContextTimelineTick — readout order', () => {
-  // The size badge reads first. The jump and reset annotations sit under it:
-  // they qualify the number rather than competing with it.
+  // What happened sits above, the size it produced below. A delta is the
+  // growth between the previous reading and this one, so stacked under its
+  // own badge it read as the growth AFTER it — "88k, +88k, 88k" made no sense
+  // (Greg, 2026-11-18). Above, it sits between the two readings it spans.
+  // A compaction is the same kind of event, so its label goes above too.
   const orderOf = (container: HTMLElement) => {
     const readout = container.querySelector('[data-timeline-readout]') as HTMLElement;
     return Array.from(readout.children).map((c) =>
@@ -319,23 +322,28 @@ describe('ContextTimelineTick — readout order', () => {
     );
   };
 
-  it('puts the size first', () => {
+  it('puts the delta above the size it produced', () => {
     const { container } = render(<ContextTimelineTick point={point()} />);
-    expect(orderOf(container)).toEqual(['120k', '+20k']);
+    expect(orderOf(container)).toEqual(['+20k', '120k']);
   });
 
-  it('keeps the jump delta below the size', () => {
+  it('puts a jump above the size too', () => {
     const { container } = render(
       <ContextTimelineTick point={point({ isJump: true, delta: 325_000 })} />,
     );
-    expect(orderOf(container)).toEqual(['120k', '+325k']);
+    expect(orderOf(container)).toEqual(['+325k', '120k']);
   });
 
-  it('keeps the compacted label below the size', () => {
+  it('puts the compaction above the size it left', () => {
     const { container } = render(
       <ContextTimelineTick point={point({ isReset: true, delta: null })} />,
     );
-    expect(orderOf(container)).toEqual(['120k', '+20k', 'compacted']);
+    expect(orderOf(container)).toEqual(['+20k', 'compacted', '120k']);
+  });
+
+  it('shows the size alone when there is no delta to print', () => {
+    const { container } = render(<ContextTimelineTick point={point({ delta: 500 })} viewMode="compact" />);
+    expect(orderOf(container)).toEqual(['120k']);
   });
 });
 

@@ -163,19 +163,10 @@ export const ContextTimelineTick: React.FC<ContextTimelineTickProps> = ({
         // height, so a short row let it print over the following tick.
         // `relative` lifts it above the absolute rail.
         <div data-timeline-readout className="relative flex flex-col items-start gap-0.5 pl-2 pt-1">
-          {/* The one number worth reading mid-scroll, so it leads, in a badge
-              tinted by level. It stays smaller than body text: the gutter is
-              4rem, and "compacted" at this size wraps. */}
-          <span
-            data-timeline-badge
-            className={cn(
-              "w-fit rounded-sm px-1.5 py-0.5 font-mono text-xs leading-none tabular-nums",
-              BADGE[level],
-            )}
-          >
-            {formatTokens(tokens)}
-          </span>
-          {/* Every turn's delta, not just the jumps — this is now the only
+          {/* What happened sits above the size it produced: a delta is the
+              growth since the previous reading, so under its own badge it read
+              as growth after it ("88k, +88k, 88k").
+              Every turn's delta, not just the jumps — this is now the only
               inline home for context growth, since the banner that used to
               announce it is gone. Compact mode drops the sub-2k noise that
               made "label every step" a bad idea the first time round. */}
@@ -196,6 +187,18 @@ export const ContextTimelineTick: React.FC<ContextTimelineTickProps> = ({
               compacted
             </span>
           )}
+          {/* The one number worth reading mid-scroll, in a badge tinted by
+              level. Below the events that produced it. It stays smaller than body text: the gutter is
+              4rem, and "compacted" at this size wraps. */}
+          <span
+            data-timeline-badge
+            className={cn(
+              "w-fit rounded-sm px-1.5 py-0.5 font-mono text-xs leading-none tabular-nums",
+              BADGE[level],
+            )}
+          >
+            {formatTokens(tokens)}
+          </span>
         </div>
       )}
     </div>
