@@ -30,7 +30,7 @@ export const DEFAULT_CONTEXT_TIMELINE_ENABLED = true;
 export interface ContextTimelinePoint {
   /** Context size at this row; carried forward between samples. */
   tokens: number;
-  /** Growth vs the previous sample. Null at carried-forward rows and resets. */
+  /** Growth since the previous badge (reply). Null at carried-forward rows and resets. */
   delta: number | null;
   /**
    * The previous sample's total, carried even where `delta` is null.
@@ -40,7 +40,7 @@ export interface ContextTimelinePoint {
    * treating a reset as a step. Two fields, two meanings.
    */
   prevTokens: number | null;
-  /** True only where a real usage reading exists. */
+  /** True only at a badge: Claude's text to the user, with a usage reading. */
   isSample: boolean;
   /** A sample whose delta met the jump threshold. */
   isJump: boolean;
@@ -82,40 +82,50 @@ export function buildContextTimeline(
   const levelAt = (tokens: number) =>
     contextPressureLevel({ tokens, limit, setting: pressure });
 
-  let lastTotal: number | null = null;
+  // Two running values. `lastReading` is the newest context size from any
+  // main-thread response, tool calls included, so the line and its color
+  // follow real context. `lastShown` is the size at the previous badge, which
+  // sits only on Claude's text to the user: each badge's delta is the growth
+  // since the previous reply, the tool work between them included. A badge on
+  // every response put one on each tool row, and its "+Nk" landed on
+  // whichever row followed a big tool result (Greg, 2026-11-18).
+  let lastReading: number | null = null;
+  let lastShown: number | null = null;
   let pendingReset = false;
 
   for (const node of messages) {
     if (node.kind === 'system' && node.subtype === 'compact_boundary') {
-      // The next reading is a fresh baseline, not a drop worth differencing.
+      // The next badge is a fresh baseline, not a drop worth differencing.
       pendingReset = true;
     }
 
-    const total = turnContextTotal(node);
+    const reading = turnContextTotal(node);
+    if (reading !== null) lastReading = reading;
 
-    if (total === null) {
-      // No reading here. Carry the curve forward so the rail stays continuous,
+    if (reading === null || !isReplyToUser(node)) {
+      // No badge here. Carry the curve forward so the rail stays continuous,
       // but only once there is something to carry.
-      if (lastTotal !== null) {
+      if (lastReading !== null) {
         points.set(node, {
-          tokens: lastTotal,
+          tokens: lastReading,
           delta: null,
           prevTokens: null,
           isSample: false,
           isJump: false,
           isReset: false,
-          fraction: windowFraction(lastTotal, limit),
-          level: levelAt(lastTotal),
+          fraction: windowFraction(lastReading, limit),
+          level: levelAt(lastReading),
         });
       }
       continue;
     }
 
+    const total = reading;
     const isReset = pendingReset;
-    const delta = isReset || lastTotal === null ? null : total - lastTotal;
-    const prevTokens = lastTotal;
+    const delta = isReset || lastShown === null ? null : total - lastShown;
+    const prevTokens = lastShown;
     pendingReset = false;
-    lastTotal = total;
+    lastShown = total;
 
     points.set(node, {
       tokens: total,
@@ -130,6 +140,22 @@ export function buildContextTimeline(
   }
 
   return points;
+}
+
+/** Claude saying something to the user: a non-blank text block. */
+function isReplyToUser(node: JsonlNode): boolean {
+  if (node.kind !== 'assistant') return false;
+  const content = (node.raw as { message?: { content?: unknown } }).message?.content;
+  if (typeof content === 'string') return content.trim() !== '';
+  if (!Array.isArray(content)) return false;
+  return content.some(
+    (block: unknown) =>
+      typeof block === 'object' &&
+      block !== null &&
+      (block as { type?: unknown }).type === 'text' &&
+      typeof (block as { text?: unknown }).text === 'string' &&
+      ((block as { text: string }).text).trim() !== '',
+  );
 }
 
 /** 0 rather than NaN/Infinity when the window is unknown — this drives a width. */

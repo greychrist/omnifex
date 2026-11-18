@@ -11,7 +11,8 @@ const opts = {
   pressure: DEFAULT_CONTEXT_PRESSURE,
 };
 
-const assistant = (total: number): JsonlNode =>
+/** Claude writing to the user: a text block. The rows that get a badge. */
+const assistant = (total: number, content: unknown[] = [{ type: 'text', text: 'Done.' }]): JsonlNode =>
   ({
     kind: 'assistant',
     sessionId: 's1',
@@ -20,7 +21,7 @@ const assistant = (total: number): JsonlNode =>
       type: 'assistant',
       message: {
         role: 'assistant',
-        content: [],
+        content,
         usage: {
           input_tokens: 1,
           cache_read_input_tokens: total - 3,
@@ -30,6 +31,10 @@ const assistant = (total: number): JsonlNode =>
       },
     },
   }) as unknown as JsonlNode;
+
+/** Claude working: a tool call and nothing said. A reading, but no badge. */
+const toolCall = (total: number): JsonlNode =>
+  assistant(total, [{ type: 'tool_use', id: 't1', name: 'Read', input: {} }]);
 
 const sidechain = (total: number): JsonlNode => {
   const node = assistant(total) as unknown as { raw: Record<string, unknown> };
@@ -85,6 +90,71 @@ describe('buildContextTimeline — sampling', () => {
     expect(t.get(sub)?.isSample).toBe(false);
     // The subagent's 900k must not become the baseline for b's delta.
     expect(t.get(b)?.delta).toBe(40_000);
+  });
+});
+
+describe('buildContextTimeline — badges only on replies', () => {
+  // A badge on every API response put one on each tool row, and the "+Nk"
+  // landed on whichever row followed a big tool result — no rhyme or reason
+  // from where the user sits (Greg, 2026-11-18). Badges now sit only on
+  // Claude's text to the user, and each delta is the growth since the
+  // previous reply, tool work included.
+  it('gives a tool call no badge', () => {
+    const tool = toolCall(120_000);
+    const t = buildContextTimeline([assistant(100_000), tool], opts);
+    expect(t.get(tool)?.isSample).toBe(false);
+  });
+
+  it('carries the latest reading on a tool row, so the line follows real context', () => {
+    const tool = toolCall(230_000);
+    const t = buildContextTimeline([assistant(100_000), tool], opts);
+    expect(t.get(tool)?.tokens).toBe(230_000);
+    expect(t.get(tool)?.level).toBe('warn');
+  });
+
+  it('measures a reply against the previous reply, counting the tool work between', () => {
+    const reply = assistant(160_000);
+    const t = buildContextTimeline(
+      [assistant(100_000), toolCall(120_000), toolCall(150_000), reply],
+      opts,
+    );
+    expect(t.get(reply)).toMatchObject({ isSample: true, tokens: 160_000, delta: 60_000, prevTokens: 100_000, isJump: true });
+  });
+
+  it('gives no badge to a message with only thinking in it', () => {
+    const thinking = assistant(110_000, [{ type: 'thinking', thinking: 'hmm' }]);
+    const t = buildContextTimeline([assistant(100_000), thinking], opts);
+    expect(t.get(thinking)?.isSample).toBe(false);
+  });
+
+  it('gives no badge to whitespace-only text', () => {
+    const blank = assistant(110_000, [{ type: 'text', text: '  \n' }]);
+    const t = buildContextTimeline([assistant(100_000), blank], opts);
+    expect(t.get(blank)?.isSample).toBe(false);
+  });
+
+  it('badges a message that says something and calls a tool', () => {
+    const both = assistant(110_000, [
+      { type: 'text', text: 'Checking.' },
+      { type: 'tool_use', id: 't1', name: 'Read', input: {} },
+    ]);
+    const t = buildContextTimeline([assistant(100_000), both], opts);
+    expect(t.get(both)).toMatchObject({ isSample: true, delta: 10_000 });
+  });
+
+  it('marks the first reply after a compaction as the reset, even with tool work before it', () => {
+    const reply = assistant(40_000);
+    const t = buildContextTimeline(
+      [assistant(300_000), compactBoundary(), toolCall(30_000), reply],
+      opts,
+    );
+    expect(t.get(reply)).toMatchObject({ isSample: true, isReset: true, delta: null, prevTokens: 300_000 });
+  });
+
+  it('starts the series at the first reply, measured from nothing', () => {
+    const reply = assistant(50_000);
+    const t = buildContextTimeline([prompt(), toolCall(30_000), reply], opts);
+    expect(t.get(reply)).toMatchObject({ isSample: true, delta: null, prevTokens: null });
   });
 });
 
