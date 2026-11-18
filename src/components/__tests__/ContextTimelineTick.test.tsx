@@ -373,3 +373,41 @@ describe('ContextTimelineTick — per-turn delta', () => {
     expect(container.firstElementChild).toHaveAttribute('title', expect.stringContaining('100k → 120k'));
   });
 });
+
+describe('ContextTimelineTick — delta and reset notes stand out', () => {
+  // "+4k" in muted gray on bg-muted all but vanished against the dark
+  // transcript (Greg, 2026-11-18): brighter text, a background lifted off the
+  // page, and a thin edge. The edge is an inset shadow — border-color
+  // utilities lose to the unlayered `* { border-color }` rule and styles.css
+  // sets `.ring-1 { box-shadow: none !important }`. Both colors mix from the
+  // theme's own variables so they follow light and dark at runtime.
+  const note = (text: RegExp) => screen.getByText(text) as HTMLElement;
+
+  it('lifts the delta note off the page with a theme-mixed background and edge', () => {
+    render(<ContextTimelineTick point={point({ delta: 4_000 })} />);
+    const cls = note(/\+4k/).className;
+    expect(cls).not.toMatch(/\bbg-muted\b/);
+    expect(cls).toMatch(/\bbg-\[color-mix\(in_oklch,var\(--color-foreground\)_\d+%,var\(--color-background\)\)\]/);
+    expect(cls).toMatch(/\bshadow-\[inset_0_0_0_1px_color-mix\(in_oklch,var\(--color-foreground\)_\d+%,transparent\)\]/);
+    expect(cls).not.toMatch(/\bring-/);
+  });
+
+  it('sets an ordinary delta in near-foreground text, not muted gray', () => {
+    render(<ContextTimelineTick point={point({ delta: 4_000 })} />);
+    const cls = note(/\+4k/).className;
+    expect(cls).not.toMatch(/\btext-muted-foreground\b/);
+    expect(cls).toMatch(/\btext-foreground\/\d+\b/);
+  });
+
+  it('keeps a jump amber', () => {
+    render(<ContextTimelineTick point={point({ isJump: true, delta: 325_000 })} />);
+    expect(note(/\+325k/).className).toMatch(/\btext-amber-/);
+  });
+
+  it('gives the compacted note the same treatment', () => {
+    render(<ContextTimelineTick point={point({ isReset: true, delta: null })} />);
+    const cls = note(/compacted/).className;
+    expect(cls).not.toMatch(/\btext-muted-foreground\b/);
+    expect(cls).toMatch(/\bshadow-\[inset_0_0_0_1px_/);
+  });
+});

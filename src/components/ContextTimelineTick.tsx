@@ -42,8 +42,19 @@ const BADGE: Record<ContextPressureLevel, string> = {
   critical: "bg-red-600 text-white",
 };
 
-/** The annotations under it: solid too, quieter. */
-const NOTE = "rounded px-1 py-0.5 bg-muted font-mono text-[10px] leading-none tabular-nums";
+/** The annotations under it: quieter than the badge, but lifted off the page.
+ *  Muted gray on bg-muted all but vanished against the transcript, so the
+ *  background mixes 14% foreground into the page and a thin edge (an inset
+ *  shadow: border-color utilities lose to the unlayered `* { border-color }`
+ *  rule, and styles.css nulls `.ring-1`) mixes 28%. Both come from the
+ *  theme's variables, so they follow light and dark at runtime. */
+const NOTE =
+  "rounded px-1 py-0.5 font-mono text-[10px] leading-none tabular-nums " +
+  "bg-[color-mix(in_oklch,var(--color-foreground)_14%,var(--color-background))] " +
+  "shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--color-foreground)_28%,transparent)]";
+
+/** Note text: near-foreground, so it reads at 10px. */
+const NOTE_TEXT = "text-foreground/85";
 
 export interface ContextTimelineTickProps {
   /** Undefined for rows before the first usage reading. */
@@ -174,14 +185,14 @@ export const ContextTimelineTick: React.FC<ContextTimelineTickProps> = ({
                 NOTE,
                 isJump
                   ? "text-amber-600 dark:text-amber-400"
-                  : "text-muted-foreground",
+                  : NOTE_TEXT,
               )}
             >
               {shownDelta >= 0 ? `+${formatTokens(shownDelta)}` : `−${formatTokens(-shownDelta)}`}
             </span>
           )}
           {isReset && (
-            <span className={cn(NOTE, "text-muted-foreground")}>
+            <span className={cn(NOTE, NOTE_TEXT)}>
               compacted
             </span>
           )}
