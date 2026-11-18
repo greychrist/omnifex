@@ -32,8 +32,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     // Quit when the last window closes: the stock "stay resident" behaviour
-    // got OmniFex reported as running in the background. The daemon keeps
-    // every session alive regardless, so nothing is lost but the window.
+    // got OmniFex reported as running in the background. Quitting stops the
+    // daemon and its sessions too; `applicationShouldTerminate` asks first
+    // when a turn is running.
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {

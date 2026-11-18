@@ -86,9 +86,17 @@ before changing any of it.
   The Brain MCP server runs on the same binary, so it is `omnifexd` too.
 - **Mac app** — `macos/`: `OmniFexCore` (pure, tested rules) and `OmniFex`
   (AppKit wiring). It runs `omnifexd omnifex-server.js ensure` to start or
-  adopt the daemon (the replace-outdated / launchd rules stay in
+  adopt the daemon (the replace-outdated rules stay in
   `electron/remote/launcher.ts` and `daemon-control.ts`), then loads the page
   the daemon serves and injects `window.__omnifexNative`.
+- **Lifetime** — the daemon is the app's (2026-11-18,
+  `docs/superpowers/specs/2026-11-18-daemon-dies-with-app-design.md`):
+  spawned non-detached into the app's process group, stopped on quit
+  (`DaemonCLI` in `OmniFexCore`), and `electron/remote/idle-watch.ts` as the
+  backstop when the app dies without quitting. There is no LaunchAgent. A
+  daemon that outlived the app kept the permissions macOS granted before it
+  started, so a new grant never reached the sessions. Quitting ends every
+  session; the iPad works only while the Mac app runs.
 - **State** — `~/.omnifex/` (`server.json`, `server.pid`, `projects.json`,
   `sessions/<id>.meta.json`). The SQLite DB is in
   `~/Library/Application Support/OmniFex` (`OMNIFEX_USER_DATA_DIR`). Session
@@ -143,15 +151,13 @@ before changing any of it.
   installed app used to share one daemon on one port — the daemon holding every
   live CLI process the user actually works in — so `npm start` SIGTERM'd it and
   killed those sessions. A dev build also retires only a daemon that reports
-  its own script path in `/healthz`, and never drives the LaunchAgent. The
+  its own script path in `/healthz`, and its quit runs `stop --dev`, which
+  only reaches `~/.omnifex-dev`'s pid file. The
   database stays shared, which is why the dev daemon passes a closed gate to
   `startPeriodicWork` and to the close-time Brain drain: two sweepers on one
-  `brain_spend` pay twice. It is also the one daemon that does not outlive its
-  app — app's process group, `stop --dev` on quit, and `createDevIdleWatch` as
-  the backstop. `OMNIFEX_DEV_INSTANCE=0` opts out.
-- **The LaunchAgent belongs to the real instance.** Only `ensure`/`stop` with
-  the default state dir may drive `com.omnifex.server` (`launchdAllowed`). A
-  packaged build is smoke-tested with `OMNIFEX_STATE_DIR` /
+  `brain_spend` pay twice. `OMNIFEX_DEV_INSTANCE=0` opts out.
+- **Smoke-test a packaged build on throwaway state.** A packaged build is
+  smoke-tested with `OMNIFEX_STATE_DIR` /
   `OMNIFEX_USER_DATA_DIR` / `OMNIFEX_PORT` pointed somewhere throwaway, and
   `OMNIFEX_SMOKE_DIR` makes the app write a PNG of each window it loads.
 - **Periodic work lives in `electron/periodic-work.ts`.** Add new periodic work

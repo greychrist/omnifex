@@ -4,8 +4,7 @@ import OmniFexCore
 /// Starts, finds and stops the daemon — by asking the daemon's own CLI.
 ///
 /// The rules for that (replace a daemon from another build, but only once its
-/// turns are done; drive the LaunchAgent when one owns it; a dev build never
-/// retires the installed app's daemon) live in TypeScript with their tests
+/// turns are done; a dev build never retires the installed app's daemon) live in TypeScript with their tests
 /// (`remote-launcher.ts`, `daemon-control.ts`). Re-typing them in Swift would
 /// be a second copy to drift, so this runs `omnifexd omnifex-server.js ensure`
 /// and reads one line of JSON back.
@@ -53,7 +52,7 @@ final class DaemonLauncher {
 
     private func run(_ args: [String]) async -> Result<String, Error> {
         do {
-            let out = try await Spawn.output(paths.node, [paths.daemonScript] + args, timeout: 60, group: .forDaemonCLI(paths))
+            let out = try await Spawn.output(paths.node, [paths.daemonScript] + args, timeout: 60, group: DaemonCLI.group)
             guard let result = DaemonEnsure.parse(stdout: out.stdout) else {
                 throw BridgeError("The daemon launcher gave no answer (exit \(out.status)). \(out.stderrTail)")
             }
@@ -80,15 +79,15 @@ final class DaemonLauncher {
         }
     }
 
-    /// Before an update swaps the bundle: the daemon outlives the app and
-    /// would otherwise keep running from files the helper is about to delete.
+    /// Before an update swaps the bundle, so the daemon is not running from
+    /// files the helper is about to delete.
     func stop(timeout: TimeInterval) async {
-        _ = try? await Spawn.output(paths.node, [paths.daemonScript, "stop"] + (paths.isDev ? ["--dev"] : []), timeout: timeout, group: .forDaemonCLI(paths))
+        _ = try? await Spawn.output(paths.node, [paths.daemonScript] + DaemonCLI.stopArgs(paths), timeout: timeout, group: DaemonCLI.group)
     }
 
     /// `applicationWillTerminate` cannot await.
     func stopSync(timeout: TimeInterval) {
-        Spawn.runAndWait(paths.node, [paths.daemonScript, "stop", "--dev"], timeout: timeout)
+        Spawn.runAndWait(paths.node, [paths.daemonScript] + DaemonCLI.stopArgs(paths), timeout: timeout)
     }
 
     /// Turns in flight on the daemon, for the install gate. nil = no answer.

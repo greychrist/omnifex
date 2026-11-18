@@ -148,9 +148,11 @@ final class AppServices {
 
     func willTerminate() {
         inFlightTimer?.invalidate()
-        // The dev daemon exists for this run only; the real one outliving the
-        // app is the whole point of the split and is never touched here.
-        if paths.isDev { daemon.stopSync(timeout: 2) }
+        // The daemon lives and dies with the app: quitting ends it and every
+        // session under it, so a permission granted to OmniFex applies on the
+        // next launch. Waits out the stop command's own 5s, so Quit & Reopen
+        // never adopts a daemon still closing.
+        daemon.stopSync(timeout: DaemonCLI.quitStopTimeout)
     }
 }
 
