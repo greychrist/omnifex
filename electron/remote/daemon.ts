@@ -147,7 +147,7 @@ export interface DaemonOptions {
 
 export interface RunningDaemon {
   address: { host: string; port: number };
-  /** What the dev instance's idle watch reads: who is attached, what is
+  /** What the idle watch reads: who is attached, what is
    *  running, and whether anyone ever attached at all. */
   status(): { clients: number; inFlight: number; everConnected: boolean };
   close(): Promise<void>;
