@@ -155,6 +155,23 @@ function num(v: unknown): number | null {
   return typeof v === 'number' && Number.isFinite(v) ? v : null;
 }
 
+/**
+ * Every `claude -p` this daemon has running — summaries, Brain extraction and
+ * curation. The daemon dies with the app, and a run left behind kept going
+ * after it: it paid for its whole call, its result went nowhere, and the next
+ * start re-queued the item and paid again. `stopInternalRuns` at close caps
+ * that at the moment of the quit.
+ */
+const inFlightRuns = new Set<ChildProcessByStdio<null, Readable, Readable>>();
+
+/** SIGTERM every internal run in flight; how many there were. */
+export function stopInternalRuns(): number {
+  const n = inFlightRuns.size;
+  for (const child of inFlightRuns) child.kill('SIGTERM');
+  inFlightRuns.clear();
+  return n;
+}
+
 export async function runCliOnce(p: RunPromptParams): Promise<CliRunResult> {
   // argv cannot carry a NUL, and a transcript can (binary tool output): Node
   // refused the spawn outright, so those sessions were never summarised or
@@ -185,6 +202,10 @@ export async function runCliOnce(p: RunPromptParams): Promise<CliRunResult> {
       stdio: ['ignore', 'pipe', 'pipe'],
     },
   ) as ChildProcessByStdio<null, Readable, Readable>;
+
+  inFlightRuns.add(child);
+  child.once('exit', () => inFlightRuns.delete(child));
+  child.once('error', () => inFlightRuns.delete(child));
 
   let stdout = '';
   let stderr = '';

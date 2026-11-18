@@ -73,7 +73,7 @@ import {
   AUTO_ON_CLOSE_SETTING_KEY,
   ENABLED_SETTING_KEY,
 } from '../services/sessions-summary';
-import { createSummaryQueryRunner } from '../services/sessions/summary-query';
+import { createSummaryQueryRunner, stopInternalRuns } from '../services/sessions/summary-query';
 import { readSubagentMeta } from '../services/sessions/subagent-meta';
 import { toElicitationAction } from '../services/sessions/elicitations';
 import { createPermissionsIOService } from '../services/permissions-io';
@@ -1026,6 +1026,9 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
     }),
     async close() {
       stopPeriodicWork();
+      // A summary or Brain run left going would pay for its whole call after
+      // we exit, and the next start re-queues the item and pays again.
+      stopInternalRuns();
       accountWatchers.disposeAll();
       for (const t of timers) clearInterval(t);
       for (const t of permissionTimers.values()) clearTimeout(t);
