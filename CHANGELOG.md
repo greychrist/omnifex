@@ -5,6 +5,19 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.50] — 2026-11-18
+
+### Changed
+- Context-size badges in the transcript gutter now sit only on Claude's replies to you, not on every tool call, and each `+Nk` is the growth since the previous reply — the tool work between them included — so it reads as what that reply cost. Tool rows keep the line, colored by the latest reading.
+- The background service now reclaims free space in the app's database shortly after it starts, not only once an hour, since it now stops whenever OmniFex quits.
+
+### Fixed
+- Quitting OmniFex while a session summary or Brain extraction was running left that run going after the service stopped: it paid for its whole call, its result was lost, and the item was queued and paid for again on the next launch. Quitting now stops it.
+- Updated DOMPurify, used for diagram rendering, to 3.4.18 for a security advisory (GHSA-cg2g-xh64-v4q7). OmniFex does not use the affected options.
+
+### Removed
+- The `OMNIFEX_DEV_INSTANCE=0` development switch, which had stopped doing anything.
+
 ## [0.5.49] — 2026-11-18
 
 ### Changed
