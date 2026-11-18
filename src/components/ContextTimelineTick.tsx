@@ -30,8 +30,8 @@ const RAIL_BG: Record<ContextPressureLevel, string | null> = {
   critical: "bg-red-600",
 };
 
-/** The size badge, in the rail's color. Solid: it sits on top of the line
- *  and must hide it. No border — the unlayered `* { border-color }` rule
+/** The size badge, in the rail's color. Solid: a lighter or translucent
+ *  badge beside the solid line read as two different greens. No border — the unlayered `* { border-color }` rule
  *  outranks the utilities.
  *
  *  Each pair clears WCAG AA (4.5:1) for its 12px text: emerald-700 5.4,
@@ -129,12 +129,15 @@ export const ContextTimelineTick: React.FC<ContextTimelineTickProps> = ({
       title={title}
     >
       {/* Spans the row edge to edge. ClaudeTranscript drops the inter-row gap
-          while the rail is on, so consecutive rails meet and read as one line. */}
+          while the rail is on, so consecutive rails meet and read as one line.
+          A 1px line at 7px, so its right edge is the readout's 8px padding:
+          the left-aligned badges touch it whatever their width. Struck through
+          centred badges at 2px it read as too much. */}
       <div
         data-timeline-rail
         data-timeline-reset={isReset ? "" : undefined}
         className={cn(
-          "absolute left-1/2 w-0.5 -translate-x-1/2",
+          "absolute left-[7px] w-px",
           // `bottom-4` cancels the body column's `pb-4` exactly, so the line
           // ends flush with the card's bottom edge; the rounded cap closes it
           // off rather than leaving a cut stem.
@@ -147,8 +150,8 @@ export const ContextTimelineTick: React.FC<ContextTimelineTickProps> = ({
       {isSample && (
         // In normal flow, NOT absolute. An absolute readout contributes no
         // height, so a short row let it print over the following tick.
-        // `relative` lifts it above the absolute rail, so the badges cover it.
-        <div data-timeline-readout className="relative flex flex-col items-center gap-0.5 pt-1">
+        // `relative` lifts it above the absolute rail.
+        <div data-timeline-readout className="relative flex flex-col items-start gap-0.5 pl-2 pt-1">
           {/* The one number worth reading mid-scroll, so it leads, in a badge
               tinted by level. It stays smaller than body text: the gutter is
               4rem, and "compacted" at this size wraps. */}

@@ -242,13 +242,19 @@ describe('ContextTimelineTick — rail color tracks pressure', () => {
     expect(badge.className).not.toMatch(/bg-[a-z]+-\d+\/\d+/);
   });
 
-  it('centres the line in the gutter and the badges on it', () => {
+  // A line struck through every badge read as too much (2026-11-18), and a
+  // line in the gutter's edge with centred badges left a gap that changed
+  // with each badge's width. So the badges start where the line ends: the
+  // 1px line at 7px, the readout padded to 8px, its badges left-aligned.
+  it('draws the line beside the badges, touching their left edge', () => {
     const { container } = render(<ContextTimelineTick point={point()} />);
     const rail = container.querySelector('[data-timeline-rail]') as HTMLElement;
     const readout = container.querySelector('[data-timeline-readout]') as HTMLElement;
-    expect(rail.className).toMatch(/\bleft-1\/2\b/);
-    expect(rail.className).toMatch(/-translate-x-1\/2/);
-    expect(readout.className).toMatch(/\bitems-center\b/);
+    expect(rail.className).toMatch(/\bleft-\[7px\]/);
+    expect(rail.className).not.toMatch(/translate-x/);
+    expect(readout.className).toMatch(/\bpl-2\b/);
+    expect(readout.className).toMatch(/\bitems-start\b/);
+    expect(readout.className).not.toMatch(/\bitems-center\b/);
     expect(readout.className).toMatch(/\brelative\b/);
   });
 
@@ -264,14 +270,15 @@ describe('ContextTimelineTick — rail color tracks pressure', () => {
 });
 
 describe('ContextTimelineTick — the rail reads as one line', () => {
-  // 4px read as clumsy (Greg, 2026-10-28); a 1px line antialiases away on
-  // half-pixel positions. 2px is the line.
-  it('draws a slim rail: thinner than 4px, thicker than a hairline', () => {
+  // 4px read as clumsy (Greg, 2026-10-28), and 2px still read as too much
+  // (2026-11-18). 1px used to antialias away, but only because centring with
+  // -translate-x-1/2 put it on half pixels; at a whole-pixel left it is crisp.
+  it('draws a hairline rail', () => {
     const { container } = render(<ContextTimelineTick point={point()} />);
     const rail = container.querySelector('[data-timeline-rail]') as HTMLElement;
-    expect(rail.className).toMatch(/\bw-0\.5\b/);
+    expect(rail.className).toMatch(/\bw-px\b/);
+    expect(rail.className).not.toMatch(/\bw-0\.5\b/);
     expect(rail.className).not.toMatch(/\bw-1\b/);
-    expect(rail.className).not.toMatch(/\bw-px\b/);
   });
 
   // Continuity depends on the rail spanning the row edge to edge; the gap
