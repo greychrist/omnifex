@@ -122,6 +122,9 @@ interface Connection extends ClientContext {
   closeListeners: (() => void)[];
 }
 
+/** How long `close()` waits for clients to answer the close frame. */
+const CLOSE_GRACE_MS = 1_000;
+
 export function createRemoteServer(deps: RemoteServerDeps): RemoteServer {
   const log = deps.log ?? NOOP_LOG;
   const heartbeatMs = deps.heartbeatMs ?? 30_000;
@@ -544,7 +547,15 @@ export function createRemoteServer(deps: RemoteServerDeps): RemoteServer {
       return new Promise((resolvePromise) => {
         if (heartbeat) clearInterval(heartbeat);
         heartbeat = null;
-        for (const conn of connections) conn.socket.close(1001, 'daemon shutting down');
+        // A polite close, then a hard one: a peer that never answers (a
+        // sleeping iPad) would otherwise hold `http.close()` for ws's 30s close
+        // timeout, and the app quitting waits only seconds for the daemon.
+        const sockets = [...connections].map((conn) => conn.socket);
+        for (const socket of sockets) socket.close(1001, 'daemon shutting down');
+        const hardClose = setTimeout(() => {
+          for (const socket of sockets) socket.terminate();
+        }, CLOSE_GRACE_MS);
+        hardClose.unref?.();
         connections.clear();
         subscribers.clear();
         const finish = () => {

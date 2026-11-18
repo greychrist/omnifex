@@ -120,8 +120,9 @@ final class AppServices {
     /// The gate for every quit path; false only when the user cancels.
     /// "Quit anyway" latches `quitAuthorized` so the rest of the same quit
     /// (each window closing, then terminate) does not ask again.
-    func mayQuit(over window: NSWindow?) -> Bool {
-        switch QuitPolicy.decide(workingCount: tabStatus.workingTabIds().count, authorized: quitAuthorized) {
+    func mayQuit(over window: NSWindow?, daemonInFlight: Int?) -> Bool {
+        let working = QuitPolicy.workingCount(local: tabStatus.workingTabIds().count, daemon: daemonInFlight)
+        switch QuitPolicy.decide(workingCount: working, authorized: quitAuthorized) {
         case .allow:
             return true
         case .confirm(let prompt):

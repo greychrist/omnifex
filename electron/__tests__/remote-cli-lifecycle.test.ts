@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { HELP, lifecycleEnv, parseCliArgs, stopCommand } from '../remote/cli';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+import { HELP, lifecycleEnv, parseCliArgs, readPid, removePidFile, stopCommand, writePidFile } from '../remote/cli';
 import type { ServerConfig } from '../remote/config';
 import { DEV_DAEMON_ENV, DEV_PORT } from '../remote/dev-instance';
 
@@ -73,6 +77,37 @@ describe('cli lifecycle commands', () => {
       const { control, d, out } = deps({ aliveFor: 10_000 });
       expect(await stopCommand(CONFIG, control, d)).toBe(1);
       expect(out[0]).toMatch(/did not exit within 5s/);
+    });
+  });
+});
+
+describe('removePidFile', () => {
+  // A daemon slow to close can still be shutting down after the app has quit
+  // and relaunched; by then the new daemon has written its own pid. The old
+  // one's exit must not delete it, or the next quit's `stop` finds "not
+  // running" and the daemon survives the quit (review, 2026-11-18).
+  const withState = (fn: (config: ServerConfig) => void) => {
+    const dir = mkdtempSync(join(tmpdir(), 'omnifex-pid-'));
+    try {
+      fn({ ...CONFIG, stateDir: dir });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  };
+
+  it('leaves a pid file that names another daemon', () => {
+    withState((config) => {
+      writePidFile(config, 222);
+      removePidFile(config, 111);
+      expect(readPid(config)).toBe(222);
+    });
+  });
+
+  it('removes its own', () => {
+    withState((config) => {
+      writePidFile(config, 111);
+      removePidFile(config, 111);
+      expect(readPid(config)).toBeNull();
     });
   });
 });

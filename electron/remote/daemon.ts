@@ -24,6 +24,7 @@ import type { Services } from '../ipc/handlers';
 
 import { startPeriodicWork } from '../periodic-work';
 import { isDevDaemon, periodicWorkGate } from './dev-instance';
+import { progressingTurns } from './idle-watch';
 import { createLoggingOptions } from '../logging-options';
 import { createSessionCloseWork } from '../session-close-work';
 import { createSessionJsonlPathResolver } from '../session-jsonl-path';
@@ -147,8 +148,9 @@ export interface DaemonOptions {
 
 export interface RunningDaemon {
   address: { host: string; port: number };
-  /** What the idle watch reads: who is attached, what is
-   *  running, and whether anyone ever attached at all. */
+  /** What the idle watch reads: who is attached, how many turns can still
+   *  finish on their own (`progressingTurns`), and whether anyone ever
+   *  attached at all. */
   status(): { clients: number; inFlight: number; everConnected: boolean };
   close(): Promise<void>;
 }
@@ -1019,7 +1021,7 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
     address,
     status: () => ({
       clients: server.clients.length,
-      inFlight: (handlersRef?.summaries() ?? []).filter((s) => s.inFlight).length,
+      inFlight: progressingTurns(handlersRef?.summaries() ?? []),
       everConnected: server.connectionsSeen > 0,
     }),
     async close() {

@@ -37,8 +37,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // when a turn is running.
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 
+    // Asks the daemon how many turns a quit would stop (the iPad's too), so the
+    // answer is deferred. `remoteInFlight` gives up after 1.5s and the window's
+    // own tabs stand in.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        services.mayQuit(over: NSApp.keyWindow) ? .terminateNow : .terminateCancel
+        if services.quitAuthorized { return .terminateNow }
+        let window = NSApp.keyWindow
+        Task { @MainActor in
+            let remote = await services.daemon.remoteInFlight()
+            NSApp.reply(toApplicationShouldTerminate: services.mayQuit(over: window, daemonInFlight: remote))
+        }
+        return .terminateLater
     }
 
     func applicationWillTerminate(_ notification: Notification) {

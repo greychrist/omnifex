@@ -77,7 +77,7 @@ export function lifecycleEnv(env: Env, opts: { dev: boolean }, home: string = ho
 export interface StopCommandDeps {
   readPid(config: ServerConfig): number | null;
   isAlive(pid: number): boolean;
-  removePidFile(config: ServerConfig): void;
+  removePidFile(config: ServerConfig, ownerPid: number | null): void;
   sleep(ms: number): Promise<void>;
   out(s: string): void;
 }
@@ -94,13 +94,13 @@ export async function stopCommand(
 ): Promise<number> {
   const pid = deps.readPid(config);
   if (!(await control.stop(config))) {
-    deps.removePidFile(config);
+    deps.removePidFile(config, pid);
     deps.out('omnifex-server is not running');
     return 0;
   }
   for (let i = 0; i < 50; i++) {
     if (!pid || !deps.isAlive(pid)) {
-      deps.removePidFile(config);
+      deps.removePidFile(config, pid);
       deps.out(pid ? `stopped omnifex-server (pid ${pid})` : 'stopped omnifex-server');
       return 0;
     }
@@ -119,7 +119,15 @@ export function writePidFile(config: ServerConfig, pid: number = process.pid): v
   writeFileSync(pidFilePath(config), `${pid}\n`, 'utf8');
 }
 
-export function removePidFile(config: ServerConfig): void {
+/**
+ * Remove the pid file — unless it now names another daemon. A daemon slow to
+ * close can still be exiting after the app relaunched and a new daemon wrote
+ * its pid; deleting that would make the next quit's `stop` find nothing.
+ * `ownerPid` null means "whoever": a stale or unreadable file.
+ */
+export function removePidFile(config: ServerConfig, ownerPid: number | null): void {
+  const current = readPid(config);
+  if (ownerPid !== null && current !== null && current !== ownerPid) return;
   rmSync(pidFilePath(config), { force: true });
 }
 

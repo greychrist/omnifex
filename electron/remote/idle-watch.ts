@@ -69,3 +69,14 @@ export function createIdleWatch(opts: {
     },
   };
 }
+
+/**
+ * Turns that can still finish on their own — what the watch's `inFlight`
+ * counts. A session's `inFlight` also covers a permission or question
+ * waiting on the user; with no client attached nobody is left to answer it
+ * (`permissionTimeoutMs` defaults to never), so counting it kept a
+ * crash-orphaned daemon alive forever.
+ */
+export function progressingTurns(sessions: readonly { inFlight: boolean; pendingPermissions: number }[]): number {
+  return sessions.filter((s) => s.inFlight && s.pendingPermissions === 0).length;
+}

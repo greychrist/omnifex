@@ -162,7 +162,7 @@ async function main(argv: string[]): Promise<number> {
           .close()
           .catch((err: unknown) => log.error('close failed', { error: String(err) }))
           .finally(() => {
-            removePidFile(config);
+            removePidFile(config, process.pid);
             process.exit(0);
           });
       };

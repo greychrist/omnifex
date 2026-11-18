@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import { createIdleWatch, IDLE_CHECK_MS, IDLE_GRACE_MS, STARTUP_GRACE_MS } from '../remote/idle-watch';
+import { createIdleWatch, IDLE_CHECK_MS, IDLE_GRACE_MS, progressingTurns, STARTUP_GRACE_MS } from '../remote/idle-watch';
 
 describe('createIdleWatch', () => {
   // A daemon must not outlive the app that spawned it. The app stops it on
@@ -93,5 +93,27 @@ describe('createIdleWatch', () => {
     expect(IDLE_GRACE_MS).toBe(30_000);
     expect(STARTUP_GRACE_MS).toBe(120_000);
     expect(IDLE_CHECK_MS).toBe(5_000);
+  });
+});
+
+describe('progressingTurns', () => {
+  // What the watch counts as "a turn still running". A turn blocked on a
+  // permission or question cannot progress once no client is attached —
+  // nobody is left to answer, and permissionTimeoutMs defaults to never — so
+  // counting it kept a crash-orphaned daemon alive forever (review, 2026-11-18).
+  it('counts turns that can still finish on their own', () => {
+    expect(progressingTurns([{ inFlight: true, pendingPermissions: 0 }])).toBe(1);
+  });
+
+  it('does not count a turn waiting on the user', () => {
+    expect(progressingTurns([{ inFlight: true, pendingPermissions: 1 }])).toBe(0);
+  });
+
+  it('does not count idle sessions', () => {
+    expect(progressingTurns([
+      { inFlight: false, pendingPermissions: 0 },
+      { inFlight: true, pendingPermissions: 0 },
+      { inFlight: true, pendingPermissions: 2 },
+    ])).toBe(1);
   });
 });

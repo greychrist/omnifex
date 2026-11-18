@@ -64,6 +64,11 @@ class TestClient {
   close(): void {
     this.ws.close();
   }
+
+  /** Stop reading the socket — a peer that has gone quiet (a sleeping iPad). */
+  goQuiet(): void {
+    (this.ws as unknown as { _socket: { pause(): void } })._socket.pause();
+  }
 }
 
 const handlers = (overrides: Partial<ProtocolHandlers> = {}): ProtocolHandlers => ({
@@ -119,6 +124,20 @@ describe('remote server', () => {
     await server.close();
     rmSync(webRoot, { recursive: true, force: true });
   });
+
+  // Quitting the app stops the daemon, and the app waits only so long. A peer
+  // that never answers the close frame used to hold `close()` for ws's 30s
+  // close timeout — with every CLI session still running behind it, since
+  // sessions stop after the server closes (review, 2026-11-18).
+  it('closes promptly even when a client never answers the close', async () => {
+    const c = new TestClient(url);
+    await c.open();
+    await c.hello('web');
+    c.goQuiet();
+    const started = Date.now();
+    await server.close();
+    expect(Date.now() - started).toBeLessThan(3_000);
+  }, 10_000);
 
   it('answers hello with welcome and a response, and counts the client', async () => {
     const c = new TestClient(url);
