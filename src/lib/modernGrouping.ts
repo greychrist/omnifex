@@ -92,8 +92,7 @@ export type ModernItem =
     }
   | { kind: 'recap'; key: string; node: JsonlNode; text: string }
   | { kind: 'instructions'; key: string; node: JsonlNode; files: InstructionFile[] }
-  | { kind: 'line'; key: string; node: JsonlNode; line: ModernLine }
-  | { kind: 'other'; key: string; node: JsonlNode };
+  | { kind: 'line'; key: string; node: JsonlNode; line: ModernLine };
 
 export interface PromptImage { src: string; mediaType: string }
 
@@ -418,14 +417,10 @@ export function buildModernItems(
       continue;
     }
 
-    // Hidden under the chosen rules: left out. Anything else is a line, or
-    // drawn as Compact draws it.
+    // Hidden under the chosen rules: left out. Anything else is a line.
     if (hidden(node)) continue;
     closeWork();
-    const line = modernLineOf(node, messages, config);
-    items.push(line
-      ? { kind: 'line', key: `l-${nodeKey}`, node, line }
-      : { kind: 'other', key: `o-${nodeKey}`, node });
+    items.push({ kind: 'line', key: `l-${nodeKey}`, node, line: modernLineOf(node, messages, config) });
   }
   return items;
 }
@@ -453,7 +448,6 @@ function sameItem(a: ModernItem, b: ModernItem): boolean {
     case 'compaction': return a.node === (b as typeof a).node && a.summaryNode === (b as typeof a).summaryNode;
     case 'instructions':
     case 'line': return a.node === (b as typeof a).node;
-    case 'other': return a.node === (b as typeof a).node;
   }
 }
 

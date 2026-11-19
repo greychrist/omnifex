@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { JsonlNode } from '@/types/jsonl';
-import { createDefaultConfig } from '../messageRenderingConfig';
+import { createDefaultConfig, revealNeverShown } from '../messageRenderingConfig';
+import { ALL_KIND_RECORDS, KIND_OF_RECORD } from './fixtures/allKindRecords';
 import { buildModernItems, keepUnchangedItems, type ModernItem } from '../modernGrouping';
 
 function prompt(text: string): JsonlNode {
@@ -481,5 +482,15 @@ describe('buildModernItems — record rules', () => {
       const items = buildModernItems([nested], createDefaultConfig(), [nested], rules);
       expect(items.map((i) => i.kind === 'line' ? i.line.title : i.kind)).toEqual(['Nested memory — src/CLAUDE.md']);
     }
+  });
+});
+
+describe('buildModernItems — no classic fallback', () => {
+  it('leaves no record to the classic card', () => {
+    const cfg = revealNeverShown(createDefaultConfig());
+    const items = buildModernItems(ALL_KIND_RECORDS, cfg, ALL_KIND_RECORDS, 'all');
+    const left = items.filter((i) => (i as { kind: string }).kind === 'other')
+      .map((i) => KIND_OF_RECORD.get((i as { node: JsonlNode }).node));
+    expect(left).toEqual([]);
   });
 });

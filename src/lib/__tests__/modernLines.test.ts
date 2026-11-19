@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import type { JsonlNode } from '@/types/jsonl';
-import { createDefaultConfig } from '../messageRenderingConfig';
+import { createDefaultConfig, resolveKind } from '../messageRenderingConfig';
+import { classifyJsonlLine } from '../jsonlClassifier';
+import { ALL_KIND_RECORDS, KIND_OF_RECORD } from './fixtures/allKindRecords';
 import { modernLineOf } from '../modernLines';
 
 const cfg = createDefaultConfig();
@@ -38,11 +40,13 @@ describe('modernLineOf — what Modern draws instead of a Compact card', () => {
       .toEqual({ kind: 'css', color: 'var(--color-purple-600)' });
   });
 
-  it('leaves an unknown value and every other record uncolored', () => {
+  // Since 2026-11-18 a line with no color of its own wears its kind's, from
+  // Settings › Chats, as the classic card did.
+  it('gives an unknown value and every other record its kind color', () => {
     const cc = (control: string, value: string) => ({ kind: 'control-change', control, value, sessionId: '', receivedAt: '' });
-    expect(line(cc('permission', 'someNewMode'))?.accent).toBeUndefined();
-    expect(line(cc('effort', 'ultra'))?.accent).toBeUndefined();
-    expect(line(sys('informational', { content: 'hi' }))?.accent).toBeUndefined();
+    expect(line(cc('permission', 'someNewMode')).accent).toEqual({ kind: 'css', color: resolveKind(cfg, 'control.permission').accentColor });
+    expect(line(cc('effort', 'ultra')).accent).toEqual({ kind: 'css', color: resolveKind(cfg, 'control.effort').accentColor });
+    expect(line(sys('informational', { content: 'hi' })).accent).toEqual({ kind: 'css', color: resolveKind(cfg, 'system.unknown').accentColor });
   });
 
   it('draws a slash command\'s output in mono under its command name, open', () => {
@@ -76,7 +80,50 @@ describe('modernLineOf — what Modern draws instead of a Compact card', () => {
     expect(l?.body).toContain('"brand-new"');
   });
 
-  it('leaves conversation content to the message renderer', () => {
-    expect(line({ kind: 'assistant', sessionId: '', receivedAt: '', raw: { type: 'assistant', message: { content: [{ type: 'image' }] } } })).toBeNull();
+  // A record with no text to show, such as an assistant image, is still
+  // drawn: its raw JSON, folded.
+  it('draws a record with no text as its folded raw JSON', () => {
+    expect(line({ kind: 'assistant', sessionId: '', receivedAt: '', raw: { type: 'assistant', message: { content: [{ type: 'image' }] } } }))
+      .toMatchObject({ title: 'Assistant text', mono: true, fold: true });
+  });
+});
+
+// Standard and Expanded (2026-11-18): the classic card is gone, so every
+// record Modern does not draw as conversation is a line, in its kind's icon
+// and color from Settings › Chats.
+describe('modernLineOf — every record has a line', () => {
+  const fixtureCfg = createDefaultConfig();
+  const recordOfKind = (kindId: string): JsonlNode => {
+    const node = ALL_KIND_RECORDS.find((n) => KIND_OF_RECORD.get(n) === kindId);
+    if (!node) throw new Error(`no fixture record for ${kindId}`);
+    return node;
+  };
+
+  it.each(['user.subagentPrompt', 'user.skillInjection', 'user.systemContext', 'user.taskNotification',
+    'user.coordinatorMessage'])('draws %s as a line in its kind icon and color', (kindId) => {
+    const l = modernLineOf(recordOfKind(kindId), ALL_KIND_RECORDS, fixtureCfg)!;
+    expect(l).not.toBeNull();
+    expect(l.icon).toBe(resolveKind(fixtureCfg, kindId).icon);
+    expect(l.accent).toEqual({ kind: 'css', color: resolveKind(fixtureCfg, kindId).accentColor });
+    expect(l.body?.length ?? l.detail?.length ?? 0).toBeGreaterThan(0);
+  });
+
+  it('draws the live permission record and the legacy summary record as lines', () => {
+    expect(modernLineOf(recordOfKind('permission.request'), ALL_KIND_RECORDS, fixtureCfg))
+      .toMatchObject({ title: 'Permission request', detail: 'Bash' });
+    expect(modernLineOf(recordOfKind('summary.compaction'), ALL_KIND_RECORDS, fixtureCfg))
+      .toMatchObject({ title: 'Conversation summary', detail: 'Login fix' });
+  });
+
+  it('draws a tool result outside any work run as a folded line', () => {
+    const orphan = { kind: 'user', userKind: 'tool-result', sessionId: '', receivedAt: '2026-11-18T00:00:00Z',
+      raw: { type: 'user', uuid: 'orphan', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'gone', content: 'line one\nline two' }] } } } as unknown as JsonlNode;
+    expect(modernLineOf(orphan, [orphan], fixtureCfg)).toMatchObject({ title: 'Tool result', body: 'line one\nline two', fold: true });
+  });
+
+  it('draws an unregistered record as an unrecognized line', () => {
+    const l = modernLineOf(classifyJsonlLine({ type: 'brand_new', uuid: 'x', timestamp: '2026-11-18T00:00:00Z' })!, [], fixtureCfg)!;
+    expect(l.title).toBe('Unrecognized record: brand_new');
+    expect(l.tone).toBe('warn');
   });
 });

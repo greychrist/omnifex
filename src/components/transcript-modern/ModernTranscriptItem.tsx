@@ -8,7 +8,6 @@ import * as React from 'react';
 import type { JsonlNode } from '@/types/jsonl';
 import type { RowLookups } from '@/lib/rowLookups';
 import type { ModernItem } from '@/lib/modernGrouping';
-import { StreamMessage } from '@/components/StreamMessage';
 import { CopyButton } from '@/components/ui/copy-button';
 import { CheckCircle2, RotateCcw } from 'lucide-react';
 import { extractResendPayload } from '@/lib/extractResendPayload';
@@ -161,17 +160,6 @@ export const ModernTranscriptItem = React.memo(function ModernTranscriptItem({
       );
     case 'line':
       return <RecordLine line={item.line} />;
-    case 'other':
-      return (
-        <StreamMessage
-          message={item.node}
-          lookups={ctx.lookupsFor(item.node)}
-          tabId={ctx.tabId}
-          accountType={ctx.accountType}
-          compact
-          onResend={ctx.onResend}
-        />
-      );
   }
 });
 

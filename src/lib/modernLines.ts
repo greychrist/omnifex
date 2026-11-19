@@ -10,8 +10,10 @@
  * restyled kind keeps its icon here. Visibility is not decided here: the
  * caller drops a record Compact hides before asking.
  *
- * Null leaves the record to StreamMessage: conversation content (assistant
- * and user records), and the records it draws as their own widgets.
+ * Every record gets a line (2026-11-18: the classic card is gone). Records
+ * with nothing specific to say get the generic one: the kind's label, its
+ * text, or its raw JSON folded. A line without an accent of its own, and not
+ * an error or warning, wears its kind's color from Settings › Chats.
  */
 import type { JsonlNode } from '@/types/jsonl';
 import { KIND_REGISTRY, resolveKind, type IconName, type MessageRenderingConfig } from './messageRenderingConfig';
@@ -107,10 +109,55 @@ export function modernLineOf(
   node: JsonlNode,
   messages: readonly JsonlNode[],
   config: MessageRenderingConfig,
-): ModernLine | null {
-  const kindId = classifyStandaloneKind(node, messages) ?? 'unknown';
-  const icon = resolveKind(config, kindId).icon;
+): ModernLine {
+  const kindId = classifyStandaloneKind(node, messages) ?? blockKindOf(node);
+  const style = resolveKind(config, kindId);
   const label = KIND_REGISTRY[kindId]?.label ?? humanize(kindId);
+  const line = specificLine(node, kindId, style.icon, label) ?? genericLine(node, style.icon, label);
+  return line.accent || line.tone ? line : { ...line, accent: { kind: 'css', color: style.accentColor } };
+}
+
+/** The kind of a record classifyStandaloneKind leaves to its content blocks. */
+function blockKindOf(node: JsonlNode): string {
+  if (node.kind === 'user') {
+    const content = (node.raw as { message?: { content?: unknown } }).message?.content;
+    const blocks = Array.isArray(content) ? (content as { type?: unknown }[]) : [];
+    if (blocks.some((b) => b?.type === 'tool_result')) return 'user.tool-result';
+    if (blocks.some((b) => b?.type === 'image')) return 'user.image';
+    return 'user.prompt';
+  }
+  if (node.kind === 'assistant') return 'assistant.text';
+  return 'unknown';
+}
+
+/** A record's readable text: its text blocks and tool-result text. */
+function recordTextOf(node: JsonlNode): string {
+  const content = ((node as { raw?: unknown }).raw as { message?: { content?: unknown } } | undefined)?.message?.content;
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+  const parts: string[] = [];
+  for (const b of content as Record<string, unknown>[]) {
+    if (b?.type === 'text' && typeof b.text === 'string') parts.push(b.text);
+    if (b?.type === 'tool_result') {
+      const c = b.content;
+      if (typeof c === 'string') parts.push(c);
+      else if (Array.isArray(c)) {
+        for (const x of c as Record<string, unknown>[]) if (x?.type === 'text' && typeof x.text === 'string') parts.push(x.text);
+      }
+    }
+  }
+  return parts.join('\n');
+}
+
+/** The line for a record nothing more specific describes. */
+function genericLine(node: JsonlNode, icon: IconName, label: string): ModernLine {
+  const text = recordTextOf(node);
+  if (text.trim()) return withText({ icon, title: label }, text);
+  const raw = (node as { raw?: unknown }).raw;
+  return raw === undefined ? { icon, title: label } : { icon, title: label, body: JSON.stringify(raw, null, 2), mono: true, fold: true };
+}
+
+function specificLine(node: JsonlNode, kindId: string, icon: IconName, label: string): ModernLine | null {
 
   switch (node.kind) {
     case 'control-change':
@@ -166,9 +213,15 @@ export function modernLineOf(
 
     case 'unknown': {
       const raw = node.raw;
-      // The live permission prompt and the compaction summary are drawn by
-      // their own widgets.
-      if (raw.type === 'permission_request' || raw.type === 'summary') return null;
+      // The live prompt is answered above the composer; its record is a line.
+      if (raw.type === 'permission_request') {
+        const tool = (raw as { tool_name?: unknown }).tool_name;
+        return typeof tool === 'string' && tool ? { icon, title: label, detail: tool } : { icon, title: label };
+      }
+      if (raw.type === 'summary') {
+        const summary = (raw as { summary?: unknown }).summary;
+        return withText({ icon, title: label }, typeof summary === 'string' ? summary : '');
+      }
       const base = typeof raw.type === 'string' ? raw.type : 'untyped record';
       const subtype = (raw as { subtype?: unknown }).subtype;
       const type = typeof subtype === 'string' && subtype ? `${base}.${subtype}` : base;
