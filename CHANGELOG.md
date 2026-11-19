@@ -5,6 +5,17 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.52] — 2026-11-19
+
+### Changed
+- Expanded view: the CLI's own bookkeeping records (mode, session owner, latches, tools used and the rest) draw as a pale-blue "CLI state" line with an automation icon, instead of an orange "Unrecognized record" card. Its color, icon and visibility are a kind in Settings › Chats.
+- Expanded view: task start and finish frames draw as "Task started" / "Task notification" lines with the task type, description or status beside them.
+- "Unrecognized record" is now reserved for record types OmniFex does not know.
+- Settings › Chats: the Workflow icon is available in the icon picker.
+
+### Fixed
+- Settings › Chats: a kind's editor showed its category's color ("User's color", gray swatch) when the kind has a built-in default of its own. It now shows the color, icon and Show in Standard default the kind actually draws with.
+
 ## [0.5.51] — 2026-11-19
 
 ### Added
