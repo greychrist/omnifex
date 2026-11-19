@@ -203,3 +203,19 @@ describe('Modern answer line stylesheet', () => {
 });
 
 
+
+// The user prompt takes the same choice as the answer (Greg, 2026-11-19).
+describe('Modern user prompt style', () => {
+  it('is the card by default; a saved line is kept and junk is dropped', () => {
+    expect(createDefaultConfig().modern.promptStyle).toBe('card');
+    expect(mergeConfig({ version: 6, modern: { promptStyle: 'line' } }).modern.promptStyle).toBe('line');
+    expect(mergeConfig({ version: 6, modern: { promptStyle: 'banner' } }).modern.promptStyle).toBe('card');
+  });
+
+  it('draws the line as a 2px bar in the prompt blue by default', async () => {
+    const fs = await import('node:fs');
+    const css = fs.readFileSync(new URL('../../styles.css', import.meta.url), 'utf8');
+    const rule = /\.modern-format \.modern-prompt-line \{([^}]*)\}/.exec(css)?.[1] ?? '';
+    expect(rule).toMatch(/border-left:\s*2px solid var\(--modern-prompt-tint, oklch\(0\.45 0\.15 255\)\)/);
+  });
+});

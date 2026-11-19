@@ -58,3 +58,31 @@ describe('Modern answer style', () => {
     expect(line).not.toHaveClass('pl-3');
   });
 });
+
+describe('Modern user prompt style', () => {
+  const prompt = { kind: 'prompt', key: 'p', node, text: 'Fix the login bug.' } as ModernItem;
+  function renderPrompt(promptStyle: 'card' | 'line') {
+    const config = createDefaultConfig();
+    config.modern = { ...config.modern, promptStyle };
+    return render(
+      <MessageRenderingPreviewProvider config={config}>
+        <ModernTranscriptItem item={prompt} live={false} ctx={ctx} />
+      </MessageRenderingPreviewProvider>,
+    );
+  }
+
+  it('draws the prompt in its card by default', () => {
+    const { container } = renderPrompt('card');
+    expect(screen.getByText('Fix the login bug.').closest('.modern-prompt')).not.toBeNull();
+    expect(container.querySelector('.modern-prompt-line')).toBeNull();
+  });
+
+  it('draws only a bar on the left in line style, with no fill or shadow', () => {
+    const { container } = renderPrompt('line');
+    const line = screen.getByText('Fix the login bug.').closest('.modern-prompt-line');
+    expect(line).not.toBeNull();
+    expect(container.querySelector('.modern-prompt')).toBeNull();
+    expect(line).not.toHaveClass('modern-card-shadow');
+    expect(line).toHaveClass('pl-4');
+  });
+});

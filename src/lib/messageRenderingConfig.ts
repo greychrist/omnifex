@@ -657,6 +657,9 @@ export interface ModernStyle {
   /** The answer that ends a turn: in the card, or with only a bar down its
    *  left edge in the answer color (Compact's "Execution complete" look). */
   answerStyle: ModernAnswerStyle;
+  /** The user prompt: in its card, or with only a bar down its left edge in
+   *  the prompt color — the answer's Line, for the prompt. */
+  promptStyle: ModernAnswerStyle;
 }
 
 export type ModernAnswerStyle = "card" | "line";
@@ -701,6 +704,7 @@ export const DEFAULT_MODERN: ModernStyle = {
   promptColorEnabled: true,
   answerCardColorEnabled: true,
   answerStyle: "card",
+  promptStyle: "card",
 };
 
 const GEIST_STACK = "'Geist', var(--app-font-stack, ui-sans-serif, system-ui, sans-serif)";
@@ -787,6 +791,7 @@ function mergeModern(saved: Record<string, unknown>, base: ModernStyle): ModernS
     promptColorEnabled: typeof saved.promptColorEnabled === "boolean" ? saved.promptColorEnabled : base.promptColorEnabled,
     answerCardColorEnabled: typeof saved.answerCardColorEnabled === "boolean" ? saved.answerCardColorEnabled : base.answerCardColorEnabled,
     answerStyle: saved.answerStyle === "card" || saved.answerStyle === "line" ? saved.answerStyle : base.answerStyle,
+    promptStyle: saved.promptStyle === "card" || saved.promptStyle === "line" ? saved.promptStyle : base.promptStyle,
   };
 }
 

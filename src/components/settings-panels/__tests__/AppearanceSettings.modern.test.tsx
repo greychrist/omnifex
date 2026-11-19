@@ -107,7 +107,7 @@ describe('AppearanceSettings — Modern', () => {
   it('hands the live chats its font, answer size and tint through :root', async () => {
     const editor = await openModern();
     fireEvent.click(within(openText()).getByRole('radio', { name: '16px' }));
-    fireEvent.change(within(editor).getByLabelText('Prompt bubble color hex'), { target: { value: '#22c55e' } });
+    fireEvent.change(within(editor).getByLabelText('User prompt color hex'), { target: { value: '#22c55e' } });
     const root = document.documentElement.style;
     await waitFor(() => {
       expect(root.getPropertyValue('--modern-answer-size')).toBe('16px');
@@ -117,7 +117,7 @@ describe('AppearanceSettings — Modern', () => {
 
   it('saves a prompt tint and a failed-step colour', async () => {
     const editor = await openModern();
-    fireEvent.change(within(editor).getByLabelText('Prompt bubble color hex'), { target: { value: '#22c55e' } });
+    fireEvent.change(within(editor).getByLabelText('User prompt color hex'), { target: { value: '#22c55e' } });
     fireEvent.change(within(editor).getByLabelText('Failed step color hex'), { target: { value: '#f97316' } });
     await waitFor(() => {
       expect(savedModern().some((m) => m.promptTint === '#22c55e' && m.failedColor === '#f97316')).toBe(true);
@@ -135,7 +135,7 @@ describe('AppearanceSettings — Modern', () => {
   it('offers a reset to the built-in colour on each color once changed', async () => {
     const editor = await openModern();
     const fields: [string, string, string][] = [
-      ['Prompt bubble', 'built-in blue', 'promptTint'],
+      ['User prompt', 'built-in blue', 'promptTint'],
       ['Failed step', 'theme red', 'failedColor'],
       ['Answer card', 'built-in green', 'answerCardColor'],
     ];
@@ -155,8 +155,8 @@ describe('AppearanceSettings — Modern', () => {
   it('has a saturation and a brightness slider for each card, each with a reset once moved', async () => {
     const editor = await openModern();
     const sliders: [string, string, string][] = [
-      ['Prompt bubble', 'saturation', 'promptSaturation'],
-      ['Prompt bubble', 'brightness', 'promptBrightness'],
+      ['User prompt', 'saturation', 'promptSaturation'],
+      ['User prompt', 'brightness', 'promptBrightness'],
       ['Answer card', 'saturation', 'answerCardSaturation'],
       ['Answer card', 'brightness', 'answerCardBrightness'],
     ];
@@ -185,12 +185,22 @@ describe('AppearanceSettings — Modern', () => {
     expect(grid.className).toMatch(/\bmd:grid-cols-3\b/);
     expect(grid.children).toHaveLength(3);
     // The two cards first, then the failed step.
-    const order = ['Prompt bubble', 'Answer card', 'Failed step'];
+    const order = ['User prompt', 'Answer card', 'Failed step'];
     order.forEach((name, i) => {
       expect(within(grid.children[i] as HTMLElement).getByLabelText(`${name} color hex`)).toBeInTheDocument();
     });
     const thoughts = within(editor).getByRole('switch', { name: 'Show thoughts' });
     expect(thoughts.compareDocumentPosition(section) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('switches the user prompt between a card and a bar on the left, card by default', async () => {
+    const editor = await openModern();
+    const group = within(editor).getByRole('radiogroup', { name: 'User prompt style' });
+    expect(within(group).getByRole('radio', { name: 'Card' })).toHaveAttribute('aria-checked', 'true');
+    fireEvent.click(within(group).getByRole('radio', { name: 'Line' }));
+    await waitFor(() => { expect(savedModern().at(-1)?.promptStyle).toBe('line'); });
+    // A line has no fill or shadow: only its color still applies.
+    expect(within(editor).getByRole('switch', { name: 'User prompt drop shadow' })).toBeDisabled();
   });
 
   it('switches the answer between a card and a bar on the left, card by default', async () => {
@@ -207,7 +217,7 @@ describe('AppearanceSettings — Modern', () => {
 
   it('has a drop shadow switch for the prompt bubble and the answer card, on by default', async () => {
     const editor = await openModern();
-    for (const [name, key] of [['Prompt bubble', 'promptShadow'], ['Answer card', 'answerCardShadow']] as const) {
+    for (const [name, key] of [['User prompt', 'promptShadow'], ['Answer card', 'answerCardShadow']] as const) {
       const sw = within(editor).getByRole('switch', { name: `${name} drop shadow` });
       expect(sw).toHaveAttribute('aria-checked', 'true');
       fireEvent.click(sw);
@@ -220,7 +230,7 @@ describe('AppearanceSettings — Modern', () => {
   it('titles each field by its name alone, and never spells it colour', async () => {
     const editor = await openModern();
     const section = within(editor).getByRole('region', { name: 'Colors' });
-    for (const name of ['Prompt bubble', 'Failed step', 'Answer card']) {
+    for (const name of ['User prompt', 'Failed step', 'Answer card']) {
       expect(within(section).getByText(name, { selector: 'label' })).toBeInTheDocument();
       expect(within(section).queryByText(`${name} color`)).toBeNull();
     }
@@ -229,7 +239,7 @@ describe('AppearanceSettings — Modern', () => {
 
   it('has an Enabled checkbox beside the prompt and answer card color titles, on by default', async () => {
     const editor = await openModern();
-    for (const [name, key] of [['Prompt bubble', 'promptColorEnabled'], ['Answer card', 'answerCardColorEnabled']] as const) {
+    for (const [name, key] of [['User prompt', 'promptColorEnabled'], ['Answer card', 'answerCardColorEnabled']] as const) {
       const box = within(editor).getByRole('checkbox', { name: `${name} color enabled` });
       expect(box).toBeChecked();
       // Beside the title, in its row.

@@ -215,17 +215,25 @@ export const ModernEditor: React.FC<ModernEditorProps> = ({ config, onChange }) 
         <div data-testid="modern-colors" className="grid grid-cols-1 gap-6 md:grid-cols-3">
           <div className="space-y-3">
             <ColorField
-              name="Prompt bubble"
-              title="Prompt bubble"
+              name="User prompt"
+              title="User prompt"
               unsetLabel="built-in blue"
               value={m.promptTint}
               onChange={(v) => { patch({ promptTint: v }); }}
               enabled={m.promptColorEnabled}
               onEnabledChange={(v) => { patch({ promptColorEnabled: v }); }}
             />
-            <PercentField name="Prompt bubble" label="Saturation" value={m.promptSaturation} disabled={!m.promptColorEnabled} onChange={(v) => { patch({ promptSaturation: v }); }} />
-            <PercentField name="Prompt bubble" label="Brightness" value={m.promptBrightness} disabled={!m.promptColorEnabled} onChange={(v) => { patch({ promptBrightness: v }); }} />
-            <ShadowField name="Prompt bubble" checked={m.promptShadow} disabled={!m.promptColorEnabled} onChange={(v) => { patch({ promptShadow: v }); }} />
+            {/* Line: a bar down the prompt's left edge in this color. The
+                card's fill strength and shadow have nothing to act on. */}
+            <Segmented
+              label="User prompt style"
+              value={m.promptStyle}
+              options={ANSWER_STYLE_OPTIONS}
+              onChange={(v) => { patch({ promptStyle: v }); }}
+            />
+            <PercentField name="User prompt" label="Saturation" value={m.promptSaturation} disabled={!m.promptColorEnabled || m.promptStyle === "line"} onChange={(v) => { patch({ promptSaturation: v }); }} />
+            <PercentField name="User prompt" label="Brightness" value={m.promptBrightness} disabled={!m.promptColorEnabled || m.promptStyle === "line"} onChange={(v) => { patch({ promptBrightness: v }); }} />
+            <ShadowField name="User prompt" checked={m.promptShadow} disabled={!m.promptColorEnabled || m.promptStyle === "line"} onChange={(v) => { patch({ promptShadow: v }); }} />
           </div>
           <div className="space-y-3">
             <ColorField
