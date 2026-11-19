@@ -6,7 +6,6 @@
  */
 import * as React from 'react';
 import type { JsonlNode } from '@/types/jsonl';
-import type { RowLookups } from '@/lib/rowLookups';
 import type { ModernItem } from '@/lib/modernGrouping';
 import { CopyButton } from '@/components/ui/copy-button';
 import { CheckCircle2, RotateCcw } from 'lucide-react';
@@ -17,7 +16,7 @@ import { RecapLine } from './RecapLine';
 import { InstructionsLine } from './InstructionsLine';
 import { RecordLine } from './RecordLine';
 import { DownloadableImage } from '@/components/DownloadableImage';
-import { RawJsonPopover } from '@/components/StreamMessage/RawJsonPopover';
+import { RawJsonPopover } from '@/components/transcript-modern/RawJsonPopover';
 import { useClaudeSessionStore } from '@/stores/claudeSessionStore';
 import { ChainOfThought } from './ChainOfThought';
 import { QuestionLine } from './QuestionLine';
@@ -30,7 +29,6 @@ import { cn } from '@/lib/utils';
 import { useRenderProfile } from '@/hooks/useRenderProfile';
 
 export interface ModernRowContext {
-  lookupsFor: (node: JsonlNode) => RowLookups;
   tabId: string;
   /** The session's account config dir: links to its private pages open in
    *  the browser chosen for that account. */

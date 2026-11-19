@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { createDefaultConfig } from "../messageRenderingConfig";
-import { accentStyleFor, borderAlphaHex, DARK_TEXT, hiddenEventsColors, LIGHT_TEXT, swatchFor } from "../accentStyle";
+import { accentStyleFor, borderAlphaHex, swatchFor } from "../accentStyle";
 
 describe("accentStyle", () => {
   describe("swatchFor", () => {
@@ -66,62 +66,5 @@ describe("accentStyle", () => {
       cfg.kinds["permission.request"] = { accentColor: "#123456" };
       expect(swatchFor(cfg, "permission.request")).toBe("#123456");
     });
-  });
-});
-
-describe("hiddenEventsColors", () => {
-  const DARK = "#12171c";
-  const LIGHT = "#f7f9fb";
-  const unset = { background: null, border: null, headerText: null, detailText: null, borderOpacity: 100, borderRadius: 8 };
-
-  it("sets nothing when nothing is configured, so the bar keeps its theme look", () => {
-    expect(hiddenEventsColors(unset, DARK)).toEqual({ bar: undefined, header: undefined, detail: undefined });
-  });
-
-  it("puts bar colors on the bar, only the ones configured", () => {
-    expect(hiddenEventsColors({ ...unset, border: "#60a5fa" }, DARK).bar).toEqual({ borderColor: "#60a5fa" });
-    expect(hiddenEventsColors({ ...unset, background: "#1e293b", border: "#60a5fa" }, DARK).bar)
-      .toEqual({ backgroundColor: "#1e293b", borderColor: "#60a5fa" });
-  });
-
-  // Border opacity scales the border color's own alpha; on the theme's border
-  // (no color set) it fades the theme color instead. 100% changes nothing.
-  it("applies border opacity to a configured border, multiplying any alpha it carries", () => {
-    expect(hiddenEventsColors({ ...unset, border: "#3f6578", borderOpacity: 50 }, DARK).bar)
-      .toEqual({ borderColor: "#3f657880" });
-    // #60a5fa80 is 50% already; at 50% opacity it lands on 25% (0x40).
-    expect(hiddenEventsColors({ ...unset, border: "#60a5fa80", borderOpacity: 50 }, DARK).bar)
-      .toEqual({ borderColor: "#60a5fa40" });
-    expect(hiddenEventsColors({ ...unset, border: "#abc", borderOpacity: 20 }, DARK).bar)
-      .toEqual({ borderColor: "#aabbcc33" });
-  });
-
-  it("fades the theme border when no border color is set", () => {
-    expect(hiddenEventsColors({ ...unset, borderOpacity: 40 }, DARK).bar)
-      .toEqual({ borderColor: "color-mix(in oklch, var(--color-border) 40%, transparent)" });
-  });
-
-  it("picks dark text on a light background and light text on a dark one", () => {
-    expect(hiddenEventsColors({ ...unset, background: "#fde68a" }, DARK).header).toBe(DARK_TEXT);
-    expect(hiddenEventsColors({ ...unset, background: "#1e293b" }, LIGHT).header).toBe(LIGHT_TEXT);
-  });
-
-  // A translucent background is mostly the theme showing through: faint white
-  // over the dark theme is still dark, so the text must stay light.
-  it("judges a translucent background by what it composites to over the theme", () => {
-    expect(hiddenEventsColors({ ...unset, background: "#ffffff20" }, DARK).header).toBe(LIGHT_TEXT);
-    expect(hiddenEventsColors({ ...unset, background: "#00000020" }, LIGHT).header).toBe(DARK_TEXT);
-  });
-
-  it("dims the automatic detail text so the header still leads", () => {
-    expect(hiddenEventsColors({ ...unset, background: "#fde68a" }, DARK).detail).toBe(`${DARK_TEXT}b3`);
-  });
-
-  it("lets an explicit text color win, each independently", () => {
-    const c = hiddenEventsColors({ ...unset, background: "#fde68a", headerText: "#ff0000" }, DARK);
-    expect(c.header).toBe("#ff0000");
-    expect(c.detail).toBe(`${DARK_TEXT}b3`);
-    expect(hiddenEventsColors({ ...unset, detailText: "#00ff00" }, DARK))
-      .toEqual({ bar: undefined, header: undefined, detail: "#00ff00" });
   });
 });

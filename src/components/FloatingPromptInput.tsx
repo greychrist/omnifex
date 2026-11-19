@@ -44,11 +44,8 @@ interface FloatingPromptInputProps {
   projectPath?: string;
   className?: string;
   onCancel?: () => void;
-  /** `modern` draws the Modern chat format's input: a rounded field with a
-   *  round send button. Behaviour is identical. */
-  variant?: 'classic' | 'modern';
   extraMenuItems?: React.ReactNode;
-  /** Compact ↔ Verbose output toggle, in the left-side column. */
+  /** The Standard ↔ Expanded view toggle, in the left-side column. */
   outputStyleToggle?: React.ReactNode;
   configDir?: string;
   tabId?: string;
@@ -98,7 +95,6 @@ const FloatingPromptInputInner = (
     projectPath,
     className,
     onCancel,
-    variant = 'classic',
     extraMenuItems,
     outputStyleToggle,
     configDir,
@@ -108,7 +104,6 @@ const FloatingPromptInputInner = (
   }: FloatingPromptInputProps,
   ref: React.Ref<FloatingPromptInputRef>,
 ) => {
-  const modern = variant === 'modern';
   const [prompt, setPrompt] = useState("");
   const [selectedModel, setSelectedModel] = useState<string>(defaultModel);
 
@@ -531,7 +526,7 @@ const FloatingPromptInputInner = (
       {/* Fixed Position Input Bar */}
       <div
         className={cn(
-          modern ? "modern-format bg-background border-t border-border/50" : "bg-muted border-t border-border shadow-lg",
+          "modern-format bg-background border-t border-border/50",
           dragActive && "ring-2 ring-primary ring-offset-2",
           className
         )}
@@ -591,7 +586,7 @@ const FloatingPromptInputInner = (
                   disabled={disabled}
                   className={cn(
                     "resize-none pr-20 pl-3 py-2.5 transition-colors duration-150 h-full",
-                    modern && "rounded-2xl bg-background pl-4 py-3 shadow-sm focus-visible:ring-1",
+                    "rounded-2xl bg-background pl-4 py-3 shadow-sm focus-visible:ring-1",
                     dragActive && "border-primary",
                     textareaHeight >= GROW_CEILING_PX && "overflow-y-auto scrollbar-thin"
                   )}
@@ -628,20 +623,18 @@ const FloatingPromptInputInner = (
                       <Button
                         onClick={isLoading ? onCancel : handleSend}
                         disabled={isLoading ? false : (!prompt.trim() || disabled)}
-                        variant={modern ? "default" : isLoading ? "destructive" : prompt.trim() ? "default" : "ghost"}
+                        variant="default"
                         size="icon"
                         className={cn(
                           "h-8 w-8 transition-all",
-                          modern && "rounded-full",
+                          "rounded-full",
                           prompt.trim() && !isLoading && "shadow-sm"
                         )}
                       >
                         {isLoading ? (
-                          <Square className={cn("h-4 w-4", modern && "h-3.5 w-3.5 fill-current")} />
-                        ) : modern ? (
-                          <ArrowUp className="h-4 w-4" />
+                          <Square className="h-3.5 w-3.5 fill-current" />
                         ) : (
-                          <Send className="h-4 w-4" />
+                          <ArrowUp className="h-4 w-4" />
                         )}
                       </Button>
                     </motion.div>

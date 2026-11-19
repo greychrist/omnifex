@@ -1,28 +1,11 @@
-import { useMemo } from 'react';
-import { cn } from '@/lib/utils';
-import { MessageFrameCard as MessageCard } from '@/components/StreamMessage/MessageFrameCard';
-import type { JsonlNode } from '@/types/jsonl';
-
 /**
- * Historical view of an answered `AskUserQuestion` interaction. Renders the
- * questions the agent asked alongside the user's picks as a single compact
- * card in the chat feed, so scrollback shows "agent asked X → user picked Y"
- * as one self-contained unit rather than a generic tool_use followed by a
- * blob of JSON-shaped tool_result.
- *
- * Sourced from the persistent stream:
- *   - `questions`  ← `tool_use.input.questions` (agent's original payload)
- *   - `answers`    ← `tool_result.content` JSON parsed to `{ answers, annotations? }`
- *
- * Compact layout, one row per question:
- *   ⬢  [Header]  Question text  →  Answer
- *                  You typed: "free text"   ← only when the user picked Other
- *
- * The "You typed:" sub-line surfaces the Other-text annotation that
- * `AskUserQuestionCard.handleSubmit` adds to the tool result — the agent
- * sees that annotation in its turn, so the chat record should too.
+ * Reading an answered AskUserQuestion: the questions from the tool call's
+ * input, and the answers from the CLI's tool result. The result string
+ * drifts between CLI releases (prefix, notes delimiter, trailer), so the
+ * parser anchors on each question's literal text — see the wire-format tests
+ * in QuestionLine.test.tsx. Moved out of the classic answered-question card
+ * when that renderer was deleted (2026-11-18).
  */
-
 interface OptionShape {
   label: string;
   description?: string;
@@ -34,21 +17,6 @@ export interface QuestionShape {
   header?: string;
   options: OptionShape[];
   multiSelect?: boolean;
-}
-
-interface AnsweredAskUserQuestionCardProps {
-  /** `input` from the assistant's `tool_use` block. */
-  input: unknown;
-  /** Stringified content of the matching `tool_result` block (the runtime
-   *  always serialises it via JSON.stringify). May be undefined if the
-   *  result hasn't landed yet — in that case the card renders just the
-   *  questions with the picks blank, matching the "live awaiting" state. */
-  resultContent?: string;
-  /** The originating assistant `JsonlNode`. Passed through to
-   *  `MessageCard` so its footer can show the receivedAt timestamp and
-   *  expose the debug raw-JSON copy button in the same shape every other
-   *  first-order card uses. */
-  message?: JsonlNode;
 }
 
 interface ParsedAnswerPayload {
@@ -248,103 +216,4 @@ export function extractOtherText(note: string | undefined): string | null {
   if (!m) return null;
   const text = m[1].trim();
   return text.length > 0 ? text : null;
-}
-
-// Reuse the live-dialog kind so chrome (icon, accent) matches the
-// AskUserQuestionCard that produced this answer. This is an agent-category kind
-// (Claude asking the user a question), NOT a permission gate — see
-// messageKind.ts. The v2 catalog dropped the dedicated answered kind; the
-// answered card is visually a "post-submit" companion to the question prompt
-// and a single shared entry is enough.
-const KIND_ID = 'assistant.askUserQuestion';
-
-export function AnsweredAskUserQuestionCard({
-  input,
-  resultContent,
-  message,
-}: AnsweredAskUserQuestionCardProps) {
-  // All card chrome — outer shell, icon column, KindHeader, timestamp
-  // footer, debug raw-JSON copy — comes from `MessageCard`, which
-  // routes through the same MessageRenderingConfig helpers every other
-  // first-order card uses. A user's Settings → Chats edits for this
-  // kind take effect end-to-end with no per-card wiring.
-  const questions = useMemo(() => parseQuestions(input), [input]);
-  const payload = useMemo(
-    () => parseAnswerPayload(resultContent, questions),
-    [resultContent, questions],
-  );
-
-  if (questions.length === 0) return null;
-
-  return (
-    <div data-testid="answered-ask-user-question-card">
-      <MessageCard
-        kindId={KIND_ID}
-        message={message}
-        headerLabel={
-          questions.length === 1
-            ? 'Question answered'
-            : `${questions.length} questions answered`
-        }
-      >
-        {/* Three-column subgrid: headers / questions / answers all align
-            vertically across rows. Each question is its own subgrid so
-            the parent's column tracks govern alignment without
-            auto-placement collisions. Columns:
-              1. auto              — header label (widest wins)
-              2. minmax(0, 1fr)    — question text
-              3. minmax(0, 1.5fr)  — answer (italic; slightly wider than
-                                     the question column so multi-word
-                                     Other-text answers breathe)
-            For Other answers the answer cell renders
-            `Other: <text>` directly. */}
-        <div
-          className={cn(
-            'grid items-baseline gap-x-3 gap-y-1.5',
-            'grid-cols-[auto_minmax(0,1fr)_minmax(0,1.5fr)]',
-            'text-xs leading-snug',
-          )}
-        >
-          {questions.map((q, i) => {
-            const answer = payload?.answers?.[q.question];
-            const note = payload?.annotations?.[q.question]?.notes;
-            const otherText = extractOtherText(note);
-            const hasAnswer = answer != null && answer.length > 0;
-            return (
-              <div
-                key={i}
-                className="grid grid-cols-subgrid col-span-3 items-baseline gap-x-3"
-              >
-                {/* Header label — bright foreground, no background.
-                    Always emit the cell (empty if absent) so column-1
-                    alignment is preserved across rows. */}
-                <div className="flex items-baseline">
-                  {q.header && (
-                    <span className="text-[10px] uppercase tracking-wide font-semibold text-foreground">
-                      {q.header}
-                    </span>
-                  )}
-                </div>
-                <span className="text-foreground/80 break-words">{q.question}</span>
-                {/* Answer rendered as an opaque pill so the card's
-                    translucent accent doesn't bleed through. */}
-                <span
-                  className={cn(
-                    'inline-block italic text-foreground break-words',
-                    'rounded-md bg-background px-2 py-0.5',
-                  )}
-                >
-                  {otherText
-                    ? <>Other: {otherText}</>
-                    : hasAnswer
-                      ? answer
-                      : '(no answer recorded)'}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      </MessageCard>
-    </div>
-  );
 }

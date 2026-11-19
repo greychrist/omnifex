@@ -161,7 +161,7 @@ grep, a file read or a transcript behind it.
 
    - **Transcript records**: \`src/lib/jsonlClassifier.ts\` (\`classifyJsonlLine\`),
      \`src/lib/cliSidechannelRecords.ts\` (\`CLI_SIDECHANNEL_RECORD_TYPES\`),
-     \`src/types/jsonl.ts\`, \`src/components/StreamMessage.tsx\`
+     \`src/types/jsonl.ts\`, \`src/lib/modernLines.ts\` (\`modernLineOf\`), \`src/lib/modernGrouping.ts\`
    - **Stream-json I/O and the control protocol**:
      \`electron/services/agents/claude-cli-engine.ts\` (\`writeUserMessage\`, \`--permission-prompt-tool\`, \`control_request\`),
      \`electron/services/sessions/queries.ts\` (\`sendControlRequest\`, \`apply_flag_settings\`),

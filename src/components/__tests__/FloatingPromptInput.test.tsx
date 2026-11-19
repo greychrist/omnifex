@@ -178,19 +178,15 @@ describe('FloatingPromptInput — auto-grow', () => {
   });
 });
 
-describe('FloatingPromptInput — Modern variant', () => {
+describe('FloatingPromptInput — Modern look', () => {
   it('rounds the field and the send button', () => {
-    render(<FloatingPromptInput onSend={vi.fn()} variant="modern" />);
+    render(<FloatingPromptInput onSend={vi.fn()} />);
     expect(screen.getByPlaceholderText(/Message Claude/).className).toContain('rounded-2xl');
     expect(screen.getByPlaceholderText(/Message Claude/).closest('.modern-format')).not.toBeNull();
     const send = screen.getAllByRole('button').find((b) => b.className.includes('rounded-full'));
     expect(send).toBeDefined();
   });
 
-  it('keeps the classic look by default', () => {
-    render(<FloatingPromptInput onSend={vi.fn()} />);
-    expect(screen.getByPlaceholderText(/Message Claude/).className).not.toContain('rounded-2xl');
-  });
 });
 
 describe('FloatingPromptInput — dropping a file', () => {

@@ -23,7 +23,6 @@ import { FindBar } from "@/components/FindBar";
 import { useFindInChat } from "@/hooks/useFindInChat";
 import { useRenderProfile } from "@/hooks/useRenderProfile";
 import { renderProfiler } from "@/lib/renderProfiler";
-import { createRowLookupCache, rowLookups } from "@/lib/rowLookups";
 import { MessageRenderingOverrideProvider, useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
 import { displayableRecords, groupRecords } from "@/lib/transcriptItems";
 import { useAutoScroll } from "@/contexts/AutoScrollContext";
@@ -240,15 +239,6 @@ function ClaudeTranscriptImpl({
     return undefined;
   }, [timeline, displayableMessages]);
 
-  // What each row needs from the rest of the transcript, as an object that
-  // keeps its identity while the answers do — which is what lets a row's memo
-  // hold when a record is appended. See `rowLookups` for the freeze this fixes.
-  const [rowLookupCache] = useState(createRowLookupCache);
-  const lookupsFor = useCallback(
-    (node: JsonlNode) => rowLookups(node, messages, rowLookupCache),
-    [messages, rowLookupCache],
-  );
-
   // Modern format: the same displayable rows, grouped into a conversation.
   // Unchanged items keep their previous object, and the row context reads
   // lookups through a ref, so appending a record re-renders only the items it
@@ -268,9 +258,6 @@ function ClaudeTranscriptImpl({
     return next;
   }, [modernItems, messages, outstandingWork]);
   const rowCount = modernItems.length;
-  const lookupsForRef = useRef(lookupsFor);
-  lookupsForRef.current = lookupsFor;
-  const stableLookupsFor = useCallback((node: JsonlNode) => lookupsForRef.current(node), []);
   const lastModernItem = modernItems.length > 0 ? modernItems[modernItems.length - 1] : undefined;
   // The live run shows the turn's activity itself; otherwise it gets a line of
   // its own below the items.
@@ -279,8 +266,8 @@ function ClaudeTranscriptImpl({
   // moves while it runs. It shows even under a live run (auto-compact).
   const compacting = currentActivity === COMPACTING_LABEL;
   const modernRowContext = useMemo<ModernRowContext>(
-    () => ({ lookupsFor: stableLookupsFor, tabId, configDir, accountType, onResend }),
-    [stableLookupsFor, tabId, configDir, accountType, onResend],
+    () => ({ tabId, configDir, accountType, onResend }),
+    [tabId, configDir, accountType, onResend],
   );
 
   const parentRef = useRef<HTMLDivElement>(null);

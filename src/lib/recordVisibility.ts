@@ -1,14 +1,17 @@
+/**
+ * Which records Standard leaves out, by each record's kind settings
+ * (Settings › Chats). Expanded reads none of this: it draws every record.
+ * What survives of the classic Compact grouping (2026-11-18).
+ */
 import type { JsonlNode } from '@/types/jsonl';
 import type { MessageContentBlock } from '@/types/claudeStream';
 import type { MessageRenderingConfig } from './messageRenderingConfig';
 import { isHiddenInCompact, isNeverShown, resolveKind, type KindStyle } from './messageRenderingConfig';
 import { classifyStandaloneKind } from './messageKind';
 import { classifyBlockKind } from './blockKind';
-import { countHiddenEvents } from './hiddenEventsSummary';
-import { rowKeyOf } from './rowKey';
 
 /**
- * Resolve the whole-message kind ID for compact-grouping purposes.
+ * Resolve the whole-message kind ID a visibility rule reads.
  *
  * Uses `classifyStandaloneKind` for the context-aware kind derivation.
  *
@@ -25,11 +28,8 @@ function resolveWholeMessageKind(
   allMessages: JsonlNode[],
 ): string | null {
   const raw = classifyStandaloneKind(msg, allMessages);
-  // Sentinel IDs for the answered AskUserQuestion pair are internal dispatch
-  // signals (StreamMessage short-circuits to AnsweredAskUserQuestionCard /
-  // null before the registry lookup runs). Map them to the registry entry
-  // that carries the correct compact-grouping style so they are never folded
-  // into a HiddenEventsGroup.
+  // Sentinel IDs for the answered AskUserQuestion pair have no registry
+  // entry. Map them to the one that carries their visibility.
   if (
     raw === 'tool.askUserQuestion.answered' ||
     raw === 'tool.askUserQuestion.answered.result'
@@ -38,27 +38,6 @@ function resolveWholeMessageKind(
   }
   return raw;
 }
-
-/**
- * Compact-mode grouping: walk the timeline and decide, per message, whether
- * to render it normally (visible) or fold it into a `HiddenEventsGroup`
- * with neighboring hidden messages.
- *
- * The rule is intentionally simple: a message is "fully hidden" iff every
- * renderable thing in it is hidden by the user's per-kind config. A
- * partially-hidden message (e.g. visible text + hidden tool_use blocks)
- * still renders normally — its hidden blocks get a per-message
- * `HiddenBlocksExpander` inside `StreamMessage`.
- *
- * Under the current CLI the live task list is surfaced by `TaskList` at the
- * bottom of the chat (driven by the per-task `TaskCreate` / `TaskUpdate`
- * stream), so there's no longer a single snapshot tool_use to carve out
- * and promote here.
- */
-
-export type CompactItem =
-  | { kind: 'single'; message: JsonlNode; key: string }
-  | { kind: 'group'; messages: JsonlNode[]; key: string };
 
 function isRenderableBlock(b: MessageContentBlock | null | undefined): boolean {
   if (!b || typeof b !== 'object') return false;
@@ -69,10 +48,8 @@ function isRenderableBlock(b: MessageContentBlock | null | undefined): boolean {
 }
 
 /**
- * True iff every renderable thing in `msg` is folded away in compact mode.
- * A message with no renderable content counts as hidden, so it joins any
- * neighbouring hidden run instead of injecting an empty card that fragments
- * runs visually for no reason.
+ * True iff every renderable thing in `msg` is hidden in Standard. A message
+ * with no renderable content counts as hidden.
  */
 export function isMessageFullyHidden(
   msg: JsonlNode,
@@ -87,7 +64,7 @@ export function isMessageFullyHidden(
  * the compact rule, a message with nothing classifiable stays: dropping
  * content is this predicate's whole effect, so it only acts on evidence.
  */
-export function isMessageNeverShown(
+function isMessageNeverShown(
   msg: JsonlNode,
   allMessages: JsonlNode[],
   config: MessageRenderingConfig,
@@ -96,9 +73,7 @@ export function isMessageNeverShown(
 }
 
 /**
- * `messages` without the ones the user set to never be shown. Runs before
- * either view mode, so a never-shown message is neither drawn in verbose mode
- * nor folded into a compact-mode expander.
+ * `messages` without the ones the user set to never be shown.
  */
 export function withoutNeverShown(
   messages: JsonlNode[],
@@ -147,31 +122,4 @@ function everyRenderableKind(
   if (renderable === 0) return null;
 
   return hidden === renderable;
-}
-
-export function buildCompactItems(
-  messages: JsonlNode[],
-  config: MessageRenderingConfig,
-): CompactItem[] {
-  const items: CompactItem[] = [];
-
-  messages.forEach((message) => {
-    const fullyHidden = isMessageFullyHidden(message, messages, config);
-
-    if (!fullyHidden) {
-      items.push({ kind: 'single', message, key: `m-${rowKeyOf(message)}` });
-      return;
-    }
-
-    const last = items[items.length - 1];
-    if (last?.kind === 'group') {
-      last.messages.push(message);
-    } else {
-      items.push({ kind: 'group', messages: [message], key: `g-${rowKeyOf(message)}` });
-    }
-  });
-
-  // A hidden run with nothing countable renders no expander; emitting it
-  // anyway left an empty, padded row — a blank gap — in the transcript.
-  return items.filter((item) => item.kind === 'single' || countHiddenEvents(item.messages) > 0);
 }

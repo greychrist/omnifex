@@ -29,7 +29,7 @@ vi.mock('framer-motion', () => {
   };
 });
 
-import { RawJsonPopover } from '@/components/StreamMessage/RawJsonPopover';
+import { RawJsonPopover } from '@/components/transcript-modern/RawJsonPopover';
 
 const SAMPLE = JSON.stringify({ type: 'user', origin: { kind: 'task-notification' } }, null, 2);
 

@@ -8,7 +8,7 @@ import {
   resolveKind,
 } from '../messageRenderingConfig';
 import { classifyStandaloneKind } from '../messageKind';
-import { withoutNeverShown } from '../compactGrouping';
+import { withoutNeverShown } from '../recordVisibility';
 import { filterDisplayableMessages } from '../messageFilters';
 import { JSONL_CARRIED_SYSTEM_SUBTYPES } from '../../../electron/services/sessions/stream-forward';
 

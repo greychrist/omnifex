@@ -273,18 +273,6 @@ describe('AppearanceSettings — edits are debounced before the global commit', 
   });
 });
 
-describe('AppearanceSettings — sample preview', () => {
-  it('renders the sample through the real MessageFrame', async () => {
-    // The preview must look exactly like a rendered message, which means it
-    // goes through the same <MessageFrame> the transcript uses. MessageFrame
-    // tags every variant with data-frame-variant; a bespoke preview card has
-    // no such marker.
-    const { container } = renderWithProvider();
-    await screen.findAllByText('User');
-    expect(container.querySelector('[data-frame-variant]')).not.toBeNull();
-  });
-});
-
 describe('AppearanceSettings — presentation control', () => {
   it('renders a Border dropdown via the shadcn Select primitive', async () => {
     renderWithProvider();
@@ -303,94 +291,5 @@ describe('AppearanceSettings — presentation control', () => {
     const editor = screen.getByTestId('kind-editor');
     // At least some fields show the inherit hint since no user patch is set.
     expect(within(editor).getAllByText(/inherited/i).length).toBeGreaterThan(0);
-  });
-});
-
-describe('AppearanceSettings — hidden events bar', () => {
-  it('lists the bar in the tree and persists its background and border separately', async () => {
-    renderWithProvider();
-    await screen.findAllByText('User');
-    saved.config = null;
-
-    clickRow('Hidden events');
-    const editor = screen.getByTestId('hidden-events-editor');
-
-    fireEvent.change(within(editor).getByLabelText('Background color hex'), { target: { value: '#1e293b' } });
-    fireEvent.change(within(editor).getByLabelText('Border color picker'), { target: { value: '#60a5fa' } });
-
-    await waitFor(() => {
-      const cfg = saved.config as { hiddenEvents?: unknown } | null;
-      expect(cfg?.hiddenEvents).toEqual({ background: '#1e293b', border: '#60a5fa', headerText: null, detailText: null, borderOpacity: 100, borderRadius: 8 });
-    });
-  });
-
-  // Same order as All cards: border opacity, then corner radius.
-  it('lists border opacity before corner radius, like All cards', async () => {
-    renderWithProvider();
-    await screen.findAllByText('User');
-    clickRow('Hidden events');
-    const editor = screen.getByTestId('hidden-events-editor');
-    const sliders = within(editor).getAllByRole('slider').map((el) => el.id);
-    expect(sliders).toEqual(['hidden-events-border-opacity', 'hidden-events-border-radius']);
-  });
-
-  it('persists a corner radius from its slider', async () => {
-    renderWithProvider();
-    await screen.findAllByText('User');
-    saved.config = null;
-    clickRow('Hidden events');
-    const editor = screen.getByTestId('hidden-events-editor');
-    const slider = within(editor).getByLabelText<HTMLInputElement>('Corner radius');
-    expect(slider.value).toBe('8');
-    fireEvent.change(slider, { target: { value: '2' } });
-    await waitFor(() => {
-      const cfg = saved.config as { hiddenEvents?: { borderRadius?: number } } | null;
-      expect(cfg?.hiddenEvents?.borderRadius).toBe(2);
-    });
-  });
-
-  it('persists a border opacity from its slider', async () => {
-    renderWithProvider();
-    await screen.findAllByText('User');
-    saved.config = null;
-    clickRow('Hidden events');
-    const editor = screen.getByTestId('hidden-events-editor');
-    const slider = within(editor).getByLabelText<HTMLInputElement>('Border opacity');
-    expect(slider.value).toBe('100');
-    fireEvent.change(slider, { target: { value: '40' } });
-    await waitFor(() => {
-      const cfg = saved.config as { hiddenEvents?: { borderOpacity?: number } } | null;
-      expect(cfg?.hiddenEvents?.borderOpacity).toBe(40);
-    });
-  });
-
-  it('puts a color back to the theme default', async () => {
-    renderWithProvider();
-    await screen.findAllByText('User');
-    clickRow('Hidden events');
-    const editor = screen.getByTestId('hidden-events-editor');
-    fireEvent.change(within(editor).getByLabelText('Border color picker'), { target: { value: '#60a5fa' } });
-    await waitFor(() => {
-      expect((saved.config as { hiddenEvents?: { border: unknown } } | null)?.hiddenEvents?.border).toBe('#60a5fa');
-    });
-
-    fireEvent.click(within(editor).getByRole('button', { name: /reset border color/i }));
-    await waitFor(() => {
-      expect((saved.config as { hiddenEvents?: { border: unknown } }).hiddenEvents?.border).toBeNull();
-    });
-  });
-
-  it('persists header and detail text colors', async () => {
-    renderWithProvider();
-    await screen.findAllByText('User');
-    clickRow('Hidden events');
-    const editor = screen.getByTestId('hidden-events-editor');
-    fireEvent.change(within(editor).getByLabelText('Header text color hex'), { target: { value: '#ffffff' } });
-    fireEvent.change(within(editor).getByLabelText('Detail text color hex'), { target: { value: '#ffffffb3' } });
-    await waitFor(() => {
-      const h = (saved.config as { hiddenEvents?: { headerText: unknown; detailText: unknown } } | null)?.hiddenEvents;
-      expect(h?.headerText).toBe('#ffffff');
-      expect(h?.detailText).toBe('#ffffffb3');
-    });
   });
 });

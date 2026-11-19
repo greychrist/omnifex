@@ -4,12 +4,12 @@
  * kind's icon, title and left rule in its own accent (purple unless
  * restyled in Appearance), "Question answered" — over the questions and their answers, open under the
  * left rule. Each question is underlined in the muted color; its answer is
- * in the foreground color, so the answer is what stands out. Parsing is the classic card's (AnsweredAskUserQuestionCard), so
- * the two formats read the CLI's drifting answer string the same way.
+ * in the foreground color, so the answer is what stands out. Parsing is askUserQuestionParse.ts, which reads the CLI's drifting
+ * answer string.
  */
 import * as React from 'react';
 import { IconRenderer } from '@/components/settings-panels/appearance/iconMap';
-import { extractOtherText, parseAnswerPayload, parseQuestions } from '@/components/AnsweredAskUserQuestionCard';
+import { extractOtherText, parseAnswerPayload, parseQuestions } from '@/lib/askUserQuestionParse';
 import { useMessageRenderingConfig } from '@/contexts/MessageRenderingContext';
 import { resolveKind } from '@/lib/messageRenderingConfig';
 import { Trace, TraceIcon, TraceLine, TraceTitle } from './trace';

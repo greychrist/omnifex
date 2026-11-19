@@ -13,7 +13,7 @@ import { accentStyleFor, cardRadiusStyle, swatchFor } from '@/lib/accentStyle';
 import { useMessageRenderingConfig } from '@/contexts/MessageRenderingContext';
 import type { PermissionRequestPayload } from '@/lib/types/permissionRequest';
 import { buildAskUserQuestionAnswer, OTHER_VALUE } from '@/lib/askUserQuestionAnswer';
-import { parseQuestions, type QuestionShape } from '@/components/AnsweredAskUserQuestionCard';
+import { parseQuestions, type QuestionShape } from '@/lib/askUserQuestionParse';
 
 function OptionRow({
   multi,

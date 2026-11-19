@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach } from 'vitest';
 import { render, screen, cleanup, within } from '@testing-library/react';
-import { AnsweredAskUserQuestionCard } from '../AnsweredAskUserQuestionCard';
+import { QuestionLine } from '../QuestionLine';
 
 afterEach(() => { cleanup(); });
 
@@ -52,16 +52,16 @@ function resultJson(answers: Record<string, string>, annotations?: Record<string
   return JSON.stringify({ answers, annotations });
 }
 
-describe('AnsweredAskUserQuestionCard (wire format — synthesised string)', () => {
+describe('QuestionLine (wire format — synthesised string)', () => {
   it('renders one row per question with the header chip, question text, and answer', () => {
     render(
-      <AnsweredAskUserQuestionCard
+      <QuestionLine
         input={input([{ question: 'Pick a color', header: 'Color', options: [{ label: 'Red' }] }])}
         resultContent={resultWire({ 'Pick a color': 'Red' })}
       />,
     );
 
-    const card = screen.getByTestId('answered-ask-user-question-card');
+    const card = (document.querySelector('[data-question-line]') as HTMLElement);
     expect(within(card).getByText('Color')).toBeTruthy();
     expect(within(card).getByText('Pick a color')).toBeTruthy();
     expect(within(card).getByText('Red')).toBeTruthy();
@@ -69,7 +69,7 @@ describe('AnsweredAskUserQuestionCard (wire format — synthesised string)', () 
 
   it('renders the singular header for a single-question call', () => {
     render(
-      <AnsweredAskUserQuestionCard
+      <QuestionLine
         input={input([{ question: 'A?', options: [{ label: 'B' }] }])}
         resultContent={resultWire({ 'A?': 'B' })}
       />,
@@ -79,7 +79,7 @@ describe('AnsweredAskUserQuestionCard (wire format — synthesised string)', () 
 
   it('renders the count header for multi-question calls', () => {
     render(
-      <AnsweredAskUserQuestionCard
+      <QuestionLine
         input={input([
           { question: 'A?', options: [{ label: 'X' }] },
           { question: 'B?', options: [{ label: 'Y' }] },
@@ -98,7 +98,7 @@ describe('AnsweredAskUserQuestionCard (wire format — synthesised string)', () 
     // question's literal text and captures up to the next boundary, so the
     // ', ' inside the answer doesn't fool it into stopping early.
     render(
-      <AnsweredAskUserQuestionCard
+      <QuestionLine
         input={input([{ question: 'Pick toppings', options: [{ label: 'A' }, { label: 'B' }], multiSelect: true }])}
         resultContent={resultWire({ 'Pick toppings': 'A, B' })}
       />,
@@ -108,7 +108,7 @@ describe('AnsweredAskUserQuestionCard (wire format — synthesised string)', () 
 
   it('shows the "Other:" form when the user selected Other (rendered once)', () => {
     render(
-      <AnsweredAskUserQuestionCard
+      <QuestionLine
         input={input([{ question: 'Pick', options: [{ label: 'X' }] }])}
         resultContent={resultWire({ Pick: 'Magenta' }, ['Magenta'])}
       />,
@@ -125,7 +125,7 @@ describe('AnsweredAskUserQuestionCard (wire format — synthesised string)', () 
 
   it('omits the "Other:" line when there is no annotation', () => {
     render(
-      <AnsweredAskUserQuestionCard
+      <QuestionLine
         input={input([{ question: 'Pick', options: [{ label: 'X' }] }])}
         resultContent={resultWire({ Pick: 'X' })}
       />,
@@ -147,7 +147,7 @@ describe('AnsweredAskUserQuestionCard (wire format — synthesised string)', () 
       '. You can now continue with the user\'s answers in mind.';
 
     render(
-      <AnsweredAskUserQuestionCard
+      <QuestionLine
         input={input([
           { question: 'Which color do you prefer?', header: 'Color', options: [{ label: 'Blue' }, { label: 'Red' }, { label: 'Green' }] },
           { question: 'Which programming languages do you use regularly?', header: 'Languages', options: [{ label: 'TypeScript' }, { label: 'Python' }, { label: 'Rust' }, { label: 'Go' }], multiSelect: true },
@@ -159,7 +159,7 @@ describe('AnsweredAskUserQuestionCard (wire format — synthesised string)', () 
 
     // Each answer rendered against its question — no "(no answer recorded)"
     // anywhere, which was the symptom of the bug.
-    expect(screen.queryByText('(no answer recorded)')).toBeNull();
+    expect(screen.queryByText(/no answer recorded/i)).toBeNull();
     expect(screen.getByText('Blue')).toBeTruthy();
     expect(screen.getByText('TypeScript, Python')).toBeTruthy();
     // Other answers render exclusively as the "Other: …" form in the answer
@@ -186,7 +186,7 @@ describe('AnsweredAskUserQuestionCard (wire format — synthesised string)', () 
       '. You can now continue with these answers in mind.';
 
     render(
-      <AnsweredAskUserQuestionCard
+      <QuestionLine
         input={input([
           {
             question:
@@ -207,14 +207,14 @@ describe('AnsweredAskUserQuestionCard (wire format — synthesised string)', () 
     expect(screen.queryByText(/(?:^|\s)notes:/)).toBeNull();
   });
 
-  it('falls back to "(no answer recorded)" when the result content is missing', () => {
+  it('falls back to "No answer recorded" when the result content is missing', () => {
     render(
-      <AnsweredAskUserQuestionCard
+      <QuestionLine
         input={input([{ question: 'Pick', options: [{ label: 'X' }] }])}
         resultContent={undefined}
       />,
     );
-    expect(screen.getByText('(no answer recorded)')).toBeTruthy();
+    expect(screen.getByText(/no answer recorded/i)).toBeTruthy();
   });
 
   it('tolerates resultContent that is already a parsed object (some replay paths)', () => {
@@ -222,7 +222,7 @@ describe('AnsweredAskUserQuestionCard (wire format — synthesised string)', () 
     // — if a future caller passes the parsed shape directly, the card should
     // still light up the answer column.
     render(
-      <AnsweredAskUserQuestionCard
+      <QuestionLine
         input={input([{ question: 'Pick', options: [{ label: 'X' }] }])}
         // Cast to string-typed prop slot but pass an already-parsed object —
         // the parser branches on typeof body before JSON.parsing.
@@ -234,7 +234,7 @@ describe('AnsweredAskUserQuestionCard (wire format — synthesised string)', () 
 
   it('renders nothing when the input has no questions', () => {
     const { container } = render(
-      <AnsweredAskUserQuestionCard
+      <QuestionLine
         input={{ questions: [] }}
         resultContent={resultJson({})}
       />,
@@ -244,18 +244,18 @@ describe('AnsweredAskUserQuestionCard (wire format — synthesised string)', () 
 
   it('tolerates malformed JSON in resultContent without crashing', () => {
     render(
-      <AnsweredAskUserQuestionCard
+      <QuestionLine
         input={input([{ question: 'Pick', options: [{ label: 'X' }] }])}
         resultContent="not valid json {{{"
       />,
     );
     // Card still renders the question; just no answer column.
     expect(screen.getByText('Pick')).toBeTruthy();
-    expect(screen.getByText('(no answer recorded)')).toBeTruthy();
+    expect(screen.getByText(/no answer recorded/i)).toBeTruthy();
   });
 });
 
-describe('AnsweredAskUserQuestionCard (CLI trailer drift — "Read the answers carefully")', () => {
+describe('QuestionLine (CLI trailer drift — "Read the answers carefully")', () => {
   // Verbatim tool_result from live session
   // cd8cb2a5-e28a-4f8b-867d-78473f61219f. The CLI drifted again: the prefix
   // is now "The user answered:" and the trailer is "Read the answers
@@ -278,7 +278,7 @@ describe('AnsweredAskUserQuestionCard (CLI trailer drift — "Read the answers c
       TRAILER;
 
     render(
-      <AnsweredAskUserQuestionCard
+      <QuestionLine
         input={input([
           { question: "There's already a CostsView embedded as a sub-tab inside the Usage dashboard (range presets, account filter, groupBy, rescan). What happens to it?", header: 'Old view', options: [{ label: 'Keep both' }] },
           { question: 'How much lands in this branch?', header: 'Scope', options: [{ label: 'Everything, staged commits (Recommended)' }] },
@@ -289,7 +289,7 @@ describe('AnsweredAskUserQuestionCard (CLI trailer drift — "Read the answers c
       />,
     );
 
-    expect(screen.queryByText('(no answer recorded)')).toBeNull();
+    expect(screen.queryByText(/no answer recorded/i)).toBeNull();
     expect(screen.getByText('Keep both')).toBeTruthy();
     expect(screen.getByText('Everything, staged commits (Recommended)')).toBeTruthy();
     expect(screen.getByText('Date range incl. custom start/end, Account, model, project — all multi-select, Main-loop vs subagent toggle, Free-text project search')).toBeTruthy();
@@ -306,7 +306,7 @@ describe('AnsweredAskUserQuestionCard (CLI trailer drift — "Read the answers c
       TRAILER;
 
     render(
-      <AnsweredAskUserQuestionCard
+      <QuestionLine
         input={input([{ question: 'Regenerate?', header: 'Regen', options: [{ label: 'No' }] }])}
         resultContent={liveContent}
       />,

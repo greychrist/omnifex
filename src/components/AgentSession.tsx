@@ -3210,7 +3210,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
             <AttentionSlot queue={signals.queue} onDismiss={signals.dismiss} />
             <FloatingPromptInput
               ref={floatingPromptRef}
-              variant="modern"
               onSend={fireAndLog('claude-code-session:send', handleSendPrompt)}
               onCancel={fireAndLog('claude-code-session:cancel', handleCancelExecution)}
               isLoading={isLoading}

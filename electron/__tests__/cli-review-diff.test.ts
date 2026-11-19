@@ -120,9 +120,9 @@ describe('USAGE_ANCHORS', () => {
 });
 
 describe('RENDERED_FROM_UNKNOWN', () => {
-  it('names only types StreamMessage really draws from the unknown kind', () => {
-    const sm = fs.readFileSync(path.join(REPO, 'src/components/StreamMessage.tsx'), 'utf8');
-    for (const t of RENDERED_FROM_UNKNOWN) expect(sm).toContain(`unknownRaw.type === "${t}"`);
+  it('names only types the Modern renderer really draws from the unknown kind', () => {
+    const lines = fs.readFileSync(path.join(REPO, 'src/lib/modernLines.ts'), 'utf8');
+    for (const t of RENDERED_FROM_UNKNOWN) expect(lines).toContain(`raw.type === '${t}'`);
   });
 });
 

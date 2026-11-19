@@ -31,7 +31,7 @@
  */
 import type { JsonlNode } from '@/types/jsonl';
 import type { MessageRenderingConfig, ModernRecordRules } from './messageRenderingConfig';
-import { isMessageFullyHidden } from './compactGrouping';
+import { isMessageFullyHidden } from './recordVisibility';
 import { isMainPrompt } from './transcriptStepper';
 import { rowKeyOf } from './rowKey';
 import { commandEnvelopeKind, isRecapCommandRecord, localCommandOutput, parseCommandEnvelope } from './commandEnvelope';

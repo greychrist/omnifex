@@ -184,9 +184,9 @@ function walk(dir: string, out: string[] = []): string[] {
 }
 
 /**
- * Record types the classifier leaves as `unknown` on purpose because
- * StreamMessage draws them from there (`summary` → SummaryWidget). The test
- * holds each to a branch in StreamMessage.tsx.
+ * Record types the classifier leaves as `unknown` on purpose because the
+ * Modern renderer draws them from there (`summary` → a Conversation summary
+ * line). The test holds each to a branch in src/lib/modernLines.ts.
  */
 export const RENDERED_FROM_UNKNOWN = ['summary'];
 

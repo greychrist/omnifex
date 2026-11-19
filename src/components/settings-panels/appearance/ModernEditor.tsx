@@ -22,7 +22,7 @@ import type { TurnFooter } from "@/lib/modernTurnFooter";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { IconPicker } from "./IconPicker";
-import { ColorField } from "./HiddenEventsEditor";
+import { ColorField } from "./ColorField";
 import { cn } from "@/lib/utils";
 
 /** What each step kind is called here — and what `stepKind` files under it. */
@@ -235,7 +235,7 @@ const SAMPLE_ITEMS: ModernItem[] = [
   },
 ];
 
-const SAMPLE_CTX: ModernRowContext = { lookupsFor: () => ({}) as never, tabId: "settings-modern-sample" };
+const SAMPLE_CTX: ModernRowContext = { tabId: "settings-modern-sample" };
 
 /** The sample's answer ends its turn, so it carries the Done line. */
 const SAMPLE_FOOTER: TurnFooter = { ms: 252_000, steps: 4, usd: 0.38 };

@@ -1,5 +1,5 @@
 import React from "react";
-import { Ban, ChevronDown, ChevronRight, ChevronsUpDown, EyeOff, Layers, Lock } from "lucide-react";
+import { Ban, ChevronDown, ChevronRight, EyeOff, Lock } from "lucide-react";
 import { CATEGORIES, KIND_REGISTRY, resolveKind, isHexColor } from "@/lib/messageRenderingConfig";
 import type {
   Category,
@@ -19,11 +19,7 @@ import { cn } from "@/lib/utils";
 
 export type TreeSelection =
   | { type: "category"; id: Category }
-  | { type: "kind"; id: string }
-  /** Settings for every card at once. */
-  | { type: "allCards" }
-  /** The compact-mode expander — styled here, but not a message kind. */
-  | { type: "hiddenEvents" };
+  | { type: "kind"; id: string };
 
 interface MessageKindTreeProps {
   config: MessageRenderingConfig;
@@ -128,48 +124,6 @@ export const MessageKindTree: React.FC<MessageKindTreeProps> = ({
         );
       })}
 
-      {/* Not kinds: every card at once, and the bar compact mode folds hidden
-          kinds into. */}
-      <div className="pt-1 mt-1 border-t border-border/40">
-        <div
-          className={cn(
-            "w-full flex items-center gap-2 px-1 py-1 rounded transition-colors",
-            selected.type === "allCards" ? "bg-primary/10 text-foreground" : "hover:bg-muted/40 text-foreground/90",
-          )}
-        >
-          <button
-            type="button"
-            onClick={() => { onSelect({ type: "allCards" }); }}
-            className="flex flex-1 min-w-0 items-center gap-2 text-left pl-[18px]"
-            title="Settings that apply to every card."
-          >
-            <Layers className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-            <span className="flex-1 truncate text-[12px] font-medium">All cards</span>
-          </button>
-        </div>
-        <div
-          className={cn(
-            "w-full flex items-center gap-2 px-1 py-1 rounded transition-colors",
-            selected.type === "hiddenEvents" ? "bg-primary/10 text-foreground" : "hover:bg-muted/40 text-foreground/90",
-          )}
-        >
-          <button
-            type="button"
-            onClick={() => { onSelect({ type: "hiddenEvents" }); }}
-            className="flex flex-1 min-w-0 items-center gap-2 text-left pl-[18px]"
-            title="The compact-mode bar that hidden messages fold into."
-          >
-            <span
-              className="shrink-0"
-              style={{ color: config.hiddenEvents.border ?? config.hiddenEvents.background ?? undefined }}
-              aria-hidden="true"
-            >
-              <ChevronsUpDown className="h-3.5 w-3.5" />
-            </span>
-            <span className="flex-1 truncate text-[12px] font-medium">Hidden events</span>
-          </button>
-        </div>
-      </div>
     </div>
   );
 };

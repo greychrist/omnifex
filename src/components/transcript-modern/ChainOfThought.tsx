@@ -22,7 +22,7 @@ import {
 } from '@/lib/modernSteps';
 import { designRunSummary, foldDesignRuns, type DesignRun } from '@/lib/designRuns';
 import { openSignInLink } from '@/lib/signInBrowser';
-import { RawJsonPopover } from '@/components/StreamMessage/RawJsonPopover';
+import { RawJsonPopover } from '@/components/transcript-modern/RawJsonPopover';
 import { CopyButton } from '@/components/ui/copy-button';
 import { DiffViewer } from '@/components/shared/DiffViewer';
 import { getLanguage } from '@/components/claude/tools/shared';

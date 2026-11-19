@@ -13,7 +13,7 @@ import type { JsonlNode } from '@/types/jsonl';
 import { revealNeverShown, type MessageRenderingConfig, type ViewMode } from './messageRenderingConfig';
 import { collapseRepeats } from './collapseRepeats';
 import { filterDisplayableMessages } from './messageFilters';
-import { withoutNeverShown } from './compactGrouping';
+import { withoutNeverShown } from './recordVisibility';
 import { buildModernItems, type ModernItem } from './modernGrouping';
 
 /** The records that survive the view's rules, and the config they ran under. */

@@ -18,19 +18,12 @@ import {
   type CategoryStyle,
   type CollapseRule,
   type ModernStyle,
-  type HiddenEventsStyle,
   type Typography,
-  type ViewMode,
 } from "@/lib/messageRenderingConfig";
 import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
 import { MessageKindTree, type TreeSelection } from "./appearance/MessageKindTree";
 import { KindEditor } from "./appearance/KindEditor";
-import { HiddenEventsEditor } from "./appearance/HiddenEventsEditor";
-import { AllCardsEditor } from "./appearance/AllCardsEditor";
-import { SamplePreview } from "./appearance/SamplePreview";
-import { TurnPreview } from "./appearance/TurnPreview";
 import {
-  ALL_CARDS_PREVIEW_TEXT,
   previewTextForCategory,
   previewTextForKindId,
 } from "./appearance/fixtures";
@@ -38,7 +31,6 @@ import { TypographyEditor } from "./appearance/TypographyEditor";
 import { ModernEditor } from "./appearance/ModernEditor";
 import type { SettingsPanelProps } from "./types";
 import { useSaveStatus } from "./saveStatus";
-import { cn } from "@/lib/utils";
 import { fireAndLog } from "@/lib/fireAndLog";
 
 const USER_DEFAULT_KEY = "message_rendering_config_user_default";
@@ -56,13 +48,8 @@ type AppearanceSettingsProps = Pick<SettingsPanelProps, "setToast">;
 const FIRST_SELECTION: TreeSelection = { type: "category", id: "user" };
 
 /** The tabs that exist, so a remembered one that no longer does is ignored. */
-const APPEARANCE_TABS: readonly string[] = ["kinds", "turns", "modern", "typography"];
+const APPEARANCE_TABS: readonly string[] = ["kinds", "modern", "typography"];
 
-
-/** The classic turn preview's mode for a view (until it is replaced). */
-function previewModeOf(mode: ViewMode): "compact" | "verbose" {
-  return mode === "standard" ? "compact" : "verbose";
-}
 
 export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast }) => {
   const { config: committedConfig, setConfig: commitConfig } = useMessageRenderingConfig();
@@ -131,7 +118,6 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
   }, [pushToGlobal]);
 
   const [selected, setSelected] = useState<TreeSelection>(FIRST_SELECTION);
-  const [previewMode, setPreviewMode] = useState<"compact" | "verbose">(previewModeOf(config.defaultViewMode));
   const [hasUserDefault, setHasUserDefault] = useState(false);
   // Surface every section behind tabs instead of a single long scroll.
   // Persisted across remounts via sessionStorage so a quick trip back to
@@ -159,11 +145,6 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
       .catch(() => { setHasUserDefault(false); });
   }, []);
 
-  // Keep the local preview toggle in sync when the persisted default mode changes.
-  useEffect(() => {
-    setPreviewMode(previewModeOf(config.defaultViewMode));
-  }, [config.defaultViewMode]);
-
   const mutate = useCallback(
     (producer: (prev: MessageRenderingConfig) => MessageRenderingConfig) => {
       setDraft((prev) => producer(prev));
@@ -175,13 +156,6 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
   const setTypography = useCallback(
     (next: Typography) => {
       mutate((prev) => ({ ...prev, typography: next }));
-    },
-    [mutate],
-  );
-
-  const setHiddenEvents = useCallback(
-    (next: HiddenEventsStyle) => {
-      mutate((prev) => ({ ...prev, hiddenEvents: next }));
     },
     [mutate],
   );
@@ -283,20 +257,6 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
     [mutate, setToast],
   );
 
-  const setCardBorderOpacity = useCallback(
-    (pct: number) => {
-      mutate((prev) => ({ ...prev, cardBorderOpacity: pct }));
-    },
-    [mutate],
-  );
-
-  const setCardBorderRadius = useCallback(
-    (px: number) => {
-      mutate((prev) => ({ ...prev, cardBorderRadius: px }));
-    },
-    [mutate],
-  );
-
   const resetAll = useCallback(() => {
     if (!window.confirm("Reset all appearance settings to defaults? This cannot be undone.")) {
       return;
@@ -324,29 +284,12 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
         const text = await file.text();
         const imported = parseConfig(text);
         replaceConfig(imported);
-        setPreviewMode(previewModeOf(imported.defaultViewMode));
         setToast({ message: `Imported ${file.name}`, type: "success" });
       } catch {
         setToast({ message: "Failed to import config", type: "error" });
       }
     },
     [replaceConfig, setToast],
-  );
-
-  // Live preview of a card; updates as you edit.
-  const sample = (style: KindStyle, kindId: string, text: string) => (
-    <div
-      role="region"
-      aria-label="Sample"
-      className="rounded-md border border-border bg-background p-3"
-    >
-      <SamplePreview style={style} kindId={kindId} text={text} />
-    </div>
-  );
-
-  const allCardsSampleStyle = useMemo(
-    (): KindStyle => ({ ...config.categories.user, headerLabel: "All cards" }),
-    [config.categories.user],
   );
 
   // Resolve the current selection into the editor + preview inputs.
@@ -402,7 +345,6 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
       <Tabs value={activeTab} onValueChange={setActiveTab} variant="line" className="w-full">
         <TabsList>
           <TabsTrigger value="kinds">Message kinds</TabsTrigger>
-          <TabsTrigger value="turns">Turn preview</TabsTrigger>
           <TabsTrigger value="modern">Modern</TabsTrigger>
           <TabsTrigger value="typography">Typography</TabsTrigger>
         </TabsList>
@@ -429,25 +371,7 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
                 />
               </div>
 
-              {selected.type === "allCards" ? (
-                <div className="min-w-0 space-y-3">
-                  {/* A generic card — the User category's look under its own
-                      title — so the all-card settings show their effect. */}
-                  {sample(allCardsSampleStyle, "user", ALL_CARDS_PREVIEW_TEXT)}
-                  <AllCardsEditor
-                    cardBorderOpacity={config.cardBorderOpacity}
-                    cardBorderRadius={config.cardBorderRadius}
-                    onCardBorderOpacity={setCardBorderOpacity}
-                    onCardBorderRadius={setCardBorderRadius}
-                  />
-                </div>
-              ) : selected.type === "hiddenEvents" ? (
-                <div className="min-w-0">
-                  <HiddenEventsEditor value={config.hiddenEvents} onChange={setHiddenEvents} />
-                </div>
-              ) : (
               <div className="min-w-0 space-y-3">
-                {sample(editor.style, editor.kindId, editor.previewText)}
 
                 <KindEditor
                   mode={editor.mode}
@@ -464,38 +388,6 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
                   onReset={editor.onReset}
                 />
               </div>
-              )}
-            </div>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="turns" className="mt-4">
-          <Card className="p-6 space-y-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-heading-4">Turn preview</h3>
-                <p className="text-caption text-muted-foreground mt-1">
-                  See what a full turn looks like in compact vs. verbose mode.
-                </p>
-              </div>
-              <div className="flex items-center gap-1 p-1 bg-muted/30 rounded-lg">
-                {(["verbose", "compact"] as const).map((m) => (
-                  <button
-                    key={m}
-                    type="button"
-                    onClick={() => { setPreviewMode(m); }}
-                    className={cn(
-                      "px-3 py-1.5 text-xs font-medium rounded-md transition-all capitalize",
-                      previewMode === m ? "bg-background shadow-sm" : "hover:bg-background/50",
-                    )}
-                  >
-                    {m}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="rounded-md border border-border bg-background p-4">
-              <TurnPreview config={config} mode={previewMode} />
             </div>
           </Card>
         </TabsContent>
