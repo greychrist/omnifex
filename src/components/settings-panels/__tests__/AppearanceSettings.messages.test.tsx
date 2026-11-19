@@ -85,16 +85,22 @@ describe('Settings › Chats', () => {
     }, { timeout: 3000 });
   });
 
-  it('previews a turn in Standard and Expanded, following Show in Standard', () => {
+  it('previews in Standard and Expanded, following Show in Standard', () => {
     renderSettings();
+    const preview = () => screen.getByRole('region', { name: 'Turn preview' });
+    // Two lines carry the title: the saved mode record (Permission mode) and
+    // the live mode change (its own kind).
+    const modeLines = () => within(preview()).queryAllByText('Permission mode').length;
+    fireEvent.click(screen.getByRole('tab', { name: 'Turn preview' }));
+    const before = modeLines();
+    fireEvent.click(screen.getByRole('tab', { name: 'Messages' }));
     fireEvent.click(screen.getByRole('button', { name: 'Expand all' }));
-    fireEvent.click(within(tree()).getByText('Permission mode'));
+    fireEvent.click(within(tree()).getAllByText('Permission mode')[0]);
     fireEvent.click(screen.getByRole('switch', { name: 'Show in Standard' }));
     fireEvent.click(screen.getByRole('tab', { name: 'Turn preview' }));
-    const preview = () => screen.getByRole('region', { name: 'Turn preview' });
-    expect(within(preview()).queryByText('Permission mode')).toBeNull();
+    expect(modeLines()).toBe(before - 1);
     fireEvent.click(screen.getByRole('radio', { name: 'Expanded' }));
-    expect(within(preview()).getByText('Permission mode')).toBeInTheDocument();
+    expect(modeLines()).toBe(before);
   });
 });
 
@@ -122,5 +128,22 @@ describe('Typography', () => {
     renderSettings();
     fireEvent.click(screen.getByRole('tab', { name: 'Typography' }));
     expect(screen.queryByText('Italic')).toBeNull();
+  });
+});
+
+// The preview is the sample transcript with a record of every kind, so
+// Expanded shows them all and Standard shows what the kinds list lets
+// through (Greg, 2026-11-19: the old preview showed far more than one turn).
+describe('Turn preview — every kind', () => {
+  it('draws the sample transcript: every record in Expanded, the shown ones in Standard', () => {
+    renderSettings();
+    fireEvent.click(screen.getByRole('tab', { name: 'Turn preview' }));
+    const preview = () => screen.getByRole('region', { name: 'Turn preview' });
+    const lines = () => preview().querySelectorAll('[data-record-line]').length;
+    expect(within(preview()).getByText('Fix the login bug.')).toBeInTheDocument();
+    const standard = lines();
+    fireEvent.click(screen.getByRole('radio', { name: 'Expanded' }));
+    expect(within(preview()).getByText('Unrecognized record: brand_new_record')).toBeInTheDocument();
+    expect(lines()).toBeGreaterThan(standard + 20);
   });
 });
