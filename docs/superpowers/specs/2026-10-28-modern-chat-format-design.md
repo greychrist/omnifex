@@ -1,5 +1,7 @@
 # Modern chat format — design
 
+> **Superseded 2026-11-18** by `2026-11-18-standard-expanded-views-design.md`: Modern is the only renderer, drawn in two views, Standard and Expanded; the classic formats and their settings are gone.
+
 2026-10-28. Greg asked for the shadcn AI Elements look (Chat, Message,
 Reasoning, Chain of Thought, Prompt Input, Model Selector, Plan,
 Confirmation) as a fourth chat format beside Compact, Verbose and All, named
