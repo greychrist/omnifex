@@ -237,3 +237,622 @@ exports[`what Standard draws (golden — never update with -u) > default config,
   "u-086-assistant.text.endTurn",
 ]
 `;
+
+exports[`what Standard draws per kind setting (golden — never update with -u) > every kind set to never, one at a time, recordRules compact 1`] = `
+{
+  "assistant.askUserQuestion": {
+    "hidden": [
+      "u-056-assistant.askUserQuestion",
+      "u-057-user.tool-result",
+    ],
+    "shown": [],
+  },
+  "assistant.text": {
+    "hidden": [
+      "u-020-assistant.text",
+      "u-038-assistant.text.endTurn",
+      "u-086-assistant.text.endTurn",
+    ],
+    "shown": [],
+  },
+  "assistant.thinking": {
+    "hidden": [
+      "u-013-assistant.thinking",
+    ],
+    "shown": [],
+  },
+  "assistant.tool-use": {
+    "hidden": [
+      "u-015-assistant.tool-use",
+      "u-019-user.tool-result",
+      "u-021-assistant.tool-use",
+      "u-023-assistant.tool-use",
+      "u-024-user.tool-result",
+      "u-026-assistant.tool-use",
+      "u-028-user.tool-result",
+    ],
+    "shown": [],
+  },
+  "control.effort": {
+    "hidden": [
+      "control-change@2026-11-18T10:00:46.000Z",
+    ],
+    "shown": [],
+  },
+  "control.model": {
+    "hidden": [
+      "control-change@2026-11-18T10:00:47.000Z",
+    ],
+    "shown": [],
+  },
+  "control.permission": {
+    "hidden": [
+      "control-change@2026-11-18T10:00:48.000Z",
+    ],
+    "shown": [],
+  },
+  "permission-mode": {
+    "hidden": [
+      "u-002-permission-mode",
+    ],
+    "shown": [],
+  },
+  "permission.askUserQuestion": {
+    "hidden": [
+      "u-059-permission.askUserQuestion",
+    ],
+    "shown": [],
+  },
+  "permission.request": {
+    "hidden": [
+      "u-058-permission.request",
+    ],
+    "shown": [],
+  },
+  "system.api_error": {
+    "hidden": [
+      "u-032-system.api_error",
+    ],
+    "shown": [],
+  },
+  "system.away_summary": {
+    "hidden": [
+      "u-060-system.away_summary",
+    ],
+    "shown": [],
+  },
+  "system.compact_boundary": {
+    "hidden": [
+      "u-061-system.compact_boundary",
+    ],
+    "shown": [],
+  },
+  "system.feedback_draft_queued": {
+    "hidden": [
+      "u-037-system.feedback_draft_queued",
+    ],
+    "shown": [],
+  },
+  "system.local_command": {
+    "hidden": [
+      "u-051-system.local_command",
+    ],
+    "shown": [],
+  },
+  "system.notification.error": {
+    "hidden": [
+      "u-035-system.notification.error",
+    ],
+    "shown": [],
+  },
+  "system.notification.info": {
+    "hidden": [
+      "u-033-system.notification.info",
+    ],
+    "shown": [],
+  },
+  "system.notification.stop": {
+    "hidden": [
+      "u-036-system.notification.stop",
+    ],
+    "shown": [],
+  },
+  "system.notification.warn": {
+    "hidden": [
+      "u-034-system.notification.warn",
+    ],
+    "shown": [],
+  },
+  "system.permission_denied": {
+    "hidden": [
+      "u-029-system.permission_denied",
+    ],
+    "shown": [],
+  },
+  "system.progress": {
+    "hidden": [
+      "u-030-system.progress",
+    ],
+    "shown": [],
+  },
+  "system.ui_log": {
+    "hidden": [
+      "u-080-system.ui_log",
+    ],
+    "shown": [],
+  },
+  "system.ui_toast": {
+    "hidden": [
+      "u-081-system.ui_toast",
+    ],
+    "shown": [],
+  },
+  "user.command": {
+    "hidden": [
+      "u-049-user.command",
+    ],
+    "shown": [],
+  },
+  "user.skillInjection": {
+    "hidden": [
+      "u-025-user.skillInjection",
+    ],
+    "shown": [],
+  },
+}
+`;
+
+exports[`what Standard draws per kind setting (golden — never update with -u) > every kind set to never, one at a time, recordRules verbose 1`] = `
+{
+  "ai-title": {
+    "hidden": [
+      "u-043-ai-title",
+    ],
+    "shown": [],
+  },
+  "assistant.askUserQuestion": {
+    "hidden": [
+      "u-056-assistant.askUserQuestion",
+      "u-057-user.tool-result",
+    ],
+    "shown": [],
+  },
+  "assistant.text": {
+    "hidden": [
+      "u-020-assistant.text",
+      "u-038-assistant.text.endTurn",
+      "u-086-assistant.text.endTurn",
+    ],
+    "shown": [],
+  },
+  "assistant.thinking": {
+    "hidden": [
+      "u-013-assistant.thinking",
+    ],
+    "shown": [],
+  },
+  "assistant.tool-use": {
+    "hidden": [
+      "u-015-assistant.tool-use",
+      "u-019-user.tool-result",
+      "u-021-assistant.tool-use",
+      "u-023-assistant.tool-use",
+      "u-026-assistant.tool-use",
+    ],
+    "shown": [],
+  },
+  "attachment.nested_memory": {
+    "hidden": [
+      "u-005-attachment.nested_memory",
+    ],
+    "shown": [],
+  },
+  "attachment.skill_listing": {
+    "hidden": [
+      "u-009-attachment.skill_listing",
+    ],
+    "shown": [],
+  },
+  "control.effort": {
+    "hidden": [
+      "control-change@2026-11-18T10:00:46.000Z",
+    ],
+    "shown": [],
+  },
+  "control.model": {
+    "hidden": [
+      "control-change@2026-11-18T10:00:47.000Z",
+    ],
+    "shown": [],
+  },
+  "control.permission": {
+    "hidden": [
+      "control-change@2026-11-18T10:00:48.000Z",
+    ],
+    "shown": [],
+  },
+  "custom-title": {
+    "hidden": [
+      "u-044-custom-title",
+    ],
+    "shown": [],
+  },
+  "file-history-snapshot": {
+    "hidden": [
+      "u-003-file-history-snapshot",
+    ],
+    "shown": [],
+  },
+  "last-prompt": {
+    "hidden": [
+      "u-042-last-prompt",
+    ],
+    "shown": [],
+  },
+  "permission-mode": {
+    "hidden": [
+      "u-002-permission-mode",
+    ],
+    "shown": [],
+  },
+  "permission.askUserQuestion": {
+    "hidden": [
+      "u-059-permission.askUserQuestion",
+    ],
+    "shown": [],
+  },
+  "permission.request": {
+    "hidden": [
+      "u-058-permission.request",
+    ],
+    "shown": [],
+  },
+  "queue-operation": {
+    "hidden": [
+      "u-045-queue-operation",
+    ],
+    "shown": [],
+  },
+  "system.api_error": {
+    "hidden": [
+      "u-032-system.api_error",
+    ],
+    "shown": [],
+  },
+  "system.away_summary": {
+    "hidden": [
+      "u-060-system.away_summary",
+    ],
+    "shown": [],
+  },
+  "system.compact_boundary": {
+    "hidden": [
+      "u-061-system.compact_boundary",
+    ],
+    "shown": [],
+  },
+  "system.feedback_draft_queued": {
+    "hidden": [
+      "u-037-system.feedback_draft_queued",
+    ],
+    "shown": [],
+  },
+  "system.init": {
+    "hidden": [
+      "u-001-system.init",
+    ],
+    "shown": [],
+  },
+  "system.local_command": {
+    "hidden": [
+      "u-051-system.local_command",
+    ],
+    "shown": [],
+  },
+  "system.notification.error": {
+    "hidden": [
+      "u-035-system.notification.error",
+    ],
+    "shown": [],
+  },
+  "system.notification.info": {
+    "hidden": [
+      "u-033-system.notification.info",
+    ],
+    "shown": [],
+  },
+  "system.notification.stop": {
+    "hidden": [
+      "u-036-system.notification.stop",
+    ],
+    "shown": [],
+  },
+  "system.notification.warn": {
+    "hidden": [
+      "u-034-system.notification.warn",
+    ],
+    "shown": [],
+  },
+  "system.permission_denied": {
+    "hidden": [
+      "u-029-system.permission_denied",
+    ],
+    "shown": [],
+  },
+  "system.progress": {
+    "hidden": [
+      "u-030-system.progress",
+    ],
+    "shown": [],
+  },
+  "system.rate_limit": {
+    "hidden": [
+      "u-041-system.rate_limit",
+    ],
+    "shown": [],
+  },
+  "system.result": {
+    "hidden": [
+      "u-040-system.result",
+    ],
+    "shown": [],
+  },
+  "system.stop_hook_summary": {
+    "hidden": [
+      "u-039-system.stop_hook_summary",
+    ],
+    "shown": [],
+  },
+  "system.ui_log": {
+    "hidden": [
+      "u-080-system.ui_log",
+    ],
+    "shown": [],
+  },
+  "system.ui_toast": {
+    "hidden": [
+      "u-081-system.ui_toast",
+    ],
+    "shown": [],
+  },
+  "system.unknown": {
+    "hidden": [
+      "u-031-system.unknown",
+      "u-082-system.unknown",
+    ],
+    "shown": [],
+  },
+  "user.command": {
+    "hidden": [
+      "u-049-user.command",
+    ],
+    "shown": [],
+  },
+  "user.commandOutput": {
+    "hidden": [
+      "u-050-user.commandOutput",
+    ],
+    "shown": [],
+  },
+  "user.coordinatorMessage": {
+    "hidden": [
+      "u-055-user.coordinatorMessage",
+    ],
+    "shown": [],
+  },
+  "user.skillInjection": {
+    "hidden": [
+      "u-025-user.skillInjection",
+    ],
+    "shown": [],
+  },
+  "user.taskNotification": {
+    "hidden": [
+      "u-054-user.taskNotification",
+    ],
+    "shown": [],
+  },
+}
+`;
+
+exports[`what Standard draws per kind setting (golden — never update with -u) > every kind set to verbose, one at a time, recordRules compact 1`] = `
+{
+  "control.effort": {
+    "hidden": [
+      "control-change@2026-11-18T10:00:46.000Z",
+    ],
+    "shown": [],
+  },
+  "control.model": {
+    "hidden": [
+      "control-change@2026-11-18T10:00:47.000Z",
+    ],
+    "shown": [],
+  },
+  "control.permission": {
+    "hidden": [
+      "control-change@2026-11-18T10:00:48.000Z",
+    ],
+    "shown": [],
+  },
+  "permission-mode": {
+    "hidden": [
+      "u-002-permission-mode",
+    ],
+    "shown": [],
+  },
+  "permission.askUserQuestion": {
+    "hidden": [
+      "u-059-permission.askUserQuestion",
+    ],
+    "shown": [],
+  },
+  "permission.request": {
+    "hidden": [
+      "u-058-permission.request",
+    ],
+    "shown": [],
+  },
+  "system.away_summary": {
+    "hidden": [
+      "u-060-system.away_summary",
+    ],
+    "shown": [],
+  },
+  "system.feedback_draft_queued": {
+    "hidden": [
+      "u-037-system.feedback_draft_queued",
+    ],
+    "shown": [],
+  },
+  "system.local_command": {
+    "hidden": [
+      "u-051-system.local_command",
+    ],
+    "shown": [],
+  },
+  "system.permission_denied": {
+    "hidden": [
+      "u-029-system.permission_denied",
+    ],
+    "shown": [],
+  },
+  "system.progress": {
+    "hidden": [
+      "u-030-system.progress",
+    ],
+    "shown": [],
+  },
+  "system.ui_log": {
+    "hidden": [
+      "u-080-system.ui_log",
+    ],
+    "shown": [],
+  },
+  "system.ui_toast": {
+    "hidden": [
+      "u-081-system.ui_toast",
+    ],
+    "shown": [],
+  },
+}
+`;
+
+exports[`what Standard draws per kind setting (golden — never update with -u) > every kind set to verbose, one at a time, recordRules verbose 1`] = `
+{
+  "system.background_tasks_changed": {
+    "hidden": [],
+    "shown": [
+      "u-064-system.background_tasks_changed",
+    ],
+  },
+  "system.commands_changed": {
+    "hidden": [],
+    "shown": [
+      "u-079-system.commands_changed",
+    ],
+  },
+  "system.dev_intent": {
+    "hidden": [],
+    "shown": [
+      "u-065-system.dev_intent",
+    ],
+  },
+  "system.elicitation_complete": {
+    "hidden": [],
+    "shown": [
+      "u-067-system.elicitation_complete",
+    ],
+  },
+  "system.hook_progress": {
+    "hidden": [],
+    "shown": [
+      "u-017-system.hook_progress",
+    ],
+  },
+  "system.hook_response": {
+    "hidden": [],
+    "shown": [
+      "u-018-system.hook_response",
+    ],
+  },
+  "system.hook_started": {
+    "hidden": [],
+    "shown": [
+      "u-016-system.hook_started",
+    ],
+  },
+  "system.per_turn_effort_changed": {
+    "hidden": [],
+    "shown": [
+      "u-066-system.per_turn_effort_changed",
+    ],
+  },
+  "system.permission_check_status": {
+    "hidden": [],
+    "shown": [
+      "u-078-system.permission_check_status",
+    ],
+  },
+  "system.session_metadata": {
+    "hidden": [],
+    "shown": [
+      "u-068-system.session_metadata",
+    ],
+  },
+  "system.session_title_changed": {
+    "hidden": [],
+    "shown": [
+      "u-069-system.session_title_changed",
+    ],
+  },
+  "system.ui_focus": {
+    "hidden": [],
+    "shown": [
+      "u-072-system.ui_focus",
+    ],
+  },
+  "system.ui_invalidate": {
+    "hidden": [],
+    "shown": [
+      "u-071-system.ui_invalidate",
+    ],
+  },
+  "system.ui_notify": {
+    "hidden": [],
+    "shown": [
+      "u-075-system.ui_notify",
+    ],
+  },
+  "system.ui_notify_cancel": {
+    "hidden": [],
+    "shown": [
+      "u-076-system.ui_notify_cancel",
+    ],
+  },
+  "system.ui_panes": {
+    "hidden": [],
+    "shown": [
+      "u-073-system.ui_panes",
+    ],
+  },
+  "system.ui_placed": {
+    "hidden": [],
+    "shown": [
+      "u-074-system.ui_placed",
+    ],
+  },
+  "system.ui_scroll": {
+    "hidden": [],
+    "shown": [
+      "u-077-system.ui_scroll",
+    ],
+  },
+  "system.ui_status": {
+    "hidden": [],
+    "shown": [
+      "u-070-system.ui_status",
+    ],
+  },
+}
+`;

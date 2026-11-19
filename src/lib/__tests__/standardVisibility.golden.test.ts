@@ -51,3 +51,32 @@ describe('what Standard draws (golden — never update with -u)', () => {
     expect(drawnUuids(transcriptItems(ALL_KIND_RECORDS, mergeConfig(GREG_RENDERING_CONFIG), 'standard'))).toMatchSnapshot();
   });
 });
+
+// Each kind set to Verbose and to Never, one at a time, under each record
+// rule. Pins the two ways the old settings hid a kind — a line Compact hid,
+// a record Never dropped — which the v6 migration has to reproduce for every
+// kind separately (Modern draws thinking, tool calls and answers as its own
+// items, which Verbose never hid).
+describe('what Standard draws per kind setting (golden — never update with -u)', () => {
+  const kinds = Object.keys(KIND_REGISTRY);
+  for (const rules of ['compact', 'verbose'] as const) {
+    for (const visibility of ['verbose', 'never'] as const) {
+      it(`every kind set to ${visibility}, one at a time, recordRules ${rules}`, () => {
+        // Only what differs from the rule's baseline, so the snapshot reads
+        // as "setting this kind hid these records".
+        const base = new Set(drawnUuids(transcriptItems(ALL_KIND_RECORDS, withRules(rules), 'standard')));
+        const changed: Record<string, { hidden: string[]; shown: string[] }> = {};
+        for (const id of kinds) {
+          const cfg = withRules(rules);
+          cfg.kinds[id] = { visibility };
+          const drawn = drawnUuids(transcriptItems(ALL_KIND_RECORDS, cfg, 'standard'));
+          const now = new Set(drawn);
+          const hidden = [...base].filter((u) => !now.has(u));
+          const shown = drawn.filter((u) => !base.has(u));
+          if (hidden.length || shown.length) changed[id] = { hidden, shown };
+        }
+        expect(changed).toMatchSnapshot();
+      });
+    }
+  }
+});
