@@ -73,6 +73,27 @@ describe('Settings › Chats', () => {
     expect(within(editor).queryByText(/Presentation|Alignment|Border style|Header label/)).toBeNull();
   });
 
+  // A kind's built-in default is what it draws with until you change it, so
+  // the editor shows that, not the category it would fall back to.
+  it("shows a kind's built-in default, not its category's", () => {
+    renderSettings();
+    fireEvent.click(screen.getByRole('button', { name: 'Expand all' }));
+    fireEvent.click(within(tree()).getByText('Coordinator message'));
+    const editor = screen.getByRole('region', { name: 'Coordinator message settings' });
+    expect(within(editor).getByLabelText(/color picker/i)).toHaveValue('#f59e0b');
+    expect(within(editor).getByLabelText(/color hex/i)).toHaveAttribute('placeholder', 'Default · #f59e0b');
+    expect(within(editor).queryByText(/User's color/)).toBeNull();
+    expect(within(editor).getByText(/Hidden by default\./)).toBeInTheDocument();
+  });
+
+  it("names the category when a kind has no default of its own", () => {
+    renderSettings();
+    fireEvent.click(screen.getByRole('button', { name: 'Expand all' }));
+    fireEvent.click(within(tree()).getByText('Tool result'));
+    const editor = screen.getByRole('region', { name: 'Tool result settings' });
+    expect(within(editor).getByLabelText(/color hex/i).getAttribute('placeholder')).toMatch(/^User's color · #/);
+  });
+
   it('saves Show in Standard on the kind', async () => {
     renderSettings();
     // Let the saved config load first, or it replaces the edit.

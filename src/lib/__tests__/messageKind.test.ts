@@ -55,6 +55,8 @@ const EMITTABLE_IDS = [
   "attachment.instructions", "attachment.nested_memory",
   "attachment.mcp_instructions_delta", "attachment.agent_listing_delta",
   "attachment.deferred_tools_delta", "attachment.skill_listing", "attachment.project_doc_reads",
+  // the CLI's own bookkeeping latches (cliSidechannelRecords.ts)
+  "cli-state",
 ];
 
 describe('classifier ↔ registry coverage', () => {
@@ -661,5 +663,17 @@ describe('classifyStandaloneKind — control-change', () => {
     expect(classifyStandaloneKind(e as unknown as JsonlNode, [])).toBe('control.effort');
     const m = { kind: 'control-change', control: 'model', value: 'opus', sessionId: 's', receivedAt: 't' };
     expect(classifyStandaloneKind(m as unknown as JsonlNode, [])).toBe('control.model');
+  });
+});
+
+describe('classifyStandaloneKind — CLI state records', () => {
+  it('gives the CLI bookkeeping latches a kind of their own', () => {
+    const node = { kind: 'unknown', sessionId: '', receivedAt: null, raw: { type: 'atis-latch', atis: '' } } as unknown as JsonlNode;
+    expect(classifyStandaloneKind(node, [node])).toBe('cli-state');
+  });
+
+  it('leaves a type nothing knows unclassified', () => {
+    const node = { kind: 'unknown', sessionId: '', receivedAt: null, raw: { type: 'brand-new' } } as unknown as JsonlNode;
+    expect(classifyStandaloneKind(node, [node])).toBeNull();
   });
 });

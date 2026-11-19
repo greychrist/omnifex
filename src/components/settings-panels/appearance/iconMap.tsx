@@ -116,6 +116,7 @@ import {
   FolderSearch,
   ListTodo,
   Wrench,
+  Workflow,
 } from "lucide-react";
 import type { IconName } from "@/lib/messageRenderingConfig";
 
@@ -223,6 +224,7 @@ const LUCIDE_MAP: Record<string, React.ComponentType<{ className?: string }>> = 
   FolderSearch,
   ListTodo,
   Wrench,
+  Workflow,
 };
 
 export const IconRenderer: React.FC<{ name: IconName; className?: string }> = ({

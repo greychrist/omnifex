@@ -322,6 +322,7 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
         },
         onReset: () => { resetCategory(c); },
         inheritedCategoryLabel: undefined as string | undefined,
+        builtIn: undefined as Partial<KindStyle> | undefined,
         override: undefined as Partial<KindStyle> | undefined,
         offersStandard: true,
         offersColor: true,
@@ -341,6 +342,7 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
         onClearField: (field: keyof KindStyle) => { clearKindField(id, field); },
         onReset: () => { resetKind(id); },
         inheritedCategoryLabel: config.categories[cat].label,
+        builtIn: def?.default,
         override: config.kinds[id],
         // Kinds Modern draws as its own items are always in Standard.
         offersStandard: !MODERN_ITEM_KINDS.has(id),
@@ -413,6 +415,7 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
                   style={editor.style}
                   override={editor.override}
                   inheritedCategoryLabel={editor.inheritedCategoryLabel}
+                  builtIn={editor.builtIn}
                   onChange={editor.onChange}
                   onClearField={editor.onClearField}
                   onReset={editor.onReset}

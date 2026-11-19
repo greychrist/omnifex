@@ -19,6 +19,9 @@ interface KindEditorProps {
   override?: Partial<KindStyle>;
   /** Kind mode: the category it inherits from, for the reset labels. */
   inheritedCategoryLabel?: string;
+  /** Kind mode: the kind's built-in default (its registry entry). A field set
+   *  there is what an unset field falls back to, not the category. */
+  builtIn?: Partial<KindStyle>;
   onChange: (patch: Partial<KindStyle>) => void;
   /** Put a field back: a kind inherits again, a category takes its default. */
   onClearField: (field: keyof KindStyle) => void;
@@ -41,6 +44,7 @@ export const KindEditor: React.FC<KindEditorProps> = ({
   style,
   override,
   inheritedCategoryLabel,
+  builtIn,
   onChange,
   onClearField,
   onReset,
@@ -50,6 +54,7 @@ export const KindEditor: React.FC<KindEditorProps> = ({
   const isKind = mode === "kind";
   const inherited = (field: keyof KindStyle) => isKind && override?.[field] === undefined;
   const from = inheritedCategoryLabel ?? "category";
+  const hasDefault = (field: keyof KindStyle) => builtIn?.[field] !== undefined;
 
   return (
     <section role="region" aria-label={`${label} settings`} className="space-y-4">
@@ -77,7 +82,7 @@ export const KindEditor: React.FC<KindEditorProps> = ({
               onClick={() => { onClearField("icon"); }}
               className="text-[10px] text-muted-foreground hover:text-foreground underline underline-offset-2"
             >
-              Use {from}'s
+              {hasDefault("icon") ? "Use default" : `Use ${from}'s`}
             </button>
           )}
         </div>
@@ -88,8 +93,9 @@ export const KindEditor: React.FC<KindEditorProps> = ({
       <ColorField
         name={label}
         title="Color"
-        unsetLabel={isKind ? `${from}'s color` : "default"}
+        unsetLabel={isKind && !hasDefault("accentColor") ? `${from}'s color` : "default"}
         value={isKind ? (override?.accentColor ?? null) : style.accentColor}
+        fallback={isKind ? style.accentColor : undefined}
         onChange={(next) => {
           if (next === null) onClearField("accentColor");
           else onChange({ accentColor: next });
@@ -105,7 +111,9 @@ export const KindEditor: React.FC<KindEditorProps> = ({
             {style.alwaysShown
               ? "A turn boundary: always shown."
               : isKind && inherited("standard")
-                ? `Following ${from}. Expanded always shows it.`
+                ? hasDefault("standard")
+                  ? `${style.standard ? "Shown" : "Hidden"} by default. Expanded always shows it.`
+                  : `Following ${from}. Expanded always shows it.`
                 : "Expanded always shows it."}
           </p>
         </div>

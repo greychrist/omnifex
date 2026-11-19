@@ -26,6 +26,7 @@ import { transcriptIndex } from './transcriptIndex';
 import { detectSkillInjection } from './skillDetection';
 import { isSystemContextText } from './blockKind';
 import { commandEnvelopeKind, isRecapCommandRecord } from './commandEnvelope';
+import { isCliSidechannelRecord } from './cliSidechannelRecords';
 
 /**
  * Renderable in the chat feed for the purpose of "is this message
@@ -135,6 +136,7 @@ export function classifyStandaloneKind(
       const s = raw as { summary?: string; leafUuid?: string };
       if (s.summary && s.leafUuid) return 'summary.compaction';
     }
+    if (isCliSidechannelRecord(raw)) return 'cli-state';
     return null;
   }
 

@@ -20,7 +20,10 @@ export const ColorField: React.FC<{
   onEnabledChange?: (next: boolean) => void;
   /** The visible title; `${name} color` unless a heading already says so. */
   title?: string;
-}> = ({ name, unsetLabel = "theme default", value, onChange, enabled, onEnabledChange, title = `${name} color` }) => {
+  /** The color an unset value draws with, when it is known: shown in the
+   *  swatch and the hex field's placeholder so unset never reads as gray. */
+  fallback?: string;
+}> = ({ name, unsetLabel = "theme default", value, onChange, enabled, onEnabledChange, title = `${name} color`, fallback }) => {
   const hasToggle = enabled !== undefined && onEnabledChange !== undefined;
   const off = hasToggle && !enabled;
   const lower = name.toLowerCase();
@@ -64,7 +67,7 @@ export const ColorField: React.FC<{
         <input
           type="color"
           // The native picker takes only #rrggbb; alpha lives in the hex field.
-          value={value ? toPickerHex(value) : "#888888"}
+          value={toPickerHex(value ?? fallback ?? "#888888")}
           onChange={(e) => { onChange(e.target.value.toLowerCase()); }}
           className={cn(
             "h-9 w-12 cursor-pointer rounded-md border border-border",
@@ -76,7 +79,7 @@ export const ColorField: React.FC<{
         />
         <Input
           value={text}
-          placeholder={unsetLabel}
+          placeholder={fallback ? `${capitalize(unsetLabel)} · ${fallback}` : unsetLabel}
           onChange={(e) => {
             const v = e.target.value.trim();
             setText(v);
@@ -90,6 +93,10 @@ export const ColorField: React.FC<{
     </div>
   );
 };
+
+function capitalize(s: string): string {
+  return s ? s[0].toUpperCase() + s.slice(1) : s;
+}
 
 /** `#rgb` / `#rrggbbaa` → `#rrggbb`, the only form `<input type="color">` accepts. */
 function toPickerHex(hex: string): string {

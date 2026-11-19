@@ -20,6 +20,7 @@ import { KIND_REGISTRY, resolveKind, type IconName, type MessageRenderingConfig 
 import { classifyStandaloneKind } from './messageKind';
 import { bookkeepingText, progressText, rateLimitText, streamEnvelopeText, systemRecordText } from './recordText';
 import { summariseContextAttachment } from './contextLedger';
+import { isTaskLifecycleMarker } from './subagentEvents';
 import { commandEnvelopeKind, localCommandOutput } from './commandEnvelope';
 import { EFFORT_OPTIONS, PERMISSION_OPTIONS } from './sessionDefaultOptions';
 import { EFFORT_LEVELS, PERMISSION_MODES } from '@/components/ControlBar';
@@ -221,6 +222,18 @@ function specificLine(node: JsonlNode, kindId: string, icon: IconName, label: st
       if (raw.type === 'summary') {
         const summary = (raw as { summary?: unknown }).summary;
         return withText({ icon, title: label }, typeof summary === 'string' ? summary : '');
+      }
+      // Expanded draws every record, so the ones we classify on purpose get
+      // muted lines of their own; "Unrecognized" stays reserved for types
+      // nothing knows, which is what the CLI review looks for.
+      const json = JSON.stringify(raw, null, 2);
+      if (kindId === 'cli-state') {
+        return { icon, title: `${label}: ${String(raw.type)}`, body: json, mono: true, fold: true };
+      }
+      if (isTaskLifecycleMarker(raw)) {
+        const r = raw as { subtype: string; task_type?: unknown; description?: unknown; status?: unknown };
+        const detail = [r.task_type, r.description, r.status].filter((v): v is string => typeof v === 'string' && v !== '').join(' · ');
+        return { icon, title: humanize(r.subtype), ...(detail ? { detail } : {}), body: json, mono: true, fold: true };
       }
       const base = typeof raw.type === 'string' ? raw.type : 'untyped record';
       const subtype = (raw as { subtype?: unknown }).subtype;

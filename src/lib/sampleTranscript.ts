@@ -121,6 +121,8 @@ const entries: [string, JsonlNode][] = [
   rec('unknown', { type: 'brand_new_record', payload: 1 }),
   rec('user.prompt', user([text('Thanks, ship it.')], { origin: { kind: 'human' } })),
   rec('assistant.text.endTurn', assistant([text('Shipped.')])),
+  // CLI state rides at the end so adding it shifted no earlier record's id.
+  rec('cli-state', { type: 'session-owner', accountUuid: 'acct', organizationUuid: 'org' }),
 ];
 
 /** Every record, in transcript order. */

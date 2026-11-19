@@ -80,6 +80,32 @@ describe('modernLineOf — what Modern draws instead of a Compact card', () => {
     expect(l?.body).toContain('"brand-new"');
   });
 
+  // Expanded draws every record, but "Unrecognized" is reserved for types
+  // nothing knows: the CLI review leans on that card to spot new ones.
+  it('draws known CLI bookkeeping as a muted state line, not as unrecognized', () => {
+    const l = line({ kind: 'unknown', sessionId: '', receivedAt: null, raw: { type: 'session-owner', accountUuid: 'a', sessionId: 's' } });
+    expect(l).toMatchObject({ title: 'CLI state: session-owner', mono: true, fold: true });
+    expect(l?.tone).toBeUndefined();
+    expect(l?.body).toContain('"accountUuid"');
+    // Its own kind, pale blue by default (Settings › Chats can change it).
+    expect(l?.accent).toEqual({ kind: 'css', color: '#93c5fd' });
+    // An automation glyph, not the unknown kind's question mark.
+    expect(l?.icon).toBe('Workflow');
+  });
+
+  it('draws a task lifecycle frame as a task line, not as unrecognized', () => {
+    const started = line({ kind: 'unknown', sessionId: '', receivedAt: 't', raw: {
+      type: 'system', subtype: 'task_started', task_type: 'local_bash', description: 'Build the link',
+    } });
+    expect(started).toMatchObject({ title: 'Task started', detail: 'local_bash · Build the link', mono: true, fold: true });
+    expect(started?.tone).toBeUndefined();
+    const done = line({ kind: 'unknown', sessionId: '', receivedAt: 't', raw: {
+      type: 'system', subtype: 'task_notification', status: 'completed',
+    } });
+    expect(done).toMatchObject({ title: 'Task notification', detail: 'completed' });
+    expect(done?.tone).toBeUndefined();
+  });
+
   // A record with no text to show, such as an assistant image, is still
   // drawn: its raw JSON, folded.
   it('draws a record with no text as its folded raw JSON', () => {
