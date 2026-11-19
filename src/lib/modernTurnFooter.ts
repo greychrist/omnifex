@@ -74,7 +74,11 @@ export function modernTurnFooters(
     }
     if (item.kind === 'work') steps += item.entries.filter((e) => e.type === 'tool').length;
     if (item.kind !== 'text') return;
-    const next = items[i + 1];
+    // A compaction marker is not a turn of its own: /compact writes it before
+    // the command's prompt, so look past it to what follows.
+    let j = i + 1;
+    while (items[j]?.kind === 'compaction') j++;
+    const next = items[j];
     const endsTurn = next ? next.kind === 'prompt' : !running;
     if (!endsTurn) return;
     const started = promptNode ? timeOf(promptNode) : null;

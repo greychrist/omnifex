@@ -64,6 +64,33 @@ describe('modernTurnFooters', () => {
     expect(footers.size).toBe(0);
   });
 
+  // /compact writes its marker before the command's prompt, so the answer
+  // that ended the turn was followed by the compaction, not a prompt, and
+  // lost its mark (session 57dcbf21, 2026-11-18).
+  it('marks an answer followed by a compaction and then a prompt', () => {
+    const boundary = {
+      kind: 'system', subtype: 'compact_boundary', sessionId: '', receivedAt: at(5),
+      raw: { type: 'system', subtype: 'compact_boundary', compactMetadata: { trigger: 'manual', preTokens: 421_000 } },
+    } as unknown as JsonlNode;
+    const { items, footers } = footersFor([prompt('go', 0), text('Released.', 4), boundary, prompt('/compact', 6)]);
+    expect(items.map((i) => i.kind)).toEqual(['prompt', 'text', 'compaction', 'prompt']);
+    expect(footers.has(items[1].key)).toBe(true);
+  });
+
+  // An auto-compaction can land mid-turn; the work after it means the
+  // answer before it did not end the turn.
+  it('does not mark an answer when the turn goes on after a compaction', () => {
+    const boundary = {
+      kind: 'system', subtype: 'compact_boundary', sessionId: '', receivedAt: at(5),
+      raw: { type: 'system', subtype: 'compact_boundary', compactMetadata: { trigger: 'auto', preTokens: 421_000 } },
+    } as unknown as JsonlNode;
+    const { items, footers } = footersFor([
+      prompt('go', 0), text('Checking.', 4), boundary, toolUse('a', 6), toolResult('a', 7), text('Done.', 8),
+    ]);
+    const marked = items.filter((i) => footers.has(i.key)).map((i) => (i.kind === 'text' ? i.text : i.kind));
+    expect(marked).toEqual(['Done.']);
+  });
+
   it('has no duration without a prompt to measure from', () => {
     const { items, footers } = footersFor([text('resumed', 5)]);
     expect(footers.get(items[0].key)?.ms).toBeNull();

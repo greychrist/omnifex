@@ -59,3 +59,41 @@ describe('isRepeatedRecord', () => {
     expect(isRepeatedRecord(messages, echo('hi'))).toBe(false);
   });
 });
+
+// After /compact the CLI writes the last reply in again: a new uuid, but the
+// same message id and every usage field 0 (session 57dcbf21, lines 1425 and
+// 1443, 2026-11-18). It rendered as a second copy of the reply, took the
+// turn's "Answer" label from the original, and gave the context rail a "0".
+describe('the reply the CLI re-writes after /compact', () => {
+  const ZERO = { input_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, output_tokens: 0 };
+  const reply = (uuid: string, usage: Record<string, number>, id = 'msg_1'): JsonlNode =>
+    classifyJsonlLine({
+      type: 'assistant',
+      uuid,
+      timestamp: '2026-11-18T18:07:54.166Z',
+      message: { id, role: 'assistant', content: [{ type: 'text', text: 'v0.5.50 is published' }], usage },
+    })!;
+  const original = reply('d083', { ...ZERO, cache_read_input_tokens: 420_000 });
+  const copy = reply('d487', ZERO);
+
+  it('drops the zero-usage copy of a message the tab already holds', () => {
+    expect(withoutRepeatedRecords([original, copy])).toEqual([original]);
+    expect(isRepeatedRecord([original], copy)).toBe(true);
+  });
+
+  // Another record of the same message — the CLI writes one per content
+  // block — carries real usage, and stays.
+  it('keeps a second record of the same message that has real usage', () => {
+    const block = reply('e001', { ...ZERO, cache_read_input_tokens: 420_000 });
+    expect(withoutRepeatedRecords([original, block])).toEqual([original, block]);
+    expect(isRepeatedRecord([original], block)).toBe(false);
+  });
+
+  // A synthetic message (an API error, "No response requested") also has zero
+  // usage, but its id is its own.
+  it('keeps a zero-usage message whose id the tab has not seen', () => {
+    const synthetic = reply('f001', ZERO, 'msg_synthetic');
+    expect(withoutRepeatedRecords([original, synthetic])).toEqual([original, synthetic]);
+    expect(isRepeatedRecord([original], synthetic)).toBe(false);
+  });
+});
