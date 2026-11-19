@@ -27,12 +27,11 @@ import { FindBar } from "@/components/FindBar";
 import { useFindInChat } from "@/hooks/useFindInChat";
 import { useRenderProfile } from "@/hooks/useRenderProfile";
 import { renderProfiler } from "@/lib/renderProfiler";
-import { buildCompactItems, withoutNeverShown } from "@/lib/compactGrouping";
-import { collapseRepeats } from "@/lib/collapseRepeats";
-import { filterDisplayableMessages } from "@/lib/messageFilters";
+import { buildCompactItems } from "@/lib/compactGrouping";
 import { createRowLookupCache, rowLookups } from "@/lib/rowLookups";
 import { MessageRenderingOverrideProvider, useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
 import { revealNeverShown, rulesViewMode } from "@/lib/messageRenderingConfig";
+import { displayableRecords } from "@/lib/transcriptItems";
 import { useAutoScroll } from "@/contexts/AutoScrollContext";
 import { useSessionGauges } from "@/contexts/SessionGaugesContext";
 import { buildContextTimeline } from "@/lib/contextTimeline";
@@ -236,12 +235,10 @@ function ClaudeTranscriptImpl({
   // kind's collapse rule, honors the user's hard-filter toggles and the kinds
   // set to "Never" in Appearance settings). Repeats fold first, over the
   // unfiltered list, so a hidden message still ends a run.
+  // The same pipeline the golden test pins (transcriptItems.ts).
   const displayableMessages = useMemo(
-    () => withoutNeverShown(
-      filterDisplayableMessages(collapseRepeats(messages, renderConfig, rulesMode)),
-      renderConfig,
-    ),
-    [messages, renderConfig, rulesMode],
+    () => displayableRecords(messages, savedRenderConfig, viewMode).displayable,
+    [messages, savedRenderConfig, viewMode],
   );
   /**
    * The last row that will actually draw a rail — the tail of the transcript
