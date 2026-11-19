@@ -323,3 +323,28 @@ describe('showsGutterDelta', () => {
     expect(showsGutterDelta(0, 'verbose')).toBe(false);
   });
 });
+
+describe('buildContextTimeline — the reply the CLI re-writes after /compact', () => {
+  // The CLI copies the last reply in after the compact_boundary with all-zero
+  // usage. It must not badge, and must not use up the reset: the "compacted"
+  // drop belongs on the first real reply after the boundary.
+  const zeroCopy = (): JsonlNode => {
+    const node = assistant(100_000) as unknown as { raw: { message: { usage: Record<string, number> } } };
+    node.raw.message.usage = {
+      input_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, output_tokens: 0,
+    };
+    return node as unknown as JsonlNode;
+  };
+
+  it('badges neither the copy nor anything before the boundary as a drop', () => {
+    const before = assistant(421_000);
+    const copy = zeroCopy();
+    const after = assistant(79_000);
+    const t = buildContextTimeline([before, prompt(), compactBoundary(), copy, prompt(), after], opts);
+    expect(t.get(before)).toMatchObject({ tokens: 421_000, isSample: true, isReset: false });
+    expect(t.get(copy)).toMatchObject({ tokens: 421_000, isSample: false });
+    expect(t.get(after)).toMatchObject({
+      tokens: 79_000, isSample: true, isReset: true, prevTokens: 421_000, delta: null,
+    });
+  });
+});

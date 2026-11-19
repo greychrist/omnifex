@@ -8,22 +8,16 @@ import type { ViewMode } from "@/components/SessionViewToggle";
  * Green / amber / red by proximity to the budget, so a long session can be
  * scanned for where it got expensive without reading a number.
  *
- * Split into text and background maps because a compaction reset paints its
- * dashes from `currentColor`, which the `text-*` half supplies.
- *
  * Exactly the badge's color, solid: a lighter, translucent line under a
  * solid badge read as two different greens.
  *
- * Under the budget draws no solid line at all: that is the normal case, so
- * the rail only appears where context is getting expensive. A reset still
- * dashes in green, from the `text-*` half.
+ * Under the budget draws no line at all: that is the normal case, so the rail
+ * only appears where context is getting expensive.
+ *
+ * A compaction used to dash the line. The "compacted" note already says it,
+ * and the dashes spanned the reply row rather than the compaction itself
+ * (Greg, 2026-11-18).
  */
-const RAIL_TEXT: Record<ContextPressureLevel, string> = {
-  none: "text-emerald-700",
-  warn: "text-amber-500",
-  critical: "text-red-600",
-};
-
 const RAIL_BG: Record<ContextPressureLevel, string | null> = {
   none: null,
   warn: "bg-amber-500",
@@ -78,16 +72,6 @@ export interface ContextTimelineTickProps {
  *  frame (see `data-transcript-frame` in ClaudeTranscript). Shared so the
  *  empty and drawn states agree. */
 const GUTTER = "relative w-14 shrink-0 self-stretch select-none min-h-9";
-
-/**
- * Dashes for a compaction reset, drawn as a gradient rather than a dashed
- * border. A border cannot carry the level color here: styles.css declares an
- * unlayered `* { border-color: var(--color-border) }` that outranks every
- * Tailwind border-color utility, and a 4px dashed border would also need a
- * zero-width box to line up with the solid rail.
- */
-const RESET_DASHES =
-  "repeating-linear-gradient(to bottom, currentColor 0 4px, transparent 4px 8px)";
 
 /**
  * One row of the transcript's context rail: a slim continuous vertical line,
@@ -146,17 +130,14 @@ export const ContextTimelineTick: React.FC<ContextTimelineTickProps> = ({
           centred badges at 2px it read as too much. */}
       <div
         data-timeline-rail
-        data-timeline-reset={isReset ? "" : undefined}
         className={cn(
           "absolute left-[7px] w-px",
           // `bottom-4` cancels the body column's `pb-4` exactly, so the line
           // ends flush with the card's bottom edge; the rounded cap closes it
           // off rather than leaving a cut stem.
           isLast ? "top-0 bottom-4 rounded-b-full" : "inset-y-0",
-          RAIL_TEXT[level],
-          !isReset && RAIL_BG[level],
+          RAIL_BG[level],
         )}
-        style={isReset ? { backgroundImage: RESET_DASHES } : undefined}
       />
       {isSample && (
         // In normal flow, NOT absolute. An absolute readout contributes no

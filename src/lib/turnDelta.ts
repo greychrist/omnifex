@@ -68,12 +68,16 @@ export function turnContextTotal(node: JsonlNode): number | null {
       }
     | undefined;
   if (!usage) return null;
-  return (
+  const total =
     (usage.input_tokens || 0) +
     (usage.cache_read_input_tokens || 0) +
     (usage.cache_creation_input_tokens || 0) +
-    (usage.output_tokens || 0)
-  );
+    (usage.output_tokens || 0);
+  // After /compact the CLI re-writes the last reply with every usage field 0.
+  // No real request reads an empty context, so a zero is no reading at all:
+  // counted, it drew a "0" badge and a "−421k" drop on the turn before the
+  // compaction.
+  return total > 0 ? total : null;
 }
 
 /** Newest assistant context total in [from, to], or null if there is none. */

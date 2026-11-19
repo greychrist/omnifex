@@ -99,6 +99,18 @@ describe('turnContextTotal', () => {
     expect(turnContextTotal(sidechain(900_000))).toBeNull();
     expect(turnContextTotal(forwarded(900_000))).toBeNull();
   });
+
+  // After /compact the CLI re-writes the last reply with every usage field 0.
+  // No real request reads an empty context, so a zero is no reading at all —
+  // counted, it drew a "0" badge and a "−421k" drop on the turn before the
+  // compaction (Greg, 2026-11-18).
+  it('is null when every usage field is zero', () => {
+    const node = assistant(477_456) as unknown as { raw: { message: { usage: Record<string, number> } } };
+    node.raw.message.usage = {
+      input_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, output_tokens: 0,
+    };
+    expect(turnContextTotal(node as unknown as JsonlNode)).toBeNull();
+  });
 });
 
 // CLI 2.1.265: a forked skill's kickoff prompt streams as a user envelope
