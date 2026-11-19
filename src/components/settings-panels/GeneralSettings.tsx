@@ -73,10 +73,8 @@ function SettingsSection({ title, children }: { title: string; children: React.R
 }
 
 const CHAT_FORMATS: { value: ViewMode; label: string }[] = [
-  { value: "compact", label: "Compact" },
-  { value: "verbose", label: "Verbose" },
-  { value: "all", label: "All" },
-  { value: "modern", label: "Modern" },
+  { value: "standard", label: "Standard" },
+  { value: "expanded", label: "Expanded" },
 ];
 
 /** Every control saves as it changes and reports through `track` (see saveStatus.tsx). */
@@ -302,14 +300,14 @@ export const GeneralSettings: React.FC = () => {
                 (useSessionViewMode), an open one stays where it is. */}
             <div className="flex items-center justify-between">
               <div>
-                <Label>Default chat format</Label>
+                <Label>Default chat view</Label>
                 <p className="text-caption text-muted-foreground mt-1">
-                  The format a new session opens in. Each session can still switch its own.
+                  The view a new session opens in. Each session can still switch its own.
                 </p>
               </div>
               <div
                 role="radiogroup"
-                aria-label="Default chat format"
+                aria-label="Default chat view"
                 className="flex items-center gap-1 p-1 bg-muted/30 rounded-lg"
               >
                 {CHAT_FORMATS.map((f) => {

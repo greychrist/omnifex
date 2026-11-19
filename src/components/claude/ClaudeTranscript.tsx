@@ -4,15 +4,13 @@ import { ChevronDown, ChevronUp, ChevronsDown, ChevronsUp, MessageSquare, User }
 import { Button } from "@/components/ui/button";
 import { TooltipSimple } from "@/components/ui/tooltip-modern";
 import { SessionGutter, GUTTER_BUTTON, GUTTER_GROUP_BUTTON, GutterButtonGroup, InspectorGutterButton, type InspectorGutterButtonProps } from "@/components/SessionGutter";
-import { StreamMessage } from "@/components/StreamMessage";
 import { TranscriptRowBoundary } from "@/components/claude/TranscriptRowBoundary";
-import { HiddenEventsGroup } from "@/components/HiddenEventsGroup";
 import { TranscriptSkeleton } from "@/components/claude/TranscriptSkeleton";
 import { LiveActivity } from "@/components/transcript-modern/ChainOfThought";
 import { phaseLabel } from "@/lib/phaseLabel";
 
 const COMPACTING_LABEL = phaseLabel('compacting');
-import { buildModernItems, keepUnchangedItems, type ModernItem } from "@/lib/modernGrouping";
+import { keepUnchangedItems, type ModernItem } from "@/lib/modernGrouping";
 import { keepUnchangedFooters, modernTurnFooters, type TurnFooter } from "@/lib/modernTurnFooter";
 import {
   ModernLiveAnswer,
@@ -21,17 +19,13 @@ import {
   firstNodeOf,
   type ModernRowContext,
 } from "@/components/transcript-modern/ModernTranscriptItem";
-import { InflightAssistantBubble } from "@/components/InflightAssistantBubble";
-import { InflightThinking } from "@/components/InflightThinking";
 import { FindBar } from "@/components/FindBar";
 import { useFindInChat } from "@/hooks/useFindInChat";
 import { useRenderProfile } from "@/hooks/useRenderProfile";
 import { renderProfiler } from "@/lib/renderProfiler";
-import { buildCompactItems } from "@/lib/compactGrouping";
 import { createRowLookupCache, rowLookups } from "@/lib/rowLookups";
 import { MessageRenderingOverrideProvider, useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
-import { revealNeverShown, rulesViewMode } from "@/lib/messageRenderingConfig";
-import { displayableRecords } from "@/lib/transcriptItems";
+import { displayableRecords, groupRecords } from "@/lib/transcriptItems";
 import { useAutoScroll } from "@/contexts/AutoScrollContext";
 import { useSessionGauges } from "@/contexts/SessionGaugesContext";
 import { buildContextTimeline } from "@/lib/contextTimeline";
@@ -41,7 +35,6 @@ import { afterContentResize, nextFollowing, USER_SCROLL_INTENT_MS } from "@/lib/
 import { stepTarget, isStepStop, isMainPrompt, STEP_MARGIN_PX, type StepDirection } from "@/lib/transcriptStepper";
 import { cn } from "@/lib/utils";
 import { logAndForget } from "@/lib/fireAndLog";
-import { rowKeyOf } from "@/lib/rowKey";
 import { earlierStart, windowStart } from "@/lib/transcriptWindow";
 import type { JsonlNode } from "@/types/jsonl";
 import type { ViewMode } from "@/components/SessionViewToggle";
@@ -80,10 +73,8 @@ export interface ClaudeTranscriptProps extends InspectorGutterButtonProps {
   outstandingWork: boolean;
   /** True when the inflight streaming bubble is visible — suppresses the typing-dots row. */
   hasInflightAssistant: boolean;
-  /** Activity gerund / label shown alongside the typing-dots bubble. */
+  /** Activity gerund / label; named while compaction runs. */
   currentActivity: string;
-  /** Running token total used in the typing-dots row. */
-  totalTokens: number;
   /** Context window for this session — scales the timeline rail's bars. */
   contextLimit: number;
   /** Error string to render under the transcript, if any. */
@@ -145,7 +136,6 @@ function ClaudeTranscriptImpl({
   outstandingWork,
   hasInflightAssistant,
   currentActivity,
-  totalTokens,
   contextLimit,
   error,
   tabId,
@@ -171,16 +161,6 @@ function ClaudeTranscriptImpl({
   }, [historyShown, messages.length]);
   const rendering = (messages.length > 0 && !historyShown) || viewMode !== liveViewMode;
   const { config: savedRenderConfig } = useMessageRenderingConfig();
-  // The format whose rules decide what shows: Modern borrows Compact's,
-  // Verbose's or All's (Settings › Modern › Show records like).
-  const rulesMode = rulesViewMode(viewMode, savedRenderConfig);
-  // The "All" rules render through a copy of the config with every "Never"
-  // kind demoted to verbose-only; rows get it from context below.
-  const showAll = rulesMode === 'all';
-  const renderConfig = useMemo(
-    () => (showAll ? revealNeverShown(savedRenderConfig) : savedRenderConfig),
-    [showAll, savedRenderConfig],
-  );
   const { followPx } = useAutoScroll();
   const { contextTimelineEnabled, setContextTimelineEnabled, contextJump, contextPressure } =
     useSessionGauges();
@@ -235,9 +215,10 @@ function ClaudeTranscriptImpl({
   // kind's collapse rule, honors the user's hard-filter toggles and the kinds
   // set to "Never" in Appearance settings). Repeats fold first, over the
   // unfiltered list, so a hidden message still ends a run.
-  // The same pipeline the golden test pins (transcriptItems.ts).
-  const displayableMessages = useMemo(
-    () => displayableRecords(messages, savedRenderConfig, viewMode).displayable,
+  // The same pipeline the golden test pins (transcriptItems.ts). `renderConfig`
+  // is the config the rows draw with: Expanded reveals kinds set to hidden.
+  const { displayable: displayableMessages, config: renderConfig } = useMemo(
+    () => displayableRecords(messages, savedRenderConfig, viewMode),
     [messages, savedRenderConfig, viewMode],
   );
   /**
@@ -274,9 +255,7 @@ function ClaudeTranscriptImpl({
   // touched — not every row (see keepUnchangedItems).
   const prevModernItemsRef = useRef<ModernItem[]>([]);
   const modernItems = useMemo(() => {
-    const next = viewMode === 'modern'
-      ? keepUnchangedItems(prevModernItemsRef.current, buildModernItems(displayableMessages, renderConfig, messages, renderConfig.modern.recordRules))
-      : [];
+    const next = keepUnchangedItems(prevModernItemsRef.current, groupRecords(displayableMessages, renderConfig, messages, viewMode));
     prevModernItemsRef.current = next;
     return next;
   }, [viewMode, displayableMessages, renderConfig, messages]);
@@ -288,13 +267,7 @@ function ClaudeTranscriptImpl({
     prevFootersRef.current = next;
     return next;
   }, [modernItems, messages, outstandingWork]);
-  const compactItems = useMemo(
-    () => (viewMode === 'compact' ? buildCompactItems(displayableMessages, renderConfig) : []),
-    [viewMode, displayableMessages, renderConfig],
-  );
-  const rowCount = viewMode === 'modern'
-    ? modernItems.length
-    : viewMode === 'compact' ? compactItems.length : displayableMessages.length;
+  const rowCount = modernItems.length;
   const lookupsForRef = useRef(lookupsFor);
   lookupsForRef.current = lookupsFor;
   const stableLookupsFor = useCallback((node: JsonlNode) => lookupsForRef.current(node), []);
@@ -329,12 +302,8 @@ function ClaudeTranscriptImpl({
   const jumpNonce = jumpTo?.nonce;
   const jumpRow = useMemo(() => {
     if (!jumpUuid) return -1;
-    if (viewMode === 'modern') return modernItems.findIndex((item) => messageUuidOf(firstNodeOf(item)) === jumpUuid);
-    if (viewMode === 'compact') {
-      return compactItems.findIndex((item) => item.kind === 'single' && messageUuidOf(item.message) === jumpUuid);
-    }
-    return displayableMessages.findIndex((message) => messageUuidOf(message) === jumpUuid);
-  }, [jumpUuid, viewMode, modernItems, compactItems, displayableMessages]);
+    return modernItems.findIndex((item) => messageUuidOf(firstNodeOf(item)) === jumpUuid);
+  }, [jumpUuid, modernItems]);
   // Find walks the DOM, so it sees the whole transcript only if all of it is
   // mounted while the bar is open.
   const start = findOpen
@@ -620,19 +589,9 @@ function ClaudeTranscriptImpl({
     if (!following && startRef.current > 0 && el.scrollTop < LOAD_EARLIER_PX) showEarlier();
   }, [isNearBottomRef, followPx, setFollowing, viewMode, showEarlier]);
 
-  const liveRows = (
-    <>
-      {/* The thought being typed (classic formats; Modern draws its own in
-          the live run). Renders null when no thought is streaming. */}
-      {viewMode !== 'modern' && !rendering && <InflightThinking tabId={tabId} />}
-      {/* Streaming answer — renders null when no in-flight slot is set.
-          Modern streams it in its own style, so the finished answer does not
-          change look when its record lands. */}
-      {viewMode === 'modern'
-        ? <ModernLiveAnswer tabId={tabId} />
-        : <InflightAssistantBubble tabId={tabId} />}
-    </>
-  );
+  // Streaming answer — renders null when no in-flight slot is set. Streamed
+  // in the answer's own style, so it does not change look when its record lands.
+  const liveRows = <ModernLiveAnswer tabId={tabId} />;
 
   return (
     <MessageRenderingOverrideProvider config={renderConfig}>
@@ -799,7 +758,7 @@ function ClaudeTranscriptImpl({
           // With the rail on, the gutter cell starts each row at the left
           // edge and the row's body carries the inset.
           timeline ? "pr-4" : "px-4",
-          viewMode === 'modern' && "modern-format",
+          "modern-format",
           !timeline && "space-y-4",
         )}
       >
@@ -824,8 +783,7 @@ function ClaudeTranscriptImpl({
             // In a row like any other: with the rail on, the row's gutter is
             // what keeps it inside the chat frame.
             ? withTimeline(undefined, <TranscriptSkeleton />)
-            : viewMode === 'modern'
-            ? modernItems.slice(start).map((item, j) => {
+            : modernItems.slice(start).map((item, j) => {
                 const i = start + j;
                 const anchor = anchorNodeOf(item);
                 const first = firstNodeOf(item);
@@ -850,75 +808,7 @@ function ClaudeTranscriptImpl({
                     )}
                   </div>
                 );
-              })
-            : viewMode !== 'compact'
-            ? displayableMessages.slice(start).map((message) => (
-                <div
-                  key={rowKeyOf(message)}
-                  className={ROW_CLASS}
-                  data-message-uuid={messageUuidOf(message)}
-                  data-transcript-step={isStepStop(message) ? "" : undefined}
-                  data-transcript-prompt={isMainPrompt(message) ? "" : undefined}
-                >
-                  {withTimeline(
-                    message,
-                    <TranscriptRowBoundary>
-                      <StreamMessage
-                        message={message}
-                        lookups={lookupsFor(message)}
-                        tabId={tabId}
-                        accountType={accountType}
-                        onResend={onResend}
-                      />
-                    </TranscriptRowBoundary>,
-                  )}
-                </div>
-              ))
-            : (() => {
-                return compactItems.slice(start).map((item) =>
-                  item.kind === 'single' ? (
-                    <div
-                      key={item.key}
-                      className={ROW_CLASS}
-                      data-message-uuid={messageUuidOf(item.message)}
-                      data-transcript-step={isStepStop(item.message) ? "" : undefined}
-                      data-transcript-prompt={isMainPrompt(item.message) ? "" : undefined}
-                    >
-                      {withTimeline(
-                        item.message,
-                        <TranscriptRowBoundary>
-                          <StreamMessage
-                            message={item.message}
-                            lookups={lookupsFor(item.message)}
-                            tabId={tabId}
-                            accountType={accountType}
-                            compact
-                            onResend={onResend}
-                          />
-                        </TranscriptRowBoundary>,
-                      )}
-                    </div>
-                  ) : (
-                    // A collapsed group is one landable row: it holds only
-                    // hidden events, so stepping past it entirely would skip
-                    // the expander that reaches them.
-                    <div key={item.key} data-transcript-step>
-                      {/* A collapsed group reports its EXIT state — the context
-                          size after everything inside it ran. */}
-                      {withTimeline(
-                        item.messages[item.messages.length - 1],
-                        <HiddenEventsGroup
-                          messages={item.messages}
-                          lookupsFor={lookupsFor}
-                          tabId={tabId}
-                          accountType={accountType}
-                          onResend={onResend}
-                        />,
-                      )}
-                    </div>
-                  ),
-                );
-              })()}
+              })}
 
           {/* The live rows render nothing most of the time, so they are not
               timeline rows (a row's spacing would leave a gap). With the rail
@@ -929,48 +819,10 @@ function ClaudeTranscriptImpl({
             ? <div data-live-inset className="pl-18">{liveRows}</div>
             : liveRows}
 
-          {/* Modern: the running turn's activity when no live run shows it. */}
-          {viewMode === 'modern' && !rendering && outstandingWork && !hasInflightAssistant && !waitingForPermission && (!liveRunShown || compacting) && withTimeline(
+          {/* The running turn's activity when no live run shows it. */}
+          {!rendering && outstandingWork && !hasInflightAssistant && !waitingForPermission && (!liveRunShown || compacting) && withTimeline(
             undefined,
             <LiveActivity tabId={tabId} phase={compacting ? currentActivity : null} />,
-          )}
-
-          {/* Loading indicator under the latest message — iMessage-style typing bubble.
-              Rendered inside contentRef (and before messagesEndRef) so the ResizeObserver
-              on contentRef catches its appearance/height changes, and scrollIntoView on
-              messagesEndRef scrolls past it instead of leaving it below the viewport.
-              Also kept visible during awaiting_background so the visual "in-flight"
-              cue bridges the parent's turn-end result to the eventual completion. */}
-          {outstandingWork && !hasInflightAssistant && viewMode !== 'modern' && withTimeline(
-            // No node, so the gutter cell is the empty spacer and the rail
-            // still ends on the last real message. The point is purely the
-            // indent: unwrapped, the dots bubble started hard against the
-            // transcript's left edge while every message card sat a gutter's
-            // width to the right of it.
-            undefined,
-            <motion.div
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.15 }}
-              className="flex justify-start mb-20"
-            >
-              <div className="max-w-[95%] space-y-2">
-                <div className="flex items-center gap-3">
-                  <div className="inline-flex items-center gap-1 rounded-2xl rounded-bl-sm bg-primary/10 border border-primary/20 px-4 py-3">
-                    <span className="typing-dot" />
-                    <span className="typing-dot" style={{ animationDelay: '0.15s' }} />
-                    <span className="typing-dot" style={{ animationDelay: '0.3s' }} />
-                  </div>
-                  <div className="flex items-baseline gap-2 text-xs font-mono">
-                    <span className="text-primary">✶</span>
-                    <span className="text-muted-foreground">{currentActivity}...</span>
-                    <span className="text-muted-foreground/60">
-                      (↓ {totalTokens.toLocaleString()} tokens)
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </motion.div>,
           )}
 
           {/* Error indicator */}

@@ -329,7 +329,7 @@ describe('ContextTimelineTick — readout order', () => {
   });
 
   it('shows the size alone when there is no delta to print', () => {
-    const { container } = render(<ContextTimelineTick point={point({ delta: 500 })} viewMode="compact" />);
+    const { container } = render(<ContextTimelineTick point={point({ delta: 500 })} viewMode="standard" />);
     expect(orderOf(container)).toEqual(['120k']);
   });
 });
@@ -353,13 +353,13 @@ describe('ContextTimelineTick — per-turn delta', () => {
     expect(screen.getByText('compacted')).toBeInTheDocument();
   });
 
-  it('hides sub-2k deltas in Compact and shows them in Verbose', () => {
+  it('hides sub-2k deltas in Standard and shows them in Expanded', () => {
     const { rerender } = render(
-      <ContextTimelineTick point={point({ delta: 900 })} viewMode="compact" />,
+      <ContextTimelineTick point={point({ delta: 900 })} viewMode="standard" />,
     );
     expect(screen.queryByText('+900')).not.toBeInTheDocument();
 
-    rerender(<ContextTimelineTick point={point({ delta: 900 })} viewMode="verbose" />);
+    rerender(<ContextTimelineTick point={point({ delta: 900 })} viewMode="expanded" />);
     expect(screen.getByText('+900')).toBeInTheDocument();
   });
 

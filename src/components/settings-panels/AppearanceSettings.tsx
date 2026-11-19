@@ -59,10 +59,9 @@ const FIRST_SELECTION: TreeSelection = { type: "category", id: "user" };
 const APPEARANCE_TABS: readonly string[] = ["kinds", "turns", "modern", "typography"];
 
 
-/** The turn preview draws Compact and Verbose only. Modern filters as
- *  Compact does, All shows what Verbose shows and more. */
+/** The classic turn preview's mode for a view (until it is replaced). */
 function previewModeOf(mode: ViewMode): "compact" | "verbose" {
-  return mode === "compact" || mode === "modern" ? "compact" : "verbose";
+  return mode === "standard" ? "compact" : "verbose";
 }
 
 export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast }) => {

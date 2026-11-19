@@ -143,9 +143,9 @@ describe("createDefaultConfig", () => {
 
 describe("mergeConfig", () => {
   it("returns defaults for non-object input", () => {
-    expect(mergeConfig(null).defaultViewMode).toBe("compact");
-    expect(mergeConfig("nope").defaultViewMode).toBe("compact");
-    expect(mergeConfig(42).defaultViewMode).toBe("compact");
+    expect(mergeConfig(null).defaultViewMode).toBe("standard");
+    expect(mergeConfig("nope").defaultViewMode).toBe("standard");
+    expect(mergeConfig(42).defaultViewMode).toBe("standard");
   });
 
   it("resets to defaults when saved version is not 5 (v4)", () => {
@@ -167,16 +167,17 @@ describe("mergeConfig", () => {
     expect(merged.kinds).toEqual({});
   });
 
-  it("applies valid view-mode override", () => {
-    expect(mergeConfig({ version: 5, defaultViewMode: "compact" }).defaultViewMode).toBe("compact");
-    // Every chat format can be the default, not only the two the setting began with.
-    for (const mode of ["verbose", "all", "modern"] as const) {
-      expect(mergeConfig({ version: 5, defaultViewMode: mode }).defaultViewMode).toBe(mode);
+  // Four chat formats became two views (2026-11-18): Compact and Modern
+  // land on Standard, Verbose and All on Expanded.
+  it("migrates the default view", () => {
+    for (const [saved, view] of [["compact", "standard"], ["modern", "standard"], ["verbose", "expanded"], ["all", "expanded"],
+      ["standard", "standard"], ["expanded", "expanded"]] as const) {
+      expect(mergeConfig({ version: 5, defaultViewMode: saved }).defaultViewMode).toBe(view);
     }
   });
 
   it("ignores invalid view-mode values", () => {
-    expect(mergeConfig({ version: 5, defaultViewMode: "weird" }).defaultViewMode).toBe("compact");
+    expect(mergeConfig({ version: 5, defaultViewMode: "weird" }).defaultViewMode).toBe("standard");
   });
 
   it("merges a valid kinds patch onto a v5 config", () => {
@@ -566,19 +567,19 @@ describe("typeface migration", () => {
 describe("parse/serialize round-trip", () => {
   it("round-trips a v5 config through JSON", () => {
     const original = createDefaultConfig();
-    original.defaultViewMode = "compact";
+    original.defaultViewMode = "expanded";
     original.kinds["user.prompt"] = { headerLabel: "Greg" };
     const raw = serializeConfig(original);
     const restored = parseConfig(raw);
-    expect(restored.defaultViewMode).toBe("compact");
+    expect(restored.defaultViewMode).toBe("expanded");
     expect(restored.kinds["user.prompt"]).toEqual({ headerLabel: "Greg" });
     expect(resolveKind(restored, "user.prompt").headerLabel).toBe("Greg");
   });
 
   it("returns defaults for null/empty/invalid JSON", () => {
-    expect(parseConfig(null).defaultViewMode).toBe("compact");
-    expect(parseConfig("").defaultViewMode).toBe("compact");
-    expect(parseConfig("{not json").defaultViewMode).toBe("compact");
+    expect(parseConfig(null).defaultViewMode).toBe("standard");
+    expect(parseConfig("").defaultViewMode).toBe("standard");
+    expect(parseConfig("{not json").defaultViewMode).toBe("standard");
   });
 
   it("returns defaults (v5 reset) for a serialized v4 config", () => {

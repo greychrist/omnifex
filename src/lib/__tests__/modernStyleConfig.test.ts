@@ -211,19 +211,3 @@ describe('Modern record rules', () => {
   });
 });
 
-describe('rulesViewMode', () => {
-  // The format whose display rules a transcript runs on: its own, except
-  // Modern, which borrows the one its Record rules setting names ('modern'
-  // standing for Compact's rules plus Modern's own repeat tidying).
-  it('maps Modern to its chosen rules and leaves every other format alone', async () => {
-    const { rulesViewMode } = await import('@/lib/messageRenderingConfig');
-    const cfg = createDefaultConfig();
-    expect(rulesViewMode('modern', cfg)).toBe('modern');
-    for (const r of ['verbose', 'all'] as const) {
-      expect(rulesViewMode('modern', { ...cfg, modern: { ...cfg.modern, recordRules: r } })).toBe(r);
-    }
-    for (const v of ['compact', 'verbose', 'all'] as const) {
-      expect(rulesViewMode(v, { ...cfg, modern: { ...cfg.modern, recordRules: 'all' } })).toBe(v);
-    }
-  });
-});

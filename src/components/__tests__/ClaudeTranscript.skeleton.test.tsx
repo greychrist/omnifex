@@ -70,14 +70,13 @@ function renderModern(outstandingWork = false, rows: JsonlNode[] = messages, onR
       <TooltipProvider>
         <ClaudeTranscript
           messages={rows}
-          viewMode="modern"
+          viewMode="standard"
           accountType={undefined}
           onResend={onResend}
           waitingForPermission={waitingForPermission}
           outstandingWork={outstandingWork}
           hasInflightAssistant={false}
           currentActivity={currentActivity}
-          totalTokens={0}
           contextLimit={200_000}
           error={null}
           tabId="tab-1"

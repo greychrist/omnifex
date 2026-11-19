@@ -8,12 +8,10 @@
  * shows; fix the change, not the snapshot.
  */
 import { describe, it, expect } from 'vitest';
-import type { JsonlNode } from '@/types/jsonl';
 import { KIND_REGISTRY, createDefaultConfig, mergeConfig, type MessageRenderingConfig } from '@/lib/messageRenderingConfig';
 import { classifyStandaloneKind } from '@/lib/messageKind';
-import type { ModernItem } from '@/lib/modernGrouping';
 import { transcriptItems } from '@/lib/transcriptItems';
-import { ALL_KIND_RECORDS, KIND_OF_RECORD, NOT_A_RECORD } from './fixtures/allKindRecords';
+import { ALL_KIND_RECORDS, KIND_OF_RECORD, NOT_A_RECORD, drawnUuids } from './fixtures/allKindRecords';
 import { GREG_RENDERING_CONFIG } from './fixtures/gregRenderingConfig';
 
 /** Kinds decided per content block, not by classifyStandaloneKind. */
@@ -22,25 +20,6 @@ const BLOCK_LEVEL = new Set([
   'assistant.askUserQuestion', 'user.prompt', 'user.tool-result', 'user.tool-result.image',
   'user.image', 'user.compactSummary', 'user.sdkSystemBracket',
 ]);
-
-function idOf(n: JsonlNode | undefined): string | null {
-  if (!n) return null;
-  const uuid = (n as { raw?: { uuid?: unknown } }).raw?.uuid;
-  return typeof uuid === 'string' ? uuid : `${n.kind}@${(n as { receivedAt?: string }).receivedAt ?? ''}`;
-}
-
-/** Every record an item draws, work entries included, in order. */
-export function drawnUuids(items: ModernItem[]): string[] {
-  const out: string[] = [];
-  for (const item of items) {
-    const i = item as { node?: JsonlNode; nodes?: JsonlNode[]; resultNode?: JsonlNode; summaryNode?: JsonlNode };
-    for (const n of [i.node, ...(i.nodes ?? []), i.resultNode, i.summaryNode]) {
-      const id = idOf(n);
-      if (id && !out.includes(id)) out.push(id);
-    }
-  }
-  return out;
-}
 
 const withRules = (rules: 'compact' | 'verbose' | 'all'): MessageRenderingConfig => {
   const cfg = createDefaultConfig();
@@ -65,10 +44,10 @@ describe('the all-kinds fixture', () => {
 
 describe('what Standard draws (golden — never update with -u)', () => {
   it.each(['compact', 'verbose', 'all'] as const)('default config, recordRules %s', (rules) => {
-    expect(drawnUuids(transcriptItems(ALL_KIND_RECORDS, withRules(rules), 'modern'))).toMatchSnapshot();
+    expect(drawnUuids(transcriptItems(ALL_KIND_RECORDS, withRules(rules), 'standard'))).toMatchSnapshot();
   });
 
   it("Greg's saved config", () => {
-    expect(drawnUuids(transcriptItems(ALL_KIND_RECORDS, mergeConfig(GREG_RENDERING_CONFIG), 'modern'))).toMatchSnapshot();
+    expect(drawnUuids(transcriptItems(ALL_KIND_RECORDS, mergeConfig(GREG_RENDERING_CONFIG), 'standard'))).toMatchSnapshot();
   });
 });

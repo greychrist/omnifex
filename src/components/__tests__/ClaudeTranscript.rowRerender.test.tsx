@@ -36,9 +36,6 @@ vi.mock('@/contexts/SessionGaugesContext', () => ({
     contextPressure: { enabled: true, mode: 'tokens', value: 250_000 },
   }),
 }));
-vi.mock('@/components/InflightAssistantBubble', () => ({
-  InflightAssistantBubble: () => null,
-}));
 
 import { ClaudeTranscript } from '@/components/claude/ClaudeTranscript';
 import { TooltipProvider } from '@/components/ui/tooltip-modern';
@@ -97,7 +94,7 @@ function conversation(turns: number): JsonlNode[] {
   return out;
 }
 
-function Harness({ messages, viewMode }: { messages: JsonlNode[]; viewMode: 'verbose' | 'compact' }) {
+function Harness({ messages, viewMode }: { messages: JsonlNode[]; viewMode: 'expanded' | 'standard' }) {
   const onResend = React.useRef(() => {}).current;
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
   const isNearBottomRef = React.useRef(true);
@@ -112,7 +109,6 @@ function Harness({ messages, viewMode }: { messages: JsonlNode[]; viewMode: 'ver
         outstandingWork={false}
         hasInflightAssistant={false}
         currentActivity="Thinking"
-        totalTokens={0}
         contextLimit={200_000}
         error={null}
         tabId="tab-1"
@@ -123,15 +119,15 @@ function Harness({ messages, viewMode }: { messages: JsonlNode[]; viewMode: 'ver
   );
 }
 
-function rowRendersOnUpdate(before: JsonlNode[], after: JsonlNode[], viewMode: 'verbose' | 'compact') {
+function rowRendersOnUpdate(before: JsonlNode[], after: JsonlNode[], viewMode: 'expanded' | 'standard') {
   const { rerender } = render(<Harness messages={before} viewMode={viewMode} />);
   renderProfiler.begin('append');
   rerender(<Harness messages={after} viewMode={viewMode} />);
   const report = renderProfiler.end();
-  return report?.renders.find((r) => r.name === 'StreamMessage')?.count ?? 0;
+  return report?.renders.find((r) => r.name === 'ModernTranscriptItem')?.count ?? 0;
 }
 
-describe.each(['verbose', 'compact'] as const)('ClaudeTranscript row re-renders (%s)', (viewMode) => {
+describe.each(['expanded', 'standard'] as const)('ClaudeTranscript row re-renders (%s)', (viewMode) => {
   it('renders only the new row when a record is appended', () => {
     const before = conversation(40);
     const after = [...before, prompt(100)];
@@ -144,8 +140,7 @@ describe.each(['verbose', 'compact'] as const)('ClaudeTranscript row re-renders 
     const before = [...conversation(40), prompt(199), call];
     const after = [...before, toolResult(201, 'toolu_1')];
 
-    // At most the Bash row: the result row itself is folded into it (verbose)
-    // or into a collapsed group with it (compact).
+    // At most the work row the Bash call sits in: its result folds into it.
     expect(rowRendersOnUpdate(before, after, viewMode)).toBeLessThanOrEqual(1);
   });
 
@@ -168,15 +163,10 @@ describe.each(['verbose', 'compact'] as const)('ClaudeTranscript row re-renders 
   });
 });
 
-it('re-renders a tool call row when its result lands', () => {
+it('re-renders the work row when its tool result lands', () => {
   const call = reply(200, [{ type: 'tool_use', id: 'toolu_1', name: 'Bash', input: { command: 'ls' } }]);
   const before = [...conversation(40), prompt(199), call];
   const after = [...before, toolResult(201, 'toolu_1')];
 
-  const { rerender, container } = render(<Harness messages={before} viewMode="verbose" />);
-  expect(container.textContent).toContain('Running...');
-
-  rerender(<Harness messages={after} viewMode="verbose" />);
-  expect(container.textContent).not.toContain('Running...');
-  expect(container.textContent).toContain('$ lsdone');
+  expect(rowRendersOnUpdate(before, after, 'standard')).toBe(1);
 });

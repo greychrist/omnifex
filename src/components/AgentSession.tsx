@@ -47,8 +47,6 @@ import { ErrorBoundary } from "./ErrorBoundary";
 import { SlashCommandsManager } from "./SlashCommandsManager";
 import { SessionMCPStatus } from "./SessionMCPStatus";
 import { SessionContextPanel, SessionContextRefreshButton } from "./SessionContextPanel";
-import { PermissionCard } from "./PermissionCard";
-import { AskUserQuestionCard } from "./AskUserQuestionCard";
 import { TranscriptSkeleton } from "./claude/TranscriptSkeleton";
 import { ModernQuestionCard } from "./transcript-modern/ModernQuestion";
 import { ModernPermissionCard } from "./transcript-modern/ModernPermissionCard";
@@ -1107,9 +1105,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   }, [taskEntries]);
 
   const [viewMode, setViewMode] = useSessionViewMode();
-  // The live question and permission cards follow the chat format's look.
-  const ActiveQuestionCard = viewMode === 'modern' ? ModernQuestionCard : AskUserQuestionCard;
-  const ActivePermissionCard = viewMode === 'modern' ? ModernPermissionCard : PermissionCard;
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -2477,8 +2472,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
         outstandingWork={outstandingWork}
         hasInflightAssistant={hasInflightAssistant}
         currentActivity={currentActivity}
-        totalTokens={totalTokens}
-        contextLimit={contextLimit}
+                contextLimit={contextLimit}
         error={error}
         tabId={tabIdRef.current}
         messagesEndRef={messagesEndRef}
@@ -3181,7 +3175,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
               // forward answers via updatedInput on allow. Other tools still
               // use the standard PermissionCard.
               pendingPermission.toolName === 'AskUserQuestion' ? (
-                <ActiveQuestionCard
+                <ModernQuestionCard
                   request={pendingPermission}
                   onSubmit={(updatedInput) => {
                     handlePermissionAllowWithInput(tabIdRef.current, updatedInput);
@@ -3191,7 +3185,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
                   }}
                 />
               ) : (
-                <ActivePermissionCard
+                <ModernPermissionCard
                   request={pendingPermission}
                   onAllow={(selectedSuggestions) => {
                     handlePermissionAllow(
@@ -3216,7 +3210,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
             <AttentionSlot queue={signals.queue} onDismiss={signals.dismiss} />
             <FloatingPromptInput
               ref={floatingPromptRef}
-              variant={viewMode === 'modern' ? 'modern' : 'classic'}
+              variant="modern"
               onSend={fireAndLog('claude-code-session:send', handleSendPrompt)}
               onCancel={fireAndLog('claude-code-session:cancel', handleCancelExecution)}
               isLoading={isLoading}

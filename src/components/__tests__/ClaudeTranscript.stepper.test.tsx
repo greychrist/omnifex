@@ -9,10 +9,14 @@ import { STEP_MARGIN_PX } from '@/lib/transcriptStepper';
 // The transcript's contexts all read app_settings over IPC and the message
 // bodies are irrelevant here — this file is about which rows become
 // navigation anchors, so everything below the row wrapper is stubbed out.
-vi.mock('@/contexts/MessageRenderingContext', () => ({
-  useMessageRenderingConfig: () => ({ config: {} }),
-  MessageRenderingOverrideProvider: ({ children }: { children: React.ReactNode }) => children,
-}));
+vi.mock('@/contexts/MessageRenderingContext', async () => {
+  const { createDefaultConfig } = await import('@/lib/messageRenderingConfig');
+  const config = createDefaultConfig();
+  return {
+    useMessageRenderingConfig: () => ({ config }),
+    MessageRenderingOverrideProvider: ({ children }: { children: React.ReactNode }) => children,
+  };
+});
 vi.mock('@/contexts/AutoScrollContext', () => ({
   useAutoScroll: () => ({ followPx: 200 }),
 }));
@@ -24,11 +28,9 @@ vi.mock('@/contexts/SessionGaugesContext', () => ({
     contextPressure: { enabled: true, mode: 'tokens', value: 250_000 },
   }),
 }));
-vi.mock('@/components/StreamMessage', () => ({
-  StreamMessage: () => <div data-stub-message />,
-}));
-vi.mock('@/components/InflightAssistantBubble', () => ({
-  InflightAssistantBubble: () => null,
+vi.mock('@/components/transcript-modern/ModernTranscriptItem', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/components/transcript-modern/ModernTranscriptItem')>()),
+  ModernTranscriptItem: () => <div data-stub-message />,
 }));
 
 import { ClaudeTranscript } from '@/components/claude/ClaudeTranscript';
@@ -60,7 +62,7 @@ const assistant = (): JsonlNode => ({
   kind: 'assistant',
   sessionId: 's',
   receivedAt: '2026-07-30T00:00:02.000Z',
-  raw: { type: 'assistant', message: { role: 'assistant', content: [] } } as never,
+  raw: { type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'ok' }] } } as never,
 });
 
 function transcriptElement(
@@ -71,14 +73,13 @@ function transcriptElement(
     <TooltipProvider>
       <ClaudeTranscript
         messages={messages}
-        viewMode="verbose"
+        viewMode="expanded"
         accountType={undefined}
         onResend={() => {}}
         waitingForPermission={false}
         outstandingWork={false}
         hasInflightAssistant={false}
         currentActivity="Thinking"
-        totalTokens={0}
         contextLimit={200_000}
         error={null}
         tabId="tab-1"

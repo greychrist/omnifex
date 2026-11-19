@@ -66,7 +66,7 @@ const prompt = (i: number): JsonlNode => ({
  * not care about (a tab becoming active/inactive), holding every transcript
  * prop referentially stable across that re-render.
  */
-function Harness({ messages, tick, viewMode = 'verbose' }: { messages: JsonlNode[]; tick: number; viewMode?: 'verbose' | 'modern' }) {
+function Harness({ messages, tick, viewMode = 'expanded' }: { messages: JsonlNode[]; tick: number; viewMode?: 'expanded' | 'standard' }) {
   // Stable identities, exactly as AgentSession must supply them.
   const onResend = React.useRef(() => {}).current;
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
@@ -84,7 +84,6 @@ function Harness({ messages, tick, viewMode = 'verbose' }: { messages: JsonlNode
         outstandingWork={false}
         hasInflightAssistant={false}
         currentActivity="Thinking"
-        totalTokens={0}
         contextLimit={200_000}
         error={null}
         tabId="tab-1"
@@ -142,7 +141,7 @@ describe('ClaudeTranscript render cost — a thought being typed', () => {
   // The live thought flushes every 100ms. It must re-render only the row
   // that shows it — the components read the store themselves, as
   // InflightAssistantBubble does — never the whole transcript.
-  for (const viewMode of ['verbose', 'modern'] as const) {
+  for (const viewMode of ['expanded', 'standard'] as const) {
     it(`does not re-render the transcript per thinking flush (${viewMode})`, () => {
       render(<Harness messages={messages} tick={0} viewMode={viewMode} />);
       renderProfiler.begin('thinking-flush');

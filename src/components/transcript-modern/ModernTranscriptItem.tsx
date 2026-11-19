@@ -27,6 +27,7 @@ import { turnFooterText, type TurnFooter } from '@/lib/modernTurnFooter';
 import { useMessageRenderingConfig } from '@/contexts/MessageRenderingContext';
 import { cardRadiusStyle } from '@/lib/accentStyle';
 import { cn } from '@/lib/utils';
+import { useRenderProfile } from '@/hooks/useRenderProfile';
 
 export interface ModernRowContext {
   lookupsFor: (node: JsonlNode) => RowLookups;
@@ -82,6 +83,9 @@ export const ModernTranscriptItem = React.memo(function ModernTranscriptItem({
   /** Set on the answer that ends a turn. */
   footer?: TurnFooter;
 }) {
+  // One count per row render: `__omnifexProfile` and the row re-render tests
+  // read it to catch one record re-rendering the whole transcript.
+  useRenderProfile('ModernTranscriptItem');
   switch (item.kind) {
     case 'prompt':
       return (

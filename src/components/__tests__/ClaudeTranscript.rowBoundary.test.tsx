@@ -12,10 +12,14 @@ import '@testing-library/jest-dom/vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import type { JsonlNode } from '@/types/jsonl';
 
-vi.mock('@/contexts/MessageRenderingContext', () => ({
-  useMessageRenderingConfig: () => ({ config: {} }),
-  MessageRenderingOverrideProvider: ({ children }: { children: React.ReactNode }) => children,
-}));
+vi.mock('@/contexts/MessageRenderingContext', async () => {
+  const { createDefaultConfig } = await import('@/lib/messageRenderingConfig');
+  const config = createDefaultConfig();
+  return {
+    useMessageRenderingConfig: () => ({ config }),
+    MessageRenderingOverrideProvider: ({ children }: { children: React.ReactNode }) => children,
+  };
+});
 vi.mock('@/contexts/AutoScrollContext', () => ({
   useAutoScroll: () => ({ followPx: 200 }),
 }));
@@ -28,16 +32,14 @@ vi.mock('@/contexts/SessionGaugesContext', () => ({
   }),
 }));
 // One poisoned message: the second row throws on render, the rest are fine.
-vi.mock('@/components/StreamMessage', () => ({
-  StreamMessage: ({ message }: { message: JsonlNode }) => {
-    if ((message as { poisoned?: boolean }).poisoned) {
+vi.mock('@/components/transcript-modern/ModernTranscriptItem', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/components/transcript-modern/ModernTranscriptItem')>()),
+  ModernTranscriptItem: ({ item }: { item: { node?: JsonlNode } }) => {
+    if ((item.node as { poisoned?: boolean } | undefined)?.poisoned) {
       throw new TypeError('path.split is not a function');
     }
     return <div data-stub-message />;
   },
-}));
-vi.mock('@/components/InflightAssistantBubble', () => ({
-  InflightAssistantBubble: () => null,
 }));
 
 import { ClaudeTranscript } from '@/components/claude/ClaudeTranscript';
@@ -59,14 +61,13 @@ function renderTranscript(messages: JsonlNode[]) {
     <TooltipProvider>
       <ClaudeTranscript
         messages={messages}
-        viewMode="verbose"
+        viewMode="expanded"
         accountType={undefined}
         onResend={() => {}}
         waitingForPermission={false}
         outstandingWork={false}
         hasInflightAssistant={false}
         currentActivity="Thinking"
-        totalTokens={0}
         contextLimit={200_000}
         error={null}
         tabId="tab-1"

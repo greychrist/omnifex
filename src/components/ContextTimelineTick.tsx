@@ -53,7 +53,7 @@ const NOTE_TEXT = "text-foreground/85";
 export interface ContextTimelineTickProps {
   /** Undefined for rows before the first usage reading. */
   point: ContextTimelinePoint | undefined;
-  /** Compact hides sub-2k deltas; Verbose prints every one. */
+  /** Standard hides sub-2k deltas; Expanded prints every one. */
   viewMode?: ViewMode;
   /**
    * The last row that draws a rail. Caps the line off level with the final
@@ -86,7 +86,7 @@ const GUTTER = "relative w-14 shrink-0 self-stretch select-none min-h-9";
  */
 export const ContextTimelineTick: React.FC<ContextTimelineTickProps> = ({
   point,
-  viewMode = 'verbose',
+  viewMode = 'expanded',
   isLast = false,
 }) => {
   // The cell keeps its width before the series starts. Returning null instead

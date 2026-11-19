@@ -258,9 +258,9 @@ export interface KindStyle {
  */
 export type CollapseRule =
   | { mode: "latestInRun" }
-  /** `onlyIn`: the formats the rule applies in; absent means every format.
-   *  Verbose and All are the raw record stream, so a rule that only tidies
-   *  re-stamped bookkeeping leaves them alone. */
+  /** `onlyIn`: the views the rule applies in; absent means both. Expanded
+   *  is the raw record stream, so a rule that only tidies re-stamped
+   *  bookkeeping leaves it alone. */
   | { mode: "onChange"; field: string; onlyIn?: ViewMode[] };
 
 export interface CategoryStyle extends KindStyle {
@@ -369,10 +369,10 @@ export const KIND_REGISTRY: Record<string, KindDef> = {
   "summary.compaction": { id: "summary.compaction", category: "system", label: "Conversation summary", description: "Compaction summary card.", default: { icon: "FileText", presentation: "card", widget: "SummaryWidget", visibility: "always", compactBoundaryLocked: true } },
   "unknown": { id: "unknown", category: "system", label: "Unknown", description: "Unclassifiable message — shows raw payload.", default: { presentation: "side-line", icon: "HelpCircle", accentColor: "#f97316", borderStyle: "dashed", headerLabel: "Unknown", visibility: "always", compactBoundaryLocked: true, showRawPayload: true } },
   // ── bookkeeping (real JSONL lines, previously dropped by the renderer) ──
-  "permission-mode": { id: "permission-mode", category: "system", label: "Permission mode", description: "Permission level changed mid-session.", default: { presentation: "side-line", icon: "ShieldCheck", accentColor: "#f59e0b", visibility: "always" }, collapse: { mode: "onChange", field: "permissionMode", onlyIn: ["compact", "modern"] } },
+  "permission-mode": { id: "permission-mode", category: "system", label: "Permission mode", description: "Permission level changed mid-session.", default: { presentation: "side-line", icon: "ShieldCheck", accentColor: "#f59e0b", visibility: "always" }, collapse: { mode: "onChange", field: "permissionMode", onlyIn: ["standard"] } },
   "last-prompt": { id: "last-prompt", category: "system", label: "Last-prompt bookmark", description: "Resume bookmark pointing at your most recent prompt.", default: { presentation: "side-line", icon: "Bookmark", accentColor: "#4b5563", visibility: "verbose" } },
   "ai-title": { id: "ai-title", category: "system", label: "Session title", description: "Auto-generated session title.", default: { presentation: "side-line", icon: "Tag", accentColor: "#4b5563", visibility: "verbose" } },
-  "custom-title": { id: "custom-title", category: "system", label: "Session renamed", description: "Session renamed — by the pencil in the status bar, /rename, or claude.ai.", default: { presentation: "side-line", icon: "Tag", accentColor: "#9ca3af", visibility: "verbose" }, collapse: { mode: "onChange", field: "customTitle", onlyIn: ["compact", "modern"] } },
+  "custom-title": { id: "custom-title", category: "system", label: "Session renamed", description: "Session renamed — by the pencil in the status bar, /rename, or claude.ai.", default: { presentation: "side-line", icon: "Tag", accentColor: "#9ca3af", visibility: "verbose" }, collapse: { mode: "onChange", field: "customTitle", onlyIn: ["standard"] } },
   "queue-operation": { id: "queue-operation", category: "system", label: "Input queue", description: "The CLI's input queue: a prompt, task notification or agent message arriving (enqueue), a turn starting on it (dequeue, with the wait when there was one), or it being folded into the running turn (remove).", default: { presentation: "side-line", icon: "ListOrdered", accentColor: "#9ca3af", visibility: "verbose" } },
   "file-history-snapshot": { id: "file-history-snapshot", category: "system", label: "File snapshot", description: "CLI editor undo/redo snapshot.", default: { presentation: "side-line", icon: "Clock", accentColor: "#4b5563", visibility: "verbose" } },
   // ── session context sources (attachment channel) ──
@@ -876,20 +876,19 @@ function mergeModern(saved: Record<string, unknown>, base: ModernStyle): ModernS
 
 // ─── top-level config (v5) ──────────────────────────────────────────────────
 
-/** The chat formats a transcript can be drawn in (SessionViewToggle). */
-export type ViewMode = "compact" | "verbose" | "all" | "modern";
-const VIEW_MODES: readonly ViewMode[] = ["compact", "verbose", "all", "modern"];
-
 /**
- * The format whose display rules a transcript runs on: its own, except
- * Modern, which borrows the one Settings › Modern › Show records like names.
- * `modern` itself stands for Compact's visibility plus the repeat tidying
- * Compact and Modern share (CollapseRule.onlyIn).
+ * The two views a transcript can be drawn in (SessionViewToggle), both by the
+ * Modern renderer. Standard leaves out what Settings › Chats hides; Expanded
+ * draws every record (2026-11-18, replacing Compact / Verbose / All / Modern).
  */
-export function rulesViewMode(viewMode: ViewMode, config: MessageRenderingConfig): ViewMode {
-  if (viewMode !== "modern") return viewMode;
-  return config.modern.recordRules === "compact" ? "modern" : config.modern.recordRules;
-}
+export type ViewMode = "standard" | "expanded";
+
+/** A saved default from before the two views: Compact and Modern drew what
+ *  Standard draws; Verbose and All showed more, as Expanded does. */
+const LEGACY_VIEW_MODES: Record<string, ViewMode> = {
+  standard: "standard", expanded: "expanded",
+  compact: "standard", modern: "standard", verbose: "expanded", all: "expanded",
+};
 
 export interface MessageRenderingConfig {
   version: 5;
@@ -914,7 +913,7 @@ export function createDefaultConfig(): MessageRenderingConfig {
   return {
     version: 5,
     // What sessions opened in before the setting was read.
-    defaultViewMode: "compact",
+    defaultViewMode: "standard",
     categories: structuredClone(DEFAULT_CATEGORIES),
     kinds: {},
     cardBorderOpacity: DEFAULT_CARD_BORDER_OPACITY,
@@ -1055,9 +1054,9 @@ function mergeShared(
   saved: Record<string, unknown>,
   swatches: Record<string, string>,
 ): MessageRenderingConfig {
-  if (VIEW_MODES.includes(saved.defaultViewMode as ViewMode)) {
-    base.defaultViewMode = saved.defaultViewMode as ViewMode;
-  }
+  const saved_ = saved.defaultViewMode;
+  const view = typeof saved_ === "string" && Object.prototype.hasOwnProperty.call(LEGACY_VIEW_MODES, saved_) ? LEGACY_VIEW_MODES[saved_] : undefined;
+  if (view) base.defaultViewMode = view;
 
   if (typeof saved.cardBorderOpacity === "number" && Number.isFinite(saved.cardBorderOpacity)) {
     base.cardBorderOpacity = Math.max(0, Math.min(100, Math.round(saved.cardBorderOpacity)));

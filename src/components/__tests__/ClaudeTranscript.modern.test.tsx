@@ -65,14 +65,13 @@ function renderModern(outstandingWork = false, rows: JsonlNode[] = messages, onR
       <TooltipProvider>
         <ClaudeTranscript
           messages={rows}
-          viewMode="modern"
+          viewMode="standard"
           accountType={undefined}
           onResend={onResend}
           waitingForPermission={waitingForPermission}
           outstandingWork={outstandingWork}
           hasInflightAssistant={false}
           currentActivity={currentActivity}
-          totalTokens={0}
           contextLimit={200_000}
           error={null}
           tabId="tab-1"
@@ -398,14 +397,13 @@ describe('ClaudeTranscript — Modern record rules', () => {
         <TooltipProvider>
           <ClaudeTranscript
             messages={[prompt, nested]}
-            viewMode="modern"
+            viewMode="standard"
             accountType={undefined}
             onResend={() => {}}
             waitingForPermission={false}
             outstandingWork={false}
             hasInflightAssistant={false}
             currentActivity="Thinking"
-            totalTokens={0}
             contextLimit={200_000}
             error={null}
             tabId="tab-1"

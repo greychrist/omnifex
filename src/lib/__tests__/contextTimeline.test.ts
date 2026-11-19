@@ -297,30 +297,21 @@ describe('buildContextTimeline — previous reading', () => {
 });
 
 describe('showsGutterDelta', () => {
-  it('prints every delta in All, as in Verbose', () => {
-    expect(showsGutterDelta(120, 'all')).toBe(true);
+  it('prints every non-zero delta in Expanded', () => {
+    expect(showsGutterDelta(120, 'expanded')).toBe(true);
+    expect(showsGutterDelta(-120, 'expanded')).toBe(true);
   });
 
-  it('prints every non-zero delta in Verbose', () => {
-    expect(showsGutterDelta(120, 'verbose')).toBe(true);
-    expect(showsGutterDelta(-120, 'verbose')).toBe(true);
-  });
-
-  it('hides sub-2k noise in Compact, by magnitude not sign', () => {
-    expect(showsGutterDelta(1_999, 'compact')).toBe(false);
-    expect(showsGutterDelta(-1_999, 'compact')).toBe(false);
-    expect(showsGutterDelta(2_000, 'compact')).toBe(true);
-    expect(showsGutterDelta(-2_000, 'compact')).toBe(true);
-  });
-
-  it('hides sub-2k noise in Modern, as in Compact', () => {
-    expect(showsGutterDelta(1_999, 'modern')).toBe(false);
-    expect(showsGutterDelta(2_000, 'modern')).toBe(true);
+  it('hides sub-2k noise in Standard, by magnitude not sign', () => {
+    expect(showsGutterDelta(1_999, 'standard')).toBe(false);
+    expect(showsGutterDelta(-1_999, 'standard')).toBe(false);
+    expect(showsGutterDelta(2_000, 'standard')).toBe(true);
+    expect(showsGutterDelta(-2_000, 'standard')).toBe(true);
   });
 
   it('has nothing to print with no reading or no movement', () => {
-    expect(showsGutterDelta(null, 'verbose')).toBe(false);
-    expect(showsGutterDelta(0, 'verbose')).toBe(false);
+    expect(showsGutterDelta(null, 'expanded')).toBe(false);
+    expect(showsGutterDelta(0, 'expanded')).toBe(false);
   });
 });
 

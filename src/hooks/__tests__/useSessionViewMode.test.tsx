@@ -22,34 +22,37 @@ const withDefault = (mode: MessageRenderingConfig['defaultViewMode']) => ({ ...c
 
 describe('useSessionViewMode', () => {
   it('opens in the saved default chat format', () => {
-    const { result } = renderHook(() => useSessionViewMode(), { wrapper: wrapperFor({ config: withDefault('modern'), loaded: true }) });
-    expect(result.current[0]).toBe('modern');
+    const { result } = renderHook(() => useSessionViewMode(), { wrapper: wrapperFor({ config: withDefault('expanded'), loaded: true }) });
+    expect(result.current[0]).toBe('expanded');
   });
 
-  it('takes the saved default once the settings finish loading', () => {
+  it('opens in standard before settings load, then takes the saved default', () => {
     const state = { config: createDefaultConfig(), loaded: false };
     const { result, rerender } = renderHook(() => useSessionViewMode(), { wrapper: ({ children }) => wrapperFor(state)({ children }) });
-    expect(result.current[0]).toBe('compact');
-    state.config = withDefault('modern');
+    expect(result.current[0]).toBe('standard');
+    state.config = withDefault('expanded');
     state.loaded = true;
     rerender();
-    expect(result.current[0]).toBe('modern');
+    expect(result.current[0]).toBe('expanded');
   });
 
-  it('keeps a format picked in the session when the default changes later', () => {
-    const state = { config: withDefault('verbose'), loaded: true };
+  // With two views, a later default can only differ from the pick by being
+  // the one picked before load; the pick still wins.
+  it('keeps a view picked before the settings finish loading', () => {
+    const state = { config: createDefaultConfig(), loaded: false };
     const { result, rerender } = renderHook(() => useSessionViewMode(), { wrapper: ({ children }) => wrapperFor(state)({ children }) });
-    act(() => { result.current[1]('all'); });
-    state.config = withDefault('modern');
+    act(() => { result.current[1]('expanded'); });
+    state.config = withDefault('standard');
+    state.loaded = true;
     rerender();
-    expect(result.current[0]).toBe('all');
+    expect(result.current[0]).toBe('expanded');
   });
 
   it('does not move an open session when the default changes', () => {
-    const state = { config: withDefault('verbose'), loaded: true };
+    const state = { config: withDefault('standard'), loaded: true };
     const { result, rerender } = renderHook(() => useSessionViewMode(), { wrapper: ({ children }) => wrapperFor(state)({ children }) });
-    state.config = withDefault('modern');
+    state.config = withDefault('expanded');
     rerender();
-    expect(result.current[0]).toBe('verbose');
+    expect(result.current[0]).toBe('standard');
   });
 });

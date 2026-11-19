@@ -9,7 +9,7 @@
 
 import type { JsonlNode } from '@/types/jsonl';
 import { turnContextTotal } from '@/lib/turnDelta';
-import type { ViewMode } from '@/components/SessionViewToggle';
+import type { ViewMode } from '@/lib/messageRenderingConfig';
 import {
   contextPressureLevel,
   type ContextPressureLevel,
@@ -169,8 +169,8 @@ function windowFraction(tokens: number, limit: number): number {
  *
  * Most turns move context by a few hundred tokens. Printing all of them turns
  * the rail into a column of noise that hides the one row that matters, which is
- * the same failure the old jump banner existed to avoid. Verbose mode prints
- * every delta, because that is what Verbose means.
+ * the same failure the old jump banner existed to avoid. Expanded prints
+ * every delta, because showing everything is what Expanded is for.
  */
 export const COMPACT_MODE_MIN_DELTA_TOKENS = 2_000;
 
@@ -180,7 +180,7 @@ export function showsGutterDelta(
   viewMode: ViewMode,
 ): boolean {
   if (delta === null || delta === 0) return false;
-  // Modern filters as Compact does, so it prints the same deltas.
-  if (viewMode !== 'compact' && viewMode !== 'modern') return true;
+  // Expanded prints every delta; Standard drops the sub-2k noise.
+  if (viewMode !== 'standard') return true;
   return Math.abs(delta) >= COMPACT_MODE_MIN_DELTA_TOKENS;
 }

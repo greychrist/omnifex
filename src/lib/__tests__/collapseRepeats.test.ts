@@ -153,7 +153,7 @@ describe('collapseRepeats — permission-mode and custom-title re-stamps', () =>
   ];
 
   it('keeps the first and each change in Compact and Modern, across other records', () => {
-    for (const viewMode of ['compact', 'modern'] as const) {
+    for (const viewMode of ['standard'] as const) {
       const out = collapseRepeats(stream, createDefaultConfig(), viewMode);
       expect(modes(out)).toEqual(['auto', 'acceptEdits', 'auto']);
       expect(titles(out)).toEqual(['Working on Jira App', 'Jira app v2']);
@@ -163,7 +163,7 @@ describe('collapseRepeats — permission-mode and custom-title re-stamps', () =>
   });
 
   it('shows every record in Verbose and All', () => {
-    for (const viewMode of ['verbose', 'all'] as const) {
+    for (const viewMode of ['expanded'] as const) {
       expect(collapseRepeats(stream, createDefaultConfig(), viewMode)).toBe(stream);
     }
   });
@@ -171,16 +171,16 @@ describe('collapseRepeats — permission-mode and custom-title re-stamps', () =>
   it('honours the kind\'s Repeats › Show all', () => {
     const cfg = createDefaultConfig();
     cfg.kinds = { ...cfg.kinds, 'permission-mode': { collapseRepeats: false } };
-    expect(modes(collapseRepeats(stream, cfg, 'compact'))).toEqual(['auto', 'auto', 'acceptEdits', 'acceptEdits', 'auto']);
+    expect(modes(collapseRepeats(stream, cfg, 'standard'))).toEqual(['auto', 'auto', 'acceptEdits', 'acceptEdits', 'auto']);
   });
 
   it('declares the rule on both kinds, so Appearance offers the Repeats row', () => {
-    expect(KIND_REGISTRY['permission-mode'].collapse).toEqual({ mode: 'onChange', field: 'permissionMode', onlyIn: ['compact', 'modern'] });
-    expect(KIND_REGISTRY['custom-title'].collapse).toEqual({ mode: 'onChange', field: 'customTitle', onlyIn: ['compact', 'modern'] });
+    expect(KIND_REGISTRY['permission-mode'].collapse).toEqual({ mode: 'onChange', field: 'permissionMode', onlyIn: ['standard'] });
+    expect(KIND_REGISTRY['custom-title'].collapse).toEqual({ mode: 'onChange', field: 'customTitle', onlyIn: ['standard'] });
   });
 
   it('leaves the existing system rules on in every format', () => {
     const burst = [thinkingTokens(10), thinkingTokens(20)];
-    expect(tokensOf(collapseRepeats(burst, createDefaultConfig(), 'all'))).toEqual([20]);
+    expect(tokensOf(collapseRepeats(burst, createDefaultConfig(), 'expanded'))).toEqual([20]);
   });
 });

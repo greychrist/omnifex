@@ -7,6 +7,7 @@
  * the smallest shape the classifier keys on (messageKind.ts, jsonlClassifier.ts).
  */
 import type { JsonlNode } from '@/types/jsonl';
+import type { ModernItem } from '@/lib/modernGrouping';
 import { classifyJsonlLine } from '@/lib/jsonlClassifier';
 import { normalizeJsonlNode } from '@/lib/normalizeMessage';
 
@@ -134,3 +135,24 @@ export const NOT_A_RECORD: ReadonlyMap<string, string> = new Map([
   // record classifies as `unknown`; messageKind's branch for it is unreachable.
   ['system.userPromptSubmit', 'no record classifies to it (see above)'],
 ]);
+
+/** A record's identity: its uuid, or kind and time for one without. */
+export function idOf(n: JsonlNode | undefined): string | null {
+  if (!n) return null;
+  const uuid = (n as { raw?: { uuid?: unknown } }).raw?.uuid;
+  return typeof uuid === 'string' ? uuid : `${n.kind}@${(n as { receivedAt?: string }).receivedAt ?? ''}`;
+}
+
+/** Every record an item draws, work entries included, in order. */
+export function drawnUuids(items: ModernItem[]): string[] {
+  const out: string[] = [];
+  for (const item of items) {
+    const i = item as { node?: JsonlNode; nodes?: JsonlNode[]; resultNode?: JsonlNode; summaryNode?: JsonlNode };
+    for (const n of [i.node, ...(i.nodes ?? []), i.resultNode, i.summaryNode]) {
+      const id = idOf(n);
+      if (id && !out.includes(id)) out.push(id);
+    }
+  }
+  return out;
+}
+

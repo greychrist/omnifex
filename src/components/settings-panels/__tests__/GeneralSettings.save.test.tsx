@@ -158,15 +158,15 @@ describe('GeneralSettings saving', () => {
     await waitFor(() => { expect(status().textContent).toMatch(/Saved/); });
   });
 
-  it('sets the default chat format under Appearance, saving it at once', async () => {
+  it('sets the default chat view under Appearance, saving it at once', async () => {
     await renderGeneral();
-    const group = screen.getByRole('radiogroup', { name: 'Default chat format' });
+    const group = screen.getByRole('radiogroup', { name: 'Default chat view' });
     const radios = Array.from(group.querySelectorAll('[role="radio"]'));
-    expect(radios.map((r) => r.textContent?.trim())).toEqual(['Compact', 'Verbose', 'All', 'Modern']);
-    fireEvent.click(radios[3]);
+    expect(radios.map((r) => r.textContent?.trim())).toEqual(['Standard', 'Expanded']);
+    fireEvent.click(radios[1]);
     await waitFor(() => {
       expect(vi.mocked(api.saveSetting).mock.calls.some(([key, value]) =>
-        key === 'message_rendering_config' && String(value).includes('"defaultViewMode":"modern"'))).toBe(true);
+        key === 'message_rendering_config' && String(value).includes('"defaultViewMode":"expanded"'))).toBe(true);
     });
     await waitFor(() => { expect(status().textContent).toMatch(/Saved/); });
   });

@@ -90,7 +90,7 @@ function conversation(turns: number): JsonlNode[] {
   return out;
 }
 
-type Mode = 'verbose' | 'compact' | 'modern';
+type Mode = 'expanded' | 'standard';
 
 function Harness({
   messages,
@@ -117,7 +117,6 @@ function Harness({
         outstandingWork={false}
         hasInflightAssistant={false}
         currentActivity="Thinking"
-        totalTokens={0}
         contextLimit={200_000}
         error={null}
         tabId="tab-1"
@@ -135,7 +134,7 @@ const rowUuids = (container: HTMLElement) =>
 // 600 rows' worth of records: four windows, so every mode is well past one.
 const LONG = conversation(300);
 
-describe.each(['verbose', 'compact', 'modern'] as const)('ClaudeTranscript tail window (%s)', (viewMode) => {
+describe.each(['expanded', 'standard'] as const)('ClaudeTranscript tail window (%s)', (viewMode) => {
   it('mounts at most one window of rows, ending with the newest', () => {
     const { container } = render(<Harness messages={LONG} viewMode={viewMode} />);
     const uuids = rowUuids(container);
@@ -196,7 +195,7 @@ describe('ClaudeTranscript tail window while reading back', () => {
   it('keeps the rows the reader is looking at when records stream in', () => {
     const nearBottom = { current: true };
     const { container, rerender } = render(
-      <Harness messages={LONG} viewMode="verbose" nearBottom={nearBottom} />,
+      <Harness messages={LONG} viewMode="expanded" nearBottom={nearBottom} />,
     );
     // Scroll up, away from the tail: following turns off.
     const scroller = container.querySelector<HTMLElement>('[data-transcript-scroll]')!;
@@ -209,7 +208,7 @@ describe('ClaudeTranscript tail window while reading back', () => {
     const firstRow = rowUuids(container)[0];
 
     rerender(
-      <Harness messages={[...LONG, prompt(1000), reply(1001), prompt(1002)]} viewMode="verbose" nearBottom={nearBottom} />,
+      <Harness messages={[...LONG, prompt(1000), reply(1001), prompt(1002)]} viewMode="expanded" nearBottom={nearBottom} />,
     );
 
     expect(rowUuids(container)[0]).toBe(firstRow);
@@ -219,7 +218,7 @@ describe('ClaudeTranscript tail window while reading back', () => {
   it('loads the next window by itself as the reader nears the top', () => {
     const nearBottom = { current: true };
     const { container } = render(
-      <Harness messages={LONG} viewMode="verbose" nearBottom={nearBottom} />,
+      <Harness messages={LONG} viewMode="expanded" nearBottom={nearBottom} />,
     );
     const before = rowUuids(container).length;
     const scroller = container.querySelector<HTMLElement>('[data-transcript-scroll]')!;
@@ -235,7 +234,7 @@ describe('ClaudeTranscript tail window while reading back', () => {
   it('does not load earlier rows while following the tail', () => {
     const nearBottom = { current: true };
     const { container } = render(
-      <Harness messages={LONG} viewMode="verbose" nearBottom={nearBottom} />,
+      <Harness messages={LONG} viewMode="expanded" nearBottom={nearBottom} />,
     );
     const before = rowUuids(container).length;
     // A short view: the top is near, but so is the bottom.
@@ -254,7 +253,7 @@ describe('ClaudeTranscript tail window while reading back', () => {
   it('stops following for "scroll to top", so the growth does not snap back down', () => {
     const nearBottom = { current: true };
     const { container } = render(
-      <Harness messages={LONG} viewMode="verbose" nearBottom={nearBottom} />,
+      <Harness messages={LONG} viewMode="expanded" nearBottom={nearBottom} />,
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'Scroll to top' }));
@@ -267,7 +266,7 @@ describe('ClaudeTranscript tail window while reading back', () => {
   // keep what was on screen still, which cancelled a smooth scroll to the top
   // and left the reader at the bottom. The top is set, not animated.
   it('sets the scroll position to the top once every row has mounted', () => {
-    const { container } = render(<Harness messages={LONG} viewMode="verbose" />);
+    const { container } = render(<Harness messages={LONG} viewMode="expanded" />);
     const scroller = container.querySelector<HTMLElement>('[data-transcript-scroll]')!;
     scroller.scrollTop = 5_000;
 
@@ -279,7 +278,7 @@ describe('ClaudeTranscript tail window while reading back', () => {
   it('drops back to one window once the reader returns to the tail', () => {
     const nearBottom = { current: true };
     const { container } = render(
-      <Harness messages={LONG} viewMode="verbose" nearBottom={nearBottom} />,
+      <Harness messages={LONG} viewMode="expanded" nearBottom={nearBottom} />,
     );
     fireEvent.click(screen.getByRole('button', { name: /show earlier/i }));
     expect(rowUuids(container).length).toBeGreaterThan(TRANSCRIPT_WINDOW_ROWS);
