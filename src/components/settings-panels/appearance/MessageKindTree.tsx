@@ -1,6 +1,6 @@
 import React from "react";
 import { ChevronDown, ChevronRight, EyeOff, Lock } from "lucide-react";
-import { CATEGORIES, KIND_REGISTRY, resolveKind, isHexColor } from "@/lib/messageRenderingConfig";
+import { CATEGORIES, KIND_REGISTRY, resolveKind, isHexColor, isHiddenInStandard } from "@/lib/messageRenderingConfig";
 import type { Category, IconName, MessageRenderingConfig } from "@/lib/messageRenderingConfig";
 import { MODERN_ITEM_KINDS } from "@/lib/renderingConfigMigration";
 import { IconRenderer } from "./iconMap";
@@ -17,7 +17,11 @@ import { cn } from "@/lib/utils";
  * their look from the step settings above and are always in Standard.
  * `assistant.text.live` is the streaming reply, never a record.
  */
-const LISTED = (id: string) => !MODERN_ITEM_KINDS.has(id) && id !== "assistant.text.live";
+const LISTED = (id: string, config: MessageRenderingConfig) =>
+  id !== "assistant.text.live"
+  // Except one hidden in Standard (a v5 Never migrates to that), so it can
+  // be shown again.
+  && (!MODERN_ITEM_KINDS.has(id) || isHiddenInStandard(resolveKind(config, id)));
 
 export type TreeSelection =
   | { type: "category"; id: Category }
@@ -64,7 +68,7 @@ export const MessageKindTree: React.FC<MessageKindTreeProps> = ({
       {CATEGORIES.map((c) => {
         const catStyle = config.categories[c];
         const kinds = Object.values(KIND_REGISTRY)
-          .filter((d) => d.category === c && LISTED(d.id))
+          .filter((d) => d.category === c && LISTED(d.id, config))
           .sort((a, b) => a.label.localeCompare(b.label));
         const isOpen = !collapsed.has(c);
         const swatch = swatchHex(catStyle.accentColor);

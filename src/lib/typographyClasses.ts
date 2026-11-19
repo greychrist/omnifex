@@ -1,17 +1,7 @@
 import type {
   FontSize,
   FontWeight,
-  MessageRenderingConfig,
 } from "./messageRenderingConfig";
-
-const SIZE_CLASS: Record<FontSize, string> = {
-  // text-xxs is a custom utility (see styles.css); the rest are Tailwind's.
-  xxs: "text-xxs",
-  xs: "text-xs",
-  sm: "text-sm",
-  base: "text-base",
-  lg: "text-lg",
-};
 
 /**
  * Font size as a raw `rem` length. Used to drive the content body via CSS
@@ -42,22 +32,3 @@ export const FONT_WEIGHT_VALUE: Record<FontWeight, number> = {
   extrabold: 800,
   black: 900,
 };
-
-const WEIGHT_CLASS: Record<FontWeight, string> = {
-  thin: "font-thin",
-  extralight: "font-extralight",
-  light: "font-light",
-  normal: "font-normal",
-  medium: "font-medium",
-  semibold: "font-semibold",
-  bold: "font-bold",
-  extrabold: "font-extrabold",
-  black: "font-black",
-};
-
-export function contentClassNames(config: MessageRenderingConfig): string {
-  const style = config.typography.content;
-  return [SIZE_CLASS[style.size], WEIGHT_CLASS[style.weight], style.italic ? "italic" : ""]
-    .filter(Boolean)
-    .join(" ");
-}

@@ -12,7 +12,15 @@ import { migrateV5 } from "./renderingConfigMigration";
 import { hexChroma, hexHue, NEUTRAL_CHROMA } from "./colorHue";
 import { isTypefaceId, type Typeface } from "./typefaceCatalog";
 
-export const MESSAGE_RENDERING_CONFIG_KEY = "message_rendering_config";
+/**
+ * v6 has a key of its own. The dev build and the installed app share one
+ * database, and an installed app from before v6 resets anything under the
+ * v5 key that is not v5 — so v6 written there would have wiped the settings
+ * for both. The v5 key is only read, to migrate from, and never written.
+ */
+export const MESSAGE_RENDERING_CONFIG_KEY = "message_rendering_config_v6";
+/** Where v5 lived; read once to migrate, never written. */
+export const LEGACY_MESSAGE_RENDERING_CONFIG_KEY = "message_rendering_config";
 
 // ─── legacy palette names ──────────────────────────────────────────────────
 //
@@ -440,7 +448,6 @@ export interface TypographyStyle {
   typeface: Typeface;
   size: FontSize;
   weight: FontWeight;
-  italic: boolean;
 }
 
 /** The chat's body text. Modern's answers use it when Settings › Chats sets
@@ -450,7 +457,7 @@ export interface Typography {
 }
 
 export const DEFAULT_TYPOGRAPHY: Typography = {
-  content: { typeface: "inter", size: "sm", weight: "normal", italic: false },
+  content: { typeface: "inter", size: "sm", weight: "normal" },
 };
 
 // ─── tab status indicators ───────────────────────────────────────────────────
@@ -1030,7 +1037,6 @@ function mergeTypographyStyle(
     weight: WEIGHT_VALUES.includes(raw.weight as FontWeight)
       ? (raw.weight as FontWeight)
       : base.weight,
-    italic: typeof raw.italic === "boolean" ? raw.italic : base.italic,
   };
 }
 

@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useMemo, useState, useCall
 import { api } from "@/lib/api";
 import {
   MESSAGE_RENDERING_CONFIG_KEY,
+  LEGACY_MESSAGE_RENDERING_CONFIG_KEY,
   createDefaultConfig,
   modernCssVars,
   parseConfig,
@@ -28,17 +29,17 @@ export const MessageRenderingProvider: React.FC<{ children: React.ReactNode }> =
     let cancelled = false;
     logAndForget('message-rendering-context:iife', (async () => {
       try {
-        const raw = await api.getSetting(MESSAGE_RENDERING_CONFIG_KEY);
+        const current = await api.getSetting(MESSAGE_RENDERING_CONFIG_KEY);
+        // No v6 yet: migrate from where v5 lived (never written to).
+        const raw = current ?? await api.getSetting(LEGACY_MESSAGE_RENDERING_CONFIG_KEY);
         const parsed = parseConfig(raw);            // v5 migrates; anything else not v6 resets
         let savedVersion: unknown = null;
         try {
           savedVersion = (JSON.parse(raw ?? 'null') as { version?: unknown } | null)?.version ?? null;
         } catch { /* unreadable: a reset */ }
-        const wasReset = savedVersion !== 5 && savedVersion !== 6;
-        // A v5 config is written back as v6 once, so the migration (Standard
-        // shows what Modern showed) runs on one load, not on every one.
-        const wasMigrated = savedVersion === 5;
-        if ((wasReset || wasMigrated) && !cancelled) {
+        const loadedAsIs = current !== null && savedVersion === 6;
+        const wasMigrated = current === null && savedVersion === 5;
+        if (!loadedAsIs && !cancelled) {
           await api.saveSetting(MESSAGE_RENDERING_CONFIG_KEY, serializeConfig(parsed));
           await api.logWriteBatch([{
             timestamp: new Date().toISOString(),

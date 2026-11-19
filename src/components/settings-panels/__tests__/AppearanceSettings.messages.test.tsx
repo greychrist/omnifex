@@ -21,7 +21,7 @@ vi.mock('@/lib/api', () => ({
   api: {
     getSetting: vi.fn(async () => null),
     saveSetting: vi.fn(async (key: string, value: string) => {
-      if (key === 'message_rendering_config') saved.config = JSON.parse(value);
+      if (key === 'message_rendering_config_v6') saved.config = JSON.parse(value);
     }),
     logWriteBatch: vi.fn(async () => {}),
   },
@@ -95,5 +95,32 @@ describe('Settings › Chats', () => {
     expect(within(preview()).queryByText('Permission mode')).toBeNull();
     fireEvent.click(screen.getByRole('radio', { name: 'Expanded' }));
     expect(within(preview()).getByText('Permission mode')).toBeInTheDocument();
+  });
+});
+
+// A v5 Never on thinking or tool calls migrates to hidden in Standard. Those
+// kinds are not normally listed, so a hidden one is — or nothing could bring
+// it back (review, 2026-11-19).
+describe('MessageKindTree — a hidden item kind', () => {
+  it('lists Thinking once it is hidden in Standard, so it can be shown again', async () => {
+    const { MessageKindTree } = await import('@/components/settings-panels/appearance/MessageKindTree');
+    const { createDefaultConfig } = await import('@/lib/messageRenderingConfig');
+    const config = createDefaultConfig();
+    config.kinds['assistant.thinking'] = { standard: false };
+    render(<MessageKindTree config={config} selected={{ type: 'category', id: 'user' }} onSelect={() => {}} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Expand all' }));
+    expect(within(tree()).getByText('Thinking')).toBeInTheDocument();
+    expect(within(tree()).queryByText('Tool call')).toBeNull();
+  });
+});
+
+// Every control changes something visible. The chat text is set by CSS
+// variables for font, size and weight only; italic reached nothing once the
+// classic cards were gone (review, 2026-11-19).
+describe('Typography', () => {
+  it('offers the content typeface, size and weight, and no Italic', () => {
+    renderSettings();
+    fireEvent.click(screen.getByRole('tab', { name: 'Typography' }));
+    expect(screen.queryByText('Italic')).toBeNull();
   });
 });

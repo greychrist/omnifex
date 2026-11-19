@@ -166,7 +166,7 @@ describe('GeneralSettings saving', () => {
     fireEvent.click(radios[1]);
     await waitFor(() => {
       expect(vi.mocked(api.saveSetting).mock.calls.some(([key, value]) =>
-        key === 'message_rendering_config' && String(value).includes('"defaultViewMode":"expanded"'))).toBe(true);
+        key === 'message_rendering_config_v6' && String(value).includes('"defaultViewMode":"expanded"'))).toBe(true);
     });
     await waitFor(() => { expect(status().textContent).toMatch(/Saved/); });
   });

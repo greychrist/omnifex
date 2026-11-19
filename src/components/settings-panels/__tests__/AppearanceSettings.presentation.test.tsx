@@ -23,7 +23,7 @@ vi.mock('@/lib/api', () => ({
   api: {
     getSetting: vi.fn(async () => null), // first-load: defaults
     saveSetting: vi.fn(async (key: string, value: string) => {
-      if (key === 'message_rendering_config') {
+      if (key === 'message_rendering_config_v6') {
         try { saved.config = JSON.parse(value); } catch { /* ignore */ }
       }
     }),
@@ -160,7 +160,7 @@ describe('AppearanceSettings — edits are debounced before the global commit', 
     // whole point: dragging doesn't re-render every chat / write to disk per
     // tick.
     const configWrites = () =>
-      saveSetting.mock.calls.filter(([key]) => key === 'message_rendering_config').length;
+      saveSetting.mock.calls.filter(([key]) => key === 'message_rendering_config_v6').length;
     expect(configWrites()).toBe(0);
 
     // After the debounce settles, exactly one commit lands, carrying the LAST

@@ -57,3 +57,10 @@ describe('v5 → v6 migration', () => {
     expect(parseConfig(serializeConfig(cfg))).toEqual(cfg);
   });
 });
+
+describe('v6 typography', () => {
+  it('keeps typeface, size and weight, and drops the italic nothing reads', () => {
+    const cfg = mergeConfig({ version: 5, typography: { content: { typeface: 'geist', size: 'lg', weight: 'bold', italic: true } } });
+    expect(cfg.typography.content).toEqual({ typeface: 'geist', size: 'lg', weight: 'bold' });
+  });
+});

@@ -1,6 +1,5 @@
 import React from "react";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -51,7 +50,6 @@ interface TextColumnProps {
   title: string;
   description: string;
   style: TypographyStyle;
-  italicId: string;
   onChange: (next: TypographyStyle) => void;
 }
 
@@ -59,7 +57,6 @@ const TextColumn: React.FC<TextColumnProps> = ({
   title,
   description,
   style,
-  italicId,
   onChange,
 }) => (
   <div className="space-y-3">
@@ -107,16 +104,6 @@ const TextColumn: React.FC<TextColumnProps> = ({
         </SelectContent>
       </Select>
     </div>
-    <div className="flex items-center gap-2">
-      <Switch
-        id={italicId}
-        checked={style.italic}
-        onCheckedChange={(v) => { onChange({ ...style, italic: v }); }}
-      />
-      <Label htmlFor={italicId} className="cursor-pointer">
-        Italic
-      </Label>
-    </div>
   </div>
 );
 
@@ -135,7 +122,6 @@ export const TypographyEditor: React.FC<TypographyEditorProps> = ({ typography, 
           title="Content"
           description="Body text for chat messages — user prompts and assistant markdown."
           style={typography.content}
-          italicId="typography-content-italic"
           onChange={(next) => { onChange({ ...typography, content: next }); }}
         />
       </div>
