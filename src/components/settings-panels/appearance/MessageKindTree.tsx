@@ -1,7 +1,8 @@
 import React from "react";
-import { ChevronDown, ChevronRight, EyeOff, Lock } from "lucide-react";
+import { ChevronDown, ChevronRight, EyeOff, ListTree, Lock, Type } from "lucide-react";
 import { CATEGORIES, KIND_REGISTRY, resolveKind, isHexColor, isHiddenInStandard } from "@/lib/messageRenderingConfig";
-import type { Category, IconName, MessageRenderingConfig } from "@/lib/messageRenderingConfig";
+import { MODERN_STEP_KINDS, type Category, type IconName, type MessageRenderingConfig, type ModernStepKind } from "@/lib/messageRenderingConfig";
+import { STEP_LABELS } from "./stepLabels";
 import { MODERN_ITEM_KINDS } from "@/lib/renderingConfigMigration";
 import { IconRenderer } from "./iconMap";
 import { cn } from "@/lib/utils";
@@ -21,11 +22,20 @@ const LISTED = (id: string, config: MessageRenderingConfig) =>
   id !== "assistant.text.live"
   // Except one hidden in Standard (a v5 Never migrates to that), so it can
   // be shown again.
-  && (!MODERN_ITEM_KINDS.has(id) || isHiddenInStandard(resolveKind(config, id)));
+  // The answered question is drawn as a line in its kind's icon and color.
+  && (!MODERN_ITEM_KINDS.has(id) || id === "assistant.askUserQuestion" || isHiddenInStandard(resolveKind(config, id)));
+
+/** The groups that open and close: the steps, then each category. */
+const STEPS = "steps";
+const GROUPS: readonly string[] = [STEPS, ...CATEGORIES];
 
 export type TreeSelection =
   | { type: "category"; id: Category }
-  | { type: "kind"; id: string };
+  | { type: "kind"; id: string }
+  /** A kind of timeline step: Modern's step icon and color. */
+  | { type: "step"; id: ModernStepKind }
+  /** The text the chat is set in. */
+  | { type: "text" };
 
 interface MessageKindTreeProps {
   config: MessageRenderingConfig;
@@ -44,9 +54,9 @@ export const MessageKindTree: React.FC<MessageKindTreeProps> = ({
   onSelect,
 }) => {
   // Starts collapsed: 50-odd kinds open at once buried the categories.
-  const [collapsed, setCollapsed] = React.useState<ReadonlySet<Category>>(() => new Set(CATEGORIES));
-  const anyOpen = collapsed.size < CATEGORIES.length;
-  const toggle = (c: Category) => {
+  const [collapsed, setCollapsed] = React.useState<ReadonlySet<string>>(() => new Set(GROUPS));
+  const anyOpen = collapsed.size < GROUPS.length;
+  const toggle = (c: string) => {
     setCollapsed((prev) => {
       const next = new Set(prev);
       if (next.has(c)) next.delete(c); else next.add(c);
@@ -59,12 +69,19 @@ export const MessageKindTree: React.FC<MessageKindTreeProps> = ({
       <div className="flex justify-end px-1">
         <button
           type="button"
-          onClick={() => { setCollapsed(anyOpen ? new Set(CATEGORIES) : new Set()); }}
+          onClick={() => { setCollapsed(anyOpen ? new Set(GROUPS) : new Set()); }}
           className="text-[11px] text-muted-foreground hover:text-foreground underline underline-offset-2"
         >
           {anyOpen ? "Collapse all" : "Expand all"}
         </button>
       </div>
+      <StepsGroup
+        config={config}
+        open={!collapsed.has(STEPS)}
+        onToggle={() => { toggle(STEPS); }}
+        selected={selected}
+        onSelect={onSelect}
+      />
       {CATEGORIES.map((c) => {
         const catStyle = config.categories[c];
         const kinds = Object.values(KIND_REGISTRY)
@@ -129,10 +146,73 @@ export const MessageKindTree: React.FC<MessageKindTreeProps> = ({
           </div>
         );
       })}
-
+      <div
+        className={cn(
+          "w-full flex items-center gap-2 rounded px-1 py-1 mt-1 border-t border-border/40 transition-colors",
+          selected.type === "text" ? "bg-primary/10 text-foreground" : "hover:bg-muted/40 text-foreground/90",
+        )}
+      >
+        <button
+          type="button"
+          onClick={() => { onSelect({ type: "text" }); }}
+          className="flex flex-1 min-w-0 items-center gap-2 text-left pl-[18px]"
+          title="The text the chat is set in."
+        >
+          <Type className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+          <span className="flex-1 truncate text-[12px] font-medium">Text</span>
+        </button>
+      </div>
     </div>
   );
 };
+
+/** The timeline steps, as a group above the categories. */
+const StepsGroup: React.FC<{
+  config: MessageRenderingConfig;
+  open: boolean;
+  onToggle: () => void;
+  selected: TreeSelection;
+  onSelect: (selection: TreeSelection) => void;
+}> = ({ config, open, onToggle, selected, onSelect }) => (
+  <div>
+    <div className="w-full flex items-center gap-1 rounded px-1 py-1 text-foreground/90">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-label={open ? "Collapse Timeline steps" : "Expand Timeline steps"}
+        className="shrink-0 text-muted-foreground hover:text-foreground"
+      >
+        {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+      </button>
+      <button
+        type="button"
+        onClick={onToggle}
+        className="flex flex-1 min-w-0 items-center gap-2 text-left"
+        title="Each step in the work timeline: its icon and color."
+      >
+        <ListTree className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+        <span className="flex-1 truncate text-[12px] font-medium">Timeline steps</span>
+        <span className="text-[10px] text-muted-foreground/70">{MODERN_STEP_KINDS.length}</span>
+      </button>
+    </div>
+    {open && (
+      <div className="ml-4 border-l border-border/40 pl-1 mt-0.5 mb-1">
+        {MODERN_STEP_KINDS.map((kind) => (
+          <KindRow
+            key={kind}
+            label={STEP_LABELS[kind].label}
+            icon={config.modern.stepIcons[kind]}
+            swatch={swatchHex(config.modern.stepColors[kind] ?? "#888")}
+            standard
+            selected={selected.type === "step" && selected.id === kind}
+            onSelect={() => { onSelect({ type: "step", id: kind }); }}
+          />
+        ))}
+      </div>
+    )}
+  </div>
+);
+
 
 interface KindRowProps {
   label: string;

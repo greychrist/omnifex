@@ -38,9 +38,9 @@ function renderSettings() {
 const tree = () => screen.getByRole('tree', { name: 'Message kinds' });
 
 describe('Settings › Chats', () => {
-  it('has Messages, Turn preview and Typography, in that order, opening on Messages', () => {
+  it('has Messages and Turn preview, opening on Messages', () => {
     renderSettings();
-    expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(['Messages', 'Turn preview', 'Typography']);
+    expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(['Messages', 'Turn preview']);
     expect(screen.getByRole('tab', { name: 'Messages' })).toHaveAttribute('aria-selected', 'true');
   });
 
@@ -123,10 +123,11 @@ describe('MessageKindTree — a hidden item kind', () => {
 // Every control changes something visible. The chat text is set by CSS
 // variables for font, size and weight only; italic reached nothing once the
 // classic cards were gone (review, 2026-11-19).
-describe('Typography', () => {
+describe('Text', () => {
   it('offers the content typeface, size and weight, and no Italic', () => {
     renderSettings();
-    fireEvent.click(screen.getByRole('tab', { name: 'Typography' }));
+    fireEvent.click(within(tree()).getByText('Text'));
+    expect(screen.getByRole('region', { name: 'Text settings' })).toBeInTheDocument();
     expect(screen.queryByText('Italic')).toBeNull();
   });
 });
@@ -145,5 +146,52 @@ describe('Turn preview — every kind', () => {
     fireEvent.click(screen.getByRole('radio', { name: 'Expanded' }));
     expect(within(preview()).getByText('Unrecognized record: brand_new_record')).toBeInTheDocument();
     expect(lines()).toBeGreaterThan(standard + 20);
+  });
+});
+
+// One list for everything the chat draws (Greg, 2026-11-19): timeline steps,
+// then the message kinds, then the text.
+describe('Messages — steps, kinds and text in one list', () => {
+  it('lists timeline steps first and Text last', () => {
+    renderSettings();
+    fireEvent.click(screen.getByRole('button', { name: 'Expand all' }));
+    const rows = within(tree()).getAllByRole('button').map((b) => b.textContent ?? '');
+    const at = (label: string) => rows.findIndex((r) => r.startsWith(label));
+    expect(at('Timeline steps')).toBeGreaterThanOrEqual(0);
+    expect(at('Command')).toBeGreaterThan(at('Timeline steps'));
+    expect(at('Command')).toBeLessThan(at('User'));
+    expect(at('Text')).toBe(rows.length - 1);
+  });
+
+  it('gives a step an icon and a color, saved on the Modern step settings', async () => {
+    renderSettings();
+    await act(async () => { await Promise.resolve(); });
+    fireEvent.click(screen.getByRole('button', { name: 'Expand all' }));
+    fireEvent.click(within(tree()).getByText('Command'));
+    const editor = screen.getByRole('region', { name: 'Command step settings' });
+    expect(within(editor).getByRole('button', { name: /icon/i })).toBeInTheDocument();
+    expect(within(editor).queryByRole('switch', { name: 'Show in Standard' })).toBeNull();
+    fireEvent.change(within(editor).getByLabelText('Command color picker'), { target: { value: '#123456' } });
+    await waitFor(() => {
+      expect((saved.config as { modern: { stepColors: Record<string, string | null> } } | null)?.modern.stepColors.command).toBe('#123456');
+    }, { timeout: 3000 });
+  });
+
+  it('lists the answered question, with icon and color but no Show in Standard', () => {
+    renderSettings();
+    fireEvent.click(screen.getByRole('button', { name: 'Expand all' }));
+    fireEvent.click(within(tree()).getByText('Question (answered)'));
+    const editor = screen.getByRole('region', { name: 'Question (answered) settings' });
+    expect(within(editor).getByLabelText(/color picker/i)).toBeInTheDocument();
+    expect(within(editor).queryByRole('switch', { name: 'Show in Standard' })).toBeNull();
+  });
+
+  it('puts Font and Answer size under Text, not in the Modern settings', () => {
+    renderSettings();
+    expect(screen.queryByRole('radiogroup', { name: 'Font' })).toBeNull();
+    fireEvent.click(within(tree()).getByText('Text'));
+    const editor = screen.getByRole('region', { name: 'Text settings' });
+    expect(within(editor).getByRole('radiogroup', { name: 'Font' })).toBeInTheDocument();
+    expect(within(editor).getByRole('radiogroup', { name: 'Answer size' })).toBeInTheDocument();
   });
 });

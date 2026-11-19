@@ -7,19 +7,30 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import type {
-  FontSize,
-  FontWeight,
-  Typography,
-  TypographyStyle,
+import {
+  MODERN_ANSWER_SIZES,
+  type FontSize,
+  type FontWeight,
+  type ModernFont,
+  type ModernStyle,
+  type Typography,
+  type TypographyStyle,
 } from "@/lib/messageRenderingConfig";
 import type { Typeface } from "@/lib/typefaceCatalog";
 import { TypefacePicker } from "./TypefacePicker";
+import { Segmented } from "./Segmented";
 
-interface TypographyEditorProps {
+interface TextEditorProps {
   typography: Typography;
-  onChange: (next: Typography) => void;
+  onTypography: (next: Typography) => void;
+  modern: ModernStyle;
+  onModern: (next: ModernStyle) => void;
 }
+
+const FONT_OPTIONS: { value: ModernFont; label: string }[] = [
+  { value: "geist", label: "Geist" },
+  { value: "content", label: "Chat text typeface" },
+];
 
 const SIZES: { value: FontSize; label: string }[] = [
   { value: "xxs", label: "Extra extra small" },
@@ -107,24 +118,41 @@ const TextColumn: React.FC<TextColumnProps> = ({
   </div>
 );
 
-export const TypographyEditor: React.FC<TypographyEditorProps> = ({ typography, onChange }) => {
-  return (
-    <div className="space-y-6">
-      <div>
-        <h3 className="text-heading-4">Typography</h3>
-        <p className="text-caption text-muted-foreground mt-1">
-          Typeface, size and weight of the chat's body text. Answers use it when
-          Messages sets their font to Content; the App font controls the rest of the app.
-        </p>
+/**
+ * Settings › Chats › Messages › Text: the text the chat is set in. Answers
+ * are in Geist or the chat text's own typeface, at the answer size; prompts
+ * and markdown elsewhere use the chat text's typeface, size and weight.
+ */
+export const TextEditor: React.FC<TextEditorProps> = ({ typography, onTypography, modern, onModern }) => (
+  <section role="region" aria-label="Text settings" className="space-y-5">
+    <div>
+      <h4 className="text-sm font-medium">Text</h4>
+      <p className="text-caption text-muted-foreground mt-0.5">
+        The text the chat is set in. The App font controls the rest of the app.
+      </p>
+    </div>
+    <div className="flex flex-wrap items-center gap-6">
+      <div className="space-y-1">
+        <Label>Answer font</Label>
+        <Segmented label="Font" value={modern.font} options={FONT_OPTIONS} onChange={(font) => { onModern({ ...modern, font }); }} />
       </div>
-      <div className="max-w-sm">
-        <TextColumn
-          title="Content"
-          description="Body text for chat messages — user prompts and assistant markdown."
-          style={typography.content}
-          onChange={(next) => { onChange({ ...typography, content: next }); }}
+      <div className="space-y-1">
+        <Label>Answer size</Label>
+        <Segmented
+          label="Answer size"
+          value={modern.answerSize}
+          options={MODERN_ANSWER_SIZES.map((s) => ({ value: s as number, label: `${String(s)}px` }))}
+          onChange={(answerSize) => { onModern({ ...modern, answerSize }); }}
         />
       </div>
     </div>
-  );
-};
+    <div className="max-w-sm">
+      <TextColumn
+        title="Chat text"
+        description="Prompts and Claude's markdown."
+        style={typography.content}
+        onChange={(next) => { onTypography({ ...typography, content: next }); }}
+      />
+    </div>
+  </section>
+);

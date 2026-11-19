@@ -22,7 +22,9 @@ import {
 import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
 import { MessageKindTree, type TreeSelection } from "./appearance/MessageKindTree";
 import { KindEditor } from "./appearance/KindEditor";
-import { TypographyEditor } from "./appearance/TypographyEditor";
+import { TextEditor } from "./appearance/TextEditor";
+import { StepEditor } from "./appearance/StepEditor";
+import { MODERN_ITEM_KINDS } from "@/lib/renderingConfigMigration";
 import { ModernEditor } from "./appearance/ModernEditor";
 import { CardShapeEditor } from "./appearance/CardShapeEditor";
 import { ModernTurnPreview } from "./appearance/ModernTurnPreview";
@@ -45,9 +47,9 @@ type AppearanceSettingsProps = Pick<SettingsPanelProps, "setToast">;
 const FIRST_SELECTION: TreeSelection = { type: "category", id: "user" };
 
 /** The tabs that exist, so a remembered one that no longer does is ignored. */
-const APPEARANCE_TABS: readonly string[] = ["messages", "turns", "typography"];
+const APPEARANCE_TABS: readonly string[] = ["messages", "turns"];
 /** A tab saved before Messages merged Message kinds and Modern. */
-const LEGACY_TABS: Readonly<Record<string, string>> = { kinds: "messages", modern: "messages" };
+const LEGACY_TABS: Readonly<Record<string, string>> = { kinds: "messages", modern: "messages", typography: "messages" };
 
 
 export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast }) => {
@@ -321,6 +323,7 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
         onReset: () => { resetCategory(c); },
         inheritedCategoryLabel: undefined as string | undefined,
         override: undefined as Partial<KindStyle> | undefined,
+        offersStandard: true,
       };
     };
 
@@ -338,10 +341,12 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
         onReset: () => { resetKind(id); },
         inheritedCategoryLabel: config.categories[cat].label,
         override: config.kinds[id],
+        // Kinds Modern draws as its own items are always in Standard.
+        offersStandard: !MODERN_ITEM_KINDS.has(id),
       };
     }
 
-    return categoryEditor(selected.id);
+    return categoryEditor(selected.type === "category" ? selected.id : "user");
   }, [selected, config, updateCategory, resetCategory, updateKind, clearKindField, resetKind]);
 
   return (
@@ -350,7 +355,6 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
         <TabsList>
           <TabsTrigger value="messages">Messages</TabsTrigger>
           <TabsTrigger value="turns">Turn preview</TabsTrigger>
-          <TabsTrigger value="typography">Typography</TabsTrigger>
         </TabsList>
 
         <TabsContent value="messages" className="mt-4 space-y-4">
@@ -369,11 +373,12 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
 
           <Card className="p-6">
             <div className="mb-4">
-              <h3 className="text-heading-4">Message kinds</h3>
+              <h3 className="text-heading-4">Steps, messages and text</h3>
               <p className="text-caption text-muted-foreground mt-1">
-                The records Modern draws as a line: their icon, color, and whether Standard
-                shows them. Set a <strong>category</strong> for every kind in it, or a{" "}
-                <strong>kind</strong> to override its category. Expanded shows every record.
+                Everything the chat draws: the steps of the work timeline, the records drawn
+                as a line — their icon, color, and whether Standard shows them; set a{" "}
+                <strong>category</strong> for every kind in it, or a <strong>kind</strong> to
+                override it — and the text. Expanded shows every record.
               </p>
             </div>
 
@@ -382,6 +387,22 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
                 <MessageKindTree config={config} selected={selected} onSelect={setSelected} />
               </div>
               <div className="min-w-0">
+                {selected.type === "step" ? (
+                  <StepEditor
+                    kind={selected.id}
+                    icon={config.modern.stepIcons[selected.id]}
+                    color={config.modern.stepColors[selected.id]}
+                    onIcon={(icon) => { setModern({ ...config.modern, stepIcons: { ...config.modern.stepIcons, [selected.id]: icon } }); }}
+                    onColor={(color) => { setModern({ ...config.modern, stepColors: { ...config.modern.stepColors, [selected.id]: color } }); }}
+                  />
+                ) : selected.type === "text" ? (
+                  <TextEditor
+                    typography={config.typography}
+                    onTypography={setTypography}
+                    modern={config.modern}
+                    onModern={setModern}
+                  />
+                ) : (
                 <KindEditor
                   mode={editor.mode}
                   label={editor.label}
@@ -392,7 +413,9 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
                   onChange={editor.onChange}
                   onClearField={editor.onClearField}
                   onReset={editor.onReset}
+                  offersStandard={editor.offersStandard}
                 />
+                )}
               </div>
             </div>
           </Card>
@@ -404,11 +427,6 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
           </Card>
         </TabsContent>
 
-        <TabsContent value="typography" className="mt-4">
-          <Card className="p-6">
-            <TypographyEditor typography={config.typography} onChange={setTypography} />
-          </Card>
-        </TabsContent>
       </Tabs>
 
       {/* Actions live below the tabs so import / export / save-default /

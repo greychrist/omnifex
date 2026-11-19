@@ -51,6 +51,20 @@ async function openModern() {
   return screen.findByTestId('modern-editor');
 }
 
+/** Messages › Text: Font and Answer size moved there from the Modern section. */
+function openText() {
+  fireEvent.click(within(screen.getByRole('tree', { name: 'Message kinds' })).getByText('Text'));
+  return screen.getByRole('region', { name: 'Text settings' });
+}
+
+/** A step in the list's Timeline steps group. */
+function openStep(label: string) {
+  const expand = screen.queryByRole('button', { name: 'Expand all' });
+  if (expand) fireEvent.click(expand);
+  fireEvent.click(within(screen.getByRole('tree', { name: 'Message kinds' })).getByText(label));
+  return screen.getByRole('region', { name: `${label} step settings` });
+}
+
 describe('AppearanceSettings — Modern', () => {
   // A tab saved as Modern before the merge lands on Messages.
   it('opens the Modern settings on Messages, and has no Terminal tab', async () => {
@@ -81,9 +95,10 @@ describe('AppearanceSettings — Modern', () => {
   });
 
   it('saves the font and the answer size', async () => {
-    const editor = await openModern();
-    fireEvent.click(within(editor).getByRole('radio', { name: 'Typography font' }));
-    fireEvent.click(within(editor).getByRole('radio', { name: '16px' }));
+    await openModern();
+    const text = openText();
+    fireEvent.click(within(text).getByRole('radio', { name: 'Chat text typeface' }));
+    fireEvent.click(within(text).getByRole('radio', { name: '16px' }));
     await waitFor(() => {
       expect(savedModern().some((m) => m.font === 'content' && m.answerSize === 16)).toBe(true);
     });
@@ -91,7 +106,7 @@ describe('AppearanceSettings — Modern', () => {
 
   it('hands the live chats its font, answer size and tint through :root', async () => {
     const editor = await openModern();
-    fireEvent.click(within(editor).getByRole('radio', { name: '16px' }));
+    fireEvent.click(within(openText()).getByRole('radio', { name: '16px' }));
     fireEvent.change(within(editor).getByLabelText('Prompt bubble color hex'), { target: { value: '#22c55e' } });
     const root = document.documentElement.style;
     await waitFor(() => {
@@ -162,7 +177,7 @@ describe('AppearanceSettings — Modern', () => {
 
   // One "Colors" section, the three side by side, between Show thoughts and
   // Step icons.
-  it('sets the three colors on one row under a Colors heading, after Show thoughts and before Step icons', async () => {
+  it('sets the three colors on one row under a Colors heading, after Show thoughts', async () => {
     const editor = await openModern();
     const section = within(editor).getByRole('region', { name: 'Colors' });
     expect(within(section).getByText('Colors')).toBeInTheDocument();
@@ -175,9 +190,7 @@ describe('AppearanceSettings — Modern', () => {
       expect(within(grid.children[i] as HTMLElement).getByLabelText(`${name} color hex`)).toBeInTheDocument();
     });
     const thoughts = within(editor).getByRole('switch', { name: 'Show thoughts' });
-    const icons = within(editor).getByRole('group', { name: 'Thought step icon' });
     expect(thoughts.compareDocumentPosition(section) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(section.compareDocumentPosition(icons) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('switches the answer between a card and a bar on the left, card by default', async () => {
@@ -238,50 +251,38 @@ describe('AppearanceSettings — Modern', () => {
 
   // A rule between each pair of the four sections: Work timeline | Colors |
   // Step icons | Text.
-  it('separates the Work timeline, Colors, Step icons and Text sections with a line', async () => {
+  it('separates the Work timeline and Colors sections with a line', async () => {
     const editor = await openModern();
     const seps = within(editor).getAllByRole('separator');
-    expect(seps).toHaveLength(3);
-    const order = [
-      within(editor).getByRole('switch', { name: 'Show thoughts' }),
-      seps[0],
-      within(editor).getByRole('region', { name: 'Colors' }),
-      seps[1],
-      within(editor).getByRole('group', { name: 'Thought step icon' }),
-      seps[2],
-      within(editor).getByRole('radiogroup', { name: 'Font' }),
-    ];
-    for (let i = 1; i < order.length; i++) {
-      expect(order[i - 1].compareDocumentPosition(order[i]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    }
+    expect(seps).toHaveLength(1);
+    const thoughts = within(editor).getByRole('switch', { name: 'Show thoughts' });
+    const colors = within(editor).getByRole('region', { name: 'Colors' });
+    expect(thoughts.compareDocumentPosition(seps[0]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(seps[0].compareDocumentPosition(colors) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it('lists an icon for every kind of step', async () => {
-    const editor = await openModern();
+  it('lists every kind of step under Timeline steps', async () => {
+    await openModern();
+    fireEvent.click(screen.getByRole('button', { name: 'Expand all' }));
+    const tree = within(screen.getByRole('tree', { name: 'Message kinds' }));
     for (const label of ['Thought', 'Command', 'Commit', 'Read', 'Edit', 'Web', 'Agent', 'Design', 'MCP tool', 'Other tool']) {
-      expect(within(editor).getByRole('group', { name: `${label} step icon` })).toBeInTheDocument();
+      // "Agent" is also a category.
+      expect(tree.getAllByText(label).length).toBeGreaterThan(0);
     }
   });
 
   it('sets a colour for a step kind, and resets it to the built-in gray', async () => {
-    const editor = await openModern();
-    const row = within(editor).getByRole('group', { name: 'Edit step icon' });
-    expect(within(row).queryByRole('button', { name: 'Reset Edit color' })).toBeNull();
-    fireEvent.change(within(row).getByLabelText('Edit color'), { target: { value: '#22c55e' } });
+    await openModern();
+    const step = openStep('Edit');
+    expect(within(step).queryByRole('button', { name: 'Reset edit color' })).toBeNull();
+    fireEvent.change(within(step).getByLabelText('Edit color picker'), { target: { value: '#22c55e' } });
     await waitFor(() => {
       expect((savedModern().at(-1)?.stepColors as Record<string, unknown> | undefined)?.edit).toBe('#22c55e');
     });
-    fireEvent.click(within(row).getByRole('button', { name: 'Reset Edit color' }));
+    fireEvent.click(within(openStep('Edit')).getByRole('button', { name: 'Reset edit color' }));
     await waitFor(() => {
       expect((savedModern().at(-1)?.stepColors as Record<string, unknown> | undefined)?.edit).toBeNull();
     });
-  });
-
-  it('heads Step icons with a heading and a caption, larger than the row labels', async () => {
-    const editor = await openModern();
-    const heading = within(editor).getByRole('heading', { name: 'Step icons' });
-    expect(heading).not.toHaveClass('text-sm');
-    expect(heading.nextElementSibling?.tagName).toBe('P');
   });
 });
 

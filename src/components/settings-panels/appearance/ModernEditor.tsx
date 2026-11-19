@@ -1,15 +1,11 @@
+import { Segmented } from "./Segmented";
 import React from "react";
 import { Undo2 } from "lucide-react";
 import {
-  DEFAULT_MODERN,
-  MODERN_ANSWER_SIZES,
   MODERN_PERCENT_MAX,
-  MODERN_STEP_KINDS,
   modernCssVars,
   type MessageRenderingConfig,
   type ModernAnswerStyle,
-  type ModernFont,
-  type ModernStepKind,
   type ModernStyle,
   type TimelineOpen,
 } from "@/lib/messageRenderingConfig";
@@ -20,30 +16,7 @@ import { ModernTranscriptItem, type ModernRowContext } from "@/components/transc
 import type { TurnFooter } from "@/lib/modernTurnFooter";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { IconPicker } from "./IconPicker";
 import { ColorField } from "./ColorField";
-import { cn } from "@/lib/utils";
-
-/** What each step kind is called here — and what `stepKind` files under it. */
-const STEP_LABELS: Record<ModernStepKind, { label: string; hint: string }> = {
-  thought: { label: "Thought", hint: "Claude thinking" },
-  command: { label: "Command", hint: "Bash" },
-  commit: { label: "Commit", hint: "git commit" },
-  branch: { label: "Branch", hint: "git checkout -b / switch -c" },
-  read: { label: "Read", hint: "Read" },
-  edit: { label: "Edit", hint: "Edit, MultiEdit, NotebookEdit" },
-  create: { label: "Create", hint: "Write" },
-  search: { label: "Search", hint: "Grep" },
-  explore: { label: "Explore", hint: "Glob, LS" },
-  web: { label: "Web", hint: "WebSearch, WebFetch" },
-  agent: { label: "Agent", hint: "Agent, Task" },
-  tasks: { label: "Tasks", hint: "TodoWrite, Task tools" },
-  question: { label: "Question", hint: "AskUserQuestion" },
-  skill: { label: "Skill", hint: "Skill" },
-  design: { label: "Design", hint: "Claude Design (Artifacts)" },
-  mcp: { label: "MCP tool", hint: "mcp__*" },
-  tool: { label: "Other tool", hint: "anything else" },
-};
 
 const TIMELINE_OPTIONS: { value: TimelineOpen; label: string }[] = [
   { value: "while-running", label: "Open while running" },
@@ -56,43 +29,6 @@ const ANSWER_STYLE_OPTIONS: { value: ModernAnswerStyle; label: string }[] = [
   { value: "line", label: "Line" },
 ];
 
-const FONT_OPTIONS: { value: ModernFont; label: string }[] = [
-  { value: "geist", label: "Geist" },
-  { value: "content", label: "Typography font" },
-];
-
-/** A row of mutually exclusive buttons — a radio group, so it reads as one. */
-function Segmented<T extends string | number>({
-  label,
-  value,
-  options,
-  onChange,
-}: {
-  label: string;
-  value: T;
-  options: { value: T; label: string }[];
-  onChange: (next: T) => void;
-}) {
-  return (
-    <div role="radiogroup" aria-label={label} className="inline-flex flex-wrap items-center gap-1 rounded-lg bg-muted/30 p-1">
-      {options.map((o) => (
-        <button
-          key={String(o.value)}
-          type="button"
-          role="radio"
-          aria-checked={value === o.value}
-          onClick={() => { onChange(o.value); }}
-          className={cn(
-            "rounded-md px-3 py-1.5 text-xs font-medium transition-all",
-            value === o.value ? "bg-background shadow-sm" : "hover:bg-background/50",
-          )}
-        >
-          {o.label}
-        </button>
-      ))}
-    </div>
-  );
-}
 
 /** A card's saturation or brightness, as a percent of its built-in — the
  *  color's hue stays put. A reset back to 100% once it is moved. */
@@ -163,36 +99,6 @@ function SectionHeading({ id, children }: { id?: string; children: React.ReactNo
   return <h4 id={id} className="text-body font-semibold">{children}</h4>;
 }
 
-/** A step kind's color: a swatch, and a reset back to the built-in gray
- *  once one is set. The native picker takes only #rrggbb. */
-function StepColorField({ label, value, onChange }: { label: string; value: string | null; onChange: (next: string | null) => void }) {
-  return (
-    <>
-      <input
-        type="color"
-        aria-label={`${label} color`}
-        title={value ?? "Built-in gray"}
-        value={value && /^#[0-9a-f]{6}$/i.test(value) ? value : "#888888"}
-        onChange={(e) => { onChange(e.target.value.toLowerCase()); }}
-        className={cn(
-          "h-8 w-9 cursor-pointer rounded-md border border-border bg-background p-1",
-          value === null && "opacity-50",
-        )}
-      />
-      {value !== null ? (
-        <button
-          type="button"
-          onClick={() => { onChange(null); }}
-          aria-label={`Reset ${label} color`}
-          title="Reset to gray"
-          className="text-muted-foreground hover:text-foreground"
-        >
-          <Undo2 className="h-3.5 w-3.5" />
-        </button>
-      ) : <span />}
-    </>
-  );
-}
 
 /** The line between two sections. `bg-border`, not a border: the unlayered
  *  `* { border-color }` reset in styles.css beats border-color utilities. */
@@ -264,12 +170,6 @@ interface ModernEditorProps {
 export const ModernEditor: React.FC<ModernEditorProps> = ({ config, onChange }) => {
   const m = config.modern;
   const patch = (p: Partial<ModernStyle>) => { onChange({ ...m, ...p }); };
-  const setIcon = (kind: ModernStepKind, icon: ModernStyle["stepIcons"][ModernStepKind]) => {
-    onChange({ ...m, stepIcons: { ...m.stepIcons, [kind]: icon } });
-  };
-  const setColor = (kind: ModernStepKind, color: string | null) => {
-    onChange({ ...m, stepColors: { ...m.stepColors, [kind]: color } });
-  };
 
   return (
     <div data-testid="modern-editor" className="space-y-6">
@@ -361,65 +261,6 @@ export const ModernEditor: React.FC<ModernEditorProps> = ({ config, onChange }) 
         </div>
       </section>
 
-      <SectionRule />
-
-      <section className="space-y-3">
-        <SectionHeading>Step icons</SectionHeading>
-        <p className="text-caption text-muted-foreground">
-          The icon and color of each step in the work timeline. A color tints the step's icon and the line beside it when opened; a failed step stays red.
-        </p>
-        <div className="grid grid-cols-1 gap-x-6 gap-y-2 md:grid-cols-2">
-          {MODERN_STEP_KINDS.map((kind) => {
-            const changed = m.stepIcons[kind] !== DEFAULT_MODERN.stepIcons[kind];
-            return (
-              <div
-                key={kind}
-                role="group"
-                aria-label={`${STEP_LABELS[kind].label} step icon`}
-                className="grid grid-cols-[minmax(0,1fr)_10rem_1.25rem_2.25rem_1.25rem] items-center gap-2"
-              >
-                <div className="min-w-0">
-                  <div className="text-sm">{STEP_LABELS[kind].label}</div>
-                  <div className="truncate text-[11px] text-muted-foreground">{STEP_LABELS[kind].hint}</div>
-                </div>
-                <IconPicker value={m.stepIcons[kind]} onChange={(v) => { setIcon(kind, v); }} />
-                {changed ? (
-                  <button
-                    type="button"
-                    onClick={() => { setIcon(kind, DEFAULT_MODERN.stepIcons[kind]); }}
-                    aria-label={`Reset ${STEP_LABELS[kind].label} icon`}
-                    className="text-muted-foreground hover:text-foreground"
-                  >
-                    <Undo2 className="h-3.5 w-3.5" />
-                  </button>
-                ) : <span />}
-                <StepColorField label={STEP_LABELS[kind].label} value={m.stepColors[kind]} onChange={(v) => { setColor(kind, v); }} />
-              </div>
-            );
-          })}
-        </div>
-      </section>
-
-      <SectionRule />
-
-      <section className="space-y-3">
-        <SectionHeading>Text</SectionHeading>
-        <div className="flex flex-wrap items-center gap-6">
-          <div className="space-y-1">
-            <div className="text-caption text-muted-foreground">Font</div>
-            <Segmented label="Font" value={m.font} options={FONT_OPTIONS} onChange={(v) => { patch({ font: v }); }} />
-          </div>
-          <div className="space-y-1">
-            <div className="text-caption text-muted-foreground">Answer size</div>
-            <Segmented
-              label="Answer size"
-              value={m.answerSize}
-              options={MODERN_ANSWER_SIZES.map((s) => ({ value: s as number, label: `${String(s)}px` }))}
-              onChange={(v) => { patch({ answerSize: v }); }}
-            />
-          </div>
-        </div>
-      </section>
 
     </div>
   );

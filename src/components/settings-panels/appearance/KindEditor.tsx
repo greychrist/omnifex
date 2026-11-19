@@ -23,6 +23,8 @@ interface KindEditorProps {
   /** Put a field back: a kind inherits again, a category takes its default. */
   onClearField: (field: keyof KindStyle) => void;
   onReset: () => void;
+  /** False for kinds Modern draws as its own items: always in Standard. */
+  offersStandard?: boolean;
 }
 
 /**
@@ -40,6 +42,7 @@ export const KindEditor: React.FC<KindEditorProps> = ({
   onChange,
   onClearField,
   onReset,
+  offersStandard = true,
 }) => {
   const isKind = mode === "kind";
   const inherited = (field: keyof KindStyle) => isKind && override?.[field] === undefined;
@@ -89,6 +92,7 @@ export const KindEditor: React.FC<KindEditorProps> = ({
         }}
       />
 
+      {offersStandard && (
       <div className="flex items-center justify-between gap-3">
         <div>
           <Label htmlFor={`standard-${label}`}>Show in Standard</Label>
@@ -111,6 +115,7 @@ export const KindEditor: React.FC<KindEditorProps> = ({
           />
         </div>
       </div>
+      )}
     </section>
   );
 };
