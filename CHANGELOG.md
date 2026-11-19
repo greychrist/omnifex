@@ -5,6 +5,28 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.51] — 2026-11-19
+
+### Added
+- Two chat views, Standard and Expanded, in place of the four formats (Compact, Verbose, All, Modern). Both draw the conversation the same way — the format that was Modern. Standard leaves out the kinds of record you hide in settings; Expanded shows every record the session holds, so none goes unaccounted for. Each tab switches with a two-button toggle; a saved Compact or Modern default becomes Standard, Verbose or All becomes Expanded.
+- The user prompt can be drawn as a card or as a line, like the answer: the line is a bar down its right edge, the text right-aligned under a User prompt label in the prompt's color and the User prompt icon.
+- Turn preview in Settings › Chats draws a sample session with a record of every kind, in Standard or Expanded, through the real renderer.
+
+### Changed
+- Every record that is not conversation is drawn as one Modern line in its kind's icon and color, including the ones that used to fall back to the old message card.
+- Settings › Chats is two tabs. Messages holds the Modern settings, card shape, and one list of everything the chat draws: the timeline steps (icon and color), the message kinds by category (icon, color, and whether Standard shows them), and Text (answer font and size, and the chat text's typeface, size and weight). "Prompt bubble" is now "User prompt".
+- Standard shows exactly what Modern showed before: your saved settings are carried over kind by kind, and stored under a new key so an older OmniFex sharing the same database cannot reset them.
+- The CLI's task ticker now sets task statuses in the task panel itself (Claude Code 2.1.328).
+
+### Fixed
+- After /compact, the last reply no longer appears a second time and no longer takes the turn's Answer label from the original; the context rail no longer shows a "0" badge and a drop before the compaction.
+- The context rail no longer draws a dashed segment at a compaction; the "compacted" note marks it.
+- Accept Edits no longer auto-allows an edit the CLI says a person must answer.
+- Claude Code 2.1.328's api-request-resumed record no longer draws as an unrecognized record.
+
+### Removed
+- The classic message renderer and its settings: per-kind presentation, alignment, borders and header labels, the hidden-events bar, the All cards editor, the Typography tab, and the Italic option, which no longer changed anything.
+
 ## [0.5.50] — 2026-11-18
 
 ### Changed
