@@ -55,10 +55,20 @@ const FILE_EDIT_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
  *    classifier runs inside the CLI before it ever delegates here, so a request
  *    that still reaches us is one the CLI wants a human to confirm.
  */
+/** The can_use_tool fields that say the CLI wants a person to answer. */
+interface EscalationSignals {
+  blocked_path?: string;
+  decision_reason_type?: string;
+  /** CLI 2.1.328 on the stdio payload: "no stored grant or automatic
+   *  approval may answer" this ask (classifier-blocked person-only asks,
+   *  host-worded asks, connector-name clashes). */
+  requires_user_interaction?: boolean;
+}
+
 function autoDecisionForMode(
   mode: string,
   toolName: string,
-  payload: { blocked_path?: string; decision_reason_type?: string } = {},
+  payload: EscalationSignals = {},
   agent: 'claude' | 'codex' = 'claude',
 ): 'allow' | 'deny' | null {
   switch (mode) {
@@ -102,12 +112,16 @@ function isSafetyCheck(payload: { decision_reason_type?: string }): boolean {
  * Auto-allowing those overrode the CLI's own ask with nobody looking — the
  * decider answers in the human's place, so its answer is final.
  *
- * An edit with neither marker is one the CLI would have accepted had it known
+ * Since 2.1.328 the CLI also says so outright with
+ * `requires_user_interaction`.
+ *
+ * An edit with none of these markers is one the CLI would have accepted had it known
  * the mode; allowing it keeps the dropdown effective even if the CLI never
  * received `set_permission_mode`.
  */
-function isEscalatedEdit(payload: { blocked_path?: string; decision_reason_type?: string }): boolean {
+function isEscalatedEdit(payload: EscalationSignals): boolean {
   return (
+    payload.requires_user_interaction === true ||
     !!payload.blocked_path ||
     payload.decision_reason_type === 'workingDir' ||
     isSafetyCheck(payload)
@@ -523,6 +537,7 @@ export function createPermissionRequestHandler(
       display_name?: string;
       description?: string;
       suppress_always_allow_rule?: boolean;
+      requires_user_interaction?: boolean;
     };
     const toolName = rawPayload.tool_name ?? 'unknown';
     const toolInput = rawPayload.input ?? {};

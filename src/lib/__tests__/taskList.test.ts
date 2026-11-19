@@ -526,3 +526,65 @@ describe('summarizeTaskList', () => {
     });
   });
 });
+
+// CLI 2.1.328's task ticker: a small model marks TaskCreate items itself and
+// tells Claude not to call TaskUpdate. The only signal is a stdout frame,
+// `system/task_list_statuses`, which the classifier keeps as an `unknown`
+// node. Shape from the CLI's schema: {statuses:[{id, status}], uuid,
+// session_id}. "It sets the tasks it names; a task it leaves out keeps its
+// last status. A later TaskUpdate result that changes a status wins."
+describe('getTaskList — task ticker statuses (CLI 2.1.328)', () => {
+  function statusesMsg(statuses: Array<{ id: string; status: string }>): JsonlNode {
+    return {
+      kind: 'unknown', sessionId: 's', receivedAt: null,
+      raw: { type: 'system', subtype: 'task_list_statuses', statuses, uuid: 'u', session_id: 's' },
+    } as unknown as JsonlNode;
+  }
+
+  function twoTasks(): JsonlNode[] {
+    return [
+      taskCreateMsg('tc1', { subject: 'A' }),
+      taskCreateResultMsg('tc1', '1'),
+      taskCreateMsg('tc2', { subject: 'B' }),
+      taskCreateResultMsg('tc2', '2'),
+    ];
+  }
+
+  it('applies the statuses it names and leaves the rest alone', () => {
+    const list = getTaskList([
+      ...twoTasks(),
+      statusesMsg([{ id: '1', status: 'completed' }]),
+    ])!;
+    expect(list.map((t) => [t.id, t.status])).toEqual([['1', 'completed'], ['2', 'pending']]);
+  });
+
+  it('attributes later work to the task it marked in progress', () => {
+    const list = getTaskList([
+      ...twoTasks(),
+      statusesMsg([{ id: '1', status: 'completed' }, { id: '2', status: 'in_progress' }]),
+      assistantText('working on B'),
+    ])!;
+    expect(list[1].status).toBe('in_progress');
+    expect(list[1].messages).toHaveLength(1);
+    expect(list[0].messages).toHaveLength(0);
+  });
+
+  it('lets a later TaskUpdate win', () => {
+    const list = getTaskList([
+      ...twoTasks(),
+      statusesMsg([{ id: '1', status: 'completed' }]),
+      taskUpdateMsg('tu1', { taskId: '1', status: 'in_progress' }),
+    ])!;
+    expect(list[0].status).toBe('in_progress');
+  });
+
+  it('ignores unknown ids, unknown statuses and a malformed frame', () => {
+    const list = getTaskList([
+      ...twoTasks(),
+      statusesMsg([{ id: '9', status: 'completed' }, { id: '2', status: 'deleted' }]),
+      { kind: 'unknown', sessionId: 's', receivedAt: null,
+        raw: { type: 'system', subtype: 'task_list_statuses', statuses: 'nope' } } as unknown as JsonlNode,
+    ])!;
+    expect(list.map((t) => t.status)).toEqual(['pending', 'pending']);
+  });
+});

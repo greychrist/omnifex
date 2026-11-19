@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { isRequestReplayLine } from '../services/util/request-replay';
 
 describe('isRequestReplayLine', () => {
-  it.each(['api-request', 'api-request-shape', 'api-request-blob'])('matches a %s record', (type) => {
+  it.each(['api-request', 'api-request-shape', 'api-request-blob', 'api-request-resumed'])('matches a %s record', (type) => {
     expect(isRequestReplayLine(JSON.stringify({ type, sessionId: 's' }))).toBe(true);
   });
 

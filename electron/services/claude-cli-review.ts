@@ -66,6 +66,113 @@ import { probeBinaryVersion } from './util/exec-text';
  *    and no `Artifact` is working, not broken. Neither present = re-read
  *    the gate.
  *
+ * Last review: 2.1.327 -> 2.1.328 on 2026-11-19. Findings: none broken.
+ * One latent record (`api-request-resumed`) fixed. One baseline
+ * (`task_list_statuses`). Task ticker statuses taken into the task panel;
+ * acceptEdits now honors `requires_user_interaction`. Both landed the same
+ * day.
+ *
+ *  Changelog coverage: 2.1.328 (~150 entries; mostly Code Mode, self-hosted
+ *  runner, cloud/Remote Control, terminal UI). Both ends installed. Script
+ *  exit 0. hook_event_name (33), control envelopes (5), SDK requests (55),
+ *  control request schemas (108), CLI flags (117), origin kinds (14),
+ *  subtype literals (169) identical. /usage anchors unchanged
+ *  (`Estimated cost:` 2 -> 2).
+ *  - Merge map +`api-request-resumed` (boundary-cleared): request replay for
+ *    a paused request that resumed ({messageId, pausedRequestId,
+ *    resumedRequestId}, plus the full request params on the main thread).
+ *    The CLI writes it through the same recorder as `api-request`
+ *    (`appendResumed`), behind the same `CLAUDE_CODE_ELEGANT_MEADOW` gate.
+ *    Our spawns set that to 0, but terminal-spawned transcripts would draw
+ *    "Unrecognized record" and be fully parsed by the readers. (b) latent,
+ *    FIXED: added to CLI_SIDECHANNEL_RECORD_TYPES and to the
+ *    isRequestReplayLine regex, with tests. Zero in both accounts.
+ *  - `system` +`task_list_statuses` ({statuses:[{id,status}]}, stdout):
+ *    comes from the new "task ticker". A small model (`task_ticker_step` /
+ *    `_close` / `_confirm` query sources) marks TaskCreate items
+ *    in_progress / completed with no TaskUpdate call, when a live `keeper`
+ *    exists on the session. The TaskCreate result then carries
+ *    `appKeepsStatuses: true` and tells the model "The app marks these items
+ *    in progress and checks them off by itself... you don't need to call
+ *    TaskUpdate". It doesn't draw for us: it is forwarded (stream-forward's
+ *    deny-list), then dropped by isTaskLifecycleMarker's `task_` prefix.
+ *    Baselined 'filtered'. GAP, FIXED (live half): taskList.ts followed
+ *    only TaskUpdate, so the panel would go stale. `taskTickerStatuses`
+ *    now applies the frame's statuses in stream order, and a later
+ *    TaskUpdate still wins. A reloaded tab gets no stdout frames, so it is
+ *    stale until we know whether the JSONL persists the statuses. What
+ *    installs the keeper is in Bun bytecode and unread; only telemetry names
+ *    `tengu_task_ticker`. Zero `appKeepsStatuses` / "The app marks these
+ *    items" in both accounts outside this review's own transcript.
+ *  - can_use_tool key +`requires_user_interaction` on the stdio schema
+ *    (on the SDK permission message since 2.1.241). Describe: one-tap
+ *    Approve/Deny must not be offered; "no stored grant or automatic
+ *    approval may answer" classifier-blocked person-only asks, connector
+ *    name spoofs, host-worded asks. OmniFex push has no approve action, and
+ *    the card is a full surface. (a). Hardening TAKEN: acceptEdits'
+ *    auto-allow (permissions.ts, isEscalatedEdit) now sends a flagged edit
+ *    to the card. Unlikely to fire (no classifier outside Auto).
+ *  - Type literals, inert: `dangerous_tool_use` (API stream flag status),
+ *    `tool_offer_record` (deferred-tool offer bookkeeping), `repl_mcp_servers`
+ *    (Code Mode note), `declared` (plugin `network` hosts, plugin
+ *    validate), `usage`/`options*`/`details`/`desktop` (/plugin UI pages).
+ *    The removals are minifier/UI renames.
+ *  - Describe moves: peer-message hold / delivery notices / `--cloud`
+ *    message_undelivered (remote); foreground agent auto-backgrounded when
+ *    its permission prompt goes unanswered (model-facing text; we already
+ *    draw background agents); member spend-limit field and managed-settings
+ *    status (not read); connector_files line; sandbox allowWrite on Windows;
+ *    plugin/MCP `network` hosts; mcp_tool hook onFailure; ReportFindings
+ *    tool (/code-review); allowedMcpServers wording. None asks anything of
+ *    a host like us.
+ *  - Object keys +676 -1178: env names (CLAUDE_CODE_DISABLE_DEFERRED_TOOL_
+ *    RESUME, _THINKING_RESUMPTION, _SHELL_MCP_SERVERS...), signals, CI
+ *    names, DOM/zlib constants leaving. Nothing new on user/assistant
+ *    records or the initialize reply.
+ *  - Changelog, in our favor: auto-compaction rebuilds the system prompt
+ *    the way /compact does; the model no longer says background agents run
+ *    after an SDK interrupt; "Send now" in SDK hosts no longer reports a
+ *    stopped web search as empty; subagent token counts no longer double
+ *    retries; a mod saved just after a turn began no longer reloads
+ *    mid-turn; a plugin toast no longer shows another plugin's text; the
+ *    usage-credits error no longer names a rate limit (nothing of ours
+ *    matches that text); faster resume of large sessions.
+ *  - Changelog, inert: `mcp_tool` hooks `onFailure:"block"` (HooksEditor
+ *    authors command hooks only and round-trips unknown keys);
+ *    CLAUDE_CODE_DISABLE_DEFERRED_TOOL_RESUME (we defer no tools); auto mode
+ *    for 4.6 models on 3P providers; 3P / telemetry-off behavior changes;
+ *    managed PostToolUse no longer fires on refused calls (managed only);
+ *    /usage plugin total at 2,000 tokens (we parse the % column, not
+ *    totals); /code-review severity format; sandbox-start reporting;
+ *    `CLAUDE_CODE_FORK_SUBAGENT=0` wait changes (we don't set it); Code
+ *    Mode, self-hosted runner, cloud, Remote Control, VS Code, Linux and
+ *    every terminal-UI fix. No permission-rule syntax change;
+ *    docs/permission-syntax.md unaffected.
+ *  - Open items re-checked in both accounts' projects/ (files since the
+ *    2.1.327 install): supersedesUuids 0, plugin_note 0, real ui_notify
+ *    frames 0 (3 files only mention it), api-request-resumed 0.
+ *
+ *  Script + prompt: `task_list_statuses` baseline. Prompt step 4 now says a
+ *  `task_`-prefixed subtype is dropped by isTaskLifecycleMarker, so the risk
+ *  is silent state loss, not a card.
+ *
+ *  OPEN ITEMS (carry forward; re-check each review):
+ *   - Task ticker reload: first `appKeepsStatuses` / `task_list_statuses`
+ *     in one of our sessions, check its JSONL for a persisted form of the
+ *     statuses; a reloaded tab's panel is stale until then. Also confirms
+ *     the live frame matches the schema taskTickerStatuses reads.
+ *   - Fullscreen /usage order: capture a subscriber render with windows
+ *     before `Session`; bound windowBlock at the Session header if so.
+ *   - plugin_note: shape taken from the bundle; check the first real one
+ *     against contextLedger's reading (plugin, rowUuid, content[]).
+ *   - Idle compaction: verify the first real occurrence (2.1.314 block).
+ *   - ui_notify: unverified against a real mod; first `$.ui.notify` seen in
+ *     a transcript or reported banner closes it.
+ *   - `supersedes`: first `"supersedesUuids":[` in a transcript decides
+ *     whether the renderer must drop the named rows.
+ *   - Auto-mode classifier fallback removal: when it lands, check how its
+ *     asks / denials reach the card (2.1.327 heads-up; not in 2.1.328).
+ * *
  * Last review: 2.1.326 -> 2.1.327 on 2026-11-17. Findings: none broken,
  * no bugs, no opportunities taken. One script baseline (`shell_cwd`).
  *
@@ -5715,7 +5822,7 @@ import { probeBinaryVersion } from './util/exec-text';
  * `~/.claude.json` fix (we read-modify-write that file, never replace it), and
  * the VSCode screen-reader work.
  */
-export const REVIEWED_CLI_VERSION = '2.1.327';
+export const REVIEWED_CLI_VERSION = '2.1.328';
 
 /**
  * app_settings key holding the user's explicit OmniFex-checkout override.

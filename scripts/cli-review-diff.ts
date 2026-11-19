@@ -206,6 +206,11 @@ export const UNDRAWN_SYSTEM_SUBTYPES: Readonly<Record<string, string>> = {
   // Background-task lifecycle: dropped by messageFilters before render.
   task_started: 'filtered', task_updated: 'filtered', task_progress: 'filtered',
   task_notification: 'filtered', task_summary: 'filtered',
+  // 2.1.328: the task ticker's statuses (a small model ticking off TaskCreate
+  // items with no TaskUpdate call). Stdout only; forwarded, then dropped by
+  // the `task_` prefix in isTaskLifecycleMarker. taskList.ts reads it for
+  // the task panel before that filter (taskTickerStatuses).
+  task_list_statuses: 'filtered',
   // Opt-in SDK host events (session state, retries, attachments, memory,
   // plugins), none of which a default stream-json spawn has been seen to send.
   session_state_changed: 'sdk opt-in', api_retry: 'sdk opt-in', files_persisted: 'sdk opt-in',

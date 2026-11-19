@@ -89,6 +89,23 @@ describe('isCliSidechannelRecord', () => {
     ).toBe(true);
   });
 
+  // New in CLI 2.1.328: `api-request-resumed`, the request-replay record for
+  // a paused request picked up again (messageId, pausedRequestId,
+  // resumedRequestId, plus the request params on the main thread). Same
+  // `boundary-cleared` merge strategy and the same CLAUDE_CODE_ELEGANT_MEADOW
+  // gate as `api-request`.
+  it('recognises the 2.1.328 api-request-resumed record', () => {
+    expect(
+      isCliSidechannelRecord({
+        type: 'api-request-resumed',
+        sessionId: 's',
+        messageId: 'msg_1',
+        pausedRequestId: 'req_1',
+        resumedRequestId: 'req_2',
+      }),
+    ).toBe(true);
+  });
+
   // New in CLI 2.1.283: a latch naming the session's plugin "dev mods"
   // folder (`<config>/dev-mods/<sessionId>`, hot-reloaded as a plugin dir).
   // `last-wins` in the CLI's merge map; written when dev mods are enabled

@@ -26,8 +26,8 @@ import type { MessageContentBlock } from '@/types/claudeStream';
  *     system managing itself.
  *
  * The pattern mirrors `src/lib/subagentEvents.ts`'s reducer style:
- * walk-once, state map keyed by id, terminal status overrides only via
- * the CLI's canonical TaskUpdate carrier.
+ * walk-once, state map keyed by id, status changes only via the CLI's
+ * TaskUpdate carrier or its task-ticker frame (`taskTickerStatuses`).
  */
 
 export type TaskStatus = 'pending' | 'in_progress' | 'completed';
@@ -197,6 +197,28 @@ function isAttributable(m: JsonlNode): boolean {
   return structural < renderable;
 }
 
+/**
+ * The statuses in a CLI task-ticker frame (2.1.328), or null when `m` is not
+ * one. With the ticker on, a small model marks TaskCreate items itself and
+ * Claude is told not to call TaskUpdate, so this stdout-only frame is the
+ * only place the change shows. Schema: `{type:'system',
+ * subtype:'task_list_statuses', statuses:[{id, status}]}`. It sets the
+ * tasks it names; the rest keep their status. The classifier keeps it as an
+ * `unknown` node and messageFilters hides it (the `task_` prefix).
+ */
+function taskTickerStatuses(m: JsonlNode): Array<{ id: string; status: TaskStatus }> | null {
+  const raw = (m as unknown as { raw?: { type?: unknown; subtype?: unknown; statuses?: unknown } }).raw;
+  if (raw?.type !== 'system' || raw.subtype !== 'task_list_statuses') return null;
+  if (!Array.isArray(raw.statuses)) return [];
+  return raw.statuses.flatMap((entry: unknown) => {
+    const { id, status } = (entry ?? {}) as { id?: unknown; status?: unknown };
+    const coerced = coerceSdkStatus(status);
+    return typeof id === 'string' && coerced !== null && coerced !== 'deleted'
+      ? [{ id, status: coerced }]
+      : [];
+  });
+}
+
 export function getTaskList(messages: JsonlNode[]): TaskListEntry[] | null {
   const byToolUseId = new Map<string, InternalTask>();
   const byTaskId = new Map<string, InternalTask>();
@@ -215,6 +237,18 @@ export function getTaskList(messages: JsonlNode[]): TaskListEntry[] | null {
     // task-list summarizer treats real-state pending tasks correctly.
     if (m.kind === 'cli-stream-result') {
       currentTaskId = null;
+      continue;
+    }
+
+    const tickerStatuses = taskTickerStatuses(m);
+    if (tickerStatuses) {
+      for (const { id, status } of tickerStatuses) {
+        const task = byTaskId.get(id);
+        if (!task) continue;
+        task.status = status;
+        if (status === 'in_progress') currentTaskId = id;
+        else if (currentTaskId === id) currentTaskId = null;
+      }
       continue;
     }
 

@@ -86,6 +86,10 @@ export const CLI_SIDECHANNEL_RECORD_TYPES: ReadonlySet<string> = new Set([
   'api-request',
   'api-request-shape',
   'api-request-blob',
+  // 2.1.328: a paused request picked up again (messageId, pausedRequestId,
+  // resumedRequestId, plus the request params on the main thread). Same
+  // gate and merge strategy as `api-request`.
+  'api-request-resumed',
   // Dropped from the CLI's merge map in 2.1.276. Kept: transcripts written
   // by 2.1.275 and earlier still carry them, and the list exists to silence
   // records already on disk.

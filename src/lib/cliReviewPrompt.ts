@@ -137,7 +137,10 @@ grep, a file read or a transcript behind it.
      to a stream-json host, classify it and give it a render (it draws an
      orange "Unrecognized record: system" card until then). If not, add it
      to \`UNDRAWN_SYSTEM_SUBTYPES\` in \`scripts/cli-review-diff.ts\`, with
-     why.
+     why. A \`task_\`-prefixed subtype never draws
+     (\`src/lib/subagentEvents.ts\`, \`isTaskLifecycleMarker\`, drops it), so
+     it is \`filtered\`. Check whether it carries state a panel should read.
+     Being dropped silently is the failure mode there, not a card.
    - **New drawn records in the Modern format.** Anything the classifier
      learns and \`src/lib/modernGrouping.ts\` (\`buildModernItems\`) doesn't
      model becomes an \`other\` item, which Modern draws as a Compact card.

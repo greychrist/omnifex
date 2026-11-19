@@ -1,7 +1,8 @@
 /**
  * Request replay — the CLI's `api-request`, `api-request-shape` and
  * `api-request-blob` transcript records (CLI >= 2.1.282, on by default since
- * 2.1.300). Each `api-request` repeats the full request params, and in auto
+ * 2.1.300), plus `api-request-resumed` (2.1.328, a paused request resumed;
+ * same gate). Each `api-request` repeats the full request params, and in auto
  * mode those carry a classifier context that grows ~0.8 KB per model call up
  * to a 256 KB ceiling, so a long session's transcript is mostly these. Nothing
  * in OmniFex reads them.
@@ -15,12 +16,12 @@
  *    `JSON.parse`, so a terminal-spawned transcript costs its readers (and the
  *    renderer, which only ever filtered them out) nothing.
  *
- * The renderer still lists the three types in `cliSidechannelRecords.ts`: that
+ * The renderer still lists the four types in `cliSidechannelRecords.ts`: that
  * is the backstop if the CLI ever writes `type` anywhere but first.
  */
 export const REQUEST_REPLAY_ENV = 'CLAUDE_CODE_ELEGANT_MEADOW';
 
-const REQUEST_REPLAY_LINE = /^\s*\{"type":"api-request(?:-shape|-blob)?"/;
+const REQUEST_REPLAY_LINE = /^\s*\{"type":"api-request(?:-shape|-blob|-resumed)?"/;
 
 /** Whether a raw JSONL line is a request-replay record. Never parses. */
 export function isRequestReplayLine(line: string): boolean {

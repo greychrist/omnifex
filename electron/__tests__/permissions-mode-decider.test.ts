@@ -179,6 +179,15 @@ describe('permission-mode decider (auto allow/deny vs prompt)', () => {
       expect(handle.permissionQueue).toHaveLength(1);
     });
 
+    // CLI 2.1.328 puts `requires_user_interaction` on the stdio can_use_tool
+    // payload: "no stored grant or automatic approval may answer" it.
+    it('prompts for an edit the CLI says a person must answer', () => {
+      const { fn, handle, respondPermission } = handlerFor('acceptEdits');
+      fn(escalated({ file_path: '/Users/test/proj/src/a.ts' }, { requires_user_interaction: true }));
+      expect(respondPermission).not.toHaveBeenCalled();
+      expect(handle.permissionQueue).toHaveLength(1);
+    });
+
     it('still auto-allows an in-project edit the CLI did not escalate (mode out of sync)', () => {
       // The decider enforces the dropdown even when the CLI never received
       // set_permission_mode — the "kept asking after I set it" fix.
