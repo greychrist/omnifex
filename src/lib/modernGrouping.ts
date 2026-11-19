@@ -30,7 +30,7 @@
  * record never re-keys the items before it.
  */
 import type { JsonlNode } from '@/types/jsonl';
-import type { MessageRenderingConfig, ModernRecordRules } from './messageRenderingConfig';
+import type { MessageRenderingConfig } from './messageRenderingConfig';
 import { isMessageFullyHidden } from './recordVisibility';
 import { isMainPrompt } from './transcriptStepper';
 import { rowKeyOf } from './rowKey';
@@ -223,12 +223,11 @@ export function buildModernItems(
   /** The whole transcript, for pairing tools with results: the display
    *  filter drops tool-result rows, which other formats reach by lookup. */
   allMessages: JsonlNode[] = messages,
-  /** Which format's rules leave records out (Settings › Modern › Show
-   *  records like). Under Verbose and All nothing more is left out here: the
-   *  caller has already dropped Never kinds (All reveals them first). */
-  rules: ModernRecordRules = 'compact',
+  /** Standard: records whose kinds are hidden in Standard are left out.
+   *  Expanded passes false and every record is drawn. */
+  filtered = true,
 ): ModernItem[] {
-  const hidden = (node: JsonlNode) => rules === 'compact' && isMessageFullyHidden(node, messages, config);
+  const hidden = (node: JsonlNode) => filtered && isMessageFullyHidden(node, messages, config);
   // Every tool result, by the tool use it answers.
   const results = new Map<string, { node: JsonlNode; text: string; error: boolean }>();
   for (const node of allMessages) {

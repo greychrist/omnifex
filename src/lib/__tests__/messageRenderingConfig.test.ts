@@ -13,17 +13,14 @@ import {
   CATEGORIES,
   KIND_REGISTRY,
   categoryOf,
-  isHiddenInCompact,
-  isNeverShown,
-  revealNeverShown,
 } from "../messageRenderingConfig";
 
 // ─── config v5 ──────────────────────────────────────────────────────────────
 
 describe("config v5", () => {
-  it("default config is version 5 with an empty kinds map", () => {
+  it("default config is version 6 with an empty kinds map", () => {
     const cfg = createDefaultConfig();
-    expect(cfg.version).toBe(5);
+    expect(cfg.version).toBe(6);
     expect(cfg.kinds).toEqual({});
   });
 
@@ -34,16 +31,9 @@ describe("config v5", () => {
     expect(back.kinds["user.prompt"]).toEqual({ accentColor: "#14b8a6" });
   });
 
-  it("keeps a narrow-centered alignment through save and load", () => {
-    const cfg = createDefaultConfig();
-    cfg.kinds["assistant.text.live"] = { alignment: "narrow-center" };
-    const back = parseConfig(serializeConfig(cfg));
-    expect(back.kinds["assistant.text.live"]).toEqual({ alignment: "narrow-center" });
-  });
-
   it("resets to defaults when the saved version is not 5", () => {
     const merged = mergeConfig({ version: 4, overrides: [{ id: "x", category: "system", match: [], style: {} }] });
-    expect(merged.version).toBe(5);
+    expect(merged.version).toBe(6);
     expect(merged.kinds).toEqual({});
   });
 
@@ -74,9 +64,8 @@ describe("resolveKind (three-layer merge)", () => {
   it("returns the category default for the kind's category", () => {
     const cfg = createDefaultConfig();
     const s = resolveKind(cfg, "user.prompt");
-    expect(s.alignment).toBe("right");
-    expect(s.headerLabel).toBe("You");
-    expect(s.presentation).toBe("card");
+    expect(s.icon).toBe("User");
+    expect(s.accentColor).toBe("#60a5fa");
   });
 
   it("registry default overrides category base, user patch wins over both", () => {
@@ -85,7 +74,7 @@ describe("resolveKind (three-layer merge)", () => {
     const s = resolveKind(cfg, "assistant.text.endTurn");
     expect(s.accentColor).toBe("#22c55e");  // registry default
     expect(s.icon).toBe("CheckCircle2");    // registry default
-    expect(s.headerLabel).toBe("Claude");   // inherited from agent category
+    expect(s.standard).toBe(true);           // inherited from agent category
     // now add a user patch
     cfg.kinds["assistant.text.endTurn"] = { accentColor: "#ec4899" };
     expect(resolveKind(cfg, "assistant.text.endTurn").accentColor).toBe("#ec4899"); // user wins
@@ -96,44 +85,29 @@ describe("resolveKind (three-layer merge)", () => {
 // ─── createDefaultConfig ─────────────────────────────────────────────────────
 
 describe("createDefaultConfig", () => {
-  it("is version 5 with categories and an empty kinds map", () => {
+  it("is version 6 with categories and an empty kinds map", () => {
     const cfg = createDefaultConfig();
-    expect(cfg.version).toBe(5);
+    expect(cfg.version).toBe(6);
     expect(Object.keys(cfg.categories).sort()).toEqual(["agent", "live", "system", "user"]);
     expect(cfg.kinds).toEqual({});
-  });
-
-  it("includes every category and their presentations", () => {
-    const cfg = createDefaultConfig();
-    for (const c of CATEGORIES) {
-      expect(cfg.categories[c].presentation).toBeDefined();
-    }
-  });
-
-  it("defaults user.systemContext to the collapsible presentation with raw-payload metadata", () => {
-    const cfg = createDefaultConfig();
-    const s = resolveKind(cfg, "user.systemContext");
-    expect(s.presentation).toBe("collapsible");
-    expect(s.showRawPayload).toBe(true);
   });
 
   it("returns independent copies on each call", () => {
     const a = createDefaultConfig();
     const b = createDefaultConfig();
-    a.categories.user.headerLabel = "MUTATED";
-    expect(b.categories.user.headerLabel).toBe("You");
+    a.categories.user.label = "MUTATED";
+    expect(b.categories.user.label).toBe("User");
   });
 
-  it("compactBoundaryLocked kinds are set via registry defaults", () => {
+  it("alwaysShown kinds are set via registry defaults", () => {
     const cfg = createDefaultConfig();
-    // These kinds carry compactBoundaryLocked in their registry default
+    // Turn boundaries: always on screen in Standard.
     const locked = Object.keys(KIND_REGISTRY)
-      .filter((id) => resolveKind(cfg, id).compactBoundaryLocked)
+      .filter((id) => resolveKind(cfg, id).alwaysShown)
       .sort();
     expect(locked).toEqual([
       "assistant.text.endTurn",
       "summary.compaction",
-      "unknown",
       "user.prompt",
     ]);
   });
@@ -150,20 +124,20 @@ describe("mergeConfig", () => {
 
   it("resets to defaults when saved version is not 5 (v4)", () => {
     const merged = mergeConfig({ version: 4, categories: {}, overrides: [] });
-    expect(merged.version).toBe(5);
+    expect(merged.version).toBe(6);
     expect(merged.kinds).toEqual({});
   });
 
   it("resets to defaults when saved version is not 5 (v2)", () => {
     const merged = mergeConfig({ version: 2, kinds: { "user.prompt": { accentColor: "pink" } } });
-    expect(merged.version).toBe(5);
+    expect(merged.version).toBe(6);
     // The v2 kinds are NOT migrated — full reset
     expect(merged.kinds).toEqual({});
   });
 
   it("resets to defaults when saved version is not 5 (v3)", () => {
     const merged = mergeConfig({ version: 3, overrides: { "assistant.tool-use": { accentColor: "info" } } });
-    expect(merged.version).toBe(5);
+    expect(merged.version).toBe(6);
     expect(merged.kinds).toEqual({});
   });
 
@@ -187,14 +161,13 @@ describe("mergeConfig", () => {
         "user.prompt": { headerLabel: "Me", accentColor: "amber" },
       },
     });
-    // A saved palette name is migrated to its hex on load.
-    expect(cfg.kinds["user.prompt"]).toEqual({ headerLabel: "Me", accentColor: "#f59e0b" });
+    // A saved palette name is migrated to its hex on load; the classic
+    // card's header label is dropped.
+    expect(cfg.kinds["user.prompt"]).toEqual({ accentColor: "#f59e0b" });
     const s = resolveKind(cfg, "user.prompt");
-    expect(s.headerLabel).toBe("Me");
     expect(s.accentColor).toBe("#f59e0b");
     // untouched fields keep defaults
     expect(s.icon).toBe("User");
-    expect(s.alignment).toBe("right");
   });
 
   it("rejects icon values not in the allow-list", () => {
@@ -223,32 +196,6 @@ describe("mergeConfig", () => {
       });
       expect(resolveKind(cfg, "user.prompt").accentColor).toBe(hex);
     }
-  });
-
-  it("persists presentation, borderStyle, and showRawPayload through kinds merge", () => {
-    const persisted = {
-      version: 5,
-      kinds: {
-        "user.prompt": { presentation: "side-line", borderStyle: "dashed" },
-        "system.unknown": { showRawPayload: false },
-      },
-    };
-    const merged = mergeConfig(persisted);
-    expect(resolveKind(merged, "user.prompt").presentation).toBe("side-line");
-    expect(resolveKind(merged, "user.prompt").borderStyle).toBe("dashed");
-    expect(resolveKind(merged, "system.unknown").showRawPayload).toBe(false);
-  });
-
-  it("rejects invalid presentation and borderStyle values", () => {
-    const cfg = mergeConfig({
-      version: 5,
-      kinds: {
-        "user.prompt": { presentation: "balloon", borderStyle: "dotted" },
-      },
-    });
-    // Invalid values are dropped; resolves to category defaults.
-    expect(resolveKind(cfg, "user.prompt").presentation).toBe("card");
-    expect(resolveKind(cfg, "user.prompt").borderStyle).toBe("solid");
   });
 
   // The palette is retired: every color is a hex. Saved configs (and exported
@@ -314,38 +261,12 @@ describe("mergeConfig", () => {
     expect(mergeConfig({ version: 5, tabs: { maxWidth: "wide" } }).tabs.maxWidth).toBe(DEFAULT_TAB_STRIP.maxWidth);
   });
 
-  it("defaults the hidden-events bar to the theme's own colors", () => {
-    expect(createDefaultConfig().hiddenEvents).toEqual({ background: null, border: null, headerText: null, detailText: null, borderOpacity: 100, borderRadius: 8 });
-  });
-
-  it("keeps saved hidden-events colors, alpha hex included", () => {
-    const cfg = mergeConfig({ version: 5, hiddenEvents: { background: "#1e293b", border: "#60a5fa80", headerText: "#fff", detailText: "#ffffffb3" } });
-    expect(cfg.hiddenEvents).toEqual({ background: "#1e293b", border: "#60a5fa80", headerText: "#fff", detailText: "#ffffffb3", borderOpacity: 100, borderRadius: 8 });
-  });
-
-  it("drops a hidden-events color that is not a hex, keeping the other", () => {
-    const cfg = mergeConfig({ version: 5, hiddenEvents: { background: "blue", border: "#60a5fa", headerText: 3 } });
-    expect(cfg.hiddenEvents).toEqual({ background: null, border: "#60a5fa", headerText: null, detailText: null, borderOpacity: 100, borderRadius: 8 });
-  });
-
-  it("keeps a saved hidden-events corner radius, clamped to 0-24, defaulting to 8px", () => {
-    expect(mergeConfig({ version: 5, hiddenEvents: { borderRadius: 3 } }).hiddenEvents.borderRadius).toBe(3);
-    expect(mergeConfig({ version: 5, hiddenEvents: { borderRadius: 50 } }).hiddenEvents.borderRadius).toBe(24);
-    expect(mergeConfig({ version: 5, hiddenEvents: {} }).hiddenEvents.borderRadius).toBe(8);
-  });
-
-  it("keeps a saved hidden-events border opacity, clamped to 0-100", () => {
-    expect(mergeConfig({ version: 5, hiddenEvents: { borderOpacity: 45 } }).hiddenEvents.borderOpacity).toBe(45);
-    expect(mergeConfig({ version: 5, hiddenEvents: { borderOpacity: 300 } }).hiddenEvents.borderOpacity).toBe(100);
-    expect(mergeConfig({ version: 5, hiddenEvents: { borderOpacity: "x" } }).hiddenEvents.borderOpacity).toBe(100);
-  });
-
   // The four live-overlay toggles were retired: three were read by nothing and
   // the fourth duplicated the hook kinds' own visibility on Message Kinds.
   it("hides hook rows by default through their kinds", () => {
     const cfg = createDefaultConfig();
     for (const id of ["system.hook_started", "system.hook_progress", "system.hook_response"]) {
-      expect(resolveKind(cfg, id).visibility).toBe("never");
+      expect(resolveKind(cfg, id).standard).toBe(false);
     }
   });
 
@@ -363,15 +284,8 @@ describe("mergeConfig", () => {
     const cfg = mergeConfig({
       version: 5,
       typography: {
-        header: { typeface: "source-serif", size: "lg", weight: "bold", italic: true },
         content: { typeface: "jetbrains-mono" },
       },
-    });
-    expect(cfg.typography.header).toEqual({
-      typeface: "source-serif",
-      size: "lg",
-      weight: "bold",
-      italic: true,
     });
     // partial override preserves defaults for other fields
     expect(cfg.typography.content.typeface).toBe("jetbrains-mono");
@@ -382,10 +296,10 @@ describe("mergeConfig", () => {
     const cfg = mergeConfig({
       version: 5,
       typography: {
-        header: { typeface: "comic-sans", size: "huge", weight: "ultra", italic: "sometimes" },
+        content: { typeface: "comic-sans", size: "huge", weight: "ultra", italic: "sometimes" },
       },
     });
-    expect(cfg.typography.header).toEqual(DEFAULT_TYPOGRAPHY.header);
+    expect(cfg.typography.content).toEqual(DEFAULT_TYPOGRAPHY.content);
   });
 
   it("returns defaults when typography is entirely absent", () => {
@@ -458,10 +372,8 @@ describe("typeface migration", () => {
       },
     };
     const cfg = parseConfig(JSON.stringify(legacy));
-    expect(cfg.typography.header.typeface).toBe("inter");
     expect(cfg.typography.content.typeface).toBe("inter");
     // Legacy `family` key is dropped from the result.
-    expect((cfg.typography.header as unknown as Record<string, unknown>).family).toBeUndefined();
   });
 
   it("migrates legacy family: 'serif' to typeface: 'source-serif'", () => {
@@ -474,7 +386,6 @@ describe("typeface migration", () => {
       },
     };
     const cfg = parseConfig(JSON.stringify(legacy));
-    expect(cfg.typography.header.typeface).toBe("source-serif");
     expect(cfg.typography.content.typeface).toBe("source-serif");
   });
 
@@ -488,7 +399,6 @@ describe("typeface migration", () => {
       },
     };
     const cfg = parseConfig(JSON.stringify(legacy));
-    expect(cfg.typography.header.typeface).toBe("jetbrains-mono");
     expect(cfg.typography.content.typeface).toBe("jetbrains-mono");
   });
 
@@ -502,13 +412,11 @@ describe("typeface migration", () => {
       },
     };
     const cfg = parseConfig(JSON.stringify(bad));
-    expect(cfg.typography.header.typeface).toBe("inter");
     expect(cfg.typography.content.typeface).toBe("geist"); // valid one survives
   });
 
-  it("default config uses typeface: 'inter' for both header and content", () => {
+  it("default config uses typeface: 'inter' for content", () => {
     const cfg = createDefaultConfig();
-    expect(cfg.typography.header.typeface).toBe("inter");
     expect(cfg.typography.content.typeface).toBe("inter");
   });
 
@@ -535,9 +443,7 @@ describe("typeface migration", () => {
     };
     const cfg = parseConfig(JSON.stringify(mixed));
     // typeface field wins; legacy family is ignored entirely.
-    expect(cfg.typography.header.typeface).toBe("source-serif");
     expect(cfg.typography.content.typeface).toBe("geist");
-    expect((cfg.typography.header as unknown as Record<string, unknown>).family).toBeUndefined();
     expect((cfg.typography.content as unknown as Record<string, unknown>).family).toBeUndefined();
   });
 
@@ -556,7 +462,6 @@ describe("typeface migration", () => {
         },
       };
       const cfg = parseConfig(JSON.stringify(legacy));
-      expect(cfg.typography.header.typeface, `family=${JSON.stringify(garbage)}`).toBe("inter");
       expect(cfg.typography.content.typeface, `family=${JSON.stringify(garbage)}`).toBe("inter");
     }
   });
@@ -565,15 +470,15 @@ describe("typeface migration", () => {
 // ─── parse/serialize round-trip ───────────────────────────────────────────────
 
 describe("parse/serialize round-trip", () => {
-  it("round-trips a v5 config through JSON", () => {
+  it("round-trips a v6 config through JSON", () => {
     const original = createDefaultConfig();
     original.defaultViewMode = "expanded";
-    original.kinds["user.prompt"] = { headerLabel: "Greg" };
+    original.kinds["user.prompt"] = { accentColor: "#123456" };
     const raw = serializeConfig(original);
     const restored = parseConfig(raw);
     expect(restored.defaultViewMode).toBe("expanded");
-    expect(restored.kinds["user.prompt"]).toEqual({ headerLabel: "Greg" });
-    expect(resolveKind(restored, "user.prompt").headerLabel).toBe("Greg");
+    expect(restored.kinds["user.prompt"]).toEqual({ accentColor: "#123456" });
+    expect(resolveKind(restored, "user.prompt").accentColor).toBe("#123456");
   });
 
   it("returns defaults for null/empty/invalid JSON", () => {
@@ -582,11 +487,11 @@ describe("parse/serialize round-trip", () => {
     expect(parseConfig("{not json").defaultViewMode).toBe("standard");
   });
 
-  it("returns defaults (v5 reset) for a serialized v4 config", () => {
+  it("returns defaults (reset) for a serialized v4 config", () => {
     // Simulate a v4 blob coming from localStorage
     const v4blob = JSON.stringify({ version: 4, overrides: [], categories: {} });
     const restored = parseConfig(v4blob);
-    expect(restored.version).toBe(5);
+    expect(restored.version).toBe(6);
     expect(restored.kinds).toEqual({});
   });
 });
@@ -612,44 +517,35 @@ describe("kind registry", () => {
     expect(categoryOf("totally.unknown.future.id")).toBe("system");
   });
 
-  it("every kind in KIND_REGISTRY resolves to a category style with a presentation", () => {
-    const cfg = createDefaultConfig();
-    for (const id of Object.keys(KIND_REGISTRY)) {
-      const s = resolveKind(cfg, id);
-      expect(s.presentation, `no presentation for "${id}"`).toBeDefined();
-    }
-  });
-
   it("exposes system.away_summary as a separately-stylable system kind", () => {
     const def = KIND_REGISTRY["system.away_summary"];
     expect(def).toBeDefined();
     expect(def.category).toBe("system");
     expect(def.label.length).toBeGreaterThan(0);
-    expect(resolveKind(createDefaultConfig(), "system.away_summary").presentation).toBeDefined();
+    expect(resolveKind(createDefaultConfig(), "system.away_summary").icon).toBeDefined();
   });
 });
 
 // ─── category catalog ─────────────────────────────────────────────────────────
 
-describe("category catalog (v5)", () => {
+describe("category catalog", () => {
   it("defines exactly the four categories, each a complete style", () => {
     expect([...CATEGORIES].sort()).toEqual(["agent", "live", "system", "user"]);
     for (const c of CATEGORIES) {
       const s = DEFAULT_CATEGORIES[c];
-      expect(typeof s.presentation).toBe("string");
       expect(typeof s.accentColor).toBe("string");
       expect(typeof s.icon).toBe("string");
-      expect(typeof s.borderStyle).toBe("string");
+      expect(typeof s.standard).toBe("boolean");
     }
   });
 
-  it("system category defaults to verbose-only visibility", () => {
-    expect(DEFAULT_CATEGORIES.system.visibility).toBe("verbose");
+  it("system category defaults to hidden in Standard", () => {
+    expect(DEFAULT_CATEGORIES.system.standard).toBe(false);
   });
 
-  it("user and agent categories default to always visible", () => {
-    expect(DEFAULT_CATEGORIES.user.visibility).toBe("always");
-    expect(DEFAULT_CATEGORIES.agent.visibility).toBe("always");
+  it("user and agent categories default to shown in Standard", () => {
+    expect(DEFAULT_CATEGORIES.user.standard).toBe(true);
+    expect(DEFAULT_CATEGORIES.agent.standard).toBe(true);
   });
 });
 
@@ -751,52 +647,7 @@ describe("validateStyleField (via kinds merge)", () => {
     expect(resolveKind(cfg, "user.prompt").icon).toBe("Bot");
   });
 
-  it("accepts headerLabel null (hides the header)", () => {
-    const cfg = mergeConfig({ version: 5, kinds: { "user.prompt": { headerLabel: null } } });
-    expect(resolveKind(cfg, "user.prompt").headerLabel).toBeNull();
-  });
-
-  it("accepts headerLabel string", () => {
-    const cfg = mergeConfig({ version: 5, kinds: { "user.prompt": { headerLabel: "Greg" } } });
-    expect(resolveKind(cfg, "user.prompt").headerLabel).toBe("Greg");
-  });
-
-  it("accepts each visibility and rejects anything else", () => {
-    for (const v of ["always", "verbose", "never"]) {
-      const cfg = mergeConfig({ version: 5, kinds: { "assistant.thinking": { visibility: v } } });
-      expect(resolveKind(cfg, "assistant.thinking").visibility, v).toBe(v);
-    }
-    const junk = mergeConfig({ version: 5, kinds: { "assistant.thinking": { visibility: "sometimes" } } });
-    expect(junk.kinds["assistant.thinking"]).toBeUndefined();
-  });
-
   // Saved configs from before the three-way setting carry the old boolean.
-  it("migrates a saved hiddenInCompact boolean to visibility, for kinds and categories", () => {
-    const cfg = mergeConfig({
-      version: 5,
-      categories: { system: { hiddenInCompact: false } },
-      kinds: {
-        "assistant.thinking": { hiddenInCompact: false },
-        "assistant.text": { hiddenInCompact: true },
-      },
-    });
-    expect(cfg.kinds["assistant.thinking"]).toEqual({ visibility: "always" });
-    expect(cfg.kinds["assistant.text"]).toEqual({ visibility: "verbose" });
-    expect(cfg.categories.system.visibility).toBe("always");
-    expect("hiddenInCompact" in cfg.categories.system).toBe(false);
-  });
-
-  it("prefers a saved visibility over a leftover hiddenInCompact", () => {
-    const cfg = mergeConfig({ version: 5, kinds: { "assistant.text": { visibility: "never", hiddenInCompact: false } } });
-    expect(cfg.kinds["assistant.text"]).toEqual({ visibility: "never" });
-  });
-
-  it("clamps iconBgOpacity to 0-100", () => {
-    const cfg = mergeConfig({ version: 5, kinds: { "user.prompt": { iconBgOpacity: 150 } } });
-    expect(cfg.kinds["user.prompt"]?.iconBgOpacity).toBe(100);
-    const cfg2 = mergeConfig({ version: 5, kinds: { "user.prompt": { iconBgOpacity: -10 } } });
-    expect(cfg2.kinds["user.prompt"]?.iconBgOpacity).toBe(0);
-  });
 });
 
 // ─── tool-result kind id unification ─────────────────────────────────────────
@@ -812,7 +663,7 @@ describe("resolveKind — classifier output coverage", () => {
   it("resolves summary.compaction, system.unknown, user.systemContext to styles", () => {
     const cfg = createDefaultConfig();
     for (const id of ["summary.compaction", "system.userPromptSubmit", "system.unknown", "user.systemContext"]) {
-      expect(resolveKind(cfg, id).presentation).toBeDefined();
+      expect(resolveKind(cfg, id).icon).toBeDefined();
     }
   });
 
@@ -824,8 +675,7 @@ describe("resolveKind — classifier output coverage", () => {
       "system.notification.error",
       "system.notification.stop",
     ]) {
-      const s = resolveKind(cfg, id);
-      expect(s.presentation).toBe("card");
+      expect(resolveKind(cfg, id).standard).toBe(true);
     }
   });
 
@@ -841,7 +691,7 @@ describe("resolveKind — classifier output coverage", () => {
     const cfg = createDefaultConfig();
     const s = resolveKind(cfg, "totally.new.kind.in.future.version");
     expect(s.accentColor).toBe("#4b5563");
-    expect(s.alignment).toBe("left");
+    expect(s.standard).toBe(false);
   });
 });
 
@@ -857,11 +707,11 @@ describe("bookkeeping kind registry entries", () => {
     }
   });
 
-  it("permission-mode is visible in compact; passive bookkeeping is hidden", () => {
+  it("permission-mode is shown in Standard; passive bookkeeping is hidden", () => {
     const cfg = createDefaultConfig();
-    expect(resolveKind(cfg, "permission-mode").visibility).toBe("always");
+    expect(resolveKind(cfg, "permission-mode").standard).toBe(true);
     for (const id of ["last-prompt", "ai-title", "queue-operation", "file-history-snapshot"]) {
-      expect(resolveKind(cfg, id).visibility, id).toBe("verbose");
+      expect(resolveKind(cfg, id).standard, id).toBe(false);
     }
   });
 });
@@ -869,68 +719,15 @@ describe("bookkeeping kind registry entries", () => {
 // ─── synthetic control-change kinds ───────────────────────────────────────────
 
 describe("control-change kinds", () => {
-  it("registers control.effort and control.model under live, visible in compact", () => {
+  it("registers control.effort and control.model under live, shown in Standard", () => {
     const cfg = createDefaultConfig();
     for (const id of ["control.effort", "control.model"]) {
       expect(KIND_REGISTRY[id], id).toBeDefined();
       expect(categoryOf(id), id).toBe("live");
-      expect(resolveKind(cfg, id).visibility, id).toBe("always");
+      expect(resolveKind(cfg, id).standard, id).toBe(true);
     }
-  });
-});
-
-describe("visibility predicates", () => {
-  const cfg = createDefaultConfig();
-  const style = (id: string, visibility: "always" | "verbose" | "never") =>
-    ({ ...resolveKind(cfg, id), visibility });
-
-  it("hides verbose-only and never kinds in compact mode", () => {
-    expect(isHiddenInCompact(style("assistant.text", "always"))).toBe(false);
-    expect(isHiddenInCompact(style("assistant.text", "verbose"))).toBe(true);
-    expect(isHiddenInCompact(style("assistant.text", "never"))).toBe(true);
-  });
-
-  it("drops only never kinds outright", () => {
-    expect(isNeverShown(style("assistant.text", "verbose"))).toBe(false);
-    expect(isNeverShown(style("assistant.text", "never"))).toBe(true);
-  });
-
-  // Turn boundaries stay on screen whatever the setting says.
-  it("never hides a boundary-locked kind", () => {
-    expect(isHiddenInCompact(style("user.prompt", "never"))).toBe(false);
-    expect(isNeverShown(style("user.prompt", "never"))).toBe(false);
   });
 });
 
 // ─── "All" chat format ──────────────────────────────────────────────────────
 
-describe("revealNeverShown", () => {
-  it("turns every never-shown kind into verbose-only, leaving the rest alone", () => {
-    const cfg = createDefaultConfig();
-    cfg.kinds["assistant.thinking"] = { visibility: "never" };
-    const revealed = revealNeverShown(cfg);
-
-    expect(resolveKind(revealed, "system.hook_started").visibility).toBe("verbose");
-    expect(resolveKind(revealed, "assistant.thinking").visibility).toBe("verbose");
-    for (const id of Object.keys(KIND_REGISTRY)) {
-      expect(isNeverShown(resolveKind(revealed, id))).toBe(false);
-      if (!isNeverShown(resolveKind(cfg, id))) {
-        expect(resolveKind(revealed, id)).toEqual(resolveKind(cfg, id));
-      }
-    }
-  });
-
-  it("reveals a category set to never, so unregistered kinds in it show too", () => {
-    const cfg = createDefaultConfig();
-    cfg.categories.system = { ...cfg.categories.system, visibility: "never" };
-    const revealed = revealNeverShown(cfg);
-    expect(resolveKind(revealed, "system.some_future_kind").visibility).toBe("verbose");
-  });
-
-  it("does not mutate the saved config", () => {
-    const cfg = createDefaultConfig();
-    const before = structuredClone(cfg);
-    revealNeverShown(cfg);
-    expect(cfg).toEqual(before);
-  });
-});

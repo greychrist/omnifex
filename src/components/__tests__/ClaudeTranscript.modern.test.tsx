@@ -380,24 +380,23 @@ describe('ClaudeTranscript — Modern chat format', () => {
   });
 });
 
-describe('ClaudeTranscript — Modern record rules', () => {
-  // A kind the user set to Never (nested memory): Compact and Verbose rules
-  // leave it out; All's rules reveal it, as the All format does.
+describe('ClaudeTranscript — Standard and Expanded', () => {
+  // A kind hidden in Standard (nested memory): Standard leaves it out;
+  // Expanded shows every record.
   const nested = {
     kind: 'attachment', sessionId: 's', receivedAt: '2026-10-28T10:00:02Z',
     raw: { type: 'attachment', uuid: 'n1', attachment: { type: 'nested_memory', path: '/r/src/CLAUDE.md', content: { path: '/r/src/CLAUDE.md' } } },
   } as unknown as JsonlNode;
 
-  function renderWith(recordRules: 'compact' | 'verbose' | 'all') {
+  function renderWith(viewMode: 'standard' | 'expanded') {
     const config = createDefaultConfig();
-    config.kinds = { ...config.kinds, 'attachment.nested_memory': { visibility: 'never' } };
-    config.modern = { ...config.modern, recordRules };
+    config.kinds = { ...config.kinds, 'attachment.nested_memory': { standard: false } };
     return render(
       <MessageRenderingPreviewProvider config={config}>
         <TooltipProvider>
           <ClaudeTranscript
             messages={[prompt, nested]}
-            viewMode="standard"
+            viewMode={viewMode}
             accountType={undefined}
             onResend={() => {}}
             waitingForPermission={false}
@@ -415,16 +414,13 @@ describe('ClaudeTranscript — Modern record rules', () => {
     );
   }
 
-  it('leaves a Never kind out under Compact and Verbose rules', () => {
-    for (const r of ['compact', 'verbose'] as const) {
-      renderWith(r);
-      expect(screen.queryByText(/Nested memory/)).toBeNull();
-      cleanup();
-    }
+  it('leaves a kind hidden in Standard out of Standard', () => {
+    renderWith('standard');
+    expect(screen.queryByText(/Nested memory/)).toBeNull();
   });
 
-  it('shows it as a Modern line under All rules', () => {
-    renderWith('all');
+  it('shows it as a Modern line in Expanded', () => {
+    renderWith('expanded');
     expect(screen.getByText('Nested memory — src/CLAUDE.md')).toBeInTheDocument();
   });
 });

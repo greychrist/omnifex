@@ -1,12 +1,8 @@
 import React from "react";
-import { Ban, ChevronDown, ChevronRight, EyeOff, Lock } from "lucide-react";
+import { ChevronDown, ChevronRight, EyeOff, Lock } from "lucide-react";
 import { CATEGORIES, KIND_REGISTRY, resolveKind, isHexColor } from "@/lib/messageRenderingConfig";
-import type {
-  Category,
-  IconName,
-  MessageRenderingConfig,
-  Visibility,
-} from "@/lib/messageRenderingConfig";
+import type { Category, IconName, MessageRenderingConfig } from "@/lib/messageRenderingConfig";
+import { MODERN_ITEM_KINDS } from "@/lib/renderingConfigMigration";
 import { IconRenderer } from "./iconMap";
 import { cn } from "@/lib/utils";
 
@@ -15,7 +11,13 @@ import { cn } from "@/lib/utils";
  * selectable node (opens the category's style editor) that expands to show
  * the registry kinds belonging to that category, sorted alphabetically by label.
  * Selecting a kind row opens its kind editor.
+ *
+ * Only kinds whose settings change what is drawn are listed. The kinds Modern
+ * draws as its own items (prompts, answers, thinking, tool calls…) take
+ * their look from the step settings above and are always in Standard.
+ * `assistant.text.live` is the streaming reply, never a record.
  */
+const LISTED = (id: string) => !MODERN_ITEM_KINDS.has(id) && id !== "assistant.text.live";
 
 export type TreeSelection =
   | { type: "category"; id: Category }
@@ -49,7 +51,7 @@ export const MessageKindTree: React.FC<MessageKindTreeProps> = ({
   };
 
   return (
-    <div className="text-sm space-y-1">
+    <div role="tree" aria-label="Message kinds" className="text-sm space-y-1">
       <div className="flex justify-end px-1">
         <button
           type="button"
@@ -62,7 +64,7 @@ export const MessageKindTree: React.FC<MessageKindTreeProps> = ({
       {CATEGORIES.map((c) => {
         const catStyle = config.categories[c];
         const kinds = Object.values(KIND_REGISTRY)
-          .filter((d) => d.category === c)
+          .filter((d) => d.category === c && LISTED(d.id))
           .sort((a, b) => a.label.localeCompare(b.label));
         const isOpen = !collapsed.has(c);
         const swatch = swatchHex(catStyle.accentColor);
@@ -111,8 +113,8 @@ export const MessageKindTree: React.FC<MessageKindTreeProps> = ({
                       label={def.label}
                       icon={style.icon}
                       swatch={kindSwatch}
-                      visibility={style.visibility}
-                      compactBoundaryLocked={style.compactBoundaryLocked}
+                      standard={style.standard}
+                      alwaysShown={style.alwaysShown}
                       selected={kindSelected}
                       onSelect={() => { onSelect({ type: "kind", id: def.id }); }}
                     />
@@ -132,21 +134,13 @@ interface KindRowProps {
   label: string;
   icon: IconName;
   swatch: string;
-  visibility: Visibility;
-  compactBoundaryLocked?: boolean;
+  standard: boolean;
+  alwaysShown?: boolean;
   selected: boolean;
   onSelect: () => void;
 }
 
-const KindRow: React.FC<KindRowProps> = ({
-  label,
-  icon,
-  swatch,
-  visibility,
-  compactBoundaryLocked,
-  selected,
-  onSelect,
-}) => (
+const KindRow: React.FC<KindRowProps> = ({ label, icon, swatch, standard, alwaysShown, selected, onSelect }) => (
   <div
     className={cn(
       "w-full flex items-center gap-2 px-2 py-1 rounded transition-colors",
@@ -163,14 +157,11 @@ const KindRow: React.FC<KindRowProps> = ({
       </span>
       <span className="flex-1 truncate text-[11px] leading-tight">{label}</span>
     </button>
-    {compactBoundaryLocked && (
-      <Lock className="h-3 w-3 text-muted-foreground/60 flex-shrink-0" aria-label="Always visible — turn boundary" />
+    {alwaysShown && (
+      <Lock className="h-3 w-3 text-muted-foreground/60 flex-shrink-0" aria-label="Always shown — turn boundary" />
     )}
-    {visibility === "verbose" && !compactBoundaryLocked && (
-      <EyeOff className="h-3 w-3 text-muted-foreground/60 flex-shrink-0" aria-label="Hidden in compact mode" />
-    )}
-    {visibility === "never" && !compactBoundaryLocked && (
-      <Ban className="h-3 w-3 text-muted-foreground/60 flex-shrink-0" aria-label="Never shown" />
+    {!standard && !alwaysShown && (
+      <EyeOff className="h-3 w-3 text-muted-foreground/60 flex-shrink-0" aria-label="Hidden in Standard" />
     )}
   </div>
 );

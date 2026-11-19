@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import type { JsonlNode } from '@/types/jsonl';
-import { isMessageFullyHidden, withoutNeverShown } from '../recordVisibility';
+import { isMessageFullyHidden, withoutHiddenInStandard } from '../recordVisibility';
 import { createDefaultConfig, type MessageRenderingConfig } from '../messageRenderingConfig';
 
 function unhide(cfg: MessageRenderingConfig, id: string): void {
-  cfg.kinds[id] = { ...cfg.kinds[id], visibility: 'always' };
+  cfg.kinds[id] = { ...cfg.kinds[id], standard: true };
 }
 
 function userText(text: string): JsonlNode {
@@ -82,10 +82,12 @@ describe('isMessageFullyHidden', () => {
     expect(isMessageFullyHidden(assistantEndTurn('done'), [], cfg)).toBe(false);
   });
 
-  it('returns true for a tool_use-only assistant message in compact default', () => {
+  // Standard draws tool calls (in the work timeline) and thoughts: v5 Modern
+  // never hid them for Verbose, so v6 shows them by default.
+  it('returns false for a tool_use-only assistant message by default', () => {
     const cfg = createDefaultConfig();
     const msg = toolUseMsg('Read', { file_path: '/a' });
-    expect(isMessageFullyHidden(msg, [msg], cfg)).toBe(true);
+    expect(isMessageFullyHidden(msg, [msg], cfg)).toBe(false);
   });
 
   it('returns true for a tool_result-only user message', () => {
@@ -103,8 +105,10 @@ describe('isMessageFullyHidden', () => {
     expect(isMessageFullyHidden(msg, [msg], cfg)).toBe(false);
   });
 
-  it('returns true when user unhides nothing and message is all hidden blocks', () => {
+  it('returns true when every block is a kind hidden in Standard', () => {
     const cfg = createDefaultConfig();
+    cfg.kinds['assistant.thinking'] = { standard: false };
+    cfg.kinds['assistant.tool-use'] = { standard: false };
     const msg = assistantWithBlocks([
       { type: 'thinking', thinking: 'pondering' },
       { type: 'tool_use', name: 'Read', input: { file_path: '/a' } },
@@ -112,7 +116,7 @@ describe('isMessageFullyHidden', () => {
     expect(isMessageFullyHidden(msg, [msg], cfg)).toBe(true);
   });
 
-  it('respects user toggle that unhides assistant.tool-use', () => {
+  it('respects a kind set to show in Standard', () => {
     const cfg = createDefaultConfig();
     unhide(cfg, 'assistant.tool-use');
     const msg = toolUseMsg('Read', { file_path: '/a' });
@@ -164,20 +168,18 @@ describe('isMessageFullyHidden', () => {
     expect(isMessageFullyHidden(result, allMsgs, cfg)).toBe(false);
   });
 
-  it('never hides compactBoundaryLocked kinds even if their visibility is forced off', () => {
-    // user.prompt is compactBoundaryLocked in the registry; forcing a hidden
-    // visibility on a locked kind must still return visible=false
-    // (defense in depth — compactBoundaryLocked short-circuits the hidden check).
+  it('never hides an alwaysShown kind even if its standard is forced off', () => {
+    // user.prompt is alwaysShown in the registry: a turn boundary.
     const cfg = createDefaultConfig();
-    cfg.kinds['user.prompt'] = { ...cfg.kinds['user.prompt'], visibility: 'verbose' };
+    cfg.kinds['user.prompt'] = { ...cfg.kinds['user.prompt'], standard: false };
     const msg = userText('hi');
     expect(isMessageFullyHidden(msg, [msg], cfg)).toBe(false);
   });
 });
 
-describe('withoutNeverShown', () => {
+describe('withoutHiddenInStandard', () => {
   function never(cfg: MessageRenderingConfig, id: string): void {
-    cfg.kinds[id] = { ...cfg.kinds[id], visibility: 'never' };
+    cfg.kinds[id] = { ...cfg.kinds[id], standard: false };
   }
   const localCommand = {
     kind: 'system', subtype: 'local_command', sessionId: '', receivedAt: '',
@@ -187,23 +189,23 @@ describe('withoutNeverShown', () => {
   it('keeps everything by default', () => {
     const cfg = createDefaultConfig();
     const msgs = [userText('hi'), toolUseMsg('Bash'), localCommand];
-    expect(withoutNeverShown(msgs, cfg)).toEqual(msgs);
+    expect(withoutHiddenInStandard(msgs, cfg)).toEqual(msgs);
   });
 
-  it('drops a message whose whole kind is set to never', () => {
+  it('drops a message whose whole kind is hidden in Standard', () => {
     const cfg = createDefaultConfig();
     never(cfg, 'system.local_command');
     const prompt = userText('hi');
-    expect(withoutNeverShown([prompt, localCommand], cfg)).toEqual([prompt]);
+    expect(withoutHiddenInStandard([prompt, localCommand], cfg)).toEqual([prompt]);
   });
 
-  it('drops a message only when every renderable block is never', () => {
+  it('drops a message only when every renderable block is hidden', () => {
     const cfg = createDefaultConfig();
     never(cfg, 'assistant.tool-use');
     never(cfg, 'assistant.thinking');
     const allNever = assistantWithBlocks([{ type: 'thinking', thinking: 'hmm' }, { type: 'tool_use', name: 'Bash', input: {} }], 'tool_use');
     const mixed = assistantWithBlocks([{ type: 'text', text: 'here' }, { type: 'tool_use', name: 'Bash', input: {} }], 'tool_use');
-    expect(withoutNeverShown([allNever, mixed], cfg)).toEqual([mixed]);
+    expect(withoutHiddenInStandard([allNever, mixed], cfg)).toEqual([mixed]);
   });
 
   it('keeps boundary-locked kinds and messages with nothing to classify', () => {
@@ -211,7 +213,7 @@ describe('withoutNeverShown', () => {
     never(cfg, 'user.prompt');
     const prompt = userText('hi');
     const empty = assistantWithBlocks([]);
-    expect(withoutNeverShown([prompt, empty], cfg)).toEqual([prompt, empty]);
+    expect(withoutHiddenInStandard([prompt, empty], cfg)).toEqual([prompt, empty]);
   });
 });
 

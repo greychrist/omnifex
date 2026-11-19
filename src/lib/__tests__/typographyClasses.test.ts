@@ -1,17 +1,13 @@
 import { describe, it, expect } from "vitest";
 import { createDefaultConfig } from "../messageRenderingConfig";
-import {
-  contentClassNames,
-  headerClassNames,
-  iconWrapperClassName,
-  iconWrapperStyle,
-  typographyClassNames,
-  typographyFontFamily,
-  FONT_SIZE_REM,
-  FONT_WEIGHT_VALUE,
-} from "../typographyClasses";
+import { contentClassNames, FONT_SIZE_REM, FONT_WEIGHT_VALUE } from "../typographyClasses";
+import type { TypographyStyle } from "../messageRenderingConfig";
 
-describe("typographyClassNames", () => {
+/** The class names for a content style, through the config the app reads. */
+const typographyClassNames = (content: TypographyStyle) =>
+  contentClassNames({ ...createDefaultConfig(), typography: { content } });
+
+describe("contentClassNames", () => {
   it("emits size + weight + italic, no family class", () => {
     const result = typographyClassNames({
       typeface: "inter",
@@ -89,147 +85,6 @@ describe("FONT_SIZE_REM / FONT_WEIGHT_VALUE", () => {
       bold: 700,
       extrabold: 800,
       black: 900,
-    });
-  });
-});
-
-describe("typographyFontFamily", () => {
-  it("returns the catalog cssFamily for known typefaces", () => {
-    const inter = typographyFontFamily({
-      typeface: "inter",
-      size: "sm",
-      weight: "normal",
-      italic: false,
-    });
-    expect(inter).toMatch(/^"Inter",/);
-
-    const geist = typographyFontFamily({
-      typeface: "geist",
-      size: "sm",
-      weight: "normal",
-      italic: false,
-    });
-    expect(geist).toMatch(/^"Geist",/);
-  });
-});
-
-describe("headerClassNames / contentClassNames", () => {
-  it("default config emits text-sm font-semibold for header (no italic)", () => {
-    expect(headerClassNames(createDefaultConfig())).toBe("text-sm font-semibold");
-  });
-
-  it("default config emits text-sm font-normal for content", () => {
-    expect(contentClassNames(createDefaultConfig())).toBe("text-sm font-normal");
-  });
-});
-
-describe("typographyClasses (icon helpers)", () => {
-  describe("iconWrapperClassName", () => {
-    // The sole caller is MessageFrameCard's header row, which is
-    // `flex flex-row items-center`. A one-sided vertical margin there
-    // decenters the chip against the header's own padding, which is
-    // visible as unequal space above and below the icon.
-    const ONE_SIDED_VERTICAL = /(^|\s)-?m[tb]-/;
-
-    it("includes chip classes when bordered is true (default)", () => {
-      const cfg = createDefaultConfig();
-      const cls = iconWrapperClassName(cfg);
-      expect(cls).toContain("border");
-      expect(cls).toContain("rounded-md");
-      expect(cls).toContain("p-1.5");
-    });
-
-    it("pulls the chip in symmetrically so items-center can center it", () => {
-      const cfg = createDefaultConfig();
-      const cls = iconWrapperClassName(cfg);
-      // -my-1.5 cancels the chip's own p-1.5 on both axes, keeping the
-      // header row the same height it was with a bare glyph.
-      expect(cls).toContain("-my-1.5");
-      expect(cls).toContain("-mx-1.5");
-      expect(cls).not.toMatch(ONE_SIDED_VERTICAL);
-    });
-
-    it("uses flat layout when bordered is false", () => {
-      const cfg = createDefaultConfig();
-      cfg.typography.icon.bordered = false;
-      const cls = iconWrapperClassName(cfg);
-      expect(cls).not.toContain("border");
-      expect(cls).not.toContain("rounded-md");
-    });
-
-    it("emits no one-sided vertical nudge when unbordered either", () => {
-      const cfg = createDefaultConfig();
-      cfg.typography.icon.bordered = false;
-      expect(iconWrapperClassName(cfg)).not.toMatch(ONE_SIDED_VERTICAL);
-    });
-
-    it("respects per-kind iconBordered override", () => {
-      const cfg = createDefaultConfig();
-      cfg.typography.icon.bordered = true;
-      // Helpers read the resolved kind (category base in production = cascaded).
-      cfg.categories.user.iconBordered = false;
-      expect(iconWrapperClassName(cfg, "user.prompt")).not.toContain("border");
-    });
-  });
-
-  describe("iconWrapperStyle", () => {
-    it("returns undefined when no swatch and not bordered", () => {
-      const cfg = createDefaultConfig();
-      cfg.typography.icon.bordered = false;
-      expect(iconWrapperStyle(cfg)).toBeUndefined();
-    });
-
-    it("sets color from swatch", () => {
-      const cfg = createDefaultConfig();
-      cfg.typography.icon.bordered = false;
-      const style = iconWrapperStyle(cfg, "#abcdef");
-      expect(style?.color).toBe("#abcdef");
-    });
-
-    it("sets borderColor and backgroundColor when bordered with swatch", () => {
-      const cfg = createDefaultConfig();
-      cfg.typography.icon.bordered = true;
-      cfg.typography.icon.bgOpacity = 50;
-      const style = iconWrapperStyle(cfg, "#abcdef");
-      expect(style?.color).toBe("#abcdef");
-      expect(style?.borderColor).toBe("#abcdef33");
-      expect(style?.backgroundColor).toBe(
-        "color-mix(in oklch, var(--color-background) 50%, transparent)",
-      );
-    });
-
-    it("clamps bgOpacity below 0 to 0", () => {
-      const cfg = createDefaultConfig();
-      cfg.typography.icon.bordered = true;
-      cfg.typography.icon.bgOpacity = -10;
-      const style = iconWrapperStyle(cfg, "#000");
-      expect(style?.backgroundColor).toContain("0%");
-    });
-
-    it("clamps bgOpacity above 100 to 100", () => {
-      const cfg = createDefaultConfig();
-      cfg.typography.icon.bordered = true;
-      cfg.typography.icon.bgOpacity = 999;
-      const style = iconWrapperStyle(cfg, "#000");
-      expect(style?.backgroundColor).toContain("100%");
-    });
-
-    it("respects per-kind iconBgOpacity override", () => {
-      const cfg = createDefaultConfig();
-      cfg.typography.icon.bordered = true;
-      cfg.typography.icon.bgOpacity = 100;
-      cfg.categories.user.iconBgOpacity = 25;
-      const style = iconWrapperStyle(cfg, "#000", "user.prompt");
-      expect(style?.backgroundColor).toContain("25%");
-    });
-
-    it("returns bordered styling without color when no swatch", () => {
-      const cfg = createDefaultConfig();
-      cfg.typography.icon.bordered = true;
-      const style = iconWrapperStyle(cfg);
-      expect(style?.color).toBeUndefined();
-      expect(style?.borderColor).toBeUndefined();
-      expect(style?.backgroundColor).toBeDefined();
     });
   });
 });

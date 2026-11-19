@@ -22,12 +22,11 @@
 
 import type { JsonlNode } from "@/types/jsonl";
 import { classifyStandaloneKind } from "./messageKind";
-import { KIND_REGISTRY, resolveKind, type MessageRenderingConfig, type ViewMode } from "./messageRenderingConfig";
+import { KIND_REGISTRY, type ViewMode } from "./messageRenderingConfig";
 
 export function collapseRepeats(
   messages: JsonlNode[],
-  config: MessageRenderingConfig,
-  /** The format drawing them; a rule with `onlyIn` skips the others. */
+  /** The view drawing them; a rule with `onlyIn` skips the others. */
   viewMode?: ViewMode,
 ): JsonlNode[] {
   const drop = new Set<number>();
@@ -42,7 +41,7 @@ export function collapseRepeats(
     if (!isSystem && msg.kind !== "permission-mode" && msg.kind !== "custom-title") return;
     const id = classifyStandaloneKind(msg, messages);
     const rule = id ? KIND_REGISTRY[id]?.collapse : undefined;
-    if (!id || !rule || resolveKind(config, id).collapseRepeats === false) return;
+    if (!id || !rule) return;
     if (rule.mode === "onChange" && rule.onlyIn && !(viewMode && rule.onlyIn.includes(viewMode))) return;
 
     if (rule.mode === "latestInRun") {

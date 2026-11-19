@@ -8,7 +8,6 @@ import {
   modernCssVars,
   type MessageRenderingConfig,
   type ModernAnswerStyle,
-  type ModernRecordRules,
   type ModernFont,
   type ModernStepKind,
   type ModernStyle,
@@ -50,12 +49,6 @@ const TIMELINE_OPTIONS: { value: TimelineOpen; label: string }[] = [
   { value: "while-running", label: "Open while running" },
   { value: "always", label: "Always open" },
   { value: "never", label: "Always folded" },
-];
-
-const RECORD_RULES_OPTIONS: { value: ModernRecordRules; label: string }[] = [
-  { value: "compact", label: "Compact" },
-  { value: "verbose", label: "Verbose" },
-  { value: "all", label: "All" },
 ];
 
 const ANSWER_STYLE_OPTIONS: { value: ModernAnswerStyle; label: string }[] = [
@@ -289,20 +282,6 @@ export const ModernEditor: React.FC<ModernEditorProps> = ({ config, onChange }) 
 
       <ModernSample config={config} />
 
-      <section className="space-y-3">
-        <SectionHeading>Records</SectionHeading>
-        <p className="text-caption text-muted-foreground">
-          Which records Modern shows, by another format's rules: Compact shows kinds set to Always, Verbose adds Verbose-only kinds, All adds kinds set to Never. Your prompts, the work timeline and answers look the same under each.
-        </p>
-        <Segmented
-          label="Show records like"
-          value={m.recordRules}
-          options={RECORD_RULES_OPTIONS}
-          onChange={(v) => { patch({ recordRules: v }); }}
-        />
-      </section>
-
-      <SectionRule />
 
       <section className="space-y-3">
         <SectionHeading>Work timeline</SectionHeading>

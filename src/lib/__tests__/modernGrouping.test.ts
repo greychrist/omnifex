@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { JsonlNode } from '@/types/jsonl';
-import { createDefaultConfig, revealNeverShown } from '../messageRenderingConfig';
+import { createDefaultConfig } from '../messageRenderingConfig';
 import { ALL_KIND_RECORDS, KIND_OF_RECORD } from './fixtures/allKindRecords';
 import { buildModernItems, keepUnchangedItems, type ModernItem } from '../modernGrouping';
 
@@ -116,7 +116,7 @@ describe('buildModernItems', () => {
 
   it('keeps a shown non-conversation record as its own row', () => {
     const cfg = createDefaultConfig();
-    cfg.kinds['system.stop_hook_summary'] = { visibility: 'always' };
+    cfg.kinds['system.stop_hook_summary'] = { standard: true };
     const hook = system('stop_hook_summary');
     const items = buildModernItems([prompt('go'), hook, text('ok')], cfg);
     expect(kinds(items)).toEqual(['prompt', 'line', 'text']);
@@ -460,35 +460,32 @@ describe('buildModernItems — nothing borrows the Compact card but content', ()
     ] as unknown as JsonlNode[];
     // Shown, whatever their default visibility: this is about the form.
     const cfg = createDefaultConfig();
-    for (const k of ['system.unknown', 'system.local_command']) cfg.kinds[k] = { visibility: 'always' };
+    for (const k of ['system.unknown', 'system.local_command']) cfg.kinds[k] = { standard: true };
     expect(buildModernItems(records, cfg).map((i) => i.kind)).toEqual(['line', 'line']);
   });
 });
 
-describe('buildModernItems — record rules', () => {
-  // nested_memory is verbose-only by default: Compact leaves it out.
+describe('buildModernItems — Standard and Expanded', () => {
+  // nested_memory is hidden in Standard by default.
   const nested = {
     kind: 'attachment', sessionId: '', receivedAt: '2026-11-03T00:00:00.000Z',
     raw: { type: 'attachment', attachment: { type: 'nested_memory', path: '/r/src/CLAUDE.md', content: { path: '/r/src/CLAUDE.md' } } },
   } as unknown as JsonlNode;
 
-  it('leaves a verbose-only record out under Compact rules (the default)', () => {
+  it('leaves a kind hidden in Standard out when filtered (the default)', () => {
     expect(buildModernItems([nested], createDefaultConfig())).toEqual([]);
-    expect(buildModernItems([nested], createDefaultConfig(), [nested], 'compact')).toEqual([]);
+    expect(buildModernItems([nested], createDefaultConfig(), [nested], true)).toEqual([]);
   });
 
-  it('draws it as a Modern line under Verbose and All rules', () => {
-    for (const rules of ['verbose', 'all'] as const) {
-      const items = buildModernItems([nested], createDefaultConfig(), [nested], rules);
-      expect(items.map((i) => i.kind === 'line' ? i.line.title : i.kind)).toEqual(['Nested memory — src/CLAUDE.md']);
-    }
+  it('draws it as a Modern line unfiltered (Expanded)', () => {
+    const items = buildModernItems([nested], createDefaultConfig(), [nested], false);
+    expect(items.map((i) => i.kind === 'line' ? i.line.title : i.kind)).toEqual(['Nested memory — src/CLAUDE.md']);
   });
 });
 
 describe('buildModernItems — no classic fallback', () => {
   it('leaves no record to the classic card', () => {
-    const cfg = revealNeverShown(createDefaultConfig());
-    const items = buildModernItems(ALL_KIND_RECORDS, cfg, ALL_KIND_RECORDS, 'all');
+    const items = buildModernItems(ALL_KIND_RECORDS, createDefaultConfig(), ALL_KIND_RECORDS, false);
     const left = items.filter((i) => (i as { kind: string }).kind === 'other')
       .map((i) => KIND_OF_RECORD.get((i as { node: JsonlNode }).node));
     expect(left).toEqual([]);

@@ -214,11 +214,11 @@ function ClaudeTranscriptImpl({
   // kind's collapse rule, honors the user's hard-filter toggles and the kinds
   // set to "Never" in Appearance settings). Repeats fold first, over the
   // unfiltered list, so a hidden message still ends a run.
-  // The same pipeline the golden test pins (transcriptItems.ts). `renderConfig`
-  // is the config the rows draw with: Expanded reveals kinds set to hidden.
-  const { displayable: displayableMessages, config: renderConfig } = useMemo(
-    () => displayableRecords(messages, savedRenderConfig, viewMode),
-    [messages, savedRenderConfig, viewMode],
+  // The same pipeline the golden test pins (transcriptItems.ts).
+  const renderConfig = savedRenderConfig;
+  const displayableMessages = useMemo(
+    () => displayableRecords(messages, renderConfig, viewMode),
+    [messages, renderConfig, viewMode],
   );
   /**
    * The last row that will actually draw a rail — the tail of the transcript

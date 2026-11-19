@@ -8,7 +8,7 @@ import {
   resolveKind,
 } from '../messageRenderingConfig';
 import { classifyStandaloneKind } from '../messageKind';
-import { withoutNeverShown } from '../recordVisibility';
+import { withoutHiddenInStandard } from '../recordVisibility';
 import { filterDisplayableMessages } from '../messageFilters';
 import { JSONL_CARRIED_SYSTEM_SUBTYPES } from '../../../electron/services/sessions/stream-forward';
 
@@ -107,9 +107,9 @@ describe('Live-only section', () => {
   it('keeps kind ids unchanged, so saved per-kind overrides still apply', () => {
     const cfg = mergeConfig({
       ...createDefaultConfig(),
-      kinds: { 'system.thinking_tokens': { visibility: 'always' } },
+      kinds: { 'system.thinking_tokens': { accentColor: '#123456' } },
     });
-    expect(resolveKind(cfg, 'system.thinking_tokens').visibility).toBe('always');
+    expect(resolveKind(cfg, 'system.thinking_tokens').accentColor).toBe('#123456');
   });
 
   it('gives a config saved before the section existed the default Live-only style', () => {
@@ -121,21 +121,21 @@ describe('Live-only section', () => {
 });
 
 describe('stream-only bookkeeping kinds', () => {
-  it.each(BOOKKEEPING)('system:%s defaults to Never', (subtype) => {
+  it.each(BOOKKEEPING)('system:%s is hidden in Standard by default', (subtype) => {
     const id = classifyStandaloneKind(system(subtype), [])!;
     expect(id).toBe(`system.${subtype}`);
-    expect(resolveKind(createDefaultConfig(), id).visibility).toBe('never');
+    expect(resolveKind(createDefaultConfig(), id).standard).toBe(false);
   });
 
-  it.each(BOOKKEEPING)('system:%s is hidden by the Never setting, not by a hard-coded filter', (subtype) => {
+  it.each(BOOKKEEPING)('system:%s is hidden by its Standard setting, not by a hard-coded filter', (subtype) => {
     const node = system(subtype);
     expect(filterDisplayableMessages([node])).toHaveLength(1);
-    expect(withoutNeverShown([node], createDefaultConfig())).toHaveLength(0);
+    expect(withoutHiddenInStandard([node], createDefaultConfig())).toHaveLength(0);
   });
 
   it.each(BOOKKEEPING)('system:%s is drawn once switched on', (subtype) => {
     const cfg = createDefaultConfig();
-    cfg.kinds[`system.${subtype}`] = { visibility: 'always' };
-    expect(withoutNeverShown([system(subtype)], cfg)).toHaveLength(1);
+    cfg.kinds[`system.${subtype}`] = { standard: true };
+    expect(withoutHiddenInStandard([system(subtype)], cfg)).toHaveLength(1);
   });
 });

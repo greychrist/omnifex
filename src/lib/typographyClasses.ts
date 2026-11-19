@@ -1,13 +1,8 @@
-import type React from "react";
 import type {
   FontSize,
   FontWeight,
   MessageRenderingConfig,
-  TypographyStyle,
 } from "./messageRenderingConfig";
-import { resolveTypeface } from "./typefaceCatalog";
-import { resolveKind } from "./messageRenderingConfig";
-import { borderAlphaHex } from "./accentStyle";
 
 const SIZE_CLASS: Record<FontSize, string> = {
   // text-xxs is a custom utility (see styles.css); the rest are Tailwind's.
@@ -60,101 +55,9 @@ const WEIGHT_CLASS: Record<FontWeight, string> = {
   black: "font-black",
 };
 
-export function typographyClassNames(style: TypographyStyle): string {
-  return [
-    SIZE_CLASS[style.size],
-    WEIGHT_CLASS[style.weight],
-    style.italic ? "italic" : "",
-  ]
+export function contentClassNames(config: MessageRenderingConfig): string {
+  const style = config.typography.content;
+  return [SIZE_CLASS[style.size], WEIGHT_CLASS[style.weight], style.italic ? "italic" : ""]
     .filter(Boolean)
     .join(" ");
-}
-
-/**
- * CSS `font-family` value for a typography style. Pair with
- * `typographyClassNames` and apply via `style={{ fontFamily: ... }}`.
- */
-export function typographyFontFamily(style: TypographyStyle): string {
-  return resolveTypeface(style.typeface).cssFamily;
-}
-
-export function headerClassNames(config: MessageRenderingConfig): string {
-  return typographyClassNames(config.typography.header);
-}
-
-export function contentClassNames(config: MessageRenderingConfig): string {
-  return typographyClassNames(config.typography.content);
-}
-
-function resolveIconBordered(config: MessageRenderingConfig, kindId?: string): boolean {
-  const kind = kindId ? resolveKind(config, kindId) : undefined;
-  return kind?.iconBordered ?? config.typography.icon.bordered;
-}
-
-function resolveIconBgOpacity(config: MessageRenderingConfig, kindId?: string): number {
-  const kind = kindId ? resolveKind(config, kindId) : undefined;
-  return kind?.iconBgOpacity ?? config.typography.icon.bgOpacity;
-}
-
-/**
- * Tailwind classes for the wrapper around each card icon.
- *
- * When `typography.icon.bordered` is true, the wrapper renders as a chip
- * (`border rounded-md p-1.5`). Pair with `iconWrapperStyle()` for the
- * swatch-tinted border + opacity-controlled chat-background fill.
- *
- * When false, only the layout primitives stay — the icon sits flat against
- * the card background, no chip.
- *
- * In both cases `mt-0.5` nudges the icon down to align with the first text
- * line, and `shrink-0` keeps the wrapper from collapsing when body text
- * wraps.
- */
-export function iconWrapperClassName(config: MessageRenderingConfig, kindId?: string): string {
-  const base = "flex items-center justify-center shrink-0";
-  // When bordered, negative margins offset the chip outward from its layout
-  // box by exactly the chip's padding — net effect is that the icon glyph
-  // itself stays in the same position relative to the card whether the chip
-  // is on or off, while the chip border + bg extend visually around it.
-  // -mx-1.5 / -my-1.5 (-6px) each cancel p-1.5 (+6px), so the chip neither
-  // shifts the icon's left edge off the column nor grows the row height.
-  //
-  // Both axes must stay symmetric. The sole caller is MessageFrameCard's
-  // header, a `flex flex-row items-center` row, so any one-sided vertical
-  // margin decenters the chip against the header's own py padding and
-  // shows up as unequal space above and below the icon. This previously
-  // read `-mt-1 -mb-1.5` (a 2px lean) to align the glyph with the first
-  // line of a top-aligned text flow — a call site that no longer exists;
-  // the side-line variant styles its own chip inline.
-  return resolveIconBordered(config, kindId)
-    ? `${base} -my-1.5 -mx-1.5 border rounded-md p-1.5`
-    : base;
-}
-
-/**
- * Inline style for the chip wrapper. Returns:
- *  - `color` from the swatch (for the icon itself, since IconRenderer
- *    inherits via currentColor)
- *  - `borderColor` from the swatch at the card border opacity (matches card accent)
- *  - `backgroundColor` from `--background` mixed with transparent at the
- *    user's `bgOpacity` setting, so the chip punches through the card's
- *    tinted accent at the chosen opacity
- *
- * Returns undefined when there is nothing to apply (e.g. unbordered + no
- * swatch). Always pair with `iconWrapperClassName(config)`.
- */
-export function iconWrapperStyle(
-  config: MessageRenderingConfig,
-  swatch?: string | null,
-  kindId?: string,
-): React.CSSProperties | undefined {
-  const bordered = resolveIconBordered(config, kindId);
-  const style: React.CSSProperties = {};
-  if (swatch) style.color = swatch;
-  if (bordered) {
-    if (swatch) style.borderColor = `${swatch}${borderAlphaHex(config.cardBorderOpacity)}`;
-    const op = Math.max(0, Math.min(100, resolveIconBgOpacity(config, kindId)));
-    style.backgroundColor = `color-mix(in oklch, var(--color-background) ${op}%, transparent)`;
-  }
-  return Object.keys(style).length > 0 ? style : undefined;
 }

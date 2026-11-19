@@ -8,7 +8,7 @@
  * shows; fix the change, not the snapshot.
  */
 import { describe, it, expect } from 'vitest';
-import { KIND_REGISTRY, createDefaultConfig, mergeConfig, type MessageRenderingConfig } from '@/lib/messageRenderingConfig';
+import { KIND_REGISTRY, mergeConfig, type MessageRenderingConfig } from '@/lib/messageRenderingConfig';
 import { classifyStandaloneKind } from '@/lib/messageKind';
 import { transcriptItems } from '@/lib/transcriptItems';
 import { ALL_KIND_RECORDS, KIND_OF_RECORD, NOT_A_RECORD, drawnUuids } from './fixtures/allKindRecords';
@@ -21,10 +21,13 @@ const BLOCK_LEVEL = new Set([
   'user.image', 'user.compactSummary', 'user.sdkSystemBracket',
 ]);
 
-const withRules = (rules: 'compact' | 'verbose' | 'all'): MessageRenderingConfig => {
-  const cfg = createDefaultConfig();
-  return { ...cfg, modern: { ...cfg.modern, recordRules: rules } };
-};
+/**
+ * A saved v5 config, loaded the way the app loads one. The goldens drive
+ * Standard through `mergeConfig`, so after the v6 config they exercise the
+ * migration: what an old saved setting showed is what Standard shows.
+ */
+const savedV5 = (rules: 'compact' | 'verbose' | 'all', kinds: Record<string, Record<string, unknown>> = {}): MessageRenderingConfig =>
+  mergeConfig({ version: 5, kinds, modern: { recordRules: rules } });
 
 describe('the all-kinds fixture', () => {
   it('covers every registry kind a record can produce', () => {
@@ -44,7 +47,7 @@ describe('the all-kinds fixture', () => {
 
 describe('what Standard draws (golden — never update with -u)', () => {
   it.each(['compact', 'verbose', 'all'] as const)('default config, recordRules %s', (rules) => {
-    expect(drawnUuids(transcriptItems(ALL_KIND_RECORDS, withRules(rules), 'standard'))).toMatchSnapshot();
+    expect(drawnUuids(transcriptItems(ALL_KIND_RECORDS, savedV5(rules), 'standard'))).toMatchSnapshot();
   });
 
   it("Greg's saved config", () => {
@@ -64,11 +67,10 @@ describe('what Standard draws per kind setting (golden — never update with -u)
       it(`every kind set to ${visibility}, one at a time, recordRules ${rules}`, () => {
         // Only what differs from the rule's baseline, so the snapshot reads
         // as "setting this kind hid these records".
-        const base = new Set(drawnUuids(transcriptItems(ALL_KIND_RECORDS, withRules(rules), 'standard')));
+        const base = new Set(drawnUuids(transcriptItems(ALL_KIND_RECORDS, savedV5(rules), 'standard')));
         const changed: Record<string, { hidden: string[]; shown: string[] }> = {};
         for (const id of kinds) {
-          const cfg = withRules(rules);
-          cfg.kinds[id] = { visibility };
+          const cfg = savedV5(rules, { [id]: { visibility } });
           const drawn = drawnUuids(transcriptItems(ALL_KIND_RECORDS, cfg, 'standard'));
           const now = new Set(drawn);
           const hidden = [...base].filter((u) => !now.has(u));

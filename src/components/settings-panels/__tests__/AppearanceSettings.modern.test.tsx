@@ -52,9 +52,10 @@ async function openModern() {
 }
 
 describe('AppearanceSettings — Modern', () => {
-  it('has a Modern tab and no Terminal tab', async () => {
+  // A tab saved as Modern before the merge lands on Messages.
+  it('opens the Modern settings on Messages, and has no Terminal tab', async () => {
     await openModern();
-    expect(screen.getByRole('tab', { name: 'Modern' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Messages' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.queryByRole('tab', { name: 'Terminal' })).toBeNull();
   });
 
@@ -179,15 +180,6 @@ describe('AppearanceSettings — Modern', () => {
     expect(section.compareDocumentPosition(icons) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it('chooses which format\'s rules Modern shows records by, Compact by default', async () => {
-    const editor = await openModern();
-    const group = within(editor).getByRole('radiogroup', { name: 'Show records like' });
-    expect(within(group).getAllByRole('radio').map((r) => r.textContent)).toEqual(['Compact', 'Verbose', 'All']);
-    expect(within(group).getByRole('radio', { name: 'Compact' })).toHaveAttribute('aria-checked', 'true');
-    fireEvent.click(within(group).getByRole('radio', { name: 'Verbose' }));
-    await waitFor(() => { expect(savedModern().at(-1)?.recordRules).toBe('verbose'); });
-  });
-
   it('switches the answer between a card and a bar on the left, card by default', async () => {
     const editor = await openModern();
     const group = within(editor).getByRole('radiogroup', { name: 'Answer style' });
@@ -246,19 +238,17 @@ describe('AppearanceSettings — Modern', () => {
 
   // A rule between each pair of the four sections: Work timeline | Colors |
   // Step icons | Text.
-  it('separates the Records, Work timeline, Colors, Step icons and Text sections with a line', async () => {
+  it('separates the Work timeline, Colors, Step icons and Text sections with a line', async () => {
     const editor = await openModern();
     const seps = within(editor).getAllByRole('separator');
-    expect(seps).toHaveLength(4);
+    expect(seps).toHaveLength(3);
     const order = [
-      within(editor).getByRole('radiogroup', { name: 'Show records like' }),
-      seps[0],
       within(editor).getByRole('switch', { name: 'Show thoughts' }),
-      seps[1],
+      seps[0],
       within(editor).getByRole('region', { name: 'Colors' }),
-      seps[2],
+      seps[1],
       within(editor).getByRole('group', { name: 'Thought step icon' }),
-      seps[3],
+      seps[2],
       within(editor).getByRole('radiogroup', { name: 'Font' }),
     ];
     for (let i = 1; i < order.length; i++) {

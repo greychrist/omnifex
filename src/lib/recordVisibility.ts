@@ -6,7 +6,7 @@
 import type { JsonlNode } from '@/types/jsonl';
 import type { MessageContentBlock } from '@/types/claudeStream';
 import type { MessageRenderingConfig } from './messageRenderingConfig';
-import { isHiddenInCompact, isNeverShown, resolveKind, type KindStyle } from './messageRenderingConfig';
+import { isHiddenInStandard, resolveKind, type KindStyle } from './messageRenderingConfig';
 import { classifyStandaloneKind } from './messageKind';
 import { classifyBlockKind } from './blockKind';
 
@@ -36,6 +36,8 @@ function resolveWholeMessageKind(
   ) {
     return 'assistant.askUserQuestion';
   }
+  // A record type OmniFex does not recognize: the Unknown kind decides it.
+  if (raw === null && msg.kind === 'unknown') return 'unknown';
   return raw;
 }
 
@@ -56,30 +58,21 @@ export function isMessageFullyHidden(
   allMessages: JsonlNode[],
   config: MessageRenderingConfig,
 ): boolean {
-  return everyRenderableKind(msg, allMessages, config, isHiddenInCompact) ?? true;
+  return everyRenderableKind(msg, allMessages, config, isHiddenInStandard) ?? true;
 }
 
 /**
- * True iff every renderable thing in `msg` is set to never be shown. Unlike
- * the compact rule, a message with nothing classifiable stays: dropping
- * content is this predicate's whole effect, so it only acts on evidence.
+ * `messages` without the records Standard hides: every renderable thing in
+ * them is a kind hidden in Standard. A record with nothing classifiable
+ * stays — dropping it is this filter's whole effect, so it acts only on
+ * evidence. Records that reach grouping as a line meet the stricter
+ * `isMessageFullyHidden` there, as Compact's did.
  */
-function isMessageNeverShown(
-  msg: JsonlNode,
-  allMessages: JsonlNode[],
-  config: MessageRenderingConfig,
-): boolean {
-  return everyRenderableKind(msg, allMessages, config, isNeverShown) ?? false;
-}
-
-/**
- * `messages` without the ones the user set to never be shown.
- */
-export function withoutNeverShown(
+export function withoutHiddenInStandard(
   messages: JsonlNode[],
   config: MessageRenderingConfig,
 ): JsonlNode[] {
-  const kept = messages.filter((m) => !isMessageNeverShown(m, messages, config));
+  const kept = messages.filter((m) => !everyRenderableKind(m, messages, config, isHiddenInStandard));
   return kept.length === messages.length ? messages : kept;
 }
 

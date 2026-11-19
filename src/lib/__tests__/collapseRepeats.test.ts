@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { JsonlNode } from '@/types/jsonl';
-import { createDefaultConfig, KIND_REGISTRY } from '../messageRenderingConfig';
+import { KIND_REGISTRY } from '../messageRenderingConfig';
 import { collapseRepeats } from '../collapseRepeats';
 
 const system = (subtype: string, extra: Record<string, unknown> = {}): JsonlNode =>
@@ -39,43 +39,40 @@ const tokensOf = (nodes: JsonlNode[]) => field(nodes, 'thinking_tokens', 'estima
 // ends at the first non-system message. A pure filter: nothing synthetic is
 // injected, so the output stays a faithful subset of what the CLI emitted.
 describe('collapseRepeats — latestInRun (thinking_tokens)', () => {
-  const cfg = createDefaultConfig();
 
   it('collapses a burst to its last ping, which carries the turn total', () => {
     const out = collapseRepeats(
-      [thinkingTokens(50), thinkingTokens(100), thinkingTokens(150), thinkingTokens(1300)],
-      cfg,
+      [thinkingTokens(50), thinkingTokens(100), thinkingTokens(150), thinkingTokens(1300)]
     );
     expect(tokensOf(out)).toEqual([1300]);
   });
 
   it('keeps a lone ping', () => {
-    expect(tokensOf(collapseRepeats([thinkingTokens(800)], cfg))).toEqual([800]);
+    expect(tokensOf(collapseRepeats([thinkingTokens(800)]))).toEqual([800]);
   });
 
   it('keeps one ping per burst when bursts are split by an assistant message', () => {
     const out = collapseRepeats(
-      [thinkingTokens(50), thinkingTokens(400), assistantText('let me check'), thinkingTokens(75), thinkingTokens(900)],
-      cfg,
+      [thinkingTokens(50), thinkingTokens(400), assistantText('let me check'), thinkingTokens(75), thinkingTokens(900)]
     );
     expect(tokensOf(out)).toEqual([400, 900]);
   });
 
   it('treats intervening system messages as part of the same burst', () => {
     const status = system('status', { status: 'requesting' });
-    const out = collapseRepeats([thinkingTokens(50), status, thinkingTokens(600)], cfg);
+    const out = collapseRepeats([thinkingTokens(50), status, thinkingTokens(600)]);
     expect(tokensOf(out)).toEqual([600]);
     expect(out).toContain(status);
   });
 
   it('does not drop the trailing ping of an in-flight burst', () => {
-    const out = collapseRepeats([userText('hi'), thinkingTokens(50), thinkingTokens(100)], cfg);
+    const out = collapseRepeats([userText('hi'), thinkingTokens(50), thinkingTokens(100)]);
     expect(tokensOf(out)).toEqual([100]);
   });
 
   it('collapses each kind independently within one run', () => {
     const snap = (n: number) => system('background_tasks_changed', { tasks: new Array(n).fill({}) });
-    const out = collapseRepeats([thinkingTokens(50), snap(1), thinkingTokens(90), snap(2)], cfg);
+    const out = collapseRepeats([thinkingTokens(50), snap(1), thinkingTokens(90), snap(2)]);
     expect(tokensOf(out)).toEqual([90]);
     expect(field(out, 'background_tasks_changed', 'tasks')).toHaveLength(1);
   });
@@ -85,34 +82,25 @@ describe('collapseRepeats — latestInRun (thinking_tokens)', () => {
 // For single-value kinds the CLI re-sends unchanged: `session_title_changed`
 // arrives at startup for every resume of a named session.
 describe('collapseRepeats — onChange (session_title_changed)', () => {
-  const cfg = createDefaultConfig();
 
   it('keeps only the rows where the value changes', () => {
     const out = collapseRepeats(
-      [titleChanged('A'), userText('hi'), titleChanged('A'), titleChanged('B'), titleChanged('B'), titleChanged('A')],
-      cfg,
+      [titleChanged('A'), userText('hi'), titleChanged('A'), titleChanged('B'), titleChanged('B'), titleChanged('A')]
     );
     expect(field(out, 'session_title_changed', 'title')).toEqual(['A', 'B', 'A']);
   });
 });
 
-describe('collapseRepeats — user choice', () => {
-  it('shows every repeat when the kind is set to Show all', () => {
-    const cfg = createDefaultConfig();
-    cfg.kinds['system.thinking_tokens'] = { collapseRepeats: false };
-    const out = collapseRepeats([thinkingTokens(50), thinkingTokens(100)], cfg);
-    expect(tokensOf(out)).toEqual([50, 100]);
-  });
-
+describe('collapseRepeats — kinds without a rule', () => {
   it('leaves kinds without a rule alone', () => {
     const a = system('hook_started');
     const b = system('hook_started');
-    expect(collapseRepeats([a, b], createDefaultConfig())).toEqual([a, b]);
+    expect(collapseRepeats([a, b])).toEqual([a, b]);
   });
 
   it('returns the same array when nothing collapses', () => {
     const msgs = [userText('hi'), assistantText('yo')];
-    expect(collapseRepeats(msgs, createDefaultConfig())).toBe(msgs);
+    expect(collapseRepeats(msgs)).toBe(msgs);
   });
 });
 
@@ -124,15 +112,6 @@ describe('collapse rules in the registry', () => {
   });
 });
 
-describe('collapseRepeats — persistence', () => {
-  it('survives a save and reload', async () => {
-    const { mergeConfig } = await import('../messageRenderingConfig');
-    const cfg = createDefaultConfig();
-    cfg.kinds['system.thinking_tokens'] = { collapseRepeats: false };
-    const reloaded = mergeConfig(JSON.parse(JSON.stringify(cfg)));
-    expect(reloaded.kinds['system.thinking_tokens']).toEqual({ collapseRepeats: false });
-  });
-});
 
 // ── re-stamped bookkeeping (Compact and Modern only) ───────────────────────
 // The CLI re-writes the current permission mode and custom title each time it
@@ -154,7 +133,7 @@ describe('collapseRepeats — permission-mode and custom-title re-stamps', () =>
 
   it('keeps the first and each change in Compact and Modern, across other records', () => {
     for (const viewMode of ['standard'] as const) {
-      const out = collapseRepeats(stream, createDefaultConfig(), viewMode);
+      const out = collapseRepeats(stream, viewMode);
       expect(modes(out)).toEqual(['auto', 'acceptEdits', 'auto']);
       expect(titles(out)).toEqual(['Working on Jira App', 'Jira app v2']);
       // Conversation is untouched.
@@ -164,23 +143,17 @@ describe('collapseRepeats — permission-mode and custom-title re-stamps', () =>
 
   it('shows every record in Verbose and All', () => {
     for (const viewMode of ['expanded'] as const) {
-      expect(collapseRepeats(stream, createDefaultConfig(), viewMode)).toBe(stream);
+      expect(collapseRepeats(stream, viewMode)).toBe(stream);
     }
   });
 
-  it('honours the kind\'s Repeats › Show all', () => {
-    const cfg = createDefaultConfig();
-    cfg.kinds = { ...cfg.kinds, 'permission-mode': { collapseRepeats: false } };
-    expect(modes(collapseRepeats(stream, cfg, 'standard'))).toEqual(['auto', 'auto', 'acceptEdits', 'acceptEdits', 'auto']);
-  });
-
-  it('declares the rule on both kinds, so Appearance offers the Repeats row', () => {
+  it('declares the rule on both kinds, so Standard tidies both', () => {
     expect(KIND_REGISTRY['permission-mode'].collapse).toEqual({ mode: 'onChange', field: 'permissionMode', onlyIn: ['standard'] });
     expect(KIND_REGISTRY['custom-title'].collapse).toEqual({ mode: 'onChange', field: 'customTitle', onlyIn: ['standard'] });
   });
 
   it('leaves the existing system rules on in every format', () => {
     const burst = [thinkingTokens(10), thinkingTokens(20)];
-    expect(tokensOf(collapseRepeats(burst, createDefaultConfig(), 'expanded'))).toEqual([20]);
+    expect(tokensOf(collapseRepeats(burst, 'expanded'))).toEqual([20]);
   });
 });

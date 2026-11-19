@@ -16,19 +16,16 @@ import {
   type MessageRenderingConfig,
   type KindStyle,
   type CategoryStyle,
-  type CollapseRule,
   type ModernStyle,
   type Typography,
 } from "@/lib/messageRenderingConfig";
 import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
 import { MessageKindTree, type TreeSelection } from "./appearance/MessageKindTree";
 import { KindEditor } from "./appearance/KindEditor";
-import {
-  previewTextForCategory,
-  previewTextForKindId,
-} from "./appearance/fixtures";
 import { TypographyEditor } from "./appearance/TypographyEditor";
 import { ModernEditor } from "./appearance/ModernEditor";
+import { CardShapeEditor } from "./appearance/CardShapeEditor";
+import { ModernTurnPreview } from "./appearance/ModernTurnPreview";
 import type { SettingsPanelProps } from "./types";
 import { useSaveStatus } from "./saveStatus";
 import { fireAndLog } from "@/lib/fireAndLog";
@@ -48,7 +45,9 @@ type AppearanceSettingsProps = Pick<SettingsPanelProps, "setToast">;
 const FIRST_SELECTION: TreeSelection = { type: "category", id: "user" };
 
 /** The tabs that exist, so a remembered one that no longer does is ignored. */
-const APPEARANCE_TABS: readonly string[] = ["kinds", "modern", "typography"];
+const APPEARANCE_TABS: readonly string[] = ["messages", "turns", "typography"];
+/** A tab saved before Messages merged Message kinds and Modern. */
+const LEGACY_TABS: Readonly<Record<string, string>> = { kinds: "messages", modern: "messages" };
 
 
 export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast }) => {
@@ -125,10 +124,11 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
   // restart so cold-launches always land on the most common surface first.
   const [activeTab, setActiveTab] = useState<string>(() => {
     try {
-      const saved = sessionStorage.getItem('omnifex:appearance-tab');
-      // A tab that no longer exists (Global, Palette) falls back to kinds.
-      return saved && APPEARANCE_TABS.includes(saved) ? saved : 'kinds';
-    } catch { return 'kinds'; }
+      const raw = sessionStorage.getItem('omnifex:appearance-tab');
+      const saved = raw ? (LEGACY_TABS[raw] ?? raw) : null;
+      // A tab that no longer exists falls back to Messages.
+      return saved && APPEARANCE_TABS.includes(saved) ? saved : 'messages';
+    } catch { return 'messages'; }
   });
   useEffect(() => {
     try { sessionStorage.setItem('omnifex:appearance-tab', activeTab); }
@@ -257,6 +257,16 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
     [mutate, setToast],
   );
 
+  const setCardBorderOpacity = useCallback(
+    (pct: number) => { mutate((prev) => ({ ...prev, cardBorderOpacity: pct })); },
+    [mutate],
+  );
+
+  const setCardBorderRadius = useCallback(
+    (px: number) => { mutate((prev) => ({ ...prev, cardBorderRadius: px })); },
+    [mutate],
+  );
+
   const resetAll = useCallback(() => {
     if (!window.confirm("Reset all appearance settings to defaults? This cannot be undone.")) {
       return;
@@ -292,30 +302,27 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
     [replaceConfig, setToast],
   );
 
-  // Resolve the current selection into the editor + preview inputs.
-  // A category carries a full style; a kind carries a resolved style
-  // (category base → registry default → user patch) with a sparse patch
-  // for the inherit-hint affordances.
+  // Resolve the current selection into the editor's inputs. A category
+  // carries a full style; a kind a resolved one (category → registry default
+  // → user patch) plus its sparse patch for the inherit affordances.
   const editor = useMemo(() => {
     const categoryEditor = (c: Category) => {
       const style = config.categories[c];
       return {
         mode: "category" as const,
-        kindId: c,
         label: style.label,
         description: style.description,
         style: style as KindStyle,
-        previewText: previewTextForCategory(c),
         onChange: (patch: Partial<KindStyle>) => { updateCategory(c, patch); },
-        onClearField: undefined,
+        // A category has nothing to inherit from: a cleared field takes its default.
+        onClearField: (field: keyof KindStyle) => {
+          updateCategory(c, { [field]: DEFAULT_CATEGORIES[c][field] } as Partial<KindStyle>);
+        },
         onReset: () => { resetCategory(c); },
         inheritedCategoryLabel: undefined as string | undefined,
         override: undefined as Partial<KindStyle> | undefined,
-        collapseRule: undefined as CollapseRule | undefined,
       };
     };
-
-    if (selected.type === "category") return categoryEditor(selected.id);
 
     if (selected.type === "kind") {
       const id = selected.id;
@@ -323,72 +330,77 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
       const cat = categoryOf(id);
       return {
         mode: "kind" as const,
-        kindId: id,
         label: def?.label ?? id,
         description: def?.description ?? `Inherits the ${config.categories[cat].label} category.`,
         style: resolveKind(config, id),
-        previewText: previewTextForKindId(id),
         onChange: (patch: Partial<KindStyle>) => { updateKind(id, patch); },
         onClearField: (field: keyof KindStyle) => { clearKindField(id, field); },
         onReset: () => { resetKind(id); },
         inheritedCategoryLabel: config.categories[cat].label,
         override: config.kinds[id],
-        collapseRule: def?.collapse,
       };
     }
 
-    return categoryEditor("user");
+    return categoryEditor(selected.id);
   }, [selected, config, updateCategory, resetCategory, updateKind, clearKindField, resetKind]);
 
   return (
     <div className="space-y-4">
       <Tabs value={activeTab} onValueChange={setActiveTab} variant="line" className="w-full">
         <TabsList>
-          <TabsTrigger value="kinds">Message kinds</TabsTrigger>
-          <TabsTrigger value="modern">Modern</TabsTrigger>
+          <TabsTrigger value="messages">Messages</TabsTrigger>
+          <TabsTrigger value="turns">Turn preview</TabsTrigger>
           <TabsTrigger value="typography">Typography</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="kinds" className="mt-4">
+        <TabsContent value="messages" className="mt-4 space-y-4">
           <Card className="p-6">
-            <div className="flex items-start justify-between gap-4 mb-4">
-              <div>
-                <h3 className="text-heading-4">Message kinds</h3>
-                <p className="text-caption text-muted-foreground mt-1">
-                  Edit a <strong>category</strong> to restyle every message in it, or select a{" "}
-                  <strong>specific kind</strong> to override just that kind's style. Unset kind
-                  fields inherit from the category.
-                </p>
-              </div>
+            <ModernEditor config={config} onChange={setModern} />
+          </Card>
+
+          <Card className="p-6">
+            <CardShapeEditor
+              cardBorderOpacity={config.cardBorderOpacity}
+              cardBorderRadius={config.cardBorderRadius}
+              onCardBorderOpacity={setCardBorderOpacity}
+              onCardBorderRadius={setCardBorderRadius}
+            />
+          </Card>
+
+          <Card className="p-6">
+            <div className="mb-4">
+              <h3 className="text-heading-4">Message kinds</h3>
+              <p className="text-caption text-muted-foreground mt-1">
+                The records Modern draws as a line: their icon, color, and whether Standard
+                shows them. Set a <strong>category</strong> for every kind in it, or a{" "}
+                <strong>kind</strong> to override its category. Expanded shows every record.
+              </p>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-[300px_minmax(0,1fr)] gap-6">
               <div className="lg:border-r lg:pr-4 lg:border-border lg:max-h-[70vh] lg:overflow-y-auto">
-                <MessageKindTree
-                  config={config}
-                  selected={selected}
-                  onSelect={setSelected}
-                />
+                <MessageKindTree config={config} selected={selected} onSelect={setSelected} />
               </div>
-
-              <div className="min-w-0 space-y-3">
-
+              <div className="min-w-0">
                 <KindEditor
                   mode={editor.mode}
-                  kindId={editor.kindId}
                   label={editor.label}
                   description={editor.description}
                   style={editor.style}
                   override={editor.override}
                   inheritedCategoryLabel={editor.inheritedCategoryLabel}
-                  typography={config.typography}
                   onChange={editor.onChange}
                   onClearField={editor.onClearField}
-                  collapseRule={editor.collapseRule}
                   onReset={editor.onReset}
                 />
               </div>
             </div>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="turns" className="mt-4">
+          <Card className="p-6">
+            <ModernTurnPreview config={config} />
           </Card>
         </TabsContent>
 
@@ -397,13 +409,6 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
             <TypographyEditor typography={config.typography} onChange={setTypography} />
           </Card>
         </TabsContent>
-
-        <TabsContent value="modern" className="mt-4">
-          <Card className="p-6">
-            <ModernEditor config={config} onChange={setModern} />
-          </Card>
-        </TabsContent>
-
       </Tabs>
 
       {/* Actions live below the tabs so import / export / save-default /

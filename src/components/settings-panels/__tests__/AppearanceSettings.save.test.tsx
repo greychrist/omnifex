@@ -7,6 +7,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
 
+vi.mock('@/hooks', async (orig) => ({
+  ...(await orig<typeof import('@/hooks')>()),
+  useTheme: () => ({ theme: 'gray', setTheme: () => {}, isLoading: false }),
+}));
 vi.mock('@/lib/api', () => ({
   api: {
     getSetting: vi.fn(async () => null),
@@ -42,7 +46,7 @@ async function renderChats() {
 }
 
 const editAccent = () => {
-  fireEvent.change(screen.getByLabelText('Accent color picker'), { target: { value: '#123456' } });
+  fireEvent.change(screen.getByLabelText('User color picker'), { target: { value: '#123456' } });
 };
 
 describe('AppearanceSettings saving', () => {

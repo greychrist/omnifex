@@ -1,7 +1,6 @@
 import React from "react";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { cn } from "@/lib/utils";
 import {
   Select,
   SelectContent,
@@ -121,80 +120,23 @@ const TextColumn: React.FC<TextColumnProps> = ({
   </div>
 );
 
-interface IconColumnProps {
-  icon: Typography["icon"];
-  onChange: (next: Typography["icon"]) => void;
-}
-
-const IconColumn: React.FC<IconColumnProps> = ({ icon, onChange }) => (
-  <div className="space-y-3">
-    <div>
-      <Label>Card icon</Label>
-      <p className="text-caption text-muted-foreground mt-1">
-        Chrome of the colored icon on the left of each card. Independent from text.
-      </p>
-    </div>
-    <div className="flex items-center gap-2">
-      <Switch
-        id="icon-bordered"
-        checked={icon.bordered}
-        onCheckedChange={(v) => { onChange({ ...icon, bordered: v }); }}
-      />
-      <Label htmlFor="icon-bordered" className="cursor-pointer">
-        Bordered chip
-      </Label>
-    </div>
-    <div className={cn("flex items-center gap-3", !icon.bordered && "opacity-50")}>
-      <Label htmlFor="icon-bg-opacity" className="shrink-0 text-caption">
-        Bg opacity
-      </Label>
-      <input
-        id="icon-bg-opacity"
-        type="range"
-        min={0}
-        max={100}
-        step={5}
-        value={icon.bgOpacity}
-        onChange={(e) => { onChange({ ...icon, bgOpacity: parseInt(e.target.value, 10) }); }}
-        disabled={!icon.bordered}
-        className="flex-1 cursor-pointer disabled:cursor-not-allowed accent-foreground"
-      />
-      <span className="font-mono text-caption text-muted-foreground w-10 text-right">
-        {icon.bgOpacity}%
-      </span>
-    </div>
-  </div>
-);
-
 export const TypographyEditor: React.FC<TypographyEditorProps> = ({ typography, onChange }) => {
   return (
     <div className="space-y-6">
       <div>
         <h3 className="text-heading-4">Typography</h3>
         <p className="text-caption text-muted-foreground mt-1">
-          Per-element typeface, size, and weight for chat messages. Pick any bundled
-          font from the Header and Content columns; the App font (above) controls the
-          rest of the app.
+          Typeface, size and weight of the chat's body text. Answers use it when
+          Messages sets their font to Content; the App font controls the rest of the app.
         </p>
       </div>
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <TextColumn
-          title="Header"
-          description={'The small label row above a card (e.g. "You", "Claude Code").'}
-          style={typography.header}
-          italicId="typography-header-italic"
-          onChange={(next) => { onChange({ ...typography, header: next }); }}
-        />
+      <div className="max-w-sm">
         <TextColumn
           title="Content"
           description="Body text for chat messages — user prompts and assistant markdown."
           style={typography.content}
           italicId="typography-content-italic"
           onChange={(next) => { onChange({ ...typography, content: next }); }}
-        />
-        <IconColumn
-          icon={typography.icon}
-          onChange={(next) => { onChange({ ...typography, icon: next }); }}
         />
       </div>
     </div>

@@ -202,12 +202,4 @@ describe('Modern answer line stylesheet', () => {
   });
 });
 
-describe('Modern record rules', () => {
-  it('follows Compact by default; a saved Verbose or All is kept, junk dropped', () => {
-    expect(createDefaultConfig().modern.recordRules).toBe('compact');
-    expect(mergeConfig({ version: 5, modern: { recordRules: 'verbose' } }).modern.recordRules).toBe('verbose');
-    expect(mergeConfig({ version: 5, modern: { recordRules: 'all' } }).modern.recordRules).toBe('all');
-    expect(mergeConfig({ version: 5, modern: { recordRules: 'modern' } }).modern.recordRules).toBe('compact');
-  });
-});
 

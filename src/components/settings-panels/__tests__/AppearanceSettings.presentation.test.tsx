@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import '@testing-library/jest-dom/vitest';
-import { render, screen, fireEvent, cleanup, within, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
 import { AppearanceSettings } from '@/components/settings-panels/AppearanceSettings';
 import { MessageKindTree } from '@/components/settings-panels/appearance/MessageKindTree';
 import { MessageRenderingProvider } from '@/contexts/MessageRenderingContext';
@@ -15,6 +15,10 @@ afterEach(() => { cleanup(); });
 // the shape that actually gets written.
 const saved: { config: unknown } = { config: null };
 
+vi.mock('@/hooks', async (orig) => ({
+  ...(await orig<typeof import('@/hooks')>()),
+  useTheme: () => ({ theme: 'gray', setTheme: () => {}, isLoading: false }),
+}));
 vi.mock('@/lib/api', () => ({
   api: {
     getSetting: vi.fn(async () => null), // first-load: defaults
@@ -68,7 +72,7 @@ describe('MessageKindTree — registry-driven', () => {
   it('starts with every category collapsed', () => {
     renderTree();
     expect(screen.queryByText("Permission request")).toBeNull();
-    expect(screen.queryByText("Execution complete")).toBeNull();
+    expect(screen.queryByText("Permission mode")).toBeNull();
   });
 
   it('lists registry kinds under their category once expanded', () => {
@@ -77,7 +81,7 @@ describe('MessageKindTree — registry-driven', () => {
     // system category kinds
     expect(screen.getByText("Permission request")).toBeInTheDocument();
     // agent category kind (still in the tree, just under a different category)
-    expect(screen.getByText("Execution complete")).toBeInTheDocument();
+    expect(screen.getByText("Permission mode")).toBeInTheDocument();
   });
 
   it('offers Collapse all while any category is open, and Expand all once none is', () => {
@@ -107,34 +111,6 @@ describe('MessageKindTree — registry-driven', () => {
   });
 });
 
-describe('Repeats control', () => {
-  it('offers Collapse / Show all on a kind with a collapse rule, and persists the choice', async () => {
-    renderWithProvider();
-    await screen.findAllByText('User');
-    saved.config = null;
-    expandAll();
-    clickRow('Thinking tokens');
-
-    const editor = screen.getByTestId('kind-editor');
-    const group = within(editor).getByRole('radiogroup', { name: 'Repeats' });
-    expect(within(group).getByRole('radio', { name: 'Collapse' })).toHaveAttribute('aria-checked', 'true');
-    fireEvent.click(within(group).getByRole('radio', { name: 'Show all' }));
-
-    await waitFor(() => expect(saved.config).not.toBeNull());
-    const cfg = saved.config as { kinds: Record<string, Record<string, unknown>> };
-    expect(cfg.kinds['system.thinking_tokens']).toEqual({ collapseRepeats: false });
-  });
-
-  it('is absent on a kind with nothing to collapse', async () => {
-    renderWithProvider();
-    await screen.findAllByText('User');
-    expandAll();
-    clickRow('Tool call');
-    const editor = screen.getByTestId('kind-editor');
-    expect(within(editor).queryByRole('radiogroup', { name: 'Repeats' })).toBeNull();
-  });
-});
-
 describe('AppearanceSettings — category + kind tree', () => {
   it('lists the three categories', async () => {
     renderWithProvider();
@@ -144,97 +120,22 @@ describe('AppearanceSettings — category + kind tree', () => {
     }
     // Registry kinds render under their category
     expandAll();
-    expect(screen.getAllByText('Tool call').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Permission mode').length).toBeGreaterThan(0);
   });
 
-  it('shows a Presentation dropdown when a category is selected', async () => {
-    renderWithProvider();
-    await screen.findAllByText('User');
-    // User category is selected by default.
-    const controls = screen.getAllByLabelText(/^Presentation$/i);
-    expect(controls.length).toBeGreaterThan(0);
-  });
 
   it('opens a kind editor with a reset affordance when a kind is selected', async () => {
     renderWithProvider();
     await screen.findAllByText('User');
-    // "Execution complete" is a kind in the agent category.
+    // "Permission mode" is a kind in the system category.
     expandAll();
-    clickRow('Execution complete');
-    expect(screen.getByRole('button', { name: /reset to default/i })).toBeInTheDocument();
-  });
-});
-
-describe('AppearanceSettings — kind field editing', () => {
-  it('persists the changed field into config.kinds[id], not inherited category values', async () => {
-    // Selecting "Tool call" (assistant.tool-use) opens a kind editor.
-    // Choosing a visibility writes only that field into config.kinds[id].
-    renderWithProvider();
-    await screen.findAllByText('User');
-    saved.config = null;
-
-    // Select "Tool call" in the tree.
-    expandAll();
-    clickRow('Tool call');
-
-    // assistant.tool-use defaults to "Verbose only".
-    const editor = screen.getByTestId('kind-editor');
-    const group = within(editor).getByRole('radiogroup', { name: 'Visibility' });
-    expect(within(group).getByRole('radio', { name: 'Verbose only' })).toHaveAttribute('aria-checked', 'true');
-    fireEvent.click(within(group).getByRole('radio', { name: 'Never' }));
-
-    // saveSetting is debounced (the global commit re-renders all chats + writes
-    // to disk, so rapid edits coalesce) — wait for the commit to land.
-    await waitFor(() => expect(saved.config).not.toBeNull());
-    const cfg = saved.config as { kinds: Record<string, Record<string, unknown>> };
-
-    // The kinds map now has an entry for this id.
-    expect(cfg.kinds).toBeDefined();
-    const patch = cfg.kinds['assistant.tool-use'];
-    expect(patch).toBeDefined();
-
-    expect(patch.visibility).toBe('never');
-    expect(Object.prototype.hasOwnProperty.call(patch, 'hiddenInCompact')).toBe(false);
-
-    // Fields not in the patch (inherited) must NOT have been written.
-    expect(Object.prototype.hasOwnProperty.call(patch, 'alignment')).toBe(false);
-    expect(Object.prototype.hasOwnProperty.call(patch, 'presentation')).toBe(false);
-    expect(Object.prototype.hasOwnProperty.call(patch, 'borderStyle')).toBe(false);
+    clickRow('Permission mode');
+    expect(screen.getByRole('button', { name: /reset kind/i })).toBeInTheDocument();
   });
 });
 
 // The editor is laid out as label | control rows, one concern per row, so the
 // whole kind fits without scrolling. Each row carries one inherit hint.
-describe('AppearanceSettings — compact kind editor rows', () => {
-  it('puts presentation, border and alignment in one Layout row', async () => {
-    renderWithProvider();
-    await screen.findAllByText('User');
-    expandAll();
-    clickRow('Tool call');
-    const editor = screen.getByTestId('kind-editor');
-    const row = within(editor).getByRole('group', { name: 'Layout' });
-    const names = within(row).getAllByRole('combobox').map((c) => c.getAttribute('aria-label'));
-    expect(names).toEqual(['Presentation', 'Border', 'Alignment']);
-  });
-
-  it('reverts a row to inherited with its one hint', async () => {
-    renderWithProvider();
-    await screen.findAllByText('User');
-    expandAll();
-    clickRow('Tool call');
-    const editor = screen.getByTestId('kind-editor');
-    fireEvent.click(within(editor).getByRole('radio', { name: 'Never' }));
-    const row = within(editor).getByRole('group', { name: 'Visibility' });
-    fireEvent.click(within(row).getByRole('button', { name: /revert/i }));
-    await waitFor(() => {
-      const cfg = saved.config as { kinds: Record<string, Record<string, unknown>> } | null;
-      expect(cfg).not.toBeNull();
-      expect(cfg!.kinds['assistant.tool-use']?.visibility).toBeUndefined();
-    });
-    expect(within(row).getByText(/inherited/i)).toBeInTheDocument();
-  });
-});
-
 describe('AppearanceSettings — edits are debounced before the global commit', () => {
   it('coalesces a rapid burst of color edits into a single persisted commit', async () => {
     const { api } = await import('@/lib/api');
@@ -246,7 +147,7 @@ describe('AppearanceSettings — edits are debounced before the global commit', 
     // Drop the first-load reset write so we count only edit-driven commits.
     saveSetting.mockClear();
 
-    const picker = screen.getByLabelText('Accent color picker');
+    const picker = screen.getByLabelText('User color picker');
 
     // Simulate an OS color-picker drag: many onChange events in quick
     // succession, like the native <input type="color"> streams.
@@ -273,23 +174,3 @@ describe('AppearanceSettings — edits are debounced before the global commit', 
   });
 });
 
-describe('AppearanceSettings — presentation control', () => {
-  it('renders a Border dropdown via the shadcn Select primitive', async () => {
-    renderWithProvider();
-    await screen.findAllByText('User');
-    const border = screen.getAllByLabelText(/^Border$/i)[0];
-    expect(border).toBeInTheDocument();
-    expect(border.getAttribute('role')).toBe('combobox');
-  });
-
-  it('shows inherited placeholders for unset fields in kind mode', async () => {
-    renderWithProvider();
-    await screen.findAllByText('User');
-    // Select a kind that has no user patch — inherited fields show "inherited" hint.
-    expandAll();
-    clickRow('Tool call');
-    const editor = screen.getByTestId('kind-editor');
-    // At least some fields show the inherit hint since no user patch is set.
-    expect(within(editor).getAllByText(/inherited/i).length).toBeGreaterThan(0);
-  });
-});
