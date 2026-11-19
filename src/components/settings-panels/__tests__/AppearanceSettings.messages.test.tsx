@@ -57,7 +57,7 @@ describe('Settings › Chats', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Expand all' }));
     const t = within(tree());
     expect(t.getByText('Permission mode')).toBeInTheDocument();
-    for (const item of ['Thinking', 'Tool call', 'User prompt', 'Assistant text']) {
+    for (const item of ['Thinking', 'Tool call', 'Assistant text']) {
       expect(t.queryByText(item)).toBeNull();
     }
   });
@@ -193,5 +193,19 @@ describe('Messages — steps, kinds and text in one list', () => {
     const editor = screen.getByRole('region', { name: 'Text settings' });
     expect(within(editor).getByRole('radiogroup', { name: 'Font' })).toBeInTheDocument();
     expect(within(editor).getByRole('radiogroup', { name: 'Answer size' })).toBeInTheDocument();
+  });
+});
+
+// The User prompt chip over a line-style prompt wears this kind's icon; its
+// color is Colors › User prompt, so the kind offers the icon alone.
+describe('Messages — User prompt kind', () => {
+  it('lists User prompt with an icon, and no color or Show in Standard', () => {
+    renderSettings();
+    fireEvent.click(screen.getByRole('button', { name: 'Expand all' }));
+    fireEvent.click(within(tree()).getByText('User prompt'));
+    const editor = screen.getByRole('region', { name: 'User prompt settings' });
+    expect(within(editor).getByRole('button', { name: /icon/i })).toBeInTheDocument();
+    expect(within(editor).queryByLabelText(/color picker/i)).toBeNull();
+    expect(within(editor).queryByRole('switch', { name: 'Show in Standard' })).toBeNull();
   });
 });

@@ -39,12 +39,12 @@ export function Message({ from, children }: { from: 'user' | 'assistant'; childr
 
 export function UserBubble({ children }: { children: React.ReactNode }) {
   const { config } = useMessageRenderingConfig();
-  // Line style (Settings › Chats › User prompt style): only a bar down the
-  // left edge in the prompt color, `.modern-prompt-line`, set 16px off it as
-  // every ruled text in Modern is.
+  // Line style (Settings › Chats › User prompt style): the answer's line,
+  // mirrored — a bar down the right edge in the prompt color,
+  // `.modern-prompt-line`, the text right-aligned 16px off it.
   if (config.modern.promptStyle === 'line') {
     return (
-      <div className={cn('modern-prompt-line max-w-[80%] py-1 pl-4 text-sm leading-relaxed break-words text-foreground', !config.modern.promptColorEnabled && 'modern-card-plain')}>
+      <div className={cn('modern-prompt-line max-w-[80%] py-1 pr-4 text-right text-sm leading-relaxed break-words text-foreground', !config.modern.promptColorEnabled && 'modern-card-plain')}>
         {children}
       </div>
     );

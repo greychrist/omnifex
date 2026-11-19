@@ -159,10 +159,18 @@ html {
   border-left-color: var(--color-border);
 }
 .modern-format .modern-prompt-line {
-  border-left: 2px solid var(--modern-prompt-tint, oklch(0.45 0.15 255));
+  border-right: 2px solid var(--modern-prompt-tint, oklch(0.45 0.15 255));
 }
 .modern-format .modern-prompt-line.modern-card-plain {
-  border-left-color: var(--color-border);
+  border-right-color: var(--color-border);
+}
+/* The User prompt chip over a line-style prompt: the answer chip's shape, in
+   the prompt color. */
+.modern-format .modern-prompt-chip {
+  background-color: var(--modern-prompt-tint, oklch(0.45 0.15 255));
+}
+.modern-format .modern-prompt-chip.modern-card-plain {
+  background-color: var(--color-muted-foreground);
 }
 .modern-format .modern-card-shadow {
   box-shadow: 0 1px 2px oklch(0 0 0 / 0.12), 0 2px 8px color-mix(in oklch, var(--modern-card-glow) 12%, transparent);

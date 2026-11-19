@@ -324,6 +324,7 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
         inheritedCategoryLabel: undefined as string | undefined,
         override: undefined as Partial<KindStyle> | undefined,
         offersStandard: true,
+        offersColor: true,
       };
     };
 
@@ -343,6 +344,8 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
         override: config.kinds[id],
         // Kinds Modern draws as its own items are always in Standard.
         offersStandard: !MODERN_ITEM_KINDS.has(id),
+        // The prompt's color is Colors › User prompt.
+        offersColor: id !== "user.prompt",
       };
     }
 
@@ -414,6 +417,7 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
                   onClearField={editor.onClearField}
                   onReset={editor.onReset}
                   offersStandard={editor.offersStandard}
+                  offersColor={editor.offersColor}
                 />
                 )}
               </div>

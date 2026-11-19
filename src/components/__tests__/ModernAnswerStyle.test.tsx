@@ -77,12 +77,35 @@ describe('Modern user prompt style', () => {
     expect(container.querySelector('.modern-prompt-line')).toBeNull();
   });
 
-  it('draws only a bar on the left in line style, with no fill or shadow', () => {
+  // Laid out opposite to the answer's line (Greg, 2026-11-19): the bar on
+  // the right, right-aligned, under a "User prompt" chip in the User prompt
+  // kind's icon.
+  it('draws a bar on the right in line style, mirrored from the answer, with no fill or shadow', () => {
     const { container } = renderPrompt('line');
     const line = screen.getByText('Fix the login bug.').closest('.modern-prompt-line');
     expect(line).not.toBeNull();
     expect(container.querySelector('.modern-prompt')).toBeNull();
     expect(line).not.toHaveClass('modern-card-shadow');
-    expect(line).toHaveClass('pl-4');
+    expect(line).toHaveClass('pr-4');
+    expect(line).toHaveClass('text-right');
+  });
+
+  it('heads the line with a User prompt chip in the User prompt icon', () => {
+    const config = createDefaultConfig();
+    config.modern = { ...config.modern, promptStyle: 'line' };
+    config.kinds['user.prompt'] = { icon: 'Star' };
+    const { container } = render(
+      <MessageRenderingPreviewProvider config={config}>
+        <ModernTranscriptItem item={prompt} live={false} ctx={ctx} />
+      </MessageRenderingPreviewProvider>,
+    );
+    const chip = container.querySelector('[data-prompt-chip]') as HTMLElement;
+    expect(chip).toHaveTextContent('User prompt');
+    expect(chip.querySelector('svg.lucide-star')).not.toBeNull();
+  });
+
+  it('has no chip in card style', () => {
+    const { container } = renderPrompt('card');
+    expect(container.querySelector('[data-prompt-chip]')).toBeNull();
   });
 });

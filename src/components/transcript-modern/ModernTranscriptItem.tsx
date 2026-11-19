@@ -26,6 +26,8 @@ import { turnFooterText, type TurnFooter } from '@/lib/modernTurnFooter';
 import { useMessageRenderingConfig } from '@/contexts/MessageRenderingContext';
 import { cardRadiusStyle } from '@/lib/accentStyle';
 import { cn } from '@/lib/utils';
+import { IconRenderer } from '@/components/settings-panels/appearance/iconMap';
+import { resolveKind } from '@/lib/messageRenderingConfig';
 import { useRenderProfile } from '@/hooks/useRenderProfile';
 
 export interface ModernRowContext {
@@ -88,6 +90,7 @@ export const ModernTranscriptItem = React.memo(function ModernTranscriptItem({
     case 'prompt':
       return (
         <Message from="user">
+          <PromptChip />
           <UserBubble>
             {item.images && (
               <div className="mb-2 flex flex-wrap gap-2">
@@ -214,6 +217,22 @@ function FinalAnswerCard({ children }: { children: React.ReactNode }) {
     >
       {children}
     </div>
+  );
+}
+
+/** Heads a line-style user prompt, as FinalChip heads the answer: the User
+ *  prompt kind's icon, in the prompt color. Card style draws none. */
+function PromptChip() {
+  const { config } = useMessageRenderingConfig();
+  if (config.modern.promptStyle !== 'line') return null;
+  return (
+    <span
+      data-prompt-chip
+      className={cn('modern-prompt-chip inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium leading-none text-white', !config.modern.promptColorEnabled && 'modern-card-plain')}
+    >
+      <IconRenderer name={resolveKind(config, 'user.prompt').icon} className="size-3" />
+      User prompt
+    </span>
   );
 }
 

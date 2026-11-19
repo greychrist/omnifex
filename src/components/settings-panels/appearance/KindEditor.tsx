@@ -25,6 +25,8 @@ interface KindEditorProps {
   onReset: () => void;
   /** False for kinds Modern draws as its own items: always in Standard. */
   offersStandard?: boolean;
+  /** False where something else sets the color (User prompt: Colors). */
+  offersColor?: boolean;
 }
 
 /**
@@ -43,6 +45,7 @@ export const KindEditor: React.FC<KindEditorProps> = ({
   onClearField,
   onReset,
   offersStandard = true,
+  offersColor = true,
 }) => {
   const isKind = mode === "kind";
   const inherited = (field: keyof KindStyle) => isKind && override?.[field] === undefined;
@@ -81,6 +84,7 @@ export const KindEditor: React.FC<KindEditorProps> = ({
         <IconPicker value={style.icon} onChange={(icon) => { onChange({ icon }); }} />
       </div>
 
+      {offersColor && (
       <ColorField
         name={label}
         title="Color"
@@ -91,6 +95,7 @@ export const KindEditor: React.FC<KindEditorProps> = ({
           else onChange({ accentColor: next });
         }}
       />
+      )}
 
       {offersStandard && (
       <div className="flex items-center justify-between gap-3">

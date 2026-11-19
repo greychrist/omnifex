@@ -212,10 +212,10 @@ describe('Modern user prompt style', () => {
     expect(mergeConfig({ version: 6, modern: { promptStyle: 'banner' } }).modern.promptStyle).toBe('card');
   });
 
-  it('draws the line as a 2px bar in the prompt blue by default', async () => {
+  it('draws the line as a 2px bar on the right in the prompt blue by default', async () => {
     const fs = await import('node:fs');
     const css = fs.readFileSync(new URL('../../styles.css', import.meta.url), 'utf8');
     const rule = /\.modern-format \.modern-prompt-line \{([^}]*)\}/.exec(css)?.[1] ?? '';
-    expect(rule).toMatch(/border-left:\s*2px solid var\(--modern-prompt-tint, oklch\(0\.45 0\.15 255\)\)/);
+    expect(rule).toMatch(/border-right:\s*2px solid var\(--modern-prompt-tint, oklch\(0\.45 0\.15 255\)\)/);
   });
 });

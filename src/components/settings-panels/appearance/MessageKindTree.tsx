@@ -22,8 +22,10 @@ const LISTED = (id: string, config: MessageRenderingConfig) =>
   id !== "assistant.text.live"
   // Except one hidden in Standard (a v5 Never migrates to that), so it can
   // be shown again.
-  // The answered question is drawn as a line in its kind's icon and color.
-  && (!MODERN_ITEM_KINDS.has(id) || id === "assistant.askUserQuestion" || isHiddenInStandard(resolveKind(config, id)));
+  // The answered question is drawn as a line in its kind's icon and color;
+  // a line-style user prompt's chip wears the User prompt icon.
+  && (!MODERN_ITEM_KINDS.has(id) || id === "assistant.askUserQuestion" || id === "user.prompt"
+    || isHiddenInStandard(resolveKind(config, id)));
 
 /** The groups that open and close: the steps, then each category. */
 const STEPS = "steps";
