@@ -93,6 +93,30 @@ describe('EXTRACTORS', () => {
   });
 });
 
+describe('can_use_tool payload keys', () => {
+  // 2.1.329's main emitter spreads `...r.mcpInfo&&{mcp_server:…}` before most
+  // of its keys. A capture that stopped at the first `}` read three keys and
+  // missed the new `auto_modes_check_raised` entirely.
+  it('reads past nested objects and calls to every top-level key', () => {
+    const t = 'x={type:"control_request",request:{subtype:"can_use_tool",tool_name:r.name,'
+      + '...r.mcpInfo&&{mcp_server:W(r.mcpInfo)},input:q,'
+      + 'decision_reason_rule_source:M?.type==="rule"?M.rule.source:void 0,'
+      + '...X&&{matched_ask_rule:{source:X.source,tool_name:X.t}},'
+      + 'auto_modes_check_raised:we(y)||void 0,label:`a:${b}`,'
+      + 'requires_user_interaction:f()||void 0},Y.signal,K)';
+    expect(EXTRACTORS.find((e) => e.name === 'can_use_tool payload keys')!.extract(t)).toEqual([
+      'auto_modes_check_raised',
+      'decision_reason_rule_source',
+      'input',
+      'label',
+      'matched_ask_rule',
+      'mcp_server',
+      'requires_user_interaction',
+      'tool_name',
+    ]);
+  });
+});
+
 describe('.describe() strings', () => {
   // 2.1.312 announced `ask_user_question_unanswered_v1` inside the init
   // `capabilities` description, a ~2,000-character string. An 800-character

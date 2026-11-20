@@ -188,6 +188,21 @@ describe('permission-mode decider (auto allow/deny vs prompt)', () => {
       expect(handle.permissionQueue).toHaveLength(1);
     });
 
+    // An ask the auto-mode classifier raised: the CLI's own test (2.1.329) is
+    // type 'classifier' || code 'classifier_transcript_too_long' ||
+    // `auto_modes_check_raised`. Reaches us only when the dropdown says
+    // acceptEdits but the CLI is still in auto (a lost set_permission_mode).
+    it.each([
+      ['type classifier', { decision_reason_type: 'classifier' }],
+      ['code classifier_transcript_too_long', { decision_reason_code: 'classifier_transcript_too_long' }],
+      ['auto_modes_check_raised', { auto_modes_check_raised: true }],
+    ])('prompts for an edit the auto-mode classifier raised (%s)', (_label, extra) => {
+      const { fn, handle, respondPermission } = handlerFor('acceptEdits');
+      fn(escalated({ file_path: '/Users/test/proj/src/a.ts' }, extra));
+      expect(respondPermission).not.toHaveBeenCalled();
+      expect(handle.permissionQueue).toHaveLength(1);
+    });
+
     it('still auto-allows an in-project edit the CLI did not escalate (mode out of sync)', () => {
       // The decider enforces the dropdown even when the CLI never received
       // set_permission_mode — the "kept asking after I set it" fix.
@@ -221,6 +236,27 @@ describe('permission-mode decider (auto allow/deny vs prompt)', () => {
       const payload = sendToRenderer.mock.calls[0][1] as Record<string, unknown>;
       expect(payload.directory_grant).toEqual(['/Users/test/proj/linked', '/tmp/outside', '/private/tmp/outside']);
     });
+  });
+
+  // CLI 2.1.329's Artifact delete ask sends the same sentence as description
+  // and decision_reason; the card drew it twice.
+  it('drops a decision_reason that repeats the description', () => {
+    const { fn, sendToRenderer } = handlerFor('default');
+    const line = 'Permanently delete "Pi-Tuitive Design System (test)"?';
+    fn({
+      ...req('Artifact', { action: 'delete', url: 'https://claude.ai/artifact/x' }),
+      payload: {
+        tool_name: 'Artifact',
+        input: { action: 'delete', url: 'https://claude.ai/artifact/x' },
+        tool_use_id: 'tu-a',
+        description: line,
+        decision_reason: line,
+        suppress_always_allow_rule: true,
+      },
+    });
+    const payload = sendToRenderer.mock.calls[0][1] as Record<string, unknown>;
+    expect(payload.description).toBe(line);
+    expect(payload.decision_reason).toBeUndefined();
   });
 
   it('acceptEdits: still prompts for non-edit tools (e.g. Bash)', () => {

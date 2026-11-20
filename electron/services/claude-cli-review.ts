@@ -66,6 +66,117 @@ import { probeBinaryVersion } from './util/exec-text';
  *    and no `Artifact` is working, not broken. Neither present = re-read
  *    the gate.
  *
+ * Last review: 2.1.328 -> 2.1.329 on 2026-11-19. Findings: none broken.
+ * One latent record (`hybrid-organization`) fixed. One script blind spot
+ * (can_use_tool keys) fixed.
+ *
+ *  Changelog coverage: 2.1.329 (~130 entries; mostly Code Mode, self-hosted
+ *  runner, /code-review, Remote Control, VS Code, terminal UI). Both ends
+ *  installed. Script exit 0. Merge map (47), subtype literals (169), system
+ *  subtypes (84), hook_event_name (33), control envelopes (5), SDK requests
+ *  (55), control request schemas (108), CLI flags (117), origin kinds (14)
+ *  identical. /usage anchors unchanged (`Estimated cost:` 2 -> 2).
+ *  - Record type +`hybrid-organization` ({organizationUuid, sessionId,
+ *    agentId?}): the organization a "hybrid" sign-in (org reached through
+ *    another provider / gateway) belongs to. Pushed with the session
+ *    metadata beside isolation-latch / dev-mods, and into subagent files.
+ *    Not in the merge map; `last-wins` by the same fallback as `repl-mode`.
+ *    The CLI also counts a transcript holding one as non-first-party (with
+ *    the bdrk/vrtx id prefixes). (b) latent, FIXED: added to
+ *    CLI_SIDECHANNEL_RECORD_TYPES with a test. Zero in both accounts.
+ *  - can_use_tool key +`auto_modes_check_raised`: set when an ask reaches a
+ *    person after the auto-mode classifier's block/flag (or an over-long
+ *    transcript) and decision_reason_type/code don't say `classifier`. The
+ *    CLI's own test is type 'classifier' || code
+ *    'classifier_transcript_too_long' || this flag. Not read by us; the
+ *    card still shows decision_reason. Hardening TAKEN the same day:
+ *    isEscalatedEdit sends a classifier-raised edit to the card in
+ *    acceptEdits (isClassifierRaised, the CLI's own test), with tests.
+ *    Only fires when the CLI is still in auto (a lost set_permission_mode).
+ *  - Artifact `delete` asks carry `suppress_always_allow_rule` and
+ *    `__artifactAsk.remember:"this_call"`: the tool's
+ *    suppressesAlwaysAllowRule lists nearly every action, and a delete is
+ *    "irreversible; every delete asks the user". So Allow once only is the
+ *    CLI's design, not ours (a). Its description and decision_reason are
+ *    the same sentence; the card drew it twice. FIXED: permissions.ts drops
+ *    a decision_reason equal to the description, with a test.
+ *  - Script blind spot: the can_use_tool extractor's `[^}]{0,900}` capture
+ *    stopped at the main emitter's first `...mcpInfo&&{…}` spread, so it
+ *    read 12 keys of ~30 and missed this one (and would have missed
+ *    2.1.328's `requires_user_interaction` but for a second emitter).
+ *    FIXED: bracket-aware `extractCanUseToolKeys`, with a test. `answer` /
+ *    `ask` in its output come from a pass() call object: noise.
+ *  - Describe moves: `server_policy_ask_only` no longer sent for Write/Edit
+ *    default prompts or the outside-working-directory Read/Write/Edit ask
+ *    (not read by us); `prompt_submit_outcome.no_verdict_kind`
+ *    'hook_failed' / 'hook_timed_out' now carry Claude Code's own reason
+ *    line (we don't read prompt_submit_outcome; the frame's content renders
+ *    as before); get_usage `skip_behaviors` detached answers (we scrape
+ *    /usage, never send get_usage); pasted_texts wrapping wording; agent
+ *    message paging for Remote Control thin clients; client chat-column
+ *    width; `show_to_auto_mode` on server-queued messages; first-party
+ *    provider flag; managed-settings source codes; git diff display paths.
+ *    None asks anything of a host like us.
+ *  - Type literals: removed five_hour / seven_day / seven_day_sonnet /
+ *    rate_limit_error as `type:` values = the internal mock-limits
+ *    simulator's `exceededLimits` dropped; the strings remain (41/38/20/11
+ *    occurrences), rateLimitType untouched. Added first_week / fork / goal /
+ *    scheduled = /tasks rows; the rest (bracket, star, qmark...) are a glob
+ *    tokenizer leaving. Inert.
+ *  - Object keys +865 -282: env names (CLAUDE_CODE_SCRATCHPAD_DIR,
+ *    _HOST_SHOWS_CONNECTION_NOTICE, _ENABLE_AUTO_MODE...), hybrid/gateway
+ *    sign-in, picomatch CHAR_* constants leaving. Nothing new on
+ *    user/assistant records or the initialize reply.
+ *  - Changelog, in our favor: a removed plugin's MCP server no longer stays
+ *    connected after `reload_plugins` in headless sessions (we send it);
+ *    octet-stream PDFs/images from MCP no longer saved as .bin; Claude is
+ *    told when an MCP server's tools failed to load; memory use of idle SDK
+ *    sessions after long turns / --resume; ~/.claude.json no longer reset
+ *    on a stalled read.
+ *  - Changelog, checked: macOS Keychain read-but-not-write now "stops at
+ *    expiry and says why"; our auth-expiry detector keys on the assistant
+ *    `error:'authentication_failed'` (sessionDerivedState.ts), not wording,
+ *    so it should catch it; unverified live. Managed-hooks load warning in
+ *    non-interactive hosts goes through the existing warning system
+ *    message; we have no managed settings. Stop/SubagentStop
+ *    `background_tasks` lists Monitor as `monitor` (we read no hook input).
+ *  - Changelog, inert: removal of 2.1.326's max_tokens auto-retry; saved
+ *    scheduled tasks need rescheduling; /tasks contents; /usage credits
+ *    wording (we parse windows and the % column, not the credits row);
+ *    /model Default fix; autoCompactWindow on pre-warmed processes; headless
+ *    rewind/fork ordering (we don't rewind); Agent `effort` for teammates;
+ *    /auto-mode-setup; resumed "Rejected/Declined" labels (terminal UI);
+ *    computer use safety rules (TUI-only for us); Code Mode, self-hosted
+ *    runner, gateway, cloud, Remote Control, VS Code and every terminal-UI
+ *    fix. No permission-rule syntax change; docs/permission-syntax.md
+ *    unaffected.
+ *  - Open items re-checked in both accounts' projects/: hybrid-organization
+ *    0, real appKeepsStatuses / task_list_statuses 0 (2 review transcripts
+ *    only mention it), supersedesUuids 0,
+ *    plugin_note 0, real ui_notify frames 0.
+ *
+ *  Script + prompt: extractCanUseToolKeys replaces the regex capture. The
+ *  prompt needed no change: its pointers all resolved.
+ *
+ *  OPEN ITEMS (carry forward; re-check each review):
+ *   - Task ticker reload: first `appKeepsStatuses` / `task_list_statuses`
+ *     in one of our sessions, check its JSONL for a persisted form of the
+ *     statuses; a reloaded tab's panel is stale until then. Also confirms
+ *     the live frame matches the schema taskTickerStatuses reads.
+ *   - Fullscreen /usage order: capture a subscriber render with windows
+ *     before `Session`; bound windowBlock at the Session header if so.
+ *   - plugin_note: shape taken from the bundle; check the first real one
+ *     against contextLedger's reading (plugin, rowUuid, content[]).
+ *   - Idle compaction: verify the first real occurrence (2.1.314 block).
+ *   - ui_notify: unverified against a real mod; first `$.ui.notify` seen in
+ *     a transcript or reported banner closes it.
+ *   - `supersedes`: first `"supersedesUuids":[` in a transcript decides
+ *     whether the renderer must drop the named rows.
+ *   - Auto-mode classifier fallback removal: when it lands, check how its
+ *     asks / denials reach the card (2.1.327 heads-up; not in 2.1.329).
+ *   - Keychain expiry stop (2.1.329): first real occurrence confirms the
+ *     auth-expiry banner fires.
+ * *
  * Last review: 2.1.327 -> 2.1.328 on 2026-11-19. Findings: none broken.
  * One latent record (`api-request-resumed`) fixed. One baseline
  * (`task_list_statuses`). Task ticker statuses taken into the task panel;
@@ -5822,7 +5933,7 @@ import { probeBinaryVersion } from './util/exec-text';
  * `~/.claude.json` fix (we read-modify-write that file, never replace it), and
  * the VSCode screen-reader work.
  */
-export const REVIEWED_CLI_VERSION = '2.1.328';
+export const REVIEWED_CLI_VERSION = '2.1.329';
 
 /**
  * app_settings key holding the user's explicit OmniFex-checkout override.

@@ -106,6 +106,20 @@ describe('isCliSidechannelRecord', () => {
     ).toBe(true);
   });
 
+  // New in CLI 2.1.329: `hybrid-organization`, a latch naming the
+  // organization a "hybrid" sign-in (an org reached through another provider
+  // or a gateway) belongs to. Written with the session metadata, also into
+  // subagent files with an `agentId`; `last-wins` by the CLI's own fallback.
+  it('recognises the 2.1.329 hybrid-organization record', () => {
+    expect(
+      isCliSidechannelRecord({
+        type: 'hybrid-organization',
+        organizationUuid: 'org-1',
+        sessionId: 's',
+      }),
+    ).toBe(true);
+  });
+
   // New in CLI 2.1.283: a latch naming the session's plugin "dev mods"
   // folder (`<config>/dev-mods/<sessionId>`, hot-reloaded as a plugin dir).
   // `last-wins` in the CLI's merge map; written when dev mods are enabled

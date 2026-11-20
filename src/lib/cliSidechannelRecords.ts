@@ -63,6 +63,11 @@ export const CLI_SIDECHANNEL_RECORD_TYPES: ReadonlySet<string> = new Set([
   // Whether the session runs in experimental Code Mode (CLI >= 2.1.318).
   // Re-appended with the metadata, but not in the merge map.
   'repl-mode',
+  // The organization a "hybrid" sign-in (an org reached through another
+  // provider or a gateway) belongs to (CLI >= 2.1.329). Written with the
+  // metadata and into subagent files; not in the merge map, last-wins by
+  // the CLI's own fallback.
+  'hybrid-organization',
   // Structural bookkeeping — branch plumbing and file-history deltas.
   'file-history-delta',
   'continued-in',

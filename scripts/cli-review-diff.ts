@@ -106,6 +106,65 @@ export function extractControlRequestSchemas(text: string): string[] {
   return all(/[A-Za-z_$][\w$]*\(\{subtype:[A-Za-z_$][\w$]*\("([a-z_]+)"\)/g, text);
 }
 
+/**
+ * The keys of every `{subtype:"can_use_tool",…}` object the CLI builds: its
+ * own keys plus those of a `...cond&&{…}` spread, read with a bracket-aware
+ * scan. A plain `[^}]` capture stopped at the first nested object — in
+ * 2.1.329 that was `...r.mcpInfo&&{mcp_server:…}`, three keys into the main
+ * emitter — and never saw the new `auto_modes_check_raised`.
+ */
+export function extractCanUseToolKeys(text: string): string[] {
+  const keys: string[] = [];
+  const anchor = 'subtype:"can_use_tool",';
+  for (let at = text.indexOf(anchor); at !== -1; at = text.indexOf(anchor, at + 1)) {
+    // Stack of open brackets; a `{` entered through a spread at the top level
+    // counts as top level too.
+    const stack: { close: string; keys: boolean }[] = [];
+    const end = Math.min(text.length, at + 4000);
+    let i = at + anchor.length;
+    let expectKey = true;
+    while (i < end) {
+      const ch = text[i];
+      const readingKeys = stack.length === 0 || stack[stack.length - 1].keys;
+      if (ch === '"' || ch === "'" || ch === '`') {
+        // Skip a string; template `${…}` bodies are skipped with it.
+        const q = ch;
+        i++;
+        while (i < end && text[i] !== q) i += text[i] === '\\' ? 2 : 1;
+        i++;
+        expectKey = false;
+        continue;
+      }
+      if (ch === '{' || ch === '(' || ch === '[') {
+        const spread = ch === '{' && readingKeys && /\.\.\.[^,]*&&\s*$/.test(text.slice(Math.max(at, i - 120), i));
+        stack.push({ close: ch === '{' ? '}' : ch === '(' ? ')' : ']', keys: spread });
+        expectKey = spread;
+        i++;
+        continue;
+      }
+      if (ch === '}' || ch === ')' || ch === ']') {
+        if (stack.length === 0) break;
+        stack.pop();
+        expectKey = false;
+        i++;
+        continue;
+      }
+      if (ch === ',') {
+        expectKey = readingKeys;
+        i++;
+        continue;
+      }
+      if (expectKey && readingKeys) {
+        const m = /^([a-z][a-z_]*):/.exec(text.slice(i, i + 60));
+        if (m) keys.push(m[1]);
+        expectKey = false;
+      }
+      i++;
+    }
+  }
+  return uniqueSorted(keys);
+}
+
 export const EXTRACTORS: Extractor[] = [
   { name: 'merge-strategy map', extract: extractMergeMap },
   // Every short `type:"…"` literal. Broad on purpose: attachment subtypes
@@ -127,11 +186,7 @@ export const EXTRACTORS: Extractor[] = [
   // was stamping {kind:"human"} (claude-cli-engine.ts writeUserMessage).
   { name: 'origin kinds', extract: (t) => all(/origin:\{kind:"([a-z_-]+)"/g, t) },
   // The fields of the permission request the stdio decider answers.
-  {
-    name: 'can_use_tool payload keys',
-    extract: (t) => uniqueSorted([...t.matchAll(/subtype:"can_use_tool",([^}]{0,900})/g)]
-      .flatMap((m) => [...m[1].matchAll(/(?:^|[,{])\s*(?:\.\.\.[^{]*\{)?([a-z][a-z_]*):/g)].map((k) => k[1]))),
-  },
+  { name: 'can_use_tool payload keys', extract: extractCanUseToolKeys },
   // Every object-literal key. Mostly minifier and telemetry noise; read it
   // for new fields on records we already classify — the class of change the
   // type sets cannot see.

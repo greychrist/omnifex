@@ -63,6 +63,10 @@ interface EscalationSignals {
    *  approval may answer" this ask (classifier-blocked person-only asks,
    *  host-worded asks, connector-name clashes). */
   requires_user_interaction?: boolean;
+  decision_reason_code?: string;
+  /** CLI 2.1.329: the auto-mode classifier raised this ask, though
+   *  decision_reason_type / _code keep a reason of their own. */
+  auto_modes_check_raised?: boolean;
 }
 
 function autoDecisionForMode(
@@ -113,7 +117,10 @@ function isSafetyCheck(payload: { decision_reason_type?: string }): boolean {
  * decider answers in the human's place, so its answer is final.
  *
  * Since 2.1.328 the CLI also says so outright with
- * `requires_user_interaction`.
+ * `requires_user_interaction`. An ask the auto-mode classifier raised is
+ * escalated too — the CLI's own test, `isClassifierRaised`. It reaches us in
+ * acceptEdits only when the CLI is still in auto (a lost
+ * `set_permission_mode`).
  *
  * An edit with none of these markers is one the CLI would have accepted had it known
  * the mode; allowing it keeps the dropdown effective even if the CLI never
@@ -124,7 +131,17 @@ function isEscalatedEdit(payload: EscalationSignals): boolean {
     payload.requires_user_interaction === true ||
     !!payload.blocked_path ||
     payload.decision_reason_type === 'workingDir' ||
-    isSafetyCheck(payload)
+    isSafetyCheck(payload) ||
+    isClassifierRaised(payload)
+  );
+}
+
+/** The CLI's own test (2.1.329) for an ask the auto-mode classifier raised. */
+function isClassifierRaised(payload: EscalationSignals): boolean {
+  return (
+    payload.decision_reason_type === 'classifier' ||
+    payload.decision_reason_code === 'classifier_transcript_too_long' ||
+    payload.auto_modes_check_raised === true
   );
 }
 
@@ -607,7 +624,9 @@ export function createPermissionRequestHandler(
       title: rawPayload.title,
       display_name: rawPayload.display_name,
       description: rawPayload.description,
-      decision_reason: rawPayload.decision_reason,
+      // The CLI can send one sentence as both (2.1.329's Artifact delete);
+      // the card would draw it twice.
+      decision_reason: rawPayload.decision_reason === rawPayload.description ? undefined : rawPayload.decision_reason,
       blocked_path: rawPayload.blocked_path,
       permission_suggestions: suggestions,
       // Present only for a symlink escape: the card grants these folders
