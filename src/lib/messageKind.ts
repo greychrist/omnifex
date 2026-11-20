@@ -27,6 +27,7 @@ import { detectSkillInjection } from './skillDetection';
 import { isSystemContextText } from './blockKind';
 import { commandEnvelopeKind, isRecapCommandRecord } from './commandEnvelope';
 import { isCliSidechannelRecord } from './cliSidechannelRecords';
+import { isTaskLifecycleMarker } from './subagentEvents';
 
 /**
  * Renderable in the chat feed for the purpose of "is this message
@@ -137,6 +138,7 @@ export function classifyStandaloneKind(
       if (s.summary && s.leafUuid) return 'summary.compaction';
     }
     if (isCliSidechannelRecord(raw)) return 'cli-state';
+    if (isTaskLifecycleMarker(raw)) return 'task-lifecycle';
     return null;
   }
 

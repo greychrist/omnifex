@@ -57,6 +57,8 @@ const EMITTABLE_IDS = [
   "attachment.deferred_tools_delta", "attachment.skill_listing", "attachment.project_doc_reads",
   // the CLI's own bookkeeping latches (cliSidechannelRecords.ts)
   "cli-state",
+  // task_started / task_progress / task_notification frames (subagentEvents.ts)
+  "task-lifecycle",
 ];
 
 describe('classifier ↔ registry coverage', () => {
@@ -675,5 +677,12 @@ describe('classifyStandaloneKind — CLI state records', () => {
   it('leaves a type nothing knows unclassified', () => {
     const node = { kind: 'unknown', sessionId: '', receivedAt: null, raw: { type: 'brand-new' } } as unknown as JsonlNode;
     expect(classifyStandaloneKind(node, [node])).toBeNull();
+  });
+});
+
+describe('classifyStandaloneKind — task lifecycle frames', () => {
+  it('gives task_progress frames a kind of their own', () => {
+    const node = { kind: 'unknown', sessionId: '', receivedAt: null, raw: { type: 'system', subtype: 'task_progress', task_id: 't1', description: 'x' } } as unknown as JsonlNode;
+    expect(classifyStandaloneKind(node, [node])).toBe('task-lifecycle');
   });
 });

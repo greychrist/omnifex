@@ -99,6 +99,10 @@ describe('modernLineOf — what Modern draws instead of a Compact card', () => {
     } });
     expect(started).toMatchObject({ title: 'Task started', detail: 'local_bash · Build the link', mono: true, fold: true });
     expect(started?.tone).toBeUndefined();
+    // Its own kind: the CLI state blue and a checklist glyph, not the
+    // unknown kind's orange question mark.
+    expect(started?.accent).toEqual({ kind: 'css', color: '#93c5fd' });
+    expect(started?.icon).toBe('ListChecks');
     const done = line({ kind: 'unknown', sessionId: '', receivedAt: 't', raw: {
       type: 'system', subtype: 'task_notification', status: 'completed',
     } });

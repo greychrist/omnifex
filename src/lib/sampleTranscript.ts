@@ -123,6 +123,7 @@ const entries: [string, JsonlNode][] = [
   rec('assistant.text.endTurn', assistant([text('Shipped.')])),
   // CLI state rides at the end so adding it shifted no earlier record's id.
   rec('cli-state', { type: 'session-owner', accountUuid: 'acct', organizationUuid: 'org' }),
+  rec('task-lifecycle', { type: 'system', subtype: 'task_progress', task_id: 'tk', description: 'Check the appended CSS' }),
 ];
 
 /** Every record, in transcript order. */
