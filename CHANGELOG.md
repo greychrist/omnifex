@@ -5,6 +5,19 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.53] — 2026-11-20
+
+### Added
+- Expanded view: background task and subagent progress frames (task started / progress / finished) now show as their own "Task progress" kind instead of being hidden.
+
+### Changed
+- Reviewed against Claude Code 2.1.329.
+- In Accept Edits, an edit the CLI's auto-mode check flagged now goes to the permission card instead of being approved automatically.
+
+### Fixed
+- The CLI's new `hybrid-organization` transcript record no longer draws an "Unrecognized record" card.
+- A permission card no longer shows the same line twice when the CLI sends one sentence as both the description and the reason (Artifact deletes).
+
 ## [0.5.52] — 2026-11-19
 
 ### Changed
