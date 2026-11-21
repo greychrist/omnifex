@@ -68,6 +68,10 @@ export const CLI_SIDECHANNEL_RECORD_TYPES: ReadonlySet<string> = new Set([
   // metadata and into subagent files; not in the merge map, last-wins by
   // the CLI's own fallback.
   'hybrid-organization',
+  // One row per Code Mode script call (`ranByToolUseId`), routed to the
+  // agent's file by `agentId` (CLI >= 2.1.330). The CLI's merge maps it
+  // `boundary-cleared` / `ignored` and strips it on hydrate.
+  'host-row',
   // Structural bookkeeping — branch plumbing and file-history deltas.
   'file-history-delta',
   'continued-in',

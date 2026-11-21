@@ -66,6 +66,103 @@ import { probeBinaryVersion } from './util/exec-text';
  *    and no `Artifact` is working, not broken. Neither present = re-read
  *    the gate.
  *
+ * Last review: 2.1.329 -> 2.1.330 on 2026-11-20. Findings: none broken.
+ * One latent record (`host-row`) fixed.
+ *
+ *  Changelog coverage: 2.1.330 (~150 entries; mostly self-hosted runner,
+ *  Code Mode, VS Code, terminal UI). Both ends installed. Script exit 0.
+ *  Merge map (47), subtype literals (169), system subtypes (84),
+ *  hook_event_name (33), control envelopes (5), SDK requests (55), CLI
+ *  flags (117), origin kinds (14), can_use_tool keys (30) identical.
+ *  /usage anchors unchanged (`Estimated cost:` 2 -> 2).
+ *  - Record type +`host-row` ({sessionId, agentId?, timestamp,
+ *    ranByToolUseId, ...}): one row per Code Mode script call, routed to
+ *    the agent's file by agentId. Merge strategy `boundary-cleared`,
+ *    replay `ignored`, stripped on hydrate beside repl-mode. (b) latent,
+ *    FIXED: added to CLI_SIDECHANNEL_RECORD_TYPES with a test. Zero in
+ *    both accounts.
+ *  - Control schemas +`dictate` (host-recorded 16 kHz PCM -> text through
+ *    /voice's service and sign-in; start/audio/stop, replies text/interim/
+ *    done) and +`log_host_events` (VS Code extension telemetry relayed
+ *    with the CLI's sign-in; refused where list_cloud_sessions is). Both
+ *    host -> CLI offers. dictate is (c) if OmniFex ever wants voice input
+ *    without its own speech service; log_host_events not for us.
+ *  - bypass_auto_switch describes (launch in bypassPermissions started in
+ *    auto, held bypass, answers_bypass): "Honored only on the session's
+ *    first initialize ... in the VS Code extension. ABSENCE fails closed:
+ *    the session keeps the mode it was launched with." We never set it,
+ *    so Restart in Bypass is unaffected (a).
+ *  - easel (changelog "built-in mod that draws charts"): `cc-plugin-easel`,
+ *    isAvailable = flag `tengu_joyful_otter` (default false) && macOS/
+ *    Linux && no enterprise MCP config && not hipaa/zdr. NO entrypoint
+ *    gate, so stream-json sessions get it when the flag flips. Hooks
+ *    session.start / prompt.section / tool.call / ui.render; registers
+ *    `mcp__easel__chart` via tool.register. Not present in this 2.1.330
+ *    session (flag off). Open item below.
+ *  - Describe moves: can_use_tool / permission request `mcp_skill` (+name,
+ *    address, description, version key) when the Skill tool asks before
+ *    loading an MCP server's skill: the card shows tool_name Skill + input
+ *    as for any tool (a); remoteControlMetaKeys on sdkMcpServers config;
+ *    connector_files line summary; page_texts / PDF rows in the
+ *    project-doc uuid list; ui_attach later_answers / unhooked components
+ *    (remote transport only); read_file offset/anchor wording; cloud
+ *    session init wording; interrupt/still_queued wording; the comment
+ *    reply's light-Markdown note; allowMcpSkills-style managed setting.
+ *    None asks anything of a host like us.
+ *  - Type literals: +not_forwarded (log_host_events result), +page_texts,
+ *    +plugin-repository-refused (runner notice), -class (tokenizer). Inert.
+ *  - Object keys +731 -345: env names (CLAUDE_CODE_FULL_SIGN_IN_LINK,
+ *    _HOST_READS_NO_BASH_EDIT_DIFF, _MODEL_NOBODY_CHOSE...), VCS_* runner
+ *    ops, axios/HTTP-status constants leaving. Nothing new on
+ *    user/assistant records or the initialize reply.
+ *  - Changelog, in our favor: --continue/--resume no longer open empty on
+ *    a bad last timestamp; "still waiting for a background agent stopped
+ *    just as it finished, in sessions run by an app or the SDK"; text and
+ *    images added on a permission approval no longer dropped when the tool
+ *    then fails; session files no longer grow by MB when MCP tool schemas
+ *    are refused; user settings no longer lost on concurrent saves (we
+ *    write settings.json too); freeze after compacting a long conversation.
+ *  - Changelog, checked: skills with a `model` now leave subagents, forks,
+ *    compaction and /recap on the session model (other than context:fork);
+ *    the Skill-tool path ignoring `model:` (2.1.326 note) is not mentioned
+ *    as fixed, so the upstream gap stands. More `rm` commands now ask:
+ *    more cards, same path (a). Changed `deniedMcpServers` name entries to
+ *    hide only the named claude.ai connector; we don't write it.
+ *  - Changelog, inert: Enterprise Admin Console sign-in; max_tokens retry
+ *    reverted back in; /mcp grouping; /stats local days; scheduled tasks
+ *    30 days; prompt hooks accept model aliases (HooksEditor takes free
+ *    text); Code Mode, self-hosted runner, Remote Control, VS Code, LSP,
+ *    WebFetch, Bedrock, Windows/Linux and every terminal-UI fix. No
+ *    permission-rule syntax change; docs/permission-syntax.md unaffected.
+ *  - Open items re-checked in both accounts' projects/: host-row 0,
+ *    hybrid-organization 0, appKeepsStatuses / task_list_statuses 0 real,
+ *    supersedesUuids 0, plugin_note 0, real ui_notify frames 0.
+ *
+ *  Script + prompt: the script needed no change. The prompt's mods bullet
+ *  now names the CLI's built-in mods (`cc-plugin-*`) and their
+ *  `isAvailable` gates, which easel showed no pointer covered.
+ *
+ *  OPEN ITEMS (carry forward; re-check each review):
+ *   - easel: first session whose init lists `mcp__easel__chart`, check its
+ *     ui.render output draws in OmniFex (Modern and Compact) and an
+ *     auto chart under an MCP result doesn't show as an Unrecognized card.
+ *   - Task ticker reload: first `appKeepsStatuses` / `task_list_statuses`
+ *     in one of our sessions, check its JSONL for a persisted form of the
+ *     statuses; a reloaded tab's panel is stale until then.
+ *   - Fullscreen /usage order: capture a subscriber render with windows
+ *     before `Session`; bound windowBlock at the Session header if so.
+ *   - plugin_note: check the first real one against contextLedger's
+ *     reading (plugin, rowUuid, content[]).
+ *   - Idle compaction: verify the first real occurrence (2.1.314 block).
+ *   - ui_notify: unverified against a real mod.
+ *   - `supersedes`: first `"supersedesUuids":[` in a transcript decides
+ *     whether the renderer must drop the named rows.
+ *   - Auto-mode classifier fallback removal: not in 2.1.330.
+ *   - Keychain expiry stop (2.1.329): first real occurrence confirms the
+ *     auth-expiry banner fires.
+ *   - Skill-tool `model:` ignored (2.1.326, upstream): not fixed in
+ *     2.1.330.
+ * *
  * Last review: 2.1.328 -> 2.1.329 on 2026-11-19. Findings: none broken.
  * One latent record (`hybrid-organization`) fixed. One script blind spot
  * (can_use_tool keys) fixed.
@@ -5933,7 +6030,7 @@ import { probeBinaryVersion } from './util/exec-text';
  * `~/.claude.json` fix (we read-modify-write that file, never replace it), and
  * the VSCode screen-reader work.
  */
-export const REVIEWED_CLI_VERSION = '2.1.329';
+export const REVIEWED_CLI_VERSION = '2.1.330';
 
 /**
  * app_settings key holding the user's explicit OmniFex-checkout override.

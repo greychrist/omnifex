@@ -185,7 +185,11 @@ grep, a file read or a transcript behind it.
      A new model needs a price row as well as a picker entry.
    - **Mods, plugins, MCP**: \`electron/services/sessions/mods.ts\`,
      \`electron/services/sessions/plugins.ts\`, \`electron/services/bundled-mod.ts\`,
-     \`electron/services/mcp.ts\`, \`omnifex-mod/\`
+     \`electron/services/mcp.ts\`, \`omnifex-mod/\`.
+     The CLI also ships built-in mods (\`cc-plugin-*\`, e.g. easel's chart
+     tool). Each has an \`isAvailable\` gate; read it to see whether a
+     stream-json session gets the mod, and if so whether its \`ui_*\` frames
+     draw in OmniFex.
    - **The Brain's MCP server**: \`electron/brain-mcp.ts\`,
      \`electron/services/brain/instructions.ts\`,
      \`electron/services/brain/mcp-registration.ts\` (\`--mcp-config\`).

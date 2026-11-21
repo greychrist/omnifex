@@ -120,6 +120,21 @@ describe('isCliSidechannelRecord', () => {
     ).toBe(true);
   });
 
+  // New in CLI 2.1.330: `host-row`, written per Code Mode script call
+  // (`ranByToolUseId`), routed to the agent's file by `agentId`. The CLI's
+  // own merge maps it `boundary-cleared` / `ignored` and strips it on
+  // hydrate, like `repl-mode`.
+  it('recognises the 2.1.330 host-row record', () => {
+    expect(
+      isCliSidechannelRecord({
+        type: 'host-row',
+        sessionId: 's',
+        timestamp: '2026-11-20T00:00:00.000Z',
+        ranByToolUseId: 'toolu_1',
+      }),
+    ).toBe(true);
+  });
+
   // New in CLI 2.1.283: a latch naming the session's plugin "dev mods"
   // folder (`<config>/dev-mods/<sessionId>`, hot-reloaded as a plugin dir).
   // `last-wins` in the CLI's merge map; written when dev mods are enabled
