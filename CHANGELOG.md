@@ -5,6 +5,11 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.55] — 2026-11-23
+
+### Added
+- Queued prompts now show their pasted images as thumbnails with an image count; click one to view it full size, or hover and ✕ to remove that image without dropping the prompt.
+
 ## [0.5.54] — 2026-11-21
 
 ### Changed
