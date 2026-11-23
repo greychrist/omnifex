@@ -10,9 +10,10 @@ interface ImagePreviewProps {
    */
   images: string[];
   /**
-   * Callback to remove an image from the preview
+   * Callback to remove an image from the preview. Omit for a view-only row
+   * (no remove button), as the queued-prompts panel does.
    */
-  onRemove: (index: number) => void;
+  onRemove?: (index: number) => void;
   /**
    * Optional className for styling
    */
@@ -52,7 +53,7 @@ export const ImagePreview: React.FC<ImagePreviewProps> = ({
 
   const handleRemove = (e: React.MouseEvent, index: number) => {
     e.stopPropagation();
-    onRemove(index);
+    onRemove?.(index);
   };
 
   // Helper to get the image source - handles both file paths and data URLs
@@ -110,8 +111,9 @@ export const ImagePreview: React.FC<ImagePreviewProps> = ({
 
               {/* Remove button */}
               <AnimatePresence>
-                {hoveredIndex === index && (
+                {onRemove && hoveredIndex === index && (
                   <motion.button
+                    aria-label={`Remove image ${index + 1}`}
                     initial={{ opacity: 0, scale: 0.8 }}
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.8 }}

@@ -4,6 +4,7 @@ import { ChevronDown, ChevronUp, Play, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { TooltipSimple } from "@/components/ui/tooltip-modern";
+import { ImagePreview } from "@/components/ImagePreview";
 import type { QueuedPrompt } from "@/lib/sessionStreamEffects";
 
 interface QueuedPromptsPanelProps {
@@ -12,6 +13,8 @@ interface QueuedPromptsPanelProps {
   modelLabel: (model: string) => string;
   onRemove: (id: string) => void;
   onSave: (id: string, prompt: string) => void;
+  /** Take one image off a queued prompt; the prompt itself stays queued. */
+  onRemoveImage?: (id: string, index: number) => void;
   /** The prompt open for editing, or null. The session holds the queue while
    *  that prompt is at its head, and drains it when this goes back to null. */
   onEditingChange: (id: string | null) => void;
@@ -33,6 +36,7 @@ export function QueuedPromptsPanel({
   modelLabel,
   onRemove,
   onSave,
+  onRemoveImage,
   onEditingChange,
   held = false,
   onResume,
@@ -112,6 +116,11 @@ export function QueuedPromptsPanel({
               <span className="text-xs px-1.5 py-0.5 bg-primary/10 text-primary rounded">
                 {modelLabel(queuedPrompt.model)}
               </span>
+              {queuedPrompt.images && queuedPrompt.images.length > 0 && (
+                <span className="text-xs text-muted-foreground">
+                  {queuedPrompt.images.length === 1 ? "1 image" : `${queuedPrompt.images.length} images`}
+                </span>
+              )}
             </div>
             {editingId === queuedPrompt.id ? (
               <Textarea
@@ -141,6 +150,13 @@ export function QueuedPromptsPanel({
               >
                 {queuedPrompt.prompt}
               </p>
+            )}
+            {queuedPrompt.images && queuedPrompt.images.length > 0 && (
+              <ImagePreview
+                images={queuedPrompt.images}
+                onRemove={onRemoveImage && ((i) => { onRemoveImage(queuedPrompt.id, i); })}
+                className="px-0 pb-0"
+              />
             )}
           </div>
           {held && onSendNow && (

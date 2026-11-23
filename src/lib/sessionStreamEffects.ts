@@ -74,6 +74,18 @@ export interface StreamEffectDeps<Q extends QueuedPrompt = QueuedPrompt> {
   onError: (kind: StreamReducerEffect['kind'], err: unknown) => void;
 }
 
+/** The queue with one image taken off one prompt. The `images` key goes
+ *  when its last image does, matching how a text-only prompt is queued. */
+export function withoutQueuedImage<Q extends QueuedPrompt>(queue: Q[], id: string, index: number): Q[] {
+  return queue.map((p) => {
+    if (p.id !== id || !p.images) return p;
+    const images = p.images.filter((_, i) => i !== index);
+    if (images.length > 0) return { ...p, images };
+    const { images: _dropped, ...rest } = p;
+    return rest as Q;
+  });
+}
+
 /** Id for a queued prompt — the queue panel keys, edits and removes by it. */
 export function newQueuedPromptId(): string {
   return `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;

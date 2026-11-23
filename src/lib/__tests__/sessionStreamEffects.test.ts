@@ -3,6 +3,7 @@ import {
   runStreamEffect,
   drainQueuedPrompt,
   type StreamEffectDeps,
+  withoutQueuedImage,
 } from '../sessionStreamEffects';
 import type { StreamReducerEffect } from '../sessionStreamReducer';
 
@@ -378,5 +379,22 @@ describe('runStreamEffect', () => {
     await vi.waitFor(() => { expect(onError).toHaveBeenCalled(); });
     expect(onError.mock.calls[0][0]).toBe('fetchAccountInfo');
     expect((onError.mock.calls[0][1] as Error).message).toBe('boom');
+  });
+});
+
+describe('withoutQueuedImage', () => {
+  const queue = [
+    { id: 'a', prompt: 'one', model: 'm', images: ['x', 'y'] },
+    { id: 'b', prompt: 'two', model: 'm', images: ['z'] },
+  ];
+
+  it('drops the image at that index from that prompt only', () => {
+    const next = withoutQueuedImage(queue, 'a', 0);
+    expect(next[0]).toEqual({ id: 'a', prompt: 'one', model: 'm', images: ['y'] });
+    expect(next[1]).toBe(queue[1]);
+  });
+
+  it('drops the images key when the last image goes', () => {
+    expect(withoutQueuedImage(queue, 'b', 0)[1]).toEqual({ id: 'b', prompt: 'two', model: 'm' });
   });
 });

@@ -77,7 +77,7 @@ import {
   resolvePostCompactDirective,
 } from '@/lib/postCompactPrompt';
 import type { ModelPricingInput } from '@/lib/pricing';
-import { runStreamEffect, drainQueuedPrompt } from '@/lib/sessionStreamEffects';
+import { runStreamEffect, drainQueuedPrompt, withoutQueuedImage } from '@/lib/sessionStreamEffects';
 import { QueuedPromptsPanel } from '@/components/QueuedPromptsPanel';
 import { appendInflightDelta, appendInflightThinkingDelta, clearInflightThinking } from '@/lib/inflightCoalescer';
 import { maybeAutoGenerateSummaryOnLeave } from "@/lib/sessionSummaryGate";
@@ -3136,6 +3136,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
                   modelLabel={(model) => modelPickerLabel(model, supportedModels, accountDefaultModel, liveDefaultEvidence(selectedModel, liveDefaultModel))}
                   onRemove={(id) => { setQueuedPrompts(prev => prev.filter(p => p.id !== id)); }}
                   onSave={saveQueuedPromptEdit}
+                  onRemoveImage={(id, index) => { setQueuedPrompts(prev => withoutQueuedImage(prev, id, index)); }}
                   onEditingChange={handleQueuedPromptEditing}
                   held={queueHeld && !isLoading}
                   onResume={resumeQueue}

@@ -25,6 +25,40 @@ function renderPanel(overrides: Partial<React.ComponentProps<typeof QueuedPrompt
 afterEach(cleanup);
 
 describe('QueuedPromptsPanel', () => {
+  it('shows the images a queued prompt carries, labelled with a count', () => {
+    renderPanel({
+      prompts: [{ id: 'a', prompt: 'look at this', model: 'default', images: ['data:image/png;base64,AAAA'] }],
+    });
+    expect(screen.getByText('1 image')).toBeTruthy();
+    const img = screen.getByAltText('Preview 1');
+    expect(img.getAttribute('src')).toBe('data:image/png;base64,AAAA');
+  });
+
+  it('opens a queued image full size when its thumbnail is clicked', () => {
+    renderPanel({
+      prompts: [{ id: 'a', prompt: 'look', model: 'default', images: ['data:image/png;base64,AAAA', 'data:image/png;base64,BBBB'] }],
+    });
+    expect(screen.getByText('2 images')).toBeTruthy();
+    fireEvent.click(screen.getByAltText('Preview 2'));
+    expect(screen.getByAltText('Full preview 2').getAttribute('src')).toBe('data:image/png;base64,BBBB');
+  });
+
+  it('removes one image from a queued prompt via its hover ✕', () => {
+    const { props } = renderPanel({
+      prompts: [{ id: 'a', prompt: 'look', model: 'default', images: ['data:image/png;base64,AAAA', 'data:image/png;base64,BBBB'] }],
+      onRemoveImage: vi.fn(),
+    });
+    fireEvent.mouseEnter(screen.getByAltText('Preview 2').closest('.group')!);
+    fireEvent.click(screen.getByLabelText('Remove image 2'));
+    expect(props.onRemoveImage).toHaveBeenCalledWith('a', 1);
+    expect(props.onRemove).not.toHaveBeenCalled();
+  });
+
+  it('shows no image row for a text-only prompt', () => {
+    renderPanel();
+    expect(screen.queryByAltText('Preview 1')).toBeNull();
+  });
+
   it('labels each prompt with the resolved model name', () => {
     renderPanel();
     expect(screen.getByText('Opus 5.5 *')).toBeTruthy();
