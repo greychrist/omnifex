@@ -59,7 +59,7 @@ describe('internal spend in the cost table', () => {
   function rows() {
     return db.raw
       .prepare('SELECT session_id, account_name, project_path, internal_kind, model, cost_usd FROM session_cost_daily ORDER BY session_id')
-      .all() as Array<Record<string, unknown>>;
+      .all() as Record<string, unknown>[];
   }
 
   it('prices an internal run and says which activity paid for it', async () => {

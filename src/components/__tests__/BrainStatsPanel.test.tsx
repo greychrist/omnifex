@@ -50,7 +50,7 @@ describe('BrainStatsPanel', () => {
     await waitFor(() => { expect(screen.getByText('83')).toBeTruthy(); });
 
     // The work account's read is still in flight.
-    vi.mocked(api.brainStats).mockReturnValue(new Promise(() => {}) as Promise<BrainVaultStats>);
+    vi.mocked(api.brainStats).mockReturnValue(new Promise(() => {}));
     rerender(<BrainStatsPanel accountId={2} />);
 
     expect(screen.queryByText('83')).toBeNull();
@@ -76,7 +76,7 @@ describe('BrainStatsPanel', () => {
     const { rerender } = render(<BrainStatsPanel accountId={1} />);
     await waitFor(() => { expect(screen.getByText('vault on fire')).toBeTruthy(); });
 
-    vi.mocked(api.brainStats).mockReturnValue(new Promise(() => {}) as Promise<BrainVaultStats>);
+    vi.mocked(api.brainStats).mockReturnValue(new Promise(() => {}));
     rerender(<BrainStatsPanel accountId={2} />);
 
     expect(screen.queryByText('vault on fire')).toBeNull();

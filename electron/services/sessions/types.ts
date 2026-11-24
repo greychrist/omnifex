@@ -171,7 +171,7 @@ export type SessionClosedHook = (
  * value is already rendered text — for display, not for parsing.
  */
 export interface CliStatusReport {
-  sections: Array<{ title: string; rows: Array<{ label?: string; value: string }> }>;
+  sections: { title: string; rows: { label?: string; value: string }[] }[];
 }
 
 export interface CliControlGetContextUsageResponse {

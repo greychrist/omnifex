@@ -105,7 +105,7 @@ describe('createJsonlTail', () => {
     );
     await waitUntil(() => received.length >= 1);
     await wait();
-    expect((received as Array<{ type: string }>).map((r) => r.type)).toEqual(['assistant']);
+    expect((received as { type: string }[]).map((r) => r.type)).toEqual(['assistant']);
   });
 
   it('does not corrupt a multibyte UTF-8 codepoint split across two drains', async () => {

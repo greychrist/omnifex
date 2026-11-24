@@ -74,7 +74,7 @@ type State = 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
 
 export function RemoteConnectionBanner(): React.JSX.Element | null {
   const remote = typeof window !== 'undefined' ? window.__omnifexRemote : undefined;
-  const [state, setState] = useState<State>((remote?.client?.state as State | undefined) ?? 'connected');
+  const [state, setState] = useState<State>((remote?.client?.state) ?? 'connected');
   const [everConnected, setEverConnected] = useState(remote?.client?.state === 'connected');
 
   useEffect(() => {

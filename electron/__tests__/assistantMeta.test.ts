@@ -105,7 +105,7 @@ describe('createAssistantResolver', () => {
   const toolResult = () => ({ type: 'user', message: { role: 'user', content: [] } });
   const result = (stop_reason = 'end_turn') => ({ type: 'result', subtype: 'success', stop_reason });
 
-  type Asst = { type: string; message: { id?: string; stop_reason?: string | null; usage?: { output_tokens?: number } } };
+  interface Asst { type: string; message: { id?: string; stop_reason?: string | null; usage?: { output_tokens?: number } } }
   const run = (frames: unknown[]): unknown[] => {
     const r = createAssistantResolver();
     const out: unknown[] = [];

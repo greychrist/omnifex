@@ -8,7 +8,7 @@ function summary(tabId: string, over: Partial<RosterSummary> = {}): RosterSummar
     sessionId: `sess-${tabId}`,
     promptStatus: 'ready',
     ...over,
-  } as RosterSummary;
+  };
 }
 
 function tab(id: string, order: number, sessionId?: string): RosterTab {
@@ -24,7 +24,7 @@ function session(sessionId: string, over: Partial<RosterSession> = {}): RosterSe
     inFlight: false,
     pendingPermissions: 0,
     ...over,
-  } as RosterSession;
+  };
 }
 
 const projects: RosterProject[] = [

@@ -67,15 +67,15 @@ vi.mock('@/lib/api', async () => {
       }),
       // Task 16 — Codex session walker. Default: no Codex rows. Codex-aware
       // tests below override this with mockResolvedValueOnce.
-      listCodexSessions: vi.fn(async () => [] as Array<{
+      listCodexSessions: vi.fn(async () => [] as {
         conversationId: string;
         projectPath: string | null;
         lastActivity: string;
         jsonlPath: string;
-      }>),
+      }[]),
       // Per-session cost rows from the durable cost-history table, keyed
       // by session_id. Default: none; cost-aware tests override.
-      sessionCostSessions: vi.fn(async () => [] as Array<{
+      sessionCostSessions: vi.fn(async () => [] as {
         session_id: string;
         account_name: string;
         project_path: string | null;
@@ -86,7 +86,7 @@ vi.mock('@/lib/api', async () => {
         output_tokens: number;
         cache_read_tokens: number;
         cache_write_tokens: number;
-      }>),
+      }[]),
     },
     // Mirror the setting key constants the component imports.
     PROMPT_TEMPLATE_SETTING_KEY: 'sessionsSummary.promptTemplate',
@@ -181,7 +181,7 @@ beforeAll(() => {
     unobserve() {}
     disconnect() {}
   }
-  globalThis.ResizeObserver = StubResizeObserver as unknown as typeof ResizeObserver;
+  globalThis.ResizeObserver = StubResizeObserver;
 });
 
 afterEach(() => { cleanup(); });

@@ -12,7 +12,7 @@ const DOWN = { url: null, outdated: false };
 const same = (): DaemonHealth => ({ version: APP, inFlight: 0 });
 const old = (inFlight = 0): DaemonHealth => ({ version: '0.4.9', inFlight });
 
-function make(probeResults: Array<DaemonHealth | null>, opts: { spawnOk?: boolean; stopOk?: boolean } = {}) {
+function make(probeResults: (DaemonHealth | null)[], opts: { spawnOk?: boolean; stopOk?: boolean } = {}) {
   const probe = vi.fn(async () => (probeResults.length ? probeResults.shift()! : null));
   const spawn = vi.fn(() => opts.spawnOk ?? true);
   const stop = vi.fn(async () => opts.stopOk ?? true);
@@ -167,7 +167,7 @@ describe('remote launcher', () => {
     const stamped = (build: string, inFlight = 0): DaemonHealth => ({ version: APP, build, inFlight });
 
     function makeStamped(
-      probeResults: Array<DaemonHealth | null>,
+      probeResults: (DaemonHealth | null)[],
       appBuild?: string,
       extra: Partial<Parameters<typeof createRemoteLauncher>[0]> = {},
     ) {

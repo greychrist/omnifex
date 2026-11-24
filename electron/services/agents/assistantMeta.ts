@@ -46,7 +46,7 @@ export function readMessageDeltaMeta(payload: unknown): AssistantMeta | null {
   const delta = isRecord(event.delta) ? event.delta : undefined;
   const stopReasonRaw = delta?.stop_reason;
   const stopReason = typeof stopReasonRaw === 'string' ? stopReasonRaw : null;
-  const usage = isRecord(event.usage) ? (event.usage as Record<string, unknown>) : undefined;
+  const usage = isRecord(event.usage) ? (event.usage) : undefined;
   return { stopReason, usage };
 }
 
@@ -111,7 +111,7 @@ export function createAssistantResolver(): { resolve(payload: unknown): unknown[
   return {
     resolve(payload: unknown): unknown[] {
       if (!isRecord(payload)) return [payload];
-      const key = deltaStashKey(payload as { parent_tool_use_id?: unknown });
+      const key = deltaStashKey(payload);
       const type = payload.type;
 
       if (type === 'stream_event') {
@@ -162,7 +162,7 @@ export function createAssistantResolver(): { resolve(payload: unknown): unknown[
           applyAssistantMeta(payload, pd.meta);
           pendingDelta.delete(key);
         }
-        buffered.set(key, { messageId, payload: payload as Record<string, unknown> });
+        buffered.set(key, { messageId, payload: payload });
         return out;
       }
 

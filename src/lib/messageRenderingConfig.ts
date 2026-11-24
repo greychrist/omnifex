@@ -908,7 +908,7 @@ function validateKindsMap(raw: unknown, swatches: Record<string, string>): Recor
       const v = validateStyleField(f, patch, swatches);
       if (v !== undefined) clean[f] = v;
     }
-    if (Object.keys(clean).length > 0) out[id] = clean as Partial<KindStyle>;
+    if (Object.keys(clean).length > 0) out[id] = clean;
   }
   return out;
 }
@@ -921,7 +921,7 @@ function mergeCategories(
 ): void {
   if (!isRecord(saved.categories)) return;
   for (const c of CATEGORIES) {
-    const sc = (saved.categories as Record<string, unknown>)[c];
+    const sc = (saved.categories)[c];
     if (!isRecord(sc)) continue;
     const patch: Record<string, unknown> = {};
     for (const f of STYLE_FIELDS) {
@@ -930,7 +930,7 @@ function mergeCategories(
     }
     if (typeof sc.label === "string") patch.label = sc.label;
     if (typeof sc.description === "string") patch.description = sc.description;
-    base.categories[c] = { ...base.categories[c], ...patch } as CategoryStyle;
+    base.categories[c] = { ...base.categories[c], ...patch };
   }
 }
 

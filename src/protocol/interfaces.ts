@@ -55,8 +55,8 @@ export interface ProtocolRequestMap {
   'turn.send': {
     params: {
       sessionId: string;
-      content: string | Array<Record<string, unknown>>;
-      attachments?: Array<{ name: string; mimeType: string; dataBase64: string }>;
+      content: string | Record<string, unknown>[];
+      attachments?: { name: string; mimeType: string; dataBase64: string }[];
     };
     result: void;
   };
@@ -67,7 +67,7 @@ export interface ProtocolRequestMap {
       permissionId: string;
       decision: 'allow' | 'deny';
       updatedInput?: Record<string, unknown>;
-      remember?: Array<Record<string, unknown>>;
+      remember?: Record<string, unknown>[];
     };
     result: void;
   };

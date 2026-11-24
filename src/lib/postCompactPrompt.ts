@@ -51,7 +51,7 @@ export const DEFAULT_POST_COMPACT_PROMPT = `The conversation above was just comp
 export function resolvePostCompactPrompt(
   template: string | null | undefined,
 ): string {
-  return template && template.trim() ? template : DEFAULT_POST_COMPACT_PROMPT;
+  return template?.trim() ? template : DEFAULT_POST_COMPACT_PROMPT;
 }
 
 /**

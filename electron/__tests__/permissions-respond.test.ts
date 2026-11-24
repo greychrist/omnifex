@@ -27,11 +27,11 @@ import type {
   } from '../services/sessions/types';
 import type { LoggingService } from '../services/logging';
 
-type Queued = {
+interface Queued {
   requestId: string;
   toolInput?: Record<string, unknown>;
   payload?: Record<string, unknown>;
-};
+}
 
 function setup(queue: Queued[], opts: { engine?: boolean } = {}) {
   const responses: { requestId: string; behavior: string; body?: unknown }[] = [];

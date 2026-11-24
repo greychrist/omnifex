@@ -245,7 +245,7 @@ export function createRemoteServer(deps: RemoteServerDeps): RemoteServer {
     }
 
     try {
-      const result = await handler(params as ParamsOf<ClientMethod>, conn);
+      const result = await handler(params, conn);
       respondOk(conn, requestId, result ?? null);
     } catch (err) {
       if (isProtocolError(err)) {

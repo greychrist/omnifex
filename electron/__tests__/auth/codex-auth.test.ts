@@ -46,9 +46,6 @@ function makeMockOneShot(): OneShotTerminalService & {
     onExit: vi.fn(() => ({ dispose: () => {} })),
     __spawn: spawn,
     __kill: kill,
-  } as unknown as OneShotTerminalService & {
-    __spawn: ReturnType<typeof vi.fn>;
-    __kill: ReturnType<typeof vi.fn>;
   };
 }
 
@@ -177,7 +174,7 @@ describe('CodexAuthService.watch', () => {
     const b = makeTmpCodexDir();
     const service = createCodexAuthService({ oneShotTerminal: makeMockOneShot(), readEnv: () => ({}) });
 
-    const fired: Array<{ dir: 'a' | 'b'; status: CodexAuthStatus }> = [];
+    const fired: { dir: 'a' | 'b'; status: CodexAuthStatus }[] = [];
     const subA = service.watch(a.dir, (s) => fired.push({ dir: 'a', status: s }));
     const subB = service.watch(b.dir, (s) => fired.push({ dir: 'b', status: s }));
     disposeFns.push(() => subA.dispose(), () => subB.dispose());

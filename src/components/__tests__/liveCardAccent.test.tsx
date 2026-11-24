@@ -69,7 +69,7 @@ describe("Live card accent regression — B2", () => {
     // different channel values and would fail this assertion.
     const borderColor = card!.style.borderColor;
     // rgba() parse: extract r,g,b channels from the browser-normalized value.
-    const rgbMatch = borderColor.match(/rgba?\(\s*(\d+),\s*(\d+),\s*(\d+)/);
+    const rgbMatch = /rgba?\(\s*(\d+),\s*(\d+),\s*(\d+)/.exec(borderColor);
     expect(rgbMatch).not.toBeNull();
     const [, r, g, b] = rgbMatch!.map(Number);
     // Amber #f59e0b → r=245, g=158, b=11

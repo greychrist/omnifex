@@ -218,7 +218,7 @@ export function createSqliteSessionMetadataStore(db: Database): SessionMetadataS
   );
   const deleteOne = raw.prepare('DELETE FROM session_metadata_cache WHERE file_path = ?');
 
-  type Row = {
+  interface Row {
     size: number;
     mtime_ms: number;
     read_offset: number;
@@ -226,7 +226,7 @@ export function createSqliteSessionMetadataStore(db: Database): SessionMetadataS
     custom_title: string | null;
     first_timestamp: string | null;
     last_timestamp: string | null;
-  };
+  }
 
   return {
     load(filePath) {

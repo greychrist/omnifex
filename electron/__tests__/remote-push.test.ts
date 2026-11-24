@@ -14,7 +14,7 @@ const sub = (n: number): Omit<PushSubscriptionRecord, 'addedAt'> => ({
 describe('push service', () => {
   let dir: string;
   let file: string;
-  let sent: Array<{ endpoint: string; title: string }>;
+  let sent: { endpoint: string; title: string }[];
   let results: Record<string, PushSendResult>;
 
   const make = () =>

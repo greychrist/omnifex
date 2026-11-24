@@ -122,7 +122,7 @@ export function createSessionBridge(deps: SessionBridgeDeps): SessionBridge {
     // catch-all is an `unknown` node, and a client shim re-emits `raw` anyway.
     const node =
       deps.classify(raw) ??
-      ({ kind: 'unknown', raw: raw as Record<string, unknown>, sessionId, receivedAt: null } as JsonlNode);
+      ({ kind: 'unknown', raw: raw as Record<string, unknown>, sessionId, receivedAt: null });
     emitEvent(sessionId, 'transcript', channel, node, { origin });
   }
 
@@ -137,7 +137,7 @@ export function createSessionBridge(deps: SessionBridgeDeps): SessionBridge {
       sessionId,
       permissionId,
       tool: String(payload.tool_name ?? 'unknown'),
-      input: (payload.tool_input as Record<string, unknown> | undefined) ?? {},
+      input: (payload.tool_input) ?? {},
       kind,
       ...(Array.isArray(payload.permission_suggestions) && { suggestions: payload.permission_suggestions }),
       payload,

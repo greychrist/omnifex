@@ -215,7 +215,7 @@ describe('permission-mode decider (auto allow/deny vs prompt)', () => {
     it('offers the containing folder as the rule for an outside write, so it asks once', () => {
       const { fn, sendToRenderer } = handlerFor('acceptEdits');
       fn(escalated({ file_path: '/opt/shared/a.txt' }, { decision_reason_type: 'workingDir' }));
-      const payload = sendToRenderer.mock.calls[0][1] as { permission_suggestions: Array<{ type: string; rules?: unknown[] }> };
+      const payload = sendToRenderer.mock.calls[0][1] as { permission_suggestions: { type: string; rules?: unknown[] }[] };
       expect(payload.permission_suggestions[0]).toMatchObject({
         type: 'addRules',
         rules: [{ toolName: 'Edit', ruleContent: '//opt/shared/**' }],

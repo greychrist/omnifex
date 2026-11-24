@@ -31,7 +31,7 @@ const text = (t: string) => ({ type: 'text', text: t });
 
 function control(control: 'effort' | 'model' | 'permission', value: string): [string, JsonlNode] {
   seq += 1;
-  return [`control.${control}`, { kind: 'control-change', control, value, sessionId: 's1', receivedAt: at() } as JsonlNode];
+  return [`control.${control}`, { kind: 'control-change', control, value, sessionId: 's1', receivedAt: at() }];
 }
 
 const entries: [string, JsonlNode][] = [

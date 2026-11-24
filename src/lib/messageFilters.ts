@@ -123,7 +123,7 @@ export function filterDisplayableMessages(messages: JsonlNode[]): JsonlNode[] {
 
       {
         let hasVisibleContent = false;
-        for (const content of msgContent as Array<{ type?: string; tool_use_id?: string; name?: string }>) {
+        for (const content of msgContent as { type?: string; tool_use_id?: string; name?: string }[]) {
           if (content.type === "text") {
             hasVisibleContent = true;
             break;

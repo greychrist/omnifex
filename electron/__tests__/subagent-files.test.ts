@@ -39,7 +39,7 @@ function world() {
     [path.join(WF_DIR, 'agent-wf1.jsonl')]: assistantLine('m-wf1', 'claude-opus-4-8', 4000),
     [path.join(WF_DIR, 'agent-wf2.jsonl')]: assistantLine('m-wf2', 'claude-opus-4-8', 8000),
   };
-  const dirs: Record<string, Array<{ name: string; isDirectory: boolean }>> = {
+  const dirs: Record<string, { name: string; isDirectory: boolean }[]> = {
     [path.join(CFG, 'projects')]: [{ name: '-Users-me-proj', isDirectory: true }],
     [PROJ_DIR]: [
       { name: 'sessA.jsonl', isDirectory: false },

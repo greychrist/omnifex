@@ -265,7 +265,7 @@ export function readSubagentMeta(
     const content = obj.message?.content;
     if (!Array.isArray(content)) continue;
     let toolUseId: string | undefined;
-    for (const block of content as Array<{ type?: unknown; tool_use_id?: unknown }>) {
+    for (const block of content as { type?: unknown; tool_use_id?: unknown }[]) {
       if (block.type === 'tool_result' && typeof block.tool_use_id === 'string') {
         toolUseId = block.tool_use_id;
         break;

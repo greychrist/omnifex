@@ -316,7 +316,7 @@ describe('BrainSources', () => {
     vi.mocked(api.brainSourcePreview).mockResolvedValue(preview());
     // Never settles, so the run stays in flight for the assertions.
     vi.mocked(api.brainIndexSelection).mockReturnValue(
-      new Promise(() => {}) as ReturnType<typeof api.brainIndexSelection>,
+      new Promise(() => {}),
     );
     render(<BrainSources accountId={1} />);
 
@@ -344,7 +344,7 @@ describe('BrainSources', () => {
     vi.mocked(api.brainListSources).mockResolvedValue([summary()]);
     vi.mocked(api.brainSourcePreview).mockResolvedValue(preview());
     vi.mocked(api.brainIndexSelection).mockReturnValue(
-      new Promise(() => { /* never settles: the run is in flight */ }) as ReturnType<typeof api.brainIndexSelection>,
+      new Promise(() => { /* never settles: the run is in flight */ }),
     );
     render(<BrainSources accountId={1} />);
 
@@ -367,7 +367,7 @@ describe('BrainSources', () => {
       summary({ itemKey: 'a' }), summary({ itemKey: 'b' }),
     ]);
     vi.mocked(api.brainIndexSelection).mockReturnValue(
-      new Promise(() => {}) as ReturnType<typeof api.brainIndexSelection>,
+      new Promise(() => {}),
     );
     render(<BrainSources accountId={1} />);
 
@@ -394,7 +394,7 @@ describe('BrainSources', () => {
       summary({ itemKey: 'a' }), summary({ itemKey: 'b' }),
     ]);
     vi.mocked(api.brainIndexSelection).mockReturnValue(
-      new Promise(() => {}) as ReturnType<typeof api.brainIndexSelection>,
+      new Promise(() => {}),
     );
     render(<BrainSources accountId={1} />);
 

@@ -22,7 +22,7 @@ function assistantLine(req: string, out: number): string {
 
 function makeWorld(initial: string) {
   const files: Record<string, string> = { [SESSION_FILE]: initial };
-  const dirs: Record<string, Array<{ name: string; isDirectory: boolean }>> = { [SUBAGENTS_DIR]: [] };
+  const dirs: Record<string, { name: string; isDirectory: boolean }[]> = { [SUBAGENTS_DIR]: [] };
   const stat = (p: string) => (p in files ? { mtimeMs: files[p].length, size: files[p].length } : null);
   const fakeFs: CostFs = {
     readRange: rangeReader((p) => files[p] ?? null),
@@ -37,7 +37,7 @@ describe('session-cost watcher', () => {
 
   it('get() computes a snapshot and upserts history', async () => {
     const world = makeWorld(assistantLine('r1', 1000));
-    const upserts: Array<{ sessionId: string; rows: SessionCostDailyRow[] }> = [];
+    const upserts: { sessionId: string; rows: SessionCostDailyRow[] }[] = [];
     const svc = createSessionCostService({
       sendToRenderer: () => {},
       costHistory: { replaceSession: (sessionId: string, rows: SessionCostDailyRow[]) => upserts.push({ sessionId, rows }) } as never,
@@ -54,7 +54,7 @@ describe('session-cost watcher', () => {
   it('watch() emits on change and stops after unwatch', async () => {
     vi.useFakeTimers();
     const world = makeWorld(assistantLine('r1', 1000));
-    const emitted: Array<{ channel: string; payload: unknown }> = [];
+    const emitted: { channel: string; payload: unknown }[] = [];
     const svc = createSessionCostService({
       sendToRenderer: (channel, payload) => emitted.push({ channel, payload }),
       costHistory: null,
@@ -99,7 +99,7 @@ describe('session-cost watcher', () => {
     const args2 = { ...args, sessionId: 'sess2' };
     const SESSION_FILE_2 = path.join(PROJECT_DIR, 'sess2.jsonl');
     world.files[SESSION_FILE_2] = assistantLine('r1', 500);
-    const emitted: Array<{ channel: string; payload: unknown }> = [];
+    const emitted: { channel: string; payload: unknown }[] = [];
     const svc = createSessionCostService({
       sendToRenderer: (channel, payload) => emitted.push({ channel, payload }),
       costHistory: null,
@@ -146,7 +146,7 @@ describe('session-cost watcher', () => {
     const AGENT_FILE = path.join(SUBAGENTS_DIR, 'agent-x.jsonl');
     world.files[AGENT_FILE] = assistantLine('a1', 500);
     world.dirs[SUBAGENTS_DIR] = [{ name: 'agent-x.jsonl', isDirectory: false }];
-    const emitted: Array<{ channel: string; payload: unknown }> = [];
+    const emitted: { channel: string; payload: unknown }[] = [];
     const svc = createSessionCostService({
       sendToRenderer: (channel, payload) => emitted.push({ channel, payload }),
       costHistory: null,
@@ -173,7 +173,7 @@ describe('session-cost watcher', () => {
   it('a non-agent .jsonl appearing in the subagents dir must not trigger an emission', async () => {
     vi.useFakeTimers();
     const world = makeWorld(assistantLine('r1', 1000));
-    const emitted: Array<{ channel: string; payload: unknown }> = [];
+    const emitted: { channel: string; payload: unknown }[] = [];
     const svc = createSessionCostService({
       sendToRenderer: (channel, payload) => emitted.push({ channel, payload }),
       costHistory: null,
@@ -218,7 +218,7 @@ describe('session-cost watcher', () => {
       listDir: (p) => world.fakeFs.listDir(p),
       stat: (p) => world.fakeFs.stat(p),
     };
-    const emitted: Array<{ channel: string; payload: unknown }> = [];
+    const emitted: { channel: string; payload: unknown }[] = [];
     const svc = createSessionCostService({
       sendToRenderer: (channel, payload) => emitted.push({ channel, payload }),
       costHistory: null,
@@ -279,7 +279,7 @@ describe('session-cost watcher', () => {
     it('watch() resolves the same alternate dir for signature() and compute(), and emits on a change to the alt file', async () => {
       vi.useFakeTimers();
       const world = makeWorktreeWorld();
-      const emitted: Array<{ channel: string; payload: unknown }> = [];
+      const emitted: { channel: string; payload: unknown }[] = [];
       const svc = createSessionCostService({
         sendToRenderer: (channel, payload) => emitted.push({ channel, payload }),
         costHistory: null,
@@ -313,7 +313,7 @@ describe('session-cost watcher', () => {
         },
         stat: (p) => world.fakeFs.stat(p),
       };
-      const emitted: Array<{ channel: string; payload: unknown }> = [];
+      const emitted: { channel: string; payload: unknown }[] = [];
       const svc = createSessionCostService({
         sendToRenderer: (channel, payload) => emitted.push({ channel, payload }),
         costHistory: null,
@@ -341,7 +341,7 @@ describe('session-cost watcher', () => {
         { name: '-Users-me-proj', isDirectory: true },
         { name: ALT_DIR_NAME, isDirectory: true },
       ];
-      const emitted: Array<{ channel: string; payload: unknown }> = [];
+      const emitted: { channel: string; payload: unknown }[] = [];
       const svc = createSessionCostService({
         sendToRenderer: (channel, payload) => emitted.push({ channel, payload }),
         costHistory: null,

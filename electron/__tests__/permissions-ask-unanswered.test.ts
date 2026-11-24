@@ -19,7 +19,7 @@ const QUESTIONS = [
   { question: 'Ship it?', options: [{ label: 'Yes' }, { label: 'No' }] },
 ];
 
-type Queued = { requestId: string; toolInput?: Record<string, unknown>; payload?: Record<string, unknown> };
+interface Queued { requestId: string; toolInput?: Record<string, unknown>; payload?: Record<string, unknown> }
 
 function askEntry(requestId = 'q1'): Queued {
   const toolInput = { questions: QUESTIONS };

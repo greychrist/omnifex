@@ -329,7 +329,7 @@ function matchingRows(
  * So the most specific row that says anything about input rates says all of
  * them. The cache fields have no paired variant and stand alone.
  */
-const RATE_GROUPS: ReadonlyArray<readonly PricingRateField[]> = [
+const RATE_GROUPS: readonly (readonly PricingRateField[])[] = [
   ['inputPerM', 'fastInputPerM'],
   ['outputPerM', 'fastOutputPerM'],
   ['cacheReadPerM'],
@@ -487,7 +487,7 @@ const LEGACY_FROM = '1970-01-01';
 /** The legacy blob's field names, which differ from the row's. This mapping
  *  exists only to read the retired `pricing_overrides` setting; nothing writes
  *  this shape any more. */
-const LEGACY_FIELD_MAP: ReadonlyArray<readonly [string, PricingRateField]> = [
+const LEGACY_FIELD_MAP: readonly (readonly [string, PricingRateField])[] = [
   ['input', 'inputPerM'],
   ['output', 'outputPerM'],
   ['cacheRead', 'cacheReadPerM'],

@@ -118,7 +118,7 @@ function parsePorcelainV1Z(buf: string): ChangedFile[] {
     const entry: ChangedFile = {
       path: filePath,
       status: statusFor(xy),
-      staged: xy !== '??' && xy[0] !== ' ',
+      staged: xy !== '??' && !xy.startsWith(' '),
     };
     if (origPath) entry.origPath = origPath;
     out.push(entry);

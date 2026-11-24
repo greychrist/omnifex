@@ -14,19 +14,19 @@ export interface JsonRpcClientOptions {
   onServerRequest?: (method: string, params: unknown, id: string | number) => void;
 }
 
-type PendingEntry = {
+interface PendingEntry {
   resolve: (value: unknown) => void;
   reject: (reason: unknown) => void;
-};
+}
 
-type InboundFrame = {
+interface InboundFrame {
   jsonrpc?: unknown;
   id?: unknown;
   method?: unknown;
   params?: unknown;
   result?: unknown;
   error?: unknown;
-};
+}
 
 const MAX_LINE_BYTES = 10 * 1024 * 1024;
 

@@ -113,7 +113,7 @@ describe('protocol messages', () => {
 
     it('requires a requestId on every request', () => {
       for (const sample of CLIENT_SAMPLES) {
-        const { requestId: _dropped, ...withoutId } = sample as ClientMessage & { requestId: string };
+        const { requestId: _dropped, ...withoutId } = sample;
         expect(ClientMessageSchema.safeParse(withoutId).success).toBe(false);
       }
     });

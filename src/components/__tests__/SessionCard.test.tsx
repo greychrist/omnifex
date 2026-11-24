@@ -92,7 +92,7 @@ const WITH_CATEGORIES: SessionContextUsage = {
     { name: 'Tools', tokens: 40_000, color: '#fff' },
     { name: 'Messages', tokens: 60_000, color: '#fff' },
   ],
-} as SessionContextUsage;
+};
 
 const openPopover = () => {
   fireEvent.click(screen.getByRole('button', { name: /context/i }));

@@ -23,7 +23,7 @@ vi.mock('framer-motion', () => ({
         if (cached) return cached;
         const Component = ({ children, ...rest }: any) => {
           const { initial, animate, exit, transition, layout, ...domProps } = rest;
-          void initial; void animate; void exit; void transition; void layout;
+          initial; animate; exit; transition; layout;
 
           // eslint-disable-next-line @typescript-eslint/no-require-imports -- vi.mock factory hoisted before module imports settle.
           return require('react').createElement(Tag, domProps, children);
@@ -326,7 +326,7 @@ describe('SlashCommandPicker command types', () => {
 
   it('leaves out tabs for types with no commands', async () => {
     sessionSupportedCommandsMock.mockResolvedValue([{ name: 'compact', description: 'built-in' }]);
-    renderPicker({ tabId: undefined } as never);
+    renderPicker({ tabId: undefined });
     await waitFor(() => { isNull(screen.queryByText(/Loading commands/)); });
     expect(tabLabels()).toEqual(['All', 'Project', 'User']);
   });

@@ -13,7 +13,7 @@ import type { ProtocolHandlers } from '../../src/protocol/interfaces';
 class TestClient {
   private ws: WebSocket;
   readonly frames: ServerMessage[] = [];
-  private waiters: Array<(m: ServerMessage) => void> = [];
+  private waiters: ((m: ServerMessage) => void)[] = [];
   private n = 0;
 
   constructor(url: string) {

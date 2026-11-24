@@ -58,7 +58,7 @@ function cacheCreationOf(node: JsonlNode): CacheCreationBreakdown | null {
   if (!usage || typeof usage !== 'object') return null;
   const breakdown = (usage as { cache_creation?: unknown }).cache_creation;
   if (!breakdown || typeof breakdown !== 'object') return null;
-  return breakdown as CacheCreationBreakdown;
+  return breakdown;
 }
 
 /**

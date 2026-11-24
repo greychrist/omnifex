@@ -92,13 +92,13 @@ function extractEmail(parsed: unknown): string | undefined {
     if (typeof v === 'string' && v.includes('@')) return v;
   }
 
-  const account = obj['account'];
+  const account = obj.account;
   if (account && typeof account === 'object') {
     const email = (account as Record<string, unknown>).email;
     if (typeof email === 'string' && email.includes('@')) return email;
   }
 
-  const tokens = obj['tokens'];
+  const tokens = obj.tokens;
   if (tokens && typeof tokens === 'object') {
     const email = (tokens as Record<string, unknown>).email;
     if (typeof email === 'string' && email.includes('@')) return email;

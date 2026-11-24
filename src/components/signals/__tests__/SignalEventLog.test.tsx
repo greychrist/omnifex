@@ -16,7 +16,7 @@ function event(i: number): SessionSignal {
     at: Date.UTC(2026, 8, 14, 12, 0, i),
     read: true,
     meta: { delta: 1000 * i, before: 1000 * i, after: 1000 * (i + 1) },
-  } as SessionSignal;
+  };
 }
 
 afterEach(() => { cleanup(); });

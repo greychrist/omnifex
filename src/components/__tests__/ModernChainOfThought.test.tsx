@@ -26,7 +26,7 @@ const ctx = { lookupsFor: () => ({}) as never, tabId: 't' };
 const node = (id: string) => ({ kind: 'assistant', raw: { uuid: id } }) as unknown as JsonlNode;
 
 function tool(name: string, input: Record<string, unknown>, resultText?: string, status: 'done' | 'error' | 'pending' = 'done'): WorkEntry {
-  return { type: 'tool', key: name + JSON.stringify(input), node: node(name), id: name, name, input, status, resultText, ...(resultText !== undefined ? { resultNode: node(name + '-r') } : {}) } as WorkEntry;
+  return { type: 'tool', key: name + JSON.stringify(input), node: node(name), id: name, name, input, status, resultText, ...(resultText !== undefined ? { resultNode: node(name + '-r') } : {}) };
 }
 const thought: WorkEntry = { type: 'thinking', key: 'th', node: node('th'), text: 'hmm', ms: null, tokens: null };
 
@@ -115,7 +115,7 @@ describe('Modern chain of thought — shadcn Trace steps', () => {
   });
 
   it('drops the blank lines a thought ends with, so it has no gap under it', () => {
-    const trailing: WorkEntry = { ...thought, key: 'tt', text: 'I will grep for it.\n\n' } as WorkEntry;
+    const trailing: WorkEntry = { ...thought, key: 'tt', text: 'I will grep for it.\n\n' };
     // A run that only thought has no "Worked in" header around it.
     render(<ChainOfThought entries={[trailing]} nodes={[]} live={false} ctx={ctx} />);
     fireEvent.click(screen.getByRole('button', { name: /^Thought/ }));

@@ -16,7 +16,7 @@ function isIgnorableStderr(msg: string): boolean {
 const IDLE_TURN: TurnState = { status: 'idle', since: null };
 
 /** Loose structural type — only `.status` is read by the derivation. */
-type WithStatus = { status: string };
+interface WithStatus { status: string }
 
 interface UseSessionLifecycleArgs {
   tabId: string;

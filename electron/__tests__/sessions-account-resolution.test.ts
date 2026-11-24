@@ -136,7 +136,7 @@ describe('sessions.start — account identity verification', () => {
   }
 
   it('emits session-account-mismatch and STILL starts the session', () => {
-    const sent: Array<[string, unknown]> = [];
+    const sent: [string, unknown][] = [];
     const verify = vi.fn(() => ({
       expected: 'work@example.com',
       detected: 'personal@example.com',

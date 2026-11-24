@@ -141,7 +141,7 @@ export const TextEditor: React.FC<TextEditorProps> = ({ typography, onTypography
         <Segmented
           label="Answer size"
           value={modern.answerSize}
-          options={MODERN_ANSWER_SIZES.map((s) => ({ value: s as number, label: `${String(s)}px` }))}
+          options={MODERN_ANSWER_SIZES.map((s) => ({ value: s, label: `${String(s)}px` }))}
           onChange={(answerSize) => { onModern({ ...modern, answerSize }); }}
         />
       </div>

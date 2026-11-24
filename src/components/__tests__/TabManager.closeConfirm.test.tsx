@@ -23,8 +23,8 @@ const tagComponent = (tag: string): React.FC<any> => {
         initial, animate, exit, transition, layout,
         whileTap, whileDrag, layoutScroll, ...domProps
       } = rest;
-      void initial; void animate; void exit; void transition;
-      void layout; void whileTap; void whileDrag; void layoutScroll;
+      initial; animate; exit; transition;
+      layout; whileTap; whileDrag; layoutScroll;
       return React.createElement(tag, domProps, children);
     };
     tagCache.set(tag, C);
@@ -37,11 +37,11 @@ vi.mock('framer-motion', () => ({
   AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   Reorder: {
     Group: ({ children, onReorder, values, axis, layoutScroll, ...rest }: any) => {
-      void onReorder; void values; void axis; void layoutScroll;
+      onReorder; values; axis; layoutScroll;
       return <div {...rest}>{children}</div>;
     },
     Item: ({ children, value, id, dragListener, whileDrag, onDragStart, onDragEnd, ...rest }: any) => {
-      void value; void dragListener; void whileDrag; void onDragStart; void onDragEnd;
+      value; dragListener; whileDrag; onDragStart; onDragEnd;
       return <div data-tab-id={id} {...rest}>{children}</div>;
     },
   },
@@ -73,7 +73,7 @@ beforeAll(() => {
     unobserve() {}
     disconnect() {}
   }
-  globalThis.ResizeObserver = StubResizeObserver as unknown as typeof ResizeObserver;
+  globalThis.ResizeObserver = StubResizeObserver;
 });
 
 afterEach(() => {

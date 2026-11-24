@@ -89,7 +89,7 @@ function PrintCaption({ filters }: { filters: CostFilterState }) {
         ? 'Main loop only'
         : 'Subagents only';
 
-  const rows: Array<[string, string]> = [
+  const rows: [string, string][] = [
     ['Range', `${range} · grouped by ${filters.groupBy}`],
     ['Accounts', list(filters.accounts, 'All accounts')],
     ['Projects', list(filters.projects, 'All projects', shortProject)],

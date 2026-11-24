@@ -7,7 +7,7 @@ import type { SessionHandle } from '../services/sessions/types';
  * backgrounded agent produces, captured from a live 2.1.235 stream.
  */
 function harness() {
-  const messageCbs: Array<(m: unknown) => void> = [];
+  const messageCbs: ((m: unknown) => void)[] = [];
   const sendToRenderer = vi.fn();
   // The banner a client raises, as (title, body, isError, tabId).
   const showNotification = {

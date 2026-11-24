@@ -22,7 +22,7 @@ import type { SessionHandle, SendToRenderer } from '../services/sessions/types';
 import type { LoggingService } from '../services/logging';
 import { createSideChatStore } from '../services/sessions/side-chat';
 
-type ControlCall = { subtype: string; payload: unknown };
+interface ControlCall { subtype: string; payload: unknown }
 
 function createEngine(opts: {
   control?: (subtype: string, payload: unknown) => unknown;

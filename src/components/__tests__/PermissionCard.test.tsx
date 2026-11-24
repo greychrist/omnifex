@@ -110,7 +110,7 @@ describe("PermissionCard — Claude tool variant (regression)", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: /save permission/i }));
     expect(onAllow).toHaveBeenCalledTimes(1);
-    const [suggestions] = onAllow.mock.calls[0]!;
+    const [suggestions] = onAllow.mock.calls[0];
     expect(suggestions.length).toBe(1);
     expect(suggestions[0]).toMatchObject({
       type: "addRules",

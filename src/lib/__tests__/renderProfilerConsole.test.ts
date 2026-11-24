@@ -12,7 +12,7 @@ function fakeStorage() {
 }
 
 function setup() {
-  const scheduled: Array<() => void> = [];
+  const scheduled: (() => void)[] = [];
   const profiler = createRenderProfiler({
     storage: fakeStorage(),
     now: () => 0,
@@ -85,7 +85,7 @@ describe('installRenderProfilerConsole', () => {
   });
 
   it('is idempotent — installing twice does not double-log a report', () => {
-    const scheduled: Array<() => void> = [];
+    const scheduled: (() => void)[] = [];
     const profiler = createRenderProfiler({
       storage: fakeStorage(),
       schedule: (cb) => { scheduled.push(cb); },

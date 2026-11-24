@@ -216,7 +216,7 @@ export function createRemoteHandlers(deps: RemoteHandlerDeps): RemoteHandlers {
 
     'session.create': async (p) => {
       const project = requireProject(p.projectId);
-      const options = (p.options ?? {}) as Record<string, unknown>;
+      const options = (p.options ?? {});
       // The client may carry an explicit account choice (the desktop picker's
       // manual override) as options.configDir; otherwise the project's
       // resolved account is the only acceptable answer. No default account.

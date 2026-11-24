@@ -42,7 +42,7 @@ function req(payload: Record<string, unknown>): AgentPermissionRequest {
     kind: 'tool',
     summary: 'tool',
     payload,
-  } as AgentPermissionRequest;
+  };
 }
 
 /** The `permission_request` envelope the handler pushed to the renderer. */

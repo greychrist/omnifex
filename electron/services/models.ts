@@ -112,7 +112,7 @@ export function createModelsService(db: Database, opts: ModelsServiceOptions = {
         engine.sendControlRequest<{ models?: unknown[] }>('initialize'),
         new Promise<null>((resolve) => setTimeout(() => resolve(null), timeoutMs)),
       ]);
-      const models = (resp as { models?: unknown[] } | null)?.models;
+      const models = (resp)?.models;
       return Array.isArray(models) ? (models as ModelInfo[]) : [];
     } catch (err) {
       console.error('[models] listSupported failed:', err);

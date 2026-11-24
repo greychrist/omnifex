@@ -9,7 +9,7 @@ import type { AgentMessage } from '../services/agents/types';
 // person returns to the session first (CLI 2.1.321 contract). The daemon's
 // evidence of a return is the user sending the session a message.
 
-const messageCbs: Array<(m: AgentMessage) => void> = [];
+const messageCbs: ((m: AgentMessage) => void)[] = [];
 
 vi.mock('../services/agents/claude-cli-engine', () => ({
   createClaudeCliEngine: vi.fn(() => ({

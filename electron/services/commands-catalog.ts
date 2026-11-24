@@ -113,7 +113,7 @@ export function createCommandsCatalogService(
         engine.sendControlRequest<{ commands?: unknown[] }>('initialize'),
         new Promise<null>((resolve) => setTimeout(() => resolve(null), timeoutMs)),
       ]);
-      const commands = (resp as { commands?: unknown[] } | null)?.commands;
+      const commands = (resp)?.commands;
       return Array.isArray(commands) ? (commands as CommandInfo[]) : [];
     } catch (err) {
       console.error('[commands] listSupported failed:', err);

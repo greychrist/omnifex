@@ -791,7 +791,7 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
       (p?.commandId ?? p?.command_id) as string,
       (p?.configDir ?? p?.config_dir) as string | undefined,
     ) ?? null),
-    slash_command_save: wrapWith((p: Record<string, unknown>) => { assertOwnedConfigDir(p?.configDir ?? p?.config_dir); return slashCommands?.save(p as any) ?? null; }),
+    slash_command_save: wrapWith((p: Record<string, unknown>) => { assertOwnedConfigDir(p?.configDir ?? p?.config_dir); return slashCommands?.save(p) ?? null; }),
     slash_command_delete: wrapWith((p: Record<string, unknown>) => {
       assertOwnedConfigDir(p?.configDir ?? p?.config_dir);
       return slashCommands?.delete(
@@ -988,7 +988,7 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
 
     // ── Repo aliases (short display names, per repo) ─────────────────────────
     repo_aliases_list: wrapWith((p: Record<string, unknown>) => {
-      const paths = (p?.repoPaths ?? p?.repo_paths) as unknown;
+      const paths = (p?.repoPaths ?? p?.repo_paths);
       return repoAliases?.list(Array.isArray(paths) ? paths.filter((x): x is string => typeof x === 'string') : []) ?? {};
     }),
     repo_alias_set: wrapWith((p: Record<string, unknown>) => {

@@ -37,13 +37,13 @@ beforeAll(() => {
     observe(target: Element) {
       this.cb(
         [{ target, contentRect: { width: W, height: H } } as unknown as ResizeObserverEntry],
-        this as unknown as ResizeObserver,
+        this,
       );
     }
     unobserve() {}
     disconnect() {}
   }
-  globalThis.ResizeObserver = StubResizeObserver as unknown as typeof ResizeObserver;
+  globalThis.ResizeObserver = StubResizeObserver;
 
   Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, value: W });
   Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, value: H });

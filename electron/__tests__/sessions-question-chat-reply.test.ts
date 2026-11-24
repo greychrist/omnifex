@@ -10,7 +10,7 @@ import type { AgentPermissionRequest } from '../services/agents/types';
 // the message is written, so the CLI is not left blocked on the card with
 // the message queued behind it.
 
-const permissionCbs: Array<(r: AgentPermissionRequest) => void> = [];
+const permissionCbs: ((r: AgentPermissionRequest) => void)[] = [];
 const stdin: string[] = [];
 const caps = { current: ['ask_user_question_unanswered_v1'] as string[] | null };
 

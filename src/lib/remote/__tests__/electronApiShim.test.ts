@@ -10,7 +10,7 @@ const APP_VERSION = (JSON.parse(readFileSync(new URL('../../../../package.json',
 
 /** A protocol client double: records requests, lets the test push. */
 function fakeClient() {
-  const requests: Array<{ method: string; params: unknown }> = [];
+  const requests: { method: string; params: unknown }[] = [];
   const pushListeners = new Set<(m: ServerMessage) => void>();
   const stateListeners = new Set<(s: ConnectionState) => void>();
   const responders: Record<string, (params: any) => unknown> = {};

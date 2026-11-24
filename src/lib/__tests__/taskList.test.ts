@@ -534,7 +534,7 @@ describe('summarizeTaskList', () => {
 // session_id}. "It sets the tasks it names; a task it leaves out keeps its
 // last status. A later TaskUpdate result that changes a status wins."
 describe('getTaskList — task ticker statuses (CLI 2.1.328)', () => {
-  function statusesMsg(statuses: Array<{ id: string; status: string }>): JsonlNode {
+  function statusesMsg(statuses: { id: string; status: string }[]): JsonlNode {
     return {
       kind: 'unknown', sessionId: 's', receivedAt: null,
       raw: { type: 'system', subtype: 'task_list_statuses', statuses, uuid: 'u', session_id: 's' },

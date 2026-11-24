@@ -4,7 +4,7 @@ import { renderHook } from '@testing-library/react';
 import type { JsonlNode } from '@/types/jsonl';
 import type { Subagent } from '@/lib/subagentStreams';
 
-const published: Array<Record<string, unknown>> = [];
+const published: Record<string, unknown>[] = [];
 
 vi.mock('@/lib/api', () => ({
   api: {
@@ -27,7 +27,7 @@ const runningAgent = (overrides: Partial<Subagent> = {}): Subagent =>
   ({
     toolUseId: 'toolu_1', description: 'Adversarial pre-push review', agentType: 'general-purpose',
     status: 'running', latest: null, events: [], colorIndex: 0, isBackground: true, ...overrides,
-  }) as Subagent;
+  });
 
 function publish(messages: JsonlNode[], subagents: Subagent[]) {
   renderHook(() =>

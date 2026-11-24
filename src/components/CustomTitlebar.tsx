@@ -159,7 +159,7 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
     return api.onSessionInFlightCount(setActiveSessions);
   }, []);
 
-  type DownloadTarget = { version: string; downloadUrl: string; assetName: string; releaseUrl: string };
+  interface DownloadTarget { version: string; downloadUrl: string; assetName: string; releaseUrl: string }
 
   // Fetch the release zip and stop at 'ready': installing is the user's click.
   const startDownload = useCallback(async (t: DownloadTarget) => {

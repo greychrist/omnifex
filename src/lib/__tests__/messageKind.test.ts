@@ -651,7 +651,7 @@ describe('classifyStandaloneKind', () => {
 
 
 describe('classifyStandaloneKind — bookkeeping kinds', () => {
-  const cases: Array<[string, Record<string, unknown>]> = [
+  const cases: [string, Record<string, unknown>][] = [
     ['permission-mode', { kind: 'permission-mode', raw: { type: 'permission-mode', permissionMode: 'acceptEdits' }, sessionId: 's' }],
     ['last-prompt', { kind: 'last-prompt', raw: { type: 'last-prompt', lastPrompt: 'hi', leafUuid: 'u' }, sessionId: 's' }],
     ['ai-title', { kind: 'ai-title', raw: { type: 'ai-title', aiTitle: 'T' }, sessionId: 's' }],

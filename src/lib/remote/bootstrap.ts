@@ -45,7 +45,7 @@ function clientId(): string {
   try {
     const existing = localStorage.getItem(key);
     if (existing) return existing;
-    const fresh = `${crypto.randomUUID?.() ?? Math.random().toString(36).slice(2)}`;
+    const fresh = crypto.randomUUID?.() ?? Math.random().toString(36).slice(2);
     localStorage.setItem(key, fresh);
     return fresh;
   } catch {
@@ -56,7 +56,7 @@ function clientId(): string {
 function webNotify(title: string, body: string): void {
   try {
     if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
-    // eslint-disable-next-line no-new -- the constructor is the API
+     
     new Notification(title, { body });
   } catch {
     // Notifications are best-effort everywhere.

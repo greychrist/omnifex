@@ -69,7 +69,7 @@ function fakeSource(extra: Partial<BrainSource> = {}): BrainSource {
         },
       }),
     ...extra,
-  } as BrainSource;
+  };
 }
 
 describe('durable project exclusion', () => {

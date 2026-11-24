@@ -15,7 +15,6 @@ import {
   type Category,
   type MessageRenderingConfig,
   type KindStyle,
-  type CategoryStyle,
   type ModernStyle,
   type Typography,
 } from "@/lib/messageRenderingConfig";
@@ -202,7 +201,7 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
         ...prev,
         categories: {
           ...prev.categories,
-          [c]: { ...prev.categories[c], ...patch } as CategoryStyle,
+          [c]: { ...prev.categories[c], ...patch },
         },
       }));
     },
@@ -318,7 +317,7 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
         onChange: (patch: Partial<KindStyle>) => { updateCategory(c, patch); },
         // A category has nothing to inherit from: a cleared field takes its default.
         onClearField: (field: keyof KindStyle) => {
-          updateCategory(c, { [field]: DEFAULT_CATEGORIES[c][field] } as Partial<KindStyle>);
+          updateCategory(c, { [field]: DEFAULT_CATEGORIES[c][field] });
         },
         onReset: () => { resetCategory(c); },
         inheritedCategoryLabel: undefined as string | undefined,

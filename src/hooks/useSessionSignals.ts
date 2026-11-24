@@ -87,7 +87,7 @@ export function useSessionSignals(input: SessionSignalsInput): SessionSignals {
 
   const derived = useMemo(
     () => deriveSessionSignals({ ...input, boundarySnoozeTokens, handlers }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `input` is a fresh
+     
     // object literal every render; its fields are the real dependencies.
     [
       input.tabId,

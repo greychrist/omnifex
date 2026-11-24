@@ -101,7 +101,7 @@ export function createServerClient(opts: ServerClientOptions): ServerClient {
   const outbox: string[] = [];
   const pushListeners = new Set<(m: ServerMessage) => void>();
   const stateListeners = new Set<(s: ConnectionState) => void>();
-  let connectWaiters: Array<{ resolve: (w: Welcome) => void; reject: (e: unknown) => void }> = [];
+  const connectWaiters: { resolve: (w: Welcome) => void; reject: (e: unknown) => void }[] = [];
 
   function setState(next: ConnectionState): void {
     if (state === next) return;
@@ -310,7 +310,7 @@ export function createServerClient(opts: ServerClientOptions): ServerClient {
     },
 
     request<M extends ClientMethod>(method: M, params: ParamsOf<M>): Promise<ResultOf<M>> {
-      return rawRequest<ResultOf<M>>(method, params as Record<string, unknown>, state === 'connected');
+      return rawRequest<ResultOf<M>>(method, params, state === 'connected');
     },
 
     onPush(listener): Unsubscribe {
@@ -326,5 +326,5 @@ export function createServerClient(opts: ServerClientOptions): ServerClient {
 
   // `everConnected` is read by nothing yet but kept for the reconnect banner
   // (Phase 5): the first connect and a re-connect deserve different copy.
-  void everConnected;
+  everConnected;
 }

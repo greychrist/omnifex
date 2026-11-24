@@ -201,7 +201,7 @@ export async function runCliOnce(p: RunPromptParams): Promise<CliRunResult> {
       env: buildClaudeEnv(p.configDir),
       stdio: ['ignore', 'pipe', 'pipe'],
     },
-  ) as ChildProcessByStdio<null, Readable, Readable>;
+  );
 
   inFlightRuns.add(child);
   child.once('exit', () => inFlightRuns.delete(child));

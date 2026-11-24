@@ -6,7 +6,7 @@ import { TooltipProvider } from '@/components/ui/tooltip-modern';
 
 const setActiveTab = vi.fn();
 const addTab = vi.fn();
-let mockTabs: Array<Record<string, unknown>> = [];
+let mockTabs: Record<string, unknown>[] = [];
 
 vi.mock('@/contexts/TabContext', () => ({
   useTabContext: () => ({ tabs: mockTabs, setActiveTab, addTab }),
@@ -186,7 +186,7 @@ describe('TabStatusPopover — where each session is open', () => {
 
 describe('TabStatusPopover — closing a detached session', () => {
   function daemonWithKill(sessions: unknown[]) {
-    const requests: Array<{ method: string; params: unknown }> = [];
+    const requests: { method: string; params: unknown }[] = [];
     (window as unknown as { __omnifexRemote?: unknown }).__omnifexRemote = {
       mode: 'web',
       client: {
@@ -200,7 +200,7 @@ describe('TabStatusPopover — closing a detached session', () => {
     };
     return requests;
   }
-  const kills = (requests: Array<{ method: string; params: unknown }>) =>
+  const kills = (requests: { method: string; params: unknown }[]) =>
     requests.filter((r) => r.method === 'session.kill').map((r) => r.params);
 
   it('offers Close only on a session no client has open, and closing stops it', async () => {

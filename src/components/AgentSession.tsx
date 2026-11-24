@@ -1891,7 +1891,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   // If the user was scrolled up reading history and sends a new message, they expect
   // the view to follow their new activity rather than leave them stranded.
   const handleSendPrompt = useCallback(
-    // eslint-disable-next-line react-hooks/preserve-manual-memoization -- preserved as-is.
+     
     (prompt: string, model: string, images?: string[], opts?: SendPromptOptions) => {
       isNearBottomRef.current = true;
       return sendPromptRaw(prompt, model, images, opts);
@@ -2227,7 +2227,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     const rest = queuedPromptsRef.current.filter(p => p.id !== id);
     queuedPromptsRef.current = rest;
     setQueuedPrompts(rest);
-    void fireAndLog('claude-code-session:send-prompt-now', handleSendPrompt)(item.prompt, item.model, item.images);
+    fireAndLog('claude-code-session:send-prompt-now', handleSendPrompt)(item.prompt, item.model, item.images);
   };
 
   // An emptied queue has nothing left to hold.

@@ -23,9 +23,9 @@ describe('json-rpc-client', () => {
     await new Promise((r) => setImmediate(r));
 
     expect(writes.length).toBe(1);
-    const parsed = JSON.parse(writes[0]!.replace(/\n$/, ''));
+    const parsed = JSON.parse(writes[0].replace(/\n$/, ''));
     expect(parsed).toEqual({ jsonrpc: '2.0', id: 1, method: 'foo', params: { x: 1 } });
-    expect(writes[0]!.endsWith('\n')).toBe(true);
+    expect(writes[0].endsWith('\n')).toBe(true);
 
     readable.write(JSON.stringify({ jsonrpc: '2.0', id: 1, result: { ok: true } }) + '\n');
 
@@ -122,8 +122,8 @@ describe('json-rpc-client', () => {
     await new Promise((r) => setImmediate(r));
 
     expect(writes.length).toBe(1);
-    expect(writes[0]!.endsWith('\n')).toBe(true);
-    expect(JSON.parse(writes[0]!.replace(/\n$/, ''))).toEqual({
+    expect(writes[0].endsWith('\n')).toBe(true);
+    expect(JSON.parse(writes[0].replace(/\n$/, ''))).toEqual({
       jsonrpc: '2.0',
       id: 'srv-1',
       result: { decision: 'allow' },
@@ -133,7 +133,7 @@ describe('json-rpc-client', () => {
     await new Promise((r) => setImmediate(r));
 
     expect(writes.length).toBe(2);
-    expect(JSON.parse(writes[1]!.replace(/\n$/, ''))).toEqual({
+    expect(JSON.parse(writes[1].replace(/\n$/, ''))).toEqual({
       jsonrpc: '2.0',
       id: 'srv-1',
       error: { code: -32601, message: 'nope' },

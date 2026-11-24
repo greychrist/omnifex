@@ -35,7 +35,7 @@ function loadsArtifactTools(e: WorkEntry): boolean {
  *  before they are published. */
 function touchesScratchpad(e: ToolEntry): boolean {
   if (!['Write', 'Edit', 'MultiEdit', 'Read', 'Bash'].includes(e.name)) return false;
-  return /\/scratchpad\//.test(str(e.input.file_path) || str(e.input.command));
+  return (str(e.input.file_path) || str(e.input.command)).includes('/scratchpad/');
 }
 
 /** Todo bookkeeping: says how far along the work is, never what it is, so

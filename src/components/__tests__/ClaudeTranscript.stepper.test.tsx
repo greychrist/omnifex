@@ -114,7 +114,7 @@ function fakeLayout(container: HTMLElement, rowOffsets: number[]) {
     }
   });
   const scrollTo = vi.fn();
-  scrollEl.scrollTo = scrollTo as unknown as HTMLElement['scrollTo'];
+  scrollEl.scrollTo = scrollTo;
   return { scrollEl, scrollTo };
 }
 
@@ -247,7 +247,7 @@ describe('stepper button icons', () => {
   it('marks the message steppers with a chat icon', () => {
     const { getByLabelText } = renderTranscript([prompt(), assistant()]);
     for (const label of ['Previous message', 'Next message']) {
-      const icons = iconNames(getByLabelText(label) as HTMLElement);
+      const icons = iconNames(getByLabelText(label));
       expect(icons).toHaveLength(2);
       expect(icons.join(' ')).toContain('message-square');
     }
@@ -256,7 +256,7 @@ describe('stepper button icons', () => {
   it('marks the prompt steppers with a person icon', () => {
     const { getByLabelText } = renderTranscript([prompt(), assistant()]);
     for (const label of ['Previous prompt', 'Next prompt']) {
-      const icons = iconNames(getByLabelText(label) as HTMLElement);
+      const icons = iconNames(getByLabelText(label));
       expect(icons).toHaveLength(2);
       expect(icons.join(' ')).toContain('lucide-user');
     }
@@ -268,7 +268,7 @@ describe('stepper button icons', () => {
       ['Previous message', 'up'], ['Next message', 'down'],
       ['Previous prompt', 'up'], ['Next prompt', 'down'],
     ] as const) {
-      const icons = iconNames(getByLabelText(label) as HTMLElement).join(' ');
+      const icons = iconNames(getByLabelText(label)).join(' ');
       expect(icons).toContain(`lucide-chevron-${dir}`);
       expect(icons).not.toContain('lucide-arrow');
     }
@@ -293,8 +293,8 @@ describe('stepper button icons', () => {
     // These two aren't about a subject — they go to an end of the transcript,
     // so a subject icon would be noise.
     const { getByLabelText } = renderTranscript([prompt(), assistant()]);
-    expect(iconNames(getByLabelText('Scroll to top') as HTMLElement)).toHaveLength(1);
-    expect(iconNames(getByLabelText('Scroll to bottom') as HTMLElement)).toHaveLength(1);
+    expect(iconNames(getByLabelText('Scroll to top'))).toHaveLength(1);
+    expect(iconNames(getByLabelText('Scroll to bottom'))).toHaveLength(1);
   });
 });
 

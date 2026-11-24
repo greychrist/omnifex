@@ -3,7 +3,6 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import '@testing-library/jest-dom/vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import type { JsonlNode } from '@/types/jsonl';
-import type { ModernItem } from '@/lib/modernGrouping';
 import type { ModernLine } from '@/lib/modernLines';
 
 vi.mock('@/hooks/useLayoutMode', () => ({ useLayoutMode: () => ({ touch: false }) }));
@@ -18,7 +17,7 @@ afterEach(() => { cleanup(); });
 const ctx = { lookupsFor: () => ({}), tabId: 't' } as unknown as ModernRowContext;
 const node = { kind: 'permission-mode', raw: { type: 'permission-mode' } } as unknown as JsonlNode;
 const draw = (line: ModernLine) =>
-  render(<ModernTranscriptItem item={{ kind: 'line', key: 'l', node, line } as ModernItem} live={false} ctx={ctx} />);
+  render(<ModernTranscriptItem item={{ kind: 'line', key: 'l', node, line }} live={false} ctx={ctx} />);
 
 describe('Modern record line', () => {
   it('is a Trace line, title and detail, not a Compact card', () => {

@@ -71,7 +71,7 @@ describe('historical internal spend reconciliation (v24)', () => {
     rerun();
     const rows = db.raw
       .prepare('SELECT account_name, project_path, internal_kind, cost_usd FROM session_cost_daily ORDER BY internal_kind')
-      .all() as Array<Record<string, unknown>>;
+      .all() as Record<string, unknown>[];
     expect(rows).toEqual([
       { account_name: 'Work', project_path: 'OmniFex/Brain curation', internal_kind: 'brain-curation', cost_usd: 0.97 },
       { account_name: 'Work', project_path: 'OmniFex/Brain index', internal_kind: 'brain-index', cost_usd: 0.51 },

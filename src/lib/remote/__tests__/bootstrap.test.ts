@@ -48,7 +48,7 @@ function nativeBridge(remoteUrl: string | null): NativeBridge {
   return {
     invoke: vi.fn(async (channel: string) => (channel === 'remote:url' ? remoteUrl : null)),
     onEvent: vi.fn(() => () => {}),
-  } as unknown as NativeBridge;
+  };
 }
 
 /** Let the client's `onopen` → hello → response chain settle. */

@@ -12,7 +12,7 @@ describe('model_pricing.context_window (v26)', () => {
   afterEach(() => { db.close(); });
 
   const columns = (): string[] =>
-    (db.raw.prepare('PRAGMA table_info(model_pricing)').all() as Array<{ name: string }>).map((c) => c.name);
+    (db.raw.prepare('PRAGMA table_info(model_pricing)').all() as { name: string }[]).map((c) => c.name);
 
   it('exists on a fresh install', () => {
     expect(columns()).toContain('context_window');

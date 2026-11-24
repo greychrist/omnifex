@@ -24,10 +24,10 @@ const renderStatus = (list: SessionMcpServerStatus[] | null, watchUntil: WatchUn
   render(<SessionMCPStatus servers={list} tabId="tab1" watchUntil={watchUntil} />);
 
 const server = (name: string, extra: Partial<SessionMcpServerStatus> = {}): SessionMcpServerStatus =>
-  ({ name, status: 'connected', scope: 'user', ...extra }) as SessionMcpServerStatus;
+  ({ name, status: 'connected', scope: 'user', ...extra });
 
 const servers = [
-  server('brain', { tools: [{ name: 'brain_search' }] } as Partial<SessionMcpServerStatus>),
+  server('brain', { tools: [{ name: 'brain_search' }] }),
   server('github', { status: 'failed', error: 'bad auth' }),
 ];
 

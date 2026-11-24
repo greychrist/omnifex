@@ -99,7 +99,7 @@ const ACCENT_500: Record<string, string> = {
 type PerTheme = Record<ThemeMode, string>;
 export interface Accent { name: string; fill: PerTheme; stroke: PerTheme; text: PerTheme }
 
-const ACCENTS: Array<Accent & { hue: number }> = Object.entries(ACCENT_500).map(([name, hex]) => {
+const ACCENTS: (Accent & { hue: number })[] = Object.entries(ACCENT_500).map(([name, hex]) => {
   const c = parseColor(hex)!;
   const surface = (t: ThemeMode) => parseColor(THEME_SURFACES[t].node)!;
   const text = (t: ThemeMode) => parseColor(THEME_SURFACES[t].text)!;
@@ -140,7 +140,7 @@ function rewriteStyleLine(line: string, theme: ThemeMode): string {
   });
   // Not the `key:value` list we understand — draw it as written.
   if (segments.some((s) => s === null)) return line;
-  const props = segments as Array<{ key: string; value: string; raw: string }>;
+  const props = segments as { key: string; value: string; raw: string }[];
   const get = (k: string) => props.find((p) => p.key === k)?.value ?? '';
   const accent = accentFor(get('fill')) ?? accentFor(get('stroke'));
   const kept = props.filter((p) => !COLOR_KEYS.has(p.key)).map((p) => p.raw);

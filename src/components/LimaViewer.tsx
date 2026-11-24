@@ -186,7 +186,7 @@ export const LimaViewer: React.FC<LimaViewerProps> = ({ isActive }) => {
       setActionError(err instanceof Error ? err.message : String(err));
     } finally {
       setPendingAction((prev) => {
-        // eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- intentional removal of one property from a copied object; rest-spread alternative is more allocation-heavy.
+         
         const next = { ...prev };
         // eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- intentional removal of one property from a copied object; rest-spread alternative is more allocation-heavy.
         delete next[vmName];
@@ -204,7 +204,7 @@ export const LimaViewer: React.FC<LimaViewerProps> = ({ isActive }) => {
     } catch (err) {
       setActionError(err instanceof Error ? err.message : String(err));
     } finally {
-        // eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- intentional removal of one property from a copied object; rest-spread alternative is more allocation-heavy.
+         
       setPendingContainerAction((prev) => {
         const next = { ...prev };
         // eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- intentional removal of one property from a copied object; rest-spread alternative is more allocation-heavy.
@@ -222,7 +222,7 @@ export const LimaViewer: React.FC<LimaViewerProps> = ({ isActive }) => {
       await loadContainers(vmName, 'Running');
     } catch (err) {
       setActionError(err instanceof Error ? err.message : String(err));
-        // eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- intentional removal of one property from a copied object; rest-spread alternative is more allocation-heavy.
+         
     } finally {
       setPendingContainerAction((prev) => {
         const next = { ...prev };

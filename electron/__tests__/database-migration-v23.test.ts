@@ -19,7 +19,7 @@ describe('session_cost_daily.internal_kind (v23)', () => {
   afterEach(() => { db.close(); });
 
   function columns(): string[] {
-    return (db.raw.prepare('PRAGMA table_info(session_cost_daily)').all() as Array<{ name: string }>)
+    return (db.raw.prepare('PRAGMA table_info(session_cost_daily)').all() as { name: string }[])
       .map((c) => c.name);
   }
 

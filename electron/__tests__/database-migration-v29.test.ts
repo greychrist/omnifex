@@ -14,7 +14,7 @@ describe('old auto-scroll threshold settings removed (v29)', () => {
   const set = (key: string, value: string) =>
     db.raw.prepare('INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)').run(key, value);
   const keys = () =>
-    (db.raw.prepare("SELECT key FROM app_settings WHERE key LIKE 'autoscroll%' ORDER BY key").all() as Array<{ key: string }>)
+    (db.raw.prepare("SELECT key FROM app_settings WHERE key LIKE 'autoscroll%' ORDER BY key").all() as { key: string }[])
       .map((r) => r.key);
   const rerun = () => {
     // `>=`: runMigrations gates on MAX(version).

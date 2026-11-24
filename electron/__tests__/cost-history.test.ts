@@ -98,7 +98,7 @@ describe('cost-history', () => {
       [path.join(PROJ_DIR, 'sessA.jsonl')]: sessionLine,
       [path.join(PROJ_DIR, 'sessA', 'subagents', 'agent-x1.jsonl')]: subLine,
     };
-    const dirs: Record<string, Array<{ name: string; isDirectory: boolean }>> = {
+    const dirs: Record<string, { name: string; isDirectory: boolean }[]> = {
       [path.join(CFG, 'projects')]: [{ name: '-Users-me-proj', isDirectory: true }],
       [PROJ_DIR]: [
         { name: 'sessA.jsonl', isDirectory: false },
@@ -142,7 +142,7 @@ describe('cost-history', () => {
       [SESSION_A]: sessionLineA,
       [SESSION_B]: sessionLineB,
     };
-    const dirs: Record<string, Array<{ name: string; isDirectory: boolean }>> = {
+    const dirs: Record<string, { name: string; isDirectory: boolean }[]> = {
       [path.join(CFG, 'projects')]: [{ name: '-Users-me-proj', isDirectory: true }],
       [PROJ_DIR]: [
         { name: 'sessA.jsonl', isDirectory: false },
@@ -213,7 +213,7 @@ describe('cost-history', () => {
         listDir: (p) => ({
           [path.join(CFG, 'projects')]: [{ name: '-Users-me-proj', isDirectory: true }],
           [PROJ_DIR]: [{ name: 'sessA.jsonl', isDirectory: false }],
-        } as Record<string, Array<{ name: string; isDirectory: boolean }>>)[p] ?? [],
+        } as Record<string, { name: string; isDirectory: boolean }[]>)[p] ?? [],
         stat: (p) => (p in files ? { mtimeMs: 1, size: files[p].length } : null),
       };
       return fakeFs;

@@ -148,7 +148,7 @@ export const AccountDialog: React.FC<AccountDialogProps> = ({
     }
     // mode/account are intentionally the only seed triggers; subsequent
     // field edits are owned by the inputs.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [open, mode, account]);
 
   useEffect(() => {

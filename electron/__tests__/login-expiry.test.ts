@@ -3,7 +3,7 @@ import { createLoginExpiryService } from '../services/login-expiry';
 
 const HOUR = 60 * 60 * 1000;
 
-function setup(answers: Array<string | null | Error>) {
+function setup(answers: (string | null | Error)[]) {
   let t = Date.parse('2026-11-04T12:00:00.000Z');
   const probe = vi.fn(async (_configDir: string) => {
     const next = answers.shift();

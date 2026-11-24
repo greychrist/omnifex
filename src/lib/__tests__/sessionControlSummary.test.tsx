@@ -185,7 +185,7 @@ describe('sessionControlSummary', () => {
         accountDefaultModel: null,
         models: FALLBACK_MODELS,
         raw: null,
-        effort: 'warp' as never,
+        effort: 'warp',
         permissionMode: 'skip',
       }),
     ).toBe('Default | warp | Bypass');

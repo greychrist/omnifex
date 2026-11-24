@@ -28,7 +28,7 @@ describe('v24 ledger backfill removed (v30)', () => {
   }
 
   const ids = () =>
-    (db.raw.prepare('SELECT session_id FROM session_cost_daily ORDER BY session_id').all() as Array<{ session_id: string }>)
+    (db.raw.prepare('SELECT session_id FROM session_cost_daily ORDER BY session_id').all() as { session_id: string }[])
       .map((r) => r.session_id);
 
   it('deletes the brain-spend ledger rows and keeps transcript-priced rows', () => {

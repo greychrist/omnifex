@@ -38,6 +38,11 @@ export default defineConfig(
     ignores: [
       'node_modules/**',
       'dist-web/**',
+      // Stale output of the old renderer build (gitignored); dist-web/ replaced it.
+      'dist/**',
+      // The service worker is plain JS served as-is; the type-aware rules
+      // below cannot load for a file outside every tsconfig.
+      'web/public/sw.js',
       '.vite/**',
       'out/**',
       'coverage/**',

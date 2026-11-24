@@ -128,7 +128,7 @@ describe("ApplyPatchItem", () => {
         })}
       />,
     );
-    const firstToggle = screen.getAllByRole("button", { expanded: false })[0]!;
+    const firstToggle = screen.getAllByRole("button", { expanded: false })[0];
     fireEvent.click(firstToggle);
     expect(firstToggle.getAttribute("aria-expanded")).toBe("true");
   });

@@ -53,7 +53,7 @@ export interface FirstTimeDiscoveryResult {
   /** True if discovery actually ran this call (vs. skipped due to existing
    *  accounts or the completed flag). */
   ran: boolean;
-  created: Array<{ name: string; configDir: string; engine: AccountEngine }>;
+  created: { name: string; configDir: string; engine: AccountEngine }[];
 }
 
 export async function runFirstTimeDiscovery(
@@ -72,7 +72,7 @@ export async function runFirstTimeDiscovery(
   }
 
   const found = await deps.discover();
-  const created: Array<{ name: string; configDir: string; engine: AccountEngine }> = [];
+  const created: { name: string; configDir: string; engine: AccountEngine }[] = [];
   for (const { dirName, configDir, engine } of found) {
     const name = nameFromConfigDir(dirName, engine);
     // Claude only — Codex identity lives in ~/.codex/auth.json and is already
@@ -87,7 +87,7 @@ export async function runFirstTimeDiscovery(
   return { ran: true, created };
 }
 
-const ENGINE_PREFIXES: ReadonlyArray<readonly [string, AccountEngine]> = [
+const ENGINE_PREFIXES: readonly (readonly [string, AccountEngine])[] = [
   ['.claude', 'claude'],
   ['.codex', 'codex'],
 ];

@@ -98,7 +98,7 @@ describe('toPickerModel', () => {
     const m = toPickerModel({
       value: 'sonnet', displayName: 'Sonnet',
       description: 'Sonnet 5 · Efficient for routine tasks',
-    } as SessionModelInfo);
+    });
     expect(m.name).toBe('Sonnet 5');
     expect(m.description).toBe('Efficient for routine tasks');
   });
@@ -554,7 +554,7 @@ describe('catalogModelName', () => {
     expect(catalogModelName({
       value: 'claude-opus-5[1m]', displayName: 'Opus 5 (1M context)',
       description: 'Best for everyday, complex tasks',
-    } as SessionModelInfo)).toBe('Opus 5');
+    })).toBe('Opus 5');
   });
 
   it('takes the version from the description when the name has none', () => {
@@ -563,24 +563,24 @@ describe('catalogModelName', () => {
     expect(catalogModelName({
       value: 'opus[1m]', displayName: 'Opus (1M context)',
       description: 'Opus 5.5 with 1M context · Best for everyday, complex tasks',
-    } as SessionModelInfo)).toBe('Opus 5.5');
+    })).toBe('Opus 5.5');
     expect(catalogModelName({
       value: 'sonnet', displayName: 'Sonnet',
       description: 'Sonnet 5 · Efficient for routine tasks',
-    } as SessionModelInfo)).toBe('Sonnet 5');
+    })).toBe('Sonnet 5');
   });
 
   it('falls back to the bare name when nothing names a version', () => {
     expect(catalogModelName({
       value: 'haiku', displayName: 'Haiku', description: 'Fastest',
-    } as SessionModelInfo)).toBe('Haiku');
+    })).toBe('Haiku');
   });
 
   it('never rewrites the default entry', () => {
     expect(catalogModelName({
       value: 'default', displayName: 'Default (recommended)',
       description: 'Opus 5.5 with 1M context · Best for everyday',
-    } as SessionModelInfo)).toBe('Default (recommended)');
+    })).toBe('Default (recommended)');
   });
 });
 

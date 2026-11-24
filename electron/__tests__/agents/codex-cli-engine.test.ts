@@ -88,7 +88,7 @@ describe('CodexCliEngine', () => {
       expect(opts.cwd).toBe('/p');
 
       expect(fake.stdin._writes.length).toBe(1);
-      const sent = JSON.parse(fake.stdin._writes[0]!.trim());
+      const sent = JSON.parse(fake.stdin._writes[0].trim());
       expect(sent.jsonrpc).toBe('2.0');
       expect(typeof sent.id).toBe('number');
       expect(sent.method).toBe('newConversation');
@@ -132,7 +132,7 @@ describe('CodexCliEngine', () => {
       await flushMicrotasks();
 
       expect(fake.stdin._writes.length).toBe(1);
-      const sent = JSON.parse(fake.stdin._writes[0]!.trim());
+      const sent = JSON.parse(fake.stdin._writes[0].trim());
       expect(sent.method).toBe('resumeConversation');
       expect(sent.params).toMatchObject({
         conversationId: 'conv-existing',
@@ -172,7 +172,7 @@ describe('CodexCliEngine', () => {
 
       await flushMicrotasks();
 
-      const sent = JSON.parse(fake.stdin._writes[0]!.trim());
+      const sent = JSON.parse(fake.stdin._writes[0].trim());
       expect(sent.method).toBe('resumeConversation');
 
       // Server replies with an empty result — no conversationId in the
@@ -210,7 +210,7 @@ describe('CodexCliEngine', () => {
 
       await flushMicrotasks();
 
-      const sent = JSON.parse(fake.stdin._writes[0]!.trim());
+      const sent = JSON.parse(fake.stdin._writes[0].trim());
       expect(sent.method).toBe('newConversation');
 
       fake.stdout.push(
@@ -247,7 +247,7 @@ describe('CodexCliEngine', () => {
 
       await flushMicrotasks();
 
-      const startSent = JSON.parse(fake.stdin._writes[0]!.trim());
+      const startSent = JSON.parse(fake.stdin._writes[0].trim());
       expect(startSent.method).toBe('newConversation');
 
       fake.stdout.push(
@@ -269,7 +269,7 @@ describe('CodexCliEngine', () => {
       await flushMicrotasks();
 
       expect(fake.stdin._writes.length).toBe(writesBefore + 1);
-      const sent = JSON.parse(fake.stdin._writes[writesBefore]!.trim());
+      const sent = JSON.parse(fake.stdin._writes[writesBefore].trim());
       expect(sent.jsonrpc).toBe('2.0');
       expect(typeof sent.id).toBe('number');
       expect(sent.method).toBe('sendUserTurn');
@@ -328,7 +328,7 @@ describe('CodexCliEngine', () => {
 
       await flushMicrotasks();
 
-      const startSent = JSON.parse(fake.stdin._writes[0]!.trim());
+      const startSent = JSON.parse(fake.stdin._writes[0].trim());
       fake.stdout.push(
         JSON.stringify({
           jsonrpc: '2.0',
@@ -365,7 +365,7 @@ describe('CodexCliEngine', () => {
       await flushMicrotasks();
 
       expect(received.length).toBe(1);
-      const r = received[0]!;
+      const r = received[0];
       expect(r.agent).toBe('codex');
       expect(r.requestId).toBe('srv-p1');
       expect(r.kind).toBe('patch');
@@ -398,7 +398,7 @@ describe('CodexCliEngine', () => {
       await flushMicrotasks();
 
       expect(received.length).toBe(1);
-      const r = received[0]!;
+      const r = received[0];
       expect(r.agent).toBe('codex');
       expect(r.requestId).toBe('srv-e1');
       expect(r.kind).toBe('exec');
@@ -430,7 +430,7 @@ describe('CodexCliEngine', () => {
       await engine.respondPermission('srv-p1', 'allow');
 
       expect(fake.stdin._writes.length).toBe(writesBefore + 1);
-      const sent = JSON.parse(fake.stdin._writes[writesBefore]!.trim());
+      const sent = JSON.parse(fake.stdin._writes[writesBefore].trim());
       expect(sent).toEqual({
         jsonrpc: '2.0',
         id: 'srv-p1',
@@ -458,7 +458,7 @@ describe('CodexCliEngine', () => {
       await engine.respondPermission('srv-p1', 'deny');
 
       expect(fake.stdin._writes.length).toBe(writesBefore + 1);
-      const sent = JSON.parse(fake.stdin._writes[writesBefore]!.trim());
+      const sent = JSON.parse(fake.stdin._writes[writesBefore].trim());
       expect(sent).toEqual({
         jsonrpc: '2.0',
         id: 'srv-p1',
@@ -483,7 +483,7 @@ describe('CodexCliEngine', () => {
       await flushMicrotasks();
 
       expect(fake.stdin._writes.length).toBe(writesBefore + 1);
-      const sent = JSON.parse(fake.stdin._writes[writesBefore]!.trim());
+      const sent = JSON.parse(fake.stdin._writes[writesBefore].trim());
       expect(sent.jsonrpc).toBe('2.0');
       expect(sent.id).toBe('srv-x');
       expect(sent.error?.code).toBe(-32601);
@@ -515,7 +515,7 @@ describe('CodexCliEngine', () => {
 
       await flushMicrotasks();
 
-      const startSent = JSON.parse(fake.stdin._writes[0]!.trim());
+      const startSent = JSON.parse(fake.stdin._writes[0].trim());
       fake.stdout.push(
         JSON.stringify({
           jsonrpc: '2.0',
@@ -534,7 +534,7 @@ describe('CodexCliEngine', () => {
       const received: AgentMessage[] = [];
       engine.onMessage((m) => received.push(m));
 
-      const notifications: Array<{ method: string; params: unknown }> = [
+      const notifications: { method: string; params: unknown }[] = [
         { method: 'task_started', params: { conversationId: 'conv-1' } },
         { method: 'agent_message', params: { content: 'hi' } },
         { method: 'agent_reasoning', params: { summary: 'thinking…' } },
@@ -559,7 +559,7 @@ describe('CodexCliEngine', () => {
       const isoRe = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})$/;
 
       received.forEach((msg, i) => {
-        const expected = notifications[i]!;
+        const expected = notifications[i];
         expect(msg.agent).toBe('codex');
         expect(msg.tabId).toBe('tab-x');
         expect(typeof msg.receivedAt).toBe('string');
@@ -619,7 +619,7 @@ describe('CodexCliEngine', () => {
 
       await flushMicrotasks();
 
-      const startSent = JSON.parse(fake.stdin._writes[0]!.trim());
+      const startSent = JSON.parse(fake.stdin._writes[0].trim());
       fake.stdout.push(
         JSON.stringify({
           jsonrpc: '2.0',
@@ -643,7 +643,7 @@ describe('CodexCliEngine', () => {
       await flushMicrotasks();
 
       expect(fake.stdin._writes.length).toBe(writesBefore + 1);
-      const sent = JSON.parse(fake.stdin._writes[writesBefore]!.trim());
+      const sent = JSON.parse(fake.stdin._writes[writesBefore].trim());
       expect(sent.jsonrpc).toBe('2.0');
       expect(typeof sent.id).toBe('number');
       expect(sent.method).toBe('interruptConversation');
@@ -696,7 +696,7 @@ describe('CodexCliEngine', () => {
 
       await flushMicrotasks();
 
-      const startSent = JSON.parse(fake.stdin._writes[0]!.trim());
+      const startSent = JSON.parse(fake.stdin._writes[0].trim());
       fake.stdout.push(
         JSON.stringify({
           jsonrpc: '2.0',
@@ -719,8 +719,8 @@ describe('CodexCliEngine', () => {
       await flushMicrotasks();
 
       expect(exits.length).toBe(1);
-      expect(exits[0]!.code).toBe(42);
-      expect(exits[0]!.signal).toBe('SIGTERM');
+      expect(exits[0].code).toBe(42);
+      expect(exits[0].signal).toBe('SIGTERM');
     });
 
     it('onError fires for each stderr line (NDJSON-style line buffering)', async () => {
@@ -733,14 +733,14 @@ describe('CodexCliEngine', () => {
       await flushMicrotasks();
 
       expect(errs.length).toBe(1);
-      expect(errs[0]!.message).toBe('boom: missing arg');
+      expect(errs[0].message).toBe('boom: missing arg');
 
       fake.stderr.push('first line\nsecond line\n');
       await flushMicrotasks();
 
       expect(errs.length).toBe(3);
-      expect(errs[1]!.message).toBe('first line');
-      expect(errs[2]!.message).toBe('second line');
+      expect(errs[1].message).toBe('first line');
+      expect(errs[2].message).toBe('second line');
 
       fake.stderr.push('partial');
       await flushMicrotasks();
@@ -751,7 +751,7 @@ describe('CodexCliEngine', () => {
       await flushMicrotasks();
 
       expect(errs.length).toBe(4);
-      expect(errs[3]!.message).toBe('partial-finish');
+      expect(errs[3].message).toBe('partial-finish');
     });
 
     it('close() and kill() are idempotent', async () => {

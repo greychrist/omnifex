@@ -154,7 +154,7 @@ export const BrainStatsPanel: React.FC<{
                         data-curatable={String(curatable)}
                         title={
                           `${String(b.count)} ${b.count === 1 ? 'note has' : 'notes have'} ` +
-                          `${b.label === 'none' ? 'no entries' : `${b.label} entries`}` +
+                          (b.label === 'none' ? 'no entries' : `${b.label} entries`) +
                           (curatable ? ' — old entries here can be summarized to shrink recalls' : '')
                         }
                         className={`inline-flex items-center gap-1.5 rounded border px-1.5 py-0.5 ${

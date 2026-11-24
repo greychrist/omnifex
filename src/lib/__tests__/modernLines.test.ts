@@ -131,7 +131,7 @@ describe('modernLineOf — every record has a line', () => {
 
   it.each(['user.subagentPrompt', 'user.skillInjection', 'user.systemContext', 'user.taskNotification',
     'user.coordinatorMessage'])('draws %s as a line in its kind icon and color', (kindId) => {
-    const l = modernLineOf(recordOfKind(kindId), ALL_KIND_RECORDS, fixtureCfg)!;
+    const l = modernLineOf(recordOfKind(kindId), ALL_KIND_RECORDS, fixtureCfg);
     expect(l).not.toBeNull();
     expect(l.icon).toBe(resolveKind(fixtureCfg, kindId).icon);
     expect(l.accent).toEqual({ kind: 'css', color: resolveKind(fixtureCfg, kindId).accentColor });
@@ -152,7 +152,7 @@ describe('modernLineOf — every record has a line', () => {
   });
 
   it('draws an unregistered record as an unrecognized line', () => {
-    const l = modernLineOf(classifyJsonlLine({ type: 'brand_new', uuid: 'x', timestamp: '2026-11-18T00:00:00Z' })!, [], fixtureCfg)!;
+    const l = modernLineOf(classifyJsonlLine({ type: 'brand_new', uuid: 'x', timestamp: '2026-11-18T00:00:00Z' })!, [], fixtureCfg);
     expect(l.title).toBe('Unrecognized record: brand_new');
     expect(l.tone).toBe('warn');
   });

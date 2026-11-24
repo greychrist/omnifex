@@ -50,9 +50,9 @@ describe('runFirstTimeDiscovery', () => {
     const list = accounts.listAccounts();
     expect(list).toHaveLength(2);
     const byName = Object.fromEntries(list.map((a) => [a.name, a]));
-    expect(byName['Claude'].engine).toBe('claude');
-    expect(byName['Work'].engine).toBe('codex');
-    expect(byName['Work'].config_dir).toBe('/home/user/.codex-work');
+    expect(byName.Claude.engine).toBe('claude');
+    expect(byName.Work.engine).toBe('codex');
+    expect(byName.Work.config_dir).toBe('/home/user/.codex-work');
   });
 
   // Prefilling expected_email means account email verification works out of
@@ -67,7 +67,7 @@ describe('runFirstTimeDiscovery', () => {
 
     const list = accounts.listAccounts();
     const byName = Object.fromEntries(list.map((a) => [a.name, a]));
-    expect(byName['Claude'].expected_email).toBe('gpchristie@gmail.com');
+    expect(byName.Claude.expected_email).toBe('gpchristie@gmail.com');
   });
 
   it('leaves expectedEmail unset for codex accounts (their identity lives elsewhere)', async () => {
@@ -79,7 +79,7 @@ describe('runFirstTimeDiscovery', () => {
     });
 
     const byName = Object.fromEntries(accounts.listAccounts().map((a) => [a.name, a]));
-    expect(byName['Work'].expected_email).toBeNull();
+    expect(byName.Work.expected_email).toBeNull();
   });
 
   it('leaves expectedEmail unset when no identity can be read', async () => {
@@ -91,14 +91,14 @@ describe('runFirstTimeDiscovery', () => {
     });
 
     const byName = Object.fromEntries(accounts.listAccounts().map((a) => [a.name, a]));
-    expect(byName['Claude'].expected_email).toBeNull();
+    expect(byName.Claude.expected_email).toBeNull();
   });
 
   it('leaves expectedEmail unset when no reader is injected at all', async () => {
     await runFirstTimeDiscovery({ accounts, db, discover: fakeDiscoverTwo });
 
     const byName = Object.fromEntries(accounts.listAccounts().map((a) => [a.name, a]));
-    expect(byName['Claude'].expected_email).toBeNull();
+    expect(byName.Claude.expected_email).toBeNull();
   });
 
   it('sets discovery_completed=true after a run', async () => {

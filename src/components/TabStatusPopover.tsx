@@ -401,8 +401,8 @@ export const TabStatusPopover: React.FC = () => {
           client.request('project.list', {}),
         ]);
         if (cancelled) return;
-        setSessions(s as unknown as RosterSession[]);
-        setProjects(p as unknown as RosterProject[]);
+        setSessions(s);
+        setProjects(p);
       } catch {
         // A daemon that cannot be reached means no detached rows, not a
         // broken popover — the tabs in this window still render.

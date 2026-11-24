@@ -52,7 +52,7 @@ describe('session_cost_daily component + subagent columns', () => {
   afterEach(() => { db.close(); });
 
   it('has the new columns and is_subagent in the primary key', async () => {
-    const cols = (db.raw.prepare('PRAGMA table_info(session_cost_daily)').all() as Array<{ name: string; pk: number }>);
+    const cols = (db.raw.prepare('PRAGMA table_info(session_cost_daily)').all() as { name: string; pk: number }[]);
     const names = cols.map((c) => c.name);
     for (const c of ['is_subagent', 'request_count', 'input_usd', 'output_usd', 'cache_read_usd', 'cache_write_usd']) {
       expect(names).toContain(c);
@@ -62,7 +62,7 @@ describe('session_cost_daily component + subagent columns', () => {
   });
 
   it('keeps the date and account indexes after the table rebuild', async () => {
-    const idx = (db.raw.prepare("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='session_cost_daily'").all() as Array<{ name: string }>).map((r) => r.name);
+    const idx = (db.raw.prepare("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='session_cost_daily'").all() as { name: string }[]).map((r) => r.name);
     expect(idx).toContain('idx_session_cost_daily_date');
     expect(idx).toContain('idx_session_cost_daily_account');
   });
@@ -72,7 +72,7 @@ describe('session_cost_daily component + subagent columns', () => {
       [path.join(PROJ_DIR, 'sessA.jsonl')]: line('m-main', { output: 1000 }),
       [path.join(SUBAGENTS, 'agent-a.jsonl')]: line('m-sub', { output: 4000 }),
     };
-    const dirs: Record<string, Array<{ name: string; isDirectory: boolean }>> = {
+    const dirs: Record<string, { name: string; isDirectory: boolean }[]> = {
       [path.join(CFG, 'projects')]: [{ name: '-Users-me-proj', isDirectory: true }],
       [PROJ_DIR]: [{ name: 'sessA.jsonl', isDirectory: false }, { name: 'sessA', isDirectory: true }],
       [SUBAGENTS]: [{ name: 'agent-a.jsonl', isDirectory: false }],
@@ -149,7 +149,7 @@ describe('session_cost_daily component + subagent columns', () => {
       [path.join(PROJ_DIR, 'sessA.jsonl')]: line('m-main', { output: 1000, cacheRead: 5000 }),
       [path.join(SUBAGENTS, 'agent-a.jsonl')]: line('m-sub', { output: 4000 }),
     };
-    const dirs: Record<string, Array<{ name: string; isDirectory: boolean }>> = {
+    const dirs: Record<string, { name: string; isDirectory: boolean }[]> = {
       [path.join(CFG, 'projects')]: [{ name: '-Users-me-proj', isDirectory: true }],
       [PROJ_DIR]: [{ name: 'sessA.jsonl', isDirectory: false }, { name: 'sessA', isDirectory: true }],
       [SUBAGENTS]: [{ name: 'agent-a.jsonl', isDirectory: false }],
@@ -222,14 +222,14 @@ describe('migration 22 rebuild', () => {
 
     const idx = (db.raw
       .prepare("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='session_cost_daily'")
-      .all() as Array<{ name: string }>).map((r) => r.name);
+      .all() as { name: string }[]).map((r) => r.name);
     expect(idx).toContain('idx_session_cost_daily_date');
     expect(idx).toContain('idx_session_cost_daily_account');
 
     // The old table must not survive under a renamed alias.
     const leftovers = db.raw
       .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'session_cost_daily%'")
-      .all() as Array<{ name: string }>;
+      .all() as { name: string }[];
     expect(leftovers.map((r) => r.name)).toEqual(['session_cost_daily']);
     db.close();
   });

@@ -20,7 +20,7 @@ export function useDaemonLink(tabId: string, sessionId: string | null): LinkStat
   const hasDaemon = !!remote?.client;
 
   const [connection, setConnection] = useState<ConnectionState | null>(
-    () => (hasDaemon ? ((remote?.client?.state as ConnectionState | undefined) ?? 'connecting') : null),
+    () => (hasDaemon ? ((remote?.client?.state) ?? 'connecting') : null),
   );
   const [delivering, setDelivering] = useState(false);
 
@@ -29,7 +29,7 @@ export function useDaemonLink(tabId: string, sessionId: string | null): LinkStat
       setConnection(null);
       return;
     }
-    setConnection((remote?.client?.state as ConnectionState | undefined) ?? 'connecting');
+    setConnection((remote?.client?.state) ?? 'connecting');
     return window.electronAPI.onEvent('remote-connection', (p) => {
       setConnection((p as { state: ConnectionState }).state);
     });

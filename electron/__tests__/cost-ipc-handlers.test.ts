@@ -33,17 +33,17 @@ function costAdapter(svc: CostHistoryService) {
     get: () => null,
     watch: () => null,
     unwatch: () => null,
-    history: (f: Record<string, unknown>) => svc.aggregate(f as never, g(f)),
-    historyByModel: (f: Record<string, unknown>) => svc.aggregateByModel(f as never, g(f)),
-    sessions: (f: Record<string, unknown>) => svc.sessions(f as never),
-    byProject: (f: Record<string, unknown>) => svc.byProject(f as never),
-    byModel: (f: Record<string, unknown>) => svc.byModel(f as never),
-    byProjectModel: (f: Record<string, unknown>) => svc.byProjectModel(f as never),
-    components: (f: Record<string, unknown>) => svc.components(f as never),
-    cachingRoi: (f: Record<string, unknown>) => svc.cachingRoi(f as never),
-    subagentSplit: (f: Record<string, unknown>) => svc.subagentSplit(f as never),
-    unpriced: (f: Record<string, unknown>) => svc.unpriced(f as never),
-    facets: (f: Record<string, unknown>) => svc.facets(f as never),
+    history: (f: Record<string, unknown>) => svc.aggregate(f, g(f)),
+    historyByModel: (f: Record<string, unknown>) => svc.aggregateByModel(f, g(f)),
+    sessions: (f: Record<string, unknown>) => svc.sessions(f),
+    byProject: (f: Record<string, unknown>) => svc.byProject(f),
+    byModel: (f: Record<string, unknown>) => svc.byModel(f),
+    byProjectModel: (f: Record<string, unknown>) => svc.byProjectModel(f),
+    components: (f: Record<string, unknown>) => svc.components(f),
+    cachingRoi: (f: Record<string, unknown>) => svc.cachingRoi(f),
+    subagentSplit: (f: Record<string, unknown>) => svc.subagentSplit(f),
+    unpriced: (f: Record<string, unknown>) => svc.unpriced(f),
+    facets: (f: Record<string, unknown>) => svc.facets(f),
     rescan: () => ({ sessionsScanned: 0 }),
   };
 }
@@ -92,7 +92,7 @@ describe('Cost Report IPC handlers', () => {
     const camel = await call('session_cost_by_model', { accountName: 'Work', startDate: '2026-08-01' });
     const snake = await call('session_cost_by_model', { account_name: 'Work', start_date: '2026-08-01' });
     expect(snake).toEqual(camel);
-    expect((camel as Array<{ cost_usd: number }>)[0].cost_usd).toBeCloseTo(12, 10);
+    expect((camel as { cost_usd: number }[])[0].cost_usd).toBeCloseTo(12, 10);
   });
 
   it('carries array filters through the handler rather than flattening them', async () => {
@@ -109,7 +109,7 @@ describe('Cost Report IPC handlers', () => {
     const main = await call('session_cost_subagent_split', { isSubagent: false });
     expect(main).toEqual([{ is_subagent: 0, cost_usd: 15, request_count: 8, usd_per_request: 15 / 8 }]);
     const sub = await call('session_cost_subagent_split', { is_subagent: true });
-    expect((sub as Array<{ is_subagent: number }>)[0].is_subagent).toBe(1);
+    expect((sub as { is_subagent: number }[])[0].is_subagent).toBe(1);
   });
 
   it('returns the component split and caching ROI as objects, not arrays', async () => {
@@ -121,7 +121,7 @@ describe('Cost Report IPC handlers', () => {
   });
 
   it('groups history by model and period', async () => {
-    const r = await call('session_cost_history_by_model', { groupBy: 'day' }) as Array<{ period: string; model: string }>;
+    const r = await call('session_cost_history_by_model', { groupBy: 'day' }) as { period: string; model: string }[];
     expect(r.map((x) => `${x.period}|${x.model}`)).toEqual([
       '2026-08-01|claude-opus-5',
       '2026-08-02|claude-sonnet-5',

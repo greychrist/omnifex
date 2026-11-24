@@ -78,8 +78,8 @@ const PAIR: ResolvePair = {
  * agent/account interaction.
  */
 function Harness({
-  initialAgent = 'claude' as AgentKind,
-  pair = PAIR as ResolvePair,
+  initialAgent = 'claude',
+  pair = PAIR,
   codexAuthStatus,
   onCodexSignIn,
   onChooseAccount,

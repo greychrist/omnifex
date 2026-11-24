@@ -177,11 +177,11 @@ export interface AccountsService {
 }
 
 /** Engine-tagged discovery result re-exported for handler/renderer typing. */
-export type DiscoveredConfigDirTuple = {
+export interface DiscoveredConfigDirTuple {
   dirName: string;
   configDir: string;
   engine: AccountEngine;
-};
+}
 
 // ---------------------------------------------------------------------------
 // Row types returned from SQLite

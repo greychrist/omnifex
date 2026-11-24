@@ -827,7 +827,7 @@ export const migrations: Migration[] = [
 
       // ALTER TABLE ADD COLUMN throws on a duplicate, and migrations must be
       // safe to re-run against an image that already has the column.
-      const has = (db.prepare('PRAGMA table_info(session_cost_daily)').all() as Array<{ name: string }>)
+      const has = (db.prepare('PRAGMA table_info(session_cost_daily)').all() as { name: string }[])
         .some((c) => c.name === 'internal_kind');
       if (!has) db.exec('ALTER TABLE session_cost_daily ADD COLUMN internal_kind TEXT');
     },
@@ -983,7 +983,7 @@ export const migrations: Migration[] = [
     up: (db) => {
       // Guarded: fresh installs get the column from MODEL_PRICING_DDL, and so
       // does a pre-v25 image, whose v25 runs the current DDL.
-      const cols = (db.prepare('PRAGMA table_info(model_pricing)').all() as Array<{ name: string }>)
+      const cols = (db.prepare('PRAGMA table_info(model_pricing)').all() as { name: string }[])
         .map((c) => c.name);
       if (cols.length > 0 && !cols.includes('context_window')) {
         db.exec('ALTER TABLE model_pricing ADD COLUMN context_window INTEGER');
@@ -1000,12 +1000,12 @@ export const migrations: Migration[] = [
     up: (db) => {
       // Guarded like v26: an image old enough to predate the column (or the
       // table) has nothing to strip.
-      const cols = (db.prepare('PRAGMA table_info(accounts)').all() as Array<{ name: string }>)
+      const cols = (db.prepare('PRAGMA table_info(accounts)').all() as { name: string }[])
         .map((c) => c.name);
       if (!cols.includes('session_defaults')) return;
       const rows = db
         .prepare("SELECT id, session_defaults FROM accounts WHERE session_defaults LIKE '%thinkingConfig%'")
-        .all() as Array<{ id: number; session_defaults: string }>;
+        .all() as { id: number; session_defaults: string }[];
       const update = db.prepare('UPDATE accounts SET session_defaults = ? WHERE id = ?');
       for (const row of rows) {
         let parsed: unknown;

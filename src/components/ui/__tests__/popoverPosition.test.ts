@@ -10,7 +10,7 @@ function rect(left: number, top: number, width = 100, height = 36): DOMRect {
     bottom: top + height,
     x: left, y: top,
     toJSON: () => ({}),
-  } as DOMRect;
+  };
 }
 
 describe('computePopoverPosition', () => {

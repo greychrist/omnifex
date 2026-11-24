@@ -28,8 +28,8 @@ function makeFakeEngine(opts?: {
   delayMs?: number;
   startReject?: Error;
 }): FakeEngine {
-  const messageCbs: Array<(m: { agent: 'claude'; tabId: string; receivedAt: string; sessionId: string | null; payload: unknown }) => void> = [];
-  const exitCbs: Array<() => void> = [];
+  const messageCbs: ((m: { agent: 'claude'; tabId: string; receivedAt: string; sessionId: string | null; payload: unknown }) => void)[] = [];
+  const exitCbs: (() => void)[] = [];
   let initData: InitData | null = null;
   const defaultModels = [
     { value: 'claude-sonnet-4-6', displayName: 'Sonnet 4.6', description: 'Fast' },

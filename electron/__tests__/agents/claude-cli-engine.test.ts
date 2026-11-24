@@ -123,7 +123,7 @@ describe('ClaudeCliEngine', () => {
 
     await engine.start(baseParams);
 
-    const args = mockedSpawn.mock.calls[0]![1] as string[];
+    const args = mockedSpawn.mock.calls[0][1] as string[];
     expect(args).toContain('--forward-subagent-text');
   });
 
@@ -151,7 +151,7 @@ describe('ClaudeCliEngine', () => {
 
     await engine.start({ ...baseParams, model: 'sonnet' });
 
-    const args = mockedSpawn.mock.calls[0]![1] as string[];
+    const args = mockedSpawn.mock.calls[0][1] as string[];
     expect(args).toContain('--model');
     expect(args[args.indexOf('--model') + 1]).toBe('sonnet');
   });
@@ -163,7 +163,7 @@ describe('ClaudeCliEngine', () => {
 
     await engine.start({ ...baseParams, model: 'default' });
 
-    const args = mockedSpawn.mock.calls[0]![1] as string[];
+    const args = mockedSpawn.mock.calls[0][1] as string[];
     expect(args).not.toContain('--model');
   });
 
@@ -176,8 +176,8 @@ describe('ClaudeCliEngine', () => {
       const fake = makeFakeChild();
       mockedSpawn.mockReturnValue(fake as never);
       const engine = createClaudeCliEngine({ tabId: 't', claudeBinaryPath: '/bin/claude' });
-      await engine.start({ ...baseParams, ...extra } as never);
-      return mockedSpawn.mock.calls[0]![1] as string[];
+      await engine.start({ ...baseParams, ...extra });
+      return mockedSpawn.mock.calls[0][1] as string[];
     }
 
     it('passes --effort for every level the CLI accepts', async () => {
@@ -213,7 +213,7 @@ describe('ClaudeCliEngine', () => {
     const engine = createClaudeCliEngine({ tabId: 't', claudeBinaryPath: '/bin/claude' });
 
     await engine.start({ ...baseParams, resume: true });
-    const args = mockedSpawn.mock.calls[0]![1] as string[];
+    const args = mockedSpawn.mock.calls[0][1] as string[];
     expect(args).toContain('--resume');
     expect(args).not.toContain('--session-id');
   });
@@ -230,8 +230,8 @@ describe('ClaudeCliEngine', () => {
     await flush();
 
     expect(received).toHaveLength(1);
-    expect(received[0]!.tabId).toBe('tab-9');
-    expect((received[0]!.payload as { type: string }).type).toBe('system');
+    expect(received[0].tabId).toBe('tab-9');
+    expect((received[0].payload as { type: string }).type).toBe('system');
   });
 
   it('surfaces a stderr line via onError', async () => {
@@ -260,9 +260,9 @@ describe('ClaudeCliEngine', () => {
     // claude-cli-engine-agent-summaries.test.ts) and the thinking-display
     // request (claude-cli-engine-thinking-display.test.ts); the prompt follows.
     expect(fake.stdin._writes).toHaveLength(3);
-    expect(JSON.parse(fake.stdin._writes[0]!.trim()).request?.subtype).toBe('initialize');
-    expect(JSON.parse(fake.stdin._writes[1]!.trim()).request?.subtype).toBe('set_max_thinking_tokens');
-    const sent = JSON.parse(fake.stdin._writes[2]!.trim());
+    expect(JSON.parse(fake.stdin._writes[0].trim()).request?.subtype).toBe('initialize');
+    expect(JSON.parse(fake.stdin._writes[1].trim()).request?.subtype).toBe('set_max_thinking_tokens');
+    const sent = JSON.parse(fake.stdin._writes[2].trim());
     expect(sent.type).toBe('user');
     expect(sent.message.content).toEqual([{ type: 'text', text: 'hello there' }]);
   });
@@ -278,7 +278,7 @@ describe('ClaudeCliEngine', () => {
     fake.emit('exit', 0, null);
 
     expect(exits).toHaveLength(1);
-    expect(exits[0]!.code).toBe(0);
+    expect(exits[0].code).toBe(0);
   });
 
   it('does not fire onExit for the OLD child after a restart (F2)', async () => {
@@ -305,7 +305,7 @@ describe('ClaudeCliEngine', () => {
     childB.emit('exit', 0, null);
     await flush();
     expect(exits).toHaveLength(1);
-    expect(exits[0]!.code).toBe(0);
+    expect(exits[0].code).toBe(0);
   });
 
   it('kills the outgoing child on restart', async () => {
@@ -334,8 +334,8 @@ describe('ClaudeCliEngine', () => {
 async function started(params: Record<string, unknown> = {}) {
   const fake = makeFakeChild();
   mockedSpawn.mockReturnValue(fake as never);
-  const engine = createClaudeCliEngine({ tabId: 't1', claudeBinaryPath: '/bin/claude' } as never);
-  await engine.start({ ...baseParams, ...params } as never);
+  const engine = createClaudeCliEngine({ tabId: 't1', claudeBinaryPath: '/bin/claude' });
+  await engine.start({ ...baseParams, ...params });
   /** Feed one NDJSON line in on stdout. */
   const emit = async (obj: unknown) => {
     fake.stdout.push(JSON.stringify(obj) + '\n');
@@ -505,7 +505,7 @@ describe('ClaudeCliEngine — permission requests', () => {
   it('names an unknown tool rather than rendering undefined', async () => {
     const { engine, emit } = await started();
     const perms: { summary: string }[] = [];
-    engine.onPermissionRequest((r) => perms.push(r as never));
+    engine.onPermissionRequest((r) => perms.push(r));
     await emit({ type: 'control_request', request_id: 'r1', request: { subtype: 'can_use_tool', tool_use_id: 'x' } });
     expect(perms[0].summary).toBe('Permission requested for tool: unknown');
   });

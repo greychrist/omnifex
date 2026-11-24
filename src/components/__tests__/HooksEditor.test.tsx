@@ -12,7 +12,7 @@ vi.mock('framer-motion', () => ({
       const React = require('react');
       return React.forwardRef(({ children, ...rest }: any, ref: unknown) => {
         const { initial, animate, exit, transition, layout, whileTap, ...domProps } = rest;
-        void initial; void animate; void exit; void transition; void layout; void whileTap;
+        initial; animate; exit; transition; layout; whileTap;
         return React.createElement(Tag, { ...domProps, ref }, children);
       });
     },
@@ -27,7 +27,7 @@ vi.mock('framer-motion', () => ({
 vi.mock('@/components/ui/select', () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports -- vi.mock factory hoisted before module imports settle.
   const React = require('react');
-  const Ctx = React.createContext({} as { onValueChange?: (v: string) => void });
+  const Ctx = React.createContext({});
   return {
     Select: ({ children, onValueChange }: any) =>
       React.createElement(Ctx.Provider, { value: { onValueChange } }, React.createElement('div', null, children)),

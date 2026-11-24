@@ -29,7 +29,7 @@ describe('shared composition-root blocks', () => {
       source: 'backend',
       message: 'hello',
       ...over,
-    }) as LogEntry;
+    });
 
     /** Warn and error always pass; only info/debug are ever filtered. */
     it('always accepts warn and error, whatever the toggles say', () => {

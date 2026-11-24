@@ -7,7 +7,7 @@ describe('refresh_supported_models handler', () => {
     listSupported: vi.fn(async () => []),
     refresh: vi.fn(async (configDir: string) => [{ value: 'fable', displayName: `Fable 5.2 @ ${configDir}` }]),
   };
-  const handlers = getHandlerMap({ models } as never);
+  const handlers = getHandlerMap({ models });
 
   it('accepts camelCase and snake_case params and returns the fresh catalog', async () => {
     await expect(handlers.refresh_supported_models(null, { configDir: '/a' })).resolves.toEqual([

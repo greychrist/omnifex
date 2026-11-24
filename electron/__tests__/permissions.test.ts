@@ -158,10 +158,10 @@ describe('withDefaultRuleSuggestion', () => {
 
   it('puts the rule suggestion first so the card reads it as the primary action', () => {
     const out = withDefaultRuleSuggestion([setMode] as any, defaultRule) ?? [];
-    expect((out[0] as any).type).toBe('addRules');
-    expect((out[0] as any).rules).toEqual([defaultRule]);
-    expect((out[0] as any).destination).toBe('localSettings');
-    expect((out[0] as any).behavior).toBe('allow');
+    expect((out[0]).type).toBe('addRules');
+    expect((out[0]).rules).toEqual([defaultRule]);
+    expect((out[0]).destination).toBe('localSettings');
+    expect((out[0]).behavior).toBe('allow');
   });
 
   it('leaves the CLI suggestions alone when they already carry rules', () => {
@@ -172,14 +172,14 @@ describe('withDefaultRuleSuggestion', () => {
   it('adds the rule when the CLI sent an addRules entry with an empty rules array', () => {
     const empty = { type: 'addRules', rules: [], behavior: 'allow', destination: 'localSettings' };
     const out = withDefaultRuleSuggestion([empty] as any, defaultRule) ?? [];
-    expect((out[0] as any).rules).toEqual([defaultRule]);
+    expect((out[0]).rules).toEqual([defaultRule]);
     expect(out).toHaveLength(2);
   });
 
   it('handles the CLI sending no suggestions at all', () => {
     const out = withDefaultRuleSuggestion(undefined, defaultRule) ?? [];
     expect(out).toHaveLength(1);
-    expect((out[0] as any).rules).toEqual([defaultRule]);
+    expect((out[0]).rules).toEqual([defaultRule]);
   });
 
   it('returns the input untouched when there is no default rule to add', () => {

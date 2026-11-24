@@ -130,7 +130,7 @@ function toElicitationRequest(requestId: string, r: Record<string, unknown>): Ag
     message: str(r.message) ?? '',
     mode: r.mode === 'url' ? 'url' : 'form',
   };
-  const optional: Array<[keyof AgentElicitationRequest, string | Record<string, unknown> | undefined]> = [
+  const optional: [keyof AgentElicitationRequest, string | Record<string, unknown> | undefined][] = [
     ['url', str(r.url)],
     ['elicitationId', str(r.elicitation_id)],
     ['requestedSchema', r.requested_schema && typeof r.requested_schema === 'object'
@@ -152,12 +152,12 @@ export function createClaudeCliEngine(
   let child: ChildProcessWithoutNullStreams | null = null;
   let sessionId: string | null = null;
   let initData: InitData | null = null;
-  const messageCallbacks: Array<(m: AgentMessage) => void> = [];
-  const permissionCallbacks: Array<(r: AgentPermissionRequest) => void> = [];
-  const elicitationCallbacks: Array<(r: AgentElicitationRequest) => void> = [];
-  const cancelCallbacks: Array<(requestId: string) => void> = [];
-  const exitCallbacks: Array<(info: AgentEngineExit) => void> = [];
-  const errorCallbacks: Array<(err: Error) => void> = [];
+  const messageCallbacks: ((m: AgentMessage) => void)[] = [];
+  const permissionCallbacks: ((r: AgentPermissionRequest) => void)[] = [];
+  const elicitationCallbacks: ((r: AgentElicitationRequest) => void)[] = [];
+  const cancelCallbacks: ((requestId: string) => void)[] = [];
+  const exitCallbacks: ((info: AgentEngineExit) => void)[] = [];
+  const errorCallbacks: ((err: Error) => void)[] = [];
   // In-flight control_requests, with a hard timeout + exit cleanup so a
   // never-arriving control_response can't hang the awaiting promise forever
   // (the old "session_context_usage: reply was never sent" symptom).
@@ -249,7 +249,7 @@ export function createClaudeCliEngine(
     // An MCP server asking the user something. The CLI parks the session
     // until we answer, so this must reach the dialog, never the transcript.
     if (p?.type === 'control_request' && p?.request?.subtype === 'elicitation') {
-      const req = toElicitationRequest(String(p.request_id ?? ''), p.request as Record<string, unknown>);
+      const req = toElicitationRequest(String(p.request_id ?? ''), p.request);
       for (const cb of elicitationCallbacks) {
         try {
           cb(req);
@@ -432,7 +432,7 @@ export function createClaudeCliEngine(
           ...buildClaudeEnv(p.configDir),
           CLAUDE_CODE_NOTIFICATIONS_HOST: '1',
         },
-      }) as ChildProcessWithoutNullStreams;
+      });
     } catch (err) {
       throw err;
     }
@@ -512,7 +512,7 @@ export function createClaudeCliEngine(
   }
 
   async function writeUserMessage(content: unknown): Promise<void> {
-    if (!child || !child.stdin.writable) {
+    if (!child?.stdin.writable) {
       throw new Error('ClaudeCliEngine.send: child not running');
     }
     const payload = {
@@ -553,7 +553,7 @@ export function createClaudeCliEngine(
     decision: 'allow' | 'deny',
     payload?: unknown,
   ): Promise<void> {
-    if (!child || !child.stdin.writable) return;
+    if (!child?.stdin.writable) return;
     const toolUseId = pendingPermissionToolUseIds.get(requestId) ?? '';
     pendingPermissionToolUseIds.delete(requestId);
 
@@ -591,7 +591,7 @@ export function createClaudeCliEngine(
   }
 
   function writeLine(envelope: unknown): Promise<void> {
-    if (!child || !child.stdin.writable) return Promise.resolve();
+    if (!child?.stdin.writable) return Promise.resolve();
     const stdin = child.stdin;
     return new Promise<void>((resolve, reject) => {
       stdin.write(JSON.stringify(envelope) + '\n', (err) => {
@@ -622,7 +622,7 @@ export function createClaudeCliEngine(
     params?: Record<string, unknown>,
     opts?: ControlRequestOptions,
   ): Promise<T> {
-    if (!child || !child.stdin.writable) {
+    if (!child?.stdin.writable) {
       return Promise.reject(new Error('ClaudeCliEngine.sendControlRequest: child not running'));
     }
     const requestId = `req-${nextRequestSeq++}-${Date.now().toString(36)}`;

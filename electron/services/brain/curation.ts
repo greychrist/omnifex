@@ -34,7 +34,7 @@ const CurationResultSchema = z
  * module; this assignment is what stops the two drifting apart silently.
  */
 const _shapeCheck: (a: z.infer<typeof CurationResultSchema>) => CurationResult = (a) => a;
-void _shapeCheck;
+_shapeCheck;
 
 export class CurationParseError extends Error {
   constructor(message: string) {

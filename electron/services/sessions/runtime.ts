@@ -195,7 +195,7 @@ export function listenToMessages(
     engine.onMessage((agentMsg: AgentMessage) => {
       const message = agentMsg.payload as Record<string, unknown>;
       const event = classifyRuntimeEvent(message);
-      (message as Record<string, unknown>).receivedAt = agentMsg.receivedAt;
+      (message).receivedAt = agentMsg.receivedAt;
 
       if (message.type === 'assistant') {
         const model = (message.message as { model?: unknown } | undefined)?.model;

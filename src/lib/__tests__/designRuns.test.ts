@@ -7,7 +7,7 @@ const node = (id: string) => ({ kind: 'assistant', raw: { uuid: id } }) as unkno
 let n = 0;
 function tool(name: string, input: Record<string, unknown> = {}, resultText?: string, status: 'done' | 'error' | 'pending' = 'done'): WorkEntry {
   n += 1;
-  return { type: 'tool', key: `k${n}`, node: node(`n${n}`), id: `t${n}`, name, input, status, resultText } as WorkEntry;
+  return { type: 'tool', key: `k${n}`, node: node(`n${n}`), id: `t${n}`, name, input, status, resultText };
 }
 const think = (): WorkEntry => { n += 1; return { type: 'thinking', key: `k${n}`, node: node(`n${n}`), text: 'hmm', ms: null, tokens: null }; };
 const A = (t: string) => `mcp__claude-artifacts__${t}`;

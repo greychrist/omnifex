@@ -44,7 +44,7 @@ vi.mock('../claude-code-session/UsageDetailPopover', () => ({
   UsageDetailPopover: (props: { trigger: React.ReactNode }) => <div>{props.trigger}</div>,
 }));
 
-type ModalProps = { open: boolean; configDir: string; onAuthenticated?: () => void };
+interface ModalProps { open: boolean; configDir: string; onAuthenticated?: () => void }
 let lastModalProps: ModalProps | null = null;
 vi.mock('../ClaudeSignInModal', () => ({
   ClaudeSignInModal: (props: ModalProps) => {

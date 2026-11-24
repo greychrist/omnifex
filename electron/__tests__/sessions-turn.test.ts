@@ -9,9 +9,9 @@ import type { AgentMessage, AgentEngineExit } from '../services/agents/types';
 // (or the process going away) closes it. Nothing here is inferred from the
 // transcript — see docs/session-lifecycle.md.
 
-const messageCbs: Array<(m: AgentMessage) => void> = [];
+const messageCbs: ((m: AgentMessage) => void)[] = [];
 const sendImpl = { current: async (_p: string): Promise<void> => {} };
-const exitCbs: Array<(info: AgentEngineExit) => void> = [];
+const exitCbs: ((info: AgentEngineExit) => void)[] = [];
 
 vi.mock('../services/agents/claude-cli-engine', () => ({
   createClaudeCliEngine: vi.fn(() => ({

@@ -57,7 +57,7 @@ function mount() {
   rerender = () => { view.rerender(<TabContent />); };
   return view;
 }
-const projectsTab = (extra: Partial<Tab> = {}): Tab => ({ id: 't1', type: 'projects', title: 'Projects', agent: 'claude', status: 'idle', hasUnsavedChanges: false, order: 0, createdAt: new Date(), updatedAt: new Date(), ...extra } as Tab);
+const projectsTab = (extra: Partial<Tab> = {}): Tab => ({ id: 't1', type: 'projects', title: 'Projects', agent: 'claude', status: 'idle', hasUnsavedChanges: false, order: 0, createdAt: new Date(), updatedAt: new Date(), ...extra });
 
 beforeEach(() => { __resetProjectsCacheForTests(); });
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
@@ -76,7 +76,7 @@ describe('TabContent — projects tab', () => {
   });
 
   it('backing out of a session lands on that project\'s sessions page, not the projects list', async () => {
-    tabs = [{ ...projectsTab(), type: 'chat', title: 'alpha', initialProjectPath: '/repo/alpha' } as Tab];
+    tabs = [{ ...projectsTab(), type: 'chat', title: 'alpha', initialProjectPath: '/repo/alpha' }];
     mount();
     await act(async () => { window.dispatchEvent(new CustomEvent('back-to-project', { detail: { projectPath: '/repo/alpha' } })); });
     expect(tabs[0].type).toBe('projects');

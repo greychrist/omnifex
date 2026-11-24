@@ -52,7 +52,7 @@ export function isRepeatedRecord(messages: JsonlNode[], node: JsonlNode): boolea
   return copyOf !== null && messages.some((m) => messageIdOf(m) === copyOf);
 }
 
-type AssistantRaw = { message?: { id?: unknown; usage?: Record<string, unknown> } };
+interface AssistantRaw { message?: { id?: unknown; usage?: Record<string, unknown> } }
 
 function messageIdOf(node: JsonlNode): string | null {
   if (node.kind !== 'assistant') return null;

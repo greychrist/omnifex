@@ -28,7 +28,7 @@ export interface CostFilterState {
 /** Three presets, on one line. The rolling 30/90-day windows were dropped:
  *  they answered the same question as "this month" less precisely, and the
  *  explicit from/to inputs below cover any window worth naming. */
-export const RANGE_PRESETS: Array<{ key: RangeKey; label: string }> = [
+export const RANGE_PRESETS: { key: RangeKey; label: string }[] = [
   { key: 'month', label: 'This month' },
   { key: 'last-month', label: 'Last month' },
   { key: 'all', label: 'All time' },

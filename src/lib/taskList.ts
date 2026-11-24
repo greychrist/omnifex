@@ -68,7 +68,7 @@ const TASK_CREATE_CONTENT_REGEX = /^Task #(\S+) created successfully/;
 
 function extractTaskIdFromContent(content: unknown): string | null {
   const tryMatch = (s: string): string | null => {
-    const m = s.match(TASK_CREATE_CONTENT_REGEX);
+    const m = TASK_CREATE_CONTENT_REGEX.exec(s);
     return m ? m[1] : null;
   };
   if (typeof content === 'string') return tryMatch(content);
@@ -206,7 +206,7 @@ function isAttributable(m: JsonlNode): boolean {
  * tasks it names; the rest keep their status. The classifier keeps it as an
  * `unknown` node and messageFilters hides it (the `task_` prefix).
  */
-function taskTickerStatuses(m: JsonlNode): Array<{ id: string; status: TaskStatus }> | null {
+function taskTickerStatuses(m: JsonlNode): { id: string; status: TaskStatus }[] | null {
   const raw = (m as unknown as { raw?: { type?: unknown; subtype?: unknown; statuses?: unknown } }).raw;
   if (raw?.type !== 'system' || raw.subtype !== 'task_list_statuses') return null;
   if (!Array.isArray(raw.statuses)) return [];

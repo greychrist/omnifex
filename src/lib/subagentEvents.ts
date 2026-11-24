@@ -364,7 +364,7 @@ export function forwardedNarration(raw: Record<string, unknown>): string {
   if (!Array.isArray(content)) return '';
   let text = '';
   let thinking = '';
-  for (const block of content as Array<{ type?: string; text?: unknown; thinking?: unknown }>) {
+  for (const block of content as { type?: string; text?: unknown; thinking?: unknown }[]) {
     if (block.type === 'text' && typeof block.text === 'string') text += block.text;
     else if (block.type === 'thinking' && typeof block.thinking === 'string') thinking += block.thinking;
   }
@@ -647,7 +647,7 @@ export function messagesToEvents(messages: JsonlNode[]): SubagentEvent[] {
     // 3. Structured CLI task_* SystemMessages.
     if (isTaskLifecycleMarker(raw)) {
       // `raw` is narrowed to TaskLifecycleMessage here. Access all fields via raw.
-      const tlm = raw as TaskLifecycleMessage;
+      const tlm = raw;
       // task_updated rides a different shape from task_started /
       // task_progress / task_notification: keyed by `task_id` only
       // (no tool_use_id) and carries a `patch` object. Handle it as
@@ -655,7 +655,7 @@ export function messagesToEvents(messages: JsonlNode[]): SubagentEvent[] {
       // siblings below.
       if (tlm.subtype === 'task_updated') {
         if (typeof tlm.task_id === 'string' && tlm.patch && typeof tlm.patch === 'object') {
-          const p = tlm.patch as Record<string, unknown>;
+          const p = tlm.patch;
           events.push({
             kind: 'TaskUpdated',
             taskId: tlm.task_id,
@@ -697,7 +697,7 @@ export function messagesToEvents(messages: JsonlNode[]): SubagentEvent[] {
           ambient: (tlm as { ambient?: unknown }).ambient === true,
         });
       } else if (tlm.subtype === 'task_progress') {
-        const tlmProg = tlm as CliTaskProgressMessage;
+        const tlmProg = tlm;
         events.push({
           kind: 'Progress',
           toolUseId: id,
@@ -711,7 +711,7 @@ export function messagesToEvents(messages: JsonlNode[]): SubagentEvent[] {
         });
       } else {
         // task_notification
-        const tlmNotif = tlm as CliTaskNotificationMessage;
+        const tlmNotif = tlm;
         events.push({
           kind: 'TaskNotification',
           toolUseId: id,

@@ -185,7 +185,7 @@ describe('ContextTimelineTick — rail color tracks pressure', () => {
     'paints the %s rail in exactly the badge color',
     (level) => {
       const color = (cls: string, prefix: 'bg' | 'text') =>
-        cls.match(new RegExp(`\\b${prefix}-([a-z]+-\\d+(?:/\\d+)?)\\b`))?.[1];
+        (new RegExp(`\\b${prefix}-([a-z]+-\\d+(?:/\\d+)?)\\b`).exec(cls))?.[1];
       const solid = render(<ContextTimelineTick point={point({ level })} />).container;
       const badgeBg = color(
         (solid.querySelector('[data-timeline-badge]') as HTMLElement).className, 'bg',

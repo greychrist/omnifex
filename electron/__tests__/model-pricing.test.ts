@@ -27,7 +27,7 @@ describe('model_pricing schema', () => {
    * saving, reading back null, and quietly mispricing.
    */
   it('has exactly the rate columns PRICING_FIELDS describes', () => {
-    const columns = (db.raw.prepare('PRAGMA table_info(model_pricing)').all() as Array<{ name: string }>)
+    const columns = (db.raw.prepare('PRAGMA table_info(model_pricing)').all() as { name: string }[])
       .map((c) => c.name);
     for (const { column } of PRICING_FIELDS) {
       expect(columns).toContain(column);

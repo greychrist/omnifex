@@ -294,7 +294,7 @@ describe('readSubagentMeta — nested subagents via .meta.json sidecars', () => 
       { configDir: CONFIG_DIR, projectPath: PROJECT_PATH, sessionId: SESSION_ID },
       fsFromMap({
         [SESSION_FILE]: '',
-        [subagentMetaFile('a843')]: sidecar({ toolUseId: '' } as never),
+        [subagentMetaFile('a843')]: sidecar({ toolUseId: '' }),
         [subagentFile('a843')]: sidechainAssistant('a843', 'claude-opus-4-8'),
       }),
     );

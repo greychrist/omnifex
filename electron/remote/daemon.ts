@@ -818,18 +818,18 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
       get: (a) => sessionCostService.get(a),
       watch: (a) => sessionCostService.watch(a),
       unwatch: (id) => sessionCostService.unwatch(id),
-      history: (f) => costHistoryService.aggregate(f as never, ((f.groupBy as string) ?? 'day') as 'day' | 'week' | 'month'),
-      historyByModel: (f) => costHistoryService.aggregateByModel(f as never, ((f.groupBy as string) ?? 'day') as 'day' | 'week' | 'month'),
-      sessions: (f) => costHistoryService.sessions(f as never),
-      byProject: (f) => costHistoryService.byProject(f as never),
-      byModel: (f) => costHistoryService.byModel(f as never),
-      byProjectModel: (f) => costHistoryService.byProjectModel(f as never),
-      components: (f) => costHistoryService.components(f as never),
-      totals: (f) => costHistoryService.totals(f as never),
-      cachingRoi: (f) => costHistoryService.cachingRoi(f as never),
-      subagentSplit: (f) => costHistoryService.subagentSplit(f as never),
-      unpriced: (f) => costHistoryService.unpriced(f as never),
-      facets: (f) => costHistoryService.facets(f as never),
+      history: (f) => costHistoryService.aggregate(f, ((f.groupBy as string) ?? 'day') as 'day' | 'week' | 'month'),
+      historyByModel: (f) => costHistoryService.aggregateByModel(f, ((f.groupBy as string) ?? 'day') as 'day' | 'week' | 'month'),
+      sessions: (f) => costHistoryService.sessions(f),
+      byProject: (f) => costHistoryService.byProject(f),
+      byModel: (f) => costHistoryService.byModel(f),
+      byProjectModel: (f) => costHistoryService.byProjectModel(f),
+      components: (f) => costHistoryService.components(f),
+      totals: (f) => costHistoryService.totals(f),
+      cachingRoi: (f) => costHistoryService.cachingRoi(f),
+      subagentSplit: (f) => costHistoryService.subagentSplit(f),
+      unpriced: (f) => costHistoryService.unpriced(f),
+      facets: (f) => costHistoryService.facets(f),
       rescan: () => costHistoryService.backfill(accountsService.listAccounts()),
     },
     usage: {
@@ -968,7 +968,7 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
   if (config.permissionTimeoutMs !== null) {
     const timeoutMs = config.permissionTimeoutMs;
     const origPublish = bridge.sendToRenderer;
-    void origPublish;
+    origPublish;
     // Watch pushes as they leave the log: a permission.request starts a
     // clock; the handler clearing it (permissionAnswered) stops it.
     const pollPending = setInterval(() => {
@@ -999,7 +999,7 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
   // Started before Tailscale was up: serve the tailnet address once it is.
   if (config.hostIsFallback) {
     const tailnet = createTailnetWatch({
-      detect: () => detectTailscaleIp(networkInterfaces() as NetworkInterfaces),
+      detect: () => detectTailscaleIp(networkInterfaces()),
       listening: () => server.hosts,
       addHost: (host) => server.addHost(host),
       log,

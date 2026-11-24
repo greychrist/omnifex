@@ -587,7 +587,7 @@ export interface SessionCostSnapshot {
   estimated: boolean;
   breakdown: { inputUsd: number; outputUsd: number; cacheReadUsd: number; cacheWriteUsd: number };
   subagentUsd: number;
-  byModel: Array<{ model: string; usd: number; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number }>;
+  byModel: { model: string; usd: number; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number }[];
   tokens: { input: number; output: number; cacheRead: number; cacheWrite: number };
   /** `subagentUsd` per agent, keyed by agent id (`agent-<id>.jsonl`). */
   bySubagent: Record<string, SubagentCost>;
@@ -997,7 +997,7 @@ export type SessionStatus =
  * Mirrors `TurnState` in `electron/services/sessions/types.ts`. See
  * docs/session-lifecycle.md.
  */
-export type TurnState = { status: 'idle' | 'running'; since: string | null };
+export interface TurnState { status: 'idle' | 'running'; since: string | null }
 
 /**
  * Turn axis of the session. Derived by the renderer from JSONL content +
@@ -1342,7 +1342,7 @@ export type SummaryGenerateResult =
 /** Mirrors `CliStatusReport` in electron/services/sessions/types.ts. Values
  *  are the CLI's own rendered text — display them, don't parse them. */
 export interface SessionStatusReport {
-  sections: Array<{ title: string; rows: Array<{ label?: string; value: string }> }>;
+  sections: { title: string; rows: { label?: string; value: string }[] }[];
 }
 
 export interface SessionModelInfo {
@@ -2310,7 +2310,7 @@ export const api = {
   /** Create or replace the row for a (pattern, effectiveFrom) pair. Rejects
    *  rather than coerces bad input — the thrown message is user-facing. */
   async modelPricingUpsert(row: ModelPricingInput): Promise<ModelPricingRow> {
-    return apiCall("model_pricing_upsert", stripUndefined({ ...row } as unknown as Record<string, unknown>));
+    return apiCall("model_pricing_upsert", stripUndefined({ ...row }));
   },
 
   /** Drop a row, restoring whatever the shipped table says for that model. */
@@ -3734,7 +3734,7 @@ export const api = {
     cols?: number;
     rows?: number;
   }): Promise<{ ptyHandle: string }> {
-    return apiCall<{ ptyHandle: string }>('one_shot_terminal_spawn', opts as unknown as Record<string, unknown>);
+    return apiCall<{ ptyHandle: string }>('one_shot_terminal_spawn', opts);
   },
   async oneShotTerminalWrite(ptyHandle: string, data: string): Promise<void> {
     return apiCall('one_shot_terminal_write', { ptyHandle, data });

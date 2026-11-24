@@ -352,7 +352,7 @@ export function isAssistantMessage(
  */
 export function isUserMessage(
   msg: ClaudeStreamMessage,
-): msg is (CliUserMessage | CliUserMessageReplay) & OmnifexEnvelope {
+): msg is (CliUserMessage  ) & OmnifexEnvelope {
   return msg.type === 'user';
 }
 

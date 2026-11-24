@@ -17,7 +17,7 @@ export const DEFAULT_PORT = 47700;
 /** The slice of `os.networkInterfaces()` this module reads; injectable for tests. */
 export type NetworkInterfaces = Record<
   string,
-  Array<{ address: string; family: string | number; internal: boolean }> | undefined
+  { address: string; family: string | number; internal: boolean }[] | undefined
 >;
 
 /**
@@ -138,7 +138,7 @@ export function loadServerConfig(opts: LoadServerConfigOptions = {}): ServerConf
   const f = parsed.data;
 
   const interfaces = opts.interfaces ?? (require('node:os') as typeof import('node:os')).networkInterfaces();
-  const tailnet = f.host ? null : detectTailscaleIp(interfaces as NetworkInterfaces);
+  const tailnet = f.host ? null : detectTailscaleIp(interfaces);
   const host = f.host ?? tailnet ?? '127.0.0.1';
 
   return {

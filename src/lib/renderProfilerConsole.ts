@@ -29,7 +29,7 @@ export interface ConsoleDeps {
 
 function defaultLog(report: ProfileReport): void {
   const { interaction, durationMs, totalRenders, renders } = report;
-  // eslint-disable-next-line no-console
+   
   console.log(
     `[profile] ${interaction}: ${totalRenders} renders in ${durationMs.toFixed(1)}ms`,
     renders,
@@ -59,12 +59,12 @@ export function installRenderProfilerConsole(
   const handle: ProfilerConsoleHandle = {
     on() {
       profiler.setEnabled(true);
-      // eslint-disable-next-line no-console
+       
       console.log('[profile] on — reload once so every component re-registers.');
     },
     off() {
       profiler.setEnabled(false);
-      // eslint-disable-next-line no-console
+       
       console.log('[profile] off');
     },
     status: () => ({ enabled: profiler.isEnabled(), last }),

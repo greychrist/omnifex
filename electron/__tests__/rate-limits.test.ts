@@ -575,4 +575,4 @@ describe('rate-limits service', () => {
 });
 
 // Suppress unused-warning if vi import happens to be unreferenced
-void vi;
+vi;

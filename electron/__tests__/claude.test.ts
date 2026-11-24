@@ -550,7 +550,7 @@ describe('claude service', () => {
       accounts.addPathRule(account.id, tmpDir);
 
       const result = await service.loadSessionHistory('s', projectId, projectPath);
-      expect((result as Array<{ type: string }>).map((r) => r.type)).toEqual(['user', 'assistant']);
+      expect((result as { type: string }[]).map((r) => r.type)).toEqual(['user', 'assistant']);
     });
 
     // Transcripts reach tens of MB and this runs on every tab open. A

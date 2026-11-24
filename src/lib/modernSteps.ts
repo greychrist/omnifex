@@ -209,7 +209,7 @@ function artifactKind(name: string): StepKind {
   if (tool.startsWith('list_')) return 'explore';
   if (tool === 'create_from_type') return 'create';
   if (tool === 'publish_files' || tool === 'publish_version' || tool === 'edit_version') return 'design';
-  if (/comment/.test(tool)) return 'question';
+  if (tool.includes('comment')) return 'question';
   return 'mcp';
 }
 

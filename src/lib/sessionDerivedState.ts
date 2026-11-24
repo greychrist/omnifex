@@ -12,7 +12,7 @@ export type ConversationStatus = 'idle' | 'running';
 
 // Treat the value of TaskRow / SubagentRow loosely — we only read `.status`.
 // If/when the repo's canonical types are typed strictly, swap these aliases.
-type WithStatus = { status: string };
+interface WithStatus { status: string }
 
 /**
  * Exported because any per-turn metric needs the same exclusion — see

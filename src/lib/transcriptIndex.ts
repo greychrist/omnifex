@@ -67,7 +67,7 @@ function build(messages: readonly JsonlNode[]): TranscriptIndex {
     if (node.kind !== 'assistant' && node.kind !== 'user') continue;
     const content = (node.raw as { message?: { content?: unknown } }).message?.content;
     if (!Array.isArray(content)) continue;
-    for (const block of content as Array<{ type?: string; id?: unknown; name?: unknown; input?: unknown; tool_use_id?: unknown }>) {
+    for (const block of content as { type?: string; id?: unknown; name?: unknown; input?: unknown; tool_use_id?: unknown }[]) {
       if (node.kind === 'assistant' && block?.type === 'tool_use' && typeof block.id === 'string') {
         toolUses.set(block.id, toolUseRef(block));
       } else if (node.kind === 'user' && block?.type === 'tool_result' && typeof block.tool_use_id === 'string') {

@@ -24,9 +24,9 @@ interface FakeEngine extends AgentEngine {
 }
 
 function makeFakeEngine(): FakeEngine {
-  const messageCbs: Array<(m: AgentMessage) => void> = [];
-  const errorCbs: Array<(err: Error) => void> = [];
-  const exitCbs: Array<(info: AgentEngineExit) => void> = [];
+  const messageCbs: ((m: AgentMessage) => void)[] = [];
+  const errorCbs: ((err: Error) => void)[] = [];
+  const exitCbs: ((info: AgentEngineExit) => void)[] = [];
 
   const engine: AgentEngine = {
     kind: 'claude',
@@ -182,16 +182,16 @@ describe('runtime.listenToMessages — account identity re-check', () => {
   function setup(account: unknown) {
     const engine = makeFakeEngine();
     vi.mocked(engine.getInitData).mockReturnValue(
-      (account === undefined ? {} : { account }) as never,
+      (account === undefined ? {} : { account }),
     );
     const handle = makeHandle(engine);
     const sessions = new Map<string, SessionHandle>([['tab-1', handle]]);
-    const sent: Array<[string, unknown]> = [];
+    const sent: [string, unknown][] = [];
     const accountMismatchSink = vi.fn();
     void listenToMessages('tab-1', handle, {
       sendToRenderer: ((ch: string, ...args: unknown[]) => {
         sent.push([ch, args[0]]);
-      }) as SendToRenderer,
+      }),
       rateLimitHook: null,
       sessions,
       accountMismatchSink,
@@ -270,7 +270,7 @@ describe('runtime.listenToMessages — engine.onError', () => {
     engine._emitError(new Error('benign stderr noise: 1 MCP server needs auth'));
 
     const sendMock = vi.mocked(sendToRenderer);
-    const channels = sendMock.mock.calls.map((c) => c[0] as string);
+    const channels = sendMock.mock.calls.map((c) => c[0]);
     expect(channels).not.toContain('agent-complete:tab-1');
   });
 
@@ -453,7 +453,7 @@ describe('runtime.listenToMessages — engine.onExit', () => {
     engine._emitExit({ code: 0 });
 
     const sendMock = vi.mocked(sendToRenderer);
-    const channels = sendMock.mock.calls.map((c) => c[0] as string);
+    const channels = sendMock.mock.calls.map((c) => c[0]);
     expect(channels).not.toContain('agent-complete:tab-1');
   });
 });

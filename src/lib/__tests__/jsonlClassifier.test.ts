@@ -4,7 +4,7 @@ import { JSONL_SAMPLES } from './fixtures/jsonl-samples';
 
 describe('classifyJsonlLine', () => {
   it('classifies assistant lines', () => {
-    const node = classifyJsonlLine(JSONL_SAMPLES['assistant']);
+    const node = classifyJsonlLine(JSONL_SAMPLES.assistant);
     expect(node?.kind).toBe('assistant');
     if (node?.kind === 'assistant') {
       expect(node.sessionId).toBeTruthy();
@@ -96,7 +96,7 @@ describe('classifyJsonlLine', () => {
   });
 
   it('classifies attachment lines', () => {
-    const node = classifyJsonlLine(JSONL_SAMPLES['attachment']);
+    const node = classifyJsonlLine(JSONL_SAMPLES.attachment);
     expect(node?.kind).toBe('attachment');
   });
 
@@ -719,7 +719,7 @@ describe('system:dev_intent (CLI >= 2.1.266)', () => {
       subtype: 'dev_intent',
       kind: 'ios_app',
       timestamp: '2026-09-09T10:00:00Z',
-    } as Record<string, unknown>);
+    });
     expect(node?.kind).toBe('system');
     if (node?.kind === 'system') expect(node.subtype).toBe('dev_intent');
   });
@@ -733,7 +733,7 @@ describe('system:elicitation_complete', () => {
       mcp_server_name: 'linear',
       elicitation_id: 'el-9',
       receivedAt: '2026-09-23T10:00:00Z',
-    } as Record<string, unknown>);
+    });
     expect(node?.kind).toBe('system');
   });
 });
@@ -745,7 +745,7 @@ describe('system:per_turn_effort_changed (CLI >= 2.1.281)', () => {
       subtype: 'per_turn_effort_changed',
       per_turn_effort_active: false,
       receivedAt: '2026-09-23T10:00:00Z',
-    } as Record<string, unknown>);
+    });
     expect(node?.kind).toBe('system');
     if (node?.kind === 'system') expect(node.subtype).toBe('per_turn_effort_changed');
   });
@@ -758,7 +758,7 @@ describe('system:session_metadata (CLI >= 2.1.282)', () => {
       subtype: 'session_metadata',
       metadata: { artifacts: [] },
       receivedAt: '2026-09-24T10:00:00Z',
-    } as Record<string, unknown>);
+    });
     expect(node?.kind).toBe('system');
     if (node?.kind === 'system') expect(node.subtype).toBe('session_metadata');
   });
@@ -771,7 +771,7 @@ describe('system:session_title_changed (CLI >= 2.1.285)', () => {
       subtype: 'session_title_changed',
       title: 'Fix login',
       receivedAt: '2026-09-29T10:00:00Z',
-    } as Record<string, unknown>);
+    });
     expect(node?.kind).toBe('system');
     if (node?.kind === 'system') expect(node.subtype).toBe('session_title_changed');
   });
@@ -861,7 +861,7 @@ it('classifies system:permission_check_status as a known system subtype', () => 
     tool_use_id: 'toolu_1',
     status: 'checking',
     receivedAt: '2026-10-06T10:00:00Z',
-  } as Record<string, unknown>);
+  });
   expect(node?.kind).toBe('system');
 });
 
@@ -874,7 +874,7 @@ describe('mod frames from a headless session', () => {
       type: 'system',
       subtype,
       receivedAt: '2026-10-03T10:00:00Z',
-    } as Record<string, unknown>);
+    });
     expect(node?.kind).toBe('system');
   });
 });

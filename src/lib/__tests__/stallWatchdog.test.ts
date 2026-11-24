@@ -139,7 +139,7 @@ describe('installStallWatchdog', () => {
     stop();
 
     expect(logWriteBatch).toHaveBeenCalledTimes(1);
-    const [entry] = logWriteBatch.mock.calls[0][0] as Array<Record<string, string>>;
+    const [entry] = logWriteBatch.mock.calls[0][0] as Record<string, string>[];
     expect(entry).toMatchObject({ level: 'warn', source: 'frontend', category: 'renderer-stall' });
     expect(entry.message).toBe('renderer main thread stalled 30.0s');
     expect(JSON.parse(entry.metadata)).toMatchObject({

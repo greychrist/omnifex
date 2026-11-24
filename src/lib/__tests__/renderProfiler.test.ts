@@ -191,7 +191,7 @@ describe('renderProfiler', () => {
 
   describe('profile() — begin plus a scheduled close', () => {
     it('closes the interaction on the injected scheduler and emits the report', () => {
-      const scheduled: Array<() => void> = [];
+      const scheduled: (() => void)[] = [];
       const clock = fakeClock();
       const p = createRenderProfiler({
         storage: fakeStorage(),
@@ -226,7 +226,7 @@ describe('renderProfiler', () => {
     });
 
     it('unsubscribes a report listener', () => {
-      const scheduled: Array<() => void> = [];
+      const scheduled: (() => void)[] = [];
       const p = createRenderProfiler({
         storage: fakeStorage(),
         schedule: (cb) => { scheduled.push(cb); },
@@ -241,7 +241,7 @@ describe('renderProfiler', () => {
     });
 
     it('keeps emitting to other listeners when one throws', () => {
-      const scheduled: Array<() => void> = [];
+      const scheduled: (() => void)[] = [];
       const p = createRenderProfiler({
         storage: fakeStorage(),
         schedule: (cb) => { scheduled.push(cb); },

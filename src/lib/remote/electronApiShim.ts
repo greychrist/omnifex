@@ -320,7 +320,7 @@ export function createElectronApiShim(opts: ShimOptions): ShimHandle {
         // A notification that belongs to no session (a rate-limit threshold)
         // is broadcast rather than routed; it still deserves the banner.
         if (m.channel === 'claude-notification') {
-          notifyNative((m.payload ?? {}) as NotificationPayload, null);
+          notifyNative((m.payload ?? {}), null);
         }
         // A mod's notification taken back, shown or still booked. Ids are
         // global, so it is broadcast rather than routed to a tab.
@@ -513,7 +513,7 @@ export function createElectronApiShim(opts: ShimOptions): ShimHandle {
    * original error stands; a session the daemon cannot resume is not one more
    * attempt away.
    */
-  async function sendTurn(tabId: unknown, content: string | Array<Record<string, unknown>>): Promise<void> {
+  async function sendTurn(tabId: unknown, content: string | Record<string, unknown>[]): Promise<void> {
     const sessionId = requireSession(tabId);
     try {
       await client.request('turn.send', { sessionId, content });
@@ -541,7 +541,7 @@ export function createElectronApiShim(opts: ShimOptions): ShimHandle {
         await sendTurn(p.tabId, String(p.prompt ?? p.message ?? ''));
         return null;
       case 'session_send_structured_message':
-        await sendTurn(p.tabId, (p.content as Array<Record<string, unknown>>) ?? []);
+        await sendTurn(p.tabId, (p.content as Record<string, unknown>[]) ?? []);
         return null;
       case 'session_respond_permission': {
         const sessionId = requireSession(p.tabId);
@@ -554,7 +554,7 @@ export function createElectronApiShim(opts: ShimOptions): ShimHandle {
           permissionId,
           decision: p.behavior === 'allow' ? 'allow' : 'deny',
           ...(p.updatedInput !== undefined && { updatedInput: p.updatedInput as Record<string, unknown> }),
-          ...(p.updatedPermissions !== undefined && { remember: p.updatedPermissions as Array<Record<string, unknown>> }),
+          ...(p.updatedPermissions !== undefined && { remember: p.updatedPermissions as Record<string, unknown>[] }),
         });
         pendingPermission.delete(sessionId);
         return null;
@@ -643,8 +643,8 @@ export function createElectronApiShim(opts: ShimOptions): ShimHandle {
       if (!set) listeners.set(channel, (set = new Set()));
       set.add(callback);
       return () => {
-        set!.delete(callback);
-        if (set!.size === 0) listeners.delete(channel);
+        set.delete(callback);
+        if (set.size === 0) listeners.delete(channel);
       };
     },
 
@@ -671,6 +671,6 @@ export function createElectronApiShim(opts: ShimOptions): ShimHandle {
     },
   };
 
-  void SESSION_EVENT_PREFIXES; // documented above; routing is by push, not by subscription
+  SESSION_EVENT_PREFIXES; // documented above; routing is by push, not by subscription
   return api;
 }

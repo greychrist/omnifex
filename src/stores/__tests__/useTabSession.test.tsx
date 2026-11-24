@@ -59,8 +59,8 @@ describe('useTabSession', () => {
     act(() => { useClaudeSessionStore.getState().patchTab(TAB, { claudeSessionId: 's-rerender' }); });
     rerender(<HookHarness tabId={TAB} capture={(s) => { captures.push(s); }} />);
 
-    const first = captures[0]!;
-    const last = captures[captures.length - 1]!;
+    const first = captures[0];
+    const last = captures[captures.length - 1];
     expect(last.setMessages).toBe(first.setMessages);
     expect(last.appendMessage).toBe(first.appendMessage);
     expect(last.setClaudeSessionId).toBe(first.setClaudeSessionId);

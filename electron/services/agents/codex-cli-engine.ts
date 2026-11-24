@@ -38,10 +38,10 @@ export function createCodexCliEngine(
   let rpc: JsonRpcClient | null = null;
   let conversationId: string | null = null;
   let stderrBuf = '';
-  const exitCallbacks: Array<(info: AgentEngineExit) => void> = [];
-  const errorCallbacks: Array<(err: Error) => void> = [];
-  const permissionCallbacks: Array<(r: AgentPermissionRequest) => void> = [];
-  const messageCallbacks: Array<(m: AgentMessage) => void> = [];
+  const exitCallbacks: ((info: AgentEngineExit) => void)[] = [];
+  const errorCallbacks: ((err: Error) => void)[] = [];
+  const permissionCallbacks: ((r: AgentPermissionRequest) => void)[] = [];
+  const messageCallbacks: ((m: AgentMessage) => void)[] = [];
 
   function wireStderr(stderr: NodeJS.ReadableStream): void {
     stderr.on('data', (chunk: Buffer | string) => {
@@ -143,7 +143,7 @@ export function createCodexCliEngine(
     child = spawn(factory.codexBinaryPath, ['mcp'], {
       cwd: p.projectPath,
       env,
-    }) as ChildProcessWithoutNullStreams;
+    });
 
     child.on('exit', (code, signal) => {
       const info: AgentEngineExit = { code: code ?? -1, signal };

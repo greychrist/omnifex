@@ -11,8 +11,8 @@ import { cn } from "@/lib/utils";
 const SORTED_ICONS: readonly IconName[] = (() => {
   const rest = (ALLOWED_ICONS as readonly IconName[]).filter((n) => n !== "none");
   rest.sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
-  return (ALLOWED_ICONS as readonly IconName[]).includes("none" as IconName)
-    ? (["none" as IconName, ...rest])
+  return (ALLOWED_ICONS as readonly IconName[]).includes("none")
+    ? (["none", ...rest])
     : rest;
 })();
 

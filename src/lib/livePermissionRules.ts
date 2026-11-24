@@ -65,7 +65,7 @@ export function diffLiveRules(state: CliPermissionRulesState | null | undefined)
     }
   }
 
-  return { hidden, ignored, managedOnly: state.managedOnly === true };
+  return { hidden, ignored, managedOnly: state.managedOnly };
 }
 
 /**

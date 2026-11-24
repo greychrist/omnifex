@@ -412,7 +412,7 @@ describe('AccountSettings', () => {
     it('self-corrects when the identity changes on disk', async () => {
       // Every subscriber hears the broadcast (the verdict and the sign-in
       // expiry both listen), as the real event does.
-      const subscribers: Array<(v: unknown) => void> = [];
+      const subscribers: ((v: unknown) => void)[] = [];
       const push = (v: unknown) => { for (const cb of subscribers) cb(v); };
       apiMock.subscribeAccountIdentity.mockImplementation(
         (_dir: string, cb: (v: unknown) => void) => {

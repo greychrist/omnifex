@@ -507,7 +507,7 @@ export function createQueryPassthroughs(
     if (!handle) return null;
     let raw: unknown;
     try {
-      raw = await handle.engine.sendControlRequest<unknown>('get_status');
+      raw = await handle.engine.sendControlRequest('get_status');
     } catch (err) {
       console.error(`[sessions] getCliStatus failed for tab ${tabId}:`, err);
       return null;
