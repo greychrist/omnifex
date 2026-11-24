@@ -13,12 +13,6 @@ import { fireAndLog } from "@/lib/fireAndLog";
 type SortKey = 'name' | 'account' | 'lastActivity';
 type SortDir = 'asc' | 'desc';
 
-/**
- * Format a Unix-seconds timestamp as a compact relative-time string
- * ("2h ago", "3d ago", "5mo ago"). Falls back to a date when older than
- * a year. The Projects list cares about recency at-a-glance, not exact
- * dates — relative reads more naturally.
- */
 function formatRelativeTime(unixSeconds: number): string {
   const now = Date.now() / 1000;
   const diff = Math.max(0, now - unixSeconds);
@@ -34,74 +28,22 @@ function formatRelativeTime(unixSeconds: number): string {
 }
 
 interface ProjectListProps {
-  /**
-   * Array of projects to display
-   */
   projects: Project[];
-  /**
-   * Callback to open the project's sessions page. Fired by clicking the
-   * project name (rendered as a link) or the Sessions icon — never by
-   * clicking elsewhere in the row.
-   */
   onProjectClick: (project: Project) => void;
-  /**
-   * Callback when open project is clicked
-   */
   onOpenProject?: () => void | Promise<void>;
-  /**
-   * Optional callback fired by the New Project button, which sits left of
-   * Open Project and creates a new folder for the project. Omitted → the
-   * button is hidden.
-   */
   onNewProject?: () => void | Promise<void>;
-  /**
-   * Optional callback fired by the Quick Launch icon. Starts a brand-new
-   * session for the project immediately, bypassing the sessions page. The
-   * parent owns the actual launch. When omitted, the Quick Launch icon is
-   * hidden so this component degrades gracefully in callers (e.g. the
-   * legacy non-tab view) that can't start a session inline.
-   */
   onQuickLaunch?: (project: Project) => void | Promise<void>;
-  /**
-   * Optional callback fired when the user toggles a project's pin. Receives
-   * the project and the DESIRED state. The parent owns the API call and the
-   * refetch, so when omitted the pin icon is hidden and the list degrades
-   * gracefully.
-   */
   onTogglePin?: (project: Project, pinned: boolean) => void | Promise<void>;
-  /**
-   * Optional callback fired by the settings action. Opens the project's
-   * settings (CLAUDE.md, hooks). Omitted → the action is hidden, so callers
-   * that can't host the settings view degrade gracefully.
-   */
   onOpenSettings?: (project: Project) => void | Promise<void>;
-  /**
-   * Whether the first load is still in flight — shows a skeleton instead of the empty state
-   */
   loading?: boolean;
-  /**
-   * Optional className for styling
-   */
   className?: string;
 }
 
-/**
- * Extracts the project name from the full path
- */
 const getProjectName = (path: string): string => {
   const parts = path.split('/').filter(Boolean);
   return parts[parts.length - 1] || path;
 };
 
-/**
- * Rewrites a path to be home-relative (`~/Repos/...`) for display. Paths
- * outside the home directory are returned unchanged.
- *
- * Deliberately does NOT shorten: the Name column takes the table's slack and
- * the path wraps, so a middle-ellipsis would hide characters we now have the
- * room to show. (This used to truncate to a `maxLength` — removed with the
- * column rework rather than left as an unused parameter.)
- */
 const getDisplayPath = (path: string): string => {
   const homeIndicators = ['/Users/', '/home/'];
   for (const indicator of homeIndicators) {
@@ -118,16 +60,6 @@ const getDisplayPath = (path: string): string => {
   return path;
 };
 
-/**
- * ProjectList component - Displays recent projects in a Cursor-like interface
- * 
- * @example
- * <ProjectList
- *   projects={projects}
- *   onProjectClick={(project) => console.log('Selected:', project)}
- *   onOpenProject={() => console.log('Open project')}
- * />
- */
 export const ProjectList: React.FC<ProjectListProps> = ({
   projects,
   onProjectClick,
@@ -143,9 +75,6 @@ export const ProjectList: React.FC<ProjectListProps> = ({
   const [sortDir, setSortDir] = useState<SortDir>('desc');
   const [accountFilter, setAccountFilter] = useState<string>('all');
 
-  // Distinct account names present in the project list — sorted alpha for
-  // a stable dropdown order. `'(unassigned)'` covers projects with no
-  // resolved account so they're filterable too.
   const accountOptions = useMemo(() => {
     const names = new Set<string>();
     for (const p of projects) {
@@ -167,10 +96,7 @@ export const ProjectList: React.FC<ProjectListProps> = ({
         case 'account':
           return (a.account_name ?? '').localeCompare(b.account_name ?? '') * dir;
         case 'lastActivity': {
-          // most_recent_session = newest Claude session JSONL mtime.
-          // We deliberately do NOT walk the project's working tree — file
-          // edits, formatter runs, and `git pull` are not "Claude activity."
-          // Undefined → 0 (project has no Claude sessions yet).
+          // Session mtime only: working-tree edits and `git pull` are not Claude activity.
           const av = a.most_recent_session ?? 0;
           const bv = b.most_recent_session ?? 0;
           return (av - bv) * dir;
@@ -178,13 +104,7 @@ export const ProjectList: React.FC<ProjectListProps> = ({
       }
     };
 
-    // Pinned projects form a group that always leads, whatever the sort. The
-    // active sort then orders rows *within* each group.
-    //
-    // Deliberately NOT multiplied by `dir`: every comparator above flips with
-    // the sort direction, but this one must not. If it did, sorting ascending
-    // would sink pinned projects to the bottom — the precise opposite of what
-    // pinning is for. Covered by a test per sort key, per direction.
+    // Pinned-first is deliberately NOT multiplied by `dir`, or ascending sorts sink pinned rows.
     const cmp = (a: Project, b: Project): number => {
       if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1;
       return bySortKey(a, b);
@@ -197,8 +117,6 @@ export const ProjectList: React.FC<ProjectListProps> = ({
       setSortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'));
     } else {
       setSortKey(key);
-      // For date columns the useful default is descending (most-recent
-      // first); for string columns ascending reads more naturally.
       setSortDir(key === 'lastActivity' ? 'desc' : 'asc');
     }
   };
@@ -216,7 +134,6 @@ export const ProjectList: React.FC<ProjectListProps> = ({
     <TooltipProvider>
     <div className={cn("h-full overflow-hidden", className)}>
       <div className="max-w-6xl mx-auto flex flex-col h-full">
-        {/* Header */}
         <div className="p-6 shrink-0">
           <div className="flex items-center justify-between">
             <div>
@@ -259,12 +176,8 @@ export const ProjectList: React.FC<ProjectListProps> = ({
           </div>
         </div>
 
-        {/* Content */}
         <div className="flex-1 min-h-0 px-6 pb-6 flex flex-col">
-          {/* Recent projects section */}
           {loading && projects.length === 0 ? (
-            // First load: "no projects" is not known yet, so the empty card
-            // would be a lie that the table replaces a moment later.
             <Card className="p-6 flex-1 min-h-0 flex flex-col" data-testid="project-list-skeleton" aria-busy="true">
               <div className="h-6 w-48 mb-4 rounded bg-muted animate-pulse" />
               <div className="flex flex-col gap-3">
@@ -307,21 +220,8 @@ export const ProjectList: React.FC<ProjectListProps> = ({
             <table className="w-full text-sm">
               <thead className="sticky top-0 bg-card z-10">
                 <tr className="text-left text-[10px] uppercase tracking-wider text-muted-foreground border-b border-border/50">
-                  {/* Pin column — furthest left, on its own so the pinned
-                      group is scannable straight down the row edge and the
-                      pin never shifts when the action buttons change. Not
-                      sortable, so no hover/cursor affordance. */}
                   <th className="w-12 px-2 py-2 font-medium">Pin</th>
-                  {/* Actions column — header is left-justified (inheriting
-                      the row's text-left) while the buttons below stay
-                      right-aligned against the Name column. Fixed width so
-                      the column doesn't grow with the session counts and the
-                      Name column keeps the slack. */}
                   <th className="w-[104px] px-3 py-2 font-medium">Actions</th>
-                  {/* w-full: under `table-layout: auto` this makes the Name
-                      column absorb every pixel the other columns don't need,
-                      so the wrapped path gets the widest possible run before
-                      it breaks to a second line. */}
                   <th
                     className="w-full px-3 py-2 font-medium cursor-pointer hover:text-foreground select-none"
                     onClick={() => { toggleSort('name'); }}
@@ -341,24 +241,12 @@ export const ProjectList: React.FC<ProjectListProps> = ({
                   >
                     Last activity<SortIcon k="lastActivity" />
                   </th>
-                  {/* Settings column — trailing, so the gear stays clear of
-                      the per-row actions and reads as a project-level escape
-                      hatch rather than another row action. Wider than the
-                      32px gear needs: the header word sets the floor. */}
                   <th className="w-20 px-3 py-2 font-medium">Settings</th>
                 </tr>
               </thead>
               <tbody>
                 {visibleProjects.map((project, index) => {
-                  // most_recent_session is undefined when the project has
-                  // no Claude session JSONLs yet — render an em-dash so
-                  // the column is visibly empty rather than showing an
-                  // epoch-zero "55y ago".
                   const lastActivity = project.most_recent_session ?? 0;
-                  // Close the pinned group with a heavier rule. Only the LAST
-                  // pinned row carries it, and only when unpinned rows follow
-                  // — all-pinned (or none-pinned) would otherwise render a
-                  // stray line under the table with nothing to separate.
                   const isPinBoundary =
                     !!project.pinned && !!visibleProjects[index + 1] && !visibleProjects[index + 1].pinned;
                   return (
@@ -368,47 +256,15 @@ export const ProjectList: React.FC<ProjectListProps> = ({
                       initial={{ opacity: 0, y: 4 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ duration: 0.15, delay: index * 0.02 }}
-                      // Subtle row hover for visual scan-tracking. The
-                      // row itself is no longer interactive (only the
-                      // name and the action icons are clickable), so
-                      // we deliberately omit `cursor-pointer` here —
-                      // the hover tint is presentational, not an
-                      // affordance.
                       className={cn(
                         "transition-colors hover:bg-accent/40",
-                        // Ordinary row separator.
                         "border-b border-border/30",
-                        // The pinned group closes with a double rule, drawn as
-                        // a 5px `border-bottom-style: double`. Chromium splits
-                        // the width line/gap/line as floor(w/3) for each line
-                        // and the remainder for the gap, so 5px gives 1px/3px/
-                        // 1px: hairlines matching the other row separators,
-                        // with an open gap between them. (3px would be 1/1/1 —
-                        // the lines nearly touch and read as one thick rule;
-                        // 7px would be 2/3/2, thickening the lines rather than
-                        // opening the gap.)
-                        //
-                        // Not a box-shadow: Tailwind preflight leaves tables
-                        // at `border-collapse: collapse`, and Chromium doesn't
-                        // paint box-shadows on rows in a collapsed table — the
-                        // rule would silently never appear. Borders do render
-                        // (the row's own border-b proves it), and the collapse
-                        // algorithm resolves on width, so 3px beats the next
-                        // row's 1px and survives.
-                        // The color needs `!` and `color-mix`, for two
-                        // reasons worth knowing: styles.css sets
-                        // `* { border-color: var(--color-border) }` OUTSIDE
-                        // any @layer, and unlayered rules beat layered ones
-                        // regardless of specificity — so every Tailwind
-                        // border-color utility is overridden app-wide.
-                        // And Tailwind bakes `border-*` colors to a hex at
-                        // build time, which wouldn't follow the theme;
-                        // `var()` inside color-mix resolves at runtime.
+                        // 5px double = 1px/3px/1px lines. Not a box-shadow: rows in a collapsed table never paint one.
+                        // `!` because the unlayered `* { border-color }` in styles.css overrides border-color utilities.
                         isPinBoundary &&
                           "border-b-[5px] [border-bottom-style:double] [border-bottom-color:color-mix(in_oklch,var(--color-muted-foreground)_45%,transparent)]!",
                       )}
                     >
-                      {/* Pin cell — furthest left in the row, alone. */}
                       <td className="px-2 py-2 align-top">
                         {onTogglePin && (
                           <TooltipSimple content={project.pinned ? "Unpin this project" : "Pin this project to the top"}>
@@ -421,10 +277,6 @@ export const ProjectList: React.FC<ProjectListProps> = ({
                               }}
                               className={cn(
                                 "h-8 w-8",
-                                // Pinned vs unpinned has to stay legible now
-                                // that both states share the same chrome —
-                                // the filled icon carries that distinction,
-                                // the dimmed outline reinforces it.
                                 project.pinned
                                   ? "text-foreground"
                                   : "text-muted-foreground/60",
@@ -436,13 +288,6 @@ export const ProjectList: React.FC<ProjectListProps> = ({
                           </TooltipSimple>
                         )}
                       </td>
-                      {/* Actions: icon-only Launch and Sessions, ahead of the
-                          name. The words are gone, so each button carries an
-                          aria-label — without one an icon button has no
-                          accessible name at all. The session count stays as a
-                          visible numeral: it rides inside this button and
-                          there's no standalone Sessions column to fall back
-                          on. */}
                       <td className="px-3 py-2 align-top">
                         <div className="flex items-center justify-end gap-1.5">
                           <TooltipSimple content="View this project's sessions">
@@ -453,10 +298,6 @@ export const ProjectList: React.FC<ProjectListProps> = ({
                                 e.stopPropagation();
                                 onProjectClick(project);
                               }}
-                              // min-w so a 1-digit and a 3-digit count produce
-                              // the same width — otherwise the row-to-row
-                              // widths differ and the Launch buttons that
-                              // follow stop lining up.
                               className="h-8 min-w-[3.25rem] gap-1 px-2 tabular-nums"
                               aria-label={`Sessions (${project.sessions.length})`}
                             >
@@ -470,8 +311,6 @@ export const ProjectList: React.FC<ProjectListProps> = ({
                                 variant="outline"
                                 size="icon"
                                 onClick={(e) => {
-                                  // Belt-and-suspenders: stop the click from
-                                  // bubbling to any future row-level handler.
                                   e.stopPropagation();
                                   void onQuickLaunch(project);
                                 }}
@@ -484,10 +323,6 @@ export const ProjectList: React.FC<ProjectListProps> = ({
                           )}
                         </div>
                       </td>
-                      {/* Name cell: the project name over its path — same
-                          stacked shape the Sessions list uses for
-                          size-over-cost, with the second line a size down and
-                          dimmed. */}
                       <td className="px-3 py-2 font-medium">
                         <div className="flex items-start gap-2">
                           <div className="min-w-0">
@@ -500,10 +335,7 @@ export const ProjectList: React.FC<ProjectListProps> = ({
                             >
                               {getProjectName(project.path)}
                             </button>
-                            {/* break-all, not break-words: paths have no
-                                spaces, so the normal word-break rules would
-                                leave a long segment overflowing rather than
-                                wrapping it. */}
+                            {/* break-all, not break-words: paths have no spaces to break at. */}
                             <div
                               data-project-path
                               className="break-all font-mono text-[11px] font-normal leading-tight text-muted-foreground/70"
@@ -520,9 +352,6 @@ export const ProjectList: React.FC<ProjectListProps> = ({
                         )}
                       </td>
                       <td
-                        // whitespace-nowrap: the Name column now absorbs the
-                        // table's slack, and "1mo ago" was wrapping onto two
-                        // lines rather than holding the column open.
                         className="px-3 py-2 text-right text-muted-foreground text-xs tabular-nums whitespace-nowrap"
                         title={
                           lastActivity
@@ -532,9 +361,6 @@ export const ProjectList: React.FC<ProjectListProps> = ({
                       >
                         {lastActivity ? formatRelativeTime(lastActivity) : '—'}
                       </td>
-                      {/* Settings: trailing, alone, so the gear reads as a
-                          project-level escape hatch rather than a row action
-                          competing with Launch and Sessions. */}
                       <td className="px-3 py-2 align-top">
                         {onOpenSettings && (
                           <TooltipSimple content="Project settings — CLAUDE.md and hooks">

@@ -8,9 +8,7 @@ import { SURFACE_BODY_BG, SURFACE_HEADER, SURFACE_RING } from '@/lib/surfaceStyl
 import { fireAndLog } from "@/lib/fireAndLog";
 import { useSurfaceVisible } from '@/hooks/useSurfaceVisible';
 
-// Every poll is a `limactl` process in the daemon (`docker ps` is a `limactl
-// shell` round trip into the VM), so both stop whenever nobody can see the
-// tab, and containers — which change least — poll slowest.
+// Each poll spawns `limactl` in the daemon: stop while hidden, and containers poll slowest.
 const VM_POLL_INTERVAL_MS = 5000;
 const CONTAINER_POLL_INTERVAL_MS = 15000;
 
@@ -26,11 +24,6 @@ function formatBytes(bytes: number): string {
   return `${n.toFixed(n >= 10 || i === 0 ? 0 : 1)} ${units[i]}`;
 }
 
-// Status-pill palettes — mirror TabStatusPopover.STATUS_COLOR so the Lima
-// page reads in the same visual language (green = healthy, amber = in
-// flight, red = error, muted = inert). Foreground + tinted background +
-// optional pulsing dot. The pill always includes the dot when transient
-// so VM/container lifecycle changes are obvious at a glance.
 function vmPillPalette(status: string, pending: 'starting' | 'stopping' | undefined): string {
   if (pending) return 'text-amber-300 bg-amber-500/20';
   const s = status.toLowerCase();
@@ -50,21 +43,14 @@ function containerPillPalette(state: string, pending: 'starting' | 'stopping' | 
   return 'text-muted-foreground bg-muted/40';
 }
 
-// Shared shell: the two-zone card from TabStatusCard (TabStatusPopover.tsx).
-// Used by both VM rows and container tiles so a single style change
-// propagates to both lists.
 const CARD_SHELL = cn('rounded-md border-0 overflow-hidden', SURFACE_BODY_BG, SURFACE_RING);
 
 const CARD_HEADER = cn('w-full flex items-center justify-between gap-3 px-3 py-2 transition-colors text-left', SURFACE_HEADER);
 
-// Mono value pill — bg-background + 1px inset border. Mirrors the
-// "Context Size" / branch pill treatment in TabStatusCard.
 const VALUE_PILL =
   'inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-mono font-medium text-foreground bg-background shadow-[0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_45%,transparent)]';
 
 interface LimaViewerProps {
-  /** Whether this is the active tab. Polling runs only while it is, and only
-   *  while the window is visible and the machine awake. */
   isActive: boolean;
 }
 
@@ -77,10 +63,7 @@ export const LimaViewer: React.FC<LimaViewerProps> = ({ isActive }) => {
   const [containersLoading, setContainersLoading] = useState(false);
   const [containersError, setContainersError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
-  /** Map of vmName → pending lifecycle action ('starting' | 'stopping'). */
   const [pendingAction, setPendingAction] = useState<Record<string, 'starting' | 'stopping'>>({});
-  /** Map of containerId → pending action. Separate map so a VM-level action
-   *  doesn't disable container buttons and vice versa. */
   const [pendingContainerAction, setPendingContainerAction] = useState<Record<string, 'starting' | 'stopping'>>({});
   const [actionError, setActionError] = useState<string | null>(null);
 
@@ -118,7 +101,6 @@ export const LimaViewer: React.FC<LimaViewerProps> = ({ isActive }) => {
     }
   }, []);
 
-  // Load + poll while visible; becoming visible again refreshes at once.
   useEffect(() => {
     if (!visible) return;
     let cancelled = false;
@@ -132,7 +114,6 @@ export const LimaViewer: React.FC<LimaViewerProps> = ({ isActive }) => {
     };
   }, [loadVms, visible]);
 
-  // Containers: refresh whenever the selected VM changes or its status changes
   const selectedVmObj = vms.find((v) => v.name === selectedVm) ?? null;
   const selectedVmStatus = selectedVmObj?.status ?? 'Stopped';
   useEffect(() => {
@@ -255,7 +236,6 @@ export const LimaViewer: React.FC<LimaViewerProps> = ({ isActive }) => {
 
   return (
     <div className="h-full flex flex-col">
-      {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-border/50">
         <div className="flex items-center gap-2">
           <HardDrive className="h-4 w-4 text-muted-foreground" />
@@ -284,11 +264,7 @@ export const LimaViewer: React.FC<LimaViewerProps> = ({ isActive }) => {
         </div>
       )}
 
-      {/* Master/detail */}
       <div className="flex-1 flex overflow-hidden">
-        {/* VM list (left) — TabStatusCard idiom: card-per-row, tinted
-            header strip with status pill + name + chevron, body grid
-            below with HeaderLabel left-col + value-pill right-col. */}
         <div className="w-[340px] shrink-0 border-r border-border/50 overflow-y-auto">
           {vms.length === 0 ? (
             <div className="p-4 text-sm text-muted-foreground">
@@ -310,7 +286,6 @@ export const LimaViewer: React.FC<LimaViewerProps> = ({ isActive }) => {
                 const showDot = !!action || vm.status.toLowerCase() === 'broken';
                 return (
                   <div key={vm.name} className={cn(CARD_SHELL, isSelected && 'ring-1 ring-accent')}>
-                    {/* Header strip — clickable to select. */}
                     <button
                       type="button"
                       onClick={() => { setSelectedVm(vm.name); }}
@@ -333,7 +308,6 @@ export const LimaViewer: React.FC<LimaViewerProps> = ({ isActive }) => {
                       <span className="text-[10px] text-muted-foreground shrink-0">→</span>
                     </button>
 
-                    {/* Body — metadata grid + action bar. */}
                     <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 px-3 pb-2.5 pt-2 text-xs">
                       <div className="flex items-center gap-2 min-w-0">
                         <HeaderLabel className="inline-block w-10 shrink-0">Arch</HeaderLabel>
@@ -391,7 +365,6 @@ export const LimaViewer: React.FC<LimaViewerProps> = ({ isActive }) => {
           )}
         </div>
 
-        {/* Container detail (right) */}
         <div className="flex-1 overflow-y-auto">
           {!selectedVmObj ? (
             <div className="p-8 text-sm text-muted-foreground">
@@ -437,7 +410,6 @@ export const LimaViewer: React.FC<LimaViewerProps> = ({ isActive }) => {
                     const cShowDot = !!cAction || cState === 'restarting' || cState === 'paused';
                     return (
                       <li key={c.id} className={CARD_SHELL}>
-                        {/* One header row: state pill, name, start/stop. */}
                         <header className={cn(CARD_HEADER, 'py-1.5')}>
                           <div className="flex items-center gap-2 min-w-0">
                             <span
@@ -486,7 +458,6 @@ export const LimaViewer: React.FC<LimaViewerProps> = ({ isActive }) => {
                           </div>
                         </header>
 
-                        {/* Body — compact labelled rows, no pills. */}
                         <div className="px-3 py-1.5 grid grid-cols-[3rem_1fr] gap-x-2 gap-y-0.5 items-baseline text-[11px]">
                           <HeaderLabel>Image</HeaderLabel>
                           <span className="font-mono break-all min-w-0">{c.image}</span>

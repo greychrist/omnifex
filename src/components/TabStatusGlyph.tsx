@@ -3,26 +3,13 @@ import type { TabIndicators, TabIndicatorStyle } from "@/lib/messageRenderingCon
 import { resolveIndicatorColor, TAB_INDICATOR_SIZE_CLASS } from "@/lib/tabIndicatorStyle";
 import { IconRenderer } from "@/components/settings-panels/appearance/iconMap";
 
-/**
- * One configurable tab status glyph. Icon + color come from the per-state
- * TabIndicatorStyle; size and the optional bordered chip are shared chrome
- * (config.tabIndicators). Always flashes (animate-pulse) so a background tab
- * that needs you catches the eye — the job the old pulsing dot did.
- *
- * Shared by the tab strip (TabManager) and the settings live-preview so the
- * two can never drift.
- */
+/** Shared by the tab strip and the settings preview so the two never drift. */
 export const TabStatusGlyph: React.FC<{
   style: TabIndicatorStyle;
   indicators: TabIndicators;
   ariaLabel: string;
-  /**
-   * Opt out of the pulse. Flashing is right for "I need you now" and wrong for
-   * an ambient countdown, which would otherwise strobe for minutes on end.
-   */
+  /** Off for ambient countdowns, which would otherwise strobe for minutes. */
   pulse?: boolean;
-  /** Override the configured color — used to redden the cache glyph at its
-   *  critical step without a second configurable entry. */
   colorOverride?: string;
 }> = ({ style, indicators, ariaLabel, pulse = true, colorOverride }) => {
   const color = resolveIndicatorColor(colorOverride ?? style.color);

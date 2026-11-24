@@ -1,8 +1,3 @@
-/**
- * The instruction files the CLI loaded (CLAUDE.md, MEMORY.md, …) in the Modern
- * format: one folded Trace line — "Loaded instructions", the count — that
- * opens onto each file's path and scope, instead of the classic side-line.
- */
 import * as React from 'react';
 import { FileTextIcon } from 'lucide-react';
 import type { InstructionFile } from '@/lib/modernGrouping';

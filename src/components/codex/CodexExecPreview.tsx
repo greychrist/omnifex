@@ -1,16 +1,6 @@
 import { Terminal } from "lucide-react";
 import type { JSX } from 'react';
 
-/**
- * Fields extracted from a Codex `execCommandApproval` payload.
- *
- * Wire shape (Codex JSON-RPC server-request `execCommandApproval`):
- *
- *   { conversationId, callId, command, cwd?, reason? }
- *
- * Anything else (missing command, malformed payload) renders the empty
- * placeholder rather than crashing the dialog.
- */
 interface ExecFields {
   command: string;
   cwd: string;
@@ -29,20 +19,9 @@ function extractExec(payload: unknown): ExecFields {
 }
 
 interface CodexExecPreviewProps {
-  /** Raw `execCommandApproval` JSON-RPC params as Codex emitted them. */
   payload: unknown;
 }
 
-/**
- * Renders a Codex exec-approval preview as a shell-command card.
- *
- * Visually echoes `ExecCommandItem` (Codex's post-execution widget) and
- * Claude's `BashWidget` — same Terminal icon, same muted header, same `$`
- * prefix on the command line — so a dialog that pre-approves a shell call
- * and the subsequent transcript entry read as a continuous flow. Unlike
- * `ExecCommandItem`, this preview has no status badge or stdout/stderr —
- * the command hasn't run yet.
- */
 export function CodexExecPreview({ payload }: CodexExecPreviewProps): JSX.Element {
   const { command, cwd, reason } = extractExec(payload);
 

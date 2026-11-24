@@ -2,10 +2,6 @@ import React from 'react';
 import { cn } from '@/lib/utils';
 import type { ViewMode } from '@/lib/messageRenderingConfig';
 
-/**
- * Standard: the conversation, with what Settings › Chats hides left out.
- * Expanded: every record in the transcript, drawn the same way.
- */
 export type { ViewMode };
 
 const MODES: { mode: ViewMode; label: string; title: string }[] = [

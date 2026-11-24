@@ -66,12 +66,6 @@ const DirInput: React.FC<DirInputProps> = ({ value, onChange, placeholder }) => 
   );
 };
 
-/**
- * Tiny engine label chip used in the account list and the path-rule
- * account dropdown so Claude vs Codex accounts are distinguishable at a
- * glance. Color-coded but intentionally low-key — it sits next to the
- * account badge, not in place of it.
- */
 const EnginePill: React.FC<{ engine: AccountEngine }> = ({ engine }) => (
   <span
     className={cn(
@@ -85,22 +79,12 @@ const EnginePill: React.FC<{ engine: AccountEngine }> = ({ engine }) => (
   </span>
 );
 
-/**
- * One row in the accounts list.
- *
- * Extracted from the enclosing `.map()` specifically so it can call
- * `useAccountVerdict` — hooks can't run inside a map callback. The row is
- * also where the expected-vs-detected email check surfaces.
- */
 const AccountListRow: React.FC<{
   account: Account;
   onEdit: (account: Account) => void;
   onDelete: (id: number) => Promise<void> | void;
 }> = ({ account, onEdit, onDelete }) => {
-  // Passing null disables the hook entirely, so accounts that haven't opted
-  // into verification cost zero IPC round-trips. The comparison itself lives
-  // in the main process (`classifyIdentity`) — this row only renders the
-  // answer, so there's no second definition of "verified" to drift.
+  // The verdict is computed in main (`classifyIdentity`); this row only renders it.
   const { verdict, loaded, error, recheck } = useAccountVerdict(
     account.expected_email ? account.config_dir : null,
   );
@@ -109,11 +93,7 @@ const AccountListRow: React.FC<{
   // Codex keeps its own sign-in; `claude auth status` knows nothing of it.
   const { state: expiry } = useLoginExpiry(account.engine === 'codex' ? null : account.config_dir);
 
-  // Deliberately renders the PASSING case too. Showing nothing on success
-  // would make "verified", "opted out", and "the check never ran" look
-  // identical — which is how a silently broken safety check gets mistaken for
-  // a clean bill of health. `error` stays distinct from `signed-out`: a failed
-  // read is not evidence about account state.
+  // Render the passing case too, so "verified" and "never ran" differ. A failed read is not `signed-out`.
   const status: 'verified' | 'mismatch' | 'signed-out' | 'error' | null = !expected
     ? null
     : error
@@ -238,7 +218,6 @@ export const AccountSettings: React.FC = () => {
   const [pathRules, setPathRules] = useState<PathRule[]>([]);
   const [overrides, setOverrides] = useState<{project_path: string; account_id: number; account_name: string}[]>([]);
 
-  // Test resolution state
   const [testPath, setTestPath] = useState("");
   const [testResult, setTestResult] = useState<{
     account: { name: string; subscription_label: string; config_dir: string; color?: string | null };
@@ -246,15 +225,11 @@ export const AccountSettings: React.FC = () => {
     match_detail: string;
   } | null>(null);
   const [testError, setTestError] = useState<string | null>(null);
-  // Inline status for the "Scan for accounts" escape-hatch button. Cleared
-  // automatically the next time the button is clicked.
   const [scanStatus, setScanStatus] = useState<{ kind: 'info' | 'success' | 'error'; message: string } | null>(null);
 
-  // Add/Edit account dialog state. `null` mode = dialog closed.
   const [dialogMode, setDialogMode] = useState<'add' | 'edit' | null>(null);
   const [dialogAccount, setDialogAccount] = useState<Account | undefined>(undefined);
 
-  // Add rule form
   const [showAddRule, setShowAddRule] = useState(false);
   const [newRulePrefix, setNewRulePrefix] = useState("");
   const [newRuleAccountId, setNewRuleAccountId] = useState<number | null>(null);
@@ -318,8 +293,6 @@ export const AccountSettings: React.FC = () => {
     setDialogAccount(undefined);
   };
 
-  // Account and rule writes report through the Settings save indicator.
-  // A failed save keeps the dialog / add-rule form open so nothing is lost.
   const handleDialogSave = async (payload: AccountDialogSavePayload) => {
     const write = dialogMode === 'edit' && dialogAccount
       ? api.updateAccount(dialogAccount.id, {
@@ -367,7 +340,6 @@ export const AccountSettings: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* Accounts — Claude and Codex unified into one list. */}
       <div>
         <h3 className="text-sm font-semibold mb-3">Accounts</h3>
         <div className="space-y-2">
@@ -435,9 +407,6 @@ export const AccountSettings: React.FC = () => {
         )}
       </div>
 
-      {/* Add / Edit account dialog. Mounted once at panel level; opens when
-          openAdd()/openEdit() set dialogMode. Engine selection + Codex
-          sign-in now live inside AccountDialog. */}
       {dialogMode !== null && (
         <AccountDialog
           mode={dialogMode}
@@ -448,7 +417,6 @@ export const AccountSettings: React.FC = () => {
         />
       )}
 
-      {/* Path Rules */}
       <div>
         <h3 className="text-sm font-semibold mb-3">Path Rules</h3>
         <p className="text-xs text-muted-foreground mb-3">
@@ -528,7 +496,6 @@ export const AccountSettings: React.FC = () => {
         )}
       </div>
 
-      {/* Project Overrides */}
       <div className="mt-6">
         <h3 className="text-sm font-medium mb-2">Project Overrides</h3>
         <p className="text-xs text-foreground/50 mb-2">
@@ -548,7 +515,6 @@ export const AccountSettings: React.FC = () => {
         )}
       </div>
 
-      {/* Test Account Resolution */}
       <div className="mt-6">
         <h3 className="text-sm font-medium mb-2">Test Account Resolution</h3>
         <p className="text-xs text-foreground/50 mb-2">

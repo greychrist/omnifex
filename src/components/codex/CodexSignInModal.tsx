@@ -10,39 +10,10 @@ import { OneShotTerminal } from '@/components/shared/OneShotTerminal';
 import { api, type CodexAuthStatus } from '@/lib/api';
 import type { JSX } from 'react';
 
-/**
- * Modal that drives the `codex login` OAuth flow inside a shared
- * OneShotTerminal pty. Mirrors the pattern in Task 13 — caller controls
- * `open`, we mount the terminal when it flips true, and the dialog
- * tears the pty down when it flips false.
- *
- * Auto-close: when the auth status watcher (Task 14) flips to
- * `authenticated: true`, we fire `onAuthenticated` (if supplied) and
- * call `onClose()` so the parent's `open` state updates without the
- * user having to click anything. Manual close (X or Esc) cancels the
- * in-flight pty so a half-completed login doesn't leak.
- *
- * The codex binary path is resolved up-front via the IPC channel. If
- * the resolver returns `null` the user has no codex install, so we
- * show a fallback message instead of the terminal — better than
- * spawning into a NotFoundError after the modal opens.
- */
 interface CodexSignInModalProps {
   open: boolean;
   onClose: () => void;
-  /**
-   * The Codex account's config dir. Scopes the auth-status subscription so
-   * the modal only auto-closes when *this* account finishes signing in, and
-   * is threaded into the login flow so the pty authenticates the right
-   * account.
-   */
   configDir: string;
-  /**
-   * Optional callback fired when the auth subscription flips to
-   * `authenticated: true`. The modal already auto-closes via `onClose`;
-   * this is for parents that want a separate side-effect (e.g. resume
-   * a queued session start).
-   */
   onAuthenticated?: () => void;
 }
 
@@ -52,25 +23,12 @@ export function CodexSignInModal({
   configDir,
   onAuthenticated,
 }: CodexSignInModalProps): JSX.Element {
-  // Binary path is loaded lazily on open. `null` after a load means "no
-  // codex binary"; we render a different body in that case. `undefined`
-  // means "haven't loaded yet" — render a loading state.
   const [binary, setBinary] = useState<string | null | undefined>(undefined);
-  // ptyHandle is captured by OneShotTerminal's onSpawn-equivalent (we don't
-  // expose one — kept here for the cancel call). We capture it via the
-  // imperative kill path: OneShotTerminal already kills on unmount, so we
-  // only need a separate handle for the explicit "user cancelled" case.
-  // Keep a ref to the latest onAuthenticated so the watcher subscription
-  // (set up once on open=true) reads the freshest callback if the parent
-  // swaps it between renders.
   const onAuthenticatedRef = useRef(onAuthenticated);
   onAuthenticatedRef.current = onAuthenticated;
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
 
-  // Load the binary path each time the modal opens. We don't cache it
-  // across open/close cycles because the user could install codex while
-  // the app is running and we want the next open to pick that up.
   useEffect(() => {
     if (!open) {
       setBinary(undefined);
@@ -89,10 +47,6 @@ export function CodexSignInModal({
     return () => { cancelled = true; };
   }, [open]);
 
-  // Subscribe to auth status changes while open. The subscription is the
-  // primary signal — `watchPath` in OneShotTerminal is a belt-and-braces
-  // backup so the modal still closes if the auth-status broadcast is
-  // somehow dropped on a slow box.
   useEffect(() => {
     if (!open) return;
     const unsub = api.subscribeCodexAuthStatus(configDir, (status: CodexAuthStatus) => {
@@ -104,10 +58,6 @@ export function CodexSignInModal({
     return unsub;
   }, [open, configDir]);
 
-  // Radix Dialog's `onOpenChange` fires for X-button, Esc, overlay
-  // click — all of which should count as "user cancelled the login".
-  // OneShotTerminal already kills its pty on unmount, so we just bubble
-  // the close up to the parent.
   const handleOpenChange = (next: boolean): void => {
     if (!next) onClose();
   };

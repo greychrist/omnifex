@@ -13,9 +13,6 @@ interface ErrorBoundaryState {
   error: Error | null;
 }
 
-/**
- * Error Boundary component to catch and display React rendering errors
- */
 export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   constructor(props: ErrorBoundaryProps) {
     super(props);
@@ -23,12 +20,10 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   }
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState {
-    // Update state so the next render will show the fallback UI
     return { hasError: true, error };
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    // Log the error to console
     console.error("Error caught by boundary:", error, errorInfo);
   }
 
@@ -38,12 +33,10 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
   render() {
     if (this.state.hasError && this.state.error) {
-      // Use custom fallback if provided
       if (this.props.fallback) {
         return this.props.fallback(this.state.error, this.reset);
       }
 
-      // Default error UI
       return (
         <div className="flex items-center justify-center min-h-[200px] p-4">
           <Card className="max-w-md w-full">

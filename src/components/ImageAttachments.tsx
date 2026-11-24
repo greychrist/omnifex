@@ -3,9 +3,6 @@ import { fireAndLog } from "@/lib/fireAndLog";
 import { api } from "@/lib/api";
 import { planDrop } from "@/lib/fileDrop";
 
-// ── Image utilities ─────────────────────────────────────────────────────
-
-/** Check if a file path (or data URL) refers to an image. */
 export function isImageFile(path: string): boolean {
   if (path.startsWith('data:image/')) {
     return true;
@@ -14,13 +11,11 @@ export function isImageFile(path: string): boolean {
   return ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'ico', 'bmp'].includes(ext || '');
 }
 
-/** Extract image paths from prompt text (both @quoted and @unquoted mentions). */
 export function extractImagePaths(text: string, projectPath?: string): string[] {
   const quotedRegex = /@"([^"]+)"/g;
   const unquotedRegex = /@([^@\n\s]+)/g;
   const pathsSet = new Set<string>();
 
-  // Quoted paths (including data URLs)
   let matches = Array.from(text.matchAll(quotedRegex));
   for (const match of matches) {
     const path = match[1];
@@ -32,7 +27,6 @@ export function extractImagePaths(text: string, projectPath?: string): string[] 
     }
   }
 
-  // Unquoted paths
   const textWithoutQuoted = text.replace(quotedRegex, '');
   matches = Array.from(textWithoutQuoted.matchAll(unquotedRegex));
   for (const match of matches) {
@@ -47,9 +41,6 @@ export function extractImagePaths(text: string, projectPath?: string): string[] 
   return Array.from(pathsSet);
 }
 
-// ── Paste handler ───────────────────────────────────────────────────────
-
-/** Handle clipboard paste — extracts image blobs and converts to data URLs. */
 export function handleImagePaste(
   e: React.ClipboardEvent,
   onImagePasted: (dataUrl: string) => void,
@@ -78,9 +69,6 @@ export function handleImagePaste(
   }
 }
 
-// ── Remove handler ──────────────────────────────────────────────────────
-
-/** Build a handler that removes an @-mentioned image path from the prompt. */
 export function removeImageFromPrompt(
   prompt: string,
   embeddedImages: string[],
@@ -89,13 +77,11 @@ export function removeImageFromPrompt(
 ): string {
   const imagePath = embeddedImages[index];
 
-  // For data URLs, they're always quoted
   if (imagePath.startsWith('data:')) {
     const quotedPath = `@"${imagePath}"`;
     return prompt.replace(quotedPath, '').trim();
   }
 
-  // For file paths, use regex to strip the @mention
   const escapedPath = imagePath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const escapedRelativePath = imagePath.replace((projectPath ?? '') + '/', '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -114,11 +100,6 @@ export function removeImageFromPrompt(
   return newPrompt.trim();
 }
 
-// ── Drop zone hook ──────────────────────────────────────────────────────
-
-/**
- * Read a File as a data URL. Returns null if the file can't be read.
- */
 function readFileAsDataUrl(file: File): Promise<string | null> {
   return new Promise((resolve) => {
     try {
@@ -132,8 +113,6 @@ function readFileAsDataUrl(file: File): Promise<string | null> {
   });
 }
 
-/** A File's bytes as base64, for `save_dropped_file`. Null if unreadable
- *  (a folder dragged in from a browser has no bytes). */
 async function readFileAsBase64(file: File): Promise<string | null> {
   const dataUrl = await readFileAsDataUrl(file);
   if (!dataUrl) return null;
@@ -142,25 +121,13 @@ async function readFileAsBase64(file: File): Promise<string | null> {
 }
 
 interface FileDropZoneOptions {
-  /** Only the tab on screen takes a drop. Every tab is mounted at once and
-   *  each listens on the document, so without this one drop attached to
-   *  every open session. */
+  /** Every tab is mounted and listens on the document; only the visible one may take a drop. */
   enabled: boolean;
-  /** An image Claude takes inline, as a data URL (same shape as a paste). */
   onImage: (dataUrl: string) => void;
-  /** A path for the prompt to @-mention: the file itself, or its copy. */
   onMention: (path: string) => void;
 }
 
-/**
- * useFileDropZone — document-level drag-drop for the chat. What each dropped
- * file becomes is `planDrop`'s call (src/lib/fileDrop.ts): inline image, a
- * mention of the real path the Mac app reports over `drop:paths`, or a
- * mention of a copy the daemon saves when there is no path.
- *
- * `File.path` is not an option: WebKit, like Electron since v32, never
- * exposes where a dropped file lives — hence the native stash.
- */
+// WebKit never exposes `File.path`; real paths come from the Mac app's `drop:paths` stash.
 export function useFileDropZone(
   { enabled, onImage, onMention }: FileDropZoneOptions,
 ): { dragActive: boolean; setDragActive: React.Dispatch<React.SetStateAction<boolean>> } {
@@ -197,7 +164,6 @@ export function useFileDropZone(
       lastDropTime = currentTime;
 
       const files = Array.from(e.dataTransfer?.files ?? []);
-      // Asked even for zero files: a dropped folder can arrive as a path alone.
       const nativePaths = await api.dropPaths().catch(() => [] as string[]);
       if (files.length === 0 && nativePaths.length === 0) return;
 
@@ -215,9 +181,7 @@ export function useFileDropZone(
       }
     };
 
-    // handleDrop is async; wrap once via fireAndLog and pin the reference
-    // so add/removeEventListener see the same fn (otherwise the
-    // remove-pair never fires and the listener leaks).
+    // Pin one wrapped fn so removeEventListener matches, or the listener leaks.
     const wrappedDrop = fireAndLog('file-drop:drop', handleDrop);
     document.addEventListener('dragenter', handleDragEnter);
     document.addEventListener('dragover', handleDragOver);

@@ -16,9 +16,7 @@ interface Props {
   sessionCost?: import('@/lib/api').SessionCostSnapshot | null;
 }
 
-// Per-model weekly windows are an open set on the CLI side, so this is a
-// prettifier, not a gate — an unmapped label falls through to itself
-// (`week_haiku` → "Current week (haiku)") rather than disappearing.
+// An open set on the CLI side: unmapped labels fall through to themselves, never disappear.
 const WINDOW_LABELS: Record<string, string> = {
   current_session: 'Current session (5h)',
   week_all_models: 'Current week (all models)',
@@ -200,15 +198,7 @@ export function UsageDetailPopover({
   );
 }
 
-/**
- * The `/usage` Loops breakdown (Claude Code 2.1.243+).
- *
- * Not a `UsageRankedTable`: loops are measured in runs and tokens, not in a
- * percentage of the limit, so there is no shared denominator to draw a bar
- * against. `tokens` / `per_run` are rendered as the CLI abbreviated them
- * rather than reformatted — the parser deliberately keeps the lossy string
- * instead of inventing an integer.
- */
+// `tokens` / `per_run` render as the CLI abbreviated them; the parser keeps the lossy string.
 function UsageLoopsSection({
   table,
 }: {
@@ -268,12 +258,6 @@ function KV({ k, v }: { k: string; v: string }) {
   );
 }
 
-/**
- * Renders one of Claude's "% of usage" ranked lists (Skills / Subagents /
- * Plugins). Each row is shown with an inline percent bar so the list
- * reads as a chart, not a wall of numbers — matches the popover's
- * existing visual language for the limit windows above.
- */
 function UsageRankedTable({
   title,
   table,
@@ -281,9 +265,6 @@ function UsageRankedTable({
   title: string;
   table: { rows: { name: string; pct_used: number }[]; more_count: number | null };
 }) {
-  // Bar width is normalized to the largest row so a 6%-leading list still
-  // shows visible variation. Floor at 1% so the smallest non-zero entry
-  // is still visible.
   const max = Math.max(1, ...table.rows.map((r) => r.pct_used));
   return (
     <Section title={title}>

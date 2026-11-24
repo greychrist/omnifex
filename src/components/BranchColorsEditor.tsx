@@ -8,13 +8,7 @@ import { Pencil, Plus, Trash2, Check, X } from 'lucide-react';
 import { api, type BranchColor } from '@/lib/api';
 import { fireAndLog } from "@/lib/fireAndLog";
 
-/**
- * Branch color pins for one repo. Pins belong to the repo (its main
- * checkout), so they show the same in every project and session that
- * includes it.
- */
 interface BranchColorsEditorProps {
-  /** Any checkout of the repo. */
   repoPath: string;
 }
 
@@ -29,7 +23,6 @@ export const BranchColorsEditor: React.FC<BranchColorsEditorProps> = ({ repoPath
     }).catch(() => {});
     return () => { cancelled = true; };
   }, [repoPath]);
-  // Chip preview only: the trunk-ish branch takes the main-folder color.
   const mainFolderBranch = availableBranches.find((b) => TRUNK_CANDIDATES.includes(b)) ?? availableBranches[0] ?? null;
   const [rows, setRows] = React.useState<BranchColor[]>([]);
   const [editing, setEditing] = React.useState<{ id: number | null; branch: string; color: string } | null>(null);
@@ -43,7 +36,7 @@ export const BranchColorsEditor: React.FC<BranchColorsEditorProps> = ({ repoPath
   const startAdd = () => {
     const taken = new Set(rows.map((r) => r.branch_name));
     const firstFree = availableBranches.find((b) => !taken.has(b)) ?? '';
-    setEditing({ id: null, branch: firstFree, color: SWATCHES[5] /* blue */ });
+    setEditing({ id: null, branch: firstFree, color: SWATCHES[5] });
   };
 
   const startEdit = (row: BranchColor) => {
@@ -68,8 +61,6 @@ export const BranchColorsEditor: React.FC<BranchColorsEditorProps> = ({ repoPath
     await refresh();
   };
 
-  // Preview chips use the resolver in isolation per row so each row reads how
-  // the chip will actually render in the session header.
   const branchesForPreview = rows.map((r) => r.branch_name);
   const preview = resolveBranchColors({
     pins: Object.fromEntries(rows.map((r) => [r.branch_name, r.color])),

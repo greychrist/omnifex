@@ -4,9 +4,6 @@ import { X, Plus, MessageSquare, Folder, Server, Settings, FileText, HardDrive, 
 import { Spinner } from '@/components/ui/spinner';
 import { useMessageRenderingConfig } from '@/contexts/MessageRenderingContext';
 import { TabStatusGlyph } from '@/components/TabStatusGlyph';
-// Re-exported: TabManager's own tests import it from here, and so does
-// anything already reaching for it. The definition moved out so the
-// session status bar can render the same glyph.
 import { AgentCountGlyph } from '@/components/AgentCountGlyph';
 export { AgentCountGlyph };
 import { AccountBadge } from './AccountBadge';
@@ -39,21 +36,11 @@ interface TabItemProps {
   setDraggedTabId?: (id: string | null) => void;
 }
 
-// Per-tab `icon` string overrides the type-based default. Today this is
-// used by the projects tab to flip Folder → List once the user drills
-// into a project's sessions view, and stays unset everywhere else so
-// the type defaults below win. Add new entries here as needed; unknown
-// ids fall through to the type default rather than throwing, so a stale
-// persisted value can't break the tab strip.
+// Unknown override ids fall through to the type default, so a stale persisted value can't break the strip.
 const TAB_ICON_OVERRIDES: Record<string, typeof MessageSquare> = {
   list: List,
 };
 
-/**
- * Pure icon resolver — exported for testing. The `tab.icon` string takes
- * precedence over the `tab.type` default, but unknown override values
- * silently fall through to the type-based switch.
- */
 export function getTabIcon(tab: Pick<Tab, 'type' | 'icon'>): typeof MessageSquare {
   if (tab.icon && TAB_ICON_OVERRIDES[tab.icon]) {
     return TAB_ICON_OVERRIDES[tab.icon];
@@ -90,41 +77,22 @@ export type TabStatusIndicator =
   | { kind: 'complete' }
   | { kind: 'cacheExpiring'; critical: boolean };
 
-/**
- * Pure precedence resolver for a tab's status glyph — exported for testing,
- * like getTabIcon. `nowMs` is passed in so the cache countdown stays
- * deterministic under test.
- */
 export function resolveTabStatusIndicator(
   tab: Tab,
   nowMs: number,
 ): TabStatusIndicator | null {
   if (tab.status === 'error') return { kind: 'error' };
-  // Waiting on the human outranks the spinner: a pending permission keeps
-  // the conversation "running" (open task), so the tab is both working AND
-  // blocked on the user. Surface what the user can act on, not just "busy".
+  // Waiting on the human outranks busy: a pending permission keeps the turn open.
   if (tab.waitingFor === 'permission') return { kind: 'permission' };
   if (tab.waitingFor === 'question') return { kind: 'question' };
-  // Spinner reflects promptStatus (working = agent is doing work: main
-  // turn in flight, active task, or running subagent). Falls back to
-  // the older `status === 'running'` for tabs that haven't published
-  // promptStatus yet (non-chat tabs or pre-mount). Not configurable.
-  // Running agents outrank the spinner. A backgrounded agent's launching
-  // turn is already over (CLI >=2.1.232 backgrounds spawns by default), so
-  // the tab is "working" with nothing visibly happening inside it — a bare
-  // spinner reads the same as Claude mid-sentence and says nothing about
-  // what the session is actually waiting on. The count does.
+  // Running agents outrank the spinner: a backgrounded agent's launching turn is already over.
   if (tab.activeAgents && tab.activeAgents > 0) {
     return { kind: 'agents', count: tab.activeAgents };
   }
   if (tab.promptStatus === 'working' || (!tab.promptStatus && tab.status === 'running')) {
     return { kind: 'spinner' };
   }
-  // Completed: a result landed on a background tab (cleared on read).
   if (tab.hasUnreadResult) return { kind: 'complete' };
-  // Ambient, so it ranks last: the prompt cache on a background session is
-  // about to expire. Cleared once expired — the cost is already sunk, and a
-  // permanent glyph would just be noise.
   if (tab.cacheAnchorMs != null && tab.cacheTtlMs != null) {
     const { level } = evaluateCacheExpiry({
       anchorMs: tab.cacheAnchorMs,
@@ -138,10 +106,6 @@ export function resolveTabStatusIndicator(
   return null;
 }
 
-/**
- * Glyph kinds that mean the session still has work in it — either the agent is
- * mid-turn, or it is blocked waiting on the human and the turn is still open.
- */
 const LIVE_WORK_KINDS: ReadonlySet<TabStatusIndicator['kind']> = new Set([
   'spinner',
   'agents',
@@ -149,46 +113,21 @@ const LIVE_WORK_KINDS: ReadonlySet<TabStatusIndicator['kind']> = new Set([
   'question',
 ]);
 
-/**
- * True when closing this tab would discard work in progress, so the close
- * should be confirmed first.
- *
- * Closing a tab is the ONLY path that tears down the main-process CLI session
- * (`TabContext.removeTab` → `api.releaseSession`, which stops it unless another client still has it open) — a misclick on the × ends a
- * running turn with no way back.
- *
- * Derived from `resolveTabStatusIndicator` rather than re-reading
- * `promptStatus` / `activeAgents` / `waitingFor` directly: the tab strip
- * already owns the question of what a tab is doing, and its precedence rules
- * are load-bearing here. `error` outranking everything is what keeps a dead
- * session from prompting (the lifecycle doc is explicit that an errored
- * session is not in flight), and `hasUnreadResult` ranking below the working
- * kinds is what keeps a finished turn from prompting.
- */
+// Derived from resolveTabStatusIndicator on purpose: `error` outranking all keeps dead sessions from
+// prompting, and `hasUnreadResult` ranking below working keeps finished turns from prompting.
 export function tabCloseNeedsConfirm(tab: Tab, nowMs: number): boolean {
   const indicator = resolveTabStatusIndicator(tab, nowMs);
   return indicator !== null && LIVE_WORK_KINDS.has(indicator.kind);
 }
 
-
 const TabItem: React.FC<TabItemProps> = ({ tab, isActive, onClose, onClick, isDragging = false, setDraggedTabId }) => {
   useRenderProfile('TabItem');
   const [isHovered, setIsHovered] = useState(false);
   const { config } = useMessageRenderingConfig();
-  // `compact` drops the second text line; the tab keeps its glyph, status and
-  // close button. The session name still feeds the hover title either way.
   const compact = config.tabs.density === 'compact';
   const accountName = tab.accountName;
-  // The strip shows the PROJECT name — that is what you navigate by — so the
-  // session's own name goes on hover, where it tells two tabs on the same
-  // project apart without widening either. Undefined when the session has no
-  // name yet: a tooltip repeating the label already printed on the tab is
-  // noise, and untitled is the common case.
   const sessionName = useTabSessionTitle(tab.id);
 
-  // Tick only while this tab has a live (unexpired) cache clock. Once the
-  // countdown is done `active` goes false and the shared interval drops this
-  // subscriber — an idle tab strip runs no timer at all.
   const cacheTracking = tab.cacheAnchorMs != null && tab.cacheTtlMs != null;
   const [cacheTickActive, setCacheTickActive] = useState(cacheTracking);
   const nowMs = useSecondTick(cacheTickActive);
@@ -220,7 +159,6 @@ const TabItem: React.FC<TabItemProps> = ({ tab, isActive, onClose, onClick, isDr
             style={ind.cacheExpiring}
             indicators={ind}
             ariaLabel={indicator.critical ? "Prompt cache about to expire" : "Prompt cache expiring soon"}
-            // A slow countdown must not strobe for minutes.
             pulse={false}
             colorOverride={indicator.critical ? 'red' : undefined}
           />
@@ -239,22 +177,13 @@ const TabItem: React.FC<TabItemProps> = ({ tab, isActive, onClose, onClick, isDr
       id={tab.id}
       data-tab-id={tab.id}
       dragListener={true}
-      // Don't transition `transform` here — framer-motion already animates
-      // it during the drag. A CSS `transition-all` would fight that and
-      // produce the jumpy reorder. Limit CSS transitions to colors / bg.
+      // No CSS transform transition: framer-motion animates transform during the drag.
       whileDrag={{ scale: 1.02, zIndex: 30, cursor: 'grabbing' }}
       className={cn(
         "relative flex items-center gap-[7px] text-[15px] cursor-pointer select-none group",
         "transition-colors duration-100",
-        // Height is fixed rather than content-driven so an unnamed session's
-        // tab still lines up with its neighbours. Expanded reserves the second
-        // line for the session name; compact is a single row.
         "rounded-md px-[10px]",
         compact ? "h-[30px]" : "h-[38px]",
-        // Size to content between a floor and the user's max width (inline
-        // style below); past the max, both names truncate. shrink-0 keeps the
-        // tab from being compressed when many are open — the strip is
-        // overflow-x-auto, so a crowded strip scrolls rather than squeezes.
         "min-w-[120px] w-max shrink-0",
         isActive
           ? "text-foreground bg-background shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_75%,transparent)]"
@@ -269,10 +198,6 @@ const TabItem: React.FC<TabItemProps> = ({ tab, isActive, onClose, onClick, isDr
       onDragStart={() => setDraggedTabId?.(tab.id)}
       onDragEnd={() => setDraggedTabId?.(null)}
     >
-      {/* Type icon. On a chat tab with a known account this is the merged
-          glyph — the bubble carries the account's color and icon, and the
-          separate chip below is dropped. Every other tab type keeps the plain
-          icon: there is no chat bubble to merge an account into. */}
       <div className="flex-shrink-0">
         {tab.type === 'chat' && accountName ? (
           <AccountTabGlyph
@@ -286,10 +211,6 @@ const TabItem: React.FC<TabItemProps> = ({ tab, isActive, onClose, onClick, isDr
         )}
       </div>
 
-      {/* Project name over the session's own name. Both truncate once the tab
-          reaches its max width — a CLI-generated title runs to a full sentence
-          and would otherwise set the width of the whole tab. The hover text
-          carries the full session name. */}
       <span className="flex-1 min-w-0 flex flex-col justify-center leading-tight">
         <span data-testid="tab-project-name" className="truncate font-medium">{tab.title}</span>
         {!compact && sessionName && (
@@ -302,8 +223,6 @@ const TabItem: React.FC<TabItemProps> = ({ tab, isActive, onClose, onClick, isDr
         )}
       </span>
 
-      {/* Account chip — only on non-chat tabs. On a chat tab the glyph above
-          already carries the account's color and icon. */}
       {accountName && tab.type !== 'chat' && (
         <AccountBadge
           name={accountName}
@@ -313,8 +232,6 @@ const TabItem: React.FC<TabItemProps> = ({ tab, isActive, onClose, onClick, isDr
         />
       )}
 
-      {/* Status indicator slot — min width keeps tab layout stable when empty,
-          but grows for larger glyph sizes or the bordered chip. */}
       <div className="flex items-center justify-center min-w-4 flex-shrink-0">
         {statusIcon}
         {tab.hasUnsavedChanges && !statusIcon && (
@@ -325,7 +242,6 @@ const TabItem: React.FC<TabItemProps> = ({ tab, isActive, onClose, onClick, isDr
         )}
       </div>
 
-      {/* Close button */}
       <button
         aria-label={`Close tab ${tab.title}`}
         onClick={(e) => {
@@ -352,14 +268,9 @@ interface TabManagerProps {
   className?: string;
 }
 
-/**
- * Room left between a revealed tab and the strip's edge. Matches the `w-8`
- * edge fades: scrolled flush, the tab would sit under the gradient and still
- * read as cut off.
- */
+/** Matches the `w-8` edge fades. */
 export const TAB_REVEAL_MARGIN_PX = 32;
 
-/** Width a mounted scroll arrow takes from the strip's row, margins included. */
 function footprint(el: HTMLElement | null): number {
   if (!el) return 0;
   const style = getComputedStyle(el);
@@ -379,7 +290,6 @@ export const TabManager: React.FC<TabManagerProps> = ({ className }) => {
     canAddTab
   } = useTabState();
 
-  // Access reorderTabs from context
   const { reorderTabs } = useTabContext();
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -388,17 +298,12 @@ export const TabManager: React.FC<TabManagerProps> = ({ className }) => {
   const leftScrollRef = useRef<HTMLButtonElement>(null);
   const rightScrollRef = useRef<HTMLButtonElement>(null);
   const [draggedTabId, setDraggedTabId] = useState<string | null>(null);
-  // Tab awaiting a "you're about to kill a running session" confirmation.
   const [pendingCloseId, setPendingCloseId] = useState<string | null>(null);
-  // The keyboard effect is registered once and must not re-subscribe every
-  // time `tabs` changes, so it reaches the current close handler through a
-  // ref rather than a dependency. Same ref-capture pattern the tab callbacks
-  // use elsewhere — see the note in TabContext.updateTab.
+  // Ref so the keyboard listener always reaches the current close handler.
   const handleCloseTabRef = useRef<(id: string) => Promise<void>>(
-    async () => { /* replaced below on first render */ },
+    async () => {},
   );
 
-  // Listen for tab switch events
   useEffect(() => {
     const handleSwitchToTab = (event: CustomEvent<{ tabId: string }>) => {
       const { tabId } = event.detail;
@@ -411,14 +316,11 @@ export const TabManager: React.FC<TabManagerProps> = ({ className }) => {
     };
   }, [switchToTab]);
 
-  // Listen for keyboard shortcut events
   useEffect(() => {
     const handleCreateTab = () => {
       createProjectsTab();
     };
 
-    // ⌘W goes through the same guard as the × — a keyboard shortcut is the
-    // easier of the two to fire by accident.
     const handleCloseTab = () => {
       if (activeTabId) {
         void handleCloseTabRef.current(activeTabId);
@@ -448,9 +350,7 @@ export const TabManager: React.FC<TabManagerProps> = ({ className }) => {
       }
     };
 
-    // handleCloseTab is async; wrap once via fireAndLog and pin the
-    // reference so add/removeEventListener see the same fn (otherwise
-    // the remove-pair never fires and the listener leaks on unmount).
+    // Wrapped once so add/removeEventListener see the same function.
     const wrappedClose = fireAndLog('tab-manager:close-current', handleCloseTab);
     window.addEventListener('create-chat-tab', handleCreateTab);
     window.addEventListener('close-current-tab', wrappedClose);
@@ -467,10 +367,7 @@ export const TabManager: React.FC<TabManagerProps> = ({ className }) => {
     };
   }, [tabs, activeTabId, createProjectsTab, closeTab, switchToTab]);
 
-  // Check scroll buttons visibility. The arrows sit in the same row as the
-  // strip, so a mounted arrow narrows it: measured as-is, tabs that would fit
-  // once the arrow is gone still overflow, and the arrow keeps itself up. So
-  // the strip is first measured with the arrows' width given back.
+  // Measure with the arrows' width given back, or a mounted arrow keeps itself up.
   const checkScrollButtons = () => {
     const container = scrollContainerRef.current;
     if (!container) return;
@@ -501,15 +398,10 @@ export const TabManager: React.FC<TabManagerProps> = ({ className }) => {
   }, [tabs]);
 
   const handleReorder = (newOrder: Tab[]) => {
-    // Opens a profiling window per drag crossing. `reorderTabs` renumbers by
-    // rebuilding every tab object, so this is the interaction we most need a
-    // number for — it fires once per neighbour passed, not once per drag.
     renderProfiler.profile('tab-reorder');
-    // Find the positions that changed
     const oldOrder = tabs.map(tab => tab.id);
     const newOrderIds = newOrder.map(tab => tab.id);
     
-    // Find what moved
     const movedTabId = newOrderIds.find((id, index) => oldOrder[index] !== id);
     if (!movedTabId) return;
     
@@ -517,21 +409,11 @@ export const TabManager: React.FC<TabManagerProps> = ({ className }) => {
     const newIndex = newOrderIds.indexOf(movedTabId);
     
     if (oldIndex !== -1 && newIndex !== -1 && oldIndex !== newIndex) {
-      // Use the context's reorderTabs function
       reorderTabs(oldIndex, newIndex);
     }
   };
 
-  /**
-   * Every user-initiated close funnels through here — the × and ⌘W both.
-   *
-   * Closing a tab is the only thing that tears down the main-process CLI
-   * session (`TabContext.removeTab` → `api.releaseSession`, which stops it unless another client still has it open), and it is not
-   * recoverable: the turn in flight is lost. So a tab with live work asks
-   * first. Everything else closes as before — a confirmation on every tab
-   * would train the reflex that makes the prompt useless on the one that
-   * matters.
-   */
+  // Only tabs with live work confirm; confirming every close trains the reflex that defeats it.
   const handleCloseTab = async (id: string) => {
     const tab = tabs.find((t) => t.id === id);
     if (tab && tabCloseNeedsConfirm(tab, Date.now())) {
@@ -547,8 +429,7 @@ export const TabManager: React.FC<TabManagerProps> = ({ className }) => {
     ? tabs.find((t) => t.id === pendingCloseId)
     : undefined;
 
-  // `force` skips the unsaved-changes prompt in useTabState.closeTab: the user
-  // has already answered the harder question about this tab.
+  // `force` skips the unsaved-changes prompt: the user already confirmed.
   const confirmPendingClose = async () => {
     const id = pendingCloseId;
     setPendingCloseId(null);
@@ -561,20 +442,13 @@ export const TabManager: React.FC<TabManagerProps> = ({ className }) => {
     }
   };
 
-  // Wraps the plain switch so a click is measured end to end: the profiler
-  // window opens before setActiveTabId and closes after the resulting paint,
-  // which is exactly the interval that feels laggy.
   const handleSwitchToTab = (id: string) => {
     renderProfiler.profile('tab-switch');
     switchToTab(id);
-    // Clicking the already-active tab changes no state, so the effect below
-    // would not fire — reveal here too. Both compute an absolute target, so
-    // the effect re-running mid-scroll lands on the same spot.
+    // Re-clicking the active tab doesn't fire the reveal effect.
     revealTab(id);
   };
 
-  // Scroll the strip just far enough to show the whole tab plus margin. A
-  // clipped tab at either edge is the usual click target in a crowded strip.
   const revealTab = (id: string) => {
     const container = scrollContainerRef.current;
     const el = Array.from(container?.querySelectorAll<HTMLElement>('[data-tab-id]') ?? [])
@@ -594,22 +468,12 @@ export const TabManager: React.FC<TabManagerProps> = ({ className }) => {
     container.scrollTo({ left, behavior: 'smooth' });
   };
 
-  // Keyboard shortcuts, `switch-to-tab` events and new tabs all land here.
   useEffect(() => {
     if (activeTabId) revealTab(activeTabId);
   }, [activeTabId]);
 
-  // The strip's width is not fixed while a reveal runs: scrolling off 0 mounts
-  // the left scroll button and narrows it, so the target computed at click time
-  // falls short and the tab's × stays clipped until a second click. Re-reveal
-  // the active tab whenever the strip resizes, until the user scrolls it.
-  // The same width change can land the strip at its end without a scroll
-  // event, so the arrows are re-checked here too — otherwise the right one
-  // stayed up after the first reveal, pointing at nothing.
-  // The tabs' row is observed as well: a tab widens on its own when its
-  // session title arrives (a store, not `tabs`), the strip keeps its width,
-  // and nothing else notices — the right arrow stayed up and the new tab's
-  // tail sat under the fade.
+  // Re-reveal on resize until the user scrolls: a mounting arrow narrows the strip mid-reveal, and a
+  // tab widens when its title arrives from a store (hence the row is observed too).
   const followActiveRef = useRef(false);
   const activeTabIdRef = useRef(activeTabId);
   activeTabIdRef.current = activeTabId;
@@ -652,7 +516,6 @@ export const TabManager: React.FC<TabManagerProps> = ({ className }) => {
 
   return (
     <div className={cn("flex items-stretch bg-muted/40 relative border-b border-border/50", className)}>
-      {/* Left scroll button */}
       <AnimatePresence>
         {showLeftScroll && (
           <motion.button
@@ -675,10 +538,6 @@ export const TabManager: React.FC<TabManagerProps> = ({ className }) => {
         )}
       </AnimatePresence>
 
-      {/* Tabs container. Shrinks to its tabs rather than filling the row, so
-          the + button outside it sits right after the last tab until the
-          strip overflows, then stays pinned at its end instead of scrolling
-          away. The fades are anchored to this wrapper, not the whole bar. */}
       <div className="relative flex min-w-0">
         {showLeftScroll && (
           <div className="absolute left-0 top-0 bottom-0 w-8 bg-gradient-to-r from-muted/40 to-transparent pointer-events-none z-10" />
@@ -692,32 +551,16 @@ export const TabManager: React.FC<TabManagerProps> = ({ className }) => {
           className="flex min-w-0 overflow-x-auto scrollbar-hide"
           style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
         >
-          {/* No fixed height here: the tabs set it. This row was pinned at `h-9`
-              (36px) from when a tab was a single 26px line, so the two-line 38px
-              tab overflowed it by a pixel top and bottom and the scroll
-              container clipped the result. Padding instead, so the strip grows
-              with whatever the tab is. */}
+          {/* No fixed height: the tabs set it, and a fixed row clipped the two-line tab. */}
           <div data-testid="tab-strip-content" className="flex items-center gap-1 pl-2 pr-1 py-1">
-            {/* The dragged tab used to blank for a frame on each crossing. It
-                was not framer-motion and not StrictMode — both were blamed and
-                both were wrong. `onReorder` fires per crossing, and nothing in
-                the panel tree below was memoised, so every crossing re-rendered
-                every open session's full unvirtualised transcript (measured:
-                ~1400 rows, ~110ms) between the drag frames. StrictMode's
-                double-invoke made it obvious in dev, which is why it looked
-                dev-only; it was always there, just cheaper to miss.
-                Fixed by memoising TabPanel and ClaudeTranscript. If it ever
-                returns, measure with `__omnifexProfile.on()` before theorising —
-                see src/lib/renderProfiler.ts. */}
+            {/* onReorder fires per crossing: TabPanel and ClaudeTranscript must stay memoised, or every
+                open transcript re-renders on each one (the drag-flash bug). */}
             <Reorder.Group
               axis="x"
               values={tabs}
               onReorder={handleReorder}
               className="flex items-center gap-1"
-              // The scroll container is `overflow-x-auto`, so let framer-motion
-              // do scroll-aware layout math when the dragged tab nears the edge.
-              // Setting `layoutScroll={false}` was making drop targets
-              // mis-compute and contributed to the jumpy reorder.
+              // Needed inside the overflow-x container, or drop targets mis-compute.
               layoutScroll
             >
               {tabs.map((tab) => (
@@ -736,7 +579,6 @@ export const TabManager: React.FC<TabManagerProps> = ({ className }) => {
         </div>
       </div>
 
-      {/* Right scroll button */}
       <AnimatePresence>
         {showRightScroll && (
           <motion.button
@@ -760,7 +602,6 @@ export const TabManager: React.FC<TabManagerProps> = ({ className }) => {
       </AnimatePresence>
 
       <div className="flex items-center py-1 pr-2">
-        {/* New tab button — outside the scroll container, so always reachable. */}
         <motion.button
           onClick={handleNewTab}
           disabled={!canAddTab()}
@@ -780,9 +621,6 @@ export const TabManager: React.FC<TabManagerProps> = ({ className }) => {
         </motion.button>
       </div>
 
-      {/* Closing a tab stops its CLI session, and the turn in flight does not
-          survive it. Only shown for tabs with live work — see
-          tabCloseNeedsConfirm. */}
       <Dialog
         open={pendingCloseId !== null}
         onOpenChange={(open) => { if (!open) setPendingCloseId(null); }}

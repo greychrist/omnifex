@@ -19,58 +19,26 @@ import type { SessionSignal } from "@/lib/signals/types";
 
 interface SessionCardProps {
   totalTokens: number;
-  /** The window to size the gauge against, from resolveContextLimit in the
-   *  parent — one computation, so the card and the pressure signals agree. */
   contextLimit: number;
   contextUsage?: SessionContextUsage | null;
   sessionStatus?: 'starting' | 'active' | 'ended';
-  /** Force-reconnect button click handler. Renders inside the status badge
-   *  while sessionStatus === 'ended'. */
   onReconnect?: () => void;
-  /** Restart / Clear-conversation button click handler. */
   onClear?: () => void;
   clearDisabled?: boolean;
   clearReason?: string;
-  /** Current Claude session id (GUID). When present, surfaces in the context
-   *  popover with a copy button. */
   sessionId?: string | null;
-  /** One-line rollup of the active controls ("Fable 5 | High | Auto Review"),
-   *  rendered in thin small type above the context gauge so the live state is
-   *  visible without opening the popover. */
   controlsSummary?: string | null;
-  /** `session.activity` state signal — drives the usage-limit pill. */
   activitySignal?: SessionSignal;
-  /** `context.level` state signal — drives the meter's color and the
-   *  compact-at readout. Falls back to an uncolored meter when absent. */
   contextLevelSignal?: SessionSignal;
-  /** A pending `action` anchored here, mirrored as a card atop the popover. */
   pendingAction?: SessionSignal | null;
-  /** The anchor's recent events, newest first, already limited by the caller. */
   recentEvents?: SessionSignal[];
-  /** Called when the popover opens, so the caller can clear the unread badge. */
   onSignalsRead?: () => void;
-  /**
-   * Runs `/compact` on this session. Omit and no button renders.
-   *
-   * Deliberately NOT derived from a signal. The boundary action only fires at
-   * 100% of the budget, so between 80% and 100% the meter went amber with
-   * nothing to click — the old context-pressure banner had been the only
-   * always-visible compact affordance, and removing it took that with it.
-   * Compacting is a thing you may want to do at any level, so it lives on the
-   * widget permanently rather than appearing when the app decides it matters.
-   */
+  /** Not derived from a signal: compacting must be offered at any level, not only at 100% of the budget. */
   onCompact?: () => void;
-  /** True while a turn is in flight; the button renders inert, not absent. */
   compactDisabled?: boolean;
   className?: string;
 }
 
-/**
- * Compact card summarizing the live session: status badge, context-window
- * widget (with detail popover), and a restart button. Pulled out of
- * SessionHeader so it can sit inline with the other top-toolbar cards
- * (folder, branch, account).
- */
 export function SessionCard({
   totalTokens,
   contextLimit,
@@ -151,11 +119,7 @@ export function SessionCard({
             open={contextPopoverOpen}
             onOpenChange={(next) => {
               setContextPopoverOpen(next);
-              // Reading happens on CLOSE, not on open. Opening is still what
-              // counts as having read them — there is no separate "mark read"
-              // control to forget — but clearing on open zeroed the badge and
-              // dropped every row's unread tint before the reader could see
-              // which rows the number had been pointing at.
+              // Mark read on close, not open: clearing on open dropped the unread tints before they could be seen.
               if (!next) onSignalsRead?.();
             }}
             align="end"
@@ -165,8 +129,6 @@ export function SessionCard({
             trigger={
               <button
                 type="button"
-                // Its visible text is "120.0k 12%", which a screen reader
-                // announces as two bare numbers with no subject.
                 aria-label="Context usage"
                 aria-expanded={contextPopoverOpen}
                 className={cn(
@@ -178,10 +140,6 @@ export function SessionCard({
                 <span className={cn("font-mono", color)}>
                   {formatContextTokens(tokens)}
                 </span>
-                {/* The bar is the first thing to go when the card has to
-                    share a narrow row: the token count and the percentage
-                    either side of it carry the same fact in less space. A rule
-                    takes its place so those two numbers do not read as one. */}
                 {narrow && <InlineDivider data-testid="context-meter-divider" className="bg-current opacity-30" />}
                 {!narrow && (
                 <div data-testid="context-meter-bar" className="flex-1 min-w-11 h-1.5 bg-foreground/10 rounded-full overflow-hidden relative">
@@ -189,10 +147,6 @@ export function SessionCard({
                     className={cn("absolute inset-y-0 left-0 rounded-full transition-all", METER_FILL[level])}
                     style={{ width: `${pct}%` }}
                   />
-                  {/* Where /compact becomes the ask. Without it the meter shows
-                      a bar filling toward 100% of the WINDOW, while the color
-                      and the attention slot answer to the budget instead —
-                      which reads as the meter contradicting itself. */}
                   {budgetPct > 0 && budgetPct < 100 && (
                     <div
                       className="absolute inset-y-0 w-px bg-foreground/50"
@@ -235,11 +189,6 @@ export function SessionCard({
       )}
       </div>
 
-      {/* The usage-limit pill, when there is one. The turn clock, the thinking burst, the
-          cache countdown and the running-subagent count used to live here
-          too; they are facts about the conversation rather than the session,
-          so they moved to the chat status bar above the transcript, where
-          they stay readable without this widget open. */}
       <ActivityPill signal={activitySignal} className="self-start" />
     </div>
   );

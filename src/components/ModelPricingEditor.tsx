@@ -7,24 +7,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useSaveStatus } from '@/components/settings-panels/saveStatus';
 
-/**
- * Editor for the `model_pricing` table — the delta layer over the rates this
- * build shipped with.
- *
- * The point of the table is that a model Anthropic releases after this build
- * can still be priced and named correctly without a new release. So the editor
- * is built around adding a row, not around editing a blob: a row is a pattern,
- * a date, and only the fields that differ.
- *
- * The built-in rates are shown read-only underneath rather than copied into
- * the table as editable rows. Copying them would pin this install to whatever
- * the rates were the day it was created, so a shipped price correction would
- * never reach it — the exact drift the table exists to fix.
- */
+// Built-in rates are shown read-only, never copied into the table: a copy would pin this install to old rates.
 
-// Field list and labels come from PRICING_FIELDS, so a rate added to the
-// schema shows up in this form automatically instead of being silently
-// uneditable until someone notices.
 type RateField = (typeof PRICING_FIELDS)[number]['row'];
 
 interface DraftRow {
@@ -43,8 +27,7 @@ const EMPTY_DRAFT: DraftRow = {
   rates: {},
 };
 
-/** `""` and whitespace mean "not set" — distinct from 0, which is a real rate
- *  (`<synthetic>` is priced at zero on purpose). */
+/** `""` means not set; 0 is a real rate (`<synthetic>` is priced at zero). */
 function toNumber(v: string | undefined): number | undefined {
   if (v == null) return undefined;
   const t = v.trim();
@@ -85,8 +68,6 @@ export function ModelPricingEditor() {
       .finally(() => setLoading(false));
   }, [reload]);
 
-  // Typing mistakes stay inline next to the button; the write itself reports
-  // through the Settings save indicator. A rejected row keeps its draft.
   const save = async () => {
     setError(null);
     const rates: Record<string, number> = {};
@@ -102,8 +83,6 @@ export function ModelPricingEditor() {
       return;
     }
 
-    // The service rejects rather than coerces, and its message names the
-    // offending field, so the indicator shows it verbatim.
     const saved = await track(api.modelPricingUpsert({
       pattern: draft.pattern,
       effectiveFrom: draft.effectiveFrom,
@@ -176,8 +155,6 @@ export function ModelPricingEditor() {
                       ))}
                       <td className="p-2 text-right tabular-nums">{fmtWindow(r.contextWindow)}</td>
                       <td className="p-2">{r.label ?? '—'}</td>
-                      {/* Derived from the row's tier and version, not set
-                          per row: the Cost Report's own color for it. */}
                       <td className="p-2">
                         <span
                           className="inline-block h-3 w-3 rounded-sm align-middle"

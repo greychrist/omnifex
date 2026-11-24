@@ -46,10 +46,6 @@ import { sessionNameRegistry } from "@/services/sessionNameRegistry";
 
 const PAGE_SIZE = 50;
 
-// Column-width persistence — drag handles on each header write into this
-// state and persist immediately so widths survive reloads. Keys match the
-// columns rendered below; the Message column is omitted because it stretches
-// to fill the remaining space.
 type ResizableColKey = "time" | "level" | "source" | "category";
 const DEFAULT_COL_WIDTHS: Record<ResizableColKey, number> = {
   time: 160,
@@ -83,12 +79,6 @@ function clampWidth(n: unknown, fallback: number): number {
     : fallback;
 }
 
-/**
- * Last non-empty path segment of an absolute project path. Same logic as
- * TabContext's helper — duplicated locally rather than exported because
- * keeping the cross-file surface small is worth more than the two lines
- * saved. Accepts both POSIX and Windows separators; strips trailing slashes.
- */
 function projectBasename(p: string | null | undefined): string | undefined {
   if (!p) return undefined;
   const trimmed = String(p).replace(/[/\\]+$/, "");
@@ -133,48 +123,22 @@ export const LogTab: React.FC = () => {
     label: "",
   });
   const [pruneCount, setPruneCount] = useState<number | null>(null);
-  // Pending "older than N <unit>" selection. The actual delete is only
-  // triggered by the adjacent trash button — changing either dropdown
-  // alone is non-destructive.
   const [olderN, setOlderN] = useState<number>(1);
   const [olderUnit, setOlderUnit] = useState<"h" | "d" | "w" | "m">("d");
-  // Verbose-source toggles. Default off — these two sources fire constantly
-  // and were originally added for debugging. The settings are read by the
-  // main-process LoggingService on every writeBatch, so flipping these
-  // takes effect on the next event without a restart.
   const [verboseHooks, setVerboseHooks] = useState(false);
   const [verboseUsageRunner, setVerboseUsageRunner] = useState(false);
-  // Default ON — only flips off if the user has explicitly disabled it.
   const [toastOnErrors, setToastOnErrors] = useState(true);
-  // Sort state. Server-side sort (the query is paginated, so reordering
-  // only the current page would be misleading). Default matches the
-  // backend's pre-sort behavior: newest first by timestamp.
   const [sortBy, setSortBy] = useState<LogOrderBy>("timestamp");
   const [sortDir, setSortDir] = useState<LogOrderDir>("desc");
 
-  // Column widths (resizable via drag handles on each header). Persisted
-  // to localStorage immediately on drop so the layout survives reloads.
   const [colWidths, setColWidths] = useState<Record<ResizableColKey, number>>(
     () => loadStoredColWidths(),
   );
 
-  // Resolve `session:<tabId>` categories to the user-facing label
-  //   `session: <projectName> - <claudeSessionId[0..6]>`
-  // (GitHub's 7-char short-SHA convention for the GUID).
-  //
-  // The identity comes from two sources, in priority order:
-  //   1. Live tabs (TabContext) — freshest signal, picks up renames /
-  //      project changes the moment they happen.
-  //   2. sessionNameRegistry — localStorage map mirrored from TabContext
-  //      on every tab change, used as the fallback for tabs that were
-  //      closed after the log entry was written.
-  // Log entries persist long after tabs close, so without the registry
-  // closed-tab rows have no recoverable identity at all.
+  // Registry fallback: log rows outlive the tabs that wrote them.
   const { tabs } = useTabContext();
   const { track } = useSaveStatus();
   const tabIdentityMap = useMemo(() => {
-    // Start with the persisted snapshot; live tab data overwrites it
-    // below so an in-flight rename wins over a stale registry entry.
     const m = new Map<string, {
       title?: string;
       projectName?: string;
@@ -199,21 +163,6 @@ export const LogTab: React.FC = () => {
     return m;
   }, [tabs]);
 
-  // Convert a log row's `category` to the label rendered in the Category
-  // column. Categories produced by the sessions service look like
-  // `session:<tabId>`; everything else (e.g. "permission") passes through
-  // as-is.
-  //
-  // Format priority (best signal first):
-  //   1. `session: <project> - <guid7>`  — both fields known
-  //   2. `session: <project>`             — only project known
-  //   3. `session: <title>`               — legacy registry entry (pre-
-  //                                          schema-upgrade) that only
-  //                                          stored a title
-  //   4. `session …<short-tabId>`         — nothing known; show enough of
-  //                                          the tabId that rows from the
-  //                                          same session still cluster
-  //                                          visually
   const displayCategory = useCallback(
     (raw: string | null | undefined): { label: string; tooltip: string } => {
       if (!raw) return { label: "-", tooltip: "" };
@@ -247,14 +196,10 @@ export const LogTab: React.FC = () => {
       const t = await api.getSetting('log_error_toast_enabled');
       setVerboseHooks(h === 'true');
       setVerboseUsageRunner(u === 'true');
-      // Default on: only the literal string "false" disables it.
       setToastOnErrors(t !== 'false');
     })());
   }, []);
 
-  // When the user clicks "View in Log" on an error toast, App.tsx fires this
-  // event after focusing the Settings tab. Snap our filters so the error is
-  // immediately visible: level=error, all sources, no search.
   useEffect(() => {
     const handler = () => {
       setLevelFilter('error');
@@ -266,7 +211,6 @@ export const LogTab: React.FC = () => {
     return () => { window.removeEventListener('log:focus-error-view', handler); };
   }, []);
 
-  // Debounce search
   useEffect(() => {
     const timer = setTimeout(() => { setDebouncedSearch(searchQuery); }, 300);
     return () => { clearTimeout(timer); };
@@ -297,16 +241,10 @@ export const LogTab: React.FC = () => {
     logAndForget('log-tab:fetch-logs', fetchLogs());
   }, [fetchLogs]);
 
-  // Reset to page 0 when filters or sort change — otherwise the user
-  // re-sorts and lands deep in the middle of an unfamiliar dataset.
   useEffect(() => {
     setPage(0);
   }, [levelFilter, sourceFilter, debouncedSearch, sortBy, sortDir]);
 
-  // Click a column header to sort by it. Same column → flip direction;
-  // new column → pick a useful default (descending for timestamp and
-  // level — newest / most severe first; ascending for alphabetical
-  // columns where A-Z reads more naturally). Mirrors ProjectList.tsx.
   const toggleSort = (key: LogOrderBy) => {
     if (sortBy === key) {
       setSortDir((prev) => (prev === "asc" ? "desc" : "asc"));
@@ -316,10 +254,6 @@ export const LogTab: React.FC = () => {
     }
   };
 
-  // Drag handler shared by every resizable header: captures the pointer,
-  // tracks deltaX, updates colWidths live, and persists the final value to
-  // localStorage on release. We attach mousemove/mouseup at the window level
-  // so the drag survives moving outside the (narrow) handle hit area.
   const startResize = useCallback(
     (key: ResizableColKey, startX: number, startWidth: number) => {
       const onMove = (ev: MouseEvent) => {
@@ -332,14 +266,11 @@ export const LogTab: React.FC = () => {
         window.removeEventListener("mouseup", onUp);
         document.body.style.cursor = "";
         document.body.style.userSelect = "";
-        // Persist after the drop. Using a microtask-safe read of the latest
-        // state via the functional updater avoids stale captures.
         setColWidths((latest) => {
           try {
             localStorage.setItem(COL_WIDTHS_STORAGE_KEY, JSON.stringify(latest));
           } catch {
-            // localStorage quota — column widths will revert on reload, which
-            // is harmless; no need to surface a UI error.
+            // Quota: widths just revert on reload.
           }
           return latest;
         });
@@ -352,9 +283,6 @@ export const LogTab: React.FC = () => {
     [],
   );
 
-  // Render the drag handle on the right edge of a resizable header. The
-  // header itself remains clickable for sorting; we stop propagation from
-  // the handle's own mousedown so dragging never accidentally toggles sort.
   const ResizeHandle: React.FC<{ colKey: ResizableColKey }> = ({ colKey }) => (
     <span
       role="separator"
@@ -381,10 +309,7 @@ export const LogTab: React.FC = () => {
 
   const totalPages = Math.ceil(total / PAGE_SIZE);
 
-  // Compute the ISO cutoff for a relative "olderThan" string so we can ask the
-  // backend for a count of entries that will *actually* be deleted. Keep this
-  // in sync with parseOlderThan() in daemon/services/logging.ts — at some
-  // point this should live in a shared module.
+  // Must match parseOlderThan() in daemon/services/logging.ts.
   const olderThanCutoff = (olderThan: string | undefined): string | undefined => {
     if (!olderThan) return undefined;
     const now = Date.now();
@@ -403,8 +328,6 @@ export const LogTab: React.FC = () => {
 
   const handlePruneClick = async (olderThan: string | undefined, label: string) => {
     try {
-      // For "older than X" prune, count rows strictly before the cutoff so the
-      // dialog shows an accurate number. For "all", fall back to the unfiltered count.
       const cutoff = olderThanCutoff(olderThan);
       const count = await api.logCount(cutoff ? { until: cutoff } : undefined);
       setPruneCount(count);
@@ -450,7 +373,6 @@ export const LogTab: React.FC = () => {
         </span>
       </div>
 
-      {/* Filter bar */}
       <div className="flex items-center gap-3 mb-4">
         <Select value={levelFilter} onValueChange={setLevelFilter}>
           <SelectTrigger className="w-32">
@@ -497,10 +419,6 @@ export const LogTab: React.FC = () => {
         </Button>
       </div>
 
-      {/* Verbose-source toggles. These two streams (Claude hook events and
-          the usage CLI runner) emit info entries on nearly every action and
-          were originally turned on for debugging. Off by default; warnings
-          and errors from these sources always flow through regardless. */}
       <div className="flex items-center flex-wrap gap-x-6 gap-y-2 mb-4 text-xs text-muted-foreground">
         <span className="font-medium">Verbose info logging:</span>
         <div className="flex items-center gap-2">
@@ -529,9 +447,6 @@ export const LogTab: React.FC = () => {
             Usage runner
           </Label>
         </div>
-        {/* Notification side — independent of the two verbose-info toggles
-            above. Errors always get persisted to the log; this only gates
-            whether a toast also pops in the corner when one is recorded. */}
         <div className="ml-auto flex items-center gap-2">
           <Switch
             id="toast-on-errors"
@@ -547,7 +462,6 @@ export const LogTab: React.FC = () => {
         </div>
       </div>
 
-      {/* Log table */}
       <div className="border rounded-lg overflow-hidden flex-1 min-h-0 flex flex-col">
         <div className="flex-1 overflow-y-auto">
           {entries.length === 0 ? (
@@ -666,7 +580,6 @@ export const LogTab: React.FC = () => {
         </div>
       </div>
 
-      {/* Footer: pagination + clear */}
       <div className="flex items-center justify-between mt-4">
         <div className="flex items-center gap-2">
           <span className="text-sm text-muted-foreground">
@@ -693,9 +606,6 @@ export const LogTab: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2">
-          {/* "Older than N <unit>" — count dropdown + unit dropdown + trash.
-              Cycling either dropdown is non-destructive; only the trash
-              button opens the confirmation dialog. */}
           <div className="flex items-center gap-1 rounded-md border border-input pl-2">
             <span className="text-xs text-muted-foreground whitespace-nowrap">Older than</span>
             <Select value={String(olderN)} onValueChange={(v) => { setOlderN(Number(v)); }}>
@@ -753,7 +663,6 @@ export const LogTab: React.FC = () => {
         </div>
       </div>
 
-      {/* Prune confirmation dialog */}
       <Dialog open={pruneDialog.open} onOpenChange={(open) => !open && setPruneDialog({ open: false, label: "" })}>
         <DialogContent>
           <DialogHeader>

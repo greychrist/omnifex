@@ -18,23 +18,8 @@ import { motion } from "framer-motion";
 import type { SessionModelInfo } from "@/lib/api";
 import { ACCOUNT_DEFAULT_MARK } from "@/lib/modelCatalog";
 
-// ── Effort ──────────────────────────────────────────────────────────────
-
-/**
- * Effort level — the CLI's `--effort` / `effortLevel` (`low | medium | high |
- * xhigh | max`), plus `auto`: send no level and let the CLI pick the model's
- * own default. That default is decided per model at runtime — org setting,
- * server flag, settings.json, then the model's capability, then `high` — and
- * differs between models (Opus 5.5 is `medium`), so no fixed level can stand
- * in for it. `auto` never reaches the CLI as a value: the engine omits
- * `--effort` and a mid-session change sends `effortLevel: null`.
- *
- * Which levels a model accepts comes from the CLI catalog's
- * `supportedEffortLevels`, never from these descriptions — keep them free of
- * model names, versions and "default" claims (pinned in ControlBar.test.tsx).
- *
- * @see https://platform.claude.com/docs/en/build-with-claude/effort
- */
+// `auto` = omit `--effort` / send `effortLevel: null`; the default is per-model, so no fixed level can stand in.
+// Accepted levels come from the catalog's `supportedEffortLevels`: keep descriptions free of model names (pinned in tests).
 export type EffortLevel = 'auto' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
 export const EFFORT_LEVELS: { id: EffortLevel; name: string; description: string; shortName: string; color: string }[] = [
@@ -46,38 +31,27 @@ export const EFFORT_LEVELS: { id: EffortLevel; name: string; description: string
   { id: 'max', name: 'Max', description: 'No cap on token spend', shortName: 'Max', color: 'text-red-600' },
 ];
 
-/**
- * The levels a catalogued model accepts. `undefined` means the model is not
- * in the catalog (no data — show everything); a catalogued model without
- * effort support (Haiku) gets `[]`, which leaves only Auto.
- */
+/** `undefined` = not catalogued (show all); `[]` = no effort support (Auto only). */
 export function catalogEffortLevels(model: SessionModelInfo | undefined): EffortLevel[] | undefined {
   if (!model) return undefined;
   return model.supportedEffortLevels ?? [];
 }
 
-/** Picker rows for a model's `levels`. Auto is always offered. */
 export function visibleEffortLevels(levels: EffortLevel[] | undefined): typeof EFFORT_LEVELS {
   return levels ? EFFORT_LEVELS.filter((l) => l.id === 'auto' || levels.includes(l.id)) : EFFORT_LEVELS;
 }
 
-
-// ── Permission ──────────────────────────────────────────────────────────
 
 export interface PermissionMode {
   id: string;
   name: string;
   description: string;
   shortName: string;
-  /** Lucide icon node */
   icon: React.ReactNode;
-  /** Tailwind text color for the trigger and legend swatch */
   color: string;
 }
 
-// Mirrors the CLI's PermissionMode union exactly:
-//   'default' | 'acceptEdits' | 'bypassPermissions' | 'plan' | 'dontAsk' | 'auto'
-// Order is UI ordering (least to most permissive-ish), not CLI enum order.
+// UI order (least to most permissive), not the CLI enum order.
 export const PERMISSION_MODES: PermissionMode[] = [
   {
     id: "default",
@@ -95,7 +69,6 @@ export const PERMISSION_MODES: PermissionMode[] = [
       "Auto-approve file edits and common filesystem operations; prompt for other unmatched tools.",
     shortName: "EDIT",
     icon: <FilePen className="h-3.5 w-3.5" />,
-    // Matches Claude Code's accept-edits indicator (purple).
     color: "text-purple-600",
   },
   {
@@ -104,7 +77,6 @@ export const PERMISSION_MODES: PermissionMode[] = [
     description: "Plan only; no tool execution.",
     shortName: "PLAN",
     icon: <ClipboardList className="h-3.5 w-3.5" />,
-    // Matches Claude Code's plan-mode indicator (blue-green / teal).
     color: "text-teal-600",
   },
   {
@@ -122,7 +94,6 @@ export const PERMISSION_MODES: PermissionMode[] = [
       "Use Claude Code's safety check to approve or deny unmatched tool requests.",
     shortName: "AUTO",
     icon: <Sparkles className="h-3.5 w-3.5" />,
-    // Matches Claude Code's auto/safety-review indicator (yellow).
     color: "text-yellow-600",
   },
   {
@@ -136,15 +107,11 @@ export const PERMISSION_MODES: PermissionMode[] = [
   },
 ];
 
-// Back-compat: the pre-session panel and some older callers use "skip" as
-// a binary alias for bypassPermissions. Map it on read so we don't break
-// anything while the rest of the app migrates to full CLI modes.
+// "skip" is a legacy alias for bypassPermissions.
 export function normalizePermissionMode(mode: string): string {
   if (mode === "skip") return "bypassPermissions";
   return mode;
 }
-
-// ── Effort Picker ───────────────────────────────────────────────────────
 
 interface EffortPickerProps {
   effort: EffortLevel;
@@ -152,21 +119,12 @@ interface EffortPickerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   disabled?: boolean;
-  /** "compact" (bottom bar), "expanded" (modal), "form" (full-name
-   *  trigger that fills its container — used in NewSessionForm). */
   variant?: "compact" | "expanded" | "form";
-  /**
-   * Levels the selected model actually supports — see `catalogEffortLevels`.
-   * Omitted/undefined shows every level, the fallback when no catalog data
-   * exists for the selection. Auto is shown either way.
-   */
   levels?: EffortLevel[];
 }
 
 export function EffortPickerDropdown({ effort, onSelect, levels, bare = false }: { effort: EffortLevel; onSelect: (level: EffortLevel) => void; levels?: EffortLevel[]; bare?: boolean }) {
   const visible = visibleEffortLevels(levels);
-  // `bare` drops the frame and heading so the model dropdown can host this
-  // list under its own back header — one panel, not a box inside a box.
   return (
     <div className={cn("flex flex-col gap-0.5", !bare && "w-72")}>
       {!bare && <div className={cn(POPOVER_SECTION, "mb-1")}>Effort</div>}
@@ -296,24 +254,16 @@ export function EffortPicker({ effort, onEffortChange, open, onOpenChange, disab
   );
 }
 
-// ── Permission Picker ───────────────────────────────────────────────────
-
 interface PermissionPickerProps {
   permissionMode: string;
   onPermissionModeChange?: (mode: string) => void;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   disabled?: boolean;
-  /** "compact" (bottom bar) or "form" (full-name trigger that fills its
-   *  container — used in NewSessionForm). Defaults to "compact". */
   variant?: "compact" | "form";
 }
 
-/**
- * The permission dropdown body, shared by every trigger (including the
- * status bar's `SessionControlPickers`): a second hand-typed copy would drift
- * on the option set (all six CLI modes) or on closing after a pick.
- */
+// Shared by every trigger: a second copy drifts on the six modes or on closing after a pick.
 export function PermissionPickerDropdown({
   normalizedMode,
   onPermissionModeChange,
@@ -324,15 +274,8 @@ export function PermissionPickerDropdown({
   normalizedMode: string;
   onPermissionModeChange?: (mode: string) => void;
   onOpenChange: (open: boolean) => void;
-  /** The account's default permission mode (its session defaults), marked
-   *  as the model picker marks the account-default model. */
   defaultMode?: string | null;
-  /**
-   * Set when the live session was NOT launched in Bypass. The CLI refuses a
-   * mid-session switch to Bypass then (it is only available to a process
-   * spawned in it), so the row explains that and offers a restart instead of
-   * a pick that could only fail.
-   */
+  /** Set when not launched in Bypass: the CLI refuses a mid-session switch to it. */
   onRestartInBypass?: () => void;
 }) {
   return (

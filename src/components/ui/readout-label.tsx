@@ -1,14 +1,7 @@
 import * as React from 'react';
 import { cn } from '@/lib/utils';
 
-/**
- * The name of a status-bar readout — `model`, `turn`, `repos` — muted, with a
- * colon after it separating it from the value.
- *
- * The colon is drawn by CSS rather than written into the text, so the label's
- * text stays the bare word for anything that reads it (aria names, tests,
- * copy-paste).
- */
+/** The colon is drawn by CSS so the text stays the bare word (aria names, tests, copy). */
 export function ReadoutLabel({
   className,
   ...rest

@@ -9,21 +9,6 @@ interface McpFields {
   output: unknown;
 }
 
-/**
- * Extract server/tool/input/output from an `item.mcp_tool_call`
- * notification.
- *
- * Wire shape (Codex):
- *   { method: "item.mcp_tool_call", params: {
- *       serverName: string,
- *       toolName: string,
- *       input?: unknown,
- *       output?: unknown,
- *   } }
- *
- * Defensive: input/output stay as `unknown` here so the widget can decide
- * how to render each (string vs structured JSON).
- */
 function extractMcp(payload: unknown): McpFields {
   const empty: McpFields = {
     serverName: "",
@@ -48,13 +33,6 @@ function extractMcp(payload: unknown): McpFields {
   };
 }
 
-/**
- * Pretty-print an unknown JSON-ish value for display. Strings are
- * returned as-is so output strings (which Codex commonly emits raw) don't
- * pick up surrounding JSON quotes. Anything else is `JSON.stringify`'d
- * with indentation; a `JSON.stringify` failure (circular refs, BigInt)
- * falls back to `String(value)`.
- */
 function formatJson(value: unknown): string {
   if (typeof value === "string") return value;
   if (value === undefined) return "";
@@ -86,13 +64,6 @@ function CollapsibleJson({ label, value }: CollapsibleJsonProps): JSX.Element | 
   );
 }
 
-/**
- * Renders a Codex `item.mcp_tool_call` notification — an MCP server +
- * tool name header with collapsed input/output JSON underneath. Uses
- * native `<details>` rather than the Radix Collapsible primitive: this
- * widget needs only "click to expand", which `<details>` gives for free
- * without an extra controlled-state hook per call.
- */
 export function McpToolCallItem({ message }: { message: AgentMessage }): JSX.Element {
   const { serverName, toolName, input, output } = extractMcp(message.payload);
   const headerLabel =

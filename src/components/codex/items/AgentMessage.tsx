@@ -9,17 +9,7 @@ import { buildMarkdownComponents } from "@/lib/markdownComponents";
 import type { AgentMessage } from "@/lib/api";
 import type { JSX } from 'react';
 
-/**
- * Extracts the `content` string from an `agent_message` notification.
- *
- * Wire shape (from `daemon/services/codex/notifications.ts`, Task 7):
- *   { method: "agent_message", params: { content: string } }
- *
- * Defensive — `payload` is typed `unknown` on AgentMessage, and live Codex
- * builds have shipped subtly different params (`text`, no params at all).
- * Returning `""` lets the widget render an empty assistant card rather
- * than crashing the transcript.
- */
+// Codex builds have shipped other params shapes; return "" rather than crash the transcript.
 function extractContent(payload: unknown): string {
   if (!payload || typeof payload !== "object") return "";
   const params = (payload as { params?: unknown }).params;
@@ -29,15 +19,6 @@ function extractContent(payload: unknown): string {
   return typeof content === "string" ? content : "";
 }
 
-/**
- * Renders a Codex `agent_message` notification as an assistant card.
- *
- * Mirrors the chrome of Claude's assistant bubble (`InflightAssistantBubble`)
- * so transcripts feel cohesive when a single tab routes through both engines
- * — same Card, same ReactMarkdown pipeline, same syntax theme. The only
- * visible difference is a small "Codex" header with a Bot icon, which acts
- * as the equivalent of the Claude "Assistant" role tag.
- */
 export function AgentMessageItem({ message }: { message: AgentMessage }): JSX.Element {
   const content = extractContent(message.payload);
   const { theme } = useTheme();

@@ -37,22 +37,9 @@ interface PermissionCardProps {
   onDeny: () => void;
 }
 
-/**
- * Pick a one-line "headline" string from a tool's input for the
- * permission-prompt preview. When the tool name is one we model in
- * `ToolInputByName`, the field selection is driven by the CLI's
- * typed schema (no field-name guessing). For MCP and other tools
- * outside the map, a generic field-probe fallback preserves the
- * pre-typed behavior so unknown tools still surface a useful label.
- */
 export function formatToolInput(toolName: string | undefined, input: Record<string, unknown>): string {
-  // Every branch runs its field through `toolInputString`. The typed map is a
-  // compile-time contract only: Claude can emit a non-string `command` /
-  // `file_path` / pattern (Claude Code 2.1.229 fixed its own crash on exactly
-  // that), and returning one here as a declared `string` reaches
-  // `buildCommandPreview`'s `raw.replace(...)` as a TypeError — which takes the
-  // card down, and with it the Allow/Deny the session is waiting on. A field
-  // that fails the guard falls through to the JSON dump at the bottom.
+  // Every field goes through toolInputString: the CLI can emit non-strings here, and one reaching
+  // buildCommandPreview's `raw.replace` crashes the card and its Allow/Deny.
   const bash = toolInputString(asToolInput(toolName, 'Bash', input)?.command);
   if (bash) return bash;
 
@@ -70,17 +57,13 @@ export function formatToolInput(toolName: string | undefined, input: Record<stri
   const glob = toolInputString(asToolInput(toolName, 'Glob', input)?.pattern);
   if (glob) return glob;
 
-  // LS uses `path`, not `file_path` — the generic field probe below
-  // wouldn't pick it up, so a permission request for LS would render
-  // as raw JSON without this branch.
+  // LS uses `path`, which the generic probe below misses.
   const ls = toolInputString(asToolInput(toolName, 'LS', input)?.path);
   if (ls) return ls;
 
   const webFetch = toolInputString(asToolInput(toolName, 'WebFetch', input)?.url);
   if (webFetch) return webFetch;
 
-  // Unknown / MCP / future tools: generic field probe keeps the card
-  // functional for anything not in our typed map.
   if (typeof input.command === 'string') return input.command;
   if (typeof input.file_path === 'string') return input.file_path;
   if (typeof input.pattern === 'string') return input.pattern;
@@ -89,10 +72,6 @@ export function formatToolInput(toolName: string | undefined, input: Record<stri
 }
 
 export function PermissionCard({ request, onAllow, onDeny }: PermissionCardProps) {
-  // Codex `patch` / `exec` approvals have a fundamentally different shape
-  // than Claude's `canUseTool` payload — no tool name to format, no rules
-  // to edit, no scope persistence (Codex's protocol has no per-rule store).
-  // Render a kind-specific preview card with a simple Allow / Deny pair.
   if (request.kind === 'patch' || request.kind === 'exec') {
     return (
       <CodexPermissionCard
@@ -106,11 +85,7 @@ export function PermissionCard({ request, onAllow, onDeny }: PermissionCardProps
   return <ClaudePermissionCard request={request} onAllow={onAllow} onDeny={onDeny} />;
 }
 
-/**
- * Claude's `canUseTool` prompt. Its own component so its hooks run in the
- * same order on every render — they used to sit after the Codex early
- * return in PermissionCard, which breaks the rules of hooks.
- */
+// Separate component so its hooks never sit after PermissionCard's Codex early return.
 function ClaudePermissionCard({ request, onAllow, onDeny }: PermissionCardProps) {
   const layout = useLayoutMode();
   const {
@@ -124,9 +99,7 @@ function ClaudePermissionCard({ request, onAllow, onDeny }: PermissionCardProps)
     suppressAlwaysAllowRule,
     directoryGrant,
   } = request;
-  // A symlink escape grants folders, not a rule: no Edit(...) rule stops the
-  // CLI asking about a write that lands outside the working directories
-  // through a link, so a rule here would ask again every time.
+  // A symlink escape needs a folder grant: no Edit(...) rule stops the CLI re-asking.
   const grantsFolders = !suppressAlwaysAllowRule && !!directoryGrant && directoryGrant.length > 0;
   const { config } = useMessageRenderingConfig();
   const accentStyle = { ...accentStyleFor(config, "permission.request"), ...cardRadiusStyle(config) };
@@ -162,7 +135,6 @@ function ClaudePermissionCard({ request, onAllow, onDeny }: PermissionCardProps)
   const handleSavePermission = () => {
     onAllow([grantsFolders ? buildDirectoryGrant(directoryGrant, scope) : buildPersistedSuggestion(rule, scope)]);
   };
-  // No suggestions at all: allow this one use and persist nothing.
   const handleAllowOnce = () => { onAllow([]); };
 
   return (
@@ -171,7 +143,6 @@ function ClaudePermissionCard({ request, onAllow, onDeny }: PermissionCardProps)
       style={accentStyle}
     >
       <div className="p-3 space-y-3">
-        {/* Header */}
         <div className="flex items-start gap-2">
           <Shield className="h-4 w-4 mt-0.5 shrink-0" style={{ color: accentSwatch }} />
           <div className="flex-1 min-w-0">
@@ -194,8 +165,7 @@ function ClaudePermissionCard({ request, onAllow, onDeny }: PermissionCardProps)
           </div>
         </div>
 
-        {/* Tool input preview. Escaped, never raw: this card is the only
-            approval surface, so a command must display as what will run. */}
+        {/* Escaped, never raw: this card is the only approval surface. */}
         <div className="rounded-md border border-border bg-muted/30">
           <div className="max-h-32 overflow-auto p-2">
             <pre className="text-xs font-mono whitespace-pre-wrap break-all">
@@ -212,10 +182,6 @@ function ClaudePermissionCard({ request, onAllow, onDeny }: PermissionCardProps)
           )}
         </div>
 
-        {/* No standing grant for this ask: the CLI vetoed one (it would
-            cover more than what is being approved), or offered no Bash rule
-            because none would allow the command again. Say so rather than
-            silently dropping the controls. */}
         {suppressAlwaysAllowRule && (
           <p
             data-testid="permission-no-standing-rule"
@@ -227,7 +193,6 @@ function ClaudePermissionCard({ request, onAllow, onDeny }: PermissionCardProps)
           </p>
         )}
 
-        {/* Folder grant (symlink escape) */}
         {grantsFolders && (
         <div className="space-y-1">
           <label className="text-[11px] uppercase tracking-wide text-muted-foreground font-medium">
@@ -241,7 +206,6 @@ function ClaudePermissionCard({ request, onAllow, onDeny }: PermissionCardProps)
         </div>
         )}
 
-        {/* Editable rule */}
         {!suppressAlwaysAllowRule && !grantsFolders && (
         <div className="space-y-1">
           <label className="text-[11px] uppercase tracking-wide text-muted-foreground font-medium">
@@ -264,7 +228,6 @@ function ClaudePermissionCard({ request, onAllow, onDeny }: PermissionCardProps)
         </div>
         )}
 
-        {/* Scope combobox */}
         {!suppressAlwaysAllowRule && (
         <div className="space-y-1">
           <label className="text-[11px] uppercase tracking-wide text-muted-foreground font-medium">
@@ -310,13 +273,10 @@ function ClaudePermissionCard({ request, onAllow, onDeny }: PermissionCardProps)
         </div>
         )}
 
-        {/* Buttons */}
         <div
           className={cn(
             'flex items-center justify-between gap-2 pt-1',
-            // On a touch screen this is a sheet, not a toolbar: full-width,
-            // finger-sized, Deny last so the destructive choice is not the one
-            // under a resting thumb.
+            // Deny last on touch, so the destructive choice isn't under a resting thumb.
             layout.touch && 'flex-col-reverse items-stretch gap-2 pt-2 [&_button]:min-h-12 [&_button]:text-sm [&_button]:justify-center',
           )}
         >
@@ -369,18 +329,7 @@ function ClaudePermissionCard({ request, onAllow, onDeny }: PermissionCardProps)
   );
 }
 
-/**
- * Codex approval card. Renders the kind-specific preview (patch diff or
- * shell-command) and a plain Allow / Deny pair. Codex's protocol has no
- * per-rule persistence — there's no "Allow for Session" vs "Save
- * Permission" distinction here. The session-suggestion shape passed to
- * `onAllow` is empty so the response routes through the engine's plain
- * `decision: 'allow'` path.
- *
- * Lives inside PermissionCard.tsx (not its own file) because the dialog
- * shell — accent style, header, Allow / Deny button row — is shared with
- * Claude's tool prompt; only the middle preview swaps out.
- */
+/** Codex has no per-rule persistence: Allow sends no suggestions, the engine's plain allow path. */
 function CodexPermissionCard({
   request,
   onAllow,
@@ -403,7 +352,6 @@ function CodexPermissionCard({
       data-codex-permission-card={request.kind}
     >
       <div className="p-3 space-y-3">
-        {/* Header */}
         <div className="flex items-start gap-2">
           <Shield className="h-4 w-4 mt-0.5 shrink-0" style={{ color: accentSwatch }} />
           <div className="flex-1 min-w-0">
@@ -414,14 +362,12 @@ function CodexPermissionCard({
           </div>
         </div>
 
-        {/* Kind-specific preview */}
         {isPatch ? (
           <CodexPatchPreview payload={request.payload} />
         ) : (
           <CodexExecPreview payload={request.payload} />
         )}
 
-        {/* Allow / Deny */}
         <div className="flex items-center justify-between gap-2 pt-1">
           <Button
             size="sm"

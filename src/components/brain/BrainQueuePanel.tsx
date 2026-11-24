@@ -1,44 +1,19 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { api, type BrainQueueCounts, type BrainQueueEntry } from '@/lib/api';
 
-/**
- * The operational surface spec §14 promised, deferred out of Plan 2 because a
- * control panel over a queue nothing drained would have been a control surface
- * for nothing. The worker exists now, so it lands.
- *
- * Split in two along the line the Brain tab's tabs draw:
- *
- *  - `BrainQueueActions` — what the queue is doing and what you can do to it
- *    right now. Lives above the Sources table, because Backfill and Curate act
- *    on the list you are looking at.
- *  - `BrainAutomationSettings` — the three persistent switches. They are
- *    configuration, not actions, and a tab named Settings is where someone
- *    goes to stop unattended spending.
- *
- * Everything here is scoped to the selected account. Queue depth is per
- * account, and showing one account's backlog under another would misreport
- * what is about to be indexed and where it will land.
- */
 const EMPTY: BrainQueueCounts = { pending: 0, running: 0, done: 0, failed: 0 };
 
-/** Mirrors the backend keys in daemon/services/brain/queue.ts. */
+/** Must match the keys in daemon/services/brain/queue.ts. */
 const AUTO_INDEX_KEY = 'brain.autoIndex';
 const PAUSED_KEY = 'brain.queuePaused';
 const CURATE_KEY = 'brain.curate';
 const IDLE_MINUTES_KEY = 'brain.idleMinutes';
 const SWEEP_HOURS_KEY = 'brain.sweepHours';
 
-/**
- * Mirrors the defaults and ranges in daemon/services/brain/queue.ts.
- *
- * Duplicated rather than imported because the renderer cannot import from
- * `daemon/`. The backend clamps whatever arrives regardless, so a drift here
- * costs a misleading input hint and never a bad stored value.
- */
+// Mirrors queue.ts's defaults and ranges (the renderer can't import daemon/); the backend clamps regardless.
 const IDLE_MINUTES = { def: 15, min: 1, max: 1440 };
 const SWEEP_HOURS = { def: 24, min: 1, max: 720 };
 
-/** Parse a stored setting the way the backend's readNumericSetting does. */
 function readNumber(
   raw: string | null,
   range: { def: number; min: number; max: number },
@@ -48,11 +23,6 @@ function readNumber(
   return Math.min(range.max, Math.max(range.min, parsed));
 }
 
-/**
- * Optimistic, then persisted: a toggle is the user's own action, and a control
- * that lags a round trip reads as broken. A failed write puts it back and says
- * why, so the switch never lies about what was stored.
- */
 function persistSwitch(
   key: string,
   next: boolean,
@@ -66,13 +36,6 @@ function persistSwitch(
   });
 }
 
-/**
- * Persist a number, reverting the control if the write fails.
- *
- * Applies first like `persistSwitch` — the value is already clamped and the
- * user typed it — but the revert restores the PREVIOUS value rather than the
- * negation, which is the only difference a number makes.
- */
 function persistNumber(
   key: string,
   next: number,
@@ -87,16 +50,7 @@ function persistNumber(
   });
 }
 
-/**
- * A labelled number box for one persistent setting.
- *
- * Deliberately NOT optimistic on every change like `persistSwitch`: a switch
- * has one event per user decision, a text box has one per keystroke, and
- * writing on each would persist every intermediate value typed on the way to
- * the one they meant. Commits on blur or Enter instead, and restores the
- * stored value on Escape, so the box never shows a number the backend does
- * not hold.
- */
+// Commits on blur or Enter, not per keystroke: writing each change would persist every intermediate value.
 const SettingNumber: React.FC<{
   label: string;
   suffix: string;
@@ -108,14 +62,11 @@ const SettingNumber: React.FC<{
 }> = ({ label, suffix, title, value, min, max, onCommit }) => {
   const [draft, setDraft] = useState(String(value));
 
-  // The stored value is authoritative: when it changes underneath this — the
-  // initial read landing, or a failed write reverting — the box follows.
   useEffect(() => { setDraft(String(value)); }, [value]);
 
   const commit = useCallback(() => {
     const parsed = Number.parseInt(draft.trim(), 10);
-    // The same clamp-or-fall-back rule readNumericSetting applies, so what the
-    // box accepts and what the backend stores can never disagree.
+    // readNumericSetting's clamp-or-fall-back, so the box and the backend never disagree.
     const next = Number.isFinite(parsed) ? Math.min(max, Math.max(min, parsed)) : value;
     setDraft(String(next));
     if (next !== value) onCommit(next);
@@ -142,7 +93,6 @@ const SettingNumber: React.FC<{
   );
 };
 
-/** A labelled switch for one persistent setting. */
 const SettingSwitch: React.FC<{
   label: string;
   title: string;
@@ -160,23 +110,8 @@ const SettingSwitch: React.FC<{
   </label>
 );
 
-/**
- * Queue depth, the actions that change it, and anything that failed.
- *
- * Pause/Resume lives here rather than with the switches: stopping a run in
- * progress is something you DO, and it belongs beside the buttons whose work
- * it stops.
- */
 export const BrainQueueActions: React.FC<{
   accountId: number | null;
-  /**
-   * Bumped by the owner when something OUTSIDE this panel changed the queue —
-   * a background drain on session close, or the Sources pane's Refresh.
-   *
-   * Its own controls already re-read via `nonce`; this covers the changes it
-   * has no way to notice, which is the other half of the stale-read the
-   * comment below describes.
-   */
   refreshToken?: number;
 }> = ({ accountId, refreshToken = 0 }) => {
   const [counts, setCounts] = useState<BrainQueueCounts>(EMPTY);
@@ -187,16 +122,14 @@ export const BrainQueueActions: React.FC<{
   const [nonce, setNonce] = useState(0);
   const [paused, setPaused] = useState(false);
 
-  // Re-read on `nonce`, i.e. after every action — not only at mount. Reading
-  // once is the stale-read bug this tab has now shipped three times: a pause
-  // applied from anywhere else left this showing the opposite of the truth.
+  // Re-read on every nonce, not only at mount: reading once is the stale-read bug this tab shipped three times.
   useEffect(() => {
     let cancelled = false;
     void api
       .getSetting(PAUSED_KEY)
       .then((pause) => { if (!cancelled) setPaused(pause === 'true'); })
       .catch(() => {
-        // A failed read leaves it un-paused, matching the stored default.
+        // Un-paused, the stored default.
       });
     return () => { cancelled = true; };
   }, [nonce, refreshToken]);
@@ -219,7 +152,6 @@ export const BrainQueueActions: React.FC<{
     return () => { cancelled = true; };
   }, [accountId, nonce, refreshToken]);
 
-  /** Every control refreshes on completion, or the panel lies about its state. */
   const run = useCallback(
     (fn: () => Promise<string | null>) => {
       setBusy(true);
@@ -243,8 +175,6 @@ export const BrainQueueActions: React.FC<{
   return (
     <div className="text-xs">
       <div className="flex flex-wrap items-center gap-3">
-        {/* The queue's own reading, boxed away from the buttons beside it —
-            four counts run together read as one sentence about nothing. */}
         <span
           data-testid="queue-counts"
           className="rounded-md border bg-muted/40 px-2 py-1 tabular-nums text-muted-foreground"
@@ -284,14 +214,8 @@ export const BrainQueueActions: React.FC<{
           Curate
         </button>
 
-        {/* No bulk index button. Indexing is driven by the checked rows below
-            (Index Selected) and by the worker, which drains this queue when a
-            session closes. A control that ran everything pending is what
-            indexed 158 sessions — about an hour of Sonnet — when the user
-            meant to index the one row they had ticked. */}
+        {/* No bulk index button: one indexed 158 sessions (~an hour of Sonnet) when the user meant one ticked row. */}
 
-        {/* A button, not a checkbox: stopping a run in progress is an action,
-            and the label has to say what pressing it will DO. */}
         <button
           type="button"
           onClick={() => { persistSwitch(PAUSED_KEY, !paused, setPaused, setError); }}
@@ -322,9 +246,6 @@ export const BrainQueueActions: React.FC<{
         <ul className="mt-2 space-y-1">
           {failed.map((e) => (
             <li key={e.id} className="text-destructive">
-              {/* The error text, not just a count: a pane that says something
-                  broke without saying what is useless for the job spec §14
-                  gives it. */}
               <span className="font-medium">{e.itemKey}</span> — {e.error}
             </li>
           ))}
@@ -334,26 +255,17 @@ export const BrainQueueActions: React.FC<{
   );
 };
 
-/**
- * The three switches that let the Brain spend without being asked.
- *
- * Grouped under Settings because that is where someone goes to turn unattended
- * spending off. Each is off by default, and a failed settings read leaves them
- * that way — the safe direction, since it can never turn spending ON by
- * accident.
- */
+// Each switch is off by default and a failed read leaves it off: never turn spending on by accident.
 export const BrainAutomationSettings: React.FC<{ accountId: number | null }> = ({ accountId }) => {
   const [autoIndex, setAutoIndex] = useState(false);
   const [curate, setCurate] = useState(false);
   const [idleMinutes, setIdleMinutes] = useState(IDLE_MINUTES.def);
   const [sweepHours, setSweepHours] = useState(SWEEP_HOURS.def);
   const [error, setError] = useState<string | null>(null);
-  // Unlike the two above, this one IS per account — it writes into one
-  // account's Claude config — so it re-reads whenever the account changes.
+  // Per account: it writes one account's Claude config.
   const [mcpStatus, setMcpStatus] = useState({ registered: false, available: false });
 
-  // These settings are GLOBAL, not per account — deliberately not re-read when
-  // the account changes, which would imply a scoping they do not have.
+  // Global settings: deliberately not re-read on account change.
   useEffect(() => {
     let cancelled = false;
     void Promise.all([
@@ -370,8 +282,7 @@ export const BrainAutomationSettings: React.FC<{ accountId: number | null }> = (
         setSweepHours(readNumber(sweep, SWEEP_HOURS));
       })
       .catch(() => {
-        // Leaves both switches off — never turns unattended spending on by
-        // accident — and both numbers at the shipped defaults.
+        // Switches stay off, numbers at the shipped defaults.
       });
     return () => { cancelled = true; };
   }, []);
@@ -386,8 +297,6 @@ export const BrainAutomationSettings: React.FC<{ accountId: number | null }> = (
       .brainMcpStatus(accountId)
       .then((status) => { if (!cancelled) setMcpStatus(status); })
       .catch(() => {
-        // Unknown reads as "not exposed", which is the safe direction: it can
-        // never imply residue exists in a config dir when it does not.
         if (!cancelled) setMcpStatus({ registered: false, available: false });
       });
     return () => { cancelled = true; };
@@ -395,9 +304,7 @@ export const BrainAutomationSettings: React.FC<{ accountId: number | null }> = (
 
   const setMcpRegistered = useCallback((next: boolean) => {
     if (accountId === null) return;
-    // Not optimistic, unlike the two global switches: this one writes into a
-    // real Claude config dir, and showing it flipped before the write landed
-    // would claim residue that may not exist.
+    // Not optimistic: it writes a real Claude config dir, so flipping first would claim residue that may not exist.
     setError(null);
     const call = next ? api.brainMcpRegister(accountId) : api.brainMcpUnregister(accountId);
     void call
@@ -420,9 +327,6 @@ export const BrainAutomationSettings: React.FC<{ accountId: number | null }> = (
           onChange={(next) => { persistSwitch(AUTO_INDEX_KEY, next, setAutoIndex, setError); }}
         />
 
-        {/* Indented under the switch they modify, and hidden while it is off:
-            neither value means anything until auto-indexing is on, and a knob
-            for a disabled feature reads as a knob that does nothing. */}
         {autoIndex && (
           <div className="ml-4 flex flex-col gap-2 border-l border-border pl-3">
             <SettingNumber

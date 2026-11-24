@@ -15,12 +15,7 @@ interface TypefacePickerProps {
   label?: string;
   value: Typeface;
   onChange: (next: Typeface) => void;
-  /**
-   * Restrict the dropdown to the given family tags. Use this for surfaces
-   * where the choice is semantically constrained — e.g. the terminal picker
-   * passes `['mono']` because non-mono fonts break xterm's column grid.
-   * Defaults to every family (all groups visible).
-   */
+  /** e.g. `['mono']` for the terminal: non-mono fonts break xterm's column grid. */
   families?: readonly FamilyTag[];
 }
 

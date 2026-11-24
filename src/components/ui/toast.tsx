@@ -11,46 +11,15 @@ interface ToastAction {
 }
 
 interface ToastProps {
-  /**
-   * The message to display
-   */
   message: string;
-  /**
-   * The type of toast
-   */
   type?: ToastType;
-  /**
-   * Duration in milliseconds before auto-dismiss. Pass 0 or a negative
-   * value to keep the toast visible until manually dismissed.
-   */
+  /** 0 or negative keeps the toast until dismissed. */
   duration?: number;
-  /**
-   * Callback when the toast is dismissed
-   */
   onDismiss?: () => void;
-  /**
-   * Optional action button rendered to the left of the close icon. Tapping
-   * it runs `onClick`; the caller is responsible for dismissing the toast
-   * if the action should also close it.
-   */
   action?: ToastAction;
-  /**
-   * Optional className for styling
-   */
   className?: string;
 }
 
-/**
- * Toast component for showing temporary notifications
- * 
- * @example
- * <Toast
- *   message="File saved successfully"
- *   type="success"
- *   duration={3000}
- *   onDismiss={() => setShowToast(false)}
- * />
- */
 export const Toast: React.FC<ToastProps> = ({
   message,
   type = "info",
@@ -115,7 +84,6 @@ export const Toast: React.FC<ToastProps> = ({
   );
 };
 
-// Toast container for positioning
 interface ToastContainerProps {
   children: React.ReactNode;
 }

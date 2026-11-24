@@ -17,7 +17,6 @@ import { SlashCommandPicker } from "./SlashCommandPicker";
 import { ImagePreview } from "./ImagePreview";
 import { api, type FileEntry, type SlashCommand } from "@/lib/api";
 
-// Sub-components
 import type { EffortLevel, PermissionMode } from "./ControlBar";
 import {
   extractImagePaths,
@@ -33,8 +32,6 @@ import { pingPromptDraftActivity } from "@/lib/promptDraftActivity";
 import { CliStatusDialog } from "./CliStatusDialog";
 import { useOptionalAccounts } from "@/contexts/AccountsContext";
 
-// Re-export types so existing consumers don't break. The model / effort /
-// permission pickers themselves moved to the SessionCard context popover.
 export type { EffortLevel, PermissionMode };
 
 interface FloatingPromptInputProps {
@@ -46,14 +43,11 @@ interface FloatingPromptInputProps {
   className?: string;
   onCancel?: () => void;
   extraMenuItems?: React.ReactNode;
-  /** The Standard ↔ Expanded view toggle, in the left-side column. */
   outputStyleToggle?: React.ReactNode;
   configDir?: string;
   tabId?: string;
-  /** Pre-fetched built-in CLI slash commands (loaded during session init). */
   supportedCommands?: import("@/lib/api").SessionSlashCommand[];
-  /** Whether this session's tab is the one on screen. Only it takes a
-   *  dropped file. */
+  /** Only the tab on screen takes a dropped file. */
   isActive?: boolean;
 }
 
@@ -65,24 +59,15 @@ const GROW_FLOOR_PX = 72;
 const GROW_CEILING_PX = 240;
 
 /**
- * The composer's auto-grow floor for `value`: what the textarea would need to
- * show it, clamped, and applied as `minHeight` (the box itself stays `h-full`
- * so the taller side stack can stretch it).
- *
- * An EMPTY composer is the floor, unmeasured. Measuring it reads the
- * placeholder, and in a narrow bar (a side panel open, a larger chat font)
- * that wraps onto enough lines to set the whole bar's height — until the
- * first keystroke removes the placeholder and the bar visibly shrinks.
+ * An EMPTY composer is the floor, unmeasured: measuring reads the wrapped
+ * placeholder, and the bar shrinks on the first keystroke.
  */
 function measureGrowFloor(el: HTMLTextAreaElement | null, value: string): number {
   if (!el || value.length === 0) return GROW_FLOOR_PX;
-  // Measure with the box free-height: stretched, scrollHeight reports the
-  // stretched height and the input could never shrink back down.
+  // Free height first: stretched, scrollHeight never lets the box shrink.
   el.style.height = 'auto';
-  // scrollHeight stops at the padding edge; min-height is border-box. Without
-  // the border the box is 2px short of its text and scrolls it under the caret.
+  // min-height is border-box; without the border the caret scrolls under.
   const needed = el.scrollHeight + (el.offsetHeight - el.clientHeight);
-  // Hand the box back to `h-full`; the measurement is only its floor.
   el.style.height = '';
   return Math.min(Math.max(needed, GROW_FLOOR_PX), GROW_CEILING_PX);
 }
@@ -124,13 +109,8 @@ const FloatingPromptInputInner = (
   const [textareaHeight, setTextareaHeight] = useState<number>(GROW_FLOOR_PX);
   const isIMEComposingRef = useRef(false);
 
-  // -- Slash command autocomplete hook --
-  // The Brain, for /recall. The account is derived from the session's resolved
-  // configDir rather than passed in: this component already receives the
-  // configDir, and a second source of account identity is a second thing that
-  // can disagree.
-  // Optional on purpose: /recall is enrichment, and a prompt input rendered
-  // outside AccountsProvider must still work.
+  // Account comes from configDir: a second source of identity can disagree.
+  // Optional: the input must work outside AccountsProvider.
   const accountsCtx = useOptionalAccounts();
   const accounts = accountsCtx?.accounts;
   const brainAccountId = useMemo(
@@ -152,8 +132,7 @@ const FloatingPromptInputInner = (
       .then((status) => {
         if (!cancelled) setHasBrainVault(status.configured);
       })
-      // The Brain is auxiliary: a failed probe means no /recall entry, never a
-      // broken prompt input.
+      // The Brain is auxiliary: a failed probe must never break the input.
       .catch(() => { if (!cancelled) setHasBrainVault(false); });
     return () => { cancelled = true; };
   }, [brainAccountId]);
@@ -163,11 +142,6 @@ const FloatingPromptInputInner = (
     if (commandId === STATUS_COMMAND_ID) setStatusOpen(true);
   }, []);
 
-  /**
-   * Splice recalled notes in at the cursor. Appended to whatever is already
-   * typed rather than replacing it: /recall is used mid-thought, and the ask
-   * the user was writing is the reason they reached for it.
-   */
   const insertRecalledNotes = useCallback((text: string) => {
     if (!text) return;
     setPrompt((prev) => {
@@ -178,9 +152,6 @@ const FloatingPromptInputInner = (
 
   const slash = useSlashCommandAutocomplete({ onLocalCommand: handleLocalCommand });
 
-  // -- File drop zone hook --
-  // Dropped images flow through the same base64 state as pasted ones; any
-  // other file becomes an @-mention of its path (or of a copy, if it has none).
   const handleImageDropped = React.useCallback((dataUrl: string) => {
     setPastedImages(prev => [...prev, dataUrl]);
   }, []);
@@ -189,7 +160,6 @@ const FloatingPromptInputInner = (
   }, []);
   const { dragActive } = useFileDropZone({ enabled: isActive, onImage: handleImageDropped, onMention: handleFileDropped });
 
-  // Expose addImage via ref
   React.useImperativeHandle(
     ref,
     () => ({
@@ -216,18 +186,15 @@ const FloatingPromptInputInner = (
     [isExpanded, projectPath]
   );
 
-  // Update embedded images when prompt changes
   useEffect(() => {
     setEmbeddedImages(extractImagePaths(prompt, projectPath));
   }, [prompt, projectPath]);
 
-  // Auto-resize, once per change and before paint, so no frame shows the old
-  // height under the new text.
+  // Layout effect, so no frame shows the old height under the new text.
   useLayoutEffect(() => {
     if (!isExpanded) setTextareaHeight(measureGrowFloor(textareaRef.current, prompt));
   }, [prompt, isExpanded]);
 
-  // Focus textarea when expand state changes
   useEffect(() => {
     if (isExpanded && expandedTextareaRef.current) {
       expandedTextareaRef.current.focus();
@@ -236,16 +203,13 @@ const FloatingPromptInputInner = (
     }
   }, [isExpanded]);
 
-  // -- Text change handler --
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newValue = e.target.value;
     const newCursorPosition = e.target.selectionStart || 0;
     if (tabId && newValue.length > 0) pingPromptDraftActivity(tabId);
 
-    // Slash command detection (delegated to hook)
     slash.handleTextChangeForSlash(newValue, newCursorPosition, prompt);
 
-    // File picker @ detection
     if (projectPath?.trim() && newValue.length > prompt.length && newValue[newCursorPosition - 1] === '@') {
       console.log('[FloatingPromptInput] @ detected, projectPath:', projectPath);
       setShowFilePicker(true);
@@ -253,7 +217,6 @@ const FloatingPromptInputInner = (
       setCursorPosition(newCursorPosition);
     }
 
-    // Update file picker query while typing after @
     if (showFilePicker && newCursorPosition >= cursorPosition) {
       let atPosition = -1;
       for (let i = newCursorPosition - 1; i >= 0; i--) {
@@ -279,7 +242,6 @@ const FloatingPromptInputInner = (
     setCursorPosition(newCursorPosition);
   };
 
-  // -- File selection --
   const handleFileSelect = (entry: FileEntry) => {
     if (textareaRef.current) {
       let atPosition = -1;
@@ -326,7 +288,6 @@ const FloatingPromptInputInner = (
     }, 0);
   };
 
-  // -- IME handling --
   const handleCompositionStart = () => {
     isIMEComposingRef.current = true;
   };
@@ -351,7 +312,6 @@ const FloatingPromptInputInner = (
     return false;
   };
 
-  // -- Send / key handling --
   const handleSend = () => {
     if (isIMEInteraction()) return;
 
@@ -385,8 +345,6 @@ const FloatingPromptInputInner = (
       return;
     }
 
-    // Cmd/Ctrl+Enter always sends — including from the expanded editor, and
-    // on an iPad with a Magic Keyboard where a bare Enter is a newline habit.
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !showFilePicker && !slash.showSlashCommandPicker) {
       if (isIMEInteraction(e)) return;
       e.preventDefault();
@@ -422,7 +380,6 @@ const FloatingPromptInputInner = (
     // A list pasted before existing text would swallow it into its last item.
     const after = prompt.slice(end);
     const markdown = after && !after.startsWith('\n') ? `${list}\n` : list;
-    // insertText keeps the paste on the undo stack and goes through onChange.
     // eslint-disable-next-line @typescript-eslint/no-deprecated -- no standard API puts a programmatic insert on a textarea's native undo stack; execCommand('insertText') is the only one, and setPrompt below is the fallback.
     if (typeof document.execCommand === 'function' && document.execCommand('insertText', false, markdown)) return;
     const caret = start + markdown.length;
@@ -431,7 +388,6 @@ const FloatingPromptInputInner = (
     setTimeout(() => textarea.setSelectionRange(caret, caret), 0);
   };
 
-  // Browser drag-and-drop passthrough (visual only; real handling in useFileDropZone)
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -442,19 +398,16 @@ const FloatingPromptInputInner = (
     e.stopPropagation();
   };
 
-  // -- Image removal --
   const handleRemoveImage = (index: number) => {
     const newPrompt = removeImageFromPrompt(prompt, embeddedImages, index, projectPath);
     setPrompt(newPrompt);
   };
 
-  // Active textarea helper
   const activeTextarea = () => isExpanded ? expandedTextareaRef.current : textareaRef.current;
 
   return (
     <TooltipProvider>
     <>
-      {/* Expanded Modal */}
       <AnimatePresence>
         {isExpanded && (
           <motion.div
@@ -491,7 +444,6 @@ const FloatingPromptInputInner = (
                 </TooltipSimple>
               </div>
 
-              {/* Image previews in expanded mode */}
               {embeddedImages.length > 0 && (
                 <ImagePreview
                   images={embeddedImages}
@@ -542,16 +494,12 @@ const FloatingPromptInputInner = (
         )}
       </AnimatePresence>
 
-      {/* Fixed Position Input Bar */}
       <div
         className={cn(
           "modern-format bg-background border-t border-border/50",
           dragActive && "ring-2 ring-primary ring-offset-2",
           className
         )}
-        // Sits above the software keyboard (visual-viewport inset, set by
-        // useKeyboardInset) and above the home indicator (safe area). Both
-        // resolve to 0 under Electron.
         style={{ paddingBottom: 'calc(var(--omnifex-keyboard-inset, 0px) + env(safe-area-inset-bottom, 0px))' }}
         onDragEnter={handleDrag}
         onDragLeave={handleDrag}
@@ -559,7 +507,6 @@ const FloatingPromptInputInner = (
         onDrop={handleDrop}
       >
         <div className="container mx-auto">
-          {/* Image previews */}
           {embeddedImages.length > 0 && (
             <ImagePreview
               images={embeddedImages}
@@ -576,18 +523,13 @@ const FloatingPromptInputInner = (
           )}
 
           <div className="p-3">
-            {/* The bar's height is whichever side stack is taller; the
-                input stretches to fill it and both stacks hug the top. */}
             <div className="flex items-stretch gap-2">
-              {/* Left side: the output toggle. The model/effort/permission
-                  pickers live in the SessionCard context popover. */}
               {outputStyleToggle && (
                 <div className="flex flex-col items-stretch gap-1.5 shrink-0 self-start w-40">
                   {outputStyleToggle}
                 </div>
               )}
 
-              {/* Prompt Input - Center */}
               <div className="flex-1 relative">
                 <Textarea
                   ref={textareaRef}
@@ -615,7 +557,6 @@ const FloatingPromptInputInner = (
                   }}
                 />
 
-                {/* Action buttons inside input */}
                 <div className="absolute right-1.5 bottom-1.5 flex items-center gap-0.5">
                   <TooltipSimple content="Expand (Ctrl+Shift+E)" side="top">
                     <motion.div
@@ -660,7 +601,6 @@ const FloatingPromptInputInner = (
                   </TooltipSimple>
                 </div>
 
-                {/* File Picker */}
                 <AnimatePresence>
                   {showFilePicker && projectPath?.trim() && (
                     <FilePicker
@@ -685,7 +625,6 @@ const FloatingPromptInputInner = (
                   <CliStatusDialog open={statusOpen} tabId={tabId} onOpenChange={setStatusOpen} />
                 )}
 
-                {/* Slash Command Picker */}
                 <AnimatePresence>
                   {slash.showSlashCommandPicker && (
                     <SlashCommandPicker
@@ -704,9 +643,7 @@ const FloatingPromptInputInner = (
                 </AnimatePresence>
               </div>
 
-              {/* Right side: the extra menu items, three per row. Two columns
-                  put six of them in three rows, and that stack — not the
-                  input — was what set the bar's height. */}
+              {/* Three per row: in two columns this stack set the bar's height. */}
               {extraMenuItems && (
                 <div className="grid grid-cols-3 gap-0.5 shrink-0 self-start">
                   {extraMenuItems}

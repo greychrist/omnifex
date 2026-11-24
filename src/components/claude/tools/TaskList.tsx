@@ -55,11 +55,6 @@ export const TaskList: React.FC<TaskListProps> = ({ messages, isLive, className 
   const running = summary.running;
 
   return (
-    // Header stays at the top of this block (the "drawer handle"); the
-    // expanded panel grows below it in DOM order. Because the whole
-    // block is shrink-0 inside ClaudeCodeSession's flex-column layout,
-    // expanding pushes the chat list above us upward — the header
-    // visually slides UP as the panel reveals itself.
     <div className={cn('shrink-0 flex flex-col', className)}>
       <div className="relative shrink-0 border-t border-border/40">
         <div
@@ -212,11 +207,7 @@ interface AttributedMessageProps {
   message: JsonlNode;
 }
 
-/**
- * Minimal one-line rendering of a message that was attributed to a task.
- * Mirrors the subagent progress-event row treatment: icon + summary, no
- * heavy `<StreamMessage>` re-render inside the panel.
- */
+// One line, deliberately not a heavy <StreamMessage>.
 const AttributedMessage: React.FC<AttributedMessageProps> = ({ message }) => {
   const summary = summarizeMessageForTask(message);
   const Icon = summary.icon;

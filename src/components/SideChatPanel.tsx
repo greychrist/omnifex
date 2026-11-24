@@ -9,29 +9,17 @@ import type { SideChat, SideChatExchange } from '@/lib/sideChat';
 
 // ReactMarkdown re-renders if `remarkPlugins` is a new array each call.
 const REMARK_PLUGINS = [remarkGfm];
-/** Roughly eight lines, then the textarea scrolls. */
 const MAX_INPUT_HEIGHT = 160;
 
 export interface SideChatPanelProps {
   sideChat: SideChat;
   askError: string | null;
-  /** Resolves true once the question is pending; false leaves the draft in place. */
   onAsk: (question: string) => Promise<boolean>;
-  /** Discard the side chat. Only called after confirmation when there is a thread. */
   onClose: () => void;
-  /** Bumped by the caller to focus the input — each open, button or `/btw`. */
   focusRequest?: number;
 }
 
-/**
- * The side chat: questions about the session, answered from the conversation
- * so far without interrupting it. Docked beside the messages area rather than
- * overlaying it, since it stays open while you keep working.
- *
- * Memoised: AgentSession re-renders on every stream event and every tab stays
- * mounted, so an open panel would otherwise re-parse all its answers each time.
- * Every prop the session passes is state or a stable callback.
- */
+// Memoised: AgentSession re-renders on every stream event, so every prop must be state or a stable callback.
 export const SideChatPanel = React.memo(function SideChatPanel({
   sideChat,
   askError,

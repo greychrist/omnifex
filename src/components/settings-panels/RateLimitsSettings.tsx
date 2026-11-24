@@ -24,7 +24,6 @@ function parseThresholds(text: string): number[] | null {
     if (!Number.isFinite(n) || n < 1 || n > 99) return null;
     nums.push(Math.round(n));
   }
-  // de-dupe + sort ascending
   return Array.from(new Set(nums)).sort((a, b) => a - b);
 }
 
@@ -35,7 +34,6 @@ export const RateLimitsSettings: React.FC<SettingsPanelProps> = ({ setToast }) =
   const [fiveHourError, setFiveHourError] = useState<string | null>(null);
   const [sevenDayError, setSevenDayError] = useState<string | null>(null);
 
-  // Initial load
   useEffect(() => {
     let cancelled = false;
     api.getRateLimitSettings()
@@ -104,7 +102,6 @@ export const RateLimitsSettings: React.FC<SettingsPanelProps> = ({ setToast }) =
         </p>
       </div>
 
-      {/* Master toggle */}
       <div className="flex items-center justify-between">
         <div>
           <Label>Enable rate-limit notifications</Label>
@@ -119,7 +116,6 @@ export const RateLimitsSettings: React.FC<SettingsPanelProps> = ({ setToast }) =
         />
       </div>
 
-      {/* 5-hour thresholds */}
       <div className="space-y-2">
         <Label>5-hour window thresholds (%)</Label>
         <Input
@@ -138,7 +134,6 @@ export const RateLimitsSettings: React.FC<SettingsPanelProps> = ({ setToast }) =
         )}
       </div>
 
-      {/* 7-day toggle + thresholds */}
       <div className="flex items-center justify-between">
         <div>
           <Label>Enable 7-day notifications</Label>

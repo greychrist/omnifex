@@ -11,54 +11,17 @@ import { Spinner } from "@/components/ui/spinner";
 import { fireAndLog, logAndForget } from "@/lib/fireAndLog";
 
 interface ClaudeVersionSelectorProps {
-  /**
-   * Currently selected installation path
-   */
   selectedPath?: string | null;
-  /**
-   * Callback when an installation is selected
-   */
   onSelect: (installation: ClaudeInstallation) => void;
-  /**
-   * Optional className for styling
-   */
   className?: string;
-  /**
-   * Whether to show the save button
-   */
   showSaveButton?: boolean;
-  /**
-   * Callback when save is clicked
-   */
   onSave?: () => void;
-  /**
-   * Whether save is in progress
-   */
   isSaving?: boolean;
-  /**
-   * Simplified mode for cleaner UI
-   */
   simplified?: boolean;
-  /**
-   * With no `selectedPath`, pick the first (best) installation and report it
-   * through `onSelect`. On by default: the first-run dialog needs a choice to
-   * save. Settings turns it off — it saves on every `onSelect`, so an
-   * automatic pick was a write the user never made, and with nothing saved
-   * the app already uses the best installation it finds.
-   */
+  /** Off in Settings: it saves on every `onSelect`, so an auto-pick is a write the user never made. */
   autoSelect?: boolean;
 }
 
-/**
- * ClaudeVersionSelector component for selecting Claude Code installations
- * Supports system installations and user preferences
- * 
- * @example
- * <ClaudeVersionSelector
- *   selectedPath={currentPath}
- *   onSelect={(installation) => setSelectedInstallation(installation)}
- * />
- */
 export const ClaudeVersionSelector: React.FC<ClaudeVersionSelectorProps> = ({
   selectedPath,
   onSelect,
@@ -74,9 +37,7 @@ export const ClaudeVersionSelector: React.FC<ClaudeVersionSelectorProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [selectedInstallation, setSelectedInstallation] = useState<ClaudeInstallation | null>(null);
 
-  // Refs hold the latest prop values so loadInstallations stays stable
-  // (we explicitly do NOT want a re-fetch on selectedPath/onSelect change —
-  // selectedPath changes are handled by the sync effect below).
+  // Refs keep loadInstallations stable: no re-fetch on selectedPath/onSelect change.
   const selectedPathRef = useRef(selectedPath);
   const onSelectRef = useRef(onSelect);
   const autoSelectRef = useRef(autoSelect);
@@ -93,14 +54,12 @@ export const ClaudeVersionSelector: React.FC<ClaudeVersionSelectorProps> = ({
       const foundInstallations = await api.listClaudeInstallations();
       setInstallations(foundInstallations);
 
-      // If we have a selected path, find and select it
       if (selectedPathRef.current) {
         const found = foundInstallations.find(i => i.path === selectedPathRef.current);
         if (found) {
           setSelectedInstallation(found);
         }
       } else if (autoSelectRef.current && foundInstallations.length > 0) {
-        // Auto-select the first (best) installation
         setSelectedInstallation(foundInstallations[0]);
         onSelectRef.current(foundInstallations[0]);
       }
@@ -117,7 +76,6 @@ export const ClaudeVersionSelector: React.FC<ClaudeVersionSelectorProps> = ({
   }, [loadInstallations]);
 
   useEffect(() => {
-    // Update selected installation when selectedPath changes
     if (selectedPath && installations.length > 0) {
       const found = installations.find(i => i.path === selectedPath);
       if (found) {
@@ -219,7 +177,6 @@ export const ClaudeVersionSelector: React.FC<ClaudeVersionSelectorProps> = ({
   const systemInstallations = installations.filter(i => i.installation_type === "System");
   const customInstallations = installations.filter(i => i.installation_type === "Custom");
 
-  // Simplified mode - more streamlined UI
   if (simplified) {
     return (
       <div className={cn("space-y-3", className)}>
@@ -295,7 +252,6 @@ export const ClaudeVersionSelector: React.FC<ClaudeVersionSelectorProps> = ({
     );
   }
 
-  // Original card-based UI
   return (
     <Card className={className}>
       <CardHeader>
@@ -308,7 +264,6 @@ export const ClaudeVersionSelector: React.FC<ClaudeVersionSelectorProps> = ({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
-        {/* Available Installations */}
         <div className="space-y-3">
           <Label className="text-sm font-medium">Available Installations</Label>
           <Select value={selectedInstallation?.path || ""} onValueChange={handleInstallationChange}>
@@ -373,7 +328,6 @@ export const ClaudeVersionSelector: React.FC<ClaudeVersionSelectorProps> = ({
           </Select>
         </div>
 
-        {/* Installation Details */}
         {selectedInstallation && (
           <div className="p-3 bg-muted rounded-lg space-y-2">
             <div className="flex items-center justify-between">
@@ -403,7 +357,6 @@ export const ClaudeVersionSelector: React.FC<ClaudeVersionSelectorProps> = ({
           </div>
         )}
 
-        {/* Save Button */}
         {showSaveButton && (
           <Button 
             onClick={onSave} 

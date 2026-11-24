@@ -8,18 +8,12 @@ interface MultiSelectFilterProps {
   options: string[];
   selected: string[];
   onChange: (next: string[]) => void;
-  /** Shorten long values (project paths) for the button and the list. */
   renderOption?: (value: string) => string;
-  /** Show a type-to-filter box above the list once there are many options. */
   searchable?: boolean;
   className?: string;
 }
 
-/**
- * Checkbox-list filter. An EMPTY selection means "all" — the same convention
- * the query layer uses, so clearing every box shows everything rather than
- * emptying the page.
- */
+/** An empty selection means "all", matching the query layer. */
 export function MultiSelectFilter({
   label,
   options,
@@ -62,7 +56,6 @@ export function MultiSelectFilter({
 
       {open && (
         <>
-          {/* Click-away layer. Sits under the panel, over everything else. */}
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
           <div className="absolute left-0 top-full z-50 mt-1 max-h-72 w-64 overflow-auto rounded-md border border-border bg-popover p-1 shadow-lg">
             {searchable && (

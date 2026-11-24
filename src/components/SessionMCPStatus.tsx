@@ -9,19 +9,11 @@ import {
   DetailBlock, DetailRow, EmptyLine, GroupHeader, RowTag, StatusDot, rowClass, scopeIcon, useCollapsedGroups,
 } from "@/components/sessionContext/rows";
 
-/**
- * The MCP servers section of the Session context panel. Presentational: the
- * list comes from useSessionMcpStatus, because the section heading counts it
- * too and must not wait for this section to be opened.
- */
+// Presentational: the section heading counts the list too, so it must not wait for this section to open.
 interface SessionMCPStatusProps {
-  /** Null while the list is being fetched. */
   servers: SessionMcpServerStatus[] | null;
-  /** The session the row actions go to. */
   tabId: string;
-  /** From useSessionMcpStatus: polls until an action's effect shows up. */
   watchUntil: McpWatchUntil;
-  /** The session's account, whose chosen browser sign-in links open in. */
   configDir?: string | null;
 }
 

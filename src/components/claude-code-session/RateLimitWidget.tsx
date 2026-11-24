@@ -7,23 +7,16 @@ import { useLayoutMode } from '@/hooks/useLayoutMode';
 import { InlineDivider } from '@/components/ui/inline-divider';
 
 interface RateLimitWidgetProps {
-  /** Latest snapshot for this rate-limit window. Null = no data yet. */
   snapshot: RateLimitSnapshot | null;
-  /** Which window this widget represents — drives label, icon, fallback copy. */
   windowType: 'five_hour' | 'seven_day';
-  /** Account name displayed in tooltip. */
   accountName?: string;
-  /** Click handler — AccountCard uses it to toggle its usage popover. */
   onClick?: () => void;
-  /** Wall-clock right now (ms since epoch). Defaults to `Date.now()`. */
   nowMs?: number;
-  /** Hide the HeaderLabel above the badge (used when the widget is stacked
-   *  under a sibling that already labels the group). */
   hideLabel?: boolean;
   className?: string;
 }
 
-const STALE_MS = 10 * 60 * 1000; // 10 min
+const STALE_MS = 10 * 60 * 1000;
 
 const LABELS: Record<RateLimitWidgetProps['windowType'], { label: string; short: string }> = {
   five_hour: { label: 'Current session', short: '5h' },
@@ -49,7 +42,6 @@ function formatResetTail(resetsAt: number | null, nowMs: number): string {
   return `${days}d ${hrs}h`;
 }
 
-/** The percentage's color by severity; a rejected window is red whatever it reads. */
 export function rateLimitPctColor(pct: number | null, rejected: boolean): string {
   if (rejected) return 'text-red-500';
   if (pct == null) return 'text-foreground';
@@ -59,18 +51,11 @@ export function rateLimitPctColor(pct: number | null, rejected: boolean): string
   return 'text-foreground';
 }
 
-/** True when the percentage is red (90% and up, or rejected) — the status
- *  bar pulses it then, as it does the thinking readout. Not from yellow:
- *  that starts at 50%, and a weekly window would pulse all week. */
+// Not from yellow: that starts at 50%, so a weekly window would pulse all week.
 export function rateLimitPctAlert(pct: number | null, rejected: boolean): boolean {
   return rateLimitPctColor(pct, rejected).startsWith('text-red-');
 }
 
-/**
- * Compact pill that mirrors the SessionHeader context widget's visual
- * language (icon, value, gradient mini-bar, percentage). Renders the
- * authoritative rate-limit utilization for one window (5-hour or 7-day).
- */
 export function RateLimitWidget({
   snapshot,
   windowType,
@@ -80,15 +65,11 @@ export function RateLimitWidget({
   hideLabel,
   className,
 }: RateLimitWidgetProps) {
-  // The bar is the widest element in the pill and the least informative: the
-  // percentage beside it says the same thing exactly. First to go when the
-  // row has to fit a narrow window.
   const { narrow } = useLayoutMode();
   const { label } = LABELS[windowType];
   const Icon = ICONS[windowType];
   const now = nowMs ?? Date.now();
 
-  // Empty state — no data yet for this window
   if (!snapshot) {
     return (
       <div className={cn('flex flex-col items-start gap-0.5', className)}>
@@ -118,7 +99,6 @@ export function RateLimitWidget({
   const isWarning = snapshot.status === 'allowed_warning';
   const tail = formatResetTail(snapshot.resets_at, now);
 
-  // Color the percentage label by severity. Bar is always the gradient.
   const pctTextColor = rateLimitPctColor(pct, isRejected);
 
   const tooltip = [
@@ -152,9 +132,7 @@ export function RateLimitWidget({
         <span className={cn('font-mono text-right tabular-nums min-w-[4ch]', pctTextColor)}>
           {pct != null ? `${pct.toFixed(0)}%` : '?%'}
         </span>
-        {/* The bar was doing double duty: a gauge, and the thing keeping the
-            percentage from running into the reset countdown. Drop one and the
-            other still has to be done. */}
+        {/* Narrow drops the bar, but something must still keep the percentage off the reset countdown. */}
         {narrow ? (
           <InlineDivider data-testid="rate-limit-divider" className="bg-current opacity-30" />
         ) : (

@@ -1,8 +1,3 @@
-/**
- * A compaction in the Modern format: one Trace line — scissors, "Compacted
- * conversation", the figures beside it — that opens onto the recap the CLI
- * wrote, instead of the classic boundary marker and summary card.
- */
 import * as React from 'react';
 import { ScissorsIcon } from 'lucide-react';
 import {
@@ -31,7 +26,6 @@ export function CompactionLine({ detail, summary }: { detail: string; summary?: 
     <Trace>
       <TraceCollapsible open={open} onOpenChange={setOpen}>
         <TraceCollapsibleTrigger>{line}</TraceCollapsibleTrigger>
-        {/* The recap is long; it is only built once opened. */}
         {open && (
           <TraceCollapsibleContent>
             <MessageResponse>{summary}</MessageResponse>

@@ -11,25 +11,11 @@ import { cn } from '@/lib/utils';
 import { CONTENT_INDENT, GroupHeader, ROW_INDENT } from '@/components/sessionContext/rows';
 import { CONTEXT_TRACKING_SINCE, type ContextEntryKind, type ContextLedger, type LedgerEntry } from '@/lib/contextLedger';
 
-/**
- * "What shaped this session, and when did it arrive?" — with the same list
- * answering "and which of those is still in effect?".
- *
- * The ledger is an audit in arrival order; `live` is an overlay on it rather
- * than a second view, so the two readings can never disagree.
- *
- * Read-only by design. "Review" was the ask, and read-only keeps this clear
- * of the editing question entirely — which is why the old ClaudeFileEditor
- * was deleted rather than revived.
- */
-
 interface GroupDef {
   kind: ContextEntryKind;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
-  /** High-volume groups start closed. Two `deferred_tools_delta` records
-   *  expand to ~197 entries in a real session — open by default, that group
-   *  IS the panel. */
+  /** High-volume groups start closed: deferred_tools_delta expands to ~197 entries. */
   openByDefault: boolean;
 }
 
@@ -44,11 +30,8 @@ const GROUPS: readonly GroupDef[] = [
   { kind: 'plugin-note', label: 'Plugin notes', icon: StickyNote, openByDefault: true },
 ];
 
-// ─── rows ───────────────────────────────────────────────────────────────────
-
 type View = 'rendered' | 'source';
 
-/** Files read better by name; the full path stays on the title attribute. */
 function displayLabel(e: LedgerEntry): string {
   if (e.kind !== 'instruction-file' && e.kind !== 'nested-memory') return e.label;
   const parts = e.label.split('/');
@@ -74,8 +57,7 @@ function EntryRow({
   onToggle: () => void;
   view: View;
   onViewChange: (v: View) => void;
-  /** Built once by the panel. Built per row, a session with 197 deferred-tool
-   *  rows paid for 197 component maps to render the one file that is open. */
+  /** Built once by the panel: per row, 197 rows paid for 197 component maps. */
   mdComponents: ReturnType<typeof buildMarkdownComponents>;
 }): React.JSX.Element {
   const hasContent = typeof entry.content === 'string' && entry.content.length > 0;
@@ -154,9 +136,7 @@ function EntryRow({
               </ReactMarkdown>
             </div>
           ) : (
-            // Plain <pre>, not the syntax highlighter MarkdownBlock uses: these
-            // are up to 27,000 characters and the highlighter tokenises the
-            // whole string on every render.
+            // Plain <pre>: up to 27k chars, and the highlighter tokenises the whole string every render.
             <pre
               data-testid="entry-content-source"
               className="overflow-auto whitespace-pre-wrap rounded border bg-background p-2 text-[10px] leading-relaxed"
@@ -170,12 +150,8 @@ function EntryRow({
   );
 }
 
-// ─── panel ──────────────────────────────────────────────────────────────────
-
 export interface ContextLedgerPanelProps {
   ledger: ContextLedger;
-  /** Entry id to open on mount — how the inline transcript marker points at
-   *  its own arrival. Opens the containing group and the entry's content. */
   focusId?: string;
   className?: string;
 }
@@ -193,9 +169,7 @@ export function ContextLedgerPanel({
     return seed;
   });
   const [expanded, setExpanded] = React.useState<string | null>(focusId ?? null);
-  // A reading preference, so it lives on the panel rather than per row —
-  // choosing Source on one file and getting Rendered on the next would be a
-  // setting that silently resets.
+  // On the panel, not per row, or the choice silently resets between files.
   const [view, setView] = React.useState<View>('rendered');
   const { theme } = useTheme();
   const mdComponents = React.useMemo(
@@ -231,8 +205,6 @@ export function ContextLedgerPanel({
       data-testid="context-ledger-panel"
       className={cn('flex h-full flex-col gap-1 p-2', className)}
     >
-      {/* Fills the remaining height rather than a fixed max, so a resize
-          actually lengthens the list instead of the empty space under it. */}
       <div data-testid="context-ledger-scroll" className="min-h-0 flex-1 overflow-y-auto">
         {GROUPS.map(g => {
           const items = byKind.get(g.kind);

@@ -11,31 +11,16 @@ interface BrainVaultSetupProps {
   accountName: string | null;
 }
 
-/** True when the FTS index does not reflect what is on disk. */
 function indexIsStale(status: BrainVaultStatus): boolean {
   return status.exists && status.indexedCount !== status.noteCount;
 }
 
-/**
- * True only when eviction is known to be happening.
- *
- * `offloadedCount` is null for "not determined" — off Darwin, or the probe
- * could not run — and reporting that as a problem would put a permanent
- * warning on every Linux and Windows vault.
- */
+/** offloadedCount null means "not determined", never a problem. */
 function isOffloaded(status: BrainVaultStatus): boolean {
   return status.offloadedCount !== null && status.offloadedCount > 0;
 }
 
-/**
- * Everything that stands between an account and a browsable vault.
- *
- * Four states, each with exactly the action that fixes it. The important one is
- * CONFLICT: it gets no repair button at all, because a conflict means this
- * path overlaps another account's vault, and the only correct response is a
- * different path. A "retry" there would invite the user to hammer something
- * designed to keep failing.
- */
+/** CONFLICT gets no repair button: the only fix is a different path. */
 export const BrainVaultSetup: React.FC<BrainVaultSetupProps> = ({ vault, accountName }) => {
   const [path, setPath] = useState('');
   const [touched, setTouched] = useState(false);

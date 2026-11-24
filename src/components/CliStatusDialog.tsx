@@ -10,14 +10,7 @@ interface CliStatusDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
-/**
- * `/status` — the CLI's own status screen, for a chat-mode session that has no
- * TUI to type it into.
- *
- * The rows come from the live CLI (`get_status`) already rendered as text, so
- * they are drawn verbatim: version, session, login and account, model, MCP
- * servers, setting sources. Nothing here is parsed — the CLI owns the wording.
- */
+/** Rows are the CLI's own rendered text, drawn verbatim; never parse them. */
 export const CliStatusDialog: React.FC<CliStatusDialogProps> = ({ open, tabId, onOpenChange }) => {
   const [report, setReport] = useState<SessionStatusReport | null>(null);
   const [loading, setLoading] = useState(false);

@@ -9,18 +9,6 @@ import {
 import { api, type BrainRun } from '@/lib/api';
 import { PHASE_LABEL, formatElapsed, useRunClock } from './runProgress';
 
-/**
- * "Something is indexing, and here is where it is" — everywhere in the app.
- *
- * Plan 8 §5. Indexing no longer waits for the user to step away, so it now runs
- * while they are working and needs to be visible from wherever they are. The
- * Brain tab still owns the detail; this is the ambient signal.
- *
- * Two sources, and both are needed. The pushed `brain-run-progress` frames
- * arrive once per item, and an item takes minutes — so a component that only
- * listened would show nothing for minutes after mounting mid-run. The seed read
- * closes that gap, which is the whole reason the run lives in the main process.
- */
 export interface BrainRunIndicatorAccount {
   id: number;
   name: string;
@@ -33,19 +21,13 @@ export const BrainRunIndicator: React.FC<{
 
   useEffect(() => {
     let cancelled = false;
-    // Seed first, then subscribe. A frame that lands between the two wins,
-    // because the subscription's setState runs after this promise resolves
-    // only if the promise was still pending — hence the `cancelled` guard
-    // rather than an unconditional overwrite.
+    // Seed, then subscribe: a pushed frame sets `cancelled` so a late seed can't overwrite it.
     api
       .brainActiveRun()
       .then((active) => {
         if (!cancelled) setRun(active);
       })
-      .catch(() => {
-        // The Brain is auxiliary: an indicator that cannot read its own state
-        // shows nothing, and never interrupts what the user is doing.
-      });
+      .catch(() => {});
 
     const unsubscribe = api.onBrainRunProgress((next) => {
       cancelled = true;
@@ -63,57 +45,33 @@ export const BrainRunIndicator: React.FC<{
   if (!run) return null;
 
   const name = accounts.find((a) => a.id === run.accountId)?.name;
-  // A deleted-mid-run account still has a vault and still has a run, so the id
-  // has to read as a possessive rather than a name: "account 99's vault".
   const vault = name ? `${name} vault` : `account ${String(run.accountId)}'s vault`;
-  // Item-positional, the same framing the Brain tab's own banner uses: the
-  // `completed + 1`-th item is the one in flight. Reporting the completed count
-  // instead made one run read "0 of 2" in the titlebar and "1 of 2" in the tab.
-  //
-  // Shown always, including "1 of 1". A queue drain recomputes `total` per
-  // claimed entry, so the last pending item is a one-item run — which is most
-  // of them. Hiding the counter there left the pill reading "Indexing Personal
-  // vault" and nothing else for minutes at a time.
+  // `completed + 1` is the item in flight. Shown even at "1 of 1": queue-drain runs are mostly one item.
   const position = `${String(run.completed + 1)} of ${String(run.total)}`;
   const phase = PHASE_LABEL[run.phase];
   const elapsed = formatElapsed(now - run.startedAt);
   const label = `Indexing ${vault} · ${position} · ${phase}`;
 
   return (
-    // Own provider: the titlebar has one, but this also renders in shells that
-    // do not, and nesting Radix providers is legal.
     <TooltipProvider>
       <Tooltip>
         <TooltipTrigger asChild>
           <div
             data-testid="brain-run-indicator"
-            // Both names: the key identifies the row in the Sources table, the
-            // label is the one a person can read.
             aria-label={`Brain indexing: ${run.label} (${run.item}) into the ${vault}, item ${position}, ${phase}, ${elapsed} elapsed`}
-            // Inline flow, clamped to two lines: the pill has only the gap
-            // between the brand and the nav buttons (see CustomTitlebar), so
-            // on a narrow window it wraps inside that gap rather than running
-            // under the buttons — and stops at two lines with an ellipsis,
-            // because the title bar is 60px tall and free wrapping to four
-            // lines spilled out of it.
+            // Clamped to two lines: the titlebar is 60px tall.
             className="max-w-full min-w-0 px-2.5 py-1 rounded-md text-xs font-medium leading-tight text-center bg-violet-600/15 text-violet-400 app-no-drag"
           >
-            {/* The clamp sits on an inner element, not the padded pill: with
-                `overflow: hidden` on the padded box the third line's top
-                showed through the bottom padding. No `block` alongside it —
-                line-clamp is `display: -webkit-box`, and `block` won. */}
+            {/* Clamp on the inner element: on the padded box a third line shows through the padding. */}
             <span className="line-clamp-2">
               <Brain size={13} className="inline-block align-[-2px] mr-1.5 animate-pulse" />
               <span className="tabular-nums">{label}</span>{' '}
-              {/* Truncated alone, so a long project name shrinks instead of
-                  pushing the counter and the clock out of the titlebar. */}
               <span className="inline-block align-bottom max-w-[16ch] truncate">{run.label}</span>{' '}
               <span className="tabular-nums opacity-70">{`· ${elapsed}`}</span>
             </span>
           </div>
         </TooltipTrigger>
-        {/* Below the pill: the titlebar is the top edge of the window, so a
-            top-side tooltip would render off-screen. */}
+        {/* Bottom: the titlebar is the window's top edge. */}
         <TooltipContent side="bottom" className="max-w-xs">
           <p className="font-medium text-popover-foreground">Brain indexing</p>
           <p className="mt-1 text-muted-foreground">

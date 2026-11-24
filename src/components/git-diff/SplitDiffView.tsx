@@ -10,33 +10,16 @@ import { toSplitRows, type SplitCell, type SplitRow } from "@/lib/splitDiff";
 import type { DiffFile } from "@/lib/unifiedDiff";
 
 /**
- * Side-by-side diff for one file: old on the left, new on the right, each with
- * its own line-number gutter.
- *
- * Unlike `UnifiedDiffView` — which renders a patch inline in the transcript and
- * therefore refuses to syntax-highlight — this mounts in a full-screen overlay
- * and highlights. The reason that rule exists is the unvirtualised transcript:
- * Prism per line across a 20,000-line diff is a render storm. Here the rows ARE
- * virtualised above `VIRTUALIZE_ABOVE`, so only what is on screen is tokenised.
- *
- * Below that threshold rows render directly. Virtualising a 40-row diff costs
- * more than it saves, and a plain list measures and scrolls correctly with no
- * height estimation at all.
+ * Unlike UnifiedDiffView this highlights: rows are virtualised above this, so
+ * only on-screen rows are tokenised.
  */
-
-/** Row count past which rows are windowed rather than all mounted. */
 const VIRTUALIZE_ABOVE = 200;
 
-/** Starting row-height estimate, refined per row by `measureElement`. */
 const ESTIMATED_ROW_HEIGHT = 20;
 
-/** Width of one line-number gutter (`NumberCell`'s `w-[52px]`). Two sit outside the split. */
+/** Matches `NumberCell`'s `w-[52px]`. */
 const GUTTER_PX = 52;
 
-/**
- * The old side's share of the code width. A fraction rather than pixels, so
- * the split survives the file list being resized and the window changing.
- */
 const RATIO_STORAGE_KEY = "omnifex.gitDiff.splitRatio";
 const DEFAULT_RATIO = 0.5;
 /** Neither side may be dragged shut — a vanished side has no handle left to grab. */
@@ -67,11 +50,8 @@ const RIGHT_SIDE_STYLE: React.CSSProperties = { flex: "calc(1 - var(--diff-left)
 
 export interface SplitDiffViewProps {
   file: DiffFile;
-  /** Language id for Prism, e.g. `tsx`. */
   language: string;
-  /** Ask for more unchanged context around the hunks. */
   onExpandContext?: () => void;
-  /** False once the whole file is already on screen. */
   canExpandContext?: boolean;
   className?: string;
 }
@@ -96,10 +76,7 @@ interface CodeCellProps {
   syntaxTheme: Record<string, React.CSSProperties>;
 }
 
-/**
- * One side of one row. Memoised because a scroll that changes the window by a
- * few rows must not re-tokenise the rows that stayed.
- */
+/** Memoised so a scroll does not re-tokenise the rows that stayed. */
 const CodeCell = React.memo<CodeCellProps>(({ cell, language, syntaxTheme }) => {
   if (cell.kind === "none") {
     return <div role="cell" data-diff-side="none" className={cn("px-2", SIDE_TINT.none)} />;
@@ -213,8 +190,7 @@ export const SplitDiffView: React.FC<SplitDiffViewProps> = ({
   /** The live ratio, so the mouse-up persists the last move, not the first render's. */
   const ratioRef = useRef(ratio);
 
-  // Window-level listeners, as in `useSplitWidth`: the handle is a few pixels
-  // wide and the cursor outruns it mid-drag.
+  // Window-level listeners: the cursor outruns the few-pixel handle mid-drag.
   const startResize = useCallback((e: React.MouseEvent): void => {
     e.preventDefault();
     const el = scrollRef.current;
@@ -328,8 +304,6 @@ export const SplitDiffView: React.FC<SplitDiffViewProps> = ({
           rows.map((row, i) => renderRow(row, i))
         )}
       </div>
-      {/* Overlays the rows rather than living in them: one handle for the
-          whole view, and it stays put while the rows scroll beneath it. */}
       <div
         className="absolute inset-y-0 z-10 flex"
         style={{ left: `calc(${GUTTER_PX}px + var(--diff-left) * (100% - ${2 * GUTTER_PX}px))` }}

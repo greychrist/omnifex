@@ -40,11 +40,6 @@ const SIZES: { value: FontSize; label: string }[] = [
   { value: "lg", label: "Large" },
 ];
 
-// Ordered light → heavy. Tailwind v4 maps each to its standard CSS weight
-// (thin = 100, extralight = 200, … black = 900). Not every bundled typeface
-// ships every weight (e.g. IBM Plex Serif/Mono are single-weight 400, Plus
-// Jakarta and Oxanium start at 200) — the browser falls back to the closest
-// available weight on a miss, so all options remain selectable.
 const WEIGHTS: { value: FontWeight; label: string }[] = [
   { value: "thin", label: "Thin" },
   { value: "extralight", label: "Extra light" },
@@ -118,11 +113,6 @@ const TextColumn: React.FC<TextColumnProps> = ({
   </div>
 );
 
-/**
- * Settings › Chats › Messages › Text: the text the chat is set in. Answers
- * are in Geist or the chat text's own typeface, at the answer size; prompts
- * and markdown elsewhere use the chat text's typeface, size and weight.
- */
 export const TextEditor: React.FC<TextEditorProps> = ({ typography, onTypography, modern, onModern }) => (
   <section role="region" aria-label="Text settings" className="space-y-5">
     <div>

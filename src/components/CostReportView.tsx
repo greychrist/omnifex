@@ -1,14 +1,3 @@
-// Cost Report — the analysis page behind the titlebar's Cost button.
-//
-// Port of ~/Repos/work/management/scripts/ai-cost-report.py. Its value was
-// never the tables; it was four interpretations the Anthropic console has no
-// way to produce — per-project attribution, cost by component, caching ROI,
-// and main-loop vs subagent efficiency. Each of those renders here as a
-// SENTENCE above its table, because "87% of spend is context" changes what you
-// do and "$518.70" does not.
-//
-// Design: docs/superpowers/specs/2026-08-26-cost-report-page-design.md
-
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, FileDown, RefreshCw } from 'lucide-react';
 import {
@@ -65,14 +54,6 @@ interface ReportData {
   totals: CostTotals | null;
 }
 
-/**
- * The filter bar, restated as prose for the PDF.
- *
- * A cost figure with no statement of what it covers is not a report, it is a
- * number — and the interactive filter cards do not print as anything a reader
- * can interpret. So the controls are dropped and their *settings* are kept,
- * which is the part that was ever information.
- */
 function PrintCaption({ filters }: { filters: CostFilterState }) {
   const preset = resolveRange(filters.rangeKey, utcToday());
   const start = filters.customStart || preset.startDate;
@@ -112,8 +93,6 @@ function PrintCaption({ filters }: { filters: CostFilterState }) {
   );
 }
 
-/** Trim a project path to its last two segments — enough to tell repos apart
- *  without giving a table column a 60-character cell. */
 function shortProject(path: string | null): string {
   if (!path) return '(unknown)';
   const parts = path.split('/').filter(Boolean);
@@ -129,8 +108,6 @@ function Panel({
 }: {
   title: string;
   subtitle?: React.ReactNode;
-  /** Display controls that belong to this panel rather than to the filters —
-   *  they change how the data is drawn, not which rows are counted. */
   actions?: React.ReactNode;
   testId?: string;
   children: React.ReactNode;
@@ -160,23 +137,8 @@ function Kpi({ label, value, hint }: { label: string; value: string; hint?: stri
 }
 
 export interface CostReportViewProps {
-  /**
-   * Render for PDF export: no scroll wrapper, no interactive controls, and the
-   * filter state printed as a caption instead of as a filter bar. The controls
-   * are not information; what they are *set to* is, so that survives and they
-   * do not.
-   */
   printMode?: boolean;
-  /**
-   * Filters to open with, overriding the persisted ones. The print window is
-   * told which report to draw rather than reading this window's localStorage.
-   */
   initialFilters?: CostFilterState;
-  /**
-   * Fired once the report has settled. `chartExpected` says whether this range
-   * has a chart to draw at all, which is what lets the export tell "the chart
-   * failed to size itself" apart from "there is no spend to plot".
-   */
   onSettled?: (info: { chartExpected: boolean }) => void;
 }
 
@@ -185,20 +147,14 @@ export function CostReportView({ printMode, initialFilters, onSettled }: CostRep
   const mode: ChartMode = theme === 'light' ? 'light' : 'dark';
 
   const { accounts } = useAccounts();
-  // Read synchronously on first render, so the page opens already filtered
-  // rather than flashing the defaults.
   const [filters, setFilters] = useState<CostFilterState>(() => initialFilters ?? loadFilterState());
   const [facets, setFacets] = useState<CostFacets | null>(null);
-  // The model_pricing delta layer. Loaded once: it drives legend names and
-  // series colors, so a model released after this build reads as its
-  // configured name rather than a raw id on a hashed hue.
   const [pricing, setPricing] = useState<readonly ModelPricingInput[] | undefined>(undefined);
   const [data, setData] = useState<ReportData | null>(null);
   const [loading, setLoading] = useState(true);
   const [rescanning, setRescanning] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  /** Names of the panels whose query failed on the last load. */
   const [failed, setFailed] = useState<string[]>([]);
 
   const params = useMemo(() => toFilterParams(filters, utcToday()), [filters]);
@@ -211,11 +167,7 @@ export function CostReportView({ printMode, initialFilters, onSettled }: CostRep
     setLoading(true);
     setError(null);
 
-    // allSettled, NOT all. Eleven independent queries feed eleven independent
-    // panels, so one failure must cost one panel — not the page. `Promise.all`
-    // rejected the whole load the first time a renderer hot-reload started
-    // calling a channel the still-running main process had no handler for, and
-    // one missing handler blanked every panel at once.
+    // allSettled, not all: one failed query must cost one panel, not the page.
     const queries = [
       ['trend', () => api.sessionCostHistoryByModel({ ...params, groupBy: filters.groupBy })],
       ['projects', () => api.sessionCostByProject(params)],
@@ -259,26 +211,17 @@ export function CostReportView({ printMode, initialFilters, onSettled }: CostRep
 
   useEffect(() => { void load(); }, [load]);
 
-  // Loaded once, not per filter change: the pricing table changes only when
-  // the user edits it in Settings, and refetching it on every filter tweak
-  // would put a DB round-trip on the filter bar's hot path.
   useEffect(() => {
     void api
       .modelPricingList()
       .then((rows) => setPricing(rows.length > 0 ? rows : undefined))
       .catch(() => {});
   }, []);
-  // Not in print mode: both windows share an origin, so the print window
-  // persisting the filters it was handed would overwrite what the user has
-  // selected in the window they are looking at.
+  // Not in print mode: both windows share an origin, so the print window would overwrite this window's filters.
   useEffect(() => {
     if (!printMode) saveFilterState(filters);
   }, [filters, printMode]);
 
-  // Choosing an account narrows the project list, so a project picked under a
-  // different account would stay selected while no longer being on screen —
-  // a filter quietly excluding rows with no visible control to undo it. Drop
-  // any selection the current account scope can no longer offer.
   useEffect(() => {
     if (!facets || filters.projects.length === 0) return;
     const available = new Set(facets.projects);
@@ -299,24 +242,14 @@ export function CostReportView({ printMode, initialFilters, onSettled }: CostRep
     }
   }, [load]);
 
-  /**
-   * Save the report as a PDF.
-   *
-   * The filter *state* goes to the main process, not the derived query params:
-   * the export re-renders the report in a hidden window, so what has to travel
-   * is what the filter bar is set to. Sending params would mean the PDF and
-   * the page could disagree about the range they cover.
-   */
+  // Send the filter state, not derived params, so the PDF and the page can't disagree about the range.
   const exportPdf = useCallback(async () => {
-    // Dialogs go through the preload's named helpers, as every other picker in
-    // the app does (AccountDialog, TabContent, GeneralSettings) — they are not
-    // the generic `invoke` the renderer is told to avoid.
     const savePath = (await window.electronAPI.showSaveDialog({
       title: 'Export Cost Report',
       defaultPath: pdfFileName(filters, utcToday()),
       filters: [{ name: 'PDF', extensions: ['pdf'] }],
     })) as string | null;
-    if (!savePath) return; // cancelled
+    if (!savePath) return;
 
     setExporting(true);
     setError(null);
@@ -333,13 +266,6 @@ export function CostReportView({ printMode, initialFilters, onSettled }: CostRep
   const requests = data?.totals?.request_count ?? 0;
   const sessionCount = data?.totals?.session_count ?? 0;
 
-  /**
-   * Subscription accounts (Max, Pro) are not billed per token, so their dollar
-   * figure is what the usage WOULD have cost at API rates — not money spent.
-   * Saying so is the one thing the old Usage dashboard did better; it printed
-   * "Included" rather than a number. Keeping the number is more useful (it is
-   * how you compare accounts at all), but it must never read as a bill.
-   */
   const notionalAccounts = useMemo(() => {
     const inScope = filters.accounts.length
       ? accounts.filter((a) => filters.accounts.includes(a.name))
@@ -357,9 +283,7 @@ export function CostReportView({ printMode, initialFilters, onSettled }: CostRep
     [data],
   );
 
-  // Report settled state upward exactly once per load, after loading clears.
-  // The PDF export blocks on this: printing before the queries land yields a
-  // "Loading…" PDF, which looks like a successful export until it is opened.
+  // The PDF export blocks on this; printing before the queries land yields a "Loading…" PDF.
   const chartExpected = (data?.periods ?? []).length > 0;
   useEffect(() => {
     if (loading) return;
@@ -369,8 +293,6 @@ export function CostReportView({ printMode, initialFilters, onSettled }: CostRep
   const main = data?.subagents.find((s) => s.is_subagent === 0);
   const sub = data?.subagents.find((s) => s.is_subagent === 1);
 
-  /** The two or three heaviest days. Aggregate months look alarming and are
-   *  usually a couple of heavy sessions; naming the days defuses that. */
   const heaviestDays = useMemo(() => {
     const byDay = new Map<string, number>();
     for (const p of data?.periods ?? []) {
@@ -385,9 +307,7 @@ export function CostReportView({ printMode, initialFilters, onSettled }: CostRep
   );
 
   return (
-    // Print mode drops the scroll box deliberately. It is what makes the live
-    // document exactly one window tall, and a PDF of that is one screenful of
-    // a report that is many screens long.
+    // Print mode drops the scroll box, or the PDF is one window tall.
     <div className={printMode ? 'w-full' : 'h-full overflow-auto'}>
       <div
         className="mx-auto max-w-6xl space-y-8 p-6"
@@ -416,11 +336,6 @@ export function CostReportView({ printMode, initialFilters, onSettled }: CostRep
             the billing source of truth; these figures are derived from local transcripts and will
             read low where usage happened elsewhere.
           </p>
-          {/* Reconciled against the Enterprise console for Sep 2026: the
-              whole Sonnet shortfall (~$50, ~8% of the month) was the auto-mode
-              classifier. The CLI writes those calls to neither the JSONL nor
-              the stream-json result's modelUsage, so there is nothing to
-              recover — only a rate-times-calls guess, which we don't make. */}
           <p className="text-xs text-muted-foreground">
             Sessions in auto permission mode also read low: auto mode&apos;s permission classifier
             makes a Sonnet call for each tool use, and the CLI records that spend nowhere
@@ -429,20 +344,6 @@ export function CostReportView({ printMode, initialFilters, onSettled }: CostRep
           </p>
         </header>
 
-        {/* ── Filters ─────────────────────────────────────────────────── */}
-        {/* Grouped into labelled cards by category. Previously one flex-wrap
-            row put date presets, account, models, projects, scope and the
-            day/week/month grouping shoulder to shoulder, separated only by
-            hairline dividers — same size, same weight, no labels.
-
-            Account and project share the top card because they are one
-            question, not two: a project belongs to an account, and the
-            project list narrows to whatever accounts are selected.
-
-            The grouping control is deliberately NOT here: it changes how the
-            trend is drawn, not which rows are counted, so it lives with the
-            chart. Mixing a display control into the filters implies changing
-            it changes the totals, and it does not. */}
         {printMode ? (
           <PrintCaption filters={filters} />
         ) : (
@@ -477,9 +378,6 @@ export function CostReportView({ printMode, initialFilters, onSettled }: CostRep
 
             <div className="grid gap-3 lg:grid-cols-2">
               <FilterCard label="Date range" testId="filter-date-range">
-                {/* Three presets, one line. w-full then drops the explicit
-                    dates onto their own row, so they read as an override of the
-                    presets rather than a fourth one. */}
                 {RANGE_PRESETS.map((r) => (
                   <Button
                     key={r.key}
@@ -582,7 +480,6 @@ export function CostReportView({ printMode, initialFilters, onSettled }: CostRep
           <div className="text-sm text-muted-foreground">Loading…</div>
         ) : (
           <>
-            {/* ── Headline ────────────────────────────────────────────── */}
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
               <Kpi
                 label={notionalAccounts.length > 0 ? 'Total (notional)' : 'Total'}
@@ -605,13 +502,10 @@ export function CostReportView({ printMode, initialFilters, onSettled }: CostRep
               </p>
             )}
 
-            {/* ── Trend ───────────────────────────────────────────────── */}
             <Panel
               title="Spend over time"
               testId="trend-panel"
               actions={
-                // The grouping a PDF was taken at is stated in the caption, so
-                // the buttons carry nothing the printed page needs.
                 printMode ? null : (
                   <>
                     {(['day', 'week', 'month'] as const).map((g) => (
@@ -643,7 +537,6 @@ export function CostReportView({ printMode, initialFilters, onSettled }: CostRep
               <CostChartLegend models={chartModels} mode={mode} pricing={pricing} />
             </Panel>
 
-            {/* ── Component split ─────────────────────────────────────── */}
             {data?.components && total > 0 && (
               <Panel
                 title="Cost by component"
@@ -684,7 +577,6 @@ export function CostReportView({ printMode, initialFilters, onSettled }: CostRep
               </Panel>
             )}
 
-            {/* ── Caching ROI ─────────────────────────────────────────── */}
             {data?.roi && data.roi.cache_write_tokens > 0 && (
               <Panel
                 title="Caching ROI"
@@ -713,7 +605,6 @@ export function CostReportView({ printMode, initialFilters, onSettled }: CostRep
               </Panel>
             )}
 
-            {/* ── Subagent efficiency ─────────────────────────────────── */}
             {main && sub && sub.request_count > 0 && main.request_count > 0 && (
               <Panel
                 title="Main loop vs subagents"
@@ -751,7 +642,6 @@ export function CostReportView({ printMode, initialFilters, onSettled }: CostRep
               </Panel>
             )}
 
-            {/* ── By model ────────────────────────────────────────────── */}
             <Panel title="By model">
               <table className="w-full text-xs">
                 <thead>
@@ -790,7 +680,6 @@ export function CostReportView({ printMode, initialFilters, onSettled }: CostRep
               </table>
             </Panel>
 
-            {/* ── By project ──────────────────────────────────────────── */}
             <Panel
               title="By project"
               subtitle={
@@ -837,7 +726,6 @@ export function CostReportView({ printMode, initialFilters, onSettled }: CostRep
               )}
             </Panel>
 
-            {/* ── Project × model ─────────────────────────────────────── */}
             <Panel title="Project × model">
               <table className="w-full text-xs">
                 <thead>
@@ -877,7 +765,6 @@ export function CostReportView({ printMode, initialFilters, onSettled }: CostRep
               )}
             </Panel>
 
-            {/* ── Sessions ────────────────────────────────────────────── */}
             <Panel title="Most expensive sessions">
               <table className="w-full text-xs">
                 <thead>

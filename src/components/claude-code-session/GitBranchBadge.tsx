@@ -9,38 +9,18 @@ export interface GitBranchBadgeProps {
   name: string;
   changed: number;
   untracked: number;
-  /** Resolved hex color for non-trunk chips. Ignored when `isTrunk` is true. */
   color: string | null;
-  /** When true, render the black trunk style (overrides `color`). */
   isTrunk: boolean;
-  /** Absolute path of the worktree this branch is checked out in. When
-   *  provided, the badge becomes clickable and opens a popover with the
-   *  folder + branch detail. */
   path?: string;
-  /** Per-row error string from the unified git watch — surfaced inside the
-   *  popover so the user can see why a row went red without leaving it. */
   error?: string | null;
-  /** Open the working-tree diff viewer. Omitted where there is nowhere to
-   *  open it — the branch-color preview in settings, for instance. */
   onViewChanges?: () => void;
-  /** `bar` sets the chip in a status bar: the bar's 10px type, and
-   *  block-level so it centres with the bar's readouts. */
   size?: 'header' | 'bar';
-  /** Extra classes for the chip, e.g. the heavier weight of a main checkout. */
   className?: string;
-  /** The chip's icon: a branch unless told otherwise (a worktree's folder). */
   icon?: LucideIcon;
-  /** `chip` (default): tinted, bordered. `text`: no chip, the branch color on
-   *  the text alone — the status bar's readout style. */
   variant?: 'chip' | 'text';
-  /** A readout label before the name (`branch`, `worktree`). Hidden from
-   *  assistive tech: the name and the title already say what it is. */
   label?: string;
 }
 
-// WCAG relative luminance — used only to detect TRUE near-black picks where
-// `${color}33` would be invisible on the dark page bg. Everything else (blue,
-// gray, etc.) keeps the same translucent recipe AccountBadge uses.
 function isNearBlack(hex: string): boolean {
   const m = hex.replace('#', '');
   if (m.length !== 6) return false;
@@ -73,8 +53,7 @@ export const GitBranchBadge: React.FC<GitBranchBadgeProps> = ({
 }) => {
   const asText = variant === 'text';
   const textSize = size === 'bar' ? 'text-[10px]' : 'text-[11px]';
-  // An inline-flex trigger inside the Popover's block wrapper opens a line
-  // box and sits ~1px high among a bar's readouts.
+  // An inline-flex trigger in the Popover's block wrapper sits ~1px high in a bar.
   const display = size === 'bar' ? 'flex' : 'inline-flex';
   const [open, setOpen] = React.useState(false);
 
@@ -85,8 +64,6 @@ export const GitBranchBadge: React.FC<GitBranchBadgeProps> = ({
   const useColor = !isTrunk && color != null;
   const nearBlack = useColor && isNearBlack(color);
 
-  // As text, a trunk takes the bar's own text color (a black chip has no
-  // text-only equivalent that shows in dark mode), and nothing is filled.
   const inlineStyle = asText
     ? (useColor ? { color: nearBlack ? undefined : color } : undefined)
     : useColor
@@ -117,15 +94,11 @@ export const GitBranchBadge: React.FC<GitBranchBadgeProps> = ({
       <Icon className="w-3.5 h-3.5 shrink-0" />
       {label && <ReadoutLabel aria-hidden="true">{label}</ReadoutLabel>}
       <span className="truncate max-w-[24ch]">{name}</span>
-      {/* A chip rules its counts off from the name; as text the counts sit
-          right beside it, so they read as that checkout's. */}
       {!asText && (changed > 0 || untracked > 0) && (
         <span aria-hidden className="h-3 w-px bg-current opacity-40 mx-0.5" />
       )}
       {asText ? (
-        // As text, the counts share one small outlined badge so they read as
-        // this checkout's rather than floating between columns. The border
-        // color needs `!` to beat the global `* { border-color }` reset.
+        // `!` on the border color beats the global `* { border-color }` reset.
         (changed > 0 || untracked > 0) && (
           <span data-testid="change-counts" className="inline-flex items-center gap-1 rounded-sm border border-foreground/25! bg-foreground/10 px-1 font-normal">
             {counts}
@@ -135,8 +108,6 @@ export const GitBranchBadge: React.FC<GitBranchBadgeProps> = ({
     </>
   );
 
-  // No path means we have no extra detail to show — render a plain span like
-  // before so the badge stays non-interactive in fallback callers.
   if (!path) {
     return (
       <span

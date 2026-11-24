@@ -1,17 +1,8 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 
-// shadcn/ui pattern: thin alias around the underlying HTML element's
-// attributes so consumers can later add Label-specific props without
-// touching every call site.
 export type LabelProps = React.LabelHTMLAttributes<HTMLLabelElement>;
 
-/**
- * Label component for form fields
- * 
- * @example
- * <Label htmlFor="input-id">Field Label</Label>
- */
 const Label = React.forwardRef<HTMLLabelElement, LabelProps>(
   ({ className, ...props }, ref) => (
     <label

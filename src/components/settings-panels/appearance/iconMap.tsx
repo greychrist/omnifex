@@ -1,6 +1,5 @@
 import React from "react";
 import {
-  // originals
   User,
   Bot,
   Terminal,
@@ -20,14 +19,12 @@ import {
   Globe,
   Download,
   Plug,
-  // people / chat
   MessageCircle,
   MessageSquare,
   Send,
   Mail,
   AtSign,
   CircleHelp,
-  // status / feedback
   ShieldCheck,
   ShieldX,
   Eye,
@@ -38,7 +35,6 @@ import {
   Bookmark,
   Star,
   Heart,
-  // code / tech
   Code,
   Code2,
   Braces,
@@ -48,14 +44,12 @@ import {
   Server,
   GitBranch,
   GitCommit,
-  // creative / thinking
   Sparkles,
   Lightbulb,
   Brain,
   Feather,
   PenTool,
   Palette,
-  // objects / cards
   Package,
   Box,
   Tag,
@@ -63,7 +57,6 @@ import {
   ClipboardList,
   BookOpen,
   Book,
-  // fun / personality
   Rocket,
   Coffee,
   Ghost,
@@ -73,7 +66,6 @@ import {
   Sun,
   Wand,
   Crown,
-  // misc symbols
   Circle,
   Square,
   Hexagon,
@@ -82,13 +74,10 @@ import {
   Flame,
   Smile,
   Hourglass,
-  // additions
   ImageUp,
   MonitorCog,
   Slash,
-  // v2 catalog additions (previously declared in ALLOWED_ICONS but never
-  // wired into LUCIDE_MAP — every kind using one of these was rendering as
-  // a blank square)
+  // Every ALLOWED_ICONS name must be wired into LUCIDE_MAP, or that kind renders blank.
   AlertOctagon,
   AlertTriangle,
   Bell,
@@ -106,11 +95,9 @@ import {
   Scissors,
   Shield,
   ShieldOff,
-  // v3 catalog additions
   GitPullRequest,
   ShieldQuestion,
   MessageCircleQuestion,
-  // Modern step icons
   GitCommitHorizontal,
   FilePen,
   FolderSearch,

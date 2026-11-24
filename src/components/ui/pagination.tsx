@@ -4,34 +4,12 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 interface PaginationProps {
-  /**
-   * Current page number (1-indexed)
-   */
   currentPage: number;
-  /**
-   * Total number of pages
-   */
   totalPages: number;
-  /**
-   * Callback when page changes
-   */
   onPageChange: (page: number) => void;
-  /**
-   * Optional className for styling
-   */
   className?: string;
 }
 
-/**
- * Pagination component for navigating through paginated content
- * 
- * @example
- * <Pagination
- *   currentPage={1}
- *   totalPages={5}
- *   onPageChange={(page) => setCurrentPage(page)}
- * />
- */
 export const Pagination: React.FC<PaginationProps> = ({
   currentPage,
   totalPages,

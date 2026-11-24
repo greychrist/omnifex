@@ -5,33 +5,11 @@ import { Button } from '@/components/ui/button';
 import { fireAndLog } from "@/lib/fireAndLog";
 
 interface GitWatchStatusIconProps {
-  /**
-   * Per-path errors aggregated from the unified session-git snapshot.
-   * Empty = the whole watch is healthy. Each entry's `label` is what shows
-   * in the tooltip (e.g. branch name, "project", or path basename).
-   */
   errors: { label: string; error: string }[];
-  /**
-   * Trigger a reconnect for the whole tab's watch. Resolves once the main
-   * process has re-armed the watch and emitted a fresh snapshot. The icon
-   * owns its own spinner state for the duration of this call.
-   */
   onReconnect: () => Promise<unknown>;
-  /**
-   * Reference identity changes when a fresh snapshot arrives from the
-   * watcher. Drives a brief auto-spin so the user can see when a poll/fs
-   * event actually delivered new data.
-   */
   snapshotKey?: unknown;
 }
 
-/**
- * Click-to-reconnect status icon for the tab's unified git watch. One per
- * tab — green when every path in the snapshot reads cleanly, red when any
- * path reports an error, spinner while a reconnect attempt is in flight.
- * The tooltip lists the offending paths so the user can see at a glance
- * which worktree is wedged.
- */
 export const GitWatchStatusIcon: React.FC<GitWatchStatusIconProps> = ({
   errors,
   onReconnect,
@@ -51,8 +29,6 @@ export const GitWatchStatusIcon: React.FC<GitWatchStatusIconProps> = ({
     }
   };
 
-  // Pulse the spinner briefly each time a fresh snapshot arrives. Skip the
-  // initial mount so we don't spin against the seed snapshot.
   const lastKey = React.useRef(snapshotKey);
   const seeded = React.useRef(false);
   React.useEffect(() => {
@@ -87,7 +63,6 @@ export const GitWatchStatusIcon: React.FC<GitWatchStatusIconProps> = ({
       disabled={userBusy}
       title={title}
       aria-label={title}
-      // Clear fill: it sits in the bar's button group, where the bar shows through.
       className={cn('h-5 w-5 p-0 rounded-sm border-0 bg-transparent shadow-[0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_45%,transparent)]', color)}
     >
       <Icon className={cn('h-3.5 w-3.5', spinning && 'animate-spin')} />

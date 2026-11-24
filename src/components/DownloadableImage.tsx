@@ -4,7 +4,6 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { fireAndLog } from "@/lib/fireAndLog";
 
-/** Image with a hover-reveal copy + download toolbar and click-to-zoom lightbox. */
 export const DownloadableImage: React.FC<{
   src: string;
   alt: string;
@@ -38,9 +37,7 @@ export const DownloadableImage: React.FC<{
     try {
       const response = await fetch(src);
       const blob = await response.blob();
-      // Chromium's clipboard refuses most blob types other than PNG. Coerce
-      // anything not already PNG via a canvas round-trip so paste-into-other-
-      // apps actually works for JPEG/WebP/etc.
+      // Chromium's clipboard rejects most non-PNG blobs, so re-encode.
       let clipboardBlob = blob;
       if (blob.type !== 'image/png') {
         clipboardBlob = await encodeBlobAsPng(blob);
@@ -93,16 +90,7 @@ export const DownloadableImage: React.FC<{
         </div>
       </div>
       <Dialog open={lightboxOpen} onOpenChange={setLightboxOpen}>
-        {/*
-          The box is sized EXPLICITLY (w/h), not `w-fit`, and the image scales
-          inside it. `w-fit` on a `left-[50%]`-anchored fixed element resolves
-          fit-content against the space from that 50% anchor to the right edge
-          — i.e. half the viewport. The container then shrank to 50vw while the
-          image was still allowed 90vw, so it overflowed its own container (no
-          overflow-hidden here) and ran off the right edge, with
-          `translate-x-[-50%]` centering on the wrong width. Measured at 1200px
-          wide: container 600px, image 1080px, right edge at 1380.
-        */}
+        {/* Sized explicitly, not `w-fit`: fit-content on a left-50% fixed element resolves to half the viewport. */}
         <DialogContent className="w-[90vw] h-[90vh] max-w-none flex items-center justify-center p-0 bg-transparent border-0 shadow-none">
           <DialogTitle className="sr-only">{alt || 'Image preview'}</DialogTitle>
           <img
@@ -116,11 +104,6 @@ export const DownloadableImage: React.FC<{
   );
 };
 
-/** Re-encode any image blob as a PNG via an offscreen canvas. Used by the
- *  clipboard-copy path because Chromium only reliably accepts `image/png`
- *  in `ClipboardItem` — passing a JPEG blob silently no-ops in some
- *  versions. The round-trip discards EXIF and recompresses, which is fine
- *  for a "paste this into another app" scenario. */
 async function encodeBlobAsPng(blob: Blob): Promise<Blob> {
   const bitmap = await createImageBitmap(blob);
   try {

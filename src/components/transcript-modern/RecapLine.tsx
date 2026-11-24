@@ -1,10 +1,3 @@
-/**
- * A recap in the Modern format — the CLI's away summary or `/recap`'s
- * output: a Trace line ("Recap") over the prose — its date and time are in
- * the hover row under it, as an answer's are —
- * set off by the same left rule a compaction's recap opens onto. Left open:
- * unlike a compaction's summary, the recap is the point of the row.
- */
 import { HistoryIcon } from 'lucide-react';
 import { Trace, TraceIcon, TraceLine, TraceTitle } from './trace';
 import { MessageResponse } from './primitives';

@@ -13,12 +13,6 @@ const VIEWS: { value: ViewMode; label: string }[] = [
   { value: "expanded", label: "Expanded" },
 ];
 
-/**
- * Settings › Chats › Turn preview: the sample transcript — a record of every
- * message kind — drawn by the real Modern renderer against the draft config,
- * in either view, so a kind's icon, color or Show in Standard can be seen
- * changing.
- */
 export const ModernTurnPreview: React.FC<{ config: MessageRenderingConfig }> = ({ config }) => {
   const [view, setView] = React.useState<ViewMode>("standard");
   const items = React.useMemo(() => transcriptItems(ALL_KIND_RECORDS, config, view), [config, view]);

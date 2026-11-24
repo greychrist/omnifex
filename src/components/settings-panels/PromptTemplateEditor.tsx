@@ -2,18 +2,10 @@ import React from 'react';
 import { Button } from '@/components/ui/button';
 import { RotateCcw } from 'lucide-react';
 
-/**
- * The textarea + "Reset to default" shared by every system-prompt panel. Save
- * outcomes show in the Settings save indicator, not here. Purely presentational — state lives in
- * `usePromptTemplate`, so a panel can wrap this in whatever switches and help
- * text it needs.
- */
-
 export interface PromptTemplateEditorProps {
   value: string;
   onChange: (next: string) => void;
   onReset: () => void;
-  /** True when the editor already holds the shipped default. */
   isDefault: boolean;
   rows?: number;
   'aria-label'?: string;

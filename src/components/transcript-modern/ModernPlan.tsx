@@ -1,9 +1,3 @@
-/**
- * ExitPlanMode in the Modern format — AI Elements' Plan: a card with the
- * plan's title and opening line, the whole plan behind a chevron, and a
- * footer saying where it stands. Approving still happens on the live
- * permission card; this is the transcript's record of it.
- */
 import * as React from 'react';
 import { CheckCircle2, ChevronDown, ListChecks, XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';

@@ -2,9 +2,6 @@ import * as React from "react";
 import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
-/**
- * Button variants configuration using class-variance-authority
- */
 const buttonVariants = cva(
   "inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors disabled:pointer-events-none disabled:opacity-50",
   {
@@ -41,14 +38,6 @@ export interface ButtonProps
   asChild?: boolean;
 }
 
-/**
- * Button component with multiple variants and sizes
- * 
- * @example
- * <Button variant="outline" size="lg" onClick={() => console.log('clicked')}>
- *   Click me
- * </Button>
- */
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, variant, size, ...props }, ref) => {
     return (

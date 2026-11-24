@@ -9,28 +9,17 @@ import type { QueuedPrompt } from "@/lib/sessionStreamEffects";
 
 interface QueuedPromptsPanelProps {
   prompts: QueuedPrompt[];
-  /** Badge text for a model id — the picker's label, not the raw catalog's. */
   modelLabel: (model: string) => string;
   onRemove: (id: string) => void;
   onSave: (id: string, prompt: string) => void;
-  /** Take one image off a queued prompt; the prompt itself stays queued. */
   onRemoveImage?: (id: string, index: number) => void;
-  /** The prompt open for editing, or null. The session holds the queue while
-   *  that prompt is at its head, and drains it when this goes back to null. */
+  /** The session holds the queue while the edited prompt is at its head, and drains it on null. */
   onEditingChange: (id: string | null) => void;
-  /** A Stop held the queue: nothing drains until the user picks. */
   held?: boolean;
-  /** Release the hold; the queue drains as usual from its head. */
   onResume?: () => void;
-  /** Send this one prompt now, leaving the rest held. */
   onSendNow?: (id: string) => void;
 }
 
-/**
- * The queued-prompt card over the transcript. Click a prompt's text to edit
- * it in place: Enter or clicking away saves, Shift+Enter is a newline, Escape
- * discards. Saving blank text is a cancel — removal is the ✕ button's job.
- */
 export function QueuedPromptsPanel({
   prompts,
   modelLabel,
@@ -45,8 +34,7 @@ export function QueuedPromptsPanel({
   const [collapsed, setCollapsed] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
-  // Read by finish(): Enter closes the textarea and its blur follows, which
-  // must not save a second time.
+  // Read by finish(): the blur after Enter closes the textarea must not save again.
   const editingIdRef = useRef<string | null>(null);
 
   const setEditing = (id: string | null) => {
@@ -69,8 +57,6 @@ export function QueuedPromptsPanel({
     setEditing(null);
   };
 
-  // The prompt under edit can leave the queue (✕, a session clear); the hold
-  // on it has to go with it.
   useEffect(() => {
     if (editingId !== null && !prompts.some((p) => p.id === editingId)) {
       setEditing(null);

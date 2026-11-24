@@ -1,8 +1,3 @@
-/**
- * A notification or a stop in the Modern format: one Trace-style line — icon
- * and text in the transcript's own type — instead of a classic card. A stop
- * uses the triangle the classic Stop Request card has in its header, in red.
- */
 import { CircleAlertIcon, InfoIcon, TriangleAlertIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { NoticeTone } from '@/lib/modernGrouping';

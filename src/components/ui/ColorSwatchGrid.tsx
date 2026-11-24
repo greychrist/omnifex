@@ -2,15 +2,15 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 
 export const SWATCHES = [
-  "#ef4444", // red
-  "#f59e0b", // amber
-  "#84cc16", // lime
-  "#10b981", // emerald
-  "#06b6d4", // cyan
-  "#3b82f6", // blue
-  "#a78bfa", // violet
-  "#ec4899", // pink
-  "#6b7280", // gray
+  "#ef4444",
+  "#f59e0b",
+  "#84cc16",
+  "#10b981",
+  "#06b6d4",
+  "#3b82f6",
+  "#a78bfa",
+  "#ec4899",
+  "#6b7280",
 ];
 
 export interface ColorSwatchGridProps {

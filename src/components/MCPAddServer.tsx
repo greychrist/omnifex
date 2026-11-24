@@ -11,17 +11,8 @@ import { api } from "@/lib/api";
 import { fireAndLog } from "@/lib/fireAndLog";
 
 interface MCPAddServerProps {
-  /**
-   * Callback when a server is successfully added
-   */
   onServerAdded: () => void;
-  /**
-   * Callback for error messages
-   */
   onError: (message: string) => void;
-  /**
-   * Optional config directory for account-scoped MCP operations
-   */
   configDir?: string;
 }
 
@@ -31,10 +22,6 @@ interface EnvironmentVariable {
   value: string;
 }
 
-/**
- * Component for adding new MCP servers
- * Supports both stdio and SSE transport types
- */
 export const MCPAddServer: React.FC<MCPAddServerProps> = ({
   onServerAdded,
   onError,
@@ -43,22 +30,17 @@ export const MCPAddServer: React.FC<MCPAddServerProps> = ({
   const [transport, setTransport] = useState<"stdio" | "sse">("stdio");
   const [saving, setSaving] = useState(false);
 
-  // Stdio server state
   const [stdioName, setStdioName] = useState("");
   const [stdioCommand, setStdioCommand] = useState("");
   const [stdioArgs, setStdioArgs] = useState("");
   const [stdioScope, setStdioScope] = useState("local");
   const [stdioEnvVars, setStdioEnvVars] = useState<EnvironmentVariable[]>([]);
   
-  // SSE server state
   const [sseName, setSseName] = useState("");
   const [sseUrl, setSseUrl] = useState("");
   const [sseScope, setSseScope] = useState("local");
   const [sseEnvVars, setSseEnvVars] = useState<EnvironmentVariable[]>([]);
 
-  /**
-   * Adds a new environment variable
-   */
   const addEnvVar = (type: "stdio" | "sse") => {
     const newVar: EnvironmentVariable = {
       id: `env-${Date.now()}`,
@@ -73,9 +55,6 @@ export const MCPAddServer: React.FC<MCPAddServerProps> = ({
     }
   };
 
-  /**
-   * Updates an environment variable
-   */
   const updateEnvVar = (type: "stdio" | "sse", id: string, field: "key" | "value", value: string) => {
     if (type === "stdio") {
       setStdioEnvVars(prev => prev.map(v => 
@@ -88,9 +67,6 @@ export const MCPAddServer: React.FC<MCPAddServerProps> = ({
     }
   };
 
-  /**
-   * Removes an environment variable
-   */
   const removeEnvVar = (type: "stdio" | "sse", id: string) => {
     if (type === "stdio") {
       setStdioEnvVars(prev => prev.filter(v => v.id !== id));
@@ -99,9 +75,6 @@ export const MCPAddServer: React.FC<MCPAddServerProps> = ({
     }
   };
 
-  /**
-   * Validates and adds a stdio server
-   */
   const handleAddStdioServer = async () => {
     if (!stdioName.trim()) {
       onError("Server name is required");
@@ -116,10 +89,8 @@ export const MCPAddServer: React.FC<MCPAddServerProps> = ({
     try {
       setSaving(true);
       
-      // Parse arguments
       const args = stdioArgs.trim() ? stdioArgs.split(/\s+/) : [];
       
-      // Convert env vars to object
       const env = stdioEnvVars.reduce<Record<string, string>>((acc, { key, value }) => {
         if (key.trim() && value.trim()) {
           acc[key] = value;
@@ -139,7 +110,6 @@ export const MCPAddServer: React.FC<MCPAddServerProps> = ({
       );
       
       if (result.success) {
-        // Reset form
         setStdioName("");
         setStdioCommand("");
         setStdioArgs("");
@@ -157,9 +127,6 @@ export const MCPAddServer: React.FC<MCPAddServerProps> = ({
     }
   };
 
-  /**
-   * Validates and adds an SSE server
-   */
   const handleAddSseServer = async () => {
     if (!sseName.trim()) {
       onError("Server name is required");
@@ -174,7 +141,6 @@ export const MCPAddServer: React.FC<MCPAddServerProps> = ({
     try {
       setSaving(true);
       
-      // Convert env vars to object
       const env = sseEnvVars.reduce<Record<string, string>>((acc, { key, value }) => {
         if (key.trim() && value.trim()) {
           acc[key] = value;
@@ -194,7 +160,6 @@ export const MCPAddServer: React.FC<MCPAddServerProps> = ({
       );
       
       if (result.success) {
-        // Reset form
         setSseName("");
         setSseUrl("");
         setSseEnvVars([]);
@@ -211,9 +176,6 @@ export const MCPAddServer: React.FC<MCPAddServerProps> = ({
     }
   };
 
-  /**
-   * Renders environment variable inputs
-   */
   const renderEnvVars = (type: "stdio" | "sse", envVars: EnvironmentVariable[]) => {
     return (
       <div className="space-y-3">
@@ -284,7 +246,6 @@ export const MCPAddServer: React.FC<MCPAddServerProps> = ({
           </TabsTrigger>
         </TabsList>
 
-        {/* Stdio Server */}
         <TabsContent value="stdio" className="space-y-6">
           <Card className="p-6 space-y-6">
             <div className="space-y-4">
@@ -367,7 +328,6 @@ export const MCPAddServer: React.FC<MCPAddServerProps> = ({
           </Card>
         </TabsContent>
 
-        {/* SSE Server */}
         <TabsContent value="sse" className="space-y-6">
           <Card className="p-6 space-y-6">
             <div className="space-y-4">
@@ -437,7 +397,6 @@ export const MCPAddServer: React.FC<MCPAddServerProps> = ({
         </TabsContent>
       </Tabs>
 
-      {/* Example */}
       <Card className="p-4 bg-muted/30">
         <div className="space-y-3">
           <div className="flex items-center gap-2 text-sm font-medium">

@@ -3,17 +3,7 @@ import { ChevronUp, ChevronDown, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
-/**
- * Floating find-in-chat bar. Mounts inside the chat pane's `relative`
- * wrapper at the top-right. Consumes state from `useFindInChat` upstream;
- * this component is purely presentational + keyboard plumbing.
- *
- * The root carries `data-find-skip` so the hook's TreeWalker skips this
- * bar's own DOM — otherwise the user's query string in the input would
- * become a self-match.
- *
- * See `docs/superpowers/specs/2026-05-11-find-in-chat-design.md`.
- */
+// `data-find-skip` keeps the hook's TreeWalker out of this bar, or the query self-matches.
 export interface FindBarProps {
   query: string;
   onQueryChange: (value: string) => void;
@@ -38,9 +28,6 @@ export const FindBar: React.FC<FindBarProps> = ({
 }) => {
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Autofocus on mount. Using useEffect rather than the HTML `autoFocus`
-  // attribute so the focus reliably happens even when the bar is mounted
-  // mid-session inside an already-busy React tree.
   useEffect(() => {
     inputRef.current?.focus();
     inputRef.current?.select();

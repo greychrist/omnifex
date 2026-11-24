@@ -14,19 +14,6 @@ interface SearchFields {
   results: SearchResult[];
 }
 
-/**
- * Extract query + results list from an `item.web_search` notification.
- *
- * Wire shape (Codex):
- *   { method: "item.web_search", params: {
- *       query: string,
- *       results: Array<{ title?: string, url?: string, snippet?: string }>,
- *   } }
- *
- * Defensive: an empty/missing `results` array renders as an empty list
- * rather than throwing, so a malformed payload still produces a coherent
- * (if barren) card with the query visible.
- */
 function extractSearch(payload: unknown): SearchFields {
   const empty: SearchFields = { query: "", results: [] };
   if (!payload || typeof payload !== "object") return empty;
@@ -49,14 +36,6 @@ function extractSearch(payload: unknown): SearchFields {
   return { query, results };
 }
 
-/**
- * Renders a Codex `item.web_search` notification as a query + result-list
- * card. Visually mirrors the Claude `WebSearchWidget` header — same Globe
- * icon, same muted "Web Search" tag — so cross-engine transcripts feel
- * consistent. Each result is a button that calls
- * `window.electronAPI.openExternal(url)` to open in the user's default
- * browser (the same path TerminalView's link addon uses).
- */
 export function WebSearchItem({ message }: { message: AgentMessage }): JSX.Element {
   const { query, results } = extractSearch(message.payload);
 

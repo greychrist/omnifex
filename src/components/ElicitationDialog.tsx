@@ -12,12 +12,6 @@ import {
   type ElicitationValues,
 } from "@/lib/elicitationForm";
 
-/**
- * An MCP server's question, as main pushes it on `elicitation-request:<tabId>`
- * (see daemon/services/sessions/elicitations.ts). Form mode asks for a
- * schema-shaped answer; URL mode asks the user to open a page — a sign-in,
- * typically — whose completion the server confirms on its own.
- */
 export interface ElicitationRequest {
   requestId: string;
   serverName: string;
@@ -35,7 +29,6 @@ interface ElicitationDialogProps {
   request: ElicitationRequest | null;
   onAccept: (requestId: string, content: Record<string, unknown> | undefined) => void;
   onDecline: (requestId: string) => void;
-  /** Dismissed without an answer (Esc, click outside) — MCP's `cancel`. */
   onCancel: (requestId: string) => void;
   openUrl: (url: string) => Promise<void>;
 }
@@ -48,7 +41,6 @@ export function ElicitationDialog({ request, onAccept, onDecline, onCancel, open
   const [values, setValues] = useState<ElicitationValues>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  // Each request starts from its own schema defaults.
   useEffect(() => {
     setValues(initialElicitationValues(fields));
     setErrors({});

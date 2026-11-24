@@ -19,10 +19,6 @@ interface AccountPickerDialogProps {
   projectPath: string;
   onAccountSelected: (account: Account) => void;
   title?: string;
-  /**
-   * When set, only show accounts whose `engine` matches. When unset, all
-   * accounts are shown (the historical behavior).
-   */
   engineFilter?: AccountEngine;
 }
 

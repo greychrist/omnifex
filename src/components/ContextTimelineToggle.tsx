@@ -9,18 +9,7 @@ export interface ContextTimelineToggleProps {
   onToggle: () => void;
 }
 
-/**
- * Shows/hides the transcript's context rail.
- *
- * Lives at the bottom-LEFT of the transcript rather than in the scroll-button
- * stack on the right, because the rail it controls renders in the left gutter —
- * a control on the far side of the message column from its own effect reads as
- * unrelated chrome.
- *
- * The active state is carried by a filled background, not by icon color alone:
- * a tinted glyph against a translucent button is close to invisible at 14px,
- * which is exactly the "is it on?" problem this control has to answer.
- */
+/** Active state is a filled background: a tinted glyph alone is near-invisible at 14px. */
 export const ContextTimelineToggle: React.FC<ContextTimelineToggleProps> = ({
   active,
   onToggle,

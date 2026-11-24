@@ -24,8 +24,6 @@ function getFallbackColor(name: string): string {
   return FALLBACK_COLORS[Math.abs(hash) % FALLBACK_COLORS.length];
 }
 
-/** The text color alone from an uncolored account's fallback cluster —
- *  for a readout that wears the account's color without its chip. */
 export function fallbackTextColor(name: string): string {
   return getFallbackColor(name).split(" ").find((c) => c.startsWith("text-")) ?? "";
 }
@@ -37,17 +35,9 @@ export interface AccountShield {
 }
 
 /**
- * The identity shield, or null when there is nothing to attest.
- *
- * A lost session sign-in outranks the verdict: the config dir can still read
- * as verified while the running process — which never re-reads its
- * credentials — can no longer make a request.
- *
- * `unverified` and `null` deliberately give no shield: with no expected email
- * configured there is nothing to attest, and a green shield there would be a
- * claim we haven't earned. Colors are hard-coded rather than themed:
- * green/red must not be mixed toward the account tint, or a red alert on an
- * amber account stops reading as an alert.
+ * A lost session sign-in outranks the verdict: the process never re-reads its
+ * credentials. Colors are hard-coded, not themed: red mixed toward an amber
+ * tint stops reading as an alert.
  */
 export function accountShield(
   verification: IdentityStatus | null | undefined,
@@ -86,25 +76,6 @@ export function accountShield(
   }[verification];
 }
 
-/**
- * Theme-aware style cluster for the colored badge variants. The original
- * approach (hex + alpha against `transparent`) reads well over the dark
- * `gray` theme but collapses on `light` — a bright account color (yellow,
- * cyan, rose) becomes ~white on a near-white background, with no contrast
- * for either text or border.
- *
- * The fix is per-theme color mixing done in the browser via `color-mix(...
- * in oklch ...)`:
- *   - gray (dark) — mix the account color with `transparent` (prior look).
- *   - light       — mix toward white for the surface (soft tint instead
- *                   of low-alpha white-on-white) and toward black for the
- *                   foreground (darken bright hues so they read against a
- *                   light background). The border tracks the foreground
- *                   so it stays visible at any hue.
- *
- * `color-mix(in oklch, ...)` ships in Chromium 111+, well below the
- * Electron baseline this repo runs on, so no fallback path is needed.
- */
 export function buildThemedColors(color: string, theme: "gray" | "light"): {
   backgroundColor: string;
   color: string;
@@ -117,7 +88,6 @@ export function buildThemedColors(color: string, theme: "gray" | "light"): {
       borderColor: `color-mix(in oklch, ${color} 55%, white)`,
     };
   }
-  // gray (default / dark)
   return {
     backgroundColor: `color-mix(in oklch, ${color} 20%, transparent)`,
     color,
@@ -130,46 +100,12 @@ interface AccountBadgeProps {
   color?: string | null;
   icon?: string | null;
   accountType?: string | null;
-  /** When set, render the brand mark for the engine after the account type
-   *  (e.g. "Personal : max [Claude logo]"). Used in the session header so
-   *  the badge carries engine identity alongside account identity. Ignored
-   *  by the `compact` variant. */
   agent?: AgentKind | null;
-  /**
-   * Account identity verdict. When it carries something worth asserting
-   * (`verified` / `mismatch` / `signed-out` / `unknown-account`), a shield
-   * replaces the engine brand mark in the trailing slot.
-   *
-   * `unverified` and `null` deliberately keep the brand mark: with no expected
-   * email configured there is nothing to attest, and a green shield there
-   * would be a claim we haven't earned. Ignored by the `compact` variant.
-   */
   verification?: IdentityStatus | null;
-  /**
-   * This session's CLI process has lost its sign-in. Outranks `verification`:
-   * the config dir can still read as verified while the running process —
-   * which never re-reads its credentials — can no longer make a request.
-   */
   sessionSignedOut?: boolean;
   variant?: "full" | "compact";
-  /**
-   * Text size of the "full" badge. Defaults to `xs` (11px text + 14px icon)
-   * — the historical sizing every existing call site relies on. Use `sm`
-   * (12px text / `text-xs` + 15px icon) when embedding the badge inside a
-   * `text-xs` container like a select dropdown so the badge inherits the
-   * surrounding scale instead of looking like an undersized chip. Ignored
-   * by the `compact` variant — that's a fixed 18px icon-only square.
-   */
   size?: "xs" | "sm";
-  /**
-   * Drop the account name and type, keeping the icon. For narrow windows,
-   * where the name is the widest thing in a row that has other work to do.
-   *
-   * The trailing mark is deliberately kept: a mismatch shield is a warning
-   * about which account is about to run, and a narrow window is not a reason
-   * to stop showing it. Ignored by the `compact` variant, which is already
-   * icon-only.
-   */
+  /** Keeps the trailing mark: a mismatch shield must show in narrow windows too. */
   hideName?: boolean;
   className?: string;
 }
@@ -193,26 +129,12 @@ export const AccountBadge: React.FC<AccountBadgeProps> = ({
   const resolvedIcon = icon ?? getIcon(name);
   const resolvedType = accountTypeProp ?? getAccountType(name);
   const IconComponent = (resolvedIcon && ICON_MAP[resolvedIcon]) || User;
-  // Per-size knobs for the "full" variant. `text-[11px]` is the historical
-  // baseline; `text-xs` is 12px and matches shadcn's select / dropdown
-  // chrome. Icon size scales ~25% above text height in both — readable
-  // without dwarfing the label.
   const textSizeClass = size === "sm" ? "text-xs" : "text-[11px]";
   const iconSizeClass = size === "sm" ? "h-[15px] w-[15px]" : "h-[14px] w-[14px]";
-  // The fallback (no-color) path uses an icon that's slightly smaller than
-  // its text height for visual balance with the muted color stack.
   const fallbackIconSizeClass = size === "sm" ? "h-[12px] w-[12px]" : "h-[11px] w-[11px]";
-  // Brand icon (Claude / OpenAI mark) sits after the account type. Scales
-  // with the badge text so it stays balanced visually. Color is forced
-  // per theme — white-on-dark / dark-on-light — so the mark stays
-  // legible against any account-color background tint instead of
-  // inheriting the themed color and washing out.
   const brandIconSizeClass = size === "sm" ? "h-[13px] w-[13px]" : "h-[12px] w-[12px]";
   const brandIconColorClass = theme === "light" ? "text-neutral-900" : "text-white";
 
-  // The trailing slot shows EITHER the engine brand mark or an identity
-  // shield — the shield wins when there's a verdict to report, because "is
-  // this the right account?" matters more at a glance than "which engine".
   const shield = accountShield(verification, sessionSignedOut);
 
   const trailingMark = shield ? (
@@ -231,9 +153,7 @@ export const AccountBadge: React.FC<AccountBadgeProps> = ({
 
   if (variant === "compact") {
     if (color) {
-      // Compact uses an inset box-shadow as the "border" so the chip
-      // stays a fixed 18px square. Same theme-aware mix as the full
-      // variant, applied to the three style fields the chip exposes.
+      // Inset shadow as the border keeps the chip a fixed 18px square.
       const compactColors = buildThemedColors(color, theme);
       return (
         <span
@@ -277,9 +197,6 @@ export const AccountBadge: React.FC<AccountBadgeProps> = ({
         )}
         style={buildThemedColors(color, theme)}
       >
-        {/* Icon is intentionally ~25% larger than the label to read
-            cleaner. The pill height is driven by the line-height of the
-            text, so the icon doesn't change the badge's overall size. */}
         <IconComponent className={iconSizeClass} strokeWidth={2.2} />
         {!hideName && name}
         {!hideName && resolvedType && (

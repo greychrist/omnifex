@@ -1,14 +1,3 @@
-/**
- * The status bar's `agents` and `shells` readouts: what is running beside the
- * main conversation, one readout per kind. Each pulses while anything of its
- * kind runs, the way `thinking` does, and opens a popover of its rows.
- *
- * Two readouts rather than one list, because the two are not the same thing:
- * subagent rows are built from `Agent` tool calls and the subagents' own
- * transcripts, shell rows from the CLI's stream-only
- * `background_tasks_changed` snapshot. They used to share a strip under the
- * transcript; that strip is gone.
- */
 import React from 'react';
 import { ReadoutLabel } from '@/components/ui/readout-label';
 import { Bot, SquareTerminal } from 'lucide-react';
@@ -21,14 +10,11 @@ import { subagentTotals } from '@/lib/subagentRunStats';
 import { formatCost } from '@/components/claude-code-session/CostWidget';
 import type { BackgroundShell, TaskOutputTail } from '@/lib/backgroundShells';
 
-/** Everything the status bar needs to draw both readouts. */
 export interface BackgroundWork {
   subagents: Subagent[];
-  /** Per-agent cost and context, keyed by agent id. */
   subagentCost?: Record<string, SubagentCost> | null;
   onDismissSubagent?: (toolUseId: string) => void;
   onDismissAllCompletedSubagents?: () => void;
-  /** Background shells and Monitors (`local_bash` tasks). */
   shells: BackgroundShell[];
   readShellOutput: (taskId: string) => Promise<TaskOutputTail | null>;
   onDismissShell?: (taskId: string) => void;
@@ -46,17 +32,11 @@ interface ReadoutProps {
   running: number;
   total: number;
   onClearDone?: () => void;
-  /** Read `done/total` while running rather than `N running`. */
   showProgress?: boolean;
-  /** Appended to the header's `done/total done`, e.g. a cost total. */
   headerExtra?: string;
   children: React.ReactNode;
 }
 
-/**
- * One readout and its popover. Running count while anything runs, done count
- * otherwise — the same label-then-value shape as `turn 12s`.
- */
 function BackgroundReadout({
   noun,
   icon,

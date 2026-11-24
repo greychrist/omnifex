@@ -11,22 +11,9 @@ import { CopyButton } from "@/components/ui/copy-button";
 type View = "rendered" | "source";
 
 interface MarkdownBlockProps {
-  /** Raw markdown source — what was inside the ```markdown fence. */
   source: string;
 }
 
-/**
- * Renders one fenced markdown block with a Rendered/Source pill toggle
- * and a copy-source button. Default view is Rendered. The copy button
- * always copies the raw source string regardless of which view is active.
- *
- * Recursion (a ```markdown fence nested inside another ```markdown fence)
- * is supported: the inner `ReactMarkdown` is wired with the shared
- * `buildMarkdownComponents` dispatcher, so any nested markdown fence
- * renders as another `<MarkdownBlock>` with its own toggle and copy
- * button. Each component instance owns its own `view` state, so inner
- * and outer toggles operate independently.
- */
 export const MarkdownBlock: React.FC<MarkdownBlockProps> = ({ source }) => {
   const [view, setView] = useState<View>("rendered");
   const { theme } = useTheme();

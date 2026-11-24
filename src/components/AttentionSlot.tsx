@@ -4,9 +4,7 @@ import { cn } from '@/lib/utils';
 import type { SessionSignal, SignalAnchor } from '@/lib/signals/types';
 
 export interface AttentionSlotProps {
-  /** The tab's attention queue, already sorted by the store. */
   queue: SessionSignal[];
-  /** Remove an item from the slot. It stays in its anchored popover. */
   onDismiss: (key: string) => void;
   className?: string;
 }
@@ -19,25 +17,12 @@ const ANCHOR_ICON: Record<SignalAnchor, React.ComponentType<{ className?: string
   mcp: PlugZap,
 };
 
-/**
- * The one slot in the app allowed to interrupt: a single call to action,
- * directly above the subagents bar.
- *
- * This replaces a stack that had grown to five banners. The rule that keeps it
- * from growing back is that it renders **exactly one item, ever** — overflow is
- * a `1 of N` counter, not another row. Everything informational was routed to a
- * widget badge instead and never reaches here.
- *
- * Returns `null` rather than an empty wrapper when idle. It sits in the flex
- * column above the composer, where a zero-content div still contributes its
- * padding and pushes the transcript.
- */
+// Renders exactly one item, ever: overflow is a `1 of N` counter, not another row.
+// Returns null when idle: an empty div's padding would push the transcript.
 export function AttentionSlot({ queue, onDismiss, className }: AttentionSlotProps) {
   const [cursor, setCursor] = React.useState(0);
 
-  // Resolving the item under the cursor shortens the queue beneath it; without
-  // the clamp the slot points past the end and renders nothing while items are
-  // still waiting.
+  // Clamp: resolving the current item shortens the queue beneath the cursor.
   const index = queue.length === 0 ? 0 : Math.min(cursor, queue.length - 1);
 
   React.useEffect(() => {
@@ -61,8 +46,6 @@ export function AttentionSlot({ queue, onDismiss, className }: AttentionSlotProp
       role="status"
       aria-live="polite"
       className={cn(
-        // py-1 matches the TaskList header above it so the two read as one
-        // group rather than as two bars of different weights.
         'shrink-0 flex items-center gap-2 px-3 py-1 text-[11px]',
         critical
           ? 'bg-red-500/10 text-red-600 dark:text-red-400'

@@ -7,15 +7,7 @@ export interface SignalActionCardProps {
   className?: string;
 }
 
-/**
- * A pending `action`, mirrored into its anchored widget's popover.
- *
- * This is what makes the attention slot's dismiss button safe. The slot can be
- * waved away because the item is never actually gone — it keeps standing here,
- * under the widget it is about, until the condition that raised it ends. The
- * old context-pressure banner had to be non-dismissible for exactly the lack of
- * this surface.
- */
+// Keeps a dismissed attention-slot item visible until its condition ends; that is what makes dismissing it safe.
 export function SignalActionCard({ signal, className }: SignalActionCardProps) {
   return (
     <div

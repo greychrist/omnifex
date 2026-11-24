@@ -16,23 +16,15 @@ interface DiagramToolbarProps {
   source: string;
   /** A light-theme render of `source` — what every export is made from. */
   getLightSvg: () => Promise<string>;
-  /** Omitted inside the full-window viewer, which is already expanded. */
   onExpand?: () => void;
   className?: string;
 }
 
-/**
- * A bordered segmented bar, the same chrome as the Diagram/Source toggle
- * (MermaidBlock) and MarkdownBlock's Rendered/Source pills, so the block's
- * controls read as one row of like controls. The overlay's zoom group uses
- * the same two constants.
- */
 export const BAR =
   "flex items-center rounded-md border border-border/50 bg-background/80 overflow-hidden divide-x divide-border/50";
 export const BAR_BUTTON =
   "inline-flex items-center gap-1 rounded-none px-2 py-0.5 text-[10px] font-medium text-muted-foreground hover:text-foreground hover:bg-foreground/10 transition-colors disabled:opacity-50 [&_svg]:h-3 [&_svg]:w-3";
 
-/** Expand, download (SVG / PNG) and copy (image / source) for one diagram. */
 export const DiagramToolbar: React.FC<DiagramToolbarProps> = ({
   source,
   getLightSvg,

@@ -6,29 +6,13 @@ import { getClaudeSyntaxTheme } from "@/lib/claudeSyntaxTheme";
 import { useTheme } from "@/hooks";
 
 /**
- * Renders a line-level diff between two strings.
- *
- * Lifted out of `EditWidget` so the Claude `Edit` tool and the Codex
- * `apply_patch` item can share identical visuals: contiguous unchanged spans
- * longer than 8 lines collapse to a separator, trailing newlines are trimmed
- * from each part, and each part is syntax-highlighted via Prism using
- * `language`.
- *
- * Colors match `UnifiedDiffView`, which renders a diff that arrived as text
- * — the two are one system seen from two sides, and a reader should not have
- * to learn each. The tints used to be `bg-green-950/20`: a near-black at 20%,
- * invisible on the dark theme and wrong on the light one, with the only real
- * signal the +/- glyph. Mid-tone hues at low alpha read on both.
- *
- * Syntax highlighting stays here, unlike in `UnifiedDiffView`: an Edit's diff
- * is a handful of lines, not an arbitrarily large `git diff`.
+ * Colors match `UnifiedDiffView`. Unlike it, this highlights: an Edit's diff is
+ * a handful of lines, not an arbitrarily large `git diff`.
  */
 export interface DiffViewerProps {
   oldText: string;
   newText: string;
-  /** Language id understood by react-syntax-highlighter's Prism (e.g. 'tsx'). */
   language: string;
-  /** Optional className applied to the outer scroll container. */
   className?: string;
 }
 

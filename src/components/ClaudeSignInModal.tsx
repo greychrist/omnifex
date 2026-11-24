@@ -15,10 +15,8 @@ import { openSignInLink } from '@/lib/signInBrowser';
 interface ClaudeSignInModalProps {
   open: boolean;
   onClose: () => void;
-  /** The account's config dir — the sign-in authenticates exactly this dir. */
   configDir: string;
   accountName?: string;
-  /** Fired with who the CLI says signed in. The modal closes itself. */
   onAuthenticated?: (account: ClaudeSignedInAccount) => void;
 }
 
@@ -27,21 +25,7 @@ type Phase =
   | { kind: 'ready'; flow: ClaudeSignInFlow }
   | { kind: 'failed'; message: string };
 
-/**
- * Sign one account in to Claude, through the CLI's own OAuth
- * (`claude_authenticate`, run by the daemon in a CLI started for this
- * account — see `daemon/services/auth/claude-auth.ts`).
- *
- * On the Mac the sign-in page opens at once, in the browser chosen for this
- * account (`signInBrowser.ts`), and finishes by itself: its redirect lands on
- * the CLI's localhost listener. Anywhere else (the iPad) that listener is out
- * of reach, so the page that shows a code is opened from a button — a popup
- * opened after an await is blocked — and the code is pasted back. The code
- * box is there on the Mac too, for a browser that lands somewhere else.
- *
- * Replaced `claude auth login` in a one-shot terminal (2026-10-24), which
- * could only use the default browser and only ran on the Mac.
- */
+// Off the Mac the CLI's localhost redirect is unreachable: the code page opens from a button (a popup after an await is blocked) and the code is pasted back.
 export function ClaudeSignInModal({
   open,
   onClose,

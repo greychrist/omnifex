@@ -1,12 +1,6 @@
 import React from "react";
 import { TAB_MAX_WIDTH_RANGE } from "@/lib/messageRenderingConfig";
 
-/**
- * Slider for the widest a tab may grow before its names truncate.
- *
- * A slider rather than a number field: the setting applies live, so dragging
- * it shows the tab strip reflowing and the right value is found by eye.
- */
 export const TabMaxWidthControl: React.FC<{
   maxWidth: number;
   onChange: (maxWidth: number) => void;

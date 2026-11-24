@@ -14,11 +14,6 @@ import { cn } from "@/lib/utils";
 import { logAndForget } from "@/lib/fireAndLog";
 
 interface SlashCommandPickerProps {
-  /**
-   * True when the session's account has a configured Brain vault. Gates the
-   * OmniFex-local /recall entry: without a vault the dialog would open onto
-   * nothing and every search would come back empty.
-   */
   hasBrainVault?: boolean;
   projectPath?: string;
   tabId?: string;
@@ -31,15 +26,11 @@ interface SlashCommandPickerProps {
 }
 
 const SCOPE_LABEL: Record<string, string> = {
-  // Per-row badge for CLI-sourced commands. The scope value stays "default"
-  // (that's the CLI's own term) but we surface it to the user as "claude".
   default: "claude",
   project: "project",
   user: "user",
   plugin: "plugin",
   mcp: "mcp",
-  // OmniFex's own commands. Badged distinctly so it is visible that they are
-  // not something the CLI knows about and not a file in a config dir.
   omnifex: "omnifex",
 };
 
@@ -54,9 +45,7 @@ const SCOPE_COLOR: Record<string, string> = {
 
 type ScopeFilter = "all" | "project" | "user" | "plugin" | "mcp" | "omnifex" | "default";
 
-// Order matters: tab order is also the left/right-arrow cycle order, and the
-// first entry is the initial selection on open. "All" leads so the picker
-// opens showing every scope by default. A type with no commands gets no tab.
+// Order matters: it is also the arrow-key cycle order, and the first entry is the initial selection.
 const SCOPE_FILTERS: { value: ScopeFilter; label: string }[] = [
   { value: "all", label: "All" },
   { value: "project", label: "Project" },
@@ -67,19 +56,12 @@ const SCOPE_FILTERS: { value: ScopeFilter; label: string }[] = [
   { value: "default", label: "Claude" },
 ];
 
-/**
- * Where a command the CLI reported comes from, read off its name. The CLI
- * namespaces plugin commands and skills `plugin:name`, and names MCP prompts
- * `mcp__server__prompt`; everything else it reports is its own built-in.
- */
 const cliCommandScope = (name: string): string => {
   if (name.startsWith("mcp__")) return "mcp";
   if (name.includes(":")) return "plugin";
   return "default";
 };
 
-// Default order on every tab, and the Type column's sort order: what the
-// user wrote or installed before what ships with Claude Code — the tab order.
 const SCOPE_RANK: Record<string, number> = Object.fromEntries(
   SCOPE_FILTERS.filter(f => f.value !== "all").map((f, i) => [f.value, i]),
 );
@@ -97,7 +79,6 @@ const SORT_COLUMNS: { key: SortKey; label: string; className: string }[] = [
 const compareBy = (key: SortKey, a: SlashCommand, b: SlashCommand): number => {
   if (key === "scope") return scopeRank(a.scope) - scopeRank(b.scope);
   if (key === "description") {
-    // No description sorts last either way round it is read.
     if (!a.description !== !b.description) return a.description ? -1 : 1;
     return (a.description ?? "").localeCompare(b.description ?? "");
   }
@@ -120,16 +101,10 @@ const toSlashCommands = (sdkCommands: import("@/lib/api").SessionSlashCommand[])
     accepts_arguments: !!cmd.argumentHint,
   }));
 
-/**
- * Merge default and custom command lists. When a command name appears in both,
- * keep a single entry with the project/user scope but fall back to the default
- * description when the custom one is empty.
- */
 function deduplicateCommands(
   defaultCommands: SlashCommand[],
   customCommands: SlashCommand[],
 ): SlashCommand[] {
-  // Index defaults by full_command for exact match
   const defaultByFullCmd = new Map<string, SlashCommand>();
   for (const cmd of defaultCommands) {
     defaultByFullCmd.set(cmd.full_command, cmd);
@@ -138,7 +113,6 @@ function deduplicateCommands(
   const merged: SlashCommand[] = [];
   const seenFullCmds = new Set<string>();
 
-  // Custom commands take priority — merge in default description if needed
   for (const cmd of customCommands) {
     seenFullCmds.add(cmd.full_command);
     const defaultCmd = defaultByFullCmd.get(cmd.full_command);
@@ -152,7 +126,6 @@ function deduplicateCommands(
     }
   }
 
-  // Add default-only commands (not already covered by custom)
   for (const cmd of defaultCommands) {
     if (!seenFullCmds.has(cmd.full_command)) {
       seenFullCmds.add(cmd.full_command);
@@ -181,8 +154,6 @@ export const SlashCommandPicker: React.FC<SlashCommandPickerProps> = ({
   const [searchQuery, setSearchQuery] = useState(initialQuery);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [scopeFilter, setScopeFilter] = useState<ScopeFilter>(SCOPE_FILTERS[0].value);
-  // Null is the default order. A header click sorts ascending, a second
-  // descending, a third goes back to the default.
   const [sort, setSort] = useState<SortState>(null);
   const cycleSort = (key: SortKey) => {
     setSort(prev => {
@@ -192,11 +163,7 @@ export const SlashCommandPicker: React.FC<SlashCommandPickerProps> = ({
   };
 
   const commandListRef = useRef<HTMLDivElement>(null);
-  // Set once a selection or close has fired. AnimatePresence (in the parent)
-  // keeps the picker mounted during its exit animation, so without this guard
-  // the window-level keydown listener would re-fire onSelect when the user
-  // presses Enter again to send the picked command — repopulating the textarea
-  // after the send and forcing a second Enter to clear it.
+  // AnimatePresence keeps the picker mounted through its exit, so without this guard Enter re-fires onSelect.
   const isClosedRef = useRef(false);
 
   const loadCommands = useCallback(async () => {
@@ -206,13 +173,7 @@ export const SlashCommandPicker: React.FC<SlashCommandPickerProps> = ({
 
       const customCommands = await api.slashCommandsList(projectPath, configDir);
 
-      // Union two CLI-command sources, freshest first, deduped by name:
-      //   1. The config-dir command catalog — a fresh, version-keyed list that
-      //      includes built-ins added by a later CLI update (e.g. /design-sync).
-      //      A long-running session's init snapshot misses those.
-      //   2. The live session's init-time list — a fallback that also covers
-      //      anything session-specific the catalog (run from a scratch cwd)
-      //      might not surface.
+      // Catalog first: a long-running session's init list misses built-ins added by later CLI updates.
       const defaultByName = new Map<string, SlashCommand>();
       const addDefaults = (cmds: import("@/lib/api").SessionSlashCommand[]) => {
         for (const cmd of toSlashCommands(cmds)) {
@@ -241,16 +202,12 @@ export const SlashCommandPicker: React.FC<SlashCommandPickerProps> = ({
       const defaultCommands: SlashCommand[] = [...defaultByName.values()];
 
       const merged = deduplicateCommands(defaultCommands, customCommands);
-      // Final safety: deduplicate by full_command in case any slip through
       const seen = new Set<string>();
       const unique = merged.filter(cmd => {
         if (seen.has(cmd.full_command)) return false;
         seen.add(cmd.full_command);
         return true;
       });
-      // OmniFex's own commands go in last and are never deduped away: they
-      // have no CLI counterpart to collide with, and they are the only entries
-      // in this list that no config dir knows about.
       setCommands([...unique, ...localSlashCommands({ hasVault: hasBrainVault, hasSession: !!tabId })]);
     } catch (err) {
       console.error("Failed to load slash commands:", err);
@@ -261,8 +218,6 @@ export const SlashCommandPicker: React.FC<SlashCommandPickerProps> = ({
     }
   }, [projectPath, configDir, tabId, prefetchedCommands, hasBrainVault]);
 
-  // Load commands on mount (re-runs when the loadCommands callback changes,
-  // i.e. when projectPath, configDir, tabId, or prefetchedCommands change).
   useEffect(() => {
     logAndForget('slash-command-picker:load-commands', loadCommands());
   }, [loadCommands]);
@@ -274,16 +229,13 @@ export const SlashCommandPicker: React.FC<SlashCommandPickerProps> = ({
   const visibleFiltersRef = useRef(visibleFilters);
   visibleFiltersRef.current = visibleFilters;
 
-  // Filter + sort
   const filteredCommands = useMemo(() => {
     if (!commands.length) return [];
 
     const query = searchQuery.toLowerCase();
     const filtered = commands.filter(cmd => {
-      // Scope filter — "all" passes everything; the others require an exact match.
       if (scopeFilter !== "all" && cmd.scope !== scopeFilter) return false;
 
-      // Text search
       if (!query) return true;
       return (
         cmd.name.toLowerCase().includes(query) ||
@@ -299,8 +251,7 @@ export const SlashCommandPicker: React.FC<SlashCommandPickerProps> = ({
         const tie = byColumn === 0 ? a.name.localeCompare(b.name) : byColumn;
         return sort.dir === "asc" ? tie : -tie;
       }
-      // Default: an exact name match first (it is what Enter should pick),
-      // then scope, then prefix matches, then name.
+      // An exact name match first: it is what Enter should pick.
       if (query) {
         const aExact = a.name.toLowerCase() === query;
         const bExact = b.name.toLowerCase() === query;
@@ -321,12 +272,10 @@ export const SlashCommandPicker: React.FC<SlashCommandPickerProps> = ({
     return filtered;
   }, [searchQuery, commands, scopeFilter, sort]);
 
-  // Reset selection when list changes
   useEffect(() => {
     setSelectedIndex(0);
   }, [filteredCommands]);
 
-  // Keyboard navigation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (isClosedRef.current) return;
@@ -359,7 +308,6 @@ export const SlashCommandPicker: React.FC<SlashCommandPickerProps> = ({
             const filters = visibleFiltersRef.current;
             const idx = filters.findIndex(f => f.value === prev);
             const len = filters.length;
-            // Wrap on both ends so the cycle is continuous.
             const next = (idx + delta + len) % len;
             return filters[next].value;
           });
@@ -371,7 +319,6 @@ export const SlashCommandPicker: React.FC<SlashCommandPickerProps> = ({
     return () => { window.removeEventListener('keydown', handleKeyDown); };
   }, [filteredCommands, selectedIndex, onSelect, onClose]);
 
-  // Scroll selected item into view
   useEffect(() => {
     if (commandListRef.current) {
       const el = commandListRef.current.querySelector(`[data-index="${selectedIndex}"]`);
@@ -379,7 +326,6 @@ export const SlashCommandPicker: React.FC<SlashCommandPickerProps> = ({
     }
   }, [selectedIndex]);
 
-  // Update search query from parent
   useEffect(() => {
     setSearchQuery(initialQuery);
   }, [initialQuery]);
@@ -397,7 +343,6 @@ export const SlashCommandPicker: React.FC<SlashCommandPickerProps> = ({
         className
       )}
     >
-      {/* Header */}
       <div className="border-b border-border px-3 py-2 shrink-0">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -437,7 +382,6 @@ export const SlashCommandPicker: React.FC<SlashCommandPickerProps> = ({
         </div>
       </div>
 
-      {/* Command List */}
       <div className="flex-1 overflow-y-auto" ref={commandListRef}>
         {isLoading && (
           <div className="flex items-center justify-center h-full">
@@ -553,7 +497,6 @@ export const SlashCommandPicker: React.FC<SlashCommandPickerProps> = ({
         )}
       </div>
 
-      {/* Footer */}
       <div className="border-t border-border p-2 shrink-0">
         <p className="text-xs text-muted-foreground text-center">
           ↑↓ Navigate &bull; ←→ Switch tab &bull; Enter Select &bull; Esc Close

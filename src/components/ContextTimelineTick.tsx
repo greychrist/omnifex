@@ -4,100 +4,46 @@ import { formatTokens, type ContextPressureLevel } from "@/lib/contextPressure";
 import { showsGutterDelta, type ContextTimelinePoint } from "@/lib/contextTimeline";
 import type { ViewMode } from "@/components/SessionViewToggle";
 
-/**
- * Green / amber / red by proximity to the budget, so a long session can be
- * scanned for where it got expensive without reading a number.
- *
- * Exactly the badge's color, solid: a lighter, translucent line under a
- * solid badge read as two different greens.
- *
- * Under the budget draws no line at all: that is the normal case, so the rail
- * only appears where context is getting expensive.
- *
- * A compaction used to dash the line. The "compacted" note already says it,
- * and the dashes spanned the reply row rather than the compaction itself
- * (Greg, 2026-11-18).
- */
 const RAIL_BG: Record<ContextPressureLevel, string | null> = {
   none: null,
   warn: "bg-amber-500",
   critical: "bg-red-600",
 };
 
-/** The size badge, in the rail's color. Solid: a lighter or translucent
- *  badge beside the solid line read as two different greens. No border — the unlayered `* { border-color }` rule
- *  outranks the utilities.
- *
- *  Each pair clears WCAG AA (4.5:1) for its 12px text: emerald-700 5.4,
- *  amber-500 on black 9.8, red-600 4.8. Emerald-600 was 3.7 and failed. */
+// No border: the unlayered `* { border-color }` rule outranks the utilities. Each pair clears WCAG AA for 12px text.
 const BADGE: Record<ContextPressureLevel, string> = {
   none: "bg-emerald-700 text-white",
   warn: "bg-amber-500 text-black",
   critical: "bg-red-600 text-white",
 };
 
-/** The annotations under it: quieter than the badge, but lifted off the page.
- *  Muted gray on bg-muted all but vanished against the transcript, so the
- *  background mixes 14% foreground into the page and a thin edge (an inset
- *  shadow: border-color utilities lose to the unlayered `* { border-color }`
- *  rule, and styles.css nulls `.ring-1`) mixes 28%. Both come from the
- *  theme's variables, so they follow light and dark at runtime. */
+// Edge is an inset shadow: border-color utilities lose to the unlayered `* { border-color }` rule, and styles.css nulls `.ring-1`.
 const NOTE =
   "rounded px-1 py-0.5 font-mono text-[10px] leading-none tabular-nums " +
   "bg-[color-mix(in_oklch,var(--color-foreground)_14%,var(--color-background))] " +
   "shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--color-foreground)_28%,transparent)]";
 
-/** Note text: near-foreground, so it reads at 10px. */
 const NOTE_TEXT = "text-foreground/85";
 
 export interface ContextTimelineTickProps {
-  /** Undefined for rows before the first usage reading. */
   point: ContextTimelinePoint | undefined;
-  /** Standard hides sub-2k deltas; Expanded prints every one. */
   viewMode?: ViewMode;
-  /**
-   * The last row that draws a rail. Caps the line off level with the final
-   * message card instead of running 1rem past it.
-   *
-   * Every row's body column carries `pb-4` so consecutive rails meet through
-   * the inter-row gap and read as one continuous line — see `withTimeline` in
-   * ClaudeTranscript. The last segment has nothing below it to meet, so that
-   * same padding is pure overshoot: the line trailed past the transcript's
-   * final card and stopped in mid-air.
-   */
   isLast?: boolean;
 }
 
-/** Width of the gutter cell — the transcript's left margin, outside the chat
- *  frame (see `data-transcript-frame` in ClaudeTranscript). Shared so the
- *  empty and drawn states agree. */
 const GUTTER = "relative w-14 shrink-0 self-stretch select-none min-h-9";
 
-/**
- * One row of the transcript's context rail: a slim continuous vertical line,
- * plus a size badge and readout wherever a real usage reading exists.
- *
- * Rendered as a stretched flex cell rather than an absolutely-positioned
- * overlay. The transcript is a plain `.map` of variable-height messages with no
- * virtualization, so letting flexbox own the alignment avoids a resize observer
- * chasing markdown and code blocks as they reflow.
- *
- * See docs/superpowers/specs/2026-07-30-context-timeline-design.md
- */
 export const ContextTimelineTick: React.FC<ContextTimelineTickProps> = ({
   point,
   viewMode = 'expanded',
   isLast = false,
 }) => {
-  // The cell keeps its width before the series starts. Returning null instead
-  // un-indented the opening rows while every later row was pushed right by the
-  // gutter, which read as the transcript jogging sideways partway down.
+  // Keep the cell's width before the series starts; returning null jogs the opening rows sideways.
   if (!point) return <div data-timeline-gutter className={GUTTER} aria-hidden="true" />;
 
   const { tokens, delta, prevTokens, isSample, isJump, isReset, fraction, level } = point;
 
-  // The delta a reset row prints is measured across the compaction, which is
-  // why it comes from prevTokens rather than `delta` (null there by design).
+  // Reset rows measure across the compaction; `delta` is null there by design.
   const shownDelta = isReset && prevTokens !== null ? tokens - prevTokens : delta;
   const showDelta = isSample && showsGutterDelta(shownDelta, viewMode);
 
@@ -109,48 +55,27 @@ export const ContextTimelineTick: React.FC<ContextTimelineTickProps> = ({
     : isSample && beforeAfter
       ? `Context ${formatTokens(tokens)} (${beforeAfter})`
       : `Context ${formatTokens(tokens)}`;
-  // The share of the window, which the bar under the number used to show.
   const title = `${base} · ${Math.round(fraction * 100)}% of the window`;
 
   return (
     <div
-      // min-h reserves the readout's own height. Rows in this transcript vary
-      // wildly — a compact marker or a collapsed "N Hidden Events" bar is a
-      // fraction of the height of a message — and without a floor the cell
-      // collapses to the body's height and the next tick starts on top of this
-      // one's numbers.
+      // min-h floor: short rows otherwise collapse and the next tick prints over this one's numbers.
       data-timeline-gutter
       className={GUTTER}
       title={title}
     >
-      {/* Spans the row edge to edge. ClaudeTranscript drops the inter-row gap
-          while the rail is on, so consecutive rails meet and read as one line.
-          A 1px line at 7px, so its right edge is the readout's 8px padding:
-          the left-aligned badges touch it whatever their width. Struck through
-          centred badges at 2px it read as too much. */}
       <div
         data-timeline-rail
         className={cn(
           "absolute left-[7px] w-px",
-          // `bottom-4` cancels the body column's `pb-4` exactly, so the line
-          // ends flush with the card's bottom edge; the rounded cap closes it
-          // off rather than leaving a cut stem.
+          // `bottom-4` cancels the body column's `pb-4` so the last line ends flush with its card.
           isLast ? "top-0 bottom-4 rounded-b-full" : "inset-y-0",
           RAIL_BG[level],
         )}
       />
       {isSample && (
-        // In normal flow, NOT absolute. An absolute readout contributes no
-        // height, so a short row let it print over the following tick.
-        // `relative` lifts it above the absolute rail.
+        // In normal flow, not absolute: an absolute readout has no height and prints over the next tick.
         <div data-timeline-readout className="relative flex flex-col items-start gap-0.5 pl-2 pt-1">
-          {/* What happened sits above the size it produced: a delta is the
-              growth since the previous reading, so under its own badge it read
-              as growth after it ("88k, +88k, 88k").
-              Every turn's delta, not just the jumps — this is now the only
-              inline home for context growth, since the banner that used to
-              announce it is gone. Compact mode drops the sub-2k noise that
-              made "label every step" a bad idea the first time round. */}
           {showDelta && shownDelta !== null && (
             <span
               className={cn(
@@ -168,9 +93,6 @@ export const ContextTimelineTick: React.FC<ContextTimelineTickProps> = ({
               compacted
             </span>
           )}
-          {/* The one number worth reading mid-scroll, in a badge tinted by
-              level. Below the events that produced it. It stays smaller than body text: the gutter is
-              4rem, and "compacted" at this size wraps. */}
           <span
             data-timeline-badge
             className={cn(

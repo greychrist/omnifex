@@ -1,16 +1,3 @@
-/**
- * What the socket to the daemon is doing, when that is worth a line.
- *
- * Silent while connected. "Reconnecting…" while the client is between
- * sockets — an iPad coming back from the background lands here for a second
- * or two — and a brief "caught up N events" once the resubscribe has replayed
- * what was missed, so a wall of new transcript rows reads as a catch-up and
- * not as a glitch.
- *
- * It used to offer "Work locally" after a long outage — Electron could run
- * the app against its own copy of the services. That copy went with Electron
- * (2026-10-23); restarting the daemon is the title bar's Daemon popover's job.
- */
 import { useEffect, useState } from 'react';
 import { Bell, RefreshCw, WifiOff, X } from 'lucide-react';
 
@@ -19,12 +6,6 @@ import { enablePush, pushSupport, type PushSupport } from '@/lib/remote/push';
 
 const PUSH_DISMISSED_KEY = 'omnifex.remote.pushDismissed';
 
-/**
- * One-line offer to turn on Web Push, shown on the web client only while it
- * is still possible and not yet decided: a secure origin, permission not yet
- * asked, and the user has not dismissed it. The Mac app has native banners
- * and never shows this.
- */
 export function PushEnableBar(): React.JSX.Element | null {
   const [support, setSupport] = useState<PushSupport>(() => pushSupport());
   const [dismissed, setDismissed] = useState<boolean>(() => {
@@ -104,10 +85,6 @@ export function RemoteConnectionBanner(): React.JSX.Element | null {
   );
 }
 
-/**
- * Per-session "caught up" pill. Mounted inside a session; listens for the
- * shim's `remote-caught-up:<tabId>` and shows for a few seconds.
- */
 export function CaughtUpPill({ tabId }: { tabId: string }): React.JSX.Element | null {
   const [count, setCount] = useState<number | null>(null);
 

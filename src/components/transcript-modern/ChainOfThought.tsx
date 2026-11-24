@@ -1,18 +1,3 @@
-/**
- * A run of thinking and tool calls, drawn as shadcn's Trace chain of thought:
- * a header line with a status circle ("Worked in 5 steps" · 32s, or
- * "Working" with a spinner while live), opening onto one line per step, each
- * with an icon naming its action (a brain for a thought, a terminal for a
- * command, a file for a read) and a title whose verb follows its state. As in
- * Trace, status is the line's color, shimmer and wording, never the icon.
- *
- * Collapsed once the run is finished and open while it is live, unless
- * Settings › Chats › Modern says otherwise — that tab also picks each step
- * kind's icon, can leave thoughts out, and recolors failures. A step opens
- * onto its result alone (a command's output, an edit's diff, the sources a
- * web step used); a read opens onto nothing, its title says it all. Copy and
- * the raw records sit beside every step on hover.
- */
 import * as React from 'react';
 import type { JsonlNode } from '@/types/jsonl';
 import type { WorkEntry } from '@/lib/modernGrouping';
@@ -46,15 +31,11 @@ import {
   type TraceStatus,
 } from './trace';
 
-/** What the timeline reads of its row's context: whose live thought to
- *  show, and whose browser a Design step's page opens in. */
 interface RowContext {
   tabId: string;
-  /** The session's account; its pages open in the browser chosen for it. */
   configDir?: string | null;
 }
 
-/** First record to last, from the CLI's own timestamps; null when unknown. */
 function spanMs(nodes: JsonlNode[]): number | null {
   const times = nodes
     .map((n) => Date.parse((n as { receivedAt?: string | null }).receivedAt ?? ''))
@@ -74,25 +55,17 @@ export const ChainOfThought = React.memo(function ChainOfThought({
   ctx: RowContext;
 }) {
   const { modern } = useMessageRenderingConfig().config;
-  // Follows the run (open while live, closed once done, by default) until the
-  // user chooses — by its header, or by clicking anything inside it — then
-  // keeps their choice.
   const [chosen, setChosen] = React.useState<boolean | null>(null);
   const open = chosen ?? (modern.timelineOpen === 'always' ? true : modern.timelineOpen === 'never' ? false : live);
-  // Settings › Chats › Modern › Failed step: the timeline's red, recolored.
   const failedStyle = modern.failedColor
     ? ({ '--color-destructive': modern.failedColor } as React.CSSProperties)
     : undefined;
 
   const shown = modern.showThoughts ? entries : entries.filter((e) => e.type !== 'thinking');
-  // The thought being had right now, typed in as it streams. A recorded
-  // thought has already ended — its record lands when it does.
   const thought = live && modern.showThoughts ? <LiveThought key="live-thought" tabId={ctx.tabId} /> : null;
 
   if (shown.length === 0 && !thought) return null;
 
-  // A run that only thought is shadcn's Reasoning on its own: no "Worked in"
-  // header around it.
   if (shown.every((e) => e.type === 'thinking')) {
     return (
       <Trace style={failedStyle}>
@@ -122,8 +95,7 @@ export const ChainOfThought = React.memo(function ChainOfThought({
             {!live && header.description && <TraceDescription>{header.description}</TraceDescription>}
           </TraceLine>
         </TraceCollapsibleTrigger>
-        {/* A click inside an open run — opening a step, say — pins it open:
-            otherwise the run closes over that step the moment it finishes. */}
+        {/* Any inner click pins the run open, or it closes over a step the moment that step finishes. */}
         <TraceCollapsibleContent onClickCapture={() => { if (chosen === null) setChosen(true); }}>
           <Trace>
             {foldDesignRuns(shown).map((entry) =>
@@ -138,12 +110,6 @@ export const ChainOfThought = React.memo(function ChainOfThought({
   );
 });
 
-/**
- * shadcn's Reasoning (ui.shadcn.com/docs/ai-elements/base/reasoning): a
- * Trace line reading "Thinking" with a spinner while the model thinks, then
- * "Thought for 5s" with a check, closed. Open while it thinks; once the
- * person opens or closes it, their choice holds.
- */
 export function ReasoningLine({
   text,
   ms,
@@ -152,7 +118,6 @@ export function ReasoningLine({
 }: {
   text: string;
   ms: number | null;
-  /** The CLI's token estimate for the thought (live only), shown beside it. */
   tokens?: number | null;
   running: boolean;
 }) {
@@ -167,46 +132,31 @@ export function ReasoningLine({
       {tokens !== null && <TraceDescription>({thinkingTokensLabel(tokens)})</TraceDescription>}
     </TraceLine>
   );
-  // The CLI ends every thought with "\n\n", and the body keeps line
-  // breaks, so untrimmed it drew two blank lines under each opened thought.
+  // The CLI ends every thought with "\n\n".
   const body = text.trim();
   if (!body) return line;
   return (
     <TraceCollapsible open={chosen ?? running} onOpenChange={setChosen}>
       <TraceCollapsibleTrigger>{line}</TraceCollapsibleTrigger>
-      {/* Brighter than the muted step chrome around it, so the reasoning
-          itself stands out from the titles and commands. */}
       <TraceCollapsibleContent ruleColor={color} className="whitespace-pre-wrap text-foreground/85">{body}</TraceCollapsibleContent>
     </TraceCollapsible>
   );
 }
 
-/** Settings › Chats › Modern › Step icons: the color chosen for a kind — its
- *  icon chip, title and opened rule take it, as an answered question does — or
- *  undefined for the built-in gray. */
 function useStepColor(kind: StepKind | 'thought'): string | undefined {
   return useMessageRenderingConfig().config.modern.stepColors[kind] ?? undefined;
 }
 
-/** A step title in its kind's color, shimmering in it while it runs. */
 function titleStyle(color: string | undefined): React.CSSProperties | undefined {
   return color ? ({ color, '--modern-shimmer-color': color } as React.CSSProperties) : undefined;
 }
 
-/** A #rrggbb at half strength, for the chip's border (as a failed step's);
- *  any other hex form is used as given. */
 function halfStrength(hex: string): string {
   return /^#[0-9a-f]{6}$/i.test(hex) ? `${hex}80` : hex;
 }
 
-/** `color` tints the glyph and the chip's border; a failed step passes none,
- *  so its red holds. */
 function KindIcon({ kind, color }: { kind: StepKind | 'thought'; color?: string }) {
-  // Settings › Chats › Modern › Step icons.
   const icon = useMessageRenderingConfig().config.modern.stepIcons[kind];
-  // A chip like the classic card header's icon, as bright as an opened
-  // thought. The negative margins cancel the padding and border, so the
-  // chip keeps the 16px box the thought's left rule is centred under.
   // A failed step's red border is `.modern-step-icon` in styles.css.
   return (
     <TraceIcon
@@ -234,18 +184,14 @@ function Step({ entry, live }: { entry: WorkEntry; live: boolean }) {
 }
 
 function ToolStep({ entry, live }: { entry: ToolEntry; live: boolean }) {
-  // A tool with no result yet is running while the turn is; otherwise it
-  // never got one (an interrupted turn) and waits, dimmed.
   const state: StepState = entry.status === 'error' ? 'error' : entry.status === 'pending' ? 'running' : 'done';
   const status: TraceStatus | undefined =
     entry.status === 'error' ? 'error' : entry.status === 'pending' ? (live ? 'running' : 'pending') : undefined;
   const text = describeToolStep(entry.name, entry.input, state);
-  // The model's own description of a command: the title says what ran.
   const tooltip = entry.name === 'Bash' && typeof entry.input.description === 'string' ? entry.input.description : undefined;
   const body = stepBody(entry);
   const kind = stepKind(entry.name, entry.input);
   const kindColor = useStepColor(kind);
-  // A failure keeps its red: the kind's color would hide it.
   const color = status === 'error' ? undefined : kindColor;
 
   const line = (
@@ -277,10 +223,6 @@ function ToolStep({ entry, live }: { entry: ToolEntry; live: boolean }) {
   );
 }
 
-/**
- * A Claude Design run, folded: one step named for what was made, with a link
- * to the published page beside it, opening onto the calls that made it.
- */
 function DesignStep({ run, live, configDir }: { run: DesignRun; live: boolean; configDir?: string | null }) {
   const summary = designRunSummary(run.entries);
   const kindColor = useStepColor('design');
@@ -289,7 +231,6 @@ function DesignStep({ run, live, configDir }: { run: DesignRun; live: boolean; c
     summary.state === 'error' ? 'error' : summary.state === 'running' ? (live ? 'running' : 'pending') : undefined;
   const color = status === 'error' ? undefined : kindColor;
   const what = summary.title ?? 'a design';
-  // "Designed" only once there is a page to show for it.
   const title = summary.state === 'error'
     ? `Failed to design ${what}`
     : running ? `Designing ${what}` : summary.url ? `Designed ${what}` : `Worked on ${what}`;
@@ -297,10 +238,7 @@ function DesignStep({ run, live, configDir }: { run: DesignRun; live: boolean; c
   return (
     <HoverActionsRow data-step raw={rawOf(run.entries.map((e) => e.node))} copy={() => summary.url ?? title}>
       <TraceCollapsible>
-        {/* One line in three parts, because a link cannot sit inside the
-            fold's button: the title opens the fold, then the link, then the
-            step count and chevron, which open it too — by mouse only, so a
-            keyboard or screen reader meets one control, not two. */}
+        {/* Three parts because a link cannot sit inside the fold's button. */}
         <div data-design-line className="flex w-fit max-w-full min-w-0 items-center gap-2">
           <TraceCollapsibleTrigger chevron={false} className="min-w-0">
             <TraceLine status={status}>
@@ -325,12 +263,7 @@ function DesignStep({ run, live, configDir }: { run: DesignRun; live: boolean; c
   );
 }
 
-/** The published page, on the Design step's title line — beside the fold's
- *  trigger, not in it, since a link inside a button is neither valid nor
- *  clickable.
- *  It opens in the browser chosen for the session's account (Settings ›
- *  Accounts), like a sign-in link: the page is private to that claude.ai
- *  identity, and the system default browser may be signed in as another. */
+// Opens in the account's chosen browser: the page is private to that claude.ai identity.
 function DesignLink({ url, configDir }: { url: string; configDir?: string | null }) {
   return (
     <a
@@ -339,9 +272,6 @@ function DesignLink({ url, configDir }: { url: string; configDir?: string | null
         e.preventDefault();
         void openSignInLink(url, configDir);
       }}
-      // A small outlined button, so it reads as a control beside the title
-      // rather than more of it. The border takes the theme color from the
-      // global border reset, as every border here does.
       className="flex h-6 shrink-0 items-center gap-1 rounded-md border bg-muted/40 px-2 text-xs font-medium text-foreground/85 transition-colors hover:bg-accent hover:text-foreground"
     >
       Open in Claude
@@ -361,7 +291,6 @@ function str(v: unknown): string {
   return typeof v === 'string' ? v : '';
 }
 
-/** What a step opens onto, or null when there is nothing to open. */
 function stepBody(entry: ToolEntry): React.ReactNode {
   const result = entry.resultText?.replace(/<\/?tool_use_error>/g, '').trim();
   if (entry.status === 'error') {
@@ -398,13 +327,11 @@ function stepBody(entry: ToolEntry): React.ReactNode {
       return result ? <div className="text-foreground"><MessageResponse>{result}</MessageResponse></div> : null;
   }
   if (result) return <StepOutput text={result} />;
-  // A result with no text: what it carried instead, drawn the Modern way.
   return blocksBody(resultBlocks(entry)) ?? inputBody(input);
 }
 
 interface ResultBlock { type?: unknown; tool_name?: unknown; source?: { type?: unknown; media_type?: unknown; data?: unknown } }
 
-/** The blocks of this step's own tool_result. */
 function resultBlocks(entry: ToolEntry): ResultBlock[] {
   const content = (entry.resultNode as { raw?: { message?: { content?: unknown } } } | undefined)?.raw?.message?.content;
   if (!Array.isArray(content)) return [];
@@ -413,7 +340,6 @@ function resultBlocks(entry: ToolEntry): ResultBlock[] {
   return Array.isArray(own?.content) ? (own.content as ResultBlock[]) : [];
 }
 
-/** Tools a ToolSearch loaded, and images — the non-text results we know. */
 function blocksBody(blocks: ResultBlock[]): React.ReactNode {
   const tools = blocks.flatMap((b) => (b.type === 'tool_reference' && typeof b.tool_name === 'string' ? [b.tool_name] : []));
   const images = blocks.flatMap((b) =>
@@ -438,14 +364,10 @@ function blocksBody(blocks: ResultBlock[]): React.ReactNode {
   );
 }
 
-/** Last resort: what the step was asked to do, when its result says nothing
- *  we can draw. */
 function inputBody(input: Record<string, unknown>): React.ReactNode {
   return Object.keys(input).length > 0 ? <StepOutput text={JSON.stringify(input, null, 2)} /> : null;
 }
 
-/** A skill's SKILL.md, in the colors and corner radius of the classic
- *  skill card it replaces (Appearance › Skill injection, All cards). */
 function SkillBody({ text }: { text: string }) {
   const { config } = useMessageRenderingConfig();
   const swatch = swatchFor(config, 'user.skillInjection');
@@ -465,7 +387,6 @@ function SkillBody({ text }: { text: string }) {
   );
 }
 
-/** Trace's code block: a step's output in the code face, red when it failed. */
 function StepOutput({ text, tone = 'default' }: { text: string; tone?: 'default' | 'error' }) {
   return (
     <pre
@@ -503,21 +424,14 @@ function SourceList({ sources }: { sources: { title: string; url: string }[] }) 
   );
 }
 
-/** The streaming thought for a tab, or nothing. Reads its own store slot so a
- *  thinking flush re-renders this line, not the transcript. */
+// Reads its own store slot so a thinking flush re-renders this line, not the transcript.
 function LiveThought({ tabId }: { tabId: string }) {
   const text = useClaudeSessionStore((st) => st.tabs[tabId]?.inflightThinking ?? null);
   return text ? <ReasoningLine text={text} ms={null} running /> : null;
 }
 
-/**
- * A turn that is running with no run on screen yet: the thought being typed
- * (Reasoning), or "Working" until there is something to show. Replaces the
- * classic typing dots in the Modern format.
- */
 export function LiveActivity({ tabId, phase = null }: {
   tabId: string;
-  /** A phase the CLI announced ("Compacting context"), said instead of "Working". */
   phase?: string | null;
 }) {
   const thought = useClaudeSessionStore((st) => st.tabs[tabId]?.inflightThinking ?? null);

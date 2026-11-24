@@ -12,24 +12,11 @@ import { MCPImportExport } from "./MCPImportExport";
 import { fireAndLog, logAndForget } from "@/lib/fireAndLog";
 
 interface MCPManagerProps {
-  /**
-   * Callback to go back to the main view
-   */
   onBack: () => void;
-  /**
-   * Optional className for styling
-   */
   className?: string;
-  /**
-   * Optional config directory for account-scoped MCP operations
-   */
   configDir?: string;
 }
 
-/**
- * Main component for managing MCP (Model Context Protocol) servers
- * Provides a comprehensive UI for adding, configuring, and managing MCP servers
- */
 export const MCPManager: React.FC<MCPManagerProps> = ({
   className: _className,
   configDir,
@@ -41,9 +28,6 @@ export const MCPManager: React.FC<MCPManagerProps> = ({
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
   
 
-  /**
-   * Loads all MCP servers
-   */
   const loadServers = useCallback(async () => {
     try {
       setLoading(true);
@@ -61,31 +45,21 @@ export const MCPManager: React.FC<MCPManagerProps> = ({
     }
   }, [configDir]);
 
-  // Load servers on mount (and whenever configDir changes — distinct account)
   useEffect(() => {
     logAndForget('mcpmanager:load-servers', loadServers());
   }, [loadServers]);
 
-  /**
-   * Handles server added event
-   */
   const handleServerAdded = () => {
     logAndForget('mcpmanager:load-servers', loadServers());
     setToast({ message: "MCP server added successfully!", type: "success" });
     setActiveTab("servers");
   };
 
-  /**
-   * Handles server removed event
-   */
   const handleServerRemoved = (name: string) => {
     setServers(prev => prev.filter(s => s.name !== name));
     setToast({ message: `Server "${name}" removed successfully!`, type: "success" });
   };
 
-  /**
-   * Handles import completed event
-   */
   const handleImportCompleted = (imported: number, failed: number) => {
     logAndForget('mcpmanager:load-servers', loadServers());
     if (failed === 0) {
@@ -104,7 +78,6 @@ export const MCPManager: React.FC<MCPManagerProps> = ({
   return (
     <div className="h-full overflow-y-auto">
       <div className="max-w-6xl mx-auto flex flex-col h-full">
-        {/* Header */}
         <div className="p-6">
           <div className="flex items-center justify-between">
             <div>
@@ -116,7 +89,6 @@ export const MCPManager: React.FC<MCPManagerProps> = ({
           </div>
         </div>
 
-        {/* Error Display */}
         <AnimatePresence>
           {error && (
             <motion.div
@@ -131,7 +103,6 @@ export const MCPManager: React.FC<MCPManagerProps> = ({
           )}
         </AnimatePresence>
 
-        {/* Content */}
         {loading ? (
           <div className="flex-1 flex items-center justify-center">
             <Spinner className="size-8 text-muted-foreground" />
@@ -151,7 +122,6 @@ export const MCPManager: React.FC<MCPManagerProps> = ({
                 </TabsTrigger>
               </TabsList>
 
-              {/* Servers Tab */}
               <TabsContent value="servers" className="space-y-6 mt-6">
                 <Card>
                   <MCPServerList
@@ -164,7 +134,6 @@ export const MCPManager: React.FC<MCPManagerProps> = ({
                 </Card>
               </TabsContent>
 
-              {/* Add Server Tab */}
               <TabsContent value="add" className="space-y-6 mt-6">
                 <Card>
                   <MCPAddServer
@@ -175,7 +144,6 @@ export const MCPManager: React.FC<MCPManagerProps> = ({
                 </Card>
               </TabsContent>
 
-              {/* Import/Export Tab */}
               <TabsContent value="import" className="space-y-6 mt-6">
                 <Card className="overflow-hidden">
                   <MCPImportExport
@@ -190,7 +158,6 @@ export const MCPManager: React.FC<MCPManagerProps> = ({
         )}
       </div>
 
-      {/* Toast Notifications */}
       <ToastContainer>
         {toast && (
           <Toast

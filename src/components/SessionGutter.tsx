@@ -3,33 +3,13 @@ import { PanelRightOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { TooltipSimple } from '@/components/ui/tooltip-modern';
 
-/**
- * Chrome for a button in the right-hand rail. Exported because the surfaces
- * that have a rail — rendered chat and Codex — were each carrying their own
- * copy of this string, and they had already drifted from being one
- * declaration.
- */
 export const GUTTER_BUTTON =
   'h-8 w-8 hover:bg-accent/50 transition-colors bg-background/80 backdrop-blur-sm border border-border/50';
 
-/**
- * Chrome for a button inside a GutterButtonGroup: the group draws the border,
- * background and corners, so the button keeps only its size and hover. It is
- * 2px narrower than GUTTER_BUTTON because the group's 1px border sits outside
- * its buttons, while a standalone button's sits inside its own width — at
- * w-8 the groups stood 2px wider than the scroll-to-top/bottom buttons.
- */
+// 2px narrower than GUTTER_BUTTON: the group's border sits outside its buttons.
 export const GUTTER_GROUP_BUTTON = 'h-8 w-[30px] rounded-none hover:bg-accent/50 transition-colors';
 
-/**
- * A run of rail buttons joined into one capsule — a pair that steps the same
- * thing both ways, so it reads as one control rather than two near-identical
- * buttons. One border round the outside and a hairline between the halves
- * (`divide-y`: its color comes from the global border-color reset, like
- * every other border here). Each direct child is a button, or the span a
- * disabled button sits in for its tooltip; spans are made blocks so the
- * hairline draws.
- */
+// Disabled buttons sit in spans for their tooltips; spans are made blocks so the divide-y hairline draws.
 export function GutterButtonGroup({ label, children }: { label: string; children: React.ReactNode }): React.JSX.Element {
   return (
     <div
@@ -42,25 +22,12 @@ export function GutterButtonGroup({ label, children }: { label: string; children
   );
 }
 
-/**
- * The right-hand rail: a full-height column with two ends.
- *
- * `children` sit at the bottom, where the scroll and stepper controls belong
- * — near the composer, where the hand already is. `top` pins to the top edge
- * instead of riding on top of that stack, which is the difference between
- * "above the other buttons" and "at the top of the rail".
- *
- * The column spans the full height, so it is `pointer-events-none` with the
- * two groups opting back in: otherwise an invisible full-height strip down
- * the right edge of the transcript would swallow clicks and scrolls.
- */
+// The full-height column is pointer-events-none (groups opt back in), or it swallows transcript clicks.
 export function SessionGutter({
   top,
   children,
 }: {
-  /** Pinned to the top edge of the rail. */
   top?: React.ReactNode;
-  /** Pinned to the bottom edge. */
   children: React.ReactNode;
 }): React.JSX.Element {
   return (
@@ -72,21 +39,10 @@ export function SessionGutter({
 }
 
 export interface InspectorGutterButtonProps {
-  /** Omit on a surface that has no inspector to open. */
   onOpenInspector?: () => void;
-  /** The panel has its own close control, so the opener hides while it is up. */
   inspectorOpen?: boolean;
 }
 
-/**
- * Opens the session inspector, from the top of the rail.
- *
- * It used to be an `absolute top-2 right-2` button floating over the content
- * area, attached to nothing and matching none of the other chrome — and once
- * the chat status bar arrived above the transcript, it sat on top of it. It
- * now pins to the top of the rail: same column and same chrome as the
- * steppers, but its own end of it rather than stacked on theirs.
- */
 export function InspectorGutterButton({
   onOpenInspector,
   inspectorOpen,

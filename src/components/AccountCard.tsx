@@ -14,23 +14,13 @@ import { UsageDetailPopover } from "./claude-code-session/UsageDetailPopover";
 import type { AccountUsage } from "@/hooks/useAccountUsage";
 
 interface AccountCardProps extends AccountDetailsInputs {
-  /** Whether usage on this account costs money (true for e.g. Enterprise/API,
-   *  false for Max). Drives the usage widget: cost-based accounts show a dollar
-   *  figure (they have no rate-limit windows); rate-limited accounts show the
-   *  5h/7d utilization chart. */
   hasCost?: boolean;
-  /** `/usage` and computed cost, owned by AgentSession — see useAccountUsage. */
   usage: AccountUsage;
   fiveHourRateLimit?: RateLimitSnapshot | null;
   sevenDayRateLimit?: RateLimitSnapshot | null;
   className?: string;
 }
 
-/**
- * Compact account-and-usage card. Pulled out of SessionHeader so it can be
- * mounted inline in the upper toolbar (next to folder/branch) without
- * dragging the rest of the session header along.
- */
 export function AccountCard({
   hasCost,
   usage,
@@ -46,18 +36,13 @@ export function AccountCard({
 
   const shieldStatus: IdentityStatus | null = verification?.status ?? null;
 
-  // Cost-based accounts (Enterprise/API) are billed per token and expose no
-  // rate-limit windows, so we show a dollar figure instead of the 5h/7d chart.
-  // Both variants still fetch /usage and open the same detail popover.
   const costBased = hasCost === true;
 
   const { data: usageData, loading: usageLoading, refresh: refreshUsage } = usage;
   const computedCost = usage.sessionCost;
   const sessionCostUsd = computedCost?.totalUsd ?? null;
 
-  // Also re-runs the identity check: the verdict is otherwise re-read only on
-  // an on-disk login change, so an expected email edited in Settings would
-  // stay stale in an open session until this.
+  // Also re-runs the identity check, which is otherwise re-read only on an on-disk login change.
   const handleRefreshClick = React.useCallback(async () => {
     onRecheck?.();
     if (usageLoading) return;
@@ -103,10 +88,6 @@ export function AccountCard({
         sessionCost={costBased ? computedCost : null}
         trigger={
           costBased ? (
-            // Invisible label spacer so the single cost pill drops down to the
-            // account-badge row instead of sitting up at the "account" label
-            // (the parent row is items-start). Mirrors the account column's
-            // label + badge stack without hardcoding the label height.
             <div className="flex flex-col items-start gap-0.5">
               <HeaderLabel aria-hidden className="invisible">account</HeaderLabel>
               <CostWidget
@@ -121,8 +102,6 @@ export function AccountCard({
             </div>
           ) : (
             <div className="flex flex-col items-start gap-1">
-              {/* No 5-hour snapshot: the account has no such window (Max
-                  dropped it 2026-10-31), so draw the week alone. */}
               {fiveHourRateLimit && (
                 <RateLimitWidget
                   snapshot={fiveHourRateLimit}
@@ -159,9 +138,6 @@ export function AccountCard({
             <RefreshCw className={cn('h-3.5 w-3.5', usageLoading && 'animate-spin')} />
           </Button>
         );
-        // Cost view is a single pill on the badge row, so drop the refresh
-        // button to that row too (same invisible-label spacer as the pill).
-        // The chart view stacks two pills, so the button stays at the top.
         return costBased ? (
           <div className="flex flex-col items-start gap-0.5">
             <HeaderLabel aria-hidden className="invisible">account</HeaderLabel>

@@ -4,26 +4,11 @@ import { Hash } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface TokenCounterProps {
-  /**
-   * Total number of tokens
-   */
   tokens: number;
-  /**
-   * Whether to show the counter
-   */
   show?: boolean;
-  /**
-   * Optional className for styling
-   */
   className?: string;
 }
 
-/**
- * TokenCounter component - Displays a floating token count
- * 
- * @example
- * <TokenCounter tokens={1234} show={true} />
- */
 export const TokenCounter: React.FC<TokenCounterProps> = ({
   tokens,
   show = true,

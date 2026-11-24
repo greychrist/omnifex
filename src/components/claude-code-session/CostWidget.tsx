@@ -3,39 +3,21 @@ import { cn } from '@/lib/utils';
 import { HeaderLabel } from '../HeaderLabel';
 
 interface CostWidgetProps {
-  /** Session cost in USD from the scraped /usage output. Null = no data yet. */
   costUsd: number | null;
-  /** A /usage refresh is in flight. */
   loading?: boolean;
-  /** Account name shown in the tooltip. */
   accountName?: string;
-  /** Click handler — parent typically opens the usage-detail popover. */
   onClick?: () => void;
-  /** Hide the HeaderLabel above the badge. */
   hideLabel?: boolean;
-  /** True when any priced message used an unknown-model estimate. */
   estimated?: boolean;
-  /** Computed snapshot for the tooltip breakdown (null = scraped fallback). */
   breakdown?: import('@/lib/api').SessionCostSnapshot | null;
   className?: string;
 }
 
-/**
- * Format a USD cost for the compact pill. Sub-cent amounts keep four decimals
- * so a real-but-tiny cost doesn't collapse to a misleading "$0.00"; everything
- * else shows the familiar two-decimal currency form.
- */
 export function formatCost(cost: number): string {
   if (cost > 0 && cost < 0.01) return `$${cost.toFixed(4)}`;
   return `$${cost.toFixed(2)}`;
 }
 
-/**
- * Compact cost pill for cost-based accounts (e.g. Enterprise / API), shown in
- * place of the rate-limit chart since those accounts are billed per token and
- * expose no subscription rate-limit windows. Mirrors {@link RateLimitWidget}'s
- * visual language (icon + value pill) so the two read as siblings.
- */
 export function CostWidget({
   costUsd,
   loading,
@@ -47,10 +29,9 @@ export function CostWidget({
   className,
 }: CostWidgetProps) {
   const label = 'Session cost';
-  // Icon carries the $ — strip it from the rendered text to avoid "$ $1.19"
+  // The icon carries the $.
   const pillValue = (v: number) => formatCost(v).slice(1);
 
-  // No data yet — render the same muted placeholder shape as RateLimitWidget.
   if (costUsd == null) {
     return (
       <div className={cn('flex flex-col items-start gap-0.5', className)}>

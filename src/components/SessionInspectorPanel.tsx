@@ -6,35 +6,22 @@ import type { ConversationStatus } from '@/lib/sessionDerivedState';
 
 export interface SessionInspectorPanelProps {
 
-  // Lifecycle
   sessionId: string | null;
   status: 'starting' | 'active' | 'ended' | undefined;
-  /** Raw connection axis from useSessionLifecycle. See docs/session-lifecycle.md. */
   sessionStatus: SessionStatus;
-  /** Raw turn axis. Null whenever sessionStatus !== 'started'. */
   conversationStatus: ConversationStatus | null;
   model: string;
   account: { name: string; configDir: string } | null;
   projectPath: string | null;
   branch: string | null;
 
-  // Workload (promptStatus rollup)
   promptStatus: 'working' | 'ready';
-  /** The session's own turn axis, mirrored from main — not the renderer's optimistic isLoading. */
+  /** The session's own turn axis, never the renderer's optimistic isLoading. */
   turn: TurnState;
   activeAgents: number;
   tasks: { total: number; inProgress: number; completed: number; pending: number };
 }
 
-/**
- * Right-side drawer that surfaces this session's live properties:
- *   - Lifecycle (status / model / GUID / account / project / branch)
- *   - Workload (promptStatus + its three inputs)
- *
- * Pure presentational. Parent (ClaudeCodeSession) wires every prop from the
- * same state the rest of the chat reads, so the panel mirrors reality with
- * no separate fetches or polling.
- */
 export const SessionInspectorPanel: React.FC<SessionInspectorPanelProps> = ({
   sessionId,
   status,
@@ -55,11 +42,9 @@ export const SessionInspectorPanel: React.FC<SessionInspectorPanelProps> = ({
     navigator.clipboard.writeText(sessionId).then(() => {
       setCopied(true);
       setTimeout(() => { setCopied(false); }, 1500);
-    }).catch(() => { /* clipboard blocked — best-effort */ });
+    }).catch(() => { });
   }, [sessionId]);
 
-  // Positioning, the title and the close button belong to the host
-  // (`SessionSidePanels`). This component only owns its internal layout.
   return (
     <div
       className="h-full flex flex-col"
@@ -160,8 +145,6 @@ export const SessionInspectorPanel: React.FC<SessionInspectorPanelProps> = ({
     </div>
   );
 };
-
-// --- internals -------------------------------------------------------------
 
 const Section: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
   <div>

@@ -13,17 +13,11 @@ import { BrainAutomationSettings } from './BrainQueuePanel';
 import { SplitHandle } from '@/components/ui/SplitHandle';
 import { useSplitWidth } from '@/hooks/useSplitWidth';
 
-/** The three tabs, and the only state that decides what the card body shows. */
 type BrainTabName = 'notes' | 'sources' | 'settings';
 
 /**
- * The Brain tab, scoped to exactly ONE account at a time.
- *
- * Results are never merged across accounts into a single list. Merged-with-
- * badges was considered and rejected during design: it makes cross-account
- * leakage a rendering detail — one bad key, one stale row — rather than an
- * impossibility. Switching vaults is a deliberate act with an explicit
- * control, and everything downstream re-derives from the chosen account.
+ * One account at a time. Never merge accounts into one list: that makes
+ * cross-account leakage a rendering detail rather than an impossibility.
  */
 export const BrainTab: React.FC = () => {
   const { accounts } = useAccounts();
@@ -32,24 +26,9 @@ export const BrainTab: React.FC = () => {
 
   const { accountId, setAccountId } = vault;
 
-  /**
-   * Bumped whenever a pane below changes the vault, and handed to the stats
-   * bar — whose fetch effect keys on it.
-   *
-   * The bar reads `brain_stats`, which nothing inside Sources can reach: it is
-   * a sibling, not a child. Before this the prop was simply never passed, so
-   * it defaulted to 0 forever and "Spent indexing" froze at whatever it read
-   * on mount. Closing and reopening the tab was the only cure.
-   */
+  /** Bumped on vault changes; the stats bar, a sibling, keys its fetch on it. */
   const [statsNonce, setStatsNonce] = useState(0);
 
-  /**
-   * The Notes pane's table/viewer split, dragged by the bar between them.
-   *
-   * The table was a fixed 18rem sidebar, which is too narrow for four columns
-   * and unhelpfully wide for a vault of short names — the right width depends
-   * on the vault and the window, so it is the user's to choose.
-   */
   const notesSplitRef = useRef<HTMLDivElement>(null);
   const notesSplit = useSplitWidth({
     storageKey: 'omnifex.brain.notesSplit',
@@ -59,42 +38,28 @@ export const BrainTab: React.FC = () => {
     containerRef: notesSplitRef,
   });
 
-  /**
-   * Two readings go stale together, so they refresh together: the stats bar,
-   * and the vault status behind the header's note count.
-   */
   const refreshVault = vault.refresh;
   const handleVaultChanged = useCallback(() => {
     setStatsNonce((n) => n + 1);
     void refreshVault();
   }, [refreshVault]);
 
-  // Land on an account rather than an empty screen. The FIRST account, not a
-  // remembered or resolved one: this app has no "default account" concept, and
-  // inventing one here would be exactly the silent fallback the account rules
-  // forbid. The user's next act is either accepting it or switching.
+  // The FIRST account, not a resolved one: no silent default-account fallback.
   useEffect(() => {
     if (accountId === null && accounts.length > 0) {
       setAccountId(accounts[0].id);
     }
   }, [accounts, accountId, setAccountId]);
 
-  // A note path is only meaningful inside the vault it came from. Carrying a
-  // selection across a switch would read a path from one account's list
-  // against another account's vault.
+  // A note path is only meaningful inside the vault it came from.
   useEffect(() => { setSelectedNote(null); }, [accountId]);
 
   const account = accounts.find((a) => a.id === accountId) ?? null;
   const status = vault.status;
 
-  // One value, not a pane plus a `showVault` flag. Vault management used to be
-  // a toggle that REPLACED the whole page, so a broken vault hid the account
-  // switcher and stranded the user on the account they wanted to leave. As a
-  // tab it is just another destination, and setup renders inside it.
   const [tab, setTab] = useState<BrainTabName>('notes');
   useEffect(() => { setTab('notes'); }, [accountId]);
 
-  /** The parenthetical beside the vault's name, the way Projects counts rows. */
   const headerSummary = (): string => {
     if (!status) return vault.loading ? 'loading…' : '';
     if (!status.configured) return 'no vault';
@@ -103,37 +68,22 @@ export const BrainTab: React.FC = () => {
     return `${status.noteCount} ${status.noteCount === 1 ? 'note' : 'notes'}`;
   };
 
-  /**
-   * UNKNOWN IS NOT HEALTHY.
-   *
-   * `useBrainVault` clears `status` to null synchronously on every account
-   * switch, deliberately. Both branches below derive from `status`, so during
-   * the read neither question — "does this vault need setup?", "how many
-   * notes?" — has an answer yet. Treating that gap as "no setup needed" made
-   * an unconfigured account render setup → panes → setup on every switch: a
-   * visible flash next to the header summary.
-   */
+  // Unknown is not healthy: status is null during a switch, and treating that
+  // as "no setup needed" flashes setup → panes → setup.
   const statusKnown = status !== null;
 
-  // Anything that stops this account's vault from being browsable routes to the
-  // setup panel, which is the only surface that can explain WHY and offer the
-  // matching repair.
   const needsSetup =
     status !== null && (!status.configured || !status.exists || status.conflict !== null);
 
   const indexIsStale = status !== null && status.exists && status.indexedCount !== status.noteCount;
 
-  // A vault that cannot be browsed forces the tab that can repair it. Notes and
-  // Sources are disabled rather than hidden: a tab strip that changes length
-  // depending on vault health reads as a different page every time.
+  // Disabled, not hidden: a tab strip that changes length reads as a new page.
   const effectiveTab: BrainTabName = needsSetup ? 'settings' : tab;
   const vaultUnusable = needsSetup;
 
   return (
     <div className="h-full overflow-hidden">
       <div className="mx-auto flex h-full max-w-6xl flex-col">
-        {/* Hero, matching the Projects page: what this page is, in one line,
-            above the surface that does the work. */}
         <div className="shrink-0 p-6">
           <h1 className="text-3xl font-bold">Brain</h1>
           <p className="text-body-small mt-1 text-muted-foreground">
@@ -144,8 +94,6 @@ export const BrainTab: React.FC = () => {
 
         <div className="flex min-h-0 flex-1 flex-col px-6 pb-6">
           <Card className="flex min-h-0 flex-1 flex-col p-6">
-            {/* Card header: which vault on the left, which account on the
-                right — the same shape as "Recent Projects (12)". */}
             <div className="mb-4 flex shrink-0 items-center justify-between gap-3">
               <h2 className="text-heading-4">
                 {account ? `${account.name} Brain` : 'Brain'}
@@ -168,9 +116,7 @@ export const BrainTab: React.FC = () => {
               </div>
             </div>
 
-            {/* What this vault costs and holds, under the name it belongs to.
-                Hidden while the vault is unusable — every figure would be zero,
-                and four zeroes read as a fact rather than as an absence. */}
+            {/* Hidden while unusable: four zeroes read as a fact, not an absence. */}
             {statusKnown && !needsSetup && (
               <BrainStatsPanel
                 accountId={accountId}
@@ -207,9 +153,6 @@ export const BrainTab: React.FC = () => {
                 </TabsTrigger>
                 <TabsTrigger value="settings">
                   Settings
-                  {/* The staleness dot the Vault button used to carry: the
-                      index no longer matches the notes on disk, and Settings
-                      is where the rebuild lives. */}
                   {indexIsStale && (
                     <span
                       data-testid="index-stale-dot"
@@ -221,8 +164,7 @@ export const BrainTab: React.FC = () => {
               </TabsList>
 
               {!statusKnown ? (
-                // Holds the space while the read is in flight, so switching
-                // accounts does not swap the body twice.
+                // Holds the space so an account switch does not swap the body twice.
                 <div className="flex min-h-0 flex-1 items-center justify-center text-xs text-muted-foreground">
                   {vault.loading ? 'loading…' : null}
                 </div>
@@ -233,9 +175,6 @@ export const BrainTab: React.FC = () => {
                       ref={notesSplitRef}
                       className="flex min-h-0 flex-1 overflow-hidden rounded-md border"
                     >
-                      {/* The table takes the whole pane until a note is open —
-                          there is nothing to reserve room for, the same rule
-                          the Sources pane follows. */}
                       <div
                         className={
                           selectedNote === null
@@ -264,9 +203,6 @@ export const BrainTab: React.FC = () => {
                               notePath={selectedNote}
                               onNavigate={setSelectedNote}
                               onChanged={vault.refresh}
-                              // Clearing the selection is what closes it: the
-                              // pane is rendered off this value, so the table
-                              // takes the whole width back in the same tick.
                               onClose={() => { setSelectedNote(null); }}
                             />
                           </div>

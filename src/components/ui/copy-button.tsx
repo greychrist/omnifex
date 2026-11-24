@@ -4,20 +4,13 @@ import { cn } from "@/lib/utils";
 import { fireAndLog } from "@/lib/fireAndLog";
 
 interface CopyButtonProps {
-  /** Read at click time, so the text is whatever the block holds then. */
   getText: () => string;
-  /** Accessible name and resting tooltip. */
   label?: string;
-  /** Visible text beside the icon, for buttons that sit in a labelled bar. */
   text?: string;
   className?: string;
 }
 
-/**
- * Copy-to-clipboard icon button: `Copy`, then `Check` for 1.2s once the
- * write lands. A failed write (no clipboard in an insecure context — the
- * remote client over plain HTTP) is logged and leaves the icon alone.
- */
+// No clipboard in an insecure context (the remote client over plain HTTP): log and leave the icon.
 export const CopyButton: React.FC<CopyButtonProps> = ({ getText, label = "Copy", text, className }) => {
   const [copied, setCopied] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);

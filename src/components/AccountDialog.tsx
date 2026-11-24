@@ -39,15 +39,12 @@ export interface AccountDialogSavePayload {
 
 export interface AccountDialogProps {
   mode: "add" | "edit";
-  /** Required when mode='edit'. */
   account?: Account;
   open: boolean;
   onClose: () => void;
   onSave: (payload: AccountDialogSavePayload) => void;
 }
 
-// Native directory picker. Same call AccountSettings uses so the Browse
-// button opens the OS folder dialog and pre-seeds the home dir.
 async function pickFolder(defaultPath?: string): Promise<string | null> {
   try {
     const paths = (await window.electronAPI.showOpenDialog({
@@ -61,8 +58,6 @@ async function pickFolder(defaultPath?: string): Promise<string | null> {
   }
 }
 
-// Per-engine session-default seeds applied when the engine radio flips in
-// add mode.
 const ENGINE_DEFAULTS: Record<
   AccountEngine,
   { permission: string; effort: string }
@@ -71,15 +66,6 @@ const ENGINE_DEFAULTS: Record<
   codex: { permission: "workspace-edit", effort: "medium" },
 };
 
-/**
- * Unified Add/Edit account dialog. Add mode lets you pick the engine
- * (Claude vs Codex); edit mode locks the engine (it's immutable
- * post-create) and surfaces the Codex sign-in row for codex accounts.
- *
- * Visual primitives are shared with AccountSettings: ColorSwatchGrid for
- * color, IconPicker for icons, and the same showOpenDialog-based folder
- * picker for the config directory.
- */
 export const AccountDialog: React.FC<AccountDialogProps> = ({
   mode,
   account,
@@ -95,20 +81,14 @@ export const AccountDialog: React.FC<AccountDialogProps> = ({
   const [color, setColor] = useState("#3b82f6");
   const [icon, setIcon] = useState("user");
 
-  // Expected login email — the account this config dir should be
-  // authenticated as. Blank means the session-start check is off.
   const [expectedEmail, setExpectedEmail] = useState("");
   const [detecting, setDetecting] = useState(false);
   const [detectError, setDetectError] = useState<string | null>(null);
 
-  // Session-defaults fields, flattened so they can be wired straight into
-  // SessionDefaultsRow.
   const [model, setModel] = useState("");
   const [effort, setEffort] = useState(ENGINE_DEFAULTS.claude.effort);
   const [permission, setPermission] = useState(ENGINE_DEFAULTS.claude.permission);
 
-  // Where this account's sign-in links open (signInBrowser.ts). '' is the
-  // system default. Mac only: a web client cannot pick a browser.
   const showSignInBrowser = platform.isDesktop && engine === "claude";
   const [signInBrowser, setSignInBrowserChoice] = useState("");
   const [browsers, setBrowsers] = useState<BrowserInfo[]>([]);
@@ -116,8 +96,6 @@ export const AccountDialog: React.FC<AccountDialogProps> = ({
   const [showIconPicker, setShowIconPicker] = useState(false);
   const [showCodexSignIn, setShowCodexSignIn] = useState(false);
 
-  // Seed local state whenever the dialog opens (or the target account
-  // changes). Add mode resets to defaults; edit mode mirrors the account.
   useEffect(() => {
     if (!open) return;
     if (mode === "edit" && account) {
@@ -146,9 +124,6 @@ export const AccountDialog: React.FC<AccountDialogProps> = ({
       setEffort(ENGINE_DEFAULTS.claude.effort);
       setPermission(ENGINE_DEFAULTS.claude.permission);
     }
-    // mode/account are intentionally the only seed triggers; subsequent
-    // field edits are owned by the inputs.
-     
   }, [open, mode, account]);
 
   useEffect(() => {
@@ -163,17 +138,12 @@ export const AccountDialog: React.FC<AccountDialogProps> = ({
     return () => { cancelled = true; };
   }, [open, mode, account, showSignInBrowser]);
 
-  // When the engine flips in add mode, reset engine-specific session
-  // defaults to sensible per-engine values. Edit mode never flips engine
-  // (radios are disabled), so this is a no-op there.
   useEffect(() => {
     if (mode !== "add") return;
     setEffort(ENGINE_DEFAULTS[engine].effort);
     setPermission(ENGINE_DEFAULTS[engine].permission);
   }, [engine, mode]);
 
-  // Codex auth status — only watched for codex accounts in edit mode (an
-  // add-mode account has no config dir on disk to authenticate yet).
   const codexAuth = useCodexAuthStatus(
     engine === "codex" && mode === "edit" ? configDir : null,
   );
@@ -201,9 +171,7 @@ export const AccountDialog: React.FC<AccountDialogProps> = ({
     });
   };
 
-  // Ask the CLI who this config dir is actually signed in as. Uses the
-  // authoritative probe (a process spawn) rather than the cheap file read
-  // precisely because this is an explicit, one-off user action.
+  // The spawning probe, not the cheap file read: this is an explicit one-off action.
   const handleDetect = (): void => {
     if (!configDir) return;
     setDetecting(true);
@@ -250,7 +218,6 @@ export const AccountDialog: React.FC<AccountDialogProps> = ({
         </DialogHeader>
 
         <div className="space-y-3 py-2">
-          {/* Engine radios */}
           <fieldset className="space-y-1">
             <legend className="text-xs text-muted-foreground">Engine</legend>
             <div className="flex items-center gap-4">
@@ -279,7 +246,6 @@ export const AccountDialog: React.FC<AccountDialogProps> = ({
             </div>
           </fieldset>
 
-          {/* Name */}
           <div className="space-y-1">
             <label htmlFor="account-name" className="text-xs text-muted-foreground">
               Name
@@ -293,7 +259,6 @@ export const AccountDialog: React.FC<AccountDialogProps> = ({
             />
           </div>
 
-          {/* Config directory + browse */}
           <div className="space-y-1">
             <label htmlFor="account-config-dir" className="text-xs text-muted-foreground">
               Config directory
@@ -322,7 +287,6 @@ export const AccountDialog: React.FC<AccountDialogProps> = ({
             </div>
           </div>
 
-          {/* Subscription label */}
           <div className="space-y-1">
             <label htmlFor="account-subscription" className="text-xs text-muted-foreground">
               Subscription label
@@ -336,8 +300,6 @@ export const AccountDialog: React.FC<AccountDialogProps> = ({
             />
           </div>
 
-          {/* Expected login email — Claude only. Codex surfaces its own
-              signed-in address in the auth row below. */}
           {engine === "claude" && (
             <div className="space-y-1">
               <label htmlFor="account-email" className="text-xs text-muted-foreground">
@@ -371,7 +333,6 @@ export const AccountDialog: React.FC<AccountDialogProps> = ({
             </div>
           )}
 
-          {/* Has cost */}
           <label className="flex items-center gap-2 text-sm">
             <input
               type="checkbox"
@@ -382,7 +343,6 @@ export const AccountDialog: React.FC<AccountDialogProps> = ({
             Has cost
           </label>
 
-          {/* Color + icon */}
           <div className="space-y-2">
             <div className="flex items-start gap-3">
               <label className="text-xs text-muted-foreground w-14 mt-1">Color</label>
@@ -428,7 +388,6 @@ export const AccountDialog: React.FC<AccountDialogProps> = ({
             </div>
           )}
 
-          {/* Session defaults */}
           <SessionDefaultsRow
             engine={engine}
             model={model}
@@ -440,7 +399,6 @@ export const AccountDialog: React.FC<AccountDialogProps> = ({
             configDir={configDir || undefined}
           />
 
-          {/* Codex sign-in row (edit + codex only) */}
           {showCodexRow && (
             <div className="space-y-2 pt-2">
               <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg border border-border bg-muted/30">

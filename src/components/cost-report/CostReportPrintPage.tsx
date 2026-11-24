@@ -1,13 +1,5 @@
-// The Cost Report, rendered for PDF export.
-//
-// This is what a hidden window boots into when the renderer is loaded with a
-// `#print=cost-report&…` hash. It is the same `CostReportView` the user sees,
-// in print mode — same components, same theme, so the PDF looks like the page.
-// What it adds is the handshake: the main process cannot know when a report
-// made of eleven independent queries and an SVG chart has finished drawing, so
-// this page measures itself and says so.
-//
-// See `daemon/services/cost-report-pdf.ts` for the other half.
+// The daemon can't tell when the report's queries and chart have drawn, so this page measures itself and reports
+// ready. Other half: daemon/services/cost-report-pdf.ts.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppFontProvider } from '@/contexts/AppFontContext';
@@ -19,10 +11,7 @@ import { measurePrintContent, type PrintMeasurement } from '@/lib/costReportPrin
 
 export interface CostReportPrintPageProps {
   filters: CostFilterState;
-  /** Reports the measured page. Injected so the measuring logic can be tested
-   *  without an Electron window on the other end. */
   onReady: (measurement: PrintMeasurement) => void;
-  /** Overrides for the settle timings, so tests need not wait real seconds. */
   timings?: { chartPollMs?: number; chartTimeoutMs?: number };
 }
 

@@ -13,37 +13,19 @@ import {
   type SessionContextDetailsProps,
 } from "./SessionContextDetails";
 
-/**
- * The session widget as a status-bar readout: `session ready 157.1k (16%)`.
- *
- * Same label-then-value shape as `daemon live` and `turn 12s` beside it, and
- * the same popover the widget opens — `SessionContextDetails`, so the two
- * cannot disagree. Lives alongside the widget for now, so the two can be
- * compared before one of them goes.
- *
- * The state word is colored text, not a badge: the sessions popover's
- * `Working` / `Ready` vocabulary and colors, at the bar's weight.
- */
-
 type SessionState = "starting" | "closed" | "permission" | "question" | "working" | "ready";
 
 const STATE_COLOR: Record<SessionState, string> = {
   starting: "text-amber-500",
   closed: "text-red-500",
-  // Indigo and amber/emerald match TabStatusPopover's WAITING_COLOR and
-  // PROMPT_COLOR, minus their backgrounds.
+  // Matches TabStatusPopover's WAITING_COLOR / PROMPT_COLOR.
   permission: "text-indigo-300",
   question: "text-indigo-300",
   working: "text-amber-300",
   ready: "text-emerald-400",
 };
 
-/**
- * Process state first, then what the turn is doing. "ready" over a process
- * that has exited would be a lie, and "working" while it waits on you hides
- * the one thing worth acting on — the same override the sessions popover
- * applies.
- */
+/** Process state outranks waiting, which outranks the turn — the sessions popover's override. */
 function sessionState(
   sessionStatus: "starting" | "active" | "ended" | undefined,
   promptStatus: "working" | "ready",
@@ -61,7 +43,6 @@ export interface SessionStatusItemProps
   sessionStatus?: "starting" | "active" | "ended";
   promptStatus: "working" | "ready";
   waitingFor: TabWaitingFor;
-  /** Called when the popover closes, so the caller can clear unread events. */
   onSignalsRead?: () => void;
 }
 
@@ -90,8 +71,6 @@ export function SessionStatusItem({
     </>
   );
 
-  // Nothing to open before the first usage arrives: the popover is about the
-  // context window, and it would be empty.
   if (!reading) {
     return (
       <span className="inline-flex items-center gap-1">{label}</span>
@@ -103,8 +82,7 @@ export function SessionStatusItem({
       open={open}
       onOpenChange={(next) => {
         setOpen(next);
-        // On close, as the widget does: clearing on open dropped the unread
-        // tint before the rows could be read.
+        // Clear on close: clearing on open dropped the unread tint before the rows could be read.
         if (!next) onSignalsRead?.();
       }}
       align="end"
@@ -120,8 +98,6 @@ export function SessionStatusItem({
           {label}
           <span
             data-testid="session-item-context"
-            // Pulses when red, like the thinking readout, so a window at its
-            // compaction boundary is noticed without opening anything.
             className={cn(METER_TEXT[reading.level], reading.level === "critical" && "animate-pulse")}
           >
             {formatContextTokens(reading.tokens)} ({reading.pct.toFixed(0)}%)
@@ -132,7 +108,6 @@ export function SessionStatusItem({
         <SessionContextDetails
           reading={reading}
           {...details}
-          // Close first: the popover sits over the transcript it is scrolling.
           onJumpToMessage={details.onJumpToMessage && ((uuid) => {
             setOpen(false);
             onSignalsRead?.();

@@ -1,9 +1,3 @@
-/**
- * The rows behind the status bar's `agents` and `shells` readouts
- * (`BackgroundWorkItems.tsx`): one per subagent, one per background shell or
- * Monitor. Each row expands in place — a subagent to its progress log, a
- * shell to the tail of its output.
- */
 import React, { useEffect, useState } from 'react';
 import {
   ChevronDown,
@@ -26,19 +20,13 @@ import { useSecondTick } from '@/hooks/useSecondTick';
 import { formatCost } from '@/components/claude-code-session/CostWidget';
 import { plainTaskOutput, type BackgroundShell, type TaskOutputTail } from '@/lib/backgroundShells';
 
-// 16-slot palette — one distinct hue per slot so concurrent subagents never
-// share a color until all 16 are live simultaneously (extremely rare).
-// The allocator in subagentStreams guarantees ordered assignment so slot 0
-// always goes to the first dispatched subagent, slot 1 to the second, etc.
 const PALETTE: { border: string; bg: string; dot: string; text: string }[] = [
-  // 0–5 original set
   { border: 'border-sky-400/40',     bg: 'bg-sky-400/10',     dot: 'bg-sky-400',     text: 'text-sky-400' },
   { border: 'border-indigo-400/40',  bg: 'bg-indigo-400/10',  dot: 'bg-indigo-400',  text: 'text-indigo-400' },
   { border: 'border-cyan-400/40',    bg: 'bg-cyan-400/10',    dot: 'bg-cyan-400',    text: 'text-cyan-400' },
   { border: 'border-teal-400/40',    bg: 'bg-teal-400/10',    dot: 'bg-teal-400',    text: 'text-teal-400' },
   { border: 'border-violet-400/40',  bg: 'bg-violet-400/10',  dot: 'bg-violet-400',  text: 'text-violet-400' },
   { border: 'border-emerald-400/40', bg: 'bg-emerald-400/10', dot: 'bg-emerald-400', text: 'text-emerald-400' },
-  // 6–15 ten new hues, evenly spaced around the wheel
   { border: 'border-rose-400/40',    bg: 'bg-rose-400/10',    dot: 'bg-rose-400',    text: 'text-rose-400' },
   { border: 'border-orange-400/40',  bg: 'bg-orange-400/10',  dot: 'bg-orange-400',  text: 'text-orange-400' },
   { border: 'border-amber-400/40',   bg: 'bg-amber-400/10',   dot: 'bg-amber-400',   text: 'text-amber-400' },
@@ -59,10 +47,6 @@ function formatElapsed(ms?: number): string {
   return m > 0 ? `${m}m ${String(r).padStart(2, '0')}s` : `${r}s`;
 }
 
-// Compact a CLI model id for the dense row meta: drop the `claude-` vendor
-// prefix and any trailing `-YYYYMMDD` date stamp, e.g.
-// `claude-haiku-4-5-20251001` → `haiku-4-5`. Leaves unrecognised shapes
-// (local models, already-short ids) untouched.
 function formatModel(model?: string): string {
   if (!model) return '';
   return model.replace(/^claude-/, '').replace(/-\d{8}$/, '');
@@ -70,11 +54,7 @@ function formatModel(model?: string): string {
 
 const kTokens = (n: number): string => `${Math.round(n / 1000)}k`;
 
-/**
- * A row's Stop / Move-to-background in flight, and the CLI's refusal if it
- * gave one. The row stays as it is until the CLI's own task events move it:
- * the request answers before the task has actually ended.
- */
+// The row stays until the CLI's task events move it: the request answers before the task ends.
 function useRowAction(): {
   busy: boolean;
   error: string | null;
@@ -93,7 +73,7 @@ function useRowAction(): {
   return { busy, error, run };
 }
 
-/** An icon button inside a row's header button (hence a span, like Dismiss). */
+// A span, not a button: it sits inside the row's header button.
 function RowActionButton({
   label, icon, busy, onActivate,
 }: {
@@ -134,13 +114,8 @@ function RowActionError({ error }: { error: string | null }): React.JSX.Element 
 interface SubagentRowProps {
   sub: Subagent;
   onDismiss?: (toolUseId: string) => void;
-  /** Per-agent cost and context from the session cost watcher, keyed by
-   *  agent id. Absent until its first snapshot. */
   costs?: Record<string, SubagentCost> | null;
-  /** Stop the agent (`stop_task`), by the task id the CLI gave it. */
   onStop?: (taskId: string) => Promise<void>;
-  /** Move a foreground agent to the background (`background_tasks`); false
-   *  when the CLI found it already finished. */
   onBackground?: (toolUseId: string) => Promise<boolean>;
 }
 
@@ -154,18 +129,8 @@ export const SubagentRow: React.FC<SubagentRowProps> = ({ sub, onDismiss, costs,
 
   const statusIcon =
     sub.status === 'completed' ? (
-      // Mirrors the TaskList's completed row — green check, not the
-      // per-subagent palette color, so "done" reads the same way across
-      // both bars at a glance.
       <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
     ) : sub.status === 'completed_inferred' ? (
-      // Distinct icon for inferred completion — the parent emitted a
-      // `result` and moved on, but we never received a direct closure
-      // carrier (task_notification SystemMessage or
-      // queue-operation/attachment XML). The work is done, but we lack
-      // the summary/usage data the carriers would have provided. The
-      // dashed-ring variant makes this visible at a glance vs the solid
-      // CheckCircle2 used for verified completions.
       <span title="Completion inferred from parent result — no task-notification was delivered.">
         <CircleDashed className={cn('h-3.5 w-3.5', color.text, 'opacity-60')} />
       </span>
@@ -179,27 +144,16 @@ export const SubagentRow: React.FC<SubagentRowProps> = ({ sub, onDismiss, costs,
       <span className={cn('inline-block h-2 w-2 rounded-full animate-pulse', color.dot)} />
     );
 
-  // Ticks only while this agent runs; a finished row holds still.
   const nowMs = useSecondTick(sub.status === 'running');
   const stats = subagentRunStats(sub, costs, nowMs);
 
-  // Prefer the authoritative end-of-run totals (merged from disk via
-  // applySubagentMeta) over the live `latest.*` running tally, which can lag
-  // the final numbers.
   const tokenCount = sub.finalTotalTokens ?? latest?.totalTokens;
   const toolCount = sub.finalToolUseCount ?? latest?.toolUses;
   const model = formatModel(sub.model);
-  // Only rendered when the subagent reports its own effort — most runs
-  // inherit the session default and carry none, and a placeholder there
-  // would be noise on every row.
   const effort = sub.effort ? `${sub.effort} effort` : '';
-  // The CLI's token tally only when the transcript gave us no context figure.
   const tokens = stats.contextTokens === undefined && tokenCount ? `${kTokens(tokenCount)} tok` : '';
   const tools = toolCount ? `${toolCount} tools` : '';
   const metaBits = [model, effort, tools, tokens].filter(Boolean).join(' · ');
-  // Context, cost and time, read off the agent's own transcript. Cost is
-  // `≈`: on a subscription account it is what the tokens would cost at API
-  // rates, and it lags the final totals by up to a poll.
   const statBits = [
     stats.contextTokens !== undefined
       ? `${stats.contextPct !== undefined ? `ctx ${stats.contextPct}% · ` : ''}${kTokens(stats.contextTokens)}`
@@ -213,30 +167,16 @@ export const SubagentRow: React.FC<SubagentRowProps> = ({ sub, onDismiss, costs,
       : sub.status === 'completed_inferred' ? 'inferred'
         : sub.status;
 
-  // What the agent is doing now, in the CLI's words (task_progress.summary),
-  // only while it runs. Once it ends, the state (done, failed) says more.
   const nowLabel = barState === 'running' ? sub.progressSummary ?? null : null;
 
-  // The purpose is what the parent said the agent is for; it holds still.
-  // What it is doing right now is in the expanded log, not under it: that
-  // line carries the run stats.
   const purpose = sub.description || latest?.description || 'Working…';
   const agentLabel = sub.agentType ?? 'Agent';
 
-  // A nested subagent (dispatched by another subagent, not by the main
-  // session) is indented under its parent. It shares the parent's color, so
-  // the indent is what distinguishes it from a sibling.
   const nested = !!sub.parentToolUseId;
   const running = sub.status === 'running';
-  // Stop needs the CLI's task id, which a nested row synthesised from the
-  // sidecar may lack. Backgrounding is for the session's own foreground
-  // agents: a nested one blocks its parent agent, not the turn.
   const canStop = onStop && running && !!sub.taskId;
   const canBackground = onBackground && running && sub.isBackground !== true && !nested;
 
-  // Foreground or background, as the dispatch, the CLI's launch ACK or a
-  // later `is_backgrounded` patch last set it. Nested rows are synthesised
-  // from the sidecar and carry no flag — no tag beats a guessed one.
   const mode =
     sub.isBackground === true
       ? { label: 'bg', title: 'Background — the session carries on while it runs' }
@@ -250,9 +190,7 @@ export const SubagentRow: React.FC<SubagentRowProps> = ({ sub, onDismiss, costs,
       data-nested={nested ? 'true' : undefined}
       className={cn(
         'border-l-2 transition-opacity',
-        // Row divider. The color has to be an important arbitrary property:
-        // styles.css's unlayered `* { border-color }` beats every plain
-        // Tailwind border-color utility.
+        // `!` because the unlayered `* { border-color }` in styles.css beats border-color utilities.
         'border-b last:border-b-0 [border-bottom-color:color-mix(in_oklch,var(--color-muted-foreground)_30%,transparent)]!',
         color.border,
         color.bg,
@@ -265,7 +203,6 @@ export const SubagentRow: React.FC<SubagentRowProps> = ({ sub, onDismiss, costs,
         onClick={() => { setExpanded((v) => !v); }}
         className="w-full px-3 py-1.5 text-xs text-left hover:bg-white/5"
       >
-        {/* Top-aligned so a purpose that wraps keeps the icons on its first line. */}
         <span className="flex items-start gap-2">
           <span className="flex items-center justify-center w-4 h-4 shrink-0">{statusIcon}</span>
           <Bot className={cn('h-3.5 w-3.5 mt-px shrink-0', color.text)} />
@@ -336,10 +273,6 @@ export const SubagentRow: React.FC<SubagentRowProps> = ({ sub, onDismiss, costs,
             {nowLabel}
           </span>
         )}
-        {/* The run's state: a sweep while it runs. It used to fill to the step
-            count the agent reported through OmniFex's progress mod (removed
-            2026-11-24), and before that to context %, which on a 1M-window
-            model sat at 2–3% for the whole run. */}
         <span
           data-subagent-bar
           data-state={barState}
@@ -362,8 +295,7 @@ export const SubagentRow: React.FC<SubagentRowProps> = ({ sub, onDismiss, costs,
       {expanded && (
         <div className="px-3 pb-2 pt-0.5 border-t border-white/5 space-y-0.5">
           {sub.prompt && (
-            // A <div>, not a <pre>: the narrow/touch layout forces every
-            // <pre> to one unwrapped line (styles.css), which clipped the brief.
+            // A <div>, not a <pre>: the narrow/touch layout forces every <pre> to one unwrapped line.
             <div
               data-subagent-prompt
               className="mb-1 max-h-48 overflow-y-auto rounded bg-black/20 px-2 py-1 text-[11px] font-sans leading-snug whitespace-pre-wrap break-words text-foreground/80"
@@ -377,14 +309,10 @@ export const SubagentRow: React.FC<SubagentRowProps> = ({ sub, onDismiss, costs,
                 ? 'Waiting for first progress event…'
                 : sub.status === 'completed_inferred'
                   ? 'Completed (no progress reported)'
-                  // A finished row with no log was reloaded: the log is built
-                  // from live events, and those are not saved.
                   : 'No steps to show — the step log is kept only while the app is open.'}
             </div>
           )}
           {sub.events.map((ev, i) => {
-            // A frame's own text is the agent's purpose, repeated. Where the
-            // CLI wrote a progress label on it, that says what was happening.
             const description = ev.summary ?? (ev.description || '…');
             const bits = [
               ev.lastToolName,
@@ -414,15 +342,9 @@ export const SubagentRow: React.FC<SubagentRowProps> = ({ sub, onDismiss, costs,
   );
 };
 
-/** How often an open, running shell row re-reads its output. */
 const SHELL_POLL_MS = 2000;
 
-/**
- * The open row's output tail. Reads only while the row is open: once on
- * open, then every SHELL_POLL_MS while the shell runs. A read that comes back
- * null (task evicted, session gone) keeps the last output rather than
- * blanking it.
- */
+// A null read (task evicted, session gone) keeps the last output rather than blanking it.
 function useShellOutput(
   taskId: string,
   running: boolean,
@@ -457,7 +379,6 @@ interface ShellRowProps {
   shell: BackgroundShell;
   read: (taskId: string) => Promise<TaskOutputTail | null>;
   onDismiss?: (taskId: string) => void;
-  /** Stop the shell or Monitor (`stop_task`). */
   onStop?: (taskId: string) => Promise<void>;
 }
 
@@ -537,8 +458,7 @@ export const ShellRow: React.FC<ShellRowProps> = ({ shell, read, onDismiss, onSt
                 <div className="text-[10px] text-muted-foreground py-0.5">Showing the last 8 KiB</div>
               )}
               {text ? (
-                // A <div>, not a <pre>: the narrow/touch layout forces every
-                // <pre> to one unwrapped line (styles.css), clipping the output.
+                // A <div>, not a <pre>: the narrow/touch layout forces every <pre> to one unwrapped line.
                 <div
                   data-shell-output
                   className="rounded bg-black/20 px-2 py-1 text-[11px] font-mono leading-snug whitespace-pre-wrap break-words text-foreground/80 max-h-64 overflow-y-auto"

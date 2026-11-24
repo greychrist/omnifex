@@ -82,9 +82,6 @@ interface QueryResult {
   last_insert_rowid?: number;
 }
 
-/**
- * StorageTab component - A beautiful SQLite database viewer/editor
- */
 export const StorageTab: React.FC = () => {
   const [tables, setTables] = useState<TableInfo[]>([]);
   const [selectedTable, setSelectedTable] = useState<string>("");
@@ -95,7 +92,6 @@ export const StorageTab: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Dialog states
   const [editingRow, setEditingRow] = useState<Record<string, CellValue> | null>(null);
   const [newRow, setNewRow] = useState<Record<string, CellValue> | null>(null);
   const [deletingRow, setDeletingRow] = useState<Record<string, CellValue> | null>(null);
@@ -106,12 +102,7 @@ export const StorageTab: React.FC = () => {
   const [sqlError, setSqlError] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
 
-  /**
-   * Load all tables from the database. selectedTable is read through a
-   * ref so the mount fetch never gets a stale value but doesn't trigger
-   * re-fetches when the user picks a different table — that's what the
-   * loadTableData effect below is for.
-   */
+  // Ref, not a dep: picking a table must not refetch the table list.
   const selectedTableRef = React.useRef(selectedTable);
   useEffect(() => {
     selectedTableRef.current = selectedTable;
@@ -134,9 +125,6 @@ export const StorageTab: React.FC = () => {
     }
   }, []);
 
-  /**
-   * Load data for the selected table
-   */
   const loadTableData = useCallback(async (page: number, search?: string) => {
     if (!selectedTable) return;
 
@@ -159,25 +147,16 @@ export const StorageTab: React.FC = () => {
     }
   }, [selectedTable, pageSize, searchQuery]);
 
-  /**
-   * Load all tables on mount
-   */
   useEffect(() => {
     logAndForget('storage-tab:load-tables', loadTables());
   }, [loadTables]);
 
-  /**
-   * Load table data when selected table changes
-   */
   useEffect(() => {
     if (selectedTable) {
       logAndForget('storage-tab:load-table-data', loadTableData(1));
     }
   }, [selectedTable, loadTableData]);
 
-  /**
-   * Handle search
-   */
   const handleSearch = useCallback(
     (value: string) => {
       setSearchQuery(value);
@@ -186,9 +165,6 @@ export const StorageTab: React.FC = () => {
     [loadTableData]
   );
 
-  /**
-   * Get primary key values for a row
-   */
   const getPrimaryKeyValues = (row: Record<string, CellValue>): Record<string, CellValue> => {
     if (!tableData) return {};
     
@@ -202,9 +178,6 @@ export const StorageTab: React.FC = () => {
     return pkValues;
   };
 
-  /**
-   * Handle row update
-   */
   const handleUpdateRow = async (updates: Record<string, CellValue>) => {
     if (!editingRow || !selectedTable) return;
 
@@ -222,9 +195,6 @@ export const StorageTab: React.FC = () => {
     }
   };
 
-  /**
-   * Handle row deletion
-   */
   const handleDeleteRow = async () => {
     if (!deletingRow || !selectedTable) return;
 
@@ -242,9 +212,6 @@ export const StorageTab: React.FC = () => {
     }
   };
 
-  /**
-   * Handle new row insertion
-   */
   const handleInsertRow = async (values: Record<string, CellValue>) => {
     if (!selectedTable) return;
 
@@ -261,9 +228,6 @@ export const StorageTab: React.FC = () => {
     }
   };
 
-  /**
-   * Handle SQL query execution
-   */
   const handleExecuteSql = async () => {
     try {
       setLoading(true);
@@ -271,7 +235,6 @@ export const StorageTab: React.FC = () => {
       const result: QueryResult = await api.storageExecuteSql(sqlQuery);
       setSqlResult(result);
       
-      // Refresh tables and data if it was a non-SELECT query
       if (result.rows_affected !== undefined) {
         await loadTables();
         if (selectedTable) {
@@ -286,9 +249,6 @@ export const StorageTab: React.FC = () => {
     }
   };
 
-  /**
-   * Handle database reset
-   */
   const handleResetDatabase = async () => {
     try {
       setLoading(true);
@@ -313,9 +273,6 @@ export const StorageTab: React.FC = () => {
     }
   };
 
-  /**
-   * Format cell value for display
-   */
   const formatCellValue = (value: CellValue, maxLength = 100): string => {
     if (value === null) return "NULL";
     if (value === undefined) return "";
@@ -329,9 +286,6 @@ export const StorageTab: React.FC = () => {
     return stringValue;
   };
 
-  /**
-   * Get input type for column
-   */
   const getInputType = (column: ColumnInfo): string => {
     const type = column.type_name.toUpperCase();
     if (type.includes("INT")) return "number";
@@ -342,7 +296,6 @@ export const StorageTab: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <Card className="p-6">
         <div className="space-y-4">
           <div className="flex items-center justify-between">
@@ -372,7 +325,6 @@ export const StorageTab: React.FC = () => {
             </div>
           </div>
 
-          {/* Table Selector and Search */}
           <div className="flex items-center gap-3">
             <Select value={selectedTable} onValueChange={setSelectedTable}>
               <SelectTrigger className="w-[200px] h-8 text-xs">
@@ -424,7 +376,6 @@ export const StorageTab: React.FC = () => {
         </div>
       </Card>
 
-      {/* Table Data */}
       {tableData && (
         <Card className="overflow-hidden">
           <div className="overflow-x-auto">
@@ -527,7 +478,6 @@ export const StorageTab: React.FC = () => {
             </table>
           </div>
 
-          {/* Pagination */}
           {tableData.total_pages > 1 && (
             <div className="flex items-center justify-between p-3 border-t">
               <div className="text-xs text-muted-foreground">
@@ -565,14 +515,12 @@ export const StorageTab: React.FC = () => {
         </Card>
       )}
 
-      {/* Loading State */}
       {loading && (
         <div className="flex items-center justify-center py-12">
           <Spinner className="size-8 text-muted-foreground" />
         </div>
       )}
 
-      {/* Error State */}
       {error && (
         <Card className="p-6 border-destructive/50 bg-destructive/10">
           <div className="flex items-center gap-3 text-destructive">
@@ -582,7 +530,6 @@ export const StorageTab: React.FC = () => {
         </Card>
       )}
 
-      {/* Edit Row Dialog */}
       <Dialog open={!!editingRow} onOpenChange={() => { setEditingRow(null); }}>
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
@@ -660,7 +607,6 @@ export const StorageTab: React.FC = () => {
         </DialogContent>
       </Dialog>
 
-      {/* New Row Dialog */}
       <Dialog open={!!newRow} onOpenChange={() => { setNewRow(null); }}>
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
@@ -673,9 +619,7 @@ export const StorageTab: React.FC = () => {
             <div className="space-y-4">
               {tableData.columns
               .filter((col) => {
-                // Skip columns with defaults (e.g. created_at/updated_at with CURRENT_TIMESTAMP)
                 if (col.dflt_value) return false;
-                // Skip integer PKs (autoincrement rowid aliases)
                 if (col.pk && col.type_name.toUpperCase().includes('INT')) return false;
                 return true;
               })
@@ -743,7 +687,6 @@ export const StorageTab: React.FC = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirmation Dialog */}
       <Dialog open={!!deletingRow} onOpenChange={() => { setDeletingRow(null); }}>
         <DialogContent>
           <DialogHeader>
@@ -790,7 +733,6 @@ export const StorageTab: React.FC = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Reset Database Confirmation */}
       <Dialog open={showResetConfirm} onOpenChange={setShowResetConfirm}>
         <DialogContent>
           <DialogHeader>
@@ -830,7 +772,6 @@ export const StorageTab: React.FC = () => {
         </DialogContent>
       </Dialog>
 
-      {/* SQL Query Editor */}
       <Dialog open={showSqlEditor} onOpenChange={setShowSqlEditor}>
         <DialogContent className="max-w-4xl max-h-[80vh]">
           <DialogHeader>
@@ -964,7 +905,6 @@ export const StorageTab: React.FC = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Toast Notification */}
       <ToastContainer>
         {toast && (
           <Toast

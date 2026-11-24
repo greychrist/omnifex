@@ -18,13 +18,6 @@ import { useModelCatalog } from "@/lib/modelCatalog";
 import type { AgentKind, CodexAuthStatus, ResolvePair } from "@/lib/api";
 
 interface NewSessionFormProps {
-  /**
-   * Per-engine routing for the current project. The form reads the slot for
-   * the currently-selected `agent` (`resolvePair[agent]`) so flipping the
-   * AgentPicker swaps the displayed account between the Claude and Codex
-   * routing targets. A null slot for the active engine renders a "Choose
-   * account" affordance instead of an AccountBadge.
-   */
   resolvePair: ResolvePair;
   selectedModel: string;
   setSelectedModel: (model: string) => void;
@@ -32,59 +25,18 @@ interface NewSessionFormProps {
   setEffort: (effort: EffortLevel) => void;
   permissionMode: string;
   setPermissionMode: (mode: string) => void;
-  /**
-   * Which engine drives the session. Lifted to the parent so the form's
-   * caller can seed it from the path-rule resolver (`api.resolveAccountForProject`
-   * returns `{ agent, account }`) and so the value survives flipping the
-   * form into a chat tab via `initialSessionConfig`.
-   */
   agent: AgentKind;
   setAgent: (agent: AgentKind) => void;
-  /**
-   * When true, disable the agent picker (e.g. while the form is loading or
-   * an in-flight session start is racing). The picker still renders so the
-   * current value stays visible.
-   */
   agentPickerDisabled?: boolean;
   onStart: () => void;
-  /**
-   * Open the account picker to change the resolved account for the active
-   * engine. Surfaced as the Pencil affordance next to a present account.
-   */
   onChangeAccount?: () => void;
-  /**
-   * Open the account picker when the active engine has NO resolved account
-   * (the slot is null). Surfaced as the "Choose account" button that replaces
-   * the AccountBadge. Distinct from `onChangeAccount` so callers can scope the
-   * picker (e.g. engineFilter) and re-fetch the pair after a pick.
-   */
   onChooseAccount?: () => void;
-  /**
-   * Current Codex auth status. Threaded in from the parent (typically the
-   * `App` shell, which subscribes once at app startup) so the form stays a
-   * pure presentation component. `null` means "auth status hasn't loaded
-   * yet" — treated the same as unauthenticated for gating: we keep submit
-   * disabled rather than letting the user start a Codex session against
-   * potentially-unauthenticated state. Only consulted when `agent === 'codex'`.
-   */
+  /** `null` (not loaded yet) gates Codex like unauthenticated. */
   codexAuthStatus?: CodexAuthStatus | null;
-  /**
-   * Called when the user clicks the inline "Sign in" button in the
-   * Codex-unauthenticated banner. Parent should open the
-   * `CodexSignInModal`. Required when `agent === 'codex'` is reachable
-   * in the form; if omitted the banner renders without a sign-in
-   * affordance (only useful for snapshot tests).
-   */
   onCodexSignIn?: () => void;
   className?: string;
 }
 
-/**
- * Trigger button for the form-variant dropdowns. Outlined, fills the
- * column, shows a chevron on the right. The label slot is whatever the
- * caller wants (matches the visual content of the corresponding row).
- * Tight padding so 4 dropdowns fit on a single row inside `max-w-md`.
- */
 function DropdownTrigger({
   open,
   onClick,
@@ -101,9 +53,6 @@ function DropdownTrigger({
       variant="outline"
       size="sm"
       onClick={onClick}
-      // min-h-9 + flex-1 (inside the cell's flex-col) lets every trigger
-      // stretch to the row height set by the tallest cell — the two-line
-      // model trigger — so the row stays visually aligned.
       className="w-full justify-between min-h-9 h-auto flex-1 px-2 font-normal gap-1"
       aria-expanded={open}
       title={title}
@@ -114,9 +63,6 @@ function DropdownTrigger({
   );
 }
 
-/** Single dropdown row that mirrors the visual of one button from the
- *  pre-existing button grid. Highlighted when this row is the selected
- *  option. */
 function DropdownRow({
   selected,
   onClick,
@@ -159,26 +105,15 @@ export const NewSessionForm: React.FC<NewSessionFormProps> = ({
   onCodexSignIn,
   className,
 }) => {
-  // Codex auth gating — only consulted on the codex agent path. We treat
-  // `null` (status not yet loaded) the same as unauthenticated so submit
-  // stays disabled until we definitively know we can start the session.
   const codexAuthenticated = agent === 'codex'
     ? codexAuthStatus?.authenticated === true
     : true;
   const showCodexAuthBanner = agent === 'codex' && !codexAuthenticated;
-  // Per-engine routing target for the currently-selected agent. Codex
-  // accounts are real accounts now, so both engines render a full
-  // AccountBadge when their slot resolves. A null slot for the active
-  // engine means no override/path rule routes here yet — render a
-  // "Choose account" affordance instead.
   const activeSlot = resolvePair[agent];
   const [modelOpen, setModelOpen] = useState(false);
   const [effortOpen, setEffortOpen] = useState(false);
   const [permissionsOpen, setPermissionsOpen] = useState(false);
 
-  // Dynamic model catalog for the resolved Claude account (falls back to the
-  // static list when no account routes here yet, or for the Codex engine —
-  // whose model options this picker has never differentiated).
   const { models: modelList, raw: modelCatalogRaw } = useModelCatalog(
     agent === 'claude' ? activeSlot?.account.config_dir : undefined,
   );
@@ -205,12 +140,6 @@ export const NewSessionForm: React.FC<NewSessionFormProps> = ({
         />
       </div>
 
-      {/* Account cell + 3 dropdowns on a single row, labels on top. The
-          leftmost cell auto-sizes — it shows the resolved AccountBadge (for
-          either engine) with an edit pencil, or a "Choose account" button
-          when the active engine has no routing target yet. Model gets the
-          widest track (its trigger carries a name + detail line), Effort the
-          narrowest (short values like "Hi High"). */}
       <div className="grid gap-2 grid-cols-[auto_minmax(0,1.8fr)_minmax(0,0.7fr)_minmax(0,1.1fr)]">
         <div className="flex flex-col gap-1">
           <Label className="text-[10px] uppercase tracking-wider text-foreground/50">
@@ -244,7 +173,6 @@ export const NewSessionForm: React.FC<NewSessionFormProps> = ({
           )}
         </div>
 
-        {/* Model */}
         <div className="flex flex-col gap-1 min-w-0">
           <Label className="text-[10px] uppercase tracking-wider text-foreground/50">Model</Label>
           <Popover
@@ -294,7 +222,6 @@ export const NewSessionForm: React.FC<NewSessionFormProps> = ({
           />
         </div>
 
-        {/* Effort */}
         <div className="flex flex-col gap-1 min-w-0">
           <Label className="text-[10px] uppercase tracking-wider text-foreground/50">Effort</Label>
           <Popover
@@ -336,7 +263,6 @@ export const NewSessionForm: React.FC<NewSessionFormProps> = ({
           />
         </div>
 
-        {/* Permissions */}
         <div className="flex flex-col gap-1 min-w-0">
           <Label className="text-[10px] uppercase tracking-wider text-foreground/50">Permissions</Label>
           <Popover

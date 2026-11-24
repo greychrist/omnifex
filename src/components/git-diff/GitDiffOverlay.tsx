@@ -9,35 +9,17 @@ import { SplitHandle } from "@/components/ui/SplitHandle";
 import { DiffFileTree } from "./DiffFileTree";
 import { SplitDiffView } from "./SplitDiffView";
 
-/**
- * Full-screen working-tree diff: file navigator on the left, side-by-side
- * patch on the right.
- *
- * Owns all fetching for the feature. The file list is read once per
- * `refreshToken`, and a patch is read per selected file — never on a timer.
- * The per-tab git watcher already pushes change notifications; the caller
- * turns those into a `refreshToken` bump rather than this component polling.
- *
- * Context expansion is per-file and whole-file: clicking a gap re-reads the
- * same patch at a wider `-U`. It is NOT per-gap, because git has no way to
- * widen one hunk in isolation — expanding a gap in the middle of a file
- * necessarily widens the others too. The ladder stops at a value large enough
- * to mean "the whole file", which is how "expand all" is expressed without a
- * second code path.
- */
+// Never polls: the caller bumps `refreshToken` from the git watcher.
+// Context expansion is whole-file, not per-gap: git cannot widen one hunk in isolation.
 
-/** Context widths the expand control walks through, in unchanged lines. */
 const CONTEXT_LADDER = [3, 25, 100, 1_000_000] as const;
 
-/** Body-line cap when parsing, so one enormous file cannot hang the parse. */
 const PARSE_LINE_BUDGET = 60_000;
 
 export interface GitDiffOverlayProps {
   projectPath: string;
-  /** Which worktree this is, when it is not the session's own checkout. */
   label?: string;
   onClose: () => void;
-  /** Bump to re-read the file list. */
   refreshToken?: number;
   className?: string;
 }
@@ -63,8 +45,6 @@ export const GitDiffOverlay: React.FC<GitDiffOverlayProps> = ({
   const [patch, setPatch] = useState<Load<string>>({ state: "loading" });
   const [contextIndex, setContextIndex] = useState(0);
 
-  // Paths in a deep tree are wider than any fixed sidebar, and the diff wants
-  // every pixel it can get on a narrow window — so the user picks.
   const bodyRef = useRef<HTMLDivElement>(null);
   const treeSplit = useSplitWidth({
     storageKey: "omnifex.gitDiff.treeWidth",
@@ -74,8 +54,6 @@ export const GitDiffOverlay: React.FC<GitDiffOverlayProps> = ({
     containerRef: bodyRef,
   });
 
-  // Escape closes. Captured on window so it works regardless of what inside
-  // the overlay holds focus.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {
       if (e.key === "Escape") onClose();
@@ -84,7 +62,6 @@ export const GitDiffOverlay: React.FC<GitDiffOverlayProps> = ({
     return () => { window.removeEventListener("keydown", onKeyDown); };
   }, [onClose]);
 
-  // ── File list ────────────────────────────────────────────────────────────
   useEffect(() => {
     let cancelled = false;
     setFiles({ state: "loading" });
@@ -92,10 +69,7 @@ export const GitDiffOverlay: React.FC<GitDiffOverlayProps> = ({
       .then((value) => {
         if (cancelled) return;
         setFiles({ state: "ready", value });
-        // Open the first file so the right-hand pane is never blank. Keep the
-        // current selection across a refresh if it still exists — a refresh
-        // fires on every save, and yanking the reader back to file one would
-        // make the overlay unusable while work is in flight.
+        // Keep the selection across a refresh: one fires on every save.
         setSelectedPath((current) => {
           if (current && value.some((f) => f.path === current)) return current;
           return value.length > 0 ? value[0].path : null;
@@ -108,7 +82,6 @@ export const GitDiffOverlay: React.FC<GitDiffOverlayProps> = ({
     return () => { cancelled = true; };
   }, [projectPath, refreshToken]);
 
-  // ── Patch for the selected file ──────────────────────────────────────────
   useEffect(() => {
     if (!selectedPath) { setPatch({ state: "ready", value: "" }); return; }
     let cancelled = false;
@@ -121,8 +94,7 @@ export const GitDiffOverlay: React.FC<GitDiffOverlayProps> = ({
     return () => { cancelled = true; };
   }, [projectPath, selectedPath, contextIndex, refreshToken]);
 
-  // A new file starts at the narrowest context. Without this, opening a small
-  // file after expanding a large one would render the whole thing.
+  // A new file starts at the narrowest context, or a small file after a large expanded one renders whole.
   const previousPath = useRef(selectedPath);
   useEffect(() => {
     if (previousPath.current !== selectedPath) {

@@ -4,18 +4,7 @@ import { cn } from "@/lib/utils";
 import type { AgentMessage } from "@/lib/api";
 import type { JSX } from 'react';
 
-/**
- * Extracts the reasoning text from an `agent_reasoning` notification.
- *
- * Wire shape (Codex builds vary):
- *   { method: "agent_reasoning", params: { summary?: string, content?: string } }
- *
- * Some builds send only `summary` (a short headline), some send both, and
- * some have shipped `text` instead. We surface both fields independently so
- * the collapsed header can show the short summary while the expanded body
- * shows the full content. When only one is present, both views fall back
- * to it.
- */
+// Codex builds vary: `summary`, `content`, or both; each view falls back to the other.
 function extractReasoning(payload: unknown): { summary: string; content: string } {
   if (!payload || typeof payload !== "object") return { summary: "", content: "" };
   const params = (payload as { params?: unknown }).params;
@@ -29,8 +18,6 @@ function extractReasoning(payload: unknown): { summary: string; content: string 
   return { summary, content };
 }
 
-/** Collapsed-header inline preview length. Long single-line summaries get
- *  truncated so the trigger row stays a single line. */
 const SUMMARY_PREVIEW_LIMIT = 120;
 
 function truncate(s: string, limit: number): string {
@@ -38,24 +25,11 @@ function truncate(s: string, limit: number): string {
   return oneLine.length > limit ? oneLine.slice(0, limit - 1) + "…" : oneLine;
 }
 
-/**
- * Renders a Codex `agent_reasoning` notification as a collapsible
- * "Thinking…" card. Collapsed by default — matches Claude's
- * `ThinkingWidget` behavior (assistant reasoning is supplementary; the
- * user opts in by clicking the header).
- *
- * Deliberately not reusing `ThinkingWidget` itself: that component is
- * wired to Claude's `assistant.thinking` accent style in the message
- * rendering config (custom icon, color, header label). Codex reasoning
- * is a parallel concept, not the same kind — sharing the accent slot
- * would leak Codex theming into Claude's appearance settings.
- */
+// Not ThinkingWidget: sharing its accent slot would leak Codex theming into Claude's appearance settings.
 export function AgentReasoningItem({ message }: { message: AgentMessage }): JSX.Element {
   const [isExpanded, setIsExpanded] = useState(false);
   const { summary, content } = extractReasoning(message.payload);
 
-  // Prefer `content` for the expanded body; fall back to `summary` so a
-  // payload with only one field still reveals something on click.
   const fullText = (content || summary).trim();
   const headerPreview = truncate(summary || content, SUMMARY_PREVIEW_LIMIT);
 

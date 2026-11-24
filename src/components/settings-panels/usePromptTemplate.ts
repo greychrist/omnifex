@@ -3,26 +3,13 @@ import { api } from '@/lib/api';
 import { fireAndLog } from '@/lib/fireAndLog';
 import { useSaveStatus } from './saveStatus';
 
-/**
- * Load/edit/auto-save cycle for one prompt template stored in `app_settings`.
- *
- * Extracted from `SummaryPromptSettings` when the Compactions panel needed the
- * same behaviour: debounced auto-save with no Save button, reported through the
- * Settings save indicator, and reset-to-default. Only the storage key and the
- * default text differ between the two.
- */
-
-/** Debounce before the textarea contents are persisted. Tuned so short pauses
- *  while typing flush, and rapid edits coalesce into one save. */
 export const PROMPT_AUTOSAVE_DEBOUNCE_MS = 500;
 
 export interface UsePromptTemplateResult {
   value: string;
   loading: boolean;
   isDefault: boolean;
-  /** Update the editor and schedule a debounced save. */
   edit: (next: string) => void;
-  /** Replace the editor with the shipped default and save it. */
   resetToDefault: () => void;
 }
 
@@ -34,11 +21,7 @@ export function usePromptTemplate(
   const [loading, setLoading] = useState(true);
   const { track } = useSaveStatus();
 
-  // Refreshed on every keystroke so the save fires after the *last* edit
-  // rather than the first.
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Last value successfully persisted, so the autosave can no-op when the
-  // editor already shows what's on disk (initial mount, undo back to saved).
   const savedRef = useRef('');
 
   useEffect(() => {

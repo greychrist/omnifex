@@ -1,10 +1,5 @@
 import React from "react";
 
-/**
- * One label | control | hint row — the compact layout the Message kinds tab's
- * editors share. `name` labels the group for assistive tech; `label` is what
- * shows when it should read shorter.
- */
 export const EditorRow: React.FC<{
   name: string;
   label?: React.ReactNode;

@@ -33,21 +33,14 @@ import { fireAndLog } from "@/lib/fireAndLog";
 
 const USER_DEFAULT_KEY = "message_rendering_config_user_default";
 
-// Edits are applied to a local draft instantly (so the in-panel previews stay
-// live) and pushed to the global MessageRenderingContext on this debounce. The
-// global commit is the expensive step: it re-renders every message in every
-// open chat (all subscribe to the context) and persists to disk. A native
-// color-input drag streams dozens of onChange/sec; without coalescing, each
-// became a full chat re-render + disk write — the source of the picker lag.
+// The global commit re-renders every message in every chat and writes to disk; debounced, or a color-input drag lags.
 const COMMIT_DEBOUNCE_MS = 150;
 
 type AppearanceSettingsProps = Pick<SettingsPanelProps, "setToast">;
 
 const FIRST_SELECTION: TreeSelection = { type: "category", id: "user" };
 
-/** The tabs that exist, so a remembered one that no longer does is ignored. */
 const APPEARANCE_TABS: readonly string[] = ["messages", "turns"];
-/** A tab saved before Messages merged Message kinds and Modern. */
 const LEGACY_TABS: Readonly<Record<string, string>> = { kinds: "messages", modern: "messages", typography: "messages" };
 
 
@@ -55,14 +48,10 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
   const { config: committedConfig, setConfig: commitConfig } = useMessageRenderingConfig();
   const { track } = useSaveStatus();
 
-  // Local working copy. The whole panel reads/edits `config` (bound to the
-  // draft below) so previews update instantly; the global commit is debounced.
   const [draft, setDraft] = useState<MessageRenderingConfig>(committedConfig);
   const config = draft;
   const commitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // The exact object last pushed to the context. Lets the sync effect tell our
-  // own debounced commit (skip) from an external config change — first load,
-  // import, reset — which must replace the draft.
+  // Tells our own debounced commit (skip) from an external change (load, import, reset), which must replace the draft.
   const lastCommittedRef = useRef<MessageRenderingConfig | null>(null);
   const draftRef = useRef(draft);
   draftRef.current = draft;
@@ -70,7 +59,6 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
   const pushToGlobal = useCallback(
     (next: MessageRenderingConfig) => {
       lastCommittedRef.current = next;
-      // Re-renders chat consumers and persists; the save indicator reports the write.
       void track(commitConfig(next));
     },
     [commitConfig, track],
@@ -84,8 +72,6 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
     }, COMMIT_DEBOUNCE_MS);
   }, [pushToGlobal]);
 
-  // Wholesale replacement (import / factory reset / restore default): update
-  // the draft and commit immediately, cancelling any pending debounced commit.
   const replaceConfig = useCallback(
     (next: MessageRenderingConfig) => {
       if (commitTimerRef.current) {
@@ -98,15 +84,12 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
     [pushToGlobal],
   );
 
-  // Adopt external config changes (first load, import, reset) into the draft.
-  // Skip our own debounced commits (same object ref) so an edit the user is
-  // mid-drag on isn't clobbered.
   useEffect(() => {
     if (committedConfig === lastCommittedRef.current) return;
     setDraft(committedConfig);
   }, [committedConfig]);
 
-  // Flush a pending commit on unmount so a fast edit-then-leave isn't lost.
+  // Flush on unmount, or a fast edit-then-leave is lost.
   useEffect(() => {
     return () => {
       if (commitTimerRef.current) {
@@ -119,15 +102,10 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
 
   const [selected, setSelected] = useState<TreeSelection>(FIRST_SELECTION);
   const [hasUserDefault, setHasUserDefault] = useState(false);
-  // Surface every section behind tabs instead of a single long scroll.
-  // Persisted across remounts via sessionStorage so a quick trip back to
-  // the page doesn't snap the user back to "kinds" — but cleared on app
-  // restart so cold-launches always land on the most common surface first.
   const [activeTab, setActiveTab] = useState<string>(() => {
     try {
       const raw = sessionStorage.getItem('omnifex:appearance-tab');
       const saved = raw ? (LEGACY_TABS[raw] ?? raw) : null;
-      // A tab that no longer exists falls back to Messages.
       return saved && APPEARANCE_TABS.includes(saved) ? saved : 'messages';
     } catch { return 'messages'; }
   });
@@ -137,8 +115,6 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
   }, [activeTab]);
   const importInputRef = useRef<HTMLInputElement>(null);
 
-  // Load user-default presence on mount so the "Reset to my default" button
-  // only enables once the user has actually saved a personal default.
   useEffect(() => {
     api
       .getSetting(USER_DEFAULT_KEY)
@@ -192,9 +168,6 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
     }
   }, [replaceConfig, setToast]);
 
-  // ── Category editing ──────────────────────────────────────────────────
-  // Categories carry a full style; an edit writes the field straight onto
-  // config.categories[c].
   const updateCategory = useCallback(
     (c: Category, patch: Partial<KindStyle>) => {
       mutate((prev) => ({
@@ -222,10 +195,7 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
     [mutate, setToast],
   );
 
-  // ── Kind editing ──────────────────────────────────────────────────────
-  // Kinds carry a sparse user patch in config.kinds[id]. An edit writes
-  // only the changed field into the patch; unset fields inherit from the
-  // registry default ⊕ category base.
+  // Kinds carry a sparse patch: write only the changed field; unset fields inherit.
   const updateKind = useCallback(
     (id: string, patch: Partial<KindStyle>) => {
       mutate((prev) => ({ ...prev, kinds: { ...prev.kinds, [id]: { ...(prev.kinds[id] ?? {}), ...patch } } }));
@@ -300,9 +270,6 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
     [replaceConfig, setToast],
   );
 
-  // Resolve the current selection into the editor's inputs. A category
-  // carries a full style; a kind a resolved one (category → registry default
-  // → user patch) plus its sparse patch for the inherit affordances.
   const editor = useMemo(() => {
     const categoryEditor = (c: Category) => {
       const style = config.categories[c];
@@ -312,7 +279,6 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
         description: style.description,
         style: style as KindStyle,
         onChange: (patch: Partial<KindStyle>) => { updateCategory(c, patch); },
-        // A category has nothing to inherit from: a cleared field takes its default.
         onClearField: (field: keyof KindStyle) => {
           updateCategory(c, { [field]: DEFAULT_CATEGORIES[c][field] });
         },
@@ -340,9 +306,7 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
         inheritedCategoryLabel: config.categories[cat].label,
         builtIn: def?.default,
         override: config.kinds[id],
-        // Kinds Modern draws as its own items are always in Standard.
         offersStandard: !MODERN_ITEM_KINDS.has(id),
-        // The prompt's color is Colors › User prompt.
         offersColor: id !== "user.prompt",
       };
     }
@@ -432,9 +396,6 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
 
       </Tabs>
 
-      {/* Actions live below the tabs so import / export / save-default /
-          reset-to-factory are always one click away regardless of which
-          tab is open. */}
       <Card className="p-4">
         <div className="flex flex-wrap items-center gap-2">
           <Button type="button" variant="outline" size="sm" onClick={exportConfig}>

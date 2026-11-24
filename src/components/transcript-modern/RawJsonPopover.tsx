@@ -3,42 +3,19 @@ import { Check, Copy, Eye } from "lucide-react";
 import { Popover } from "@/components/ui/popover";
 import { fireAndLog } from "@/lib/fireAndLog";
 
-/** Payload, or a thunk producing it. See the note on laziness below. */
 export type RawPayload = string | (() => string);
 
 interface RawJsonPopoverProps {
-  /** Already-serialized payload, or a thunk that produces it. Rendered
-   *  verbatim and copied verbatim. */
   text: RawPayload;
-  /** Panel heading. Defaults to "Raw JSON". */
   label?: string;
 }
 
-/**
- * The message action bar's payload affordance: opens a scrollable panel
- * showing the raw wire payload, with a copy button inside it.
- *
- * This used to be a bare copy button, which made "what is actually in this
- * record?" a question you could only answer by copying it somewhere else
- * first. Reading the payload is the common case — copying it is the
- * occasional one — so the trigger views and the panel copies.
- *
- * **A thunk is only called while the panel is open.** The first version took
- * an eagerly-serialized string, so `JSON.stringify(raw, null, 2)` ran in the
- * render body of every card footer in the transcript — measured at ~5ms and
- * 2.7MB per re-render on a real session, on every one of ~10k stream deltas,
- * for a panel almost nobody opens. Keep the laziness.
- *
- * Chrome comes from the shared `Popover` (portal, click-outside, escape,
- * viewport clamping); this passes `p-0` and supplies its own header/body so
- * the heading sits flush against the panel edge the way other panels do.
- */
+// A thunk is called only while the panel is open: eager serialization in every card footer cost ~5ms per stream delta. Keep the laziness.
 export const RawJsonPopover: React.FC<RawJsonPopoverProps> = ({ text, label = "Raw JSON" }) => {
   const [copied, setCopied] = useState(false);
   const [open, setOpen] = useState(false);
 
-  // An empty string means "nothing to show". A thunk is always assumed to
-  // have something — calling it here to find out would defeat the laziness.
+  // Never call the thunk to check for emptiness: that defeats the laziness.
   if (typeof text === "string" && !text) return null;
 
   const resolved = open ? (typeof text === "string" ? text : text()) : "";
@@ -53,8 +30,6 @@ export const RawJsonPopover: React.FC<RawJsonPopoverProps> = ({ text, label = "R
     }
   };
 
-  // Matches CardActionButton's shape — this sits inside the action bar as a
-  // peer of Copy, so it has to read as the same family of control.
   const trigger = (
     <button
       type="button"
@@ -82,9 +57,6 @@ export const RawJsonPopover: React.FC<RawJsonPopoverProps> = ({ text, label = "R
             : <><Copy className="w-3 h-3" /><span>Copy</span></>}
         </button>
       </div>
-      {/* The payload is unbounded in both axes — a long record would run off
-          the viewport, and a single long line would widen the panel past it.
-          Cap the height and scroll; wrap rather than scroll horizontally. */}
       <div className="max-h-[60vh] overflow-y-auto px-3 py-2">
         <pre
           data-testid="raw-json-body"

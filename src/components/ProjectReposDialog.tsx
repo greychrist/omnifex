@@ -9,13 +9,6 @@ import { api, type ProjectRepos } from '@/lib/api';
 import { useRepoAliases } from '@/hooks/useRepoAliases';
 import { fireAndLog } from '@/lib/fireAndLog';
 
-/**
- * The repos in a project and which of them its sessions watch, plus each
- * repo's branch colors. Opened from a session's git bar and from the
- * project screen; choices are saved per project and reach every open session
- * of it live.
- */
-
 const DEPTHS = [1, 2, 3, 4, 5];
 
 function tildeHome(p: string): string {
@@ -27,7 +20,6 @@ function basename(p: string): string {
   return parts[parts.length - 1] ?? p;
 }
 
-/** Load a project's repos, reloading when any client changes them. */
 function useProjectRepos(projectPath: string, enabled: boolean) {
   const [data, setData] = React.useState<ProjectRepos | null>(null);
   const [loading, setLoading] = React.useState(false);
@@ -47,10 +39,6 @@ function useProjectRepos(projectPath: string, enabled: boolean) {
   return { data, loading, reload };
 }
 
-/**
- * A repo's display alias. Saved on blur or Enter, and only when it changed;
- * blank clears it, and the bar falls back to the folder name.
- */
 const AliasField: React.FC<{ name: string; path: string; alias: string }> = ({ name, path, alias }) => {
   const [value, setValue] = React.useState(alias);
   React.useEffect(() => { setValue(alias); }, [alias]);
@@ -76,7 +64,6 @@ const AliasField: React.FC<{ name: string; path: string; alias: string }> = ({ n
 interface RowProps {
   name: string;
   path: string;
-  /** The repo's saved alias, '' for none. */
   alias: string;
   watched: boolean;
   locked?: boolean;
@@ -100,8 +87,6 @@ const RepoRow: React.FC<RowProps> = ({ name, path, alias, watched, locked, missi
         >
           {expanded ? <ChevronDown className="h-3.5 w-3.5 shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0" />}
           <FolderGit2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-          {/* Name, then path on its own line — both wrap rather than truncate,
-              since repo names alone can outrun the dialog. */}
           <span data-repo-row-text className="flex min-w-0 flex-1 flex-col">
             <span className="flex flex-wrap items-baseline gap-x-1.5">
               <span className="font-mono text-xs break-all">{name}</span>
@@ -230,7 +215,6 @@ export const ProjectReposDialog: React.FC<ProjectReposDialogProps> = ({ projectP
   );
 };
 
-/** The project screen's entry point: a summary and a button that opens the dialog. */
 export const ProjectReposCard: React.FC<{ projectPath: string }> = ({ projectPath }) => {
   const [open, setOpen] = React.useState(false);
   const { data } = useProjectRepos(projectPath, true);

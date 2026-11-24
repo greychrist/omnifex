@@ -1,10 +1,3 @@
-/**
- * Shared utilities and types for tool widget components
- */
-
-/**
- * Extract the programming language from a file path for syntax highlighting
- */
 export const getLanguage = (path: string) => {
   const ext = path.split('.').pop()?.toLowerCase();
   const languageMap: Record<string, string> = {
@@ -46,10 +39,6 @@ export const getLanguage = (path: string) => {
   return languageMap[ext || ""] || "text";
 };
 
-/**
- * Extract text content from a tool result object.
- * Handles the various shapes that result.content can take.
- */
 export const extractResultContent = (result: unknown): string => {
   if (!result || typeof result !== 'object') return '';
   const content = (result as { content?: unknown }).content;
@@ -62,9 +51,8 @@ export const extractResultContent = (result: unknown): string => {
       return text as string;
     }
     if (Array.isArray(content)) {
-      // Image blocks are drawn as images beneath the widget (StreamMessage,
-      // extractToolResultImages). Stringified, a screenshot's base64 became
-      // one unbreakable line WebKit spent seconds per layout measuring.
+      // Images render beneath the widget; stringified base64 is one unbreakable
+      // line WebKit spends seconds measuring.
       return (content as unknown[])
         .filter((c) => !(c && typeof c === 'object' && (c as { type?: unknown }).type === 'image'))
         .map((c) => {

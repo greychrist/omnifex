@@ -1,19 +1,5 @@
-/**
- * HooksEditor — authoring UI for Claude Code hooks in settings.json.
- *
- * Two things worth knowing about the shape, because an earlier version got
- * both wrong:
- *
- * 1. EVERY event uses the same nesting, `Event → [{matcher?, hooks:[…]}]`,
- *    including the ten events that always fire and ignore `matcher`. There is
- *    no flat-command form. This component therefore has ONE code path; the
- *    old matcher-events/direct-events split both mis-read real configs and
- *    wrote back a shape the CLI silently never executes.
- * 2. The matcher vocabulary is per-event and not guessable — `SessionStart`
- *    takes `startup|resume|clear`, `PreToolUse` takes tool names, `PreCompact`
- *    takes `manual|auto`. `HOOK_EVENT_INFO` carries the hint and examples so
- *    the field can offer the right values instead of tool names everywhere.
- */
+// Every event nests `Event → [{matcher?, hooks:[…]}]`, matcher-less ones too; the CLI silently never runs a flat form.
+// Matcher vocabulary is per-event (HOOK_EVENT_INFO), not tool names everywhere.
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -75,10 +61,7 @@ import {
 
 interface HooksEditorProps {
   projectPath?: string;
-  /**
-   * Absolute path to the Claude config directory (the account's `config_dir`).
-   * Required for the `user` scope so we never silently read/write ~/.claude.
-   */
+  /** Required for `user` scope so we never silently read/write ~/.claude. */
   configDir?: string;
   scope: 'project' | 'local' | 'user';
   readOnly?: boolean;
@@ -99,7 +82,6 @@ interface EditableHookMatcher extends Omit<HookMatcher, 'hooks'> {
 
 type EditableHooks = Partial<Record<HookEvent, EditableHookMatcher[]>>;
 
-/** Attach render ids to a loaded config so rows survive re-renders. */
 function toEditable(config: HooksConfiguration): EditableHooks {
   const out: EditableHooks = {};
   for (const [event, matchers] of Object.entries(config) as [HookEvent, HookMatcher[]][]) {
@@ -107,9 +89,6 @@ function toEditable(config: HooksConfiguration): EditableHooks {
     out[event] = matchers.map((m) => ({
       ...m,
       id: HooksManager.generateId(),
-      // Expanded on load: the first question anyone opening this screen has
-      // is "what is configured?", and collapsed cards answer it with a
-      // chevron. Configs are a handful of entries, not hundreds.
       expanded: true,
       hooks: (m.hooks ?? []).map((h) => ({ ...h, id: HooksManager.generateId() })),
     }));
@@ -117,8 +96,6 @@ function toEditable(config: HooksConfiguration): EditableHooks {
   return out;
 }
 
-/** Apply a field update; an `undefined` value removes the key, so clearing
- *  timeout or onFailure writes nothing rather than an explicit undefined. */
 function withUpdates(
   cmd: EditableHookCommand,
   updates: Partial<EditableHookCommand>,
@@ -132,8 +109,6 @@ function withUpdates(
   return next as unknown as EditableHookCommand;
 }
 
-/** Strip render ids back out. Events with no entries are omitted entirely so
- *  saving an emptied event removes the key rather than writing `[]`. */
 function toConfig(editable: EditableHooks): HooksConfiguration {
   const out: HooksConfiguration = {};
   for (const [event, matchers] of Object.entries(editable) as [HookEvent, EditableHookMatcher[]][]) {
@@ -169,7 +144,6 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
   const eventInfo = HOOK_EVENT_INFO[selectedEvent];
   const supportsMatcher = eventSupportsMatcher(selectedEvent);
 
-  /** Mutate one event's entries and mark the form dirty. */
   const updateEntries = useCallback(
     (event: HookEvent, fn: (prev: EditableHookMatcher[]) => EditableHookMatcher[]) => {
       setEditableHooks((prev) => ({ ...prev, [event]: fn(prev[event] ?? []) }));
@@ -178,7 +152,6 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
     [],
   );
 
-  // Load hooks when scope/project/config dir changes.
   useEffect(() => {
     if (scope !== 'user' && !projectPath) {
       setIsLoading(false);
@@ -205,7 +178,6 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
 
   const currentConfig = useMemo(() => toConfig(editableHooks), [editableHooks]);
 
-  // Notify the parent so it can drive its own save button.
   useEffect(() => {
     onChange?.(hasUnsavedChanges, () => toConfig(editableHooks));
   }, [hasUnsavedChanges, editableHooks, onChange]);
@@ -376,8 +348,7 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
               </div>
             </>
           ) : (
-            // The CLI ignores `matcher` on this event, so offering the field
-            // would invite a filter that silently does nothing.
+            // The CLI ignores `matcher` on this event; a field would invite a filter that does nothing.
             <div className="flex items-center justify-between gap-2">
               <p className="text-sm text-muted-foreground">
                 {info.label} always fires — no matcher.
@@ -573,10 +544,6 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
             </div>
           )}
 
-          {/* Event picker. A tab strip held five events; there are 31, so the
-              selector is a grouped dropdown. Counts ride on each item —
-              otherwise there is no way to find which of 31 events you have
-              hooks on without opening each one. */}
           <div className="space-y-2">
             <Label htmlFor="hook-event">Event</Label>
             <div className="flex items-center gap-3">

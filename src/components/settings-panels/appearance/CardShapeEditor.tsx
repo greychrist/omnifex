@@ -9,10 +9,6 @@ interface CardShapeEditorProps {
   onCardBorderRadius: (px: number) => void;
 }
 
-/**
- * Settings › Chats › Messages › Cards: the shape every Modern card shares.
- * (cardRadiusStyle and accentStyleFor read these.)
- */
 export const CardShapeEditor: React.FC<CardShapeEditorProps> = ({
   cardBorderOpacity,
   cardBorderRadius,

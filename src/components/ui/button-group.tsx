@@ -1,21 +1,7 @@
 import * as React from 'react';
 import { cn } from '@/lib/utils';
 
-/**
- * Buttons joined into one horizontal capsule: one border round the outside
- * and a divider between neighbours (each later child's left border).
- *
- * The divider color carries `!`: the unlayered global `* { border-color }`
- * reset in styles.css outranks every layered border-color utility, so
- * without it the dividers fall back to the faint default. The outer border is
- * left at that default on purpose — it frames, the dividers separate.
- *
- * The group draws the chrome, so each child's own corners and ring are
- * stripped — also with `!`, because a child's utility classes and these child
- * selectors have equal specificity and stylesheet order would otherwise
- * decide. Children's borders are left alone: the divider is one. The
- * vertical rail's equivalent is `GutterButtonGroup`.
- */
+// `!` on the divider color: the unlayered `* { border-color }` reset outranks layered utilities. `!` on child corners/ring: equal specificity would let stylesheet order decide.
 export function ButtonGroup({
   label,
   className,

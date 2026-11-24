@@ -11,26 +11,9 @@ import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { SURFACE_HEADER } from "@/lib/surfaceStyles";
 
-/**
- * "What is shaping this session?" — one side panel, four sections: the mods
- * running inside the CLI, the plugins it loaded, its MCP servers, and the
- * instructions that reached it (the context ledger).
- *
- * These were three panels behind three header buttons (MCP, Plugins, Session
- * context). They answer one question from mostly one source — system:init —
- * so they are read together. Inspector and Permissions stay apart: one is
- * diagnostics, the other an editor.
- *
- * Mods lead. They are plugins, but the one kind that runs code inside the
- * CLI, and in a stream-json session nothing they draw reaches OmniFex — so
- * this is the only place a mod that approves tool calls is visible at all.
- */
-
 type SectionKey = "mods" | "plugins" | "mcp" | "instructions";
 
 const SECTIONS_STORAGE_KEY = "omnifex.sessionContext.sections";
-// All collapsed: the headers and their counts are the overview, and the panel
-// remembers whichever you open.
 const DEFAULT_OPEN: Record<SectionKey, boolean> = { mods: false, plugins: false, mcp: false, instructions: false };
 
 function readOpen(): Record<SectionKey, boolean> {
@@ -43,14 +26,10 @@ function readOpen(): Record<SectionKey, boolean> {
 }
 
 export interface SessionContextPanelProps {
-  /** Null while the list is being fetched. */
   plugins: SessionPluginInfo[] | null;
-  /** Each mod's pinned `$.ui.status` line, by plugin name. */
   modStatus: Record<string, string>;
-  /** Null while unknown, which leaves the heading without a count. */
   mcpCount: number | null;
   mcp: React.ReactNode;
-  /** Entries in the context ledger; null when the session has no record. */
   instructionsCount: number | null;
   instructions: React.ReactNode;
 }
@@ -110,15 +89,11 @@ function Section({
   count: number | null;
   open: boolean;
   onToggle: (key: SectionKey) => void;
-  /** Brings its own padding: every body is a row list in the rows.tsx grammar. */
   children: React.ReactNode;
 }): React.JSX.Element {
   const headerId = `session-context-${id}`;
   return (
     <section role="region" aria-labelledby={headerId}>
-      {/* A header band (the Lima card header), ending in the chat cards'
-          up/down expander — so it cannot be mistaken for the chevron-led
-          scope groups inside it. */}
       <button
         type="button"
         id={headerId}
@@ -140,12 +115,6 @@ function Section({
   );
 }
 
-/**
- * The panel header's one control: reload plugins (which re-runs each mod's
- * session start) and ask the MCP servers again. It used to be two buttons,
- * one inside Plugins and one inside MCP servers, each visible only with its
- * section open.
- */
 export function SessionContextRefreshButton({
   onRefresh,
   busy,
@@ -206,9 +175,6 @@ function ModList({ mods, status }: { mods: SessionPluginInfo[]; status: Record<s
                           <span className="ml-auto flex-none font-mono text-[10px] text-muted-foreground/70">v{m.version}</span>
                         )}
                       </button>
-                      {/* What the mod can do stays visible with the row shut:
-                          a mod that approves tool calls is the reason this
-                          section exists. */}
                       <div className={cn("mb-1 mr-1.5 space-y-1 pl-3", CONTENT_INDENT)}>
                         {inspection ? (
                           inspection.capabilities.length > 0 && (

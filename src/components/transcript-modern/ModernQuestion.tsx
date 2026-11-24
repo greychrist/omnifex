@@ -1,10 +1,3 @@
-/**
- * AskUserQuestion in the Modern format — AI Elements' Questionnaire.
- *
- * The live card; answers go back through the same `buildAskUserQuestionAnswer`
- * the classic card uses. Once answered, the transcript draws the classic
- * `AnsweredAskUserQuestionCard` in both formats.
- */
 import * as React from 'react';
 import { Check, ChevronDown, ChevronUp, MessageCircleQuestion, Pencil } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -73,11 +66,7 @@ function Shell({
   children: React.ReactNode;
   footer: React.ReactNode;
 }) {
-  // Folds to its header, as the classic card does, so the chat behind a tall
-  // question can be read before answering.
   const [collapsed, setCollapsed] = React.useState(false);
-  // The classic card's per-kind accent (Settings → Chats) and inset margin, so
-  // a waiting question stands out from the chat.
   const { config } = useMessageRenderingConfig();
   const accentStyle = { ...accentStyleFor(config, 'permission.askUserQuestion'), ...cardRadiusStyle(config) };
   const swatch = swatchFor(config, 'permission.askUserQuestion');
@@ -192,7 +181,6 @@ export function ModernQuestionCard({
                 onChange={(e) => {
                   const v = e.target.value;
                   setOtherTexts((prev) => { const next = prev.slice(); next[i] = v; return next; });
-                  // Typing picks Other; clearing un-picks it.
                   if ((v.trim() !== '') !== picked(i, OTHER_VALUE)) toggle(i, OTHER_VALUE);
                 }}
                 onKeyDown={(e) => {

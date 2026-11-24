@@ -12,31 +12,18 @@ interface KindEditorProps {
   mode: KindEditorMode;
   label: string;
   description?: string;
-  /** The resolved style the controls show: a category's own, or a kind's
-   *  category ⊕ registry default ⊕ user patch. */
   style: KindStyle;
-  /** Kind mode: the fields the user set on this kind, vs. inherited. */
   override?: Partial<KindStyle>;
-  /** Kind mode: the category it inherits from, for the reset labels. */
   inheritedCategoryLabel?: string;
-  /** Kind mode: the kind's built-in default (its registry entry). A field set
-   *  there is what an unset field falls back to, not the category. */
+  /** An unset field falls back to this registry default, not the category. */
   builtIn?: Partial<KindStyle>;
   onChange: (patch: Partial<KindStyle>) => void;
-  /** Put a field back: a kind inherits again, a category takes its default. */
   onClearField: (field: keyof KindStyle) => void;
   onReset: () => void;
-  /** False for kinds Modern draws as its own items: always in Standard. */
   offersStandard?: boolean;
-  /** False where something else sets the color (User prompt: Colors). */
   offersColor?: boolean;
 }
 
-/**
- * Settings › Chats › Messages, one kind or category: its icon and color (the
- * Modern line it is drawn as wears both), and whether Standard shows it.
- * Expanded draws every record whatever this says.
- */
 export const KindEditor: React.FC<KindEditorProps> = ({
   mode,
   label,

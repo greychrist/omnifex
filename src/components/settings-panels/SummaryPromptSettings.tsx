@@ -12,12 +12,7 @@ import { usePromptTemplate } from './usePromptTemplate';
 import { PromptTemplateEditor } from './PromptTemplateEditor';
 import { useSaveStatus } from './saveStatus';
 
-/**
- * The default prompt the backend ships with. Mirrored here so the
- * "Reset to default" button can populate the textarea without an extra
- * IPC round-trip. Keep in sync with `DEFAULT_SUMMARY_PROMPT` in
- * `daemon/services/sessions-summary.ts`.
- */
+// Keep in sync with `DEFAULT_SUMMARY_PROMPT` in daemon/services/sessions-summary.ts.
 const DEFAULT_SUMMARY_PROMPT = `You are summarizing a coding-assistant session for a developer's records.
 Produce a one-line headline (8–14 words) and a 2–3 bullet points (< 50 words) that capture the THEMES of the session — what general area or capability was worked on, what the broader goals were, what kind of problem the user was trying to solve.
 
@@ -38,22 +33,6 @@ Format your response EXACTLY:
 <paragraph>...</paragraph>
 `;
 
-/**
- * Settings → System Prompts → Session summaries.
- *
- * Layout (top → bottom):
- *   1. Heading + master "Enable summaries" switch (controls UI visibility
- *      everywhere + auto-on-close lifecycle gate).
- *   2. Prompt textarea — auto-saves with a debounce, no Save button.
- *   3. "Reset to default" button.
- *   4. "Generate summaries automatically" switch — only gates the
- *      lifecycle hook (auto generation on session close); the manual
- *      refresh button is unaffected.
- *
- * Both switches save instantly on flip (optimistic UI with rollback on
- * error). The prompt textarea's load/debounce/save cycle lives in
- * `usePromptTemplate`, shared with the Compactions panel.
- */
 export const SummaryPromptSettings: React.FC = () => {
   const { track } = useSaveStatus();
   const prompt = usePromptTemplate(PROMPT_TEMPLATE_SETTING_KEY, DEFAULT_SUMMARY_PROMPT);
@@ -70,8 +49,7 @@ export const SummaryPromptSettings: React.FC = () => {
     ])
       .then(([storedEnabled, storedAuto]) => {
         if (cancelled) return;
-        // Default-on if the row is missing (matches the backend seed in
-        // `ensureDefaultSettings`). Any non-'true' string parses as off.
+        // Default-on when missing, matching the backend seed in `ensureDefaultSettings`.
         setEnabled(storedEnabled === null ? true : storedEnabled === 'true');
         setAutoOnClose(storedAuto === null ? true : storedAuto === 'true');
       })
@@ -86,7 +64,6 @@ export const SummaryPromptSettings: React.FC = () => {
     return () => { cancelled = true; };
   }, []);
 
-  // Optimistic: the switch flips at once and flips back if the write fails.
   const handleEnabledChange = async (next: boolean) => {
     setEnabled(next);
     if (!(await track(api.saveSetting(ENABLED_SETTING_KEY, next ? 'true' : 'false')))) {
@@ -121,8 +98,6 @@ export const SummaryPromptSettings: React.FC = () => {
         </div>
       ) : (
         <>
-          {/* Master switch — controls UI visibility everywhere AND the
-              auto-on-close lifecycle gate. */}
           <div className="flex items-center gap-3">
             <Switch
               id="sessions-summary-enabled"
@@ -147,8 +122,6 @@ export const SummaryPromptSettings: React.FC = () => {
               aria-label="Session summary prompt"
             />
 
-            {/* Auto-on-close switch — only gates the lifecycle hook.
-                Manual refresh on a row works regardless. */}
             <div className="flex items-center gap-3 pt-4">
               <Switch
                 id="sessions-summary-auto-on-close"

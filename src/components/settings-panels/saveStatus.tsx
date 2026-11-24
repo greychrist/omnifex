@@ -2,21 +2,9 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import { AlertCircle, Check, Loader2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-/**
- * Save feedback for the Settings screen — the one rule every panel follows.
- *
- * Every setting persists the moment it changes (typed fields on blur or after
- * a typing pause); nothing waits for a Save button. Each write goes through
- * `track()`, and the <SaveStatusBanner> under the tab strip reports its real outcome:
- * "Saved" once every write in flight has landed, or the error, which stays
- * until a later save succeeds. Never report success before the write returns.
- *
- * Toasts are for one-off actions (import, reset, restore), not routine saves.
- * Forms that create or edit a record (an account, a path rule, a pricing row)
- * keep their submit button and report through `track()` as well.
- */
+// Settings persist on change through `track()`; never report success before
+// the write returns. Toasts are for one-off actions, not routine saves.
 
-/** How long "Saved" stays up after the last write lands. */
 export const SAVED_VISIBLE_MS = 2000;
 
 type SaveState =
@@ -25,12 +13,7 @@ type SaveState =
   | { kind: "saved" }
   | { kind: "error"; message: string };
 
-/**
- * Report one write. Takes the write's promise, or a function for a
- * synchronous write (localStorage). Resolves `true` when it landed and
- * `false` when it failed — it never rejects, so callers can fire and forget
- * or roll their optimistic state back on `false`.
- */
+/** Never rejects: resolves `false` on failure so callers can roll back. */
 export type TrackSave = (work: Promise<unknown> | (() => unknown)) => Promise<boolean>;
 
 const errorMessage = (err: unknown): string =>
@@ -39,7 +22,6 @@ const errorMessage = (err: unknown): string =>
 const run = (work: Promise<unknown> | (() => unknown)): Promise<unknown> =>
   typeof work === "function" ? Promise.resolve().then(work) : work;
 
-/** Outside a provider (a panel rendered on its own, in a test) nothing is shown. */
 const standaloneTrack: TrackSave = (work) =>
   run(work).then(
     () => true,
@@ -57,8 +39,7 @@ const SaveStatusContext = createContext<{ track: TrackSave; state: SaveState; di
 
 export const SaveStatusProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [state, setState] = useState<SaveState>({ kind: "idle" });
-  // Overlapping writes are one batch: the outcome is reported when the last
-  // one lands, and any failure in the batch wins over the successes.
+  // Overlapping writes are one batch; any failure in it wins.
   const inFlight = useRef(0);
   const batchError = useRef<string | null>(null);
   const fadeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -126,12 +107,7 @@ const TONE: Record<SaveState["kind"], string> = {
   error: "bg-destructive text-destructive-foreground",
 };
 
-/**
- * The Settings save banner. Floats (absolutely positioned) so it never pushes
- * the panel down; place it inside a `relative` container. It stays mounted
- * while idle — only faded out — so screen readers hear every change.
- * `data-state` carries the outcome for styling and tests.
- */
+/** Stays mounted while idle, faded, so screen readers hear every change. */
 export const SaveStatusBanner: React.FC<{ className?: string }> = ({ className }) => {
   const { state, dismiss } = useContext(SaveStatusContext);
   const idle = state.kind === "idle";

@@ -13,11 +13,6 @@ import {
 } from "@/lib/autoRecapSettings";
 import { useSaveStatus } from "./saveStatus";
 
-/**
- * Automatic `/recap` after a finished turn goes unanswered. Main owns the
- * timer (`daemon/services/sessions/auto-recap.ts`) and reads these settings
- * fresh each time, so a change applies to sessions already open.
- */
 export function AutoRecapSettings() {
   const { track } = useSaveStatus();
   const [enabled, setEnabled] = useState(true);
@@ -34,7 +29,7 @@ export function AutoRecapSettings() {
         setMinutes(m);
         setDraft(String(m));
       })
-      .catch(() => { /* defaults stand */ });
+      .catch(() => {});
     return () => { cancelled = true; };
   }, []);
 

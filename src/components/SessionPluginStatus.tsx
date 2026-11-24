@@ -4,11 +4,6 @@ import {
   DetailBlock, DetailRow, EmptyLine, GroupHeader, RowTag, StatusDot, rowClass, scopeIcon, useCollapsedGroups,
 } from "@/components/sessionContext/rows";
 
-/**
- * The Plugins section of the Session context panel: the session's plugins,
- * grouped by where they were installed. Presentational — the panel owns the
- * list (useSessionPlugins), because the Mods section reads the same one.
- */
 interface SessionPluginStatusProps {
   plugins: SessionPluginInfo[];
 }
@@ -36,11 +31,7 @@ export function groupByScope(plugins: SessionPluginInfo[]): [SessionPluginInfo["
     .map((k) => [k, buckets.get(k)!.slice().sort((a, b) => a.name.localeCompare(b.name))]);
 }
 
-/**
- * The marketplace a plugin came from. The CLI reports `source` as the full
- * `name@marketplace` id, so a tag showing it repeats the name beside itself.
- * Built-ins report `@builtin`, which their group heading already says.
- */
+/** The CLI reports `source` as `name@marketplace`; built-ins as `@builtin`. */
 export function marketplaceOf(plugin: SessionPluginInfo): string | null {
   if (!plugin.source || plugin.scope === "builtin") return null;
   const at = plugin.source.lastIndexOf("@");
@@ -84,7 +75,6 @@ export const SessionPluginStatus: React.FC<SessionPluginStatusProps> = ({ plugin
                         className={rowClass(true)}
                       >
                         <StatusDot className="bg-emerald-400" label="loaded" />
-                        {/* The name keeps its width; the tag gives way first. */}
                         <span className="max-w-[70%] shrink-0 truncate">{plugin.name}</span>
                         {marketplace && <RowTag>{marketplace}</RowTag>}
                         {plugin.version && (

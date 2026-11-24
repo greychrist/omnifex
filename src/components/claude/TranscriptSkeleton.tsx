@@ -1,10 +1,4 @@
-/**
- * What a chat shows while its history loads or a large transcript renders:
- * a few turns sketched in shadcn Skeletons — a prompt bubble on the right, a
- * work line, and a paragraph of answer. The pulse is an opacity animation,
- * which WebKit runs off the main thread, so it keeps moving through the
- * transcript's own (blocking) commit.
- */
+// Opacity pulse: WebKit runs it off the main thread, so it keeps moving through the blocking transcript commit.
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 

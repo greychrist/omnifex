@@ -13,13 +13,7 @@ import { DaemonStatusItem } from '@/components/DaemonStatusItem';
 import type { SessionActivity } from '@/lib/signals/emitters';
 import type { SessionSignal } from '@/lib/signals/types';
 
-/**
- * `12.4k`, matching the context gauge in the session widget.
- *
- * Not `formatTokens` from contextPressure: that rounds to the nearest
- * thousand, so a 12,400-token burst and a 12,000-token one both read `12k`.
- * At the scale a single thinking burst lives at, the decimal is the signal.
- */
+// Not `formatTokens`: it rounds to whole thousands, and a thinking burst needs the decimal.
 function formatThinkingTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
@@ -29,29 +23,12 @@ function formatThinkingTokens(n: number): string {
 type ConnectionState = 'connected' | 'connecting' | 'reconnecting' | 'disconnected';
 
 export interface LinkState {
-  /** Socket state, or null when this page has no daemon at all (legacy IPC). */
   connection: ConnectionState | null;
-  /** Whether the daemon is actually delivering THIS session's events. */
   delivering: boolean;
 }
 
-/**
- * The daemon link: the subject named, then its state — `daemon live`,
- * `daemon no events`, `daemon reconnecting`, `daemon offline`. Same
- * label-then-value shape as `turn 12s` and `thinking 12.4k` beside it, so a
- * wifi icon is not left carrying the whole meaning on its own.
- *
- * Two facts, deliberately not collapsed into one. The socket is global — one
- * per client — but the daemon fans a session out only to clients that
- * subscribed to it, so "connected" and "this session is reaching me" can
- * disagree. They did: a restored tab sat on a healthy socket with no
- * subscription, and every answer went to an empty subscriber set. A green
- * link alone would have been reassuring and wrong, which is why the middle
- * state below exists at all.
- */
+// The socket is per client but delivery is per subscription: a healthy socket can still carry nothing for this session.
 export function LinkGlyph({ connection, delivering }: LinkState): React.JSX.Element | null {
-  // No daemon on this page: nothing to report, so report nothing rather than
-  // showing a permanent "disconnected" for a mode that never connects.
   if (connection === null) return null;
 
   if (connection !== 'connected') {
@@ -106,22 +83,7 @@ export function LinkGlyph({ connection, delivering }: LinkState): React.JSX.Elem
   );
 }
 
-/**
- * The session's name, and the pencil that changes it.
- *
- * The name comes from the transcript — the CLI's own `ai-title`, or a
- * `custom-title` if the session was renamed (see `deriveSessionTitle`) — and
- * the pencil sends the CLI's own `rename_session` control request, which is
- * what writes that `custom-title` record. So the bar is not displaying a
- * name OmniFex invented and keeps in sync; it is displaying the CLI's name
- * for the session, and renaming through the CLI's own door.
- *
- * "Untitled" is shown rather than nothing because untitled is the COMMON
- * case, not an edge one: the CLI only titles a fresh conversation, so every
- * resumed session and everything older than CLI 2.1.268 arrives with no name
- * at all. Those are exactly the sessions worth naming, so the affordance
- * cannot be hidden behind already having a name.
- */
+// Show "Untitled" and the pencil even with no name: resumed sessions arrive untitled.
 function SessionTitle({
   title,
   canRename,
@@ -131,8 +93,6 @@ function SessionTitle({
   title: string | null;
   canRename: boolean;
   onRename: (title: string) => Promise<boolean> | boolean;
-  /** Ask the CLI for a name; resolves null when it has none. Absent when
-   *  there is nothing to suggest from (no prompt yet, no live session). */
   onSuggest?: () => Promise<string | null>;
 }): React.JSX.Element {
   const [open, setOpen] = React.useState(false);
@@ -151,8 +111,7 @@ function SessionTitle({
     setOpen(next);
   };
 
-  // On demand, and it writes nothing: the proposal lands in the field, and
-  // only Save sends it — through the same rename the user could have typed.
+  // Writes nothing: the proposal lands in the field; only Save sends it.
   const suggest = async (): Promise<void> => {
     if (!onSuggest || suggesting) return;
     setSuggesting(true);
@@ -168,8 +127,7 @@ function SessionTitle({
 
   const submit = async (e: React.SubmitEvent): Promise<void> => {
     e.preventDefault();
-    // A blank custom title is how the CLI CLEARS a rename — never what
-    // pressing Save on an empty field meant.
+    // A blank custom title clears the CLI's rename; never send one.
     const next = draft.trim();
     if (!next) return;
     const ok = await onRename(next);
@@ -178,39 +136,16 @@ function SessionTitle({
   };
 
   return (
-    // No `min-w-0`, unlike every other item on the bar: that is what lets a
-    // flex line shrink a child below its content, and the name is the one
-    // readout that must not give up room — `turn 12s` survives being read as
-    // a glyph and a number, a clipped name does not. Left shrinkable only to
-    // its min-content width, so a name too long for the whole bar wraps its
-    // own text instead of being cut.
+    // No `min-w-0`: the name must wrap its own text, never be clipped.
     <div className="flex items-center gap-1.5">
       <span
         data-testid="session-title"
         title={title ?? 'This session has no name yet'}
-        // One more readout, not a heading over them: the same `label value`
-        // shape as `turn 12s` and `cache 3m left (1h)` beside it, and the
-        // row's own 10px mono rather than a size and typeface of its own.
-        //
-        // It was `text-sm font-sans` before, on the reasoning that a name is
-        // prose while the bar's mono exists to stop counting numbers from
-        // jittering. True of the type, but it made the name the only thing on
-        // the bar wearing both its own size and its own family, which read as
-        // a title bolted on rather than a field in the set.
-        //
-        // No glyph, though, where the others all have one: a letter icon was
-        // tried and cut. Their glyphs stand in for a quantity you scan for,
-        // while the name is already the longest text here and a mark in front
-        // of it only crowded the left edge.
         className="inline-flex items-center gap-1 text-muted-foreground"
       >
         <ReadoutLabel>name</ReadoutLabel>
         <span
           className={cn(
-            // `break-words`, not `truncate`: the bar wraps now, so the name
-            // has a second line to grow into and an ellipsis buys nothing.
-            // The break only ever fires on an unbroken token wider than the
-            // bar itself.
             'break-words',
             title ? 'text-foreground/80' : 'text-muted-foreground/60 italic',
           )}
@@ -315,64 +250,26 @@ interface ActivityMeta {
 
 export interface ChatStatusBarProps {
   link: LinkState;
-  /** The session's name, resolved by `deriveSessionTitle`. Null = untitled. */
   title?: string | null;
-  /** Whether a rename can actually be sent (a live session). */
   canRename?: boolean;
-  /** Sends the rename; resolves false when it did not reach the CLI. */
   onRename?: (title: string) => Promise<boolean> | boolean;
-  /** Asks the CLI for a name (nothing persisted). Omit when there is no
-   *  prompt to suggest from. */
   onSuggest?: () => Promise<string | null>;
-  /** The `session.activity` state signal, or undefined before one exists. */
   activitySignal?: SessionSignal;
-  /** Newest assistant message's timestamp — when the cache TTL last restarted. */
   cacheAnchorMs: number | null;
-  /** TTL the CLI actually used, observed from usage.cache_creation. */
   cacheTtlMs: number | null;
-  /** The session's live controls (model / effort / permissions) as readouts
-   *  that open pickers — `SessionControlPickers`. Seated before the state
-   *  readouts: what you can change, then what is happening. */
   controls?: React.ReactNode;
-  /** The account readout — `AccountStatusItem`. Seated on the name's line,
-   *  at its right end: whose session this is, beside which session it is. */
   account?: React.ReactNode;
-  /** The session readout — `SessionStatusItem`. Seated last, after every
-   *  other readout. */
   session?: React.ReactNode;
-  /** Subagents and background shells, shown as the `agents` and `shells`
-   *  readouts. Each readout is omitted while its list is empty. */
   background?: BackgroundWork;
   className?: string;
 }
 
-/** The bar's surface and type, shared with any bar set beside it
- *  (`BranchStatusBar`) so the two read as one family. */
 export const STATUS_BAR_SURFACE = cn(
   'flex flex-wrap items-center gap-x-2 gap-y-1 px-3 py-1 rounded-md border-0 bg-background/60',
   'shadow-[0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_30%,transparent)]',
   'text-[10px] font-mono tabular-nums',
 );
 
-/**
- * The strip above the transcript: the facts you want visible while reading,
- * regardless of where the session widget is scrolled to or whether it is
- * open at all.
- *
- * Turn time and thinking tokens used to live in the session widget's bottom
- * row and the cache countdown beside them; all three are about the
- * conversation you are looking at, not about the widget, so they belong over
- * the conversation. The widget keeps what is genuinely about the session as a
- * whole — the context gauge, the agent count, the activity pill.
- *
- * Both readouts hold the PREVIOUS round's value while idle. That is the
- * point: how long the turn took, and how much it thought, are most worth
- * reading in the moment just after the turn that produced them ends.
- *
- * The `agents` and `shells` readouts follow the same rule: finished rows stay
- * counted until dismissed. They replaced the strip that sat under the
- * transcript; see `BackgroundWorkItems.tsx`.
- */
 export function ChatStatusBar({
   link,
   title = null,
@@ -394,26 +291,18 @@ export function ChatStatusBar({
   const turnStartedAt = meta?.turnStartedAt ?? null;
   const running = turnStartedAt !== null;
 
-  // Only subscribe to the shared clock while a turn is actually counting.
   const nowMs = useSecondTick(running);
 
   const elapsedMs = running
     ? Math.max(0, nowMs - turnStartedAt)
     : (meta?.lastTurnMs ?? null);
 
-  // The turn's tally wins: it already counts the open burst, plus every burst
-  // before it since the prompt. The live burst alone is only a fallback.
   const thinkingTokens = meta?.turnThinkingTokens ?? meta?.thinkingTokens ?? null;
   const thinkingLive = status === 'thinking';
 
-  // `CacheTimerRow` hides itself when it has nothing to count; the same
-  // condition has to be known HERE too, or the row renders a divider with
-  // nothing after it.
+  // Must match `CacheTimerRow`'s own hide condition, or a divider renders with nothing after it.
   const showCache = cacheAnchorMs !== null && cacheTtlMs !== null;
 
-  // Built as a list so dividers land strictly BETWEEN what is actually on
-  // screen. Every readout is conditional, so hard-coding separators into the
-  // markup puts a stray hairline at either end of a half-empty bar.
   const items: React.JSX.Element[] = [];
 
   if (controls) {
@@ -421,8 +310,6 @@ export function ChatStatusBar({
   }
 
   if (link.connection !== null) {
-    // The readout opens the daemon's detail — it replaced the title bar's
-    // Daemon button, since connectivity is about the session you are in.
     items.push(<DaemonStatusItem key="link" link={link} />);
   }
 
@@ -433,8 +320,7 @@ export function ChatStatusBar({
         aria-label={running ? 'working' : 'working — last round'}
         title={running ? 'A turn is in flight' : 'How long the previous turn took'}
         className={cn(
-          // Sky, not emerald: the daemon glyph owns emerald and the two sit
-          // side by side.
+          // Sky, not emerald: the daemon glyph beside it owns emerald.
           'inline-flex items-center gap-1 text-sky-400',
           running && 'animate-pulse',
         )}
@@ -450,8 +336,6 @@ export function ChatStatusBar({
     items.push(
       <span
         key="thinking"
-        // Past tense once the burst is over: the number is what it DID think,
-        // not what it is thinking.
         aria-label={thinkingLive ? 'thinking' : 'thought — last turn'}
         title={
           thinkingLive
@@ -470,8 +354,6 @@ export function ChatStatusBar({
     );
   }
 
-  // Each readout only when its list has rows: an empty one renders nothing,
-  // and would otherwise leave a divider with nothing after it.
   if (background && background.subagents.length > 0) {
     items.push(
       <AgentsStatusItem
@@ -500,7 +382,6 @@ export function ChatStatusBar({
   }
 
   if (showCache) {
-    // Labels itself: "cache: 3m left (1h)".
     items.push(
       <CacheTimerRow
         key="cache"
@@ -516,20 +397,6 @@ export function ChatStatusBar({
   }
 
   return (
-    // The frame, not the bar. It carries the session header's own `bg-muted`,
-    // so the material showing around the bar is header material and the bar
-    // reads as a field SET INTO the header — the same relationship a chat
-    // composer has with the bar it sits in.
-    //
-    // 8px horizontal against 4px vertical, deliberately uneven. The bar runs
-    // the full width of the header, so its side margins are the only ones
-    // read as margins; the vertical gaps are read as the seam between the bar
-    // and what it is seated in, and widening those would unseat it.
-    //
-    // AgentSession renders this INSIDE the header assembly, below the header
-    // row and above the assembly's border and resize handle. That placement is
-    // the other half of the effect: the bar is within the header's edge rather
-    // than the first thing beneath it.
     <div
       data-testid="chat-status-frame"
       className={cn('shrink-0 bg-muted px-[8px] py-[4px]', className)}
@@ -539,30 +406,11 @@ export function ChatStatusBar({
         role="status"
         aria-label="Session status"
         className={cn(
-          // The same ring the account, branch and session widgets above it
-          // wear (AccountCard.tsx:130, SessionCard.tsx:176), so the header
-          // reads as one family of controls.
-          //
-          // A `shadow` ring rather than a border, with `border-0` beside it:
-          // styles.css declares an unlayered
-          // `* { border-color: var(--color-border) }` that outranks every
-          // Tailwind border-color utility, so a real border cannot carry this
-          // color — it would come back at full `--color-border` strength.
-          // Wraps rather than compressing: three pickers, the daemon glyph,
-          // the turn clock, the thinking burst, the agents and shells counts
-          // and the cache countdown do not
-          // fit beside a name in a narrow window, and the readouts have no
-          // spare width to surrender — each is already a label and a value.
-          // The row gap is half the column gap so a wrapped line reads as a
-          // continuation of the same bar, not as a second bar under it.
+          // A shadow ring, not a border: the unlayered `* { border-color }` in styles.css overrides border-color utilities.
           STATUS_BAR_SURFACE,
-          // Two lines, not one wrapping row: the name's, then the readouts'.
           'flex-col flex-nowrap items-stretch',
         )}
       >
-        {/* The name's line: the name alone at its left, the account and its
-            usage at its right. `flex-wrap` so a name too long to share the
-            line pushes the account under it instead of either being cut. */}
         <div data-testid="chat-status-head" className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <SessionTitle
             title={title}
@@ -576,21 +424,13 @@ export function ChatStatusBar({
             </div>
           )}
         </div>
-        {/* Every other readout on the line below, grouped right under the
-            account. `flex-wrap` so its readouts wrap among themselves when
-            even a full line is too narrow. */}
         {items.length > 0 && (
           <div
             data-testid="chat-status-items"
             className="ml-auto flex flex-wrap items-center justify-end gap-x-2 gap-y-1"
           >
             {items.map((item, i) => (
-              // Divider and the readout it introduces travel as one flex item,
-              // so a wrap never strands a hairline at the end of a line with
-              // nothing after it.
-              // `flex-wrap` on the pair too: `controls` is a fragment of three
-              // pickers and two dividers, so this span is where they would
-              // otherwise be pinned to one line — the widest item on the bar.
+              // Divider and readout are one flex item so a wrap never strands a hairline.
               <span key={item.key} className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
                 {i > 0 && <InlineDivider data-testid="status-divider" />}
                 {item}

@@ -29,15 +29,10 @@ const EMPTY: ProxySettings = {
 const sameSettings = (a: ProxySettings, b: ProxySettings) =>
   (Object.keys(EMPTY) as (keyof ProxySettings)[]).every((k) => a[k] === b[k]);
 
-/**
- * Proxy settings save like every other setting: the switch at once, an
- * address when its field is left (a half-typed URL is never applied).
- * Outcomes go to the Settings save indicator.
- */
+/** The address saves on blur, so a half-typed URL is never applied. */
 export function ProxySettings({ setToast }: ProxySettingsProps) {
   const { track } = useSaveStatus();
   const [settings, setSettings] = useState<ProxySettings>(EMPTY);
-  // What is on disk, so leaving a field unchanged doesn't save again.
   const savedRef = useRef<ProxySettings>(EMPTY);
 
   const loadSettings = useCallback(async () => {

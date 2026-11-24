@@ -1,18 +1,3 @@
-/**
- * The daemon as a status-bar readout: `daemon live`, and the detail behind it.
- *
- * Replaced the title bar's "Daemon" button. Connectivity matters most to the
- * session you are in — the socket is global, but whether the daemon is
- * delivering THIS session's events is not (see `useDaemonLink`), and only a
- * session-scoped popover can say both. So the readout is the trigger, and the
- * popover adds the daemon's own facts — version (against the app's), address,
- * clients, sessions, uptime, refreshed from `/healthz` every few seconds while
- * open — plus Restart.
- *
- * Laid out in the account popover's grammar (`AccountDetails`): small-caps
- * section labels, `label … value` rows in xs with mono values, h-6 outline
- * buttons, tinted notes. The status-bar popovers are one family.
- */
 import { useCallback, useEffect, useState } from 'react';
 import { RefreshCw, RotateCw } from 'lucide-react';
 
@@ -58,7 +43,6 @@ export function DaemonStatusItem({ link }: { link: LinkState }): React.JSX.Eleme
   const [refreshing, setRefreshing] = useState(false);
   const [restarting, setRestarting] = useState(false);
   const [restartError, setRestartError] = useState<string | null>(null);
-  // Restart with a turn running needs a second click; this is the first one.
   const [confirmRestart, setConfirmRestart] = useState(false);
 
   const refresh = useCallback(async () => {
@@ -74,7 +58,6 @@ export function DaemonStatusItem({ link }: { link: LinkState }): React.JSX.Eleme
     }
   }, [healthUrl]);
 
-  // Poll only while the panel is open; nobody needs the count while it is closed.
   useEffect(() => {
     if (!open || !healthUrl) return;
     void refresh();
@@ -88,7 +71,6 @@ export function DaemonStatusItem({ link }: { link: LinkState }): React.JSX.Eleme
     api.getAppVersion().then(setAppVersion).catch(() => {});
   }, [open, appVersion]);
 
-  // A stale "are you sure?" must not survive closing the panel.
   useEffect(() => {
     if (!open) setConfirmRestart(false);
   }, [open]);
@@ -110,7 +92,6 @@ export function DaemonStatusItem({ link }: { link: LinkState }): React.JSX.Eleme
     void refresh();
   }, [refresh]);
 
-  // No daemon on this page: nothing to report — see LinkGlyph.
   if (connection === null) return null;
 
   const onRestartClick = () => {
@@ -125,9 +106,6 @@ export function DaemonStatusItem({ link }: { link: LinkState }): React.JSX.Eleme
   const busy = connection === 'connecting' || connection === 'reconnecting';
   const daemonVersion = health?.version ?? remote?.client?.welcome?.daemonVersion ?? null;
   const versionMismatch = !!appVersion && !!daemonVersion && appVersion !== daemonVersion;
-  // On the web this daemon is what served the page, so a mismatch means the
-  // loaded bundle is stale — the desktop's "replaced once idle" is the wrong
-  // story, and there is no separate app to name.
   const isWeb = remote?.mode === 'web';
 
   return (
@@ -193,8 +171,6 @@ export function DaemonStatusItem({ link }: { link: LinkState }): React.JSX.Eleme
             )}
           </div>
 
-          {/* The fact the socket state alone cannot give: the daemon fans a
-              session out only to subscribed clients. */}
           <div className="flex flex-col gap-1.5">
             <div className={POPOVER_SECTION}>this session</div>
             <div data-daemon-session className="flex justify-between gap-2 text-xs">

@@ -4,89 +4,27 @@ import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { computePopoverPosition } from "./popoverPosition";
 
-/**
- * `triggerClassName` for a trigger that is a form field: a full-width block
- * that may shrink below its content. The default wrapper is
- * `relative inline-block`, which shrink-wraps — so a `flex-1 w-full` trigger
- * button inside it is sized by its own text, and a row of them widens past
- * its container instead of truncating (the session context popover's control
- * row stretching off the card).
- */
+// The default `inline-block` wrapper shrink-wraps, so a `flex-1` trigger inside it can't truncate.
 export const FIELD_TRIGGER = "relative block w-full min-w-0";
 
 interface PopoverProps {
-  /**
-   * The trigger element
-   */
   trigger: React.ReactNode;
-  /**
-   * The content to display in the popover
-   */
   content: React.ReactNode;
-  /**
-   * Whether the popover is open
-   */
   open?: boolean;
-  /**
-   * Callback when the open state changes
-   */
   onOpenChange?: (open: boolean) => void;
-  /**
-   * Optional className for the content
-   */
   className?: string;
-  /**
-   * Alignment of the popover relative to the trigger
-   */
   align?: "start" | "center" | "end";
-  /**
-   * Side of the trigger to display the popover
-   */
   side?: "top" | "bottom";
-  /**
-   * Optional override for the outer wrapper around the trigger. Defaults to
-   * "relative inline-block" — pass FIELD_TRIGGER (above) to make the trigger
-   * occupy a full row and shrink with it, as a form field does.
-   */
   triggerClassName?: string;
 }
 
-/**
- * Lets a nested Popover register its portaled content node with every
- * ancestor Popover. Because each popover portals its content to
- * `document.body` as a separate subtree, an inner popover's content is —
- * by raw DOM containment — "outside" the outer popover's content node. Left
- * unhandled, the outer popover's click-outside handler fires the instant you
- * press an option in the inner popover, collapsing the whole stack (the
- * "click an option and the popover just closes" bug). Each Popover provides
- * this context to its children and, when open, registers its own content
- * node with its parent; registrations bubble up so arbitrary nesting depth
- * is covered.
- */
+// Portaled nested popovers register with every ancestor, else the outer click-outside collapses the stack.
 interface PopoverNesting {
-  /** Register a node as belonging to this popover layer (and all ancestors).
-   *  Returns a cleanup that unregisters it. */
   registerDescendant: (node: HTMLElement) => () => void;
 }
 const PopoverNestingContext = React.createContext<PopoverNesting | null>(null);
 
-/**
- * Popover component for displaying floating content.
- *
- * Content is rendered via `createPortal` into `document.body` so it escapes
- * the trigger's stacking context. Without the portal, a parent with
- * `position: relative` + `z-40` (e.g. the session header) caps the popover
- * at z-40 globally, letting later z-50 siblings paint on top of it. Positioning is done with
- * `position: fixed` against the trigger's `getBoundingClientRect()` so the
- * popover stays anchored on scroll/resize.
- *
- * @example
- * <Popover
- *   trigger={<Button>Click me</Button>}
- *   content={<div>Popover content</div>}
- *   side="top"
- * />
- */
+// Portaled to body: a `relative z-40` ancestor would otherwise cap its z-index.
 export const Popover: React.FC<PopoverProps> = ({
   trigger,
   content,
@@ -105,9 +43,6 @@ export const Popover: React.FC<PopoverProps> = ({
   const contentRef = React.useRef<HTMLDivElement>(null);
   const [coords, setCoords] = React.useState<{ top: number; left: number } | null>(null);
 
-  // Nested-popover registry. `descendants` holds the portaled content nodes
-  // of child popovers (and their children) so click-outside can treat a press
-  // inside any descendant popover as "inside" this one.
   const parentNesting = React.useContext(PopoverNestingContext);
   const descendantsRef = React.useRef<Set<HTMLElement>>(new Set());
   const registerDescendant = React.useCallback((node: HTMLElement) => {
@@ -120,8 +55,6 @@ export const Popover: React.FC<PopoverProps> = ({
   }, [parentNesting]);
   const nesting = React.useMemo<PopoverNesting>(() => ({ registerDescendant }), [registerDescendant]);
 
-  // While open, register our own content node with every ancestor popover so
-  // their click-outside handlers don't treat a press inside us as "outside".
   React.useEffect(() => {
     if (!open || !parentNesting) return;
     const node = contentRef.current;
@@ -129,7 +62,6 @@ export const Popover: React.FC<PopoverProps> = ({
     return parentNesting.registerDescendant(node);
   }, [open, parentNesting]);
 
-  // Close on click outside
   React.useEffect(() => {
     if (!open) return;
 
@@ -151,7 +83,6 @@ export const Popover: React.FC<PopoverProps> = ({
     return () => { document.removeEventListener("mousedown", handleClickOutside); };
   }, [open, setOpen]);
 
-  // Close on escape
   React.useEffect(() => {
     if (!open) return;
 
@@ -165,10 +96,6 @@ export const Popover: React.FC<PopoverProps> = ({
     return () => { document.removeEventListener("keydown", handleEscape); };
   }, [open, setOpen]);
 
-  // Reposition against the trigger's viewport rect whenever open. Recomputes
-  // on scroll/resize so the popover stays anchored when the user scrolls a
-  // parent container or resizes the window. We measure after mount and after
-  // the content node is in the DOM so its width is known.
   React.useLayoutEffect(() => {
     if (!open) {
       setCoords(null);
@@ -177,8 +104,6 @@ export const Popover: React.FC<PopoverProps> = ({
     const compute = () => {
       const trig = triggerRef.current;
       if (!trig) return;
-      // computePopoverPosition clamps into the viewport so panels anchored
-      // near an edge never render off-screen (see popoverPosition.tsx).
       setCoords(computePopoverPosition({
         triggerRect: trig.getBoundingClientRect(),
         contentWidth: contentRef.current?.offsetWidth ?? 0,
@@ -189,19 +114,11 @@ export const Popover: React.FC<PopoverProps> = ({
       }));
     };
     compute();
-    // Recompute once the content has measured its actual size (e.g. fonts
-    // loaded, async children). RAF is sufficient — recharts/framer don't
-    // grow further after first paint.
     const raf = requestAnimationFrame(compute);
     window.addEventListener("scroll", compute, true);
     window.addEventListener("resize", compute);
 
-    // Content that changes size AFTER first paint — a disclosure opening, a
-    // user-resizable panel — moves the box's own edges without moving the
-    // trigger, so neither scroll nor window resize fires and the clamp that
-    // keeps it on screen never re-runs. The RAF above catches only the first
-    // frame. Without this, growing content runs off the bottom of the
-    // viewport and stays there.
+    // Content can resize without the trigger or window moving; re-clamp when it does.
     const ro = typeof ResizeObserver !== "undefined"
       ? new ResizeObserver(() => { compute(); })
       : null;
@@ -220,29 +137,16 @@ export const Popover: React.FC<PopoverProps> = ({
   const portalNode = open && typeof document !== "undefined" && (
     <div
       ref={contentRef}
-      // Lets an ancestor Radix DismissableLayer (e.g. a Dialog) recognise a
-      // press inside this portaled content as "inside" and skip dismissing —
-      // see isInsidePopover in ui/dialog.tsx. Without it, a popover embedded
-      // in a dialog (the account editor's model/effort/permission pickers)
-      // closes the whole dialog the moment you pick an option.
+      // isInsidePopover in ui/dialog.tsx keys on this; without it picking an option closes an enclosing Dialog.
       data-omnifex-popover=""
       style={{
         position: "fixed",
         top: coords?.top ?? -9999,
         left: coords?.left ?? -9999,
-        // Hide until first measurement to avoid a one-frame flash at -9999.
         visibility: coords ? "visible" : "hidden",
-        // Above the app titlebar (`relative z-[200]`, 60px tall): a popover
-        // dropping from one of its buttons starts inside it, and at 100 the
-        // titlebar painted over the popover's top edge. Tooltips sit above
-        // this (z-[310]) so one inside a popover still shows.
+        // Above the titlebar (z-[200]); tooltips (z-[310]) must stay above this.
         zIndex: 300,
-        // A modal Radix Dialog sets `body { pointer-events: none }` and only
-        // re-enables its own layer. This content portals to body and isn't a
-        // Radix layer, so it would inherit `none` and swallow every click —
-        // the dialog stays open but options can't be selected. Re-enable
-        // pointer events for our own subtree. Outside a modal this is the
-        // default, so it's a no-op there.
+        // A modal Radix Dialog sets body pointer-events:none, and this portal is not a Radix layer.
         pointerEvents: "auto",
       }}
       className="min-w-[200px]"

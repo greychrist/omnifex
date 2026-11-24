@@ -11,15 +11,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { CONTENT_INDENT } from "@/components/sessionContext/rows";
 
-/**
- * The `⋯` menu on an MCP server row, and the per-row state its actions need.
- *
- * Every action ends by watching the CLI's own status until it reports the
- * change: the control requests answer before the server actually reconnects,
- * and an OAuth sign-in finishes in the browser where nothing tells us. A
- * claude.ai connector finishes on claude.ai and the CLI may never notice, so
- * a watch that times out leaves a hint rather than spinning forever.
- */
+// Every action watches the CLI's status until it reports the change: control
+// requests answer before the server actually reconnects.
 
 const LABEL: Record<McpServerAction, string> = {
   authenticate: "Authenticate",
@@ -31,11 +24,7 @@ const LABEL: Record<McpServerAction, string> = {
 
 type Done = (s: SessionMcpServerStatus | undefined) => boolean;
 
-/**
- * When the watch for an action is satisfied. Fresh per run: Re-authenticate's
- * is stateful, because right after mcp_clear_auth the CLI can still report
- * `connected` — it must see the server leave `connected` and come back.
- */
+/** Re-authenticate's watch must see the server leave `connected` and return: right after mcp_clear_auth it still reports connected. */
 function doneFor(action: McpServerAction): Done {
   switch (action) {
     case "authenticate":
@@ -64,16 +53,11 @@ export interface McpRowState {
   busy: boolean;
   error: string | null;
   waiting: string | null;
-  /** Sign-in started on a client the OAuth redirect cannot reach: the row
-   *  asks for the URL the browser ended on. */
   awaitingCallback: boolean;
 }
 
 const IDLE: McpRowState = { busy: false, error: null, waiting: null, awaitingCallback: false };
 
-/** Per-row action state for the whole list, keyed by server name.
- *  `configDir` is the session's account: sign-in links open in the browser
- *  chosen for it (`signInBrowser.ts`). */
 export function useMcpRowActions(tabId: string, watchUntil: McpWatchUntil, configDir?: string | null): {
   stateFor: (serverName: string) => McpRowState;
   run: (serverName: string, action: McpServerAction) => Promise<void>;
@@ -99,9 +83,8 @@ export function useMcpRowActions(tabId: string, watchUntil: McpWatchUntil, confi
           ? await api.sessionMcpAuthenticate(tabId, serverName)
           : await api.sessionMcpReauthenticate(tabId, serverName);
         if (result.authUrl) await openSignInLink(result.authUrl, configDir);
-        // The redirect goes to the CLI's localhost listener, on the daemon's
-        // machine. A browser anywhere else lands on a dead page; its address
-        // carries the code, so ask for it.
+        // The redirect hits the CLI's localhost listener on the daemon's
+        // machine; a browser elsewhere lands on a dead page, so ask for its URL.
         if (!platform.isDesktop && result.callbackExpected) {
           set(serverName, { ...IDLE, awaitingCallback: true });
           return;
@@ -166,7 +149,6 @@ export function McpServerActionsMenu({
   );
 }
 
-/** Where a client away from the daemon finishes an MCP sign-in. */
 function CallbackPaste({ busy, onSubmit }: { busy: boolean; onSubmit: (url: string) => void }): React.JSX.Element {
   const [url, setUrl] = useState("");
   return (
@@ -203,8 +185,6 @@ function CallbackPaste({ busy, onSubmit }: { busy: boolean; onSubmit: (url: stri
   );
 }
 
-/** The row's error or still-waiting hint, shown without expanding the row —
- *  and, mid sign-in on a remote client, the box for the redirect URL. */
 export function McpRowNotice({
   state, onSubmitCallback,
 }: {

@@ -25,7 +25,6 @@ import { platform } from "@/lib/platform";
 import { getCachedProjects, setCachedProjects } from "@/lib/projectsCache";
 import { Skeleton } from "@/components/ui/skeleton";
 
-// Lazy load heavy components
 const AgentSession = lazy(() => import('@/components/AgentSession').then(m => ({ default: m.AgentSession })));
 const MCPManager = lazy(() => import('@/components/MCPManager').then(m => ({ default: m.MCPManager })));
 const Settings = lazy(() => import('@/components/Settings').then(m => ({ default: m.Settings })));
@@ -34,36 +33,21 @@ const LimaViewer = lazy(() => import('@/components/LimaViewer').then(m => ({ def
 const CostReportView = lazy(() => import('@/components/CostReportView').then(m => ({ default: m.CostReportView })));
 const BrainTab = lazy(() => import('@/components/brain/BrainTab').then(m => ({ default: m.BrainTab })));
 
-// Import non-lazy components for projects view
-
 interface TabPanelProps {
   tab: Tab;
   isActive: boolean;
 }
 
 const TabPanelImpl: React.FC<TabPanelProps> = ({ tab, isActive }) => {
-  // Every tab is mounted at once (inactive ones are hidden with a CSS class,
-  // not unmounted), so this counter answers the load-bearing question: does a
-  // single tab click re-render all N panels, or only the two that changed?
   useRenderProfile('TabPanel');
   const { updateTab } = useTabState();
-  // Seeded from the last list any projects tab fetched, so the page draws at
-  // once and the refresh below lands behind it.
   const [projects, setProjects] = React.useState<Project[]>(() => getCachedProjects() ?? []);
-  // Until this panel's first `listProjects` answers, an empty list means
-  // "unknown", not "none" — the list shows a skeleton rather than its empty
-  // state (a seeded list is shown as-is while it refreshes).
+  // Until the first listProjects answers, an empty list means "unknown", not "none".
   const [projectsLoaded, setProjectsLoaded] = React.useState(false);
   const [selectedProject, setSelectedProject] = React.useState<Project | null>(null);
-  // Project whose settings (CLAUDE.md, hooks) are open. Kept separate from
-  // `selectedProject` so opening settings doesn't also drill into sessions —
-  // they're sibling destinations from the same row, not nested ones.
   const [settingsProject, setSettingsProject] = React.useState<Project | null>(null);
   const [sessions, setSessions] = React.useState<Session[]>([]);
-  // The sessions page opens before its list arrives; skeleton rows stand in.
   const [sessionsLoading, setSessionsLoading] = React.useState(false);
-  // The project whose sessions the latest click asked for. A slow answer for
-  // a project the user has since left is dropped instead of drawn.
   const sessionsRequestRef = React.useRef<string | null>(null);
   
   const [error, setError] = React.useState<string | null>(null);
@@ -72,38 +56,16 @@ const TabPanelImpl: React.FC<TabPanelProps> = ({ tab, isActive }) => {
   const [showOpenByIdDialog, setShowOpenByIdDialog] = React.useState(false);
   const [pendingProjectPath, setPendingProjectPath] = React.useState<string>('');
   const [projectAccountName, setProjectAccountName] = React.useState<string | null>(null);
-  // Inline new-session form state for the project view. Lives here (not in
-  // ClaudeCodeSession) so the user can pick model/effort/permissions before
-  // a chat tab even exists. On Start, these get baked into initialSessionConfig
-  // and ClaudeCodeSession seeds its state from them.
   const [formModel, setFormModel] = React.useState<string>('opus');
   const [formEffort, setFormEffort] = React.useState<EffortLevel>('high');
   const [formPermissionMode, setFormPermissionMode] = React.useState<string>('acceptEdits');
-  // Form-level agent selection. Seeded from the path-rule resolver in
-  // handleProjectClick — codex path rules pre-pick Codex so the user doesn't
-  // have to flip it manually for projects that already route there.
-  // Defaults to 'claude' for projects without a rule yet (greenfield) so
-  // the picker is never empty.
   const [formAgent, setFormAgent] = React.useState<AgentKind>('claude');
-  // Single-account resolution baked into a chat tab's initialSessionConfig
-  // on Start (mirrors AgentSession's accountResolution shape). Used for the
-  // session-form header badge / tab title and to carry a manual override into
-  // the spawned session. Distinct from `projectResolvePair`, which feeds the
-  // form's per-engine account cell.
   const [projectAccountResolution, setProjectAccountResolution] = React.useState<FormAccountResolution | null>(null);
-  // Per-engine routing pair for the inline new-session form. The form reads
-  // resolvePair[agent] so flipping the AgentPicker swaps which account shows.
   const [projectResolvePair, setProjectResolvePair] = React.useState<ResolvePair>({ claude: null, codex: null });
 
-
-  // Codex auth state — drives the banner + submit-button gate on the
-  // Codex agent path. Scoped to the Codex slot's configDir so the watcher
-  // tracks the right account's auth.json; null disables the hook when no
-  // Codex account routes to this project.
   const codexAuthStatus = useCodexAuthStatus(projectResolvePair.codex?.account.config_dir ?? null);
   const [showCodexSignIn, setShowCodexSignIn] = React.useState(false);
 
-  // Load projects when tab becomes active and is of type 'projects'
   useEffect(() => {
     if (isActive && tab.type === 'projects') {
       logAndForget('tab-content:load-projects', loadProjects());
@@ -125,8 +87,6 @@ const TabPanelImpl: React.FC<TabPanelProps> = ({ tab, isActive }) => {
   };
   
   const handleTogglePin = async (project: Project, pinned: boolean) => {
-    // Optimistic: the row reorders instantly, then rolls back + refetches
-    // from disk if the IPC fails.
     const previous = projects;
     setProjects((prev) =>
       prev.map((p) => (p.id === project.id ? { ...p, pinned } : p)),
@@ -143,46 +103,31 @@ const TabPanelImpl: React.FC<TabPanelProps> = ({ tab, isActive }) => {
   };
 
   const handleProjectClick = async (project: Project) => {
-    // The page opens now; the session list fills in when it arrives.
     sessionsRequestRef.current = project.id;
     setError(null);
     setSessions([]);
     setSessionsLoading(true);
     setSelectedProject(project);
     const projectName = project.path.split('/').pop() || 'Project';
-    // "<ProjectName>: Sessions" with the List icon, so the strip reflects that
-    // the projects tab is showing a session list. Both reset on Back.
     updateTab(tab.id, { title: `${projectName}: Sessions`, icon: 'list' });
     try {
       const sessionList = await api.getProjectSessions(project.id, project.path);
       if (sessionsRequestRef.current !== project.id) return;
       setSessions(sessionList);
 
-      // Resolve per-engine routing for the form's account cell, the tab
-      // badge, and the form's agent picker. project.account_name is a fast
-      // hint but lacks color/icon, so resolve the full pair. Seed the agent
-      // picker from the pair — a codex-only project pre-picks Codex so the
-      // user doesn't have to flip it; otherwise default to Claude.
       api.resolveAccountForProject(project.path).then((pair) => {
         setProjectResolvePair(pair);
         const engine: AgentKind = pair.claude ? 'claude' : pair.codex ? 'codex' : 'claude';
         setFormAgent(engine);
-        // Prefer the Claude slot for the tab badge (the Claude-centric chip),
-        // falling back to Codex, then the project hint.
         const account = pair.claude?.account ?? pair.codex?.account ?? null;
         setProjectAccountName(account?.name ?? project.account_name ?? null);
         if (account) updateTab(tab.id, { accountName: account.name, accountColor: account.color, accountIcon: account.icon });
         else if (project.account_name) setProjectAccountName(project.account_name);
 
-        // The Account/Config/Matched-by block and the resolution baked into a
-        // started session must reflect the engine that will actually launch
-        // (`engine`), NOT whichever engine owns the longest-prefix rule — that
-        // engine-agnostic resolution is what surfaced a Codex account in a
-        // Claude session's header. Derive it straight from this engine's slot.
+        // Must be the launching engine's slot, not the longest-prefix rule's engine: that put a Codex account in a Claude session's header.
         const resolution = slotToResolution(pair[engine]);
         setProjectAccountResolution(resolution);
 
-        // Seed form defaults from the launching engine's account, if set.
         const d = resolution?.account.session_defaults;
         if (d) {
           if (d.model) setFormModel(d.model);
@@ -197,13 +142,10 @@ const TabPanelImpl: React.FC<TabPanelProps> = ({ tab, isActive }) => {
     } catch (err) {
       if (sessionsRequestRef.current !== project.id) return;
       console.error("Failed to load sessions:", err, "project:", JSON.stringify(project));
-      // Back to the list: the page has nothing to show for this project.
       sessionsRequestRef.current = null;
       setSelectedProject(null);
       updateTab(tab.id, { title: 'Projects', icon: undefined });
-      // NO_ACCOUNT_FOR_PROJECT: structured signal that no path rule / project
-      // override binds this folder to a Claude account. Surface the actionable
-      // message verbatim — no silent fallback to a "default" account.
+      // NO_ACCOUNT_FOR_PROJECT: surface verbatim, no silent default-account fallback.
       const code = (err as { code?: string } | null)?.code;
       const msg = err instanceof Error ? err.message : String(err);
       if (code === 'NO_ACCOUNT_FOR_PROJECT') {
@@ -220,10 +162,6 @@ const TabPanelImpl: React.FC<TabPanelProps> = ({ tab, isActive }) => {
     }
   };
 
-  // A chat tab that backed out names its project; open that project's
-  // sessions page instead of the list. Waits for a list that contains it —
-  // the seeded one usually does — and gives up quietly once this panel's own
-  // fresh list arrives without it.
   useEffect(() => {
     const path = tab.returnToProjectPath;
     if (!isActive || tab.type !== 'projects' || !path) return;
@@ -233,14 +171,9 @@ const TabPanelImpl: React.FC<TabPanelProps> = ({ tab, isActive }) => {
     if (match) logAndForget('tab-content:return-to-project', handleProjectClick(match));
   }, [isActive, tab.type, tab.returnToProjectPath, projects, projectsLoaded]); // eslint-disable-line react-hooks/exhaustive-deps -- handleProjectClick/updateTab are read fresh each run
 
-  // Shared tail of Open Project and New Project: route the folder to an
-  // account (or ask), register it, and land on its sessions page.
   const openProjectFolder = async (selected: string) => {
-    // Check if any engine can be resolved for this path. An all-null pair
-    // means no override / path rule routes here — prompt the user to pick.
     const pair = await api.resolveAccountForProject(selected);
     if (pair.claude === null && pair.codex === null) {
-      // No matching rule — prompt user to pick account
       setPendingProjectPath(selected);
       setShowAccountPicker(true);
       return;
@@ -288,17 +221,7 @@ const TabPanelImpl: React.FC<TabPanelProps> = ({ tab, isActive }) => {
   };
   
   const openSessionInTab = (session: Session) => {
-    // Wipe any leftover slice state for this tabId before flipping the
-    // tab to a chat view. The slice (messages / claudeSessionId /
-    // extractedSessionInfo / inflightAssistant) is keyed by tabId, so a
-    // tab that previously hosted a different chat — or the same chat
-    // before a back-out — would feed stale data into the freshly
-    // mounted ClaudeCodeSession. Specifically, `effectiveSession`
-    // (ClaudeCodeSession.tsx:444) synthesizes a Session from the slice
-    // when no `session` prop is given and `extractedSessionInfo` is
-    // populated, which is what made "Start Session" warp back into the
-    // last-opened session. Resetting up front means the new mount
-    // starts from a guaranteed-blank slate.
+    // Reset the tabId-keyed slice first, or stale extractedSessionInfo warps the new chat back into the last-opened session.
     useClaudeSessionStore.getState().resetTab(tab.id);
     updateTab(tab.id, {
       type: 'chat',
@@ -306,8 +229,6 @@ const TabPanelImpl: React.FC<TabPanelProps> = ({ tab, isActive }) => {
       sessionId: session.id,
       sessionData: session,
       initialProjectPath: session.project_path,
-      // Clear the projects-tab "list" icon override so the chat type's
-      // default MessageSquare wins for this tab going forward.
       icon: undefined,
     });
     api.resolveAccountForProject(session.project_path).then((pair) => {
@@ -316,10 +237,7 @@ const TabPanelImpl: React.FC<TabPanelProps> = ({ tab, isActive }) => {
     }).catch(() => {});
   };
 
-  // Flipping the AgentPicker must re-point the baked-in resolution at the
-  // newly-selected engine's slot — otherwise Start carries the previous
-  // engine's account into the session header. Derived from the already-fetched
-  // pair, so no extra IPC round-trip.
+  // Re-point the resolution at the new engine's slot, or Start carries the previous engine's account.
   const handleFormAgentChange = (engine: AgentKind) => {
     setFormAgent(engine);
     setProjectAccountResolution(slotToResolution(projectResolvePair[engine]));
@@ -327,24 +245,16 @@ const TabPanelImpl: React.FC<TabPanelProps> = ({ tab, isActive }) => {
 
   const handleStartNewSession = () => {
     if (!selectedProject) return;
-    // Same reset rationale as openSessionInTab — without this, a
-    // previous chat's `extractedSessionInfo` leaks into ClaudeCodeSession's
-    // `effectiveSession` memo and the user lands back in the session
-    // they just backed out of, even though the CLI side has spawned a
-    // fresh subprocess.
+    // Slice reset: see openSessionInTab.
     useClaudeSessionStore.getState().resetTab(tab.id);
     const projectName = selectedProject.path.split('/').pop() || 'Session';
     updateTab(tab.id, {
       type: 'chat',
       title: projectName,
-      // Carry the form's agent selection onto the tab record so the rest
-      // of the system (api.startSession dispatch, session-list partition,
-      // header indicator) routes to the right engine.
       agent: formAgent,
       sessionId: undefined,
       sessionData: undefined,
       initialProjectPath: selectedProject.path,
-      // Clear the projects-tab "list" icon override; chat's default wins.
       icon: undefined,
       initialSessionConfig: {
         model: formModel,
@@ -353,9 +263,6 @@ const TabPanelImpl: React.FC<TabPanelProps> = ({ tab, isActive }) => {
         accountResolution: projectAccountResolution ?? undefined,
       },
     });
-    // Resolve account name for the tab badge. Prefer the manually-overridden
-    // account when the user changed it on the landing page; otherwise fall
-    // back to the auto-resolved one.
     if (projectAccountResolution) {
       updateTab(tab.id, {
         accountName: projectAccountResolution.account.name,
@@ -368,11 +275,6 @@ const TabPanelImpl: React.FC<TabPanelProps> = ({ tab, isActive }) => {
     }
   };
   
-  // Quick Launch: start a brand-new session for a project straight from the
-  // project list, bypassing the sessions page. Mirrors handleStartNewSession
-  // but resolves the launching engine/account/defaults up front (the sessions
-  // page normally seeds that via handleProjectClick's form state, which we
-  // skip here).
   const handleQuickLaunch = async (project: Project) => {
     try {
       setError(null);
@@ -380,17 +282,14 @@ const TabPanelImpl: React.FC<TabPanelProps> = ({ tab, isActive }) => {
       const engine: AgentKind = pair.claude ? 'claude' : pair.codex ? 'codex' : 'claude';
       const account = pair.claude?.account ?? pair.codex?.account ?? null;
       if (!account) {
-        // No path rule / override routes this folder to an account. Defer to
-        // the sessions-page flow, which surfaces the NO_ACCOUNT_FOR_PROJECT
-        // guidance and lets the user fix routing — no silent no-account launch.
+        // Defer to the sessions page so NO_ACCOUNT_FOR_PROJECT surfaces; never launch without an account.
         await handleProjectClick(project);
         return;
       }
       const resolution = slotToResolution(pair[engine]);
       const d = resolution?.account.session_defaults;
 
-      // Same slice reset as handleStartNewSession / openSessionInTab: without
-      // it a previous chat's extractedSessionInfo leaks into the fresh mount.
+      // Slice reset: see openSessionInTab.
       useClaudeSessionStore.getState().resetTab(tab.id);
       const projectName = project.path.split('/').pop() || 'Session';
       updateTab(tab.id, {
@@ -418,12 +317,9 @@ const TabPanelImpl: React.FC<TabPanelProps> = ({ tab, isActive }) => {
     }
   };
 
-  // Resolve account badge for chat tabs on mount
   useEffect(() => {
     if (tab.type === 'chat' && !tab.accountName && tab.initialProjectPath) {
       api.resolveAccountForProject(tab.initialProjectPath).then((pair) => {
-        // Prefer the slot for this tab's engine, falling back to the other
-        // engine so the badge still resolves when only one side routes here.
         const slot = pair[tab.agent] ?? pair.claude ?? pair.codex;
         const account = slot?.account ?? null;
         updateTab(tab.id, {
@@ -437,7 +333,6 @@ const TabPanelImpl: React.FC<TabPanelProps> = ({ tab, isActive }) => {
     }
   }, [tab.type, tab.initialProjectPath, tab.accountName, tab.id, tab.agent, updateTab]);
 
-  // Panel visibility - hide when not active
   const panelVisibilityClass = isActive ? "" : "hidden";
   
   const renderContent = () => {
@@ -445,9 +340,6 @@ const TabPanelImpl: React.FC<TabPanelProps> = ({ tab, isActive }) => {
       case 'projects':
         return (
           <div className="h-full">
-              {/* Content based on selection. Settings takes precedence over
-                  the session drill-down: it's opened explicitly from a row
-                  action, so it should win over whatever was selected before. */}
               {settingsProject ? (
                 <div className="h-full overflow-y-auto">
                   <ProjectSettings
@@ -456,10 +348,6 @@ const TabPanelImpl: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                   />
                 </div>
               ) : selectedProject ? (
-                // Flex-column layout so the session-list table can fill
-                // the remaining height and scroll internally — no
-                // page-level scrollbar. Header + new-session form stay
-                // at natural height; SessionList claims the rest.
                 <div className="h-full flex flex-col overflow-hidden">
                   <div className="max-w-6xl mx-auto p-6 w-full flex flex-col flex-1 min-h-0">
                     <div className="mb-6 flex-none">
@@ -473,9 +361,6 @@ const TabPanelImpl: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                               setSelectedProject(null);
                               setSessions([]);
                               setSessionsLoading(false);
-                              // Restore tab title to "Projects" and
-                              // clear the per-tab icon override so the
-                              // type default (Folder) wins again.
                               updateTab(tab.id, {
                                 title: 'Projects',
                                 icon: undefined,
@@ -492,11 +377,6 @@ const TabPanelImpl: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                       </div>
                     </div>
 
-                    {/* New-session form + Repos & branch colors share the top row,
-                        session list (with errors/loading) flows full-width
-                        below. The list region is `flex-1 min-h-0` so the
-                        SessionList table fills the remaining viewport
-                        height and scrolls internally. */}
                     <div className="flex flex-col gap-6 items-stretch flex-1 min-h-0">
                       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 items-stretch flex-none">
                         <div className="lg:col-span-3">
@@ -526,7 +406,6 @@ const TabPanelImpl: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                       </div>
 
                       <div className="w-full flex flex-col flex-1 min-h-0">
-                        {/* Error display */}
                         {error && (
                           <motion.div
                             initial={{ opacity: 0, y: 4 }}
@@ -538,7 +417,6 @@ const TabPanelImpl: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                           </motion.div>
                         )}
 
-                        {/* Skeleton rows until the list arrives */}
                         {sessionsLoading && (
                           <div className="flex flex-col gap-3 py-4 flex-none" data-testid="sessions-loading" aria-busy="true">
                             {Array.from({ length: 6 }, (_, i) => (
@@ -551,7 +429,6 @@ const TabPanelImpl: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                           </div>
                         )}
 
-                        {/* Session List */}
                         {!sessionsLoading && (
                           <SessionList
                             sessions={sessions}
@@ -576,7 +453,6 @@ const TabPanelImpl: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                   </div>
                 </div>
               ) : (
-                /* Projects List View */
                 <div className="h-full flex flex-col">
                   {error && (
                     <motion.div
@@ -593,8 +469,6 @@ const TabPanelImpl: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                       projects={projects}
                       onProjectClick={fireAndLog('tab-content:project-click', handleProjectClick)}
                       onOpenProject={handleOpenProject}
-                      // The save dialog is native-only; on the web client the
-                      // button could only fail, so it is not offered there.
                       onNewProject={platform.isDesktop ? handleNewProject : undefined}
                       onQuickLaunch={fireAndLog('tab-content:project-quick-launch', handleQuickLaunch)}
                       onTogglePin={handleTogglePin}
@@ -653,11 +527,6 @@ const TabPanelImpl: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                       accountColor: account.color,
                       accountIcon: account.icon,
                     });
-                    // Persist the override and re-fetch the per-engine pair so
-                    // the form's account cell reflects the new routing for the
-                    // active engine. AccountPickerDialog already persists when
-                    // its "Remember" box is checked; re-asserting here keeps the
-                    // form in sync regardless of that toggle.
                     if (selectedProject) {
                       void api.setProjectAccountOverride(selectedProject.path, account.id)
                         .then(() => api.resolveAccountForProject(selectedProject.path))
@@ -679,7 +548,7 @@ const TabPanelImpl: React.FC<TabPanelProps> = ({ tab, isActive }) => {
         return (
           <div className="h-full">
             <AgentSession
-              session={tab.sessionData} // Pass the full session object if available
+              session={tab.sessionData}
               initialProjectPath={tab.initialProjectPath || ''}
               tabId={tab.id}
               initialSessionConfig={tab.initialSessionConfig}
@@ -687,7 +556,6 @@ const TabPanelImpl: React.FC<TabPanelProps> = ({ tab, isActive }) => {
               onInitialPromptSent={() => { updateTab(tab.id, { initialPrompt: undefined }); }}
               isActive={isActive}
               onStreamingChange={(isStreaming, sessionId) => {
-                // Persist the CLI session ID to the tab so it survives app restart
                 if (sessionId) {
                   updateTab(tab.id, { sessionId, status: isStreaming ? 'running' : 'idle' });
                 } else {
@@ -695,10 +563,8 @@ const TabPanelImpl: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                 }
               }}
               onProjectPathChange={(path: string) => {
-                // Update tab title, project path, and account badge
                 const dirName = path.split('/').pop() || path.split('\\').pop() || 'Session';
                 updateTab(tab.id, { title: dirName, initialProjectPath: path });
-                // Resolve account for tab badge — prefer this tab's engine.
                 api.resolveAccountForProject(path).then((pair) => {
                   const account = (pair[tab.agent] ?? pair.claude ?? pair.codex)?.account ?? null;
                   if (account) updateTab(tab.id, { accountName: account.name, accountColor: account.color, accountIcon: account.icon });
@@ -754,8 +620,6 @@ const TabPanelImpl: React.FC<TabPanelProps> = ({ tab, isActive }) => {
         if (!tab.claudeFileId) {
           return <div className="p-4">No Claude file ID specified</div>;
         }
-        // Note: We need to get the actual file object for ClaudeFileEditor
-        // For now, returning a placeholder
         return <div className="p-4">Claude file editor not yet implemented in tabs</div>;
       
       default:
@@ -791,46 +655,31 @@ const TabPanelImpl: React.FC<TabPanelProps> = ({ tab, isActive }) => {
   );
 };
 
-/**
- * Memoised so a tab switch only re-renders the two panels whose `isActive`
- * actually flipped, instead of all N. Every panel is mounted at once (inactive
- * ones are hidden with a CSS class), and `setActiveTab` hands down a fresh
- * `tabs` array while keeping the individual tab objects — so without this,
- * every panel and every session below it re-rendered on each click.
- *
- * Depends on TabContext keeping tab object identity stable for tabs that did
- * not change; `updateTab` already bails out when a write changes nothing.
- */
+// Memoised: every panel is mounted at once, so without this a tab switch re-renders all N. Relies on updateTab keeping unchanged tab objects identical.
 const TabPanel = React.memo(TabPanelImpl);
 
 export const TabContent: React.FC = () => {
   useRenderProfile('TabContent');
   const { tabs, activeTabId, createChatTab, findTabBySessionId, closeTab, updateTab } = useTabState();
   
-  // Listen for events to open sessions in tabs
   useEffect(() => {
     const handleOpenSessionInTab = (event: CustomEvent<{ session: Session }>) => {
       const { session } = event.detail;
       
-      // Check if tab already exists for this session
       const existingTab = findTabBySessionId(session.id);
       if (existingTab) {
-        // Update existing tab with session data and switch to it
         updateTab(existingTab.id, {
           sessionData: session,
           title: session.project_path.split('/').pop() || 'Session'
         });
         window.dispatchEvent(new CustomEvent('switch-to-tab', { detail: { tabId: existingTab.id } }));
       } else {
-        // Create new tab for this session
         const projectName = session.project_path.split('/').pop() || 'Session';
         const newTabId = createChatTab(session.id, projectName, session.project_path);
-        // Update the new tab with session data and resolve account
         updateTab(newTabId, {
           sessionData: session,
           initialProjectPath: session.project_path
         });
-        // Resolve account name for the tab badge (Claude-session path).
         api.resolveAccountForProject(session.project_path).then((pair) => {
           const account = pair.claude?.account ?? pair.codex?.account ?? null;
           if (account) {
@@ -847,18 +696,14 @@ export const TabContent: React.FC = () => {
 
     const handleClaudeSessionSelected = (event: CustomEvent<{ session: Session }>) => {
       const { session } = event.detail;
-      // Check if there's an existing tab for this session
       const existingTab = findTabBySessionId(session.id);
       if (existingTab) {
-        // If tab exists, just switch to it
         updateTab(existingTab.id, {
           sessionData: session,
           title: session.project_path.split('/').pop() || 'Session',
         });
         window.dispatchEvent(new CustomEvent('switch-to-tab', { detail: { tabId: existingTab.id } }));
       } else {
-        // If we're in a projects tab, update it to show the session
-        // Otherwise create a new tab (for compatibility with other parts of the app)
         const currentTab = tabs.find(t => t.id === activeTabId);
         if (currentTab?.type === 'projects') {
           updateTab(currentTab.id, {
@@ -883,12 +728,6 @@ export const TabContent: React.FC = () => {
       }
     };
 
-    // Mirror of handleClaudeSessionSelected for Codex rows. The event
-    // payload is `{ conversationId, projectPath, jsonlPath, lastActivity }`;
-    // we mint a Codex-flavored chat tab carrying `agent: 'codex'` and the
-    // conversationId as the resumable sessionId. Transcript rendering for
-    // Codex lands in Task 19+ — for now we just create the tab so the
-    // click is wired end-to-end.
     const handleCodexSessionSelected = (event: CustomEvent) => {
       const detail = event.detail as {
         conversationId: string;
@@ -925,22 +764,13 @@ export const TabContent: React.FC = () => {
       }
     };
 
-    // When ClaudeCodeSession fires back-to-project, revert the current
-    // chat tab to a projects tab. Mirrors the mutation that happens in
-    // handleClaudeSessionSelected — except in reverse. The user ends up
-    // on the session list for the same project, preserving their
-    // navigation flow instead of having to close and reopen the tab.
     const handleBackToProject = (event: Event) => {
       const currentTab = tabs.find((t) => t.id === activeTabId);
       if (currentTab?.type === 'chat') {
         const detail = (event as CustomEvent<{ projectPath?: string } | null>).detail;
         const projectPath: string | undefined =
           detail?.projectPath || currentTab.initialProjectPath || currentTab.sessionData?.project_path || undefined;
-        // Backing out CLOSES the session: tear down the live main-process
-        // handle and clear the per-tab store slice so nothing stays bound to
-        // this (reused) tab id. Otherwise opening a *different* session into
-        // the same tab later would rebind to this stale handle and drag its
-        // cost / context / claudeSessionId onto the newly-opened session.
+        // Backing out closes the session, or a later session opened into this reused tab id rebinds to the stale handle.
         void api.stopSession(currentTab.id).catch(() => {});
         useClaudeSessionStore.getState().resetTab(currentTab.id);
         updateTab(currentTab.id, {
@@ -951,7 +781,6 @@ export const TabContent: React.FC = () => {
           sessionId: undefined,
           sessionData: undefined,
           initialProjectPath: undefined,
-          // The projects panel opens this project's sessions page from it.
           returnToProjectPath: projectPath,
         });
       }

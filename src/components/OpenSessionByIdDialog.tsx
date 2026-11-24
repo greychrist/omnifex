@@ -16,10 +16,8 @@ import { validateSessionId } from "@/lib/sessionId";
 interface OpenSessionByIdDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Project the session is being opened in. Used to scope the JSONL lookup. */
   projectId: string;
   projectPath: string;
-  /** Called with a synthesized Session when the GUID resolves to a real file. */
   onSessionResolved: (session: Session) => void;
 }
 

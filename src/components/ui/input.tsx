@@ -1,17 +1,8 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 
-// shadcn/ui pattern: thin alias around the underlying HTML element's
-// attributes so consumers can later add Input-specific props without
-// touching every call site.
 export type InputProps = React.InputHTMLAttributes<HTMLInputElement>;
 
-/**
- * Input component for text/number inputs
- * 
- * @example
- * <Input type="text" placeholder="Enter value..." />
- */
 const Input = React.forwardRef<HTMLInputElement, InputProps>(
   ({ className, type, ...props }, ref) => {
     return (

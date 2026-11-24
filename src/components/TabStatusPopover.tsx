@@ -43,10 +43,6 @@ const PROMPT_COLOR: Record<TabStatusSummary['promptStatus'], string> = {
   ready: 'text-emerald-400 bg-emerald-500/10',
 };
 
-// "Waiting on the user" overrides the busy badge with a more specific
-// label/color so background tabs that need you are obvious. Indigo for both
-// — it's a different domain from busy (amber) and idle (green) and reads
-// as "your turn" rather than "agent working".
 const WAITING_LABEL: Record<NonNullable<TabStatusSummary['waitingFor']>, string> = {
   permission: 'Permission Request',
   question: 'Question Waiting',
@@ -60,10 +56,6 @@ const OPEN_IN_LABEL: Record<OpenIn, string> = {
   browser: 'Open in Browser',
 };
 
-/**
- * Where the session is open. "Detached" is reserved for the case worth
- * noticing: the daemon is holding a session no client is looking at.
- */
 const OpenInTags: React.FC<{ openIn: readonly OpenIn[] }> = ({ openIn }) => (
   <span className="shrink-0 inline-flex items-center gap-1">
     {openIn.length === 0 ? (
@@ -78,14 +70,6 @@ const OpenInTags: React.FC<{ openIn: readonly OpenIn[] }> = ({ openIn }) => (
   </span>
 );
 
-/**
- * The session GUID, copyable.
- *
- * `tabId` is a renderer-local `tab-<ts>-<rand>` that means nothing outside
- * this window; the GUID is what names the session to the daemon, to
- * `--resume`, and in the transcript path on disk. Showing it is what makes a
- * row in this list identifiable at all.
- */
 const SessionIdRow: React.FC<{ sessionId: string }> = ({ sessionId }) => {
   const [copied, setCopied] = useState(false);
   return (
@@ -136,12 +120,6 @@ const TabStatusCard: React.FC<TabStatusCardProps> = ({ summary, branchColor, bra
       >
         <div className="flex items-center gap-2 min-w-0">
           {(() => {
-            // Badge precedence:
-            //  1. waitingFor (permission / question) — indigo, user action needed
-            //  2. lifecycle: not-started / starting / error — use STATUS_*
-            //  3. promptStatus (working / ready) — green/yellow, drives the
-            //     spinner consumers too. Replaces the old `idle`/`busy` pair
-            //     so the badge cleanly reflects "is the agent doing work".
             const useLifecycle =
               summary.status === 'not-started' ||
               summary.status === 'starting' ||
@@ -270,23 +248,10 @@ const TabStatusCard: React.FC<TabStatusCardProps> = ({ summary, branchColor, bra
   );
 };
 
-/**
- * A session the daemon is running that has no tab in this window.
- *
- * Deliberately sparser than an attached card: everything here comes from
- * `session.list`'s advisory rollup, which the protocol documents as being
- * for exactly this case — a list the client has no event stream for. There
- * is no branch, context size or agent count to show honestly, so none is
- * shown rather than showing a stale one.
- */
+/** Sparse on purpose: `session.list`'s rollup has no branch, context or agents to show honestly. */
 const DetachedSessionCard: React.FC<{ row: DetachedRow; onClick: () => void; onClose: () => void }> = ({ row, onClick, onClose }) => {
-  // Reattaching needs a real directory. Without one the tab would open on
-  // nothing, so the row stays visible — the session IS running and you may
-  // want its id — but is not clickable, and says why.
+  // Reattaching needs a real directory; without one the row stays, unclickable.
   const canOpen = row.projectPath !== null;
-  // Only a session no client is looking at can be closed from here: one that
-  // is open somewhere is closed from that tab. A working one asks once more,
-  // because stopping it loses the turn.
   const canClose = row.openIn.length === 0;
   const [confirming, setConfirming] = useState(false);
   const busy = row.promptStatus === 'working' || row.waitingFor !== null;
@@ -371,8 +336,7 @@ export const TabStatusPopover: React.FC = () => {
   const contentRef = useRef<HTMLDivElement>(null);
   const { tabs, setActiveTab, addTab } = useTabContext();
 
-  // Subscribe to live updates whenever the popover is mounted (always-on, so
-  // the badge dot can update even when closed).
+  // Always subscribed, so the badge dot updates while the popover is closed.
   useEffect(() => {
     let cancelled = false;
     void api.listTabStatuses().then((list) => {
@@ -385,10 +349,6 @@ export const TabStatusPopover: React.FC = () => {
     };
   }, []);
 
-  // What the daemon is running. Polled only while the popover is open —
-  // this is a "what did I leave going" list, not a live feed, and the
-  // attached rows already have their own event stream. In desktop-only mode
-  // there is no client, so the list stays empty and only tabs are shown.
   useEffect(() => {
     if (!open) return;
     const client = window.__omnifexRemote?.client;
@@ -404,8 +364,7 @@ export const TabStatusPopover: React.FC = () => {
         setSessions(s);
         setProjects(p);
       } catch {
-        // A daemon that cannot be reached means no detached rows, not a
-        // broken popover — the tabs in this window still render.
+        // Unreachable daemon: no detached rows; this window's tabs still render.
       }
     };
     void load();
@@ -413,7 +372,6 @@ export const TabStatusPopover: React.FC = () => {
     return () => { cancelled = true; clearInterval(timer); };
   }, [open]);
 
-  // Click-outside / Escape to close
   useEffect(() => {
     if (!open) return;
     const onClick = (e: MouseEvent) => {
@@ -437,13 +395,8 @@ export const TabStatusPopover: React.FC = () => {
     };
   }, [open]);
 
-  // This window's tabs, then the live sessions that have no tab here.
-  //
-  // The aggregator's list is NOT rendered verbatim any more. Summaries
-  // outlive the page that published them, so a reload used to leave phantom
-  // rows that clicked into nothing — they were appended here "(defensively)"
-  // under a comment claiming they were dropped. `buildSessionRoster` drops
-  // them and lets the daemon re-add whatever is genuinely still running.
+  // Aggregator summaries outlive their page; buildSessionRoster drops the
+  // phantoms and the daemon re-adds what is still running.
   const roster = buildSessionRoster({
     summaries: summaries as unknown as Parameters<typeof buildSessionRoster>[0]['summaries'],
     tabs,
@@ -451,8 +404,6 @@ export const TabStatusPopover: React.FC = () => {
     projects,
   });
 
-  // Working count drives the tooltip "N working of M" — uses the same
-  // promptStatus signal as the per-tab badge and the upgrade gate.
   const busyCount = roster.filter((r) => r.promptStatus === 'working').length;
 
   const branchResolution = resolveBranchColors({
@@ -463,7 +414,6 @@ export const TabStatusPopover: React.FC = () => {
       .filter((b): b is string => b != null),
   });
 
-  /** Stop a session no client has open. It drops off the list straight away. */
   const closeDetached = (row: DetachedRow) => {
     const client = window.__omnifexRemote?.client;
     if (!client) return;
@@ -473,7 +423,6 @@ export const TabStatusPopover: React.FC = () => {
     });
   };
 
-  /** Focus the tab that already shows this session, or open one for it. */
   const openDetached = (row: DetachedRow) => {
     if (row.projectPath === null) return;
     const existing = tabs.find((t) => t.type === 'chat' && t.sessionId === row.sessionId);
@@ -487,16 +436,14 @@ export const TabStatusPopover: React.FC = () => {
       title: row.title,
       agent: (row.agent as 'claude' | 'codex') ?? 'claude',
       sessionId: row.sessionId,
-      // AgentSession resumes only when handed a session; a bare sessionId
-      // gets the New Session panel. The daemon's sessionId is the CLI's.
+      // AgentSession resumes only when handed sessionData; a bare sessionId
+      // gets the New Session panel.
       sessionData: {
         id: row.sessionId,
         project_id: row.projectPath.replace(/[^a-zA-Z0-9]/g, '-'),
         project_path: row.projectPath,
         created_at: Date.now() / 1000,
       },
-      // What the session needs to reattach. Guaranteed non-null by the
-      // guard above and by the card being disabled without it.
       initialProjectPath: row.projectPath,
       status: 'idle',
       hasUnsavedChanges: false,

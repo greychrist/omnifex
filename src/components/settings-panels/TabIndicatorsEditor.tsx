@@ -29,8 +29,6 @@ const STATES: { key: TabIndicatorKey; label: string }[] = [
   { key: "permission", label: "Permission request" },
   { key: "question", label: "Question waiting" },
   { key: "complete", label: "Completed" },
-  // The configured color is the warn step; the critical step reddens on its own
-  // (see TabManager), and this glyph renders without the pulse.
   { key: "cacheExpiring", label: "Prompt cache expiring" },
 ];
 
@@ -40,8 +38,6 @@ const SIZES: { value: TabIndicatorSize; label: string }[] = [
   { value: "lg", label: "Large" },
 ];
 
-/** Native color input (writes hex), mirroring the kind editor's accent-color
- *  control. */
 const ColorControl: React.FC<{
   value: string;
   onChange: (color: string) => void;
@@ -58,11 +54,6 @@ const ColorControl: React.FC<{
   );
 };
 
-/**
- * Editor for the per-tab status glyphs (TabManager). Icon + color are
- * per-state; size, bordered chip, and background opacity are shared chrome.
- * Lives in the General settings tab.
- */
 export const TabIndicatorsEditor: React.FC<TabIndicatorsEditorProps> = ({
   indicators,
   onChange,

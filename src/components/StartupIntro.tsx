@@ -1,13 +1,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import OmniFexLogo from "../../icons/icon.png";
 
-/**
- * StartupIntro - a lightweight startup overlay shown on app launch.
- * - Non-interactive; auto-fades after parent hides it via the `visible` prop.
- * - Uses existing shimmer/rotating-symbol styles from shimmer.css.
- */
 export function StartupIntro({ visible }: { visible: boolean }) {
-  // Simple entrance animations only
   return (
     <AnimatePresence>
       {visible && (
@@ -19,7 +13,6 @@ export function StartupIntro({ visible }: { visible: boolean }) {
           className="fixed inset-0 z-[60] flex items-center justify-center bg-background"
           aria-hidden="true"
         >
-          {/* Ambient radial glow */}
           <motion.div
             className="absolute inset-0"
             initial={{ opacity: 0 }}
@@ -32,7 +25,6 @@ export function StartupIntro({ visible }: { visible: boolean }) {
             }}
           />
 
-          {/* Subtle vignette */}
           <div
             className="absolute inset-0 pointer-events-none"
             style={{
@@ -41,7 +33,6 @@ export function StartupIntro({ visible }: { visible: boolean }) {
             }}
           />
 
-          {/* Content */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -49,9 +40,7 @@ export function StartupIntro({ visible }: { visible: boolean }) {
             className="relative flex flex-col items-center justify-center gap-1"
           >
 
-            {/* OmniFex logo slides left; brand text reveals to the right */}
             <div className="relative flex items-center justify-center">
-              {/* Logo wrapper that gently slides left */}
               <motion.div
                 className="relative z-10"
                 initial={{ opacity: 0, scale: 1, x: 0 }}
@@ -72,7 +61,6 @@ export function StartupIntro({ visible }: { visible: boolean }) {
                 />
               </motion.div>
 
-              {/* Brand text reveals left-to-right in the freed space */}
               <motion.div
                 initial={{ x: -35, opacity: 0, clipPath: "inset(0 100% 0 0)" }}
                 animate={{ x: 2, opacity: 1, clipPath: "inset(0 0% 0 0)" }}

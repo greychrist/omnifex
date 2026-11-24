@@ -10,22 +10,10 @@ import { cn } from "@/lib/utils";
 import { fireAndLog, logAndForget } from "@/lib/fireAndLog";
 
 interface MarkdownEditorProps {
-  /**
-   * Callback to go back to the main view
-   */
   onBack: () => void;
-  /**
-   * Optional className for styling
-   */
   className?: string;
 }
 
-/**
- * MarkdownEditor component for editing the CLAUDE.md system prompt
- * 
- * @example
- * <MarkdownEditor onBack={() => setView('main')} />
- */
 export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
   className,
 }) => {
@@ -38,7 +26,6 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
   
   const hasChanges = content !== originalContent;
   
-  // Load the system prompt on mount
   useEffect(() => {
     logAndForget('markdown-editor:load-system-prompt', loadSystemPrompt());
   }, []);
@@ -79,7 +66,6 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
   return (
     <div className={cn("h-full overflow-y-auto", className)}>
       <div className="max-w-6xl mx-auto flex flex-col h-full">
-        {/* Header */}
         <div className="p-6">
           <div className="flex items-center justify-between">
             <div>
@@ -108,7 +94,6 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
           </div>
         </div>
         
-        {/* Error display */}
         {error && (
           <motion.div
             initial={{ opacity: 0, y: -10 }}
@@ -120,7 +105,6 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
           </motion.div>
         )}
         
-        {/* Content */}
         <div className="flex-1 overflow-hidden p-6">
           {loading ? (
             <div className="flex items-center justify-center h-64">
@@ -140,7 +124,6 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
         </div>
       </div>
       
-      {/* Toast Notification */}
       <ToastContainer>
         {toast && (
           <Toast

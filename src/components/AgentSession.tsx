@@ -82,7 +82,6 @@ import { QueuedPromptsPanel } from '@/components/QueuedPromptsPanel';
 import { appendInflightDelta, appendInflightThinkingDelta, clearInflightThinking } from '@/lib/inflightCoalescer';
 import { maybeAutoGenerateSummaryOnLeave } from "@/lib/sessionSummaryGate";
 import { SessionViewToggle } from "./SessionViewToggle";
-// deriveConversationStatus import removed — derivation moved into useSessionLifecycle (Task 2).
 import { HeaderLabel } from "./HeaderLabel";
 import { AccountCard } from "./AccountCard";
 import { SessionCard } from "./SessionCard";
@@ -123,15 +122,12 @@ import { useSendPrompt, type SendPromptOptions, type QueuedPromptItem } from "@/
 import { usePublishTabStatus } from "@/hooks/usePublishTabStatus";
 import { useRenderProfile } from "@/hooks/useRenderProfile";
 import { useTabContext } from "@/contexts/TabContext";
-// Virtualizer removed — flat list for reliable scrolling
 import { SessionPersistenceService } from "@/services/sessionPersistence";
 import { clearInflightBuffer } from "@/lib/inflightCoalescer";
 import { useTabSession, useClaudeSessionStore, useTabSessionTitle } from "@/stores/claudeSessionStore";
 import type { PermissionRequestPayload, PermissionSuggestion } from "@/lib/types/permissionRequest";
 
-// Random gerund words like Claude Code CLI — hoisted to module scope so
-// pickGerund has a stable identity that effects/callbacks can list as a
-// dep without recreating on every render.
+// Module scope keeps pickGerund's identity stable for effect deps.
 interface SyntheticEnvelope {
   type?: unknown;
 }
@@ -172,42 +168,18 @@ const GERUNDS = [
 ] as const;
 const pickGerund = (): string => GERUNDS[Math.floor(Math.random() * GERUNDS.length)];
 
-// User-resizable session header. Height persists across tabs/sessions via
-// localStorage. When unset (null), the header sizes to its natural content
-// (driven by the back button + the worktree column's default 5.25rem cap).
-// Once the user drags the bottom edge, the inner worktree list flexes to fill
-// the available vertical space instead of clamping to 3-and-a-peek.
-// Trial: the account and session widgets hidden, to judge the status-bar
-// readouts on their own. Flip back to true to restore them.
 const SHOW_HEADER_WIDGETS = false;
 
 const HEADER_HEIGHT_KEY = 'omnifex.session-header-height';
 const MIN_HEADER_HEIGHT = 60;
 const MAX_HEADER_HEIGHT = 600;
-// Vertical chrome around the branch card's content — header py-1.5 (12px)
-// plus card py-1 (8px). Added to the measured branch-column height to get
-// the shortest header that still shows the current-branch badge in full.
+// Must match header py-1.5 (12px) + card py-1 (8px).
 const HEADER_VERTICAL_CHROME = 20;
 
 interface AgentSessionProps {
-  /**
-   * Optional session to resume (when clicking from SessionList)
-   */
   session?: Session;
-  /**
-   * Initial project path (for new sessions)
-   */
   initialProjectPath?: string;
-  /**
-   * Tab ID for addressing the persistent process
-   */
   tabId?: string;
-  /**
-   * Pre-filled session configuration when the chat tab was started from
-   * the project view's inline form. When present, the New Session panel is
-   * skipped and the session is started immediately on mount with these
-   * values seeded into the session state.
-   */
   initialSessionConfig?: {
     model: string;
     effort: EffortLevel;
@@ -224,48 +196,17 @@ interface AgentSessionProps {
       match_detail: string;
     };
   };
-  /**
-   * First prompt to send once the auto-started session is up. Used by
-   * launchers that mean "open a session AND do this" — currently the Updates
-   * popover's changelog-drift warning. Sent after `startPersistentSession()`
-   * resolves, never before: `handleSendPrompt` starts a session of its own
-   * when none is running, so firing it alongside the auto-start would spawn a
-   * second CLI process.
-   */
+  // Send only after startPersistentSession() resolves; handleSendPrompt would otherwise spawn a second CLI process.
   initialPrompt?: string;
-  /**
-   * Called once `initialPrompt` has been handed to the session, so the owner
-   * can clear it from the tab record. Without this a persisted tab re-sends
-   * the prompt on every app launch.
-   */
+  // The owner must clear initialPrompt from the tab, or a restored tab re-sends it on every launch.
   onInitialPromptSent?: () => void;
-  /**
-   * Optional className for styling
-   */
   className?: string;
-  /**
-   * Callback when streaming state changes
-   */
   onStreamingChange?: (isStreaming: boolean, sessionId: string | null) => void;
-  /**
-   * Callback when project path changes
-   */
   onProjectPathChange?: (path: string) => void;
-  /**
-   * Whether this tab is currently the visible/active one. Gates the
-   * auto-start effect so restored-but-inactive chat tabs don't fire
-   * rebind/resume on app launch. The session activates the first time
-   * the user views the tab. See `src/lib/sessionAutoStart.ts`.
-   */
+  // Gates auto-start so restored-but-inactive tabs don't rebind/resume on launch.
   isActive?: boolean;
 }
 
-/**
- * AgentSession — the chrome around a live agent session (Claude today, Codex
- * in the future). Owns project/session lifecycle, account resolution, prompt
- * input, status bar, and the side panels. The per-agent transcript body is
- * delegated to a transcript component (currently `ClaudeTranscript`).
- */
 export const AgentSession: React.FC<AgentSessionProps> = ({
   session,
   initialProjectPath = "",
@@ -280,9 +221,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
 }) => {
   useRenderProfile('AgentSession');
   const [projectPath] = useState(initialProjectPath || session?.project_path || "");
-  // Stream-derived per-tab state lives in `claudeSessionStore`. The hook
-  // returns React-shaped setters so existing hook contracts (useSessionLifecycle,
-  // useSendPrompt) keep working without changes.
   const sessionTabId = tabId || 'default';
   const {
     messages,
@@ -301,16 +239,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     setSupportedModels,
   } = useTabSession(sessionTabId);
 
-  // `useTabSession` returns fresh setter/handler closures every render
-  // (the wrappers in claudeSessionStore.ts re-create on each call).
-  // Capturing them in a single stable ref here lets handleJsonlLine
-  // and loadSessionHistory stay reference-stable across renders while
-  // still reading the latest underlying functions at call time — the
-  // streaming-session UX historically broke when callbacks recreated
-  // (events dropped, queued prompts re-drained on stale closures).
-  // See FOLLOW-UP-2026-05-14: ideally useTabSession would memoize its
-  // own setters via useCallback so this ref isn't needed; tracked in
-  // the architectural follow-up below the file.
+  // useTabSession setters are fresh every render; reading them through this ref keeps handleJsonlLine and loadSessionHistory stable (recreated callbacks dropped events and re-drained queued prompts).
   interface StreamCtx {
     appendMessage: typeof appendMessage;
     insertMessageBeforeFirstUser: typeof insertMessageBeforeFirstUser;
@@ -341,9 +270,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     queuedPromptsRef: null,
     setQueuedPrompts: null,
   });
-  // Update on every render so the ref always points at the latest set.
-  // handleSendPrompt / isMountedRef / queuedPromptsRef / setQueuedPrompts
-  // are populated below, after the hooks that own them have run.
   streamCtxRef.current.appendMessage = appendMessage;
   streamCtxRef.current.insertMessageBeforeFirstUser = insertMessageBeforeFirstUser;
   streamCtxRef.current.setClaudeSessionId = setClaudeSessionId;
@@ -355,29 +281,11 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
 
   const [currentActivity, setCurrentActivity] = useState<string>("Honking");
   const [error, setError] = useState<string | null>(null);
-  // Parallel transcript buffer for Codex tabs. The shared `agent-output:`
-  // channel carries both Claude stream-json (handled by `handleJsonlLine`
-  // via the JSONL classifier) and Codex notifications (shape `{ method,
-  // params }`). The classifier returns null for the Codex shape — fine for
-  // Claude tabs — but Codex tabs need a transcript, so we collect a
-  // separate `codexMessages` array off the same channel. A future pass may
-  // consolidate the two accumulators behind a single reducer; for now the
-  // parallel buffer keeps Task 19 a zero-touch change to the Claude reducer.
   const [codexMessages, setCodexMessages] = useState<AgentMessage[]>([]);
   const [totalTokens, setTotalTokens] = useState(0);
-  // The account's resolved default model from its settings.json (`model` key,
-  // e.g. "opus[1m]"). When the context gauge is on its client-side fallback —
-  // e.g. a resumed session before its next turn (history loads statically, so
-  // live usage isn't fetched) — an "Account Default"
-  // session's own model string carries no [1m] suffix, so this is the only
-  // signal that the resolved default is a 1M model. Feeds the fallback
-  // denominator. See resolveContextLimit.
+  // The only signal that an "Account Default" session is 1M: its own model string never carries [1m].
   const [accountDefaultModel, setAccountDefaultModel] = useState<string | null>(null);
-  // Pre-fetched built-in slash commands from the CLI, loaded alongside models
-  // during session init so the picker has them immediately.
   const [supportedCommands, setSupportedCommands] = useState<import('@/lib/api').SessionSlashCommand[]>([]);
-  // Which checkout the diff viewer shows: the session's own, or a sibling
-  // worktree picked from its badge. Null when closed.
   const [diffTarget, setDiffTarget] = useState<{ path: string; label?: string } | null>(null);
 
   const [showSlashCommandsSettings, setShowSlashCommandsSettings] = useState(false);
@@ -386,54 +294,21 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     match_type: string;
     match_detail: string;
   } | null>(initialSessionConfig?.accountResolution ?? null);
-  // Mirror accountResolution into a ref so loadSessionHistory can read the
-  // account's default permission mode without taking accountResolution as a
-  // dependency (which would re-trigger a history reload when it resolves).
+  // A ref, not a dep: depending on accountResolution re-triggers the history reload when it resolves.
   const accountResolutionRef = useRef(accountResolution);
   accountResolutionRef.current = accountResolution;
   const [showAccountPicker, setShowAccountPicker] = useState(false);
-  // Codex sign-in modal toggle, driven by the inline banner on the
-  // new-session form. The auth status itself comes from useCodexAuthStatus
-  // so the banner re-renders the moment `~/.codex/auth.json` lands.
   const [showCodexSignIn, setShowCodexSignIn] = useState(false);
 
-  /**
-   * Latest rate-limit snapshots for the resolved account, keyed by
-   * `rate_limit_type` (e.g. 'five_hour', 'seven_day'). Populated on mount
-   * via `api.getRateLimits(accountName)` and refreshed live by subscribing
-   * to the main process's `rate-limits:updated` event channel.
-   */
   const [rateLimitSnapshots, setRateLimitSnapshots] = useState<
     Record<string, RateLimitSnapshot>
   >({});
   const [, setSessionCost] = useState(0);
-  // Pre-session config: show setup panel for new sessions until user clicks
-  // Start. When the tab was opened from the project view's inline form,
-  // initialSessionConfig is set and we skip the panel entirely.
-  // sessionStarted was previously a useState — deleted in favor of a
-  // derivation over `sessionStatus` (from useSessionLifecycle) and the
-  // mount-time session props. The actual derived constant is defined
-  // below, after the hook call.
   const [selectedModel, setSelectedModel] = useState<string>(initialSessionConfig?.model ?? "opus");
-  // Permission mode — the full CLI set ("default" | "acceptEdits" | "plan"
-  // | "bypassPermissions"). Pre-session and in-session pickers both use
-  // the same PERMISSION_MODES constant from FloatingPromptInput.
-  // Default is acceptEdits per user preference — safer than bypass,
-  // smoother than ask-every-time.
   const [permissionMode, setPermissionMode] = useState<string>(initialSessionConfig?.permissionMode ?? "acceptEdits");
-  // The mode the daemon's live session reported (useSessionLifecycle's
-  // onLivePermissionMode). Once known it outranks every guess below — a
-  // history load that lands after it must not put the picker back on one.
+  // Outranks every guess: a history load that lands later must not overwrite it.
   const livePermissionModeRef = useRef<string | null>(null);
-  // Effort level — maps to the CLI's `--effort`. 'auto' sends none, leaving
-  // the model's own default; see EffortLevel in ControlBar.
   const [effort, setEffort] = useState<EffortLevel>(initialSessionConfig?.effort ?? 'high');
-  // Agent picker — early `useTabContext` call (the main one further down
-  // is for tabTitle / updateTab; both consume the same context, so no
-  // ordering hazard). The form-level state seeds from `tab.agent` so a
-  // resumed-or-restored chat tab keeps its engine identity. The setter
-  // updates the tab record on each change so other readers (session
-  // start dispatch, session-list partition, header indicator) see it.
   const tabContextForAgent = useTabContext();
   const initialAgentFromTab: import('@/lib/api').AgentKind =
     tabContextForAgent.getTabById(tabId || 'default')?.agent ?? 'claude';
@@ -442,18 +317,9 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     setAgentLocal(next);
     tabContextForAgent.updateTab(tabId || 'default', { agent: next });
   }, [tabContextForAgent, tabId]);
-  // Codex auth status, scoped to the resolved account's configDir on the
-  // Codex path only. The status itself comes from useCodexAuthStatus so the
-  // new-session banner re-renders the moment `~/.codex/auth.json` lands. Pass
-  // null on the Claude path to disable the watcher entirely.
   const codexAuthStatus = useCodexAuthStatus(
     agent === 'codex' ? (accountResolution?.account.config_dir ?? null) : null,
   );
-  // Adapt this tab's single resolved account into the per-engine ResolvePair
-  // shape NewSessionForm now consumes. AgentSession only tracks one resolved
-  // Account identity verification, resolved once here and shared by the header
-  // banner and the account card so both make the same claim. Lives at this
-  // level (rather than inside AccountCard) because the banner needs it too.
   const {
     verdict: identityVerdict,
     loaded: identityLoaded,
@@ -465,8 +331,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     () =>
       resolveSessionVerification({
         verdict: identityVerdict,
-        // The session's own reported identity outranks the config-dir file.
-        // Null before init lands.
         sessionEmail: sdkAccountInfo?.email ?? null,
         loaded: identityLoaded,
         error: identityError,
@@ -474,10 +338,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     [identityVerdict, identityLoaded, identityError, sdkAccountInfo?.email],
   );
 
-  // account (the active tab's), so it lands in the slot for the current
-  // engine; the other slot is null. The form only reads `account.name`, so the
-  // synthesized Account fields beyond name/config_dir/subscription_label are
-  // placeholders, never displayed.
   const resolvePair = useMemo<ResolvePair>(() => {
     if (!accountResolution) return { claude: null, codex: null };
     const a = accountResolution.account;
@@ -506,17 +366,11 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     };
     return agent === 'codex' ? { claude: null, codex: slot } : { claude: slot, codex: null };
   }, [accountResolution, agent]);
-  // Unified per-tab git snapshot — project + all sibling worktrees streamed
-  // from a single main-process watcher. Null until `startSessionGitWatch`
-  // resolves; stays null when the project isn't a git repo.
   const [sessionGit, setSessionGit] = useState<import('@/lib/api').SessionGitSnapshot | null>(null);
   const [gitWatchId, setGitWatchId] = useState<string | null>(null);
   const [reposDialogOpen, setReposDialogOpen] = useState(false);
 
-  // Resizable header — null = natural sizing (default), number = user pick.
-  // True for the duration of a header drag. Drives the lit grip and the
-  // assembly's lit border — both of which must survive the pointer leaving
-  // the handle, which happens immediately once the pointer is captured.
+  // State, not :hover: the pointer leaves the handle as soon as it is captured.
   const [headerResizing, setHeaderResizing] = useState(false);
   const [headerHeight, setHeaderHeight] = useState<number | null>(() => {
     const raw = window.localStorage.getItem(HEADER_HEIGHT_KEY);
@@ -529,13 +383,8 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     if (headerHeight == null) return;
     window.localStorage.setItem(HEADER_HEIGHT_KEY, String(headerHeight));
   }, [headerHeight]);
-  // Floor for the resizable header: shrinking lets long worktree lists
-  // scroll, but never below the branch column (label + current-branch badge).
-  // Measured live — the badge wraps on long branch names, so a constant
-  // floor would under- or over-shoot.
+  // Measured live: the badge wraps on long branch names, so a constant floor is wrong.
   const branchColRef = useRef<HTMLDivElement>(null);
-  // The back column too, which holds the New session button in the trial
-  // layout.
   const backColRef = useRef<HTMLDivElement>(null);
   const [headerMinHeight, setHeaderMinHeight] = useState(MIN_HEADER_HEIGHT);
   const hasBranchCard = sessionGit !== null;
@@ -586,8 +435,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
       handleEl.removeEventListener('pointercancel', onUp);
       document.body.style.userSelect = prevBodyUserSelect;
       document.body.style.cursor = prevBodyCursor;
-      // Also on pointercancel — a cancelled drag that left this true would
-      // strand the border lit with nothing dragging.
+      // Also on pointercancel, or a cancelled drag strands the border lit.
       setHeaderResizing(false);
     };
     handleEl.addEventListener('pointermove', onMove);
@@ -599,9 +447,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     window.localStorage.removeItem(HEADER_HEIGHT_KEY);
   }, []);
 
-  // Resolve account explanation for SessionHeader. Skip when the chat tab was
-  // opened with an explicit account override from the project landing page —
-  // re-resolving via auto-rules would silently clobber the user's choice.
+  // Skip on an explicit account override: re-resolving via rules would clobber the user's choice.
   const hasInitialAccountOverride = !!initialSessionConfig?.accountResolution;
   useEffect(() => {
     if (hasInitialAccountOverride) return;
@@ -614,16 +460,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     }
   }, [projectPath, hasInitialAccountOverride, agent]);
 
-  // Resolve the account's default model so the context-gauge fallback can
-  // size a 1M-context "Account Default" session correctly (the live window is
-  // unavailable before the first turn, and the session's own model string
-  // never carries the [1m] suffix). Re-reads on account change rather than persisting, so a
-  // later settings.json edit isn't stale.
-  //
-  // Goes through `getClaudeDefaultModel`, not `getClaudeSettings().model`:
-  // Claude Code 2.1.236 added `ANTHROPIC_DEFAULT_MODEL`, which outranks the
-  // settings.json pin, and OmniFex spawns inherit the environment. Reading the
-  // file alone sized the gauge off a model the session was not running.
+  // getClaudeDefaultModel, not getClaudeSettings().model: ANTHROPIC_DEFAULT_MODEL outranks the settings.json pin.
   const accountConfigDir = accountResolution?.account.config_dir ?? null;
   useEffect(() => {
     if (!accountConfigDir) { setAccountDefaultModel(null); return; }
@@ -637,29 +474,16 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     return () => { cancelled = true; };
   }, [accountConfigDir]);
 
-  // Concrete model id the session actually runs. get_context_usage is the
-  // authoritative live signal (rich mode); the last assistant JSONL line
-  // covers resumed transcripts and the window before the first usage fetch.
-  // Resolves what an "Account Default" selection really means in the header
-  // summary and the context-popover model picker.
   const liveDefaultModel = useMemo(
     () => contextUsage?.model || lastAssistantModel(messages),
     [contextUsage, messages],
   );
 
-  // A `/model` typed into the composer switches the CLI, not selectedModel;
-  // follow the CLI's answer so the readout, the picker and a restart agree
-  // with it. A save as the account default also moves the settings.json pin
-  // the picker's `*` reads, so the catalog re-reads it.
+  // A typed /model switches the CLI, not selectedModel; follow the CLI's answer.
   const [catalogRefreshKey, setCatalogRefreshKey] = useState(0);
   const bumpCatalogRefresh = useCallback(() => { setCatalogRefreshKey((k) => k + 1); }, []);
   useSlashModelSync({ messages, onModel: setSelectedModel, onSavedAsDefault: bumpCatalogRefresh });
 
-  // Apply per-account session defaults once when the account first resolves,
-  // but only for new sessions (not when resuming or launched with explicit
-  // config). The mount-time check (`!!session || !!initialSessionConfig`)
-  // matches what the deleted `sessionStarted` state was seeded with —
-  // `accountDefaultsApplied.current` then prevents subsequent re-runs.
   const accountDefaultsApplied = useRef(false);
   useEffect(() => {
     if (!accountResolution || accountDefaultsApplied.current) return;
@@ -672,9 +496,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     if (defaults.effort) setEffort(defaults.effort);
   }, [accountResolution, session, initialSessionConfig]);
 
-  // One per-tab git watch covers project status + worktree list + per-peer
-  // status. The main process owns the fs.watch / poll machinery; we just
-  // mirror the latest snapshot into render state.
   useEffect(() => {
     if (!projectPath) {
       setSessionGit(null);
@@ -714,28 +535,17 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     };
   }, [projectPath]);
 
-  // Poll git only while someone can see this tab's badges.
   useGitWatchVisibility(gitWatchId, isActive);
 
-  // Every repo the project watches, from the unified snapshot. `gitStatus` is
-  // the project folder's own repo (null when the folder is not one) — what
-  // the tab summary reports.
   const gitRepos = useMemo(() => sessionGit?.repos ?? [], [sessionGit?.repos]);
   const gitStatus = gitRepos.find((r) => r.name === '')?.root ?? null;
   const branchPins = useRepoBranchPins(gitRepos.map((r) => r.root.path));
   const repoAliases = useRepoAliases(gitRepos.map((r) => r.root.path));
-  // The diff overlay is pull-only; this is how it learns the tree moved. The
-  // watcher's counts are the cheapest honest signal that something changed on
-  // disk, so a bump here re-reads the file list without the overlay polling.
-  // Counted from whichever checkout the overlay is showing.
+  // The diff overlay is pull-only; this bump is its only refresh signal.
   const diffReading = diffTarget
     ? gitRepos.flatMap((r) => [r.root, ...r.worktrees]).find((p) => p.path === diffTarget.path) ?? null
     : null;
   const gitRefreshToken = (diffReading?.changed ?? 0) * 1000 + (diffReading?.untracked ?? 0);
-  // Aggregate per-path errors for the single git status icon. The icon is
-  // green when this list is empty and red when any path is errored; the
-  // tooltip lists the offending labels so the user can see *which* row is
-  // wedged without needing per-row icons.
   const gitWatchErrors = useMemo(() => {
     const out: { label: string; error: string }[] = [];
     for (const repo of gitRepos) {
@@ -748,9 +558,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     return out;
   }, [gitRepos]);
 
-  // Add collapsed state for queued prompts
-
-  // Permission prompt state
   const {
     pendingPermission,
     setPendingPermission,
@@ -760,41 +567,21 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     handlePermissionAllowWithInput,
   } = usePermissions();
 
-  // The MCP elicitation on screen — main pushes the head of its queue, or
-  // null once the queue drains (answered, or withdrawn by the CLI).
   const [elicitationRequest, setElicitationRequest] = useState<ElicitationRequest | null>(null);
 
   const persistentSessionRef = useRef(false);
-  // Live mirror of the session's turn axis for call-time reads inside
-  // useSendPrompt's queue gate and the stream effects' drain. The drain path
-  // holds onto a captured handleSendPrompt across renders; reading from the
-  // ref avoids the stale-closure bug where drained prompts silently re-queue.
-  // Written below, once useSessionLifecycle has produced `turn`.
+  // Read at call time: a captured handleSendPrompt otherwise sees a stale turn and drained prompts silently re-queue.
   const turnRunningRef = useRef(false);
-  // The queued prompt open for editing — the drain holds while it is the head.
   const editingPromptIdRef = useRef<string | null>(null);
-  // Set by Stop: the queue survives the interrupt but nothing drains until
-  // the user resumes it or sends one prompt now. State drives the panel; the
-  // ref is what the drain reads, for the same stale-closure reason as above.
+  // The drain reads the ref; the state only drives the panel.
   const [queueHeld, setQueueHeldState] = useState(false);
   const queueHeldRef = useRef(false);
   const setQueueHeld = useCallback((held: boolean) => {
     queueHeldRef.current = held;
     setQueueHeldState(held);
   }, []);
-  // Session lifecycle status comes from the useSessionLifecycle hook
-  // (single source of truth), which subscribes to main-process
-  // `session-status:<tabId>` events. We derive the legacy boolean flags
-  // (isSessionStarting / isSessionActive) below — they keep call sites
-  // readable but are no longer independent state.
-  // Set when this session's config dir turns out to be signed in as somebody
-  // other than the account's expected email. Cleared on session reset so a
-  // stale warning can't outlive the session that produced it.
   const [accountMismatch, setAccountMismatch] = useState<AccountMismatch | null>(null);
   const [restartingSession, setRestartingSession] = useState(false);
-  // Which side panel overlays the transcript — one at a time. Only the
-  // inspector's open state is persisted across app sessions, so that
-  // preference sticks; the rest open fresh.
   const INSPECTOR_PREF_KEY = 'omnifex_session_inspector_open';
   const [sidePanel, setSidePanel] = useState<SessionSidePanelKey | null>(() => {
     try { return localStorage.getItem(INSPECTOR_PREF_KEY) === '1' ? 'inspector' : null; } catch { return null; }
@@ -806,25 +593,17 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   const toggleSidePanel = (key: SessionSidePanelKey) => {
     setSidePanel((prev) => (prev === key ? null : key));
   };
-  // Stable: ClaudeTranscript is memoised, and a fresh closure per render would
-  // defeat that for the whole transcript.
+  // Stable: ClaudeTranscript is memoised; a fresh closure re-renders the whole transcript.
   const openInspector = useCallback(() => { setSidePanel('inspector'); }, []);
-  // Side chat (the CLI's /btw). Docked beside the messages area and outside
-  // the one-at-a-time overlay rule: it stays open while you keep working.
   const sideChat = useSideChat(tabId || 'default');
   const [sideChatOpen, setSideChatOpen] = useState(false);
   const [sideChatFocus, setSideChatFocus] = useState(0);
-  // Visible while opened here OR while a thread exists — a reload or a second
-  // client shows a side chat in progress without being asked.
   const sideChatVisible = agent !== 'codex' && (sideChatOpen || sideChat.sideChat.exchanges.length > 0);
-  // The button and a bare `/btw` are one action: open and focus, send nothing.
   const openSideChat = useCallback(() => {
     setSideChatOpen(true);
     setSideChatFocus((n) => n + 1);
   }, []);
   const { close: closeSideChatThread, ask: askSideChat } = sideChat;
-  // `/btw` from any send path lands here (useSendPrompt checks it before
-  // queueing): open the panel, and ask when there is a question.
   const routeToSideChat = useCallback((question: string) => {
     openSideChat();
     if (question) void askSideChat(question);
@@ -834,10 +613,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     setSideChatOpen(false);
   }, [closeSideChatThread]);
   const tabIdRef = useRef(tabId || 'default');
-  // Drop any per-tab inflight buffer when this tab unmounts so the
-  // module-level Map doesn't leak across long-lived renderer sessions.
-  // Pair with a store-slot clear so a stale Zustand slot can't survive
-  // the unmount when a RAF was pending at teardown.
+  // Clear the store slot too: a RAF pending at teardown would leave a stale slot.
   useEffect(() => () => {
     const tabId = tabIdRef.current;
     clearInflightBuffer(tabId);
@@ -845,25 +621,16 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     useClaudeSessionStore.getState().clearInflightAssistant(tabId);
   }, []);
   const floatingPromptRef = useRef<FloatingPromptInputRef>(null);
-  // Tracks whether the user just hit the cancel/interrupt button. When true,
-  // the stream listener suppresses the next error-typed result message (which
-  // the CLI emits after interrupt) so "Execution Failed" doesn't flash after
-  // a deliberate cancel. Reset after the first result message is consumed.
   const userInterruptedRef = useRef(false);
   const isNearBottomRef = useRef(true);
 
-  // Post-compaction directive, read once and held in refs the stream handler
-  // can see without taking them as deps (it must not re-subscribe when the
-  // model picker changes). Seeded with the shipped default so a compaction
-  // that lands before the setting resolves still gets the directive.
+  // Refs so the stream handler never re-subscribes; seeded with the shipped default so an early compaction still gets the directive.
   const postCompactPromptRef = useRef<string>(resolvePostCompactDirective(null, null));
   const selectedModelRef = useRef<string>(selectedModel);
   useEffect(() => { selectedModelRef.current = selectedModel; }, [selectedModel]);
   useEffect(() => {
     let cancelled = false;
-    // A failed read must not disable the directive — the shipped default is
-    // complete on its own, so fall through to the seed. Switched off, the ref
-    // holds '' and queuePostCompactDirective sends nothing.
+    // A failed read keeps the shipped default; it must not disable the directive.
     Promise.all([
       api.getSetting(POST_COMPACT_ENABLED_SETTING_KEY),
       api.getSetting(POST_COMPACT_PROMPT_SETTING_KEY),
@@ -875,7 +642,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     return () => { cancelled = true; };
   }, []);
   
-  // Session metrics state for enhanced analytics
   const sessionMetrics = useRef({
     firstMessageTime: null as number | null,
     promptsSent: 0,
@@ -892,42 +658,21 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     modelChanges: [] as { from: string; to: string; timestamp: number }[],
   });
 
-  // Cost accounting for the reducer's costDelta computation (Task 8):
-  // seenCostKeys dedups repeated deliveries of the same requestId/message.id
-  // (live streams re-emit assistant messages per content block), and
-  // pricingOverrides is loaded once on mount below. Both are refs, not state
-  // — they're read inside the ctx literal passed to reduceSessionStreamMessage
-  // per-message and must never trigger a re-render or effect re-run.
+  // Refs, never state: read per message inside the reducer ctx and must not trigger renders or effects.
   const costSeenKeysRef = useRef<Set<string>>(new Set());
   const pricingOverridesRef = useRef<readonly ModelPricingInput[] | undefined>(undefined);
 
-  // Load the model_pricing delta layer once per mount. Empty dep array +
-  // ref-only writes (no setState) — this must never become a render-loop
-  // trigger like the TabContent inline-closure bug (see project memory).
-  //
-  // Once per mount is deliberate: a pricing edit reaches an already-open
-  // session on its next mount, not mid-stream. The main process re-reads the
-  // table per priced turn, so the persisted cost is right either way; this ref
-  // only backs the live per-message footer.
+  // Empty deps + ref-only writes: must never become a render loop like the TabContent inline-closure bug.
   useEffect(() => {
     void api
       .modelPricingList()
       .then((rows) => {
-        // The rows ARE the layer the resolver takes — nothing to convert.
         pricingOverridesRef.current = rows.length > 0 ? rows : undefined;
       })
       .catch(() => {});
   }, []);
 
-  // Notify parent of the active projectPath. TabContent passes a fresh
-  // inline closure for this prop on every render and its `updateTab`
-  // implementation always allocates a new tabs array + new `updatedAt`
-  // Date — so if we depended on the callback identity, the cycle would
-  // be: parent render → new closure → effect fires → updateTab → parent
-  // re-render → new closure → … (renderer pegged at >100% CPU at idle).
-  // Capture the latest callback in a ref like onStreamingChange below
-  // and key the effect on `projectPath` only, so it runs exactly once
-  // per real change.
+  // Keyed on projectPath only: TabContent passes a fresh closure and updateTab allocates new tabs, so depending on the callback loops forever.
   const onProjectPathChangeRef = useRef(onProjectPathChange);
   onProjectPathChangeRef.current = onProjectPathChange;
   useEffect(() => {
@@ -936,7 +681,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     }
   }, [projectPath]);
 
-  // Get effective session info (from prop or extracted) - use useMemo to ensure it updates
   const effectiveSession = useMemo(() => {
     if (session) return session;
     if (extractedSessionInfo) {
@@ -950,8 +694,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     return null;
   }, [session, extractedSessionInfo, projectPath]);
 
-  // Subagent (background task) state, derived from the raw stream.
-  // Rendered above the prompt input so parallel Agent/Task dispatches are visible.
   const colorAllocatorRef = useRef(createSubagentColorAllocator());
   const [dismissedSubagents, setDismissedSubagents] = useState<Set<string>>(new Set());
   const baseSubagents = useMemo(() => {
@@ -960,28 +702,16 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
       ? all
       : all.filter((s) => !dismissedSubagents.has(s.toolUseId));
   }, [messages, dismissedSubagents]);
-  // Per-subagent model + authoritative totals, fetched from disk. The live
-  // stream gives a running row its model only through forwarded frames, and
-  // only running totals, so we enrich completed rows by reading the on-disk
-  // JSONL via the main process. Keyed by tool_use_id.
   const [subagentMeta, setSubagentMeta] = useState<Record<string, SubagentMetaInput>>({});
   const subagentMetaRef = useRef(subagentMeta);
   subagentMetaRef.current = subagentMeta;
-  // A nested subagent's task-notification lands in this stream but names no
-  // row the reducer knows (its dispatch happened inside the parent's own
-  // transcript), so it is indexed here and reunited with the synthesised row
-  // during the meta merge.
   const notificationStats = useMemo(() => notificationStatsByToolUse(messages), [messages]);
-  // Same for a nested subagent's live frames: keyed by agent_id, which its
-  // sidecar also carries (CLI >= 2.1.292).
   const forwardedLive = useMemo(() => forwardedByAgentId(messages), [messages]);
   const subagents = useMemo(
     () => applySubagentMeta(baseSubagents, subagentMeta, notificationStats, forwardedLive),
     [baseSubagents, subagentMeta, notificationStats, forwardedLive],
   );
-  // Stable signature of completed rows — drives the meta fetch without
-  // depending on `subagentMeta` itself (which the fetch sets), so resolving
-  // models can't re-trigger the effect into a loop.
+  // Must not depend on subagentMeta (the fetch sets it), or it loops.
   const completedSubagentIds = useMemo(
     () => baseSubagents.filter((s) => s.status !== 'running').map((s) => s.toolUseId),
     [baseSubagents],
@@ -990,7 +720,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   useEffect(() => {
     if (!claudeSessionId || !accountConfigDir || !projectPath) return;
     if (completedSubagentIds.length === 0) return;
-    // Only hit disk when at least one completed row still lacks a model.
     const needsFetch = completedSubagentIds.some(
       (id) => !subagentMetaRef.current[id]?.model,
     );
@@ -1002,45 +731,23 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
         if (cancelled || !map || Object.keys(map).length === 0) return;
         setSubagentMeta((prev) => ({ ...prev, ...map }));
       })
-      .catch(() => { /* best-effort enrichment — silence is fine */ });
+      .catch(() => { });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [completedSubagentSig, claudeSessionId, accountConfigDir, projectPath]);
-  // Typing bubble used to bridge on `hasRunningSubagent(subagents)` so a
-  // stuck-running row would keep the spinner on after the turn ended. That
-  // coupled visual session activity to outstanding-subagent state and faked
-  // a live turn whenever the subagent-tracking pipeline missed a closure
-  // carrier. Decoupled now — the bubble follows the session's turn and
-  // `tasksInFlight` (see `outstandingWork`, below the lifecycle hook). The
-  // The status bar's `agents` readout and its rows remain the scoped
-  // indicator that a particular dispatch is in flight. See design spec
-  // docs/superpowers/specs/2026-05-11-subagent-tracking-refactor-design.md.
-  // True when the streaming bubble is currently rendered. Used to
-  // suppress the typing-dots spinner so the spinner and bubble
-  // don't co-exist on screen.
+  // The bubble follows the turn and tasksInFlight, never hasRunningSubagent: that faked a live turn whenever subagent tracking missed a closure.
   const hasInflightAssistant = useClaudeSessionStore(
     (s) => s.tabs[tabIdRef.current]?.inflightAssistant != null,
   );
-  // Tool calls waiting on their automatic permission check — the perms
-  // readout pulses `checking` while any are.
   const checkingPermissions = useClaudeSessionStore(
     (s) => s.tabs[tabIdRef.current]?.permissionChecks.size ?? 0,
   );
-  // Raw task list entries — null (no task-list tool used yet) normalised to [].
-  // Defined here so tasksInFlight can derive from it without a second getTaskList call.
-  // The same reference is passed to useSessionLifecycle further down.
   const taskEntries = useMemo(() => getTaskList(messages) ?? [], [messages]);
-  // True iff the latest task list has an actively in_progress item. Pending
-  // (planned-but-unstarted) tasks do NOT count — otherwise a resumed session
-  // that ended with unstarted todos shows a spinner forever. Matches
-  // hasOpenTasks in sessionDerivedState.ts (the conversationStatus path).
+  // in_progress only: counting pending tasks spins forever on a resumed session with unstarted todos. Matches hasOpenTasks.
   const tasksInFlight = useMemo(
     () => summarizeTaskList(taskEntries).inProgress > 0,
     [taskEntries],
   );
-  // Background shells and Monitors: the status bar's `shells` readout. Their
-  // output is read on demand (`get_task_output`) by the row itself, only
-  // while open.
   const [dismissedShells, setDismissedShells] = useState<Set<string>>(new Set());
   const shells = useMemo(() => {
     const all = deriveBackgroundShells(messages);
@@ -1053,8 +760,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     (taskId: string) => api.sessionTaskOutput(tabIdRef.current, taskId),
     [],
   );
-  // The rows' Stop and Move-to-background. The rows change state only when
-  // the CLI's own task events say so; these just ask.
+  // Ask only: rows change state solely on the CLI's own task events.
   const stopTask = useCallback(
     (taskId: string) => api.sessionStopTask(tabIdRef.current, taskId),
     [],
@@ -1092,9 +798,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
       return next;
     });
   }, [shells]);
-  // The status bar's `agents` and `shells` readouts. Memoised so a
-  // transcript tick that changes neither list does not hand the bar a new
-  // object.
+  // Memoised so a transcript tick that changes neither list doesn't hand the bar a new object.
   const backgroundWork = useMemo<BackgroundWork>(() => ({
     subagents,
     onDismissSubagent: dismissSubagent,
@@ -1107,19 +811,10 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     backgroundTask,
   }), [subagents, dismissSubagent, dismissAllCompletedSubagents, shells, readShellOutput, dismissShell, dismissAllEndedShells, stopTask, backgroundTask]);
 
-  // Tab context for title / promptStatus mirror. The usePublishTabStatus
-  // call lives further down — it depends on `isSessionActive` /
-  // `isSessionStarting`, which are derived from `useSessionLifecycle`'s
-  // `sessionStatus`.
   const { getTabById, updateTab } = useTabContext();
   const tabTitle = getTabById(tabIdRef.current)?.title ?? projectPath ?? tabIdRef.current;
 
-  // promptStatus + tab mirror live further down — they depend on
-  // `conversationStatus` from `useSessionLifecycle`. Subagent count and
-  // task summary are pure derivations from messages/subagents state and
-  // stay here so other code below can read them.
   const activeSubagentCount = countActiveSubagents(subagents);
-  // taskEntries is defined above (alongside tasksInFlight) so both can share a single getTaskList call.
   const taskListSummary = useMemo(() => {
     return taskEntries.length > 0
       ? summarizeTaskList(taskEntries)
@@ -1130,22 +825,11 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Report streaming state changes — onStreamingChange is excluded from deps
-  // because it's an event callback from the parent that may not be memoized.
-  // Including it causes infinite re-render loops when the parent recreates
-  // the callback on state change. The effect itself lives below the
-  // lifecycle hook, where the turn is known.
+  // Via ref, not deps: the parent may not memoize onStreamingChange, and depending on it loops.
   const onStreamingChangeRef = useRef(onStreamingChange);
   onStreamingChangeRef.current = onStreamingChange;
 
-
-  // Approximate current context-window occupancy from the LAST assistant turn.
-  // This is the fallback the SessionCard uses when the CLI's live
-  // query.getContextUsage() isn't available yet (notably right after a resume).
-  // Summing input+output across every turn would be cumulative tokens
-  // generated over the whole session — far larger than the live context — so
-  // we read only the most recent assistant message's usage:
-  //   input + cache_read + cache_creation + output ≈ what was in context.
+  // Last assistant turn only: summing every turn is cumulative tokens, not context.
   useEffect(() => {
     let last: { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number } | undefined;
     for (let i = messages.length - 1; i >= 0; i -= 1) {
@@ -1164,10 +848,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     setTotalTokens(tokens);
   }, [messages]);
 
-  // ── Session gauges: context pressure + prompt-cache countdown ────────────
-  //
-  // Both read the same numbers the SessionCard gauge already renders, via the
-  // shared selector, so a banner and a gauge can never disagree.
   const {
     contextPressure: contextPressureSetting,
     setContextPressure,
@@ -1186,21 +866,12 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
       defaultModel: accountDefaultModel,
       runningModel: liveDefaultModel,
       catalog: supportedModels,
-      // A ref, read at compute time: a user context-window override is rare
-      // and lands on the next recompute rather than forcing a render.
       pricingOverrides: pricingOverridesRef.current,
     }),
     [sdkMaxTokens, selectedModel, accountDefaultModel, liveDefaultModel, supportedModels],
   );
-  // (contextPressure itself is derived below, once sessionStatus exists — it
-  // gates on the live-session predicate.)
 
-  // Anchor + TTL change once per turn, so no clock lives here. AgentSession is
-  // large with a deep child tree; ticking a countdown at this level would
-  // re-render all of it every second. SessionCard and TabManager each own a
-  // local interval instead.
-  // Socket state is global; whether the daemon is delivering THIS session is
-  // not. The status bar shows both — see useDaemonLink.
+  // No clock here: ticking at this level would re-render the whole session tree every second.
   const daemonLink = useDaemonLink(sessionTabId, claudeSessionId ?? null);
 
   const cacheTtlMs = useMemo(
@@ -1212,20 +883,9 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     [messages, cacheTimerEnabled],
   );
 
-  // The session's name, read straight out of the transcript the CLI wrote —
-  // its own `ai-title`, or a `custom-title` if the session has been renamed.
-  // Deliberately not mirrored into local state on rename: the CLI persists
-  // the rename and the tail delivers the record back, so there is exactly one
-  // place a session's name comes from. Same selector the tab strip's hover
-  // uses, so the two can never disagree.
+  // Not mirrored into local state on rename: the CLI's custom-title record is the single source.
   const sessionTitle = useTabSessionTitle(sessionTabId);
 
-  /**
-   * Rename the session through the CLI's own `rename_session` control
-   * request. The CLI persists it as a `custom-title` record, the tail
-   * delivers that record back, and `sessionTitle` above picks it up — so
-   * nothing here has to mirror the new name into local state.
-   */
   const handleRenameSession = useCallback(async (title: string): Promise<boolean> => {
     try {
       return await api.sessionSetTitle(tabIdRef.current, title);
@@ -1234,9 +894,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
       return false;
     }
   }, []);
-  // Suggest-a-name is user-triggered (the CLI stopped naming stdin-driven
-  // sessions in 2.1.277, and a model call should not fire unasked). Only
-  // offered once there is a prompt to name from.
+  // User-triggered only: a model call must not fire unasked.
   const firstPrompt = useMemo(() => firstPromptText(messages), [messages]);
   const handleSuggestTitle = useMemo(
     () => (firstPrompt
@@ -1252,29 +910,14 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     [firstPrompt],
   );
 
-  // The TTL change still self-clears from its own data; the context jump moved
-  // into the signal emitters, which derive the whole per-turn series rather
-  // than only the current turn.
   const cacheTtlChange = useMemo(
     () => (cacheTimerEnabled ? lastCacheTtlChange(messages) : null),
     [messages, cacheTimerEnabled],
   );
-  // Servers the CLI dropped for a config problem. Not in the MCP status
-  // panel — the CLI omits skipped servers from `mcp_servers` entirely — so
-  // this notice is the only place they surface.
   const mcpServerErrors = useMemo(() => latestMcpServerErrors(messages), [messages]);
 
-  // What shaped this session: the instruction files, MCP servers, agents,
-  // skills and deferred tools the CLI reports loading, folded into an audit
-  // in arrival order with a live flag per entry.
-  //
-  // Memoised on `messages` and nowhere near a per-message render path. The
-  // standing failure mode in this renderer is "one click re-rendered every
-  // session in the app", and a fold over every message is exactly that shape
-  // — it runs once per new record, not once per row.
+  // Memoised: runs once per record, never per row.
   const contextLedger = useMemo(() => foldContextLedger(messages), [messages]);
-  // What is loaded into the session, for the Session context panel and the
-  // context popover's summary row. Same fold-once-per-record shape as above.
   const initMcpCount = useMemo(() => latestInitMcpCount(messages), [messages]);
   const modStatus = useMemo(() => modStatusLines(messages), [messages]);
   const contextPanelOpen = sidePanel === 'context';
@@ -1288,14 +931,10 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     return { mods: split?.mods.length ?? null, plugins: split?.plugins.length ?? null, mcp: initMcpCount };
   }, [sessionPlugins.plugins, initMcpCount]);
   const openContextPanel = useCallback(() => { setSidePanel('context'); }, []);
-  // Recent events → the prompt that caused them. The nonce lets a second click
-  // on the same row scroll again after you have scrolled away.
   const [transcriptJump, setTranscriptJump] = useState<{ uuid: string; nonce: number } | null>(null);
   const jumpToMessage = useCallback((uuid: string) => {
     setTranscriptJump((prev) => ({ uuid, nonce: (prev?.nonce ?? 0) + 1 }));
   }, []);
-  // The Session context header's Refresh: reload plugins (re-running each
-  // mod's session start) and ask the MCP servers again.
   const sessionMcp = useSessionMcpStatus(tabIdRef.current, contextPanelOpen);
   const refreshSessionPlugins = sessionPlugins.refresh;
   const refreshSessionMcp = sessionMcp.refresh;
@@ -1304,16 +943,10 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     refreshSessionMcp();
   }, [refreshSessionPlugins, refreshSessionMcp]);
 
-  // Epoch-seconds reset time when the CLI has parked this turn on a claude.ai
-  // usage limit (Claude Code 2.1.234's autoContinueAtUsageLimit), else null.
-  // conversationStatus stays 'running' throughout — correctly, the CLI still
-  // owns the turn — so this is what keeps the spinner from being unexplained.
+  // conversationStatus stays 'running' while parked: the CLI still owns the turn.
   const usageLimitResetsAt = useMemo(() => usageLimitWait(messages), [messages]);
 
-  // Mirror the cache clock onto the tab so the tab strip can show a glyph for
-  // background sessions. Guarded by a last-value ref exactly like the
-  // promptStatus mirror below: updateTab returns a new tab object every call,
-  // so an unguarded write from an effect is a render loop.
+  // Last-value guard: updateTab returns a new tab every call, so an unguarded write loops.
   const lastCacheMirrorRef = useRef<string>('');
   useEffect(() => {
     const key = `${cacheAnchorMs ?? ''}:${cacheTtlMs ?? ''}`;
@@ -1322,16 +955,8 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     updateTab(tabIdRef.current, { cacheAnchorMs, cacheTtlMs });
   }, [cacheAnchorMs, cacheTtlMs, updateTab]);
 
-  // Load session history when resuming an existing session. Uses
-  // streamCtxRef for the useTabSession setters that recreate every
-  // render — without that indirection, this callback would re-create on
-  // every render and re-trigger the effect below, re-fetching history
-  // every frame.
-  // The transcript is being read off disk — a fetch, not a turn. Drives the
-  // empty-transcript placeholder only.
+  // Via streamCtxRef: useTabSession setters recreate per render, which would refetch history every frame.
   const [historyLoading, setHistoryLoading] = useState(false);
-  // `target` defaults to the session prop. A remote resync passes the live
-  // session instead: a tab started fresh has no prop, only claudeSessionId.
   const loadSessionHistory = useCallback(async (
     target?: { id: string; project_id: string; project_path: string },
   ) => {
@@ -1344,7 +969,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
 
       const history = await api.loadSessionHistory(source.id, source.project_id, source.project_path);
 
-      // Save session data for restoration
       if (history && history.length > 0) {
         SessionPersistenceService.saveSession(
           source.id,
@@ -1354,40 +978,24 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
         );
       }
 
-      // Route through the JSONL classifier. The classifier normalizes
-      // timestamp→receivedAt and discriminates every line into a typed
-      // JsonlNode. normalizeJsonlNode handles string→array content for
-      // assistant/user nodes so downstream consumers can assume array form.
       const nodes: JsonlNode[] = history
         .map((entry) => classifyJsonlLine(entry))
         .filter((n): n is NonNullable<typeof n> => n !== null)
         .map((n) => normalizeJsonlNode(n));
 
-      // The CLI can re-append a compacted segment it already wrote; one row
-      // per uuid. See repeatedRecords.ts.
+      // The CLI can re-append a compacted segment; one row per uuid.
       streamCtxRef.current.setMessages(withoutRepeatedRecords(nodes));
 
-      // Restore the permission mode the session was last in (resume fidelity).
-      // Priority: the live session's reported mode → last mode recorded in the
-      // JSONL → account default → leave the hardcoded initial fallback
-      // (acceptEdits). setPermissionMode is a stable
-      // setter so it's safe to call here without a dependency.
       const resumedMode =
         livePermissionModeRef.current
         ?? lastPermissionMode(nodes)
         ?? accountResolutionRef.current?.account.session_defaults?.permissionMode;
       if (resumedMode) setPermissionMode(resumedMode);
 
-      // Restore the model the session is on (same resume fidelity as the
-      // permission mode above): the last turn's, or a later `/model` the CLI
-      // answered with no turn after it. Without this, selectedModel keeps its
-      // hardcoded mount seed — the header summary names the wrong model and
-      // a relaunch would even spawn with it. Concrete CLI ids are an accepted
-      // selectedModel state.
+      // Restore the model too, or a relaunch spawns with the mount seed.
       const resumedModel = lastSessionModel(nodes);
       if (resumedModel) setSelectedModel(resumedModel);
 
-      // Scroll to bottom after loading history
       setTimeout(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
       }, 100);
@@ -1399,25 +1007,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     }
   }, [session]);
 
-  // Resume effect: seed claudeSessionId from the session prop and load its
-  // history. setClaudeSessionId routed through streamCtxRef because it's a
-  // useTabSession setter that recreates per render.
-  //
-  // The decision is delegated to `decideResumeSeed` (see its doc). Two forces
-  // move the tab's session id and must not fight:
-  //   - the *prop* (`tab.sessionData`) changes when the user selects a
-  //     different session — we MUST follow it, because several open paths
-  //     (TabContent's `handleOpenSessionInTab` / `handleClaudeSessionSelected`)
-  //     reassign `sessionData` without resetting the per-tab store slice, so
-  //     `claudeSessionId` is still the *previous* session's id. Failing to
-  //     follow pins the header cost pill (`useSessionCost`) to the wrong
-  //     session's total forever — the "same $ on every session" bug.
-  //   - the live *stream* advances claudeSessionId to the CLI's forked-on-
-  //     resume id via `onSessionInit` / the reducer's `sessionIdUpdate`. That
-  //     leaves the prop id stable; we must NOT stomp it back (commit 3c60728).
-  // `prevSessionIdRef` lets us tell which value changed. It starts `undefined`
-  // (first run for this mount) so a remount over an already-live tab does not
-  // re-seed a stale pre-fork prop id over the surviving live id.
+  // Follow prop changes (open paths reassign sessionData without resetting the store, pinning the cost pill to the previous session) but never stomp the stream's fork-on-resume id; prevSessionIdRef starts undefined so a remount keeps the live id.
   const prevSessionIdRef = useRef<string | null | undefined>(undefined);
   useEffect(() => {
     const decision = decideResumeSeed({
@@ -1432,9 +1022,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     }
   }, [session, loadSessionHistory, claudeSessionId]);
 
-  // The daemon could not replay what this tab missed (it keeps events in
-  // memory only). Reload the transcript from the CLI's JSONL, as a page load
-  // would. See useRemoteResync.
   useRemoteResync(sessionTabId, () => {
     const id = claudeSessionId ?? session?.id;
     if (!id || !projectPath) return;
@@ -1445,16 +1032,11 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     }));
   });
 
-  /** One warning per tab for the stale-listener drop below, not one per event. */
   const loggedUnmountedDropRef = useRef(false);
 
   const handleJsonlLine = useCallback((payload: string | object) => {
     try {
-      // Dropping events because the React tree is gone is correct; doing it
-      // silently is not. A listener outlives its component on purpose (see
-      // useSessionLifecycle's mount effect), so a stale one discards a whole
-      // live turn here and leaves no trace anywhere — spinner up, transcript
-      // frozen, nothing logged. Say it once per tab.
+      // Never drop silently: a stale listener discards a whole live turn without a trace.
       if (!streamCtxRef.current.isMountedRef?.current) {
         if (!loggedUnmountedDropRef.current) {
           loggedUnmountedDropRef.current = true;
@@ -1466,10 +1048,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
       }
       const raw: unknown = typeof payload === 'string' ? JSON.parse(payload) : payload;
 
-      // permission_request — OmniFex-synthetic envelope from the main-process
-      // permissions service. Not a JSONL record; classifier doesn't know it.
-      // Codex variants ride the same channel with `kind: 'patch' | 'exec'`,
-      // `agent: 'codex'`, and the raw approval params on `codex_payload`.
       const envelope = raw && typeof raw === 'object' ? (raw as SyntheticEnvelope) : null;
       if (envelope?.type === 'permission_request') {
         const msg = envelope as PermissionRequestWire;
@@ -1493,17 +1071,12 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
         return;
       }
 
-      // permission_withdrawn — the CLI took back the request on screen (an
-      // interrupted turn). Synthetic like permission_request; never transcript.
       if (envelope?.type === 'permission_withdrawn') {
         const requestId = String((envelope as { request_id?: string }).request_id ?? '');
         setPendingPermission((current) => withoutWithdrawnPermission(current, requestId));
         return;
       }
 
-      // stream_event — CLI iterator overlay channel (token partials).
-      // Not in JSONL; route partials to the inflight coalescer for the
-      // typewriter effect. Subagent partials and non-text deltas drop.
       if (envelope?.type === 'stream_event') {
         const m = envelope as StreamEventWire;
         if (m.parent_tool_use_id != null) return;
@@ -1515,8 +1088,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
         ) {
           appendInflightDelta(tabIdRef.current, m.uuid, event.delta.text, m.parent_tool_use_id);
         }
-        // The thought being had, as it is typed (summarized display — see
-        // claude-cli-engine start). A new thinking block starts a new thought.
         if (event?.type === 'content_block_start' && event.content_block?.type === 'thinking') {
           clearInflightThinking(tabIdRef.current);
         }
@@ -1531,12 +1102,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
         return;
       }
 
-      // Classify. The classifier normalizes the raw JSONL line into a
-      // typed JsonlNode. normalizeJsonlNode handles string→array content
-      // for assistant/user nodes. Overlay kinds never enter messages[]:
-      // stream-event / rate-limit / lifecycle are produced upstream of the
-      // classifier, while tool-progress IS classified (it needs the anchor id
-      // computed) and is routed to its own store slot below.
       const node = classifyJsonlLine(raw);
       if (!node) return;
       if (node.kind === 'tool-progress') {
@@ -1544,13 +1109,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
         return;
       }
       if (node.kind === 'stream-event' || node.kind === 'rate-limit' || node.kind === 'lifecycle') return;
-      // A record the tab already holds — the CLI re-appending a compacted
-      // segment, or a reconnect replay overlapping what landed. Dropped before
-      // the reducer so it neither renders nor fires effects. See
-      // repeatedRecords.ts.
       if (isRepeatedRecord(useClaudeSessionStore.getState().selectTab(sessionTabId).messages, node)) return;
-      // Live-only: drives the tool row's chip and the perms readout. The node
-      // still flows on into messages[] as its own (default Never) kind.
       const permissionCheck = permissionCheckFrame(node);
       if (permissionCheck) {
         useClaudeSessionStore.getState().applyPermissionCheck(sessionTabId, permissionCheck);
@@ -1559,10 +1118,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
 
       const ctx = streamCtxRef.current;
 
-      // The node goes through the reducer for its side effects:
-      // activity labels, metrics, cost, session-id extraction,
-      // userInterrupted suppression, post-event refresh effects,
-      // and the append/skip/insert decision. The reducer is pure.
       {
         const message = normalizedNode;
         const liveSlice = useClaudeSessionStore.getState().selectTab(sessionTabId);
@@ -1659,12 +1214,8 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
           });
         }
 
-        // Reconcile inflight assistant: clear streaming bubble when canonical
-        // message arrives or an error notification lands.
         const store = useClaudeSessionStore.getState();
-        // Forwarded subagent assistants (--forward-subagent-text, tagged with
-        // parent_tool_use_id) must not clear the PARENT's streaming bubble —
-        // they belong to the subagent row, not the main chain.
+        // Forwarded subagent assistants must not clear the parent's streaming bubble.
         if (
           reduced.append === 'append' &&
           message.kind === 'assistant' &&
@@ -1685,36 +1236,21 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
         }
 
         if (reduced.append === 'skip') return;
-        // The reducer may hand back a rewritten node (e.g. a user-cancel
-        // result kept as a benign turn-closer) — append that, not the raw one.
+        // Append the reducer's rewritten node, not the raw one.
         const nodeToAppend = reduced.replaceWith ?? message;
         if (reduced.append === 'insertBeforeFirstUser') {
           ctx.insertMessageBeforeFirstUser(nodeToAppend);
           return;
         }
-        // The CLI's own record of a prompt lands on top of the optimistic echo
-        // useSendPrompt appended on Enter, rather than beside it. Since the
-        // transcript inversion the JSONL is the source of committed rows and it
-        // records your prompt; stream-json never did, so the echo used to be
-        // the only copy and nothing deduplicated it. See
-        // src/lib/promptReconciliation.ts.
         if (isCliPromptRecord(nodeToAppend)) {
           store.appendOrReconcilePrompt(sessionTabId, nodeToAppend);
           return;
         }
-        // Not a bare append: the turn's last record can come through the
-        // tail after the queued prompt it preceded was already echoed, and
-        // must land above that echo. See appendCliRecord.
+        // Not a bare append: a late tail record must land above an already-echoed queued prompt.
         store.appendCliRecord(sessionTabId, nodeToAppend);
       }
     } catch (err) {
-      // Write directly to app_logs (not via console.error → LogService).
-      // LogService batches console.error every 2s; when a stream message
-      // throws here, the user needs the toast NOW so they can correlate
-      // it with what they just saw, and we don't want a swallowed payload
-      // to vanish if the renderer reloads before the batch flushes. The
-      // main-process onError observer (the daemon → log_error_toast_enabled)
-      // turns this into a user-visible toast with a "View in Log" action.
+      // Direct to app_logs, not console.error: LogService batches every 2s and the toast must be immediate.
       const errMsg =
         err instanceof Error
           ? `${err.name}: ${err.message}${err.stack ? `\n${err.stack}` : ''}`
@@ -1728,23 +1264,17 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
         message: `handleJsonlLine threw: ${errMsg}`,
         metadata: JSON.stringify({ payloadPreview: payloadStr.slice(0, 500) }),
       }]).catch(() => {
-        // logWriteBatch failure means IPC is gone — the renderer is
-        // already in a worse state than a missing log entry. Nothing
-        // useful to do; do NOT fall back to console.error (the user
-        // asked specifically to keep this off console).
+        // IPC is gone; do not fall back to console.error.
       });
     }
   }, [projectPath, sessionTabId, setPendingPermission]);
 
-  // Session lifecycle: persistent session management, event listeners, cleanup
   const {
     unlistenRefs,
     isMountedRef,
     startPersistentSession,
     rebindPersistentSession,
     sessionStatus,
-    // The session's own turn axis, mirrored from main; conversationStatus
-    // folds it with the transcript-derived task / subagent rows.
     turn,
     conversationStatus,
     resetStatus,
@@ -1758,16 +1288,10 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     agent,
     accountResolution,
     persistentSessionRef,
-    // Seed sessionStatus to 'starting' (instead of 'stopped') when this
-    // tab is mounting with a session to resume or a preconfigured fresh
-    // start — the auto-start effect below will kick in shortly, and this
-    // skips the one-frame flash of the empty-state form.
+    // Seed 'starting' when a start is pending, avoiding a one-frame flash of the empty form.
     hasPendingStart: !!session || !!initialSessionConfig,
     handleJsonlLine,
     setMessages,
-    // session-init:<tabId> seeds claudeSessionId + extractedSessionInfo the
-    // moment the CLI subprocess spawns, instead of waiting for the
-    // mid-first-turn `system:init` stream message.
     onSessionInit: useCallback((sessionId: string) => {
       streamCtxRef.current.setClaudeSessionId(sessionId);
       const projectId = projectPath.replace(/[^a-zA-Z0-9]/g, '-');
@@ -1778,31 +1302,15 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
       livePermissionModeRef.current = mode;
       setPermissionMode(mode);
     }, []),
-    // Transcript-derived inputs for the conversation rollup.
     tasks: taskEntries,
     subagents,
   });
-  // Derived predicates over the two canonical axes. See
-  // docs/session-lifecycle.md for the model:
-  //  - isSessionStarting → connection dialing
-  //  - isSessionActive   → connection up ('started'); covers all
-  //                        conversationStatus values
   const isSessionStarting = sessionStatus === 'starting';
   const isSessionActive = sessionStatus === 'started';
 
-  // Context pressure now flows through the signal emitters (see `signals`
-  // below). The `isSessionActive` gate travels with it as `sessionLive`: it is
-  // the strict 'started' predicate, NOT `sessionStarted` (= "not stopped"),
-  // which is also true while dialing and after a failed start. The only action
-  // on offer is /compact, which a session whose CLI isn't up cannot run.
-  // "Has the user committed to a session in this tab?" Gates the
-  // NewSessionForm empty-state vs. the chat view. The hook seeds
-  // sessionStatus to 'starting' at mount when there's a session to
-  // resume or a preconfigured fresh start (see hasPendingStart above),
-  // so this single check covers all cases without a one-frame flash.
+  // sessionLive is the strict 'started' predicate, not sessionStarted (also true while dialing and after a failed start).
   const sessionStarted = sessionStatus !== 'stopped';
-  // The session's turn, as the rest of this component has always named it.
-  // It is the daemon's fact, mirrored — never an optimistic renderer flag.
+  // The daemon's turn, mirrored; never an optimistic renderer flag.
   const isLoading = turn.status === 'running';
   useEffect(() => { turnRunningRef.current = isLoading; }, [isLoading]);
   useEffect(() => {
@@ -1810,18 +1318,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   }, [isLoading, claudeSessionId]);
   const outstandingWork = isLoading || tasksInFlight;
 
-  // Turn-boundary bookkeeping: when the round started, how long the last one
-  // took, and dropping the tool-progress map the round left behind. The
-  // start is the session's own `turn.since` — the moment main handed the
-  // prompt to the CLI — so a reloaded or remote client counts from the same
-  // instant the daemon does.
-  //
-  // `lastTurnMs` is measured here rather than read off
-  // `cli-stream-result.duration_ms` on purpose. The status bar shows a LIVE
-  // counter from `turnStartedAt` while the turn runs and freezes it when the
-  // turn ends; sourcing the frozen value from a different clock (duration_ms
-  // is API time, not wall time) would make the number visibly jump at the
-  // moment it stopped moving.
+  // Starts at turn.since so remote clients agree. lastTurnMs is measured here, not taken from duration_ms (API time), or the frozen counter would jump.
   const turnStartedAt = useMemo<number | null>(() => {
     if (turn.status !== 'running' || turn.since === null) return null;
     const at = Date.parse(turn.since);
@@ -1838,7 +1335,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     if (startedAt === null) return;
     turnStartedAtRef.current = null;
     setLastTurnMs(Date.now() - startedAt);
-    // A finished turn has no running tools, so nothing is worth keeping.
     useClaudeSessionStore.getState().pruneToolProgressFor(tabIdRef.current, new Set());
     useClaudeSessionStore.getState().clearPermissionChecks(tabIdRef.current);
   }, [turnStartedAt]);
@@ -1853,13 +1349,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     updateTab(tabIdRef.current, { promptStatus });
   }, [promptStatus, updateTab]);
 
-  // Mirror the running-subagent count onto the tab so the tab strip can say
-  // WHAT a background tab is waiting on. Since CLI >=2.1.232 an agent spawn
-  // is backgrounded by default: the launching turn ends seconds later and
-  // the session sits "working" with an empty transcript for minutes, which
-  // a bare spinner reports identically to Claude mid-sentence. Guarded by a
-  // last-value ref like the promptStatus mirror above — updateTab returns a
-  // new tab object every call, so an unguarded write is a render loop.
+  // Last-value guard: updateTab returns a new tab every call, so an unguarded write loops.
   const lastAgentCountRef = useRef<number | null>(null);
   useEffect(() => {
     if (lastAgentCountRef.current === activeSubagentCount) return;
@@ -1867,10 +1357,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     updateTab(tabIdRef.current, { activeAgents: activeSubagentCount });
   }, [activeSubagentCount, updateTab]);
 
-  // Mirror the "waiting on the human" state onto the tab so the TabManager
-  // can show a shield (permission) / question mark (AskUserQuestion). Same
-  // pending permission that drives usePublishTabStatus and the in-session
-  // permission card — one source of truth.
   const tabWaitingFor: TabWaitingFor = deriveWaitingFor(pendingPermission);
   const lastWaitingForRef = useRef<TabWaitingFor | undefined>(undefined);
   useEffect(() => {
@@ -1879,14 +1365,11 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     updateTab(tabIdRef.current, { waitingFor: tabWaitingFor });
   }, [tabWaitingFor, updateTab]);
 
-  // Publish this tab's busy/idle summary up to main on every change. The
-  // status popover and the install-gate both read from the aggregated list.
   usePublishTabStatus({
     tabId: tabIdRef.current,
     title: tabTitle,
     projectPath: projectPath ?? null,
-    // The GUID, not the renderer-local tab id: it is what the popover shows,
-    // what identifies this session to the daemon, and what reopening it needs.
+    // The GUID, not the renderer-local tab id.
     sessionId: claudeSessionId ?? null,
     sessionStarted: isSessionActive,
     isStarting: isSessionStarting,
@@ -1901,7 +1384,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     pendingPermission,
   });
 
-  // Prompt sending and queuing
   const { handleSendPrompt: sendPromptRaw, queuedPrompts, setQueuedPrompts, queuedPromptsRef } = useSendPrompt({
     projectPath,
     tabId: tabIdRef.current,
@@ -1918,13 +1400,9 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     setCurrentActivity,
     setSelectedModel,
     setMessages,
-    // Codex has no side_question: `/btw` stays an ordinary prompt there.
     onSideChat: agent === 'codex' ? undefined : routeToSideChat,
   });
 
-  // Wrap sendPrompt so that sending a new prompt always re-engages bottom-stickiness.
-  // If the user was scrolled up reading history and sends a new message, they expect
-  // the view to follow their new activity rather than leave them stranded.
   const handleSendPrompt = useCallback(
      
     (prompt: string, model: string, images?: string[], opts?: SendPromptOptions) => {
@@ -1934,23 +1412,15 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     [sendPromptRaw],
   );
 
-  // Run /compact from the context-pressure banner through handleSendPrompt so
-  // it inherits the existing queueing behavior.
   const handleCompact = useCallback(() => {
     void handleSendPrompt('/compact', selectedModel);
   }, [selectedModel, handleSendPrompt]);
 
-  // The composer's Recap button: the CLI's own /recap, through the same send
-  // path so it queues behind a running turn like anything typed.
   const handleRecap = useCallback(() => {
     void handleSendPrompt('/recap', selectedModel);
   }, [selectedModel, handleSendPrompt]);
 
-  // Stable resend callback. Without memoization, every render of this
-  // component handed every `StreamMessage` a fresh `onResend` function ref,
-  // which defeated `React.memo` and forced the inner `ReactMarkdown` →
-  // `SyntaxHighlighter` tree to rebuild — wiping any active text selection
-  // inside the inner code card.
+  // Stable: a fresh onResend per render defeats React.memo on every StreamMessage.
   const handleResend = useCallback(
     (text: string, images: string[] | undefined) =>
       handleSendPrompt(text, selectedModel, images),
@@ -1961,8 +1431,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     [handleResend],
   );
 
-  // Shared by the status-bar picker and the denial card. A refused switch
-  // rolls the picker back and says so — see sessionPermissionModeChange.ts.
   const permissionModeRef = useRef(permissionMode);
   permissionModeRef.current = permissionMode;
   const changePermissionMode = useCallback((mode: string) => {
@@ -1971,8 +1439,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
       hasLiveSession: !!persistentSessionRef.current,
       previous: permissionModeRef.current,
       api,
-      // A live switch (or its rollback) is the session's mode now, so it
-      // replaces the last daemon report.
       setPermissionMode: (m) => {
         if (livePermissionModeRef.current !== null) livePermissionModeRef.current = m;
         setPermissionMode(m);
@@ -1986,13 +1452,10 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     });
   }, [appendMessage]);
 
-  // What transcript cards may ask of this session (the permission-denied
-  // card today). Callbacks read refs so the value only changes with the
-  // fields a card displays — every StreamMessage is mounted at once, and a
-  // per-render value would re-render the ones that read it on every keystroke.
+  // Callbacks read refs so the value changes only with displayed fields; every StreamMessage is mounted at once.
   const [homeDir, setHomeDir] = useState('');
   useEffect(() => {
-    api.getHomeDirectory().then(setHomeDir).catch(() => { /* rules fall back to //absolute paths */ });
+    api.getHomeDirectory().then(setHomeDir).catch(() => { });
   }, []);
   const sessionActionRefs = useRef({ handleSendPrompt, selectedModel, changePermissionMode, configDir: '' });
   sessionActionRefs.current = {
@@ -2008,7 +1471,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     turnRunning: isLoading,
     sendPrompt: (text) => {
       const { handleSendPrompt: send, selectedModel: model } = sessionActionRefs.current;
-      // Already waiting in a queue held by Stop: clicking again means "now".
       if (queueHeldRef.current && !turnRunningRef.current) {
         const rest = queuedPromptsRef.current.filter(p => p.prompt !== text);
         queuedPromptsRef.current = rest;
@@ -2023,47 +1485,28 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
       rule,
     }),
     setPermissionMode: (mode) => sessionActionRefs.current.changePermissionMode(mode),
-    // queuedPromptsRef and setQueuedPrompts are a useRef and a useState
-    // setter inside useSendPrompt: stable, so listing them never recomputes.
   }), [projectPath, homeDir, permissionMode, isLoading, queuedPromptsRef, setQueuedPrompts]);
 
-  // Launch prompt ("open a session AND do this"). Ref-captured rather than
-  // listed as an auto-start dep: the effect below runs once per activation and
-  // resolves its promise well after this render, so it needs the *current*
-  // send path, not the one captured when it fired.
+  // Ref-captured: the auto-start promise resolves later and needs the current send path.
   const initialPromptRef = useRef(initialPrompt);
   const initialPromptSentRef = useRef(false);
   const fireInitialPromptRef = useRef<() => void>(() => {});
   fireInitialPromptRef.current = () => {
     const prompt = initialPromptRef.current;
     if (!prompt || initialPromptSentRef.current) return;
-    // Latched before the send so a re-render or a second activation can't
-    // double-send, and cleared from the tab so a restored tab doesn't either.
+    // Latch before sending and clear from the tab, or a re-render or restore double-sends.
     initialPromptSentRef.current = true;
     initialPromptRef.current = undefined;
     onInitialPromptSent?.();
     void handleSendPrompt(prompt, selectedModel);
   };
 
-  // Populate the late-bound entries on streamCtxRef now that the hooks
-  // that own them have run. handleJsonlLine reads these through the ref
-  // so it never needs to list them as deps.
   streamCtxRef.current.handleSendPrompt = handleSendPrompt;
   streamCtxRef.current.isMountedRef = isMountedRef;
   streamCtxRef.current.queuedPromptsRef = queuedPromptsRef;
   streamCtxRef.current.setQueuedPrompts = setQueuedPrompts as unknown as (next: unknown) => void;
 
-  // Auto-resume / auto-start. Three distinct cases:
-  //   1. Renderer reload (Cmd+R) while a session is running in the main
-  //      process — rebind to it so the in-flight CLI query keeps streaming
-  //      and prompts still reach the open subprocess. Tearing down a
-  //      healthy session here used to leave the new query unable to
-  //      receive input (spinner stuck, no output).
-  //   2. Cold tab restore from a previous app run — no live session in
-  //      main, so spawn a fresh resume from the persisted session id.
-  //   3. New session started from the project view's inline form — no
-  //      session id to resume from, just spawn a fresh one with the
-  //      pre-filled config the user already chose. Skips the second click.
+  // On renderer reload, rebind: tearing down a healthy session leaves the new query unable to receive input.
   useEffect(() => {
     const action = decideAutoStart({
       isActive,
@@ -2074,13 +1517,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     if (action === 'skip') return;
     if (action === 'rebind-or-resume' && session) {
       (async () => {
-        // `sessionRebind` is keyed by tabId, not session id. A reused tab
-        // (back to Projects, then open a *different* session) can still hold
-        // a live handle for the previous session; rebinding would reattach
-        // this tab's stream / context / claudeSessionId — and the cost pill —
-        // to the wrong session. Only rebind when the live session IS the one
-        // the user opened; otherwise tear down the stale handle and resume the
-        // selected session.
+        // sessionRebind is keyed by tabId: rebind only when the live session IS the one opened, or a reused tab attaches to the wrong session.
         const health = await api.sessionGetHealth(tabIdRef.current).catch(() => null);
         const target = decideRebindTarget({
           healthAlive: !!health?.alive,
@@ -2108,7 +1545,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     }
   }, [isActive]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Listen for elicitation requests from MCP servers
   useEffect(() => {
     const unlisten = window.electronAPI.onEvent(
       `elicitation-request:${tabIdRef.current}`,
@@ -2119,13 +1555,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     return () => { unlisten(); };
   }, []);
 
-  // Parallel Codex notification accumulator. Subscribes to the same
-  // `agent-output:` channel as the Claude path but only keeps payloads
-  // shaped like Codex notifications (`{ method, params }`). For Claude
-  // tabs this listener still runs but collects nothing (Claude payloads
-  // carry `type` instead of `method`), so the cost is one empty array
-  // per tab — negligible. Engaged only when `agent === 'codex'`; the
-  // listener is torn down on agent change to keep the state honest.
   useEffect(() => {
     if (agent !== 'codex') {
       setCodexMessages([]);
@@ -2155,9 +1584,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     return () => { unlisten(); };
   }, [agent, claudeSessionId]);
 
-  // Rate-limit snapshots for the active account: fetch initial state on
-  // resolution, then live-update from the main process's
-  // `rate-limits:updated` event whenever a CLI rate-limit event lands.
   const activeAccountName = accountResolution?.account.name ?? null;
   useEffect(() => {
     if (!activeAccountName) {
@@ -2187,11 +1613,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     };
   }, [activeAccountName]);
 
-  // Secondary account confirmation. Main emits this when the session's config
-  // dir turns out to be authenticated as somebody other than the account's
-  // recorded email — from the pre-flight `.claude.json` read at start, and
-  // again from the CLI's own `system:init` payload in rich mode. Purely
-  // informational; the session is already running.
   useEffect(() => {
     const unlisten = window.electronAPI.onEvent(
       `session-account-mismatch:${tabIdRef.current}`,
@@ -2203,35 +1624,24 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     return () => { unlisten(); };
   }, []);
 
-  // Once the session is confirmed to be running as the expected account, drop
-  // the banner. This is the "the expectation was wrong, not the session" case:
-  // the user corrected the email, nothing needs restarting, so the warning has
-  // stopped being true and shouldn't linger.
   useEffect(() => {
     if (sessionVerification?.status === 'verified' && accountMismatch) {
       setAccountMismatch(null);
     }
   }, [sessionVerification?.status, accountMismatch]);
 
-  // session-status events are now consumed by useSessionLifecycle, which
-  // exposes the resulting `sessionStatus` enum. Derived `isSessionStarting`
-  // / `isSessionActive` predicates above.
-
-  // Keep queuedPromptsRef in sync with state
   useEffect(() => {
     queuedPromptsRef.current = queuedPrompts;
   }, [queuedPrompts, queuedPromptsRef]);
 
-  // Write the ref as well as state: releasing the edit drains right after
-  // this, synchronously, and must send the new text, not the old.
+  // Write the ref too: the drain runs synchronously after this and must send the new text.
   const saveQueuedPromptEdit = (id: string, prompt: string) => {
     const next = queuedPromptsRef.current.map(p => (p.id === id ? { ...p, prompt } : p));
     queuedPromptsRef.current = next;
     setQueuedPrompts(next);
   };
 
-  // A turn that ended mid-edit skipped its drain (the head was held), so
-  // releasing the edit has to send it.
+  // A turn that ended mid-edit skipped its drain, so releasing must send.
   const handleQueuedPromptEditing = (id: string | null) => {
     editingPromptIdRef.current = id;
     if (id !== null) return;
@@ -2257,7 +1667,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     });
   };
 
-  // Out of a held queue, ahead of the rest, which stays held.
   const sendQueuedPromptNow = (id: string) => {
     const item = queuedPromptsRef.current.find(p => p.id === id);
     if (!item || turnRunningRef.current) return;
@@ -2267,36 +1676,24 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     fireAndLog('claude-code-session:send-prompt-now', handleSendPrompt)(item.prompt, item.model, item.images);
   };
 
-  // An emptied queue has nothing left to hold.
   useEffect(() => {
     if (queuedPrompts.length === 0 && queueHeldRef.current) setQueueHeld(false);
   }, [queuedPrompts, setQueueHeld]);
 
-  // Wave 2.3 — "cancel" is now a soft interrupt. The old behavior called
-  // api.stopSession() which fully tore down the CLI session, killing the
-  // Claude subprocess, losing conversation history, and forcing a restart
-  // on the next prompt. Now we call api.sessionInterrupt() which halts the
-  // current assistant turn but keeps the session alive so the user can
-  // continue typing. If interrupt fails (old CLI, bad state, subprocess
-  // crash), we fall back to the hard stop path to guarantee the UI unsticks.
+  // Soft interrupt keeps the session alive; fall back to stopSession only if it fails.
   const handleCancelExecution = async () => {
     if (!isLoading) return;
 
     const tid = tabIdRef.current;
 
     try {
-      // Flag so the stream listener suppresses the next CLI error-result
-      // message (the CLI emits is_error after interrupt and we don't want
-      // an "Execution Failed" card for a deliberate user cancel).
+      // Suppress the CLI's is_error result after a deliberate interrupt.
       userInterruptedRef.current = true;
 
       await api.sessionInterrupt(tid);
 
-      // Session stays alive — don't clean up listeners, don't unset
-      // persistentSessionRef. The CLI emits a result row for the interrupted
-      // turn, and the session closes its turn on it.
+      // Session stays alive: don't clean up listeners or unset persistentSessionRef.
       setError(null);
-      // Held, not discarded: what the user queued is still theirs to send.
       if (queuedPromptsRef.current.length > 0) setQueueHeld(true);
 
       const interruptMessage: JsonlNode = {
@@ -2315,9 +1712,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
       };
       setMessages((prev) => [...prev, interruptMessage]);
     } catch (err) {
-      // Interrupt failed. Fall back to the hard stopSession path so the UI
-      // at least unsticks, even if the session has to be restarted on the
-      // next prompt.
       console.error("sessionInterrupt failed, falling back to stopSession:", err);
 
       try {
@@ -2352,36 +1746,16 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     }
   };
 
-  // Clear the conversation: stop the current CLI session, reset all
-  // renderer-side state, then start a fresh session in the same tab. The
-  // old JSONL transcript stays on disk; this just begins a new session
-  // ID with no resume, mirroring what `/clear` does in the Claude Code
-  // CLI. Only safe to call when nothing is in flight.
-  /**
-   * Force-reconnect handler exposed via the inline icon in the status badge.
-   * Unlike `handleClear`, this preserves the message history — it just tears
-   * down stale renderer flags / listeners and either rebinds to a still-alive
-   * main-process session or spawns a fresh one (resuming from
-   * claudeSessionId when available).
-   */
   const handleReconnect = async () => {
     const tid = tabIdRef.current;
 
-    // Reset our local connected-flag so rebind actually attempts the IPC.
-    // (rebindPersistentSession short-circuits to true when the ref is true.)
+    // rebindPersistentSession short-circuits while the ref is true.
     persistentSessionRef.current = false;
 
-    // Try the cheap rebind first — if main still has a healthy handle for
-    // this tab (e.g. after a renderer hot-reload), we reattach without
-    // spawning a new CLI process. Previously this code stopped the session
-    // first, which guaranteed rebind would fail and the cold-resume path
-    // always ran — defeating the comment's "cheap rebind first" intent.
+    // Rebind before any stop: stopping first guarantees rebind fails.
     const rebound = await rebindPersistentSession().catch(() => false);
     if (rebound) return;
 
-    // Rebind failed — main has no live handle (or a zombie one). Tear
-    // down anything stale, reset renderer state, then cold-start, resuming
-    // from claudeSessionId when available so the message history continues.
     try { await api.stopSession(tid); } catch { /* best effort */ }
 
     unlistenRefs.current.forEach((u) => { u(); });
@@ -2398,14 +1772,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     }
   };
 
-  /**
-   * Restart this session's CLI process, resuming the conversation.
-   *
-   * Deliberately NOT `handleReconnect`: that tries a cheap rebind first, which
-   * reattaches to the same still-running process. The whole point here is that
-   * the running process holds credentials for the wrong account, so it must be
-   * torn down and respawned — a re-login can't reach an existing process.
-   */
+  // Not handleReconnect: a rebind reattaches the process holding the wrong account's credentials.
   const handleRestartSession = async (options?: { permissionMode?: string }) => {
     const tid = tabIdRef.current;
     setRestartingSession(true);
@@ -2418,7 +1785,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
 
       resetStatus({ sessionStatus: 'stopped', conversationStatus: null });
       setError(null);
-      // Clear the stale verdict; the fresh session re-reports its identity.
       setAccountMismatch(null);
       setSdkAccountInfo(null);
 
@@ -2431,7 +1797,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     }
   };
 
-  // A process that lost its sign-in never picks up a new one — see the hook.
+  // A process that lost its sign-in never picks up a new one.
   const sessionAuthFailure = useSessionAuthExpiry({
     messages,
     sessionStatus,
@@ -2450,18 +1816,15 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
       console.error('clear: stopSession failed:', err);
     }
 
-    // Tear down the stream listeners attached to the dead session.
     unlistenRefs.current.forEach((unlisten) => { unlisten(); });
     unlistenRefs.current = [];
 
-    // Session-state flags
     persistentSessionRef.current = false;
     resetStatus({ sessionStatus: 'stopped', conversationStatus: null });
     setError(null);
     setQueuedPrompts([]);
     setQueueHeld(false);
 
-    // Conversation state
     setMessages([]);
     setTotalTokens(0);
     setSessionCost(0);
@@ -2472,7 +1835,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     setExtractedSessionInfo(null);
     setAccountMismatch(null);
 
-    // Spin up a fresh session (no resumeId) so the user can keep typing.
     try {
       await startPersistentSession();
     } catch (err) {
@@ -2511,56 +1873,20 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     </SessionActionsProvider>
   );
 
-
-
-  // Fire a custom event so TabContent can revert the current tab from
-  // 'chat' back to 'projects'. When SessionList mutates a projects tab
-  // into a chat tab on session-click, there was no way to undo that
-  // mutation from within the chat view. This button is that way back.
-  //
-  // Also kicks off a fire-and-forget summary regen for the session
-  // we're navigating away from. Auto-on-close only fires when the CLI
-  // session is torn down (tab close); back-button keeps the CLI
-  // session alive but we still want the summary to reflect the work
-  // that just happened. Gated on the same `enabled && autoOnClose`
-  // pair the close hook in the daemon (session-close-work.ts) checks — the back-button is
-  // semantically "leaving the session," so the user's auto-on-close
-  // toggle controls it. The service's in-flight dedup map prevents
-  // double-spend if both back-button and tab-close fire for the same
-  // session.
-  // Touch: swipe left/right between tabs. Same events as Cmd+[ / ].
+  // Back keeps the CLI alive, so regen the summary here under the same enabled && autoOnClose gate; the service dedups against tab close.
   const swipeRef = useRef<HTMLDivElement>(null);
   const layoutMode = useLayoutMode();
   useSwipeTabs(swipeRef, layoutMode.touch);
 
   const handleBackToProject = () => {
     if (claudeSessionId && projectPath) {
-      // Anchor the JSONL lookup to this tab's resolved account, NOT to
-      // the default ~/.claude. The configDir is held at tab level via
-      // accountResolution and passed explicitly so the backend doesn't
-      // have to re-resolve and risk a mismatch.
+      // The tab's resolved configDir, never the default ~/.claude.
       const configDir = accountResolution?.account.config_dir ?? null;
-      // Fire-and-forget; the helper reads the two global toggles and
-      // skips the IPC when either is off, swallowing rejections.
       void maybeAutoGenerateSummaryOnLeave(claudeSessionId, projectPath, configDir);
     }
     window.dispatchEvent(new CustomEvent('back-to-project', { detail: { projectPath } }));
   };
 
-
-
-  /**
-   * Every notice this session can raise, as routed signals.
-   *
-   * This replaced a stack of five banners above the transcript. Each of them
-   * now lands on the widget it is about — the context meter, the MCP button,
-   * the account card — and only a genuine call to action reaches the
-   * AttentionSlot above the composer.
-   *
-   * Nothing is pushed here: `deriveSessionSignals` is a pure function of state
-   * this component already holds, which is why a session resumed over the
-   * remote protocol rebuilds its signals with no replay path of its own.
-   */
   const signals = useSessionSignals({
     tabId: tabIdRef.current,
     messages,
@@ -2576,17 +1902,11 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     mcpErrors: mcpServerErrors,
     usageLimitResetsAt,
     accountMismatch,
-    // Only when restarting would actually change the credentials in use. If the
-    // expectation was simply corrected, the running session is already right.
     accountRestartable: sessionVerification?.needsRestart === true,
     handlers: {
       onCompact: handleCompact,
-      // Supplied by the hook, which owns the per-tab offset.
       onSnoozeBoundary: () => {},
       onRaiseContextBudget: (tokens) => {
-        // "Raise limit" writes the shared budget, so it applies to every
-        // session. Snooze is the per-session escape hatch; these are
-        // deliberately different verbs for deliberately different scopes.
         logAndForget('claude-code-session:raise-context-budget', setContextPressure({ ...contextPressureSetting, mode: 'tokens', value: tokens }));
       },
       onRestartSession: () => { void handleRestartSession(); },
@@ -2597,17 +1917,10 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   const contextLevel = signals.stateFor('context.level');
   const sessionEvents = signals.eventsFor('session', POPOVER_EVENT_LIMIT);
   const sessionAction = signals.actionsFor('session')[0] ?? null;
-  // No `account` badge: that anchor has only an `action` emitter, and
-  // `unreadCount` counts events — so it rendered zero forever. It is the
-  // emitter that is missing, not the badge that was needed.
+  // No `account` badge: that anchor has no counting emitter, so it would show zero forever.
   const mcpUnread = signals.unreadFor('mcp');
   const mcpEvents = signals.eventsFor('mcp', POPOVER_EVENT_LIMIT);
 
-  // Three-state display badge (legacy) derived from the canonical
-  // SessionStatus enum + `sessionStarted` (has-the-user-ever-engaged).
-  // 5→3 collapse: 'starting' | 'started' (session) + 'idle' | 'running'
-  // (conversation) + null → 'starting' | 'active' | 'ended'. Renamed from
-  // `sessionStatus` to avoid colliding with the hook's canonical name.
   const displayStatus: 'starting' | 'active' | 'ended' | undefined =
     !sessionStarted
       ? undefined
@@ -2617,8 +1930,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
           ? 'starting'
           : 'ended';
 
-  // The config dir's current login — what Sign in / Sign out act on — not the
-  // session's own reported identity.
+  // The config dir's current login, not the session's reported identity.
   const accountSignedInEmail =
     identityLoaded && !identityError && identityVerdict &&
     identityVerdict.status !== "unknown-account"
@@ -2629,8 +1941,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
       ? () => { void handleRestartSession(); }
       : null;
 
-  // Once per session view, for both the account widget and the `account`
-  // readout — see useAccountUsage for why it cannot be one each.
+  // Once per session view, shared by widget and readout; see useAccountUsage.
   const accountUsage = useAccountUsage({
     accountName: accountResolution?.account.name ?? null,
     hasCost: accountResolution?.account.has_cost === true,
@@ -2640,23 +1951,13 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     sessionId: claudeSessionId,
   });
 
-  // The agents readout's per-row cost and context. Joined here rather than in
-  // `backgroundWork`, which is built before the cost watcher's hook runs.
   const subagentCost = accountUsage.subagentCost;
   const backgroundWithCost = useMemo<BackgroundWork>(
     () => ({ ...backgroundWork, subagentCost }),
     [backgroundWork, subagentCost],
   );
 
-  // Proactively pull the live context window once a session is active but we
-  // don't have it yet. Resuming a session loads history statically and never
-  // fetches usage — the stream-driven refresh only fires on init/result/
-  // compact_boundary — so an idle resumed chat-mode session would otherwise sit
-  // on the client-side fallback (wrong denominator, no category breakdown)
-  // until its next turn. The control request is now timeout-guarded (see
-  // control-request-registry.ts), so this can't hang; on a null/timed-out reply
-  // the gauge simply stays on the fallback. Re-runs only when the active flag
-  // flips or `contextUsage` clears, so it can't loop.
+  // Resumes never fetch usage, so pull once. Re-runs only on the active flag or contextUsage clearing, so it can't loop.
   useEffect(() => {
     if (displayStatus !== 'active' || contextUsage != null) return;
     const tabId = tabIdRef.current;
@@ -2665,12 +1966,10 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
       .then((usage) => {
         if (!cancelled && usage) streamCtxRef.current.setContextUsage(usage);
       })
-      .catch(() => { /* hang-safe; fallback gauge stays until the next turn */ });
+      .catch(() => { });
     return () => { cancelled = true; };
   }, [displayStatus, contextUsage]);
 
-  // Compute restart-button gating once so it can be passed to both the
-  // header (where the button lives) and any tooltip consumers.
   const clearButtonDisabled =
     !isSessionActive || isLoading || waitingForPermission || messages.length === 0;
   const clearButtonReason = !isSessionActive
@@ -2688,8 +1987,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     }
   };
 
-  // The chat status bar, below the header row or — while the header widgets
-  // are hidden — inside it, beside the back button and over the branch.
   const renderStatusBar = (inHeaderRow: boolean): React.JSX.Element => (
     <ChatStatusBar
       className={inHeaderRow ? "p-0 bg-transparent" : undefined}
@@ -2698,14 +1995,11 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
       cacheAnchorMs={cacheAnchorMs}
       cacheTtlMs={cacheTtlMs}
       title={sessionTitle}
-      // A rename rides the CLI's control channel, which only a live
-      // session has — see queries.ts liveEngine().
+      // Renaming needs the live session's control channel.
       canRename={isSessionActive}
       onRename={handleRenameSession}
       onSuggest={handleSuggestTitle}
       background={backgroundWithCost}
-      // Shown beside the account widget for now, so the two can be
-      // compared before one of them goes. Same inputs as the widget.
       account={
         accountResolution ? (
           <AccountStatusItem
@@ -2728,8 +2022,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
           />
         ) : undefined
       }
-      // Shown beside the session widget for now, so the two can be
-      // compared before one of them goes. Same inputs as the widget.
       session={
         <SessionStatusItem
           totalTokens={totalTokens}
@@ -2754,17 +2046,11 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
         <SessionControlPickers
           engine={agent}
           configDir={accountResolution?.account.config_dir}
-          // What runs says what "default" is only while the session is on
-          // default; pinned to Fable, it runs Fable and that is no default.
           activeDefaultModel={liveDefaultEvidence(selectedModel, liveDefaultModel)}
           defaultPermissionMode={accountResolution?.account.session_defaults?.permissionMode ?? null}
           catalogRefreshKey={catalogRefreshKey}
           model={selectedModel}
           setModel={(newModel) => {
-            // Updates selectedModel AND, if a session is running, pushes
-            // the switch to the CLI immediately via sessionSetModel(),
-            // then refreshes context usage so the header summary's live
-            // model signal tracks the switch (see sessionModelChange.ts).
             void changeSessionModel(newModel, {
               tabId: tabIdRef.current,
               hasLiveSession: !!persistentSessionRef.current,
@@ -2785,9 +2071,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
             if (persistentSessionRef.current) {
               const tid = tabIdRef.current;
               api.sessionSetEffort(tid, level as EffortLevel).then(() => {
-                // Drop a live transcript marker so the change is visible in
-                // scrollback. Effort never reaches the JSONL, so this is the
-                // only record — live-session only (not persisted).
+                // Effort never reaches the JSONL; this marker is its only record.
                 appendMessage({
                   kind: 'control-change',
                   control: 'effort',
@@ -2802,9 +2086,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
           }}
           permissionMode={permissionMode}
           setPermissionMode={changePermissionMode}
-          // The CLI makes Bypass reachable mid-session only for a process
-          // spawned in it. A live session that was not gets a restart,
-          // resuming the conversation, rather than a pick that would fail.
+          // The CLI allows mid-session Bypass only for a process spawned in it; restart instead.
           onRestartInBypass={
             agent === 'claude' && isSessionActive && launchPermissionMode !== 'bypassPermissions'
               ? () => {
@@ -2840,25 +2122,10 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     <TooltipProvider>
       <div ref={swipeRef} className={cn("flex flex-col h-full bg-background", className)}>
         <CaughtUpPill tabId={tabIdRef.current} />
-        {/* The header assembly: the resizable header row, then the chat status
-            bar, then ONE border and ONE resize handle closing the whole thing.
-            The border and handle used to sit on the header row itself, which
-            put them ABOVE the status bar and left it looking like a separate
-            strip hanging below the header rather than a field inside it.
-
-            `headerRef` still wraps only the resizable row, so the drag maths
-            is untouched: the status bar is a fixed-height sibling, so the
-            pointer delta the handle reports is still exactly the row's delta
-            even though the handle now sits below the bar. */}
+        {/* headerRef wraps only the resizable row; the status bar is fixed-height, so the handle's delta is the row's. */}
         <div
           className="relative shrink-0 border-b border-border/30 bg-muted transition-shadow duration-150"
-          // Inline, not a `border-*` utility. styles.css declares an unlayered
-          // `* { border-color: var(--color-border) }` that outranks every
-          // Tailwind border-color class app-wide — which is also why the
-          // `border-border/30` above has never actually rendered at 30%. An
-          // inline style is more specific than that `*` rule, so it is the one
-          // way to color this edge. The glow underneath it is a shadow for
-          // the same reason.
+          // Inline, not a border-* utility: the unlayered `* { border-color }` in styles.css outranks them. The glow is a shadow for the same reason.
           style={headerResizing ? {
             borderBottomColor: 'var(--color-ring)',
             boxShadow: '0 1px 6px -1px color-mix(in oklch, var(--color-ring) 55%, transparent)',
@@ -2870,8 +2137,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
             style={headerHeight != null ? { height: Math.max(headerHeight, headerMinHeight) } : undefined}
           >
             <div ref={backColRef} className="flex gap-1">
-              {/* Bar-sized beside New session in the trial layout; the
-                  full 48px square beside the widgets. */}
               <BackButton
                 label="Back to Project page"
                 onClick={handleBackToProject}
@@ -2886,10 +2151,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
               )}
             </div>
             <span aria-hidden="true" className="self-stretch w-px bg-foreground/30 shrink-0 mx-1" />
-            {/* The agent (Claude / Codex) is now rendered inside the
-                AccountBadge as the trailing brand mark. Standalone
-                AgentBadge removed; access to the account picker moves
-                to the AccountCard's existing details popover (future work). */}
             {SHOW_HEADER_WIDGETS && accountResolution && (
               <div className="relative flex">
               <AccountCard
@@ -2913,14 +2174,12 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
               </div>
             )}
             {SHOW_HEADER_WIDGETS ? <div ref={branchColRef}>{gitBar}</div> : (
-              // Top-aligned: the bar is the row's first line, the branch under it.
-              // Measured as a whole for the header's minimum height: both bars.
+              // Measured for the header's minimum height: both bars.
               <div ref={branchColRef} className="flex min-w-0 flex-1 flex-col items-start gap-1.5">
                 <div className="w-full">{renderStatusBar(true)}</div>
                 {gitBar}
               </div>
             )}
-            {/* mode and output-style controls have moved to the chat bar (see FloatingPromptInput below). */}
             {SHOW_HEADER_WIDGETS && <SessionCard
               className="ml-auto min-w-0"
               activitySignal={sessionActivity}
@@ -2928,9 +2187,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
               pendingAction={sessionAction}
               recentEvents={sessionEvents}
               onSignalsRead={() => { signals.markRead('session'); }}
-              // Permanent, not signal-driven: the boundary action only fires at
-              // 100% of the budget, so without this there is nothing to click
-              // through the whole amber band.
+              // Permanent: the boundary action fires only at 100% of the budget.
               onCompact={fireAndLog('claude-code-session:compact', handleCompact)}
               compactDisabled={isLoading || !isSessionActive}
               totalTokens={totalTokens}
@@ -2965,11 +2222,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
             onDoubleClick={handleHeaderResizeReset}
           />
         </div>
-        {/* The banner stack that used to live here — account mismatch, context
-            pressure, context jump, cache TTL, skipped MCP servers — is gone.
-            Each of those is now a signal routed to the widget it concerns, and
-            the one kind that still needs space (an action) renders once, in the
-            AttentionSlot above the composer. */}
         {shouldShowNewSessionPanel({ sessionStarted, hasTranscript: messages.length > 0 }) && (
           <div className="flex-1 flex items-center justify-center p-8">
             <NewSessionForm
@@ -2984,8 +2236,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
               setAgent={setAgent}
               agentPickerDisabled={isSessionStarting}
               onStart={() => {
-                // sessionStarted is derived from sessionStatus — startPersistentSession
-                // sets it to 'starting' synchronously, which flips sessionStarted true.
                 logAndForget('claude-code-session:start-persistent-session', startPersistentSession());
               }}
               onChangeAccount={() => { setShowAccountPicker(true); }}
@@ -3024,12 +2274,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
         <div className="flex-1 min-h-0 w-full flex flex-row">
         <div className="flex-1 min-h-0 min-w-0 flex flex-col relative">
 
-        {/* Main Content Area */}
         <div className="flex-1 min-h-0 overflow-hidden relative">
-          {/* Mounted HERE, inside the messages area: the panel overlays the
-              transcript and is bounded by it, which keeps the subagent bar
-              and the composer visible while it is open. Nothing pushes the
-              transcript aside. */}
           <SessionSidePanels
             open={sidePanel}
             onClose={() => { setSidePanel(null); }}
@@ -3079,7 +2324,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
                 <SessionContextPanel
                   plugins={sessionPlugins.plugins}
                   modStatus={modStatus}
-                  // The live answer once there is one; init's count until then.
                   mcpCount={sessionMcp.servers?.length ?? initMcpCount}
                   mcp={
                     <>
@@ -3089,9 +2333,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
                         watchUntil={sessionMcp.watchUntil}
                         configDir={accountResolution?.account.config_dir ?? null}
                       />
-                      {/* What the badge on the Session context button
-                          counts. Without it the badge's number would have
-                          no explanation anywhere. */}
                       <div className="px-2 pb-2">
                         <div className="px-1.5 py-1 text-[10px] uppercase tracking-wide text-muted-foreground">
                           Recent events
@@ -3106,10 +2347,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
               ),
             }}
           />
-          {/* The diff viewer covers the transcript rather than sharing it with
-              a side panel: a split before/after pane plus a file tree has no
-              useful reading width at 384px. The header and composer stay
-              visible, so the session is still reachable behind it. */}
           {projectPath && (
             <ProjectReposDialog projectPath={projectPath} open={reposDialogOpen} onOpenChange={setReposDialogOpen} />
           )}
@@ -3122,19 +2359,9 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
               onClose={() => { setDiffTarget(null); }}
             />
           )}
-          {/* The Session Inspector toggle used to float here at
-              `top-2 right-2`, attached to nothing and — once the chat status
-              bar arrived — sitting on top of it. It now opens from the top of
-              each transcript's own right-hand rail. */}
           <div className="h-full flex flex-col">
-            {/* The thinking bar that used to sit here is now the session
-                widget's activity pill ("thinking 12s"), which costs no
-                transcript height and keeps the elapsed clock visible while
-                scrolled anywhere. The token count moved to its tooltip. */}
             {messagesList}
             
-            {/* Loading an existing session's history draws the conversation's
-                shape; a new session has none, so it keeps the message. */}
             {historyLoading && messages.length === 0 && session && <TranscriptSkeleton className="px-4 pt-8 pb-4" />}
             {historyLoading && messages.length === 0 && !session && (
               <div className="flex items-center justify-center h-full">
@@ -3148,7 +2375,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
             )}
           </div>
 
-          {/* Queued Prompts Display — inside content area so bottom offsets are relative to scrollable region */}
           <AnimatePresence>
             {sessionStarted && queuedPrompts.length > 0 && (
               <motion.div
@@ -3174,7 +2400,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
 
         </div>
 
-        {/* Floating Prompt Input - Only after session started */}
         {sessionStarted && <ErrorBoundary>
           <ElicitationDialog
             request={elicitationRequest}
@@ -3195,12 +2420,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
 
           <div className="shrink-0 z-50">
             {pendingPermission && (
-              // The CLI gates the built-in `AskUserQuestion` tool through the
-              // same canUseTool / permission_request channel as Bash / Read /
-              // etc. — but its right UX is "show the question with selectable
-              // options", not "Allow / Deny". Render the dedicated card and
-              // forward answers via updatedInput on allow. Other tools still
-              // use the standard PermissionCard.
               pendingPermission.toolName === 'AskUserQuestion' ? (
                 <ModernQuestionCard
                   request={pendingPermission}
@@ -3230,10 +2449,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
               messages={messages}
               isLive={isSessionActive || isSessionStarting}
             />
-            {/* Directly above the composer, matching the TaskList header's row
-                height so the two read as one group. Renders nothing — not an
-                empty box — when the queue is empty. The usage-limit wait that used to have
-                its own banner here is now the activity pill's `limit · 2h`. */}
             <AttentionSlot queue={signals.queue} onDismiss={signals.dismiss} />
             <FloatingPromptInput
               ref={floatingPromptRef}
@@ -3249,9 +2464,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
               isActive={isActive}
               outputStyleToggle={
                 <div className="flex flex-col gap-0.5 w-full">
-                  {/* Label above the toggle, not beside it: side by side, the
-                      column had to be wide enough for both and the composer
-                      paid for it. */}
                   <HeaderLabel className="px-0.5">chat format</HeaderLabel>
                   <SessionViewToggle className="w-full" mode={viewMode} onChange={setViewMode} />
                   {agent !== 'codex' && (
@@ -3311,9 +2523,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
                     </motion.div>
                   </TooltipSimple>
                   <TooltipSimple content="Session context — mods, plugins, MCP servers, instructions" side="top">
-                    {/* `relative` hosts the unread badge. MCP servers the CLI
-                        skipped over a bad config are the only emitter on this
-                        anchor today; the panel's MCP section lists them. */}
+                    {/* `relative` hosts the unread badge. */}
                     <motion.div
                       className="relative"
                       whileTap={{ scale: 0.97 }}
@@ -3354,7 +2564,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
         </AnimatePresence>
       </div>
 
-      {/* Slash Commands Settings Dialog */}
       {showSlashCommandsSettings && (
         <Dialog open={showSlashCommandsSettings} onOpenChange={setShowSlashCommandsSettings}>
           <DialogContent className="max-w-4xl max-h-[80vh] overflow-hidden">

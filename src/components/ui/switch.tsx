@@ -3,22 +3,10 @@ import { cn } from "@/lib/utils";
 
 export interface SwitchProps
   extends React.InputHTMLAttributes<HTMLInputElement> {
-  /**
-   * Whether the switch is checked
-   */
   checked?: boolean;
-  /**
-   * Callback when the switch state changes
-   */
   onCheckedChange?: (checked: boolean) => void;
 }
 
-/**
- * Switch component for toggling boolean values
- * 
- * @example
- * <Switch checked={isEnabled} onCheckedChange={setIsEnabled} />
- */
 const Switch = React.forwardRef<HTMLInputElement, SwitchProps>(
   ({ className, checked, onCheckedChange, disabled, ...props }, ref) => {
     return (

@@ -6,11 +6,6 @@ import { getLanguage } from "@/components/claude/tools/shared";
 import type { AgentMessage } from "@/lib/api";
 import type { JSX } from 'react';
 
-/**
- * Normalized per-file change extracted from a Codex `item.apply_patch`
- * payload. `before`/`after` are always plain strings by the time we hand
- * them to `DiffViewer` — see `extractFileChanges` for the shape probing.
- */
 interface FileChange {
   path: string;
   before: string;
@@ -22,15 +17,7 @@ interface PatchFields {
   files: FileChange[];
 }
 
-/**
- * Coerce an unknown side of a per-file change into a string. Codex builds
- * have shipped `before`/`after` as either:
- *   - a plain string ("..."), or
- *   - an object with a `lines: string[]` array.
- *
- * Anything else (null, number, object without lines) renders as empty so
- * the diff viewer still gets a usable comparison surface.
- */
+// Codex has shipped each side as a string or as { lines: string[] }; anything else renders empty.
 function coerceSide(value: unknown): string {
   if (typeof value === "string") return value;
   if (value && typeof value === "object") {
@@ -44,20 +31,7 @@ function coerceSide(value: unknown): string {
   return "";
 }
 
-/**
- * Extracts fileChanges + reason from an `item.apply_patch` payload.
- *
- * Wire shape (Codex; varies):
- *   { method: "item.apply_patch", params: {
- *       fileChanges: { [path]: { before?, after? } } | Array<{ path, before?, after? }>,
- *       reason?: string,
- *       callId?: string,
- *   } }
- *
- * Defensive: missing/malformed params yield an empty file list rather
- * than throwing — a Codex protocol shape change shouldn't crash the
- * transcript.
- */
+// Malformed params yield no files rather than throwing: a Codex shape change must not crash the transcript.
 function extractPatch(payload: unknown): PatchFields {
   const empty: PatchFields = { reason: "", files: [] };
   if (!payload || typeof payload !== "object") return empty;
@@ -96,7 +70,6 @@ function extractPatch(payload: unknown): PatchFields {
 
 interface FileBlockProps {
   change: FileChange;
-  /** Default-expanded? Caller decides based on total file count. */
   defaultOpen: boolean;
 }
 
@@ -130,16 +103,6 @@ function FileBlock({ change, defaultOpen }: FileBlockProps): JSX.Element {
   );
 }
 
-/**
- * Renders a Codex `item.apply_patch` notification as an N-files header
- * with per-file collapsible diffs. Each file uses the shared `DiffViewer`
- * (lifted out of `EditWidget` in Task 18) so Codex patches and Claude
- * `Edit` tool calls share identical diff visuals.
- *
- * Default-collapse heuristic: files expand inline when N ≤ 3 (typical
- * single-file rewrite or small multi-file refactor) and collapse when
- * larger so a sweeping patch doesn't blow out the transcript on arrival.
- */
 export function ApplyPatchItem({ message }: { message: AgentMessage }): JSX.Element {
   const { reason, files } = extractPatch(message.payload);
   const defaultOpen = files.length <= 3;

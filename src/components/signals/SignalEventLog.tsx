@@ -5,22 +5,12 @@ import type { SessionSignal } from '@/lib/signals/types';
 export interface SignalEventLogProps {
   events: SessionSignal[];
   className?: string;
-  /** Jump to an event's transcript message. Omit and no row is clickable. */
   onSelect?: (messageUuid: string) => void;
 }
 
 const timeOf = (at: number) =>
   at > 0 ? new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
 
-/**
- * The anchor's recent events, newest first.
- *
- * Mono and tabular throughout: the whole value of this list is scanning a
- * column of deltas for the one that is out of scale, which proportional digits
- * defeat. `before → after` is rendered inline rather than on hover because the
- * popover is already the "tell me more" surface — hiding it behind a second
- * interaction would make it unreachable by keyboard.
- */
 export function SignalEventLog({ events, className, onSelect }: SignalEventLogProps) {
   if (events.length === 0) {
     return (
@@ -31,12 +21,7 @@ export function SignalEventLog({ events, className, onSelect }: SignalEventLogPr
   }
 
   return (
-    // Bounded, not truncated. The store already caps what it hands over
-    // (POPOVER_EVENT_LIMIT), but a session that runs for hours reaches that
-    // cap routinely and the list simply grew — pushing the model / effort /
-    // permission controls and the session id below the fold, which is where
-    // the popover stops being usable. ~9 rows visible, the rest a scroll
-    // away, so the popover has a fixed worst-case height.
+    // Bounded height: a long session fills POPOVER_EVENT_LIMIT and would push the popover's controls below the fold.
     <ul
       className={cn(
         'flex flex-col gap-0.5 max-h-[200px] overflow-y-auto overscroll-contain',
@@ -48,8 +33,6 @@ export function SignalEventLog({ events, className, onSelect }: SignalEventLogPr
           | { delta?: number; before?: number; after?: number; compacted?: boolean; isJump?: boolean }
           | undefined;
         const delta = typeof meta?.delta === 'number' ? meta.delta : undefined;
-        // Only events that came from a transcript message can jump; a cache
-        // TTL change or a skipped MCP server has nowhere to go.
         const target = onSelect && event.messageUuid ? event.messageUuid : null;
         const rowClass = cn(
           'flex w-full items-baseline gap-2 rounded-sm px-1 py-0.5 text-left text-[11px] font-mono tabular-nums',

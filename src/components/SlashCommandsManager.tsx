@@ -35,9 +35,6 @@ interface SlashCommandsManagerProps {
   projectPath?: string;
   className?: string;
   scopeFilter?: 'project' | 'user' | 'all';
-  /**
-   * Optional config directory for account-scoped slash command operations
-   */
   configDir?: string;
 }
 
@@ -77,7 +74,6 @@ const EXAMPLE_COMMANDS = [
   }
 ];
 
-// Get icon for command based on its properties
 const getCommandIcon = (command: SlashCommand) => {
   if (command.has_bash_commands) return Terminal;
   if (command.has_file_references) return FileCode;
@@ -87,10 +83,6 @@ const getCommandIcon = (command: SlashCommand) => {
   return Command;
 };
 
-/**
- * SlashCommandsManager component for managing custom slash commands
- * Provides a no-code interface for creating, editing, and deleting commands
- */
 export const SlashCommandsManager: React.FC<SlashCommandsManagerProps> = ({
   projectPath,
   className,
@@ -105,7 +97,6 @@ export const SlashCommandsManager: React.FC<SlashCommandsManagerProps> = ({
   const [selectedScope, setSelectedScope] = useState<'all' | 'project' | 'user'>(scopeFilter === 'all' ? 'all' : scopeFilter);
   const [expandedCommands, setExpandedCommands] = useState<Set<string>>(new Set());
   
-  // Edit dialog state
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editingCommand, setEditingCommand] = useState<SlashCommand | null>(null);
   const [commandForm, setCommandForm] = useState<CommandForm>({
@@ -117,7 +108,6 @@ export const SlashCommandsManager: React.FC<SlashCommandsManagerProps> = ({
     scope: 'user'
   });
 
-  // Delete confirmation dialog state
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [commandToDelete, setCommandToDelete] = useState<SlashCommand | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -136,7 +126,6 @@ export const SlashCommandsManager: React.FC<SlashCommandsManagerProps> = ({
     }
   }, [projectPath, configDir]);
 
-  // Load commands on mount or when projectPath/configDir changes
   useEffect(() => {
     logAndForget('slash-commands-manager:load-commands', loadCommands());
   }, [loadCommands]);
@@ -253,24 +242,19 @@ export const SlashCommandsManager: React.FC<SlashCommandsManagerProps> = ({
     }));
   };
 
-  // Filter commands
   const filteredCommands = commands.filter(cmd => {
-    // Hide default commands
     if (cmd.scope === 'default') {
       return false;
     }
 
-    // Apply scopeFilter if set to specific scope
     if (scopeFilter !== 'all' && cmd.scope !== scopeFilter) {
       return false;
     }
 
-    // Scope filter
     if (selectedScope !== 'all' && cmd.scope !== selectedScope) {
       return false;
     }
 
-    // Search filter
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       return (
@@ -284,7 +268,6 @@ export const SlashCommandsManager: React.FC<SlashCommandsManagerProps> = ({
     return true;
   });
 
-  // Group commands by namespace and scope
   const groupedCommands = filteredCommands.reduce<Record<string, SlashCommand[]>>((acc, cmd) => {
     const key = cmd.namespace 
       ? `${cmd.namespace} (${cmd.scope})` 
@@ -298,7 +281,6 @@ export const SlashCommandsManager: React.FC<SlashCommandsManagerProps> = ({
 
   return (
     <div className={cn("space-y-4", className)}>
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h3 className="text-lg font-semibold">
@@ -316,7 +298,6 @@ export const SlashCommandsManager: React.FC<SlashCommandsManagerProps> = ({
         </Button>
       </div>
 
-      {/* Filters */}
       <div className="flex items-center gap-4">
         <div className="flex-1">
           <div className="relative">
@@ -343,7 +324,6 @@ export const SlashCommandsManager: React.FC<SlashCommandsManagerProps> = ({
         )}
       </div>
 
-      {/* Error Message */}
       {error && (
         <div className="flex items-center gap-2 p-3 rounded-lg bg-destructive/10 text-destructive">
           <AlertCircle className="h-4 w-4" />
@@ -351,7 +331,6 @@ export const SlashCommandsManager: React.FC<SlashCommandsManagerProps> = ({
         </div>
       )}
 
-      {/* Commands List */}
       {loading ? (
         <div className="flex items-center justify-center py-8">
           <Spinner className="size-6 text-muted-foreground" />
@@ -500,7 +479,6 @@ export const SlashCommandsManager: React.FC<SlashCommandsManagerProps> = ({
         </div>
       )}
 
-      {/* Edit Dialog */}
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -510,7 +488,6 @@ export const SlashCommandsManager: React.FC<SlashCommandsManagerProps> = ({
           </DialogHeader>
 
           <div className="space-y-4 py-4">
-            {/* Scope */}
             <div className="space-y-2">
               <Label>Scope</Label>
               <Select 
@@ -547,7 +524,6 @@ export const SlashCommandsManager: React.FC<SlashCommandsManagerProps> = ({
               </p>
             </div>
 
-            {/* Name and Namespace */}
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Command Name*</Label>
@@ -568,7 +544,6 @@ export const SlashCommandsManager: React.FC<SlashCommandsManagerProps> = ({
               </div>
             </div>
 
-            {/* Description */}
             <div className="space-y-2">
               <Label>Description (Optional)</Label>
               <Input
@@ -578,7 +553,6 @@ export const SlashCommandsManager: React.FC<SlashCommandsManagerProps> = ({
               />
             </div>
 
-            {/* Content */}
             <div className="space-y-2">
               <Label>Command Content*</Label>
               <Textarea
@@ -593,7 +567,6 @@ export const SlashCommandsManager: React.FC<SlashCommandsManagerProps> = ({
               </p>
             </div>
 
-            {/* Allowed Tools */}
             <div className="space-y-2">
               <Label>Allowed Tools</Label>
               <div className="flex flex-wrap gap-2">
@@ -614,7 +587,6 @@ export const SlashCommandsManager: React.FC<SlashCommandsManagerProps> = ({
               </p>
             </div>
 
-            {/* Examples */}
             {!editingCommand && (
               <div className="space-y-2">
                 <Label>Examples</Label>
@@ -635,7 +607,6 @@ export const SlashCommandsManager: React.FC<SlashCommandsManagerProps> = ({
               </div>
             )}
 
-            {/* Preview */}
             {commandForm.name && (
               <div className="space-y-2">
                 <Label>Preview</Label>
@@ -675,7 +646,6 @@ export const SlashCommandsManager: React.FC<SlashCommandsManagerProps> = ({
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirmation Dialog */}
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>

@@ -22,32 +22,13 @@ import { api, type MCPServer } from "@/lib/api";
 import { fireAndLog } from "@/lib/fireAndLog";
 
 interface MCPServerListProps {
-  /**
-   * List of MCP servers to display
-   */
   servers: MCPServer[];
-  /**
-   * Whether the list is loading
-   */
   loading: boolean;
-  /**
-   * Callback when a server is removed
-   */
   onServerRemoved: (name: string) => void;
-  /**
-   * Callback to refresh the server list
-   */
   onRefresh: () => void;
-  /**
-   * Optional config directory for account-scoped MCP operations
-   */
   configDir?: string;
 }
 
-/**
- * Component for displaying a list of MCP servers
- * Shows servers grouped by scope with status indicators
- */
 export const MCPServerList: React.FC<MCPServerListProps> = ({
   servers,
   loading,
@@ -59,7 +40,6 @@ export const MCPServerList: React.FC<MCPServerListProps> = ({
   const [testingServer, setTestingServer] = useState<string | null>(null);
   const [expandedServers, setExpandedServers] = useState<Set<string>>(new Set());
   const [copiedServer, setCopiedServer] = useState<string | null>(null);
-  // Group servers by scope
   const serversByScope = servers.reduce<Record<string, MCPServer[]>>((acc, server) => {
     const scope = server.scope || "local";
     if (!acc[scope]) acc[scope] = [];
@@ -67,9 +47,6 @@ export const MCPServerList: React.FC<MCPServerListProps> = ({
     return acc;
   }, {});
 
-  /**
-   * Toggles expanded state for a server
-   */
   const toggleExpanded = (serverName: string) => {
     setExpandedServers(prev => {
       const next = new Set(prev);
@@ -82,9 +59,6 @@ export const MCPServerList: React.FC<MCPServerListProps> = ({
     });
   };
 
-  /**
-   * Copies command to clipboard
-   */
   const copyCommand = async (command: string, serverName: string) => {
     try {
       await navigator.clipboard.writeText(command);
@@ -95,9 +69,6 @@ export const MCPServerList: React.FC<MCPServerListProps> = ({
     }
   };
 
-  /**
-   * Removes a server
-   */
   const handleRemoveServer = async (name: string) => {
     try {
       setRemovingServer(name);
@@ -112,15 +83,11 @@ export const MCPServerList: React.FC<MCPServerListProps> = ({
     }
   };
 
-  /**
-   * Tests connection to a server
-   */
   const handleTestConnection = async (name: string) => {
     try {
       setTestingServer(name);
       const result = await api.mcpTestConnection(name, configDir);
 
-      // TODO: Show result in a toast or modal
       console.log("Test result:", result);
     } catch (error) {
       console.error("Failed to test connection:", error);
@@ -129,9 +96,6 @@ export const MCPServerList: React.FC<MCPServerListProps> = ({
     }
   };
 
-  /**
-   * Gets icon for transport type
-   */
   const getTransportIcon = (transport: string) => {
     switch (transport) {
       case "stdio":
@@ -143,9 +107,6 @@ export const MCPServerList: React.FC<MCPServerListProps> = ({
     }
   };
 
-  /**
-   * Gets icon for scope
-   */
   const getScopeIcon = (scope: string) => {
     switch (scope) {
       case "local":
@@ -159,9 +120,6 @@ export const MCPServerList: React.FC<MCPServerListProps> = ({
     }
   };
 
-  /**
-   * Gets scope display name
-   */
   const getScopeDisplayName = (scope: string) => {
     switch (scope) {
       case "local":
@@ -175,9 +133,6 @@ export const MCPServerList: React.FC<MCPServerListProps> = ({
     }
   };
 
-  /**
-   * Renders a single server item
-   */
   const renderServerItem = (server: MCPServer) => {
     const isExpanded = expandedServers.has(server.name);
     const isCopied = copiedServer === server.name;
@@ -268,7 +223,6 @@ export const MCPServerList: React.FC<MCPServerListProps> = ({
             </div>
           </div>
           
-          {/* Expanded Details */}
           {isExpanded && (
             <motion.div
               initial={{ height: 0, opacity: 0 }}
@@ -363,7 +317,6 @@ export const MCPServerList: React.FC<MCPServerListProps> = ({
 
   return (
     <div className="p-6">
-      {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
           <h3 className="text-base font-semibold">Configured Servers</h3>
@@ -382,7 +335,6 @@ export const MCPServerList: React.FC<MCPServerListProps> = ({
         </Button>
       </div>
 
-      {/* Server List */}
       {servers.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-12 text-center">
           <div className="p-4 bg-primary/10 rounded-full mb-4">

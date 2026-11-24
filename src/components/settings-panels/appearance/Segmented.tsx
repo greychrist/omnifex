@@ -1,6 +1,5 @@
 import { cn } from "@/lib/utils";
 
-/** A row of mutually exclusive buttons — a radio group, so it reads as one. */
 export function Segmented<T extends string | number>({
   label,
   value,

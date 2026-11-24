@@ -34,17 +34,14 @@ export function SessionPermissionsEditor({
   const [expandedLevels, setExpandedLevels] = useState<Set<string>>(new Set(["user", "project", "local"]));
   const [newRule, setNewRule] = useState<{ scope: string; behavior: "allow" | "deny"; value: string } | null>(null);
   const [saving, setSaving] = useState(false);
-  // The CLI's own view of the live session. `null` means it gave no answer —
-  // a CLI older than 2.1.269 — in which case
-  // the file-derived view above stands alone, exactly as it always did.
+  // `null` = no answer (CLI < 2.1.269); the file-derived view then stands alone.
   const [liveRules, setLiveRules] = useState<CliPermissionRulesState | null>(null);
 
   const loadPermissions = useCallback(async () => {
     try {
       const result = await api.sessionGetPermissions(tabId, projectPath, configDir);
       setLevels(result ?? []);
-      // Best-effort and deliberately not awaited into the failure path above:
-      // the file view is the contract, this only annotates it.
+      // Not awaited into the failure path: the file view is the contract, this only annotates it.
       try {
         setLiveRules(await api.sessionListPermissionRules(tabId));
       } catch {
@@ -134,13 +131,7 @@ export function SessionPermissionsEditor({
         </Button>
       </div>
 
-      {/*
-        What the settings files cannot tell us. The panel above is built by
-        reading user/project/local settings, which sees only `allow` and `deny`
-        from three of the CLI's eleven rule sources. This block is the live
-        session's answer, and only ever shows the difference — rendering the
-        whole rule set again would bury it.
-      */}
+      {/* Only the delta: the settings files see allow/deny from 3 of the CLI's 11 rule sources. */}
       {hasLiveDelta && (
         <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 space-y-2">
           <div className="flex items-center gap-2">
@@ -226,7 +217,6 @@ export function SessionPermissionsEditor({
 
             {isExpanded && (
               <div className="border-t border-border px-3 pb-3 pt-2 space-y-1">
-                {/* Allow rules */}
                 {level.allow.map((rule) => (
                   <div
                     key={`allow-${rule}`}
@@ -253,7 +243,6 @@ export function SessionPermissionsEditor({
                   </div>
                 ))}
 
-                {/* Deny rules */}
                 {level.deny.map((rule) => (
                   <div
                     key={`deny-${rule}`}
@@ -284,7 +273,6 @@ export function SessionPermissionsEditor({
                   <p className="text-xs text-muted-foreground py-1">No rules</p>
                 )}
 
-                {/* Add rule inline */}
                 {newRule?.scope === level.scope ? (
                   <>
                   <div className="flex items-center gap-1.5 pt-1">
@@ -315,9 +303,6 @@ export function SessionPermissionsEditor({
                       Cancel
                     </Button>
                   </div>
-                  {/* CLI ≥2.1.210 warns at startup for Write/NotebookEdit/Glob
-                      path rules (never matched by file permission checks);
-                      surface the same warning at authoring time. */}
                   {unmatchedFileRuleWarning(newRule.value) && (
                     <p className="text-[10px] text-amber-500 pt-1 font-mono">
                       {unmatchedFileRuleWarning(newRule.value)}

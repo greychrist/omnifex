@@ -1,6 +1,5 @@
 import type { ModernStepKind } from "@/lib/messageRenderingConfig";
 
-/** What each step kind is called here — and what `stepKind` files under it. */
 export const STEP_LABELS: Record<ModernStepKind, { label: string; hint: string }> = {
   thought: { label: "Thought", hint: "Claude thinking" },
   command: { label: "Command", hint: "Bash" },

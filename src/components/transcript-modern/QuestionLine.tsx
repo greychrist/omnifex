@@ -1,12 +1,3 @@
-/**
- * An answered AskUserQuestion in the Modern format, drawn as Modern's other
- * record lines are (RecordLine, RecapLine): a Trace line — the question
- * kind's icon, title and left rule in its own accent (purple unless
- * restyled in Appearance), "Question answered" — over the questions and their answers, open under the
- * left rule. Each question is underlined in the muted color; its answer is
- * in the foreground color, so the answer is what stands out. Parsing is askUserQuestionParse.ts, which reads the CLI's drifting
- * answer string.
- */
 import * as React from 'react';
 import { IconRenderer } from '@/components/settings-panels/appearance/iconMap';
 import { extractOtherText, parseAnswerPayload, parseQuestions } from '@/lib/askUserQuestionParse';
@@ -28,10 +19,7 @@ export function QuestionLine({ input, resultContent }: { input: unknown; resultC
         <TraceIcon style={{ color: kind.accentColor }}><IconRenderer name={kind.icon} /></TraceIcon>
         <TraceTitle style={{ color: kind.accentColor }}>{questions.length === 1 ? 'Question answered' : `${questions.length} questions answered`}</TraceTitle>
       </TraceLine>
-      {/* The rule inline: the unlayered `* { border-color }` reset in
-          styles.css beats any border-color utility. A 0.5px hairline (one
-          device pixel on Retina): solid purple at 1px read heavier than the
-          grey 1px rules beside it. */}
+      {/* Inline rule: the unlayered `* { border-color }` reset beats border-color utilities. */}
       <div data-question-body className="ml-[7px] min-w-0 space-y-2 pr-1 pl-4 text-sm leading-relaxed break-words" style={{ borderLeft: `0.5px solid ${kind.accentColor}` }}>
         {questions.map((q, i) => {
           const answer = payload?.answers?.[q.question];

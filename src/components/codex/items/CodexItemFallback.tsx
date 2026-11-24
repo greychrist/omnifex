@@ -3,22 +3,12 @@ import { AlertTriangle } from "lucide-react";
 import type { AgentMessage } from "@/lib/api";
 import type { JSX } from 'react';
 
-/**
- * Extract the `method` discriminator off a Codex notification envelope,
- * returning `"unknown"` when absent so the header always renders a
- * readable label.
- */
 function getMethod(payload: unknown): string {
   if (!payload || typeof payload !== "object") return "unknown";
   const method = (payload as { method?: unknown }).method;
   return typeof method === "string" ? method : "unknown";
 }
 
-/**
- * Best-effort JSON pretty-print for the raw payload pane. Failures
- * (circular refs, BigInt) fall back to `String(value)` so the fallback
- * never throws — its only job is to keep unknown payloads visible.
- */
 function formatPayload(payload: unknown): string {
   try {
     return JSON.stringify(payload, null, 2);
@@ -27,17 +17,7 @@ function formatPayload(payload: unknown): string {
   }
 }
 
-/**
- * Fallback widget for Codex notification methods the dispatch table
- * doesn't recognize. Renders a warning header with the unknown method
- * name plus the full raw payload in a collapsed `<details>` block, and
- * console-warns once per render so unfamiliar items show up in the Log
- * tab as the protocol drifts.
- *
- * Deliberately visible (not silent): a Codex CLI bump that adds a new
- * `item.*` method should surface as a yellow warning card in dev, not as
- * a missing transcript entry.
- */
+// Deliberately visible: a new Codex item method must surface as a warning card, not vanish.
 export function CodexItemFallback({ message }: { message: AgentMessage }): JSX.Element {
   const method = getMethod(message.payload);
   const warnedRef = useRef(false);

@@ -5,19 +5,6 @@ import { buildPathTree, filterPaths, type TreeNode } from "@/lib/pathTree";
 import type { GitChangedFile } from "@/lib/api";
 import { GIT_FILE_STATUS_STYLE } from "@/lib/gitStatusStyle";
 
-/**
- * Left-hand navigator for the diff overlay: the changed files as a foldable
- * tree, with a filter box.
- *
- * Owns the filter rather than taking filtered files, so the overlay does not
- * have to thread input state through itself just to pass it back down. The
- * tree is the only thing that cares.
- *
- * Fold state is keyed by directory path and defaults to open. A changed-file
- * tree is small by construction — it holds only what differs from HEAD — so
- * opening everything is the useful default, unlike a whole-repo browser.
- */
-
 export interface DiffFileTreeProps {
   files: GitChangedFile[];
   selectedPath: string | null;
@@ -40,8 +27,6 @@ interface RowProps {
 }
 
 const Row: React.FC<RowProps> = ({ node, depth, selectedPath, onSelect, collapsed, toggle }) => {
-  // 12px per level, plus room for the chevron column so file and directory
-  // labels at the same depth line up.
   const indent = { paddingLeft: `${depth * 12 + 6}px` };
 
   if (node.kind === "dir") {

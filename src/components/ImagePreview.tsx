@@ -5,36 +5,11 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { motion, AnimatePresence } from "framer-motion";
 
 interface ImagePreviewProps {
-  /**
-   * Array of image file paths to preview
-   */
   images: string[];
-  /**
-   * Callback to remove an image from the preview. Omit for a view-only row
-   * (no remove button), as the queued-prompts panel does.
-   */
   onRemove?: (index: number) => void;
-  /**
-   * Optional className for styling
-   */
   className?: string;
 }
 
-/**
- * ImagePreview component - Shows thumbnail previews of embedded images
- * 
- * Features:
- * - Shows up to 10 image thumbnails in a row
- * - Click on thumbnail to see full-size preview
- * - Hover to show remove button
- * - Smooth animations
- * 
- * @example
- * <ImagePreview 
- *   images={["/path/to/image1.png", "/path/to/image2.jpg"]}
- *   onRemove={(index) => console.log('Remove image at', index)}
- * />
- */
 export const ImagePreview: React.FC<ImagePreviewProps> = ({
   images,
   onRemove,
@@ -44,7 +19,6 @@ export const ImagePreview: React.FC<ImagePreviewProps> = ({
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [imageErrors, setImageErrors] = useState<Set<number>>(new Set());
 
-  // Limit to 10 images
   const displayImages = images.slice(0, 10);
 
   const handleImageError = (index: number) => {
@@ -56,13 +30,10 @@ export const ImagePreview: React.FC<ImagePreviewProps> = ({
     onRemove?.(index);
   };
 
-  // Helper to get the image source - handles both file paths and data URLs
   const getImageSrc = (imagePath: string): string => {
-    // If it's already a data URL or URL, return as-is
     if (imagePath.startsWith('data:') || imagePath.startsWith('http://') || imagePath.startsWith('https://')) {
       return imagePath;
     }
-    // Use custom protocol to bypass Electron's file:// security
     if (imagePath.startsWith('/')) {
       return `greychrist-file://${encodeURI(imagePath)}`;
     }
@@ -103,13 +74,11 @@ export const ImagePreview: React.FC<ImagePreviewProps> = ({
                   />
                 )}
                 
-                {/* Hover overlay with maximize icon */}
                 <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                   <Maximize2 className="h-4 w-4 text-white" />
                 </div>
               </div>
 
-              {/* Remove button */}
               <AnimatePresence>
                 {onRemove && hoveredIndex === index && (
                   <motion.button
@@ -135,7 +104,6 @@ export const ImagePreview: React.FC<ImagePreviewProps> = ({
         )}
       </div>
 
-      {/* Full-size preview dialog */}
       <Dialog 
         open={selectedImageIndex !== null} 
         onOpenChange={(open) => !open && setSelectedImageIndex(null)}
@@ -151,7 +119,6 @@ export const ImagePreview: React.FC<ImagePreviewProps> = ({
                 onError={() => { handleImageError(selectedImageIndex); }}
               />
               
-              {/* Navigation buttons if multiple images */}
               {displayImages.length > 1 && (
                 <>
                   <button

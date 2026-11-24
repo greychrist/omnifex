@@ -39,11 +39,6 @@ import type { JsonlNode } from "@/types/jsonl";
 import type { ViewMode } from "@/components/SessionViewToggle";
 
 
-/**
- * A stepper's icon: what it steps over, then which way. Both glyphs drop to
- * 12px so the pair still fits the 32px button, and both are decorative — the
- * Button already carries the accessible name.
- */
 const StepIcon: React.FC<{
   subject: React.ComponentType<{ className?: string }>;
   direction: React.ComponentType<{ className?: string }>;
@@ -55,76 +50,35 @@ const StepIcon: React.FC<{
 );
 
 export interface ClaudeTranscriptProps extends InspectorGutterButtonProps {
-  /** All stream messages for this tab. Rows get only what they read of it — see `rowLookups`. */
   messages: JsonlNode[];
-  /** Verbose vs. compact rendering mode. */
   viewMode: ViewMode;
-  /** Resolved account type, used by StreamMessage for account-specific UI. */
   accountType: string | undefined;
-  /** The session's account config dir, for links that open in its browser. */
   configDir?: string | null;
-  /** Stable resend callback (memoized in the shell). */
   onResend: (text: string, images: string[] | undefined) => void;
-  /** Called when a URL is detected inside a rendered message. */
-  /** True while a permission prompt is open — forces scroll-to-bottom so the prompt is visible. */
   waitingForPermission: boolean;
-  /** Whether the turn is in flight (mainTurn || tasks). Renders the typing-dots bubble. */
   outstandingWork: boolean;
-  /** True when the inflight streaming bubble is visible — suppresses the typing-dots row. */
   hasInflightAssistant: boolean;
-  /** Activity gerund / label; named while compaction runs. */
   currentActivity: string;
-  /** Context window for this session — scales the timeline rail's bars. */
   contextLimit: number;
-  /** Error string to render under the transcript, if any. */
   error: string | null;
-  /** Tab id forwarded to InflightAssistantBubble. */
   tabId: string;
-  /**
-   * Ref to the sentinel below the last message. The shell uses this from
-   * its session-history loader to snap to the bottom after a resume.
-   */
-  // React 19: `useRef<T>(null)` is typed `RefObject<T | null>`, so a prop
-  // that accepts a caller's ref has to admit null too.
   messagesEndRef: React.RefObject<HTMLDivElement | null>;
-  /**
-   * Mutable flag tracking whether the user is currently near the bottom of
-   * the transcript. The shell flips this true when sending a new prompt so
-   * the view re-engages stickiness even if the user had scrolled up.
-   */
   isNearBottomRef: React.RefObject<boolean>;
-  /**
-   * Scroll to the row holding this message uuid. `nonce` makes a second jump
-   * to the same message a new request rather than an unchanged prop.
-   */
   jumpTo?: { uuid: string; nonce: number } | null;
 }
 
-/** How close to the top a reader scrolling back gets before the next window loads. */
 const LOAD_EARLIER_PX = 800;
 
-/** How long a jumped-to row stays highlighted. */
 const JUMP_HIGHLIGHT_MS = 1600;
 
-/** The transcript uuid of a row's message, which a jump looks rows up by. */
 function messageUuidOf(message: JsonlNode): string | undefined {
   const uuid = (message as { raw?: { uuid?: unknown } }).raw?.uuid;
   return typeof uuid === "string" ? uuid : undefined;
 }
 
-/** Row wrapper styling: the ring a jump lights up and then lets fade. */
 const ROW_CLASS =
   "rounded-md transition-shadow duration-500 data-[jump-target]:ring-2 data-[jump-target]:ring-primary/60";
 
-/**
- * Claude transcript — the body of the chat. Renders all messages, the
- * streaming bubble, the typing-dots row, and an inline error card. Owns
- * the find-in-chat bar and the scroll machinery (stick-to-bottom logic,
- * the scroll/step navigation buttons, resize observer).
- *
- * Extracted from `ClaudeCodeSession` (now `AgentSession`) so the agent
- * shell can swap Claude vs. Codex transcripts without duplicating chrome.
- */
 function ClaudeTranscriptImpl({
   messages,
   viewMode: liveViewMode,
@@ -145,11 +99,8 @@ function ClaudeTranscriptImpl({
   jumpTo = null,
 }: ClaudeTranscriptProps): React.ReactElement {
   useRenderProfile('ClaudeTranscript');
-  // A tab's first paint of its history, and a chat-format switch, can mean
-  // thousands of rows. Both go through a transition: the skeleton commits at
-  // once, and the rows render in the background, interruptibly, instead of
-  // freezing the window with nothing on screen. Streamed messages are not
-  // deferred — each still renders exactly once.
+  // History loads and format switches render in a transition; streamed
+  // messages are not deferred.
   const [viewMode, setViewMode] = useState(liveViewMode);
   useEffect(() => {
     if (viewMode !== liveViewMode) startTransition(() => { setViewMode(liveViewMode); });
@@ -164,17 +115,15 @@ function ClaudeTranscriptImpl({
   const { contextTimelineEnabled, setContextTimelineEnabled, contextJump, contextPressure } =
     useSessionGauges();
 
-  // Built over the FULL message array and keyed by node identity, so hard
-  // filters can hide rows without shifting the series or corrupting deltas.
+  // Built over the FULL message array, keyed by node identity, so hard filters
+  // can hide rows without shifting the series.
   const timeline = useMemo(
     () =>
       contextTimelineEnabled
         ? buildContextTimeline(messages, {
             limit: contextLimit,
             jumpThresholdTokens: contextJump.thresholdTokens,
-            // Only the thresholds are borrowed. `contextPressure.enabled`
-            // gates the banner; the rail answers to its own toggle, so
-            // turning the banner off must not flatten the rail to green.
+            // Thresholds only: turning the banner off must not flatten the rail.
             pressure: contextPressure,
           })
         : null,
@@ -187,27 +136,15 @@ function ClaudeTranscriptImpl({
     ],
   );
 
-  // Filter out messages that shouldn't be displayed (folds repeats per each
-  // kind's collapse rule, honors the user's hard-filter toggles and the kinds
-  // set to "Never" in Appearance settings). Repeats fold first, over the
-  // unfiltered list, so a hidden message still ends a run.
-  // The same pipeline the golden test pins (transcriptItems.ts).
+  // Repeats fold over the unfiltered list, so a hidden message still ends a run.
   const renderConfig = savedRenderConfig;
   const displayableMessages = useMemo(
     () => displayableRecords(messages, renderConfig, viewMode),
     [messages, renderConfig, viewMode],
   );
 
-  /**
-   * The last row that will actually draw a rail — the tail of the transcript
-   * can be rows the timeline has no reading for, and those render an empty
-   * gutter spacer.
-   *
-   * Derived from `displayableMessages` for BOTH view modes, which works
-   * because compact mode only ever folds those same messages: a `single` item
-   * carries one of them, and a collapsed group reports its LAST one. So the
-   * final message with a point is the final row with a rail either way.
-   */
+  // Valid for both view modes: compact only folds displayableMessages, and a
+  // collapsed group reports its last one.
   const lastRailNode = useMemo(() => {
     if (!timeline) return undefined;
     for (let i = displayableMessages.length - 1; i >= 0; i--) {
@@ -217,15 +154,8 @@ function ClaudeTranscriptImpl({
     return undefined;
   }, [timeline, displayableMessages]);
 
-  /**
-   * Wraps a rendered row in the rail gutter when the timeline is on.
-   *
-   * The row spacing moves INSIDE the row (`pb-4` on the message column) rather
-   * than staying on the container as `space-y-4`. With the gap between rows,
-   * each rail segment stopped at its own row's edge and the series rendered as
-   * a dashed ladder; with the gap inside, the gutter cell stretches through it
-   * and consecutive rails meet. Messages keep the same visual separation.
-   */
+  // Row spacing lives inside the row (pb-4), not `space-y-4` on the container,
+  // so consecutive rails meet instead of rendering as a dashed ladder.
   const withTimeline = (node: JsonlNode | undefined, body: React.ReactNode) => {
     if (!timeline) return body;
     return (
@@ -240,18 +170,15 @@ function ClaudeTranscriptImpl({
     );
   };
 
-  // Modern format: the same displayable rows, grouped into a conversation.
-  // Unchanged items keep their previous object, and the row context reads
-  // lookups through a ref, so appending a record re-renders only the items it
-  // touched — not every row (see keepUnchangedItems).
+  // Unchanged items keep their previous object so an append re-renders only
+  // the items it touched (keepUnchangedItems).
   const prevModernItemsRef = useRef<ModernItem[]>([]);
   const modernItems = useMemo(() => {
     const next = keepUnchangedItems(prevModernItemsRef.current, groupRecords(displayableMessages, renderConfig, messages, viewMode));
     prevModernItemsRef.current = next;
     return next;
   }, [viewMode, displayableMessages, renderConfig, messages]);
-  // The answer that ends each turn gets a Done line. Unchanged footers keep
-  // their object, so a new record re-renders only the answer whose line moved.
+  // Unchanged footers keep their object for the same reason.
   const prevFootersRef = useRef<Map<string, TurnFooter>>(new Map());
   const turnFooters = useMemo(() => {
     const next = keepUnchangedFooters(prevFootersRef.current, modernTurnFooters(modernItems, messages, outstandingWork));
@@ -260,11 +187,7 @@ function ClaudeTranscriptImpl({
   }, [modernItems, messages, outstandingWork]);
   const rowCount = modernItems.length;
   const lastModernItem = modernItems.length > 0 ? modernItems[modernItems.length - 1] : undefined;
-  // The live run shows the turn's activity itself; otherwise it gets a line of
-  // its own below the items.
   const liveRunShown = outstandingWork && lastModernItem?.kind === 'work';
-  // Compaction is the one phase worth naming: it is long, and nothing else
-  // moves while it runs. It shows even under a live run (auto-compact).
   const compacting = currentActivity === COMPACTING_LABEL;
   const modernRowContext = useMemo<ModernRowContext>(
     () => ({ tabId, configDir, accountType, onResend }),
@@ -272,28 +195,19 @@ function ClaudeTranscriptImpl({
   );
 
   const parentRef = useRef<HTMLDivElement>(null);
-  // Find-in-chat state. Cmd/Ctrl+F opens the floating FindBar; `useFindInChat`
-  // walks `contentRef` (the messages list, not the scroll wrapper) and wraps
-  // matches in <mark data-find>. transcriptVersion bumps on each new message
-  // so highlights stay fresh while streaming. See FindBar.tsx +
-  // useFindInChat.ts + docs/superpowers/specs/2026-05-11-find-in-chat-design.md.
   const [findOpen, setFindOpen] = useState(false);
   const [findQuery, setFindQuery] = useState('');
 
-  // The tail window (see transcriptWindow.ts): only the newest rows mount.
-  // A pin is a row index in one format; another format's rows are other rows,
-  // so a pin made in it reads as no pin.
+  // A pin is a row index in one format; a pin made in another reads as no pin.
   const [pin, setPin] = useState<{ mode: ViewMode; start: number } | null>(null);
   const pinned = pin?.mode === viewMode ? pin.start : null;
-  // A jump's target row, so the window can reach back to it.
   const jumpUuid = jumpTo?.uuid;
   const jumpNonce = jumpTo?.nonce;
   const jumpRow = useMemo(() => {
     if (!jumpUuid) return -1;
     return modernItems.findIndex((item) => messageUuidOf(firstNodeOf(item)) === jumpUuid);
   }, [jumpUuid, modernItems]);
-  // Find walks the DOM, so it sees the whole transcript only if all of it is
-  // mounted while the bar is open.
+  // Find walks the DOM, so everything mounts while the bar is open.
   const start = findOpen
     ? 0
     : Math.min(windowStart(rowCount, pinned), jumpRow >= 0 ? jumpRow : rowCount);
@@ -301,14 +215,9 @@ function ClaudeTranscriptImpl({
   startRef.current = start;
   const pinRef = useRef(pinned);
   pinRef.current = pinned;
-  // Every render walks the mounted rows. Recorded as a bulk count: the rows
-  // in the window, whichever format grouped them.
   renderProfiler.recordRenders('TranscriptRow(displayable)', rowCount - start);
 
-  // Auto-scroll to bottom when new messages arrive, but only if already near the bottom.
-  // Always scroll when waiting for permission so the user sees the latest context.
-  // Uses `behavior: 'auto'` (instant) during streaming — smooth scroll lags behind
-  // rapid CLI message bursts and gets visually "stuck" mid-scroll.
+  // Instant scroll while streaming: smooth scroll lags CLI bursts and sticks.
   useEffect(() => {
     if (displayableMessages.length > 0 && (isNearBottomRef.current || waitingForPermission)) {
       requestAnimationFrame(() => {
@@ -317,18 +226,12 @@ function ClaudeTranscriptImpl({
     }
   }, [displayableMessages.length, waitingForPermission, isNearBottomRef, messagesEndRef]);
 
-  // Second-order auto-scroll: watch the message-list container for height changes
-  // that don't coincide with a new message arriving. Without this, rendering a
-  // large code block, a syntax-highlighted diff, or a lazy-loading image pushes
-  // content below the viewport AFTER the length-change effect already fired, and
-  // the chat looks "stuck" a few hundred pixels above the real bottom.
+  // Height changes after the length effect fired (code blocks, images) need
+  // their own follow, or the chat stops short of the bottom.
   const contentRef = useRef<HTMLDivElement>(null);
 
-  // The follow marker: a pale dot `followPx` above the end of the content.
-  // Following is `distanceFromBottom <= followPx`, so the dot is on screen
-  // exactly when the transcript should be following. Its `data-following`
-  // is written here, imperatively, because the decision lives in a ref and a
-  // re-render per scroll event would cost every mounted tab.
+  // `data-following` is written imperatively: a re-render per scroll event
+  // would cost every mounted tab.
   const followMarkerRef = useRef<HTMLDivElement>(null);
   const setFollowing = useCallback((following: boolean) => {
     isNearBottomRef.current = following;
@@ -336,13 +239,8 @@ function ClaudeTranscriptImpl({
       followMarkerRef.current.dataset.following = String(following);
     }
   }, [isNearBottomRef]);
-  // When the user last pressed a row's expander (see markUserInput).
   const lastToggleAtRef = useRef(Number.NEGATIVE_INFINITY);
 
-  // Cmd/Ctrl+F → open the find bar. Esc inside the bar closes it (handled by
-  // FindBar itself). Listener is scoped to window because focus may be on
-  // the FloatingPromptInput when the user wants to find — we want the
-  // shortcut to work regardless. Bound only while the session is mounted.
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'f') {
@@ -358,9 +256,6 @@ function ClaudeTranscriptImpl({
     containerRef: contentRef,
     query: findQuery,
     isOpen: findOpen,
-    // Messages array grows on every stream tick; using `.length` as the
-    // version keeps the highlight count fresh without needing a separate
-    // counter. A wholesale-reload would also bump it.
     transcriptVersion: messages.length,
   });
 
@@ -379,9 +274,7 @@ function ClaudeTranscriptImpl({
       });
       setFollowing(following);
       if (scroll) {
-        // Direct scrollTop assignment — cheaper than scrollIntoView and doesn't
-        // fight the smooth-scroll animation the length-change effect may have
-        // just kicked off in the same frame.
+        // Not scrollIntoView: it fights the smooth scroll the length effect started.
         scrollEl.scrollTop = scrollEl.scrollHeight;
       }
     });
@@ -389,12 +282,7 @@ function ClaudeTranscriptImpl({
     return () => { observer.disconnect(); };
   }, [waitingForPermission, isNearBottomRef, followPx, setFollowing]);
 
-  /**
-   * Where the last navigation button aimed, held until the smooth scroll has
-   * had time to land. Smooth scrolling is asynchronous, so a second press
-   * arrives while `scrollTop` still reads the old position — without this,
-   * pressing "next" three times quickly advances one row, not three.
-   */
+  // Smooth scroll is async; holds the last target so rapid presses advance.
   const pendingTargetRef = useRef<number | null>(null);
 
   const scrollToPosition = useCallback((top: number) => {
@@ -402,18 +290,12 @@ function ClaudeTranscriptImpl({
     if (!el) return;
     pendingTargetRef.current = top;
     el.scrollTo({ top, behavior: 'smooth' });
-    // Released on a timer rather than on arrival: grabbing the scrollbar
-    // mid-animation cancels the scroll, and a cancelled scroll fires no
-    // "arrived" event to hook. 400ms is past the browser's smooth-scroll
-    // duration, so a held-down button never outruns it.
+    // Timer, not arrival: a cancelled scroll fires no arrival event.
     window.setTimeout(() => {
       if (pendingTargetRef.current === top) pendingTargetRef.current = null;
     }, 400);
   }, []);
 
-  // Set when rows are about to mount above the window; read once they have.
-  // `toTop` scrolls to the very first row; `fromBottom` holds the reader's
-  // place, which otherwise slides down by the height of what was added.
   const pendingPrependRef = useRef<{ toTop: boolean; fromBottom: number } | null>(null);
   const growWindow = useCallback((nextStart: number, toTop: boolean) => {
     const el = parentRef.current;
@@ -425,10 +307,8 @@ function ClaudeTranscriptImpl({
     const el = parentRef.current;
     if (!pending || !el) return;
     pendingPrependRef.current = null;
-    // Both are set, not animated. WebKit anchors scrolling: as rows mount
-    // above the view it moves scrollTop to keep the visible rows still, which
-    // cancelled a smooth scroll to the top and left the reader at the bottom.
-    // A set after layout lands where it says.
+    // Set, not animated: WebKit scroll anchoring cancels a smooth scroll as
+    // rows mount above.
     el.scrollTop = pending.toTop ? 0 : el.scrollHeight - pending.fromBottom;
   }, [start]);
   const showEarlier = useCallback(() => {
@@ -436,8 +316,7 @@ function ClaudeTranscriptImpl({
   }, [growWindow]);
 
   const scrollToTop = useCallback(() => {
-    // Stop following first: from the bottom, mounting every row grows the
-    // content, and a following transcript pins itself to the new bottom.
+    // Stop following first, or mounting rows pins the view to the new bottom.
     setFollowing(false);
     if (startRef.current > 0) growWindow(0, true);
     else scrollToPosition(0);
@@ -448,19 +327,10 @@ function ClaudeTranscriptImpl({
   const scrollToBottom = useCallback(() => {
     const el = parentRef.current;
     if (!el) return;
-    // Clamped rather than raw scrollHeight: the browser clamps the scroll
-    // itself, but the pending target is compared against real positions.
+    // Clamped: the pending target is compared against real positions.
     scrollToPosition(Math.max(0, el.scrollHeight - el.clientHeight));
   }, [scrollToPosition]);
 
-  /**
-   * Row tops relative to the scroll container's content, in document order.
-   *
-   * Measured from the DOM instead of tracked alongside the message array:
-   * hard filters and compact-mode grouping both change which nodes become
-   * rows, and every row is variable-height, so an index-keyed model would
-   * need the same measurement anyway.
-   */
   const rowOffsets = useCallback((selector: string): number[] => {
     const scrollEl = parentRef.current;
     const contentEl = contentRef.current;
@@ -471,10 +341,6 @@ function ClaudeTranscriptImpl({
     );
   }, []);
 
-  /**
-   * Both button pairs share this: the only difference between stepping
-   * messages and stepping prompts is which rows supply the offsets.
-   */
   const step = useCallback(
     (direction: StepDirection, selector: string) => {
       const el = parentRef.current;
@@ -489,9 +355,7 @@ function ClaudeTranscriptImpl({
     [rowOffsets, scrollToPosition],
   );
 
-  // A jump from outside (the session popover's Recent events). The highlight
-  // is a DOM attribute rather than state: setting state here would re-render
-  // every row of an unvirtualised transcript to light up one of them.
+  // Highlight is a DOM attribute, not state: state would re-render every row.
   useEffect(() => {
     if (!jumpUuid) return;
     const scrollEl = parentRef.current;
@@ -508,8 +372,7 @@ function ClaudeTranscriptImpl({
       window.clearTimeout(timer);
       row.removeAttribute("data-jump-target");
     };
-    // `start`: a target outside the window is found once the window has
-    // reached back to it.
+    // `start`: an out-of-window target is found once the window reaches it.
   }, [jumpUuid, jumpNonce, isNearBottomRef, scrollToPosition, start]);
 
   const stepPrev = useCallback(() => { step('prev', '[data-transcript-step]'); }, [step]);
@@ -523,17 +386,12 @@ function ClaudeTranscriptImpl({
   );
 
 
-  // When the user last touched the transcript, and whether a pointer is held
-  // (a scrollbar drag is one pointerdown and then however long the drag
-  // takes). Only a scroll near one of these may stop following — see
-  // autoScrollFollow. Bound on the wrapper, so the find bar and the gutter's
-  // step buttons count too; the prompt box sits outside it and does not.
+  // Only a scroll near user input may stop following (autoScrollFollow).
   const lastUserInputAtRef = useRef(Number.NEGATIVE_INFINITY);
   const pointerHeldRef = useRef(false);
   const markUserInput = useCallback((e: React.SyntheticEvent) => {
     lastUserInputAtRef.current = performance.now();
-    // A press on a row's expander: the height change it causes is the
-    // user's, and must not scroll (see afterContentResize).
+    // The expander's height change is the user's and must not scroll.
     if (e.target instanceof Element && e.target.closest('[aria-expanded]')) {
       lastToggleAtRef.current = lastUserInputAtRef.current;
     }
@@ -555,8 +413,6 @@ function ClaudeTranscriptImpl({
     const el = parentRef.current;
     if (!el) return;
     const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    // The distance is user-tunable in Settings → General (see
-    // AutoScrollContext / autoScrollFollow).
     const following = nextFollowing({
       following: isNearBottomRef.current,
       distanceFromBottom,
@@ -567,18 +423,13 @@ function ClaudeTranscriptImpl({
     });
     setFollowing(following);
     // Reading back: hold the window's top so streamed records do not unmount
-    // the rows on screen. Back at the tail: let go, and the rows above drop
-    // back to one window (the resize keeps the view at the bottom).
+    // the rows on screen.
     if (!following && pinRef.current === null) setPin({ mode: viewMode, start: startRef.current });
     else if (following && pinRef.current !== null) setPin(null);
-    // Nearing the top while reading back brings the next window in before
-    // the reader reaches the edge. Never while following: a short view is
-    // near its top and its bottom at once.
+    // Never while following: a short view is near its top and bottom at once.
     if (!following && startRef.current > 0 && el.scrollTop < LOAD_EARLIER_PX) showEarlier();
   }, [isNearBottomRef, followPx, setFollowing, viewMode, showEarlier]);
 
-  // Streaming answer — renders null when no in-flight slot is set. Streamed
-  // in the answer's own style, so it does not change look when its record lands.
   const liveRows = <ModernLiveAnswer tabId={tabId} />;
 
   return (
@@ -586,8 +437,6 @@ function ClaudeTranscriptImpl({
     <div
       className={cn(
         "flex-1 min-h-0 py-2 bg-muted/30 relative",
-        // With the rail on, the left margin is the rail's: the scroller
-        // reaches into it (see data-transcript-frame below).
         timeline ? "pr-10" : "px-10",
       )}
       onWheel={markUserInput}
@@ -607,20 +456,12 @@ function ClaudeTranscriptImpl({
         onClose={() => { setFindOpen(false); setFindQuery(''); }}
       />
     )}
-    {/* Top of the left gutter it controls, level with the frame's top edge
-        (the container's py-2) — the scroll buttons on the right are
-        unrelated chrome. */}
     <div data-timeline-toggle-slot className="absolute left-1 top-2 z-10">
       <ContextTimelineToggle
         active={contextTimelineEnabled}
         onToggle={() => { logAndForget('claude-transcript:context-timeline-toggle', setContextTimelineEnabled(!contextTimelineEnabled)); }}
       />
     </div>
-    {/* Each stepper is a subject glyph plus a direction glyph, because six
-        buttons stacked in a 32px column are otherwise four near-identical
-        up/down arrows you have to hover to tell apart: a chat bubble steps
-        one message, a person steps one user prompt. The two jump-to-end
-        buttons stay bare double chevrons — they have no subject. */}
     <SessionGutter
       top={
         <InspectorGutterButton
@@ -640,9 +481,6 @@ function ClaudeTranscriptImpl({
           <ChevronsUp className="h-3.5 w-3.5" />
         </Button>
       </TooltipSimple>
-      {/* Each step pair is one joined control, so the column reads as top,
-          two pairs, bottom — no separators needed between them. Both pairs
-          point with the same chevrons; the subject glyph says which is which. */}
       <GutterButtonGroup label="Step by message">
         <TooltipSimple content="Previous message" side="left">
           <Button
@@ -668,9 +506,7 @@ function ClaudeTranscriptImpl({
         </TooltipSimple>
       </GutterButtonGroup>
       <GutterButtonGroup label="Step by prompt">
-        {/* Wrapped in spans: a disabled Button swallows the pointer events the
-            tooltip trigger needs, so the tooltip would vanish exactly when the
-            reason for the disabled state is worth explaining. */}
+        {/* Spans: a disabled Button swallows the pointer events the tooltip needs. */}
         <TooltipSimple content="Previous prompt" side="left">
           <span>
             <Button
@@ -713,10 +549,6 @@ function ClaudeTranscriptImpl({
       </TooltipSimple>
     </SessionGutter>
     <div className="relative h-full">
-    {/* The chat frame, drawn behind the scroller rather than being it. The
-        scroller spans the left margin too, so the context rail scrolls with
-        its rows while sitting outside the frame, in the gutter. Inset 1px so
-        rows scrolling past never paint over the frame's own edge. */}
     <div
       aria-hidden="true"
       data-transcript-frame
@@ -737,23 +569,16 @@ function ClaudeTranscriptImpl({
         contain: 'paint',
       }}
     >
-      {/* No `space-y-4` while the rail is on — the spacing lives inside each
-          row instead, so the rail can run through it unbroken. */}
+      {/* No `space-y-4` while the rail is on, so the rail runs unbroken. */}
       <div
         ref={contentRef}
         className={cn(
           "relative w-full pt-8 pb-4",
-          // With the rail on, the gutter cell starts each row at the left
-          // edge and the row's body carries the inset.
           timeline ? "pr-4" : "px-4",
           "modern-format",
           !timeline && "space-y-4",
         )}
       >
-          {/* data-transcript-step / -prompt are the anchors the prev/next and
-              last-prompt buttons measure. Marked on the row wrapper rather
-              than counted in an array so they follow whatever the filters and
-              the view mode actually rendered. */}
           {hasEarlier && !rendering && withTimeline(
             undefined,
             <div className="flex justify-center">
@@ -768,8 +593,6 @@ function ClaudeTranscriptImpl({
             </div>,
           )}
           {rendering
-            // In a row like any other: with the rail on, the row's gutter is
-            // what keeps it inside the chat frame.
             ? withTimeline(undefined, <TranscriptSkeleton />)
             : modernItems.slice(start).map((item, j) => {
                 const i = start + j;
@@ -798,22 +621,16 @@ function ClaudeTranscriptImpl({
                 );
               })}
 
-          {/* The live rows render nothing most of the time, so they are not
-              timeline rows (a row's spacing would leave a gap). With the rail
-              on they take its inset — gutter plus the row's own — so they stay
-              inside the chat frame. Unwrapped otherwise: an empty wrapper
-              would take a space-y gap of its own. */}
+          {/* Unwrapped when the rail is off: an empty wrapper would take a space-y gap. */}
           {timeline
             ? <div data-live-inset className="pl-18">{liveRows}</div>
             : liveRows}
 
-          {/* The running turn's activity when no live run shows it. */}
           {!rendering && outstandingWork && !hasInflightAssistant && !waitingForPermission && (!liveRunShown || compacting) && withTimeline(
             undefined,
             <LiveActivity tabId={tabId} phase={compacting ? currentActivity : null} />,
           )}
 
-          {/* Error indicator */}
           {error && (
             <motion.div
               initial={{ opacity: 0, y: 8 }}
@@ -827,16 +644,14 @@ function ClaudeTranscriptImpl({
 
           <div ref={messagesEndRef} />
 
-          {/* Last child, so it never shifts the row indexes anything counts.
-              Centred on the threshold line; hollow once following is off. */}
+          {/* Last child, so it never shifts the row indexes anything counts. */}
           <div
             ref={followMarkerRef}
             aria-hidden="true"
             data-autoscroll-marker
             data-following="true"
             className="pointer-events-none absolute right-0.5 h-1.5 w-1.5 translate-y-1/2 rounded-full text-muted-foreground/40 bg-current data-[following=false]:bg-transparent"
-            // Outline via currentColor: styles.css overrides every
-            // border-color utility and strips the ring classes.
+            // styles.css overrides border-color utilities and strips rings.
             style={{ bottom: followPx, boxShadow: 'inset 0 0 0 1px currentColor' }}
           />
       </div>
@@ -848,21 +663,7 @@ function ClaudeTranscriptImpl({
 }
 
 /**
- * Memoised because the transcript is the most expensive thing in the app and
- * the cheapest thing to skip.
- *
- * Every tab stays mounted — TabContent hides inactive panels with a CSS class
- * rather than unmounting them — so a change to `activeTabId` re-renders every
- * panel in the app. Measured in packaged 0.4.133, one tab click cost ~1435
- * renders in ~110ms, 1419 of them transcript rows belonging to sessions the
- * user was not even looking at. `isActive` is not a prop here, so none of that
- * work could ever change a pixel of this subtree.
- *
- * The guard rail this needs: every prop must stay referentially stable across
- * a parent re-render, or memo silently does nothing. `onResendStable` is the
- * standing example — a bare arrow there re-rendered every transcript row in
- * every open tab. (`onLinkDetected` was the same trap, and was ref-captured
- * for it; the prop is gone now that the preview pane it fed was deleted.)
- * See ClaudeTranscript.memo.test.tsx, which fails if that regresses.
+ * Every tab stays mounted, so every prop must stay referentially stable or
+ * memo does nothing (ClaudeTranscript.memo.test.tsx).
  */
 export const ClaudeTranscript = React.memo(ClaudeTranscriptImpl);

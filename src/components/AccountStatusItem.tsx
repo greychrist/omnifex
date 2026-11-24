@@ -16,25 +16,8 @@ import { UsageDetailPopover } from "./claude-code-session/UsageDetailPopover";
 import type { AccountUsage } from "@/hooks/useAccountUsage";
 import { loginExpiryColor } from "@/lib/loginExpiry";
 
-/**
- * The account widget as a status-bar readout:
- * `[icon] account Personal: max [shield] | usage [clock] 42% [calendar] 18%`
- * (the clock pair only on an account that still has a 5-hour window).
- *
- * Two buttons, two popovers, as the widget has: the name opens the account
- * details (`useAccountDetailsPopover`, the widget's own body) and the usage
- * opens `UsageDetailPopover`. Lives alongside the widget for now, so the two
- * can be compared before one of them goes.
- *
- * The icon, label and name wear the account's color, as the badge does —
- * text only, not its chip, at the bar's weight.
- */
-
 export interface AccountStatusItemProps extends AccountDetailsInputs {
-  /** Cost-based accounts show dollars; the rest show the 5-hour and weekly
-   *  windows. */
   hasCost?: boolean;
-  /** `/usage` and computed cost, owned by AgentSession — see useAccountUsage. */
   usage: AccountUsage;
   fiveHourRateLimit?: RateLimitSnapshot | null;
   sevenDayRateLimit?: RateLimitSnapshot | null;
@@ -58,7 +41,6 @@ export function AccountStatusItem({
   const icon = getIcon(accountName);
   const Icon = (icon && ICON_MAP[icon]) || User;
   const shield = accountShield(verification?.status, sessionAuthFailure !== null);
-  // Marked only when near or past the end; the popover always has the date.
   const expiry = details.loginExpiry?.alert ? details.loginExpiry : null;
   const expiryLabel = expiry
     ? expiry.level === "expired" ? "stored sign-in expired" : `sign-in ends ${expiry.relative}`
@@ -104,7 +86,6 @@ export function AccountStatusItem({
                 className={cn(
                   "h-3.5 w-3.5",
                   loginExpiryColor(expiry.level),
-                  // Red only pulses, as the bar's other readouts do.
                   expiry.level !== "warning" && "animate-pulse",
                 )}
                 strokeWidth={2.4}
@@ -115,7 +96,6 @@ export function AccountStatusItem({
         content={details.content}
       />
       {details.signInModal}
-      {/* Two readouts, divided as the bar divides its others. */}
       <InlineDivider data-testid="account-usage-divider" />
       <UsageDetailPopover
         open={usageOpen}
@@ -138,8 +118,6 @@ export function AccountStatusItem({
 
 const USAGE_BUTTON = "flex items-center gap-1 rounded hover:bg-muted/60";
 
-/** Names the readout, as "account" labels the name beside it: "usage" for a
- *  subscription's allowance, "cost" for dollars billed per token. */
 function UsageLabel({ text }: { text: "usage" | "cost" }): React.JSX.Element {
   return <ReadoutLabel data-testid="usage-label">{text}</ReadoutLabel>;
 }
@@ -148,7 +126,6 @@ function pctOf(snapshot: RateLimitSnapshot | null): number | null {
   return snapshot?.utilization == null ? null : Math.max(0, Math.min(100, snapshot.utilization));
 }
 
-/** One window's icon and percentage, colored by its own severity. */
 function WindowPct({
   snapshot,
   Icon,
@@ -173,10 +150,6 @@ function WindowPct({
   );
 }
 
-/** The 5-hour and weekly windows — `/usage`'s current session and current
- *  week. One button: both open the same popover. An account with no 5-hour
- *  window (Max, since 2026-10-31) shows the week alone; the week is always
- *  drawn, as a dash until its first snapshot. */
 function RateLimitReadout({
   fiveHour,
   sevenDay,
@@ -194,7 +167,6 @@ function RateLimitReadout({
       type="button"
       aria-label={fiveHour ? "usage, current session and week" : "usage, current week"}
       title={fiveHour ? `${describe("Current session (5h)", fiveHour)}\n${week}` : week}
-      // Wider than the icon-to-value gap, so each pair reads as one window.
       className={cn(USAGE_BUTTON, "gap-2")}
     >
       <UsageLabel text="usage" />
@@ -204,7 +176,6 @@ function RateLimitReadout({
   );
 }
 
-/** Dollars this session has cost so far, for accounts billed per token. */
 function CostReadout({
   cost,
   loading,
@@ -221,7 +192,6 @@ function CostReadout({
     >
       <UsageLabel text="cost" />
       <DollarSign className="h-3.5 w-3.5" />
-      {/* The icon carries the $, as on the cost widget. */}
       <span data-testid="account-item-usage">
         {cost ? `${cost.estimated ? "~" : ""}${formatCost(cost.totalUsd).slice(1)}` : "—"}
       </span>

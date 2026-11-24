@@ -5,15 +5,8 @@ import { BrandIcon } from "@/components/shared/BrandIcon";
 import type { AgentKind } from "@/lib/api";
 
 export interface AgentBadgeProps {
-  /** Which engine drives the current session — drives icon, label, tooltip. */
   agent: AgentKind;
-  /**
-   * Optional click handler. When provided, the badge renders as a `<button>`
-   * (used for Claude tabs to open the account picker). When omitted, it
-   * renders as a non-interactive `<span>` (Codex tabs — informational only).
-   */
   onClick?: () => void;
-  /** Disables the click target. Ignored when `onClick` is absent. */
   disabled?: boolean;
   className?: string;
 }
@@ -23,11 +16,6 @@ const AGENT_LABELS: Record<AgentKind, string> = {
   codex: "OpenAI Codex",
 };
 
-/**
- * Minimal agent indicator in the session header — just the brand mark, no
- * surrounding card or "agent" label. Hovering shows the engine name; click
- * opens the account picker (Claude tabs only).
- */
 export const AgentBadge: React.FC<AgentBadgeProps> = ({
   agent,
   onClick,

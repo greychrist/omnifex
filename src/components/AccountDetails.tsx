@@ -11,41 +11,16 @@ import { ClaudeSignInModal } from "./ClaudeSignInModal";
 import { useLoginExpiry } from "@/hooks/useLoginExpiry";
 import { formatLoginExpiryDate, loginExpiryColor, type LoginExpiryState } from "@/lib/loginExpiry";
 
-/**
- * The account popover: identity, sign in / out, the CLI-reported account,
- * the config dir and how it was matched. Opened from the account widget's
- * badge and from the status bar's `account` readout — one body, so the two
- * cannot disagree.
- */
-
 export interface AccountDetailsInputs {
   accountName: string;
   agent?: AgentKind | null;
-  /**
-   * Resolved account identity verification. Supplied by AgentSession rather
-   * than fetched here so the popover and the header banner can never make
-   * contradictory claims about the same session.
-   */
+  /** Supplied by the caller, not fetched here, so the popover and the header banner cannot disagree. */
   verification?: SessionVerification | null;
-  /**
-   * Who is signed in to `configDir` right now, from its `.claude.json`.
-   * `undefined` = not known yet (or the read failed), `null` = nobody. Drives
-   * Sign in vs Re-authenticate / Sign out, independent of `verification`,
-   * which only exists for accounts with an expected email.
-   */
+  /** `undefined` = not known yet, `null` = nobody. */
   signedInEmail?: string | null;
-  /**
-   * This session's CLI process has lost its sign-in (`sessionAuthFailure`).
-   * Independent of `signedInEmail`: the config dir's login can look fine while
-   * the running process, which never re-reads its credentials, cannot work.
-   */
+  /** The config dir's login can look fine while the running process, which never re-reads credentials, cannot work. */
   sessionAuthFailure?: SessionAuthFailure | null;
-  /** Force a fresh identity check. */
   onRecheck?: () => void;
-  /**
-   * Supplied only when a restart changes something: the running process holds
-   * the wrong credentials, or has lost its sign-in.
-   */
   onRestart?: (() => void) | null;
   restarting?: boolean;
   configDir: string;
@@ -54,10 +29,6 @@ export interface AccountDetailsInputs {
   sdkAccount?: SessionAccountInfo | null;
 }
 
-// The backend emits 'override' | 'path_rule' | 'on_disk'; the renderer also
-// synthesizes 'manual_override' when the user picks an account mid-session.
-// The old fallback read "default", which both mislabelled a plain 'override'
-// and named a concept that does not exist — there is no default account.
 function matchLabelFor(matchType: string): string {
   return matchType === "path_rule"
     ? "path rule"
@@ -68,10 +39,7 @@ function matchLabelFor(matchType: string): string {
     : matchType;
 }
 
-/**
- * Popover content. Mounted only while the popover is open, so an armed
- * Sign out and any sign-out error reset when it closes.
- */
+// Mounted only while open, so an armed Sign out and its error reset on close.
 function AccountDetails({
   verification,
   signedInEmail,
@@ -91,8 +59,7 @@ function AccountDetails({
   onSignIn: () => void;
   loginExpiry: LoginExpiryState | null;
 }): React.JSX.Element {
-  // Sign out is two clicks: it cuts off every session on this account, not
-  // just this one.
+  // Two clicks: signing out cuts off every session on this account.
   const [signOutArmed, setSignOutArmed] = React.useState(false);
   const [signingOut, setSigningOut] = React.useState(false);
   const [authError, setAuthError] = React.useState<string | null>(null);
@@ -150,9 +117,7 @@ function AccountDetails({
           )}
         </div>
       )}
-      {/* Account identity. Lives in the popover rather than on the
-          shield itself: the badge is already a popover trigger, and a
-          button inside a button is invalid markup. */}
+      {/* Here, not on the shield: the badge is a popover trigger, and a button inside a button is invalid. */}
       {verification && (
         <div className="flex flex-col gap-1.5">
           <div className="text-[10px] uppercase tracking-wider text-muted-foreground flex items-center gap-1">
@@ -207,9 +172,6 @@ function AccountDetails({
               <RefreshCw className="w-3 h-3 mr-1" />
               Re-check
             </Button>
-            {/* Absent unless the running process genuinely holds the
-                wrong credentials — a corrected expectation needs no
-                restart. */}
             {onRestart && !sessionAuthFailure && (
               <Button
                 variant="outline"
@@ -226,12 +188,7 @@ function AccountDetails({
           </div>
         </div>
       )}
-      {/* Outside the identity block on purpose: an account with no
-          expected email has no verification to show, and signing
-          in or out does not depend on that check. */}
       {canManageAuth && !verification && signedInEmail !== undefined && (
-        // The identity block above already shows Detected when there
-        // is a verification; this covers accounts with no expected email.
         <div className="flex justify-between gap-2 text-xs">
           <span className="text-foreground/50">Signed in as</span>
           {signedInEmail === null ? (
@@ -242,8 +199,6 @@ function AccountDetails({
         </div>
       )}
       {canManageAuth && loginExpiry && (
-        // Always the date, not only near the end: the warning on the bar is
-        // only worth trusting if the date is checkable here.
         <div className="flex justify-between gap-2 text-xs">
           <span className="text-foreground/50">
             {loginExpiry.level === "expired" ? "Sign-in ended" : "Sign-in ends"}
@@ -360,21 +315,16 @@ export interface AccountDetailsPopover {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   content: React.ReactNode;
-  /** The sign-in dialog. Rendered beside the popover, not inside it: the
-   *  popover closes as the dialog opens. */
+  /** Rendered beside the popover, not inside it: the popover closes as the dialog opens. */
   signInModal: React.ReactNode;
-  /** When the stored sign-in ends; null when unknown or Codex. */
   loginExpiry: LoginExpiryState | null;
 }
 
-/** State and parts for one account popover and its sign-in dialog. */
 export function useAccountDetailsPopover(inputs: AccountDetailsInputs): AccountDetailsPopover {
   const [open, setOpen] = React.useState(false);
   const [signInOpen, setSignInOpen] = React.useState(false);
   const { accountName, agent, configDir, onRecheck } = inputs;
 
-  // Claude only — Codex signs in from Account Settings. Any client: the
-  // daemon runs the sign-in, and the iPad finishes it by pasting a code.
   const canManageAuth = agent !== "codex";
   const expiry = useLoginExpiry(canManageAuth ? configDir || null : null);
   const { refresh: refreshExpiry } = expiry;
@@ -394,8 +344,7 @@ export function useAccountDetailsPopover(inputs: AccountDetailsInputs): AccountD
         loginExpiry={expiry.state}
         canManageAuth={canManageAuth}
         onSignIn={() => {
-          // Close the popover first: the dialog would otherwise count a
-          // click in it as outside the popover.
+          // Close the popover first, or the dialog counts a click in it as outside the popover.
           setOpen(false);
           setSignInOpen(true);
         }}

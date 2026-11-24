@@ -6,22 +6,14 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
 
-/** A nullable color: native picker plus hex field, with a reset to unset.
- *  Used across Settings › Chats. */
 export const ColorField: React.FC<{
   name: string;
-  /** What an unset value means here — the theme's look, or automatic text. */
   unsetLabel?: string;
   value: string | null;
   onChange: (next: string | null) => void;
-  /** With both, an Enabled checkbox beside the title; off disables the
-   *  inputs (the caller decides what off draws). */
   enabled?: boolean;
   onEnabledChange?: (next: boolean) => void;
-  /** The visible title; `${name} color` unless a heading already says so. */
   title?: string;
-  /** The color an unset value draws with, when it is known: shown in the
-   *  swatch and the hex field's placeholder so unset never reads as gray. */
   fallback?: string;
 }> = ({ name, unsetLabel = "theme default", value, onChange, enabled, onEnabledChange, title = `${name} color`, fallback }) => {
   const hasToggle = enabled !== undefined && onEnabledChange !== undefined;

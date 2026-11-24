@@ -13,31 +13,16 @@ interface DiagramOverlayProps {
   onClose: () => void;
 }
 
-/** A pointer that travelled further than this between down and click was a pan. */
 const CLICK_SLOP_PX = 4;
 
-/** Fit never enlarges a drawing beyond this. */
 const FIT_MAX_SCALE = 2;
 
-/**
- * Top of the viewer: the bottom edge of the app titlebar. The titlebar is
- * z-[200] across the top of every window (and the web client), so a viewer
- * pinned to inset-0 had its header — title, controls, close — underneath it.
- * Starting below it keeps the titlebar usable too, the way the diff viewer
- * leaves the session header in view.
- */
+/** Starts below the z-[200] titlebar, which otherwise covers the viewer's header. */
 function titlebarBottom(): number {
   return document.querySelector("[data-app-drag-region]")?.getBoundingClientRect().bottom ?? 0;
 }
 
-/**
- * Centres the drawing at `scale`, or at the fit scale when omitted. Centring
- * is computed here rather than with the library's centerView, which placed
- * the content off-centre once a transform was already applied. Fit never
- * enlarges past FIT_MAX_SCALE — three boxes filling a 27-inch screen is not
- * "fit". offsetWidth/Height are the untransformed size, so this is stable
- * whatever the current zoom.
- */
+/** Centers itself: the library's centerView misplaces content once a transform is applied. */
 function centerAt(
   zoom: ReactZoomPanPinchRef | null,
   host: HTMLElement | null,
@@ -59,19 +44,6 @@ function centerAt(
   );
 }
 
-/**
- * Full-window diagram viewer: pan (drag), zoom (wheel, pinch, buttons), fit,
- * 100%, the export toolbar, Escape to close.
- *
- * Portalled to <body> rather than mounted beside the transcript the way the
- * diff overlay is, so it works wherever markdown renders — sessions, the
- * side chat, Brain notes — without each host wiring it up.
- *
- * Flowcharts also get click-to-highlight: a node, its edges and its
- * neighbours stay lit and the rest dims. The graph is read back out of
- * mermaid's SVG (see svgGraph.ts); when it cannot be, clicks do nothing and
- * the viewer is pan and zoom only.
- */
 export const DiagramOverlay: React.FC<DiagramOverlayProps> = ({ svg, source, getLightSvg, onClose }) => {
   const hostRef = useRef<HTMLDivElement>(null);
   const zoomRef = useRef<ReactZoomPanPinchRef>(null);
@@ -79,7 +51,6 @@ export const DiagramOverlay: React.FC<DiagramOverlayProps> = ({ svg, source, get
   const selectedRef = useRef<string | null>(null);
   const downAtRef = useRef<{ x: number; y: number } | null>(null);
   const [canHighlight, setCanHighlight] = useState(false);
-  // Read once on open: the titlebar's height does not change under a modal.
   const [top] = useState(titlebarBottom);
 
   useEffect(() => {
@@ -88,8 +59,6 @@ export const DiagramOverlay: React.FC<DiagramOverlayProps> = ({ svg, source, get
     return () => { window.removeEventListener("keydown", onKey); };
   }, [onClose]);
 
-  // Give the drawing its natural size: inline it is squeezed to the column
-  // (`width="100%"` + max-width); here zoom does the scaling.
   useLayoutEffect(() => {
     const el = hostRef.current?.querySelector("svg");
     if (!el) return;
@@ -99,10 +68,8 @@ export const DiagramOverlay: React.FC<DiagramOverlayProps> = ({ svg, source, get
     el.style.maxWidth = "none";
     graphRef.current = readFlowchartGraph(el);
     setCanHighlight(graphRef.current !== null);
-    // Open fitted, and instantly: an animated transform issued this early was
-    // intermittently overridden by the library's own initial transform and
-    // the drawing opened at 1× in the corner. (Its onInit callback fired
-    // before the ref was attached, so this runs from here instead.)
+    // Instant: an animated transform this early lost to the library's initial
+    // one. Its onInit fires before the ref attaches, so this runs here.
     const frame = requestAnimationFrame(() => { centerAt(zoomRef.current, hostRef.current, undefined, 0); });
     return () => { cancelAnimationFrame(frame); };
   }, [svg]);

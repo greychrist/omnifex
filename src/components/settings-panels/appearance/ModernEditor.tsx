@@ -30,11 +30,8 @@ const ANSWER_STYLE_OPTIONS: { value: ModernAnswerStyle; label: string }[] = [
 ];
 
 
-/** A card's saturation or brightness, as a percent of its built-in — the
- *  color's hue stays put. A reset back to 100% once it is moved. */
 function PercentField({ name, label, value, disabled = false, onChange }: {
   name: string;
-  /** "Saturation" or "Brightness". */
   label: string;
   value: number;
   disabled?: boolean;
@@ -81,8 +78,6 @@ function PercentField({ name, label, value, disabled = false, onChange }: {
 
 const BUILT_IN_PERCENT = 100;
 
-/** A soft drop shadow under the card, tinted its own color. Disabled while
- *  the card's color is off — it would shadow an invisible card. */
 function ShadowField({ name, checked, disabled = false, onChange }: { name: string; checked: boolean; disabled?: boolean; onChange: (next: boolean) => void }) {
   const id = `modern-shadow-${name.toLowerCase().replace(/\s+/g, "-")}`;
   return (
@@ -93,25 +88,18 @@ function ShadowField({ name, checked, disabled = false, onChange }: { name: stri
   );
 }
 
-/** A section's title: a size up from the rows' own labels, so it reads as
- *  the heading over them rather than one more row. */
 function SectionHeading({ id, children }: { id?: string; children: React.ReactNode }) {
   return <h4 id={id} className="text-body font-semibold">{children}</h4>;
 }
 
 
-/** The line between two sections. `bg-border`, not a border: the unlayered
- *  `* { border-color }` reset in styles.css beats border-color utilities. */
+/** `bg-border`, not a border: the unlayered `* { border-color }` reset in styles.css beats border-color utilities. */
 function SectionRule() {
   return <div role="separator" className="h-px w-full bg-border" />;
 }
 
-// ─── sample ─────────────────────────────────────────────────────────────────
-
 const node = (uuid: string) => ({ kind: "assistant", raw: { uuid } }) as unknown as JsonlNode;
 
-/** One made-up turn: a prompt, a run of work with a thought and a failure,
- *  and an answer — enough to show every setting on this tab. */
 const SAMPLE_ITEMS: ModernItem[] = [
   { kind: "prompt", key: "p", node: node("p"), text: "Why does the composer jump while I type?" },
   {
@@ -136,10 +124,8 @@ const SAMPLE_ITEMS: ModernItem[] = [
 
 const SAMPLE_CTX: ModernRowContext = { tabId: "settings-modern-sample" };
 
-/** The sample's answer ends its turn, so it carries the Done line. */
 const SAMPLE_FOOTER: TurnFooter = { ms: 252_000, steps: 4, usd: 0.38 };
 
-/** The real Modern components, drawn against the draft config. */
 const ModernSample: React.FC<{ config: MessageRenderingConfig }> = ({ config }) => {
   const vars = Object.fromEntries(
     Object.entries(modernCssVars(config.modern)).filter(([, v]) => v !== null),
@@ -159,8 +145,6 @@ const ModernSample: React.FC<{ config: MessageRenderingConfig }> = ({ config }) 
     </MessageRenderingPreviewProvider>
   );
 };
-
-// ─── editor ─────────────────────────────────────────────────────────────────
 
 interface ModernEditorProps {
   config: MessageRenderingConfig;
@@ -223,8 +207,6 @@ export const ModernEditor: React.FC<ModernEditorProps> = ({ config, onChange }) 
               enabled={m.promptColorEnabled}
               onEnabledChange={(v) => { patch({ promptColorEnabled: v }); }}
             />
-            {/* Line: a bar down the prompt's left edge in this color. The
-                card's fill strength and shadow have nothing to act on. */}
             <Segmented
               label="User prompt style"
               value={m.promptStyle}
@@ -245,8 +227,6 @@ export const ModernEditor: React.FC<ModernEditorProps> = ({ config, onChange }) 
               enabled={m.answerCardColorEnabled}
               onEnabledChange={(v) => { patch({ answerCardColorEnabled: v }); }}
             />
-            {/* Line: a bar down the answer's left edge in this color. The
-                card's fill strength and shadow have nothing to act on. */}
             <Segmented
               label="Answer style"
               value={m.answerStyle}

@@ -1,21 +1,8 @@
 import { useEffect, useState } from 'react';
 import type { BrainRunPhase } from '@/lib/api';
 
-/**
- * How a run in flight is described, shared by the two places that draw one.
- *
- * The titlebar pill and the Brain tab's banner report the same `BrainRun`, and
- * every time they have described it differently the two have disagreed on
- * screen — one reading "0 of 2" while the other read "1 of 2", one dropping the
- * counter that the other kept. The wording lives here so that cannot recur.
- */
+// One wording for the titlebar pill and the Brain tab banner: describing a run in two places made them disagree on screen.
 
-/**
- * What each stage is called on screen.
- *
- * Present-participle throughout, so it reads as a continuation of the verb
- * already in the line: "Indexing Personal vault · 1 of 1 · extracting".
- */
 export const PHASE_LABEL: Record<BrainRunPhase, string> = {
   preparing: 'preparing',
   distilling: 'reading',
@@ -24,13 +11,7 @@ export const PHASE_LABEL: Record<BrainRunPhase, string> = {
   curating: 'curating',
 };
 
-/**
- * Elapsed as `m:ss`, growing to `h:mm:ss` only once it has to.
- *
- * Clamped at zero: `startedAt` is stamped by the main process and read against
- * the renderer's clock, so a frame that arrives a few ms "early" must not
- * render a negative timer.
- */
+// Clamped at zero: `startedAt` is the daemon's clock, read against the renderer's.
 export function formatElapsed(ms: number): string {
   const total = Math.max(0, Math.floor(ms / 1000));
   const seconds = total % 60;
@@ -42,14 +23,7 @@ export function formatElapsed(ms: number): string {
     : `${String(minutes)}:${pad(seconds)}`;
 }
 
-/**
- * A once-a-second `Date.now()`, but only while something is running.
- *
- * Run frames arrive per phase change, and the extraction phase alone can last
- * minutes. A timer redrawn only on a frame would sit frozen at the one number
- * it exists to keep moving — telling a slow item from a wedged one. Gated on
- * `active` so an idle app schedules nothing.
- */
+// Ticks while active: run frames arrive only per phase change, so a frame-driven timer would freeze.
 export function useRunClock(active: boolean): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {

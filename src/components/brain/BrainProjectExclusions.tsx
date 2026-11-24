@@ -2,19 +2,7 @@ import React from 'react';
 import type { BrainSourceSummary } from '@/lib/api';
 import { projectsOf } from './BrainSourcesTable';
 
-/**
- * Which projects the Brain is allowed to touch at all.
- *
- * Distinct from the table's project FILTER, and labelled so they cannot be
- * confused: the filter narrows what is on screen and resets, while this is a
- * durable property of the account. With Auto-index on, closing a session in a
- * temp project indexes it in the background no matter what the table shows —
- * so only this can keep it out.
- *
- * Scratch paths (`/private`, `/tmp`, `/var/folders`) arrive unchecked, having
- * never been decided on. Re-checking one records a decision that outlives the
- * default.
- */
+/** Durable, unlike the table's filter: with Auto-index on, only this keeps a project out. */
 export const BrainProjectExclusions: React.FC<{
   rows: BrainSourceSummary[];
   excluded: ReadonlySet<string>;
@@ -50,7 +38,6 @@ export const BrainProjectExclusions: React.FC<{
                 aria-label={`Include ${p.path}`}
                 className="h-3 w-3 shrink-0"
               />
-              {/* The whole path — see the table's Project column. */}
               <span className="break-all">{p.path}</span>
               <span className="ml-auto shrink-0 text-muted-foreground">
                 {p.count} {p.count === 1 ? 'item' : 'items'}

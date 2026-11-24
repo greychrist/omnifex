@@ -14,48 +14,13 @@ const TabsContext = React.createContext<{
 });
 
 export interface TabsProps {
-  /**
-   * The controlled value of the tab to activate
-   */
   value: string;
-  /**
-   * Event handler called when the value changes
-   */
   onValueChange: (value: string) => void;
-  /**
-   * Visual variant:
-   * - "pill" (default): rounded chips inside a muted bar — the original look.
-   * - "line": text labels under a hairline, active tab gets an underline.
-   *           Use this on dense pages where pill chrome competes with the
-   *           cards beneath (e.g. AppearanceSettings).
-   */
   variant?: TabsVariant;
-  /**
-   * The tabs and their content
-   */
   children: React.ReactNode;
-  /**
-   * Additional CSS classes
-   */
   className?: string;
 }
 
-/**
- * Root tabs component
- *
- * @example
- * <Tabs value={activeTab} onValueChange={setActiveTab}>
- *   <TabsList>
- *     <TabsTrigger value="general">General</TabsTrigger>
- *   </TabsList>
- *   <TabsContent value="general">Content</TabsContent>
- * </Tabs>
- *
- * @example
- * <Tabs value={activeTab} onValueChange={setActiveTab} variant="line">
- *   <TabsList>...</TabsList>
- * </Tabs>
- */
 const Tabs: React.FC<TabsProps> = ({
   value,
   onValueChange,
@@ -75,9 +40,6 @@ export interface TabsListProps {
   className?: string;
 }
 
-/**
- * Container for tab triggers. Adapts its chrome based on the active variant.
- */
 const TabsList = React.forwardRef<HTMLDivElement, TabsListProps>(
   ({ className, ...props }, ref) => {
     const { variant } = React.useContext(TabsContext);
@@ -117,15 +79,9 @@ export interface TabsTriggerProps {
   children: React.ReactNode;
   className?: string;
   disabled?: boolean;
-  /** Native tooltip. A disabled trigger has to be able to say why it is
-   *  disabled; the value already reaches the button through the props
-   *  spread, this only declares it. */
   title?: string;
 }
 
-/**
- * Individual tab trigger button
- */
 const TabsTrigger = React.forwardRef<
   HTMLButtonElement,
   TabsTriggerProps
@@ -134,13 +90,7 @@ const TabsTrigger = React.forwardRef<
   const isSelected = selectedValue === value;
 
   if (variant === "line") {
-    // Inline `borderBottom` instead of Tailwind border utilities. The
-    // class-based approach (`border-b-2 border-transparent`) rendered with
-    // a visible line on every trigger in this project's Tailwind v4 build
-    // — either `border-foreground` wasn't being generated from the
-    // `@theme` block or `border-transparent` was being stripped during
-    // tailwind-merge. Inline styles bypass both paths and produce the
-    // exact bytes we want.
+    // Inline borderBottom: Tailwind border-color utilities don't render in this build.
     return (
       <button
         ref={ref}
@@ -158,8 +108,6 @@ const TabsTrigger = React.forwardRef<
           className,
         )}
         style={{
-          // Both states render a 2px bottom border so heights match — only
-          // the color differs, and only the active tab's color is visible.
           borderBottom: isSelected
             ? "2px solid var(--color-foreground)"
             : "2px solid transparent",
@@ -200,9 +148,6 @@ export interface TabsContentProps {
   className?: string;
 }
 
-/**
- * Tab content panel
- */
 const TabsContent = React.forwardRef<
   HTMLDivElement,
   TabsContentProps

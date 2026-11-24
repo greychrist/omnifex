@@ -1,12 +1,3 @@
-/**
- * Modern chat format — the AI Elements visual language (shadcn / vercel
- * ai-elements), ported onto what OmniFex already uses: Radix collapsible,
- * Tailwind tokens and our markdown components. No new dependencies.
- *
- * The originals' class strings are kept where they apply: the borderless
- * assistant message, the `bg-secondary` user bubble, muted collapsible
- * triggers with an icon and a turning chevron.
- */
 import * as React from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -20,7 +11,6 @@ import { buildMarkdownComponents } from '@/lib/markdownComponents';
 // A stable reference: ReactMarkdown re-parses when `remarkPlugins` is new.
 const REMARK_PLUGINS = [remarkGfm];
 
-/** AI Elements' Shimmer: the band's width follows the text's length. */
 export function Shimmer({ children }: { children: string }) {
   return (
     <span className="modern-shimmer" style={{ '--modern-shimmer-spread': `${children.length * 2}px` } as React.CSSProperties}>
@@ -39,9 +29,6 @@ export function Message({ from, children }: { from: 'user' | 'assistant'; childr
 
 export function UserBubble({ children }: { children: React.ReactNode }) {
   const { config } = useMessageRenderingConfig();
-  // Line style (Settings › Chats › User prompt style): the answer's line,
-  // mirrored — a bar down the right edge in the prompt color,
-  // `.modern-prompt-line`, the text right-aligned 16px off it.
   if (config.modern.promptStyle === 'line') {
     return (
       <div className={cn('modern-prompt-line max-w-[80%] py-1 pr-4 text-right text-sm leading-relaxed break-words text-foreground', !config.modern.promptColorEnabled && 'modern-card-plain')}>
@@ -50,13 +37,10 @@ export function UserBubble({ children }: { children: React.ReactNode }) {
     );
   }
   return (
-    // Cornered like every card (All cards › Corner radius). Tint and border
-    // are `.modern-prompt` in styles.css, the shadow `.modern-card-shadow` — the unlayered
-    // `* { border-color }` reset there beats any Tailwind border-color utility.
+    // Tint and border live in `.modern-prompt` (styles.css): the unlayered `* { border-color }` reset beats border-color utilities.
     <div
       className={cn(
         'modern-prompt max-w-[80%] px-3 py-2.5 text-sm leading-relaxed break-words text-foreground',
-        // Color off takes the shadow with it, keeping its setting.
         config.modern.promptColorEnabled
           ? config.modern.promptShadow && 'modern-card-shadow'
           : 'modern-card-plain',
@@ -72,15 +56,13 @@ export const MessageResponse = React.memo(function MessageResponse({ children }:
   const { theme } = useTheme();
   const components = React.useMemo(() => buildMarkdownComponents(getClaudeSyntaxTheme(theme)), [theme]);
   return (
-    // Sized by `.modern-format .modern-answer` in styles.css: the .prose
-    // rules are unlayered, so utilities here could not override them.
+    // Sized in styles.css: the unlayered .prose rules beat utilities here.
     <div className="modern-answer prose prose-sm dark:prose-invert w-full max-w-none text-foreground">
       <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={components}>{children}</ReactMarkdown>
     </div>
   );
 });
 
-/** Hover row under a message: actions on the left, quiet metadata on the right. */
 export function MessageActions({ from, children }: { from: 'user' | 'assistant'; children: React.ReactNode }) {
   return (
     <div

@@ -19,15 +19,6 @@ import { modelOwnColor, screenChartMode } from '@/lib/costChartPalette';
 import { useModelCatalog, pickModelOption, reconcileLiveModelName, extraModelOptions } from '@/lib/modelCatalog';
 import { MODEL_OPTIONS, EFFORT_OPTIONS, PERMISSION_OPTIONS, type DropdownOption } from '@/lib/sessionDefaultOptions';
 
-/**
- * One status-bar readout that is also a picker: `label value` in the bar's
- * own 10px mono grammar, opening the same dropdown body the form pickers use.
- *
- * Not a fifth `variant` on EffortPicker / PermissionPicker: those own a
- * bordered Button trigger and this is a bare readout — the note on
- * EffortPicker's `inline` variant about two surfaces sharing a variant they
- * disagree about applies here too.
- */
 function StatusBarPicker({
   id,
   icon,
@@ -40,15 +31,11 @@ function StatusBarPicker({
   content,
 }: {
   id: string;
-  /** Leads the readout, as the bar's other readouts lead with theirs. */
   icon: React.ReactNode;
   label: string;
   value: string;
-  /** Text color for the whole readout — glyph, label and value as one. */
   tone?: string;
-  /** A second value sharing this readout — effort beside the model. */
   trailing?: React.ReactNode;
-  /** Inline color for the value alone — the model name in its tier's. */
   valueStyle?: React.CSSProperties;
   title: string;
   content: (close: () => void) => React.ReactNode;
@@ -96,25 +83,15 @@ export interface SessionControlPickersProps {
   setEffort: (v: string) => void;
   permissionMode: string;
   setPermissionMode: (v: string) => void;
-  /** Config dir of the account the session runs under; enables the live
-   *  model catalog for Claude. */
   configDir?: string;
-  /** Concrete model id the live session actually runs — labels the
-   *  account-default row. See SessionDefaultsRow. */
   activeDefaultModel?: string | null;
-  /** Set when the live session was not launched in Bypass, which the CLI
-   *  then refuses mid-session: the menu offers this restart instead. */
+  /** Set when the session wasn't launched in Bypass; the CLI refuses switching to it mid-session. */
   onRestartInBypass?: () => void;
-  /** The account's default permission mode, marked in the perms menu. */
   defaultPermissionMode?: string | null;
-  /** Bump to re-read the account's model pin (useModelCatalog). */
   catalogRefreshKey?: number;
-  /** Tool calls waiting on their automatic permission check. While any are,
-   *  the perms readout says `checking` and pulses instead of naming the mode. */
   checkingPermissions?: number;
 }
 
-/** A plain option list for the engines without a stylised catalog (Codex). */
 function OptionList({
   options,
   value,
@@ -144,11 +121,6 @@ function OptionList({
   );
 }
 
-/**
- * The session's three live controls — model, effort, permission mode — as
- * status-bar readouts that open pickers. This is where they are changed; the
- * session card's summary line only reports them.
- */
 export function SessionControlPickers({
   engine,
   model,
@@ -183,13 +155,8 @@ export function SessionControlPickers({
   }
 
   const modelData = pickModelOption(model, models);
-  // The catalog's label is the CLI's and it lags the server — see
-  // reconcileLiveModelName. The session card already reports what ran; this
-  // keeps the readout beside it from saying something different.
+  // The catalog's label lags the server; keep this readout matching the session card.
   const modelName = reconcileLiveModelName(modelData, activeDefaultModel);
-  // The name's color is the Cost Report's for the model it names: on
-  // default, the one that actually answered; else the pick, falling back
-  // to the row it resolved to (a concrete id the catalog lists by alias).
   const modelColorId = model === 'default' ? (activeDefaultModel ?? modelData.resolvedId ?? model) : model;
   const modelNameColor = modelOwnColor(modelColorId, screenChartMode()) ?? modelOwnColor(modelData.resolvedId ?? modelData.id, screenChartMode());
   const rawModel = raw.find((m) => m.value === model);
@@ -204,9 +171,6 @@ export function SessionControlPickers({
 
   return (
     <>
-      {/* Model and effort are one control: they are picked together, and two
-          separate readouts spent the bar's width on a second `effort` label
-          to say one word. */}
       <StatusBarPicker
         id="model"
         icon={<Zap className="h-3.5 w-3.5" />}
@@ -232,9 +196,6 @@ export function SessionControlPickers({
       <InlineDivider data-testid="status-divider" />
       <StatusBarPicker
         id="perms"
-        // One glyph for "permissions" whatever the mode — the mode's own would
-        // change under you, and Default's is a plain Shield. ShieldCheck is
-        // what PermissionCard wears for a permission request.
         icon={<ShieldCheck className="h-3.5 w-3.5" />}
         label="perms"
         value={permsValue}

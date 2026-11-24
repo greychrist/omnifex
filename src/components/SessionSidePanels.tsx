@@ -7,35 +7,18 @@ export type SessionSidePanelKey = 'inspector' | 'permissions' | 'context';
 const PANELS: Record<SessionSidePanelKey, { title: string; storageKey: string }> = {
   inspector: { title: 'Session inspector', storageKey: 'omnifex.sessionInspector.panelWidth' },
   permissions: { title: 'Permissions', storageKey: 'omnifex.permissions.panelWidth' },
-  // The context panel was the first overlay; keep the width users saved. It
-  // also holds what were the MCP and Plugins panels (SessionContextPanel).
+  // Storage key predates the merged panels; kept so saved widths survive.
   context: { title: 'Session context', storageKey: 'omnifex.contextLedger.panelWidth' },
 };
 
 export interface SessionSidePanelsProps {
-  /** Which panel is open. One at a time: the toolbar buttons toggle, and
-   *  opening one closes whichever was showing. */
   open: SessionSidePanelKey | null;
   onClose: () => void;
   content: Record<SessionSidePanelKey, React.ReactNode>;
-  /** Header controls per panel, beside its close button. */
   actions?: Partial<Record<SessionSidePanelKey, React.ReactNode>>;
 }
 
-/**
- * The session's side panels, hosted as ONE overlay `ResizableSidePanel`.
- *
- * Mount this inside the messages area. The panel then overlays the transcript
- * and stops where the transcript stops, so the subagent bar and the composer
- * stay visible beneath it — the way the context panel already worked. The
- * Permissions and Inspector panels (and the MCP and Plugins panels, now
- * sections of Session context) used to be absolute within
- * the whole chat body AND pushed the transcript and composer left by their
- * width (`sm:mr-96`), which reflowed every message on every open.
- *
- * Only the open panel's body is mounted; the others are plain elements the
- * caller built and nothing renders them.
- */
+// Mount inside the messages area so it overlays the transcript; pushing content aside (`sm:mr-96`) reflowed every message on open.
 export function SessionSidePanels({ open, onClose, content, actions }: SessionSidePanelsProps): React.JSX.Element {
   return (
     <AnimatePresence>

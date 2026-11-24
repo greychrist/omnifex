@@ -5,28 +5,10 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { SURFACE_BODY_BG, SURFACE_HEADER } from '@/lib/surfaceStyles';
 
-/**
- * A right-hand panel that overlays its container and can be dragged wider.
- *
- * `inset-y-0` of its OWN container, not of the chat body — mount it inside the
- * messages area and it stops where the messages stop, leaving the subagent bar
- * and the composer visible beneath it. The older session panels (MCP, Plugins,
- * Permissions) are absolute within the whole chat body instead, which is why
- * they cover those controls.
- *
- * It overlays rather than displaces: nothing here pushes the content left, so
- * the transcript keeps its full width and the panel floats above it.
- *
- * The slide-in lives here rather than in a wrapper. A `transform` establishes
- * a containing block for absolutely positioned descendants, so an animated
- * wrapper around a self-positioning panel makes the panel measure against the
- * wrapper — which has no size — instead of the messages area. Owning both the
- * position and the animation is what avoids that.
- */
+// Mount inside the messages area: it is `inset-y-0` of its own container.
+// The slide-in lives here, not in a wrapper: a transformed wrapper becomes the containing block and has no size.
 
 const MIN_WIDTH = 240;
-/** Past this a "side" panel is just a second column, and on a narrow window it
- *  would leave no transcript at all. */
 const MAX_WIDTH = 900;
 const FALLBACK_WIDTH = 384;
 
@@ -46,11 +28,9 @@ function loadWidth(key: string, fallback: number): number {
 }
 
 export interface ResizableSidePanelProps {
-  /** localStorage key for this panel's width. Distinct per panel — a shared
-   *  key would make two panels resize each other. */
+  /** Distinct per panel, or two panels resize each other. */
   storageKey: string;
   title: string;
-  /** Panel-wide controls, drawn in the header just before the close button. */
   actions?: React.ReactNode;
   onClose?: () => void;
   defaultWidth?: number;
@@ -87,7 +67,6 @@ export function ResizableSidePanel({
     document.body.style.userSelect = 'none';
 
     const onMove = (ev: PointerEvent) => {
-      // The panel is anchored right, so dragging LEFT (negative dx) widens it.
       latest = clampWidth(origin - (ev.clientX - startX));
       setWidth(latest);
     };
@@ -97,7 +76,6 @@ export function ResizableSidePanel({
       gripEl.removeEventListener('pointercancel', onUp);
       document.body.style.cursor = prevCursor;
       document.body.style.userSelect = prevSelect;
-      // Once per drag, not once per move.
       if (latest !== null) persist(latest);
     };
     gripEl.addEventListener('pointermove', onMove);
@@ -120,7 +98,6 @@ export function ResizableSidePanel({
       style={{ width: `${width}px` }}
       className={cn(
         'absolute inset-y-0 right-0 z-20 flex max-w-full flex-col',
-        // The Lima page's two zones: a muted title band over a tinted body.
         'border-l shadow-xl',
         SURFACE_BODY_BG,
         className,
@@ -144,8 +121,7 @@ export function ResizableSidePanel({
 
       <div className="min-h-0 flex-1 overflow-hidden">{children}</div>
 
-      {/* Left edge. Sits just outside the content so the grab target does not
-          eat clicks on the first column of the panel's own rows. */}
+      {/* Sits just outside the content so the grab target doesn't eat clicks on the panel's rows. */}
       <div
         role="separator"
         aria-orientation="vertical"

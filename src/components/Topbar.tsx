@@ -8,43 +8,14 @@ import { cn } from "@/lib/utils";
 import { logAndForget } from "@/lib/fireAndLog";
 
 interface TopbarProps {
-  /**
-   * Callback when CLAUDE.md is clicked
-   */
   onClaudeClick: () => void;
-  /**
-   * Callback when Settings is clicked
-   */
   onSettingsClick: () => void;
-  /**
-   * Callback when Usage Dashboard is clicked
-   */
   onUsageClick: () => void;
-  /**
-   * Callback when MCP is clicked
-   */
   onMCPClick: () => void;
-  /**
-   * Callback when Agents is clicked
-   */
   onAgentsClick?: () => void;
-  /**
-   * Optional className for styling
-   */
   className?: string;
 }
 
-/**
- * Topbar component with status indicator and navigation buttons
- * 
- * @example
- * <Topbar
- *   onClaudeClick={() => setView('editor')}
- *   onSettingsClick={() => setView('settings')}
- *   onUsageClick={() => setView('usage-dashboard')}
- *   onMCPClick={() => setView('mcp')}
- * />
- */
 export const Topbar: React.FC<TopbarProps> = ({
   onSettingsClick,
   className,
@@ -52,7 +23,6 @@ export const Topbar: React.FC<TopbarProps> = ({
   const [versionStatus, setVersionStatus] = useState<ClaudeVersionStatus | null>(null);
   const [checking, setChecking] = useState(true);
   
-  // Check Claude version on mount
   useEffect(() => {
     logAndForget('topbar:check-version', checkVersion());
   }, []);
@@ -63,9 +33,7 @@ export const Topbar: React.FC<TopbarProps> = ({
       const status = await api.checkClaudeVersion();
       setVersionStatus(status);
       
-      // If Claude is not installed and the error indicates it wasn't found
       if (!status.is_installed && status.output.includes("No such file or directory")) {
-        // Emit an event that can be caught by the parent
         window.dispatchEvent(new CustomEvent('claude-not-found'));
       }
     } catch (err) {
@@ -165,10 +133,8 @@ export const Topbar: React.FC<TopbarProps> = ({
         className
       )}
     >
-      {/* Status Indicator */}
       <StatusIndicator />
       
-      {/* Spacer - Navigation moved to titlebar */}
       <div></div>
     </motion.div>
   );

@@ -30,13 +30,7 @@ import { useAccounts } from "@/contexts/AccountsContext";
 import { logAndForget } from "@/lib/fireAndLog";
 import { formatCost } from "@/components/claude-code-session/CostWidget";
 
-/**
- * FNV-1a hash mirror — must produce the same output as `promptHash` in
- * `daemon/services/sessions-summary.ts`. The renderer hashes the
- * locally-cached prompt template (read from app_settings) so it can
- * decide whether the size-change gate should treat the cached sidecar
- * as fresh, without an extra IPC round-trip per row.
- */
+// Must match `promptHash` in daemon/services/sessions-summary.ts.
 function clientPromptHash(template: string): string {
   let hash = 0x811c9dc5;
   for (let i = 0; i < template.length; i++) {
@@ -46,12 +40,6 @@ function clientPromptHash(template: string): string {
   return (hash >>> 0).toString(16).padStart(8, '0');
 }
 
-/**
- * Human-readable byte size for the session list. Mirrors the formatter in
- * `LimaViewer.tsx`; kept local since the two consumers are otherwise
- * unrelated. `undefined` / `0` / negative renders as an em-dash so missing
- * sizes don't read as zero-byte files.
- */
 function formatBytes(bytes: number | undefined | null): string {
   if (typeof bytes !== 'number' || bytes <= 0) return '—';
   const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
@@ -64,14 +52,6 @@ function formatBytes(bytes: number | undefined | null): string {
   return `${n.toFixed(n >= 10 || i === 0 ? 0 : 1)} ${units[i]}`;
 }
 
-/**
- * Render the body of a session summary. The current default prompt asks
- * the model to produce markdown-style "- " bullet lines inside the
- * `<paragraph>` tag; older cached summaries are still plain prose. When
- * every non-empty line begins with `- ` or `* ` we render a tight bullet
- * list, otherwise we fall back to a plain paragraph so legacy sidecars
- * keep rendering correctly until they're regenerated.
- */
 const SummaryBody: React.FC<{ text: string }> = ({ text }) => {
   const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
   const allBullets =
@@ -92,11 +72,6 @@ const SummaryBody: React.FC<{ text: string }> = ({ text }) => {
   );
 };
 
-/**
- * Human-readable explanation for each `skipped` reason. Surfaced inline
- * on the row so the manual refresh button gives honest feedback when the
- * account isn't fully configured for summarization.
- */
 function skipReasonMessage(reason: Extract<SummaryGenerateResult, { status: 'skipped' }>['reason']): string {
   switch (reason) {
     case 'toggle-off':
@@ -115,52 +90,15 @@ function skipReasonMessage(reason: Extract<SummaryGenerateResult, { status: 'ski
 }
 
 interface SessionListProps {
-  /**
-   * Array of sessions to display
-   */
   sessions: Session[];
-  /**
-   * The current project path being viewed
-   */
   projectPath: string;
-  /**
-   * Optional callback to go back to project list (deprecated - use tabs instead)
-   */
   onBack?: () => void;
-  /**
-   * Callback when a session is clicked
-   */
   onSessionClick?: (session: Session) => void;
-  /**
-   * Callback to re-fetch the session list (refresh button). When provided,
-   * the component renders a small refresh icon in the header row. The
-   * component manages its own pending/spinner state while the promise is
-   * in flight; callers don't need to pass any loading flag.
-   */
   onRefresh?: () => Promise<void> | void;
-  /**
-   * Callback to open the "Open session by GUID" dialog. When provided,
-   * a small `Open by ID…` button is rendered in the header row next to
-   * the session count. The dialog itself is owned by the caller.
-   */
   onOpenById?: () => void;
-  /**
-   * Optional className for styling
-   */
   className?: string;
 }
 
-/**
- * SessionList component - Displays paginated sessions for a specific project
- *
- * @example
- * <SessionList
- *   sessions={sessions}
- *   projectPath="/Users/example/project"
- *   onBack={() => setSelectedProject(null)}
- *   onSessionClick={(session) => console.log('Selected session:', session)}
- * />
- */
 export const SessionList: React.FC<SessionListProps> = ({
   sessions,
   projectPath,
@@ -169,16 +107,8 @@ export const SessionList: React.FC<SessionListProps> = ({
   onOpenById,
   className,
 }) => {
-  // We use the accounts context not for direct lookups but to re-trigger
-  // the per-project resolution below when the user toggles the
-  // "Generate Summaries" / model settings on the resolved account from
-  // somewhere else in the app — without this dep the summarize state
-  // for an open SessionList wouldn't update until the user navigated
-  // away and back.
   const { accounts } = useAccounts();
   const [refreshing, setRefreshing] = useState(false);
-  // Touch: pull the list down from the top to refresh. The indicator is the
-  // only thing that moves; the list keeps its native overscroll.
   const listRef = useRef<HTMLDivElement>(null);
   const layout = useLayoutMode();
   const pull = usePullToRefresh(listRef, onRefresh, layout.touch);
@@ -192,8 +122,6 @@ export const SessionList: React.FC<SessionListProps> = ({
       setRefreshing(false);
     }
   };
-  /** Most recently copied session ID — drives the "Copied" affordance on the
-   *  copy button. Cleared after a short delay so the icon flips back. */
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const handleCopySessionId = (id: string) => {
@@ -204,10 +132,6 @@ export const SessionList: React.FC<SessionListProps> = ({
     }, 1500);
   };
 
-  // Single launch path. Used by the per-row launch icon — and by any
-  // future caller that wants to programmatically open a session — so the
-  // CustomEvent + onSessionClick callback always fire together. Keeps
-  // parity with the row-onClick that lived here through v0.4.20.
   const handleLaunch = useCallback(
     (session: Session) => {
       const event = new CustomEvent('claude-session-selected', {
@@ -219,12 +143,6 @@ export const SessionList: React.FC<SessionListProps> = ({
     [projectPath, onSessionClick],
   );
 
-  // ── Codex sessions (Task 16) ───────────────────────────────────────
-  // Codex stores rollouts under `~/.codex/sessions/` outside the per-account
-  // Claude config; the walker enumerates them globally. We filter to the
-  // current project here so the unified list stays project-scoped, matching
-  // what the Claude column already shows. The agent filter below lets the
-  // user toggle Codex rows in/out of the table entirely.
   const [codexSessions, setCodexSessions] = useState<CodexSessionEntry[]>([]);
   const [agentFilter, setAgentFilter] = useState<'all' | AgentKind>('all');
 
@@ -244,11 +162,6 @@ export const SessionList: React.FC<SessionListProps> = ({
     };
   }, []);
 
-  // Per-session cost, keyed by session id, from the durable
-  // `session_cost_daily` table (populated by the startup backfill / hourly
-  // sweep / live watcher). Fetched project-scoped so the list can show each
-  // session's total without opening it. Sessions missing from the table
-  // render an em-dash; a rescan from the Costs view fills them in.
   const [sessionCosts, setSessionCosts] = useState<Map<string, number>>(
     () => new Map(),
   );
@@ -271,30 +184,15 @@ export const SessionList: React.FC<SessionListProps> = ({
     return () => {
       cancelled = true;
     };
-    // Re-fetch when the visible session set changes (e.g. after a manual
-    // refresh) so newly-computed costs surface without a remount.
   }, [projectPath, sessions]);
 
-  // Codex rollouts whose recorded `cwd` matches the current project. When
-  // the rollout didn't log a cwd (projectPath === null) we drop it from the
-  // project view — there's no way to associate it with this project. The
-  // "All Codex sessions across projects" view will be a different mount
-  // point once we land it; for now the project-scoped view is the only
-  // consumer.
   const projectCodexSessions = useMemo(
     () => codexSessions.filter((e) => e.projectPath === projectPath),
     [codexSessions, projectPath],
   );
 
-  // Codex row click → mint a synthetic Session-shaped detail and dispatch a
-  // `codex-session-selected` event so TabContent can branch on `agent`
-  // without each row hand-rolling addTab. Mirrors the Claude launch path
-  // above for symmetry; TabContent handles the actual tab creation.
   const handleLaunchCodex = useCallback(
     (entry: CodexSessionEntry) => {
-      // Codex rollouts may not have recorded a projectPath; fall back to
-      // the page-level projectPath so the new tab still has a working
-      // directory to open under.
       const resolvedProjectPath = entry.projectPath ?? projectPath;
       const event = new CustomEvent('codex-session-selected', {
         detail: {
@@ -309,17 +207,10 @@ export const SessionList: React.FC<SessionListProps> = ({
     [projectPath],
   );
 
-  // ── Per-session summaries ────────────────────────────────────────────
-  // Map keyed by session.id. `null` = no summary on disk; `undefined` =
-  // not yet fetched.
+  // `null` = no summary on disk; `undefined` = not yet fetched.
   const [summaries, setSummaries] = useState<Map<string, SessionSummary | null>>(
     new Map(),
   );
-  // Per-row expand/collapse state. Default = collapsed (only headline
-  // visible); clicking the chevron flips it. Restored in v0.4.15 — the
-  // unconditional always-expanded layout from v0.4.8 made multi-summary
-  // pages impossibly tall, especially once paired with the bounded
-  // scroll container below.
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const toggleExpanded = useCallback((id: string) => {
     setExpanded((prev) => {
@@ -332,33 +223,15 @@ export const SessionList: React.FC<SessionListProps> = ({
   const [summaryRefreshing, setSummaryRefreshing] = useState<Set<string>>(
     new Set(),
   );
-  // Per-row error message for the most recent failed manual refresh.
-  // Auto-clears after a few seconds. No toast library is wired in this
-  // codebase, so we surface failures inline.
   const [summaryErrors, setSummaryErrors] = useState<Map<string, string>>(
     new Map(),
   );
-  // Whether the project's resolved account has summarization enabled.
-  // Drives whether we even render the manual refresh button on each row —
-  // when the account toggle is off or no model is set, the button is
-  // hidden entirely (rather than visible-but-clicking-yields-an-error).
-  // Null until the resolution returns; we render no button while it's
-  // pending to avoid a flash of incorrect UI.
   const [summarizeEnabledForProject, setSummarizeEnabledForProject] =
     useState<boolean | null>(null);
-  // The resolved account's config_dir — held at tab/view level so every
-  // summaryGet / summaryGenerate call anchors paths to the right account
-  // root (NOT ~/.claude). Null until resolution returns.
+  // Summary IPC must anchor on the resolved account's config dir, never ~/.claude.
   const [resolvedConfigDir, setResolvedConfigDir] = useState<string | null>(null);
-  // Hash of the active prompt template — used to decide whether the
-  // refresh button should treat an unchanged JSONL as "nothing to do".
-  // A prompt edit changes the hash and re-enables the button.
   const [activePromptHash, setActivePromptHash] = useState<string | null>(null);
 
-  // Delete-session flow: clicking the per-row trash icon parks the
-  // session id here, which opens the confirm dialog. Confirming calls
-  // the IPC and then onRefresh() to reload the list. Errors surface
-  // inline in the dialog so the row stays addressable.
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -367,7 +240,6 @@ export const SessionList: React.FC<SessionListProps> = ({
     if (!pendingDeleteId) return;
     const target = sessions.find((s) => s.id === pendingDeleteId);
     if (!target) {
-      // Row vanished from under us (refresh race); just close the dialog.
       setPendingDeleteId(null);
       return;
     }
@@ -376,9 +248,6 @@ export const SessionList: React.FC<SessionListProps> = ({
     try {
       await api.deleteSession(target.id, target.project_id, target.project_path);
       setPendingDeleteId(null);
-      // Drop any in-memory summary state for the deleted row so the
-      // list doesn't briefly re-render the row with a stale summary if
-      // the parent's refresh hasn't completed yet.
       setSummaries((prev) => {
         const next = new Map(prev);
         next.delete(target.id);
@@ -392,9 +261,6 @@ export const SessionList: React.FC<SessionListProps> = ({
     }
   }, [pendingDeleteId, sessions, onRefresh]);
 
-  // Fetch summaries in parallel whenever the session list or project path
-  // changes. The IPC layer answers each call independently; we don't await
-  // them serially.
   useEffect(() => {
     if (!sessions.length || !projectPath) return;
     let cancelled = false;
@@ -414,20 +280,12 @@ export const SessionList: React.FC<SessionListProps> = ({
     };
   }, [sessions, projectPath, resolvedConfigDir]);
 
-  // Read the active prompt template once on mount and hash it. Used by
-  // the noChanges check below — a prompt edit since the cached sidecar
-  // was written re-enables the refresh button.
   useEffect(() => {
     let cancelled = false;
     api
       .getSetting(PROMPT_TEMPLATE_SETTING_KEY)
       .then((value) => {
         if (cancelled) return;
-        // Empty / missing → backend will fall through to its DEFAULT
-        // prompt; we represent that as null on this side and skip the
-        // hash compare (any cached sidecar is treated as fresh wrt
-        // prompt). The next refresh from the backend will write a real
-        // promptHash.
         // eslint-disable-next-line @typescript-eslint/prefer-optional-chain -- preserved for readability; auto-fix would obscure null-guard intent.
         setActivePromptHash(value && value.trim() ? clientPromptHash(value) : null);
       })
@@ -439,9 +297,6 @@ export const SessionList: React.FC<SessionListProps> = ({
     };
   }, []);
 
-  // Resolve which account "owns" this project so we can (a) decide
-  // whether the manual refresh button should even render and (b) hold
-  // its config_dir at this view level for downstream summary IPC calls.
   useEffect(() => {
     if (!projectPath) {
       setSummarizeEnabledForProject(null);
@@ -456,12 +311,6 @@ export const SessionList: React.FC<SessionListProps> = ({
       .then(([resolved, enabledSetting]) => {
         if (cancelled) return;
         const acct = resolved.claude?.account ?? resolved.codex?.account ?? null;
-        // Master "Enable session summaries" toggle in Settings → Session
-        // Summaries. Off → cached sidecars hide and the refresh button
-        // disappears (rows fall back to first-message previews). On
-        // requires a model on the resolved account before the refresh
-        // button is shown. The auto-on-close toggle is unrelated here —
-        // it only gates the close hook in the daemon (session-close-work.ts).
         const enabled = enabledSetting === null ? true : enabledSetting === 'true';
         setSummarizeEnabledForProject(!!(enabled && acct?.summaryModel));
         setResolvedConfigDir(acct?.config_dir ?? null);
@@ -474,15 +323,9 @@ export const SessionList: React.FC<SessionListProps> = ({
     return () => {
       cancelled = true;
     };
-    // `accounts` is intentionally a dep: when the AccountsContext
-    // refreshes after the user edits per-account summary settings, we
-    // re-resolve so the gate flips without needing a tab switch.
+    // `accounts` is a dep so editing per-account summary settings re-resolves the gate.
   }, [projectPath, accounts]);
 
-  // Subscribe to backend summary-updated events so auto-on-close
-  // generations refresh the matching row in real time. We re-fetch the
-  // sidecar via the same `summaryGet` path so the row source-of-truth
-  // stays consistent with the disk.
   useEffect(() => {
     if (!projectPath) return;
     const unsubscribe = api.onSessionSummaryUpdated(({ sessionUuid }) => {
@@ -492,7 +335,6 @@ export const SessionList: React.FC<SessionListProps> = ({
           setSummaries((prev) => new Map(prev).set(sessionUuid, summary));
         })
         .catch(() => {
-          // Silent — the row keeps its previous state.
         });
     });
     return () => {
@@ -500,18 +342,7 @@ export const SessionList: React.FC<SessionListProps> = ({
     };
   }, [projectPath, resolvedConfigDir]);
 
-  // Subscribe to backend generation-state events so the per-row refresh
-  // icon spins for *background* auto-on-close runs (not just the
-  // user's manual button click). The same `summaryRefreshing` set
-  // drives both — manual clicks add+remove locally inside
-  // `refreshSummary`, backend events add+remove via this listener.
-  //
-  // We ALSO query `getGeneratingSummaryUuids()` once on mount and seed
-  // the set from the result. This catches the back-button race: when
-  // the user clicks back inside a session, the close lifecycle fires
-  // its `generating: true` event in the same frame as the navigation
-  // — often before this effect has subscribed. The mount-time query
-  // recovers any in-flight generation we'd otherwise miss.
+  // Seed from getGeneratingSummaryUuids(): the close-time `generating` event can fire before this subscribes.
   useEffect(() => {
     if (!projectPath) return;
     let cancelled = false;
@@ -526,8 +357,6 @@ export const SessionList: React.FC<SessionListProps> = ({
         });
       })
       .catch(() => {
-        // Silent — worst case the spinner doesn't appear; the
-        // updated event will still refresh the row when it arrives.
       });
     const unsubscribe = api.onSessionSummaryGenerating(
       ({ sessionUuid, generating }) => {
@@ -549,15 +378,12 @@ export const SessionList: React.FC<SessionListProps> = ({
     async (id: string) => {
       if (summaryRefreshing.has(id) || !projectPath) return;
       setSummaryRefreshing((prev) => new Set(prev).add(id));
-      // Clear any previous error on this row before retrying.
       setSummaryErrors((prev) => {
         if (!prev.has(id)) return prev;
         const next = new Map(prev);
         next.delete(id);
         return next;
       });
-      // Min-spinner: even instant returns (toggle-off, size-unchanged)
-      // flash the spinner long enough to feel like a click registered.
       const minSpinner = new Promise<void>((resolve) => setTimeout(resolve, 400));
       const showError = (message: string) => {
         setSummaryErrors((prev) => new Map(prev).set(id, message));
@@ -590,8 +416,6 @@ export const SessionList: React.FC<SessionListProps> = ({
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Summary failed.';
         console.error('[SessionList] summaryGenerate failed:', err);
-        // Don't dismiss the spinner before the min duration even on
-        // failure — keeps the UI honest about a click having registered.
         await minSpinner.catch(() => {});
         showError(message);
       } finally {
@@ -608,11 +432,6 @@ export const SessionList: React.FC<SessionListProps> = ({
   return (
     <TooltipProvider>
       <div className={cn("flex flex-col gap-4 h-full min-h-0", className)}>
-      {/* Header row: session count + agent filter + Open-by-ID + refresh.
-          Renders only when at least one of those affordances is present so
-          empty states stay clean. The agent filter is always rendered when
-          any rows exist on either side — gives the user a way to hide
-          Codex rows when they only care about Claude (and vice-versa). */}
       {(onRefresh || onOpenById || sessions.length > 0 || projectCodexSessions.length > 0) && (
         <div className="flex items-center gap-3">
           <span className="text-sm text-muted-foreground">
@@ -623,9 +442,6 @@ export const SessionList: React.FC<SessionListProps> = ({
               return `${total} session${total !== 1 ? 's' : ''}`;
             })()}
           </span>
-          {/* Agent filter — only render when both engines have rows
-              under this project. Single-agent projects don't need the
-              toggle and the empty space reads as a visual distraction. */}
           {projectCodexSessions.length > 0 && sessions.length > 0 && (
             <div
               role="group"
@@ -686,21 +502,7 @@ export const SessionList: React.FC<SessionListProps> = ({
       )}
 
 
-      {/* Bounded scroll container. The table fills the remaining height
-          inside the project-view flex column and scrolls internally so
-          long, expanded summary lists never push the page out of the
-          viewport. The sticky <thead> keeps the column labels visible
-          while the body scrolls underneath.
-
-          Two-layer wrapper:
-            - Outer holds the rounded border AND `overflow-hidden`, so
-              the sticky thead's tinted background gets clipped by the
-              radius at the top corners.
-            - Inner is the actual scroll container.
-          Folding both responsibilities onto a single div left the
-          header bleeding past the top corners — `overflow-y-auto` only
-          gates vertical overflow, so content drawn outside the radius
-          still painted. */}
+      {/* Outer div clips the sticky thead to the radius; inner scrolls. One div lets the header bleed past the corners. */}
       <AnimatePresence mode="popLayout">
         <div className="rounded-md border border-border/40 overflow-hidden flex-1 min-h-0 flex flex-col">
           {(pull.progress > 0 || pull.refreshing) && (
@@ -714,26 +516,13 @@ export const SessionList: React.FC<SessionListProps> = ({
           )}
           <div ref={listRef} className="overflow-y-auto flex-1 min-h-0">
           <table className="w-full text-sm">
-            {/* Fully opaque bg — `bg-muted` (no /60 alpha). The header
-                is sticky over a scrolling body, so any transparency
-                lets row content paint through and read as ghosted
-                text. Same muted hue as before, just at full opacity.
-                No backdrop-blur, since `backdrop-filter` opens its own
-                stacking context and bled past the wrapper's rounded
-                corners as a faint shadow. */}
+            {/* Opaque, no backdrop-blur: rows scroll under the sticky header, and blur bleeds past the rounded corners. */}
             <thead className="sticky top-0 z-10 bg-muted text-[11px] uppercase tracking-wider text-muted-foreground">
               <tr>
-                {/* The engine (Claude / Codex) is identified by an icon
-                    prefixed to the Date cell rather than a dedicated
-                    column, so the list stays compact. */}
                 <th className="text-left font-medium py-2 px-3 w-40">Date</th>
                 <th className="text-left font-medium py-2 px-3">Summary</th>
                 <th className="text-left font-medium py-2 px-3 w-28">Session ID</th>
                 <th className="text-right font-medium py-2 px-3 w-24">Size / Cost</th>
-                {/* Consolidated actions column — launch + summary refresh
-                    + trash. Width fits all three icons with gap-1 padding;
-                    aria-label is on each button so the column header can
-                    stay empty without screen-reader noise. */}
                 <th className="text-left font-medium py-2 px-3 w-[88px]" aria-label="Actions" />
               </tr>
             </thead>
@@ -754,30 +543,15 @@ export const SessionList: React.FC<SessionListProps> = ({
                 const lastDate = session.last_timestamp
                   ? new Date(session.last_timestamp)
                   : new Date(session.created_at * 1000);
-                // Hide cached summaries when the resolved account has
-                // summarization turned off — the user toggled off and
-                // expects them gone from the UI without having to manually
-                // delete sidecar files. `null` (resolution still pending)
-                // and `true` keep showing whatever's cached.
                 const cachedSummary = summaries.get(session.id);
                 const summary =
                   summarizeEnabledForProject === false ? null : cachedSummary;
                 const isExpanded = expanded.has(session.id);
-                // A rename outranks the CLI's own generated title, resolved
-                // the same way the CLI resolves it (pickSessionTitle).
                 const sessionTitle = pickSessionTitle({
                   aiTitle: session.ai_title,
                   customTitle: session.custom_title,
                 });
                 const isRefreshing = summaryRefreshing.has(session.id);
-                // Refresh button is a no-op when the JSONL size hasn't
-                // changed AND the cached summary was produced by the
-                // current prompt template. A promptHash mismatch
-                // re-enables the button so prompt iteration lands —
-                // the backend size-gate has the matching escape hatch.
-                // When activePromptHash is null we couldn't load the
-                // prompt setting (or it's empty / using the default),
-                // so we don't gate on it.
                 const sizeMatches =
                   !!summary &&
                   typeof session.file_size_bytes === 'number' &&
@@ -799,23 +573,10 @@ export const SessionList: React.FC<SessionListProps> = ({
                     }}
                     className={cn(
                       "border-t border-border/30 transition-colors hover:bg-accent/40",
-                      // Launch is now the per-row launch icon; the row
-                      // itself is no longer interactive. The hover tint
-                      // is just for scan-tracking — `cursor-pointer` is
-                      // intentionally omitted so the visual signal
-                      // doesn't claim a click target that doesn't exist.
-                      // The bg tint for sessions with stored todos is a
-                      // status cue, not an affordance, so it stays.
                       session.todo_data && "bg-primary/5",
                     )}
                   >
                     <td className="py-2 px-3 text-[11px] text-muted-foreground whitespace-nowrap leading-tight align-top">
-                      {/* Engine icon + dates. The icon replaces the old
-                          dedicated agent column; the dates are wrapped in
-                          a launch button — same contract as ProjectList's
-                          name cell. Trailing ExternalLink glyph signals
-                          the launch affordance. Top-aligned so the icons
-                          sit next to the first date line. */}
                       <div className="flex items-start gap-1.5">
                         <TooltipSimple content="Claude session">
                           <span
@@ -833,11 +594,6 @@ export const SessionList: React.FC<SessionListProps> = ({
                               handleLaunch(session);
                             }}
                             className="inline-flex items-start gap-1 text-left text-muted-foreground hover:text-foreground hover:underline focus-visible:underline focus:outline-none"
-                            // aria-label fixes the accessible name to
-                            // "Launch session" so the button matches the
-                            // rightmost icon launcher in screen-reader
-                            // and test queries. Visible date text is still
-                            // there for sighted users.
                             aria-label="Launch session"
                           >
                             <span>
@@ -855,15 +611,7 @@ export const SessionList: React.FC<SessionListProps> = ({
                       </div>
                     </td>
                     <td className="py-2 px-3 text-xs text-foreground/90 max-w-0 align-top">
-                      {/* Label, then body.
-                          The label is the session's name — a rename if one was
-                          made, otherwise the CLI's own `ai-title` when it wrote
-                          one — otherwise the summary headline, otherwise a
-                          literal "No name". There is deliberately no fallback to
-                          the opening prompt: it hid sessions the CLI never
-                          titled and the summary never reached, and those are
-                          exactly the rows worth noticing. The body beneath is
-                          the summary, when there is one. */}
+                      {/* No fallback to the opening prompt: untitled rows are the ones worth noticing. */}
                       <div className="flex items-start gap-1 min-w-0">
                         {summary && (
                           <button
@@ -883,12 +631,6 @@ export const SessionList: React.FC<SessionListProps> = ({
                           </button>
                         )}
                         <div className="min-w-0 flex-1">
-                          {/* The name launches, like the dates. Only the
-                              name line — the headline and bullets beneath
-                              stay plain text so they can be selected, and
-                              the chevron keeps expand/collapse. Accessible
-                              name is the visible text, not "Launch
-                              session", so screen readers hear the name. */}
                           <TooltipSimple content="Launch session">
                             <button
                               type="button"
@@ -908,9 +650,6 @@ export const SessionList: React.FC<SessionListProps> = ({
                           </TooltipSimple>
                           {summary && (
                             <>
-                              {/* Only a titled row needs the headline on its
-                                  own line — untitled rows already have it as
-                                  the label. */}
                               {sessionTitle && (
                                 <span className="block truncate text-muted-foreground">
                                   {summary.headline}
@@ -947,8 +686,6 @@ export const SessionList: React.FC<SessionListProps> = ({
                         </button>
                       </TooltipSimple>
                     </td>
-                    {/* Size (top) + Cost (bottom), stacked and styled like
-                        the Date column — same size font, second line dimmed. */}
                     <td className="py-2 px-3 text-right text-[11px] font-mono tabular-nums text-muted-foreground align-top whitespace-nowrap leading-tight">
                       <div
                         title={
@@ -975,9 +712,6 @@ export const SessionList: React.FC<SessionListProps> = ({
                     </td>
                     <td className="py-2 px-3 align-top">
                       <div className="flex items-center justify-end gap-1">
-                        {/* Launch — primary action, leftmost in the
-                            cluster. Mirrors the projects-row icon
-                            placement / glyph for cross-page consistency. */}
                         <TooltipSimple content="Launch session">
                           <button
                             type="button"
@@ -1035,13 +769,6 @@ export const SessionList: React.FC<SessionListProps> = ({
                   </motion.tr>
                 );
               })}
-              {/* Codex rows — separate data source (~/.codex/sessions
-                  walker) than the Claude `sessions` prop, but rendered into
-                  the same table so the agent-filter dropdown and badge
-                  column do the partition work. Hidden entirely when the
-                  filter is set to "claude". Codex doesn't have JSONL
-                  summaries yet (Task 19+); the Summary column shows a
-                  fallback project-path label so rows stay scannable. */}
               {(agentFilter === 'claude' ? [] : projectCodexSessions).map((entry, index) => {
                 const fmt = (d: Date) =>
                   `${d.toLocaleDateString('en-US', {
@@ -1061,8 +788,6 @@ export const SessionList: React.FC<SessionListProps> = ({
                     exit={{ opacity: 0, y: -8 }}
                     transition={{
                       duration: 0.2,
-                      // Stagger continues from the Claude rows' delay
-                      // sequence so the two groups feel like one list.
                       delay: (sessions.length + index) * 0.02,
                       ease: [0.4, 0, 0.2, 1],
                     }}
@@ -1130,11 +855,6 @@ export const SessionList: React.FC<SessionListProps> = ({
                         </button>
                       </TooltipSimple>
                     </td>
-                    {/* Size (top) + Cost (bottom), stacked to match the
-                        Claude rows. Size needs a stat() round-trip we don't
-                        do for Codex rollouts yet; cost is keyed by
-                        conversationId and rarely present — both usually
-                        render an em-dash so the column still aligns. */}
                     <td className="py-2 px-3 text-right text-[11px] font-mono tabular-nums text-muted-foreground align-top whitespace-nowrap leading-tight">
                       <div>—</div>
                       <div className="text-muted-foreground/70">
@@ -1159,9 +879,6 @@ export const SessionList: React.FC<SessionListProps> = ({
                             <ExternalLink className="h-4 w-4" />
                           </button>
                         </TooltipSimple>
-                        {/* Codex sessions have no sidecar summary yet and
-                            no delete endpoint; surface neither button so
-                            the row reads as "view-only" until Task 19+. */}
                       </div>
                     </td>
                   </motion.tr>
@@ -1174,10 +891,6 @@ export const SessionList: React.FC<SessionListProps> = ({
       </AnimatePresence>
       </div>
 
-      {/* Delete-session confirmation. Mounted once at panel level; opens
-          when pendingDeleteId is set. Cancel just clears the id; Delete
-          calls handleConfirmDelete which clears it on success or sets
-          deleteError on failure. */}
       <Dialog
         open={pendingDeleteId !== null}
         onOpenChange={(open) => {

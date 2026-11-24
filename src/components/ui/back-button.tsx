@@ -11,11 +11,6 @@ const SIZES = {
   lg: { button: "h-12 w-12", icon: "h-6 w-6" },
 } as const;
 
-/**
- * The app's one back button: the session header's chrome at any size. The
- * label names where it goes and doubles as the tooltip and accessible name.
- * Renders anywhere: it brings its own TooltipProvider.
- */
 export function BackButton({
   label,
   onClick,
@@ -29,8 +24,7 @@ export function BackButton({
   disabled?: boolean;
   className?: string;
 }): React.JSX.Element {
-  // Its own provider: several screens it sits on mount none, and Radix
-  // throws without one. A nested provider is harmless where one exists.
+  // Own provider: some screens mount none, and Radix throws without one.
   return (
     <TooltipProvider>
       <TooltipSimple content={label} side="bottom">

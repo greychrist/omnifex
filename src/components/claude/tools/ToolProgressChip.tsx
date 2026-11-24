@@ -4,7 +4,6 @@ import { useSecondTick } from '@/hooks/useSecondTick';
 import { useClaudeSessionStore } from '@/stores/claudeSessionStore';
 import type { ToolProgressEntry } from '@/lib/toolProgress';
 
-/** `0:42`, `12:05`, `1:04:09`. Floors, never rounds up. */
 export function formatToolElapsed(totalSeconds: number): string {
   const s = Math.max(0, Math.floor(totalSeconds));
   const seconds = s % 60;
@@ -17,33 +16,12 @@ export function formatToolElapsed(totalSeconds: number): string {
 
 export interface ToolProgressChipProps {
   entry: ToolProgressEntry | null | undefined;
-  /**
-   * True once the tool_result has landed.
-   *
-   * The render-time kill switch, and the reason the progress map can be pruned
-   * lazily rather than in lockstep with the stream: a stale entry can never
-   * paint, so the prune is hygiene rather than correctness.
-   */
+  /** The render-time kill switch: a stale entry never paints, so the progress map can be pruned lazily. */
   done: boolean;
-  /** The call is waiting on its automatic permission check (CLI 2.1.292
-   *  `permission_check_status`). Shown before any progress beat exists. */
   checkingPermission?: boolean;
 }
 
-/**
- * Transient progress for an in-flight tool call: how long it has been running,
- * and a retry banner when a subagent is being retried.
- *
- * Both halves vanish when the result arrives — the data behind them is
- * live-only (the CLI never writes `tool_progress` to disk), so anything that
- * outlived the call would be visible in a live transcript and absent from the
- * same transcript reloaded.
- *
- * The CLI beats every 30 seconds, so showing `elapsed_time_seconds` raw would
- * jump by half-minutes. This interpolates from the last beat's arrival, and
- * subscribes to the shared one-second clock only while it is actually showing
- * something: an idle transcript runs no timer.
- */
+// tool_progress is live-only (never on disk), so nothing may outlive the call; the clock is subscribed only while showing.
 export const ToolProgressChip: React.FC<ToolProgressChipProps> = ({ entry, done, checkingPermission = false }) => {
   const live = !!entry && !done;
   const nowMs = useSecondTick(live);
@@ -89,20 +67,7 @@ export const ToolProgressChip: React.FC<ToolProgressChipProps> = ({ entry, done,
   );
 };
 
-/**
- * Store-connected wrapper.
- *
- * Subscribes here rather than threading the whole progress map down from
- * `ClaudeTranscript`: the map's identity changes on every beat, and a map prop
- * would re-render every mounted message in the tab twice a minute per running
- * tool. The transcript is unvirtualised and every open tab is mounted at once
- * (see the perf note in the root CLAUDE.md), so that is the expensive shape.
- * The selector returns one entry, whose reference the reducer keeps stable
- * unless its own values moved.
- *
- * Same pattern as `InflightAssistantBubble` — a leaf that takes `tabId` and
- * reads its own slice.
- */
+// Subscribes per leaf: a map prop changes identity every beat and would re-render every mounted message.
 export const ConnectedToolProgressChip: React.FC<{
   tabId: string;
   toolUseId: string | undefined;

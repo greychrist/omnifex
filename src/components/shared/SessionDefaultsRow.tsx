@@ -23,16 +23,7 @@ export interface SessionDefaultsRowProps {
   setEffort: (v: string) => void;
   permissionMode: string;
   setPermissionMode: (v: string) => void;
-  /**
-   * Config dir of the account these defaults belong to. When set (and the
-   * engine is Claude) the model picker shows that account's live CLI model
-   * catalog instead of the static fallback.
-   */
   configDir?: string;
-  /**
-   * 'row' (default) lays the three fields out side by side; 'column' stacks
-   * them full-width for narrow containers.
-   */
   direction?: 'row' | 'column';
   className?: string;
 }
@@ -54,8 +45,6 @@ interface DropdownProps {
   options: DropdownOption[];
 }
 
-// Plain <select> used for the Codex engine, whose model / effort / permission
-// option sets have no shared stylized (icon + color) picker component yet.
 function Dropdown({ id, label, value, onChange, options }: DropdownProps) {
   return (
     <div className="flex flex-col gap-1 min-w-0 flex-1">
@@ -100,13 +89,7 @@ export function SessionDefaultsRow({
     engine === 'claude' ? configDir : undefined,
   );
 
-  // Claude reuses the same stylized, icon-bearing pickers as the new-session
-  // page (ControlBar + ModelPicker). Reusing them means the permission option
-  // set (all six CLI modes) and the per-mode colors stay in one place and any
-  // fix propagates to both surfaces.
   if (engine === 'claude') {
-    // pickModelOption bridges concrete CLI ids (e.g. `claude-opus-4-8`) to
-    // the picker's alias options.
     const selectedModelData = pickModelOption(model, models);
     const selectedRawModel = modelCatalogRaw.find((m) => m.value === model);
     const wrap = (label: string, node: React.ReactNode) => (
@@ -149,7 +132,6 @@ export function SessionDefaultsRow({
     );
   }
 
-  // Codex: plain selects fed by the engine-keyed option lists.
   return (
     <div className={`${layout} ${className ?? ''}`}>
       <Dropdown

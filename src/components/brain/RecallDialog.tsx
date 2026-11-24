@@ -11,18 +11,10 @@ interface RecallDialogProps {
   open: boolean;
   accountId: number;
   onOpenChange: (open: boolean) => void;
-  /** Receives the formatted block to insert at the cursor. */
   onInsert: (text: string) => void;
 }
 
-/**
- * `/recall` — search one account's Brain and insert whole notes into the
- * prompt.
- *
- * Scoped to the session's own account and never merged across vaults, the same
- * rule the Brain tab enforces: merged-with-badges would make cross-account
- * leakage a rendering detail rather than an impossibility.
- */
+// One account's vault, never merged: cross-account leakage must be impossible, not a rendering detail.
 export const RecallDialog: React.FC<RecallDialogProps> = ({
   open,
   accountId,
@@ -36,8 +28,7 @@ export const RecallDialog: React.FC<RecallDialogProps> = ({
   const [inserting, setInserting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // A fresh dialog every time: a stale result list from the previous /recall
-  // would invite inserting a note the user did not just search for.
+  // Fresh every open: stale results invite inserting a note the user did not just search for.
   useEffect(() => {
     if (!open) return;
     setQuery('');
@@ -86,8 +77,7 @@ export const RecallDialog: React.FC<RecallDialogProps> = ({
       onInsert(formatRecalledNotes(notes));
       onOpenChange(false);
     } catch (err) {
-      // A note that cannot be read must not close the dialog on a silent
-      // no-op: the user would think they inserted something.
+      // Must not close on a silent no-op: the user would think they inserted something.
       setError(err instanceof Error ? err.message : 'Could not read the selected notes');
     } finally {
       setInserting(false);

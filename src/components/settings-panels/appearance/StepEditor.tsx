@@ -6,11 +6,6 @@ import { IconPicker } from "./IconPicker";
 import { ColorField } from "./ColorField";
 import { STEP_LABELS } from "./stepLabels";
 
-/**
- * Settings › Chats › Messages, one kind of timeline step: its icon and color.
- * A color tints the step's icon and the line beside it when opened; a failed
- * step stays red. Steps are always shown, so there is no Show in Standard.
- */
 export const StepEditor: React.FC<{
   kind: ModernStepKind;
   icon: IconName;

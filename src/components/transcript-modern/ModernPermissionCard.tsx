@@ -1,12 +1,3 @@
-/**
- * A permission request in the Modern format — AI Elements' Confirmation.
- *
- * Same decisions as the classic PermissionCard, on the same logic
- * (`permissionCardLogic`): deny, allow once, allow for the session, or save a
- * rule. The rule and where it is saved sit behind "Change" rather than on the
- * card's face. Codex approvals and symlink folder grants keep the classic
- * card, which has the previews they need.
- */
 import * as React from 'react';
 import { ShieldQuestion } from 'lucide-react';
 import { Button } from '@/components/ui/button';

@@ -1,13 +1,3 @@
-/**
- * shadcn's Trace (ui.shadcn.com, AI › Chain of Thought), ported onto our
- * Radix collapsible. Class strings are theirs, except two of their utilities
- * we don't have: `shimmer` (our Shimmer span instead) and the collapsible
- * height transition (Radix exposes a different variable; no animation).
- *
- * A Trace is a column of TraceLines; a line is a status icon, a title, an
- * optional muted description. A collapsible line rotates a chevron after its
- * title and opens onto content set off by a left rule.
- */
 import * as React from 'react';
 import { ChevronRightIcon, CircleAlertIcon, CircleCheckIcon, CircleIcon, LoaderCircleIcon } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -32,7 +22,6 @@ export function TraceLine({
         'flex w-fit max-w-full min-w-0 items-center gap-2 text-sm text-muted-foreground transition-colors',
         'in-[button]:cursor-pointer in-[button:hover]:text-foreground',
         'data-[status=error]:text-destructive data-[status=error]:in-[button:hover]:text-destructive data-[status=pending]:opacity-60',
-        // The context rail's warning amber (ContextTimelineTick, NoticeLine).
         'data-[status=warn]:text-amber-500 data-[status=warn]:in-[button:hover]:text-amber-500',
         className,
       )}
@@ -65,7 +54,6 @@ export function TraceDescription({ className, ...props }: React.ComponentProps<'
   );
 }
 
-/** The status circle Trace's examples use: check, spinner, alert, or empty while waiting. */
 export function TraceStatusIcon({ status }: { status?: TraceStatus }) {
   if (status === 'running') return <LoaderCircleIcon className="animate-spin" />;
   if (status === 'error') return <CircleAlertIcon />;
@@ -81,7 +69,6 @@ export function TraceCollapsibleTrigger({
   chevron = true,
   ...props
 }: React.ComponentProps<typeof CollapsibleTrigger> & {
-  /** Off for a trigger that shares its line with another, which draws it. */
   chevron?: boolean;
 }) {
   return (
@@ -109,8 +96,7 @@ export function TraceCollapsibleContent({
   ruleColor,
   ...props
 }: React.ComponentProps<typeof CollapsibleContent> & {
-  /** The left rule's color; the theme border when absent. Inline, because
-   *  the unlayered `* { border-color }` reset beats border-color utilities. */
+  /** Inline, because the unlayered `* { border-color }` reset beats border-color utilities. */
   ruleColor?: string;
 }) {
   return (

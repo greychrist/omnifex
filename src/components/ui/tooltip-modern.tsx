@@ -43,9 +43,6 @@ interface TooltipSimpleProps {
   contentClassName?: string
 }
 
-/**
- * Simple tooltip wrapper for common use cases
- */
 export const TooltipSimple: React.FC<TooltipSimpleProps> = ({
   content,
   children,

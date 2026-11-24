@@ -1,7 +1,6 @@
 import React, { useState, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  // Interface & Navigation
   Home,
   Menu,
   Settings,
@@ -36,7 +35,6 @@ import {
   Download,
   Edit,
   Copy,
-  // Development & Tech
   Bot,
   Brain,
   Code,
@@ -58,7 +56,6 @@ import {
   FolderOpen,
   Bug,
   Coffee,
-  // Business & Finance
   Briefcase,
   Building,
   CreditCard,
@@ -70,7 +67,6 @@ import {
   Calculator,
   Receipt,
   Wallet,
-  // Creative & Design
   Palette,
   Brush,
   Camera,
@@ -84,7 +80,6 @@ import {
   Zap,
   Sparkles,
   Wand2,
-  // Nature & Science
   Beaker,
   Atom,
   Dna,
@@ -98,7 +93,6 @@ import {
   TreePine,
   Waves,
   Wind,
-  // Gaming & Entertainment
   Gamepad2,
   Dice1,
   Trophy,
@@ -108,7 +102,6 @@ import {
   Target,
   Swords,
   Shield,
-  // Communication
   Mail,
   Send,
   MessageCircle,
@@ -117,7 +110,6 @@ import {
   Radio,
   Podcast,
   Megaphone,
-  // Miscellaneous
   Activity,
   Anchor,
   Award,
@@ -145,9 +137,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
-/**
- * Icon categories for better organization
- */
 const ICON_CATEGORIES = {
   "Interface & Navigation": [
     { name: "home", icon: Home },
@@ -301,28 +290,12 @@ type IconCategory = typeof ICON_CATEGORIES[keyof typeof ICON_CATEGORIES];
 type IconItem = IconCategory[number];
 
 interface IconPickerProps {
-  /**
-   * Currently selected icon name
-   */
   value: string;
-  /**
-   * Callback when an icon is selected
-   */
   onSelect: (iconName: string) => void;
-  /**
-   * Whether the picker is open
-   */
   isOpen: boolean;
-  /**
-   * Callback to close the picker
-   */
   onClose: () => void;
 }
 
-/**
- * Icon picker component with search and categories
- * Similar to Notion's icon picker interface
- */
 export const IconPicker: React.FC<IconPickerProps> = ({
   value,
   onSelect,
@@ -332,7 +305,6 @@ export const IconPicker: React.FC<IconPickerProps> = ({
   const [searchQuery, setSearchQuery] = useState("");
   const [hoveredIcon, setHoveredIcon] = useState<string | null>(null);
 
-  // Filter icons based on search query
   const filteredCategories = useMemo((): Record<string, readonly IconItem[]> => {
     if (!searchQuery.trim()) return ICON_CATEGORIES;
 
@@ -351,7 +323,6 @@ export const IconPicker: React.FC<IconPickerProps> = ({
     return filtered;
   }, [searchQuery]);
 
-  // Get all icons for search
   const allIcons = useMemo(() => {
     return Object.values(ICON_CATEGORIES).flat();
   }, []);
@@ -369,7 +340,6 @@ export const IconPicker: React.FC<IconPickerProps> = ({
           <DialogTitle>Choose an icon</DialogTitle>
         </DialogHeader>
 
-        {/* Search Bar */}
         <div className="px-6 py-3 border-b">
           <div className="relative">
             <SearchIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -383,7 +353,6 @@ export const IconPicker: React.FC<IconPickerProps> = ({
           </div>
         </div>
 
-        {/* Icon Grid */}
         <div className="h-[60vh] px-6 py-4 overflow-y-auto">
           {Object.keys(filteredCategories).length === 0 ? (
             <div className="flex flex-col items-center justify-center h-32 text-center">
@@ -439,7 +408,6 @@ export const IconPicker: React.FC<IconPickerProps> = ({
           )}
         </div>
 
-        {/* Footer */}
         <div className="px-6 py-3 border-t bg-muted/50">
           <p className="text-xs text-muted-foreground text-center">
             Click an icon to select • {allIcons.length} icons available
@@ -450,12 +418,10 @@ export const IconPicker: React.FC<IconPickerProps> = ({
   );
 };
 
-// Export all available icon names for type safety
 export const AVAILABLE_ICONS = Object.values(ICON_CATEGORIES)
   .flat()
   .map(({ name }) => name);
 
-// Export icon map for easy access
 export const ICON_MAP = Object.values(ICON_CATEGORIES)
   .flat()
   .reduce<Record<string, LucideIcon>>((acc, { name, icon }) => ({ ...acc, [name]: icon }), {}); 

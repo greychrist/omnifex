@@ -80,21 +80,7 @@ const SelectContent = React.forwardRef<
       {...props}
     >
       <SelectScrollUpButton />
-      {/* The Viewport is the SCROLL CONTAINER for the options, so it must not
-          be given a fixed height. It used to carry an arbitrary height utility
-          bound to the trigger-height custom property, which made it exactly as
-          tall as the TRIGGER — 28px for the Brain tab's `h-7` account switcher
-          — turning a three-item list into a one-line scrolling window with
-          scroll buttons and hover auto-scroll. It read as a sticky, laggy
-          dropdown. (Spelled out in prose rather than as the class itself:
-          Tailwind scans comments too, and naming it would regenerate the dead
-          rule this removed.)
-
-          Radix bounds a popper Select with
-          `max-height: var(--radix-select-content-available-height)` on the
-          CONTENT (see its Select docs, "Constrain the content size"), never
-          with a height on the viewport. Content's `max-h-96` above is that
-          bound here. */}
+      {/* Never give the Viewport a height: it is the scroll container. The Content's max-h bounds it. */}
       <SelectPrimitive.Viewport
         className={cn(
           "p-1",
@@ -109,15 +95,6 @@ const SelectContent = React.forwardRef<
 ));
 SelectContent.displayName = SelectPrimitive.Content.displayName;
 
-// SelectLabel is a section header inside a SelectContent, used to group
-// SelectItems (e.g. "Sans" / "Serif" / "Mono" categories in the font
-// picker). The styling is deliberately distinct from SelectItems so it
-// reads as a category header, not as another selectable option:
-//   - smaller (text-xs vs items' text-sm)
-//   - uppercase + tracked-out so the visual rhythm is clearly different
-//   - muted-foreground to de-emphasize vs items
-//   - extra top padding so a new group has breathing room from the
-//     previous group's last item
 const SelectLabel = React.forwardRef<
   React.ComponentRef<typeof SelectPrimitive.Label>,
   React.ComponentPropsWithoutRef<typeof SelectPrimitive.Label>
@@ -125,9 +102,6 @@ const SelectLabel = React.forwardRef<
   <SelectPrimitive.Label
     ref={ref}
     className={cn(
-      // -mx-1 cancels SelectContent.Viewport's p-1 so the bg strip
-      // extends edge-to-edge of the dropdown; px-3 puts the content
-      // back at the same horizontal inset as items.
       "-mx-1 px-3 pt-2 pb-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground bg-muted/40",
       className,
     )}
@@ -170,52 +144,20 @@ const SelectSeparator = React.forwardRef<
 ));
 SelectSeparator.displayName = SelectPrimitive.Separator.displayName;
 
-// Legacy interface for backward compatibility
 export interface SelectOption {
   value: string;
   label: string;
 }
 
 export interface SelectProps {
-  /**
-   * The current value
-   */
   value: string;
-  /**
-   * Callback when value changes
-   */
   onValueChange: (value: string) => void;
-  /**
-   * Available options
-   */
   options: SelectOption[];
-  /**
-   * Placeholder text
-   */
   placeholder?: string;
-  /**
-   * Whether the select is disabled
-   */
   disabled?: boolean;
-  /**
-   * Additional CSS classes
-   */
   className?: string;
 }
 
-/**
- * Simple select dropdown component
- * 
- * @example
- * <Select
- *   value={selected}
- *   onValueChange={setSelected}
- *   options={[
- *     { value: "option1", label: "Option 1" },
- *     { value: "option2", label: "Option 2" }
- *   ]}
- * />
- */
 const SimpleSelect: React.FC<SelectProps> = ({
   value,
   onValueChange,

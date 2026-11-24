@@ -7,36 +7,20 @@ import { MODERN_ITEM_KINDS } from "@/lib/renderingConfigMigration";
 import { IconRenderer } from "./iconMap";
 import { cn } from "@/lib/utils";
 
-/**
- * The settings tree is grouped by category. Each of the four categories is a
- * selectable node (opens the category's style editor) that expands to show
- * the registry kinds belonging to that category, sorted alphabetically by label.
- * Selecting a kind row opens its kind editor.
- *
- * Only kinds whose settings change what is drawn are listed. The kinds Modern
- * draws as its own items (prompts, answers, thinking, tool calls…) take
- * their look from the step settings above and are always in Standard.
- * `assistant.text.live` is the streaming reply, never a record.
- */
+// Modern's own item kinds take the step settings, so they're unlisted — except the answered question,
+// the user prompt, and any hidden in Standard (so it can be shown again).
 const LISTED = (id: string, config: MessageRenderingConfig) =>
   id !== "assistant.text.live"
-  // Except one hidden in Standard (a v5 Never migrates to that), so it can
-  // be shown again.
-  // The answered question is drawn as a line in its kind's icon and color;
-  // a line-style user prompt's chip wears the User prompt icon.
   && (!MODERN_ITEM_KINDS.has(id) || id === "assistant.askUserQuestion" || id === "user.prompt"
     || isHiddenInStandard(resolveKind(config, id)));
 
-/** The groups that open and close: the steps, then each category. */
 const STEPS = "steps";
 const GROUPS: readonly string[] = [STEPS, ...CATEGORIES];
 
 export type TreeSelection =
   | { type: "category"; id: Category }
   | { type: "kind"; id: string }
-  /** A kind of timeline step: Modern's step icon and color. */
   | { type: "step"; id: ModernStepKind }
-  /** The text the chat is set in. */
   | { type: "text" };
 
 interface MessageKindTreeProps {
@@ -45,7 +29,6 @@ interface MessageKindTreeProps {
   onSelect: (selection: TreeSelection) => void;
 }
 
-/** Swatch hex for a resolved style's accent; grey when it is not a hex. */
 function swatchHex(accentColor: string): string {
   return isHexColor(accentColor) ? accentColor : "#888";
 }
@@ -55,7 +38,6 @@ export const MessageKindTree: React.FC<MessageKindTreeProps> = ({
   selected,
   onSelect,
 }) => {
-  // Starts collapsed: 50-odd kinds open at once buried the categories.
   const [collapsed, setCollapsed] = React.useState<ReadonlySet<string>>(() => new Set(GROUPS));
   const anyOpen = collapsed.size < GROUPS.length;
   const toggle = (c: string) => {
@@ -94,7 +76,6 @@ export const MessageKindTree: React.FC<MessageKindTreeProps> = ({
         const catSelected = selected.type === "category" && selected.id === c;
         return (
           <div key={c}>
-            {/* Category node */}
             <div
               className={cn(
                 "group/cat w-full flex items-center gap-1 rounded px-1 py-1 transition-colors",
@@ -123,7 +104,6 @@ export const MessageKindTree: React.FC<MessageKindTreeProps> = ({
               </button>
             </div>
 
-            {/* Kind rows */}
             {isOpen && (
               <div className="ml-4 border-l border-border/40 pl-1 mt-0.5 mb-1">
                 {kinds.map((def) => {
@@ -168,7 +148,6 @@ export const MessageKindTree: React.FC<MessageKindTreeProps> = ({
   );
 };
 
-/** The timeline steps, as a group above the categories. */
 const StepsGroup: React.FC<{
   config: MessageRenderingConfig;
   open: boolean;

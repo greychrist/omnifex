@@ -7,13 +7,8 @@ import { BAR, BAR_BUTTON, DiagramToolbar } from "./DiagramToolbar";
 import { DiagramOverlay } from "./DiagramOverlay";
 
 interface MermaidBlockProps {
-  /** What was inside the ```mermaid fence. */
   source: string;
-  /**
-   * The reply is still arriving. A half-written diagram does not parse, so
-   * the source is shown until the message is complete rather than flashing
-   * a parse error on every chunk.
-   */
+  /** Show the source until complete: a half-written diagram doesn't parse. */
   streaming?: boolean;
 }
 
@@ -28,9 +23,7 @@ const PILL = "text-[10px] px-2 py-0.5 font-medium transition-colors";
 const PILL_ON = "bg-foreground/10 text-foreground";
 const PILL_OFF = "text-muted-foreground hover:text-foreground";
 
-// Inline styles, because `.prose pre` / `.prose code` would otherwise draw a
-// second card (and an inline-code chip) inside this block's own card; inline
-// style is the only thing that reliably beats the hand-rolled prose CSS.
+// Inline styles: only they beat the hand-rolled `.prose pre` / `.prose code` CSS.
 const PRE_RESET: React.CSSProperties = { margin: 0, background: "transparent", border: 0, borderRadius: 0 };
 const CODE_RESET: React.CSSProperties = { background: "transparent", padding: 0, border: 0 };
 
@@ -42,15 +35,9 @@ function SourceView({ source }: { source: string }): React.JSX.Element {
   );
 }
 
-/**
- * One ```mermaid fence: the drawing inline, a Diagram/Source toggle, the
- * export toolbar, and Expand into the full-window viewer.
- */
 export const MermaidBlock: React.FC<MermaidBlockProps> = ({ source, streaming = false }) => {
   const { theme } = useTheme();
-  // Results are tagged with what they were drawn from, so a source or theme
-  // change reads as "loading" during render instead of being reset by a
-  // setState inside the effect.
+  // Results are keyed by what they were drawn from, so a change reads as loading without a setState in the effect.
   const drawKey = `${theme}\u0000${source}`;
   const [result, setResult] = useState<{ key: string; drawing: Drawing } | null>(null);
   const drawing: Drawing = result?.key === drawKey ? result.drawing : { state: "loading" };

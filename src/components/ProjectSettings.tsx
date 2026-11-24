@@ -1,7 +1,3 @@
-/**
- * ProjectSettings component for managing project-specific hooks configuration
- */
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { HooksEditor } from '@/components/HooksEditor';
 import { SlashCommandsManager } from '@/components/SlashCommandsManager';
@@ -37,17 +33,14 @@ export const ProjectSettings: React.FC<ProjectSettingsProps> = ({
   const [activeTab, setActiveTab] = useState('commands');
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   
-  // Other hooks settings
   const [gitIgnoreLocal, setGitIgnoreLocal] = useState(true);
 
   const checkGitIgnore = useCallback(async () => {
     try {
-      // Check if .claude/settings.local.json is in .gitignore
       const gitignorePath = `${project.path}/.gitignore`;
       const gitignoreContent = await api.readClaudeMdFile(gitignorePath);
       setGitIgnoreLocal(gitignoreContent.includes('.claude/settings.local.json'));
     } catch {
-      // .gitignore might not exist
       setGitIgnoreLocal(false);
     }
   }, [project.path]);
@@ -64,7 +57,7 @@ export const ProjectSettings: React.FC<ProjectSettingsProps> = ({
       try {
         content = await api.readClaudeMdFile(gitignorePath);
       } catch {
-        // File doesn't exist, create it
+        // No .gitignore yet: start empty.
       }
       
       if (!content.includes('.claude/settings.local.json')) {
@@ -81,7 +74,6 @@ export const ProjectSettings: React.FC<ProjectSettingsProps> = ({
 
   return (
     <div className={cn("flex flex-col h-full", className)}>
-      {/* Header */}
       <div className="border-b px-6 py-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
@@ -101,7 +93,6 @@ export const ProjectSettings: React.FC<ProjectSettingsProps> = ({
         </div>
       </div>
 
-      {/* Content */}
       <div className="flex-1 overflow-y-auto">
         <div className="p-6">
           <Tabs value={activeTab} onValueChange={setActiveTab}>
@@ -201,7 +192,6 @@ export const ProjectSettings: React.FC<ProjectSettingsProps> = ({
         </div>
       </div>
 
-      {/* Toast Container */}
       <ToastContainer>
         {toast && (
           <Toast

@@ -5,12 +5,6 @@ import { DiffViewer } from "@/components/shared/DiffViewer";
 import { getLanguage } from "@/components/claude/tools/shared";
 import type { JSX } from 'react';
 
-/**
- * Normalized per-file change extracted from a Codex `applyPatchApproval`
- * approval payload. Mirrors the shape `ApplyPatchItem` uses for the post-
- * apply notification so a transcript that interleaves the approval card
- * and the apply notification reads as a single visual flow.
- */
 interface FileChange {
   path: string;
   before: string;
@@ -22,12 +16,7 @@ interface PatchFields {
   files: FileChange[];
 }
 
-/**
- * Coerce an unknown side of a per-file change into a string. Codex builds
- * have shipped `before`/`after` as either a plain string or an object with
- * a `lines: string[]` array — match `ApplyPatchItem.coerceSide` exactly so
- * the diff viewer sees the same content both before and after approval.
- */
+/** Codex ships each side as a string or `{ lines }`; must match `ApplyPatchItem.coerceSide`. */
 function coerceSide(value: unknown): string {
   if (typeof value === "string") return value;
   if (value && typeof value === "object") {
@@ -41,19 +30,7 @@ function coerceSide(value: unknown): string {
   return "";
 }
 
-/**
- * Extract `fileChanges` + `reason` from an `applyPatchApproval` approval
- * payload.
- *
- * Wire shape (Codex JSON-RPC server-request `applyPatchApproval`):
- *
- *   { conversationId, callId, fileChanges, reason? }
- *
- * `fileChanges` is either an object map (`{ [path]: { before?, after? } }`)
- * or an array (`Array<{ path, before?, after? }>`). Anything else yields an
- * empty file list — a Codex protocol shape change shouldn't crash the
- * dialog.
- */
+/** `fileChanges` is an object map or an array; anything else yields no files, not a crash. */
 function extractPatch(payload: unknown): PatchFields {
   const empty: PatchFields = { reason: "", files: [] };
   if (!payload || typeof payload !== "object") return empty;
@@ -90,7 +67,6 @@ function extractPatch(payload: unknown): PatchFields {
 
 interface FileBlockProps {
   change: FileChange;
-  /** Default-expanded? Caller decides based on total file count. */
   defaultOpen: boolean;
 }
 
@@ -128,25 +104,9 @@ function FileBlock({ change, defaultOpen }: FileBlockProps): JSX.Element {
 }
 
 interface CodexPatchPreviewProps {
-  /**
-   * Raw `applyPatchApproval` JSON-RPC params as Codex emitted them. The
-   * component shape-probes defensively — same pattern as
-   * `ApplyPatchItem.extractPatch` — so a build that ships an unexpected
-   * shape renders an empty state rather than crashing.
-   */
   payload: unknown;
 }
 
-/**
- * Renders a Codex patch-approval preview as an N-files header with
- * per-file collapsible diffs. Mirrors `ApplyPatchItem` (the post-apply
- * notification widget) so the approval and the applied patch read as a
- * continuous visual flow.
- *
- * Default-collapse heuristic: files expand inline when N ≤ 3 (typical
- * single-file rewrite or small refactor) and collapse when larger so a
- * sweeping patch doesn't blow out the dialog on arrival.
- */
 export function CodexPatchPreview({ payload }: CodexPatchPreviewProps): JSX.Element {
   const { reason, files } = extractPatch(payload);
   const defaultOpen = files.length <= 3;

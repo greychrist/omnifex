@@ -6,8 +6,6 @@ import { Popover } from "@/components/ui/popover";
 import { IconRenderer } from "./iconMap";
 import { cn } from "@/lib/utils";
 
-// Sort once at module load. "none" pinned at the top; the rest alphabetical
-// (case-insensitive) so the picker grid is browseable.
 const SORTED_ICONS: readonly IconName[] = (() => {
   const rest = (ALLOWED_ICONS as readonly IconName[]).filter((n) => n !== "none");
   rest.sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
@@ -16,11 +14,6 @@ const SORTED_ICONS: readonly IconName[] = (() => {
     : rest;
 })();
 
-/**
- * Popover-based icon picker with a 6-column grid. Sorted alphabetically with
- * "none" pinned at the top. Shared by the message-kind editor and the tab
- * status-indicator editor.
- */
 export const IconPicker: React.FC<{ value: IconName; onChange: (v: IconName) => void }> = ({
   value,
   onChange,
@@ -40,11 +33,7 @@ export const IconPicker: React.FC<{ value: IconName; onChange: (v: IconName) => 
           className="flex h-9 w-full items-center justify-between gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm ring-offset-background hover:bg-accent focus:outline-none focus:ring-1 focus:ring-ring"
           aria-label="Icon"
         >
-          {/* `min-w-0` is load-bearing: a flex item defaults to
-              `min-width:auto`, so without it this group refuses to shrink
-              below its text and a long icon name (the shipped default
-              "MessageCircleQuestion" is one) pushes the chevron out of the
-              button and over whatever sits beside it. */}
+          {/* `min-w-0` is load-bearing: without it a long icon name pushes the chevron out of the button. */}
           <span className="flex min-w-0 items-center gap-2">
             {value === "none" ? (
               <span className="text-muted-foreground text-xs">—</span>

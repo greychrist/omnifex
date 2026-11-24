@@ -32,63 +32,26 @@ import { fmtUsd } from '@/lib/costReportFilters';
 interface CostChartProps {
   rows: CostHistoryPeriodModel[];
   mode: ChartMode;
-  /** The `model_pricing` delta layer, so a model released after this build
-   *  gets its configured legend name and color instead of a raw id and a
-   *  hashed hue. Undefined means "use what shipped". */
   pricing?: readonly ModelPricingInput[];
 }
 
-/** Segment separation is a gap in the surface color, not a border drawn round
- *  the mark. 1px each side reads as the 2px gap the method asks for. */
 const SEAM = 1;
 
-/**
- * The plot area sits one step above the card it is on, so the chart reads as
- * an inset panel rather than as ink floating on the panel behind it.
- *
- * Derived from the theme tokens rather than fixed hex: the app ships three
- * themes whose card colors differ by a lot (0.14, 0.23 and 0.96 lightness),
- * and a hex tuned to one of them is visibly wrong in the other two.
- */
+// From theme tokens, not hex: the three themes' card colors differ too much for one fixed value.
 const PLOT_SURFACE: Record<ChartMode, string> = {
   dark: 'color-mix(in oklab, var(--color-card), white 6%)',
-  // Light's card is already near-white, so a mix barely moves; the page
-  // background is the real step above it (0.98 against the card's 0.96).
   light: 'var(--color-background)',
 };
 
 /** Below the gridlines, which recharts pins at -100. */
 const PLOT_SURFACE_Z = -200;
 
-/**
- * Gridlines, axis line and week rules — one silver-gray for all of the chart's
- * furniture.
- *
- * Same reason as the surface: derived from the card token, because the value
- * has to clear whatever the plot surface underneath it is. The previous fixed
- * near-black was a step off the *old* surface and disappeared into the lighter
- * one. Solid and hairline, never dashed; a dashed rule competes with the marks
- * it is separating.
- */
 const RULE: Record<ChartMode, string> = {
   dark: 'color-mix(in oklab, var(--color-card), white 28%)',
-  // Light mode is stepped separately, not flipped: its card is near-white, so
-  // the rule goes down toward black, and only far enough to land where the
-  // previous light gridline already sat.
   light: 'color-mix(in oklab, var(--color-card), black 10%)',
 };
 
-/**
- * Stacked columns of spend over time, one segment per model.
- *
- * Bars rather than an area: this is part-to-whole across discrete periods, and
- * an area implies the spend interpolates between days, which it does not.
- *
- * Model → color comes from the fixed slot map, never from series order, so
- * filtering a model out does not repaint the survivors and two months' charts
- * stay comparable. Series are sorted by slot too, so stack order and legend
- * order agree.
- */
+// Model → color from the fixed slot map, never series order: filtering a model must not repaint the rest.
 export function CostChart({ rows, mode, pricing }: CostChartProps) {
   const { data, models } = useMemo(() => toStackedSeries(rows), [rows]);
   const periods = useMemo(() => data.map((d) => d.period), [data]);
@@ -153,8 +116,7 @@ export function CostChart({ rows, mode, pricing }: CostChartProps) {
               stroke={plot}
               strokeWidth={SEAM}
               isAnimationActive={false}
-              // Which model sits on top varies per period, so the cap radius is
-              // decided per cell rather than per series.
+              // The top model varies per period, so the cap radius is decided per cell.
               shape={(props: unknown) => (
                 <StackedSegment {...(props as SegmentProps)} models={models} />
               )}
@@ -166,7 +128,6 @@ export function CostChart({ rows, mode, pricing }: CostChartProps) {
   );
 }
 
-/** The lighter panel the bars are drawn on. */
 function PlotSurface({ fill }: { fill: string }) {
   const plotArea = usePlotArea();
   if (!plotArea) return null;
@@ -183,17 +144,6 @@ function PlotSurface({ fill }: { fill: string }) {
   );
 }
 
-/**
- * Hairline rules at the week boundaries, so a month of daily bars reads as
- * four weeks rather than thirty-one undifferentiated columns.
- *
- * Drawn before the bars so they sit behind the data, in the gridline gray and
- * solid — a separator is chart furniture, and dashing it would make it
- * compete with the marks it is separating. `position: 'start'` puts the line
- * on the band edge, which is the middle of the gap between two bars.
- *
- * Nothing renders for week or month buckets; `weekBoundaries` returns none.
- */
 function WeekSeparators({ periods, stroke }: { periods: string[]; stroke: string }) {
   const plotArea = usePlotArea();
   const xScale = useXAxisScale();
@@ -203,8 +153,7 @@ function WeekSeparators({ periods, stroke }: { periods: string[]; stroke: string
       {weekBoundaries(periods).map((period) => {
         const x = xScale(period, { position: 'start' });
         if (x === undefined) return null;
-        // Half-pixel offset: a 1px line on an integer coordinate straddles two
-        // device pixels and renders as a 2px smear.
+        // Half-pixel offset: on an integer coordinate a 1px line smears across two device pixels.
         const cx = Math.round(x) + 0.5;
         return (
           <line
@@ -235,12 +184,6 @@ interface SegmentProps {
   payload: StackedBucket;
 }
 
-/** One stacked segment, rounding its top corners only when it is the topmost
- *  segment tall enough to show the round in its period.
- *
- *  The px-per-unit scale is recovered from this segment's own geometry — the
- *  only place a `shape` callback can see it, and it is the same for every
- *  segment in the stack. */
 function StackedSegment({ models, ...p }: SegmentProps & { models: string[] }) {
   const radius = capRadius(p.width);
   const value = Number(p.payload[p.dataKey] ?? 0);
@@ -251,8 +194,6 @@ function StackedSegment({ models, ...p }: SegmentProps & { models: string[] }) {
   return <path d={d} fill={p.fill} stroke={p.stroke} strokeWidth={p.strokeWidth} />;
 }
 
-/** Legend for the chart — identity is never color-alone, so every segment is
- *  also named here and in the by-model table below it. */
 export function CostChartLegend(
   { models, mode, pricing }: { models: string[]; mode: ChartMode; pricing?: readonly ModelPricingInput[] },
 ) {

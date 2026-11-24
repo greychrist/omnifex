@@ -2,15 +2,6 @@ import React, { useMemo, useState } from 'react';
 import type { BrainSourceSummary } from '@/lib/api';
 import { Popover } from '@/components/ui/popover';
 
-/**
- * The sources table: sort, filter, and multi-select.
- *
- * Presentational on purpose — it takes rows and selection state and returns
- * elements. Every rule worth pinning (which rows select-all covers, whether the
- * button count matches what will run) is then testable without IPC, a vault, or
- * a queue.
- */
-
 export type SortKey = 'project' | 'name' | 'type' | 'when' | 'size' | 'cost' | 'status';
 export type StatusFilter = 'all' | 'never' | 'indexed' | 'failed' | 'changed';
 
@@ -19,17 +10,7 @@ export interface BrainSourcesTableProps {
   selected: ReadonlySet<string>;
   onSelectedChange: (next: Set<string>) => void;
   activeItemKey: string | null;
-  /**
-   * The item the indexer is working on right now — `BrainRun.item`.
-   *
-   * Distinct from `activeItemKey`, which is the row the user opened in the
-   * preview. The run banner counts "3 of 20" without ever saying which of
-   * these rows the number is about; this is what closes that gap.
-   *
-   * Null when nothing is in flight. A curation entry names a note path rather
-   * than a source key, so no row matches — which is correct, since curation
-   * does not appear in this table.
-   */
+  /** The row the indexer is on (`BrainRun.item`), not the row open in the preview. */
   indexingItemKey: string | null;
   onOpen: (itemKey: string) => void;
 }
@@ -46,41 +27,16 @@ function statusOf(r: BrainSourceSummary): string {
   return 'never';
 }
 
-/**
- * What the Status cell says.
- *
- * A row the gate refuses shows the gate's REASON — "fewer than 2 prompts (1)"
- * says more than "skipped" about what to do next. But that only holds while
- * nothing has indexed it: a row can now be pushed past the gate deliberately,
- * and one with a note behind it reporting the reason it was once declined
- * reads as a press that did nothing. The record of what happened outranks the
- * gate's standing opinion.
- */
+/** A row with a note shows what happened; the gate's reason only while nothing indexed it. */
 export function statusLabel(r: BrainSourceSummary): string {
   if (r.status === 'indexed' || r.status === 'failed') return statusOf(r);
   return r.admitted ? statusOf(r) : r.reason;
 }
 
-/**
- * True when indexing this row would do nothing.
- *
- * `indexSource` short-circuits an already-indexed item whose bytes and mtime
- * have not moved — "unchanged since it was last indexed" — so ticking one buys
- * a press that spends nothing and changes nothing. A row that HAS changed is
- * still worth re-indexing.
- */
 export function isSettled(r: BrainSourceSummary): boolean {
   return r.status === 'indexed' && !r.changed;
 }
 
-/**
- * Why this row cannot be ticked, or null when it can be.
- *
- * Two different refusals the user has to be able to tell apart: a settled row
- * would spend nothing because nothing changed, while an in-use row would spend
- * on a conversation still being written. `indexSource` refuses the second one
- * too — this is the half that stops the click.
- */
 export function blockedReason(r: BrainSourceSummary): string | null {
   if (r.inUse) return 'This session is open in OmniFex — close the tab to index it';
   if (isSettled(r)) return 'Already indexed — nothing has changed since';
@@ -95,38 +51,23 @@ function matchesStatus(r: BrainSourceSummary, f: StatusFilter): boolean {
   return r.status === null;
 }
 
-/**
- * What kind of thing a row is.
- *
- * Not every row is a session — auto-memory notes and repo instruction files
- * are `.md` on disk and were indistinguishable from one, which made a Markdown
- * file masquerading as a conversation. Mirrors the `*_SOURCE_ID` constants in
- * daemon/services/brain/sources/.
- */
+/** Mirrors the `*_SOURCE_ID` constants in daemon/services/brain/sources/. */
 export function sourceTypeLabel(sourceId: string): string {
   switch (sourceId) {
     case 'session': return 'Session';
     case 'auto-memory': return 'Memory';
     case 'repo': return 'Repo file';
     case 'capture': return 'Capture';
-    // An adapter added later still renders as something rather than blank.
     default: return sourceId;
   }
 }
 
-/**
- * A run's cost, or an em dash when nothing was ever spent on the row.
- *
- * Four decimals, not two: one extraction lands around $0.02, and at two
- * decimals every cheap run would read as "$0.02" and every very cheap one as
- * "$0.00" — which says free, and it was not.
- */
+/** Four decimals: at two, every cheap run would read as "$0.00". */
 function usd(cost: number | null): string {
   if (cost === null) return '—';
   return `$${cost.toFixed(4)}`;
 }
 
-/** The token split behind a cost, for the cell's tooltip. */
 function costBreakdown(r: BrainSourceSummary): string | undefined {
   if (r.costUsd === null) return undefined;
   const n = (v: number | null): string => (v === null ? '?' : v.toLocaleString());
@@ -142,13 +83,7 @@ function kb(bytes: number): string {
   return `${Math.max(1, Math.round(bytes / 1024))} KB`;
 }
 
-/**
- * Every project folder on screen, with how many rows it holds, A→Z.
- *
- * Segment-wise and case-insensitive rather than a plain `localeCompare` on the
- * whole string: comparing paths as flat text interleaves a folder with its own
- * children (`/a/b` lands between `/a-x` and `/a/c`), which reads as unsorted.
- */
+/** Paths sort segment-wise: flat text interleaves a folder with its children. */
 export function projectsOf(rows: BrainSourceSummary[]): { path: string; count: number }[] {
   const counts = new Map<string, number>();
   for (const r of rows) counts.set(r.label, (counts.get(r.label) ?? 0) + 1);
@@ -157,14 +92,12 @@ export function projectsOf(rows: BrainSourceSummary[]): { path: string; count: n
     .sort((a, b) => comparePaths(a.path, b.path));
 }
 
-/** Order two paths the way a person reads a folder tree. */
 export function comparePaths(a: string, b: string): number {
   const left = a.split('/');
   const right = b.split('/');
   for (let i = 0; i < Math.max(left.length, right.length); i++) {
     const l = left[i];
     const r = right[i];
-    // A shorter path is the parent, so it sorts first.
     if (l === undefined) return -1;
     if (r === undefined) return 1;
     const cmp = l.localeCompare(r, undefined, { sensitivity: 'base', numeric: true });
@@ -179,9 +112,7 @@ export const BrainSourcesTable: React.FC<BrainSourcesTableProps> = ({
   const [sort, setSort] = useState<{ key: SortKey; desc: boolean }>({ key: 'when', desc: true });
   const [text, setText] = useState('');
   const [status, setStatus] = useState<StatusFilter>('all');
-  // Which projects the view is narrowed to. Empty means "no narrowing" — every
-  // project shows — so a newly discovered project appears without the user
-  // having to notice and tick it.
+  // Hidden, not shown: a newly discovered project appears without being ticked.
   const [hidden, setHidden] = useState<ReadonlySet<string>>(new Set());
   const [pickerOpen, setPickerOpen] = useState(false);
 
@@ -194,8 +125,7 @@ export const BrainSourcesTable: React.FC<BrainSourcesTableProps> = ({
         !hidden.has(r.label) &&
         matchesStatus(r, status) &&
         (needle === '' ||
-          // The item key stays searchable though it no longer has a column:
-          // pasting a session id is how you find one specific conversation.
+          // Item key stays searchable: pasting a session id finds one conversation.
           r.itemKey.toLowerCase().includes(needle) ||
           r.name.toLowerCase().includes(needle) ||
           r.label.toLowerCase().includes(needle) ||
@@ -208,8 +138,6 @@ export const BrainSourcesTable: React.FC<BrainSourcesTableProps> = ({
         case 'name': return dir * a.name.localeCompare(b.name, undefined, { numeric: true });
         case 'type': return dir * a.sourceId.localeCompare(b.sourceId);
         case 'size': return dir * (a.size - b.size);
-        // Never-indexed rows sort as zero: they cost nothing, which is exactly
-        // where they belong in a cost ordering.
         case 'cost': return dir * ((a.costUsd ?? 0) - (b.costUsd ?? 0));
         case 'status': return dir * statusOf(a).localeCompare(statusOf(b));
         default: return dir * (a.mtimeMs - b.mtimeMs);
@@ -217,13 +145,7 @@ export const BrainSourcesTable: React.FC<BrainSourcesTableProps> = ({
     });
   }, [rows, text, status, hidden, sort]);
 
-  /**
-   * Rows worth ticking: filtered, minus the ones indexing would refuse.
-   *
-   * Select-all covers the FILTERED rows and never the whole corpus — a
-   * select-all that silently reaches past what is on screen is how a user ends
-   * up indexing 158 sessions having meant to index one.
-   */
+  // Select-all covers the FILTERED rows, never the whole corpus.
   const selectableIds = useMemo(
     () => visible.filter((r) => blockedReason(r) === null).map(rowId),
     [visible],
@@ -270,13 +192,7 @@ export const BrainSourcesTable: React.FC<BrainSourcesTableProps> = ({
     return <th className="px-2 py-1 text-left font-medium">{sortButton(key, label)}</th>;
   }
 
-  /**
-   * A stacked cell's header: both halves keep their own sort control.
-   *
-   * Merging two columns must not cost two orderings — sorting by cost is how
-   * you find what the vault actually spent money on, and it would have gone
-   * with the Cost column otherwise.
-   */
+  // Both halves of a stacked cell keep their own sort control.
   function pairHeader(
     a: [SortKey, string],
     b: [SortKey, string],
@@ -293,8 +209,6 @@ export const BrainSourcesTable: React.FC<BrainSourcesTableProps> = ({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {/* The filter row is a second bar, tinted to read as chrome rather than
-          as the first line of the table. */}
       <div className="flex flex-wrap items-center gap-2 border-b bg-muted/40 px-3 py-2 text-xs">
         <input
           value={text}
@@ -350,7 +264,6 @@ export const BrainSourcesTable: React.FC<BrainSourcesTableProps> = ({
                         aria-label={`Show ${p.path}`}
                         className="h-3 w-3 shrink-0"
                       />
-                      {/* Whole path, unabridged — see the Project column. */}
                       <span className="break-all">{p.path}</span>
                       <span className="ml-auto shrink-0 text-muted-foreground">{p.count}</span>
                     </label>
@@ -377,13 +290,9 @@ export const BrainSourcesTable: React.FC<BrainSourcesTableProps> = ({
         </span>
       </div>
 
-      {/* Scrolls in both directions: paths are not truncated, so a deep one
-          is allowed to run past the pane rather than be abridged. `bg-card`
-          separates the data surface from the bars above it. */}
       <div className="min-h-0 flex-1 overflow-auto bg-card">
         <table className="w-full text-xs">
-          {/* Opaque and shadowed: a transparent sticky header let striped
-              rows scroll through the column names. */}
+          {/* Opaque: a transparent sticky header let rows scroll through it. */}
           <thead className="sticky top-0 z-10 bg-card text-muted-foreground shadow-[0_1px_0_0_hsl(var(--border))]">
             <tr>
               <th className="w-8 px-2 py-1.5">
@@ -413,9 +322,6 @@ export const BrainSourcesTable: React.FC<BrainSourcesTableProps> = ({
                   key={id}
                   onClick={() => { onOpen(r.itemKey); }}
                   aria-selected={active}
-                  // A left bar rather than a fill alone: with a striped body,
-                  // one row tinted a shade darker is not legible as "this is
-                  // the one open on the right".
                   className={`cursor-pointer border-b border-border/50 ${
                     active
                       ? 'bg-accent text-accent-foreground shadow-[inset_3px_0_0_0_hsl(var(--primary))]'
@@ -433,17 +339,9 @@ export const BrainSourcesTable: React.FC<BrainSourcesTableProps> = ({
                       className="h-3 w-3 disabled:opacity-40"
                     />
                   </td>
-                  {/* Project on top, the row's own name beneath it. Whole path
-                      on one line: these share long prefixes, so cutting one
-                      anywhere hides the part that identifies it. Stacking the
-                      name here is what let the table lose a column without
-                      abridging anything. */}
                   <td className="whitespace-nowrap px-2 py-1.5 align-top leading-tight">
                     <div data-testid="source-project" className="font-medium">{r.label}</div>
                     <div className="flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground">
-                      {/* A session id is what you paste in to find one
-                          conversation; a file's name says more than its
-                          encoded key does. */}
                       <span data-testid="source-name">{r.name}</span>
                       {r.inUse && (
                         <span
@@ -464,8 +362,6 @@ export const BrainSourcesTable: React.FC<BrainSourcesTableProps> = ({
                   <td className="whitespace-nowrap px-2 py-1.5 align-top tabular-nums text-muted-foreground">
                     {new Date(r.mtimeMs).toISOString().slice(0, 10)}
                   </td>
-                  {/* Size over cost, dimmed second line — the same stacked cell
-                      SessionList uses, so the two tables read alike. */}
                   <td className="whitespace-nowrap px-2 py-1.5 text-right align-top leading-tight tabular-nums">
                     <div data-testid="source-size" className="text-muted-foreground">
                       {kb(r.size)}
@@ -478,12 +374,6 @@ export const BrainSourcesTable: React.FC<BrainSourcesTableProps> = ({
                       {usd(r.costUsd)}
                     </div>
                   </td>
-                  {/* What this row is doing right now beats what it last did:
-                      while it is in flight, "indexing…" is the answer to the
-                      question the run banner's "3 of 20" provokes. Otherwise a
-                      rejected row shows the gate's REASON rather than just
-                      "skipped" — "fewer than 2 prompts" is the answer to the
-                      question the status alone provokes. */}
                   <td
                     data-testid="source-status"
                     className={`max-w-[12rem] truncate px-2 py-1.5 align-top ${

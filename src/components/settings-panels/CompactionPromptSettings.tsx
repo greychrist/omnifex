@@ -12,19 +12,7 @@ import { usePromptTemplate } from './usePromptTemplate';
 import { PromptTemplateEditor } from './PromptTemplateEditor';
 import { useSaveStatus } from './saveStatus';
 
-/**
- * Settings → System Prompts → Compactions.
- *
- * Edits the directive OmniFex sends as a fresh turn immediately after a
- * compaction — the one that tells the model its view of the earlier turns is
- * now a lossy summary. See `src/lib/postCompactPrompt.ts` for why it exists and
- * `queuePostCompactDirective` in `sessionStreamEffects.ts` for when it fires.
- *
- * An enable switch, like the summaries panel, is the one way to turn it off
- * (`postCompact.enabled`), and it leaves the edited text in place for when it
- * is turned back on. It replaced "clear the box to turn it off", which never
- * worked: a blank template resolves to the shipped default.
- */
+/** The switch is the only off: a blank template resolves to the shipped default. */
 export const CompactionPromptSettings: React.FC = () => {
   const { track } = useSaveStatus();
   const { value, loading, isDefault, edit, resetToDefault } =
@@ -41,7 +29,6 @@ export const CompactionPromptSettings: React.FC = () => {
     return () => { cancelled = true; };
   }, []);
 
-  // Optimistic: flips at once, flips back if the write fails.
   const handleEnabledChange = async (next: boolean) => {
     setEnabled(next);
     if (!(await track(api.saveSetting(POST_COMPACT_ENABLED_SETTING_KEY, next ? 'true' : 'false')))) {

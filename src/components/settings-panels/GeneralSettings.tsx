@@ -54,14 +54,6 @@ import {
   type NotificationSoundId,
 } from "@/lib/notificationSounds";
 
-// This panel no longer reads from `<configDir>/settings.json`. The three
-// keys it used to expose (`includeCoAuthoredBy`, `verbose`,
-// `cleanupPeriodDays`) were removed in May 2026 — the first is deprecated
-// upstream, the second isn't in current Claude Code docs, and the third is
-// load-bearing-but-rarely-tuned (Claude defaults to 30 days). Anyone who
-// still wants to tune those can edit the per-account settings.json directly.
-
-/** One titled group in the General tab; related settings sit together. */
 function SettingsSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="space-y-4">
@@ -76,16 +68,12 @@ const CHAT_FORMATS: { value: ViewMode; label: string }[] = [
   { value: "expanded", label: "Expanded" },
 ];
 
-/** Every control saves as it changes and reports through `track` (see saveStatus.tsx). */
 export const GeneralSettings: React.FC = () => {
   const { track } = useSaveStatus();
   const { theme, setTheme } = useTheme();
   const { appFont, setAppFont, isLoading: appFontLoading } = useAppFont();
   const { config, setConfig } = useMessageRenderingConfig();
   const { followPx, setFollowPx } = useAutoScroll();
-  // Local draft string so typing stays smooth; committed to the context
-  // (which persists + clamps) on blur or Enter. Re-seeded whenever the
-  // context value changes (e.g. after the clamp lifts a negative to 0).
   const [followDraft, setFollowDraft] = useState(String(followPx));
 
   useEffect(() => {
@@ -96,9 +84,6 @@ export const GeneralSettings: React.FC = () => {
     if (next === followPx) return;
     void track(setFollowPx(next));
   };
-  // Context-pressure budget + cache countdown. Same draft-string pattern as the
-  // auto-scroll input above: typing stays smooth, the value commits on blur or
-  // Enter (where the context clamps and persists it).
   const {
     contextPressure,
     setContextPressure,
@@ -133,8 +118,6 @@ export const GeneralSettings: React.FC = () => {
     void track(setContextJump({ ...contextJump, thresholdTokens }));
   };
 
-  // Spell out what the setting resolves to on both window sizes, so the
-  // clamp on absolute budgets larger than the window isn't a surprise.
   const pressureExplanation = (() => {
     const describe = (limit: number, label: string) => {
       const budget = resolveBudgetTokens(contextPressure, limit);
@@ -143,18 +126,10 @@ export const GeneralSettings: React.FC = () => {
     return `${describe(1_000_000, "1M session")} · ${describe(200_000, "200k session")}.`;
   })();
 
-  // OmniFex checkout the Updates popover's changelog-review launch runs in.
-  // Empty means "discover it" — the dev cwd, else whichever known project is
-  // an OmniFex checkout — which is the normal state; this is an override for
-  // when discovery picks the wrong one or finds nothing.
   const [cliReviewRepoDir, setCliReviewRepoDir] = useState('');
   // Reads `=== 'true'`, not `!== 'false'`: a missing setting must mean off.
   const [cliAutoUpdate, setCliAutoUpdate] = useState(false);
 
-  // The prompt that same launch starts its session with. Empty means "use the
-  // shipped default", which is the normal state.
-
-  // The Claude binary new sessions spawn. Saved as soon as one is picked.
   const [currentBinaryPath, setCurrentBinaryPath] = useState<string | null>(null);
 
   const [tabPersistenceEnabled, setTabPersistenceEnabled] = useState(true);
@@ -188,8 +163,6 @@ export const GeneralSettings: React.FC = () => {
     void track(api.setClaudeBinaryPath(installation.path));
   };
 
-  // What was last loaded or saved for each typed field, so leaving one
-  // unchanged doesn't write it again.
   const savedCliReviewRepoDir = React.useRef('');
 
   const saveCliReviewRepoDir = async (next: string) => {
@@ -215,7 +188,6 @@ export const GeneralSettings: React.FC = () => {
     const key = NOTIFICATION_SOUND_SETTING_KEYS[kind];
     const saved = await track(api.saveSetting(key, next));
     if (saved && next !== 'none') {
-      // Fire-and-forget preview so the user hears the change immediately.
       void api.previewNotificationSound(next);
     }
   };
@@ -227,7 +199,6 @@ export const GeneralSettings: React.FC = () => {
 
         <div className="space-y-6">
           <SettingsSection title="Appearance">
-            {/* Theme Selector */}
             <div className="flex items-center justify-between">
               <div>
                 <Label>Theme</Label>
@@ -263,10 +234,6 @@ export const GeneralSettings: React.FC = () => {
               </div>
             </div>
 
-            {/* App font (sits right under Theme — same row layout: label
-                on left, control on right). Drives --font-sans globally
-                for the whole UI. Chat-surface fonts are configured in
-                the Chats tab's Typography card, separately from this. */}
             <div className="flex items-center justify-between">
               <div>
                 <Label>App font</Label>
@@ -294,9 +261,6 @@ export const GeneralSettings: React.FC = () => {
               </div>
             </div>
 
-            {/* Default chat format. Stored in the message-rendering config,
-                which every session reads; a new session opens in it
-                (useSessionViewMode), an open one stays where it is. */}
             <div className="flex items-center justify-between">
               <div>
                 <Label>Default chat view</Label>
@@ -334,7 +298,6 @@ export const GeneralSettings: React.FC = () => {
 
           <div className="border-t border-border" />
           <SettingsSection title="Tabs">
-            {/* Tab Persistence Toggle */}
             <div className="flex items-center justify-between">
               <div className="space-y-1">
                 <Label htmlFor="tab-persistence">Remember Open Tabs</Label>
@@ -352,7 +315,6 @@ export const GeneralSettings: React.FC = () => {
               />
             </div>
 
-            {/* Startup Intro Toggle */}
             <div className="flex items-center justify-between">
               <div className="space-y-1">
                 <Label htmlFor="startup-intro">Show Welcome Intro on Startup</Label>
@@ -370,8 +332,6 @@ export const GeneralSettings: React.FC = () => {
               />
             </div>
 
-            {/* Tab strip density — sits with the indicators below because both
-                shape the same strip. */}
             <div className="flex items-center justify-between">
               <div>
                 <Label>Tab strip</Label>
@@ -400,7 +360,6 @@ export const GeneralSettings: React.FC = () => {
               />
             </div>
 
-            {/* Tab status indicators — the per-tab glyphs in the tab strip. */}
             <div className="space-y-3">
               <TabIndicatorsEditor
                 indicators={config.tabIndicators}
@@ -411,10 +370,6 @@ export const GeneralSettings: React.FC = () => {
 
           <div className="border-t border-border" />
           <SettingsSection title="Chat">
-            {/* Chat auto-scroll — how close to the bottom the view must be for
-                the transcript to keep following new messages. Persisted as
-                `autoscroll_follow_px` and applied live to open chats (see
-                AutoScrollContext / autoScrollFollow). */}
             <div className="space-y-3">
               <div>
                 <Label>Chat auto-scroll</Label>
@@ -450,12 +405,6 @@ export const GeneralSettings: React.FC = () => {
 
           <div className="border-t border-border" />
           <SettingsSection title="Notifications">
-            {/* Notification Sounds — pick what plays when a task completes
-                (success) and when one fails (error). Choices persist as
-                `notification_sound_success` / `notification_sound_error` in
-                app_settings and take effect on the next notification without
-                a restart. Selecting "No sound" makes the OS notification
-                silent and skips afplay while the window is focused. */}
             <div className="space-y-3">
               <div>
                 <Label>Notification Sounds</Label>
@@ -556,8 +505,6 @@ export const GeneralSettings: React.FC = () => {
               </div>
             </div>
 
-            {/* Mods' `$.ui.notify` banners. Read by the daemon per
-                notification, so it applies to running sessions at once. */}
             <div className="flex items-center justify-between">
               <div className="space-y-1">
                 <Label htmlFor="mod-notifications">Notifications from mods</Label>
@@ -579,9 +526,6 @@ export const GeneralSettings: React.FC = () => {
 
           <div className="border-t border-border" />
           <SettingsSection title="Context & cache">
-            {/* Session gauges — the context budget and the prompt-cache
-                countdown. Both persist in app_settings and apply live to open
-                sessions (see SessionGaugesContext). */}
             <div className="space-y-3">
               <div>
                 <Label>Context budget</Label>
@@ -613,8 +557,7 @@ export const GeneralSettings: React.FC = () => {
                     disabled={!contextPressure.enabled}
                     onValueChange={fireAndLog('general-settings:value-change', (v) => {
                       const mode = v === 'percent' ? 'percent' : 'tokens';
-                      // Swap in that mode's default rather than reinterpreting the
-                      // old number — 250000 percent, or 80 tokens, are nonsense.
+                      // Swap in that mode's default: the old number means nothing in the new unit.
                       void track(setContextPressure({
                         ...contextPressure,
                         mode,
@@ -721,24 +664,17 @@ export const GeneralSettings: React.FC = () => {
 
           <div className="border-t border-border" />
           <SettingsSection title="Claude Code">
-            {/* Claude binary new sessions spawn; saved as soon as one is picked. */}
             <div className="space-y-3">
               <ClaudeVersionSelector
                 selectedPath={currentBinaryPath}
                 onSelect={selectClaudeInstallation}
                 simplified={true}
-                // Saved on pick, so nothing may be picked for the user: an
-                // automatic pick showed "Saved" on opening Settings, and could
-                // overwrite the saved path when it loaded after the list.
+                // Saved on pick, so never auto-pick: a late auto-pick overwrote the saved path.
                 autoSelect={false}
               />
             </div>
 
-            {/* Restores the auto-update the terminal gets for free. The CLI's
-                self-updater is part of its interactive REPL, which OmniFex's
-                headless sessions never render, so without this nothing in the
-                app ever moves the binary. Off by default: it mutates a toolchain
-                OmniFex doesn't own. */}
+            {/* Off by default: it mutates a toolchain OmniFex doesn't own. */}
             <div className="flex items-center justify-between gap-4">
               <div>
                 <Label htmlFor="cli-auto-update">Auto-update Claude Code on launch</Label>
@@ -758,9 +694,6 @@ export const GeneralSettings: React.FC = () => {
               />
             </div>
 
-            {/* Where the Updates popover's "Claude Code is ahead of the …
-                changelog" warning launches its review session. Persisted as
-                `cli_review_repo_dir`; blank falls back to auto-detection. */}
             <div className="space-y-3">
               <div>
                 <Label htmlFor="cli-review-repo-dir">OmniFex checkout</Label>

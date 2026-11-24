@@ -4,23 +4,6 @@ import { cn } from "@/lib/utils";
 import type { AgentMessage } from "@/lib/api";
 import type { JSX } from 'react';
 
-/**
- * Extracts the displayable fields from an `item.exec_command` notification.
- *
- * Wire shape (from Codex; varies subtly across CLI builds):
- *   { method: "item.exec_command", params: {
- *       command: string,
- *       cwd?: string,
- *       stdout?: string,
- *       stderr?: string,
- *       status?: "running" | "completed" | "failed",
- *       exitCode?: number,
- *   } }
- *
- * Defensive: returns empty strings + status="running" when params are
- * missing or malformed so the widget renders a coherent (if empty) card
- * rather than crashing the transcript.
- */
 interface ExecFields {
   command: string;
   cwd: string;
@@ -59,7 +42,6 @@ function extractExec(payload: unknown): ExecFields {
   };
 }
 
-/** Length above which stdout/stderr collapses behind a toggle. */
 const INLINE_LIMIT = 200;
 
 interface StatusBadgeProps {
@@ -134,14 +116,6 @@ function StreamBlock({ label, text, tone }: StreamProps): JSX.Element | null {
   );
 }
 
-/**
- * Renders a Codex `item.exec_command` notification as a shell-preview card.
- *
- * Visually echoes Claude's `BashWidget` — same Terminal icon, same muted
- * header, same `$` prefix on the command line — so a transcript that
- * interleaves Claude Bash tool calls with Codex exec items reads as a
- * single coherent shell stream.
- */
 export function ExecCommandItem({ message }: { message: AgentMessage }): JSX.Element {
   const { command, cwd, stdout, stderr, status } = extractExec(message.payload);
   const [copied, setCopied] = useState(false);

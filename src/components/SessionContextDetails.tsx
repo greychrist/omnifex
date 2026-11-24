@@ -9,29 +9,11 @@ import { formatTokens, type ContextPressureLevel } from "@/lib/contextPressure";
 import type { SessionSignal } from "@/lib/signals/types";
 import { loadoutSummary, type LoadoutCounts } from "@/lib/sessionLoadout";
 
-/**
- * The session's context reading and the popover that explains it.
- *
- * Shared by the session widget and the status bar's `session` readout, which
- * open the same popover from two triggers. One module, so the two cannot drift
- * into disagreeing about how full the window is.
- */
-
-/**
- * Legacy `greychrist.` prefix, like every other localStorage key here.
- *
- * `detailsExpanded` replaced `detailsOpen` when Details became open by
- * default: the old key was written on every mount, so it held "0" for anyone
- * who had ever opened the popover, and reading it would have kept the old
- * default for exactly the people who already use it.
- */
+// Not the old `detailsOpen` key: it holds a stale "0" for anyone who ever opened the popover.
 const DETAILS_STORAGE_KEY = "greychrist.sessionCard.detailsExpanded";
 const EVENTS_STORAGE_KEY = "greychrist.sessionCard.eventsExpanded";
 
-/**
- * A disclosure's open state, sticky across popovers and both triggers. Only a
- * click writes it — never mounting — so an untouched one keeps its default.
- */
+// Only a click writes it, never mounting, so an untouched one keeps its default.
 function useStickyDisclosure(key: string, defaultOpen: boolean): [boolean, () => void] {
   const [open, setOpen] = React.useState<boolean>(() => {
     if (typeof window === "undefined") return defaultOpen;
@@ -70,15 +52,7 @@ function DisclosureToggle({
   );
 }
 
-/**
- * Color by proximity to the compaction boundary.
- *
- * Read from `context.level`, which resolves the user's configured budget —
- * never from a hardcoded percentage of the window. The two are not the same
- * scale: a 250k budget on a 1M window is critical at 25% full, and a meter
- * coloring by window percentage would still be showing green there while the
- * attention slot asked the user to compact.
- */
+// Keyed on `context.level` (the configured budget), never a percentage of the window.
 export const METER_FILL: Record<ContextPressureLevel, string> = {
   none: "bg-emerald-500",
   warn: "bg-amber-500",
@@ -91,25 +65,19 @@ export const METER_TEXT: Record<ContextPressureLevel, string> = {
   critical: "text-red-500",
 };
 
-// Palette for context-usage categories. Each category comes with its own
-// `color` from the CLI, but those default colors sometimes clash with our
-// dark palette, so we override with our own sequence and fall back to the
-// CLI color if we run out of slots.
 const CATEGORY_COLORS = [
-  "#60a5fa", // blue-400
-  "#a78bfa", // violet-400
-  "#34d399", // emerald-400
-  "#fbbf24", // amber-400
-  "#f472b6", // pink-400
-  "#22d3ee", // cyan-400
-  "#f87171", // red-400
-  "#a3e635", // lime-400
+  "#60a5fa",
+  "#a78bfa",
+  "#34d399",
+  "#fbbf24",
+  "#f472b6",
+  "#22d3ee",
+  "#f87171",
+  "#a3e635",
 ];
 
 const FREE_COLOR = "rgba(148, 163, 184, 0.35)";
-// The CLI's row `id` (2.1.304+) is the stable key — its schema says to
-// match on it, not the English name. The name test stays for older CLIs,
-// which send no id.
+// Match on the CLI's row `id` (2.1.304+); the name test is for older CLIs that send none.
 const isFreeCategory = (c: SessionContextUsageCategory): boolean =>
   c.id !== undefined ? c.id === "free_space" : /free|remaining|available/i.test(c.name);
 
@@ -121,32 +89,25 @@ export interface ContextBand {
 
 export interface ContextReading {
   tokens: number;
-  /** The window the gauge is sized against. */
   limit: number;
-  /** Share of `limit`, capped at 100. */
   pct: number;
   level: ContextPressureLevel;
-  /** Where /compact becomes the ask; 0 when no budget is known. */
+  /** 0 when no budget is known. */
   budgetTokens: number;
   budgetPct: number;
-  /** True when the numbers came from the CLI's own `getContextUsage`. */
   fromCli: boolean;
-  /** True when the CLI reported a per-category breakdown. */
   hasBreakdown: boolean;
-  /** Categories, largest first, then trailing free space — spans the window. */
   bands: ContextBand[];
 }
 
 export interface ContextInputs {
   totalTokens: number;
-  /** From resolveContextLimit in the parent — one computation, so every
-   *  gauge and the pressure signals agree. */
+  /** From resolveContextLimit, so every gauge and the pressure signals agree. */
   contextLimit: number;
   contextUsage?: SessionContextUsage | null;
   contextLevelSignal?: SessionSignal;
 }
 
-/** Null until there is something to show: no tokens yet, or no window. */
 export function readContext({
   totalTokens,
   contextLimit,
@@ -182,8 +143,6 @@ export function readContext({
       ? FREE_COLOR
       : CATEGORY_COLORS[usedColorIdx++ % CATEGORY_COLORS.length],
   }));
-  // Trailing free space is a band like any other, so the bar always
-  // spans the window and a category's width is directly comparable to it.
   const bands =
     categoriesSum < limit
       ? [...slices, { name: "Free", value: limit - categoriesSum, color: FREE_COLOR }]
@@ -202,39 +161,23 @@ export function readContext({
   };
 }
 
-/** `157.1k` — the gauge's own token format. */
 export function formatContextTokens(n: number): string {
   return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
 }
 
 export interface SessionContextDetailsProps {
   reading: ContextReading;
-  /** Current Claude session id (GUID), shown with a copy button. */
   sessionId?: string | null;
-  /** A pending `action` anchored here, mirrored as a card atop the popover. */
   pendingAction?: SessionSignal | null;
-  /** The anchor's recent events, newest first, already limited by the caller. */
   recentEvents?: SessionSignal[];
-  /**
-   * Runs `/compact` on this session. Omit and no button renders.
-   *
-   * Deliberately NOT derived from a signal. The boundary action only fires at
-   * 100% of the budget, so between 80% and 100% the meter went amber with
-   * nothing to click. Compacting is a thing you may want to do at any level,
-   * so it is offered permanently rather than when the app decides it matters.
-   */
+  /** Always offered, never signal-derived: the boundary action only fires at 100% of the budget. */
   onCompact?: () => void;
-  /** True while a turn is in flight; the button renders inert, not absent. */
   compactDisabled?: boolean;
-  /** What is loaded into the session. The lists live in the Session context
-   *  panel; the popover gives the counts and a way there. */
   loadout?: LoadoutCounts | null;
   onOpenLoadout?: () => void;
-  /** Scroll the transcript to a message. Makes events that have one clickable. */
   onJumpToMessage?: (messageUuid: string) => void;
 }
 
-/** The popover body. Each trigger owns its own open state. */
 export function SessionContextDetails({
   reading: r,
   sessionId,
@@ -247,7 +190,6 @@ export function SessionContextDetails({
   onJumpToMessage,
 }: SessionContextDetailsProps): React.JSX.Element {
   const loadoutText = loadout ? loadoutSummary(loadout) : null;
-  // Shared by both triggers, since each is one preference about one popover.
   const [detailsOpen, toggleDetails] = useStickyDisclosure(DETAILS_STORAGE_KEY, true);
   const [eventsOpen, toggleEvents] = useStickyDisclosure(EVENTS_STORAGE_KEY, false);
 
@@ -283,9 +225,6 @@ export function SessionContextDetails({
 
       {pendingAction && <SignalActionCard signal={pendingAction} />}
 
-      {/* Suppressed when the action card is up: that card leads with
-          its own Compact now, and two identical buttons stacked is
-          worse than either alone. */}
       {onCompact && !pendingAction && (
         <button
           type="button"
@@ -320,18 +259,12 @@ export function SessionContextDetails({
         </button>
       )}
 
-      {/* Open by default, and sticky once toggled. */}
       <div className="pt-2 mt-1 border-t border-border/50" data-testid="details-disclosure">
         <DisclosureToggle label="Details" open={detailsOpen} onToggle={toggleDetails} />
         {detailsOpen && (
           <div className="mt-2 flex flex-col gap-2">
         {r.fromCli && r.hasBreakdown ? (
           <>
-            {/* A stacked bar, not a donut. The pie cost 18rem of
-                popover height to encode one number per category —
-                exactly what the legend underneath it already lists,
-                and more precisely. Proportions survive; the height
-                does not. */}
             <div className="flex h-2.5 w-full overflow-hidden rounded-sm bg-foreground/5">
               {r.bands.map((band) => (
                 <div
@@ -381,8 +314,6 @@ export function SessionContextDetails({
         )}
       </div>
 
-      {/* Collapsed by default, and sticky once toggled. A context event
-          jumps the transcript to the prompt that caused it. */}
       <div className="pt-2 mt-1 border-t border-border/50" data-testid="recent-events">
         <DisclosureToggle label="Recent events" open={eventsOpen} onToggle={toggleEvents} />
         {eventsOpen && (

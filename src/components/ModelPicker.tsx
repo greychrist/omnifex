@@ -14,10 +14,6 @@ export interface Model {
   description: string;
   icon: React.ReactNode;
   shortName: string;
-  /** The concrete model this row stands for when `id` is not one: the CLI's
-   *  mapping of an alias (`opus[1m]` → `claude-opus-5-5[1m]`), or the model
-   *  behind the merged account-default row. Highlights that row when the
-   *  pick is this model, and gives it that model's color. */
   resolvedId?: string;
 }
 
@@ -26,56 +22,29 @@ function bareModelId(id: string): string {
   return id.replace(/\[1m\]$/, '');
 }
 
-/** Whether `selected` is this row: its id, or the model it stands for. */
 function isRowSelected(model: Model, selected: string): boolean {
   const pick = bareModelId(selected);
   return pick === bareModelId(model.id) || (model.resolvedId !== undefined && pick === bareModelId(model.resolvedId));
 }
 
-/** The Cost Report's color for the row's model — its price tier, its
- *  version's shade — so a model looks the same here as in the chart and on
- *  a Modern model-change line. None for a row with no tier ("default"). */
 function modelIconStyle(model: Model): React.CSSProperties | undefined {
   const color = modelOwnColor(model.resolvedId ?? model.id, screenChartMode());
   return color ? { color } : undefined;
 }
 
-// The model list is dynamic — sourced from the CLI catalog via
-// src/lib/modelCatalog.tsx (live session init data or the per-account
-// cached lookup). The static fallback lives there too (FALLBACK_MODELS).
-
-// ---------------------------------------------------------------------------
-// ModelPickerDropdown — the popup content shared by compact and expanded modes
-// ---------------------------------------------------------------------------
-
 interface ModelPickerDropdownProps {
   models: Model[];
   selectedModel: string;
   onSelect: (modelId: string) => void;
-  /** Current effort. Supply with `onEffortSelect` to put effort in this
-   *  dropdown instead of a readout of its own. */
   effort?: string;
   onEffortSelect?: (level: EffortLevel) => void;
-  /** Effort levels this model supports, from the CLI catalog. */
   effortLevels?: EffortLevel[];
-  /** Models the account's catalog does not list but the CLI will accept —
-   *  see `extraModelOptions`. Behind the "More models" row with the catalog's
-   *  older versions (splitLatestModels): they are the escape hatch, not the
-   *  normal choice. */
   extras?: Model[];
-  /** Re-read the account's catalog from the CLI (useModelCatalog.refresh).
-   *  Omitted → no Refresh row. */
   onRefresh?: () => void;
   refreshing?: boolean;
 }
 
-/**
- * Panels swap IN PLACE rather than opening nested popovers. A popover inside
- * a popover inside the status bar is three stacked dismiss layers, and the
- * custom Popover portals to body (see the `data-omnifex-popover` note in
- * Popover) — the outer one closes when the inner one is pressed. One panel
- * with a back row has neither problem and is testable without layout.
- */
+// Panels swap in place, not nested popovers: Popover portals to body, so pressing an inner one closes the outer.
 type Panel = 'models' | 'effort' | 'more';
 
 export function ModelPickerDropdown({
@@ -91,8 +60,6 @@ export function ModelPickerDropdown({
 }: ModelPickerDropdownProps) {
   const [panel, setPanel] = useState<Panel>('models');
   const showEffort = effort !== undefined && onEffortSelect !== undefined;
-  // Older versions of a family the catalog does list come first under More;
-  // the uncatalogued extras are the further-out escape hatch.
   const { latest, older } = splitLatestModels(models);
   const more = [...older, ...(extras ?? [])];
   const showMore = more.length > 0;
@@ -142,7 +109,6 @@ export function ModelPickerDropdown({
   );
 }
 
-/** Back row + title, shared by the two secondary panels. */
 function PanelHeader({ title, onBack }: { title: string; onBack: () => void }) {
   return (
     <button
@@ -157,7 +123,6 @@ function PanelHeader({ title, onBack }: { title: string; onBack: () => void }) {
   );
 }
 
-/** A row that opens a secondary panel: `label … value ›`. */
 function PanelLink({ label, value, onClick }: { label: string; value?: React.ReactNode; onClick: () => void }) {
   return (
     <button type="button" onClick={onClick} className={cn(popoverOption(false), "items-center justify-between")}>
@@ -189,8 +154,6 @@ function ModelList({
   onRefresh: (() => void) | null;
   refreshing: boolean;
 }) {
-  // The account-default model is marked in place rather than listed twice, so
-  // the header carries the key for the mark (see withAccountDefaultLabel).
   const marked = models.some((m) => m.name.endsWith(ACCOUNT_DEFAULT_MARK));
   return (
     <div className="w-72 flex flex-col gap-0.5">
@@ -223,8 +186,6 @@ function ModelList({
       {onOpenEffort && <PanelLink label="Effort" value={effortName} onClick={onOpenEffort} />}
       {onOpenMore && <PanelLink label="More models" onClick={onOpenMore} />}
       {onRefresh && (
-        // The catalog is cached per account and only refetched on a CLI
-        // update or after a day; a model granted in between needs this.
         <button
           type="button"
           onClick={onRefresh}
@@ -239,11 +200,6 @@ function ModelList({
   );
 }
 
-// ---------------------------------------------------------------------------
-// FormModelPicker — full-name trigger that fills its container.
-// Used by NewSessionForm. Same dropdown content as the others.
-// ---------------------------------------------------------------------------
-
 interface FormModelPickerProps {
   selectedModelData: Model;
   models: Model[];
@@ -256,8 +212,6 @@ interface FormModelPickerProps {
   refreshing?: boolean;
 }
 
-/** Full-name trigger that fills its container. Used by NewSessionForm and
- *  the account dialog's defaults row. */
 export function FormModelPicker({
   selectedModelData,
   models,
@@ -269,9 +223,7 @@ export function FormModelPicker({
   onRefresh,
   refreshing,
 }: FormModelPickerProps) {
-  // Apply the pick AND close the dropdown, matching EffortPicker /
-  // PermissionPicker (ControlBar handleSelect). Without the close, selecting a
-  // model left the popover open ("it changes but doesn't close").
+  // Close on pick too, or the popover stays open after selecting.
   const handleSelect = (modelId: string) => {
     onSelect(modelId);
     onOpenChange(false);

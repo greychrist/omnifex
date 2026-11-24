@@ -13,14 +13,7 @@ import {
   WIKILINK_SCHEME,
 } from '@/lib/brainWikilinks';
 
-/**
- * react-markdown strips any URL whose scheme is not on its allow-list, which
- * includes the scheme wikilinks are smuggled through — so without this every
- * wikilink arrives at the link renderer with an empty href and degrades to
- * inert text. Only OUR scheme is exempted; everything else still goes through
- * the library's own sanitizer, so a `javascript:` URL in a hand-edited note
- * is neutralised exactly as before.
- */
+// Exempts only our wikilink scheme from react-markdown's sanitizer, which would otherwise empty its href.
 function wikilinkUrlTransform(url: string): string {
   return url.startsWith(WIKILINK_SCHEME) ? url : (defaultUrlTransform(url) || '');
 }
@@ -30,25 +23,10 @@ interface BrainNoteViewerProps {
   notePath: string | null;
   onNavigate: (notePath: string) => void;
   onChanged: () => Promise<void> | void;
-  /**
-   * Put the pane away, giving the table the full width back — the same thing
-   * the Sources preview's ✕ does.
-   *
-   * Optional so the viewer can still be rendered somewhere that has nothing to
-   * close; the button only appears when there is.
-   */
   onClose?: () => void;
 }
 
-/**
- * One note: its frontmatter, its rendered body with live wikilinks, the notes
- * that link back to it, and an editor.
- *
- * Editing goes through `brainUpdateNote`, which replaces only the BODY — the
- * renderer never sends frontmatter. A note's type, provenance and sources are
- * what merge dedup relies on later, so an edit box that could rewrite them
- * would make them untrustworthy.
- */
+// Edits go through brainUpdateNote (body only): frontmatter drives merge dedup and must never be rewritten here.
 export const BrainNoteViewer: React.FC<BrainNoteViewerProps> = ({
   accountId, notePath, onNavigate, onChanged, onClose,
 }) => {
@@ -60,14 +38,12 @@ export const BrainNoteViewer: React.FC<BrainNoteViewerProps> = ({
   const [draft, setDraft] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  /** Same discipline as useBrainVault: a late response for a note the user has
-   *  already navigated away from must not replace the current one. */
+  // Drops late responses for a note the user already left.
   const loadToken = useRef(0);
 
   useEffect(() => {
     const token = ++loadToken.current;
-    // A draft belongs to the note it was opened on. Carrying it across a
-    // navigation would let a save write one note's text to another's path.
+    // A carried-over draft would save one note's text to another's path.
     setDraft(null);
     setError(null);
 
@@ -108,10 +84,6 @@ export const BrainNoteViewer: React.FC<BrainNoteViewerProps> = ({
     [allNotes, onNavigate],
   );
 
-  // A wikilink becomes a button only when it resolves to exactly one note.
-  // An unresolvable or ambiguous target renders as plain text: a dead button
-  // that silently does nothing, or one that opens a note the author did not
-  // mean, are both worse than visibly inert text.
   const markdownComponents = useMemo(
     () => ({
       a: ({ href, children }: { href?: string; children?: React.ReactNode }) => {
@@ -151,15 +123,6 @@ export const BrainNoteViewer: React.FC<BrainNoteViewerProps> = ({
       .finally(() => { setSaving(false); });
   };
 
-  /**
-   * Closing discards whatever is in the editor, and the editor is the only
-   * place that text exists. Close sits one button from Save, so an unguarded
-   * ✕ is a misclick away from losing an edit — the delete button has taken a
-   * confirmation for the same reason since it shipped.
-   *
-   * An UNTOUCHED draft is not work: opening the editor and changing your mind
-   * is the common case, and a dialog there would be noise.
-   */
   const close = (): void => {
     if (onClose === undefined) return;
     const dirty = draft !== null && draft !== (note?.body ?? '');
@@ -176,9 +139,6 @@ export const BrainNoteViewer: React.FC<BrainNoteViewerProps> = ({
       .brainDeleteNote(accountId, notePath)
       .then(async () => {
         await onChanged();
-        // The pane would otherwise stay pointed at a path that no longer
-        // exists, and the next read renders "cannot read note" where the note
-        // the user just deleted used to be.
         onClose?.();
       })
       .catch((err: unknown) => { setError((err as Error).message); });
@@ -227,8 +187,6 @@ export const BrainNoteViewer: React.FC<BrainNoteViewerProps> = ({
               </Button>
             </>
           )}
-          {/* Last in the row and iconic, the way the Sources preview closes.
-              Outside the edit/read branch above: it is available in both. */}
           {onClose !== undefined && (
             <Button
               size="sm"

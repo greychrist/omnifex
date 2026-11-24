@@ -3,17 +3,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { SummaryPromptSettings } from './SummaryPromptSettings';
 import { CompactionPromptSettings } from './CompactionPromptSettings';
 
-/**
- * Settings → System Prompts.
- *
- * One home for every prompt OmniFex composes and sends on the user's behalf,
- * rather than scattering a tab per prompt across the top-level bar. Sub-tabs
- * follow the Chats tab's `variant="line"` pattern.
- *
- * Add a sub-tab here whenever a new OmniFex-authored prompt ships. The CLI
- * review prompt is deliberately absent: it is not user-editable (see
- * `src/lib/cliReviewPrompt.ts`).
- */
+// The CLI review prompt is deliberately absent: it is not user-editable.
 export const SystemPromptSettings: React.FC = () => {
   const [activeTab, setActiveTab] = useState('summaries');
 
