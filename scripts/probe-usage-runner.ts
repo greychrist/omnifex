@@ -1,23 +1,6 @@
 /**
- * Capture one live `/usage` render through the shipped usage runner.
- *
- * The runner itself does the work — startup interstitials, ready markers,
- * the render-complete wait, stripAnsi, the parser and its drift warnings — so
- * this probe cannot drift from what the app sees. The copy it replaced
- * re-implemented the startup phase, fell behind the runner, and by 2.1.306
- * captured nothing at all.
- *
- * Usage:
- *   node --experimental-strip-types --import ./scripts/lib/register-ts.mjs \
- *        scripts/probe-usage-runner.ts ~/.claude-personal [Personal]
- *
- * The second argument is the scratch-cwd key; it defaults to the config
- * dir's suffix (`.claude-work` → `Work`), which is the folder the app already
- * uses under `<userData>/usage-cwd/`, so a normal run trusts nothing new.
- *
- * Writes /tmp/usage-probe/: `raw.ansi` (the pty bytes, fixture-ready),
- * `stripped.txt` (what the parser read) and `parsed.json`. Records nothing:
- * the rate-limits store is a stub.
+ * Drives the shipped usage runner, never a copy: a copy fell behind it and captured nothing.
+ * The scratch key defaults to the folder the app already uses under `<userData>/usage-cwd/`, so a normal run trusts nothing new.
  */
 import fs from 'node:fs';
 import os from 'node:os';

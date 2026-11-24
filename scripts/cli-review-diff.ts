@@ -1,28 +1,5 @@
 /**
- * The mechanical half of a Claude Code release review: diff two installed CLI
- * bundles, and check the newer one against what OmniFex itself knows.
- *
- *   npm run cli-review:diff -- <reviewedVersion> <installedVersion> [--full]
- *
- * The review prompt (`src/lib/cliReviewPrompt.ts`) used to carry these as
- * hand-typed `rg` one-liners. Each review re-typed them a little differently,
- * a regex quantifier over 255 silently matched nothing under BSD grep, and
- * nothing noticed when an anchor stopped matching — an empty set reads
- * exactly like "no change". Here every check has a test, and an extractor
- * that finds nothing says so (ANCHOR NOT FOUND, exit 2) instead of passing.
- *
- * Two directions, because each is blind to what the other catches:
- *
- *  - version to version — what moved in this range. Cheap, but it only ever
- *    sees the range: a gap an earlier review let through is invisible to it
- *    forever (PreModelSwitch / PostModelSwitch sat outside HOOK_EVENTS for
- *    sixty releases this way).
- *  - installed binary vs OmniFex — the record types, hook events, control
- *    subtypes and flags OmniFex depends on, read from the real modules and
- *    sources rather than from a copy kept here, so it cannot drift from them.
- *
- * Bundles are read from `~/.local/share/claude/versions/<version>` (override
- * with CLAUDE_VERSIONS_DIR, or pass a path instead of a version).
+ * An extractor that finds nothing must fail (ANCHOR NOT FOUND, exit 2): an empty set reads exactly like "no change".
  */
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -42,19 +19,12 @@ function all(re: RegExp, text: string): string[] {
   return uniqueSorted([...text.matchAll(re)].map((m) => m[1]));
 }
 
-/**
- * Keys the CLI's JSONL merge-strategy map is known to hold. Several, so the
- * map is still found the day any one of them is retired.
- */
+/** Several anchors, so the map is still found the day one of them is retired. */
 const MERGE_MAP_ANCHORS = ['atis-latch', 'custom-title', 'ai-title', 'last-prompt', 'file-history-snapshot'];
 
 /**
- * The map from every record type the CLI writes into a session file to its
- * merge strategy, as `type=strategy`. Exactly four types are "transcript";
- * the rest are bookkeeping. Found by widening from a known key to the
- * enclosing brace-free object, accepted only if it holds `user:"transcript"`.
- * Keys that are valid identifiers come out of the minifier bare (`user:`,
- * `mode:`), hyphenated ones quoted (`"atis-latch":`) — read both.
+ * Accepted only if brace-free and holding `user:"transcript"`. The minifier leaves identifier keys
+ * bare (`user:`) and quotes hyphenated ones (`"atis-latch":`): read both.
  */
 export function extractMergeMap(text: string): string[] {
   for (const anchor of MERGE_MAP_ANCHORS) {
@@ -76,24 +46,12 @@ export function extractMergeMap(text: string): string[] {
   return [];
 }
 
-/**
- * Record types the CLI appends to a session file as `{type:"x",…,sessionId:…}`
- * with no nested object in between. The merge map does not hold them all:
- * 2.1.318's `repl-mode` is re-appended with the session metadata but has no
- * merge strategy, so a coverage check fed only by the map never asked about
- * it.
- */
+/** The merge map does not hold every appended record type (`repl-mode` has no merge strategy). */
 export function extractSessionRecordTypes(text: string): string[] {
   return all(/\{type:"([a-z][a-z0-9_-]*)",[^{}]{0,300}?\bsessionId:/g, text);
 }
 
-/**
- * Every `system` subtype the bundle declares: the stream-json zod schemas
- * (`type:C("system"),subtype:C("x")`, the factory name minified) and the
- * frames it builds inline (`{type:"system",subtype:"x"`). The plain
- * `subtype:"…"` set mixes in result, control and attachment subtypes; this
- * one is only what can reach `classifySystem`.
- */
+/** Only what can reach `classifySystem`: zod schemas (factory name minified) and inline frames. */
 export function extractSystemSubtypes(text: string): string[] {
   return uniqueSorted([
     ...text.matchAll(/type:[A-Za-z_$][\w$]*\("system"\),subtype:[A-Za-z_$][\w$]*\("([a-z_]+)"\)/g),
@@ -106,13 +64,7 @@ export function extractControlRequestSchemas(text: string): string[] {
   return all(/[A-Za-z_$][\w$]*\(\{subtype:[A-Za-z_$][\w$]*\("([a-z_]+)"\)/g, text);
 }
 
-/**
- * The keys of every `{subtype:"can_use_tool",…}` object the CLI builds: its
- * own keys plus those of a `...cond&&{…}` spread, read with a bracket-aware
- * scan. A plain `[^}]` capture stopped at the first nested object — in
- * 2.1.329 that was `...r.mcpInfo&&{mcp_server:…}`, three keys into the main
- * emitter — and never saw the new `auto_modes_check_raised`.
- */
+/** Bracket-aware: a `[^}]` capture stops at the first nested `...cond&&{…}` spread and misses keys. */
 export function extractCanUseToolKeys(text: string): string[] {
   const keys: string[] = [];
   const anchor = 'subtype:"can_use_tool",';
@@ -167,40 +119,26 @@ export function extractCanUseToolKeys(text: string): string[] {
 
 export const EXTRACTORS: Extractor[] = [
   { name: 'merge-strategy map', extract: extractMergeMap },
-  // Every short `type:"…"` literal. Broad on purpose: attachment subtypes
-  // (`project_doc_reads`, 2.1.310) ride the `attachment` record and never
-  // reach the merge map, so this is where they show up.
+  // Broad on purpose: attachment subtypes ride the `attachment` record and never reach the merge map.
   { name: 'type literals', extract: (t) => all(/\btype:"([a-z][a-z0-9_-]{2,40})"/g, t) },
   { name: 'subtype literals', extract: (t) => all(/\bsubtype:"([a-z][a-z0-9_]*)"/g, t) },
   { name: 'system subtypes', extract: extractSystemSubtypes },
   { name: 'hook_event_name', extract: (t) => all(/hook_event_name:"([A-Za-z]+)"/g, t) },
   { name: 'control envelopes', extract: (t) => all(/type:"(control_[a-z_]+)"/g, t) },
   { name: 'SDK control requests', extract: (t) => all(/this\.request\(\{subtype:"([a-z_]+)"/g, t) },
-  // Every control-request zod schema, both directions, @internal ones too.
-  // `SDK control requests` sees only the SDK's public methods, so 2.1.326's
-  // host -> CLI `prompt_draft_activity` / `set_message_waiting` passed it.
+  // `SDK control requests` sees only public SDK methods; this sees every schema, @internal ones too.
   { name: 'control request schemas', extract: (t) => extractControlRequestSchemas(t) },
   { name: 'CLI flags', extract: (t) => all(/(?:\.option|Option)\("(?:-[a-zA-Z], )?(--[a-zA-Z][a-zA-Z-]*)/g, t) },
-  // Allowed `origin.kind` values on user records. 2.1.277 began treating an
-  // absent origin as non-human and stopped naming those sessions; our fix
-  // was stamping {kind:"human"} (claude-cli-engine.ts writeUserMessage).
+  // The CLI treats an absent origin as non-human; writeUserMessage stamps {kind:"human"}.
   { name: 'origin kinds', extract: (t) => all(/origin:\{kind:"([a-z_-]+)"/g, t) },
-  // The fields of the permission request the stdio decider answers.
   { name: 'can_use_tool payload keys', extract: extractCanUseToolKeys },
-  // Every object-literal key. Mostly minifier and telemetry noise; read it
-  // for new fields on records we already classify — the class of change the
-  // type sets cannot see.
+  // Mostly noise; catches new fields on already-classified records, which the type sets cannot see.
   { name: 'object keys', extract: (t) => all(/[{,]([a-zA-Z_][a-zA-Z0-9_]{3,40}):/g, t) },
-  // Where the stream-json schemas document what a host must do. The cap is
-  // generous on purpose: the init `capabilities` text runs past 2,000
-  // characters, and an 800 cap hid 2.1.312's new obligation in it.
+  // Cap generous on purpose: the init `capabilities` text runs past 2,000 characters.
   { name: '.describe() strings', extract: (t) => all(/\.describe\("((?:[^"\\]|\\.){10,8000})"\)/g, t) },
 ];
 
-/**
- * Strings the `/usage` scraper keys on. A copy, because the parser holds them
- * inside regexes; the test holds every entry to `usage-runner/parser.ts`.
- */
+/** A copy, because the parser holds these inside regexes; the test holds each to `usage-runner/parser.ts`. */
 export const USAGE_ANCHORS = [
   'Current session',
   'Current week',
@@ -218,13 +156,10 @@ export function diffSets(from: string[], to: string[]): { added: string[]; remov
 
 export interface Inventory {
   hookEvents: readonly string[];
-  /** Every control request the catalog has classified, whatever its status. */
   catalogued: ReadonlySet<string>;
   controlSubtypesSent: string[];
   cliFlagsPassed: string[];
-  /** True when OmniFex would draw this record type as an "Unrecognized record" card. */
   isUnrecognizedRecord(type: string): boolean;
-  /** True when a `system` frame of this subtype would draw "Unrecognized record: system". */
   isUnrecognizedSystemSubtype(subtype: string): boolean;
 }
 
@@ -238,43 +173,24 @@ function walk(dir: string, out: string[] = []): string[] {
   return out;
 }
 
-/**
- * Record types the classifier leaves as `unknown` on purpose because the
- * Modern renderer draws them from there (`summary` → a Conversation summary
- * line). The test holds each to a branch in src/lib/modernLines.ts.
- */
+/** Left `unknown` on purpose: the Modern renderer draws them from there. The test holds each to modernLines.ts. */
 export const RENDERED_FROM_UNKNOWN = ['summary'];
 
 /**
- * `system` subtypes the binary declares that OmniFex does not classify, each
- * judged not to reach a local stream-json host as a drawn row. Without this
- * baseline the check below lists ~35 names every review and gets skimmed;
- * with it, only a subtype no review has judged shows up.
- *
- * Baselined at 2.1.317 from the binary, the transcripts (none of these is on
- * disk under either account) and the absence of any reported "Unrecognized
- * record: system" card. A judgment, not a proof: if one of these ever draws
- * a card, move it into SYSTEM_SUBTYPES (src/lib/jsonlClassifier.ts) and give
- * it a render. A classified subtype must not stay here; the test holds that.
+ * Judged never to reach a local stream-json host as a drawn row. If one ever draws a card, classify it
+ * in jsonlClassifier.ts; the test forbids a classified subtype staying here.
  */
 export const UNDRAWN_SYSTEM_SUBTYPES: Readonly<Record<string, string>> = {
-  // Background-task lifecycle: dropped by messageFilters before render.
   task_started: 'filtered', task_updated: 'filtered', task_progress: 'filtered',
   task_notification: 'filtered', task_summary: 'filtered',
-  // 2.1.328: the task ticker's statuses (a small model ticking off TaskCreate
-  // items with no TaskUpdate call). Stdout only; forwarded, then dropped by
-  // the `task_` prefix in isTaskLifecycleMarker. taskList.ts reads it for
-  // the task panel before that filter (taskTickerStatuses).
+  // Dropped by isTaskLifecycleMarker's `task_` prefix; taskList.ts reads it before that filter.
   task_list_statuses: 'filtered',
-  // Opt-in SDK host events (session state, retries, attachments, memory,
-  // plugins), none of which a default stream-json spawn has been seen to send.
   session_state_changed: 'sdk opt-in', api_retry: 'sdk opt-in', files_persisted: 'sdk opt-in',
   file_attachments_missing: 'sdk opt-in', memory_recall: 'sdk opt-in', memory_saved: 'sdk opt-in',
   plugin_install: 'sdk opt-in', local_command_output: 'sdk opt-in', post_turn_summary: 'sdk opt-in',
   control_request_progress: 'sdk opt-in', permission_retry: 'sdk opt-in',
   inherited_asks_settled: 'sdk opt-in', instruction_size_warning: 'sdk opt-in',
   agents_killed: 'sdk opt-in', thinking: 'sdk opt-in', file_snapshot: 'sdk opt-in',
-  // Cloud sessions, Remote Control bridges, self-hosted runners and workers.
   bridge_state: 'remote', bridge_status: 'remote', cloud_session_delta: 'remote',
   cloud_session_status: 'remote', code_change_published: 'remote', mirror_error: 'remote',
   peer_message_hold: 'remote', scheduled_task_fire: 'remote', tool_host_result: 'remote',
@@ -282,32 +198,19 @@ export const UNDRAWN_SYSTEM_SUBTYPES: Readonly<Record<string, string>> = {
   vcs_state_changed: 'remote', worker_shutting_down: 'remote', checkpoint_done: 'remote',
   rewind_stand_in: 'remote', turn_began_before_init: 'remote', turn_starting: 'remote',
   placed: 'remote',
-  // 2.1.318: written only to a self-hosted runner's CLAUDE_RUNNER_ACTIVITY_FD
-  // (RemoteIO), never to stdout; the runner drops it on read.
+  // Only to a self-hosted runner's activity fd, never stdout.
   start_folder: 'remote',
-  // 2.1.323: the stored form of a user message or queued command whose
-  // `origin.kind` is `voice-call` — what a host (Claude Desktop) hands over
-  // from a voice call. Transcoded back to user/attachment on read; stdout
-  // carries the user form. OmniFex never stamps that origin.
+  // Stored form of a voice-call message; stdout carries the user form, and OmniFex never stamps that origin.
   voice_call_talk: 'host-only',
-  // 2.1.326: a cloud (CCR) worker's report that a late Allow on a card kept up
-  // behind a new message will not run. Needs the input-only `keeps_request_id`
-  // on a user message, which OmniFex never sends.
+  // Needs the input-only `keeps_request_id`, which OmniFex never sends.
   late_allow_not_run: 'remote',
-  // 2.1.327: sent (stdout) only when an initialize hook matcher sets
-  // `replacedByFrame: 'shell_cwd'` on a PostToolUse SDK callback. OmniFex
-  // registers no hook callbacks in initialize.
+  // Only for an initialize hook matcher with `replacedByFrame`; OmniFex registers no hook callbacks.
   shell_cwd: 'host opt-in',
 };
 
 /** Flags only the Claude CLI takes — a file holding one of these spawns `claude`. */
 const CLAUDE_SPAWN_MARKERS = ["'--output-format'", "'--mcp-config'", "'--setting-sources'", "'--permission-prompt-tool'"];
 
-/**
- * What OmniFex depends on, read from the code itself: the classifier and the
- * sidechannel set are imported and asked, the hook list is imported, and the
- * control subtypes and spawn flags are collected from every daemon source.
- */
 export async function loadInventory(repoRoot: string): Promise<Inventory> {
   const load = (rel: string) => import(pathToFileURL(path.join(repoRoot, rel)).href);
   const { classifyJsonlLine } = await load('src/lib/jsonlClassifier.ts');
@@ -316,8 +219,7 @@ export async function loadInventory(repoRoot: string): Promise<Inventory> {
   const { CLI_CONTROL_REQUESTS } = await load('daemon/services/sessions/cli-control-catalog.ts');
 
   const sources = walk(path.join(repoRoot, 'daemon/services')).map((f) => fs.readFileSync(f, 'utf8'));
-  // `mcpControl` is queries.ts's wrapper for the mcp_* family; the test pins
-  // it, so renaming the wrapper fails there rather than here.
+  // `mcpControl` wraps the mcp_* family; the test pins the name.
   const sent = sources.flatMap((s) =>
     [...s.matchAll(/(?:sendControlRequest|mcpControl)\s*(?:<[\s\S]{0,400}?>)?\(\s*'([a-z_]+)'/g)].map((m) => m[1]));
   const flags = sources
@@ -340,7 +242,6 @@ export async function loadInventory(repoRoot: string): Promise<Inventory> {
 
 export interface CoverageFinding {
   check: string;
-  /** What a non-empty list means for the current build. */
   meaning: string;
   items: string[];
 }
@@ -349,17 +250,13 @@ export function coverage(text: string, inv: Inventory): CoverageFinding[] {
   const hooks = all(/hook_event_name:"([A-Za-z]+)"/g, text);
   const systemSubtypes = extractSystemSubtypes(text);
   const sdkRequests = all(/this\.request\(\{subtype:"([a-z_]+)"/g, text);
-  // What the CLI accepts, SDK method or not: a catalogued @internal request
-  // (prompt_draft_activity) is offered though no SDK method sends it.
+  // Offered includes @internal requests no SDK method sends.
   const offered = new Set([...sdkRequests, ...extractControlRequestSchemas(text)]);
   return [
     {
       check: 'record types OmniFex would draw as Unrecognized',
       meaning: 'BUG once the CLI writes one (check transcripts): classify it in src/lib/jsonlClassifier.ts or list it in src/lib/cliSidechannelRecords.ts',
-      // The four `transcript` types are the classifier's own cases; a probe
-      // with no fields would misread `system` as unknown, so only the
-      // bookkeeping types are asked. Session-appended records outside the
-      // map are asked too.
+      // Only bookkeeping types are probed: a field-less probe misreads `system` as unknown.
       items: uniqueSorted([
         ...extractMergeMap(text)
           .map((kv) => kv.split('='))
@@ -434,7 +331,6 @@ export interface ReviewArgs {
   to: string;
   versionsDir: string;
   repoRoot: string;
-  /** List every moved item, untruncated, instead of the first 40. */
   full?: boolean;
 }
 

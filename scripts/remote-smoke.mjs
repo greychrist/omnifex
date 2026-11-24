@@ -1,17 +1,5 @@
 #!/usr/bin/env node
-// End-to-end smoke test for the OmniFex Remote daemon, over the real protocol.
-//
-// Drives: hello → (create a Claude account if the daemon has none) →
-// project.add → session.create → session.subscribe → turn.send → answer the
-// first permission.request with allow → wait for the CLI result → print what
-// happened. With --resume <sessionId> it skips creation and resumes instead,
-// which is how the "kill the daemon and come back" acceptance is checked.
-//
 // Spends real tokens: one tiny turn on whichever account the daemon resolves.
-//
-//   node scripts/remote-smoke.mjs [--url ws://127.0.0.1:47701/ws] [--project /abs/dir]
-//                                 [--config-dir ~/.claude-personal] [--resume <sessionId>]
-//                                 [--prompt "..."] [--timeout 120]
 import WebSocket from 'ws';
 import { homedir } from 'node:os';
 import { mkdirSync } from 'node:fs';
@@ -117,16 +105,13 @@ ws.on('open', async () => {
     const sub = await request('session.subscribe', { sessionId: sid, fromSeq: 0 });
     log('subscribed', sub);
 
-    // Everything at or below this seq is replay of the past; the turn we care
-    // about starts after it. Without the fence a resumed session's OLD result
-    // satisfies the wait and the new turn is never observed.
+    // Fence: without it a resumed session's OLD result satisfies the wait and the new turn is never observed.
     const fence = sub.lastSeq;
     const isResult = (m) =>
       m.type === 'event' && m.kind === 'transcript' && m.sessionId === sid && m.payload?.kind === 'cli-stream-result';
     const isPermission = (m) => m.type === 'permission.request' && m.sessionId === sid;
 
-    // A session resumed with a prompt still blocked on a permission: answer
-    // it instead of piling a second prompt on top.
+    // A resumed session still blocked on a permission: answer it rather than pile a second prompt on top.
     const summaryNow = (await request('session.list')).find((s) => s.sessionId === sid);
     let first;
     if (summaryNow?.pendingPermissions > 0) {
@@ -161,7 +146,6 @@ ws.on('open', async () => {
 });
 ws.on('error', (e) => { console.error('socket error', e.message); process.exit(1); });
 ws.on('close', (code, reason) => {
-  // Reached only if the daemon dropped us before the script finished.
   console.error(`\nSMOKE FAILED: socket closed early (${code} ${reason?.toString() || ''})`);
   process.exit(1);
 });

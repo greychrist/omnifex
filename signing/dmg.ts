@@ -1,18 +1,8 @@
 /**
- * Notarize the app and the disk image, and staple both.
- *
- * The app is notarized first (`notarizeApp`), and the DMG is then built
- * around the stapled app — a disk image is a fresh container that carries
- * no signature of its own, so it is signed, notarized and stapled separately
- * (`notarizeDmg`). The app inside is fine once copied out, its ticket travels
- * with it, but the container itself fails Gatekeeper (`spctl` → "no usable
- * signature") and that is what a user actually double-clicks.
- *
- * Gated on `OMNIFEX_NOTARIZE=1` by the package script, so ordinary local
- * builds don't touch Apple.
+ * A DMG is a fresh container with no signature of its own: it is signed, notarized and stapled
+ * separately, or Gatekeeper rejects the thing a user double-clicks.
  */
 
-/** Injected so the whole flow is testable without shelling out. */
 export interface NotarizeDmgDeps {
   /** Run a command to completion; return stdout, throw on non-zero exit. */
   run: (cmd: string, args: string[]) => string;
@@ -21,18 +11,10 @@ export interface NotarizeDmgDeps {
 
 export interface NotarizeDmgOptions {
   keychainProfile: string;
-  /** Overrides certificate discovery. Set via `APPLE_SIGNING_IDENTITY`. */
   identity?: string;
 }
 
-/**
- * Extract Developer ID Application certificate names from
- * `security find-identity -v -p codesigning` output.
- *
- * Deliberately narrow: an "Apple Development" cert cannot notarize, and a
- * self-signed one has no Team ID. Matching loosely here would produce a build
- * that signs successfully and is then rejected by the notary service.
- */
+/** Deliberately narrow: an "Apple Development" cert signs fine and is then rejected by the notary. */
 export function developerIdIdentities(securityOutput: string): string[] {
   const names: string[] = [];
   for (const line of securityOutput.split('\n')) {
@@ -42,14 +24,7 @@ export function developerIdIdentities(securityOutput: string): string[] {
   return names;
 }
 
-/**
- * Choose which certificate to sign with.
- *
- * Refuses to pick between multiple Developer ID certs for the same reason
- * `resolve()` refuses to pick between two accounts that both own a project:
- * silently guessing produces artifacts signed by the wrong team, which is only
- * discovered downstream.
- */
+/** Never picks between several: a guess signs with the wrong team, found only downstream. */
 export function pickSigningIdentity(
   available: string[],
   explicit: string | undefined,
@@ -82,8 +57,7 @@ export async function notarizeDmg(
   );
 
   log?.(`[signing] signing ${dmgPath} with "${identity}"`);
-  // --timestamp is required for notarization; a signature without a secure
-  // timestamp is rejected.
+  // The notary rejects a signature without a secure timestamp.
   run('codesign', ['--sign', identity, '--timestamp', '--force', dmgPath]);
 
   log?.('[signing] submitting dmg to the notary service (this can take a while)');
@@ -96,22 +70,14 @@ export async function notarizeDmg(
     '--wait',
   ]);
 
-  // Without the staple the dmg only passes Gatekeeper while online — the
-  // failure appears offline, on someone else's machine.
+  // Unstapled, the dmg passes Gatekeeper only while online.
   log?.('[signing] stapling the notary ticket');
   run('xcrun', ['stapler', 'staple', dmgPath]);
 
   log?.(`[signing] ${dmgPath} signed, notarized, and stapled`);
 }
 
-/**
- * Notarize and staple an already-signed app bundle.
- *
- * notarytool takes an archive, not a bundle, so the app is zipped to
- * `zipPath` for the submission; the ticket is then stapled to the bundle
- * itself. The zip the updater downloads is made after this, from the stapled
- * app, so the app inside it passes Gatekeeper offline.
- */
+/** notarytool takes an archive, not a bundle; the ticket is stapled to the bundle itself. */
 export async function notarizeApp(
   appPath: string,
   zipPath: string,

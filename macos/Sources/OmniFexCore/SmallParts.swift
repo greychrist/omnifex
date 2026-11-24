@@ -1,11 +1,6 @@
 import Foundation
 
-/// The cost report's measured content box → the rect a one-page PDF is cut
-/// from. PDF caps a page at 200in (14400pt); at 96 CSS px per inch that is
-/// 19200px, and a taller report is shrunk to fit rather than cut off — a
-/// truncated cost report is missing panels, the failure the export exists to
-/// prevent. A garbage measurement (a view that never laid out reports 0)
-/// falls back rather than producing a zero-size page.
+/// PDF caps a page at 200in (19200 CSS px): a taller report is shrunk to fit, never cut off.
 public struct PdfPageSize: Equatable, Sendable {
     public static let maxPx: Double = 200 * 96
     public var widthPx: Double
@@ -21,7 +16,6 @@ public struct PdfPageSize: Equatable, Sendable {
     }
 }
 
-/// The daemon CLI's `ensure` / `restart` answer, and the URLs derived from it.
 public enum DaemonEnsure {
     public struct Result: Equatable, Sendable {
         public var url: String?
@@ -49,7 +43,6 @@ public enum DaemonEnsure {
         return c
     }
 
-    /// `ws://h:p/ws` → `http://h:p/`: the daemon serves the renderer at `/`.
     public static func pageURL(fromWebSocket ws: String) -> URL? {
         guard var c = httpBase(ws) else { return nil }
         c.path = "/"
@@ -62,17 +55,13 @@ public enum DaemonEnsure {
         return c.url
     }
 
-    /// `sessions.inFlight` from `/healthz`; an older daemon without the field
-    /// reads as idle. nil = not a health body at all.
+    /// An older daemon without the field reads as idle.
     public static func inFlight(fromHealth data: Data) -> Int? {
         guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
         return (obj["sessions"] as? [String: Any])?["inFlight"] as? Int ?? 0
     }
 }
 
-/// Reads the `params` the bridge delivers. Handlers accept camelCase and
-/// snake_case alike, and a few channels (`shell:openExternal`) send a bare
-/// string rather than an object.
 public enum BridgeParams {
     public static func string(_ params: Any?, _ keys: String...) -> String? {
         if let s = params as? String { return s }

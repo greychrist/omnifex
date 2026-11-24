@@ -1,13 +1,7 @@
 import Foundation
 
-/// The channels this app serves itself. Mirrors `NATIVE_INVOKE_CHANNELS` and
-/// `NATIVE_EVENT_PREFIXES` in `src/lib/remote/nativeChannels.ts`, which is the
-/// source of truth: the renderer's shim routes exactly those to
-/// `window.__omnifexNative`, and everything else to the daemon.
-///
-/// Keep every channel a plain string literal in this file — a vitest guard
-/// greps it for each entry of the TS list, which is what stops a channel being
-/// added on one side and silently answering nothing on the other.
+/// Mirrors `src/lib/remote/nativeChannels.ts`, the source of truth. Keep every channel a plain
+/// string literal: a vitest guard greps this file for each entry of the TS list.
 public enum NativeChannels {
     public static let invoke: Set<String> = [
         "dialog:open",
@@ -39,7 +33,6 @@ public enum NativeChannels {
         "drop:paths",
     ]
 
-    /// Events this app emits into pages.
     public static let events: Set<String> = [
         "updater:progress",
         "updater:install-status",
@@ -56,8 +49,6 @@ public struct BridgeError: Error, LocalizedError, Sendable {
     public var errorDescription: String? { message }
 }
 
-/// Channel → handler, refusing anything not on the native list. `Context` is
-/// whatever the app needs to know about the caller (its web view).
 public final class BridgeRouter<Context> {
     public typealias Handler = (_ params: Any?, _ context: Context) async throws -> Any?
     private var handlers: [String: Handler] = [:]
@@ -75,7 +66,6 @@ public final class BridgeRouter<Context> {
         return try await handler(params, context)
     }
 
-    /// Native channels nothing handles — empty in a correct build.
     public func missingHandlers() -> [String] {
         NativeChannels.invoke.filter { handlers[$0] == nil }.sorted()
     }

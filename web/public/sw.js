@@ -1,10 +1,4 @@
-// Minimal service worker: enough for Safari's "Add to Home Screen" to install
-// a real standalone app, and nothing more.
-//
-// Deliberately NOT an offline cache. The app is a live session console; a
-// stale cached shell that could not reach the daemon would be worse than a
-// plain failed load. Every fetch goes to the network; the worker's only job is
-// to exist and to claim the page so the install criteria are met.
+// Deliberately NOT an offline cache: a stale shell that cannot reach the daemon is worse than a failed load.
 self.addEventListener('install', () => {
   self.skipWaiting();
 });
@@ -14,13 +8,10 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  // Pass-through. Keep the handler present: some browsers require a fetch
-  // listener before they treat the page as installable.
+  // Some browsers require a fetch listener before they treat the page as installable.
   event.respondWith(fetch(event.request));
 });
 
-// Phase 6 hook: Web Push lands here. A pushed `permission.request` opens the
-// session it belongs to.
 self.addEventListener('push', (event) => {
   let data = {};
   try { data = event.data ? event.data.json() : {}; } catch { /* not JSON */ }

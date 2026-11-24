@@ -1,28 +1,3 @@
-// eslint flat config (eslint 9 + typescript-eslint v8) for OmniFex.
-//
-// Goals (per the Tier S decision in CHANGELOG / session notes):
-//   * Catch React effect-deps drift before it ships
-//     (`react-hooks/exhaustive-deps`).
-//   * Catch async-ish bugs the type-checker can't see
-//     (`no-floating-promises`, `no-misused-promises`).
-//   * Catch silent fall-throughs in discriminated-union switches
-//     (`switch-exhaustiveness-check`) — the failure mode that hid
-//     the lost-`task_updated` payload bug.
-//   * Honor the 30-some `// eslint-disable` comments already in the
-//     tree by actually running an eslint that recognizes them.
-//
-// `projectService: true` is the modern way to give typed-linting rules
-// access to type info; it auto-finds the nearest `tsconfig.json` per
-// file and naturally covers both the renderer (tsconfig.json) and main
-// process (tsconfig.daemon.json) projects.
-//
-// Rule policy (see "Why these are off" comments below for each):
-// strict-type-checked + stylistic-type-checked are the BASE. We then
-// turn off the rules that produce 100s of low-signal stylistic
-// findings on this codebase, while keeping every rule that catches
-// a real bug class. The intent is "eslint passes clean, every report
-// is worth investigating," not "every strict rule is non-negotiable."
-
 import { defineConfig } from 'eslint/config';
 import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
@@ -33,52 +8,35 @@ import globals from 'globals';
 import { noBareSpawn } from './eslint/no-bare-spawn.mjs';
 
 export default defineConfig(
-  // Ignore patterns first — anything matched here skips ALL configs below.
   {
     ignores: [
       'node_modules/**',
       'dist-web/**',
-      // Stale output of the old renderer build (gitignored); dist-web/ replaced it.
       'dist/**',
-      // The service worker is plain JS served as-is; the type-aware rules
-      // below cannot load for a file outside every tsconfig.
+      // Plain JS outside every tsconfig: the type-aware rules cannot load for it.
       'web/public/sw.js',
       '.vite/**',
       'out/**',
       'coverage/**',
-      // The Swift app; SwiftPM's build tree holds generated sources.
       'macos/**',
-      // Generated/Vite output that doesn't belong in lint.
       '**/*.d.ts.map',
       '**/*.js.map',
-      // The eslint config itself doesn't need to lint itself.
       'eslint.config.mjs',
-      // Plain-JS rule fragments imported by this config; no tsconfig covers them.
+      // Plain-JS rule fragments; no tsconfig covers them.
       'eslint/**',
-      // Vite configs are mostly Node scripts; defer for a future
-      // tightening pass.
       'vite.*.config.ts',
       'vitest.config.ts',
-      // Plain-JS scripts and root-level JS aren't in any tsconfig and
-      // would just produce parsing errors under typed linting. Skip
-      // for the same "future tightening" reason.
+      // Not in any tsconfig: typed linting would only produce parse errors.
       'postcss.config.js',
       'scripts/**',
     ],
   },
 
-  // Base layer: core JS recommended + typescript-eslint typed-strict.
   js.configs.recommended,
   tseslint.configs.strictTypeChecked,
   tseslint.configs.stylisticTypeChecked,
 
-  // Tell typescript-eslint about both TS projects (renderer + main).
-  // We use the explicit `project` array rather than `projectService: true`
-  // because projectService's nearest-tsconfig.json discovery picks up
-  // the root tsconfig.json (renderer-only) and rejects every electron
-  // file, since there's no `daemon/tsconfig.json`. Listing both
-  // projects keeps electron files covered without needing to introduce
-  // a redundant tsconfig file just to satisfy discovery.
+  // Explicit `project`, not `projectService`: discovery finds the renderer-only root tsconfig and rejects every daemon file.
   {
     files: ['**/*.{ts,tsx}'],
     languageOptions: {
@@ -93,9 +51,6 @@ export default defineConfig(
     },
   },
 
-  // React + React Hooks — applied only to renderer files (src/**).
-  // Electron main-process code doesn't render React so these are noise
-  // there. We use the flat-config presets shipped by each plugin.
   {
     files: ['src/**/*.{ts,tsx,js,jsx}'],
     ...reactPlugin.configs.flat.recommended,
@@ -117,10 +72,7 @@ export default defineConfig(
     files: ['src/**/*.{ts,tsx,js,jsx}'],
     plugins: { 'react-hooks': reactHooks },
     rules: {
-      // Recommended set first, then per-rule policy. The v7 plugin
-      // ships several new rules we'll adopt incrementally — keep
-      // `exhaustive-deps` (the original Tier S ask) as error and the
-      // rest as warn so they're visible without blocking the gate.
+      // exhaustive-deps gates; the newer v7 rules warn until adopted.
       ...reactHooks.configs.recommended.rules,
       'react-hooks/exhaustive-deps': 'error',
       'react-hooks/error-boundaries': 'warn',
@@ -132,7 +84,6 @@ export default defineConfig(
     },
   },
 
-  // Node globals for main process + tests.
   {
     files: ['daemon/**/*.{ts,js}', '**/*.test.{ts,tsx}', '**/*.config.{ts,js,mjs}'],
     languageOptions: {
@@ -142,23 +93,14 @@ export default defineConfig(
     },
   },
 
-  // Project-wide rule policy. This is the SECOND-most-important block
-  // in the config (after the base layer) — it tunes strict-type-checked
-  // down to the rules that actually catch bugs in this codebase.
   {
     rules: {
-      // ─── Keep: explicit additions for the highest-signal rules ──
-      // switch-exhaustiveness-check is NOT in strictTypeChecked but is
-      // exactly the rule that would have caught the lost-task_updated
-      // payload bug at write time. Adding it explicitly.
+      // Not in strictTypeChecked; catches silent fall-throughs in discriminated-union switches.
       '@typescript-eslint/switch-exhaustiveness-check': ['error', {
         considerDefaultExhaustiveForUnions: true,
       }],
 
-      // Honor the `_`-prefix convention for intentionally-unused
-      // variables, parameters, and destructured values. tsconfig already
-      // sets noUnusedLocals/noUnusedParameters with this convention; the
-      // eslint rule needs explicit configuration to match.
+      // Match tsconfig's `_`-prefix convention for intentionally unused names.
       '@typescript-eslint/no-unused-vars': ['error', {
         argsIgnorePattern: '^_',
         varsIgnorePattern: '^_',
@@ -166,56 +108,28 @@ export default defineConfig(
         destructuredArrayIgnorePattern: '^_',
       }],
 
-      // ─── Off: stylistic noise ──
-      // `${val}` where val isn't a string. JS coerces; the cases where
-      // this matters are subtle and infrequent. ~140 sites in this codebase.
+      // JS coerces; the cases where it matters are rare.
       '@typescript-eslint/restrict-template-expressions': 'off',
-      // `||` vs `??`. The semantics differ for falsy-but-not-nullish
-      // values (0, '', false). Existing code is intentional; flipping
-      // them en masse would change behavior. ~120 sites.
+      // `||` vs `??` differs for 0/''/false; existing uses are intentional.
       '@typescript-eslint/prefer-nullish-coalescing': 'off',
-      // Empty `() => {}` callbacks are routine in tests (mock impls)
-      // and React (no-op handlers). ~40 sites.
+      // No-op callbacks are routine in tests and React handlers.
       '@typescript-eslint/no-empty-function': 'off',
-      // `Number()`/`String()` paranoia — harmless. ~10 sites.
+      // `Number()`/`String()` is harmless.
       '@typescript-eslint/no-unnecessary-type-conversion': 'off',
-      // Catches `if (foo?.bar)` where `foo` is provably defined. Mostly
-      // fires on defensive-coding patterns the original author wanted.
-      // ~200 sites — too noisy as an error. Off rather than warn so it
-      // stops appearing in the lint output entirely.
+      // Fires on intentional defensive checks; too noisy to surface at all.
       '@typescript-eslint/no-unnecessary-condition': 'off',
       // `Promise<void>` in handlers / callbacks is legitimate.
       '@typescript-eslint/no-invalid-void-type': 'off',
-      // `() => doThing()` is fine when doThing returns void. The
-      // post-auto-fix residual is in places where the brace style
-      // would harm readability.
+      // Braces would hurt readability where the expression is void.
       '@typescript-eslint/no-confusing-void-expression': 'off',
-      // Common React pattern false positive (passing class methods as
-      // event handlers).
+      // False positive on class methods passed as event handlers.
       '@typescript-eslint/unbound-method': 'off',
-      // 126 sites, all of one of three patterns:
-      //   1. Async method implementing an async interface contract
-      //      (signature is Promise<T> for conformance even when the
-      //      body is synchronous).
-      //   2. Test stub returning a settled Promise without an await
-      //      (vi.fn(async () => …)).
-      //   3. IPC-handler adapters whose `Promise<T>` shape is wire-
-      //      contract, not behavioral.
-      // None are bugs; they're false positives for our architecture.
-      // The honest fix is one config line, not 126 line-level disables.
+      // False positives: async interface conformance, settled-Promise test stubs, wire-contract IPC adapters.
       '@typescript-eslint/require-await': 'off',
-      // Wants `querySelector(...) as HTMLElement` written as `!`. But the
-      // assertion is the contextual type that makes TS infer HTMLElement
-      // for querySelector's generic; `!` leaves Element and tsc fails.
-      // Its auto-fix broke 19 sites. ~59 sites, all this pattern.
+      // `as HTMLElement` is the contextual type querySelector's generic needs; `!` leaves Element and tsc fails.
       '@typescript-eslint/non-nullable-type-assertion-style': 'off',
 
-      // ─── Warn (not error) for the `any`-cascade family ──
-      // These all fire because of explicit `any` at the source. Gating
-      // them as errors makes lint unrunnable until 173 explicit `any`
-      // casts are eliminated — which is a large refactor of its own.
-      // Keeping as warn so they stay visible in IDEs and counts but
-      // don't fail the gate.
+      // Cascades from explicit `any`: visible as warnings, not gating.
       '@typescript-eslint/no-explicit-any': 'warn',
       '@typescript-eslint/no-unsafe-assignment': 'warn',
       '@typescript-eslint/no-unsafe-member-access': 'warn',
@@ -223,26 +137,19 @@ export default defineConfig(
       '@typescript-eslint/no-unsafe-argument': 'warn',
       '@typescript-eslint/no-unsafe-return': 'warn',
 
-      // ─── Off: rules whose intent doesn't match this codebase ──
       // We use TypeScript, not PropTypes, for prop validation.
       'react/prop-types': 'off',
-      // ' and < etc. in JSX text are fine; the codebase already uses
-      // them for prose.
+      // Apostrophes and `<` in JSX prose are fine.
       'react/no-unescaped-entities': 'off',
       // Common false positive on inline / forwardRef components.
       'react/display-name': 'off',
-      // The `use()` hook rule is aspirational for React 19+; we're on 18.
       'react/use': 'off',
 
-      // (react-hooks rule policy lives in the renderer-only block above
-      // because plugin registration must share the block with rule overrides
-      // in flat config.)
+      // react-hooks rules live in the renderer block: flat config needs a plugin and its overrides in one block.
     },
   },
 
-  // Main + daemon processes: never spawn a bare command name. See
-  // eslint/no-bare-spawn.mjs and daemon/services/util/spawn.ts. Tests are
-  // exempt — their spawns never run inside the app.
+  // Daemon: never spawn a bare command name (a PATH probe per miss). Tests' spawns never run in the app.
   {
     files: ['daemon/**/*.ts'],
     ignores: ['daemon/**/__tests__/**'],
@@ -251,10 +158,7 @@ export default defineConfig(
     },
   },
 
-  // Test-file relaxations. Vitest tests build deliberately-malformed
-  // fixtures via `as unknown as ClaudeStreamMessage` etc.; the strict
-  // rules would force us to author proper type narrowings on every
-  // fixture, which is more friction than value.
+  // Tests build deliberately malformed fixtures.
   {
     files: ['**/*.test.{ts,tsx}', '**/__tests__/**/*.{ts,tsx}'],
     rules: {

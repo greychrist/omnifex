@@ -1,18 +1,7 @@
 import Foundation
 
-/// Access policy for the `greychrist-file://` scheme.
-///
-/// The renderer shows images from disk through it (`ImagePreview.tsx`,
-/// `StreamMessage.tsx`, both as `<img src>`). Electron's handler used to be an
-/// unrestricted read — a local-file read primitive for anything that could run
-/// script in the page, which the transcript's link preview iframe made
-/// reachable. So the scheme serves images only:
-///
-///  - absolute paths only;
-///  - the file must exist and be a regular file;
-///  - its extension must be a known image type, decided on the path AFTER
-///    symlink resolution, so `decoy.png -> ~/.claude/.credentials.json` is
-///    refused rather than served.
+/// Images only: an unrestricted read is a local-file read primitive for any script in the page.
+/// The extension is checked AFTER symlink resolution, so `decoy.png -> ~/.claude/.credentials.json` is refused.
 public enum ProtocolFilePolicy {
     public static let scheme = "greychrist-file"
 
@@ -26,15 +15,13 @@ public enum ProtocolFilePolicy {
     ]
 
     public enum Decision: Equatable, Sendable {
-        /// Read `path` — the REAL path, so the caller reads the file this
-        /// approved rather than reopening the symlink it rejected.
+        /// The REAL path: the caller must read the file approved, not reopen the symlink.
         case ok(path: String, contentType: String)
         case refused(String)
 
         public var isOK: Bool { if case .ok = self { return true } else { return false } }
     }
 
-    /// The filesystem path a `greychrist-file:///abs/path` URL names.
     public static func requestedPath(from url: URL) -> String {
         url.path(percentEncoded: false)
     }

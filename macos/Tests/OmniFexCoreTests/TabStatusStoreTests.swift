@@ -30,7 +30,6 @@ import Testing
         #expect(sink.calls.count == 1)
         store.publish(s("a", busy: true), source: 1)
         #expect(sink.calls.count == 2)
-        // Updating keeps the tab's position.
         store.publish(s("b"), source: 1)
         store.publish(s("a", title: "new"), source: 1)
         #expect(store.list().map { $0["tabId"] as? String } == ["a", "b"])
@@ -50,8 +49,6 @@ import Testing
         #expect(sink.calls.last?.isEmpty == true)
     }
 
-    // A reload tears the page down before any unmount effect can land, so
-    // its tabs outlived it as phantom "working" sessions.
     @Test func removeSourceRetiresOnlyThatSource() {
         let (store, _) = make()
         store.publish(s("a"), source: 1)
@@ -63,7 +60,7 @@ import Testing
     @Test func republishByANewSourceReattributes() {
         let (store, _) = make()
         store.publish(s("a"), source: 1)
-        store.publish(s("a"), source: 2) // identical payload, new page
+        store.publish(s("a"), source: 2)
         store.removeSource(1)
         #expect(store.list().count == 1)
     }

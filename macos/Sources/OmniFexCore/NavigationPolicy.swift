@@ -1,21 +1,13 @@
 import Foundation
 
 public enum NavigationDecision: Equatable, Sendable {
-    /// `download`: save it — a `blob:`/`data:` link the page itself made.
     case allow, external, deny, download
 }
 
-/// What a web view may navigate to.
-///
-/// The window may only ever show the app's own page. A transcript link to
-/// `/Users/me/report.md` resolves against that page — onto the daemon's origin
-/// packaged, the dev server's in dev — so allowing the whole origin let one
-/// click replace the app window with the file (2026-10-22). Hash routes are
-/// in-page navigations and never reach this policy.
+/// Only the app's own page: a transcript link like `/Users/me/report.md` resolves onto the app's
+/// origin, so allowing the whole origin let one click replace the window with the file.
 public struct NavigationPolicy: Sendable {
-    /// The daemon's page origin, `http://<host>:<port>/`.
     public var appOrigin: URL?
-    /// The Vite dev server, in dev only.
     public var devServer: URL?
 
     public init(appOrigin: URL?, devServer: URL?) {
@@ -23,10 +15,7 @@ public struct NavigationPolicy: Sendable {
         self.devServer = devServer
     }
 
-    /// `isDownload` is `WKNavigationAction.shouldPerformDownload`: the link
-    /// carries a `download` attribute. Save image, export appearance and save
-    /// diagram all build one over a `blob:` URL, which WKWebView does nothing
-    /// with unless the navigation becomes a download.
+    /// WKWebView does nothing with a `blob:` link unless the navigation becomes a download.
     public func classify(_ raw: String, isDownload: Bool = false) -> NavigationDecision {
         if raw.isEmpty || raw == "about:blank" { return .allow }
         guard let url = URL(string: raw), let scheme = url.scheme?.lowercased() else { return .deny }
@@ -45,14 +34,8 @@ public struct NavigationPolicy: Sendable {
         return scheme == "http" || scheme == "https" ? .external : .deny
     }
 
-    /// Whether a frame may call the native bridge: the main frame, showing
-    /// the app's own origin, and nothing else.
-    ///
-    /// The page shows link previews of arbitrary URLs in iframes, and the
-    /// bridge reaches `updater:download` and `updater:install` — a frame from
-    /// one of those previews calling them would be code execution. (Electron
-    /// never had the question: its preload ran in the main frame only.)
-    /// `port` is `WKSecurityOrigin`'s, where 0 means the scheme's default.
+    /// Main frame on the app's origin only: link previews put arbitrary URLs in iframes, and the bridge
+    /// reaches `updater:install`. `port` is `WKSecurityOrigin`'s, where 0 means the scheme's default.
     public func allowsBridge(isMainFrame: Bool, scheme: String, host: String, port: Int) -> Bool {
         guard isMainFrame else { return false }
         var parts = URLComponents()

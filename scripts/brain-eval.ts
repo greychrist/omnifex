@@ -1,19 +1,6 @@
 /**
- * Measure whether the Brain is worth what it costs, and keep the answer.
- *
- * Every run is stored under `<userData>/brain-evals/<runId>/` — beside
- * greychrist.db, outside the repo (which is public, and the runs quote real
- * session transcripts from both accounts) and outside /tmp (where the first
- * judge pass's verdicts were lost). `compare` reads every stored run.
- *
- * Usage (see .claude/skills/brain-eval/SKILL.md for the whole procedure):
- *   node --experimental-strip-types --import ./scripts/lib/register-ts.mjs \
- *        scripts/brain-eval.ts measure [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--judge-cap N]
- *   ... scripts/brain-eval.ts record <runDir>     # after the judge wrote verdicts-<account>.json
- *   ... scripts/brain-eval.ts compare
- *
- * Reads transcripts, greychrist.db and each vault's index, all read-only.
- * Writes only inside the run directory.
+ * Runs live in `<userData>/brain-evals/<runId>/`, never the repo (public; runs quote real transcripts)
+ * or /tmp. Everything outside the run directory is read-only.
  */
 import BetterSqlite3 from 'better-sqlite3';
 import { execFileSync } from 'node:child_process';
@@ -71,8 +58,6 @@ interface JudgeCase {
   promptBefore: string;
   after: string;
 }
-
-// ── inputs ────────────────────────────────────────────────────────────────
 
 function openAppDb(): BetterSqlite3.Database {
   if (!existsSync(APP_DB)) throw new Error(`OmniFex database not found at ${APP_DB}`);
@@ -138,11 +123,7 @@ interface SessionWithFiles {
   files: TranscriptSummary[];
 }
 
-/**
- * Each top-level `<uuid>.jsonl` is one session; its subagents' transcripts
- * under `<uuid>/subagents/` count toward it, since a search a subagent made
- * was made on that session's behalf.
- */
+/** A subagent's search was made on its session's behalf, so `<uuid>/subagents/` counts toward `<uuid>.jsonl`. */
 function readSessions(configDir: string): SessionWithFiles[] {
   const root = join(configDir, 'projects');
   if (!existsSync(root)) return [];
@@ -188,7 +169,6 @@ function vaultStats(vault: string): { notes: number; bytes: number } {
   return { notes, bytes };
 }
 
-/** Replay mined reformulation chains against today's index; see retrieval-eval.ts. */
 function retrievalScore(vault: string, files: readonly TranscriptSummary[]): RetrievalScore {
   const cases = files.flatMap((f) =>
     chainsToCases(
@@ -216,8 +196,6 @@ function retrievalScore(vault: string, files: readonly TranscriptSummary[]): Ret
     index.close();
   }
 }
-
-// ── output ────────────────────────────────────────────────────────────────
 
 const pct = (x: number | null | undefined) => (x == null ? '—' : `${(100 * x).toFixed(1)}%`);
 const usd = (x: number | null | undefined) => (x == null ? '—' : `$${x.toFixed(2)}`);
@@ -277,8 +255,6 @@ function defaultWindow(): EvalWindow {
   const day = 86_400_000;
   return { since: localDate(new Date(Date.now() - 30 * day).toISOString()), until: localDate(new Date(Date.now() - day).toISOString()) };
 }
-
-// ── commands ──────────────────────────────────────────────────────────────
 
 function measure(): void {
   const def = defaultWindow();

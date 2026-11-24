@@ -1,13 +1,8 @@
 import Foundation
 import SQLite3
 
-/// Reads one `app_settings` value from `greychrist.db`.
-///
-/// The daemon owns the database; the app only needs two settings (the
-/// notification sounds), and asking the daemon over the socket for them would
-/// make a banner depend on the connection being up. The file is shared WAL
-/// with a busy timeout, so a read here never blocks the daemon's writers.
-/// Anything missing — file, table, key — reads as nil.
+/// Read directly, not over the socket: a banner must not depend on the connection.
+/// The file is WAL with a busy timeout, so this never blocks the daemon's writers.
 public struct SettingsReader: Sendable {
     public var path: String
     public init(path: String) { self.path = path }
@@ -15,8 +10,7 @@ public struct SettingsReader: Sendable {
     public func value(for key: String) -> String? {
         guard FileManager.default.fileExists(atPath: path) else { return nil }
         var db: OpaquePointer?
-        // READWRITE without CREATE: a WAL reader may need to touch -shm, and
-        // the file must never be created from here.
+        // READWRITE without CREATE: a WAL reader may need to touch -shm, and the file must never be created here.
         guard sqlite3_open_v2(path, &db, SQLITE_OPEN_READWRITE, nil) == SQLITE_OK else {
             sqlite3_close(db)
             return nil
@@ -32,7 +26,6 @@ public struct SettingsReader: Sendable {
         return String(cString: c)
     }
 
-    /// Test fixture: a database with an `app_settings` table (or none, for nil rows).
     static func testCreate(path: String, rows: [String: String]?) throws {
         var db: OpaquePointer?
         guard sqlite3_open(path, &db) == SQLITE_OK else { throw BridgeError("open failed") }

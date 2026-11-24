@@ -1,22 +1,5 @@
 /**
- * `npm start`: the dev app.
- *
- * Builds the daemon bundles and a debug Swift app into
- * `out/dev/OmniFex Dev.app` (bundle id `com.omnifex.app.dev`, so it never
- * shares LaunchServices state or notification settings with the installed
- * app), starts the Vite dev server, and runs the app against both:
- *
- *   OMNIFEX_DEV_SERVER_URL  the page comes from Vite (hot reload)
- *   OMNIFEX_NODE            this node — Node 26, the ABI the native modules
- *                           in node_modules were built for
- *   OMNIFEX_DAEMON_SCRIPT   .vite/build/omnifex-server.js
- *
- * The app runs `ensure --dev`, so the daemon is the dev instance:
- * `~/.omnifex-dev`, port 47701, never the installed app's daemon (see
- * daemon/remote/dev-instance.ts). Quitting the app stops
- * it; Ctrl-C here reaches the whole process group.
- *
- * `--bundle-only` builds the dev app and exits without launching anything.
+ * Its own bundle id, so the dev app never shares LaunchServices state or notification settings with the installed app.
  */
 import { execFileSync, spawn } from 'node:child_process';
 import fs from 'node:fs';

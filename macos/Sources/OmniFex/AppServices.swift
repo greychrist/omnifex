@@ -2,8 +2,6 @@ import AppKit
 import WebKit
 import OmniFexCore
 
-/// Everything the windows share: the daemon, the native-channel router, the
-/// tab-status aggregator, notifications, the updater. One per process.
 @MainActor
 final class AppServices {
     let paths: AppPaths
@@ -21,17 +19,12 @@ final class AppServices {
     private var lastInFlight = -1
 
     private(set) var controllers: [BrowserWindowController] = []
-    /// Every bridged web view, windows and the hidden PDF print view alike,
-    /// keyed by the id tab-status attributes summaries to.
     private var webViews: [Int: WeakWebView] = [:]
     private var nextSourceId = 1
-    /// A quit the user already agreed to, or one the installer drives.
     var quitAuthorized = false
-    /// Filled by `DropAwareWebView` just before the page sees a drop.
     var dropStash = DropStash()
 
-    /// What every web view may navigate to — and which frames may call the
-    /// bridge. Read fresh: the daemon's address is known only after `ensure`.
+    /// Computed, never stored: the daemon's address is known only after `ensure`.
     var navigationPolicy: NavigationPolicy {
         NavigationPolicy(appOrigin: daemon.url.flatMap(DaemonEnsure.pageURL(fromWebSocket:)), devServer: paths.devServerURL)
     }
@@ -57,15 +50,11 @@ final class AppServices {
         }
         power = PowerMonitor { [weak self] awake in self?.broadcast("system-power-state", ["awake": awake]) }
 
-        // Titlebar's update warning: how many sessions are genuinely mid-turn.
-        // A 1 s poll is plenty — the count changes per turn, not per message.
         inFlightTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.broadcastInFlightIfChanged() }
         }
         updates.pruneDownloads()
     }
-
-    // MARK: - Windows and web views
 
     func newWindow() {
         let controller = BrowserWindowController(services: self)
@@ -86,7 +75,6 @@ final class AppServices {
         NSApp.isActive && controllers.contains { $0.window?.isKeyWindow == true }
     }
 
-    /// A fresh id for a bridged web view.
     func register(_ webView: WKWebView) -> Int {
         let id = nextSourceId
         nextSourceId += 1
@@ -115,11 +103,6 @@ final class AppServices {
         broadcast("session-inflight-count", ["count": count])
     }
 
-    // MARK: - Quit
-
-    /// The gate for every quit path; false only when the user cancels.
-    /// "Quit anyway" latches `quitAuthorized` so the rest of the same quit
-    /// (each window closing, then terminate) does not ask again.
     func mayQuit(over window: NSWindow?, daemonInFlight: Int?) -> Bool {
         let working = QuitPolicy.workingCount(local: tabStatus.workingTabIds().count, daemon: daemonInFlight)
         switch QuitPolicy.decide(workingCount: working, authorized: quitAuthorized) {
@@ -130,8 +113,7 @@ final class AppServices {
             alert.alertStyle = .warning
             alert.messageText = prompt.message
             alert.informativeText = prompt.detail
-            // Cancel is both the default and the escape hatch: the lossy
-            // option is never what a stray Return picks.
+            // Cancel first: a stray Return must never pick the lossy option.
             alert.addButton(withTitle: "Cancel")
             alert.addButton(withTitle: "Quit anyway")
             guard alert.runModal() == .alertSecondButtonReturn else { return false }
@@ -140,8 +122,6 @@ final class AppServices {
         }
     }
 
-    /// Quit without re-asking: the user asked for the update, and the
-    /// installer ran its own busy-session gate.
     func quitAuthorizedNow() {
         quitAuthorized = true
         NSApp.terminate(nil)
@@ -149,10 +129,8 @@ final class AppServices {
 
     func willTerminate() {
         inFlightTimer?.invalidate()
-        // The daemon lives and dies with the app: quitting ends it and every
-        // session under it, so a permission granted to OmniFex applies on the
-        // next launch. Waits out the stop command's own 5s, so Quit & Reopen
-        // never adopts a daemon still closing.
+        // The daemon must die with the app, or new macOS permission grants never reach its sessions.
+        // Wait out stop's own timeout so Quit & Reopen never adopts a daemon still closing.
         daemon.stopSync(timeout: DaemonCLI.quitStopTimeout)
     }
 }
@@ -161,7 +139,6 @@ struct WeakWebView {
     weak var view: WKWebView?
 }
 
-/// Who sent a native call.
 struct BridgeCaller {
     weak var webView: WKWebView?
     let sourceId: Int

@@ -1,8 +1,6 @@
 import AppKit
 import OmniFexCore
 
-/// Process entry. No storyboard, no nib: the menu and the windows are built
-/// in code so the whole app reads top to bottom from here.
 @main
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
@@ -24,22 +22,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NSApp.activate()
     }
 
-    /// Clicking the Dock icon with every window closed. Closing the last
-    /// window quits, so this only matters mid-launch.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if !flag { services.newWindow() }
         return true
     }
 
-    // Quit when the last window closes: the stock "stay resident" behaviour
-    // got OmniFex reported as running in the background. Quitting stops the
-    // daemon and its sessions too; `applicationShouldTerminate` asks first
-    // when a turn is running.
+    // Quit on last window close: staying resident got OmniFex reported as running in the background.
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 
-    // Asks the daemon how many turns a quit would stop (the iPad's too), so the
-    // answer is deferred. `remoteInFlight` gives up after 1.5s and the window's
-    // own tabs stand in.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         if services.quitAuthorized { return .terminateNow }
         let window = NSApp.keyWindow
@@ -60,8 +50,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return menu
     }
 
-    // MARK: - Menu actions
-
     @objc func newWindow(_ sender: Any?) { services.newWindow() }
 
     @objc func reloadWindow(_ sender: Any?) { services.focusedController()?.confirmAndReload() }
@@ -71,8 +59,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc func actualSize(_ sender: Any?) { services.focusedController()?.setZoom(1) }
     @objc func zoomIn(_ sender: Any?) { services.focusedController()?.adjustZoom(by: 0.1) }
     @objc func zoomOut(_ sender: Any?) { services.focusedController()?.adjustZoom(by: -0.1) }
-
-    // MARK: - Menu
 
     private func buildMainMenu() -> NSMenu {
         let main = NSMenu()
@@ -92,14 +78,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let file = NSMenu(title: "File")
         file.addItem(withTitle: "New Window", action: #selector(newWindow(_:)), keyEquivalent: "n")
         file.addItem(.separator())
-        // ⌘W belongs to the renderer — it closes the current tab (App.tsx).
-        // A menu item on it would race the page for the same keystroke.
+        // ⌘W belongs to the renderer (it closes the tab); a menu item on it would race the page.
         let close = file.addItem(withTitle: "Close Window", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
         close.keyEquivalentModifierMask = [.command, .shift]
         main.addItem(submenu: file, title: "File")
 
-        // Standard selectors down the responder chain: this is what makes
-        // ⌘C/⌘V/⌘Z work inside WKWebView text fields at all.
+        // Without these standard selectors, ⌘C/⌘V/⌘Z do nothing in WKWebView text fields.
         let edit = NSMenu(title: "Edit")
         edit.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
         let redo = edit.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "z")
@@ -115,7 +99,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         main.addItem(submenu: edit, title: "Edit")
 
         let view = NSMenu(title: "View")
-        // Deliberately no shortcut: an accidental reload used to lose work.
+        // Deliberately no shortcut: an accidental reload loses work.
         view.addItem(withTitle: "Reload Window", action: #selector(reloadWindow(_:)), keyEquivalent: "")
         view.addItem(.separator())
         let devtools = view.addItem(withTitle: "Toggle Developer Tools", action: #selector(toggleDeveloperTools(_:)), keyEquivalent: "i")

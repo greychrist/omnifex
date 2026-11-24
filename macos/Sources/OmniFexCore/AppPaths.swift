@@ -1,8 +1,5 @@
 import Foundation
 
-/// Where the app finds Node, the daemon, the page and the settings database.
-/// Packaged builds use the bundle; dev and throwaway smoke runs override with
-/// environment variables (see `macos/README.md`). Empty counts as unset.
 public struct AppPaths: Sendable {
     public var node: String
     public var daemonScript: String

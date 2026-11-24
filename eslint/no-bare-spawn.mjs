@@ -1,15 +1,5 @@
-// `no-restricted-syntax` entries that keep bare command names out of every
-// child_process / node-pty call in the main and daemon processes.
-//
-// libuv on macOS walks PATH itself for a bare name, posix_spawning once per
-// entry, and XNU creates a real process — assessed by syspolicyd — for every
-// miss. It regressed three times (git watcher, the /usage scraper's MCP
-// servers, limactl) before daemon/services/util/spawn.ts existed. Use that
-// helper for user-installed tools, or spell a SIP-guaranteed system tool
-// absolute (`/usr/bin/afplay`).
-//
-// Syntax-only: a command held in a variable passes. Those come from resolvers
-// (gitBinary(), claude-binary.ts) that return absolute paths.
+// libuv walks PATH itself for a bare command name, and every miss is a real process syspolicyd assesses.
+// Syntax-only: a command held in a variable passes; the resolvers return absolute paths.
 
 const SPAWNERS = 'execFile|execFileSync|execFileAsync|spawn|spawnSync|spawnChild|ptySpawn';
 const MEMBER_SPAWNERS = 'execFile|execFileSync|spawn|spawnSync';

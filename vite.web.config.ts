@@ -1,19 +1,6 @@
 /**
- * The renderer: built into `dist-web/`, which the daemon serves at `/` to
- * every client — the Mac app's window and Safari on the iPad alike. One
- * bundle, two hosts: `src/lib/remote/bootstrap.ts` tells them apart at
- * runtime by whether the native bridge is present. `npm run dev` serves the
- * same config for the dev app.
- *
- * `publicDir: web/public/` holds the PWA manifest, the service worker and the
- * icon, which only the browser uses.
- *
- * The one define is `__APP_VERSION__`. A web page is served by one specific
- * daemon build, so it has a real version, and the shim answers
- * `get_app_version` with it on the web (the Mac app answers it itself).
- * Without it the shim replied with the literal string `web`, which never
- * equals a version number, so the daemon popover's mismatch warning was on
- * permanently.
+ * `__APP_VERSION__`: on the web the shim answers `get_app_version` with it; without a real
+ * version the daemon popover's mismatch warning is on permanently.
  */
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
@@ -29,13 +16,11 @@ export default defineConfig({
   },
   publicDir: 'web/public',
   server: {
-    // `npm start` points the dev app here, so a fixed port.
+    // `npm start` points the dev app here.
     port: 5173,
     strictPort: true,
     watch: {
-      // Test output, not source. `npm run test:coverage` writes thousands of
-      // HTML files under coverage/, and with the dev server running each one
-      // is a file-change event — one run produced 2,524 page reloads.
+      // Every coverage HTML file would be a change event: one run produced 2,524 reloads.
       ignored: ['**/coverage/**', '**/.vitest/**', '**/out/**', '**/dist-web/**', '**/macos/.build/**'],
     },
   },

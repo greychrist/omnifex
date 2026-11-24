@@ -2,9 +2,6 @@ import Foundation
 import Testing
 @testable import OmniFexCore
 
-/// `<a download href="blob:…">` — save image, export appearance, save
-/// diagram. WKWebView does nothing with these unless the navigation is turned
-/// into a download; the policy used to deny the `blob` scheme outright.
 @Suite struct NavigationDownloadTests {
     let packaged = NavigationPolicy(appOrigin: URL(string: "http://127.0.0.1:47700/"), devServer: nil)
     let dev = NavigationPolicy(appOrigin: nil, devServer: URL(string: "http://localhost:5173/"))
@@ -24,7 +21,6 @@ import Testing
         #expect(packaged.classify("data:text/html,hi") == .deny)
     }
 
-    // A download attribute on an ordinary web link is still a link out.
     @Test func webLinksStayExternal() {
         #expect(packaged.classify("https://example.com/file.zip", isDownload: true) == .external)
     }

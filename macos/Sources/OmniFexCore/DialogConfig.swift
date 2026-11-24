@@ -1,7 +1,6 @@
 import Foundation
 
-/// Electron-shaped `showOpenDialog` / `showSaveDialog` options, as the renderer
-/// still sends them, read into what an NSOpenPanel / NSSavePanel needs.
+/// The renderer still sends Electron-shaped `showOpenDialog` / `showSaveDialog` options.
 public struct DialogConfig: Equatable, Sendable {
     public var title: String?
     public var prompt: String?
@@ -11,7 +10,7 @@ public struct DialogConfig: Equatable, Sendable {
     public var allowsMultipleSelection = false
     public var canCreateDirectories = false
     public var showsHiddenFiles = false
-    /// nil = any file. A `*` filter lifts the restriction, as in Electron.
+    /// nil = any file; a `*` filter lifts the restriction.
     public var allowedExtensions: [String]?
     public var directoryPath: String?
     public var nameFieldValue: String?
@@ -45,15 +44,12 @@ public struct DialogConfig: Equatable, Sendable {
         c.title = o["title"] as? String
         c.prompt = o["buttonLabel"] as? String
         c.canChooseDirectories = props.contains("openDirectory")
-        // Electron opens files unless told otherwise; asking for directories
-        // alone means directories only.
         c.canChooseFiles = props.contains("openFile") || !c.canChooseDirectories
         c.allowsMultipleSelection = props.contains("multiSelections")
         c.canCreateDirectories = props.contains("createDirectory") || c.canChooseDirectories
         c.showsHiddenFiles = props.contains("showHiddenFiles")
         c.allowedExtensions = extensions(o)
         split(o, into: &c, isDirectory: isDirectory)
-        // An open panel has no name field to put a file name in.
         c.nameFieldValue = nil
         return c
     }

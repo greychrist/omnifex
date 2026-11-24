@@ -1,25 +1,15 @@
 import path from 'node:path';
 
-/**
- * macOS Developer ID signing + notarization settings, kept apart from the
- * package script so they can be unit-tested without running a build.
- *
- * Paths are resolved from the working directory (the repo root, for both the
- * package script and vitest).
- */
+/** Paths resolve from the working directory: the repo root, for the package script and vitest alike. */
 
 /** Entitlements for the bundled node, `Contents/MacOS/omnifexd`. */
 export const ENTITLEMENTS = path.resolve('signing', 'entitlements.plist');
 
-/** Default `notarytool store-credentials` profile name. */
 export const DEFAULT_KEYCHAIN_PROFILE = 'omnifex-notary';
 
 /**
- * Which entitlements a file in the bundle is signed with, or null for none.
- *
- * Only node needs any. Everything is signed with hardened runtime — the
- * notary service rejects an executable without it — and the Swift app needs
- * nothing beyond it: WKWebView's JIT runs in WebKit's own processes.
+ * Only node needs entitlements. Everything gets hardened runtime (the notary rejects an executable
+ * without it); WKWebView's JIT runs in WebKit's own processes.
  */
 export function entitlementsFor(filePath: string): string | null {
   return path.basename(filePath) === 'omnifexd' ? ENTITLEMENTS : null;
@@ -30,14 +20,8 @@ export interface NotarizeConfig {
 }
 
 /**
- * Notarization is opt-in via `OMNIFEX_NOTARIZE=1`.
- *
- * Without the gate every `npm run package` would upload to Apple and block on
- * the notary queue. The release flow sets it; local builds don't.
- *
- * Credentials come from a `notarytool store-credentials` keychain profile
- * rather than the environment, so the App Store Connect API key never sits in
- * a shell history, a CI variable, or this repo.
+ * Opt-in, or every `npm run package` uploads to Apple. Credentials come from a keychain profile,
+ * never the environment, so the API key never sits in shell history or the repo.
  */
 export function osxNotarizeConfig(
   env: NodeJS.ProcessEnv = process.env,

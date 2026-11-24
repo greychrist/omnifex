@@ -2,13 +2,8 @@ import AppKit
 import WebKit
 import OmniFexCore
 
-/// Cost Report → PDF.
-///
-/// The report is rendered a second time in a hidden web view and that view is
-/// turned into one tall PDF page, rather than capturing the visible one: the
-/// live report sits inside `h-screen` / `overflow-hidden` wrappers, so the
-/// on-screen document is exactly one window tall. The print view reports when
-/// it has painted (`cost_report_print_ready`) with the size to capture.
+/// Renders the report again in a hidden web view: the live one sits in `h-screen` / `overflow-hidden`
+/// wrappers, so it is exactly one window tall.
 @MainActor
 final class PDFExporter {
     private unowned let services: AppServices
@@ -27,9 +22,8 @@ final class PDFExporter {
             throw BridgeError("Cost report PDF: bad print hash")
         }
 
-        // Ordered in but invisible and off every screen: a view outside a
-        // window is throttled, and recharts sizes itself from a ResizeObserver
-        // that a throttled view never fires — the chart came out zero-width.
+        // On screen but invisible: a view outside a window is throttled, its ResizeObserver never fires,
+        // and recharts renders zero-width.
         let window = NSWindow(contentRect: NSRect(x: -30000, y: -30000, width: 1280, height: 1200), styleMask: .borderless, backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.alphaValue = 0

@@ -1,34 +1,11 @@
 #!/usr/bin/env node
-/**
- * Per-area line coverage, read from the last `npm run test:coverage` run.
- *
- * Why this exists: the single repo-wide percentage is a blend of three
- * populations with very different testability — main-process services, pure
- * renderer logic, and React components — so it answers a question nobody
- * asked. A 79% that is "backend 88%, UI 65%" and a 79% that is uniformly 79%
- * call for completely different work, and the summary line cannot tell them
- * apart. That ambiguity is what made "how are we still so low?" unanswerable
- * without re-deriving the split by hand.
- *
- * Reporting only, deliberately. Coverage is not a gate here — see the comment
- * in vitest.config.ts: hard thresholds used to trip release builds when the
- * diff had barely moved the number, and with no CI on a solo project there is
- * nothing to enforce against. This prints; it never exits non-zero for a low
- * number. It exits 1 only when there is no report to read.
- *
- * Usage:
- *   npm run test:coverage && npm run coverage:areas
- *   npm run coverage:areas -- --top 20     # widen the worst-offenders list
- */
+/** Reporting only: exits non-zero only when there is no report to read, never for a low number. */
 import fs from 'node:fs';
 import path from 'node:path';
 
 const SUMMARY = path.resolve('coverage/coverage-summary.json');
 
-/**
- * Ordered: first matching predicate wins, so `src/components` must be tested
- * before the general `src/` bucket.
- */
+/** First match wins: `src/components` must precede `src/`. */
 const AREAS = [
   { name: 'daemon/**  (daemon)', match: (f) => f.startsWith('daemon/') },
   { name: 'src/components  (React UI)', match: (f) => f.startsWith('src/components/') },
@@ -36,7 +13,6 @@ const AREAS = [
   { name: 'other', match: () => true },
 ];
 
-/** Repo-wide line-coverage target, per CLAUDE.md. */
 const TARGET = 80;
 
 if (!fs.existsSync(SUMMARY)) {
@@ -57,8 +33,7 @@ const files = [];
 for (const [abs, data] of Object.entries(summary)) {
   if (abs === 'total') continue;
   const rel = abs.startsWith(root) ? abs.slice(root.length) : abs;
-  // A file with no executable lines (a pure type module, say) would divide by
-  // zero below and tells us nothing either way.
+  // No executable lines: would divide by zero and says nothing either way.
   if (!data.lines || data.lines.total === 0) continue;
   files.push({ rel, ...data.lines });
 }
@@ -95,9 +70,7 @@ console.log(
     `${String(files.length).padStart(4)} files   ALL  (target ${TARGET}%)`,
 );
 
-// Ranked by uncovered LINES, not by percentage: a 400-line file at 14% moves
-// the number far more than a 20-line file at 0%, and the percentage column
-// alone hides that completely.
+// Ranked by uncovered LINES: a 400-line file at 14% outweighs a 20-line file at 0%.
 console.log(`\nBiggest absolute drags (top ${TOP}, by uncovered lines)`);
 console.log('─'.repeat(64));
 for (const f of files.sort((a, b) => b.total - b.covered - (a.total - a.covered)).slice(0, TOP)) {

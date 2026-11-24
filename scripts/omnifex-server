@@ -1,9 +1,5 @@
 #!/bin/sh
-# Run the OmniFex daemon CLI (start, stop, status, ensure, install, …).
-#
-# On Node 26 — the ABI better-sqlite3 and node-pty are built for. Resolution
-# order: OMNIFEX_NODE (+ OMNIFEX_SERVER_SCRIPT), the repo's own build on the
-# system node, the installed app's bundled node.
+# Needs Node 26: the ABI better-sqlite3 and node-pty are built for.
 set -e
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 APP=/Applications/OmniFex.app

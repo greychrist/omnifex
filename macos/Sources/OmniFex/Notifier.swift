@@ -2,13 +2,8 @@ import AppKit
 import UserNotifications
 import OmniFexCore
 
-/// OS notifications and the dock badge for daemon-side events. The daemon has
-/// no display; the renderer's shim forwards each `claude-notification` here as
-/// `notify:show`.
 @MainActor
 final class Notifier: NSObject, UNUserNotificationCenterDelegate {
-    /// `(tabId, id)` of the clicked notification; `id` is the caller's own
-    /// (a mod's, or `claude-cli-update:<version>`), nil when it gave none.
     var onClick: ((String?, String?) -> Void)?
     private let paths: AppPaths
     private var unread = 0
@@ -20,8 +15,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         center?.delegate = self
     }
 
-    /// nil outside an app bundle (`swift run`), where touching the center
-    /// throws. Notifications simply do not exist there.
+    /// nil outside an app bundle (`swift run`), where touching the center throws.
     private var center: UNUserNotificationCenter? {
         Bundle.main.bundleIdentifier == nil ? nil : UNUserNotificationCenter.current()
     }
@@ -31,14 +25,10 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         return NotificationSound.configured(SettingsReader(path: paths.settingsDatabase).value(for: key), isError: isError)
     }
 
-    /// `id` replaces an earlier notification with the same id, shown or
-    /// booked; `deliverAtMs` books it for later (mods' `$.ui.notify`).
     func show(title: String, subtitle: String?, body: String, isError: Bool, tabId: String?, windowFocused: Bool,
               id: String? = nil, deliverAtMs: Double? = nil) {
         let sound = NotificationSound.resolve(soundId(isError: isError), resourcesPath: paths.resourcesPath)
         let plan = NotificationDelivery.plan(deliverAtMs: deliverAtMs, nowMs: Date().timeIntervalSince1970 * 1000, windowFocused: windowFocused)
-        // The user is looking at the app: a banner would only cover what they
-        // are reading, so it is just the sound.
         if plan == .soundOnly {
             play(sound.playPath)
             return
@@ -55,9 +45,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         content.userInfo = info
         let identifier = id ?? UUID().uuidString
         if case .scheduled(let seconds) = plan {
-            // Fires while OmniFex may not be running, so the sound cannot be
-            // played here; the default chime is the only one the centre can
-            // find for us.
+            // Fires while OmniFex may not be running, so only the default chime can play.
             content.sound = .default
             let trigger = UNTimeIntervalNotificationTrigger(timeInterval: seconds, repeats: false)
             center.add(UNNotificationRequest(identifier: identifier, content: content, trigger: trigger))
@@ -65,15 +53,11 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         }
         unread += 1
         NSApp.dockTile.badgeLabel = String(unread)
-        // The banner is silent and the sound is played here instead.
-        // UNNotificationSound only finds sounds inside an app's own bundle or
-        // container, never /System/Library/Sounds — so a system sound like
-        // Glass would have been silently replaced by the default chime.
+        // UNNotificationSound never finds /System/Library/Sounds, so the banner is silent and the sound plays here.
         play(sound.playPath)
         center.add(UNNotificationRequest(identifier: identifier, content: content, trigger: nil))
     }
 
-    /// Take notifications back, shown or still booked.
     func remove(ids: [String]) {
         guard let center, !ids.isEmpty else { return }
         center.removePendingNotificationRequests(withIdentifiers: ids)
@@ -85,7 +69,6 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         NSSound(contentsOfFile: path, byReference: true)?.play()
     }
 
-    /// A window came to the front: clear the badge and the banners.
     func userIsLooking() {
         unread = 0
         NSApp.dockTile.badgeLabel = nil
@@ -112,8 +95,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     }
 }
 
-/// Lock and sleep reach the renderer, which folds them into each git watch's
-/// visibility — a locked screen does not reliably hide the document.
+/// A locked screen does not reliably hide the document, so lock and sleep are reported to the renderer.
 @MainActor
 final class PowerMonitor {
     private var tokens: [(NotificationCenter, NSObjectProtocol)] = []

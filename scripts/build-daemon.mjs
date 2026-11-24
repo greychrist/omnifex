@@ -1,16 +1,7 @@
-// Build the two Node entry points the app ships: the daemon
-// (`omnifex-server.js`) and the Brain MCP server the Claude CLI spawns
-// (`brain-mcp.js`). Both land in .vite/build/ as CommonJS with node builtins
-// and the runtime packages external — `npm run package` copies them into the
-// app beside those packages, and in a checkout `scripts/omnifex-server` runs
-// them from here.
-//
-// `ws` and `web-push` stay external: bundling `ws` rewrites the module object
-// its optional native fallback (bufferutil) is looked up on, and the daemon
-// then throws `bufferUtil.unmask is not a function` on the first inbound
-// frame. Anything left external here must be copied by the package script
-// (EXTERNAL_MODULES in packaging/app-bundle.ts) — a missing one shows only as
-// `Cannot find module` in the packaged daemon, never in dev.
+// `ws` stays external: bundling it rewrites the module object bufferutil is looked up on, and the
+// daemon throws `bufferUtil.unmask is not a function` on the first frame. Every external must be
+// copied by the package script (JS_EXTERNAL_MODULES in packaging/app-bundle.ts), or the packaged
+// daemon fails with `Cannot find module`, never dev.
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { builtinModules } from 'node:module';

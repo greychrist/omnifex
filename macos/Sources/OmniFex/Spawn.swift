@@ -2,7 +2,6 @@ import Foundation
 import Darwin
 import OmniFexCore
 
-/// Process plumbing, nothing UI: off the main actor.
 nonisolated enum Spawn {
     struct Output {
         var status: Int32
@@ -14,15 +13,8 @@ nonisolated enum Spawn {
         }
     }
 
-    /// Run to completion and capture both streams, killing it at `timeout`.
-    ///
-    /// `posix_spawn` rather than `Process`, because `Process` always makes the
-    /// child a new group's leader and `group: .callers` must not: the daemon
-    /// `ensure` starts inherits `ensure`'s group, and has to share the app's.
-    /// See `LauncherProcessGroup`.
-    ///
-    /// `@concurrent`: the final drain blocks until every holder of the pipes
-    /// exits, which must never be the main thread.
+    /// `posix_spawn`, not `Process`: `Process` always makes the child a group leader, and `.callers` must share the app's group.
+    /// `@concurrent`: the final drain blocks until every pipe holder exits, so never on the main thread.
     @concurrent
     static func output(_ exe: String, _ args: [String], timeout: TimeInterval, group: LauncherProcessGroup = .own) async throws -> Output {
         let out = Pipe(), err = Pipe()
@@ -49,8 +41,7 @@ nonisolated enum Spawn {
         let child = pid
 
         let collected = Collected()
-        // Drained as it arrives: a pipe left unread past 64 KB blocks the
-        // writer, and a launcher that logs a lot would hang here forever.
+        // Drained as it arrives: a pipe unread past 64 KB blocks the writer forever.
         out.fileHandleForReading.readabilityHandler = { collected.append(out: $0.availableData) }
         err.fileHandleForReading.readabilityHandler = { collected.append(err: $0.availableData) }
         let reaped = Reaped()
@@ -87,8 +78,7 @@ nonisolated enum Spawn {
         if p.isRunning { p.terminate() }
     }
 
-    /// Start `exe` in its own session so it survives this process exiting —
-    /// the update helper must outlive the app it is replacing.
+    /// Its own session, so the update helper outlives the app it replaces.
     static func detached(_ exe: String, _ args: [String]) throws {
         var attr: posix_spawnattr_t?
         posix_spawnattr_init(&attr)
@@ -107,10 +97,7 @@ nonisolated enum Spawn {
         guard rc == 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(rc)) }
     }
 
-    /// Unblocked, default-handled signals in the child, as `Process` gives it.
-    /// We spawn from dispatch threads, which block signals, and a child
-    /// inheriting that mask shrugs off SIGTERM and Ctrl-C's SIGINT alike.
-    /// Returns the flags that make the attributes take effect.
+    /// We spawn from dispatch threads, which block signals; a child inheriting that mask ignores SIGTERM and SIGINT.
     private static func cleanSignals(_ attr: inout posix_spawnattr_t?) -> Int16 {
         var none = sigset_t(), all = sigset_t()
         sigemptyset(&none)

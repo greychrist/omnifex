@@ -2,9 +2,6 @@ import Foundation
 import Testing
 @testable import OmniFexCore
 
-/// WKWebView hands a dropped file to the page with no path. The web view
-/// stashes the pasteboard's file paths just before the page sees the drop,
-/// and the page's drop handler takes them.
 @Suite struct DropStashTests {
     @Test func takeReturnsWhatWasPutAndClears() {
         var s = DropStash()

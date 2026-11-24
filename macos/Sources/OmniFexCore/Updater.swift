@@ -1,10 +1,6 @@
 import Foundation
 
-/// Discovers updates on the public GitHub releases page and names downloads.
-///
-/// The asset shape is the contract with the release runbook and with every
-/// older install's updater (Electron's included — that is how the last Electron
-/// build updates itself into this app): `OmniFex-darwin-arm64-X.Y.Z.zip`.
+/// The asset name `OmniFex-darwin-arm64-X.Y.Z.zip` is a contract with the release runbook and every older install's updater.
 public enum Updater {
     public static let repo = "greychrist/omnifex"
     static let zipPattern = #"^OmniFex-darwin-arm64-(\d+\.\d+\.\d+)\.zip$"#
@@ -27,8 +23,7 @@ public enum Updater {
         }
     }
 
-    /// Cache-busted: GitHub's edge holds releases/latest for about a minute,
-    /// which returned the old version right after a publish (v0.4.44).
+    /// Cache-busted: GitHub's edge holds releases/latest for about a minute.
     public static func latestReleaseURL(now: Date = Date()) -> URL {
         URL(string: "https://api.github.com/repos/\(repo)/releases/latest?_=\(Int(now.timeIntervalSince1970 * 1000))")!
     }
@@ -57,9 +52,7 @@ public enum Updater {
         return String(name[r])
     }
 
-    /// The best zip asset in a releases/latest body, when newer than `currentVersion`.
-    /// Anything unreadable is "no update", never an error: the titlebar shows
-    /// "up to date" rather than a spinner that never resolves.
+    /// Anything unreadable is "no update", never an error.
     public static func pickUpdate(fromRelease data: Data, currentVersion: String) -> Info? {
         guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let assets = obj["assets"] as? [[String: Any]]
@@ -79,8 +72,7 @@ public enum Updater {
         )
     }
 
-    /// A downloaded zip is never deleted at install time — a retried install
-    /// stages from the same file — so the next launch removes the spent ones.
+    /// A retried install stages from the same zip, so spent ones are pruned at the next launch instead.
     public static func shouldPrune(_ fileName: String, currentVersion: String) -> Bool {
         guard let v = zipVersion(fileName) else { return false }
         return compare(v, currentVersion) <= 0
@@ -98,8 +90,6 @@ public enum Updater {
         return ["percent": percent, "bytesDownloaded": bytes, "totalBytes": total]
     }
 
-    /// URLSession reports every write — ~180 for one release zip. The page
-    /// shows a whole percent, so pass on the first write and each new percent.
     public struct ProgressThrottle: Sendable {
         private var lastPercent: Int?
         public init() {}

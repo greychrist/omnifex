@@ -1,19 +1,3 @@
-/**
- * Build `out/OmniFex-darwin-arm64/OmniFex.app` — and with `--make`, the
- * release artifacts the updater and the release skill expect:
- *
- *   out/make/zip/darwin/arm64/OmniFex-darwin-arm64-<v>.zip
- *   out/make/OmniFex-<v>-arm64.dmg
- *
- * Run through `npm run package` / `npm run make` (node with the repo's TS
- * resolver). `OMNIFEX_NOTARIZE=1` notarizes and staples the app and the DMG;
- * without it the app is signed (Developer ID when the keychain has one,
- * ad-hoc otherwise) and never leaves the machine. `APPLE_SIGNING_IDENTITY`
- * picks the certificate when several are installed.
- *
- * The layout is packaging/app-bundle.ts; the Node it bundles is
- * packaging/node-runtime.ts.
- */
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -53,20 +37,15 @@ function copy(from: string, to: string, filter?: (src: string) => boolean): void
   fs.cpSync(from, to, { recursive: true, verbatimSymlinks: true, ...(filter ? { filter } : {}) });
 }
 
-// ---------------------------------------------------------------------------
-
 assertSameNodeAbi(process.version);
 const version = (JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')) as { version: string }).version;
 log(`OmniFex ${version}, Node ${BUNDLED_NODE_VERSION}`);
 
-// 1. The three things that get built: renderer, daemon bundles, Swift app.
 step('npm', ['run', 'build:web']);
 step('node', ['scripts/build-daemon.mjs']);
 step('swift', ['build', '-c', 'release', '--arch', 'arm64', '--package-path', 'macos']);
 const swiftBin = path.join(run('swift', ['build', '-c', 'release', '--arch', 'arm64', '--package-path', 'macos', '--show-bin-path']).trim(), APP_NAME);
 
-// 2. Node: the official binary, verified against nodejs.org's checksums,
-//    cached by version so a rebuild does not download it again.
 async function bundledNode(): Promise<string> {
   const dist = nodeDist();
   const cache = path.join(root, '.cache', 'node', BUNDLED_NODE_VERSION);
@@ -95,7 +74,6 @@ async function bundledNode(): Promise<string> {
 }
 const node = await bundledNode();
 
-// 3. Assemble.
 const outDir = path.join(root, 'out', 'OmniFex-darwin-arm64');
 const app = path.join(outDir, `${APP_NAME}.app`);
 const L = bundleLayout(app);
@@ -110,8 +88,7 @@ fs.chmodSync(L.node, 0o755);
 fs.copyFileSync(path.join(root, 'icons', 'icon.icns'), path.join(L.resources, 'icon.icns'));
 fs.copyFileSync(path.join(root, 'assets', 'greychrist_success.aiff'), path.join(L.resources, 'greychrist_success.aiff'));
 
-// The daemon reads its version from here (omnifex-server.ts readVersion), and
-// `ensure` compares it with the app's to know an outdated daemon.
+// The daemon reads its version from here, and `ensure` compares it with the app's.
 fs.writeFileSync(path.join(L.appRoot, 'package.json'), `${JSON.stringify({ name: 'omnifex', version, private: true }, null, 2)}\n`);
 for (const f of ['omnifex-server.js', 'brain-mcp.js']) fs.copyFileSync(path.join(root, '.vite', 'build', f), path.join(L.build, f));
 
@@ -129,12 +106,10 @@ copy(path.join(root, 'dist-web'), L.webRoot);
 // Directories the native filter walked into but shipped nothing from.
 run('find', [L.nodeModules, '-type', 'd', '-empty', '-delete']);
 
-// 4. Smoke: the bundled node loads both addons from the bundle and runs the
-//    daemon's CLI. Before signing, so a wrong ABI fails here, loudly.
+// Smoke the addons before signing, so a wrong ABI fails here, loudly.
 log(run(L.node, ['-e', "new (require('better-sqlite3'))(':memory:').prepare('select 1').get(); require('node-pty'); process.stdout.write('native modules load')"], { cwd: L.appRoot }).trim());
 run(L.node, [path.join(L.build, 'omnifex-server.js'), 'help']);
 
-// 5. Sign: nested code inside-out, then the bundle, all hardened runtime.
 function machOFiles(dir: string): string[] {
   const out: string[] = [];
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -171,9 +146,7 @@ log(`built ${path.relative(root, app)}`);
 
 if (!make) process.exit(0);
 
-// 6. Release artifacts. The zip is what the updater downloads — the Electron
-//    app's included, which is how its one other user moves to this one — and
-//    is made from the stapled app.
+// The zip is what the updater downloads, so it is made from the stapled app.
 const run2 = (cmd: string, args: string[]) => run(cmd, args);
 if (notarize) {
   await notarizeApp(app, path.join(os.tmpdir(), `omnifex-notarize-${version}.zip`), notarize, { run: run2, log });

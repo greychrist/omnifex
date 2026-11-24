@@ -9,9 +9,6 @@ import Testing
     @Test func allowsAnAuthorizedQuit() {
         #expect(QuitPolicy.decide(workingCount: 3, authorized: true) == .allow)
     }
-    // The daemon is the app's: quitting stops it and every turn under it
-    // (2026-11-18). The prompt must say so — it is the only guard on a turn
-    // the user is about to lose.
     @Test func confirmsAndSaysQuittingStopsTheTurns() {
         guard case .confirm(let p) = QuitPolicy.decide(workingCount: 2, authorized: false) else { Issue.record("expected confirm"); return }
         #expect(p.message == "2 sessions are still working.")
@@ -22,9 +19,6 @@ import Testing
         #expect(one.message == "1 session is still working.")
     }
 
-    // A turn running only on the iPad is invisible to this window's tabs, but
-    // quitting kills it too. The daemon's count covers every session, so it
-    // wins when it answers; when it does not, the window's own count stands.
     @Test func countsTheDaemonsTurnsNotJustThisWindows() {
         #expect(QuitPolicy.workingCount(local: 0, daemon: 1) == 1)
         #expect(QuitPolicy.workingCount(local: 2, daemon: 3) == 3)

@@ -1,11 +1,6 @@
 import Foundation
 
-/// Turns a path Claude wrote in a transcript link into something safe to hand
-/// `NSWorkspace.open`.
-///
-/// Claude writes these paths, so a click must never run anything: an app,
-/// script or installer is revealed in Finder instead of opened, and so is any
-/// file with an executable bit. Everything else opens in its default app.
+/// Claude writes these paths, so a click must never run anything: runnable files are revealed in Finder, not opened.
 public enum OpenPathPlanner {
     public struct PathStat: Equatable, Sendable {
         public var isDirectory: Bool
@@ -22,7 +17,6 @@ public enum OpenPathPlanner {
         case error(String)
     }
 
-    /// Extensions macOS may launch or install rather than display.
     static let runnableExtensions: Set<String> = [
         "app", "command", "sh", "bash", "zsh", "csh", "tool", "terminal",
         "workflow", "action", "pkg", "mpkg", "dmg", "scpt", "scptd",
@@ -37,8 +31,7 @@ public enum OpenPathPlanner {
             guard let url = URL(string: p), url.isFileURL else { return nil }
             p = url.path(percentEncoded: false)
         } else if let decoded = p.removingPercentEncoding {
-            // react-markdown percent-encodes hrefs; a path that was not encoded
-            // after all is used as written.
+            // react-markdown percent-encodes hrefs.
             p = decoded
         }
         // `src/foo.ts:42` / `src/foo.ts:42:7`
@@ -61,7 +54,6 @@ public enum OpenPathPlanner {
         return runnable ? .reveal(resolved) : .open(resolved)
     }
 
-    /// The real filesystem's answer, for the app.
     public static func diskStat(_ path: String) -> PathStat? {
         guard let attrs = try? FileManager.default.attributesOfItem(atPath: path) else { return nil }
         let isDir = (attrs[.type] as? FileAttributeType) == .typeDirectory
@@ -69,8 +61,7 @@ public enum OpenPathPlanner {
         return PathStat(isDirectory: isDir, mode: mode)
     }
 
-    /// Lexical `.`/`..` resolution, like node's `path.normalize` — never
-    /// touches the disk, so a symlink in the path is left for the OS to follow.
+    /// Lexical only: a symlink in the path is left for the OS to follow.
     static func normalize(_ path: String) -> String {
         var out: [Substring] = []
         for part in path.split(separator: "/", omittingEmptySubsequences: true) {

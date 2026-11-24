@@ -1,16 +1,6 @@
 import Foundation
 
-/// Aggregator for renderer-published per-tab summaries.
-///
-/// Each chat tab computes its own busy/idle summary and publishes it; this
-/// stores them and broadcasts the full list so the status popover subscribes
-/// to one channel. The install gate and the quit prompt read it too — the
-/// renderer is the canonical interpreter of "is this session busy?", the app
-/// the canonical aggregator.
-///
-/// Summaries are kept as the JSON-shaped dictionaries the bridge delivers and
-/// broadcast back unchanged; `sourceId` (the publishing web view) is the
-/// store's own bookkeeping, never part of the payload.
+/// The renderer decides whether a session is busy; this only aggregates. `sourceId` is bookkeeping, never payload.
 public final class TabStatusStore {
     public typealias Summary = [String: Any]
     public struct Invalid: Error {}
@@ -31,8 +21,7 @@ public final class TabStatusStore {
 
     public func publish(_ summary: Summary, source: Int?) {
         guard let tabId = summary["tabId"] as? String else { return }
-        // Reattribution happens even when the payload is unchanged: an
-        // identical summary is exactly what a reloaded page sends first.
+        // Reattribute even when unchanged: an identical summary is exactly what a reloaded page sends first.
         sources[tabId] = source
         if let existing = summaries[tabId], NSDictionary(dictionary: existing).isEqual(to: summary) { return }
         if summaries[tabId] == nil { order.append(tabId) }
@@ -47,10 +36,7 @@ public final class TabStatusStore {
         broadcast(list())
     }
 
-    /// Drop every summary still attributed to `source`. Tabs remove themselves
-    /// on unmount, which never happens on a reload or crash: the page is gone
-    /// before an unmount effect can land, so its summaries used to live on as
-    /// phantom "working" sessions and an install gate waiting on nothing.
+    /// Tabs never unmount on a reload or crash, so their summaries would live on as phantom "working" sessions.
     public func removeSource(_ source: Int) {
         let gone = sources.filter { $0.value == source }.map(\.key)
         guard !gone.isEmpty else { return }
@@ -65,13 +51,10 @@ public final class TabStatusStore {
 
     public func list() -> [Summary] { order.compactMap { summaries[$0] } }
 
-    /// Work in flight OR waiting on the user — "let everything settle first".
     public func busyTabIds() -> [String] {
         order.filter { (summaries[$0]?["busy"] as? Bool) == true }
     }
 
-    /// Agent actively working (`promptStatus === 'working'`), excluding tabs
-    /// paused on a prompt. What "N sessions still running" counts.
     public func workingTabIds() -> [String] {
         order.filter { (summaries[$0]?["promptStatus"] as? String) == "working" }
     }

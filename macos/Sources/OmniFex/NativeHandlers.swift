@@ -3,13 +3,10 @@ import WebKit
 import UniformTypeIdentifiers
 import OmniFexCore
 
-/// One handler per native channel. Params arrive Electron-shaped (camelCase
-/// or snake_case, sometimes a bare string) because the renderer still sends
-/// them that way.
+/// Params arrive camelCase or snake_case, sometimes a bare string: accept every form.
 @MainActor
 enum NativeHandlers {
     static func register(on r: BridgeRouter<BridgeCaller>, services s: AppServices) {
-        // MARK: dialogs and Finder
         r.register("dialog:open") { p, caller in
             let config = DialogConfig.open(BridgeParams.dict(p) ?? [:], isDirectory: DialogConfig.diskIsDirectory)
             let panel = NSOpenPanel()
@@ -29,9 +26,7 @@ enum NativeHandlers {
             guard await run(panel, over: caller.window), let url = panel.url else { return nil }
             return url.path
         }
-        // `browser` (a bundle id) sends the link to that browser — an
-        // account's sign-in links go to the browser signed in as it. One
-        // that is no longer installed falls back to the default browser.
+        // `browser` is a bundle id: an account's sign-in links go to the browser signed in as it.
         r.register("shell:openExternal") { p, _ in
             guard let raw = BridgeParams.string(p, "url"), let url = URL(string: raw),
                   url.scheme == "https" || url.scheme == "http"
@@ -58,8 +53,6 @@ enum NativeHandlers {
             NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
             return nil
         }
-        // A file link clicked in a transcript. Failures surface as an alert:
-        // the click has nowhere else to report to.
         r.register("open_path") { p, caller in
             guard let raw = BridgeParams.string(p, "path"), !raw.isEmpty else { throw BridgeError("open_path: path is required") }
             let cwd = BridgeParams.string(p, "cwd", "project_path")
@@ -80,13 +73,11 @@ enum NativeHandlers {
             return nil
         }
 
-        // MARK: window
         r.register("window:minimize") { _, caller in (caller.window ?? NSApp.keyWindow)?.miniaturize(nil); return nil }
         r.register("window:maximize") { _, caller in (caller.window ?? NSApp.keyWindow)?.zoom(nil); return nil }
         r.register("window:close") { _, caller in (caller.window ?? NSApp.keyWindow)?.performClose(nil); return nil }
         r.register("get_app_version") { _, _ in s.version }
 
-        // MARK: updater
         r.register("updater:check") { _, _ in await s.updates.check() }
         r.register("updater:download") { p, caller in
             guard let url = BridgeParams.string(p, "url") else { throw BridgeError("updater:download: url is required") }
@@ -106,7 +97,6 @@ enum NativeHandlers {
         }
         r.register("updater:install-cancel") { _, _ in s.updates.cancelInstall(); return ["success": true] }
 
-        // MARK: cost report
         r.register("cost_report_export_pdf") { p, _ in
             guard let savePath = BridgeParams.string(p, "savePath", "save_path"), !savePath.isEmpty else {
                 throw BridgeError("cost_report_export_pdf: savePath is required")
@@ -122,7 +112,6 @@ enum NativeHandlers {
             return nil
         }
 
-        // MARK: sounds and notifications
         r.register("preview_notification_sound") { p, _ in
             let id = BridgeParams.string(p, "id") ?? ""
             guard NotificationSound.isValid(id),
@@ -149,9 +138,7 @@ enum NativeHandlers {
             return nil
         }
 
-        // MARK: clipboard
-        // The page has no async clipboard of its own: plain http is not a
-        // secure context to WebKit. Text, HTML and PNG, in one pasteboard item.
+        // The page has no async clipboard: WebKit treats plain http as an insecure context.
         r.register("clipboard:write") { p, _ in
             let entries = ClipboardPayload.parse(p)
             guard !entries.isEmpty else { throw BridgeError("clipboard:write: nothing to write") }
@@ -168,12 +155,10 @@ enum NativeHandlers {
             return nil
         }
 
-        // MARK: drag and drop
         r.register("drop:paths") { _, _ in
             s.dropStash.take(now: Date().timeIntervalSince1970)
         }
 
-        // MARK: tab status
         r.register("tab_status_publish") { p, caller in
             guard let summary = BridgeParams.dict(p, "summary") else { throw BridgeError("tab_status_publish requires summary.tabId") }
             do { try s.tabStatus.publishChecked(summary, source: caller.sourceId) }
@@ -187,12 +172,10 @@ enum NativeHandlers {
         }
         r.register("tab_status_list") { _, _ in s.tabStatus.list() }
 
-        // MARK: daemon
         r.register("remote:url") { _, _ in
             if let url = s.daemon.url { return url }
             return try? await s.daemon.ensure().get()
         }
-        // The Daemon popover's Restart button. The popover has already asked.
         r.register("remote:restart") { _, _ in
             ["url": (await s.daemon.restart()) as Any? ?? NSNull()]
         }

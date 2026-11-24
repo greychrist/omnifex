@@ -12,9 +12,6 @@ import Testing
         #expect(packaged.classify("http://127.0.0.1:47700/#/settings") == .allow)
     }
 
-    // A transcript link to `/Users/me/report.md` resolves against the page
-    // origin. Allowing the whole origin let one click replace the app window
-    // with the file (2026-10-22).
     @Test func deniesOtherPathsOnTheAppOrigin() {
         #expect(packaged.classify("http://127.0.0.1:47700/Users/me/report.md") == .deny)
     }
@@ -39,7 +36,6 @@ import Testing
     @Test func otherWebUrlsAreExternal() {
         #expect(dev.classify("http://example.com/page") == .external)
         #expect(packaged.classify("https://anthropic.com") == .external)
-        // Same host, different port: a different origin.
         #expect(packaged.classify("http://127.0.0.1:3000/") == .external)
     }
 
@@ -48,10 +44,6 @@ import Testing
     }
 }
 
-/// Who may call the native bridge. The page shows link previews of arbitrary
-/// URLs in iframes; a frame from one of them reaching `updater:download` and
-/// `updater:install` would be code execution. Electron never had the question:
-/// its preload ran in the main frame only.
 @Suite struct BridgeAccessTests {
     let packaged = NavigationPolicy(appOrigin: URL(string: "http://100.64.0.1:47700/"), devServer: nil)
     let dev = NavigationPolicy(appOrigin: nil, devServer: URL(string: "http://localhost:5173/"))
@@ -70,7 +62,6 @@ import Testing
         #expect(!packaged.allowsBridge(isMainFrame: true, scheme: "http", host: "100.64.0.1", port: 3000))
     }
 
-    // Before the daemon answers there is no app origin, and nothing may call.
     @Test func nothingMayCallBeforeThereIsAnAppOrigin() {
         let none = NavigationPolicy(appOrigin: nil, devServer: nil)
         #expect(!none.allowsBridge(isMainFrame: true, scheme: "http", host: "127.0.0.1", port: 47700))

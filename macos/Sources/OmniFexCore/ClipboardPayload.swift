@@ -1,9 +1,5 @@
 import Foundation
 
-/// What `clipboard:write` puts on the pasteboard. The page sends
-/// `{ items: [{ type, text? | base64? }] }` (`src/lib/remote/nativeClipboard.ts`);
-/// only the types a pasteboard reader would want are kept, and an entry
-/// whose data is missing or undecodable is dropped rather than written empty.
 public enum ClipboardPayload: Equatable, Sendable {
     case text(String)
     case html(String)

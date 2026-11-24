@@ -4,8 +4,7 @@ import path from 'path';
 import pkg from './package.json' with { type: 'json' };
 
 export default defineConfig({
-  // Mirrors vite.web.config.ts, so the web client's build-time version is a
-  // real value under test rather than an undefined global.
+  // Mirrors vite.web.config.ts.
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
   },
@@ -21,39 +20,20 @@ export default defineConfig({
       'src/**/*.test.tsx',
     ],
     environment: 'node',
-    // Node 26 ships Web Storage on by default, and without a
-    // `--localstorage-file` its `localStorage` global is a getter returning
-    // undefined. jsdom's environment does not overwrite a global that is
-    // already defined, so every DOM test saw `localStorage` as undefined
-    // (~286 failures when the toolchain moved to Node 26). Off in workers.
+    // Node 26's Web Storage makes `localStorage` an undefined getter that jsdom won't overwrite.
     execArgv: ['--no-webstorage'],
-    // `default` still prints to the terminal; `json` leaves a record behind.
-    //
-    // Terminal output is the only account of a run, and it is routinely piped
-    // through `tail`. A run that reported "1 failed" with the name scrolled or
-    // filtered away was unrecoverable — the only way "back" was another run,
-    // which for a load-dependent flake samples a new outcome rather than
-    // replaying the old one. This file answers "which test failed?" without
-    // re-running anything.
+    // `json` records which test failed, so a flake is never re-run to recover its name.
     reporters: ['default', 'json'],
     outputFile: { json: './.vitest/last-run.json' },
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html', 'json-summary'],
-      // App bootstrap and preload run in the Electron runtime and are not
-      // meaningful to unit-test in isolation; exclude from coverage.
       exclude: [
         'daemon/__tests__/**',
-        // Thin process entry over mcp-tools.ts, which is fully tested.
-        // Exercising it means spawning a stdio server; the smoke test in the
-        // Plan 5 doc covers that end to end.
+        // Thin stdio entry over the tested mcp-tools.ts.
         'daemon/brain-mcp.ts',
-        // vitest defaults still apply (node_modules, dist, .vite, etc.)
       ],
-      // Coverage is reported (via `npm run test:coverage`) but not gated.
-      // Hard thresholds used to trip release builds even when the diff
-      // barely moved coverage; since GitHub Actions isn't running anymore
-      // (solo project, local-only releases), there's no point enforcing.
+      // Reported, not gated: hard thresholds tripped release builds on diffs that barely moved coverage.
     },
   },
 });

@@ -29,8 +29,6 @@ import Testing
     }
 }
 
-/// A banner that wants an answer says so ("Permission Request:", "Answer
-/// Needed:"); one without that reports a finished task.
 @Suite struct BannerSubtitleTests {
     @Test func usesTheSessionsOwnSubtitle() {
         #expect(BannerSubtitle.text(explicit: "Permission Request:", isError: false) == "Permission Request:")
@@ -42,8 +40,6 @@ import Testing
     }
 }
 
-/// When to raise a banner. A mod's `$.ui.notify` (CLI 2.1.321) may ask for
-/// later: the notification centre books it, so it fires after OmniFex quits.
 @Suite struct NotificationDeliveryTests {
     let now = 1_800_000_000_000.0
 
@@ -59,7 +55,6 @@ import Testing
     }
     @Test func aMomentAlreadyPastIsNow() {
         #expect(NotificationDelivery.plan(deliverAtMs: now - 5, nowMs: now, windowFocused: false) == .bannerNow)
-        // Under a second ahead is not worth a booking.
         #expect(NotificationDelivery.plan(deliverAtMs: now + 500, nowMs: now, windowFocused: true) == .soundOnly)
     }
     @Test func neverBooksBeyondSevenDays() {

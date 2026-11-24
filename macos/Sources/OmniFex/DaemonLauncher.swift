@@ -1,13 +1,7 @@
 import Foundation
 import OmniFexCore
 
-/// Starts, finds and stops the daemon — by asking the daemon's own CLI.
-///
-/// The rules for that (replace a daemon from another build, but only once its
-/// turns are done; a dev build never retires the installed app's daemon) live in TypeScript with their tests
-/// (`remote-launcher.ts`, `daemon-control.ts`). Re-typing them in Swift would
-/// be a second copy to drift, so this runs `omnifexd omnifex-server.js ensure`
-/// and reads one line of JSON back.
+/// Drives the daemon through its own CLI: the replace-outdated rules live in TypeScript, never a Swift copy.
 @MainActor
 final class DaemonLauncher {
     let paths: AppPaths
@@ -28,15 +22,12 @@ final class DaemonLauncher {
 
     private var devFlags: [String] {
         guard paths.isDev else { return [] }
-        // The dev bundle's version never moves between builds, so the script's
-        // mtime is what tells a stale dev daemon from this one.
+        // The dev version never moves between builds, so the script's mtime tells a stale dev daemon apart.
         let mtime = (try? FileManager.default.attributesOfItem(atPath: paths.daemonScript)[.modificationDate] as? Date)
             .map { String(Int($0.timeIntervalSince1970 * 1000)) }
         return ["--dev"] + (mtime.map { ["--app-build", $0] } ?? [])
     }
 
-    /// The daemon's ws URL, starting it if need be. Concurrent callers (every
-    /// window asks at launch) share one attempt.
     func ensure() async -> Result<String, Error> {
         if let inFlight { return await inFlight.value }
         let task = Task { await self.run(["ensure", "--app-version", version] + devFlags) }
@@ -67,9 +58,7 @@ final class DaemonLauncher {
         }
     }
 
-    /// An older daemon that was mid-turn is kept for now; ask again in 30 s
-    /// until it has been replaced. The CLI process that answered is gone, so
-    /// the retry the TS launcher would schedule has to live here.
+    /// An outdated daemon mid-turn is kept; the CLI that answered has exited, so the 30 s retry lives here.
     private func armUpgradeCheck(_ outdated: Bool) {
         upgradeTimer?.invalidate()
         upgradeTimer = nil
@@ -79,14 +68,11 @@ final class DaemonLauncher {
         }
     }
 
-    /// On quit — every quit, including the updater's: the helper that swaps
-    /// the bundle waits for this process to exit, and this waits for the
-    /// daemon to. `applicationWillTerminate` cannot await.
+    /// Synchronous: `applicationWillTerminate` cannot await, and the updater's bundle swap waits for this process to exit.
     func stopSync(timeout: TimeInterval) {
         Spawn.runAndWait(paths.node, [paths.daemonScript] + DaemonCLI.stopArgs(paths), timeout: timeout)
     }
 
-    /// Turns in flight on the daemon, for the install gate. nil = no answer.
     func remoteInFlight() async -> Int? {
         guard let url, let health = DaemonEnsure.healthURL(fromWebSocket: url) else { return nil }
         var req = URLRequest(url: health)

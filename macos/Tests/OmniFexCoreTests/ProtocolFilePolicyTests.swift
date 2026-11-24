@@ -33,8 +33,6 @@ import Testing
         #expect(!ProtocolFilePolicy.resolve(dir + "/d.png").isOK)
     }
 
-    // `decoy.png -> ~/.claude/.credentials.json`: the extension is decided on
-    // the real path, so the symlink is refused rather than served.
     @Test func decidesOnTheRealPath() throws {
         let dir = try tempDir()
         FileManager.default.createFile(atPath: dir + "/creds.json", contents: Data("x".utf8))

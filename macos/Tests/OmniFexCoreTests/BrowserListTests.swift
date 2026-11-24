@@ -12,9 +12,6 @@ import Testing
         ], excluding: "com.greychrist.omnifex")
         #expect(entries.map(\.bundleId) == ["org.mozilla.firefox", "com.google.Chrome", "com.apple.Safari"])
     }
-    /// Parallels registers its Windows-VM app shims (a second "Google Chrome")
-    /// and Parallels Desktop itself as https handlers; neither is a browser
-    /// on this Mac.
     @Test func parallelsShimsAndParallelsDesktopAreDropped() {
         let entries = BrowserList.entries([
             .init(bundleId: "com.google.Chrome", name: "Google Chrome"),

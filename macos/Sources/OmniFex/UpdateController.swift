@@ -2,9 +2,6 @@ import AppKit
 import WebKit
 import OmniFexCore
 
-/// Updates from GitHub releases: check, download with progress, install by
-/// swapping the bundle in place and relaunching. The same zip asset every
-/// earlier OmniFex installs, Electron builds included.
 @MainActor
 final class UpdateController: NSObject {
     private unowned let services: AppServices
@@ -19,8 +16,6 @@ final class UpdateController: NSObject {
 
     init(services: AppServices) { self.services = services }
 
-    /// Anything unreachable or unreadable is "no update" — the titlebar shows
-    /// "up to date" rather than an error spinner.
     func check() async -> Any? {
         var req = URLRequest(url: Updater.latestReleaseURL())
         req.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
@@ -42,9 +37,7 @@ final class UpdateController: NSObject {
             let delegate = DownloadDelegate(dest: dest, continuation: continuation) { bytes, total in
                 if let webView { Bridge.emit("updater:progress", Updater.progress(bytes: bytes, total: total), to: webView) }
             }
-            // A session of its own, delegate attached: the async
-            // `URLSession.download(from:delegate:)` never calls `didWriteData`,
-            // so the bar sat at 0% until the download finished.
+            // A session of its own: the async `URLSession.download(from:delegate:)` never calls `didWriteData`.
             let session = URLSession(configuration: .default, delegate: delegate, delegateQueue: nil)
             session.downloadTask(with: url).resume()
             // Releases the delegate once the task completes.
@@ -52,8 +45,6 @@ final class UpdateController: NSObject {
         }
     }
 
-    /// The manual fallback: open the file (a DMG mounts) and quit so the user
-    /// can drag-install.
     func open(_ path: String) throws {
         guard NSWorkspace.shared.open(URL(fileURLWithPath: path)) else { throw BridgeError("Could not open \(path)") }
         Timer.scheduledTimer(withTimeInterval: 1.5, repeats: false) { [weak self] _ in
@@ -74,9 +65,7 @@ final class UpdateController: NSObject {
                 emit: { services.broadcast("updater:install-status", $0) },
                 sleep: { try? await Task.sleep(nanoseconds: $0) }
             )
-            // The helper waits for this process to exit, then deletes the
-            // bundle. Quitting stops the daemon first (`willTerminate`), so
-            // nothing is still running from it; the new app starts a fresh one.
+            // The helper waits for this process to exit; quitting stops the daemon first, so nothing runs from the old bundle.
             let script = try HelperScript.build(parentPid: getpid(), targetAppPath: target, stagedAppPath: staged)
             let helper = (NSTemporaryDirectory() as NSString).appendingPathComponent("omnifex-installer-\(Int(Date().timeIntervalSince1970 * 1000)).sh")
             try script.write(toFile: helper, atomically: true, encoding: .utf8)
@@ -91,7 +80,6 @@ final class UpdateController: NSObject {
 
     func cancelInstall() { installer.cancelWait() }
 
-    /// Downloaded zips at or below the running version are spent.
     func pruneDownloads() {
         let dir = NSTemporaryDirectory()
         guard let names = try? FileManager.default.contentsOfDirectory(atPath: dir) else { return }
@@ -101,10 +89,7 @@ final class UpdateController: NSObject {
     }
 }
 
-/// Moves the file and resumes the caller from the delegate callbacks. Every
-/// callback runs on the session's own serial queue, so the state is never
-/// touched concurrently. `nonisolated`: this target defaults to the main actor,
-/// and a main-actor delegate called from that queue traps at runtime.
+/// `nonisolated`: this target defaults to the main actor, and a main-actor delegate called from the session's queue traps.
 nonisolated private final class DownloadDelegate: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
     private let dest: URL
     private var continuation: CheckedContinuation<String, Error>?

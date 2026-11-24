@@ -16,8 +16,6 @@ import Testing
         #expect(s.contains("rm -f \"$SELF\""))
     }
 
-    // The stage dir holds only the staged app; removing just the app left an
-    // empty omnifex-stage-* folder behind per install.
     @Test func removesTheWholeStageDirAfterOpening() throws {
         let s = try HelperScript.build(parentPid: 1, targetAppPath: "/Applications/OmniFex.app", stagedAppPath: "/var/T/omnifex-stage-AbC123/OmniFex.app")
         let rm = try #require(s.range(of: "rm -rf \"/var/T/omnifex-stage-AbC123\""))
@@ -67,7 +65,6 @@ import Testing
         FileManager.default.createFile(atPath: t + "/a.zip", contents: Data())
         do { _ = try await installer(tmpdir: t).stage(zipPath: t + "/a.zip", expectedVersion: "0.5.0"); Issue.record("should throw") }
         catch let e as InstallError { #expect(e.name == "InvalidUpdatePackage") }
-        // The failed stage dir is cleaned up.
         #expect(try FileManager.default.contentsOfDirectory(atPath: t).filter { $0.hasPrefix("omnifex-stage-") }.isEmpty)
     }
 
@@ -121,7 +118,6 @@ import Testing
         try await installer(tmpdir: try tmp()).waitForIdle(
             force: false,
             localBusy: { box.n < 2 ? ["a"] : [] },
-            // The daemon has a turn no local tab reports, for one more poll.
             remoteInFlight: { box.n < 3 ? 1 : 0 },
             emit: { box.statuses.append($0) },
             sleep: { _ in box.n += 1 })
@@ -129,8 +125,6 @@ import Testing
         #expect(box.statuses.first?["activeSessions"] as? Int == 1)
     }
 
-    // "Install anyway" must never enter the poll loop: the daemon keeps
-    // reporting its sessions, and the override used to hang forever.
     @Test func forceInstallsImmediately() async throws {
         let box = Box()
         try await installer(tmpdir: try tmp()).waitForIdle(force: true, localBusy: { ["a"] }, remoteInFlight: { 5 }, emit: { box.statuses.append($0) }, sleep: { _ in })
@@ -151,9 +145,6 @@ import Testing
         }
     }
 
-    // `emit` reaches WKWebView and `localBusy` reads main-actor tab state. The
-    // gate runs on the cooperative pool, so it must hop to the main actor for
-    // both: emitting off-main made WebKit kill the app on every Install click.
     @Test(arguments: [false, true])
     func callsTabStateAndEmitOnTheMainThread(force: Bool) async throws {
         let i = installer(tmpdir: try tmp())

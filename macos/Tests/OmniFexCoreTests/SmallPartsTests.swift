@@ -83,7 +83,6 @@ import Testing
         #expect(BridgeParams.string(p, "cwd", "project_path") == "/p")
         #expect(BridgeParams.int(p, "n") == 3)
         #expect(BridgeParams.bool(p, "force") == true)
-        // shell:openExternal crosses as a bare string.
         #expect(BridgeParams.string("https://x", "url") == "https://x")
     }
 }
@@ -102,7 +101,7 @@ import Testing
     @Test func multiAndFilters() {
         let c = DialogConfig.open(["properties": ["openFile", "multiSelections", "showHiddenFiles"], "filters": [["name": "PDF", "extensions": ["pdf"]], ["name": "All", "extensions": ["*"]]]], isDirectory: { _ in false })
         #expect(c.allowsMultipleSelection && c.showsHiddenFiles)
-        #expect(c.allowedExtensions == nil) // "*" lifts the restriction
+        #expect(c.allowedExtensions == nil)
         let d = DialogConfig.open(["filters": [["name": "PDF", "extensions": ["pdf", "PDF"]]]], isDirectory: { _ in false })
         #expect(d.allowedExtensions == ["pdf", "PDF"])
     }
@@ -146,13 +145,13 @@ import Testing
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("settings-\(UUID().uuidString)").path
         try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
         let db = dir + "/greychrist.db"
-        #expect(SettingsReader(path: db).value(for: "x") == nil) // no file: no throw, no create
+        #expect(SettingsReader(path: db).value(for: "x") == nil)
         #expect(!FileManager.default.fileExists(atPath: db))
         try SettingsReader.testCreate(path: db, rows: ["notification_sound_success": "Glass"])
         let r = SettingsReader(path: db)
         #expect(r.value(for: "notification_sound_success") == "Glass")
         #expect(r.value(for: "missing") == nil)
         try SettingsReader.testCreate(path: dir + "/empty.db", rows: nil)
-        #expect(SettingsReader(path: dir + "/empty.db").value(for: "x") == nil) // no table
+        #expect(SettingsReader(path: dir + "/empty.db").value(for: "x") == nil)
     }
 }

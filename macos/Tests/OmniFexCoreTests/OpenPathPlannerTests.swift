@@ -43,7 +43,6 @@ import Testing
         #expect(OpenPathPlanner.plan("reports/gone.md", cwd: cwd, homeDir: home, stat: { _ in nil }) == .error("File not found: \(cwd)/reports/gone.md"))
         if case .error = OpenPathPlanner.plan("reports/draft.md", cwd: nil, homeDir: home, stat: { _ in file() }) {} else { Issue.record("expected error") }
     }
-    // Claude writes these paths. A click must never run something.
     @Test func revealsExecutables() {
         #expect(OpenPathPlanner.plan("/tmp/run", cwd: nil, homeDir: home, stat: { _ in file(0o755) }) == .reveal("/tmp/run"))
     }

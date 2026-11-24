@@ -1,15 +1,6 @@
 import AppKit
 import WebKit
 
-/// Smoke-run evidence: with `OMNIFEX_SMOKE_DIR` set, every loaded page is
-/// snapshotted to `<dir>/window-<id>.png` a few seconds after it finishes
-/// loading, beside a line in `<dir>/windows.txt` with the window's frame.
-///
-/// A packaged build is verified headlessly (isolated state dir, its own
-/// port), and "the renderer connected to the daemon" is not the same claim as
-/// "the window shows the app". This is how the second one gets checked
-/// without Screen Recording or Accessibility permission. Inert unless the
-/// variable is set.
 @MainActor
 enum SmokeSnapshot {
     static let dir: String? = {

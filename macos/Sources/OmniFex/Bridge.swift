@@ -2,15 +2,9 @@ import AppKit
 import WebKit
 import OmniFexCore
 
-/// `window.__omnifexNative` — the page's door to this app.
-///
-/// It replaces Electron's preload. The renderer never calls it directly:
-/// `src/lib/remote/bootstrap.ts` hands it to the WebSocket shim, which routes
-/// the channels in `nativeChannels.ts` here and everything else to the daemon.
 enum Bridge {
     static let handlerName = "omnifex"
 
-    /// Injected at document start, main frame only, before any page script.
     static let script = """
     (() => {
       if (window.__omnifexNative) return;
@@ -51,8 +45,6 @@ enum Bridge {
         return String(decoding: data, as: UTF8.self)
     }
 
-    /// A reply WebKit can hand to JavaScript: nil becomes null, everything
-    /// else must already be property-list/JSON shaped.
     static func replyValue(_ value: Any?) -> Any {
         guard let value else { return NSNull() }
         if let d = value as? [String: Any?] { return d.mapValues { replyValue($0) } }
@@ -64,7 +56,6 @@ enum Bridge {
     }
 }
 
-/// Receives `postMessage` from one web view and answers through the router.
 @MainActor
 final class BridgeMessageHandler: NSObject, WKScriptMessageHandlerWithReply {
     weak var services: AppServices?
@@ -87,8 +78,7 @@ final class BridgeMessageHandler: NSObject, WKScriptMessageHandlerWithReply {
             replyHandler(nil, "Malformed native call")
             return
         }
-        // Main frame on the app's origin only: link previews put other sites
-        // in iframes of this very page. See NavigationPolicy.allowsBridge.
+        // Main frame on the app's origin only: link previews put other sites in iframes of this page.
         let origin = message.frameInfo.securityOrigin
         guard services.navigationPolicy.allowsBridge(
             isMainFrame: message.frameInfo.isMainFrame,
@@ -112,8 +102,6 @@ final class BridgeMessageHandler: NSObject, WKScriptMessageHandlerWithReply {
     }
 }
 
-/// `greychrist-file:///abs/path.png` → the image, if `ProtocolFilePolicy`
-/// allows it. Images only; see the policy for why.
 final class GreychristFileSchemeHandler: NSObject, WKURLSchemeHandler {
     func webView(_ webView: WKWebView, start task: any WKURLSchemeTask) {
         guard let url = task.request.url else { return fail(task) }
@@ -140,8 +128,7 @@ final class GreychristFileSchemeHandler: NSObject, WKURLSchemeHandler {
     }
 }
 
-/// Builds a bridged web view. Each gets its own content controller, so a
-/// message's sender is known without trusting anything the page says.
+/// One content controller per web view, so a message's sender is known without trusting the page.
 @MainActor
 enum WebViewFactory {
     static let schemeHandler = GreychristFileSchemeHandler()
@@ -151,10 +138,8 @@ enum WebViewFactory {
         config.websiteDataStore = .default()
         config.setURLSchemeHandler(schemeHandler, forURLScheme: ProtocolFilePolicy.scheme)
         config.preferences.isElementFullscreenEnabled = true
-        // `isInspectable` only lets Safari's Develop menu attach. The in-window
-        // inspector (View → Toggle Developer Tools, Inspect Element) also needs
-        // this private preference; without it `_inspector.show` is a silent
-        // no-op. Guarded: an unknown KVC key would crash at launch.
+        // The in-window inspector needs this private preference, or `_inspector.show` is a silent no-op.
+        // Guarded: an unknown KVC key crashes at launch.
         if config.preferences.responds(to: Selector(("_setDeveloperExtrasEnabled:"))) {
             config.preferences.setValue(true, forKey: "developerExtrasEnabled")
         }
@@ -167,17 +152,14 @@ enum WebViewFactory {
         let sourceId = services.register(webView)
         content.addScriptMessageHandler(BridgeMessageHandler(services: services, sourceId: sourceId), contentWorld: .page, name: Bridge.handlerName)
         webView.isInspectable = true
-        // No white flash between the native overlay and the first paint.
+        // No white flash before the first paint.
         webView.underPageBackgroundColor = BrowserWindowController.background
         webView.setValue(false, forKey: "drawsBackground")
         return (webView, sourceId)
     }
 }
 
-/// Stashes the file paths of a drop before WebKit hands it to the page,
-/// which gets each file's bytes but not where it lives. The page's drop
-/// handler takes them over `drop:paths` (see `DropStash`). Stashed before
-/// `super`, so they are there by the time the page's handler asks.
+/// Stashes drop paths before `super`: the page gets only bytes, and asks for paths over `drop:paths` during the drop.
 final class DropAwareWebView: WKWebView {
     weak var services: AppServices?
 

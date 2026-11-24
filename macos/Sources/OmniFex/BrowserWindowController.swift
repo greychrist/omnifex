@@ -3,8 +3,6 @@ import WebKit
 import UniformTypeIdentifiers
 import OmniFexCore
 
-/// One OmniFex window: a native "starting" view while the daemon comes up,
-/// then the renderer the daemon serves.
 @MainActor
 final class BrowserWindowController: NSWindowController, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate {
     static let background = NSColor(srgbRed: 0x1a / 255, green: 0x1a / 255, blue: 0x2e / 255, alpha: 1)
@@ -31,8 +29,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, WKNav
         (webView, sourceId) = WebViewFactory.make(services: services, frame: window.contentLayoutRect)
         super.init(window: window)
         window.delegate = self
-        // The first window remembers its frame; later ones cascade off the
-        // frontmost so New Window never lands exactly on top of another.
         if let front = services.controllers.last?.window {
             window.setFrameTopLeftPoint(window.cascadeTopLeft(from: NSPoint(x: front.frame.minX, y: front.frame.maxY)))
         } else {
@@ -57,7 +53,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, WKNav
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 
-    /// Ensure the daemon, then load its page.
     func start() {
         overlay.showStarting()
         Task {
@@ -75,8 +70,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, WKNav
         }
     }
 
-    // MARK: - Menu-driven actions
-
     func confirmAndReload() {
         guard loaded else { return start() }
         let prompt = ReloadPolicy.prompt(workingCount: services.tabStatus.workingTabIds().count)
@@ -91,9 +84,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, WKNav
         }
     }
 
-    /// WKWebView has no public API to open the inspector. The private
-    /// `_inspector.show` is the shortcut, used only if present, and works only
-    /// with `developerExtrasEnabled` set (`WebViewFactory`).
+    /// Private `_inspector`, used only if present; works only with `developerExtrasEnabled` (`WebViewFactory`).
     func toggleInspector() {
         let getter = Selector(("_inspector"))
         guard webView.responds(to: getter),
@@ -108,17 +99,11 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, WKNav
     func setZoom(_ zoom: CGFloat) { webView.pageZoom = zoom }
     func adjustZoom(by delta: CGFloat) { webView.pageZoom = min(3, max(0.3, webView.pageZoom + delta)) }
 
-    // MARK: - NSWindowDelegate
-
     func windowDidBecomeKey(_ notification: Notification) {
         services.notifier.userIsLooking()
     }
 
-    /// Closing the last window is a quit, so it asks the question ⌘Q asks —
-    /// here, while there is still a window to go back to on Cancel. The answer
-    /// needs the daemon's turn count (the iPad's too), so the close is held,
-    /// and redone once the gate allows it; `quitAuthorized` lets the redo and
-    /// the terminate that follows through without asking again.
+    /// Closing the last window is a quit: hold the close until the quit gate (which needs the daemon's count) allows it.
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         guard services.controllers.count == 1, !services.quitAuthorized else { return true }
         Task { @MainActor [services] in
@@ -136,13 +121,10 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, WKNav
         services.windowClosed(self)
     }
 
-    // MARK: - WKNavigationDelegate
-
     private var policy: NavigationPolicy { services.navigationPolicy }
 
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void) {
-        // Only the top-level page is guarded. Frames are the link previews'
-        // iframes, which exist to show other sites.
+        // Only the main frame is guarded: subframes are link previews of other sites.
         guard action.targetFrame?.isMainFrame ?? true, let url = action.request.url else {
             return decisionHandler(.allow)
         }
@@ -160,10 +142,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, WKNav
         download.delegate = self
     }
 
-    // MARK: - WKDownloadDelegate
-
-    /// Where a page-made download goes: a save panel over this window, as
-    /// Electron gave it, starting in Downloads with the page's file name.
     func download(_ download: WKDownload, decideDestinationUsing response: URLResponse, suggestedFilename: String, completionHandler: @escaping @MainActor @Sendable (URL?) -> Void) {
         let panel = NSSavePanel()
         panel.nameFieldStringValue = suggestedFilename
@@ -183,8 +161,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, WKNav
     }
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
-        // A page going away never unmounts its tabs, so their published
-        // statuses are retired here; the new page republishes its own.
+        // A page going away never unmounts its tabs, so their statuses are retired here.
         services.tabStatus.removeSource(sourceId)
     }
 
@@ -200,14 +177,10 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, WKNav
         overlay.showError("The page did not load: \(error.localizedDescription)", logPath: services.paths.daemonLog)
     }
 
-    /// The page's process died (memory, crash). The daemon still has every
-    /// session; reloading the page re-attaches to them.
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         services.tabStatus.removeSource(sourceId)
         webView.reload()
     }
-
-    // MARK: - WKUIDelegate
 
     /// `window.open` / `target=_blank`: never a second in-app browser.
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for action: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
@@ -259,7 +232,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, WKNav
     }
 }
 
-/// "Starting OmniFex…", or what went wrong and a Retry.
 @MainActor
 final class StatusOverlay: NSView {
     var onRetry: (() -> Void)?
@@ -326,6 +298,5 @@ final class StatusOverlay: NSView {
 
     @objc private func retryClicked() { onRetry?() }
 
-    // Clicks never fall through to the web view underneath.
     override func hitTest(_ point: NSPoint) -> NSView? { isHidden ? nil : super.hitTest(point) }
 }

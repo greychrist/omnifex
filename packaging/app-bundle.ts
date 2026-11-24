@@ -1,24 +1,6 @@
 /**
- * The shape of `OmniFex.app`, as pure functions the package script and its
- * tests share.
- *
- *   Contents/
- *     Info.plist
- *     MacOS/OmniFex              the Swift app (macos/)
- *     MacOS/omnifexd             Node — the executable's own name is what
- *                                names the daemon process (process.title would
- *                                register it with LaunchServices and bounce
- *                                the Dock forever; see 0.4.158)
- *     Resources/icon.icns
- *     Resources/greychrist_success.aiff
- *     Resources/app/package.json { name, version } — the daemon's version
- *     Resources/app/build/       omnifex-server.js, brain-mcp.js
- *     Resources/app/node_modules the packages the bundles leave external
- *     Resources/dist-web/        the renderer
- *
- * `build/` is two levels under `Resources/`, so `webroot.ts` finds
- * `dist-web/` at `build/../..` —
- * the same relative step that reaches the repo root from `.vite/build`.
+ * `MacOS/omnifexd` is Node: its file name names the daemon process (never process.title, which bounces the Dock forever).
+ * `build/` sits two levels under `Resources/`, so `webroot.ts` finds `dist-web/` at `build/../..`, as from `.vite/build`.
  */
 import { join } from 'node:path';
 
@@ -102,19 +84,12 @@ export function bundleLayout(app: string): BundleLayout {
   };
 }
 
-/** Mach-O (32/64, either byte order) or a universal binary, by magic. */
 export function isMachO(header: Uint8Array): boolean {
   if (header.length < 4) return false;
   const magic = ((header[0] << 24) | (header[1] << 16) | (header[2] << 8) | header[3]) >>> 0;
   return [0xfeedface, 0xfeedfacf, 0xcefaedfe, 0xcffaedfe, 0xcafebabe, 0xbebafeca].includes(magic);
 }
 
-/**
- * Whether a file of a native module ships. The addon, its JS and its
- * manifest do; its C sources, build intermediates, test fixtures and other
- * platforms' prebuilds do not — together they were most of the 50 MB the two
- * modules occupy in node_modules.
- */
 export function shipsNativeFile(moduleName: string, rel: string): boolean {
   if (moduleName === 'better-sqlite3') {
     return rel === 'package.json' || rel.startsWith('lib/') || rel === 'build/Release/better_sqlite3.node';
@@ -124,19 +99,14 @@ export function shipsNativeFile(moduleName: string, rel: string): boolean {
       rel === 'package.json' ||
       rel.startsWith('lib/') ||
       rel === 'build/Release/pty.node' ||
-      // posix_spawn'd by pty.node for every terminal; missing, every spawn
-      // fails with ENOENT.
+      // posix_spawn'd by pty.node for every terminal; missing, every spawn fails with ENOENT.
       rel === 'build/Release/spawn-helper'
     );
   }
   return true;
 }
 
-/**
- * Codesign order: nested code first, deepest first, then the bundle itself.
- * The bundle's own signature seals the main executable, so it is never
- * signed on its own.
- */
+/** The bundle's signature seals the main executable, so it is never signed on its own. */
 export function signingOrder(app: string, machOFiles: string[]): string[] {
   const main = join(app, 'Contents', 'MacOS', APP_NAME);
   const nested = machOFiles

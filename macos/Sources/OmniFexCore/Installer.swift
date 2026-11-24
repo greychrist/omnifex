@@ -1,8 +1,6 @@
 import Foundation
 
-/// An install failure the renderer can show. `message` is `"Name: detail"`;
-/// the titlebar matches on the name (`WaitCancelled` is a user choice, not an
-/// error).
+/// `message` is `"Name: detail"`; the titlebar matches on the name.
 public struct InstallError: Error, LocalizedError, Equatable {
     public var name: String
     public var detail: String
@@ -24,19 +22,14 @@ public struct InstallError: Error, LocalizedError, Equatable {
     static let waitCancelled = Self(name: "WaitCancelled", detail: "the user cancelled the wait")
 }
 
-/// Builds the shell script that runs after the app quits, swaps the bundle in
-/// place and relaunches. Pure, so the quoting rules are testable.
 public enum HelperScript {
     public static func build(parentPid: Int32, targetAppPath: String, stagedAppPath: String) throws -> String {
-        // Defence in depth: these paths come from the bundle and the temp dir,
-        // never from a user, but they are interpolated into shell.
+        // These paths never come from a user, but they are interpolated into shell.
         let dangerous = CharacterSet(charactersIn: "\"`\\\n\r\t\0$")
         for p in [targetAppPath, stagedAppPath] where p.rangeOfCharacter(from: dangerous) != nil {
             throw InstallError(name: "InvalidUpdatePackage", detail: "helper-script: refusing path containing shell-unsafe character")
         }
-        // The stage dir is the mkdtemp folder `stage` made and holds nothing but
-        // the staged app. Remove it whole — but only when it is recognisably
-        // ours, so some other layout never gets its parent deleted.
+        // Remove the stage dir whole only when it is recognizably ours, so another layout never loses its parent.
         let stageDir = (stagedAppPath as NSString).deletingLastPathComponent
         let removeStaged = (stageDir as NSString).lastPathComponent.hasPrefix("omnifex-stage-")
             ? "rm -rf \"\(stageDir)\""
@@ -61,8 +54,6 @@ public enum HelperScript {
     }
 }
 
-/// Stages, validates and gates an update. The app target does the two side
-/// effects that end the process — stopping the daemon and spawning the helper.
 public final class Installer: @unchecked Sendable {
     public typealias Extract = (_ zipPath: String, _ destDir: String) async throws -> Void
 
@@ -80,7 +71,6 @@ public final class Installer: @unchecked Sendable {
         self.readBundleVersion = readBundleVersion
     }
 
-    /// `CFBundleShortVersionString` from a bundle's Info.plist.
     public static func bundleVersion(_ appPath: String) -> String? {
         let plist = URL(fileURLWithPath: appPath).appendingPathComponent("Contents/Info.plist")
         guard let data = try? Data(contentsOf: plist),
@@ -118,7 +108,6 @@ public final class Installer: @unchecked Sendable {
         return staged
     }
 
-    /// `/Applications/OmniFex.app/Contents/MacOS/OmniFex` → `/Applications/OmniFex.app`.
     public static func resolveTargetApp(executablePath: String) throws -> String {
         var cur = executablePath
         while cur != "/" && !cur.isEmpty {
@@ -137,16 +126,8 @@ public final class Installer: @unchecked Sendable {
         lock.withLock { cancelToken?.cancelled = true }
     }
 
-    /// Wait until nothing is in flight, then report `installing`.
-    ///
-    /// `force` ("Install anyway") never enters the loop. It used to stop the
-    /// local sessions and poll anyway, but the daemon owns the sessions and
-    /// keeps reporting them, so the override hung forever — failing exactly
-    /// when it was needed.
-    ///
-    /// `localBusy` and `emit` run on the main actor: the app's callers read
-    /// tab state and post to the WKWebView, and this gate itself runs on the
-    /// cooperative pool. WebKit kills the process on an off-main call.
+    /// `force` never enters the loop: the daemon keeps reporting its sessions, so polling would hang forever.
+    /// `localBusy` and `emit` run on the main actor: WebKit kills the process on an off-main call.
     public func waitForIdle(
         force: Bool,
         localBusy: @MainActor () -> [String],
@@ -168,8 +149,7 @@ public final class Installer: @unchecked Sendable {
                 throw InstallError.waitCancelled
             }
             let local = await localBusy()
-            // Not double-counted: a local tab and the daemon may both report
-            // the same turn, but the gate only asks "is anything running".
+            // max, not sum: a local tab and the daemon may report the same turn.
             let remote = await remoteInFlight() ?? 0
             let sessions = max(local.count, remote)
             if sessions == 0 {

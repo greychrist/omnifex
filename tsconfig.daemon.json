@@ -12,9 +12,7 @@
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
     "types": ["node"],
-    /* The daemon under daemon/remote/ shares pure TS with the renderer
-       (src/protocol, src/lib/jsonlClassifier), and those files use the
-       renderer's `@/` alias internally. */
+    /* Pure TS shared from src/ uses the renderer's `@/` alias. */
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"]
