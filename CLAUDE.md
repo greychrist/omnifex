@@ -22,6 +22,7 @@ Do not create git worktrees for this repo. Work directly on branches inside the 
 - Prefer the smallest safe change that matches existing patterns.
 - Make code changes when the user asks for a fix or implementation; do not stop at analysis.
 - TDD is required for code changes. Write the failing test first, then implement.
+- No comments unless absolutely necessary. A comment earns its place only by stating a constraint the code cannot show and that a future change would otherwise break. Never narrate what the code does, its history, or what it replaced, and never point at a doc. Stale comments steer Claude into wrong choices.
 - Refactors must clean up after themselves before being called done. When a change makes a defensive branch, helper, or shape-check unreachable — delete it in the same change, not as a follow-up. "Dead code I'll remove later" is how 71-occurrence branching taxes accumulate. Leaving compatibility code in place is justified only when an external boundary is still emitting the old shape; "we _used to_ accept both shapes" is not.
 - For backend or IPC work, add or update tests in `electron/__tests__/`.
 - Report the exact commands you ran and whether they passed or failed.
