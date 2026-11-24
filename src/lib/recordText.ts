@@ -96,9 +96,31 @@ export function systemRecordText(raw: SystemRaw, subtype: string): string {
   if (subtype === 'stop_hook_summary') return stopHookSummaryBody(raw);
   if (subtype === 'compact_boundary') return compactBoundaryBody(raw);
   if (subtype === 'ui_log' || subtype === 'ui_toast') return modLineBody(raw);
+  if (subtype === 'status') return statusText(raw);
   const r = raw as unknown as { message?: unknown; content?: unknown; body?: unknown; title?: unknown };
   const v = r.message ?? r.content ?? r.body ?? r.title ?? '';
   return typeof v === 'string' ? v : JSON.stringify(v);
+}
+
+/** A live status frame: the phase, else what the null status reports. */
+function statusText(raw: SystemRaw): string {
+  const r = raw as unknown as {
+    status?: unknown; permissionMode?: unknown; compact_result?: unknown;
+    compact_error?: unknown; compact_output_chars?: unknown; resume_held_for_plan?: unknown;
+  };
+  if (typeof r.status === 'string' && r.status) {
+    return typeof r.compact_output_chars === 'number'
+      ? `${r.status} · ${r.compact_output_chars.toLocaleString()} chars`
+      : r.status;
+  }
+  if (typeof r.compact_result === 'string') {
+    return typeof r.compact_error === 'string' && r.compact_error
+      ? `compaction ${r.compact_result} · ${r.compact_error}`
+      : `compaction ${r.compact_result}`;
+  }
+  if (typeof r.permissionMode === 'string') return `permission → ${r.permissionMode}`;
+  if (r.resume_held_for_plan === true) return 'interrupted plan-mode turn not re-run';
+  return '';
 }
 
 type BookkeepingNode = Extract<JsonlNode, { kind: 'permission-mode' | 'last-prompt' | 'ai-title' | 'custom-title' | 'queue-operation' | 'file-history-snapshot' }>;

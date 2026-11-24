@@ -56,7 +56,7 @@ describe('buildModernItems', () => {
     expect(work.nodes).toEqual([th, bash, bashRes, read, readRes]);
   });
 
-  it('leaves out progress reports and their results: the status bar and agent bars show them', () => {
+  it('leaves out the removed progress mod\'s reports and their results in old transcripts', () => {
     const p = prompt('fix it');
     const progress = toolUse('pr1', 'mcp__omnifex__progress', { done: 0, total: 3 });
     const progressRes = toolResult('pr1', 'Progress recorded.');
@@ -153,6 +153,24 @@ describe('keepUnchangedItems', () => {
     expect(second[1]).not.toBe(first[1]);
     const third = keepUnchangedItems(second, buildModernItems([p, bash, res, done], createDefaultConfig()));
     expect(third.every((item, i) => item === second[i])).toBe(true);
+  });
+
+  it("replaces a record line when its kind's icon or color changes in settings", () => {
+    // The line's icon and color are resolved from the config when it is
+    // built; keeping the old object kept the old look until a reload.
+    const records = [prompt('go'), system('dev_intent')];
+    const before = createDefaultConfig();
+    const first = buildModernItems(records, before, records, false);
+    const after = createDefaultConfig();
+    after.kinds['system.dev_intent'] = { icon: 'Star', accentColor: '#ff0000' };
+    const second = keepUnchangedItems(first, buildModernItems(records, after, records, false));
+    expect(second[1]).not.toBe(first[1]);
+    const line = (second[1] as Extract<ModernItem, { kind: 'line' }>).line;
+    expect(line.icon).toBe('Star');
+    expect(line.accent).toEqual({ kind: 'css', color: '#ff0000' });
+    // The same config again keeps the object, so appends stay cheap.
+    const third = keepUnchangedItems(second, buildModernItems(records, after, records, false));
+    expect(third[1]).toBe(second[1]);
   });
 
   it('replaces a Skill step when its body arrives after the result', () => {

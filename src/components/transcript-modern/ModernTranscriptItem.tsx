@@ -7,7 +7,9 @@
 import * as React from 'react';
 import type { JsonlNode } from '@/types/jsonl';
 import type { ModernItem } from '@/lib/modernGrouping';
+import type { ModernLine } from '@/lib/modernLines';
 import { CopyButton } from '@/components/ui/copy-button';
+import { HoverActionsRow, Stamp, rawOfNodes } from './HoverActionsRow';
 import { CheckCircle2, RotateCcw } from 'lucide-react';
 import { extractResendPayload } from '@/lib/extractResendPayload';
 import { NoticeLine } from './NoticeLine';
@@ -46,28 +48,6 @@ function resultContentOf(resultNode: JsonlNode | undefined): string | undefined 
   const block = content.find((b) => (b as { type?: string }).type === 'tool_result') as { content?: unknown } | undefined;
   const answer = block?.content;
   return typeof answer === 'string' ? answer : answer != null ? JSON.stringify(answer) : undefined;
-}
-
-function dateOf(node: JsonlNode): Date | null {
-  const at = (node as { receivedAt?: string | null }).receivedAt;
-  if (!at) return null;
-  const d = new Date(at);
-  return Number.isNaN(d.getTime()) ? null : d;
-}
-
-/** Date and time for the hover row: "3-4-2026 3:04:05 PM" — the date
- *  M-D-YYYY, unpadded, the time in the locale's own form. */
-function stampOf(node: JsonlNode): string | null {
-  const d = dateOf(node);
-  if (!d) return null;
-  const date = `${String(d.getMonth() + 1)}-${String(d.getDate())}-${String(d.getFullYear())}`;
-  return `${date} ${d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' })}`;
-}
-
-/** First in a hover row, before Copy and the rest. */
-function Stamp({ node }: { node: JsonlNode }) {
-  const stamp = stampOf(node);
-  return stamp ? <span data-message-stamp className="mr-1">{stamp}</span> : null;
 }
 
 export const ModernTranscriptItem = React.memo(function ModernTranscriptItem({
@@ -113,7 +93,7 @@ export const ModernTranscriptItem = React.memo(function ModernTranscriptItem({
             <Stamp node={item.node} />
             {ctx.onResend && <ResendButton node={item.node} onResend={ctx.onResend} />}
             <CopyButton getText={() => item.text} className="h-6 w-6" />
-            <RawJsonPopover text={rawOf(item.node)} />
+            <RawJsonPopover text={rawOfNodes([item.node])} />
           </MessageActions>
         </Message>
       );
@@ -132,24 +112,50 @@ export const ModernTranscriptItem = React.memo(function ModernTranscriptItem({
           <MessageActions from="assistant">
             <Stamp node={item.node} />
             <CopyButton getText={() => item.text} className="h-6 w-6" />
-            <RawJsonPopover text={rawOf(item.node)} />
+            <RawJsonPopover text={rawOfNodes([item.node])} />
           </MessageActions>
         </Message>
       );
     case 'work':
       return <ChainOfThought entries={item.entries} nodes={item.nodes} live={live} ctx={ctx} />;
-    case 'question':
-      // A Trace line, as Modern's other record lines are, its icon in the
-      // question kind's accent.
-      return <QuestionLine input={item.input} resultContent={resultContentOf(item.resultNode)} />;
+    case 'question': {
+      const answer = resultContentOf(item.resultNode);
+      return (
+        <RecordActions item={item} nodes={withResult(item.node, item.resultNode)} copy={() => questionCopyText(item.input, answer)}>
+          {/* A Trace line, as Modern's other record lines are, its icon in
+              the question kind's accent. */}
+          <QuestionLine input={item.input} resultContent={answer} />
+        </RecordActions>
+      );
+    }
     case 'plan':
-      return <ModernPlan markdown={item.markdown} resultNode={item.resultNode} />;
+      return (
+        <RecordActions item={item} nodes={withResult(item.node, item.resultNode)} copy={() => item.markdown}>
+          <ModernPlan markdown={item.markdown} resultNode={item.resultNode} />
+        </RecordActions>
+      );
     case 'notice':
-      return <NoticeLine tone={item.tone} text={item.text} />;
+      return (
+        <RecordActions item={item} nodes={[item.node]} copy={() => item.text}>
+          <NoticeLine tone={item.tone} text={item.text} />
+        </RecordActions>
+      );
     case 'compaction':
-      return <CompactionLine detail={item.detail} summary={item.summary} />;
+      return (
+        <RecordActions
+          item={item}
+          nodes={withResult(item.node, item.summaryNode)}
+          copy={() => [item.detail, item.summary].filter(Boolean).join('\n\n')}
+        >
+          <CompactionLine detail={item.detail} summary={item.summary} />
+        </RecordActions>
+      );
     case 'instructions':
-      return <InstructionsLine files={item.files} />;
+      return (
+        <RecordActions item={item} nodes={[item.node]} copy={() => item.files.map((f) => f.path).join('\n')}>
+          <InstructionsLine files={item.files} />
+        </RecordActions>
+      );
     case 'recap':
       // In an answer's Message column with its hover row, so the room under
       // it is an answer's, not a Trace line's.
@@ -159,12 +165,16 @@ export const ModernTranscriptItem = React.memo(function ModernTranscriptItem({
           <MessageActions from="assistant">
             <Stamp node={item.node} />
             <CopyButton getText={() => item.text} className="h-6 w-6" />
-            <RawJsonPopover text={rawOf(item.node)} />
+            <RawJsonPopover text={rawOfNodes([item.node])} />
           </MessageActions>
         </Message>
       );
     case 'line':
-      return <RecordLine line={item.line} />;
+      return (
+        <RecordActions item={item} nodes={[item.node]} copy={() => lineCopyText(item.line)}>
+          <RecordLine line={item.line} />
+        </RecordActions>
+      );
   }
 });
 
@@ -258,10 +268,38 @@ function TurnFooterLine({ footer, showCost }: { footer: TurnFooter; showCost: bo
   );
 }
 
-/** The record as the CLI wrote it — a thunk, serialized only when the panel
- *  opens (see RawJsonPopover on why that laziness matters). */
-function rawOf(node: JsonlNode): () => string {
-  return () => JSON.stringify((node as { raw?: unknown }).raw ?? node, null, 2);
+/** A record item with Copy and its JSON on hover: Expanded draws every
+ *  record, and a line with no body has no chevron to open. */
+function RecordActions({ item, nodes, copy, children }: {
+  item: ModernItem & { node: JsonlNode };
+  nodes: JsonlNode[];
+  copy: () => string;
+  children: React.ReactNode;
+}) {
+  return (
+    <HoverActionsRow data-record-row={item.kind} raw={rawOfNodes(nodes)} copy={copy} stampNode={item.node}>
+      {children}
+    </HoverActionsRow>
+  );
+}
+
+function withResult(node: JsonlNode, result: JsonlNode | undefined): JsonlNode[] {
+  return result ? [node, result] : [node];
+}
+
+/** What a line says: its title, the detail beside it, the text under it. */
+function lineCopyText(line: ModernLine): string {
+  const head = line.detail ? `${line.title} · ${line.detail}` : line.title;
+  return line.body ? `${head}\n${line.body}` : head;
+}
+
+/** Each question, then the answer the tool returned, if any. */
+function questionCopyText(input: Record<string, unknown>, answer: string | undefined): string {
+  const questions = Array.isArray(input.questions) ? input.questions : [];
+  const asked = questions
+    .map((q) => (q as { question?: unknown }).question)
+    .filter((q): q is string => typeof q === 'string' && q !== '');
+  return [...asked, answer].filter(Boolean).join('\n\n');
 }
 
 /** Send a prompt again — the classic user card's Resend, in the hover row. */

@@ -124,6 +124,9 @@ const entries: [string, JsonlNode][] = [
   // CLI state rides at the end so adding it shifted no earlier record's id.
   rec('cli-state', { type: 'session-owner', accountUuid: 'acct', organizationUuid: 'org' }),
   rec('task-lifecycle', { type: 'system', subtype: 'task_progress', task_id: 'tk', description: 'Check the appended CSS' }),
+  // Appended, not inserted: fixture uuids number by position, and the golden
+  // snapshot names them.
+  rec('system.status', system('status', { status: 'requesting' })),
 ];
 
 /** Every record, in transcript order. */

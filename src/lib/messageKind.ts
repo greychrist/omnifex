@@ -112,6 +112,9 @@ const STREAM_BOOKKEEPING_SUBTYPES: ReadonlySet<string> = new Set([
   'ui_notify_cancel',
   'commands_changed',
   'permission_check_status',
+  // The CLI's live phase pings: 'requesting' at each model call, 'compacting',
+  // and null when compaction ends or the permission mode changes.
+  'status',
 ]);
 
 /** A mod's $.ui.log / $.ui.toast, pushed to a headless host. Shown. */

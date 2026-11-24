@@ -38,7 +38,7 @@ const EMITTABLE_IDS = [
   "system.ui_invalidate", "system.ui_focus", "system.ui_panes", "system.ui_placed",
   "system.ui_scroll", "system.ui_status", "system.commands_changed",
   "system.ui_notify", "system.ui_notify_cancel",
-  "system.permission_check_status",
+  "system.permission_check_status", "system.status",
   // mod lines from a headless session (shown)
   "system.ui_log", "system.ui_toast",
   // permission / summary / fallback
@@ -151,6 +151,11 @@ describe('classifyStandaloneKind', () => {
     expect(classifyStandaloneKind(notif('info'), [])).toBe('system.notification.info');
     // Unknown → info fallback, matching StreamMessage rendering
     expect(classifyStandaloneKind(notif('whatever'), [])).toBe('system.notification.info');
+  });
+
+  it("gives the CLI's live status frames (requesting / compacting) their own kind", () => {
+    const status = { kind: 'system', subtype: 'status', sessionId: '', receivedAt: '', raw: { type: 'system', subtype: 'status', status: 'requesting' } } as unknown as JsonlNode;
+    expect(classifyStandaloneKind(status, [])).toBe('system.status');
   });
 
   it('tags permission requests and summaries', () => {

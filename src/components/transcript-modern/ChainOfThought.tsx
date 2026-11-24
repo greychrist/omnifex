@@ -22,8 +22,7 @@ import {
 } from '@/lib/modernSteps';
 import { designRunSummary, foldDesignRuns, type DesignRun } from '@/lib/designRuns';
 import { openSignInLink } from '@/lib/signInBrowser';
-import { RawJsonPopover } from '@/components/transcript-modern/RawJsonPopover';
-import { CopyButton } from '@/components/ui/copy-button';
+import { HoverActionsRow, rawOfNodes as rawOf } from './HoverActionsRow';
 import { DiffViewer } from '@/components/shared/DiffViewer';
 import { getLanguage } from '@/components/claude/tools/shared';
 import { ArrowUpRightIcon, GlobeIcon } from 'lucide-react';
@@ -226,9 +225,9 @@ type ToolEntry = Extract<WorkEntry, { type: 'tool' }>;
 function Step({ entry, live }: { entry: WorkEntry; live: boolean }) {
   if (entry.type === 'thinking') {
     return (
-      <StepRow raw={rawOf([entry.node])} copy={() => entry.text}>
+      <HoverActionsRow data-step raw={rawOf([entry.node])} copy={() => entry.text}>
         <ReasoningLine text={entry.text} ms={entry.ms} tokens={entry.tokens} running={false} />
-      </StepRow>
+      </HoverActionsRow>
     );
   }
   return <ToolStep entry={entry} live={live} />;
@@ -262,7 +261,7 @@ function ToolStep({ entry, live }: { entry: ToolEntry; live: boolean }) {
   );
 
   return (
-    <StepRow
+    <HoverActionsRow data-step
       raw={rawOf(entry.resultNode ? [entry.node, entry.resultNode] : [entry.node])}
       copy={() => entry.resultText ?? copyInputOf(entry)}
     >
@@ -274,7 +273,7 @@ function ToolStep({ entry, live }: { entry: ToolEntry; live: boolean }) {
       ) : (
         <div title={tooltip} className="min-w-0">{line}</div>
       )}
-    </StepRow>
+    </HoverActionsRow>
   );
 }
 
@@ -296,7 +295,7 @@ function DesignStep({ run, live, configDir }: { run: DesignRun; live: boolean; c
     : running ? `Designing ${what}` : summary.url ? `Designed ${what}` : `Worked on ${what}`;
   const steps = run.entries.length;
   return (
-    <StepRow raw={rawOf(run.entries.map((e) => e.node))} copy={() => summary.url ?? title}>
+    <HoverActionsRow data-step raw={rawOf(run.entries.map((e) => e.node))} copy={() => summary.url ?? title}>
       <TraceCollapsible>
         {/* One line in three parts, because a link cannot sit inside the
             fold's button: the title opens the fold, then the link, then the
@@ -322,7 +321,7 @@ function DesignStep({ run, live, configDir }: { run: DesignRun; live: boolean; c
           </Trace>
         </TraceCollapsibleContent>
       </TraceCollapsible>
-    </StepRow>
+    </HoverActionsRow>
   );
 }
 
@@ -349,28 +348,6 @@ function DesignLink({ url, configDir }: { url: string; configDir?: string | null
       <ArrowUpRightIcon className="size-3.5 shrink-0" />
     </a>
   );
-}
-
-/** A step, with copy and the raw records beside it on hover (always shown
- *  where there is no hover, on the iPad). */
-function StepRow({ raw, copy, children }: { raw: () => string; copy: () => string; children: React.ReactNode }) {
-  return (
-    <div data-step className="group/step flex min-w-0 items-start gap-2">
-      <div className="min-w-0 flex-1">{children}</div>
-      <div className="flex shrink-0 items-center gap-0.5 text-muted-foreground opacity-0 transition-opacity group-hover/step:opacity-100 focus-within:opacity-100 [@media(hover:none)]:opacity-100">
-        <CopyButton getText={copy} className="h-6 w-6" />
-        <RawJsonPopover text={raw} />
-      </div>
-    </div>
-  );
-}
-
-/** The records as the CLI wrote them — a thunk, serialized only when opened. */
-function rawOf(nodes: JsonlNode[]): () => string {
-  return () => {
-    const raws = nodes.map((n) => (n as { raw?: unknown }).raw ?? n);
-    return JSON.stringify(raws.length === 1 ? raws[0] : raws, null, 2);
-  };
 }
 
 function copyInputOf(entry: ToolEntry): string {

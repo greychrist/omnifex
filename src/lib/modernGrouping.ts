@@ -36,11 +36,14 @@ import { isMainPrompt } from './transcriptStepper';
 import { rowKeyOf } from './rowKey';
 import { commandEnvelopeKind, isRecapCommandRecord, localCommandOutput, parseCommandEnvelope } from './commandEnvelope';
 import { sessionWritesLostText } from './sessionWritesLost';
-import { modernLineOf, type ModernLine } from './modernLines';
+import { modernLineOf, type LineAccent, type ModernLine } from './modernLines';
 import { originInjectedKind } from './messageKind';
 import { formatTokens } from './contextPressure';
 import { shortDuration } from './modernSteps';
-import { PROGRESS_TOOL } from './stepProgress';
+/** OmniFex's progress mod's tool (removed 2026-11-24). Transcripts written
+ *  while it shipped still hold its calls, each answered "Progress recorded.":
+ *  bookkeeping, not work, so Modern leaves them out of the step list. */
+const LEGACY_PROGRESS_TOOL = 'mcp__omnifex__progress';
 
 export type ToolStatus = 'pending' | 'done' | 'error';
 
@@ -309,10 +312,10 @@ export function buildModernItems(
             closeWork();
             items.push({ kind: 'text', key: `t-${key}`, node, text });
           } else if (b.type === 'tool_use' && typeof b.name === 'string') {
-            // A progress report says how far along the work is, never what it
-            // is; the status bar and agent bars show it live. Its result is
-            // claimed above, so neither is drawn.
-            if (b.name === PROGRESS_TOOL) return;
+            // A report from the removed progress mod (old transcripts only):
+            // how far along, never what. Its result is claimed above, so
+            // neither is drawn.
+            if (b.name === LEGACY_PROGRESS_TOOL) return;
             const id = String(b.id ?? '');
             const input = (b.input && typeof b.input === 'object' ? b.input : {}) as Record<string, unknown>;
             const res = results.get(id);
@@ -445,9 +448,23 @@ function sameItem(a: ModernItem, b: ModernItem): boolean {
     case 'prompt':
     case 'text': return a.node === (b as typeof a).node && a.text === (b as typeof a).text;
     case 'compaction': return a.node === (b as typeof a).node && a.summaryNode === (b as typeof a).summaryNode;
-    case 'instructions':
-    case 'line': return a.node === (b as typeof a).node;
+    case 'instructions': return a.node === (b as typeof a).node;
+    // A line's icon and color are resolved from the config when it is built,
+    // so it is unchanged only if it still looks the same: a settings change
+    // must replace it, or the row keeps the old look until a reload.
+    case 'line': return a.node === (b as typeof a).node && sameLine(a.line, (b as typeof a).line);
   }
+}
+
+function sameLine(a: ModernLine, b: ModernLine): boolean {
+  return a.icon === b.icon && a.title === b.title && a.detail === b.detail && a.body === b.body
+    && a.tone === b.tone && a.fold === b.fold && a.mono === b.mono
+    && accentKey(a.accent) === accentKey(b.accent);
+}
+
+function accentKey(accent: LineAccent | undefined): string {
+  if (!accent) return '';
+  return accent.kind === 'css' ? `css:${accent.color}` : `model:${accent.model}`;
 }
 
 /**
