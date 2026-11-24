@@ -74,10 +74,10 @@ export const BrainStatsPanel: React.FC<{
         setLoaded({ accountId, stats: s });
         setFailure(null);
       })
-      .catch((err: Error) => {
+      .catch((err: unknown) => {
         // Zeroes would read as "an empty vault", which is a different and much
         // more alarming claim than "the reading failed".
-        if (!cancelled) setFailure({ accountId, message: err.message });
+        if (!cancelled) setFailure({ accountId, message: (err instanceof Error ? err.message : String(err)) });
       });
     return () => { cancelled = true; };
   }, [accountId, nonce]);

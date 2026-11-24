@@ -60,9 +60,9 @@ function persistSwitch(
   onError: (message: string) => void,
 ): void {
   apply(next);
-  api.saveSetting(key, next ? 'true' : 'false').catch((err: Error) => {
+  api.saveSetting(key, next ? 'true' : 'false').catch((err: unknown) => {
     apply(!next);
-    onError(err.message);
+    onError((err instanceof Error ? err.message : String(err)));
   });
 }
 
@@ -81,9 +81,9 @@ function persistNumber(
   onError: (message: string) => void,
 ): void {
   apply(next);
-  api.saveSetting(key, String(next)).catch((err: Error) => {
+  api.saveSetting(key, String(next)).catch((err: unknown) => {
     apply(prev);
-    onError(err.message);
+    onError((err instanceof Error ? err.message : String(err)));
   });
 }
 
@@ -215,7 +215,7 @@ export const BrainQueueActions: React.FC<{
         setCounts(c);
         setEntries(rows);
       })
-      .catch((err: Error) => { if (!cancelled) setError(err.message); });
+      .catch((err: unknown) => { if (!cancelled) setError((err instanceof Error ? err.message : String(err))); });
     return () => { cancelled = true; };
   }, [accountId, nonce, refreshToken]);
 
@@ -230,7 +230,7 @@ export const BrainQueueActions: React.FC<{
           setOutcome(message);
           setNonce((n) => n + 1);
         })
-        .catch((err: Error) => setError(err.message))
+        .catch((err: unknown) => setError((err instanceof Error ? err.message : String(err))))
         .finally(() => { setBusy(false); });
     },
     [],
@@ -402,7 +402,7 @@ export const BrainAutomationSettings: React.FC<{ accountId: number | null }> = (
     const call = next ? api.brainMcpRegister(accountId) : api.brainMcpUnregister(accountId);
     void call
       .then(() => { setMcpStatus((prev) => ({ ...prev, registered: next })); })
-      .catch((err: Error) => { setError(err.message); });
+      .catch((err: unknown) => { setError((err instanceof Error ? err.message : String(err))); });
   }, [accountId]);
 
   if (accountId === null) return null;

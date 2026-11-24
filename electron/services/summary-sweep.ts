@@ -46,7 +46,7 @@ interface SummaryLike {
     sessionUuid: string,
     projectPath: string,
     configDir: string,
-  ): Promise<{ status: string } | unknown>;
+  ): Promise<unknown>;
 }
 
 export interface SummarySweepDeps {

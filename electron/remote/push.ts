@@ -88,13 +88,15 @@ export function createPushService(deps: PushServiceDeps): PushService {
   }
 
   function ensureVapid(): NonNullable<PushStoreFile['vapid']> {
-    if (!state.vapid) {
+    let vapid = state.vapid;
+    if (!vapid) {
       const keys = deps.generateVapidKeys();
-      state = { ...state, vapid: { ...keys, subject: deps.subject ?? 'mailto:omnifex@localhost' } };
+      vapid = { ...keys, subject: deps.subject ?? 'mailto:omnifex@localhost' };
+      state = { ...state, vapid };
       save();
       log('generated VAPID key pair', { file: deps.file });
     }
-    return state.vapid!;
+    return vapid;
   }
 
   return {

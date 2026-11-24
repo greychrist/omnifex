@@ -15,8 +15,7 @@ vi.mock('framer-motion', () => ({
         // forwardRef, not a bare function: several of these are used as a
         // `asChild`-style trigger and are handed a ref.
         return React.forwardRef(({ children, ...rest }: any, ref: unknown) => {
-          const { initial, animate, exit, transition, layout, whileTap, ...domProps } = rest;
-          initial; animate; exit; transition; layout; whileTap;
+          const { initial: _initial, animate: _animate, exit: _exit, transition: _transition, layout: _layout, whileTap: _whileTap, ...domProps } = rest;
           return React.createElement(Tag, { ...domProps, ref }, children);
         });
       },

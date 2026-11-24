@@ -22,7 +22,8 @@ function answerExec(run: (file: string, args: string[]) => string): void {
     let out = '';
     let error: Error | null = null;
     try {
-      out = run(file, args);
+      // The defaults the callbacks used to carry: a call without args sees [].
+      out = run(file, args ?? []);
     } catch (e) {
       error = e as Error;
     }
@@ -62,7 +63,7 @@ describe('claude-binary findBestBinary fallback chain', () => {
 
   it('falls back to NVM installation when which fails and custom is unset', async () => {
     // tryWhich -> throws (simulates `which` not found)
-    answerExec((file: string, args: string[] = []) => {
+    answerExec((file: string, args: string[]) => {
       const cmd = [file, ...args].join(' ');
       if (cmd.includes('which') || cmd.includes('where')) {
         throw new Error('not found');
@@ -87,7 +88,7 @@ describe('claude-binary findBestBinary fallback chain', () => {
   });
 
   it('uses NVM_BIN env var to find binary directly', async () => {
-    answerExec((file: string, args: string[] = []) => {
+    answerExec((file: string, args: string[]) => {
       const cmd = [file, ...args].join(' ');
       if (cmd.includes('which') || cmd.includes('where')) throw new Error('nf');
       return '1.0';
@@ -111,7 +112,7 @@ describe('claude-binary findBestBinary fallback chain', () => {
   });
 
   it('falls back to standard install path (~/.local/bin/claude)', async () => {
-    answerExec((file: string, args: string[] = []) => {
+    answerExec((file: string, args: string[]) => {
       const cmd = [file, ...args].join(' ');
       if (cmd.includes('which') || cmd.includes('where')) throw new Error('nf');
       return '1.0';
@@ -138,7 +139,7 @@ describe('claude-binary findBestBinary fallback chain', () => {
   });
 
   it('discovers VS Code extension-bundled claude', async () => {
-    answerExec((file: string, args: string[] = []) => {
+    answerExec((file: string, args: string[]) => {
       const cmd = [file, ...args].join(' ');
       if (cmd.includes('which') || cmd.includes('where')) throw new Error('nf');
       return '1.0';
@@ -182,7 +183,7 @@ describe('claude-binary findBestBinary fallback chain', () => {
     fs.mkdirSync(path.dirname(fakeBin), { recursive: true });
     fs.writeFileSync(fakeBin, '');
 
-    answerExec((file: string, args: string[] = []) => {
+    answerExec((file: string, args: string[]) => {
       const cmd = [file, ...args].join(' ');
       if (cmd.includes('which') || cmd.includes('where')) throw new Error('nf');
       if (cmd.includes('--version')) return '0.42.0\n';

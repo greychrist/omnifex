@@ -201,7 +201,7 @@ describe('AccountDialog', () => {
           onSave={() => {}}
         />,
       );
-      expect((screen.getByLabelText(/^email$/i) as HTMLInputElement).value).toBe(
+      expect(screen.getByLabelText<HTMLInputElement>(/^email$/i).value).toBe(
         'a@example.com',
       );
     });
@@ -282,7 +282,7 @@ describe('AccountDialog', () => {
       );
       fireEvent.click(screen.getByRole('button', { name: /detect/i }));
       await waitFor(() => {
-        expect((screen.getByLabelText(/^email$/i) as HTMLInputElement).value).toBe(
+        expect(screen.getByLabelText<HTMLInputElement>(/^email$/i).value).toBe(
           'detected@example.com',
         );
       });
@@ -334,7 +334,7 @@ describe('AccountDialog — sign-in browser', () => {
   it("lists the Mac's browsers and shows the account's current choice", async () => {
     signInBrowserMock.getSignInBrowser.mockResolvedValue('com.apple.Safari');
     render(<AccountDialog mode="edit" account={claude()} open onClose={() => {}} onSave={() => {}} />);
-    const select = await screen.findByLabelText('Sign-in browser') as HTMLSelectElement;
+    const select = await screen.findByLabelText<HTMLSelectElement>('Sign-in browser');
     await waitFor(() => { expect(select.value).toBe('com.apple.Safari'); });
     expect([...select.options].map((o) => o.textContent)).toEqual(['Default browser', 'Google Chrome', 'Safari']);
     expect(signInBrowserMock.getSignInBrowser).toHaveBeenCalledWith('/home/test/.claude-work');

@@ -72,7 +72,7 @@ describe('listActiveSessionIds', () => {
   it('reports the UUID of every open session, and nothing after it closes', () => {
     const sessions = createSessionsService(vi.fn());
 
-    sessions.start({
+    void sessions.start({
       tabId: 'tab-a',
       projectPath: '/Users/test/proj',
       configDir: tmpConfig,
@@ -83,7 +83,7 @@ describe('listActiveSessionIds', () => {
     expect(idA).toBeTruthy();
     expect(sessions.listActiveSessionIds()).toEqual([idA]);
 
-    sessions.start({
+    void sessions.start({
       tabId: 'tab-b',
       projectPath: '/Users/test/other',
       configDir: tmpConfig,
@@ -117,7 +117,7 @@ describe('listActiveSessionIds', () => {
       },
     );
 
-    sessions.start({
+    void sessions.start({
       tabId: 'tab-close',
       projectPath: '/Users/test/proj',
       configDir: tmpConfig,
@@ -140,7 +140,7 @@ describe('listActiveSessionIds', () => {
       (_id, _p, _c, reason) => { reasons.push(reason); },
     );
     for (const tabId of ['t1', 't2', 't3']) {
-      sessions.start({ tabId, projectPath: '/Users/test/proj', configDir: tmpConfig, model: '', permissionMode: '' });
+      void sessions.start({ tabId, projectPath: '/Users/test/proj', configDir: tmpConfig, model: '', permissionMode: '' });
     }
     sessions.stop('t1');
     sessions.stopAll();

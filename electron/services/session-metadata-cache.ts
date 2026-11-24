@@ -138,7 +138,7 @@ export function createSessionMetadataCache(store?: SessionMetadataStore): Sessio
 
   async function refresh(filePath: string, stat: fs.Stats): Promise<SessionMetadata> {
     const seen = lookup(filePath);
-    if (seen && seen.size === stat.size && seen.mtimeMs === stat.mtimeMs) return snapshot(seen);
+    if (seen?.size === stat.size && seen.mtimeMs === stat.mtimeMs) return snapshot(seen);
 
     const appended = seen !== undefined && stat.size > seen.size;
     const entry: SessionMetadataEntry = appended ? { ...seen } : { size: 0, mtimeMs: 0, offset: 0 };
@@ -174,7 +174,7 @@ export function createSessionMetadataCache(store?: SessionMetadataStore): Sessio
         await running.catch(() => undefined);
       }
       const seen = lookup(filePath);
-      if (seen && seen.size === stat.size && seen.mtimeMs === stat.mtimeMs) return snapshot(seen);
+      if (seen?.size === stat.size && seen.mtimeMs === stat.mtimeMs) return snapshot(seen);
       const run = refresh(filePath, stat).finally(() => {
         inflight.delete(filePath);
       });

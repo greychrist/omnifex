@@ -123,8 +123,12 @@ function withUpdates(
   cmd: EditableHookCommand,
   updates: Partial<EditableHookCommand>,
 ): EditableHookCommand {
-  const next: Record<string, unknown> = { ...cmd, ...updates };
-  for (const [k, v] of Object.entries(updates)) if (v === undefined) delete next[k];
+  const cleared = new Set(
+    Object.entries(updates).filter(([, v]) => v === undefined).map(([k]) => k),
+  );
+  const next = Object.fromEntries(
+    Object.entries({ ...cmd, ...updates }).filter(([k]) => !cleared.has(k)),
+  );
   return next as unknown as EditableHookCommand;
 }
 

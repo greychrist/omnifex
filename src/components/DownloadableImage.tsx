@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { Check, Copy, Download } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import { fireAndLog } from "@/lib/fireAndLog";
 
 /** Image with a hover-reveal copy + download toolbar and click-to-zoom lightbox. */
 export const DownloadableImage: React.FC<{
@@ -73,7 +74,7 @@ export const DownloadableImage: React.FC<{
           aria-label="Image actions"
         >
           <button
-            onClick={handleCopy}
+            onClick={fireAndLog('downloadable-image:copy', handleCopy)}
             className="inline-flex items-center justify-center h-6 w-6 text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
             title={copied ? 'Copied!' : 'Copy image to clipboard'}
             aria-label="Copy image to clipboard"

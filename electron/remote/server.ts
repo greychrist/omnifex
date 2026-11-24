@@ -286,7 +286,7 @@ export function createRemoteServer(deps: RemoteServerDeps): RemoteServer {
     socket.on('message', (data) => {
       let raw: unknown;
       try {
-        raw = JSON.parse(typeof data === 'string' ? data : data.toString('utf8'));
+        raw = JSON.parse(typeof data === 'string' ? data : (data as Buffer).toString('utf8'));
       } catch {
         send(conn, { type: 'error', code: 'MALFORMED_MESSAGE', message: 'frame is not JSON' });
         return;
@@ -385,7 +385,7 @@ export function createRemoteServer(deps: RemoteServerDeps): RemoteServer {
         try {
           resolvePromise(chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {});
         } catch (err) {
-          reject(err);
+          reject(err instanceof Error ? err : new Error(String(err)));
         }
       });
       req.on('error', reject);
@@ -514,8 +514,9 @@ export function createRemoteServer(deps: RemoteServerDeps): RemoteServer {
 
     listen() {
       return new Promise((resolvePromise, reject) => {
-        http = createServer(onRequest);
-        wss = new WebSocketServer({ server: http, path: '/ws' });
+        const srv = createServer(onRequest);
+        http = srv;
+        wss = new WebSocketServer({ server: srv, path: '/ws' });
         wss.on('connection', onSocket);
         if (heartbeatMs > 0) {
           heartbeat = setInterval(() => {
@@ -530,15 +531,16 @@ export function createRemoteServer(deps: RemoteServerDeps): RemoteServer {
             }
           }, heartbeatMs);
         }
-        http.once('error', reject);
-        http.listen(deps.port, deps.host, () => {
-          const a = http!.address();
-          address =
+        srv.once('error', reject);
+        srv.listen(deps.port, deps.host, () => {
+          const a = srv.address();
+          const bound =
             typeof a === 'object' && a
               ? { host: a.address, port: a.port }
               : { host: deps.host, port: deps.port };
-          log.info('listening', { ...address, ws: '/ws' });
-          void listenExtras(address.port).then(() => resolvePromise(address!));
+          address = bound;
+          log.info('listening', { ...bound, ws: '/ws' });
+          void listenExtras(bound.port).then(() => resolvePromise(bound));
         });
       });
     },

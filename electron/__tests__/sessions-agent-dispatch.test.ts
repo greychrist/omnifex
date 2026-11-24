@@ -60,7 +60,7 @@ describe('sessions.start — engine factory dispatch on params.agent', () => {
     vi.mocked(createCodexCliEngine).mockClear();
 
     const sessions = createSessionsService(vi.fn());
-    sessions.start({ ...baseParams, agent: 'claude' });
+    void sessions.start({ ...baseParams, agent: 'claude' });
 
     expect(createClaudeCliEngine).toHaveBeenCalledTimes(1);
     expect(createCodexCliEngine).not.toHaveBeenCalled();
@@ -73,7 +73,7 @@ describe('sessions.start — engine factory dispatch on params.agent', () => {
     vi.mocked(findSystemCodexBinary).mockClear();
 
     const sessions = createSessionsService(vi.fn());
-    sessions.start({ ...baseParams, agent: 'codex' });
+    void sessions.start({ ...baseParams, agent: 'codex' });
 
     expect(createCodexCliEngine).toHaveBeenCalledTimes(1);
     expect(createClaudeCliEngine).not.toHaveBeenCalled();
@@ -94,7 +94,7 @@ describe('sessions.start — engine factory dispatch on params.agent', () => {
       vi.fn(), null, null, null, null, null, null, null, null, null,
       () => '/picked/in/settings/claude',
     );
-    sessions.start({ ...baseParams, agent: 'claude' });
+    void sessions.start({ ...baseParams, agent: 'claude' });
 
     expect(vi.mocked(createClaudeCliEngine)).toHaveBeenCalledWith(
       expect.objectContaining({ claudeBinaryPath: '/picked/in/settings/claude' }),
@@ -106,7 +106,7 @@ describe('sessions.start — engine factory dispatch on params.agent', () => {
     vi.mocked(createCodexCliEngine).mockClear();
 
     const sessions = createSessionsService(vi.fn());
-    sessions.start({ ...baseParams });
+    void sessions.start({ ...baseParams });
 
     expect(createClaudeCliEngine).toHaveBeenCalledTimes(1);
     expect(createCodexCliEngine).not.toHaveBeenCalled();
@@ -119,7 +119,7 @@ describe('sessions.start — engine factory dispatch on params.agent', () => {
 
     const send = vi.fn();
     const sessions = createSessionsService(send);
-    sessions.start({ ...baseParams, agent: 'codex' });
+    void sessions.start({ ...baseParams, agent: 'codex' });
 
     expect(createCodexCliEngine).not.toHaveBeenCalled();
     expect(send).toHaveBeenCalledWith(

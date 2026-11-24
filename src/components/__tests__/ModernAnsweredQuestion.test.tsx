@@ -57,7 +57,7 @@ describe('Modern answered question', () => {
   // because the unlayered `* { border-color }` reset beats the utilities.
   it('colors the title and the left rule in that purple too', () => {
     const { container } = render(<ModernTranscriptItem item={item} live={false} ctx={ctx} />);
-    expect((screen.getByText('2 questions answered') as HTMLElement).style.color).toBe('rgb(99, 102, 241)');
+    expect(screen.getByText('2 questions answered').style.color).toBe('rgb(99, 102, 241)');
     const rule = container.querySelector('[data-question-body]') as HTMLElement;
     expect(rule.style.borderLeftColor).toBe('rgb(99, 102, 241)');
     // A hairline: a solid purple at 1px read heavier than the grey 1px rules.

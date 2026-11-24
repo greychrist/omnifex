@@ -67,7 +67,7 @@ function setup() {
 describe('side chat — ends with the engine', () => {
   it('an engine exit with a question pending leaves the thread empty', async () => {
     const { sessions, lastSideChat, start } = setup();
-    start();
+    void start();
     await sessions.askSideQuestion('t1', 'q');
     // The engine's exit path: failAll queues the rejection, then exit callbacks run.
     const reject = pendingRejects[0];
@@ -79,7 +79,7 @@ describe('side chat — ends with the engine', () => {
 
   it('stop() empties the thread, and a late rejection does not refill it', async () => {
     const { sessions, lastSideChat, start } = setup();
-    start();
+    void start();
     await sessions.askSideQuestion('t1', 'q');
     sessions.stop('t1');
     expect(lastSideChat()).toEqual({ exchanges: [] });
@@ -90,9 +90,9 @@ describe('side chat — ends with the engine', () => {
 
   it('a fresh start over a live tab empties the old thread', async () => {
     const { sessions, lastSideChat, start } = setup();
-    start();
+    void start();
     await sessions.askSideQuestion('t1', 'q');
-    start();
+    void start();
     expect(lastSideChat()).toEqual({ exchanges: [] });
     pendingRejects[0](new Error('control_request aborted: engine exited'));
     await flush();

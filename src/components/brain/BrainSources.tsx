@@ -137,10 +137,10 @@ export const BrainSources: React.FC<{
         setItems(rows);
         setError(null);
       })
-      .catch((err: Error) => {
+      .catch((err: unknown) => {
         if (cancelled) return;
         setItems([]);
-        setError(err.message);
+        setError((err instanceof Error ? err.message : String(err)));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -196,7 +196,7 @@ export const BrainSources: React.FC<{
       api
         .brainSourcePreview(accountId, itemKey)
         .then(setPreview)
-        .catch((err: Error) => setError(err.message));
+        .catch((err: unknown) => setError((err instanceof Error ? err.message : String(err))));
     },
     [accountId],
   );
@@ -257,7 +257,7 @@ export const BrainSources: React.FC<{
         })
         // Only whole-run failures land here — no vault, a run already in
         // flight. Per-item outcomes come back in `results` above.
-        .catch((err: Error) => { setError(err.message); })
+        .catch((err: unknown) => { setError((err instanceof Error ? err.message : String(err))); })
         .finally(() => {
           setStarting(false);
           // The main process also sends a terminating null; clearing here too
@@ -265,7 +265,7 @@ export const BrainSources: React.FC<{
           setRunProgress(null);
         });
     },
-    [accountId],
+    [accountId, reload],
   );
 
   /** The preview panel's button: the one row being looked at. */
@@ -313,7 +313,7 @@ export const BrainSources: React.FC<{
       api
         .brainSetExcludedProjects(accountId, decisions)
         .then(() => { setNonce((n) => n + 1); })
-        .catch((err: Error) => { setError(err.message); });
+        .catch((err: unknown) => { setError((err instanceof Error ? err.message : String(err))); });
     },
     [accountId, items],
   );

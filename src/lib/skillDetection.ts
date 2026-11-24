@@ -51,7 +51,7 @@ export function detectSkillInjection(
 
   const tu = transcriptIndex(allMessages).toolUses.get(sourceToolUseID);
   // A companion from some other tool (Task, Bash) is not a skill body.
-  if (!tu || tu.name !== 'Skill') return null;
+  if (tu?.name !== 'Skill') return null;
   const input = tu.input;
   const skillName =
     (typeof input.skill === 'string' && input.skill) ||

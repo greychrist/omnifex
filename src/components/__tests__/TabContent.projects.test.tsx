@@ -94,7 +94,7 @@ describe('TabContent — projects tab', () => {
     const first = mount();
     await screen.findByText('/repo/alpha');
     first.unmount();
-    (api.listProjects as ReturnType<typeof vi.fn>).mockImplementationOnce(() => new Promise(() => {}));
+    vi.mocked(api.listProjects).mockImplementationOnce(() => new Promise(() => {}));
     tabs = [projectsTab({ id: 't2' })];
     activeTabId = 't2';
     mount();

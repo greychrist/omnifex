@@ -63,10 +63,11 @@ export const BrainTab: React.FC = () => {
    * Two readings go stale together, so they refresh together: the stats bar,
    * and the vault status behind the header's note count.
    */
+  const refreshVault = vault.refresh;
   const handleVaultChanged = useCallback(() => {
     setStatsNonce((n) => n + 1);
-    void vault.refresh();
-  }, [vault.refresh]);
+    void refreshVault();
+  }, [refreshVault]);
 
   // Land on an account rather than an empty screen. The FIRST account, not a
   // remembered or resolved one: this app has no "default account" concept, and

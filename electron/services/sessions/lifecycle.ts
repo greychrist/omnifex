@@ -43,24 +43,11 @@ import { shouldAutoTitle, autoTitleDescription } from './auto-title';
 import { createClaudeCliEngine } from '../agents/claude-cli-engine';
 import { createCodexCliEngine } from '../agents/codex-cli-engine';
 import type { AgentEngine, AgentKind, ElicitationAction } from '../agents/types';
-import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { setStatus, setTurn } from './status';
 import { IDLE_TURN } from './types';
 import { createAutoRecap, type AutoRecapPolicy } from './auto-recap';
 import { dispatchModNotificationRemoval } from './notifications';
-
-
-/**
- * Single source of truth for "what sessionId will this session use?" —
- * shared by CLI cold-start and CLI resume so both paths agree on the
- * resolution rule. Resume keeps the caller's id;
- * cold-start mints a fresh UUID synchronously so handle.sessionId is
- * never null after start() returns.
- */
-function resolveSessionId(resumeId?: string): string {
-  return resumeId ?? randomUUID();
-}
 
 
 // ---------------------------------------------------------------------------
@@ -118,7 +105,7 @@ export function createSessionsService(
    * scope, and it is the only place that can map a configDir to a vault
    * without this module growing a dependency on either.
    */
-  extraSpawnArgs: ((configDir: string) => string[]) | null = null,
+  _extraSpawnArgs: ((configDir: string) => string[]) | null = null,
   /**
    * Resolve the claude binary to spawn. main and the daemon wire this to
    * `ClaudeBinaryService.findBestBinary()` so the binary picked in Settings

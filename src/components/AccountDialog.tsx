@@ -223,7 +223,7 @@ export const AccountDialog: React.FC<AccountDialogProps> = ({
   };
 
   const handleSignOut = (): void => {
-    void api.codexLogout(configDir).catch((err) => {
+    void api.codexLogout(configDir).catch((err: unknown) => {
       console.error("Failed to sign out of Codex:", err);
     });
   };

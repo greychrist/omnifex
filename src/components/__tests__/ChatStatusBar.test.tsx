@@ -408,7 +408,7 @@ describe('ChatStatusBar — session name', () => {
   it('opens the rename field seeded with the current name', () => {
     render(<ChatStatusBar {...named} />);
     fireEvent.click(screen.getByRole('button', { name: /rename session/i }));
-    expect((screen.getByLabelText(/session name/i) as HTMLInputElement).value).toBe('Rate-limit spike');
+    expect(screen.getByLabelText<HTMLInputElement>(/session name/i).value).toBe('Rate-limit spike');
   });
 
   it('sends the new name on submit', async () => {
@@ -446,7 +446,7 @@ describe('ChatStatusBar — session name', () => {
     );
     fireEvent.click(screen.getByRole('button', { name: /rename session/i }));
     fireEvent.click(screen.getByRole('button', { name: /suggest/i }));
-    await waitFor(() => expect((screen.getByLabelText(/session name/i) as HTMLInputElement).value).toBe('Cache TTL work'));
+    await waitFor(() => expect(screen.getByLabelText<HTMLInputElement>(/session name/i).value).toBe('Cache TTL work'));
     expect(asked).toBe(1);
     expect(renames).toEqual([]);
     fireEvent.submit(screen.getByTestId('rename-form'));
@@ -458,7 +458,7 @@ describe('ChatStatusBar — session name', () => {
     fireEvent.click(screen.getByRole('button', { name: /rename session/i }));
     fireEvent.click(screen.getByRole('button', { name: /suggest/i }));
     await waitFor(() => expect(screen.getByText(/no suggestion/i)).toBeTruthy());
-    expect((screen.getByLabelText(/session name/i) as HTMLInputElement).value).toBe('Rate-limit spike');
+    expect(screen.getByLabelText<HTMLInputElement>(/session name/i).value).toBe('Rate-limit spike');
   });
 
   it('has no Suggest button when there is nothing to suggest from', () => {
@@ -472,7 +472,7 @@ describe('ChatStatusBar — session name', () => {
   // the button than to accept the rename and drop it.
   it('disables the pencil when the session cannot take a rename', () => {
     render(<ChatStatusBar {...named} canRename={false} />);
-    const pencil = screen.getByRole('button', { name: /rename session/i }) as HTMLButtonElement;
+    const pencil = screen.getByRole<HTMLButtonElement>('button', { name: /rename session/i });
     expect(pencil.disabled).toBe(true);
     fireEvent.click(pencil);
     expect(screen.queryByLabelText(/session name/i)).toBeNull();

@@ -7,7 +7,7 @@ import type { TaskOutputTail } from '@/lib/backgroundShells';
 
 /** Drop `undefined` optional params before an object crosses the IPC
  *  boundary — the main process can't distinguish `undefined` from missing. */
-function stripUndefined<T extends object>(obj: T): Record<string, unknown> {
+function stripUndefined(obj: object): Record<string, unknown> {
   return Object.fromEntries(Object.entries(obj as Record<string, unknown>).filter(([, v]) => v !== undefined));
 }
 
@@ -1939,14 +1939,7 @@ export const api = {
     /** The mode the session is in now. Absent from a daemon older than this field. */
     permissionMode?: string | null;
   }> {
-    return apiCall("session_get_health", { tabId }) as Promise<{
-      alive: boolean;
-      sessionId: string | null;
-      sessionStatus: SessionStatus;
-      turn: TurnState;
-      launchPermissionMode?: string | null;
-      permissionMode?: string | null;
-    }>;
+    return apiCall("session_get_health", { tabId });
   },
 
   // ─── Wave 2: Query-method passthroughs ──────────────────────────
@@ -2062,7 +2055,7 @@ export const api = {
           | { configDir?: string; verdict?: IdentityVerdict }
           | undefined;
         // The broadcast goes to every window; filter to the dir we care about.
-        if (!payload || payload.configDir !== configDir || !payload.verdict) return;
+        if (payload?.configDir !== configDir || !payload.verdict) return;
         cb(payload.verdict);
       },
     );

@@ -28,7 +28,12 @@ const Probe: React.FC<{
   }) => void;
 }> = ({ onState }) => {
   const ctx = useMessageRenderingConfig();
-  onState({ config: ctx.config, setConfig: ctx.setConfig });
+  onState({
+    config: ctx.config,
+    setConfig: (next, persist) => {
+      void ctx.setConfig(next, persist);
+    },
+  });
   return null;
 };
 

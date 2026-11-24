@@ -72,7 +72,7 @@ function run(args: string[], cwd: string, timeoutMs: number): Promise<RunResult>
           const killed = (err as NodeJS.ErrnoException & { killed?: boolean }).killed === true;
           const msg = killed
             ? `git timed out after ${timeoutMs}ms`
-            : (stderr && stderr.toString().trim()) || err.message || 'git failed';
+            : stderr?.toString().trim() || err.message || 'git failed';
           resolve({ stdout: stdout ? stdout.toString() : '', error: msg });
           return;
         }

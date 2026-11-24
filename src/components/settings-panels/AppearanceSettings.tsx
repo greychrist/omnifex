@@ -236,11 +236,9 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
   const clearKindField = useCallback(
     (id: string, field: keyof KindStyle) => {
       mutate((prev) => {
-        const next = { ...(prev.kinds[id] ?? {}) };
-        delete next[field];
-        const kinds = { ...prev.kinds };
-        if (Object.keys(next).length === 0) delete kinds[id]; else kinds[id] = next;
-        return { ...prev, kinds };
+        const { [field]: _cleared, ...next } = prev.kinds[id] ?? {};
+        const { [id]: _previous, ...kinds } = prev.kinds;
+        return { ...prev, kinds: Object.keys(next).length === 0 ? kinds : { ...kinds, [id]: next } };
       });
     },
     [mutate],
@@ -249,8 +247,7 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
   const resetKind = useCallback(
     (id: string) => {
       mutate((prev) => {
-        const kinds = { ...prev.kinds };
-        delete kinds[id];
+        const { [id]: _reset, ...kinds } = prev.kinds;
         return { ...prev, kinds };
       });
       setToast({ message: `Reset "${KIND_REGISTRY[id]?.label ?? id}" to default`, type: "success" });

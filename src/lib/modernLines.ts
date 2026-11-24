@@ -247,7 +247,7 @@ function specificLine(node: JsonlNode, kindId: string, icon: IconName, label: st
       const text = typeof content === 'string'
         ? content
         : Array.isArray(content)
-          ? content.map((b) => ((b as { type?: unknown }).type === 'text' ? String((b as { text?: unknown }).text ?? '') : '')).join('\n')
+          ? content.map((b) => ((b as { type?: unknown }).type === 'text' ? String((b as { text?: string }).text ?? '') : '')).join('\n')
           : '';
       if (node.userKind === 'local-command' && commandEnvelopeKind(text) === 'output') {
         return commandOutputLine(icon, 'Command output', localCommandOutput(text));

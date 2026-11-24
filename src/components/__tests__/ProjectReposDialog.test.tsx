@@ -106,7 +106,7 @@ describe('ProjectReposDialog', () => {
     open();
     const field = await screen.findByRole('textbox', { name: /alias for api/i });
     await waitFor(() => { expect((field as HTMLInputElement).value).toBe('backend'); });
-    const web = screen.getByRole('textbox', { name: /alias for web/i }) as HTMLInputElement;
+    const web = screen.getByRole<HTMLInputElement>('textbox', { name: /alias for web/i });
     expect(web.value).toBe('');
     expect(web.placeholder).toBe('web');
   });

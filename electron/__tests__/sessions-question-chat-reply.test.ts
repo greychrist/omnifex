@@ -54,7 +54,7 @@ afterEach(() => { fs.rmSync(tmpConfig, { recursive: true, force: true }); });
 
 function startWithQuestion() {
   const sessions = createSessionsService(() => {});
-  sessions.start({ tabId: 't1', projectPath: '/Users/test/proj', configDir: tmpConfig, model: 'opus', permissionMode: 'default' });
+  void sessions.start({ tabId: 't1', projectPath: '/Users/test/proj', configDir: tmpConfig, model: 'opus', permissionMode: 'default' });
   for (const cb of permissionCbs) {
     cb({
       agent: 'claude', requestId: 'q1', kind: 'tool', summary: 'AskUserQuestion',

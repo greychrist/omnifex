@@ -1,7 +1,8 @@
 import React from 'react';
 import { Copy, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { SessionStatus, ConversationStatus, TurnState } from '@/lib/api';
+import type { SessionStatus, TurnState } from '@/lib/api';
+import type { ConversationStatus } from '@/lib/sessionDerivedState';
 
 export interface SessionInspectorPanelProps {
 

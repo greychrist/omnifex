@@ -95,8 +95,7 @@ export function reduceToolProgress(
 
   const elapsedSeconds = raw.elapsed_time_seconds;
   if (
-    existing &&
-    existing.elapsedSeconds === elapsedSeconds &&
+    existing?.elapsedSeconds === elapsedSeconds &&
     existing.arrivedAtMs === nowMs &&
     sameRetry(existing.retry, retry)
   ) {

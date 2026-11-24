@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -133,7 +133,7 @@ describe('remote handlers', () => {
       tabId: 'sid-1',
       resumeSessionId: 'sid-1',
       // Canonical: the registry realpaths (tmpdir is a symlink on macOS).
-      projectPath: require('node:fs').realpathSync(repo),
+      projectPath: realpathSync(repo),
       configDir: '/cfg/personal',
       model: 'claude-opus-5',
       permissionMode: 'default',
@@ -141,7 +141,7 @@ describe('remote handlers', () => {
     });
     // The start pushes went through the bridge with a seq.
     expect(published.map((p) => [p.seq, p.type])).toEqual([[1, 'session.state'], [2, 'event']]);
-    expect(log.meta('sid-1')).toMatchObject({ projectPath: require('node:fs').realpathSync(repo), configDir: '/cfg/personal' });
+    expect(log.meta('sid-1')).toMatchObject({ projectPath: realpathSync(repo), configDir: '/cfg/personal' });
   });
 
   it('refuses to create a session for a project no account owns — no default account', async () => {
@@ -167,10 +167,10 @@ describe('remote handlers', () => {
   it('sends text as a plain prompt and images as structured blocks', async () => {
     const project = await addProject();
     await h['session.create']({ projectId: project.projectId }, fakeCtx().ctx);
-    h['turn.send']({ sessionId: 'sid-1', content: 'hi' }, fakeCtx().ctx);
+    void h['turn.send']({ sessionId: 'sid-1', content: 'hi' }, fakeCtx().ctx);
     expect(fake.calls.send).toEqual([['sid-1', 'hi']]);
 
-    h['turn.send']({ sessionId: 'sid-1', content: 'see', attachments: [{ name: 'a.png', mimeType: 'image/png', dataBase64: 'AAA=' }] }, fakeCtx().ctx);
+    void h['turn.send']({ sessionId: 'sid-1', content: 'see', attachments: [{ name: 'a.png', mimeType: 'image/png', dataBase64: 'AAA=' }] }, fakeCtx().ctx);
     expect(fake.calls.structured[0][1]).toEqual([
       { type: 'text', text: 'see' },
       { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AAA=' } },
@@ -181,14 +181,14 @@ describe('remote handlers', () => {
     const project = await addProject();
     await h['session.create']({ projectId: project.projectId }, fakeCtx().ctx);
     published.length = 0;
-    h['session.kill']({ sessionId: 'sid-1' }, fakeCtx().ctx);
+    void h['session.kill']({ sessionId: 'sid-1' }, fakeCtx().ctx);
     expect(published.map((p) => (p.type === 'event' ? `event/${p.kind}` : `${p.type}/${(p as { sessionStatus: string }).sessionStatus}`))).toEqual([
       'session.state/stopped',
       'event/complete',
     ]);
     // Killing an already-dead session says nothing twice.
     published.length = 0;
-    h['session.kill']({ sessionId: 'sid-1' }, fakeCtx().ctx);
+    void h['session.kill']({ sessionId: 'sid-1' }, fakeCtx().ctx);
     expect(published).toEqual([]);
   });
 
@@ -214,7 +214,7 @@ describe('remote handlers', () => {
   it('refuses a turn on a session with no live process', async () => {
     const project = await addProject();
     await h['session.create']({ projectId: project.projectId }, fakeCtx().ctx);
-    h['session.kill']({ sessionId: 'sid-1' }, fakeCtx().ctx);
+    void h['session.kill']({ sessionId: 'sid-1' }, fakeCtx().ctx);
     expect(() => h['turn.send']({ sessionId: 'sid-1', content: 'hi' }, fakeCtx().ctx)).toThrow(
       expect.objectContaining({ code: 'SESSION_NOT_RUNNING' }),
     );
@@ -224,7 +224,7 @@ describe('remote handlers', () => {
   it('resumes a persisted session by respawning with the same id and options, the seq starting over', async () => {
     const project = await addProject();
     await h['session.create']({ projectId: project.projectId, options: { model: 'claude-opus-5', permissionMode: 'acceptEdits' } }, fakeCtx().ctx);
-    h['session.kill']({ sessionId: 'sid-1' }, fakeCtx().ctx);
+    void h['session.kill']({ sessionId: 'sid-1' }, fakeCtx().ctx);
 
     // A fresh handler set over the same state dir is what a daemon restart is.
     const log2 = createSessionLog({ root: join(root, 'sessions') });
@@ -274,7 +274,7 @@ describe('remote handlers', () => {
     bridge.sendToRenderer('session-status:sid-1', { sessionStatus: 'started' });
     expect(h.summary('sid-1')).toMatchObject({ inFlight: false });
 
-    h['turn.send']({ sessionId: 'sid-1', content: 'hello' }, fakeCtx().ctx);
+    void h['turn.send']({ sessionId: 'sid-1', content: 'hello' }, fakeCtx().ctx);
     // The session opened the turn when the prompt went out; the summary reads it from there.
     expect(h.summary('sid-1')).toMatchObject({ inFlight: true, pendingPermissions: 0 });
 
@@ -288,7 +288,7 @@ describe('remote handlers', () => {
     bridge.sendToRenderer('agent-output:sid-1', { type: 'permission_request', request_id: 'req-1', tool_name: 'Bash', tool_input: { command: 'ls' } });
     expect(h.summary('sid-1')).toMatchObject({ pendingPermissions: 1, inFlight: true });
 
-    h['permission.respond']({ sessionId: 'sid-1', permissionId: 'req-1', decision: 'allow', updatedInput: { command: 'ls -la' } }, fakeCtx().ctx);
+    void h['permission.respond']({ sessionId: 'sid-1', permissionId: 'req-1', decision: 'allow', updatedInput: { command: 'ls -la' } }, fakeCtx().ctx);
     expect(fake.calls.respond[0]).toEqual(['sid-1', 'allow', { command: 'ls -la' }, undefined, 'req-1']);
     expect(h.summary('sid-1')).toMatchObject({ pendingPermissions: 0, inFlight: false });
 

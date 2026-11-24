@@ -49,7 +49,7 @@ describe('sessions.start — account re-resolution', () => {
       resolveAccountConfigDir,
     );
 
-    sessions.start({
+    void sessions.start({
       ...baseParams,
       configDir: '/stale-config-from-renderer',
     });
@@ -65,7 +65,7 @@ describe('sessions.start — account re-resolution', () => {
       resolveAccountConfigDir,
     );
 
-    sessions.start({
+    void sessions.start({
       ...baseParams,
       configDir: '/explicit-user-choice',
       manualAccountOverride: true,
@@ -85,7 +85,7 @@ describe('sessions.start — account re-resolution', () => {
       resolveAccountConfigDir,
     );
 
-    sessions.start({
+    void sessions.start({
       ...baseParams,
       configDir: '/owning-account',
       resumeSessionId: '11111111-2222-3333-4444-555555555555',
@@ -97,7 +97,7 @@ describe('sessions.start — account re-resolution', () => {
 
   it('falls back to params.configDir when no resolver is injected (back-compat)', () => {
     const sessions = createSessionsService(vi.fn());
-    sessions.start({
+    void sessions.start({
       ...baseParams,
       configDir: '/from-renderer',
     });
@@ -149,7 +149,7 @@ describe('sessions.start — account identity verification', () => {
       verify,
     );
 
-    sessions.start({ ...baseParams, configDir: '/tmp/.claude-personal' });
+    void sessions.start({ ...baseParams, configDir: '/tmp/.claude-personal' });
 
     expect(sent.find(([ch]) => ch === 'session-account-mismatch:tab-v')?.[1]).toEqual({
       expected: 'work@example.com',
@@ -165,7 +165,7 @@ describe('sessions.start — account identity verification', () => {
     const sent: string[] = [];
     const sessions = makeService((ch) => { sent.push(ch); }, () => null);
 
-    sessions.start({ ...baseParams, configDir: '/tmp/.claude-personal' });
+    void sessions.start({ ...baseParams, configDir: '/tmp/.claude-personal' });
 
     expect(sent.some((ch) => ch.startsWith('session-account-mismatch:'))).toBe(false);
   });
@@ -174,7 +174,7 @@ describe('sessions.start — account identity verification', () => {
     const sent: string[] = [];
     const sessions = createSessionsService((ch: string) => { sent.push(ch); });
 
-    sessions.start({ ...baseParams, configDir: '/tmp/.claude-personal' });
+    void sessions.start({ ...baseParams, configDir: '/tmp/.claude-personal' });
 
     expect(sent.some((ch) => ch.startsWith('session-account-mismatch:'))).toBe(false);
   });
@@ -187,7 +187,7 @@ describe('sessions.start — account identity verification', () => {
       () => '/tmp/.claude-work',
     );
 
-    sessions.start({ ...baseParams, configDir: '/tmp/.claude-personal' });
+    void sessions.start({ ...baseParams, configDir: '/tmp/.claude-personal' });
 
     // Checking the renderer-supplied dir would verify the wrong account
     // exactly when a path rule has just changed.
@@ -202,7 +202,7 @@ describe('sessions.start — account identity verification', () => {
     );
 
     expect(() => {
-      sessions.start({ ...baseParams, configDir: '/tmp/.claude-personal' });
+      void sessions.start({ ...baseParams, configDir: '/tmp/.claude-personal' });
     }).not.toThrow();
     expect(sessions.getConfigDir('tab-v')).toBe('/tmp/.claude-personal');
   });

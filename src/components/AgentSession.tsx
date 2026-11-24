@@ -1265,10 +1265,12 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   // The Session context header's Refresh: reload plugins (re-running each
   // mod's session start) and ask the MCP servers again.
   const sessionMcp = useSessionMcpStatus(tabIdRef.current, contextPanelOpen);
+  const refreshSessionPlugins = sessionPlugins.refresh;
+  const refreshSessionMcp = sessionMcp.refresh;
   const refreshSessionContext = useCallback(() => {
-    sessionPlugins.refresh();
-    sessionMcp.refresh();
-  }, [sessionPlugins.refresh, sessionMcp.refresh]);
+    refreshSessionPlugins();
+    refreshSessionMcp();
+  }, [refreshSessionPlugins, refreshSessionMcp]);
 
   // Epoch-seconds reset time when the CLI has parked this turn on a claude.ai
   // usage limit (Claude Code 2.1.234's autoContinueAtUsageLimit), else null.
@@ -1988,7 +1990,9 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
       rule,
     }),
     setPermissionMode: (mode) => sessionActionRefs.current.changePermissionMode(mode),
-  }), [projectPath, homeDir, permissionMode, isLoading]);
+    // queuedPromptsRef and setQueuedPrompts are a useRef and a useState
+    // setter inside useSendPrompt: stable, so listing them never recomputes.
+  }), [projectPath, homeDir, permissionMode, isLoading, queuedPromptsRef, setQueuedPrompts]);
 
   // Launch prompt ("open a session AND do this"). Ref-captured rather than
   // listed as an auto-start dep: the effect below runs once per activation and

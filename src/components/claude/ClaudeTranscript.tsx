@@ -92,7 +92,7 @@ export interface ClaudeTranscriptProps extends InspectorGutterButtonProps {
    * the transcript. The shell flips this true when sending a new prompt so
    * the view re-engages stickiness even if the user had scrolled up.
    */
-  isNearBottomRef: React.MutableRefObject<boolean>;
+  isNearBottomRef: React.RefObject<boolean>;
   /**
    * Scroll to the row holding this message uuid. `nonce` makes a second jump
    * to the same message a new request rather than an unchanged prop.
@@ -187,6 +187,36 @@ function ClaudeTranscriptImpl({
     ],
   );
 
+  // Filter out messages that shouldn't be displayed (folds repeats per each
+  // kind's collapse rule, honors the user's hard-filter toggles and the kinds
+  // set to "Never" in Appearance settings). Repeats fold first, over the
+  // unfiltered list, so a hidden message still ends a run.
+  // The same pipeline the golden test pins (transcriptItems.ts).
+  const renderConfig = savedRenderConfig;
+  const displayableMessages = useMemo(
+    () => displayableRecords(messages, renderConfig, viewMode),
+    [messages, renderConfig, viewMode],
+  );
+
+  /**
+   * The last row that will actually draw a rail — the tail of the transcript
+   * can be rows the timeline has no reading for, and those render an empty
+   * gutter spacer.
+   *
+   * Derived from `displayableMessages` for BOTH view modes, which works
+   * because compact mode only ever folds those same messages: a `single` item
+   * carries one of them, and a collapsed group reports its LAST one. So the
+   * final message with a point is the final row with a rail either way.
+   */
+  const lastRailNode = useMemo(() => {
+    if (!timeline) return undefined;
+    for (let i = displayableMessages.length - 1; i >= 0; i--) {
+      const node = displayableMessages[i];
+      if (timeline.get(node)) return node;
+    }
+    return undefined;
+  }, [timeline, displayableMessages]);
+
   /**
    * Wraps a rendered row in the rail gutter when the timeline is on.
    *
@@ -209,35 +239,6 @@ function ClaudeTranscriptImpl({
       </div>
     );
   };
-
-  // Filter out messages that shouldn't be displayed (folds repeats per each
-  // kind's collapse rule, honors the user's hard-filter toggles and the kinds
-  // set to "Never" in Appearance settings). Repeats fold first, over the
-  // unfiltered list, so a hidden message still ends a run.
-  // The same pipeline the golden test pins (transcriptItems.ts).
-  const renderConfig = savedRenderConfig;
-  const displayableMessages = useMemo(
-    () => displayableRecords(messages, renderConfig, viewMode),
-    [messages, renderConfig, viewMode],
-  );
-  /**
-   * The last row that will actually draw a rail — the tail of the transcript
-   * can be rows the timeline has no reading for, and those render an empty
-   * gutter spacer.
-   *
-   * Derived from `displayableMessages` for BOTH view modes, which works
-   * because compact mode only ever folds those same messages: a `single` item
-   * carries one of them, and a collapsed group reports its LAST one. So the
-   * final message with a point is the final row with a rail either way.
-   */
-  const lastRailNode = useMemo(() => {
-    if (!timeline) return undefined;
-    for (let i = displayableMessages.length - 1; i >= 0; i--) {
-      const node = displayableMessages[i];
-      if (timeline.get(node)) return node;
-    }
-    return undefined;
-  }, [timeline, displayableMessages]);
 
   // Modern format: the same displayable rows, grouped into a conversation.
   // Unchanged items keep their previous object, and the row context reads

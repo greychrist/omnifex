@@ -362,7 +362,7 @@ describe('brain: indexing cost', () => {
     brain.setVaultPath(1, join(dir, 'vault'));
     await brain.indexSource(1, 'sess-a');
 
-    const stats = await brain.stats(1);
+    const stats = brain.stats(1);
     expect(stats.spentUsd).toBeCloseTo(0.25, 6);
   });
 
@@ -420,6 +420,6 @@ describe('brain: indexing cost', () => {
     const brain = createBrainService(db, {
       execGit: stubExec, accounts: accountsStub, sources: [costSource('sess-a')],
     });
-    expect((await brain.stats(1)).spentUsd).toBe(0);
+    expect(brain.stats(1).spentUsd).toBe(0);
   });
 });

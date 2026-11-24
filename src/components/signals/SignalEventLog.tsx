@@ -47,7 +47,7 @@ export function SignalEventLog({ events, className, onSelect }: SignalEventLogPr
         const meta = event.meta as
           | { delta?: number; before?: number; after?: number; compacted?: boolean; isJump?: boolean }
           | undefined;
-        const hasDelta = typeof meta?.delta === 'number';
+        const delta = typeof meta?.delta === 'number' ? meta.delta : undefined;
         // Only events that came from a transcript message can jump; a cache
         // TTL change or a skipped MCP server has nowhere to go.
         const target = onSelect && event.messageUuid ? event.messageUuid : null;
@@ -70,8 +70,8 @@ export function SignalEventLog({ events, className, onSelect }: SignalEventLogPr
             >
               {meta?.compacted
                 ? 'compacted'
-                : hasDelta
-                  ? `${meta.delta! >= 0 ? '+' : '−'}${formatTokens(Math.abs(meta.delta!))}`
+                : delta !== undefined
+                  ? `${delta >= 0 ? '+' : '−'}${formatTokens(Math.abs(delta))}`
                   : ''}
             </span>
 

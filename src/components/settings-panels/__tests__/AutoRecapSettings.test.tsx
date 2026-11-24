@@ -26,7 +26,7 @@ describe('AutoRecapSettings', () => {
     render(<AutoRecapSettings />);
     const toggle = await screen.findByRole('switch', { name: /Recap idle sessions/ });
     expect(toggle.getAttribute('aria-checked')).toBe('true');
-    expect((screen.getByLabelText(/Minutes before the recap/) as HTMLInputElement).value).toBe('10');
+    expect(screen.getByLabelText<HTMLInputElement>(/Minutes before the recap/).value).toBe('10');
   });
 
   it('shows the stored values', async () => {
@@ -35,7 +35,7 @@ describe('AutoRecapSettings', () => {
     render(<AutoRecapSettings />);
     const toggle = await screen.findByRole('switch', { name: /Recap idle sessions/ });
     await waitFor(() => expect(toggle.getAttribute('aria-checked')).toBe('false'));
-    expect((screen.getByLabelText(/Minutes before the recap/) as HTMLInputElement).value).toBe('15');
+    expect(screen.getByLabelText<HTMLInputElement>(/Minutes before the recap/).value).toBe('15');
   });
 
   it('saves the switch', async () => {
@@ -46,7 +46,7 @@ describe('AutoRecapSettings', () => {
 
   it('saves a new delay on blur, and refuses one that is not a positive number', async () => {
     render(<AutoRecapSettings />);
-    const field = await screen.findByLabelText(/Minutes before the recap/) as HTMLInputElement;
+    const field = await screen.findByLabelText<HTMLInputElement>(/Minutes before the recap/);
     fireEvent.change(field, { target: { value: '15' } });
     fireEvent.blur(field);
     await waitFor(() => expect(api.saveSetting).toHaveBeenCalledWith(AUTO_RECAP_DELAY_KEY, '15'));

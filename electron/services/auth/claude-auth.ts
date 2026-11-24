@@ -97,7 +97,7 @@ interface Flow {
 function defaultExec(bin: string, args: string[], env: NodeJS.ProcessEnv): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
     execFile(bin, args, { env, timeout: 30_000, encoding: 'utf8' }, (err, stdout, stderr) => {
-      if (err) reject(Object.assign(err, { stdout, stderr }));
+      if (err) reject(Object.assign(err as Error, { stdout, stderr }));
       else resolve({ stdout, stderr });
     });
   });

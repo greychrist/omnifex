@@ -75,7 +75,7 @@ describe('sessions — the turn axis', () => {
 
   it('starts idle, opens on send with a timestamp, and announces both', () => {
     const { sessions, turnEvents } = setup();
-    sessions.start({ tabId: 't1', projectPath, configDir: tmpConfig, model: 'opus', permissionMode: 'default' });
+    void sessions.start({ tabId: 't1', projectPath, configDir: tmpConfig, model: 'opus', permissionMode: 'default' });
     expect(sessions.getTurn('t1')).toEqual({ status: 'idle', since: null });
 
     sessions.sendMessage('t1', 'hello');
@@ -91,7 +91,7 @@ describe('sessions — the turn axis', () => {
   // including after a reload, when it did not start the session itself.
   it('reports the permission mode the CLI was launched with', () => {
     const { sessions } = setup();
-    sessions.start({ tabId: 't1', projectPath, configDir: tmpConfig, model: 'opus', permissionMode: 'bypassPermissions' });
+    void sessions.start({ tabId: 't1', projectPath, configDir: tmpConfig, model: 'opus', permissionMode: 'bypassPermissions' });
     expect(sessions.getHealth('t1')).toMatchObject({ launchPermissionMode: 'bypassPermissions' });
     expect(sessions.getHealth('nope')).toMatchObject({ alive: false, launchPermissionMode: null });
   });
@@ -100,14 +100,14 @@ describe('sessions — the turn axis', () => {
   // renderer reads the live mode back so its picker cannot show another one.
   it('reports the permission mode the session is in now', () => {
     const { sessions } = setup();
-    sessions.start({ tabId: 't1', projectPath, configDir: tmpConfig, model: 'opus', permissionMode: 'auto' });
+    void sessions.start({ tabId: 't1', projectPath, configDir: tmpConfig, model: 'opus', permissionMode: 'auto' });
     expect(sessions.getHealth('t1')).toMatchObject({ permissionMode: 'auto' });
     expect(sessions.getHealth('nope')).toMatchObject({ alive: false, permissionMode: null });
   });
 
   it('closes on the CLI result row — the only turn-closer while the process lives', () => {
     const { sessions, turnEvents } = setup();
-    sessions.start({ tabId: 't1', projectPath, configDir: tmpConfig, model: 'opus', permissionMode: 'default' });
+    void sessions.start({ tabId: 't1', projectPath, configDir: tmpConfig, model: 'opus', permissionMode: 'default' });
     sessions.sendMessage('t1', 'hello');
     // Assistant output does not close it.
     for (const cb of messageCbs) cb({ payload: { type: 'assistant', message: { role: 'assistant', content: [] } }, receivedAt: '2026-09-20T00:00:01.000Z' } as AgentMessage);
@@ -119,7 +119,7 @@ describe('sessions — the turn axis', () => {
 
   it('closes again when the CLI refuses the prompt — a send that never happened is not a turn', async () => {
     const { sessions, turnEvents } = setup();
-    sessions.start({ tabId: 't1', projectPath, configDir: tmpConfig, model: 'opus', permissionMode: 'default' });
+    void sessions.start({ tabId: 't1', projectPath, configDir: tmpConfig, model: 'opus', permissionMode: 'default' });
     sendImpl.current = async () => { throw new Error('stdin closed'); };
     sessions.sendMessage('t1', 'hello');
     await new Promise((r) => setTimeout(r, 0));
@@ -129,7 +129,7 @@ describe('sessions — the turn axis', () => {
 
   it('closes when the process exits mid-turn', () => {
     const { sessions } = setup();
-    sessions.start({ tabId: 't1', projectPath, configDir: tmpConfig, model: 'opus', permissionMode: 'default' });
+    void sessions.start({ tabId: 't1', projectPath, configDir: tmpConfig, model: 'opus', permissionMode: 'default' });
     sessions.sendMessage('t1', 'hello');
     for (const cb of exitCbs) cb({ code: 1 });
     expect(sessions.getTurn('t1').status).toBe('idle');
@@ -137,7 +137,7 @@ describe('sessions — the turn axis', () => {
 
   it('closes when the session is stopped mid-turn', () => {
     const { sessions, turnEvents } = setup();
-    sessions.start({ tabId: 't1', projectPath, configDir: tmpConfig, model: 'opus', permissionMode: 'default' });
+    void sessions.start({ tabId: 't1', projectPath, configDir: tmpConfig, model: 'opus', permissionMode: 'default' });
     sessions.sendMessage('t1', 'hello');
     sessions.stop('t1');
     expect(sessions.getTurn('t1').status).toBe('idle');
@@ -158,7 +158,7 @@ describe('sessions — the turn axis', () => {
       JSON.stringify({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'x', content: 'ok' }] }, timestamp: '2026-09-18T05:10:02.000Z' }),
     ].join('\n') + '\n');
 
-    sessions.start({ tabId: 't1', projectPath, configDir: tmpConfig, model: 'opus', permissionMode: 'default', resumeSessionId: id });
+    void sessions.start({ tabId: 't1', projectPath, configDir: tmpConfig, model: 'opus', permissionMode: 'default', resumeSessionId: id });
     expect(sessions.getTurn('t1')).toEqual({ status: 'idle', since: null });
     expect(turnEvents()).toEqual([]);
   });
@@ -179,7 +179,7 @@ describe('sessions — automatic recap', () => {
       () => {}, null, null, null, null, null, null, null, null, null, null, null,
       () => ({ enabled, delayMs: 5 * 60_000 }),
     );
-    sessions.start({ tabId: 't1', projectPath, configDir: tmpConfig, model: 'opus', permissionMode: 'default' });
+    void sessions.start({ tabId: 't1', projectPath, configDir: tmpConfig, model: 'opus', permissionMode: 'default' });
     return { sessions, prompts };
   }
 

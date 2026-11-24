@@ -14,7 +14,7 @@ interface UseSessionTimeoutsArgs {
   messages: JsonlNode[];
   tabId: string;
   waitingForPermission: boolean;
-  persistentSessionRef: React.MutableRefObject<boolean>;
+  persistentSessionRef: React.RefObject<boolean>;
   setIsLoading: React.Dispatch<React.SetStateAction<boolean>>;
   setMessages: React.Dispatch<React.SetStateAction<JsonlNode[]>>;
   setError: React.Dispatch<React.SetStateAction<string | null>>;
@@ -24,7 +24,7 @@ interface UseSessionTimeoutsReturn {
   elapsedSeconds: number;
   timedOutMessageIndex: number | null;
   setTimedOutMessageIndex: React.Dispatch<React.SetStateAction<number | null>>;
-  lastMessageTimeRef: React.MutableRefObject<number>;
+  lastMessageTimeRef: React.RefObject<number>;
 }
 
 export function useSessionTimeouts({

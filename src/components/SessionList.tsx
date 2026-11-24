@@ -967,9 +967,10 @@ export const SessionList: React.FC<SessionListProps> = ({
                             : 'No cost recorded yet — open the Costs view to rescan'
                         }
                       >
-                        {sessionCosts.has(session.id)
-                          ? formatCost(sessionCosts.get(session.id)!)
-                          : '—'}
+                        {(() => {
+                          const cost = sessionCosts.get(session.id);
+                          return cost !== undefined ? formatCost(cost) : '—';
+                        })()}
                       </div>
                     </td>
                     <td className="py-2 px-3 align-top">
@@ -1137,9 +1138,10 @@ export const SessionList: React.FC<SessionListProps> = ({
                     <td className="py-2 px-3 text-right text-[11px] font-mono tabular-nums text-muted-foreground align-top whitespace-nowrap leading-tight">
                       <div>—</div>
                       <div className="text-muted-foreground/70">
-                        {sessionCosts.has(entry.conversationId)
-                          ? formatCost(sessionCosts.get(entry.conversationId)!)
-                          : '—'}
+                        {(() => {
+                          const cost = sessionCosts.get(entry.conversationId);
+                          return cost !== undefined ? formatCost(cost) : '—';
+                        })()}
                       </div>
                     </td>
                     <td className="py-2 px-3 align-top">

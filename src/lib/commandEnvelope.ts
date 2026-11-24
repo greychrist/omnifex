@@ -115,7 +115,7 @@ function contentText(content: unknown): string | null {
   if (!Array.isArray(content)) return null;
   return content
     .map((b) => (b && typeof b === 'object' && (b as { type?: string }).type === 'text'
-      ? String((b as { text?: unknown }).text ?? '')
+      ? String((b as { text?: string }).text ?? '')
       : ''))
     .join('');
 }

@@ -91,7 +91,7 @@ const SERVER_SAMPLES: ServerMessage[] = [
 ];
 
 /** JSON is the wire format; a round trip must survive it. */
-function wire<T>(value: T): unknown {
+function wire(value: unknown): unknown {
   return JSON.parse(JSON.stringify(value));
 }
 

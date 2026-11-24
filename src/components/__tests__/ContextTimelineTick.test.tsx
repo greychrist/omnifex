@@ -85,7 +85,7 @@ describe('ContextTimelineTick', () => {
 // transcript, carrying the most label lines.
 describe('ContextTimelineTick — readout cannot overrun the next row', () => {
   const readout = (container: HTMLElement) =>
-    container.querySelector('[data-timeline-readout]') as HTMLElement | null;
+    container.querySelector<HTMLElement>('[data-timeline-readout]');
 
   it('keeps the readout in normal flow so the row grows to fit it', () => {
     const { container } = render(<ContextTimelineTick point={point()} />);
@@ -376,7 +376,7 @@ describe('ContextTimelineTick — delta and reset notes stand out', () => {
   // utilities lose to the unlayered `* { border-color }` rule and styles.css
   // sets `.ring-1 { box-shadow: none !important }`. Both colors mix from the
   // theme's own variables so they follow light and dark at runtime.
-  const note = (text: RegExp) => screen.getByText(text) as HTMLElement;
+  const note = (text: RegExp) => screen.getByText(text);
 
   it('lifts the delta note off the page with a theme-mixed background and edge', () => {
     render(<ContextTimelineTick point={point({ delta: 4_000 })} />);

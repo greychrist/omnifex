@@ -82,7 +82,6 @@ export function createSessionBridge(deps: SessionBridgeDeps): SessionBridge {
     if (!s) {
       // A session the log knows but the bridge has not seen a status for is
       // still dialing — the same optimistic 'starting' the renderer assumes.
-      const meta = deps.log.meta(sessionId);
       s = { sessionStatus: 'starting', turn: IDLE_TURN };
       states.set(sessionId, s);
     }
@@ -127,7 +126,9 @@ export function createSessionBridge(deps: SessionBridgeDeps): SessionBridge {
   }
 
   function permission(sessionId: string, payload: Record<string, unknown>): void {
-    const permissionId = String(payload.request_id ?? payload.requestId ?? '');
+    const rawId: unknown = payload.request_id ?? payload.requestId ?? '';
+    const permissionId = String(rawId);
+    const toolName: unknown = payload.tool_name ?? 'unknown';
     const kind = payload.kind === 'patch' || payload.kind === 'exec' ? payload.kind : 'tool';
     const list = pending.get(sessionId) ?? [];
     if (!list.includes(permissionId)) list.push(permissionId);
@@ -136,7 +137,7 @@ export function createSessionBridge(deps: SessionBridgeDeps): SessionBridge {
       type: 'permission.request',
       sessionId,
       permissionId,
-      tool: String(payload.tool_name ?? 'unknown'),
+      tool: String(toolName),
       input: (payload.tool_input) ?? {},
       kind,
       ...(Array.isArray(payload.permission_suggestions) && { suggestions: payload.permission_suggestions }),

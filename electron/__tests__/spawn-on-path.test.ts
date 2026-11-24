@@ -115,7 +115,7 @@ describe('execFileOnPath', () => {
     const d = dir();
     const p = install(d, name);
     const stdout = await new Promise<string>((resolve, reject) => {
-      execFileOnPath(name, [], { env: { PATH: d } }, (err, out) => { if (err) reject(err); else resolve(out); });
+      execFileOnPath(name, [], { env: { PATH: d } }, (err, out) => { const error: Error | null = err; if (error) reject(error); else resolve(out); });
     });
     expect(stdout.trim()).toBe('ok');
     expect(execFileCalls.map((c) => c.file)).toEqual([p]);

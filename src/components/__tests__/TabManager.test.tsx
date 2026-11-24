@@ -19,8 +19,7 @@ vi.mock('framer-motion', () => ({
       get: (_, key) => {
         const Tag = key as string;
         return ({ children, ...rest }: any) => {
-          const { initial, animate, exit, transition, layout, whileTap, whileDrag, layoutScroll, ...domProps } = rest;
-          initial; animate; exit; transition; layout; whileTap; whileDrag; layoutScroll;
+          const { initial: _initial, animate: _animate, exit: _exit, transition: _transition, layout: _layout, whileTap: _whileTap, whileDrag: _whileDrag, layoutScroll: _layoutScroll, ...domProps } = rest;
           // eslint-disable-next-line @typescript-eslint/no-require-imports -- vi.mock factory hoisted before module imports settle.
           return require('react').createElement(Tag, domProps, children);
         };
@@ -29,12 +28,10 @@ vi.mock('framer-motion', () => ({
   ),
   AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   Reorder: {
-    Group: ({ children, onReorder, values, axis, layoutScroll, ...rest }: any) => {
-      onReorder; values; axis; layoutScroll;
+    Group: ({ children, onReorder: _onReorder, values: _values, axis: _axis, layoutScroll: _layoutScroll, ...rest }: any) => {
       return <div {...rest}>{children}</div>;
     },
-    Item: ({ children, value, id, dragListener, whileDrag, onDragStart, onDragEnd, ...rest }: any) => {
-      value; dragListener; whileDrag; onDragStart; onDragEnd;
+    Item: ({ children, value: _value, id, dragListener: _dragListener, whileDrag: _whileDrag, onDragStart: _onDragStart, onDragEnd: _onDragEnd, ...rest }: any) => {
       return <div data-tab-id={id} {...rest}>{children}</div>;
     },
   },

@@ -766,7 +766,7 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     claude_cli_review_status: wrap(() => claudeBinary?.reviewStatus() ?? null),
     claude_cli_update: wrap(() => claudeBinary?.runUpdate() ?? null),
     claude_cli_claim_update_notice: wrapWith((p: Record<string, unknown>) =>
-      database ? claimCliUpdateNotice(database, String(p?.version ?? '')) : false),
+      database ? claimCliUpdateNotice(database, String((p?.version as string | number | undefined) ?? '')) : false),
 
     // ── MCP ───────────────────────────────────────────────────────────────────
     mcp_add: wrapWith((p: Record<string, unknown>) => { assertOwnedConfigDir(p?.configDir ?? p?.config_dir); return mcp?.add(p) ?? null; }),

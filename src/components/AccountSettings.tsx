@@ -95,7 +95,7 @@ const EnginePill: React.FC<{ engine: AccountEngine }> = ({ engine }) => (
 const AccountListRow: React.FC<{
   account: Account;
   onEdit: (account: Account) => void;
-  onDelete: (id: number) => void;
+  onDelete: (id: number) => Promise<void> | void;
 }> = ({ account, onEdit, onDelete }) => {
   // Passing null disables the hook entirely, so accounts that haven't opted
   // into verification cost zero IPC round-trips. The comparison itself lives

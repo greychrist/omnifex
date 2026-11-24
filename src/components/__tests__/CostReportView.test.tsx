@@ -106,6 +106,7 @@ import { emptyFilterState } from '@/lib/costFilterState';
 
 describe('CostReportView', () => {
   beforeEach(() => {
+    // eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- resetting a hoisted recorder keyed by channel name; the const object must be emptied in place, not reassigned.
     for (const k of Object.keys(calls)) delete calls[k];
     // The page persists its filters, so without this each test inherits the
     // previous one's selection and a "toggle Work on" becomes "toggle it off".

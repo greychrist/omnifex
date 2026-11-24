@@ -933,7 +933,6 @@ describe('claude service', () => {
       );
 
       const sessions = await service.getProjectSessions(projectId, projectPath);
-      const byId = Object.fromEntries(sessions.map((s) => [s.id, s]));
 
       expect(sessions).toHaveLength(4);
       // No first-prompt preview: the project page shows a name, a summary,

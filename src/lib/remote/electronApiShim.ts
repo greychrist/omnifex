@@ -58,18 +58,11 @@ export interface ShimOptions {
 
 export const TAB_MAP_STORAGE_KEY = 'omnifex.remote.tabSessions';
 
-/** Legacy tab-scoped channel prefixes the daemon turns into session pushes. */
-const SESSION_EVENT_PREFIXES = new Set([
-  'agent-output',
-  'agent-error',
-  'agent-complete',
-  'claude-output-extra',
-  'session-status',
-  'session-turn',
-  'session-init',
-  'session-account-mismatch',
-  'elicitation-request',
-]);
+// Legacy tab-scoped channel prefixes the daemon turns into session pushes:
+// agent-output, agent-error, agent-complete, claude-output-extra,
+// session-status, session-turn, session-init, session-account-mismatch,
+// elicitation-request. Routing is by push, not by subscription, so the shim
+// needs no table of them.
 
 /** Channels the shim answers with a typed method rather than rpc.invoke. */
 const TYPED = new Set([
@@ -190,7 +183,7 @@ export function createElectronApiShim(opts: ShimOptions): ShimHandle {
     tabToSession.delete(tabId);
     const tabs = sessionToTabs.get(sid);
     tabs?.delete(tabId);
-    if (tabs && tabs.size === 0) {
+    if (tabs?.size === 0) {
       sessionToTabs.delete(sid);
       lastSeq.delete(sid);
       pendingPermission.delete(sid);
@@ -537,9 +530,12 @@ export function createElectronApiShim(opts: ShimOptions): ShimHandle {
         return null;
       case 'session_rebind':
         return rebind(String(p.tabId));
-      case 'session_send_message':
-        await sendTurn(p.tabId, String(p.prompt ?? p.message ?? ''));
+      case 'session_send_message': {
+        // A string on the wire; String() keeps any other shape from reaching sendTurn raw.
+        const prompt = (p.prompt ?? p.message ?? '') as string;
+        await sendTurn(p.tabId, String(prompt));
         return null;
+      }
       case 'session_send_structured_message':
         await sendTurn(p.tabId, (p.content as Record<string, unknown>[]) ?? []);
         return null;
@@ -671,6 +667,5 @@ export function createElectronApiShim(opts: ShimOptions): ShimHandle {
     },
   };
 
-  SESSION_EVENT_PREFIXES; // documented above; routing is by push, not by subscription
   return api;
 }

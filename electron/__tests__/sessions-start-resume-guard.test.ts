@@ -69,7 +69,7 @@ describe('start() with resumeSessionId — resume vs fresh transcript', () => {
     const orphanId = '2355e496-3a5d-4013-989b-0477635adc4f';
     expect(fs.existsSync(jsonlPathFor(orphanId))).toBe(false);
 
-    sessions.start({
+    void sessions.start({
       tabId: 'tab-orphan',
       projectPath,
       configDir: tmpConfig,
@@ -89,7 +89,7 @@ describe('start() with resumeSessionId — resume vs fresh transcript', () => {
     const sessions = createSessionsService(vi.fn());
     const orphanId = '2355e496-3a5d-4013-989b-0477635adc4f';
 
-    sessions.start({
+    void sessions.start({
       tabId: 'tab-orphan-id',
       projectPath,
       configDir: tmpConfig,
@@ -112,7 +112,7 @@ describe('start() with resumeSessionId — resume vs fresh transcript', () => {
       '{"type":"user","message":{"role":"user","content":"hi"}}\n',
     );
 
-    sessions.start({
+    void sessions.start({
       tabId: 'tab-real',
       projectPath,
       configDir: tmpConfig,
@@ -143,7 +143,7 @@ describe('start() with resumeSessionId — resume vs fresh transcript', () => {
       '{"type":"user","message":{"role":"user","content":"hi"}}\n',
     );
 
-    sessions.start({
+    void sessions.start({
       tabId: 'tab-moved',
       projectPath,
       configDir: tmpConfig,
@@ -158,7 +158,7 @@ describe('start() with resumeSessionId — resume vs fresh transcript', () => {
   it('cold start without a resume id still does not resume', () => {
     const sessions = createSessionsService(vi.fn());
 
-    sessions.start({
+    void sessions.start({
       tabId: 'tab-cold',
       projectPath,
       configDir: tmpConfig,

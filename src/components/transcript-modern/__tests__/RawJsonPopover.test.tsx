@@ -17,8 +17,7 @@ vi.mock('framer-motion', () => {
         const Tag = key as string;
         if (!cache.has(Tag)) {
           cache.set(Tag, React.forwardRef(({ children, ...rest }: any, ref: unknown) => {
-            const { initial, animate, exit, transition, layout, whileTap, ...domProps } = rest;
-            initial; animate; exit; transition; layout; whileTap;
+            const { initial: _initial, animate: _animate, exit: _exit, transition: _transition, layout: _layout, whileTap: _whileTap, ...domProps } = rest;
             return React.createElement(Tag, { ...domProps, ref }, children);
           }));
         }

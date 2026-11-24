@@ -183,7 +183,7 @@ export const useClaudeSessionStore = create<ClaudeSessionStoreState>()(
     clearInflightThinking: (tabId) =>
       { set((state) => {
         const existing = state.tabs[tabId];
-        if (!existing || existing.inflightThinking === null) return state;
+        if (existing?.inflightThinking == null) return state;
         return { tabs: { ...state.tabs, [tabId]: { ...existing, inflightThinking: null } } };
       }); },
 

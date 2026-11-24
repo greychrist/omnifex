@@ -23,13 +23,13 @@ describe('SideChatPanel', () => {
     expect(screen.getByText('No answer')).toBeTruthy();
     expect(screen.getByText('boom')).toBeTruthy();
     expect(screen.getByText('Thinking…')).toBeTruthy();
-    expect((screen.getByRole('button', { name: 'Send' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Send' }).disabled).toBe(true);
   });
 
   it('Enter sends and clears; Shift+Enter does not send', async () => {
     const onAsk = vi.fn().mockResolvedValue(true);
     render(<SideChatPanel askError={null} onAsk={onAsk} onClose={vi.fn()} sideChat={chat([])} />);
-    const box = screen.getByRole('textbox') as HTMLTextAreaElement;
+    const box = screen.getByRole<HTMLTextAreaElement>('textbox');
     fireEvent.change(box, { target: { value: 'hello' } });
     fireEvent.keyDown(box, { key: 'Enter', shiftKey: true });
     expect(onAsk).not.toHaveBeenCalled();
@@ -41,7 +41,7 @@ describe('SideChatPanel', () => {
   it('keeps the draft when the ask is rejected', async () => {
     const onAsk = vi.fn().mockResolvedValue(false);
     render(<SideChatPanel askError={null} onAsk={onAsk} onClose={vi.fn()} sideChat={chat([])} />);
-    const box = screen.getByRole('textbox') as HTMLTextAreaElement;
+    const box = screen.getByRole<HTMLTextAreaElement>('textbox');
     fireEvent.change(box, { target: { value: 'hello' } });
     fireEvent.click(screen.getByRole('button', { name: 'Send' }));
     await vi.waitFor(() => { expect(onAsk).toHaveBeenCalled(); });

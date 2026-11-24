@@ -15,7 +15,7 @@ export function applyRateLimitUpdate(
   payload: RateLimitUpdate | undefined,
   accountName: string,
 ): Record<string, RateLimitSnapshot> {
-  if (!payload || payload.account_name !== accountName) return prev;
+  if (payload?.account_name !== accountName) return prev;
   if (payload.snapshot) return { ...prev, [payload.snapshot.rate_limit_type]: payload.snapshot };
   if (payload.removed && payload.removed in prev) {
     const { [payload.removed]: _gone, ...rest } = prev;

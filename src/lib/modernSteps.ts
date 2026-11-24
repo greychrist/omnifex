@@ -116,7 +116,7 @@ export function describeToolStep(name: string, input: Record<string, unknown>, s
     }
     case 'Read':
       return step(`${verb(READ, state)} ${basename(input.file_path)}`,
-        [input.offset !== undefined ? `from line ${String(input.offset)}` : undefined]);
+        [input.offset !== undefined ? `from line ${input.offset as number}` : undefined]);
     case 'Write':
       return step(`${verb(WRITE, state)} ${basename(input.file_path)}`);
     case 'Edit':

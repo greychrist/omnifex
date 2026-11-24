@@ -45,7 +45,7 @@ describe('AgentBadge', () => {
   it('does NOT fire onClick when disabled is true', () => {
     const onClick = vi.fn();
     renderBadge(<AgentBadge agent="claude" onClick={onClick} disabled />);
-    const button = screen.getByRole('button', { name: /claude/i }) as HTMLButtonElement;
+    const button = screen.getByRole<HTMLButtonElement>('button', { name: /claude/i });
     expect(button.disabled).toBe(true);
     fireEvent.click(button);
     expect(onClick).not.toHaveBeenCalled();

@@ -133,6 +133,7 @@ export function usePublishTabStatus({
     sessionId,
     sessionStarted,
     isStarting,
+    turnRunning,
     hasError,
     messages,
     subagents,

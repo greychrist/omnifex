@@ -9,7 +9,6 @@
 
 import type {
   SessionHandle,
-  SessionStartParams,
   PermissionMode,
   AccountInfo,
   AgentInfo,
@@ -452,7 +451,7 @@ export function createQueryPassthroughs(
    */
   async function promptDraftActivity(tabId: string): Promise<void> {
     const handle = liveEngine(tabId);
-    if (!handle || handle.agent !== 'claude' || draftActivityRefused.has(tabId)) return;
+    if (handle?.agent !== 'claude' || draftActivityRefused.has(tabId)) return;
     try {
       await handle.engine.sendControlRequest('prompt_draft_activity', {});
     } catch (err) {

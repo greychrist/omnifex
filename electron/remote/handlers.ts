@@ -12,6 +12,7 @@
  * `ClientContext`, returns a result or throws a `ProtocolError`-shaped object;
  * `server.ts` turns those into responses.
  */
+/* eslint-disable @typescript-eslint/only-throw-error -- handlers throw ProtocolError-shaped plain objects by contract; server.ts's isProtocolError turns them into the wire error frame, and callers compare them as plain objects. */
 import { randomUUID } from 'node:crypto';
 import { realpathSync } from 'node:fs';
 

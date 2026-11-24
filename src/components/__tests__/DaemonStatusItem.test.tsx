@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
 import { render, cleanup, screen, fireEvent, waitFor, act } from '@testing-library/react';
 
 import { DaemonStatusItem } from '@/components/DaemonStatusItem';
@@ -16,7 +16,7 @@ const w = window as unknown as {
 };
 
 let fetchMock: ReturnType<typeof vi.fn>;
-let invokeMock: ReturnType<typeof vi.fn>;
+let invokeMock: Mock<(channel: string, params?: unknown) => Promise<unknown>>;
 let appVersion: string;
 
 function remote(welcomeVersion = '0.4.156', mode = 'desktop') {

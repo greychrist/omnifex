@@ -130,8 +130,9 @@ export function splitLatestModels(models: Model[]): { latest: Model[]; older: Mo
     seen.add(name);
     const fam = modelFamily(name);
     const version = nameVersion(name);
+    const best = fam ? newest.get(fam) : undefined;
     const isOlder =
-      m.id !== 'default' && !!fam && !!version && compareVersions(version, newest.get(fam)!) < 0;
+      m.id !== 'default' && !!best && !!version && compareVersions(version, best) < 0;
     (isOlder ? older : latest).push(m);
   }
   return { latest, older };
@@ -315,9 +316,10 @@ export function pickModelOption(model: string, models: Model[]): Model {
 export function recommendedDefaultModel(
   raw?: SessionModelInfo[] | null,
 ): SessionModelInfo | null {
-  const def = raw?.find((m) => m.value === 'default');
+  if (!raw) return null;
+  const def = raw.find((m) => m.value === 'default');
   if (!def) return null;
-  const others = raw!.filter((m) => m.value !== 'default');
+  const others = raw.filter((m) => m.value !== 'default');
   const byDescription = others.find(
     (m) => !!def.description && m.description === def.description,
   );

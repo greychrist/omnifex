@@ -61,6 +61,7 @@ function formatJson(value: unknown): string {
   try {
     return JSON.stringify(value, null, 2);
   } catch {
+    // eslint-disable-next-line @typescript-eslint/no-base-to-string -- last-resort fallback for values JSON cannot encode (BigInt prints its digits, a circular object reads "[object Object]"); documented above
     return String(value);
   }
 }

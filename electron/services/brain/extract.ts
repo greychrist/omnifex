@@ -32,7 +32,7 @@ const EntitySchema = z.object({
     .trim()
     .min(1)
     .transform(lastNameSegment)
-    .refine((n) => n.length > 0, { message: 'name is empty after removing path segments' }),
+    .refine((n) => n.length > 0, { error: 'name is empty after removing path segments' }),
   aliases: z.array(z.string()).default([]),
   keywords: z.array(z.string()).default([]),
   summary: z.string(),

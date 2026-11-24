@@ -97,7 +97,7 @@ describe('autoTitleDescription', () => {
 describe('sendMessage — session auto-naming', () => {
   it('asks the CLI to name a fresh session on the first prompt, and persists it', () => {
     const sessions = createSessionsService(vi.fn());
-    sessions.start({
+    void sessions.start({
       tabId: 'tab-fresh',
       projectPath,
       configDir: tmpConfig,
@@ -116,7 +116,7 @@ describe('sendMessage — session auto-naming', () => {
 
   it('does not ask again on later prompts in the same session', () => {
     const sessions = createSessionsService(vi.fn());
-    sessions.start({
+    void sessions.start({
       tabId: 'tab-twice',
       projectPath,
       configDir: tmpConfig,
@@ -143,7 +143,7 @@ describe('sendMessage — session auto-naming', () => {
       '{"type":"user","message":{"role":"user","content":"hi"}}\n',
     );
 
-    sessions.start({
+    void sessions.start({
       tabId: 'tab-resumed',
       projectPath,
       configDir: tmpConfig,
@@ -159,7 +159,7 @@ describe('sendMessage — session auto-naming', () => {
 
   it('names a session whose first message is an image with a caption', () => {
     const sessions = createSessionsService(vi.fn());
-    sessions.start({
+    void sessions.start({
       tabId: 'tab-structured',
       projectPath,
       configDir: tmpConfig,
@@ -179,7 +179,7 @@ describe('sendMessage — session auto-naming', () => {
   it('never lets a failed naming call surface as a session error', async () => {
     sendControlRequestSpy.mockRejectedValueOnce(new Error('control channel closed'));
     const sessions = createSessionsService(vi.fn());
-    sessions.start({
+    void sessions.start({
       tabId: 'tab-reject',
       projectPath,
       configDir: tmpConfig,

@@ -28,13 +28,13 @@ interface UseSendPromptArgs {
    * stale closure capture. Reading from a closure-captured boolean caused
    * the queue to silently re-enqueue drained prompts instead of sending them.
    */
-  turnRunningRef: React.MutableRefObject<boolean>;
+  turnRunningRef: React.RefObject<boolean>;
   selectedModel: string;
-  persistentSessionRef: React.MutableRefObject<boolean>;
-  unlistenRefs: React.MutableRefObject<(() => void)[]>;
+  persistentSessionRef: React.RefObject<boolean>;
+  unlistenRefs: React.RefObject<(() => void)[]>;
   effectiveSession: Session | null;
   claudeSessionId: string | null;
-  sessionMetrics: React.MutableRefObject<{
+  sessionMetrics: React.RefObject<{
     promptsSent: number;
     lastActivityTime: number;
     firstMessageTime: number | null;
@@ -60,8 +60,8 @@ interface UseSendPromptReturn {
   handleSendPrompt: (prompt: string, model: string, images?: string[], opts?: SendPromptOptions) => Promise<void>;
   queuedPrompts: QueuedPromptItem[];
   setQueuedPrompts: React.Dispatch<React.SetStateAction<QueuedPromptItem[]>>;
-  queuedPromptsRef: React.MutableRefObject<QueuedPromptItem[]>;
-  lastPromptRef: React.MutableRefObject<{ prompt: string; model: string } | null>;
+  queuedPromptsRef: React.RefObject<QueuedPromptItem[]>;
+  lastPromptRef: React.RefObject<{ prompt: string; model: string } | null>;
 }
 
 export function useSendPrompt({

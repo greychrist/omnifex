@@ -309,7 +309,12 @@ function matchingRows(
   for (const r of rows) {
     const p = r.pattern.toLowerCase();
     if (!p || !m.includes(p)) continue;
-    (byPattern.get(p) ?? byPattern.set(p, []).get(p)!).push(r);
+    let list = byPattern.get(p);
+    if (!list) {
+      list = [];
+      byPattern.set(p, list);
+    }
+    list.push(r);
   }
   return [...byPattern.entries()]
     .sort((a, b) => b[0].length - a[0].length || a[0].localeCompare(b[0]))
@@ -403,7 +408,7 @@ export function resolveRates(
   const input = inputPerM / MTOK;
   // ratePeriodFor never returns undefined for a non-empty list, and
   // CACHE_MULTIPLIERS is a module constant with at least one entry.
-  const mult = ratePeriodFor(CACHE_MULTIPLIERS, date)!;
+  const mult = ratePeriodFor(CACHE_MULTIPLIERS, date) ?? CACHE_MULTIPLIERS[0];
 
   return {
     rates: {

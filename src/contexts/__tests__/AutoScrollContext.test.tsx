@@ -43,7 +43,7 @@ describe("AutoScrollProvider", () => {
   });
 
   it("loads the stored value", async () => {
-    (api.getSetting as ReturnType<typeof vi.fn>).mockImplementation(
+    vi.mocked(api.getSetting).mockImplementation(
       (key: string) =>
         Promise.resolve(key === AUTOSCROLL_FOLLOW_SETTING_KEY ? "150" : null),
     );

@@ -101,7 +101,7 @@ function Harness({
   messages: JsonlNode[];
   viewMode: Mode;
   jumpTo?: { uuid: string; nonce: number } | null;
-  nearBottom?: React.MutableRefObject<boolean>;
+  nearBottom?: React.RefObject<boolean>;
 }) {
   const onResend = React.useRef(() => {}).current;
   const messagesEndRef = React.useRef<HTMLDivElement>(null);

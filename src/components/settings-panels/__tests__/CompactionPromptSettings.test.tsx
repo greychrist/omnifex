@@ -38,7 +38,7 @@ async function waitForLoaded() {
 }
 
 function textarea(): HTMLTextAreaElement {
-  return screen.getByRole('textbox') as HTMLTextAreaElement;
+  return screen.getByRole<HTMLTextAreaElement>('textbox');
 }
 
 describe('CompactionPromptSettings', () => {

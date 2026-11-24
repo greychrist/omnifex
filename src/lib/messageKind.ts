@@ -300,7 +300,7 @@ export function classifyStandaloneKind(
     if (!Array.isArray(content)) return null;
 
     let text = '';
-    for (const block of content) {
+    for (const block of content as ({ type?: unknown; text?: unknown } | null)[]) {
       if (block?.type === 'text' && typeof block.text === 'string') {
         text += block.text;
       }

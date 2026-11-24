@@ -112,7 +112,9 @@ export async function probeAuthStatus(configDir: string, deps: ProbeDeps): Promi
     ((b: string, args: string[], env: NodeJS.ProcessEnv): Promise<string> =>
       new Promise((resolve, reject) => {
         execFile(b, args, { encoding: 'utf8', timeout: 10_000, env }, (err, stdout) => {
-          if (err) reject(err);
+          // ExecFileException is an Omit<> intersection, which the rule cannot see is an Error.
+          const error: Error | null = err;
+          if (error) reject(error);
           else resolve(stdout);
         });
       }));

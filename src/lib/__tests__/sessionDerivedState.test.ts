@@ -568,7 +568,7 @@ describe('sessionAuthFailure', () => {
 describe('slashModelResult', () => {
   const userOut = (text: string, content: 'string' | 'blocks' = 'string'): JsonlNode => ({
     kind: 'user', userKind: 'prompt', sessionId: 's1', receivedAt: 't',
-    raw: { type: 'user', uuid: 'u-' + text.length, message: { role: 'user', content: content === 'string' ? text : [{ type: 'text', text }] } } as never,
+    raw: { type: 'user', uuid: `u-${text.length}`, message: { role: 'user', content: content === 'string' ? text : [{ type: 'text', text }] } } as never,
   });
   const sysOut = (text: string): JsonlNode => ({
     kind: 'system', subtype: 'local_command', sessionId: 's1', receivedAt: 't',

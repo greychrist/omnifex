@@ -49,7 +49,7 @@ afterEach(() => { fs.rmSync(tmpConfig, { recursive: true, force: true }); });
 describe('sessions.start → engine.start', () => {
   it('forwards the chosen effort', () => {
     const sessions = createSessionsService(vi.fn());
-    sessions.start({
+    void sessions.start({
       tabId: 't1',
       projectPath: '/Users/test/proj',
       configDir: tmpConfig,
@@ -64,7 +64,7 @@ describe('sessions.start → engine.start', () => {
 
   it('forwards no effort when none was chosen', () => {
     const sessions = createSessionsService(vi.fn());
-    sessions.start({ tabId: 't2', projectPath: '/Users/test/proj', configDir: tmpConfig, model: '', permissionMode: '' });
+    void sessions.start({ tabId: 't2', projectPath: '/Users/test/proj', configDir: tmpConfig, model: '', permissionMode: '' });
     const params = (engine.start.mock.calls[0] as unknown[])[0] as Record<string, unknown>;
     expect(params.effort).toBeUndefined();
   });

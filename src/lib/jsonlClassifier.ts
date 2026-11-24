@@ -121,7 +121,7 @@ function isToolResultOnly(content: unknown): boolean {
 function isAttachmentMarker(content: unknown): boolean {
   if (!Array.isArray(content) || content.length === 0) return false;
   const first = content[0] as { type?: string; text?: string } | undefined;
-  if (!first || first.type !== 'text' || typeof first.text !== 'string') return false;
+  if (first?.type !== 'text' || typeof first.text !== 'string') return false;
   return first.text.startsWith('[Image: ');
 }
 
@@ -181,7 +181,7 @@ export function isInterruptNotice(content: unknown): boolean {
     if (!content.every((b) => b && typeof b === 'object' && (b as { type?: string }).type === 'text')) {
       return false;
     }
-    text = content.map((b) => String((b as { text?: unknown }).text ?? '')).join('');
+    text = content.map((b) => String((b as { text?: string }).text ?? '')).join('');
   } else {
     return false;
   }

@@ -22,8 +22,7 @@ vi.mock('framer-motion', () => ({
         const cached = motionComponents.get(Tag);
         if (cached) return cached;
         const Component = ({ children, ...rest }: any) => {
-          const { initial, animate, exit, transition, layout, ...domProps } = rest;
-          initial; animate; exit; transition; layout;
+          const { initial: _initial, animate: _animate, exit: _exit, transition: _transition, layout: _layout, ...domProps } = rest;
 
           // eslint-disable-next-line @typescript-eslint/no-require-imports -- vi.mock factory hoisted before module imports settle.
           return require('react').createElement(Tag, domProps, children);

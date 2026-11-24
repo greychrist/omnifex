@@ -136,6 +136,24 @@ const MAX_TABS = 20;
  * Used by the session-name registry mirror so the Log tab can render
  * `session: <project> - <guid7>` even after the tab is closed.
  */
+function generateTabId(): string {
+  return `tab-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+}
+
+function makeDefaultTab(type: Tab['type'], title: string): Tab {
+  return {
+    id: generateTabId(),
+    type,
+    title,
+    agent: 'claude',
+    status: 'idle',
+    hasUnsavedChanges: false,
+    order: 0,
+    createdAt: new Date(),
+    updatedAt: new Date()
+  };
+}
+
 function projectBasename(p: string | null | undefined): string | undefined {
   if (!p) return undefined;
   const trimmed = String(p).replace(/[/\\]+$/, '');
@@ -272,22 +290,6 @@ export const TabProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     };
   }, [tabs, activeTabId]);
-
-  const generateTabId = () => {
-    return `tab-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
-  };
-
-  const makeDefaultTab = (type: Tab['type'], title: string): Tab => ({
-    id: generateTabId(),
-    type,
-    title,
-    agent: 'claude',
-    status: 'idle',
-    hasUnsavedChanges: false,
-    order: 0,
-    createdAt: new Date(),
-    updatedAt: new Date()
-  });
 
   const addTab = useCallback((tabData: Omit<Tab, 'id' | 'order' | 'createdAt' | 'updatedAt'>): string => {
     if (tabs.length >= MAX_TABS) {

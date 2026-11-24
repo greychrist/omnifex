@@ -106,7 +106,6 @@ import { createExtractor } from '../services/brain/extract';
 import { createCurator } from '../services/brain/curation';
 import {
   BRAIN_AUTO_INDEX_SETTING_KEY,
-  BRAIN_CURATE_SETTING_KEY,
   BRAIN_IDLE_MINUTES_SETTING_KEY,
   BRAIN_QUEUE_PAUSED_SETTING_KEY,
   BRAIN_SWEEP_HOURS_SETTING_KEY,
@@ -121,7 +120,7 @@ import { INVOKE_CHANNELS } from '../ipc/channels';
 import { classifyJsonlLine } from '../../src/lib/jsonlClassifier';
 import { MOD_NOTIFICATIONS_SETTING_KEY, modNotificationsEnabled } from '../../src/lib/notificationSounds';
 
-import { detectTailscaleIp, extraListenHosts, type NetworkInterfaces, type ServerConfig } from './config';
+import { detectTailscaleIp, extraListenHosts, type ServerConfig } from './config';
 import { createTailnetWatch } from './tailnet-watch';
 import { createAccountWatchers } from './account-watchers';
 import { createSessionLog } from './session-log';
@@ -354,7 +353,7 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
   // The rest of the graph
   // ---------------------------------------------------------------------------
 
-  let brainRef: BrainService | undefined;
+  let brainRef: BrainService | undefined = undefined;
   let sessionsRef: ReturnType<typeof createSessionsService> | null = null;
 
   const captureSource = createCaptureSource({
@@ -485,15 +484,18 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
     (configDir: string) => {
       const verdict = accountIdentityVerdict(configDir);
       if (verdict.status !== 'mismatch' && verdict.status !== 'signed-out') return null;
-      return { expected: verdict.expected!, detected: verdict.detected, configDir, source: 'oauth-file' as const };
+      // Both statuses imply a non-empty expected email; the null check only narrows.
+      if (verdict.expected === null) return null;
+      return { expected: verdict.expected, detected: verdict.detected, configDir, source: 'oauth-file' as const };
     },
     (configDir: string, observedEmail: string | null) => {
       if (observedEmail === null) return null;
       const account = accountsService.getAccountByConfigDir(configDir);
       const expected = account?.expected_email;
       const status = classifyIdentity({ accountExists: !!account, expected, detected: observedEmail });
-      if (status !== 'mismatch') return null;
-      return { expected: expected!, detected: observedEmail, configDir, source: 'session-init' as const };
+      // 'mismatch' implies a non-empty expected email; the check only narrows.
+      if (status !== 'mismatch' || !expected) return null;
+      return { expected, detected: observedEmail, configDir, source: 'session-init' as const };
     },
     (configDir: string) => {
       try {
@@ -967,8 +969,6 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
   const permissionTimers = new Map<string, NodeJS.Timeout>();
   if (config.permissionTimeoutMs !== null) {
     const timeoutMs = config.permissionTimeoutMs;
-    const origPublish = bridge.sendToRenderer;
-    origPublish;
     // Watch pushes as they leave the log: a permission.request starts a
     // clock; the handler clearing it (permissionAnswered) stops it.
     const pollPending = setInterval(() => {

@@ -6,7 +6,6 @@ import path from 'node:path';
 
 import {
   createCodexAuthService,
-  type CodexAuthService,
   type CodexAuthStatus,
 } from '../../services/auth/codex-auth';
 import type { OneShotTerminalService } from '../../services/one-shot-terminal';

@@ -13,8 +13,7 @@ vi.mock('framer-motion', () => ({
         // eslint-disable-next-line @typescript-eslint/no-require-imports -- vi.mock factory hoisted before module imports settle.
         const React = require('react');
         return React.forwardRef(({ children, ...rest }: any, ref: unknown) => {
-          const { initial, animate, exit, transition, layout, whileTap, ...domProps } = rest;
-          initial; animate; exit; transition; layout; whileTap;
+          const { initial: _initial, animate: _animate, exit: _exit, transition: _transition, layout: _layout, whileTap: _whileTap, ...domProps } = rest;
           return React.createElement(Tag, { ...domProps, ref }, children);
         });
       },

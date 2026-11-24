@@ -229,7 +229,7 @@ describe('NewSessionForm — Codex auth banner', () => {
     expect(banner).toBeTruthy();
     expect(banner.textContent).toContain('You need to sign in to Codex');
     // Submit button disabled.
-    const submit = screen.getByRole('button', { name: /Start Session/ }) as HTMLButtonElement;
+    const submit = screen.getByRole<HTMLButtonElement>('button', { name: /Start Session/ });
     expect(submit.disabled).toBe(true);
     // Clicking the disabled submit does nothing.
     fireEvent.click(submit);
@@ -247,7 +247,7 @@ describe('NewSessionForm — Codex auth banner', () => {
       />,
     );
     expect(screen.queryByTestId('codex-auth-banner')).toBeNull();
-    const submit = screen.getByRole('button', { name: /Start Session/ }) as HTMLButtonElement;
+    const submit = screen.getByRole<HTMLButtonElement>('button', { name: /Start Session/ });
     expect(submit.disabled).toBe(false);
     fireEvent.click(submit);
     expect(onStart).toHaveBeenCalledTimes(1);
@@ -263,7 +263,7 @@ describe('NewSessionForm — Codex auth banner', () => {
         onCodexSignIn={() => {}}
       />,
     );
-    const submit = screen.getByRole('button', { name: /Start Session/ }) as HTMLButtonElement;
+    const submit = screen.getByRole<HTMLButtonElement>('button', { name: /Start Session/ });
     expect(submit.disabled).toBe(true);
     expect(screen.queryByTestId('codex-auth-banner')).toBeTruthy();
   });
@@ -290,7 +290,7 @@ describe('NewSessionForm — Codex auth banner', () => {
         onStart={onStart}
       />,
     );
-    const submit = screen.getByRole('button', { name: /Start Session/ }) as HTMLButtonElement;
+    const submit = screen.getByRole<HTMLButtonElement>('button', { name: /Start Session/ });
     expect(submit.disabled).toBe(false);
     fireEvent.click(submit);
     expect(onStart).toHaveBeenCalledTimes(1);

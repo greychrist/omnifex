@@ -33,8 +33,8 @@ describe('Modern record line', () => {
   it('draws the icon and title in the line\'s accent', () => {
     const { container } = draw({ icon: 'Zap', title: 'Effort', detail: 'High', accent: { kind: 'css', color: 'rgb(202, 138, 4)' } });
     expect((container.querySelector('[data-slot="trace-icon"]') as HTMLElement).style.color).toBe('rgb(202, 138, 4)');
-    expect((screen.getByText('Effort') as HTMLElement).style.color).toBe('rgb(202, 138, 4)');
-    expect((screen.getByText('High') as HTMLElement).style.color).toBe('');
+    expect(screen.getByText('Effort').style.color).toBe('rgb(202, 138, 4)');
+    expect(screen.getByText('High').style.color).toBe('');
   });
 
   it('resolves a model accent to its Cost Report color for the theme', async () => {
@@ -42,12 +42,12 @@ describe('Modern record line', () => {
     const hexToRgb = (h: string) => `rgb(${[1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16)).join(', ')})`;
     const model = { icon: 'Cpu', title: 'Model', detail: 'claude-opus-5-5', accent: { kind: 'model', model: 'claude-opus-5-5' } } as ModernLine;
     draw(model);
-    expect((screen.getByText('Model') as HTMLElement).style.color).toBe(hexToRgb(SHADES.dark.opus[0]));
+    expect(screen.getByText('Model').style.color).toBe(hexToRgb(SHADES.dark.opus[0]));
     cleanup();
     document.documentElement.classList.add('theme-light');
     try {
       draw(model);
-      expect((screen.getByText('Model') as HTMLElement).style.color).toBe(hexToRgb(SHADES.light.opus[0]));
+      expect(screen.getByText('Model').style.color).toBe(hexToRgb(SHADES.light.opus[0]));
     } finally {
       document.documentElement.classList.remove('theme-light');
     }
@@ -55,7 +55,7 @@ describe('Modern record line', () => {
 
   it('leaves a model with no color of its own uncolored', () => {
     draw({ icon: 'Cpu', title: 'Model', detail: 'default', accent: { kind: 'model', model: 'default' } });
-    expect((screen.getByText('Model') as HTMLElement).style.color).toBe('');
+    expect(screen.getByText('Model').style.color).toBe('');
   });
 
   it('shows an open body under the rule, in mono when asked', () => {

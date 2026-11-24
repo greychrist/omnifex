@@ -336,9 +336,9 @@ describe('BrainTab', () => {
     render(<BrainTab />);
     await waitFor(() => { expect(screen.getByTestId('vault-setup')).toBeTruthy(); });
 
-    expect((screen.getByRole('tab', { name: /^notes$/i }) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByRole('tab', { name: /^sources$/i }) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByRole('tab', { name: /settings/i }) as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.getByRole<HTMLButtonElement>('tab', { name: /^notes$/i }).disabled).toBe(true);
+    expect(screen.getByRole<HTMLButtonElement>('tab', { name: /^sources$/i }).disabled).toBe(true);
+    expect(screen.getByRole<HTMLButtonElement>('tab', { name: /settings/i }).disabled).toBe(false);
     // The way out of a broken vault stays reachable.
     expect(screen.getByTestId('account-select')).toBeTruthy();
     // Four zeroes would read as a fact rather than as an absence.

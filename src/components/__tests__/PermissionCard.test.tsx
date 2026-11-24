@@ -93,9 +93,9 @@ describe("PermissionCard — Claude tool variant (regression)", () => {
     // The Bash command surfaces in the tool-input preview pre.
     expect(screen.getByText("ls -la")).toBeTruthy();
     // The rule editor input exists with the suggestion pre-filled.
-    const ruleInput = screen.getByPlaceholderText(
+    const ruleInput = screen.getByPlaceholderText<HTMLInputElement>(
       /e\.g\. Bash\(git:\*\) or Read/i,
-    ) as HTMLInputElement;
+    );
     expect(ruleInput.value).toBe("Bash(ls:*)");
   });
 

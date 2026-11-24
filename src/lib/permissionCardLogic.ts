@@ -190,6 +190,7 @@ export interface CommandPreviewResult {
  * their own visible glyph below, and newlines are meaningful in the preview.
  */
 const INVISIBLE_RE =
+  // eslint-disable-next-line no-control-regex -- matching C0/C1 control characters is this regex's purpose
   /[\u0000-\u0008\u000B-\u001F\u007F-\u009F\u00AD\u061C\u180E\u200B-\u200F\u2028\u2029\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF]/g;
 
 /** Above this, the preview box scrolls and the tail is off-screen by default. */

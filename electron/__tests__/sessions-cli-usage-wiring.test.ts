@@ -66,7 +66,7 @@ function setup(sink: (e: CliUsageEvent) => void) {
     null, null, null, null, null, null, null, null, null, null,
     sink,
   );
-  sessions.start({ tabId: 't1', projectPath: '/Users/test/proj', configDir: tmpConfig, model: 'opus', permissionMode: 'default' });
+  void sessions.start({ tabId: 't1', projectPath: '/Users/test/proj', configDir: tmpConfig, model: 'opus', permissionMode: 'default' });
   return { sessions, sent };
 }
 

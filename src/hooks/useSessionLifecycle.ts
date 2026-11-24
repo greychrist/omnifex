@@ -35,7 +35,7 @@ interface UseSessionLifecycleArgs {
     match_type: string;
     match_detail: string;
   } | null;
-  persistentSessionRef: React.MutableRefObject<boolean>;
+  persistentSessionRef: React.RefObject<boolean>;
   /**
    * If the component is mounting with a session to resume or a
    * preconfigured fresh start, pass `true` so the initial sessionStatus
@@ -76,8 +76,8 @@ interface UseSessionLifecycleArgs {
 }
 
 interface UseSessionLifecycleReturn {
-  unlistenRefs: React.MutableRefObject<(() => void)[]>;
-  isMountedRef: React.MutableRefObject<boolean>;
+  unlistenRefs: React.RefObject<(() => void)[]>;
+  isMountedRef: React.RefObject<boolean>;
   /** `options.permissionMode` overrides the picker's mode for this launch —
    *  "Restart in Bypass" starts before that state has re-rendered here. */
   startPersistentSession: (resumeId?: string, options?: { permissionMode?: string }) => Promise<void>;

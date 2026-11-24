@@ -36,8 +36,8 @@ describe('AgentPicker', () => {
   it('disables both buttons when `disabled` is true', () => {
     const onChange = vi.fn();
     render(<AgentPicker value="claude" onChange={onChange} disabled />);
-    const claude = screen.getByRole('radio', { name: 'Claude' }) as HTMLButtonElement;
-    const codex = screen.getByRole('radio', { name: 'Codex' }) as HTMLButtonElement;
+    const claude = screen.getByRole<HTMLButtonElement>('radio', { name: 'Claude' });
+    const codex = screen.getByRole<HTMLButtonElement>('radio', { name: 'Codex' });
     expect(claude.disabled).toBe(true);
     expect(codex.disabled).toBe(true);
     fireEvent.click(codex);

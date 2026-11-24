@@ -87,8 +87,9 @@ export function useSessionSignals(input: SessionSignalsInput): SessionSignals {
 
   const derived = useMemo(
     () => deriveSessionSignals({ ...input, boundarySnoozeTokens, handlers }),
-     
-    // object literal every render; its fields are the real dependencies.
+    // `input` is a fresh object literal every render; its fields are the real
+    // dependencies.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `input` is rebuilt every render; listing it would recompute every render
     [
       input.tabId,
       input.messages,

@@ -55,7 +55,7 @@ export interface ServerClientOptions {
 /** Client-side failure, distinct from a daemon `ProtocolError`. */
 export class RemoteClientError extends Error {
   constructor(
-    readonly code: 'DISCONNECTED' | 'TIMEOUT' | 'PROTOCOL_VERSION_MISMATCH' | string,
+    readonly code: 'DISCONNECTED' | 'TIMEOUT' | 'PROTOCOL_VERSION_MISMATCH' | (string & {}),
     message: string,
   ) {
     super(message);
@@ -90,7 +90,6 @@ export function createServerClient(opts: ServerClientOptions): ServerClient {
   let state: ConnectionState = 'disconnected';
   let socket: WebSocketLike | null = null;
   let welcome: Welcome | null = null;
-  let everConnected = false;
   let wantConnected = false;
   let backoffMs = reconnect ? reconnect.initialMs : 0;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -127,12 +126,12 @@ export function createServerClient(opts: ServerClientOptions): ServerClient {
   }
 
   function flushOutbox(): void {
-    if (!socket || socket.readyState !== OPEN) return;
+    if (socket?.readyState !== OPEN) return;
     for (const frame of outbox.splice(0)) socket.send(frame);
   }
 
   function sendFrame(frame: string, immediate: boolean): void {
-    if (immediate && socket && socket.readyState === OPEN) socket.send(frame);
+    if (immediate && socket?.readyState === OPEN) socket.send(frame);
     else outbox.push(frame);
   }
 
@@ -231,7 +230,6 @@ export function createServerClient(opts: ServerClientOptions): ServerClient {
       )
         .then((w) => {
           welcome = w;
-          everConnected = true;
           backoffMs = reconnect ? reconnect.initialMs : 0;
           setState('connected');
           flushOutbox();
@@ -323,8 +321,4 @@ export function createServerClient(opts: ServerClientOptions): ServerClient {
       return () => stateListeners.delete(listener);
     },
   };
-
-  // `everConnected` is read by nothing yet but kept for the reconnect banner
-  // (Phase 5): the first connect and a re-connect deserve different copy.
-  everConnected;
 }

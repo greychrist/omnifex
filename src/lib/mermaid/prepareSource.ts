@@ -66,12 +66,25 @@ function parseColor(value: string): Rgb | null {
   const v = value.trim().toLowerCase();
   const hex = NAMED[v] ?? v;
   let m = /^#([0-9a-f]{3,4})$/.exec(hex);
-  if (m) return [0, 1, 2].map((i) => parseInt(m![1][i] + m![1][i], 16)) as Rgb;
+  if (m) {
+    const h = m[1];
+    return [0, 1, 2].map((i) => parseInt(h[i] + h[i], 16)) as Rgb;
+  }
   m = /^#([0-9a-f]{6})(?:[0-9a-f]{2})?$/.exec(hex);
-  if (m) return [0, 2, 4].map((i) => parseInt(m![1].slice(i, i + 2), 16)) as Rgb;
+  if (m) {
+    const h = m[1];
+    return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16)) as Rgb;
+  }
   m = /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/.exec(v);
   if (m) return [Number(m[1]), Number(m[2]), Number(m[3])];
   return null;
+}
+
+/** A color this module defines itself, so it always parses. */
+function constColor(value: string): Rgb {
+  const c = parseColor(value);
+  if (!c) throw new Error(`unparseable built-in color: ${value}`);
+  return c;
 }
 
 /** HSL hue in degrees, saturation and lightness in 0..1. */
@@ -100,9 +113,9 @@ type PerTheme = Record<ThemeMode, string>;
 export interface Accent { name: string; fill: PerTheme; stroke: PerTheme; text: PerTheme }
 
 const ACCENTS: (Accent & { hue: number })[] = Object.entries(ACCENT_500).map(([name, hex]) => {
-  const c = parseColor(hex)!;
-  const surface = (t: ThemeMode) => parseColor(THEME_SURFACES[t].node)!;
-  const text = (t: ThemeMode) => parseColor(THEME_SURFACES[t].text)!;
+  const c = constColor(hex);
+  const surface = (t: ThemeMode) => constColor(THEME_SURFACES[t].node);
+  const text = (t: ThemeMode) => constColor(THEME_SURFACES[t].text);
   return {
     name,
     hue: hsl(c)[0],

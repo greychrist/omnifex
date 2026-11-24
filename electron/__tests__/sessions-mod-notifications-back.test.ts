@@ -48,7 +48,7 @@ afterEach(() => { fs.rmSync(tmpConfig, { recursive: true, force: true }); });
 function startWithWaitingNotice(untilBack: boolean) {
   const sendToRenderer = vi.fn();
   const sessions = createSessionsService(sendToRenderer);
-  sessions.start({ tabId: 't1', projectPath: '/Users/test/proj', configDir: tmpConfig, model: 'opus', permissionMode: 'default' });
+  void sessions.start({ tabId: 't1', projectPath: '/Users/test/proj', configDir: tmpConfig, model: 'opus', permissionMode: 'default' });
   const payload = {
     type: 'system', subtype: 'ui_notify', plugin: 'r', source: 'r@inline', title: 'T', text: 'B',
     key: 'k', delay_ms: 60_000, until_back: untilBack, rewritten: false, uuid: 'u', session_id: 's',

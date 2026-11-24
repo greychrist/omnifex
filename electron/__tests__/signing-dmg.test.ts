@@ -59,7 +59,7 @@ describe('pickSigningIdentity', () => {
 
 describe('notarizeDmg', () => {
   function deps() {
-    const run = vi.fn((cmd: string, args: string[]) => {
+    const run = vi.fn((cmd: string, _args: string[]) => {
       if (cmd === 'security') return SECURITY_OUTPUT;
       return '';
     });

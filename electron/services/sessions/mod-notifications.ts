@@ -55,7 +55,7 @@ const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFi
 /** The registry name is not cleaned by the CLI ("a host must scrub it"). */
 function scrub(s: string): string {
   // eslint-disable-next-line no-control-regex
-  return s.replace(/[\u0000-\u001f\u007f-\u009f​-‏‪-‮⁦-⁩]/g, '').slice(0, 60);
+  return s.replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069]/g, '').slice(0, 60);
 }
 
 function keyedId(sessionId: string, source: string, key: string): string {

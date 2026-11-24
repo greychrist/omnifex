@@ -61,7 +61,7 @@ interface CliTaskNotificationMessage {
   subtype: 'task_notification';
   task_id?: string;
   tool_use_id?: string;
-  status?: 'completed' | 'failed' | 'stopped' | string;
+  status?: 'completed' | 'failed' | 'stopped' | (string & {});
   summary?: string;
   usage?: { total_tokens?: number; tool_uses?: number; duration_ms?: number };
   [k: string]: unknown;

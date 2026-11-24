@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { ReadoutLabel } from '@/components/ui/readout-label';
+import { fireAndLog } from '@/lib/fireAndLog';
 import { Clock, Brain, Wifi, WifiLow, WifiOff, Pencil, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useSecondTick } from '@/hooks/useSecondTick';
@@ -165,7 +166,7 @@ function SessionTitle({
     }
   };
 
-  const submit = async (e: React.FormEvent): Promise<void> => {
+  const submit = async (e: React.SubmitEvent): Promise<void> => {
     e.preventDefault();
     // A blank custom title is how the CLI CLEARS a rename — never what
     // pressing Save on an empty field meant.
@@ -244,7 +245,7 @@ function SessionTitle({
           </button>
         }
         content={
-          <form data-testid="rename-form" onSubmit={submit} className="flex flex-col gap-2 w-64">
+          <form data-testid="rename-form" onSubmit={fireAndLog('chat-status-bar:rename-submit', submit)} className="flex flex-col gap-2 w-64">
             <label htmlFor="session-rename-input" className="text-[10px] uppercase tracking-wide text-muted-foreground">
               Session name
             </label>

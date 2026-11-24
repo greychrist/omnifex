@@ -413,40 +413,37 @@ export function createClaudeCliEngine(
     sessionId = p.sessionId;
 
     const args = buildArgs(p);
-    try {
-      child = spawn(factory.claudeBinaryPath, args, {
-        cwd: p.projectPath,
-        // CLAUDE_CODE_NOTIFICATIONS_HOST (2.1.321): OmniFex raises mods'
-        // `$.ui.notify` notifications, so the CLI sends them as
-        // `system/ui_notify` instead of telling the mod "no_surface".
-        // Interactive sessions only: buildClaudeEnv also feeds `claude -p`.
-        //
-        // CLAUDE_CODE_ARTIFACT (2.1.323): the Artifact tool — Claude Design
-        // in Claude Code — is off by default for an `sdk-cli` session, which
-        // is what the CLI calls itself under stream-json. '1' opts in; the
-        // account still has to pass the CLI's own gates (Anthropic sign-in,
-        // plan, org policy). Before the spread, so an inherited value wins:
-        // `=0` there, or `enableArtifact: false` in settings, turns it off.
-        env: {
-          CLAUDE_CODE_ARTIFACT: '1',
-          ...buildClaudeEnv(p.configDir),
-          CLAUDE_CODE_NOTIFICATIONS_HOST: '1',
-        },
-      });
-    } catch (err) {
-      throw err;
-    }
+    const spawned = spawn(factory.claudeBinaryPath, args, {
+      cwd: p.projectPath,
+      // CLAUDE_CODE_NOTIFICATIONS_HOST (2.1.321): OmniFex raises mods'
+      // `$.ui.notify` notifications, so the CLI sends them as
+      // `system/ui_notify` instead of telling the mod "no_surface".
+      // Interactive sessions only: buildClaudeEnv also feeds `claude -p`.
+      //
+      // CLAUDE_CODE_ARTIFACT (2.1.323): the Artifact tool — Claude Design
+      // in Claude Code — is off by default for an `sdk-cli` session, which
+      // is what the CLI calls itself under stream-json. '1' opts in; the
+      // account still has to pass the CLI's own gates (Anthropic sign-in,
+      // plan, org policy). Before the spread, so an inherited value wins:
+      // `=0` there, or `enableArtifact: false` in settings, turns it off.
+      env: {
+        CLAUDE_CODE_ARTIFACT: '1',
+        ...buildClaudeEnv(p.configDir),
+        CLAUDE_CODE_NOTIFICATIONS_HOST: '1',
+      },
+    });
+    child = spawned;
 
-    wireStdout(child.stdout);
-    wireStderr(child.stderr);
+    wireStdout(spawned.stdout);
+    wireStderr(spawned.stderr);
 
-    child.on('error', (err: Error) => {
+    spawned.on('error', (err: Error) => {
       for (const cb of errorCallbacks) {
         try { cb(err); } catch { /* swallow */ }
       }
     });
 
-    child.on('exit', (code, signal) => {
+    spawned.on('exit', (code, signal) => {
       const info: AgentEngineExit = { code: code ?? -1, signal };
       // Fail any in-flight control_requests now — their response can never
       // arrive once the child is gone, and waiting for each one's timeout would
@@ -464,7 +461,7 @@ export function createClaudeCliEngine(
     // for a missing binary, EACCES, etc.) so lifecycle can transition to
     // 'error' with a useful message.
     await new Promise<void>((resolve, reject) => {
-      const childRef = child!;
+      const childRef = spawned;
       const onSpawn = (): void => {
         childRef.off('error', onErr);
         resolve();
@@ -506,7 +503,7 @@ export function createClaudeCliEngine(
     if (CLI_ARGV_PERMISSION_MODES.has(mode)) return; // already pinned via argv
     try {
       await sendControlRequest('set_permission_mode', { mode });
-    } catch (err) {
+    } catch {
       // Non-fatal — CLI keeps whatever mode it defaulted to.
     }
   }
@@ -529,8 +526,9 @@ export function createClaudeCliEngine(
       origin: { kind: 'human' },
     };
     const line = JSON.stringify(payload) + '\n';
+    const stdin = child.stdin;
     await new Promise<void>((resolve, reject) => {
-      child!.stdin.write(line, (err) => {
+      stdin.write(line, (err) => {
         if (err) {
           reject(err);
         } else {
@@ -582,8 +580,9 @@ export function createClaudeCliEngine(
       },
     };
     const line = JSON.stringify(envelope) + '\n';
+    const stdin = child.stdin;
     await new Promise<void>((resolve, reject) => {
-      child!.stdin.write(line, (err) => {
+      stdin.write(line, (err) => {
         if (err) reject(err);
         else resolve();
       });

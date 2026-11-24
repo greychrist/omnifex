@@ -204,6 +204,11 @@ export default defineConfig(
       // None are bugs; they're false positives for our architecture.
       // The honest fix is one config line, not 126 line-level disables.
       '@typescript-eslint/require-await': 'off',
+      // Wants `querySelector(...) as HTMLElement` written as `!`. But the
+      // assertion is the contextual type that makes TS infer HTMLElement
+      // for querySelector's generic; `!` leaves Element and tsc fails.
+      // Its auto-fix broke 19 sites. ~59 sites, all this pattern.
+      '@typescript-eslint/non-nullable-type-assertion-style': 'off',
 
       // ─── Warn (not error) for the `any`-cascade family ──
       // These all fire because of explicit `any` at the source. Gating

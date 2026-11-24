@@ -73,11 +73,11 @@ describe('SessionControlPickers — status-bar readouts that open pickers', () =
     const { SHADES, screenChartMode } = await import('@/lib/costChartPalette');
     const rgb = (h: string) => `rgb(${[1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16)).join(', ')})`;
     const mode = screenChartMode();
-    const valueOf = () => within(item('model')).getByText(/Fable|Sonnet|Opus/) as HTMLElement;
+    const valueOf = () => within(item('model')).getByText(/Fable|Sonnet|Opus/);
     setup({ model: 'fable' });
     expect(valueOf().style.color).toBe(rgb(SHADES[mode].fable[0]));
-    expect((within(item('model')).getByRole('button') as HTMLElement).style.color).toBe('');
-    expect((within(item('model')).getByText('model') as HTMLElement).style.color).toBe('');
+    expect(within(item('model')).getByRole('button').style.color).toBe('');
+    expect(within(item('model')).getByText('model').style.color).toBe('');
     cleanup();
     setup({ model: 'sonnet' });
     expect(valueOf().style.color).toBe(rgb(SHADES[mode].sonnet[0]));

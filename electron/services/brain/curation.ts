@@ -23,18 +23,10 @@ const CurationResultSchema = z
     promotedFacts: z.array(z.string()).default([]),
   })
   .refine((r) => r.collapsed !== '' || r.collapsedDecisions !== '', {
-    message: 'expected prose for at least one collapsed span',
+    error: 'expected prose for at least one collapsed span',
     path: ['collapsed'],
   });
 
-/**
- * Compile-time proof that the schema and the pure fold's input agree.
- *
- * `CurationResult` is declared in `curate.ts` so the fold never imports this
- * module; this assignment is what stops the two drifting apart silently.
- */
-const _shapeCheck: (a: z.infer<typeof CurationResultSchema>) => CurationResult = (a) => a;
-_shapeCheck;
 
 export class CurationParseError extends Error {
   constructor(message: string) {
@@ -93,6 +85,10 @@ export function parseCuration(raw: string): CurationResult {
       `curation failed validation at ${first.path.join('.') || '(root)'}: ${first.message}`,
     );
   }
+  // Compile-time proof that the schema and the pure fold's input agree:
+  // `CurationResult` is declared in `curate.ts` so the fold never imports this
+  // module, and returning the parsed value as one is what stops the two
+  // drifting apart silently.
   return result.data;
 }
 

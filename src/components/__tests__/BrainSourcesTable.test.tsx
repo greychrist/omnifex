@@ -487,7 +487,7 @@ describe('BrainSourcesTable — sessions in use', () => {
       />,
     );
     expect(screen.getByText(/in use/i)).toBeTruthy();
-    const box = screen.getByRole('checkbox', { name: /Select live/ }) as HTMLInputElement;
+    const box = screen.getByRole<HTMLInputElement>('checkbox', { name: /Select live/ });
     expect(box.disabled).toBe(true);
   });
 

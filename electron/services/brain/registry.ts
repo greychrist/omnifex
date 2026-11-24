@@ -12,7 +12,6 @@ import {
 import { createVaultGit, type ExecGit, type VaultGit } from './git';
 import { linkMatchesNote, parseWikilinks } from './links';
 import { countOffloadedFiles } from './offloaded';
-import { fireAndLogGitFailure } from './git-logging';
 import { canonicalPath, fsIdentity, isSameOrInside, resolveVaultRoot } from './paths';
 import { createSourceStateStore, type SourceStatus } from './sources/state';
 import {
@@ -848,7 +847,7 @@ export function createBrainService(
    * reporting the wrong thing, which is worse than reporting nothing.
    */
   function setRunPhase(itemKey: string, phase: BrainRunPhase, label?: string): void {
-    if (!activeRun || activeRun.item !== itemKey) return;
+    if (activeRun?.item !== itemKey) return;
     activeRun = { ...activeRun, phase, ...(label === undefined ? {} : { label }) };
     publishRun();
   }
@@ -1862,7 +1861,7 @@ export function createBrainService(
       requireAccountId(accountId);
       // Account-scoped: another account's run is not this pane's business, and
       // showing it would attribute one account's spend to another.
-      return activeRun && activeRun.accountId === accountId ? activeRun : null;
+      return activeRun?.accountId === accountId ? activeRun : null;
     },
 
     activeRun(): BrainRun | null {

@@ -140,8 +140,7 @@ export function resolve(state: SignalState, key: string): SignalState {
 
 function removeState(state: SignalState, key: string): SignalState {
   if (!(key in state.states)) return state;
-  const states = { ...state.states };
-  delete states[key];
+  const { [key]: _removed, ...states } = state.states;
   return { ...state, states };
 }
 
@@ -247,7 +246,7 @@ function sameSignal(a: SessionSignal, b: SessionSignal): boolean {
 
 function sameActionShape(a?: SignalAction[], b?: SignalAction[]): boolean {
   if (a === b) return true;
-  if (!a || !b || a.length !== b.length) return false;
+  if (!a || a.length !== b?.length) return false;
   return a.every((x, i) => x.id === b[i].id && x.label === b[i].label && x.primary === b[i].primary);
 }
 

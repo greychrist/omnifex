@@ -362,7 +362,7 @@ function scanConfigDir(
 
       // Cache hit when the file's mtime is unchanged: skip the read + parse.
       let entry = cache?.get(sessionFile);
-      if (!entry || entry.mtimeMs !== mtimeMs) {
+      if (entry?.mtimeMs !== mtimeMs) {
         const messages = readJsonlFile(sessionFile, logging);
         entry = {
           mtimeMs,

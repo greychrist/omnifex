@@ -153,7 +153,7 @@ export function fetchHealth(config: ServerConfig): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const req = httpGet(`http://${config.host}:${config.port}/healthz`, { timeout: 3000 }, (res) => {
       let body = '';
-      res.on('data', (d) => { body += d; });
+      res.on('data', (d: Buffer) => { body += d.toString(); });
       res.on('end', () => {
         try {
           resolve(JSON.parse(body));

@@ -112,7 +112,7 @@ function noticeOf(node: JsonlNode): { tone: NoticeTone; text: string } | null {
   if (node.kind === 'user' && node.userKind === 'interrupt') return { tone: 'stop', text: STOP_TEXT };
   if (node.kind === 'system' && node.subtype === 'session_writes_lost') return { tone: 'error', text: sessionWritesLostText(node.raw) };
   if (node.kind !== 'system' || node.subtype !== 'notification') return null;
-  const raw = node.raw as { notification_type?: unknown; title?: unknown; body?: unknown };
+  const raw = node.raw as { notification_type?: string; title?: unknown; body?: unknown };
   const type = String(raw.notification_type ?? '');
   if (type === 'stop') return { tone: 'stop', text: STOP_TEXT };
   const tone: NoticeTone = type === 'error' ? 'error' : type === 'warn' ? 'warn' : 'info';
@@ -120,7 +120,8 @@ function noticeOf(node: JsonlNode): { tone: NoticeTone; text: string } | null {
   return { tone, text: parts.join(' — ') || 'Notice' };
 }
 
-interface Block { type?: unknown; [k: string]: unknown }
+/** `text`, `thinking` and `id` are strings on the wire whenever present. */
+interface Block { type?: unknown; text?: string; thinking?: string; id?: string; [k: string]: unknown }
 
 function contentOf(node: JsonlNode): Block[] {
   const c = (node as { raw?: { message?: { content?: unknown } } }).raw?.message?.content;
@@ -168,7 +169,7 @@ function promptOf(node: JsonlNode): PromptShape | null {
   const images: PromptImage[] = [];
   for (const b of blocks) {
     if (b.type === 'text') continue;
-    const source = b.source as { type?: unknown; media_type?: unknown; data?: unknown } | undefined;
+    const source = b.source as { type?: unknown; media_type?: string; data?: string } | undefined;
     if (b.type !== 'image' || source?.type !== 'base64') return null;
     const mediaType = String(source.media_type ?? 'image/png');
     images.push({ src: `data:${mediaType};base64,${String(source.data ?? '')}`, mediaType });
@@ -326,7 +327,7 @@ export function buildModernItems(
               closeWork();
               items.push(b.name === 'AskUserQuestion'
                 ? { kind: 'question', key: `q-${key}`, node, input, resultNode: res?.node }
-                : { kind: 'plan', key: `p-${key}`, node, markdown: String(input.plan ?? ''), resultNode: res?.node });
+                : { kind: 'plan', key: `p-${key}`, node, markdown: String((input.plan as string | undefined) ?? ''), resultNode: res?.node });
               return;
             }
             const w = openWork(key);
@@ -360,7 +361,7 @@ export function buildModernItems(
     // A skill's body: the CLI names the Skill call it belongs to. A
     // re-invocation sends a preamble and the body, so both are kept.
     if (node.kind === 'user' && node.userKind === 'meta-skill') {
-      const source = skillEntries.get(String((node.raw as { sourceToolUseID?: unknown }).sourceToolUseID ?? ''));
+      const source = skillEntries.get(String((node.raw as { sourceToolUseID?: string }).sourceToolUseID ?? ''));
       if (source) {
         const body = plainText(node);
         source.entry.skillBody = source.entry.skillBody ? `${source.entry.skillBody}\n\n${body}` : body;

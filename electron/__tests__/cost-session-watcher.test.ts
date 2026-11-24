@@ -82,7 +82,7 @@ describe('session-cost watcher', () => {
 
   it('missing session file yields a zero snapshot without throwing', async () => {
     const world = makeWorld('');
-    delete world.files[SESSION_FILE];
+    Reflect.deleteProperty(world.files, SESSION_FILE);
     const svc = createSessionCostService({
       sendToRenderer: () => {},
       costHistory: null,
@@ -254,7 +254,7 @@ describe('session-cost watcher', () => {
 
     function makeWorktreeWorld() {
       const world = makeWorld('');
-      delete world.files[SESSION_FILE]; // primary encoded dir never got this transcript
+      Reflect.deleteProperty(world.files, SESSION_FILE); // primary encoded dir never got this transcript
       world.files[ALT_SESSION_FILE] = assistantLine('r1', 1000);
       world.dirs[PROJECTS_DIR] = [
         { name: '-Users-me-proj', isDirectory: true },
@@ -353,7 +353,7 @@ describe('session-cost watcher', () => {
       await svc.watch(args);
 
       world.files[ALT_SESSION_FILE] = world.files[SESSION_FILE] + '\n' + assistantLine('r2', 2000);
-      delete world.files[SESSION_FILE];
+      Reflect.deleteProperty(world.files, SESSION_FILE);
       await vi.advanceTimersByTimeAsync(1100);
 
       const last = emitted.at(-1)?.payload as { totalUsd: number } | undefined;

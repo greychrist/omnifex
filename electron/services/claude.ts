@@ -8,7 +8,7 @@ import path from 'node:path';
 import type { Database } from './database';
 import type { AccountsService } from './accounts';
 import { createProjectPinsService } from './project-pins';
-import { decodeProjectId, encodeProjectId, recoverProjectPath, recoverProjectPathAsync } from './project-paths';
+import { encodeProjectId, recoverProjectPath, recoverProjectPathAsync } from './project-paths';
 import { buildClaudeEnv } from './util/claude-env';
 import { isRequestReplayLine } from './util/request-replay';
 import { createSessionMetadataCache, createSqliteSessionMetadataStore, type SessionMetadata } from './session-metadata-cache';
@@ -364,7 +364,7 @@ const sessionActivity = new Map<string, { size: number; activityMs: number }>();
 
 function activityTimeFor(filePath: string, stat: fs.Stats): number {
   const seen = sessionActivity.get(filePath);
-  if (seen && seen.size === stat.size) {
+  if (seen?.size === stat.size) {
     // Touched, not appended to. Keep the earlier reading — but never let it
     // run ahead of mtime if the file was rewritten smaller/backdated.
     return Math.min(seen.activityMs, stat.mtimeMs) === seen.activityMs
@@ -715,6 +715,7 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
           custom_title: customTitle,
           first_timestamp: firstTimestamp,
           last_timestamp: lastTimestamp ?? mtimeFallback,
+          // eslint-disable-next-line @typescript-eslint/no-deprecated -- still part of the Session wire shape the renderer receives.
           message_timestamp: lastTimestamp ?? mtimeFallback,
           file_size_bytes: fileSize,
         };
@@ -729,7 +730,7 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
     // project-root dir both resolve to this path — see
     // findProjectDirsForPath), so the loop above can push two rows sharing an
     // id. Keep the one whose transcript is most current: newest
-    // last_timestamp/message_timestamp wins, ties broken by larger
+    // last_timestamp wins, ties broken by larger
     // file_size_bytes, then by later created_at.
     const byId = new Map<string, Session>();
     for (const session of sessions) {
@@ -739,8 +740,9 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
         continue;
       }
 
-      const existingTs = existing.message_timestamp ?? existing.last_timestamp;
-      const candidateTs = session.message_timestamp ?? session.last_timestamp;
+      // Every row above sets message_timestamp and last_timestamp to the same value.
+      const existingTs = existing.last_timestamp;
+      const candidateTs = session.last_timestamp;
       const existingTime = existingTs ? Date.parse(existingTs) : NaN;
       const candidateTime = candidateTs ? Date.parse(candidateTs) : NaN;
 
@@ -762,7 +764,7 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
     // Sort by last activity DESC, so a resumed old session rises to the top.
     // created_at (file birthtime) only stands in when no timestamp parses.
     const lastActivityMs = (s: Session): number => {
-      const ts = s.message_timestamp ?? s.last_timestamp;
+      const ts = s.last_timestamp;
       const parsed = ts ? Date.parse(ts) : NaN;
       return Number.isNaN(parsed) ? s.created_at * 1000 : parsed;
     };

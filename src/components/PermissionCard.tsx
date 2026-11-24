@@ -89,7 +89,6 @@ export function formatToolInput(toolName: string | undefined, input: Record<stri
 }
 
 export function PermissionCard({ request, onAllow, onDeny }: PermissionCardProps) {
-  const layout = useLayoutMode();
   // Codex `patch` / `exec` approvals have a fundamentally different shape
   // than Claude's `canUseTool` payload — no tool name to format, no rules
   // to edit, no scope persistence (Codex's protocol has no per-rule store).
@@ -104,6 +103,16 @@ export function PermissionCard({ request, onAllow, onDeny }: PermissionCardProps
     );
   }
 
+  return <ClaudePermissionCard request={request} onAllow={onAllow} onDeny={onDeny} />;
+}
+
+/**
+ * Claude's `canUseTool` prompt. Its own component so its hooks run in the
+ * same order on every render — they used to sit after the Codex early
+ * return in PermissionCard, which breaks the rules of hooks.
+ */
+function ClaudePermissionCard({ request, onAllow, onDeny }: PermissionCardProps) {
+  const layout = useLayoutMode();
   const {
     toolName,
     toolInput,

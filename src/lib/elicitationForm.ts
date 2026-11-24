@@ -100,7 +100,7 @@ export function initialElicitationValues(fields: ElicitationField[]): Elicitatio
   for (const f of fields) {
     if (f.kind === 'boolean') values[f.name] = f.default === true;
     else if (f.kind === 'multiselect') values[f.name] = Array.isArray(f.default) ? f.default.map(String) : [];
-    else values[f.name] = f.default === undefined ? '' : String(f.default);
+    else values[f.name] = f.default === undefined ? '' : `${f.default as string | number}`;
   }
   return values;
 }

@@ -112,7 +112,7 @@ export function keepUnchangedFooters(
   const out = new Map<string, TurnFooter>();
   for (const [key, footer] of next) {
     const old = prev.get(key);
-    out.set(key, old && old.ms === footer.ms && old.steps === footer.steps && old.usd === footer.usd ? old : footer);
+    out.set(key, old?.ms === footer.ms && old.steps === footer.steps && old.usd === footer.usd ? old : footer);
   }
   return out;
 }

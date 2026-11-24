@@ -59,7 +59,7 @@ describe("Live card accent regression — B2", () => {
     // The PermissionCard (non-Codex branch) renders:
     //   <div className="mx-2 my-2 rounded-lg border shadow-sm" style={accentStyle}>
     // That is the first div with an inline style in the subtree.
-    const card = container.querySelector("div[style]") as HTMLElement | null;
+    const card = container.querySelector<HTMLElement>("div[style]");
     expect(card).not.toBeNull();
 
     // permission.request → amber palette → swatch #f59e0b → border #f59e0b33.

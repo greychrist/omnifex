@@ -140,19 +140,20 @@ export function createCodexCliEngine(
     const env = { ...process.env };
     delete env.CLAUDE_CONFIG_DIR;
 
-    child = spawn(factory.codexBinaryPath, ['mcp'], {
+    const spawned = spawn(factory.codexBinaryPath, ['mcp'], {
       cwd: p.projectPath,
       env,
     });
+    child = spawned;
 
-    child.on('exit', (code, signal) => {
+    spawned.on('exit', (code, signal) => {
       const info: AgentEngineExit = { code: code ?? -1, signal };
       for (const cb of exitCallbacks) {
         try { cb(info); } catch { /* swallow */ }
       }
     });
 
-    child.on('error', (err: Error) => {
+    spawned.on('error', (err: Error) => {
       for (const cb of errorCallbacks) {
         try { cb(err); } catch { /* swallow */ }
       }
@@ -162,10 +163,10 @@ export function createCodexCliEngine(
     // the Claude engine's wireStderr — diagnostics from the Codex binary
     // (config errors, panics, version skew) end up on stderr and need to
     // reach the UI rather than being swallowed.
-    wireStderr(child.stderr);
+    wireStderr(spawned.stderr);
 
     await new Promise<void>((resolve, reject) => {
-      const childRef = child!;
+      const childRef = spawned;
       const onSpawn = (): void => {
         childRef.off('error', onErr);
         resolve();

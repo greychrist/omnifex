@@ -271,7 +271,7 @@ function collectMetadata(rows: Row[], sessionId: string): SessionMetadata {
     if (message && Array.isArray(message.content)) {
       for (const block of message.content) {
         const b = asRecord(block);
-        if (!b || b.type !== 'tool_use') continue;
+        if (b?.type !== 'tool_use') continue;
         const name = asString(b.name);
         if (!name || !FILE_TOOLS.has(name)) continue;
         const input = asRecord(b.input);

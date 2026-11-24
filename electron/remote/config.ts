@@ -8,7 +8,7 @@
  * coffee-shop Wi-Fi into a session console.
  */
 import { readFileSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { homedir, networkInterfaces } from 'node:os';
 import { join } from 'node:path';
 import { z } from 'zod';
 
@@ -137,7 +137,7 @@ export function loadServerConfig(opts: LoadServerConfigOptions = {}): ServerConf
   }
   const f = parsed.data;
 
-  const interfaces = opts.interfaces ?? (require('node:os') as typeof import('node:os')).networkInterfaces();
+  const interfaces = opts.interfaces ?? networkInterfaces();
   const tailnet = f.host ? null : detectTailscaleIp(interfaces);
   const host = f.host ?? tailnet ?? '127.0.0.1';
 

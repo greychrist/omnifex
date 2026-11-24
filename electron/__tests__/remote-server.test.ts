@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { get as httpGet } from 'node:http';
+import { get as httpGet, request as httpRequest, type IncomingMessage } from 'node:http';
 import WebSocket from 'ws';
 
 import { createRemoteServer, type RemoteServer } from '../remote/server';
@@ -19,7 +19,7 @@ class TestClient {
   constructor(url: string) {
     this.ws = new WebSocket(url);
     this.ws.on('message', (d) => {
-      const m = JSON.parse(d.toString()) as ServerMessage;
+      const m = JSON.parse((d as Buffer).toString()) as ServerMessage;
       this.frames.push(m);
       for (const w of this.waiters.splice(0)) w(m);
     });
@@ -78,6 +78,7 @@ const handlers = (overrides: Partial<ProtocolHandlers> = {}): ProtocolHandlers =
   'project.remove': () => undefined,
   'session.list': () => [],
   'session.create': () => { throw new Error('boom: secret path /Users/greg'); },
+  // eslint-disable-next-line @typescript-eslint/only-throw-error -- handlers throw ProtocolError-shaped plain objects by contract; this is that path.
   'session.resume': () => { throw { code: 'NOT_FOUND', message: 'no such session' }; },
   'session.kill': () => undefined,
   'session.release': () => ({ stopped: true }),
@@ -301,7 +302,7 @@ describe('remote server', () => {
       new Promise<{ status: number; body: string; type: string | undefined; cors: string | undefined }>((res, rej) => {
         const req = httpGet(`${base}${path}`, { method }, (r) => {
           let body = '';
-          r.on('data', (d) => { body += d; });
+          r.on('data', (d: Buffer) => { body += d.toString(); });
           r.on('end', () => res({
             status: r.statusCode ?? 0,
             body,
@@ -353,8 +354,8 @@ describe('remote server', () => {
       expect(JSON.parse((await fetchText('/api/push/vapid-public-key')).body)).toEqual({ publicKey: 'PUBKEY' });
       const post = (path: string, body: unknown) =>
         new Promise<{ status: number; body: string }>((res, rej) => {
-          const req = require('node:http').request(`${base}${path}`, { method: 'POST', headers: { 'content-type': 'application/json' } }, (r: import('node:http').IncomingMessage) => {
-            let b = ''; r.on('data', (d) => { b += d; }); r.on('end', () => res({ status: r.statusCode ?? 0, body: b }));
+          const req = httpRequest(`${base}${path}`, { method: 'POST', headers: { 'content-type': 'application/json' } }, (r: IncomingMessage) => {
+            let b = ''; r.on('data', (d: Buffer) => { b += d.toString(); }); r.on('end', () => res({ status: r.statusCode ?? 0, body: b }));
           });
           req.on('error', rej); req.end(JSON.stringify(body));
         });
@@ -385,7 +386,7 @@ describe('remote server on extra hosts', () => {
     new Promise<{ status: number; body: string }>((res, rej) => {
       httpGet(url, (r) => {
         let body = '';
-        r.on('data', (d) => { body += d; });
+        r.on('data', (d: Buffer) => { body += d.toString(); });
         r.on('end', () => res({ status: r.statusCode ?? 0, body }));
       }).on('error', rej);
     });

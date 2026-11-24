@@ -34,7 +34,7 @@ describe('ClaudeService.getDefaultModel', () => {
     db.close();
     fs.rmSync(dir, { recursive: true, force: true });
     for (const [k, v] of Object.entries(saved)) {
-      if (v === undefined) delete process.env[k];
+      if (v === undefined) Reflect.deleteProperty(process.env, k);
       else process.env[k] = v;
     }
   });

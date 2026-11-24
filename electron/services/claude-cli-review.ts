@@ -6360,7 +6360,7 @@ const NPM_DIST_TAGS_URL =
  * Anthropic ships.
  */
 function isNpmInstall(binaryPath: string | null): boolean {
-  return binaryPath !== null && binaryPath.split(path.sep).includes('node_modules');
+  return binaryPath?.split(path.sep).includes('node_modules') === true;
 }
 
 const VERSION_RE = /^\d+\.\d+\.\d+(?:-[\w.]+)?$/;

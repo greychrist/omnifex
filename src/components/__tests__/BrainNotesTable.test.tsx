@@ -209,7 +209,7 @@ describe('BrainNotesTable', () => {
     beforeEach(() => { window.localStorage.clear(); });
 
     function colWidth(key: string): string {
-      return (screen.getByTestId(`col-${key}`) as HTMLTableColElement).style.width;
+      return screen.getByTestId<HTMLTableColElement>(`col-${key}`).style.width;
     }
 
     function drag(label: RegExp, from: number, to: number): void {

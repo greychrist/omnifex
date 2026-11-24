@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createDatabase, type Database } from '../services/database';
 import { createRateLimitsService, type RateLimitsService, type RateLimitInfo } from '../services/rate-limits';
 import type { AccountsService, Account } from '../services/accounts';
@@ -574,5 +574,3 @@ describe('rate-limits service', () => {
   });
 });
 
-// Suppress unused-warning if vi import happens to be unreferenced
-vi;
