@@ -5,6 +5,24 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.57] — 2026-11-24
+
+### Added
+- Pasting a list copied from a web page or document into the prompt keeps it as a Markdown list instead of flattened text, and the paste can be undone.
+
+### Changed
+- Dependency updates closing every open security advisory: zod 4.6.7, vite 6.4.6, vitest 4.1.12, typescript-eslint 8.74, Mermaid 12.3 (with a patched KaTeX), and patched hono, body-parser, qs, fast-uri, ip-address and undici.
+- Lint is now part of the verification gate. All 436 ESLint errors and 642 warnings were fixed in the code.
+- The daemon's source folder is renamed from `electron/` to `daemon/`; no Electron code has been left since the move to the Swift shell.
+- The design and plan documents are removed. The rules that still govern the code now live in `CLAUDE.md` files beside it, and most code comments that only narrated history are gone.
+
+### Fixed
+- A permission card that switched between a Codex request and a Claude request could throw or mix up its state.
+- The tab status and the updater's "sessions still working" check could stay stale when only the running turn changed.
+- Brain errors that weren't `Error` objects showed as no error at all.
+- Failures while renaming a session or copying an image were never reported.
+- The error shown when a native module was built for the wrong Node version pointed at a build script that no longer exists.
+
 ## [0.5.56] — 2026-11-24
 
 ### Changed
